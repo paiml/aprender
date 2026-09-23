@@ -1,0 +1,11 @@
+cold rc=0 seconds=1037
+warm rc=1 seconds=74
+MEASURE_DONE
+batched rc=0 seconds=306
+BATCHED_DONE
+final-cold rc=0 seconds=289
+final-warm rc=0 seconds=130
+FINAL_DONE
+head-cold rc=0 seconds=373
+head-warm rc=0 seconds=158
+HEAD_DONE

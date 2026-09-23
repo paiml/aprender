@@ -1,0 +1,5516 @@
+{
+  "version": "0.69.1",
+  "host": "gx10",
+  "backend": "gpu",
+  "isa": "aarch64",
+  "gpu": "NVIDIA GB10",
+  "engines": [
+    "apr",
+    "llama.cpp",
+    "vllm",
+    "hf"
+  ],
+  "verbs": [
+    "run",
+    "chat",
+    "serve",
+    "code"
+  ],
+  "thinking": [
+    "off"
+  ],
+  "sampling": {
+    "temperature": 0.0,
+    "seed": 42,
+    "context": 4096,
+    "max_tokens": 1024,
+    "source": "scripts/llama_pin.toml [protocol]"
+  },
+  "apr": {
+    "version_line": "apr 0.69.1 (d8a6df53a)"
+  },
+  "harness": {
+    "sha": "3488e25af",
+    "driver": "scripts/crux_inference_dogfood.sh",
+    "gpu_lock": "gpu-q --prio 1 (GPUQ_WAIT bound)"
+  },
+  "llama_cpp": {
+    "build": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
+    "pin": "d1d3c3396",
+    "unavailable": null
+  },
+  "ollama": {
+    "server_version": null,
+    "client_version": null,
+    "unavailable": null
+  },
+  "hf": {
+    "probe": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
+    "unavailable": null
+  },
+  "llamafile": {
+    "probe": null,
+    "unavailable": null
+  },
+  "vllm": {
+    "probe": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
+    "unavailable": null
+  },
+  "models": [
+    {
+      "name": "Qwen3.5-2B-Q4_K_M.gguf",
+      "sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+      "thinking_capable": true,
+      "ollama": {
+        "blob_sha256": null,
+        "blob_is_input": null,
+        "template_sha256": null,
+        "refused": null
+      },
+      "tokenization": {
+        "refused": null
+      }
+    }
+  ],
+  "not_covered": [
+    "verbs not run here: ",
+    "apr serve's backend is unverified: its responses report none",
+    "apr serve reads no per-request thinking toggle; the comparators are told enable_thinking explicitly",
+    "apr code has no backend, max-tokens or thinking control: it spawns `apr serve --gpu`, so its rows are judged by executing the code, and it is refused on the cpu lane",
+    "apr chat's backend is unverified: apr chat reports none (#3794)",
+    "thinking ON until #3723 adds an apr toggle",
+    "consumer-brief context rungs (#3716) and each engine's max accepted context",
+    "TTFT and decode rate: the serve verb's measurement goes through `apr test llm bench` (PERF-009), the next increment"
+  ],
+  "reference_cache": {
+    "dir": "/home/noah/a83-4036-measure/cache-batched",
+    "modes": [
+      {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "thinking": "off",
+        "result": "miss",
+        "engines": "llama.cpp,hf,vllm"
+      }
+    ],
+    "note": "hit = the reference rows were measured by an earlier run (origin in each row's reference_cache), not on this host; stale = every reference row refused (#4036)"
+  },
+  "schema": "crux-inference-receipt/v1",
+  "judged_at": "2026-09-23T18:24Z",
+  "cells": [
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "run",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2"
+      },
+      "verdict": "GREEN",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "reported_by": "apr",
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "decode_rate": 2.1,
+            "rate_unit": "tokens per second, as the engine reported it",
+            "inference_ms": 5175.91
+          },
+          "backend": {
+            "requested": "gpu",
+            "ran": "gpu",
+            "fell_back": false
+          },
+          "prompt_ids": [
+            248045,
+            846,
+            198,
+            3710,
+            369,
+            220,
+            17,
+            10,
+            17,
+            30,
+            17308,
+            440,
+            279,
+            1534,
+            4087,
+            4613,
+            361,
+            8944,
+            1419,
+            8944,
+            13867,
+            248046,
+            198,
+            248045,
+            74455,
+            198,
+            248068,
+            271,
+            248069,
+            271
+          ],
+          "prompt_token_count": 30,
+          "rendered_prompt": "<|im_start|>user\\nWhat is 2+2? Reply with the final answer inside <answer></answer>.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n",
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "reported_by": "llama.cpp",
+            "prompt_rate": 533.1,
+            "decode_rate": 111.9,
+            "rate_unit": "tokens per second, as the engine reported it",
+            "prompt_tokens": null,
+            "completion_tokens": null
+          },
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10"
+          },
+          "source": {
+            "repo": "Qwen/Qwen3.5-2B",
+            "revision": "15852e8c16360a2fea060d615a32b45270f8a8fc",
+            "dtype": "bfloat16"
+          },
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10"
+          },
+          "source": {
+            "repo": "Qwen/Qwen3.5-2B",
+            "revision": "15852e8c16360a2fea060d615a32b45270f8a8fc",
+            "dtype": "bfloat16",
+            "compares": "apr quantized file vs source weights (vLLM 0.30.0 cannot load the GGUF, #3952)"
+          },
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": true,
+        "apr_count": 30,
+        "llama_cpp_count": 28,
+        "apr_ids_compared": 30,
+        "apr_ids_complete": true,
+        "first_divergence": 27,
+        "parity": false
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "run",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-code-add"
+      },
+      "verdict": "GREEN",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "def add(a, b):\n    return a + b",
+        "llama.cpp": "def add(a, b):\n    return a + b",
+        "hf": "def add(a, b):\n    return a + b",
+        "vllm": "def add(a, b):\n    return a + b"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "add",
+        "tests": "assert add(2, 3) == 5\nassert add(-4, 4) == 0\nassert add(10, 0) == 10",
+        "timeout_s": 10
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "reported_by": "apr",
+            "prompt_tokens": 42,
+            "completion_tokens": 18,
+            "decode_rate": 4.7,
+            "rate_unit": "tokens per second, as the engine reported it",
+            "inference_ms": 5767.59
+          },
+          "backend": {
+            "requested": "gpu",
+            "ran": "gpu",
+            "fell_back": false
+          },
+          "prompt_ids": [
+            248045,
+            846,
+            198,
+            7734,
+            264,
+            12654,
+            709,
+            884,
+            2784,
+            11,
+            292,
+            8,
+            421,
+            4523,
+            279,
+            2542,
+            314,
+            264,
+            321,
+            292,
+            13,
+            9920,
+            1132,
+            279,
+            709,
+            303,
+            264,
+            3074,
+            52451,
+            12305
+          ],
+          "prompt_token_count": 42,
+          "rendered_prompt": "<|im_start|>user\\nWrite a Python function add(a, b) that returns the sum of a and b. Put only the function in a single ```python code block.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n",
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "reported_by": "llama.cpp",
+            "prompt_rate": 784.2,
+            "decode_rate": 125.3,
+            "rate_unit": "tokens per second, as the engine reported it",
+            "prompt_tokens": null,
+            "completion_tokens": null
+          },
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 42,
+            "completion_tokens": 20,
+            "device": "cuda:0 NVIDIA GB10"
+          },
+          "source": {
+            "repo": "Qwen/Qwen3.5-2B",
+            "revision": "15852e8c16360a2fea060d615a32b45270f8a8fc",
+            "dtype": "bfloat16"
+          },
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 42,
+            "completion_tokens": 18,
+            "device": "cuda:0 NVIDIA GB10"
+          },
+          "source": {
+            "repo": "Qwen/Qwen3.5-2B",
+            "revision": "15852e8c16360a2fea060d615a32b45270f8a8fc",
+            "dtype": "bfloat16",
+            "compares": "apr quantized file vs source weights (vLLM 0.30.0 cannot load the GGUF, #3952)"
+          },
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": true,
+        "apr_count": 42,
+        "llama_cpp_count": 40,
+        "apr_ids_compared": 30,
+        "apr_ids_complete": false,
+        "first_divergence": null,
+        "parity": false
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2"
+      },
+      "verdict": "GREEN",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "reported_by": "apr"
+          },
+          "backend_verified": false,
+          "turns": [
+            "<answer>4</answer>"
+          ],
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "device": "cuda (-ngl 999)",
+            "interface": "pty"
+          },
+          "turns": [
+            "<answer>4</answer>"
+          ],
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10"
+          },
+          "turns": [
+            "<answer>4</answer>"
+          ],
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10"
+          },
+          "turns": [
+            "<answer>4</answer>"
+          ],
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-recall-7"
+      },
+      "verdict": "GREEN",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "7",
+        "llama.cpp": "7",
+        "hf": "7",
+        "vllm": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "reported_by": "apr"
+          },
+          "backend_verified": false,
+          "turns": [
+            "The number 7 is a prime number, the smallest prime number, and the 7th prime number. It is also the sum of the first three prime numbers (2 + 3 + 5 = 7).\n\n<answer>7</answer>",
+            "You asked me to remember the number **7**.\n\n<answer>7</answer>"
+          ],
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "device": "cuda (-ngl 999)",
+            "interface": "pty"
+          },
+          "turns": [
+            "The number 7 is a prime number, an odd number, and the seventh number in the sequence of natural numbers. It is also the sum of the first three prime numbers (2 + 3 + 5 = 7).\n\n<answer>7</answer>",
+            "You asked me to remember the number **7**.\n\n<answer>7</answer>"
+          ],
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 69,
+            "completion_tokens": 20,
+            "device": "cuda:0 NVIDIA GB10"
+          },
+          "turns": [
+            "<answer>7</answer>",
+            "<answer>7</answer>"
+          ],
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 69,
+            "completion_tokens": 16,
+            "device": "cuda:0 NVIDIA GB10"
+          },
+          "turns": [
+            "<answer>7</answer>",
+            "<answer>7</answer>"
+          ],
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": false,
+        "apr_matches": [
+          "llama.cpp"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "chat",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-code-add"
+      },
+      "verdict": "GREEN",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "def add(a, b):\n    return a + b",
+        "llama.cpp": "def add(a, b):\n    return a + b",
+        "hf": "def add(a, b):\n    return a + b",
+        "vllm": "def add(a, b):\n    return a + b"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "add",
+        "tests": "assert add(2, 3) == 5\nassert add(-4, 4) == 0\nassert add(10, 0) == 10",
+        "timeout_s": 10
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "reported_by": "apr"
+          },
+          "backend_verified": false,
+          "turns": [
+            "```python\ndef add(a, b):\n    return a + b\n```"
+          ],
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "device": "cuda (-ngl 999)",
+            "interface": "pty"
+          },
+          "turns": [
+            "```python\ndef add(a, b):\n    return a + b\n```"
+          ],
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "interface": "generate",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 42,
+            "completion_tokens": 20,
+            "device": "cuda:0 NVIDIA GB10"
+          },
+          "turns": [
+            "```python\ndef add(a, b):\n    return a + b\n```"
+          ],
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "interface": "LLM.chat",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 42,
+            "completion_tokens": 18,
+            "device": "cuda:0 NVIDIA GB10"
+          },
+          "turns": [
+            "```python\ndef add(a, b):\n    return a + b\n```"
+          ],
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the chat verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve run",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2",
+        "mode": "nonstream",
+        "route": "POST /generate"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /generate",
+            "mode": "nonstream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": null,
+            "rendered_prompts": [
+              "7272c9f96aeaa1d1ad3b4133f73b645986a0e58aa4ae27cd177e3c8fe648ce7d"
+            ]
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "nonstream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "7272c9f96aeaa1d1ad3b4133f73b645986a0e58aa4ae27cd177e3c8fe648ce7d"
+            ]
+          },
+          "borrowed_from_route": "POST /v1/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "transformers serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "vllm serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve run verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve run",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2",
+        "mode": "nonstream",
+        "route": "POST /batch/generate"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /batch/generate",
+            "mode": "nonstream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": null,
+            "rendered_prompts": [
+              "7272c9f96aeaa1d1ad3b4133f73b645986a0e58aa4ae27cd177e3c8fe648ce7d"
+            ]
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "nonstream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "7272c9f96aeaa1d1ad3b4133f73b645986a0e58aa4ae27cd177e3c8fe648ce7d"
+            ]
+          },
+          "borrowed_from_route": "POST /v1/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "transformers serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "vllm serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve run verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve stream",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2",
+        "mode": "stream",
+        "route": "POST /stream/generate"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /stream/generate",
+            "mode": "stream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 7,
+            "terminal": "event: done",
+            "finish_reason": null,
+            "rendered_prompts": [
+              "7272c9f96aeaa1d1ad3b4133f73b645986a0e58aa4ae27cd177e3c8fe648ce7d"
+            ]
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "stream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 9,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "7272c9f96aeaa1d1ad3b4133f73b645986a0e58aa4ae27cd177e3c8fe648ce7d"
+            ]
+          },
+          "borrowed_from_route": "POST /v1/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "transformers serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "vllm serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve stream verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve stream",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2",
+        "mode": "stream",
+        "route": "POST /realize/generate"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /realize/generate",
+            "mode": "stream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 7,
+            "terminal": "event: done",
+            "finish_reason": null,
+            "rendered_prompts": [
+              "7272c9f96aeaa1d1ad3b4133f73b645986a0e58aa4ae27cd177e3c8fe648ce7d"
+            ]
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "stream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 9,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "7272c9f96aeaa1d1ad3b4133f73b645986a0e58aa4ae27cd177e3c8fe648ce7d"
+            ]
+          },
+          "borrowed_from_route": "POST /v1/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "transformers serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "vllm serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve stream verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve run",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2",
+        "mode": "nonstream",
+        "route": "POST /realize/batch"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /realize/batch",
+            "mode": "nonstream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": null,
+            "rendered_prompts": [
+              "7272c9f96aeaa1d1ad3b4133f73b645986a0e58aa4ae27cd177e3c8fe648ce7d"
+            ]
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "nonstream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "7272c9f96aeaa1d1ad3b4133f73b645986a0e58aa4ae27cd177e3c8fe648ce7d"
+            ]
+          },
+          "borrowed_from_route": "POST /v1/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "transformers serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "vllm serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve run verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve run",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2",
+        "mode": "nonstream",
+        "route": "POST /v1/completions"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "nonstream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "7272c9f96aeaa1d1ad3b4133f73b645986a0e58aa4ae27cd177e3c8fe648ce7d"
+            ]
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "nonstream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "7272c9f96aeaa1d1ad3b4133f73b645986a0e58aa4ae27cd177e3c8fe648ce7d"
+            ]
+          },
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "transformers serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "vllm serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve run verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve stream",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2",
+        "mode": "stream",
+        "route": "POST /v1/completions"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "stream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 2,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "7272c9f96aeaa1d1ad3b4133f73b645986a0e58aa4ae27cd177e3c8fe648ce7d"
+            ]
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "stream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 9,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "7272c9f96aeaa1d1ad3b4133f73b645986a0e58aa4ae27cd177e3c8fe648ce7d"
+            ]
+          },
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "transformers serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "vllm serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve stream verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve run",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2",
+        "mode": "nonstream",
+        "route": "POST /v1/chat/completions"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/chat/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "nonstream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "nonstream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "transformers serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "vllm serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve run verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve stream",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2",
+        "mode": "stream",
+        "route": "POST /v1/chat/completions"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/chat/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "stream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 9,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "stream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 9,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "transformers serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "vllm serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve stream verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve stream",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2",
+        "mode": "stream",
+        "route": "POST /v1/chat/completions/stream"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/chat/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions/stream",
+            "mode": "stream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 9,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "stream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 9,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "transformers serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "vllm serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve stream verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve run",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2",
+        "mode": "nonstream",
+        "route": "POST /api/chat"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/chat/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /api/chat",
+            "mode": "nonstream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": null,
+            "rendered_prompts": []
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "nonstream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "transformers serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "vllm serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve run verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve stream",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2",
+        "mode": "stream",
+        "route": "POST /api/chat"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/chat/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /api/chat",
+            "mode": "stream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 2,
+            "terminal": "done:true",
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "stream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 9,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "transformers serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "vllm serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve stream verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve run",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2",
+        "mode": "nonstream",
+        "route": "POST /api/generate"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/chat/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /api/generate",
+            "mode": "nonstream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": null,
+            "rendered_prompts": []
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "nonstream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "transformers serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "vllm serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve run verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve stream",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-2plus2",
+        "mode": "stream",
+        "route": "POST /api/generate"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/chat/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "4",
+        "llama.cpp": "4",
+        "hf": "4",
+        "vllm": "4"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /api/generate",
+            "mode": "stream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 2,
+            "terminal": "done:true",
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "stream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 9,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "transformers serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>4</answer>",
+          "reported": {
+            "interface": "vllm serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 30,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve stream verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve run",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-recall-7",
+        "mode": "nonstream",
+        "route": "POST /generate"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "7",
+        "llama.cpp": "7",
+        "hf": "7",
+        "vllm": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /generate",
+            "mode": "nonstream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": null,
+            "rendered_prompts": [
+              "37d2e1b1ea19e8d484130f79fc7f978865709b9589d6c83f3a835ab8c3dd41b9",
+              "972bc7f0e47a771cc948203845423e1399df77d6b806754d49025b0fd7b95186"
+            ]
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "nonstream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "37d2e1b1ea19e8d484130f79fc7f978865709b9589d6c83f3a835ab8c3dd41b9",
+              "8f95ded22891594f2e23ba9c648f74b76d88f139d312c96763c07352b07e4682"
+            ]
+          },
+          "borrowed_from_route": "POST /v1/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "transformers serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "vllm serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": false,
+        "apr_matches": [
+          "llama.cpp"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve run verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve run",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-recall-7",
+        "mode": "nonstream",
+        "route": "POST /batch/generate"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "7",
+        "llama.cpp": "7",
+        "hf": "7",
+        "vllm": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /batch/generate",
+            "mode": "nonstream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": null,
+            "rendered_prompts": [
+              "37d2e1b1ea19e8d484130f79fc7f978865709b9589d6c83f3a835ab8c3dd41b9",
+              "972bc7f0e47a771cc948203845423e1399df77d6b806754d49025b0fd7b95186"
+            ]
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "nonstream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "37d2e1b1ea19e8d484130f79fc7f978865709b9589d6c83f3a835ab8c3dd41b9",
+              "8f95ded22891594f2e23ba9c648f74b76d88f139d312c96763c07352b07e4682"
+            ]
+          },
+          "borrowed_from_route": "POST /v1/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "transformers serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "vllm serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": false,
+        "apr_matches": [
+          "llama.cpp"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve run verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve stream",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-recall-7",
+        "mode": "stream",
+        "route": "POST /stream/generate"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "7",
+        "llama.cpp": "7",
+        "hf": "7",
+        "vllm": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /stream/generate",
+            "mode": "stream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 18,
+            "terminal": "event: done",
+            "finish_reason": null,
+            "rendered_prompts": [
+              "37d2e1b1ea19e8d484130f79fc7f978865709b9589d6c83f3a835ab8c3dd41b9",
+              "972bc7f0e47a771cc948203845423e1399df77d6b806754d49025b0fd7b95186"
+            ]
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "stream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 20,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "37d2e1b1ea19e8d484130f79fc7f978865709b9589d6c83f3a835ab8c3dd41b9",
+              "8f95ded22891594f2e23ba9c648f74b76d88f139d312c96763c07352b07e4682"
+            ]
+          },
+          "borrowed_from_route": "POST /v1/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "transformers serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "vllm serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": false,
+        "apr_matches": [
+          "llama.cpp"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve stream verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve stream",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-recall-7",
+        "mode": "stream",
+        "route": "POST /realize/generate"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "7",
+        "llama.cpp": "7",
+        "hf": "7",
+        "vllm": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /realize/generate",
+            "mode": "stream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 18,
+            "terminal": "event: done",
+            "finish_reason": null,
+            "rendered_prompts": [
+              "37d2e1b1ea19e8d484130f79fc7f978865709b9589d6c83f3a835ab8c3dd41b9",
+              "972bc7f0e47a771cc948203845423e1399df77d6b806754d49025b0fd7b95186"
+            ]
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "stream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 20,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "37d2e1b1ea19e8d484130f79fc7f978865709b9589d6c83f3a835ab8c3dd41b9",
+              "8f95ded22891594f2e23ba9c648f74b76d88f139d312c96763c07352b07e4682"
+            ]
+          },
+          "borrowed_from_route": "POST /v1/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "transformers serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "vllm serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": false,
+        "apr_matches": [
+          "llama.cpp"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve stream verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve run",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-recall-7",
+        "mode": "nonstream",
+        "route": "POST /realize/batch"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "7",
+        "llama.cpp": "7",
+        "hf": "7",
+        "vllm": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /realize/batch",
+            "mode": "nonstream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": null,
+            "rendered_prompts": [
+              "37d2e1b1ea19e8d484130f79fc7f978865709b9589d6c83f3a835ab8c3dd41b9",
+              "972bc7f0e47a771cc948203845423e1399df77d6b806754d49025b0fd7b95186"
+            ]
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "nonstream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "37d2e1b1ea19e8d484130f79fc7f978865709b9589d6c83f3a835ab8c3dd41b9",
+              "8f95ded22891594f2e23ba9c648f74b76d88f139d312c96763c07352b07e4682"
+            ]
+          },
+          "borrowed_from_route": "POST /v1/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "transformers serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "vllm serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": false,
+        "apr_matches": [
+          "llama.cpp"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve run verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve run",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-recall-7",
+        "mode": "nonstream",
+        "route": "POST /v1/completions"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "7",
+        "llama.cpp": "7",
+        "hf": "7",
+        "vllm": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "nonstream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "37d2e1b1ea19e8d484130f79fc7f978865709b9589d6c83f3a835ab8c3dd41b9",
+              "972bc7f0e47a771cc948203845423e1399df77d6b806754d49025b0fd7b95186"
+            ]
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "nonstream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "37d2e1b1ea19e8d484130f79fc7f978865709b9589d6c83f3a835ab8c3dd41b9",
+              "8f95ded22891594f2e23ba9c648f74b76d88f139d312c96763c07352b07e4682"
+            ]
+          },
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "transformers serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "vllm serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": false,
+        "apr_matches": [
+          "llama.cpp"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve run verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve stream",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-recall-7",
+        "mode": "stream",
+        "route": "POST /v1/completions"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "7",
+        "llama.cpp": "7",
+        "hf": "7",
+        "vllm": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "stream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 11,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "37d2e1b1ea19e8d484130f79fc7f978865709b9589d6c83f3a835ab8c3dd41b9",
+              "972bc7f0e47a771cc948203845423e1399df77d6b806754d49025b0fd7b95186"
+            ]
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/completions",
+            "mode": "stream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 20,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": [
+              "37d2e1b1ea19e8d484130f79fc7f978865709b9589d6c83f3a835ab8c3dd41b9",
+              "8f95ded22891594f2e23ba9c648f74b76d88f139d312c96763c07352b07e4682"
+            ]
+          },
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "transformers serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "vllm serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": false,
+        "apr_matches": [
+          "llama.cpp"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve stream verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve run",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-recall-7",
+        "mode": "nonstream",
+        "route": "POST /v1/chat/completions"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/chat/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "7",
+        "llama.cpp": "7",
+        "hf": "7",
+        "vllm": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "nonstream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "nonstream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "transformers serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "vllm serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": false,
+        "apr_matches": [
+          "llama.cpp"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve run verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve stream",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-recall-7",
+        "mode": "stream",
+        "route": "POST /v1/chat/completions"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/chat/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "7",
+        "llama.cpp": "7",
+        "hf": "7",
+        "vllm": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "stream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 20,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "stream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 20,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "transformers serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "vllm serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "(route-less plugin row)",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": false,
+        "apr_matches": [
+          "llama.cpp"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve stream verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve stream",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-recall-7",
+        "mode": "stream",
+        "route": "POST /v1/chat/completions/stream"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/chat/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "7",
+        "llama.cpp": "7",
+        "hf": "7",
+        "vllm": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions/stream",
+            "mode": "stream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 20,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "stream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 20,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "transformers serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "vllm serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": false,
+        "apr_matches": [
+          "llama.cpp"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve stream verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve run",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-recall-7",
+        "mode": "nonstream",
+        "route": "POST /api/chat"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/chat/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "7",
+        "llama.cpp": "7",
+        "hf": "7",
+        "vllm": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /api/chat",
+            "mode": "nonstream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": null,
+            "rendered_prompts": []
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "nonstream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "transformers serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "vllm serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": false,
+        "apr_matches": [
+          "llama.cpp"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve run verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "serve stream",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-recall-7",
+        "mode": "stream",
+        "route": "POST /api/chat"
+      },
+      "verdict": "GREEN",
+      "oracle_route": "POST /v1/chat/completions",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "7",
+        "llama.cpp": "7",
+        "hf": "7",
+        "vllm": "7"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /api/chat",
+            "mode": "stream",
+            "device": "apr serve --gpu",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 11,
+            "terminal": "done:true",
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "backend_verified": false,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "You asked me to remember the number **7**.\n\n<answer>7</answer>",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "stream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": 20,
+            "terminal": "[DONE]",
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "transformers serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 10,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<answer>7</answer>",
+          "reported": {
+            "interface": "vllm serve (stream)",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 57,
+            "completion_tokens": 8,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "borrowed_from_route": "POST /v1/chat/completions",
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": false,
+        "apr_matches": [
+          "llama.cpp"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the serve stream verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "host": "gx10",
+        "verb": "code",
+        "thinking": "off",
+        "rung": "easy",
+        "prompt_id": "ctl-code-add"
+      },
+      "verdict": "GREEN",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "def add(a, b):\n    return a + b",
+        "llama.cpp": "def add(a, b):\n    return a + b",
+        "hf": "def add(a, b):\n    return a + b",
+        "vllm": "def add(a, b):\n    return a + b"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 4,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "apr_version": "apr 0.69.1 (d8a6df53a)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "add",
+        "tests": "assert add(2, 3) == 5\nassert add(-4, 4) == 0\nassert add(10, 0) == 10",
+        "timeout_s": 10
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "reported_by": "apr",
+            "prompt_tokens": null,
+            "completion_tokens": null,
+            "decode_rate": null,
+            "rate_unit": "tokens per second, as the engine reported it",
+            "inference_ms": null
+          },
+          "backend": null,
+          "prompt_ids": null,
+          "prompt_token_count": null,
+          "rendered_prompt": null,
+          "correct": true,
+          "version": "apr 0.69.1 (d8a6df53a)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "nonstream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "off",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "interface": "transformers serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 42,
+            "completion_tokens": 20,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "interface": "vllm serve",
+            "thinking_requested": "off",
+            "thinking_emitted": false,
+            "prompt_opens_think": false,
+            "prompt_tokens": 42,
+            "completion_tokens": 18,
+            "device": "cuda:0 NVIDIA GB10 (vllm serve)"
+          },
+          "correct": true,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ],
+        "all_identical": true,
+        "apr_matches": [
+          "hf",
+          "llama.cpp",
+          "vllm"
+        ]
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the code verb"
+      }
+    }
+  ],
+  "deterministic": [],
+  "greedy": [],
+  "summary": {
+    "RED": 0,
+    "GREEN": 32,
+    "ALL_WRONG": 0,
+    "cells": 32,
+    "judged": 32,
+    "verdict": "PASS",
+    "deterministic": {
+      "RED": 0,
+      "GREEN": 0
+    },
+    "all_wrong_by_model": {},
+    "controls": [
+      "ctl-2plus2",
+      "ctl-recall-7",
+      "ctl-code-add"
+    ],
+    "negative_controls": {
+      "chat": {
+        "prompt_id": "ctl-2plus2",
+        "planted": "<answer>5</answer>",
+        "verdict": "RED"
+      },
+      "code": {
+        "prompt_id": "ctl-code-add",
+        "planted": "```python\ndef add(a, b):\n    return a - b\n```",
+        "verdict": "RED"
+      },
+      "run": {
+        "prompt_id": "ctl-2plus2",
+        "planted": "<answer>5</answer>",
+        "verdict": "RED"
+      },
+      "serve run": {
+        "prompt_id": "ctl-2plus2",
+        "planted": "<answer>5</answer>",
+        "verdict": "RED"
+      },
+      "serve stream": {
+        "prompt_id": "ctl-2plus2",
+        "planted": "<answer>5</answer>",
+        "verdict": "RED"
+      }
+    },
+    "certified": true,
+    "declined_because": null
+  }
+}
