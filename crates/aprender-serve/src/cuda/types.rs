@@ -233,6 +233,7 @@ impl WeightQuantType {
             20 => Some(Self::IQ4NL), // #3869: declared-type-only, see the variant docs
             21 => Some(Self::IQ3S),  // #3884: IQ3_S, the remaining IQ3_M blocker
             7 => Some(Self::Q5_1),   // #3885: Q5_1, the remaining IQ4_XS blocker
+            30 => Some(Self::BF16),  // #3908: BF16, measured BIT-EXACT (0 ULP)
             2 => Some(Self::Q4_0),
             3 => Some(Self::Q4_1), // PAR-058: Q4_1 support
             6 => Some(Self::Q5_0),

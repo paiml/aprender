@@ -184,7 +184,7 @@ fn test_is_legacy_gguf_quant() {
     assert!(is_legacy_gguf_quant(10)); // Q2_K
     assert!(is_legacy_gguf_quant(11)); // Q3_K
     assert!(is_legacy_gguf_quant(15)); // Q8_K
-    assert!(is_legacy_gguf_quant(30)); // BF16
+    assert!(!is_legacy_gguf_quant(30)); // BF16 — #3908 GEMV kernel, 0 ULP
     assert!(is_legacy_gguf_quant(100)); // Unknown / IQ* families
 }
 
