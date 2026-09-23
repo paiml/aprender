@@ -1,6 +1,11 @@
 //! ONT-2c: the OWL writer's case table. The expected `.ofn` for the fixture Σ is committed beside it
 //! (`tests/fixtures/ont/owl/expected.ofn`). The oracle (`tests/oracle/`) re-parses that file with horned-owl
 //! and requires the same axiom set, so the writer is pinned from two sides.
+//!
+//! These tests READ THE TREE (`contracts/ontology.yaml`, `tests/fixtures/ont/owl/`), so
+//! scripts/check_tree_reader_tests.sh must find them. Its oracle needs `cfg(test)` in the SAME file as the
+//! tree path, hence the redundant inner attribute below. The parent's `#[cfg(test)] #[path]` alone was not seen.
+#![cfg(test)]
 
 use std::path::PathBuf;
 
