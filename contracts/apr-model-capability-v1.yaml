@@ -522,3 +522,20 @@ toyota_way_principles:
   - jidoka: >
       A negative fact in a comment cannot stop a build. A negative fact in this
       file can.
+
+# #4046 merge-back: the contract-integrity ratchet requires every contract to state its
+# equations. These two are the invariants FALSIFY-CAP-001 and FALSIFY-CAP-002 already test
+# (crates/aprender-serve/src/capability.rs).
+equations:
+  gpu_ops_set_equality:
+    formula: "{ o in ops | gpu_supported(o) } = gpu_supported_ops()"
+    domain: "o in the ops rows of this contract"
+    codomain: "{true, false}"
+    invariants:
+      - "FALSIFY-CAP-001: equality in both directions; the contract is the single declaration"
+  gpu_quant_row_agreement:
+    formula: "forall q in quant_types . gpu_supported(q) = not gpu_unsupported_quant_qtype(q.ggml_type)"
+    domain: "q in the quant_types rows, keyed on the ggml type id, never the name"
+    codomain: "{true, false}"
+    invariants:
+      - "FALSIFY-CAP-002: every row agrees with the one predicate the GPU dispatch uses"
