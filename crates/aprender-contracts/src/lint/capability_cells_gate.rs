@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::ontology::arming::ArmedShapes;
 use crate::ontology::capability_cells::{self, CapabilityCells, CellsError};
 use crate::ontology::extract::gguf::{self, Rung};
-use crate::ontology::rdf::Graph;
+use crate::ontology::rdf::{iri, Graph};
 use crate::ontology::receipts::Receipt;
 use crate::ontology::shapes::{self, NodeShape, Report, Severity};
 
@@ -116,33 +116,30 @@ fn plant_refused(shapes: &[NodeShape], arming: &ArmedShapes) -> bool {
         .any(|r| r.shape == SHAPE && r.severity == Severity::Violation)
 }
 
-/// The rungs the shape flagged on the corpus are exactly the rungs that own a `not_run` cell.
+/// The NODES the shape flagged on the corpus are exactly the nodes of the rungs that own a `not_run` cell.
+/// Compared by node, not by rung id: ONT-4c1 keys a rung's node by sha256, so two rungs sharing a sha share one
+/// node, and an id-level comparison would read the healthy twin as flagged and decline an honest tree (review
+/// lane C, round 2).
 #[must_use]
-pub fn wiring_holds(report: &Report, graph: &Graph, cc: &CapabilityCells) -> bool {
-    let flagged: BTreeSet<String> = report
+pub fn wiring_holds(report: &Report, rungs: &[Rung], cc: &CapabilityCells) -> bool {
+    let flagged: BTreeSet<&str> = report
         .results
         .iter()
         .filter(|r| r.shape == SHAPE && r.severity == Severity::Violation)
-        .flat_map(|r| rung_ids(graph, &r.focus))
+        .map(|r| r.focus.as_str())
         .collect();
     // a refused label makes its row NotRun, so its rung already owns a not_run cell
-    let owning: BTreeSet<String> = cc
+    let owning_ids: BTreeSet<&str> = cc
         .not_run
         .iter()
-        .filter_map(|id| id.rsplit_once('@').map(|(rung, _)| rung.to_string()))
+        .filter_map(|id| id.rsplit_once('@').map(|(rung, _)| rung))
         .collect();
-    flagged == owning
-}
-
-/// Every `model:id` on a focus node: two rungs that share a sha share one node (ONT-4c1 keys by sha256), and
-/// reading only the first id would make an honest tree decline as a wiring Differential (review lane B).
-fn rung_ids(graph: &Graph, focus: &str) -> Vec<String> {
-    graph
-        .objects(focus, &gguf::model("id"))
+    let owning: BTreeSet<String> = rungs
         .iter()
-        .filter_map(|t| t.as_literal())
-        .map(|(id, _)| id.to_string())
-        .collect()
+        .filter(|r| r.required && owning_ids.contains(r.id.as_str()))
+        .map(|r| iri("model", &r.sha256))
+        .collect();
+    flagged == owning.iter().map(String::as_str).collect()
 }
 
 /// One finding per NotRun cell and per refused label, naming it. Error when the shape is armed, Warning when not.
@@ -212,6 +209,63 @@ mod tests {
     /// Review lane C: the §5 probe reads `pc_shapes` and `capability_cells` at the TOP level of the single-gate
     /// report, which flattens `extra`; so they must be DIRECT keys of the serialized `GateExtra::Shapes`, not nested
     /// under `controls` (they sit in a boxed, flattened `ShapesControls`).
+    fn rung(id: &str, sha: &str) -> Rung {
+        Rung {
+            id: id.into(),
+            sha256: sha.into(),
+            arch: "qwen2".into(),
+            gguf: format!("{id}.gguf"),
+            backends: vec!["cpu".into()],
+            hosts: vec!["lambda".into()],
+            required: true,
+            contract: "ladder".into(),
+        }
+    }
+
+    fn shape() -> NodeShape {
+        let doc: serde_yaml::Value = serde_yaml::from_str(
+            "shapes:\n  - id: capability-cells\n    targetClass: model:RequiredModel\n    properties:\n      - {path: model:notRunCell, maxCount: 0}\n      - {path: model:refusedLabel, maxCount: 0}\n",
+        )
+        .expect("yaml");
+        shapes::parse_shapes("fixture", &doc)
+            .expect("in subset")
+            .into_iter()
+            .next()
+            .expect("one shape")
+    }
+
+    /// Two required rungs with DIFFERENT ids and ONE sha share one node; only one of them is NotRun. The honest
+    /// wiring must still hold (compared by node), and a corpus that skipped `apply` must not.
+    #[test]
+    fn wiring_is_compared_by_node_so_a_shared_sha_does_not_decline_an_honest_tree() {
+        let sha = "c".repeat(64);
+        let rungs = [rung("twin-a", &sha), rung("twin-b", &sha)];
+        let ok_row = r#"{"id":"twin-b","sha256":"SHA","green":true,"capability_match":{"passed":true,"skipped":false},"backends":{"cpu":{"ran":true,"fallback":false}}}"#.replace("SHA", &sha);
+        let rec = crate::ontology::receipts::parse(
+            "r.json",
+            &format!(r#"{{"schema":"apr-model-ladder-receipt/v2","host":"lambda","version":"0.69.1","sha":"x","cc":"8.9","gpu":"g","rungs":[{ok_row}]}}"#),
+        )
+        .expect("parses");
+        let mut g = Graph::new();
+        for r in &rungs {
+            gguf::emit_rung(&mut g, r);
+        }
+        let cc = capability_cells::apply(&mut g, &rungs, &[rec]).expect("applies");
+        assert_eq!(
+            cc.not_run.iter().map(String::as_str).collect::<Vec<_>>(),
+            ["twin-a@lambda"]
+        );
+        let report = shapes::validate(&g, &[shape()]);
+        assert!(wiring_holds(&report, &rungs, &cc), "{:?}", report.results);
+        // a corpus that bypassed apply: the same cells, but no edges in the validated graph → must NOT hold
+        let mut bare = Graph::new();
+        for r in &rungs {
+            gguf::emit_rung(&mut bare, r);
+        }
+        let bypassed = shapes::validate(&bare, &[shape()]);
+        assert!(!wiring_holds(&bypassed, &rungs, &cc));
+    }
+
     #[test]
     fn pc_shapes_and_capability_cells_serialize_as_direct_keys_of_the_shapes_extra() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
