@@ -40,7 +40,7 @@
 ## Measured (lambda, this branch)
 
 - aprender-contracts --lib 1724 passed; aprender-contracts-cli: all targets green (ont4d_subsumption 8, ont2c 9,
-  ont4b2 11, ont4b 8, …). clippy -D warnings clean (both crates). fmt clean.
+  ont4b2 11, ont4b 8, …). clippy `--all-targets -D warnings` clean (both crates; `--lib` alone had hidden a `type_complexity` in the lint tests and a disallowed `unwrap` inside `json!` in the CLI test — fixed at the post-receipt head). fmt clean.
 - Guards: complexity ratchet PASS 49fe19c28 vs 4fadd5ed4 (check_subsumes cognitive 28 refactored); tree-reader
   registry 146 == derived; explicit-test-commands PASS (lane 470); guards-wired PASS; include-files OK; roadmap
   sorted + aggregate idempotent; `pv extract contracts --check` fresh; `pv lint --gate tbox` decline Advisory.

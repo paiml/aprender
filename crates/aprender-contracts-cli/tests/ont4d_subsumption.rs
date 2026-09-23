@@ -93,7 +93,7 @@ fn a_code_shape_rejects_a_kernel_instance_through_the_closure() {
     assert_eq!(v["focus_nodes_n"], 1, "{}", show(&r));
     assert_eq!(
         v["by_shape"],
-        serde_json::json!(["code-shape=1"]),
+        serde_json::Value::from(vec!["code-shape=1"]),
         "{}",
         show(&r)
     );
@@ -109,7 +109,7 @@ fn the_same_hierarchy_with_a_valid_kernel_passes() {
     assert_eq!(v["inherited_shapes_applied"], 1, "{}", show(&r));
     assert_eq!(
         v["inherited_by_shape"],
-        serde_json::json!(["code-shape <- Kernel=1"]),
+        serde_json::Value::from(vec!["code-shape <- Kernel=1"]),
         "{}",
         show(&r)
     );

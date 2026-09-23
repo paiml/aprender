@@ -154,6 +154,9 @@ pub fn weakenings(shapes: &[NodeShape], sigma: &Sigma) -> Vec<String> {
 mod tests {
     use super::*;
 
+    /// One case-table row: the component the mutation must name, and the mutation.
+    type Case = (&'static str, fn(&mut PropertyShape));
+
     fn p(path: &str) -> PropertyShape {
         PropertyShape {
             path: path.into(),
@@ -190,7 +193,7 @@ mod tests {
         tighter.min_length = Some(4);
         tighter.max_length = Some(8);
         assert!(weakened(&sup, &tighter).is_empty(), "stricter is allowed");
-        let cases: [(&str, fn(&mut PropertyShape)); 9] = [
+        let cases: [Case; 9] = [
             ("minCount", |b| b.min_count = Some(0)),
             ("minCount", |b| b.min_count = None),
             ("maxCount", |b| b.max_count = Some(5)),
@@ -200,6 +203,55 @@ mod tests {
             ("minLength", |b| b.min_length = Some(1)),
             ("maxLength", |b| b.max_length = Some(99)),
             ("maxLength", |b| b.max_length = None),
+        ];
+        for (want, mutate) in cases {
+            let mut sub = sup.clone();
+            mutate(&mut sub);
+            assert_eq!(weakened(&sup, &sub), vec![want], "loosening {want}");
+        }
+    }
+
+    /// Quorum lane 1 (PMAT-4070): the class / nodeKind / pattern / in branches had no case. Each is loosened or
+    /// dropped once and must be named alone; each equal or narrowed form must name nothing.
+    #[test]
+    fn ont4d_weakened_covers_class_nodekind_pattern_and_in() {
+        use crate::ontology::shapes::{InEntry, NodeKind};
+        let e = |s: &str| InEntry {
+            lexical: s.into(),
+            datatype: "xsd:string".into(),
+        };
+        let rx = |s: &str| Some((s.to_string(), regex::Regex::new(s).expect("regex")));
+        let mut sup = p("x");
+        sup.class = Some("ont:Code".into());
+        sup.node_kind = Some(NodeKind::Iri);
+        sup.pattern = rx("^a");
+        sup.r#in = Some(vec![e("a"), e("b")]);
+        assert!(
+            weakened(&sup, &sup.clone()).is_empty(),
+            "equal is not weaker"
+        );
+        let mut narrower = sup.clone();
+        narrower.r#in = Some(vec![e("a")]);
+        assert!(
+            weakened(&sup, &narrower).is_empty(),
+            "a subset of `in` is stricter, allowed"
+        );
+        let cases: [Case; 8] = [
+            ("class", |b| b.class = Some("ont:Contract".into())),
+            ("class", |b| b.class = None),
+            ("nodeKind", |b| b.node_kind = Some(NodeKind::Literal)),
+            ("nodeKind", |b| b.node_kind = None),
+            ("pattern", |b| {
+                b.pattern = Some(("^b".into(), regex::Regex::new("^b").expect("regex")))
+            }),
+            ("pattern", |b| b.pattern = None),
+            ("in", |b| {
+                b.r#in = Some(vec![InEntry {
+                    lexical: "c".into(),
+                    datatype: "xsd:string".into(),
+                }])
+            }),
+            ("in", |b| b.r#in = None),
         ];
         for (want, mutate) in cases {
             let mut sub = sup.clone();
