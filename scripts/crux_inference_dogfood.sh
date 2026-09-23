@@ -11,7 +11,7 @@
 #
 # Usage: bash scripts/crux_inference_dogfood.sh <version> --model <gguf> [--model <gguf>]...
 #          [--host <id>] [--backend gpu|cpu] [--engines apr,llama.cpp,ollama,hf,llamafile]
-#          [--verbs run] [--out <dir>] [--prompts <file>] [--timeout <s>]
+#          [--verbs run,chat,serve,code] [--out <dir>] [--prompts <file>] [--timeout <s>]
 #          [--keep-ollama-models] [--keep-work]
 #   <version>  the apr version under test; `apr --version` must report it, or
 #              the run declines (a dogfood that measured another version is #3708)
@@ -99,11 +99,12 @@ done
 [ -n "$VERSION" ] || decline "usage: $0 <version> --model <gguf> ..."
 [ "${#MODELS[@]}" -gt 0 ] || decline "no --model given; this slice takes models by path"
 case "$BACKEND" in gpu|cpu) ;; *) decline "--backend is gpu or cpu, got '$BACKEND'" ;; esac
-# Verbs: run (always: the positive control lives there), chat, serve (the
-# correspondence key `serve run`). code is a later slice of #3739.
+# Verbs: run (always: the positive control lives there), chat, serve (verb keys
+# `serve run` and `serve stream`, over EVERY route apr serve mounts) and code
+# (`apr code -p`), the last two from scripts/lib/crux_cells_serve_code.sh (#3962).
 case ",$VERBS," in *,run,*) ;; *) decline "verbs '$VERBS': run must be included, because the positive control lives in the run verb" ;; esac
 for v in ${VERBS//,/ }; do
-  case "$v" in run|chat|serve) ;; *) decline "verb '$v': this driver runs run, chat and serve; code is a later slice of #3739" ;; esac
+  case "$v" in run|chat|serve|code) ;; *) decline "verb '$v': this driver runs run, chat, serve and code" ;; esac
 done
 want() { case ",$ENGINES," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 want apr || decline "apr is the subject; --engines must include it"
@@ -260,24 +261,50 @@ export CRUX_MANIFEST="$MANIFEST" CRUX_WORK="$WORK"
 MODELS_JSONL="$WORK/models.jsonl"; : > "$MODELS_JSONL"
 
 # One file per prompt: its id list, and each prompt's last user message.
-# A prompt belongs to one verb ("verb", default run). A chat prompt's messages are
-# the USER turns of one conversation; it is judged on the final turn.
+# v1: a prompt belongs to one verb ("verb", default run) and max_tokens is global.
+# v2 (#3962, crux-inference-prompts/v2): "verb" is a LIST of run / chat / code /
+# "serve run" / "serve stream", and max_tokens is per prompt, {off, on}. A v1 run
+# prompt is also a serve prompt in both modes, because the serve cell always drove
+# the run prompts. A chat prompt's messages are the USER turns of one conversation,
+# and it is judged on the final turn.
 PIDS_ALL=$(python3 - "$PROMPTS" "$WORK" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
+w = sys.argv[2]
+glob_mt = d.get("max_tokens")
+serve, code = open("%s/serve-prompts.jsonl" % w, "w"), open("%s/code-prompts.txt" % w, "w")
 for p in d["prompts"]:
-    w = sys.argv[2]
     open("%s/prompt-%s.txt" % (w, p["id"]), "w").write(p["messages"][-1]["content"])
+    json.dump(p, open("%s/prompt-%s.json" % (w, p["id"]), "w"))
     json.dump({"messages": p["messages"]}, open("%s/messages-%s.json" % (w, p["id"]), "w"))
     users = [m["content"] for m in p["messages"] if m.get("role") == "user"]
     json.dump(users, open("%s/turns-%s.json" % (w, p["id"]), "w"))
     open("%s/turns-%s.txt" % (w, p["id"]), "w").write("".join(u + "\n" for u in users))
-    print("%s %s" % (p.get("verb", "run"), p["id"]))
+    mt = p.get("max_tokens", glob_mt)
+    # Thinking OFF only in this slice (see THINK below), so the `off` budget.
+    open("%s/maxtok-%s.txt" % (w, p["id"]), "w").write(str(int(mt["off"] if isinstance(mt, dict) else mt)))
+    v = p.get("verb", "run")
+    verbs = v if isinstance(v, list) else [v] + (["serve run", "serve stream"] if v == "run" else [])
+    sv = [x for x in verbs if x in ("serve run", "serve stream")]
+    if sv:
+        serve.write(json.dumps([p["id"], sv]) + "\n")
+    if "code" in verbs:
+        code.write(p["id"] + "\n")
+    for x in verbs:
+        if x in ("run", "chat"):
+            print("%s %s" % (x, p["id"]))
 PY
 ) || decline "prompt set $PROMPTS unreadable"
 pids_for() { printf '%s\n' "$PIDS_ALL" | sed -n "s/^$1 //p" | tr '\n' ' '; }
 PIDS=$(pids_for run)
-MAXTOK=$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["max_tokens"]))' "$PROMPTS") || decline "max_tokens unreadable"
+# The global cap for the run/chat cells: v1's `max_tokens`, else the largest per-prompt `off` budget.
+MAXTOK=$(python3 -c 'import json,sys
+d = json.load(open(sys.argv[1]))
+m = d.get("max_tokens")
+print(int(m) if m is not None else max(int(p["max_tokens"]["off"]) for p in d["prompts"]))' "$PROMPTS") || decline "max_tokens unreadable"
+# The serve and code cells (#3962). Sourced and option-neutral; it fails by return status.
+# shellcheck source=scripts/lib/crux_cells_serve_code.sh
+. scripts/lib/crux_cells_serve_code.sh || decline "scripts/lib/crux_cells_serve_code.sh could not be sourced"
 
 # ONE CELL = ONE COMMAND UNDER THE GPU LOCK (the cop's rule rev 5, #3739). A cell is
 # one prompt through every engine. Its engine commands are written into one
@@ -407,92 +434,14 @@ PY
   [ "$ok" = 1 ]
 }
 
-# ---- the serve verb: ONE cell per model -------------------------------------------
-# The issue, verbatim: "serve: `apr serve` · `llama-server` · `ollama serve`, all through
-# the SAME OpenAI `/v1/chat/completions` client, streaming + non-streaming". Each server
-# loads the model ONCE per cell, every run prompt goes through scripts/lib/
-# crux_openai_client.py twice (nonstream, stream), then the servers stop and ollama
-# unloads, all inside one hold of the GPU lock. The plugin engines (hf, llamafile) are
-# `gen --verb 'serve run'`: they run their own server per call, non-streaming.
+# ---- the serve and code verbs: ONE cell per model each ------------------------------
+# serve_routes_cell and code_cell live in scripts/lib/crux_cells_serve_code.sh (#3962).
+# serve drives EVERY route in apr serve's own `GET /` index, not just the one OpenAI
+# route the old cell asked: a hand-picked route is how /api/chat went unprobed (#3715).
 serve_wait_line() { # serve_wait_line <cell> <port> <health path> <server pid file>
   printf 'for i in $(seq 1 %q); do curl -sf http://127.0.0.1:%q%s > /dev/null 2>&1 && break; kill -0 "$(cat %q)" 2>/dev/null || break; sleep 1; done\n' \
     "$TMO" "$2" "$3" "$4" >> "$1"
 }
-serve_cell() {
-  local d="$WORK/$SHA12/serve" cell pa pl pid mode st ext_extra
-  mkdir -p "$d"
-  cell="$d/cell-serve.sh"
-  pa=$(free_port); pl=$(free_port)
-  printf '#!/usr/bin/env bash\n# one CRUX serve cell: every server loads the model once; every prompt, nonstream + stream\n' > "$cell"
-  { printf '%q ' "$APR" serve run "$M" --port "$pa" "$APR_BE"; printf '> %q 2>&1 < /dev/null &\necho $! > %q\n' "$d/apr-serve.log" "$d/apr-serve.pid"; } >> "$cell"
-  serve_wait_line "$cell" "$pa" /health "$d/apr-serve.pid"
-  if [ "$LLAMA_OK" = 1 ]; then
-    { printf '%q ' "$LLAMA_SERVER" -m "$M" --port "$pl" --host 127.0.0.1 -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}"
-      printf '> %q 2>&1 < /dev/null &\necho $! > %q\n' "$d/llama-serve.log" "$d/llama-serve.pid"; } >> "$cell"
-    serve_wait_line "$cell" "$pl" /health "$d/llama-serve.pid"
-  fi
-  for pid in $PIDS; do
-    for mode in nonstream stream; do
-      st=(); [ "$mode" = stream ] && st=(--stream)
-      cell_add "$cell" "$d/apr-$pid-$mode" python3 scripts/lib/crux_openai_client.py --url "http://127.0.0.1:$pa" \
-        --model default --messages "$WORK/messages-$pid.json" --max-tokens "$MAXTOK" --temperature "$TEMP" \
-        --seed "$SEED" "${st[@]}" --device "apr serve $APR_BE" --out "$d/apr-$pid-$mode.json"
-      [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/llama-$pid-$mode" python3 scripts/lib/crux_openai_client.py \
-        --url "http://127.0.0.1:$pl" --model gguf --messages "$WORK/messages-$pid.json" --max-tokens "$MAXTOK" \
-        --temperature "$TEMP" --seed "$SEED" "${st[@]}" --device "$LLAMA_DEVICE" --out "$d/llama-$pid-$mode.json"
-      [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ] && cell_add "$cell" "$d/ollama-$pid-$mode" python3 scripts/lib/crux_openai_client.py \
-        --url "$OLLAMA_HOST_URL" --model "$OL_NAME" --messages "$WORK/messages-$pid.json" --max-tokens "$MAXTOK" \
-        --temperature "$TEMP" --seed "$SEED" "${st[@]}" --device "$OL_DEVICE" --extra '{"keep_alive": 0}' \
-        --out "$d/ollama-$pid-$mode.json"
-    done
-  done
-  # Stop EVERY server before waiting, and wait on those pids only: a bare `wait` after
-  # the first kill blocks on the other server, which is still running (found on the
-  # first real serve run: the cell hung at teardown with every request answered).
-  srv_pids=("$d/apr-serve.pid"); [ "$LLAMA_OK" = 1 ] && srv_pids+=("$d/llama-serve.pid")
-  { printf 'srv=""; for f in'; printf ' %q' "${srv_pids[@]}"; printf '; do srv="$srv $(cat "$f")"; done\n'
-    printf 'kill $srv 2> /dev/null; wait $srv 2> /dev/null\n'; } >> "$cell"
-  [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ] && cell_add_ollama_unload "$cell" "$d/ollama-serve" "$OL_NAME"
-  for eng in hf llamafile; do
-    want "$eng" && [ "${EXT_OK[$eng]}" = 1 ] || continue
-    [ "$eng" = hf ] && [ -n "$HF_MODEL_WHY" ] && continue
-    case "${EXT_SCRIPT[$eng]}" in *.py) ext_run=(python3) ;; *) ext_run=(bash) ;; esac
-    ext_extra=()
-    [ "$eng" = llamafile ] && ext_extra=(--interface server)
-    [ "$eng" = hf ] && ext_extra=("${HF_SRC[@]}")
-    for pid in $PIDS; do
-      cell_add "$cell" "$d/$eng-$pid.driver" "${ext_run[@]}" "${EXT_SCRIPT[$eng]}" gen \
-        --model "$M" --model-sha256 "$SHA" --verb "serve run" --prompt-id "$pid" \
-        --messages "$WORK/messages-$pid.json" --prompt-file "$WORK/prompt-$pid.txt" \
-        --thinking "$THINK" --backend "$BACKEND" --host "$HOST" \
-        --max-tokens "$MAXTOK" --seed "$SEED" --temperature "$TEMP" --context "$CTX" "${ext_extra[@]}"
-    done
-  done
-  printf 'exit 0\n' >> "$cell"
-
-  declare -A before=()
-  for pid in $PIDS; do before[hf-$pid]=$(rows_for hf "$pid"); before[llamafile-$pid]=$(rows_for llamafile "$pid"); done
-  run_cell "$cell"
-  for pid in $PIDS; do
-    for mode in nonstream stream; do
-      cell_result apr "$pid" "$d/apr-$pid-$mode" "$d/apr-$pid-$mode.json" "$mode"
-      if [ "$LLAMA_OK" = 1 ]; then cell_result llama.cpp "$pid" "$d/llama-$pid-$mode" "$d/llama-$pid-$mode.json" "$mode"
-      elif want llama.cpp; then emit_gen llama.cpp "$pid" "" "" "" "$LLAMA_WHY" "" "$mode"; fi
-      if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then cell_result ollama "$pid" "$d/ollama-$pid-$mode" "$d/ollama-$pid-$mode.json" "$mode"
-      elif want ollama; then emit_gen ollama "$pid" "" "" "" "${OL_REFUSED:-$OLLAMA_WHY}" "" "$mode"; fi
-    done
-    for eng in hf llamafile; do
-      want "$eng" || continue
-      if [ "${EXT_OK[$eng]}" != 1 ]; then emit_gen "$eng" "$pid" "" "" "" "${EXT_WHY[$eng]}" "" nonstream; continue; fi
-      if [ "$eng" = hf ] && [ -n "$HF_MODEL_WHY" ]; then emit_gen hf "$pid" "" "" "" "$HF_MODEL_WHY" "" nonstream; continue; fi
-      if [ -n "$CELL_WHY" ]; then emit_gen "$eng" "$pid" "" "" "" "$CELL_WHY" "" nonstream
-      elif [ "$(rows_for "$eng" "$pid")" -le "${before[$eng-$pid]}" ]; then
-        emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen exited $(cat "$d/$eng-$pid.driver.rc" 2>/dev/null || echo '?') without appending a row: $(tail -c 200 "$d/$eng-$pid.driver.err" 2>/dev/null | tr '\n' ' ')" "" nonstream
-      fi
-    done
-  done
-}
-
 # ---- the run ---------------------------------------------------------------------
 printf -- '--- CRUX inference dogfood %s on %s (%s lane) ---\n' "$VERSION" "$HOST" "$BACKEND"
 printf '  apr       %s\n' "$APR_VERSION_LINE"
@@ -607,8 +556,12 @@ PY
   for VERB in ${VERBS//,/ }; do
   VERB_KEY=$VERB
   if [ "$VERB" = serve ]; then
-    VERB_KEY="serve run"
-    serve_cell
+    serve_routes_cell || decline "the serve cell could not be built for $NAME"
+    continue
+  fi
+  if [ "$VERB" = code ]; then
+    VERB_KEY=code
+    code_cell || decline "the code cell could not be built for $NAME"
     continue
   fi
   for pid in $(pids_for "$VERB"); do
@@ -734,6 +687,11 @@ meta = {
     "not_covered": [
         "verbs not run here: " + ", ".join(v for v in ("chat", "serve", "code") if v not in verbs.split(",")),
         *(["apr serve's backend is unverified: its responses report none"] if "serve" in verbs.split(",") else []),
+        *(["apr serve reads no per-request thinking toggle; the comparators are told enable_thinking explicitly"]
+          if "serve" in verbs.split(",") else []),
+        *(["apr code has no backend, max-tokens or thinking control: it spawns `apr serve --gpu`, "
+           "so its rows are judged by executing the code, and it is refused on the cpu lane"]
+          if "code" in verbs.split(",") else []),
         *(["apr chat's backend is unverified: apr chat reports none (#3794)"] if "chat" in verbs.split(",") else []),
         "thinking ON until #3723 adds an apr toggle",
         "consumer-brief context rungs (#3716) and each engine's max accepted context",
