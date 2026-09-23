@@ -76,6 +76,8 @@ pub(crate) mod gemv_pool;
 pub mod generic_dot;
 pub mod generic_matvec;
 pub mod iq2_s;
+#[cfg(test)]
+pub(crate) mod iq2_s_geometry_tests;
 pub mod iq2_xxs;
 #[cfg(test)]
 #[path = "iq2_xxs_geometry_tests.rs"]
