@@ -187,6 +187,9 @@ try:
         ("serve context != budget", "serve", 2048, [("serve run", 900), ("serve stream", 1024)], 3072),
         ("mixed: refused serve item does not size the run engine", "inproc", 4096,
          [("run", 5), ("serve run", 100_000)], 4101),
+        # Past any incidental ceiling (a clamp at 8192 passed every case above) and at odd sizes (no rounding).
+        ("serve past 8192", "serve", 16384, [("serve run", 100), ("code", 4096)], 20480),
+        ("inproc odd sizes", "inproc", 1001, [("chat", 7), ("run", 3)], 1008),
     ]
     for _label, _path, _ctx, _items, _want in _cases:
         _given.clear()
