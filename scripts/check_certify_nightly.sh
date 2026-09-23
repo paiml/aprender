@@ -29,7 +29,8 @@ g add -A; g commit -qm scratch; SHA=$(g rev-parse HEAD)
 # The fakes. The build writes an apr that prints its version line (FAKE_APR_SHA overrides the sha it claims).
 export NIGHTLY_BUILD_CMD='mkdir -p "$NIGHTLY_ROOT/target/release" && printf "#!/bin/sh\necho \"apr %s (%s)\"\n" "$NIGHTLY_VERSION" "${FAKE_APR_SHA:-${NIGHTLY_SHA:0:9}}" > "$NIGHTLY_ROOT/target/release/apr" && chmod +x "$NIGHTLY_ROOT/target/release/apr"'
 export NIGHTLY_LADDER_CMD='mkdir -p "$OUT" && echo ran >> "$NIGHTLY_ROOT/ladder-ran" && printf "{\"schema\": \"apr-model-ladder-receipt/v2\", \"apr_sha\": \"%s\", \"executed\": 3, \"red\": %s}\n" "${FAKE_LADDER_SHA:-$NIGHTLY_SHA}" "${FAKE_LADDER_RED:-0}" > "$OUT/$NIGHTLY_HOST.json"'
-export NIGHTLY_CRUX_CMD='mkdir -p "$OUT" && echo "{\"host\": \"$NIGHTLY_HOST\"}" > "$OUT/$NIGHTLY_HOST-gpu.meta.json" && [ "${FAKE_CRUX_NONE:-0}" = 1 ] || printf "{\"schema\": \"crux-inference-receipt/v1\", \"summary\": {\"verdict\": \"%s\", \"declined_because\": %s}}\n" "${FAKE_CRUX_VERDICT:-PASS}" "${FAKE_CRUX_WHY:-null}" > "$OUT/$NIGHTLY_HOST-gpu.json"'
+# one call per CRUX lane ($LANE = gpu | cpu); FAKE_CRUX_BAD_LANE (default gpu) takes FAKE_CRUX_VERDICT, the other PASSes
+export NIGHTLY_CRUX_CMD='mkdir -p "$OUT" && echo "{\"host\": \"$NIGHTLY_HOST\"}" > "$OUT/$NIGHTLY_HOST-$LANE.meta.json" && { [ "${FAKE_CRUX_NONE:-0}" = 1 ] || [ "$LANE" = "${FAKE_CRUX_SKIP_LANE:-none}" ] || printf "{\"schema\": \"crux-inference-receipt/v1\", \"summary\": {\"verdict\": \"%s\", \"declined_because\": %s}}\n" "$([ "$LANE" = "${FAKE_CRUX_BAD_LANE:-gpu}" ] && echo "${FAKE_CRUX_VERDICT:-PASS}" || echo PASS)" "$([ "$LANE" = "${FAKE_CRUX_BAD_LANE:-gpu}" ] && echo "${FAKE_CRUX_WHY:-null}" || echo null)" > "$OUT/$NIGHTLY_HOST-$LANE.json"; }'
 cat > "$TMP/gh" <<'GH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FAKE_GH_LOG"
@@ -75,12 +76,17 @@ table() {
   else echo "FAIL  row issue-deduped -- gh saw: $(tr '\n' '|' < "$FAKE_GH_LOG")"; fi
 
   run_case crux-decline "$d" FAKE_CRUX_VERDICT=DECLINE 'FAKE_CRUX_WHY="TIMING (#4051): 1 engine call"'
-  if [ "$RC" = 1 ] && why_has "CRUX is DECLINE: TIMING (#4051)"; then echo "ok    row crux-decline -- a declined CRUX is a RED night, named"
+  if [ "$RC" = 1 ] && why_has "CRUX gpu is DECLINE: TIMING (#4051)"; then echo "ok    row crux-decline -- a declined CRUX is a RED night, named"
   else echo "FAIL  row crux-decline -- rc $RC"; fi
 
   run_case crux-missing "$d" FAKE_CRUX_NONE=1
-  if [ "$RC" = 1 ] && why_has "no single CRUX host receipt"; then echo "ok    row crux-missing -- no CRUX receipt (only the merge meta) is RED"
+  if [ "$RC" = 1 ] && why_has "no CRUX gpu receipt"; then echo "ok    row crux-missing -- no CRUX receipt (only the merge meta) is RED"
   else echo "FAIL  row crux-missing -- rc $RC"; fi
+
+  # every rung claims cpu AND cuda, so a night with only the gpu CRUX lane proves no cpu cell (quorum lane, Fable)
+  run_case crux-cpu-missing "$d" FAKE_CRUX_SKIP_LANE=cpu
+  if [ "$RC" = 1 ] && why_has "no CRUX cpu receipt"; then echo "ok    row crux-cpu-missing -- the cpu CRUX lane is required: a gpu-only night is RED"
+  else echo "FAIL  row crux-cpu-missing -- rc $RC"; fi
 
   run_case ladder-stale "$d" FAKE_LADDER_SHA=0000000000000000000000000000000000000000
   if [ "$RC" = 1 ] && why_has "the ladder receipt is at apr_sha"; then echo "ok    row ladder-stale -- a ladder receipt at another sha is RED"
@@ -92,9 +98,16 @@ table() {
 
   run_case idempotent "$d"
   env FAKE_GH_LOG="$FAKE_GH_LOG" bash "$d" --host lambda --root "$NR" --sha "$SHA" > "$TMP/out-idem2.log" 2>&1; local rc2=$?
-  if [ "$RC" = 0 ] && [ "$rc2" = 0 ] && [ "$(wc -l < "$NR/ladder-ran")" = 1 ] && grep -q 'already judged (green=True)' "$TMP/out-idem2.log"; then
+  if [ "$RC" = 0 ] && [ "$rc2" = 0 ] && [ "$(wc -l < "$NR/ladder-ran")" = 1 ] && grep -q 'already judged GREEN' "$TMP/out-idem2.log"; then
     echo "ok    row idempotent -- a second run for the same (sha, host) measures nothing again"
   else echo "FAIL  row idempotent -- rc $RC/$rc2, ladder ran $(wc -l < "$NR/ladder-ran" 2> /dev/null) time(s)"; fi
+
+  # a RED night (here: an unproved binary) is RE-MEASURED next run, never cached; the old verdict is kept
+  run_case red-retried "$d" FAKE_APR_SHA=deadbeef0
+  env FAKE_GH_LOG="$FAKE_GH_LOG" bash "$d" --host lambda --root "$NR" --sha "$SHA" > "$TMP/out-retry2.log" 2>&1; local rc3=$?
+  if [ "$RC" = 1 ] && [ "$rc3" = 0 ] && green_is True && ls "$NR/$SHA/lambda/"verdict.*.red.json > /dev/null 2>&1; then
+    echo "ok    row red-retried -- a RED night is re-measured on the next run (now GREEN), the RED verdict kept beside it"
+  else echo "FAIL  row red-retried -- rc $RC then $rc3"; fi
 
   run_case stamps "$d"
   if python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); sys.exit(0 if v["t_end"] >= v["t_start"] > 0 and v["certification"]["sha256"] and v["apr_version_line"].startswith("apr 0.70.0 (") else 1)' "$V" 2> /dev/null; then
@@ -125,8 +138,9 @@ mutant unproved-measures unproved       'if [ "$proved" = 1 ]; then' 'if true; t
 mutant issue-not-filed   issue-filed    '    "$GH" issue create --repo' '    : "$GH" issue create --repo'
 mutant no-dedupe         issue-deduped  '-q ".[] | select(.title == \"$title\") | .number" 2> /dev/null | head -1)' '-q "empty" 2> /dev/null | head -1)'
 mutant apr-sha-unchecked ladder-stale   'elif lad.get("apr_sha") != sha:' 'elif False:'
-mutant crux-verdict-read crux-decline   'elif (crux.get("summary") or {}).get("verdict") != "PASS":' 'elif False:'
-mutant meta-as-receipt   crux-missing   'if not f.endswith((".meta.json", "-greedy.json", ".plan.json"))]' ']'
+mutant crux-verdict-read crux-decline   'elif (r.get("summary") or {}).get("verdict") != "PASS":' 'elif False:'
+mutant verdict-gpu-only  crux-cpu-missing '"${NIGHTLY_CRUX_LANES:-gpu cpu}" > "$DIR/verdict.json.tmp"' '"gpu" > "$DIR/verdict.json.tmp"'
+mutant red-cached        red-retried    'if [ "$g" = True ]; then' 'if true; then'
 mutant not-idempotent    idempotent     'if [ -f "$DIR/verdict.json" ]; then' 'if false; then'
 
 echo "check_certify_nightly: $([ "$bad" = 0 ] && echo PASS || echo FAIL)"

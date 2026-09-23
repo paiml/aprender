@@ -15,9 +15,10 @@ H = 3600.0
 ANC = {"a" * 40, "b" * 40}          # ancestors of the cut; "c"*40 is a sibling
 
 
-def v(host, sha, age_h, green=True):
+def v(host, sha, age_h, green=True, incoherent=None):
     return {"schema": "apr-nightly-certification/v1", "host": host, "sha": sha * 40, "t_end": NOW - age_h * H,
-            "green": green, "why": [] if green else ["the ladder is RED: executed=3 red=1"], "_path": "%s/%s" % (sha, host)}
+            "green": green, "why": [] if green else ["the ladder is RED: executed=3 red=1"], "_path": "%s/%s" % (sha, host),
+            "_incoherent": incoherent}
 
 
 def run(mod):
@@ -41,18 +42,34 @@ def run(mod):
     res["older-green-when-newest-red"] = (c.get("lambda", {}).get("sha") == "a" * 40, (c, r))
     c, r = pick([v("gx10", "a", 3)])
     res["other-host-does-not-count"] = ("lambda" in r, (c, r))
+    c, r = pick([v("lambda", "a", -2)])
+    res["future-t_end-refused"] = ("lambda" in r and "FUTURE" in r["lambda"], (c, r))
+    c, r = pick([v("lambda", "a", 3, incoherent="its CRUX cpu receipt is missing or not PASS")])
+    res["incoherent-green-refused"] = ("lambda" in r and "says green but" in r["lambda"], (c, r))
     # assemble: the chosen night's files are linked where the judge reads them; a vanished receipt refuses
     d = tempfile.mkdtemp(prefix="nightly-adm-")
-    lad, crux, cert = (os.path.join(d, n) for n in ("l.json", "c.json", "cert.json"))
-    for p in (lad, crux, cert):
-        open(p, "w").write("{}")
-    good = dict(v("lambda", "a", 3), ladder={"receipt": lad}, crux={"receipt": crux}, certification={"path": cert})
+    lad, cg, cc, cert = (os.path.join(d, n) for n in ("l.json", "cg.json", "cc.json", "cert.json"))
+    import json as _j
+    _j.dump({"apr_sha": "a" * 40, "executed": 3, "red": 0}, open(lad, "w"))
+    for p in (cg, cc):
+        _j.dump({"schema": "crux-inference-receipt/v1", "summary": {"verdict": "PASS"}}, open(p, "w"))
+    open(cert, "w").write("{}")
+    lanes = {"gpu": {"receipt": cg}, "cpu": {"receipt": cc}}
+    good = dict(v("lambda", "a", 3), ladder={"receipt": lad}, crux={"lanes": lanes}, certification={"path": cert})
     out = os.path.join(d, "out")
     bad = mod.assemble({"lambda": good}, out)
     res["assemble-links"] = (not bad and os.path.realpath(os.path.join(out, "receipts", "lambda.json")) == lad
-                             and os.path.realpath(os.path.join(out, "crux", "lambda-gpu.json")) == crux
+                             and os.path.realpath(os.path.join(out, "crux", "lambda-gpu.json")) == cg
+                             and os.path.realpath(os.path.join(out, "crux", "lambda-cpu.json")) == cc
                              and os.path.exists(os.path.join(out, "crux", "prompt-certification.json")), bad)
-    gone = dict(good, crux={"receipt": os.path.join(d, "missing.json")})
+    res["coherent-rederived-green"] = (mod.coherent(good) is None, mod.coherent(good))
+    _j.dump({"schema": "crux-inference-receipt/v1", "summary": {"verdict": "RED"}}, open(cc, "w"))
+    res["coherent-sees-red-lane"] = (mod.coherent(good) is not None and "cpu" in mod.coherent(good), mod.coherent(good))
+    _j.dump({"schema": "crux-inference-receipt/v1", "summary": {"verdict": "PASS"}}, open(cc, "w"))
+    _j.dump({"apr_sha": "b" * 40, "executed": 3, "red": 0}, open(lad, "w"))
+    res["coherent-sees-ladder-sha"] = (mod.coherent(good) is not None and "not the nightly" in mod.coherent(good), mod.coherent(good))
+    _j.dump({"apr_sha": "a" * 40, "executed": 3, "red": 0}, open(lad, "w"))
+    gone = dict(good, crux={"lanes": dict(lanes, cpu={"receipt": os.path.join(d, "missing.json")})})
     bad = mod.assemble({"lambda": gone}, os.path.join(d, "out2"))
     res["assemble-refuses-vanished"] = (bool(bad) and "receipts are gone" in bad[0], bad)
     return res
@@ -65,8 +82,12 @@ MUTANTS = [
     ("oldest-chosen", 'chosen[h] = max(ok, key=lambda v: float(v.get("t_end") or 0))',
      'chosen[h] = min(ok, key=lambda v: float(v.get("t_end") or 0))', "newest-green-chosen"),
     ("any-host", '        mine = [v for v in verdicts if v.get("host") == h]', "        mine = list(verdicts)", "other-host-does-not-count"),
-    ("vanished-ok", "        if not (lad and os.path.isfile(lad) and crux and os.path.isfile(crux)):", "        if not (lad and crux):",
-     "assemble-refuses-vanished"),
+    ("vanished-ok", "        gone = [p for p in [lad] + [lanes.get(k) for k in REQUIRED_LANES] if not (p and os.path.isfile(p))]",
+     "        gone = []", "assemble-refuses-vanished"),
+    ("future-ok", "            elif age < -SKEW_S / 3600.0:", "            elif False:", "future-t_end-refused"),
+    ("green-trusted", '            elif v.get("_incoherent"):', "            elif False:", "incoherent-green-refused"),
+    ("lanes-gpu-only", 'REQUIRED_LANES = ("gpu", "cpu")', 'REQUIRED_LANES = ("gpu",)', "coherent-sees-red-lane"),
+    ("ladder-sha-unread", '    if lad.get("apr_sha") != v.get("sha"):', "    if False:", "coherent-sees-ladder-sha"),
 ]
 
 

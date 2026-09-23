@@ -1,0 +1,17 @@
+- id: GH-4051
+  github_issue: 4051
+  item_type: task
+  kind: code
+  title: 'ladder/CRUX: receipts record t_start/t_end + lock_wait per gate/engine (#4033 lever 0, blocks judging every lever)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T17:50:40.383605561+00:00
+  updated: 2026-09-23T17:50:40.383605561+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

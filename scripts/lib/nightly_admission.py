@@ -4,7 +4,10 @@ The long certification (full ladder + full CRUX) runs nightly on main (scripts/c
 is admitted only on a nightly that is, for EVERY required host:
   GREEN     its verdict says green (apr-nightly-certification/v1);
   FRESH     t_end within `max_age_h` hours (default 24) of now;
-  UPSTREAM  measured at the cut or at an ANCESTOR of it -- never a sibling branch, never a later commit.
+  UPSTREAM  measured at the cut or at an ANCESTOR of it -- never a sibling branch, never a later commit;
+  COHERENT  its green is RE-DERIVED from the receipts it names, never trusted: the ladder receipt is at the
+            verdict's sha with executed >= 1 and red == 0, and every CRUX lane receipt (gpu AND cpu -- every
+            rung claims both) is a PASS. A t_end in the future is refused (a clock or a forgery).
 The newest such verdict per host is chosen. A host with none is refused BY NAME, with the nearest miss.
 
 Admission does NOT bind the receipts to the cut: check_model_ladder.sh does that as for any receipt. A nightly
@@ -12,7 +15,7 @@ at an ancestor binds only through equivalence -- evidence-only, the scoped hotfi
 (no path in nightly..cut reaches apr inference). Otherwise it is STALE BY SHA and the release re-measures.
 
     python3 scripts/lib/nightly_admission.py <nightly root> <cut sha> <out dir> <host>...
-      -> <out>/receipts/<host>.json, <out>/crux/<host>-gpu.json, <out>/crux/prompt-certification.json
+      -> <out>/receipts/<host>.json, <out>/crux/<host>-{gpu,cpu}.json, <out>/crux/prompt-certification.json
          (symlinks to the chosen night's files); one line per host; exit 0 admitted, 1 refused
 """
 
@@ -24,15 +27,42 @@ import sys
 import time
 
 
+REQUIRED_LANES = ("gpu", "cpu")
+SKEW_S = 300.0
+
+
+def _load(p):
+    try:
+        return json.load(open(p))
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def coherent(v):
+    """-> None when the verdict's own receipts say green, else why not. Re-derived, never read from `green`."""
+    lad_p = (v.get("ladder") or {}).get("receipt")
+    lad = _load(lad_p) if lad_p else None
+    if not isinstance(lad, dict):
+        return "its ladder receipt %s is unreadable" % lad_p
+    if lad.get("apr_sha") != v.get("sha"):
+        return "its ladder receipt is at %r, not the nightly's sha" % lad.get("apr_sha")
+    if int(lad.get("executed") or 0) < 1 or int(lad.get("red") or 0) != 0:
+        return "its ladder receipt is RED (executed=%s red=%s)" % (lad.get("executed"), lad.get("red"))
+    lanes = (v.get("crux") or {}).get("lanes") or {}
+    for lane in REQUIRED_LANES:
+        r = _load((lanes.get(lane) or {}).get("receipt"))
+        if not isinstance(r, dict) or (r.get("summary") or {}).get("verdict") != "PASS":
+            return "its CRUX %s receipt is missing or not PASS" % lane
+    return None
+
+
 def load_verdicts(root):
     out = []
     for f in glob.glob(os.path.join(root, "*", "*", "verdict.json")):
-        try:
-            v = json.load(open(f))
-        except (OSError, ValueError):
-            continue
+        v = _load(f)
         if isinstance(v, dict) and v.get("schema") == "apr-nightly-certification/v1":
             v["_path"] = f
+            v["_incoherent"] = coherent(v)
             out.append(v)
     return out
 
@@ -47,6 +77,10 @@ def select(verdicts, hosts, now, is_ancestor, max_age_h=24.0):
             sha, age = v.get("sha") or "", (now - float(v.get("t_end") or 0)) / 3600.0
             if v.get("green") is not True:
                 misses.append("%s is RED (%s)" % (sha[:9], "; ".join(v.get("why") or [])[:120]))
+            elif v.get("_incoherent"):
+                misses.append("%s says green but %s" % (sha[:9], v["_incoherent"]))
+            elif age < -SKEW_S / 3600.0:
+                misses.append("%s has a t_end %.1f h in the FUTURE" % (sha[:9], -age))
             elif age > max_age_h:
                 misses.append("%s is %.1f h old (> %g h)" % (sha[:9], age, max_age_h))
             elif not is_ancestor(sha):
@@ -77,12 +111,15 @@ def assemble(chosen, out):
     os.makedirs(os.path.join(out, "crux"), exist_ok=True)
     cert = None
     for h, v in sorted(chosen.items()):
-        lad, crux = (v.get("ladder") or {}).get("receipt"), (v.get("crux") or {}).get("receipt")
-        if not (lad and os.path.isfile(lad) and crux and os.path.isfile(crux)):
-            bad.append("%s: the nightly's receipts are gone (%s, %s)" % (h, lad, crux))
+        lad = (v.get("ladder") or {}).get("receipt")
+        lanes = {k: (x or {}).get("receipt") for k, x in ((v.get("crux") or {}).get("lanes") or {}).items()}
+        gone = [p for p in [lad] + [lanes.get(k) for k in REQUIRED_LANES] if not (p and os.path.isfile(p))]
+        if gone:
+            bad.append("%s: the nightly's receipts are gone (%s)" % (h, ", ".join(map(str, gone))))
             continue
         os.symlink(os.path.abspath(lad), os.path.join(out, "receipts", h + ".json"))
-        os.symlink(os.path.abspath(crux), os.path.join(out, "crux", h + "-gpu.json"))
+        for k in REQUIRED_LANES:
+            os.symlink(os.path.abspath(lanes[k]), os.path.join(out, "crux", "%s-%s.json" % (h, k)))
         c = (v.get("certification") or {}).get("path")
         if c and os.path.isfile(c) and cert is None:
             cert = c

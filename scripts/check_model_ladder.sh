@@ -1275,6 +1275,55 @@ CW
     }
     if bash scripts/check_certify_nightly.sh > "$mdir/cn.out" 2>&1; then printf 'ok    nightly: check_certify_nightly.sh -- the driver table + %s mutants (#4040)\n' "$(grep -c '^ok    mutant' "$mdir/cn.out")"
     else grep -E '^FAIL' "$mdir/cn.out"; bad=$((bad+1)); fi
+    # #4040 POSITIVE CONTROL + must-REDs, end to end through the real gate (quorum lane, Fable: "the green path was
+    # never exercised"). A nightly root built from the `green` case's receipts, re-bound to a real commit.
+    nightly_e2e() { # nightly_e2e <script> <sha> <drop-cpu 0|1> -> prints the gate's output, returns its rc
+      local n c="scripts/lib/model_ladder_cases/green" rc; n=$(mktemp -d)
+      python3 - "$c" "$n" "$2" "$3" <<'NE'
+import json, os, sys, time
+c, n, sha, dropcpu = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "1"
+for h in ("lambda", "gx10"):
+    d = os.path.join(n, sha, h); os.makedirs(d + "/ladder"); os.makedirs(d + "/crux")
+    R = json.load(open(os.path.join(c, "receipts", h + ".json"))); R["apr_sha"] = sha
+    json.dump(R, open(d + "/ladder/%s.json" % h, "w"))
+    lanes = {}
+    for lane in ("gpu", "cpu"):
+        X = json.load(open(os.path.join(c, "crux", "%s-%s.json" % (h, lane))))
+        if isinstance(X.get("apr"), dict): X["apr"]["sha"] = sha
+        p = d + "/crux/%s-%s.json" % (h, lane)
+        if not (dropcpu and lane == "cpu"):
+            json.dump(X, open(p, "w"))
+        lanes[lane] = {"receipt": p, "verdict": (X.get("summary") or {}).get("verdict")}
+    json.dump({"schema": "apr-nightly-certification/v1", "sha": sha, "host": h, "version": "1.2.3", "t_start": time.time() - 3600,
+               "t_end": time.time() - 60, "ladder": {"rc": 0, "receipt": d + "/ladder/%s.json" % h}, "crux": {"rc": 0, "lanes": lanes},
+               "certification": {"path": os.path.abspath(os.path.join(c, "certification.json"))}, "green": True, "why": []},
+              open(d + "/verdict.json", "w"))
+NE
+      MODEL_LADDER_ROOT="$PWD" bash "$1" --nightly "$n" --cut-commit "$(git rev-parse HEAD)" --ladder "$c/ladder.yaml" --ladder-main "$c/ladder.yaml" --version 1.2.3 2>&1; rc=$?
+      rm -rf -- "$n"; return "$rc"
+    }
+    head=$(git rev-parse HEAD)
+    out=$(nightly_e2e "$SELF" "$head" 0); r=$?
+    if [ "$r" = 0 ] && grep -q '^ok    NIGHTLY gx10: GREEN' <<< "$out" && grep -q '^ok    every required rung green on every required host' <<< "$out"; then
+      echo "ok    nightly e2e-green -- a GREEN nightly at the cut is admitted and the release judges green on it (positive control)"
+    else echo "FAIL  nightly e2e-green -- rc $r: $(grep -E '^(FAIL|RED)' <<< "$out" | head -3 | tr '\n' ' ')"; bad=$((bad+1)); fi
+    out=$(nightly_e2e "$SELF" "$head" 1); r=$?
+    if [ "$r" = 1 ] && grep -q "says green but its CRUX cpu receipt is missing or not PASS" <<< "$out"; then
+      echo "ok    nightly e2e-cpu-lane-missing -- a nightly without the cpu CRUX lane is refused by name"
+    else echo "FAIL  nightly e2e-cpu-lane-missing -- rc $r"; bad=$((bad+1)); fi
+    anc=$(git log -n 1 --format=%H -- scripts/model_ladder.sh); anc=$(git rev-parse "$anc^" 2> /dev/null)
+    if [ -n "$anc" ]; then
+      out=$(nightly_e2e "$SELF" "$anc" 0); r=$?
+      if [ "$r" = 1 ] && grep -q 'STALE BY SHA' <<< "$out"; then
+        echo "ok    nightly e2e-ancestor-stale -- a nightly at an ancestor whose delta touches the measurement (model_ladder.sh) is STALE, never carried"
+      else echo "FAIL  nightly e2e-ancestor-stale -- rc $r"; bad=$((bad+1)); fi
+    fi
+    sed 's/^  RECEIPT_DIR="\$NIGHTLY_OUT\/receipts"; CRUX_DIR="\$NIGHTLY_OUT\/crux"$/  :/' "$SELF" > "$mdir/ne-mut.sh"
+    if cmp -s "$SELF" "$mdir/ne-mut.sh"; then echo "FAIL  nightly mutant dirs-unlinked did not apply"; bad=$((bad+1))
+    else out=$(nightly_e2e "$mdir/ne-mut.sh" "$head" 0); r=$?
+      if [ "$r" = 0 ]; then echo "FAIL  nightly mutant dirs-unlinked SURVIVED e2e-green"; bad=$((bad+1))
+      else echo "ok    nightly mutant dirs-unlinked killed by e2e-green"; fi
+    fi
     if nightly_wiring "$SELF"; then echo "ok    nightly: --nightly with no nightly refuses by name, before any receipt is judged"
     else echo "FAIL  nightly: --nightly with an empty root did not refuse by name"; bad=$((bad+1)); fi
     sed 's/^  if ! python3 scripts\/lib\/nightly_admission.py /  if false \&\& python3 scripts\/lib\/nightly_admission.py /' "$SELF" > "$mdir/nw-mut.sh"
