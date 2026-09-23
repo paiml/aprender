@@ -168,6 +168,117 @@ json_str_or_null() {
   python3 -c 'import json,sys; t=sys.stdin.read(); print(json.dumps(t) if t else "null")'
 }
 
+# #3925: judge the model reply, not the transcript it arrived in. `apr chat` frames
+# its session in box-drawing rules, and the ladder captures the verb with 2>&1, so
+# that chrome landed inside the judged text: the repeated-fragment signal fired on
+# the SEPARATOR and called a run whose reply was "The capital of France is Paris."
+# gibberish. Measured on gx10 at 057f9a3a2, 5/5 required rungs red on BOTH backends;
+# lambda reproduced 7 rows, cpu leg included, so it was never GPU-dependent.
+#
+# #3921 already extracted the generated text from the response shape for `serve`, and
+# wrote down why at that call site. It was not carried to `chat`/`code`. This carries
+# it -- the reasoning was right and applied to one of the three places it held.
+#
+# THE TERMINATOR IS THE BACKEND ENVELOPE, NOT THE NEXT `You:`. A reply may contain
+# the string `You:` (a completion discussing a transcript will), and cutting there
+# yields a FRAGMENT that can pass or fail for reasons that are not about the reply --
+# a mis-extraction that looks like a measurement. The `{"backend":...}` line is
+# emitted once, by us, at the end, and a model cannot produce it.
+#
+# Exit 0 prints the reply. Exit 3 = no envelope (a truncated capture). Exit 4 = no
+# reply in it. Both non-zero cases MUST read as red at the call site: a silent ""
+# would leave the detector nothing to flag and turn every row green -- a false
+# positive traded for a gate that cannot fail, which is the worse of the two bugs.
+assistant_reply() {
+  python3 -c '
+import json, sys
+t = sys.stdin.read()
+lines = t.split("\n")
+
+def from_json(d):
+    out = []
+    for c in (d.get("choices") or []):
+        out.append(c.get("text") or ((c.get("message") or {}).get("content") or ""))
+    m = (d.get("message") or {}).get("content")
+    if isinstance(m, str):
+        out.append(m)
+    for k in ("result", "response", "content", "completion", "output", "text"):
+        v = d.get(k)
+        if isinstance(v, str):
+            out.append(v)
+    return [x for x in out if x]
+
+def as_obj(s):
+    s = s.strip()
+    if not (s.startswith("{") and s.endswith("}")):
+        return None
+    try:
+        d = json.loads(s)
+    except Exception:
+        return None
+    return d if isinstance(d, dict) else None
+
+# 1. a machine envelope carrying the text: `apr code --output-format json` prints two
+#    chrome lines and then the object. Judged raw, that string carries the port, the
+#    pid and the session uuid -- 00000000-0006-7000-5c1e-5c1e... is one zero-run short
+#    of tripping the very signal this detector uses.
+nonblank = [x for x in lines if x.strip()]
+for cand in [t] + ([nonblank[-1]] if nonblank else []):
+    d = as_obj(cand)
+    if d:
+        got = from_json(d)
+        if got:
+            print("\n".join(got))
+            sys.exit(0)
+
+# 2. the chat transcript, bounded at BOTH ends by text we emit rather than the model.
+env = -1
+for i in range(len(lines) - 1, -1, -1):
+    d = as_obj(lines[i])
+    if d is not None and "backend" in d:
+        env = i
+        break
+if env < 0:
+    sys.exit(3)
+
+start = -1
+for i in range(env - 1, -1, -1):
+    if lines[i].lstrip().startswith("Assistant:"):
+        start = i
+        break
+if start < 0:
+    sys.exit(4)
+
+body = [lines[start].lstrip()[len("Assistant:"):].lstrip()] + lines[start + 1:env]
+
+# The session prints one fixed line on `/exit`. Strip THAT EXACT STRING and nothing
+# else: a general "starts with You:" rule is the cut this function exists to avoid.
+def is_exit_chrome(line):
+    return line.strip() == "You: Goodbye!"
+
+while body and (not body[-1].strip() or is_exit_chrome(body[-1])):
+    body.pop()
+
+out = "\n".join(body).strip()
+if not out:
+    sys.exit(4)
+print(out)
+'
+}
+
+# judge_reply <captured> <verb> -> the reason, or nothing when the reply is clean.
+# A reply that cannot be located or bounded is a reason, never a pass.
+judge_reply() {
+  local raw="$1" verb="$2" text rc n
+  text=$(printf '%s' "$raw" | assistant_reply); rc=$?
+  n=$(printf '%s' "$raw" | wc -c | tr -d ' ')
+  case $rc in
+    0) printf '%s' "$text" | gibberish_reason || true ;;
+    3) printf 'could not find the backend envelope in %s bytes of captured %s output -- the capture is truncated, so nothing about the reply was measured' "$n" "$verb" ;;
+    *) printf 'could not locate the %s reply in %s bytes of captured output' "$verb" "$n" ;;
+  esac
+}
+
 lock_timeout() { # lock_timeout <what> -> exit 2, naming the holder from /proc/locks (by inode; lslocks
   local ino pid holder   # leaves PATH empty for a file it cannot resolve, so it cannot be matched by path)
   ino=$(stat -c %i "$GPU_LOCK" 2> /dev/null)
@@ -518,7 +629,9 @@ PY
   [ "$code_rc" = "$LOCK_BUSY" ] && lock_timeout "apr code $rid"
   code_ran=true; [ $code_rc -eq 0 ] || code_ran=false
   # #3921: same for `code` — measured once per rung, so judged once.
-  code_bad=$(printf '%s' "$code_out" | gibberish_reason) || code_bad=""
+  # #3921/#3925: judge the REPLY the run captured, not the transcript around it.
+  code_bad=""
+  if [ $code_rc -eq 0 ]; then code_bad=$(judge_reply "$code_out" code); fi
 
   for b in "${bes[@]}"; do
     case "$b" in cpu) flag="--no-gpu" ;; cuda|gpu) flag="--gpu" ;; *) flag="" ;; esac
@@ -568,7 +681,8 @@ PY
     chat_ran=true; [ $chat_rc -eq 0 ] || chat_ran=false
     # #3921: rc=0 says the process did not fail, never that it produced the right
     # thing. Judge the text the run already captured.
-    chat_bad=$(printf '%s' "$chat_out" | gibberish_reason) || chat_bad=""
+    chat_bad=""
+    if [ $chat_rc -eq 0 ]; then chat_bad=$(judge_reply "$chat_out" chat); fi
 
     # code: measured once per rung, above this loop — see #3843.
 
