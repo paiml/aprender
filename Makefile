@@ -640,6 +640,10 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@# nightly wrote no lcov because of one timing test). Failures are LISTED, not hidden, and
 	@# every test run here is also run by CI's workspace-test, which fails on them.
 	@grep -E '^test .* \.\.\. FAILED$$' target/coverage/test.log | sed -e 's/^test //' -e 's/ \.\.\. FAILED$$//' | sort -u > target/coverage/failed-tests.txt || true
+	@# A test BINARY killed by a signal (earlyoom SIGTERMed aprender-serve at 25.7 GB on yoga, run
+	@# 35868368976) is swallowed by --ignore-run-fail, and its crate's profile is missing from the
+	@# lcov: that run printed "76% ... REGRESSION" with the largest crate absent. No verdict then.
+	@scripts/check_coverage_log_complete.sh target/coverage/test.log
 	@echo "📊 Parsing LCOV for the threshold check..."
 	@# Parse LCOV for line coverage (LH=lines hit, LF=lines found)
 	@if [ ! -s target/coverage/lcov.info ]; then echo "❌ coverage DID NOT MEASURE: no lcov.info was written. No coverage verdict."; exit 1; fi; \
