@@ -275,32 +275,48 @@ pub fn format_mismatch(architecture: &str, missing: &[RequiredOp]) -> String {
 /// Why this build's CUDA path has no forward for `architecture`, or `None` when
 /// it has one.
 ///
-/// #3817. This is not a capability *mismatch* — no kernel is missing and no
-/// arithmetic fails. The path simply was not built: `qwen3_moe` dispatches to
-/// `infer::qwen3_moe_generate`, which is CPU-only and returns `used_gpu = false`
-/// unconditionally (`infer/inference_result.rs`, "CPU-only path; GPU MoE wiring
-/// is M32d follow-up"). A caller that forced the GPU must be told that **before**
-/// a load, by name, instead of receiving a CPU generation and an exit code.
+/// #3817 made 0.69.1 REFUSE `qwen3_moe` on CUDA by name, before any load, because
+/// its dispatch was CPU-only and a forced `--gpu` got a silent CPU generation. The
+/// comment that used to sit here said what should happen next: "if a GPU MoE
+/// forward lands (#3714), deleting the arm here is what turns the refusal off, and
+/// the dispatch follows." #3714 R2 has landed (`Qwen3MoeCudaModel`, folded into
+/// 0.69.1 on the operator ruling of 2026-09-23), so plain Qwen3 MoE is no longer
+/// refused, and `infer::qwen3_moe_dispatch` serves it on the GPU.
 ///
-/// The dispatch site calls this function too, so the refusal and the routing
-/// cannot drift apart: if a GPU MoE forward lands (#3714), deleting the arm here
-/// is what turns the refusal off, and the dispatch follows.
-///
-/// The argument is a raw `general.architecture`; it is normalised here, so every
-/// spelling the loader accepts (`qwen3moe`, `qwen3_moe`, `Qwen3MoeForCausalLM`,
-/// `Qwen3CoderForCausalLM`, …) resolves to the same answer.
+/// **What is still refused, and why the arm is narrowed rather than deleted.**
+/// `normalize_architecture` folds the Qwen3.5-MoE spellings (`qwen3_5_moe`,
+/// `Qwen3_5MoeForCausalLM`, `Qwen3_5MoeForConditionalGeneration`) into the same
+/// canonical `qwen3_moe`. Qwen3.5 MoE carries Gated-DeltaNet/SSM layers the
+/// qwen3moe forward does not run. Until now those spellings were protected only
+/// incidentally, by the blanket refusal; deleting the arm outright would have
+/// routed them to a forward that cannot run them — wrong output, not a refusal.
+/// So the check reads the RAW spelling, which this function has always received.
+/// (The GGUF string of a real Qwen3.5-MoE file, `qwen35moe`, is caught here too.)
 #[must_use]
 pub fn no_cuda_forward_reason(architecture: &str) -> Option<String> {
-    match crate::tensor_names::normalize_architecture(architecture) {
-        "qwen3_moe" => Some(format!(
-            "this build has no CUDA forward for architecture '{architecture}' (canonical \
-             'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 \
-             runs this architecture on the CPU only. Re-run without --gpu to use the CPU path \
-             deliberately, or use a dense Q4_K model on the GPU. This is a refusal, not a \
-             fallback: nothing was loaded and nothing was generated."
-        )),
-        _ => None,
+    if is_qwen35_moe_spelling(architecture) {
+        return Some(format!(
+            "this build has no CUDA forward for architecture '{architecture}': Qwen3.5 MoE is a \
+             hybrid (Gated DeltaNet / SSM layers + mixture-of-experts), and the qwen3moe CUDA \
+             forward (#3714) does not run SSM layers. Re-run without --gpu to use the CPU path \
+             deliberately. This is a refusal, not a fallback: nothing was loaded and nothing \
+             was generated."
+        ));
     }
+    None
+}
+
+/// A Qwen3.5-MoE spelling, which `normalize_architecture` folds into `qwen3_moe`
+/// even though it is a different network. Compared on letters and digits only, so
+/// `qwen3_5_moe`, `qwen35moe` and `Qwen3_5MoeForCausalLM` all match and
+/// `qwen3moe` / `Qwen3MoeForCausalLM` / `Qwen3CoderForCausalLM` do not.
+fn is_qwen35_moe_spelling(raw: &str) -> bool {
+    let squashed: String = raw
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|c| c.to_ascii_lowercase())
+        .collect();
+    squashed.starts_with("qwen35moe")
 }
 
 #[cfg(test)]
@@ -538,33 +554,53 @@ mod tests {
         assert_eq!(RequiredOp::PostAttnFfnNorm.to_string(), "PostAttnFfnNorm");
     }
 
-    // ---- #3817: the architectures with no CUDA forward ---------------------
+    // ---- #3817 / #3714: which MoE architectures have a CUDA forward ----------
 
-    /// Every spelling the loader accepts must reach the same refusal — a user
-    /// who names the model one way and the file another gets one answer.
+    /// Every spelling of plain Qwen3 MoE now HAS a CUDA forward (#3714 R2), so none
+    /// is refused — and the refusal and the dispatch must agree: each spelling the
+    /// refusal lets through is one `moe_forward_handles` actually routes to the MoE
+    /// forward. This test used to assert the opposite (`…_has_no_cuda_forward`); it
+    /// was inverted by the fold that landed the forward, not deleted.
     #[test]
-    fn every_qwen3moe_spelling_has_no_cuda_forward() {
+    fn every_qwen3moe_spelling_has_a_cuda_forward_and_is_routed_to_it() {
         for spelling in [
             "qwen3moe",
             "qwen3_moe",
             "Qwen3MoeForCausalLM",
             "Qwen3MoEForCausalLM",
             "Qwen3CoderForCausalLM",
-            "qwen3_5_moe",
         ] {
-            let reason = no_cuda_forward_reason(spelling).unwrap_or_else(|| {
-                panic!("{spelling} normalises to qwen3_moe and has no GPU forward")
-            });
+            assert!(
+                no_cuda_forward_reason(spelling).is_none(),
+                "{spelling} has a CUDA forward (#3714) and must not be refused"
+            );
+            assert!(
+                crate::gguf::moe_forward_handles(spelling),
+                "{spelling} is let through by the refusal, so the MoE dispatch must route it"
+            );
+        }
+    }
+
+    /// Qwen3.5 MoE is folded into `qwen3_moe` by the normalizer but is a hybrid the
+    /// qwen3moe forward cannot run. It must still be refused BY NAME — otherwise the
+    /// fold that turned plain-MoE CUDA on would have silently routed it to that
+    /// forward. The last spelling is the GGUF string of a real file on lambda
+    /// (`Qwen3.5-35B-A3B-UD-IQ4_XS.gguf`).
+    #[test]
+    fn every_qwen35_moe_spelling_is_still_refused_by_name() {
+        for spelling in [
+            "qwen3_5_moe",
+            "Qwen3_5MoeForCausalLM",
+            "Qwen3_5MoeForConditionalGeneration",
+            "qwen35moe",
+        ] {
+            let reason = no_cuda_forward_reason(spelling)
+                .unwrap_or_else(|| panic!("{spelling} is Qwen3.5 MoE and must be refused"));
             assert!(
                 reason.contains(spelling),
                 "the refusal names what the user gave: {reason}"
             );
-            assert!(
-                reason.contains("qwen3_moe"),
-                "and the canonical name: {reason}"
-            );
-            assert!(reason.contains("#3714"), "and the ticket: {reason}");
-            assert!(reason.contains("0.70.0"), "and when it lands: {reason}");
+            assert!(reason.contains("SSM"), "and why: {reason}");
             assert!(
                 reason.contains("refusal, not a fallback"),
                 "and that nothing ran: {reason}"
@@ -624,7 +660,11 @@ mod gpu_support_doc {
         ("qwen2", "Qwen2, Qwen2.5 (incl. Coder)"),
         ("qwen3", "Qwen3 dense"),
         ("qwen35", "Qwen3.5 hybrid (Gated DeltaNet)"),
-        ("qwen3_moe", "Qwen3 / Qwen3.5 MoE (A3B)"),
+        (
+            "qwen3_moe",
+            "Qwen3 MoE (Qwen3-30B-A3B, Qwen3-Coder-30B-A3B)",
+        ),
+        ("qwen3_5_moe", "Qwen3.5 MoE (A3B, hybrid Gated DeltaNet)"),
         ("gemma2", "Gemma 2"),
         ("gemma3", "Gemma 3"),
         ("phi2", "Phi-2"),
@@ -712,7 +752,8 @@ mod gpu_support_doc {
             let verdict = match no_cuda_forward_reason(arch) {
                 Some(_) => (
                     "**refused**".to_string(),
-                    "no CUDA forward at all (#3714)".to_string(),
+                    "no CUDA forward: hybrid SSM MoE, not run by the qwen3moe forward (#3714)"
+                        .to_string(),
                 ),
                 None => match check_capability(&required, &supported) {
                     Ok(()) => ("yes".to_string(), "—".to_string()),
@@ -802,7 +843,7 @@ mod gpu_support_doc {
         );
         assert!(
             refused > 0,
-            "no architecture is refused — qwen3_moe should be (#3714)"
+            "no architecture is refused — Qwen3.5 MoE (qwen3_5_moe) should be (#3714)"
         );
     }
 }

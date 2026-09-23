@@ -580,6 +580,14 @@ pub(crate) fn qa_report_for_error(path: &Path, e: &CliError) -> QaReport {
 }
 
 /// Dispatch a single QA gate: skip if flagged, otherwise run, then print and collect.
+///
+/// A gate whose runner returns `Err` is recorded as a FAILED row carrying the
+/// error, and the remaining gates still run (#3714 done_when 3). It used to be
+/// `runner()?`, which abandoned `run_qa` before the report existed: on a
+/// qwen3moe file the golden gate's dense CPU path errored and `apr qa --json`
+/// printed ZERO bytes and exited 5 — every gate that had already passed, and
+/// the one that failed, were lost. An error is a FAIL, never a skip and never
+/// a pass; the report is always written.
 fn dispatch_gate(
     gates: &mut Vec<GateResult>,
     json: bool,
@@ -596,7 +604,10 @@ fn dispatch_gate(
         // loader's error out of `run_qa`, so the process exited 5 having printed
         // **zero bytes of JSON** — `capability_match` and `golden_output` were
         // absent rather than red, and absence reads as conformance to anything
-        // parsing the report. The error is now the gate's message.
+        // parsing the report. The error is now the gate's message. (#3714 R2
+        // fixed the same abort independently; the fold keeps this message and
+        // takes its measured duration rather than a zero.)
+        let start = Instant::now();
         match runner() {
             Ok(result) => result,
             Err(e) => GateResult::failed(
@@ -604,7 +615,7 @@ fn dispatch_gate(
                 &format!("{name} could not run: {e}"),
                 None,
                 None,
-                std::time::Duration::ZERO,
+                start.elapsed(),
             ),
         }
     };
