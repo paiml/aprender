@@ -167,7 +167,7 @@ META="$MERGED_META"
 RECEIPT="$OUT/$HOST-$BACKEND.json"
 [ "$GREEDY_ONLY" = 1 ] && RECEIPT="$OUT/$HOST-$BACKEND-greedy.json"
 python3 scripts/lib/crux_inference_judge.py collect --manifest "$MERGED" --prompts "$PROMPTS" --meta "$META" \
-  --certification "$CERT" --out-json "$RECEIPT" --out-md "${RECEIPT%.json}.md"
+  --certification "$CERT" --require-timing --out-json "$RECEIPT" --out-md "${RECEIPT%.json}.md"
 rc=$?
 if [ "$GREEDY_ONLY" = 1 ]; then
   python3 - "$RECEIPT" <<'PY' || die "the greedy-only receipt could not be marked"

@@ -483,6 +483,8 @@ def engine_entry(row, prompt, prompt_opened=None):
     """One engine's answer to one cell, from its manifest row. `prompt_opened` is the model's own
     template's answer to "does thinking ON open the block in the prompt?" (prompt_opens_think)."""
     e = {"answered": False, "rc": row.get("rc"), "why": None, "answer": None, "reported": {}}
+    if row.get("timing") is not None:
+        e["timing"] = row["timing"]   # #4051: carried into the receipt, judged in collect
     if "ollama_unloaded" in row:
         # Did ollama's model leave VRAM before the cell dropped the GPU lock?
         # Recorded, never judged: it is a property of the harness, not an answer.
@@ -888,6 +890,28 @@ def certification_ok(prompts_path, receipt_path):
     return True if rc == 0 else (buf.getvalue().strip() or "refused (rc %s)" % rc)
 
 
+def timing_faults(gens):
+    """#4051: every engine call that RAN carries its stamp -- t_start <= t_end (UTC s) and an explicit
+    lock wait (gpu: >= 0; none: exactly 0). A refused row made no call and owes none. -> [reason]."""
+    out = []
+    for r in gens:
+        if r.get("refused"):
+            continue
+        tag = "%s %s %s/%s" % (r.get("engine"), r.get("verb"), r.get("prompt_id"), r.get("thinking"))
+        t = r.get("timing")
+        if not isinstance(t, dict):
+            out.append("%s: no timing stamp" % tag)
+            continue
+        t0, t1, lw, lk = t.get("t_start"), t.get("t_end"), t.get("lock_wait_s"), t.get("lock")
+        if not all(isinstance(x, (int, float)) for x in (t0, t1)):
+            out.append("%s: stamp lacks t_start/t_end" % tag)
+        elif t1 < t0:
+            out.append("%s: t_end < t_start (%.3f < %.3f)" % (tag, t1, t0))
+        if lk not in ("gpu", "none") or not isinstance(lw, (int, float)) or lw < 0 or (lk == "none" and lw != 0):
+            out.append("%s: no valid lock wait (lock %r, lock_wait_s %r)" % (tag, lk, lw))
+    return out
+
+
 def collect(args):
     with open(args.prompts, encoding="utf-8") as fh:
         pdoc = json.load(fh)
@@ -1121,7 +1145,11 @@ def collect(args):
     if pdoc.get("schema") == "crux-inference-prompts/v2":
         certified = certification_ok(args.prompts, getattr(args, "certification", None))
     declined_because = None
-    if not controls:
+    tfaults = timing_faults(gens) if getattr(args, "require_timing", False) else []
+    if tfaults:
+        declined_because = "TIMING (#4051): %d engine call(s) carry no valid stamp -- %s" % (
+            len(tfaults), "; ".join(tfaults[:5]) + (" (+%d more)" % (len(tfaults) - 5) if len(tfaults) > 5 else ""))
+    elif not controls:
         declined_because = "the prompt set declares no positive control (\"control\": true)"
     elif not cells:
         declined_because = "no cell was measured"
@@ -1144,6 +1172,8 @@ def collect(args):
         "schema": "crux-inference-receipt/v1",
         "judged_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
         "cells": cells,
+        "timing": {"required": bool(getattr(args, "require_timing", False)),
+                   "stamped": sum(1 for r in gens if isinstance(r.get("timing"), dict)), "faults": tfaults},
         "deterministic": det,
         "greedy": greedy,
         "summary": dict(counts, cells=len(cells), judged=judged, verdict=verdict, deterministic=det_counts,
@@ -1228,6 +1258,8 @@ def main(argv):
     for flag in ("--manifest", "--prompts", "--meta", "--out-json", "--out-md"):
         c.add_argument(flag, required=True)
     c.add_argument("--certification", default=None, help="#3962 J2: the prompt-certification receipt for a v2 set")
+    c.add_argument("--require-timing", action="store_true",
+                   help="#4051: every engine call that ran must carry its t_start/t_end/lock_wait_s stamp")
     args = ap.parse_args(argv)
     try:
         return collect(args)

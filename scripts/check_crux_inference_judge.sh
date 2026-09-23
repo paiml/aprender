@@ -211,7 +211,7 @@ json.dump(meta, open(out, "w"))
 PY
   seal "$1/manifest.jsonl"
   PYTHONPATH="$ROOT/scripts/lib" python3 "$JUDGE" collect --manifest "$1/manifest.jsonl" --prompts "$PROMPTS" --meta "$1/meta.json" \
-    ${CERT:+--certification "$CERT"} --out-json "$1/receipt.json" --out-md "$1/receipt.md" > "$1/judge.out" 2> "$1/judge.err"
+    ${CERT:+--certification "$CERT"} ${REQUIRE_TIMING:+--require-timing} --out-json "$1/receipt.json" --out-md "$1/receipt.md" > "$1/judge.out" 2> "$1/judge.err"
 }
 verdict_of() { # verdict_of <case dir> <prompt id>
   python3 -c 'import json,sys
@@ -1073,6 +1073,41 @@ reason_has "  ...named as undecidable, never judged on the reasoning" "$d" $P "n
 d=$(b2 b2_floored_cut "Two and two make <answer>4</answer>" "$LL_CLOSED" "x$(printf '水%.0s' $(seq 1 66))"); run_judge "$d"; GOT_RC=$?
 expect "B2: a rendering floored to a char boundary (199 bytes) is NOT read as whole -- unknown, so RED by name" "$d" 1 $P RED
 
+# #4051: the producer's attach step (scripts/lib/crux_stamps.py): its own table, every mutant killed by its named row.
+if python3 "$ROOT/scripts/lib/crux_stamps_cases.py" --mutants > "$TMP/crux_stamps.log" 2>&1; then ok "J/timing attach: crux_stamps_cases.py rows + mutants ($(tail -1 "$TMP/crux_stamps.log"))"
+else broke "J/timing attach: $(grep -E 'FAIL|SURVIVED|ANCHOR' "$TMP/crux_stamps.log" | head -3 | tr '\n' ' ')"; fi
+# #4051: --require-timing. Every engine call that RAN carries t_start/t_end/lock_wait_s; a gap DECLINES by name.
+stamp_rows() { # stamp_rows <manifest> [<engine to leave unstamped>|-] [<engine whose t_end precedes t_start>|-]
+  python3 - "$@" <<'PY'
+import json, sys
+m, skip, back = sys.argv[1], (sys.argv[2:3] or ["-"])[0], (sys.argv[3:4] or ["-"])[0]
+rows = [json.loads(l) for l in open(m) if l.strip()]
+for r in rows:
+    if r.get("kind") == "gen" and not r.get("refused") and r.get("engine") != skip:
+        r["timing"] = {"t_start": 100.0, "t_acquired": 101.0, "t_end": 90.0 if r.get("engine") == back else 110.0,
+                       "lock": "gpu", "lock_wait_s": 1.0}
+open(m, "w").write("".join(json.dumps(r) + "\n" for r in rows))
+PY
+}
+d=$(newcase timing_stamped); control_green "$d"; stamp_rows "$d/manifest.jsonl"
+REQUIRE_TIMING=1 run_judge "$d"; GOT_RC=$?
+expect "J/timing: every engine call stamped -- the control stays GREEN under --require-timing" "$d" 0 $P GREEN
+d=$(newcase timing_unstamped); control_green "$d"; stamp_rows "$d/manifest.jsonl" hf
+REQUIRE_TIMING=1 run_judge "$d"; GOT_RC=$?
+[ "$GOT_RC" = 2 ] && ok "J/timing unstamped: an engine call with no stamp DECLINES the run (rc 2)" || broke "J/timing unstamped: want rc 2, got $GOT_RC"
+declined_has "J/timing unstamped names the call" "$d" "hf run golden-2plus2/off: no timing stamp"
+d=$(newcase timing_backwards); control_green "$d"; stamp_rows "$d/manifest.jsonl" - apr
+REQUIRE_TIMING=1 run_judge "$d"; GOT_RC=$?
+[ "$GOT_RC" = 2 ] && ok "J/timing backwards: t_end < t_start DECLINES the run (rc 2)" || broke "J/timing backwards: want rc 2, got $GOT_RC"
+declined_has "J/timing backwards names the call" "$d" "apr run golden-2plus2/off: t_end < t_start"
+d=$(newcase timing_not_required); control_green "$d"
+run_judge "$d"; GOT_RC=$?
+expect "J/timing: without --require-timing an unstamped manifest judges as before" "$d" 0 $P GREEN
+python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r["timing"]["required"] is False and r["cells"][0]["engines"]["apr"].get("timing") is None else 1)' "$d/receipt.json" \
+  && ok "J/timing receipt records required=false" || broke "J/timing receipt does not record required=false"
+python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r["timing"]["required"] is True and r["cells"][0]["engines"]["apr"]["timing"]["t_end"] == 110.0 else 1)' "$TMP/timing_stamped/receipt.json" \
+  && ok "J/timing stamps reach the receipt (required=true, apr t_end 110.0)" || broke "J/timing stamps do not reach the receipt"
+
 # ── #3957 F6 MUTANTS. Each rule deleted in a copy of the judge; the WHOLE table must then break.
 if [ -z "${CRUX_NO_MUTANTS:-}" ]; then
   # label|the row that MUST break (#3887: a kill for the wrong reason is no kill)|sed deleting the rule
@@ -1108,6 +1143,10 @@ code-comparator-cli|J\/code comparator json|s/^    elif row.get("verb") == "code
 b4-unmapped-borrows|J\/B4 unmapped route|s/^        orc = crux_serve_routes.oracle_route(k\[7\])$/        orc = crux_serve_routes.oracle_route(k[7]) or "POST \/v1\/chat\/completions"/
 admission-mode-off|admitted only for thinking ON|s/^        if admitted_mode is not None:$/        if False:/
 admission-off|NOT admitted for this model is RED|s/^        elif admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        elif False:/
+timing-unread|J/timing unstamped: want rc 2|s/^    tfaults = timing_faults(gens) if getattr(args, "require_timing", False) else \[\]$/    tfaults = []/
+timing-order-unread|J/timing backwards: want rc 2|s/^        elif t1 < t0:$/        elif False:/
+timing-missing-ok|J/timing unstamped names the call|s/^            out.append("%s: no timing stamp" % tag)$/            pass/
+timing-not-carried|J/timing stamps do not reach the receipt|s/^        e\["timing"\] = row\["timing"\]   # #4051.*$/        pass/
 certification-off|no certification receipt declines|s/^        certified = certification_ok(args.prompts, getattr(args, "certification", None))$/        certified = True/
 MUT
 fi

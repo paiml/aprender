@@ -69,7 +69,7 @@ def apr_sha_of(receipt):
     return sha if isinstance(sha, str) else None
 
 
-def load_crux(crux_dir, cut, equiv, out):
+def load_crux(crux_dir, cut, equiv, out, timing_required=False):
     """-> ({(sha, host, lane, crux_verb): [verdict, ...]}, failed)."""
     index, failed = {}, False
     files = sorted(f for f in glob.glob(os.path.join(crux_dir or "", "*.json"))
@@ -114,6 +114,14 @@ def load_crux(crux_dir, cut, equiv, out):
         if summ.get("verdict") == "DECLINE":
             out(f"FAIL  CRUX receipt {os.path.basename(f)} DECLINED ({summ.get('declined_because')}) -- a lane that "
                 f"could not certify its own controls vouches for nothing (#3957 F6)")
+            failed = True
+            continue
+        # #4051: from the contract's ladder.timing.required_from, a CRUX receipt counts only if its judge
+        # REQUIRED a stamp on every engine call (crux_inference_judge --require-timing). A producer that
+        # dropped the flag, or predates it, wrote a receipt no lever can be judged against.
+        if timing_required and (R.get("timing") or {}).get("required") is not True:
+            out(f"FAIL  CRUX receipt {os.path.basename(f)} was judged WITHOUT --require-timing -- its engine calls "
+                f"carry no checked stamp (#4051)")
             failed = True
             continue
         lane = R.get("backend")
@@ -200,7 +208,7 @@ def load_certified(cert_p, out):
     return keys, False
 
 
-def judge(L, good, crux_dir, cut, equiv, out, red=None, cert_p=None):
+def judge(L, good, crux_dir, cut, equiv, out, red=None, cert_p=None, timing_required=False):
     """Print one line per cell and a per-format summary. -> True when any cell is not proven.
 
     `red` (#3957 F9/F10): {(host, file): "RED-MODEL:<axis>" | "RED-UNSUPPORTED"}, holding ONLY the verdicts
@@ -219,7 +227,7 @@ def judge(L, good, crux_dir, cut, equiv, out, red=None, cert_p=None):
                 held.add(x.get("sha256") or inv.get(x.get("file")) or (rung_by_file.get(x.get("file")) or {}).get("sha256"))
     need = certified is None or bool(held & certified)
     if need or (crux_dir and glob.glob(os.path.join(crux_dir, "*.json"))):
-        index, lfail = load_crux(crux_dir, cut, equiv, out)
+        index, lfail = load_crux(crux_dir, cut, equiv, out, timing_required)
         failed = failed or (lfail and need)
     else:
         index = {}

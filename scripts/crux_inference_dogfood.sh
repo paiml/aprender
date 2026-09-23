@@ -292,6 +292,7 @@ _cleanup() {
 }
 trap _cleanup EXIT
 MANIFEST="$WORK/manifest.jsonl"; : > "$MANIFEST"
+CRUX_STAMPS="$WORK/stamps.jsonl"; : > "$CRUX_STAMPS"   # #4051: per engine line + per cell (scripts/lib/crux_stamps.py)
 # The plugin engines append their own rows here (row contract v1).
 export CRUX_MANIFEST="$MANIFEST" CRUX_WORK="$WORK"
 MODELS_JSONL="$WORK/models.jsonl"; : > "$MODELS_JSONL"
@@ -382,10 +383,19 @@ fi
 # cpu lane touches no GPU compute and runs the same script with no lock (the
 # rule's clause 2), under choom. Exit 75 from either tool means the lock was not
 # had within the bound: every engine of that cell is a refused row, never skipped.
+# #4051: every engine line stamps its own wall span and the manifest's line count around it (so a row
+# an engine driver appends itself is attributable), into $CRUX_STAMPS. crux_stamps.py joins them.
+cell_stamp_open() { printf '_t0=$(date +%%s.%%N); _n0=$(wc -l < %q)\n' "$MANIFEST" >> "$1"; }
+cell_stamp_close() { # <cell> <prefix>
+  printf 'printf %q %q %q "$_t0" "$(date +%%s.%%N)" "$_n0" "$(wc -l < %q)" >> %q\n' \
+    '{"line": "%s", "cell": "%s", "t_start": %s, "t_end": %s, "n0": %s, "n1": %s}\n' "$2" "$1" "$MANIFEST" "$CRUX_STAMPS" >> "$1"
+}
 cell_add() { # cell_add <cell script> <prefix> cmd... — one engine line: out, err, rc files
   local cell="$1" prefix="$2"; shift 2
+  cell_stamp_open "$cell"
   { printf 'timeout %q ' "$TMO"; printf '%q ' "$@"
     printf '> %q 2> %q < /dev/null; echo $? > %q\n' "$prefix.out" "$prefix.err" "$prefix.rc"; } >> "$cell"
+  cell_stamp_close "$cell" "$prefix"
 }
 cell_add_ollama_unload() { # cell_add_ollama_unload <cell> <prefix> <model name>
   { printf '%q stop %q > /dev/null 2>&1; u=false\n' "$OLLAMA" "$3"
@@ -393,19 +403,27 @@ cell_add_ollama_unload() { # cell_add_ollama_unload <cell> <prefix> <model name>
     printf 'echo "$u" > %q\n' "$2.unloaded"; } >> "$1"
 }
 run_cell() { # run_cell <cell script>; sets CELL_WHY when the lock was not had
-  local rc
+  local rc treq lock=gpu
   CELL_WHY=""
+  # #4051: t_req now; t_acquired is written by the cell's own first instant under the lock (`acq`), so
+  # lock_wait_s = t_acquired - t_req is the queue + flock wait, measured, never inferred.
+  treq=$(date +%s.%N); rm -f "$1.acq"
+  local acq='date +%s.%N > "$0.acq"; exec bash "$0"'
   if [ "$BACKEND" != gpu ]; then
-    choom -n 1000 -- bash "$1"
-    return $?
-  fi
-  if [ "$GPUQ_OK" = 1 ]; then
-    GPUQ_LOCK="$GPU_LOCK" GPUQ_WAIT="$LOCK_WAIT" "$GPUQ" --prio "$GPU_PRIO" -- bash "$1" 2> "$1.lock.err"
+    choom -n 1000 -- bash -c "$acq" "$1"; rc=$?
+    lock=none
+  elif [ "$GPUQ_OK" = 1 ]; then
+    GPUQ_LOCK="$GPU_LOCK" GPUQ_WAIT="$LOCK_WAIT" "$GPUQ" --prio "$GPU_PRIO" -- bash -c "$acq" "$1" 2> "$1.lock.err"
     rc=$?
   else
-    flock -w "$LOCK_WAIT" -E 75 "$GPU_LOCK" choom -n 1000 -- bash "$1" 2> "$1.lock.err"
+    flock -w "$LOCK_WAIT" -E 75 "$GPU_LOCK" choom -n 1000 -- bash -c "$acq" "$1" 2> "$1.lock.err"
     rc=$?
   fi
+  python3 -c 'import json, sys
+a = open(sys.argv[3]).read().strip() if __import__("os").path.exists(sys.argv[3]) else ""
+print(json.dumps({"cell": sys.argv[1], "t_req": float(sys.argv[2]), "t_acquired": float(a) if a else None, "lock": sys.argv[4]}))' \
+    "$1" "$treq" "$1.acq" "$lock" >> "$CRUX_STAMPS" 2> /dev/null || :
+  [ "$lock" = none ] && return "$rc"
   if [ "$rc" -ne 0 ]; then
     CELL_WHY="the GPU lock was not had ($LOCK_VIA, rc $rc, bound ${LOCK_WAIT}s): $(tail -c 200 "$1.lock.err" 2>/dev/null | tr '\n' ' ')"
   fi
@@ -421,8 +439,10 @@ cell_result() { # cell_result <engine> <prompt id> <prefix> [stdout file] [mode]
 }
 cell_add_stdin() { # cell_add_stdin <cell> <prefix> <stdin file> cmd... — like cell_add, fed a file
   local cell="$1" prefix="$2" input="$3"; shift 3
+  cell_stamp_open "$cell"
   { printf 'timeout %q ' "$TMO"; printf '%q ' "$@"
     printf '> %q 2> %q < %q; echo $? > %q\n' "$prefix.out" "$prefix.err" "$input" "$prefix.rc"; } >> "$cell"
+  cell_stamp_close "$cell" "$prefix"
 }
 
 emit_gen() { # emit_gen <engine> <prompt_id> <rc> <stdout> <stderr> <refused> [ollama_unloaded] [mode]
@@ -817,8 +837,11 @@ if grep -q -- '--certification' scripts/lib/crux_inference_judge.py; then
 elif [ -n "$CERT" ]; then
   decline "--certification given, but this tree's judge does not take one"
 fi
+# #4051: every engine row that ran takes its line's stamp; the judge then requires one on each.
+python3 scripts/lib/crux_stamps.py attach --manifest "$MANIFEST" --stamps "$CRUX_STAMPS" \
+  || decline "the #4051 timing stamps could not be attached to $MANIFEST"
 python3 scripts/lib/crux_inference_judge.py collect --manifest "$MANIFEST" --prompts "$PROMPTS" "${CERT_ARGS[@]}" \
-  --meta "$WORK/meta.json" --out-json "$OUT_DIR/$HOST-$BACKEND.json" --out-md "$OUT_DIR/$HOST-$BACKEND.md"
+  --require-timing --meta "$WORK/meta.json" --out-json "$OUT_DIR/$HOST-$BACKEND.json" --out-md "$OUT_DIR/$HOST-$BACKEND.md"
 rc=$?
 printf 'receipt: %s/%s-%s.json (judge rc %s)\n' "$OUT_DIR" "$HOST" "$BACKEND" "$rc"
 exit "$rc"

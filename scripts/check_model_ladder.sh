@@ -558,7 +558,7 @@ if model_ladder_cells.judge(L, good, rungs_doc, print, rungs_main):
     rc = 1
 # #3957 F4/F8: every (model, format, quant, host, backend, verb) cell must be PROVEN by an outside
 # oracle -- the CRUX receipts bound to the cut -- or, for .apr, by the chain to its source.
-if model_ladder_crux.judge(L, good, crux_dir, cut, equiv, print, RV.proven, cert_p):
+if model_ladder_crux.judge(L, good, crux_dir, cut, equiv, print, RV.proven, cert_p, timing_required(version)):
     rc = 1
 # #3957 F1: a DEFERRED row is not green. DEFER is `Unknown(NotRun)` in the fleet vocabulary
 # (crates/aprender-contracts/src/ontology/verdict.rs FLEET_LABELS), the same element as
@@ -1085,6 +1085,7 @@ SM
     xmutant no-cert-relaxes   red-certification-missing 's/^        return None, True$/        return set(), False/'
     xmutant certified-unheld  red-certified-not-held    's/^        if s_ not in held:$/        if False:/'
     xmutant cert-read-as-receipt green-cert-beside-crux-receipts 's/                   if not os.path.basename(f).startswith("prompt-certification")) if crux_dir else \[\]/                   ) if crux_dir else []/'
+    xmutant crux-timing-unchecked red-crux-timing-unrequired 's/^        if timing_required and (R.get("timing") or {}).get("required") is not True:$/        if False:/'
     xmutant certified-as-none red-certified-missing-crux 's/^    need = certified is None or bool(held \& certified)$/    need = False; certified = set()/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
   fi

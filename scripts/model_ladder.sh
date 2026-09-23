@@ -945,7 +945,10 @@ def gate(n):
             # not a fallback: nothing was loaded and nothing was generated", x4 rows), a
             # scope correction, and a diagnostic instruction naming the prompt check that
             # two sessions then spent hours re-deriving.
-            "message": str(x.get("message",""))}
+            "message": str(x.get("message","")),
+            # #4051 / #4035: apr qa's own per-gate wall time, passed through (it is measured there, and the
+            # qa JSON dies with $WORK). None when this apr's report carries none.
+            "duration_ms": x.get("duration_ms")}
 # EVERY gate `apr qa` reported, not two by name (#3863 item 16). The receipt used to
 # record `capability_match` + `golden_output` only, so a row could carry the SYMPTOM
 # ("gibberish (fragment ...)") while the DIAGNOSIS computed in the same process --

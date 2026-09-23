@@ -1,7 +1,7 @@
 {
  "schema": "crux-inference-receipt/v1",
  "host": "gx10",
- "backend": "gpu",
+ "backend": "cpu",
  "apr": {
   "sha": "ca5eca5eca5eca5eca5eca5eca5eca5eca5eca5e"
  },
@@ -100,8 +100,8 @@
   "cells": 8
  },
  "timing": {
-  "required": true,
-  "stamped": 1,
+  "required": false,
+  "stamped": 0,
   "faults": []
  }
 }

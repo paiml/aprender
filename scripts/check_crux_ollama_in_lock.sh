@@ -228,6 +228,26 @@ fi
 run_row flock "$ROOT" "/nonexistent/gpu-q"
 expect_held flock "flock path"
 
+# Row 2b (#4051): the SAME real run's receipt. Every engine row that ran carries its stamp (the judge ran with
+# --require-timing), each under the lock (lock "gpu") with a measured wait. timing_row <name> -> "<required> <stamped> <faults> <gpu-locked stamps>"
+timing_row() {
+  python3 - "$TMP/$1.out" <<'PY' 2> /dev/null || echo "none 0 -1 0"
+import glob, json, sys
+fs = [f for f in glob.glob(sys.argv[1] + "/*.json") if not f.endswith("-greedy.json")]
+r = json.load(open(fs[0])) if len(fs) == 1 else {}
+t = r.get("timing") or {}
+gpu = sum(1 for c in r.get("cells", []) for e in (c.get("engines") or {}).values()
+          if isinstance(e.get("timing"), dict) and e["timing"].get("lock") == "gpu" and (e["timing"].get("lock_wait_s") or -1) >= 0)
+print(t.get("required"), t.get("stamped", 0), len(t.get("faults") or []) if "faults" in t else -1, gpu)
+PY
+}
+read -r treq tst tfa tgpu <<< "$(timing_row flock)"
+if [ "$treq" = True ] && [ "$tst" -gt 0 ] && [ "$tfa" = 0 ] && [ "$tgpu" -gt 0 ]; then
+  ok "#4051 timing: the real run stamped $tst engine row(s), 0 faults, $tgpu judged cell engine(s) carry a gpu-lock stamp"
+else
+  broke "#4051 timing: required=$treq stamped=$tst faults=$tfa gpu-stamped=$tgpu -- the real run's receipt does not account for its engine calls"
+fi
+
 # Row 3: MUTANT — run_cell runs the cell with no lock. The check must see it.
 MT="$TMP/mutant-tree"; mkdir -p "$MT/scripts"
 for f in "$ROOT"/scripts/* "$ROOT"/scripts/.[!.]*; do
@@ -239,10 +259,10 @@ for d in "$ROOT"/*; do [ "$(basename "$d")" = scripts ] || ln -s "$d" "$MT/$(bas
 python3 - "$DOGFOOD" "$MT/scripts/crux_inference_dogfood.sh" <<'PY'
 import sys
 s = open(sys.argv[1]).read()
-a = '    GPUQ_LOCK="$GPU_LOCK" GPUQ_WAIT="$LOCK_WAIT" "$GPUQ" --prio "$GPU_PRIO" -- bash "$1" 2> "$1.lock.err"'
-b = '    flock -w "$LOCK_WAIT" -E 75 "$GPU_LOCK" choom -n 1000 -- bash "$1" 2> "$1.lock.err"'
+a = '    GPUQ_LOCK="$GPU_LOCK" GPUQ_WAIT="$LOCK_WAIT" "$GPUQ" --prio "$GPU_PRIO" -- bash -c "$acq" "$1" 2> "$1.lock.err"'
+b = '    flock -w "$LOCK_WAIT" -E 75 "$GPU_LOCK" choom -n 1000 -- bash -c "$acq" "$1" 2> "$1.lock.err"'
 assert s.count(a) == 1 and s.count(b) == 1, "mutation anchors moved: update this check with the dogfood"
-s = s.replace(a, '    bash "$1" 2> "$1.lock.err"').replace(b, '    bash "$1" 2> "$1.lock.err"')
+s = s.replace(a, '    bash -c "$acq" "$1" 2> "$1.lock.err"').replace(b, '    bash -c "$acq" "$1" 2> "$1.lock.err"')
 open(sys.argv[2], "w").write(s)
 PY
 [ $? -eq 0 ] || { broke "mutant: could not plant (anchors moved)"; }
@@ -289,6 +309,33 @@ if [ "$kaload" -gt 0 ] && [ "$kamiss" -eq "$kaload" ]; then
   ok "MUTANT (keep_alive 0 stripped) is caught: $kamiss of $kaload ollama loads carried no keep_alive 0"
 else
   broke "keep_alive MUTANT not caught: ollama loads=$kaload without keep_alive=$kamiss"
+fi
+
+# Row 4b (#4051): MUTANT — the engine lines write no stamp. The judge (--require-timing) must then DECLINE by name.
+MS="$TMP/mutant-stamp-tree"; mkdir -p "$MS/scripts"
+for f in "$ROOT"/scripts/* "$ROOT"/scripts/.[!.]*; do
+  [ -e "$f" ] || continue
+  [ "$(basename "$f")" = crux_inference_dogfood.sh ] && continue
+  ln -s "$f" "$MS/scripts/$(basename "$f")"
+done
+for d in "$ROOT"/*; do [ "$(basename "$d")" = scripts ] || ln -s "$d" "$MS/$(basename "$d")"; done
+python3 - "$DOGFOOD" "$MS/scripts/crux_inference_dogfood.sh" <<'PY'
+import sys
+s = open(sys.argv[1]).read()
+a = 'cell_stamp_close() { # <cell> <prefix>\n'
+assert s.count(a) == 1, "stamp anchor moved: update this check with the dogfood"
+open(sys.argv[2], "w").write(s.replace(a, a + '  return 0\n'))
+PY
+[ $? -eq 0 ] || broke "stamp mutant: could not plant (anchor moved)"
+run_row mutantst "$MS" "/nonexistent/gpu-q"
+read -r mreq mst mfa mgpu <<< "$(timing_row mutantst)"
+# The stub engines answer wrong, so the run is RED before timing is read (RED outranks DECLINE); what the mutant
+# must change is that the receipt NAMES the unstamped calls, and that nothing passes.
+mver=$(python3 -c 'import glob,json,sys; r=json.load(open([f for f in glob.glob(sys.argv[1]+"/*.json") if not f.endswith("-greedy.json")][0])); f=r["timing"]["faults"]; print(r["summary"]["verdict"], "named" if f and all("no timing stamp" in x for x in f) else "unnamed")' "$TMP/mutantst.out" 2> /dev/null)
+if [ "$mfa" -gt 0 ] && [ "$tfa" = 0 ] && [ "${mver#PASS}" = "$mver" ] && [ "${mver#* }" = named ]; then
+  ok "#4051 MUTANT (no engine-line stamps) is caught: $mfa call(s) named 'no timing stamp' in the receipt (verdict ${mver% *}), vs 0 on the shipped run"
+else
+  broke "#4051 stamp MUTANT not caught: faults=$mfa (shipped $tfa), verdict/naming '$mver'"
 fi
 
 # Row 5: --only-prompts runs only the named prompts FROM the certified file (the file is never rewritten, since its sha

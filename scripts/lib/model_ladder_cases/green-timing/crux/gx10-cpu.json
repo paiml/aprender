@@ -98,5 +98,10 @@
  "summary": {
   "verdict": "PASS",
   "cells": 8
+ },
+ "timing": {
+  "required": true,
+  "stamped": 1,
+  "faults": []
  }
 }
