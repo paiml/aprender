@@ -24,4 +24,11 @@ export UV_PROJECT_ENVIRONMENT=${UV_PROJECT_ENVIRONMENT:-$HOME/.local/share/crux/
 # CRUX's OWN model cache (#3971), shared with the vllm engine and populated only by CRUX; engine.py hashes
 # every source file against its blob name before loading it. Never the shared ~/.cache/huggingface.
 export HF_HOME="${CRUX_HF_HOME:-"$HOME/.local/share/crux/hf-home"}"
-exec uv run --quiet --frozen --project "$HERE/crux_hf" python "$HERE/crux_hf/engine.py" "$@"
+# NOT `exec uv run`: uv did not forward SIGTERM to python, and a stopped driver left VLLM::EngineCore on the card
+# holding 58928 MiB (aprender-dd, gx10, 2026-09-23). Sync the locked environment, then exec its python, so a
+# signal reaches engine.py, whose handler (scripts/lib/crux_proc.py) takes every engine child with it.
+uv sync --quiet --frozen --project "$HERE/crux_hf" || {
+  echo "crux_engine_hf: uv sync --frozen failed for $HERE/crux_hf — the locked environment cannot be built here" >&2
+  exit 3
+}
+exec "$UV_PROJECT_ENVIRONMENT/bin/python" "$HERE/crux_hf/engine.py" "$@"

@@ -551,6 +551,9 @@ def greedy(a) -> None:
 
 # ── CLI ────────────────────────────────────────────────────────────────────
 def main(argv: list[str]) -> None:
+    import crux_proc  # scripts/lib is on sys.path (see the verify import above)
+
+    crux_proc.install()  # a stopped driver takes its engine children with it (#3952, measured on gx10)
     p = argparse.ArgumentParser(prog="crux_engine_hf.sh")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("probe")

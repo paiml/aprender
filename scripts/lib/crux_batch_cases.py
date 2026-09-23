@@ -245,3 +245,57 @@ def run_sse() -> int:
 
 
 SSE_CASE_COUNT = 8
+
+
+def run_proc() -> int:
+    """crux_proc: SIGTERM to a driver takes EVERY engine child with it (aprender-dd measured VLLM::EngineCore left on
+    gx10's card holding 58928 MiB). A child process installs the handler and spawns a plain child, a child in its
+    OWN session (as `vllm serve` is started), and a grandchild behind a shell; SIGTERM to it must kill all three."""
+    import signal
+    import subprocess
+    import sys
+    import time
+
+    lib = str(Path(__file__).resolve().parent)
+    prog = (
+        "import sys, subprocess, time; sys.path.insert(0, %r); import crux_proc\n"
+        "import os\n"
+        "if os.environ.get('CRUX_PROC_INSTALL', '1') == '1': crux_proc.install()\n"
+        "a = subprocess.Popen(['sleep', '300'])\n"
+        "b = subprocess.Popen(['sleep', '300'], start_new_session=True)\n"
+        "c = subprocess.Popen(['bash', '-c', 'sleep 300 & echo $!; wait'], stdout=subprocess.PIPE, text=True)\n"
+        "print(a.pid, b.pid, c.stdout.readline().strip(), flush=True)\n"
+        "time.sleep(120)\n" % lib)
+
+    def case(install):
+        env = dict(os.environ, CRUX_PROC_INSTALL="1" if install else "0")
+        parent = subprocess.Popen([sys.executable, "-c", prog], stdout=subprocess.PIPE, text=True, env=env)
+        kids = [int(x) for x in parent.stdout.readline().split()]
+        os.kill(parent.pid, signal.SIGTERM)
+        try:
+            rc = parent.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            parent.kill()
+            rc = None
+        time.sleep(0.3)
+        survivors = [k for k in kids if os.path.exists("/proc/%d" % k) and
+                     open("/proc/%d/stat" % k).read().rsplit(")", 1)[1].split()[0] != "Z"]
+        for k in survivors:  # never leave the planted sleeps behind
+            os.kill(k, signal.SIGKILL)
+        return rc, survivors
+
+    failed = 0
+    rc, survivors = case(install=True)
+    ok = rc == 143 and not survivors
+    print(f"{'ok  ' if ok else 'FAIL'} [proc] SIGTERM takes a plain child, a new-session child and a grandchild; exit 143"
+          + ("" if ok else f"\n     got: rc={rc} survivors={survivors}"))
+    failed += not ok
+    rc, survivors = case(install=False)
+    ok = len(survivors) == 3
+    print(f"{'ok  ' if ok else 'FAIL'} [proc] control: WITHOUT the handler all three survive (the leak is real)"
+          + ("" if ok else f"\n     got: rc={rc} survivors={survivors}"))
+    failed += not ok
+    return failed
+
+
+PROC_CASE_COUNT = 2

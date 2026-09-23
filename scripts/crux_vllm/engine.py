@@ -510,6 +510,9 @@ def gen_batch(a) -> None:
 
 # ── CLI ────────────────────────────────────────────────────────────────────
 def main(argv: list[str]) -> None:
+    import crux_proc  # scripts/lib is on sys.path (see the verify import above)
+
+    crux_proc.install()  # a stopped driver takes its engine children with it (#3952, measured on gx10)
     if argv and argv[0] in ("tok", "tmpl", "greedy"):
         die(f"`{argv[0]}` is `none` for vLLM: it tokenizes and renders through the transformers tokenizer the "
             "hf engine already reports")
