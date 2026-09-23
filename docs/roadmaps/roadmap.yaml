@@ -21376,6 +21376,15 @@ roadmap:
   assigned_to: null
   created: 2026-09-22T15:13:29Z
   updated: 2026-09-22T15:13:29Z
+- id: PMAT-4002
+  github_issue: 4002
+  item_type: task
+  title: EPIC 0.75 CRUX fine-tune/distill plan (#4002)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T11:00:47Z
+  updated: 2026-09-23T11:00:47Z
   spec: null
   acceptance_criteria: []
   phases: []
