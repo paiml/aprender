@@ -164,6 +164,16 @@ sys.exit(1)
 
 # JSON-encode stdin as a string, or `null` when empty. Hand-rolled quoting of a
 # model's own output is how a receipt becomes unparseable (#3847); python does it.
+# #3943: the evidence a failed serve probe needs, INLINE. `WORK` is a `mktemp -d`
+# under `trap _rm_work EXIT`, so a `why` that names a log PATH names a file that is
+# gone before anyone reads the receipt -- which is exactly how a cpu serve failure on
+# qwen35-27b-q4km went unexplained: the one artifact that said what happened was
+# deleted by the run that recorded it. Carry the last lines themselves.
+serve_log_tail() { # <file> [n] -> the last n non-empty lines, each cut to 200 chars, or nothing
+  [ -s "$1" ] || return 0
+  grep -v '^[[:space:]]*$' "$1" | tail -n "${2:-8}" | cut -c1-200
+}
+
 json_str_or_null() {
   python3 -c 'import json,sys; t=sys.stdin.read(); print(json.dumps(t) if t else "null")'
 }
@@ -462,8 +472,14 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
     done
     if ! curl -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
         td=$(ladder_serve_teardown "$pid" "$port")
-        printf '{"probed":false,"why":"apr serve did not answer /health within %ss (log: %s)","teardown":"%s","routes":{}}' \
-            "$waited" "$WORK/serve-$rid-$bname.log" "$td"
+        python3 -c '
+import json, sys
+tail = sys.argv[2]
+last = tail.splitlines()[-1] if tail else "the serve log was empty"
+print(json.dumps({"probed": False,
+                  "why": "apr serve did not answer /health within %ss; last log line: %s" % (sys.argv[1], last),
+                  "log_tail": tail or None, "teardown": sys.argv[3], "routes": {}}))
+' "$waited" "$(serve_log_tail "$WORK/serve-$rid-$bname.log")" "$td"
         return 1
     fi
 
@@ -692,8 +708,10 @@ PY
     # probed non-streaming and streaming, because the ollama-compat wire has its own
     # translation layer that has already diverged from the OpenAI-compat one twice
     # independently (#3825's tool_calls gap, and this defect).
-    serve_json=$(ladder_serve_probe "$path" "$(flag_for "serve run" "$flag")" "$rid" "$b")
+    serve_err="$WORK/serve-probe-$rid-$b.err"
+    serve_json=$(ladder_serve_probe "$path" "$(flag_for "serve run" "$flag")" "$rid" "$b" 2> "$serve_err")
     serve_rc=$?
+    [ -s "$serve_err" ] && cat "$serve_err" >&2
 
     [ $first = 1 ] || be_json="$be_json,"; first=0
     be_json="$be_json\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"escaped_special\":$esc,\"rc\":$run_rc"
@@ -712,7 +730,17 @@ PY
     # SUBSHELL, so the parent carries on with an empty string). Substitute a
     # well-formed refusal, at the point where we still know which backend it was.
     if [ -z "$serve_json" ] || ! python3 -c 'import json,sys; json.load(sys.stdin)' <<< "$serve_json" 2>/dev/null; then
-      serve_json='{"probed":false,"why":"the serve probe produced no parseable object for backend '"$b"' — it exited rather than returned","routes":{}}'
+      # #3943: the exit STATUS is the cheapest discriminator there is -- 137/143 is a
+      # signal, 2 is lock_timeout's exit, anything else is a path nobody expected -- and
+      # it was being overwritten with 1 before anything recorded it.
+      serve_json=$(python3 -c '
+import json, sys
+print(json.dumps({"probed": False,
+                  "why": "the serve probe produced no parseable object for backend %s -- it exited (status %s) rather than returned" % (sys.argv[1], sys.argv[2]),
+                  "probe_exit": int(sys.argv[2]),
+                  "probe_stderr_tail": sys.argv[3] or None,
+                  "log_tail": sys.argv[4] or None, "routes": {}}))
+' "$b" "$serve_rc" "$(serve_log_tail "$serve_err" 6)" "$(serve_log_tail "$WORK/serve-$rid-$b.log")")
       serve_rc=1
     fi
     be_json="$be_json,\"serve\":$serve_json}}"
