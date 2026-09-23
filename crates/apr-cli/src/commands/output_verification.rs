@@ -425,6 +425,32 @@ fn gibberish_replacement_density(output: &str, test_id: &str) -> Option<String> 
 /// 2. No garbage patterns (BEFORE checking answer)
 /// 3. No BPE artifacts
 /// 4. Contains expected answer
+
+/// Truncate so the reader can TELL (#3904).
+///
+/// This one cost a diagnosis. The golden gate's failure reason is the string a human
+/// reads — hours later, out of a qa receipt, on a machine that cannot re-run the model —
+/// and it was cut at 100 characters with nothing said. On #3914 the receipt read
+///
+///   got: '<s>[INST] What is the capital of France? [/INST]\n\n[S][INST] France is the
+///        capital of France.\n\n[S][IN'
+///
+/// and the `[S]` could not be explained from it, because the explanation was in the
+/// characters the gate had already produced and thrown away. Generation had to be
+/// reproduced locally to read a string this message once held.
+///
+/// NOTE FOR ANYONE CHECKING COVERAGE: `check_no_silent_truncation.sh` did NOT catch this
+/// and cannot. Its scan matches `[:N]` slice syntax, which is Python; Rust truncates with
+/// `.chars().take(N)`. That gap is its own enumeration, not a patch to this fix.
+fn loudly_truncated(s: &str, n: usize) -> String {
+    let kept: String = s.chars().take(n).collect();
+    let dropped = s.chars().count().saturating_sub(n);
+    if dropped == 0 {
+        kept
+    } else {
+        format!("{kept} ... and {dropped} more chars")
+    }
+}
 pub fn verify_output(
     output: &str,
     test_id: &str,
@@ -474,7 +500,7 @@ pub fn verify_output(
                 reason: format!(
                     "{test_id}: Expected one of {:?}, got: '{}'",
                     expected_patterns,
-                    output.chars().take(100).collect::<String>()
+                    loudly_truncated(output, 100)
                 ),
             };
         }
@@ -1160,5 +1186,66 @@ mod pmat3782_degenerate_is_not_an_answer {
             wrongly.len(),
             wrongly.join("")
         );
+    }
+}
+
+/// #3904: the golden gate's failure reason must say what it dropped.
+#[cfg(test)]
+mod loud_truncation_3904 {
+    use super::*;
+
+    #[test]
+    fn a_short_reason_is_untouched() {
+        assert_eq!(loudly_truncated("The capital of France is Paris.", 100), "The capital of France is Paris.");
+    }
+
+    /// Exactly at the bound is NOT truncated, so the marker never appears on a complete
+    /// string. An off-by-one here would make every full-length output look decapitated.
+    #[test]
+    fn exactly_the_bound_says_nothing() {
+        let s = "x".repeat(100);
+        assert_eq!(loudly_truncated(&s, 100), s);
+    }
+
+    /// THE ROW. A bare `.chars().take(100)` passes every assertion above and fails this
+    /// one: it produces a decapitated string indistinguishable from a complete short one.
+    #[test]
+    fn a_cut_reason_says_how_much_it_dropped() {
+        let s = "y".repeat(137);
+        let got = loudly_truncated(&s, 100);
+        assert!(got.starts_with(&"y".repeat(100)), "{got}");
+        assert!(
+            got.contains("and 37 more chars"),
+            "a reader cannot tell a cut string from a complete one: {got}"
+        );
+    }
+
+    /// Counted in CHARS, not bytes — the reason carries model output, which is not ASCII.
+    #[test]
+    fn the_count_is_chars_not_bytes() {
+        let s = "é".repeat(150);
+        let got = loudly_truncated(&s, 100);
+        assert!(got.contains("and 50 more chars"), "{got}");
+    }
+
+    /// End to end through the message the receipt actually carries.
+    #[test]
+    fn the_golden_failure_reason_is_loud() {
+        // Varied, non-degenerate text: a long run of one character trips the
+        // gibberish check first and never reaches the pattern branch, so a fixture
+        // built from `"z".repeat(300)` would exercise a different failure entirely.
+        let long: String = "<s>[INST] q [/INST] France is a country in western Europe \
+            whose largest city and seat of government has been the subject of this \
+            question for as long as anyone has been asking models about it at all."
+            .to_string();
+        assert!(long.chars().count() > 100, "fixture must exceed the bound");
+        let v = verify_output(&long, "t", &["Paris"]);
+        match v {
+            OutputVerification::Fail { reason } => assert!(
+                reason.contains("more chars"),
+                "the one string a human reads was cut silently: {reason}"
+            ),
+            other => panic!("expected Fail, got {other:?}"),
+        }
     }
 }
