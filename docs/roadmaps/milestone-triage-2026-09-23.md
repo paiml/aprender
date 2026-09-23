@@ -1,6 +1,14 @@
-# Milestone triage proposal: 0.70.0 and unmilestoned issues (2026-09-23)
+# Milestone triage: 0.70.0 and unmilestoned issues (2026-09-23, applied)
 
-**Proposal only. Nothing has been moved; the operator approves every move.** Row requested by aprender-cf (cop) under #3998.
+**APPLIED 2026-09-23** on the operator's approval ("yes apply both", relayed by aprender-cf): 201 issues moved to the milestone proposed below, each with a comment naming this file, #4024 and its reason. Row requested by aprender-cf (cop) under #3998.
+
+**NOT applied (left untouched, pending): 35 rows.** These are the 8 `DECIDE` rows (operator), 7 `close?`, 6 `verify-close`, 13 `0.69.1 (in flight)` and 1 `none (pinned)`. No issue was closed.
+
+**Open issues per milestone after the move** (`gh issue list --milestone`, 2026-09-23 ~16:10 CEST): 0.70.0 126 · 0.71.0 106 · 0.72.0 55 · 0.73.0 32 · 0.74.0 23 · 0.75.0 7.
+
+0.70.0 holds 126: the table's 109 (77 kept + 32 moved in), the 4 untouched `close?` rows, and 13 issues other sessions added after this table's snapshot (#3988's moves). The milestone API's `open_issues` (140) also counts pull requests.
+
+The move was checked against each issue's LIVE state first: an issue closed, or moved off its snapshot milestone since the table was made, would have been skipped (none were). 3 edits hit a transient GitHub GraphQL error and succeeded on retry.
 Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 and 136 open issues with no milestone.
 
 ## Themes

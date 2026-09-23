@@ -1,0 +1,21 @@
+- id: PMAT-3998
+  github_issue: 3998
+  item_type: task
+  title: 'EPIC 0.70.0: Fast Train -- row: milestone triage of 0.70.0 + unmilestoned issues (#4024)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-36
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: docs/roadmaps/milestone-triage-2026-09-23.md
+  acceptance_criteria:
+  - every open issue in 0.70.0, and every open issue with no milestone, has a proposed milestone and a one-line reason
+  - an issue named as must-carry by two theme epics is listed as an operator DECIDE, never placed by the author
+  - on operator approval, only the proposed moves are applied, each with a comment citing the table; DECIDE, close?, verify-close, in-flight and pinned rows stay untouched; nothing is closed
+  - the table records the post-move counts per milestone
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:triage
+  notes: null
