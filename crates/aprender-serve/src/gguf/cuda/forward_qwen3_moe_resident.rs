@@ -385,21 +385,24 @@ impl<'a> Qwen3MoeCudaModel<'a> {
         moe_layers: &[Qwen3MoeQuantizedLayer],
         shape: Qwen3MoeShape,
     ) -> Result<()> {
+        Self::check_supported_config(model, moe_layers, shape)?;
+        for (il, layer) in model.layers.iter().enumerate() {
+            if let Some(what) = Self::unsupported_layer_feature(layer) {
+                return Err(refuse(format!("layer {il}: {what} is not implemented")));
+            }
+        }
+        Ok(())
+    }
+
+    /// The model-wide half of [`Self::check_supported`]: layer count, MoE shape, norm, rope,
+    /// positions, head grouping, lm_head bias. Extracted (complexity ratchet, #4046); behaviour unchanged.
+    fn check_supported_config(
+        model: &OwnedQuantizedModel,
+        moe_layers: &[Qwen3MoeQuantizedLayer],
+        shape: Qwen3MoeShape,
+    ) -> Result<()> {
+        Self::check_moe_shape(model, moe_layers, shape)?;
         let c = &model.config;
-        if moe_layers.len() != model.layers.len() {
-            return Err(refuse(format!(
-                "{} MoE layer descriptors for {} decoder layers",
-                moe_layers.len(),
-                model.layers.len()
-            )));
-        }
-        if shape.num_experts == 0
-            || shape.num_experts_per_tok == 0
-            || shape.expert_dim == 0
-            || shape.num_experts_per_tok > shape.num_experts
-        {
-            return Err(refuse(format!("incomplete MoE shape {shape:?}")));
-        }
         if !c.constraints.uses_rmsnorm() {
             return Err(refuse("only RMSNorm is implemented".to_string()));
         }
@@ -425,25 +428,49 @@ impl<'a> Qwen3MoeCudaModel<'a> {
         if model.lm_head_bias.is_some() {
             return Err(refuse("an lm_head bias is not implemented".to_string()));
         }
-        for (il, layer) in model.layers.iter().enumerate() {
-            let missing = if layer.qkv_bias.is_some() || layer.attn_output_bias.is_some() {
-                Some("attention biases")
-            } else if layer.attn_norm_bias.is_some() {
-                Some("an attention-norm bias")
-            } else if layer.attn_q_norm_weight.is_none() || layer.attn_k_norm_weight.is_none() {
-                Some("the per-head Q/K RMSNorm Qwen3 requires (absent here)")
-            } else if layer.ffn_norm_weight.is_none() {
-                Some("the ffn_norm Qwen3-MoE requires (absent here)")
-            } else if !matches!(layer.qkv_weight, OwnedQKVWeights::Separate { .. }) {
-                Some("a fused QKV tensor")
-            } else {
-                None
-            };
-            if let Some(what) = missing {
-                return Err(refuse(format!("layer {il}: {what} is not implemented")));
-            }
+        Ok(())
+    }
+
+    /// The MoE layer count and shape. Extracted from [`Self::check_supported`] (complexity
+    /// ratchet, #4046); behaviour unchanged.
+    fn check_moe_shape(
+        model: &OwnedQuantizedModel,
+        moe_layers: &[Qwen3MoeQuantizedLayer],
+        shape: Qwen3MoeShape,
+    ) -> Result<()> {
+        if moe_layers.len() != model.layers.len() {
+            return Err(refuse(format!(
+                "{} MoE layer descriptors for {} decoder layers",
+                moe_layers.len(),
+                model.layers.len()
+            )));
+        }
+        if shape.num_experts == 0
+            || shape.num_experts_per_tok == 0
+            || shape.expert_dim == 0
+            || shape.num_experts_per_tok > shape.num_experts
+        {
+            return Err(refuse(format!("incomplete MoE shape {shape:?}")));
         }
         Ok(())
+    }
+
+    /// The first feature of one decoder layer this forward does not implement, if any.
+    /// Extracted from [`Self::check_supported`] (complexity ratchet, #4046); behaviour unchanged.
+    fn unsupported_layer_feature(layer: &crate::gguf::OwnedQuantizedLayer) -> Option<&'static str> {
+        if layer.qkv_bias.is_some() || layer.attn_output_bias.is_some() {
+            Some("attention biases")
+        } else if layer.attn_norm_bias.is_some() {
+            Some("an attention-norm bias")
+        } else if layer.attn_q_norm_weight.is_none() || layer.attn_k_norm_weight.is_none() {
+            Some("the per-head Q/K RMSNorm Qwen3 requires (absent here)")
+        } else if layer.ffn_norm_weight.is_none() {
+            Some("the ffn_norm Qwen3-MoE requires (absent here)")
+        } else if !matches!(layer.qkv_weight, OwnedQKVWeights::Separate { .. }) {
+            Some("a fused QKV tensor")
+        } else {
+            None
+        }
     }
 
     /// Refuse, with the arithmetic, a device that cannot hold the model.
