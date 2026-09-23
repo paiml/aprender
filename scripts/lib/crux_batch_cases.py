@@ -150,7 +150,34 @@ def run(engine, serve_interface: str) -> int:
                 and not docs["pn"]["reported"]["interface"].endswith("(stream)"))
         return True if good else (dict(LOADS), CALLS, {k: v["reported"]["interface"] for k, v in docs.items()})
 
-    for name, fn in [("serve run and serve stream share ONE server; only the stream item streams", serve_stream),
+    def prefilled(text, want_text, want_reasoning):
+        def case():
+            w = batch_env()
+
+            def loader(_a):
+                LOADS["inproc"] += 1
+                return (lambda convo, thinking, max_tokens: (text, 7, 2, True)), "inproc-fake", "cuda:0 fake"
+            engine.load_inproc = loader
+            engine.run_batch(model_args(), [item("t", thinking="on", w=w)])
+            doc = json.load(open(rows(w)[0]["stdout"]))
+            good = (doc["text"] == want_text and doc.get("reasoning", "") == want_reasoning
+                    and doc["reported"]["prompt_opens_think"] is True and doc["raw_text"].startswith("<think>"))
+            return True if good else doc
+        return case
+
+    def not_prefilled():
+        w = batch_env()
+        engine.load_inproc = fake_inproc()  # a 3-tuple respond: no prefill signal
+        engine.run_batch(model_args(), [item("n", w=w)])
+        doc = json.load(open(rows(w)[0]["stdout"]))
+        return True if (doc["reported"]["prompt_opens_think"] is False and doc["raw_text"] == doc["text"]) else doc
+
+    for name, fn in [("a prompt that OPENED the think block (#3990): the closed block splits into answer + reasoning",
+                      prefilled("add them</think>4", "4", "add them")),
+                     ("...and a block that never closes is NO answer, not the reasoning handed back as one",
+                      prefilled("still adding", "", "still adding")),
+                     ("without a prefill signal nothing is prepended", not_prefilled),
+                     ("serve run and serve stream share ONE server; only the stream item streams", serve_stream),
                      ("5 items, ONE engine load, rows in order, per-item max_tokens", one_load),
                      ("a failed load refuses EVERY item with the load's reason", load_fails),
                      ("one item failing does not take the others down", isolation),
@@ -171,7 +198,7 @@ def run(engine, serve_interface: str) -> int:
     return failed
 
 
-CASE_COUNT = 9
+CASE_COUNT = 12
 
 
 def run_sse() -> int:
