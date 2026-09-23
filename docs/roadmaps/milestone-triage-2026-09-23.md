@@ -31,16 +31,16 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 
 ## How each row was placed
 
-1. **Named must-carry.** An issue an epic names in its body goes to that epic's release. Named by more than one epic → `DECIDE a/b`, which is the operator's call.
+1. **Named must-carry.** An issue an epic names in its body as a must-carry row goes to that epic's release. A dependency mention, such as #3994 citing #3986 as work that 'matters here', does not count. Named by more than one epic → `DECIDE a/b`, which is the operator's call.
 2. **Theme.** Otherwise the issue goes to the release whose exit bar it blocks. Correctness of a certified cell → 0.71; the serve/agent surface and telemetry → 0.72; the performance path (including correctness bugs *in* batched/FP8 paths, which must be fixed before parity is claimed) → 0.73; dispatch/tensor/arch consolidation → 0.74; training → 0.75; release/CI/gates/lock/sweep infrastructure → 0.70.
 3. **Debt ratchet (#3997).** Debt goes to a slice by pillar: A coverage → 0.70 (the floor gates the 0.70 train); B/C pv + ontology → 0.71; D backlog/docs/packaging → 0.73. The slices are a proposal for equal portions; the operator rebalances.
 4. **Not a milestone.** `0.69.1 (in flight)`: worked in the current train, closes at the tag or carries to 0.70. `verify-close`: the release tree already implements it -- cited in code on origin/release/0.69.1-batch-2 @ c619dddd4 (not yet on main). `close?`: a superseded or stale epic/row. `none (pinned)`: a standing coordination thread.
 5. **Review.** A keyword pass placed the rows, and a title-level hand review overrode about 120 of them. That was NOT enough: the #4024 quorum (lane 2) found keyword misplacements, and a body-level re-review of 184 rows (the 182 with a template reason at the time of writing, plus the rows the quorum named) found 10 clearly wrong placements (see **Corrections**). Treat a template reason as the weakest evidence in this table.
 
-**Totals.**
+**Totals, as first proposed** (before the 3 reverts, the 9 corrections and the 4 duplicate closes; the post-state counts are at the top).
 
 - 0.70.0 today (178): close?: 4 · DECIDE 0.73.0/0.74.0: 2 · 0.70.0: 77 · 0.71.0: 44 · 0.72.0: 15 · 0.73.0: 16 · 0.74.0: 15 · 0.75.0: 5
-- no milestone today (136): 0.69.1 (in flight): 12 · verify-close: 6 · close?: 3 · DECIDE (recommend 0.70.0): 1 · DECIDE 0.70.0/0.71.0: 4 · DECIDE 0.70.0/0.71.0 (in flight): 1 · DECIDE 0.70.0/0.71.0/0.72.0: 1 · DECIDE 0.71.0/0.72.0: 2 · DECIDE 0.73.0/0.74.0: 1 · 0.70.0: 31 · 0.71.0: 46 · 0.72.0: 10 · 0.73.0: 11 · 0.74.0: 5 · 0.75.0: 1 · none (pinned): 1
+- no milestone today (136): 0.69.1 (in flight): 12 · verify-close: 6 · close?: 3 · DECIDE (proposed 0.71.0): 1 · DECIDE (recommend 0.70.0): 1 · DECIDE 0.70.0/0.71.0: 4 · DECIDE 0.70.0/0.71.0 (in flight): 1 · DECIDE 0.70.0/0.71.0/0.72.0: 1 · DECIDE 0.71.0/0.72.0: 2 · 0.70.0: 31 · 0.71.0: 46 · 0.72.0: 10 · 0.73.0: 11 · 0.74.0: 5 · 0.75.0: 1 · none (pinned): 1
 
 ## Decisions for the operator
 
@@ -204,7 +204,7 @@ These rows were first applied as the table proposed, and a body-level re-review 
 | #3871 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | Re-apply #3784's binary-identity fix as a design: the ladder receipt names the CHECKOUT HEAD, not the binary t |
 | #3872 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | the ladder's log truncates diagnostics mid-number ([:70]), producing a complete-looking WRONG value — plus one |
 | #3873 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | the golden-output gate reports a GPU failure while asserting a CPU pass it never measured — it turned a model  |
-| #3883 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | the golden gate's thinking-ON prompt is in NEITHER mode the model declares — Qwen3.5 inherits Qwen3's prefill  |
+| #3883 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) **[CLOSED as a duplicate of #3882, see Corrections]** | the golden gate's thinking-ON prompt is in NEITHER mode the model declares — Qwen3.5 inherits Qwen3's prefill  |
 | #3888 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 | apr-cli ships 9 INVALID contracts that nothing reads, and no gate looks at them — pv lint never leaves the roo |
 | #3890 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 | apr kernel-explain reports ProofLevel::Proven from a SUBSTRING — nothing runs kani, and fixing the shipped con |
 | #3923 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | AprV2ModelCuda is Q4K-only by construction and wrong for Q4K — no configuration does useful GPU work |
@@ -299,7 +299,7 @@ These rows were first applied as the table proposed, and a body-level re-review 
 | #3987 | DECIDE 0.70.0/0.71.0/0.72.0 | qwen3moe verbs: named must-carry in #3998, #3994 and #4000 -- operator picks one | qwen3moe CUDA reaches run+qa only: chat rc 8, serve 501/500, code rc 1 — serve loads no mapped model and would |
 | #3978 | DECIDE 0.71.0/0.72.0 | named must-carry in #3994 (0.71.0) and #4000 (0.72.0) -- operator picks one | apr code hardcodes 'apr serve --gpu' (no CPU lane, no --max-tokens/thinking flag) and picks a colliding port 1 |
 | #3979 | DECIDE 0.71.0/0.72.0 | named must-carry in #3994 (0.71.0) and #4000 (0.72.0) -- operator picks one | apr serve: APR-CPU fallback and safetensors routers have no GET / route index and SSE ends without finish_reas |
-| #4008 | DECIDE 0.73.0/0.74.0 | qwen35moe arch constraints: goes with #3977, whose release is #3999's open decision | arch constraints: qwen35moe (Qwen3.5-35B-A3B) has is_moe=false; replace #3992's substring MoE predicate with a |
+| #4008 | DECIDE (proposed 0.71.0) | goes with #3977 (qwen35moe), which is in 0.71.0 per the operator's "MOE goes in .71" on #3994 (2026-09-23 10:43Z); left untouched pending confirmation | arch constraints: qwen35moe (Qwen3.5-35B-A3B) has is_moe=false; replace #3992's substring MoE predicate with a |
 | #3493 | 0.70.0 | roadmap aggregate as the one writer: merge-conflict churn (#3998) | roadmap-aggregate: pmat roadmap aggregate is the one writer of roadmap.yaml; roadmap_fragments.py aggregate be |
 | #3646 | 0.70.0 | pr-review count gate red on main: review gate (#3998) | check_pr_review_counts.sh is RED on main (6 rows disagree) and check_pr_review_receipt.sh has no caller — both |
 | #3652 | 0.70.0 | release/CI/gate speed and reliability: Fast Train (#3998) | ci_resolve_dirty.sh: `dirty-files=0` reads as "nothing to do" when it means "the driver resolves it" |
@@ -347,7 +347,7 @@ These rows were first applied as the table proposed, and a body-level re-review 
 | #3856 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 | Capability facts as a contract: apr-model-capability-v1 + SHACL + exposure on verb/http/mcp (operator keystone |
 | #3860 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 | 477 YAMLs live in crate-local `contracts/` dirs that `pv lint` has never read — and a sample says some would f |
 | #3862 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 | `contracts/apr-cli-commands-v1.yaml`'s top-level command list is compared to nothing — the de-facto registry i |
-| #3870 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | `IQ4_NL` (ggml type 20) has no CPU dequantizer — two inventory models are majority-IQ4_NL and cannot generate  |
+| #3870 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) **[CLOSED as a duplicate of #3869, see Corrections]** | `IQ4_NL` (ggml type 20) has no CPU dequantizer — two inventory models are majority-IQ4_NL and cannot generate  |
 | #3876 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | ladder receipt: bytes describes the symlink, sha256 describes the model — one row, two objects |
 | #3878 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | ladder receipt: a dangling symlink records "sha256": "" — an identity claim of nothing |
 | #3882 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | golden gate: the thinking-ON leg sends a prompt in NEITHER mode the model declares — it deletes the think bloc |
@@ -375,7 +375,7 @@ These rows were first applied as the table proposed, and a body-level re-review 
 | #3975 | 0.71.0 | named must-carry in epic #3994 | GPU/CPU f32 APR forward diverges at layer-0 QKV (std 4.44 vs 0.30); gpu_cpu_trace_compare fails 91.9% L2 once  |
 | #3976 | 0.71.0 | named must-carry in epic #3994 | Q4_K GEMV kernels: FusedKVHwDp4aQ4KGemv generate_ptx returns "" but is launched (q4k_mwv_gemv.rs:602); Dp4aSIM |
 | #3992 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | 17 more files build the dense GGUF CUDA model with no qwen3moe route — audit each (derived from #3987's guard) |
-| #3995 | 0.71.0 | the wgpu build does not compile: the wgpu backend row (#3994) | apr-cli --features wgpu does not compile on the release branch; the wgpu serve router is unbuildable |
+| #3995 | 0.71.0 | the wgpu build does not compile: the wgpu backend row (#3994) **[CLOSED as a duplicate of #3779, see Corrections]** | apr-cli --features wgpu does not compile on the release branch; the wgpu serve router is unbuildable |
 | #4006 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) **[CORRECTED 0.71.0 → 0.72.0, see Corrections]** | apr run labels a mixed UD-IQ2_XXS model 'quant=Q5_K' — it prints the tied lm_head's qtype, not the body's |
 | #4019 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | apr thinking-ON closes </think> far less often than llama.cpp on the official template (0.8B Q4_K_M: 1/13 vs 5 |
 | #3734 | 0.72.0 | replace the grammar module with TokenConstraint: structured output for agents (#4000) | Replace or remove crates/aprender-serve/src/grammar once #3568's TokenConstraint lands — an unwired, char-leve |
@@ -399,7 +399,7 @@ These rows were first applied as the table proposed, and a body-level re-review 
 | #3853 | 0.73.0 | simd_bf16_matmul dead code: debt ratchet (#3997), slice 4 | `simd_bf16_matmul` is defined twice and called by nothing — a candidate for the unwired-capability gate (PMAT- |
 | #3861 | 0.73.0 | gpu_speedup ratio floor manufactured by a shared-host CPU leg: perf measurement (#3999) | gpu_speedup's floor is a RATIO, so a shared-host CPU leg in the denominator can manufacture or erase a pass |
 | #3906 | 0.73.0 | 347 duplicated type names: debt ratchet (#3997), slice 4 | 347 public type names are defined twice or more WITHIN one crate — two were found by hand tonight as real sile |
-| #3894 | 0.74.0 | quant/tensor/arch dispatch consolidation: Any Model core (#4001) | The GPU-supported quant list is hardcoded in prose in a user-facing refusal — a third source of truth, already |
+| #3894 | 0.74.0 | quant/tensor/arch dispatch consolidation: Any Model core (#4001) **[CLOSED as a duplicate of #3891, see Corrections]** | The GPU-supported quant list is hardcoded in prose in a user-facing refusal — a third source of truth, already |
 | #3896 | 0.74.0 | two f32_matmul with swapped args: consolidation (#4001) | Two f32_matmul functions with swapped argument orders and identical types — a wrong import is a silent transpo |
 | #3918 | 0.74.0 | the name-keyed format table: #3990 routes around it when a template exists; removing it is Any Model (#4001) | detect_format_from_name's ordered substring table has produced three defects — one a correct fix that never ex |
 | #3945 | 0.74.0 | qtype x op x backend obligations derived from dispatch: one quant dispatch (#4001) | Enumerated conformance table: derive (qtype × op × backend) proof obligations from the dispatch registry — the |
