@@ -12,10 +12,10 @@ Base: `origin/chore/0.69.1-merge-back` 6db770d2f (#4046). Kind: code. K̂=64 (ba
 
 ## Design
 1. **One domain definition.** Factor `expected_hosts(rung, all_hosts)` and `row_is_green(rung,row)` out of `resolve()`/`witness_rows()` unchanged. `resolve()` calls them, so ladder-green behaviour is byte-identical. D = { `<rung.id>@<host>` : rung.required, host ∈ expected_hosts }.
-2. **Extractor emits only what it finds.** For each witness row (sha matches; a row without sha or with a wrong hex is NOT a cell), emit `model:capabilityCell "<host>=<Pass|Fail|NotRun>"` on the rung node. Pass = the ladder-green predicate holds on that row. Fail = a witness exists and the predicate does not hold. NotRun = the row carries a fleet label (`verdict`/`label` key) that `Verdict::from_label` maps to `Unknown(NotRun)`. An unrecognised label is refused by name (it is never guessed and never counts as Pass). Pass on any witness for (rung,host) wins over Fail across receipt versions: the same "∃ witness row" quantifier ladder-green uses.
+2. **Extractor emits only what it finds, measured AT THE CURRENT RELEASE (grill round 1, 2/3 do-not-implement: fixed).** V* = the greatest `version` over all tracked receipts (semver; a version that does not parse is Unsupported, exit 3, never guessed). A cell `<rung>@<host>` is measured ONLY by a witness row (sha matches; a row with no sha or a wrong hex is not a cell) in the (V*, host) receipt. Older versions are never consulted for cells: the cross-version "∃ witness row" that ladder-green uses would let a 0.68.2 green row hide a 0.69.1 DEFER or a missing 0.69.1 row. The grill measured this on this tree (all 8 required rungs share a sha across 0.68.1/0.68.2/0.69.1). ladder-green itself is unchanged. Per cell, precedence is fixed: **NotRun label > Pass/Fail predicate.** A row whose `verdict` or `label` key maps through `Verdict::from_label` to `Unknown(NotRun)` is NotRun whatever its `green` says. A label that `from_label` does not know is refused by name (a finding, exit 1), never Pass. Otherwise Pass = the ladder-green predicate (`green ∧ capability_passed ∧ backends_ok`) and Fail = its negation. The extractor emits `model:capabilityCell "<host>=<Pass|Fail|NotRun>"` for the cells it finds.
 3. **Validator computes the difference.** In the shapes gate, `not_run = D \ {cells with Pass|Fail}`. Every id in `not_run` becomes `model:notRunCell "<host>"` on the rung's RequiredModel node before validation. Shape `capability-cells`: targetClass `model:RequiredModel`, `model:notRunCell maxCount 0` (inside §3.6's subset). An absent cell is NEVER folded into Fail (it is NotRun), and a Fail cell is admitted (this row admits Fail; ladder-green is what refuses it).
 4. **Arming rule.** `capability-cells` joins `armed_shapes` in `lint-baseline.json`, so a notRunCell is a violation of an armed shape: Fail, exit 1. Exit 2 stays decline-only. **|D| = 0 → a new `ShapesOutcome` decline** (`decline: capability-cells domain is empty`), exit 2, never Pass.
-5. **Plant.** `tests/fixtures/ont/capability-cells-plant.yaml`: one required rung, hosts [plant-host], no receipt. It is evaluated in memory every run through the same function. It must yield exactly `not_run == ["<rung>@plant-host"]`, else `pc_shapes["capability-cells"]="not-fired"` and the gate declines (PositiveControlFailed).
+5. **Plant, through the SHAPE and not only the helper (grill: a plant that checks only the Rust set difference would stay "fired" with the shape deleted).** `tests/fixtures/ont/capability-cells-plant.yaml` (one required rung, hosts [plant-host], no receipt) runs in memory every gate run through the SAME cells/domain functions. It must yield exactly `not_run == ["<rung>@plant-host"]`. The resulting `model:notRunCell` node is then inserted into the planted graph `validate_with_plant` builds, and it must draw a violation of the ARMED shape `capability-cells` on `model:notRunCell`. Both must hold for `pc_shapes["capability-cells"]="fired"`. Either failing gives "not-fired", and the gate declines with PositiveControlFailed (exit 2).
 6. **JSON.** `GateExtra::Shapes` gains `capability_cells: {domain: [sorted ids], not_run: [sorted ids]}` and `pc_shapes: {"capability-cells": "fired"|"not-fired"}`. The existing `pc_shape` stays.
 7. **Contract** `contracts/ont-capability-cells-v1.yaml`: the shape, equations (D, not_run), invariants in Σ glyphs, falsification_tests = the case table below. `pv validate` clean.
 
@@ -39,8 +39,18 @@ Base: `origin/chore/0.69.1-merge-back` 6db770d2f (#4046). Kind: code. K̂=64 (ba
 | row without sha256 | not a cell → not_run |
 | |D| = 0 | exit 2 + `decline:` line, never Pass |
 | unknown label spelling | refused by name, not Pass |
+| DEFER on the V* row + a green row for the same cell in an older version | not_run names it, exit 1 (round-1 hole) |
+| V* receipt missing a required rung's row, older version green | not_run names it, exit 1 |
+| a host with older receipts but no V* receipt | every required cell on it in not_run |
+| row with `green: true` AND `verdict: DEFER` | NotRun (label precedence) |
+| row with `verdict: PASS` and `label: MANUAL` | NotRun (any NotRun label wins) |
+| optional rung (`required: false`), no receipt | not in D, not in not_run |
+| plant shape deleted from contracts / capability-cells unarmed | pc_shapes not-fired → decline exit 2 (never Pass) |
+| receipt version that does not parse as semver | Unsupported exit 3 |
+| JSON: `capability_cells.domain`/`not_run` sorted, ids `<rung>@<host>`, `pc_shapes` object | asserted by the gate test |
 
 ## Residuals (named)
 - D takes ONT-4c1's host axis unchanged (the row's own residual).
-- "∃ witness row" spans receipt versions: an old green row with a matching sha keeps a cell Pass even if the latest receipt Fails. This is inherited from ladder-green's quantifier on purpose (one definition). Changing it is a separate row.
+- RETIRED by round 1: cells no longer span receipt versions (Design 2). ladder-green keeps its own cross-version quantifier; that is ONT-4c1's, and this row does not change it.
+- The host axis is derived from the tracked receipts: the spec row's own named residual ("one definition, one blind spot"). V* narrows it. A host with ANY tracked receipt stays in D, and its cells are NotRun unless the host has a V* receipt. A host that has never had a receipt is not in D. B ⊆ D in the probe guards the 14 named cells.
 - infra#950 merged (948ae923); row text diffed identical.
