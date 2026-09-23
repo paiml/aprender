@@ -27,6 +27,11 @@ import sys
 
 ALONE = 1000
 PACK = 2000
+# Modules that build up memory in ONE process even at 4 threads on yoga (a real RTX 4060): the
+# instrumented `gpu` shard was SIGTERMed at 25.9 GB (22 threads, run 35881004821) and at 26.5 GB
+# (4 threads, run 35885731831). They are chunked into processes of at most DEEP_CHUNK tests.
+DEEP = {"gpu"}
+DEEP_CHUNK = 200
 
 
 def main(argv):
@@ -60,7 +65,10 @@ def main(argv):
 
     shards, packing = [], []  # shards: (label, tests)
     for mod, tests in sorted(by_module.items(), key=lambda kv: (-len(kv[1]), kv[0])):
-        if len(tests) >= ALONE:
+        if mod in DEEP:
+            for c in range(0, len(tests), DEEP_CHUNK):
+                shards.append((f"{mod}.{c // DEEP_CHUNK:02d}", tests[c : c + DEEP_CHUNK]))
+        elif len(tests) >= ALONE:
             shards.append((mod, tests))
         elif packing and len(packing) + len(tests) > PACK:
             shards.append(("pack", packing))

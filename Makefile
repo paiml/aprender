@@ -648,23 +648,10 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 		{ echo "❌ coverage DID NOT MEASURE: could not list aprender-serve's lib tests. No coverage verdict."; exit 1; }
 	@python3 scripts/coverage_serve_shards.py target/coverage/serve-list.txt scripts/coverage-skips.txt \
 		target/coverage/serve-shards scripts/coverage-solo.txt
-	@# The gpu shard alone reached 25.9 GB on yoga at 22 threads (run 35881004821, a real RTX 4060),
-	@# so it runs at COV_GPU_SHARD_THREADS; the other shards keep libtest's default.
-	@for shard in target/coverage/serve-shards/shard-*.txt; do \
-		threads=""; case "$$shard" in *-gpu.txt) threads="--test-threads=$(COV_GPU_SHARD_THREADS)" ;; esac; \
-		echo "   $$shard ($$(wc -l < $$shard) tests) $$threads"; \
-		PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
-			$(COV_CARGO_ENV) cargo llvm-cov test --no-report -p aprender-serve --lib --ignore-run-fail \
-			-- --exact $$threads $$(cat $$shard) 2>&1 | tee -a target/coverage/test.log; \
-		rc=$${PIPESTATUS[0]}; \
-		if [ "$$rc" -ne 0 ]; then \
-			echo "❌ coverage DID NOT MEASURE: cargo llvm-cov exited $$rc on $$shard. No coverage verdict."; \
-			exit 1; \
-		fi; \
-	done
-	@# scripts/coverage-solo.txt: each runs in its OWN process and prints its test binary's peak RSS
+	@# scripts/coverage-solo.txt: run FIRST, each in its OWN process, and print its test binary's peak RSS
 	@# (RUSAGE_CHILDREN.ru_maxrss), so a later skip carries a measured per-test reason.
-	@for solo in target/coverage/serve-shards/solo-*.txt; do \
+	@: > target/coverage/failed-runs.txt; \
+	for solo in target/coverage/serve-shards/solo-*.txt; do \
 		[ -e "$$solo" ] || continue; \
 		t=$$(cat $$solo); \
 		PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
@@ -672,11 +659,28 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 			"$$t" cargo llvm-cov test --no-report -p aprender-serve --lib --ignore-run-fail -- --exact "$$t" \
 			2>&1 | tee -a target/coverage/test.log; \
 		rc=$${PIPESTATUS[0]}; \
-		if [ "$$rc" -ne 0 ]; then \
-			echo "❌ coverage DID NOT MEASURE: cargo llvm-cov exited $$rc on solo $$t. No coverage verdict."; \
-			exit 1; \
-		fi; \
+		[ "$$rc" -eq 0 ] || echo "solo $$t rc=$$rc" >> target/coverage/failed-runs.txt; \
 	done
+	@# The `gpu` module builds up memory in one process on yoga (25.9 GB at 22 threads, 26.5 GB at 4;
+	@# runs 35881004821, 35885731831), so the partitioner chunks it into <= 200-test processes, which
+	@# also run at COV_GPU_SHARD_THREADS. EVERY shard runs even if one fails, so a dispatch yields the
+	@# whole picture; any failure then means no verdict, naming each failed shard.
+	@for shard in target/coverage/serve-shards/shard-*.txt; do \
+		threads=""; case "$$shard" in *-gpu.*.txt) threads="--test-threads=$(COV_GPU_SHARD_THREADS)" ;; esac; \
+		echo "   $$shard ($$(wc -l < $$shard) tests) $$threads"; \
+		PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
+			$(COV_CARGO_ENV) cargo llvm-cov test --no-report -p aprender-serve --lib --ignore-run-fail \
+			-- --exact $$threads $$(cat $$shard) 2>&1 | tee -a target/coverage/test.log; \
+		rc=$${PIPESTATUS[0]}; \
+		echo "   coverage-shard-rc $$rc $$shard"; \
+		[ "$$rc" -eq 0 ] || echo "shard $$shard rc=$$rc" >> target/coverage/failed-runs.txt; \
+	done
+	@if [ -s target/coverage/failed-runs.txt ]; then \
+		echo "❌ coverage DID NOT MEASURE: these aprender-serve runs failed (every one was still run):"; \
+		sed 's/^/     /' target/coverage/failed-runs.txt; \
+		echo "   No coverage verdict."; \
+		exit 1; \
+	fi
 	@echo "📊 Merging every run's profiles into one report..."
 	@$(COV_CARGO_ENV) cargo llvm-cov report --lcov --output-path target/coverage/lcov.info \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" 2>&1 | tee -a target/coverage/test.log; \
