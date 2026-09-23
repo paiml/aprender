@@ -218,3 +218,53 @@ fn build_final_json_matches_legacy_json_shape() {
     assert_eq!(v["cached"], true);
     assert_eq!(v["inference_time_ms"], 1000.0);
 }
+
+/// PMAT-3598 done_when 1, asserted on the DOCUMENT `apr run --json` prints (#3606 re-review):
+/// "apr run --json emits load_ms, h2d_ms, prefill_ms, decode_ms, tokens_out." Both `--json` paths
+/// (plain and the `--stream` final blob) are built by `build_final_json`, so this is that output.
+/// Every key must be PRESENT; a stage that was not measured is `null`, never `0`.
+#[cfg(feature = "inference")]
+#[test]
+fn run_json_emits_the_five_stage_keys_and_null_when_not_measured() {
+    use realizar::infer::stage_timings::StageTimings;
+    const KEYS: [&str; 5] = ["load_ms", "h2d_ms", "prefill_ms", "decode_ms", "tokens_out"];
+
+    let measured = RunResult {
+        stages: StageTimings {
+            load_ms: Some(120.5),
+            h2d_ms: Some(40.25),
+            prefill_ms: Some(10.0),
+            decode_ms: Some(300.0),
+            tokens_out: 7,
+            ..StageTimings::default()
+        },
+        ..RunResult::default()
+    };
+    let v = build_final_json(&measured, "m.gguf", 16);
+    for k in KEYS {
+        assert!(v.get(k).is_some(), "--json is missing `{k}`: {v}");
+    }
+    assert_eq!(v["load_ms"], 120.5);
+    assert_eq!(v["h2d_ms"], 40.25);
+    assert_eq!(v["prefill_ms"], 10.0);
+    assert_eq!(v["decode_ms"], 300.0);
+    assert_eq!(v["tokens_out"], 7);
+
+    // A CPU-shaped run: load measured, nothing transferred, prefill/decode not split.
+    let absent = RunResult {
+        stages: StageTimings {
+            load_ms: Some(5.0),
+            ..StageTimings::default()
+        },
+        ..RunResult::default()
+    };
+    let v = build_final_json(&absent, "m.gguf", 16);
+    for k in ["h2d_ms", "prefill_ms", "decode_ms"] {
+        assert!(
+            v.get(k).is_some_and(serde_json::Value::is_null),
+            "`{k}` was not measured: it must be present and null, never 0 or missing: {v}"
+        );
+    }
+    assert_eq!(v["load_ms"], 5.0);
+    assert_eq!(v["tokens_out"], 0, "tokens_out is a count, present even when zero");
+}

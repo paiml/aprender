@@ -176,3 +176,71 @@ fn an_unclosed_report_has_no_wall_clock_and_no_residual() {
         "no stages measured ⇒ all of it unattributed"
     );
 }
+
+/// #3606 re-review: a single-token prompt runs NO prefill phase, so the engine reports
+/// `prefill_ms: None`. The first cut derived decode only when prefill was `Some`, and every
+/// millisecond of decode — the planted one included — fell into `unattributed_ms`.
+///
+/// The plant is read through the shipped parser; the arithmetic is the one the CUDA call site runs.
+/// `total_ms` includes the decode sleep because the call site sleeps inside the timed span.
+#[test]
+fn a_decode_plant_on_a_single_token_prompt_moves_decode_and_only_decode() {
+    let (plant_prefill, plant_decode) = with_delay(Some("decode:50"), || {
+        (planted_delay("prefill"), planted_delay("decode"))
+    });
+    assert_eq!(
+        plant_prefill, None,
+        "a decode plant must not also plant prefill"
+    );
+    let plant_ms = plant_decode.expect("decode:50 parses").as_secs_f64() * 1000.0;
+
+    let engine_ms = 30.0;
+    let base = split_generate_ms(engine_ms, None, 0.0);
+    let planted = split_generate_ms(engine_ms + plant_ms, None, 0.0);
+    assert_eq!(
+        base,
+        (None, Some(30.0)),
+        "decode is derived with no prefill phase"
+    );
+    assert_eq!(
+        planted.0, None,
+        "prefill was not measured and must not move"
+    );
+    assert_eq!(
+        planted.1,
+        Some(80.0),
+        "the whole plant lands in decode_ms and nowhere else"
+    );
+
+    // The books still close with nothing hidden in the residual.
+    let mut t = StageTimings {
+        prefill_ms: planted.0,
+        decode_ms: planted.1,
+        ..StageTimings::default()
+    };
+    t.close(engine_ms + plant_ms);
+    assert_eq!(t.unattributed_ms, Some(0.0));
+}
+
+/// The other plant on the same no-prefill path: it moves prefill, and decode does not change.
+#[test]
+fn a_prefill_plant_with_no_prefill_phase_moves_prefill_and_only_prefill() {
+    let base = split_generate_ms(30.0, None, 0.0);
+    let planted = split_generate_ms(30.0 + 50.0, None, 50.0);
+    assert_eq!(planted, (Some(50.0), Some(30.0)));
+    assert_eq!(planted.1, base.1, "decode must not move");
+}
+
+/// The arm that already worked must keep working: engine prefill + plant, decode the remainder.
+#[test]
+fn with_a_prefill_phase_the_split_is_unchanged() {
+    assert_eq!(
+        split_generate_ms(100.0, Some(20.0), 0.0),
+        (Some(20.0), Some(80.0))
+    );
+    assert_eq!(
+        split_generate_ms(150.0, Some(20.0), 50.0),
+        (Some(70.0), Some(80.0)),
+        "a prefill plant moves prefill; decode is unchanged"
+    );
+}

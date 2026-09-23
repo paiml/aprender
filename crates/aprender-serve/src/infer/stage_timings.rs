@@ -145,6 +145,32 @@ pub fn planted_delay(stage: &str) -> Option<std::time::Duration> {
     Some(std::time::Duration::from_millis(ms.trim().parse().ok()?))
 }
 
+/// Split one GPU generate call's wall time into `(prefill_ms, decode_ms)`.
+///
+/// `total_ms` spans the whole call INCLUDING both planted sleeps; `engine_prefill_ms` is what the
+/// engine measured inside it, `None` when no prefill PHASE ran (a single-token prompt, a prefix-cache
+/// hit); `planted_prefill_ms` is the prefill plant slept outside the engine, which the engine cannot
+/// see. Decode is the remainder.
+///
+/// **Decode is derived on BOTH arms** (#3606 re-review). The first cut derived it only when the engine
+/// reported a prefill, so a single-token prompt dropped ALL of its decode time — and any `decode`
+/// plant — into `unattributed_ms`: a planted delay that moved no field at all.
+#[must_use]
+pub fn split_generate_ms(
+    total_ms: f64,
+    engine_prefill_ms: Option<f64>,
+    planted_prefill_ms: f64,
+) -> (Option<f64>, Option<f64>) {
+    // No prefill phase and no prefill plant ⇒ prefill stays NOT MEASURED, never `Some(0.0)`.
+    let prefill = match engine_prefill_ms {
+        Some(p) => Some(p + planted_prefill_ms),
+        None if planted_prefill_ms > 0.0 => Some(planted_prefill_ms),
+        None => None,
+    };
+    let decode = (total_ms - prefill.unwrap_or(0.0)).max(0.0);
+    (prefill, Some(decode))
+}
+
 /// Time `f`, adding any delay planted for `stage`, and return `(value, elapsed_ms)`.
 pub fn timed<T>(stage: &str, f: impl FnOnce() -> T) -> (T, f64) {
     let start = Instant::now();

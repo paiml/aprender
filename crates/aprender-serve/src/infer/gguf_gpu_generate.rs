@@ -354,18 +354,18 @@ fn try_gguf_gpu_generate(
     // The engine already measured prefill for the SERVE path (`take_phase_timings`, §3) and nothing
     // ever carried it to the CLI. Decode is the remainder of the generate call, exactly as
     // `cuda_chat_backend::phase_split` derives it — one derivation, not two.
-    let mut phases = cuda_model.take_phase_timings();
-    if let Some(prefill_ms) = phases.prefill_ms {
-        let total_ms = generate_start.elapsed().as_secs_f64() * 1000.0;
-        // The prefill plant is added to prefill explicitly; the decode plant needs nothing,
-        // because decode is the remainder and the sleep is already inside `total_ms`.
-        let prefill_with_plant =
-            prefill_ms + planted_prefill.map_or(0.0, |d| d.as_secs_f64() * 1000.0);
-        phases.decode_ms = Some((total_ms - prefill_with_plant).max(0.0));
-        phases.prefill_ms = Some(prefill_with_plant);
-    }
-    stages.prefill_ms = phases.prefill_ms;
-    stages.decode_ms = phases.decode_ms;
+    let phases = cuda_model.take_phase_timings();
+    let total_ms = generate_start.elapsed().as_secs_f64() * 1000.0;
+    // The prefill plant is added to prefill explicitly; the decode plant needs nothing, because
+    // decode is the remainder and the sleep is already inside `total_ms`. Decode is derived even
+    // when the engine ran no prefill phase — see `split_generate_ms`.
+    let (prefill_ms, decode_ms) = crate::infer::stage_timings::split_generate_ms(
+        total_ms,
+        phases.prefill_ms,
+        planted_prefill.map_or(0.0, |d| d.as_secs_f64() * 1000.0),
+    );
+    stages.prefill_ms = prefill_ms;
+    stages.decode_ms = decode_ms;
     stages.backend = "cuda".to_string();
     Ok(result)
 }
