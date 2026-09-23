@@ -72,6 +72,12 @@ ladder:
   # the release commit X = 4f81bdea7 + #4022, a scoped hotfix. A receipt measured at `receipts_at`
   # binds X ONLY when every path of the diff matches `paths` AND Cargo.lock changes no dependency
   # (scripts/lib/ladder_equiv.py). The gate prints the diff it accepted; anything outside is STALE BY SHA.
+  # #4051 (#4033 lever 0): from this version on, every measured row carries a stamp per apr call
+  # (t_start / t_acquired / t_end, UTC s; lock_wait_s; lock gpu|none) for qa, code, and run/chat/serve on
+  # each backend. check_model_ladder.sh refuses a row missing one, or with t_end < t_start, by name.
+  timing:
+    required_from: 0.70.0
+    ticket: '#4051'
   hotfix_scope:
     receipts_at: 4f81bdea7bdc17da7a4b22823ef000671b78a435
     paths: ["crates/aprender-mcp/**", "crates/apr-cli/Cargo.toml", "Cargo.lock", "docs/**",

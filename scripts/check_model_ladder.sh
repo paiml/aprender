@@ -115,6 +115,39 @@ def is_q4k(r):  # a Q4_K model, by its file or its id (#3712)
 def _disp(msg):
     return str(msg or "")
 
+def _semver(v):
+    import re as _re
+    m = _re.match(r"(\d+)\.(\d+)\.(\d+)", str(v or ""))
+    return tuple(int(g) for g in m.groups()) if m else None
+
+def timing_required(v):  # #4051: the contract's `timing_required_from` (0.70.0) on -- per-call stamps
+    frm = _semver((L.get("timing") or {}).get("required_from"))
+    cur = _semver(v)
+    return frm is not None and (cur is None or cur >= frm)
+
+def timing_gaps(x):  # -> every reason the row's #4051 stamps do not account for its apr calls
+    st = x.get("timing")
+    if not isinstance(st, list):
+        return ["the row records no `timing` -- no apr call it reports was stamped"]
+    out = []
+    need = [("qa", None), ("code", None)] + [(v, b) for b in sorted(x.get("backends") or {}) for v in ("run", "chat", "serve")]
+    for verb, be in need:
+        got = [s for s in st if isinstance(s, dict) and s.get("verb") == verb and (s.get("backend") or None) == be]
+        if not got:
+            out.append("no stamp for `%s`%s" % (verb, " on %s" % be if be else ""))
+    for s in st:
+        if not isinstance(s, dict):
+            out.append("a stamp is not an object: %r" % (s,)); continue
+        t0, t1, lw, lk = s.get("t_start"), s.get("t_end"), s.get("lock_wait_s"), s.get("lock")
+        tag = "%s%s" % (s.get("verb"), " on %s" % s.get("backend") if s.get("backend") else "")
+        if not all(isinstance(t, (int, float)) for t in (t0, t1)):
+            out.append("`%s` stamp lacks t_start/t_end: %r" % (tag, [t0, t1]))
+        elif t1 < t0:
+            out.append("`%s` stamp has t_end < t_start (%.3f < %.3f)" % (tag, t1, t0))
+        if lk not in ("gpu", "none") or not isinstance(lw, (int, float)) or lw < 0 or (lk == "none" and lw != 0):
+            out.append("`%s` stamp has no valid lock wait (lock %r, lock_wait_s %r)" % (tag, lk, lw))
+    return out
+
 def why_of(x, backends):  # every reason a measured row is not green on the claimed backends
     why = []
     cm, go = x.get("capability_match") or {}, x.get("golden_output") or {}
@@ -410,6 +443,15 @@ for h in hosts:
             # every real per-row refusal behind it, which is the same suppression the
             # check exists to expose.
             print(f"FAIL  {h['id']:7} receipt says red={declared_red} but carries {rows_red} non-green row(s) — a red that is counted and not recorded is a red nobody can read (#3842)"); rc = 1
+    # #4051: from 0.70.0 every measured row carries a stamp for every apr call it records -- qa, code, and
+    # run/chat/serve on each backend -- with t_end >= t_start and an explicit lock wait (0 only for a lane
+    # that takes no lock). Every #4033 lever is judged against these, so a missing one is RED, never zero.
+    if timing_required(version):
+        for x in R.get("rungs", []):
+            if not x.get("present") or x.get("row_synthesized"):
+                continue
+            for why in timing_gaps(x):
+                print(f"FAIL  {h['id']:7} {x.get('id') or x.get('file')}: TIMING {why} (#4051)"); rc = 1
     good[h["id"]] = R
     held_sha[h["id"]] = {i.get("file"): i.get("sha256") for i in inv if isinstance(i, dict)}
     by = {r.get("id"): r for r in R.get("rungs", [])}
@@ -676,6 +718,13 @@ if [ "$SELF_TEST" = 1 ]; then
     mutant sha-stale          red-receipt-sha-stale       's/    if asha != cut and asha not in equiv:/    if False:/'
     mutant sha-missing        red-receipt-sha-missing     's/    if not (isinstance(asha, str) and re.fullmatch(r"\[0-9a-f\]{40}", asha)):/    if False:/'
     mutant sha-equiv-ignored  green-receipt-sha-equivalent 's/    if asha != cut and asha not in equiv:/    if asha != cut:/'
+    # #4051: the timing rule, each clause deleted; the case that names the clause must go RED.
+    mutant timing-rule-off     red-timing-missing          's/^    if timing_required(version):$/    if False:/'
+    mutant timing-verb-unread  red-timing-verb-unstamped   's/^            out.append("no stamp for /            pass  # out.append("no stamp for /'
+    mutant timing-order-unread red-timing-end-before-start 's/^        elif t1 < t0:$/        elif False:/'
+    if python3 -c 'import sys, yaml; t = (yaml.safe_load(open(sys.argv[1]))["ladder"].get("timing") or {}); sys.exit(0 if str(t.get("required_from") or "") == "0.70.0" else 1)' "$LADDER"; then
+      echo "ok    timing: the shipped contract requires per-call stamps from 0.70.0 (#4051)"
+    else echo "FAIL  timing: $LADDER does not set ladder.timing.required_from 0.70.0 -- the #4051 rule is off for real receipts"; bad=$((bad+1)); fi
     mutant sha-drift-key      red-ladder-apr-sha-drift-key 's/^if "apr_sha_drift" in (L.get("inventory") or {}) or "apr_sha_drift" in L:/if False:/'
     mutant verb-output-bad    red-chat-output-bad-rc0     's/if r is not None and r.get("output_bad"):/if False:/'
     mutant verb-output-bad-code red-code-output-bad-rc0   's/if r is not None and r.get("output_bad"):/if False:/'
@@ -708,8 +757,82 @@ if [ "$SELF_TEST" = 1 ]; then
       else printf 'ok    producer mutant %-14s killed by the lock checks\n' "$1"; fi
     }
     pmutant raw-apr-call 's/apr_locked qa "\$path"/"$APR" qa "$path"/'
-    pmutant no-lock      's/^apr_locked() { flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" choom/apr_locked() { choom/'
-    pmutant no-choom     's/ choom -n 1000 -- "\$APR" "\$@"/ "$APR" "$@"/'
+    pmutant no-lock      's/^  flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" sh -c/  sh -c/'
+    pmutant no-choom     's/exec choom -n 1000 -- "\$@"/exec "$@"/'
+    # #4051: the stamp an apr call writes. stamp_probe holds the lock ~2 s, then makes one call through
+    # --lock-probe; the stamp must exist, be ordered, and show the wait. Each mutant names its row.
+    stamp_probe() { # stamp_probe <producer> <work dir> -> ok/FAIL lines naming the row
+      local prod=$1 w=$2 hp rc
+      mkdir -p "$w"; : > "$w/lock"; : > "$w/stamps.jsonl"
+      printf '#!/usr/bin/env bash\necho fake-apr\n' > "$w/apr"; chmod +x "$w/apr"
+      python3 -c 'import fcntl, sys, time; f = open(sys.argv[1], "a"); fcntl.flock(f, fcntl.LOCK_EX); time.sleep(2)' "$w/lock" &
+      hp=$!; sleep 0.3
+      LADDER_STAMPS="$w/stamps.jsonl" MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_GPU_LOCK="$w/lock" MODEL_LADDER_LOCK_WAIT=30 \
+        DOGFOOD_ALLOW_UNPINNED=1 APR="$w/apr" timeout 60 bash "$prod" --lock-probe run probe > /dev/null 2>&1; rc=$?
+      wait "$hp" 2> /dev/null
+      python3 - "$w/stamps.jsonl" "$rc" <<'STP'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+x = rows[0] if len(rows) == 1 else {}
+t0, ta, t1, lw = x.get("t_start"), x.get("t_acquired"), x.get("t_end"), x.get("lock_wait_s")
+checks = [
+    ("stamp-written", len(rows) == 1 and sys.argv[2] == "0", "one stamp line for one apr call (got %d, rc %s)" % (len(rows), sys.argv[2])),
+    ("stamp-ordered", all(isinstance(v, float) for v in (t0, ta, t1)) and t0 <= ta <= t1, "t_start <= t_acquired <= t_end: %r" % [t0, ta, t1]),
+    ("stamp-lock-wait", isinstance(lw, float) and lw >= 1.2 and x.get("lock") == "gpu", "a ~1.7 s held lock shows in lock_wait_s: %r (lock %r)" % (lw, x.get("lock"))),
+    ("stamp-verb", x.get("verb") == "run", "the verb is recorded: %r" % x.get("verb")),
+]
+bad = 0
+for name, ok, what in checks:
+    print(("ok    stamp " if ok else "FAIL  stamp ") + name + " -- " + what)
+    bad |= not ok
+sys.exit(bad)
+STP
+    }
+    if stamp_probe "$prod" "$mdir/stamp"; then :; else bad=$((bad+1)); fi
+    # the join: a row takes exactly its own cell's stamps (by rid), and a failed join leaves `timing` ABSENT
+    join_probe() { # join_probe <producer> <work dir>
+      local prod=$1 w=$2 out
+      mkdir -p "$w"
+      printf '%s\n' '{"rid": "r1", "verb": "qa", "t_start": 1.0, "t_end": 2.0}' '{"rid": "r2", "verb": "qa", "t_start": 3.0, "t_end": 4.0}' \
+        '{"rid": "r1", "verb": "code", "t_start": 5.0, "t_end": 6.0}' > "$w/stamps.jsonl"
+      out=$(MODEL_LADDER_ROOT="$PWD" DOGFOOD_ALLOW_UNPINNED=1 APR=/bin/true bash "$prod" --timing-join '{"id": "a"}' "$w/stamps.jsonl" r1 2> /dev/null)
+      python3 - "$out" <<'JP'
+import json, sys
+try: r = json.loads(sys.argv[1])
+except ValueError: r = {}
+t = r.get("timing")
+ok = isinstance(t, list) and [x.get("verb") for x in t] == ["qa", "code"] and all("rid" not in x for x in t)
+print(("ok    stamp " if ok else "FAIL  stamp ") + "stamp-joined -- the row takes its own cell's 2 stamps, not the other cell's: %r" % (t,))
+sys.exit(0 if ok else 1)
+JP
+      out=$(MODEL_LADDER_ROOT="$PWD" DOGFOOD_ALLOW_UNPINNED=1 APR=/bin/true bash "$prod" --timing-join '{"id": "a"}' "$w/absent.jsonl" r1 2> /dev/null)
+      if python3 -c 'import json, sys; sys.exit(0 if "timing" not in json.loads(sys.argv[1]) else 1)' "$out" 2> /dev/null; then
+        echo "ok    stamp stamp-join-fails-absent -- an unreadable stamp file leaves timing ABSENT (the judge refuses it)"
+      else echo "FAIL  stamp stamp-join-fails-absent -- got: $out"; return 1; fi
+    }
+    if join_probe "$prod" "$mdir/join"; then :; else bad=$((bad+1)); fi
+    jmutant() { # jmutant <label> <row> <sed on a copy of the producer>
+      local m="$mdir/j-$1.sh" out
+      sed "$3" "$prod" > "$m"
+      if cmp -s "$prod" "$m"; then echo "FAIL  join mutant $1 did not apply"; bad=$((bad+1)); return; fi
+      out=$(join_probe "$m" "$mdir/join-$1")
+      if printf '%s\n' "$out" | grep -q "^FAIL  stamp $2 "; then printf 'ok    join mutant %-16s killed by %s\n' "$1" "$2"
+      else echo "FAIL  join mutant $1 SURVIVED row $2"; bad=$((bad+1)); fi
+    }
+    jmutant any-rid       stamp-joined           's/^    if x.get("rid") == rid:$/    if True:/'
+    jmutant absent-empty  stamp-join-fails-absent 's/^  python3 - "\$1" "\$2" "\$3" <<.PY. 2> \/dev\/null || printf .%s. "\$1"$/  python3 - "$1" "$2" "$3" <<'"'"'PY'"'"' 2> \/dev\/null || python3 -c "import json,sys; r=json.loads(sys.argv[1]); r[\"timing\"]=[]; print(json.dumps(r))" "$1"/'
+
+    smutant_p() { # smutant_p <label> <row that must go RED> <sed on a copy of the producer>
+      local m="$mdir/st-$1.sh" out
+      sed "$3" "$prod" > "$m"
+      if cmp -s "$prod" "$m"; then echo "FAIL  stamp mutant $1 did not apply"; bad=$((bad+1)); return; fi
+      out=$(stamp_probe "$m" "$mdir/stamp-$1")
+      if printf '%s\n' "$out" | grep -q "^FAIL  stamp $2 "; then printf 'ok    stamp mutant %-16s killed by %s\n' "$1" "$2"
+      else echo "FAIL  stamp mutant $1 SURVIVED row $2"; bad=$((bad+1)); fi
+    }
+    smutant_p no-stamp       stamp-written   's/^  stamp_call gpu "\$t0" /  : stamp_call gpu "$t0" /'
+    smutant_p acq-is-start   stamp-lock-wait 's/^  stamp_call gpu "\$t0" "\$(cat "\$acq" 2> \/dev\/null)"/  stamp_call gpu "$t0" "$t0"/'
+    smutant_p end-before     stamp-ordered   's/^  t1=\$(date +%s.%N)$/  t1=$t0/'
     pmutant unbounded    's/ -w "\$LOCK_WAIT"//'
     # The cells module (scripts/lib/model_ladder_cells.py): each rule deleted in a copy, imported through
     # MODEL_LADDER_CELLS_LIB, and the case that names the rule must go RED under the copy.

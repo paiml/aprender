@@ -55,6 +55,8 @@ while [ $# -gt 0 ]; do
     # --lock-probe <apr args…>: one apr call through apr_locked, then exit with its rc. For the case
     # table in check_model_ladder.sh, which proves every apr call runs under the lock.
     --lock-probe) shift; LOCK_PROBE=1; break ;;
+    # --timing-join <row json> <stamps.jsonl> <rid>: print the row with its #4051 stamps joined, then exit.
+    --timing-join) shift; TIMING_JOIN=1; break ;;
     -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "model_ladder: unknown argument '$1'" >&2; exit 2 ;;
   esac
@@ -86,7 +88,37 @@ LOCK_WAIT="${MODEL_LADDER_LOCK_WAIT:-1800}"
 LOCK_BUSY=75   # flock -E: the lock was not free in LOCK_WAIT seconds (an apr exit 75 also declines -- never a pass)
 command -v flock > /dev/null && command -v choom > /dev/null \
   || { echo "decline: flock and choom (util-linux) are required -- every apr call runs under the fleet GPU lock" >&2; exit 2; }
-apr_locked() { flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$APR" "$@"; }
+# #4051 TIMING. Every apr call records one stamp line: when it was asked for (t_start), when it got the
+# lock (t_acquired, written by the child the moment flock hands it over), when it returned (t_end), all
+# UTC epoch seconds; lock_wait_s = t_acquired - t_start. Keyed by the calling cell's `rid` and backend `b`
+# (measure()'s locals, read here so no call site changes) and by the verb. The judge refuses a >=0.70
+# receipt whose row lacks a stamp for any verb it records. A lane that takes NO lock (#4034) calls
+# stamp_call with lock "none" and t_acquired = t_start, so a missing stamp stays a RED, never a zero.
+STAMPS="${LADDER_STAMPS:-}"   # set once WORK exists; empty = not stamping (the --lock-probe path sets it)
+stamp_call() { # stamp_call <lock gpu|none> <t_start> <t_acquired> <t_end> <rc> <verb> [argv...]
+  [ -n "$STAMPS" ] || return 0
+  python3 -c 'import json, sys
+lock, t0, ta, t1, rc, verb = sys.argv[1:7]
+f = lambda x: float(x) if x not in ("", "-") else None
+t0, ta, t1 = f(t0), f(ta), f(t1)
+print(json.dumps({"rid": sys.argv[7] or None, "backend": sys.argv[8] or None, "verb": verb, "lock": lock,
+                  "t_start": t0, "t_acquired": ta, "t_end": t1, "rc": int(rc),
+                  "lock_wait_s": (round(ta - t0, 3) if ta is not None and t0 is not None else None)}))' \
+    "$1" "$2" "$3" "$4" "$5" "$6" "${rid:-}" "${b:-}" >> "$STAMPS" 2> /dev/null || :
+}
+apr_locked() {
+  local t0 t1 acq rc verb="$1"
+  t0=$(date +%s.%N); acq=$(mktemp 2> /dev/null || echo /dev/null)
+  flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" sh -c 'date +%s.%N > "$0"; exec choom -n 1000 -- "$@"' "$acq" "$APR" "$@"; rc=$?
+  t1=$(date +%s.%N)
+  stamp_call gpu "$t0" "$(cat "$acq" 2> /dev/null)" "$t1" "$rc" "$verb"
+  [ "$acq" = /dev/null ] || rm -f "$acq"
+  return "$rc"
+}
+# The BACKGROUNDED form (`apr serve`, torn down by signal). Without a handler the subshell dies on the
+# teardown's TERM before it can stamp; with one, bash defers the TERM until flock returns (the server is
+# gone) and then stamps t_end = when it actually died. Only ever run with `&`, so the trap is the subshell's.
+apr_locked_bg() { trap ':' TERM; b="${bname:-${b:-}}" apr_locked "$@"; }
 
 # ── #3843: ASK THE BINARY whether a verb takes a flag; never assume ───────────
 # The verb loop hard-coded one backend flag and passed it to all four verbs. Their
@@ -410,6 +442,27 @@ lock_timeout() { # lock_timeout <what> -> exit 2, naming the holder from /proc/l
   echo "decline: ENV the GPU lock $GPU_LOCK was not free after ${LOCK_WAIT}s for $1 -- holder: ${holder:-unknown}. Not a model verdict." >&2
   exit 2
 }
+# #4051: a row carries every stamp its cell's apr calls wrote (stamp_call), matched by rid. Anything that
+# goes wrong prints the row unchanged -- `timing` absent, which the judge refuses for a >=0.70 receipt:
+# missing timing is never read as zero.
+ladder_row_timing() { # <row json> <stamps.jsonl> <rid>
+  python3 - "$1" "$2" "$3" <<'PY' 2> /dev/null || printf '%s' "$1"
+import json, sys
+row, path, rid = json.loads(sys.argv[1]), sys.argv[2], sys.argv[3]
+st = []
+for ln in open(path):
+    try:
+        x = json.loads(ln)
+    except ValueError:
+        continue
+    if x.get("rid") == rid:
+        x.pop("rid", None)
+        st.append(x)
+row["timing"] = st
+print(json.dumps(row))
+PY
+}
+if [ "${TIMING_JOIN:-0}" = 1 ]; then ladder_row_timing "$@"; exit 0; fi
 if [ "${LOCK_PROBE:-0}" = 1 ]; then
   apr_locked "$@"; rc=$?
   [ "$rc" = "$LOCK_BUSY" ] && lock_timeout "apr $*"
@@ -710,7 +763,7 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
     fi
 
     port=$(( 20000 + (RANDOM % 20000) ))
-    apr_locked serve run "$path" --port "$port" $flag > "$WORK/serve-$rid-$bname.log" 2>&1 &
+    apr_locked_bg serve run "$path" --port "$port" $flag > "$WORK/serve-$rid-$bname.log" 2>&1 &
     pid=$!
     # Health, bounded by the SERVER (#3943 b). A server that never comes up is a FAIL
     # naming WHY the wait ended, never a skip.
@@ -805,6 +858,7 @@ _rm_work() {
   esac
 }
 trap _rm_work EXIT
+[ -n "$STAMPS" ] || STAMPS="$WORK/stamps.jsonl"   # #4051: every apr call's timing, joined to its row below
 ROWS="$WORK/rows.jsonl"; : > "$ROWS" 2>/dev/null || { echo "decline: cannot write $ROWS" >&2; exit 2; }
 INV_ROWS="$WORK/inventory.jsonl"; : > "$INV_ROWS" 2>/dev/null || { echo "decline: cannot write $INV_ROWS" >&2; exit 2; }
 
@@ -1190,6 +1244,10 @@ PY
   # the disk failed DURING the cell they may be truncated, and this row would be built
   # from them, so the probe runs again before the row is kept.
   probe_why=$(ladder_disk_probe "$WORK") || ladder_write_decline "during $rid: $probe_why; its artifacts may be truncated"
+  # #4051: the row carries every stamp its cell's apr calls wrote (see stamp_call). Joined here, after
+  # the row is built, so no measuring code changes; an unreadable stamp file leaves `timing` absent,
+  # which the judge refuses for a >=0.70 receipt -- missing timing is never read as zero.
+  row=$(ladder_row_timing "$row" "$STAMPS" "$rid")
   ladder_append "$ROWS" "$row"
   EXECUTED=$((EXECUTED + 1))
   if grep -q '"green": true' <<< "$row"; then
