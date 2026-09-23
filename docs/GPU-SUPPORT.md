@@ -20,7 +20,8 @@ table exists to prevent is the surprise: assuming an RTX 4090 makes any GGUF fas
 | `qwen2` | Qwen2, Qwen2.5 (incl. Coder) | yes | — |
 | `qwen3` | Qwen3 dense | yes | — |
 | `qwen35` | Qwen3.5 hybrid (Gated DeltaNet) | yes | — |
-| `qwen3_moe` | Qwen3 / Qwen3.5 MoE (A3B) | **refused** | no CUDA forward at all (#3714) |
+| `qwen3_moe` | Qwen3 MoE (Qwen3-30B-A3B, Qwen3-Coder-30B-A3B) | yes | — |
+| `qwen3_5_moe` | Qwen3.5 MoE (A3B, hybrid Gated DeltaNet) | **refused** | no CUDA forward: hybrid SSM MoE, not run by the qwen3moe forward (#3714) |
 | `gemma2` | Gemma 2 | CPU fallback | missing `AttnFinalSoftcap`, `PostAttnFfnNorm` |
 | `gemma3` | Gemma 3 | CPU fallback | missing `AttnFinalSoftcap`, `PostAttnFfnNorm` |
 | `phi2` | Phi-2 | CPU fallback | missing `GeluMlp`, `LayerNorm` |

@@ -42,8 +42,8 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
         );
     }
 
-    // Read file header to detect format
-    let data = match std::fs::read(path) {
+    // #3750: the magic here and the header below, never the whole model (17.3 GiB on the 30B)
+    let magic = match super::model_header::read_prefix(path, 4) {
         Ok(d) => d,
         Err(e) => {
             let duration = start.elapsed();
@@ -57,7 +57,7 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
         }
     };
 
-    if data.len() < 4 {
+    if magic.len() < 4 {
         let duration = start.elapsed();
         return Ok(GateResult::failed(
             "capability_match",
@@ -69,8 +69,7 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
     }
 
     // Only check GGUF files — APR/SafeTensors don't carry arch constraints yet
-    let magic = &data[0..4];
-    if magic != b"GGUF" {
+    if magic.as_slice() != b"GGUF" {
         let duration = start.elapsed();
         return Ok(GateResult::passed(
             "capability_match",
@@ -82,7 +81,7 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
     }
 
     // Parse GGUF to get architecture string and tensor (name, GGML type) pairs
-    let Some((arch, tensors)) = extract_gguf_arch_and_tensors(&data) else {
+    let Some((arch, tensors)) = super::model_header::gguf_arch_and_tensors(path) else {
         let duration = start.elapsed();
         return Ok(GateResult::passed(
             "capability_match",
@@ -395,13 +394,8 @@ pub(crate) fn cpu_only_architecture(path: &Path) -> bool {
     if !cfg!(feature = "cuda") {
         return false;
     }
-    let Ok(data) = std::fs::read(path) else {
-        return false;
-    };
-    if data.len() < 4 || &data[0..4] != b"GGUF" {
-        return false;
-    }
-    let Some((arch, tensors)) = extract_gguf_arch_and_tensors(&data) else {
+    // #3750: the header, never the whole model
+    let Some((arch, tensors)) = super::model_header::gguf_arch_and_tensors(path) else {
         return false;
     };
     is_cpu_only_architecture(&arch, tensors.iter().map(|(n, _)| n.as_str()))
@@ -424,13 +418,8 @@ pub(crate) fn cpu_only_architecture(_path: &Path) -> bool {
 /// measured on some other model shape.
 #[cfg(feature = "inference")]
 pub(crate) fn hybrid_loader_architecture(path: &Path) -> bool {
-    let Ok(data) = std::fs::read(path) else {
-        return false;
-    };
-    if data.len() < 4 || &data[0..4] != b"GGUF" {
-        return false;
-    }
-    let Some((arch, _)) = extract_gguf_arch_and_tensors(&data) else {
+    // #3750: the header, never the whole model
+    let Some((arch, _)) = super::model_header::gguf_arch_and_tensors(path) else {
         return false;
     };
     cpu_forward_handles(&arch)
@@ -442,21 +431,26 @@ pub(crate) fn hybrid_loader_architecture(_path: &Path) -> bool {
     false
 }
 
-/// Extract the architecture string and the tensor table from GGUF metadata.
+/// #3714: is this a Qwen3-MoE file? The dense loader BUILDS it (the MoE
+/// placeholder fills its dense FFN) but cannot FORWARD it, so its golden and
+/// throughput gates go through the runtime entry point — the routed-expert
+/// forward, CUDA (#3714) or CPU (#3367) — and every gate measured through the
+/// dense `OwnedQuantizedModel`/`OwnedQuantizedModelCuda` skips, saying so.
 ///
-/// Uses aprender's GGUF reader to parse metadata without loading tensors.
-/// #3477: the GGML type travels with the name, because the hybrid GPU quant
-/// gate judges `(name, type)` pairs — reading the names alone was what let an
-/// unsupported-quant DeltaNet tensor through.
-fn extract_gguf_arch_and_tensors(data: &[u8]) -> Option<(String, Vec<(String, u32)>)> {
-    let reader = aprender::format::gguf::reader::GgufReader::from_bytes(data.to_vec()).ok()?;
-    let arch = reader.architecture()?;
-    let tensors = reader
-        .tensors
-        .into_iter()
-        .map(|t| (t.name, t.dtype))
-        .collect();
-    Some((arch, tensors))
+/// Reads ONLY the GGUF header, through the one bounded-prefix header reader
+/// (`model_header::gguf_arch_and_tensors`, #3750). Not a map: realizar's
+/// `MappedGGUFModel::from_path` maps with MAP_POPULATE + mlock, which faults
+/// in the whole 18.5 GB file to answer a one-string question (#3761).
+#[cfg(feature = "inference")]
+pub(crate) fn moe_loader_architecture(path: &Path) -> bool {
+    super::model_header::gguf_arch_and_tensors(path)
+        .is_some_and(|(a, _)| realizar::gguf::moe_forward_handles(&a))
+}
+
+/// Without `inference` there is no runtime to route to.
+#[cfg(not(feature = "inference"))]
+pub(crate) fn moe_loader_architecture(_path: &Path) -> bool {
+    false
 }
 
 #[cfg(all(test, feature = "inference"))]
@@ -685,5 +679,80 @@ mod qa_capability_ssm_tests {
                 "a dense transformer has no SSM tensors ({backend:?})"
             );
         }
+    }
+}
+
+#[cfg(all(test, feature = "inference"))]
+mod moe_loader_architecture_tests {
+    use super::moe_loader_architecture;
+
+    fn gguf_str(out: &mut Vec<u8>, s: &str) {
+        out.extend_from_slice(&(s.len() as u64).to_le_bytes());
+        out.extend_from_slice(s.as_bytes());
+    }
+
+    /// A GGUF v3 header whose architecture key comes AFTER a string array and
+    /// a scalar. The file ENDS right after the header: no tensor infos, no data.
+    fn header_with_arch_last(arch: &str) -> Vec<u8> {
+        let mut h = b"GGUF".to_vec();
+        h.extend_from_slice(&3u32.to_le_bytes());
+        h.extend_from_slice(&0u64.to_le_bytes()); // tensor count
+        h.extend_from_slice(&3u64.to_le_bytes()); // kv count
+        gguf_str(&mut h, "tokenizer.ggml.tokens");
+        h.extend_from_slice(&9u32.to_le_bytes()); // array
+        h.extend_from_slice(&8u32.to_le_bytes()); // of strings
+        h.extend_from_slice(&3u64.to_le_bytes());
+        for t in ["<|im_start|>", "hello", "world"] {
+            gguf_str(&mut h, t);
+        }
+        gguf_str(&mut h, "qwen3moe.expert_count");
+        h.extend_from_slice(&4u32.to_le_bytes()); // u32
+        h.extend_from_slice(&128u32.to_le_bytes());
+        gguf_str(&mut h, "general.architecture");
+        h.extend_from_slice(&8u32.to_le_bytes()); // string
+        gguf_str(&mut h, arch);
+        h
+    }
+
+    fn write(tag: &str, bytes: &[u8]) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!("moe-pred-{tag}-{}", std::process::id()));
+        std::fs::write(&p, bytes).expect("write fixture");
+        p
+    }
+
+    /// #3714: routed-expert files are recognised from the header alone; dense
+    /// ones, non-GGUF files and truncated headers are not.
+    #[test]
+    fn the_moe_predicate_reads_only_the_header() {
+        let moe = write("moe", &header_with_arch_last("qwen3moe"));
+        let dense = write("dense", &header_with_arch_last("qwen3"));
+        let bad = write("bad", b"NOTGGUF-at-all");
+        let mut cut = header_with_arch_last("qwen3moe");
+        cut.truncate(cut.len() - 3);
+        let cut = write("cut", &cut);
+        assert!(
+            moe_loader_architecture(&moe),
+            "qwen3moe is the routed-expert arch"
+        );
+        assert!(!moe_loader_architecture(&dense), "dense qwen3 is not");
+        assert!(!moe_loader_architecture(&bad), "a non-GGUF file is not");
+        assert!(
+            !moe_loader_architecture(&cut),
+            "a truncated header is not, never a guess"
+        );
+        for p in [moe, dense, bad, cut] {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+
+    /// The real file, when `APR_QWEN3MOE_GGUF` names one. Run under
+    /// `/usr/bin/time -v` for the peak-RSS row the #3714 receipt cites.
+    #[test]
+    fn the_moe_predicate_answers_the_real_file_from_its_header() {
+        let Some(path) = std::env::var_os("APR_QWEN3MOE_GGUF") else {
+            eprintln!("SKIP: APR_QWEN3MOE_GGUF is not set");
+            return;
+        };
+        assert!(moe_loader_architecture(std::path::Path::new(&path)));
     }
 }

@@ -188,7 +188,8 @@ pub enum KernelType {
         k: u32,
         n: u32,
     },
-    /// PAR-063-V2: DP4A SIMD Q4_K GEMV with true integer accumulation
+    /// PAR-063-V2: generates the SAME PTX as `Dp4aQ4KGemv` (`Dp4aQ4KGemvKernel`),
+    /// so its entry is `dp4a_q4k_gemv` (#3976). No executor path launches it.
     Dp4aSIMDQ4KGemv {
         k: u32,
         n: u32,
@@ -508,12 +509,6 @@ pub enum KernelType {
     /// PMAT-034: Fused gate + up + SwiGLU HW DP4A Q4K GEMV kernel
     /// Eliminates 2 kernel launches + 4 intermediate buffer passes
     FusedGateUpSwigluHwDp4aQ4KGemv {
-        k: u32,
-        n: u32,
-    },
-
-    /// trueno#237: Fused K+V HW DP4A Q4K GEMV — 2 projections in 1 launch
-    FusedKVHwDp4aQ4KGemv {
         k: u32,
         n: u32,
     },

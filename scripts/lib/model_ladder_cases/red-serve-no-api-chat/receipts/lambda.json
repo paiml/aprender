@@ -116,7 +116,8 @@
         }
       },
       "green": false,
-      "file": "c.gguf"
+      "file": "c.gguf",
+      "qa_rc": 0
     },
     {
       "id": "q3-q4km",
@@ -234,7 +235,8 @@
         }
       },
       "green": true,
-      "file": "q.gguf"
+      "file": "q.gguf",
+      "qa_rc": 0
     }
   ],
   "inventory": [
@@ -248,5 +250,6 @@
       "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
       "bytes": 1
     }
-  ]
+  ],
+  "apr_sha": "ca5eca5eca5eca5eca5eca5eca5eca5eca5eca5e"
 }

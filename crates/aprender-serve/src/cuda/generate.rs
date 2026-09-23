@@ -318,9 +318,6 @@ impl CudaKernels {
             KernelType::FusedGateUpSwigluHwDp4aQ4KGemv { k, n } => {
                 FusedGateUpSwigluHwDp4aQ4KGemvKernel::new(*k, *n).emit_ptx()
             },
-            KernelType::FusedKVHwDp4aQ4KGemv { k, n } => {
-                FusedQKVHwDp4aQ4KGemvKernel::new(*k, 128, 12, *n / 128).emit_ptx()
-            },
             KernelType::KvCacheScatter { num_kv_heads, head_dim, max_len } => {
                 KvCacheScatterKernel::new(*num_kv_heads, *head_dim, *max_len).emit_ptx()
             },

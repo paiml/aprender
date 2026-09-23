@@ -180,6 +180,107 @@ json_str_or_null() {
   python3 -c 'import json,sys; t=sys.stdin.read(); print(json.dumps(t) if t else "null")'
 }
 
+# ── #3957 F4c: the generated text of ONE serve response, in any of its three wire shapes ──
+# The probe read the body with a single `json.load`. Every `stream=true` body is NOT one
+# JSON object -- the OpenAI routes stream SSE (`data: {...}` lines ending `data: [DONE]`),
+# /api/chat streams NDJSON (one object per line) -- so the load failed, the text was "",
+# and `gibberish_reason("")` said nothing, which the row read as CLEAN. Half the serve
+# routes passed on http status alone; an NDJSON stream of "zombie zombie zombie" was clean.
+#
+# Prints the concatenated text (possibly empty). Shapes, tried in order:
+#   1. one JSON object: choices[].text | choices[].message.content | message.content | response
+#   2. SSE: every `data:` payload that is JSON, concatenating choices[].delta.content,
+#      choices[].text, message.content and response
+#   3. NDJSON: every line that is a JSON object, same fields
+serve_reply_text() { # <body-file>
+  python3 -c '
+import json, sys
+try:
+    raw = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+except OSError:
+    raise SystemExit
+def parts(d):
+    out = []
+    if not isinstance(d, dict):
+        return out
+    for c in (d.get("choices") or []):
+        if isinstance(c, dict):
+            out.append(c.get("text") or ((c.get("message") or {}).get("content") or "")
+                       or ((c.get("delta") or {}).get("content") or ""))
+    m = (d.get("message") or {}).get("content") if isinstance(d.get("message"), dict) else None
+    if isinstance(m, str):
+        out.append(m)
+    if isinstance(d.get("response"), str):
+        out.append(d["response"])
+    return [x for x in out if isinstance(x, str) and x]
+def objs(lines):
+    for ln in lines:
+        ln = ln.strip()
+        if not ln or ln == "[DONE]":
+            continue
+        try:
+            yield json.loads(ln)
+        except ValueError:
+            continue
+try:
+    whole = json.loads(raw)
+except ValueError:
+    whole = None
+if isinstance(whole, dict):
+    print("\n".join(parts(whole)))
+elif any(ln.startswith("data:") for ln in raw.splitlines()):
+    print("".join(p for d in objs(ln[5:] for ln in raw.splitlines() if ln.startswith("data:")) for p in parts(d)))
+else:
+    print("".join(p for d in objs(raw.splitlines()) for p in parts(d)))
+' "$1" 2>/dev/null
+}
+
+# serve_route_bad <body-file> <route label> -> prints the reason, or nothing when the reply is clean.
+# EMPTY TEXT IS A REASON, never clean: a route whose body yields no generated text measured nothing
+# about the model, and "" handed to the detector is the vacuous pass #3957 F4c removes.
+serve_route_bad() {
+  local text bytes term
+  # #3957 Q6: a STREAM must end with its terminal event -- `data: [DONE]` (SSE) or an object
+  # with `"done": true` (NDJSON). Without it the server stopped mid-reply (or curl's --max-time
+  # did), and the text that did arrive is a prefix judged as if it were the answer.
+  term=$(python3 -c '
+import json, sys
+raw = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+try:
+    one = json.loads(raw)
+except ValueError:
+    one = None
+else:
+    # A one-line NDJSON stream parses as one object. /api/chat says `done` on every chunk,
+    # and `done: false` is an unfinished reply whichever way it arrived.
+    print("open" if isinstance(one, dict) and one.get("done") is False else "single"); raise SystemExit
+lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+if any(ln.startswith("data:") for ln in lines):
+    print("ok" if any(ln[5:].strip() == "[DONE]" for ln in lines if ln.startswith("data:")) else "open")
+elif lines:
+    def done(ln):
+        try:
+            d = json.loads(ln)
+        except ValueError:
+            return False
+        return isinstance(d, dict) and d.get("done") is True
+    print("ok" if done(lines[-1]) else "open")
+else:
+    print("single")
+' "$1" 2> /dev/null)
+  if [ "$term" = open ]; then
+    printf 'truncated stream: the %s response has no terminal event (data: [DONE] / "done": true) -- a prefix is not an answer (#3957 Q6)' "$2"
+    return 0
+  fi
+  text=$(serve_reply_text "$1")
+  if [ -z "${text//[[:space:]]/}" ]; then
+    bytes=$(wc -c < "$1" 2> /dev/null | tr -d ' ')
+    printf 'nothing measured: the %s response carried no generated text (%s bytes) (#3957 F4c)' "$2" "${bytes:-0}"
+    return 0
+  fi
+  printf '%s' "$text" | gibberish_reason || true
+}
+
 # #3925: judge the model reply, not the transcript it arrived in. `apr chat` frames
 # its session in box-drawing rules, and the ladder captures the verb with 2>&1, so
 # that chrome landed inside the judged text: the repeated-fragment signal fired on
@@ -648,19 +749,7 @@ print("null" if v is None else ("true" if v else "false"))
             # as "two gaps stacked"; it was this one gap. The generated text is
             # extracted from the response shape rather than judged raw, so JSON field
             # names and ids cannot themselves trip the repeated-fragment signal.
-            rtext=$(python3 -c '
-import json,sys
-try: d=json.load(open(sys.argv[1]))
-except Exception: print(""); raise SystemExit
-out=[]
-for c in (d.get("choices") or []):
-    out.append(c.get("text") or ((c.get("message") or {}).get("content") or ""))
-m=(d.get("message") or {}).get("content")
-if m: out.append(m)
-if d.get("response"): out.append(d["response"])
-print("\\n".join(x for x in out if x))
-' "$bodyf" 2>/dev/null)
-            rbad=$(printf '%s' "$rtext" | gibberish_reason) || rbad=""
+            rbad=$(serve_route_bad "$bodyf" "$r|stream=$stream")
             rbad_json=$(printf '%s' "$rbad" | json_str_or_null)
             [ $first = 1 ] || json="$json,"; first=0
             json="$json\"$r|stream=$stream\":{\"http\":$code,\"ok\":$([ "$code" = 200 ] && echo true || echo false),\"used_gpu\":$ug,\"output_bad\":$rbad_json}"
@@ -936,7 +1025,12 @@ def verb_ok(v, name):
         return False
     return bool(x.get("ran")) and (x.get("rc") or 0) == 0
 
-green = cap_ok and qa.get("golden_output", {}).get("passed", False) \
+# #3965: a SKIPPED golden gate is not a pass. Older `apr` builds wrote skips as
+# passed:true, skipped:true, and receipts from them still exist, so the ladder guards
+# `skipped` itself instead of trusting the producer: the same guard cap_ok has above.
+golden_ok = qa.get("golden_output", {}).get("passed", False) \
+    and not qa.get("golden_output", {}).get("skipped", False)
+green = cap_ok and golden_ok \
         and all(v["ran"] and not v["fallback"] and not v.get("escaped_special") and serve_ok(v)
                 and verb_ok(v, "chat") and verb_ok(v, "code")
                 for v in be.values())
