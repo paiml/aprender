@@ -17,7 +17,10 @@
 
 use std::path::Path;
 
-const CONTRACT: &str = include_str!("../../../contracts/kernel-fusion-v1.yaml");
+/// The contract, read from the workspace at RUN time (#4048). It used to be
+/// `include_str!("../../../contracts/…")`, a path outside the crate, so `cargo test` from
+/// the published `aprender-serve` tarball could not even compile this module.
+const CONTRACT_PATH: &str = "contracts/kernel-fusion-v1.yaml";
 
 /// Lines searched around the cited one for the kernel's name: one before, three
 /// after (a call often spans a `let kernel_type =` line and its arguments).
@@ -68,9 +71,38 @@ fn workspace_root() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
+/// `true` when this crate is built inside the aprender workspace, `false` out of tree (the
+/// crates.io tarball). Keyed on the `contracts/` DIRECTORY, not on the one file: in tree, a
+/// missing or renamed `kernel-fusion-v1.yaml` must FAIL the guard, never skip it.
+fn in_workspace() -> bool {
+    workspace_root().join("contracts").is_dir()
+}
+
+/// The contract text, or `None` (after naming the skip) when out of tree.
+fn contract_or_skip(test: &str) -> Option<String> {
+    if !in_workspace() {
+        eprintln!(
+            "SKIP {test}: out of tree (no {} beside this crate) - the #3985 guard reads the \
+             workspace, which a published crate does not carry (#4048)",
+            workspace_root().join("contracts").display()
+        );
+        return None;
+    }
+    let path = workspace_root().join(CONTRACT_PATH);
+    Some(
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("in tree, {} must be readable: {e}", path.display())),
+    )
+}
+
 #[test]
 fn every_active_fusion_call_site_is_a_live_call_of_its_kernel() {
-    let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(CONTRACT).expect("parse contract");
+    let Some(contract) =
+        contract_or_skip("every_active_fusion_call_site_is_a_live_call_of_its_kernel")
+    else {
+        return;
+    };
+    let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(&contract).expect("parse contract");
     let decisions = doc["fusion_decisions"]
         .as_mapping()
         .expect("fusion_decisions mapping");
@@ -106,6 +138,9 @@ fn every_active_fusion_call_site_is_a_live_call_of_its_kernel() {
 /// accept the real one.
 #[test]
 fn the_call_site_check_rejects_each_stale_shape() {
+    if contract_or_skip("the_call_site_check_rejects_each_stale_shape").is_none() {
+        return;
+    }
     let root = workspace_root();
     let live = "crates/aprender-serve/src/cuda/kernels_generate_gemm_cuda.rs";
     let src = std::fs::read_to_string(root.join(live)).expect("read live generator");
