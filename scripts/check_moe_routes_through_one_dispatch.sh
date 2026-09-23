@@ -180,6 +180,8 @@ if [ "$SELF_TEST" = 1 ]; then
     esac
   }
   trap _rm EXIT
+  # bashrs SEC010: copies git-tracked sources into $T, a mktemp -d dir this script created and removes on EXIT.
+  # bashrs disable-next-line=SEC010
   git -C "$ROOT" ls-files -z crates/apr-cli/src crates/aprender-serve/src | (cd "$ROOT" && xargs -0 cp --parents -t "$T")
   git -C "$T" init -q && git -C "$T" add -A >/dev/null
   check "$T" > /dev/null || { echo "SELF-TEST FAILED: the shipped tree is already red" >&2; exit 1; }

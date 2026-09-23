@@ -149,6 +149,8 @@ case "${1:-}" in
     if flock -n "$STUB_LOCK" true 2>/dev/null; then h=no; else h=yes; fi
     echo "LOAD cli-run held=$h keepalive=$ka" >> "$STUB_LOG"
     echo "4"
+    # bashrs SEC001: the word 'eval' here is a literal printf argument (ollama's 'eval count'/'eval rate' output), not an eval call.
+    # bashrs disable-next-line=SEC001
     printf 'total duration:       1s\nprompt %s count:    3 token(s)\n%s count:           1 token(s)\n%s rate:            1.00 tokens/s\n' eval eval eval >&2 ;;
   *) echo "stub ollama: unhandled '$*'" >&2; exit 1 ;;
 esac

@@ -7,6 +7,7 @@
 #   derivation said so on stderr (WARN unresolved-include).
 # Also: crate<TAB>--test<TAB>name (integration binary) and crate<TAB>--bins.
 apr-cli	--lib
+apr-cli	--lib	commands
 apr-cli	--lib	commands::aliases
 apr-cli	--lib	commands::capability
 apr-cli	--lib	commands::eval
@@ -107,6 +108,7 @@ aprender-core	--test	monorepo_invariants
 aprender-core	--test	readme_contract
 aprender-core	--test	setfit_conformance
 aprender-orchestrate	--lib	agent::contracts
+aprender-orchestrate	--lib	agent::driver::chat_template
 aprender-orchestrate	--lib	agent::repl_directives
 aprender-orchestrate	--lib	analyzer
 aprender-orchestrate	--lib	cli::agent
