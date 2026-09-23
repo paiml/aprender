@@ -17,10 +17,16 @@
 #       from an argument.
 #   R3  the tag `v<version>` points at HEAD: the crate that is uploaded is the
 #       commit that is tagged, not a neighbour of it.
-#   R4  HEAD is on the main ref: nothing publishes from a branch. Either HEAD is an ancestor of
-#       main, or -- main's merge queue SQUASHES (a ruleset), so a release cut never becomes an
-#       ancestor -- main CONTAINS HEAD's crate content: `git diff HEAD <main>` is empty over
-#       crates/, src/, Cargo.toml and Cargo.lock, i.e. every published source file is equal.
+#   R4  HEAD's changes are on the main ref: nothing publishes that main does not carry. Either HEAD
+#       is an ancestor of main, or -- main's merge queue SQUASHES (a ruleset), so a release cut never
+#       becomes an ancestor -- main CONTAINS the cut's changes: the published-path diff
+#       merge-base(HEAD, main)..HEAD over crates/ src/ Cargo.toml reverse-applies cleanly to main's
+#       tree, and its Cargo.lock change does too (hunk level) or is present SEMANTICALLY
+#       (scripts/lib/lock_contained.py over ladder_equiv's canonical lock delta). main MOVING ON
+#       after the cut is expected; a cut change missing on main, or reverted by it, is refused.
+#       --via SHA (the PR head main squashed): when main has EDITED OVER a cut change afterwards (the
+#       cut's own lines superseded, not lost), containment is proven through history instead: HEAD is
+#       an ancestor of SHA, and SHA's published changes are contained in main by the same test.
 #   R6  no versioned sibling dev-dependency lies on a CYCLE. cargo keeps a versioned
 #       dev-dependency in the published manifest and resolves it on the registry,
 #       so two siblings that name each other can never be uploaded first
@@ -61,6 +67,10 @@
 #       of it), every PUBLISHED path -- crates/ src/ Cargo.toml Cargo.lock, R4's set -- must be
 #       equal to the cut's, or the published source is not the smoked binary's. The
 #       model-matrix rows are still printed, as EVIDENCE, never as the verdict.
+#       --scope-tree DIR: the tree the scope is READ from (its contract entry, reader and committed
+#       CRUX receipts), default the published tree. A release tagged exactly at the cut predates its
+#       own scope ruling, so the ruling is read from main's checkout; that tree's HEAD must be ON
+#       the main ref, so no branch can carry a ruling of its own.
 set -uo pipefail
 
 PROG=${0##*/}
@@ -179,7 +189,7 @@ rule_r7() {
         return 1
     fi
     if [ -n "${SCOPE:-}" ]; then
-        rule_r7_scope "$root" "$version" "$judge"
+        rule_r7_scope "$root" "$version" "$judge" "$3"
         return $?
     fi
     out="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; rc=$?
@@ -200,8 +210,17 @@ rule_r7() {
 # own contract entry and reader arrive after the cut.
 # rule_r7_scope root version judge -> prints its rows; 0 accepted, 1 refused
 rule_r7_scope() {
-    local root="$1" version="$2" judge="$3" cut head out rc ev evrc
+    local root="$1" version="$2" judge="$3" main_ref="$4" cut head out rc ev evrc stree sjudge shead
     head="$(git -C "$root" rev-parse HEAD 2>/dev/null)"
+    stree="${SCOPE_TREE:-$root}"
+    sjudge="${PUBLISH_PREFLIGHT_LADDER_JUDGE:-$stree/scripts/check_model_ladder.sh}"
+    if [ "$stree" != "$root" ]; then
+        shead="$(git -C "$stree" rev-parse HEAD 2>/dev/null)"
+        if [ -z "$shead" ] || ! git -C "$root" merge-base --is-ancestor "$shead" "$main_ref" 2>/dev/null; then
+            echo "FAIL  R7 OPERATOR EMERGENCY SCOPE $SCOPE: the scope tree $stree (HEAD ${shead:0:12}) is not on $main_ref -- a ruling is read from main, never from a branch"
+            return 1
+        fi
+    fi
     cut="$(git -C "$root" rev-parse --verify --quiet "${CUT_COMMIT:-HEAD}^{commit}" 2>/dev/null)"
     if [ -z "$cut" ]; then
         echo "FAIL  R7 OPERATOR EMERGENCY SCOPE $SCOPE: the cut ${CUT_COMMIT:-HEAD} does not resolve in this tree"
@@ -213,7 +232,7 @@ rule_r7_scope() {
             "$(git -C "$root" diff --name-only "$cut" "$head" -- crates src Cargo.toml Cargo.lock | head -n 10 | sed 's/^/        /')"
         return 1
     fi
-    out="$(cd "$root" && bash "$judge" --version "$version" --scope "$SCOPE" --cut-commit "$cut" 2>&1)"; rc=$?
+    out="$(cd "$stree" && bash "$sjudge" --version "$version" --scope "$SCOPE" --cut-commit "$cut" 2>&1)"; rc=$?
     grep -E '^OPERATOR EMERGENCY SCOPE' <<< "$out" | head -n 1 | sed 's/^/        /'
     # The model matrix, reported as EVIDENCE only: under the scope it is not the verdict, and a
     # stale or red row must still be visible.
@@ -229,6 +248,45 @@ rule_r7_scope() {
                "$(grep -E '^FAIL' <<< "$out" | head -n 10 | sed 's/^/        /')" ;;
     esac
     return 1
+}
+
+# R4's content arm: prints one reason per cut change NOT contained in main; nothing when all are.
+# r4_contained root head main_ref
+r4_contained() {
+    local root="$1" head="$2" main_ref="$3" mb idx patch lp rc
+    mb="$(git -C "$root" merge-base "$head" "$main_ref" 2>/dev/null)" || { echo "no merge-base between HEAD and $main_ref"; return 0; }
+    idx="$(mktemp)"; patch="$(mktemp)"; lp="$(mktemp)"
+    # main's tree in a throwaway index: nothing in any working tree is touched
+    GIT_INDEX_FILE="$idx" git -C "$root" read-tree "$main_ref" || { echo "cannot read $main_ref's tree"; rm -f "$idx" "$patch" "$lp"; return 0; }
+    git -C "$root" diff --binary "$mb" "$head" -- crates src Cargo.toml > "$patch"
+    # -C0: the cut's ADDED lines must exist on main (removed ones must be gone); the surrounding context
+    # may differ, because main moving on next to a cut change is expected, not a missing change.
+    if [ -s "$patch" ] && ! GIT_INDEX_FILE="$idx" git -C "$root" apply --cached --reverse --check -C0 "$patch" 2>/dev/null; then
+        # name the files whose change is not on main; if every file alone passes, the whole still did
+        # not -- say so rather than pass (fail closed)
+        local named
+        named="$(git -C "$root" diff --name-only "$mb" "$head" -- crates src Cargo.toml | while IFS= read -r f; do
+            git -C "$root" diff --binary "$mb" "$head" -- "$f" > "$lp"
+            GIT_INDEX_FILE="$idx" git -C "$root" apply --cached --reverse --check -C0 "$lp" 2>/dev/null \
+                || echo "$f: the cut's change is not on main (missing, reverted, or edited over)"
+        done)"
+        if [ -n "$named" ]; then printf '%s\n' "$named"
+        else echo "the cut's published changes do not reverse-apply to main as a whole (no single file names it)"; fi
+    fi
+    if ! git -C "$root" diff --quiet "$mb" "$head" -- Cargo.lock; then
+        git -C "$root" diff "$mb" "$head" -- Cargo.lock > "$lp"
+        if ! GIT_INDEX_FILE="$idx" git -C "$root" apply --cached --reverse --check "$lp" 2>/dev/null; then
+            local a b c
+            a="$(mktemp)"; b="$(mktemp)"; c="$(mktemp)"
+            git -C "$root" show "$mb:Cargo.lock" > "$a" 2>/dev/null
+            git -C "$root" show "$head:Cargo.lock" > "$b" 2>/dev/null
+            git -C "$root" show "$main_ref:Cargo.lock" > "$c" 2>/dev/null
+            PYTHONPATH="$SCRIPT_DIR/lib" python3 "$SCRIPT_DIR/lib/lock_contained.py" "$a" "$b" "$c" | sed 's/^/Cargo.lock: /'
+            rm -f "$a" "$b" "$c"
+        fi
+    fi
+    rm -f "$idx" "$patch" "$lp"
+    return 0
 }
 
 gate() {
@@ -282,12 +340,31 @@ gate() {
     elif git -C "$root" merge-base --is-ancestor "$head" "$main_ref" 2>/dev/null; then
         echo "ok    R4 HEAD is an ancestor of $main_ref"
     else
-        r4diff="$(git -C "$root" diff --name-only "$head" "$main_ref" -- crates src Cargo.toml Cargo.lock 2>&1)"
-        if [ -z "$r4diff" ]; then
-            echo "ok    R4 cut content in main via squash $(git -C "$root" rev-parse --short=9 "$main_ref"): HEAD ${head:0:9} is not an ancestor, but every file under crates/ src/ Cargo.toml Cargo.lock is equal"
+        r4diff="$(r4_contained "$root" "$head" "$main_ref")"
+        local via viadiff
+        if [ -n "$r4diff" ] && [ -n "${VIA:-}" ]; then
+            via="$(git -C "$root" rev-parse --verify --quiet "${VIA}^{commit}")"
+            if [ -z "$via" ]; then
+                r4diff="$(printf '%s\n--via %s does not resolve here' "$r4diff" "$VIA")"
+            elif ! git -C "$root" merge-base --is-ancestor "$head" "$via" 2>/dev/null; then
+                r4diff="$(printf '%s\n--via %s does not contain HEAD %s (HEAD is not its ancestor)' "$r4diff" "${via:0:9}" "${head:0:9}")"
+            else
+                viadiff="$(r4_contained "$root" "$via" "$main_ref")"
+                if [ -z "$viadiff" ]; then
+                    echo "ok    R4 cut changes contained in main $(git -C "$root" rev-parse --short=9 "$main_ref") via squashed PR head ${via:0:9}: HEAD ${head:0:9} is its ancestor, and every published change of it is on main (main edited over some cut lines afterwards: $(printf '%s\n' "$r4diff" | grep -c .) superseded)"
+                    r4diff=""; via="done"
+                else
+                    r4diff="$(printf '%s\n--via %s is itself not contained in main:\n%s' "$r4diff" "${via:0:9}" "$viadiff")"
+                fi
+            fi
+        fi
+        if [ "${via:-}" = done ]; then
+            :
+        elif [ -z "$r4diff" ]; then
+            echo "ok    R4 cut changes contained in main $(git -C "$root" rev-parse --short=9 "$main_ref"): HEAD ${head:0:9} is not an ancestor (squash queue), but every published change since merge-base $(git -C "$root" merge-base "$head" "$main_ref" | cut -c1-9) is on main"
         else
-            printf 'FAIL  R4 HEAD %s is not an ancestor of %s, and main does not contain its crate content -- %s published path(s) differ:\n%s\n' \
-                "${head:0:9}" "$main_ref" "$(printf '%s\n' "$r4diff" | grep -c .)" "$(printf '%s\n' "$r4diff" | head -n 10 | sed 's/^/        /')"
+            printf 'FAIL  R4 HEAD %s is not an ancestor of %s, and main does not contain the cut'"'"'s changes:\n%s\n' \
+                "${head:0:9}" "$main_ref" "$(printf '%s\n' "$r4diff" | head -n 12 | sed 's/^/        /')"
             fails=1
         fi
     fi
@@ -347,7 +424,7 @@ for n, t, req in sorted(vdev):
     fi
 
     # R7 the model matrix, re-read at T-4 through the T-1 judge (#3717)
-    rule_r7 "$root" "$version" || fails=1
+    rule_r7 "$root" "$version" "$main_ref" || fails=1
 
     if [ "$fails" -ne 0 ]; then
         echo "REFUSE $PROG: publishing is not allowed from this tree (see the FAIL rows)."
@@ -510,24 +587,58 @@ FXJUDGE
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row head_off_main_refuses          1 "FAIL  R4" "$d"
 
-    # R4 by CONTENT: main's merge queue squashes, so the cut is never an ancestor of main.
+    # R4 by CONTAINMENT: main's merge queue squashes, so the cut is never an ancestor of main; the cut's
+    # changes since merge-base must be ON main. main moving on afterwards is expected.
+    gcommit() { git -C "$1" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -q "${@:2}" >/dev/null; }
     sq() { # dir: topic commit squash-merged onto fixture-main, HEAD left on the topic (the cut)
         local d="$1"; build_repo "$d"; git -C "$d" checkout -q -b topic
-        printf 'pub fn k() {}\n' >> "$d/src/lib.rs"
-        git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'topic' >/dev/null
-        git -C "$d" checkout -q fixture-main; git -C "$d" merge -q --squash topic >/dev/null
-        git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'squash' >/dev/null
+        printf 'pub fn k() {}\n' >> "$d/src/lib.rs"; gcommit "$d" -am 'topic'
+        git -C "$d" checkout -q fixture-main; git -C "$d" merge -q --squash topic >/dev/null; gcommit "$d" -m 'squash'
     }
     sq_finish() { git -C "$1" checkout -q topic; git -C "$1" tag -f v1.2.3 >/dev/null; write_receipt "$1" GO "$(git -C "$1" rev-parse HEAD)" 1.2.3; }
     d="$tmp/squash"; sq "$d"; sq_finish "$d"
-    row squash_merged_content_passes   0 "ok    R4 cut content in main via squash" "$d"
-    d="$tmp/squash-docs"; sq "$d"; printf 'notes\n' > "$d/NOTES.md"; git -C "$d" add NOTES.md
-    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'docs on main' >/dev/null; sq_finish "$d"
-    row squash_then_docs_on_main_passes 0 "ok    R4 cut content in main via squash" "$d"
-    d="$tmp/squash-drift"; sq "$d"; printf 'pub fn z() {}\n' >> "$d/src/lib.rs"
-    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'crate change on main' >/dev/null; sq_finish "$d"
-    row squash_then_crate_file_differs_refuses 1 "FAIL  R4" "$d"
-    row squash_then_crate_file_names_it 1 "        src/lib.rs" "$d"
+    row squash_contained_passes        0 "ok    R4 cut changes contained in main" "$d"
+    d="$tmp/squash-moved"; sq "$d"; printf 'pub fn z() {}\n' >> "$d/src/lib.rs"; printf 'n\n' > "$d/NOTES.md"; git -C "$d" add -A; gcommit "$d" -m 'main moves on'; sq_finish "$d"
+    row squash_then_main_moves_on_passes 0 "ok    R4 cut changes contained in main" "$d"
+    d="$tmp/squash-revert"; sq "$d"
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t revert --no-edit HEAD >/dev/null \
+        || { printf '  BROKE fixture: git revert failed\n'; fail=$((fail + 1)); }
+    sq_finish "$d"
+    row cut_change_reverted_on_main_refuses 1 "src/lib.rs: the cut's change is not on main" "$d"
+    # a crate edit that exists ONLY on the cut: a second topic commit main never received
+    d="$tmp/squash-partial"; sq "$d"; git -C "$d" checkout -q topic
+    printf 'pub fn only_on_cut() {}\n' > "$d/src/extra.rs"; printf 'mod extra;\n' >> "$d/src/lib.rs"; git -C "$d" add -A; gcommit "$d" -m 'cut only'; sq_finish "$d"
+    row crate_edit_only_on_the_cut_refuses 1 "src/extra.rs: the cut's change is not on main" "$d"
+    # (a cut change missing on main entirely: head_off_main_refuses above)
+    # --via: main squashed a PR head that CONTAINS the cut and then edited over one of the cut's own lines
+    d="$tmp/via"; build_repo "$d"; git -C "$d" checkout -q -b rel
+    printf 'pub fn k() {}\n' >> "$d/src/lib.rs"; gcommit "$d" -am 'cut'; local vcut; vcut="$(git -C "$d" rev-parse HEAD)"
+    git -C "$d" checkout -q -b pr; sed -i 's/pub fn k() {}/pub fn k() -> u8 { 1 }/' "$d/src/lib.rs"; gcommit "$d" -am 'pr edits the cut line'
+    git -C "$d" checkout -q fixture-main; git -C "$d" merge -q --squash pr >/dev/null; gcommit "$d" -m 'squash pr'
+    git -C "$d" checkout -q rel; git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$vcut" 1.2.3
+    row superseded_cut_line_refuses_without_via 1 "src/lib.rs: the cut's change is not on main" "$d"
+    VIA=pr row superseded_cut_line_passes_via_pr_head 0 "via squashed PR head" "$d"
+    VIA=fixture-main~1 row via_not_containing_the_cut_refuses 1 "does not contain HEAD" "$d"
+    git -C "$d" checkout -q -b pr2 pr; printf 'pub fn unmerged() {}\n' >> "$d/src/lib.rs"; gcommit "$d" -am 'pr2 not on main'; git -C "$d" checkout -q rel
+    VIA=pr2 row via_not_on_main_refuses 1 "is itself not contained in main" "$d"
+    # Cargo.lock, semantically (lock_contained.py over ladder_equiv's canonical delta), hermetic:
+    lk() { printf '[[package]]\nname = "app"\nversion = "1.0.0"\ndependencies = [%s]\n%s' "$1" "$2"; }
+    ext() { printf '\n[[package]]\nname = "%s"\nversion = "%s"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "%s"\n' "$1" "$2" "$3"; }
+    local lt="$tmp/lock"; mkdir -p "$lt"
+    lk '"zune-core"' "$(ext zune-core 0.4.0 aa)" > "$lt/mb"
+    lk '"zune-core", "gif"' "$(ext zune-core 0.4.0 aa; ext gif 0.13.3 bb)" > "$lt/cut"
+    lk '"zune-core 0.4.0", "gif", "tiff"' "$(ext zune-core 0.4.0 aa; ext gif 0.13.3 bb; ext tiff 0.9.0 cc)" > "$lt/main_ok"   # disambiguated text + moved on
+    cp "$lt/mb" "$lt/main_reverted"
+    lk '"zune-core", "gif"' "$(ext zune-core 0.4.0 aa; ext gif 0.12.0 dd)" > "$lt/main_otherver"
+    lrow() { # name expect(0|1) main-file needle
+        local out rc=0; out="$(PYTHONPATH="$SCRIPT_DIR/lib" python3 "$SCRIPT_DIR/lib/lock_contained.py" "$lt/mb" "$lt/cut" "$lt/$3" 2>&1)" || rc=$?
+        if [ "$rc" = "$2" ] && { [ -z "$4" ] || printf '%s' "$out" | grep -qF "$4"; }; then
+            printf '  ok    %-36s exit=%s %s\n' "$1" "$2" "$4"; pass=$((pass + 1))
+        else printf '  BROKE %-36s expected %s got %s: %s\n' "$1" "$2" "$rc" "$out"; fail=$((fail + 1)); fi
+    }
+    lrow lock_dedupe_and_moved_on_contained 0 main_ok ""
+    lrow lock_change_reverted_refuses 1 main_reverted "adds dependency app -> gif; main does not have it"
+    lrow lock_other_version_refuses   1 main_otherver "the cut adds gif 0.13.3"
 
     d="$tmp/nogo"; build_repo "$d"; write_receipt "$d" NO-GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row dogfood_no_go_refuses          1 "FAIL  R5" "$d"
@@ -644,6 +755,16 @@ FXJUDGE
     git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'tooling' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_tooling_after_the_cut_passes 0 "satisfied at the cut ${cut:0:12}" "$d"
+    # the scope READ from main's checkout while the published tree is exactly the cut (older)
+    d="$tmp/sc-tree"; build_repo "$d"; cut="$(git -C "$d" rev-parse HEAD)"
+    git -C "$d" checkout -q -b rel; git -C "$d" checkout -q fixture-main
+    printf 'ruling: 1\n' > "$d/RULING"; git -C "$d" add -A; gcommit "$d" -m 'ruling on main'
+    git -C "$d" worktree add -q "$tmp/sc-tree-main" fixture-main 2>/dev/null || git -C "$d" worktree add -q --detach "$tmp/sc-tree-main" fixture-main
+    git -C "$d" checkout -q rel
+    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" SCOPE_TREE="$tmp/sc-tree-main" row scope_tree_on_main_passes 0 "satisfied at the cut ${cut:0:12}" "$d"
+    git -C "$d" checkout -q -b rogue; printf 'forged\n' > "$d/RULING"; git -C "$d" add -A; gcommit "$d" -m 'rogue ruling'
+    git -C "$d" worktree add -q --detach "$tmp/sc-tree-rogue" rogue; git -C "$d" checkout -q rel
+    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" SCOPE_TREE="$tmp/sc-tree-rogue" row scope_tree_off_main_refuses 1 "is not on fixture-main" "$d"
     d="$tmp/sc-badcut"; build_repo "$d"
     SCOPE=crux-smoke CUT_COMMIT=0123456789abcdef0123456789abcdef01234567 row scope_unresolvable_cut_refuses 1 "does not resolve" "$d"
 
@@ -670,15 +791,17 @@ FXJUDGE
     [ "$fail" -eq 0 ]
 }
 
-SCOPE=""; CUT_COMMIT=""; MODE=""
+SCOPE=""; CUT_COMMIT=""; SCOPE_TREE=""; VIA=""; MODE=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --scope) [ $# -ge 2 ] || { printf '%s: --scope needs a name\n' "$PROG" >&2; exit 2; }; SCOPE="$2"; shift 2 ;;
         --cut-commit) [ $# -ge 2 ] || { printf '%s: --cut-commit needs a sha\n' "$PROG" >&2; exit 2; }; CUT_COMMIT="$2"; shift 2 ;;
+        --via) [ $# -ge 2 ] || { printf '%s: --via needs a sha\n' "$PROG" >&2; exit 2; }; VIA="$2"; shift 2 ;;
+        --scope-tree) [ $# -ge 2 ] || { printf '%s: --scope-tree needs a directory\n' "$PROG" >&2; exit 2; }; SCOPE_TREE="$2"; shift 2 ;;
         *) [ -z "$MODE" ] || { printf '%s: unexpected argument %s\n' "$PROG" "$1" >&2; exit 2; }; MODE="$1"; shift ;;
     esac
 done
-[ -z "$CUT_COMMIT" ] || [ -n "$SCOPE" ] || { printf '%s: --cut-commit is only meaningful with --scope\n' "$PROG" >&2; exit 2; }
+[ -z "$CUT_COMMIT$SCOPE_TREE" ] || [ -n "$SCOPE" ] || { printf '%s: --cut-commit/--scope-tree are only meaningful with --scope\n' "$PROG" >&2; exit 2; }
 case "$MODE" in
     --selftest) selftest ;;
     --receipt-only) receipt_gate ;;
