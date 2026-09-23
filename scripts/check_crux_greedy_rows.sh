@@ -7,12 +7,14 @@
 # from scripts/crux_inference_dogfood.sh at test time rather than copied, so they cannot drift.
 #
 # Rows:
-#   1. both engines up        → llama.cpp ON + OFF rows and apr OFF with ids; apr ON REFUSED naming #3723;
-#                               the ON text shows <think> (special tokens kept); max_tokens equal across engines
+#   1. apr WITH `run --thinking` → apr ON and OFF measured; llama.cpp generates from apr's OWN prompt ids
+#                               (prompt_source apr, prompt_ids_equal true); the ON text shows <think>
+#   1b. apr WITHOUT it          → apr ON REFUSED naming #3723; OFF still measured
+#   1c. apr's prompt ≠ llama's template → still generated from apr's ids; prompt_ids_equal FALSE, visible
 #   2. llama.cpp returns no `tokens` (return_tokens unsupported) → its rows refused BY NAME, never absent
 #   3. llama.cpp unavailable (LLAMA_OK=0) → llama rows refused with LLAMA_WHY; apr OFF refused naming why
 #   4. apr prints no `tokens`  → apr OFF refused by name
-#   5. MUTANT: the apr-ON refusal dropped from the lib → the table sees the missing row
+#   5. MUTANT: the apr-ON refusal dropped from the lib → the no-flag row goes missing, and that is caught
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
@@ -89,8 +91,16 @@ PY
 SH
 cat > "$BIN/apr" <<'SH'
 #!/usr/bin/env bash
-# stub apr run --format json: greedy ids in "tokens"; STUB_APR_NO_TOKENS=1 omits them
-if [ -n "${STUB_APR_NO_TOKENS:-}" ]; then printf '{"text": "4"}\n'; else printf '{"text": "4", "tokens": [4, 5], "finish_reason": "stop", "backend": {"ran": "gpu"}}\n'; fi
+# stub apr. `run --help` advertises --thinking only when STUB_APR_THINKING=1. `run ... -v` prints the prompt
+# apr built on stderr (formatted_prompt + its ids) and the greedy ids on stdout; STUB_APR_NO_TOKENS=1 omits
+# them; STUB_APR_PROMPT_DRIFT=1 makes apr's prompt ids differ from llama.cpp's template.
+if [ "${2:-}" = --help ]; then echo "  --chat"; [ -n "${STUB_APR_THINKING:-}" ] && echo "  --thinking <on|off>"; exit 0; fi
+th=off; while [ $# -gt 0 ]; do [ "$1" = --thinking ] && th="$2"; shift; done
+last=1; [ "$th" = on ] && last=8
+first=9; [ -n "${STUB_APR_PROMPT_DRIFT:-}" ] && first=7
+printf '[DEBUG] formatted_prompt="<|im_start|>user\\nq<|im_end|>\\n"\n[DEBUG] add_bos=false, encoded 4 tokens: [%s, 9, 9, %s]\n' "$first" "$last" >&2
+ids="[4, 5]"; [ "$th" = on ] && ids="[1, 2, 3, 4, 5]"
+if [ -n "${STUB_APR_NO_TOKENS:-}" ]; then printf '{"text": "4"}\n'; else printf '{"text": "4", "tokens": %s, "finish_reason": "stop", "backend": {"ran": "gpu"}}\n' "$ids"; fi
 SH
 chmod +x "$BIN/llama-server" "$BIN/apr"
 
@@ -141,14 +151,32 @@ PY
 
 printf '%s: greedy rows for #3957 F9\n' "$PROG"
 
-run_case up "$LIB"
+run_case up "$LIB" STUB_APR_THINKING=1
 got=$(rows up)
-want="row llama.cpp on ids=[1, 2, 3, 4, 5] text='<think>\n</think>4<|im_end|>' max=64 special=True
+want_up="row llama.cpp on ids=[1, 2, 3, 4, 5] text='<think>\n</think>4<|im_end|>' max=64 special=True
 row llama.cpp off ids=[4, 5] text='4<|im_end|>' max=64 special=True
-row apr on REFUSED #3723: apr has no thinking toggle — realizar routes every Qw
+row apr on ids=[1, 2, 3, 4, 5] text='<think>\n</think>4<|im_end|>' max=64 special=True
 row apr off ids=[4, 5] text='4<|im_end|>' max=64 special=True"
-[ "$got" = "$want" ] && ok "both engines up: llama ON/OFF + apr OFF with ids and special text; apr ON refused #3723" \
-  || { broke "both engines up"; printf '%s\n--- want\n%s\n' "$got" "$want" | sed 's/^/        /'; }
+[ "$got" = "$want_up" ] && ok "apr with --thinking: apr ON and OFF measured beside llama.cpp, special text kept" \
+  || { broke "apr with --thinking"; printf '%s\n--- want\n%s\n' "$got" "$want_up" | sed 's/^/        /'; }
+prov=$(python3 -c 'import json,sys
+r=[json.loads(l) for l in open(sys.argv[1])]; d=json.load(open([x for x in r if x["engine"]=="llama.cpp" and x["thinking"]=="on"][0]["tokens"]))
+print(d["prompt_source"].split(" (")[0], d["prompt_ids"], d["prompt_ids_equal"])' "$TMP/up/manifest.jsonl")
+[ "$prov" = "apr's own prompt ids [9, 9, 9, 8] True" ] && ok "llama.cpp generated from apr's OWN prompt ids, and they equal its template" \
+  || broke "llama prompt provenance: '$prov'"
+
+run_case noflag "$LIB"
+got=$(rows noflag)
+got_on=$(printf '%s\n' "$got" | grep '^row apr on')
+case "$got_on" in "row apr on REFUSED #3723: this apr has no \`run --thinking\` flag"*) ok "apr without --thinking: its ON row refused naming #3723; OFF measured" ;;
+  *) broke "apr no-flag ON row: '$got_on'" ;; esac
+
+run_case drift "$LIB" STUB_APR_THINKING=1 STUB_APR_PROMPT_DRIFT=1
+prov=$(python3 -c 'import json,sys
+r=[json.loads(l) for l in open(sys.argv[1])]; d=json.load(open([x for x in r if x["engine"]=="llama.cpp" and x["thinking"]=="off"][0]["tokens"]))
+print(d["prompt_ids"], d["llama_template_prompt_ids"], d["prompt_ids_equal"])' "$TMP/drift/manifest.jsonl")
+[ "$prov" = "[7, 9, 9, 1] [9, 9, 9, 1] False" ] && ok "a prompt drift is VISIBLE: llama.cpp used apr's ids, prompt_ids_equal false" \
+  || broke "prompt drift provenance: '$prov'"
 
 run_case notokens "$LIB" STUB_NO_TOKENS=1
 got=$(rows notokens | grep '^row llama.cpp')
@@ -162,7 +190,7 @@ case "$got" in *"llama.cpp on REFUSED llama.cpp unresolved: fixture"*"apr off RE
   ok "llama.cpp unavailable: its rows carry LLAMA_WHY; apr OFF names why it cannot be decoded" ;;
   *) broke "no-llama rows: $got" ;; esac
 
-run_case noaprtokens "$LIB" STUB_APR_NO_TOKENS=1
+run_case noaprtokens "$LIB" STUB_APR_THINKING=1 STUB_APR_NO_TOKENS=1
 got=$(rows noaprtokens | grep '^row apr off')
 case "$got" in "row apr off REFUSED RuntimeError: apr --format json carried no "*) ok "apr with no tokens: its OFF row refused by name" ;;
   *) broke "apr no-tokens row: $got" ;; esac
@@ -171,13 +199,13 @@ case "$got" in "row apr off REFUSED RuntimeError: apr --format json carried no "
 python3 - "$LIB" "$TMP/mutant-lib.sh" <<'PY'
 import sys
 s = open(sys.argv[1]).read()
-a = '    row("apr", pid, "on", None, NO_ON)\n'
+a = '            row("apr", pid, "on", None, NO_ON)\n'
 assert s.count(a) == 1, "mutation anchor moved: update this check with the lib"
 open(sys.argv[2], "w").write(s.replace(a, ""))
 PY
 run_case mutant "$TMP/mutant-lib.sh"
-got=$(rows mutant)
-[ "$got" != "$want" ] && ok "MUTANT (apr ON refusal dropped) is caught by row 1's table" || broke "MUTANT not caught"
+got=$(rows mutant | grep -c '^row apr on')
+[ "$got" = 0 ] && ok "MUTANT (apr ON refusal dropped) is caught: the no-flag table's ON row is gone" || broke "MUTANT not caught ($got apr-ON rows)"
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

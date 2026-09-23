@@ -7,16 +7,19 @@
 # lock (run_cell, the same hold every other cell takes):
 #   llama.cpp  thinking ON and OFF: the model's own template rendered with enable_thinking EXPLICIT, greedy
 #              (temperature 0, top_k 1), the generated ids returned, decoded with special tokens.
-#   apr        thinking OFF: `apr run --chat --temperature 0 --format json`, whose "tokens" are its generated
-#              ids, decoded with special tokens through the SAME llama-server (one tokenizer for both texts).
-#   apr ON     REFUSED by name: #3723 (apr has no thinking toggle; realizar routes every Qwen3/3.5 to the
-#              no-think template, and a pre-rendered ON prompt is escaped). Never an absence.
+#   apr        `apr run --chat --temperature 0 --format json -v [--thinking on|off]`: "tokens" are its generated
+#              ids (decoded with special tokens through the SAME llama-server: one tokenizer for both texts), and
+#              -v prints the prompt ids apr built — which llama.cpp then generates from, so both engines start
+#              from IDENTICAL tokens (aprender-36). apr runs FIRST in each (prompt, thinking) pair for that reason.
+#   apr ON     needs `apr run --thinking` (aprender-36, fix/3957-f9-f10). An apr without it is REFUSED by name for
+#              ON: #3723 (realizar routes every Qwen3/3.5 to the no-think template). Never an absence.
 # Each is one `kind: "greedy"` manifest row, key (model_sha256, host, prompt_id, thinking), whose `tokens`
 # file is the `raw` object: {generated_ids, generated_text, greedy, special, max_tokens}. Both engines use the
 # same max_tokens ($GREEDY_MAXTOK).
 greedy_cells() {
-  local d="$WORK/$SHA12/greedy" cell port pid th content
+  local d="$WORK/$SHA12/greedy" cell port pid th content think_flag=0 aprflag
   mkdir -p "$d"
+  "$APR" run --help 2>/dev/null | grep -q -- '--thinking' && think_flag=1
   cell="$d/cell-greedy.sh"
   printf '#!/usr/bin/env bash\n# one CRUX greedy cell: apr + llama.cpp greedy ids on the identical GGUF\n' > "$cell"
   if [ "$LLAMA_OK" = 1 ]; then
@@ -29,28 +32,32 @@ greedy_cells() {
   for pid in $GREEDY_PIDS; do
     content=$(cat "$WORK/prompt-$pid.txt")
     for th in on off; do
+      aprflag=()
+      [ "$think_flag" = 1 ] && aprflag=(--thinking "$th")
+      if [ "$think_flag" = 1 ] || [ "$th" = off ]; then
+        cell_add "$cell" "$d/apr-$pid-$th.run" "$APR" run "$M" --prompt "$content" --chat --max-tokens "$GREEDY_MAXTOK" \
+          --temperature 0 --seed "$SEED" --format json -v "$APR_BE" "${aprflag[@]}"
+        [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/apr-$pid-$th" python3 scripts/lib/crux_greedy_llama.py apr \
+          --url "http://127.0.0.1:$port" --apr-json "$d/apr-$pid-$th.run.out" --apr-stderr "$d/apr-$pid-$th.run.err" \
+          --max-tokens "$GREEDY_MAXTOK" --out "$d/apr-$pid-$th.json"
+      fi
       [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/llama-$pid-$th" python3 scripts/lib/crux_greedy_llama.py gen \
         --url "http://127.0.0.1:$port" --messages "$WORK/messages-$pid.json" --thinking "$th" \
-        --max-tokens "$GREEDY_MAXTOK" --seed "$SEED" --out "$d/llama-$pid-$th.json"
+        --max-tokens "$GREEDY_MAXTOK" --seed "$SEED" --out "$d/llama-$pid-$th.json" --apr-stderr "$d/apr-$pid-$th.run.err"
     done
-    cell_add "$cell" "$d/apr-$pid-off.run" "$APR" run "$M" --prompt "$content" --chat --max-tokens "$GREEDY_MAXTOK" \
-      --temperature 0 --seed "$SEED" --format json "$APR_BE"
-    [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/apr-$pid-off" python3 scripts/lib/crux_greedy_llama.py apr \
-      --url "http://127.0.0.1:$port" --apr-json "$d/apr-$pid-off.run.out" --max-tokens "$GREEDY_MAXTOK" \
-      --out "$d/apr-$pid-off.json"
   done
   [ "$LLAMA_OK" = 1 ] && printf 'kill "$(cat %q)" 2> /dev/null; wait "$(cat %q)" 2> /dev/null\n' \
     "$d/llama-server.pid" "$d/llama-server.pid" >> "$cell"
   printf 'exit 0\n' >> "$cell"
   run_cell "$cell"
   python3 - "$MANIFEST" "$SHA" "$HOST" "$BACKEND" "$d" "$GREEDY_MAXTOK" "$LLAMA_OK" "${LLAMA_WHY:-}" \
-    "${CELL_WHY:-}" $GREEDY_PIDS <<'PY'
+    "${CELL_WHY:-}" "$think_flag" $GREEDY_PIDS <<'PY'
 import json, os, sys
-m, sha, host, backend, d, maxtok, llama_ok, llama_why, cell_why = sys.argv[1:10]
-pids = sys.argv[10:]
-NO_ON = ("#3723: apr has no thinking toggle — realizar routes every Qwen3/Qwen3.5 to the no-think template, and a "
-         "pre-rendered thinking-ON prompt is escaped (zero-width space inside its special tokens), so apr cannot "
-         "generate greedily with thinking ON")
+m, sha, host, backend, d, maxtok, llama_ok, llama_why, cell_why, think_flag = sys.argv[1:11]
+pids = sys.argv[11:]
+NO_ON = ("#3723: this apr has no `run --thinking` flag — realizar routes every Qwen3/Qwen3.5 to the no-think "
+         "template, and a pre-rendered thinking-ON prompt is escaped (zero-width space inside its special tokens), "
+         "so apr cannot generate greedily with thinking ON")
 
 
 def row(engine, pid, th, path, refused):
@@ -79,14 +86,17 @@ for pid in pids:
     for th in ("on", "off"):
         p = os.path.join(d, "llama-%s-%s.json" % (pid, th))
         row("llama.cpp", pid, th, p, judged(p, p[:-5] + ".rc") if llama_ok == "1" else (llama_why or "llama.cpp unavailable"))
-    row("apr", pid, "on", None, NO_ON)
-    p = os.path.join(d, "apr-%s-off.json" % pid)
-    if llama_ok != "1":
-        why = "apr's ids are decoded through llama-server, which is unavailable here: " + (llama_why or "?")
-    else:
-        why = judged(os.path.join(d, "apr-%s-off.run.out" % pid), os.path.join(d, "apr-%s-off.run.rc" % pid))
-        if why is None:
-            why = judged(p, p[:-5] + ".rc")
-    row("apr", pid, "off", p, why)
+    for th in ("on", "off"):
+        if th == "on" and think_flag != "1":
+            row("apr", pid, "on", None, NO_ON)
+            continue
+        p = os.path.join(d, "apr-%s-%s.json" % (pid, th))
+        if llama_ok != "1":
+            why = "apr's ids are decoded through llama-server, which is unavailable here: " + (llama_why or "?")
+        else:
+            why = judged(os.path.join(d, "apr-%s-%s.run.out" % (pid, th)), os.path.join(d, "apr-%s-%s.run.rc" % (pid, th)))
+            if why is None:
+                why = judged(p, p[:-5] + ".rc")
+        row("apr", pid, th, p, why)
 PY
 }
