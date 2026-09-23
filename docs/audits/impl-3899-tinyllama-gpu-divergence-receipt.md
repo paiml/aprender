@@ -96,11 +96,46 @@ fourth instance this session of *the scope I was working in is not the scope the
 behaviour lives in*, and it was caught by a reachability probe rather than by
 reasoning.
 
-The last row is the one that condemns the guard: a 30% per-row multiplicative
-distortion of the CPU Q4_K matvec produced **no divergence**, which means that
-function is not on the CPU generate path either, despite a panic firing from
-somewhere. I do not know what the CPU leg's matmul path actually is, and a guard
-whose subject I cannot locate is not a guard.
+### AMENDED: the conclusion I drew from that table was WRONG
+
+I originally concluded from the last row that `fused_q4k_parallel_matvec_into`
+is not on the CPU generate path and that "a guard whose subject I cannot locate
+is not a guard". **Both halves are false.** The real cause:
+
+```rust
+let use_direct_fp32 = std::env::var("DIRECT_FP32_GEMV").as_deref() == Ok("1");
+if use_direct_fp32 { ... par_chunks_mut ... return Ok(()); }
+```
+
+The `par_chunks_mut` block I distorted three times lives inside that `if`.
+`DIRECT_FP32_GEMV` is unset, so **it is dead code at runtime**. The panic probe
+fired from the function's ENTRY, which is why "reached" and "my edit has no
+effect" were both true at once.
+
+Proof: moving the distortion to the **activations**, which every branch consumes,
+changed the CPU output completely — `cpu_first8` went from
+`[263, 4272, 393, 756, 1063, 528, 10501, 491]` to
+`[8042, 29934, 15790, 17178, 17615, 6840, 29911, 29892]`.
+
+The path is fully locatable: `generate_quantized.rs:237` →
+`forward_single_with_cache` → `qkv_matmul` → `fused_matmul` →
+`fused_matmul_k_quants` → `fused_q4k_parallel_matvec` → `_into`.
+
+**The sharpened lesson.** "Prove the mutated code executes" is not enough if the
+probe is a panic at function entry: that proves the FUNCTION is reached and says
+nothing about the BRANCH you edited. **The probe has to be at the edited line.**
+An env-gated fast path is exactly the shape that makes those two differ.
+
+**And there is already a better-placed guard.** With the CPU corrupted,
+`OwnedQuantizedModelCuda::new` refused to construct:
+
+```
+PARITY-GATE FAILED: GPU computes a DIFFERENT function than CPU.
+```
+
+So the backstop my deleted guard was reaching for already exists, runs at
+model-construction time on the real path, and fired the moment a real divergence
+existed. Deleting my guard was right — for a reason I did not know at the time.
 
 **Deleted rather than shipped.** An unfalsified green reads as coverage and is
 worse than its absence. The findings above are the durable part; the test was
