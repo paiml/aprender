@@ -224,15 +224,37 @@ RATE_LINE = re.compile(r"\[\s*Prompt:\s*([0-9.]+)\s*t/s\s*\|\s*Generation:\s*([0
 LLAMA_CLI_THINK = (("[Start thinking]", "<think>"), ("[End thinking]", "</think>"))
 
 
+#: realizar logs `formatted_prompt` as `{:?}` of its first 200 BYTES (infer/mod.rs prepare_tokens_gguf).
+FORMATTED_PROMPT_LOG_BYTES = 200
+_DEBUG_ESCAPE = re.compile(r"\\(u\{([0-9a-fA-F]{1,6})\}|.)", re.S)
+
+
+def undebug(s):
+    """Undo Rust's `{:?}` escaping of a str: \\n \\t \\r \\0 \\\\ \\" \\' and \\u{XXXX}. Printable
+    non-ASCII is NOT escaped by `{:?}`, so it passes through unchanged."""
+    simple = {"n": "\n", "t": "\t", "r": "\r", "0": "\0", "\\": "\\", '"': '"', "'": "'"}
+    def sub(m):
+        if m.group(2):
+            return chr(int(m.group(2), 16))
+        return simple.get(m.group(1), m.group(0))
+    return _DEBUG_ESCAPE.sub(sub, s)
+
+
 def rendered_opens_think(rendered):
     """#3962 B2: did apr's rendered prompt (its -v `formatted_prompt`, Rust-Debug-escaped) end INSIDE an
-    open think block? -> True / False / None. realizar prints only the first 200 characters, so a
-    rendering that long may be cut before its end: that is None (unknown), never guessed."""
+    open think block? -> True / False / None.
+
+    realizar logs only the first 200 BYTES of the raw prompt. The Debug form is not a byte count: it
+    lengthens escapes (\\n) and leaves printable non-ASCII as one char for 2-4 bytes, so a CJK prompt
+    cut at 200 bytes prints as ~70 chars (aprender-6c [8b6b78]). The escapes are therefore undone and
+    the RAW UTF-8 length measured: a rendering of >= 200 bytes may have been cut before its end, and
+    is None (unknown) -- never read as "whole, and it does not open"."""
     if not isinstance(rendered, str):
         return None
-    if rendered.endswith("<think>\\n"):
+    raw = undebug(rendered)
+    if raw.endswith("<think>\n"):
         return True
-    return False if len(rendered) < 180 else None
+    return False if len(raw.encode("utf-8")) < FORMATTED_PROMPT_LOG_BYTES else None
 
 
 def prompt_opens_think(rows):
