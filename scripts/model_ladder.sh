@@ -176,8 +176,119 @@ sys.exit(1)
 
 # JSON-encode stdin as a string, or `null` when empty. Hand-rolled quoting of a
 # model's own output is how a receipt becomes unparseable (#3847); python does it.
+# #3943: the evidence a failed serve probe needs, INLINE. `WORK` is a `mktemp -d`
+# under `trap _rm_work EXIT`, so a `why` that names a log PATH names a file that is
+# gone before anyone reads the receipt -- which is exactly how a cpu serve failure on
+# qwen35-27b-q4km went unexplained: the one artifact that said what happened was
+# deleted by the run that recorded it. Carry the last lines themselves.
+serve_log_tail() { # <file> [n] -> the last n non-empty lines, each cut to 200 chars, or nothing
+  [ -s "$1" ] || return 0
+  grep -v '^[[:space:]]*$' "$1" | tail -n "${2:-8}" | cut -c1-200
+}
+
 json_str_or_null() {
   python3 -c 'import json,sys; t=sys.stdin.read(); print(json.dumps(t) if t else "null")'
+}
+
+# ── #3957 F4c: the generated text of ONE serve response, in any of its three wire shapes ──
+# The probe read the body with a single `json.load`. Every `stream=true` body is NOT one
+# JSON object -- the OpenAI routes stream SSE (`data: {...}` lines ending `data: [DONE]`),
+# /api/chat streams NDJSON (one object per line) -- so the load failed, the text was "",
+# and `gibberish_reason("")` said nothing, which the row read as CLEAN. Half the serve
+# routes passed on http status alone; an NDJSON stream of "zombie zombie zombie" was clean.
+#
+# Prints the concatenated text (possibly empty). Shapes, tried in order:
+#   1. one JSON object: choices[].text | choices[].message.content | message.content | response
+#   2. SSE: every `data:` payload that is JSON, concatenating choices[].delta.content,
+#      choices[].text, message.content and response
+#   3. NDJSON: every line that is a JSON object, same fields
+serve_reply_text() { # <body-file>
+  python3 -c '
+import json, sys
+try:
+    raw = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+except OSError:
+    raise SystemExit
+def parts(d):
+    out = []
+    if not isinstance(d, dict):
+        return out
+    for c in (d.get("choices") or []):
+        if isinstance(c, dict):
+            out.append(c.get("text") or ((c.get("message") or {}).get("content") or "")
+                       or ((c.get("delta") or {}).get("content") or ""))
+    m = (d.get("message") or {}).get("content") if isinstance(d.get("message"), dict) else None
+    if isinstance(m, str):
+        out.append(m)
+    if isinstance(d.get("response"), str):
+        out.append(d["response"])
+    return [x for x in out if isinstance(x, str) and x]
+def objs(lines):
+    for ln in lines:
+        ln = ln.strip()
+        if not ln or ln == "[DONE]":
+            continue
+        try:
+            yield json.loads(ln)
+        except ValueError:
+            continue
+try:
+    whole = json.loads(raw)
+except ValueError:
+    whole = None
+if isinstance(whole, dict):
+    print("\n".join(parts(whole)))
+elif any(ln.startswith("data:") for ln in raw.splitlines()):
+    print("".join(p for d in objs(ln[5:] for ln in raw.splitlines() if ln.startswith("data:")) for p in parts(d)))
+else:
+    print("".join(p for d in objs(raw.splitlines()) for p in parts(d)))
+' "$1" 2>/dev/null
+}
+
+# serve_route_bad <body-file> <route label> -> prints the reason, or nothing when the reply is clean.
+# EMPTY TEXT IS A REASON, never clean: a route whose body yields no generated text measured nothing
+# about the model, and "" handed to the detector is the vacuous pass #3957 F4c removes.
+serve_route_bad() {
+  local text bytes term
+  # #3957 Q6: a STREAM must end with its terminal event -- `data: [DONE]` (SSE) or an object
+  # with `"done": true` (NDJSON). Without it the server stopped mid-reply (or curl's --max-time
+  # did), and the text that did arrive is a prefix judged as if it were the answer.
+  term=$(python3 -c '
+import json, sys
+raw = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+try:
+    one = json.loads(raw)
+except ValueError:
+    one = None
+else:
+    # A one-line NDJSON stream parses as one object. /api/chat says `done` on every chunk,
+    # and `done: false` is an unfinished reply whichever way it arrived.
+    print("open" if isinstance(one, dict) and one.get("done") is False else "single"); raise SystemExit
+lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+if any(ln.startswith("data:") for ln in lines):
+    print("ok" if any(ln[5:].strip() == "[DONE]" for ln in lines if ln.startswith("data:")) else "open")
+elif lines:
+    def done(ln):
+        try:
+            d = json.loads(ln)
+        except ValueError:
+            return False
+        return isinstance(d, dict) and d.get("done") is True
+    print("ok" if done(lines[-1]) else "open")
+else:
+    print("single")
+' "$1" 2> /dev/null)
+  if [ "$term" = open ]; then
+    printf 'truncated stream: the %s response has no terminal event (data: [DONE] / "done": true) -- a prefix is not an answer (#3957 Q6)' "$2"
+    return 0
+  fi
+  text=$(serve_reply_text "$1")
+  if [ -z "${text//[[:space:]]/}" ]; then
+    bytes=$(wc -c < "$1" 2> /dev/null | tr -d ' ')
+    printf 'nothing measured: the %s response carried no generated text (%s bytes) (#3957 F4c)' "$2" "${bytes:-0}"
+    return 0
+  fi
+  printf '%s' "$text" | gibberish_reason || true
 }
 
 # #3925: judge the model reply, not the transcript it arrived in. `apr chat` frames
@@ -609,8 +720,20 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
     wait_why=${wait_out%% *}; waited=${wait_out##* }
     if [ "$wait_why" != "ready" ]; then
         td=$(ladder_serve_teardown "$pid" "$port")
-        printf '{"probed":false,"why":"apr serve did not answer /health: %s after %ss (stall window %ss, ceiling %ss; log: %s)","teardown":"%s","routes":{}}' \
-            "$wait_why" "$waited" "$SERVE_STALL_S" "$SERVE_CEILING_S" "$WORK/serve-$rid-$bname.log" "$td"
+        # #3943 + #3949: the WHY names what ended the wait (died / stalled / ceiling, with
+        # the bounds) AND carries the evidence itself, the last log line and log_tail,
+        # because $WORK is deleted by the EXIT trap, so a log PATH names a file that is
+        # gone. Arguments 1-3 keep the positions check_serve_probe_evidence.sh lifts.
+        python3 -c '
+import json, sys
+tail = sys.argv[2]
+kind = sys.argv[4] if len(sys.argv) > 4 else "timeout"
+bounds = " (stall window %ss, ceiling %ss)" % (sys.argv[5], sys.argv[6]) if len(sys.argv) > 6 else ""
+last = tail.splitlines()[-1] if tail else "the serve log was empty"
+print(json.dumps({"probed": False,
+                  "why": "apr serve did not answer /health: %s after %ss%s; last log line: %s" % (kind, sys.argv[1], bounds, last),
+                  "log_tail": tail or None, "teardown": sys.argv[3], "routes": {}}))
+' "$waited" "$(serve_log_tail "$WORK/serve-$rid-$bname.log")" "$td" "$wait_why" "$SERVE_STALL_S" "$SERVE_CEILING_S"
         return 1
     fi
 
@@ -648,19 +771,7 @@ print("null" if v is None else ("true" if v else "false"))
             # as "two gaps stacked"; it was this one gap. The generated text is
             # extracted from the response shape rather than judged raw, so JSON field
             # names and ids cannot themselves trip the repeated-fragment signal.
-            rtext=$(python3 -c '
-import json,sys
-try: d=json.load(open(sys.argv[1]))
-except Exception: print(""); raise SystemExit
-out=[]
-for c in (d.get("choices") or []):
-    out.append(c.get("text") or ((c.get("message") or {}).get("content") or ""))
-m=(d.get("message") or {}).get("content")
-if m: out.append(m)
-if d.get("response"): out.append(d["response"])
-print("\\n".join(x for x in out if x))
-' "$bodyf" 2>/dev/null)
-            rbad=$(printf '%s' "$rtext" | gibberish_reason) || rbad=""
+            rbad=$(serve_route_bad "$bodyf" "$r|stream=$stream")
             rbad_json=$(printf '%s' "$rbad" | json_str_or_null)
             [ $first = 1 ] || json="$json,"; first=0
             json="$json\"$r|stream=$stream\":{\"http\":$code,\"ok\":$([ "$code" = 200 ] && echo true || echo false),\"used_gpu\":$ug,\"output_bad\":$rbad_json}"
@@ -757,6 +868,13 @@ print(json.dumps({
 }))
 PY
 )
+  # #3957 F10: the architecture from the FILE HEADER (apr inspect), so a RED-UNSUPPORTED key is
+  # checked against what the file is rather than what its name suggests. "unknown" when unreadable.
+  arch_json="$WORK/${rid//[^A-Za-z0-9._-]/_}.inspect.json"
+  apr_locked inspect "$path" --json > "$arch_json" 2> /dev/null || :
+  row_arch=$(python3 -c 'import json, sys
+try: print(json.load(open(sys.argv[1])).get("architecture") or "unknown")
+except Exception: print("unknown")' "$arch_json")
   be_json="{"; first=1
   IFS=',' read -r -a bes <<< "$rbackends"
   # ── #3843: `code` is measured ONCE per rung, and NOT per backend ─────────────
@@ -786,9 +904,20 @@ PY
     # apr_locked / LOCK_BUSY are KEPT from main: the GPU lock is what serialises the
     # ladder against every other session on the box. #3743's side dropped it.
     run_flag=$(flag_for run "$flag")
+    # #3957 F10: stdout and stderr go to SEPARATE files. A refusal generates nothing, and the only way
+    # to observe "nothing" is a stdout byte count that the merged stream cannot give. `generated_bytes`
+    # leaves out apr's own `verbose: ` preamble, which --verbose prints BEFORE the pre-load refusal
+    # (measured on lambda, apr 0.69.1 (7b8aa7e32) on Qwen3.5-35B-A3B-UD-IQ4_XS: rc 12, 178 stdout
+    # bytes, all four of them `verbose:` lines). The refusal is recorded verbatim, so the judge can
+    # check that apr refused BY NAME (capability::no_cuda_forward_reason) and did not just fail.
+    run_o="$WORK/${rid//[^A-Za-z0-9._-]/_}.$b.run.out"; run_e="$WORK/${rid//[^A-Za-z0-9._-]/_}.$b.run.err"
     # shellcheck disable=SC2086
-    run_out=$(apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $run_flag 2>&1); run_rc=$?
+    apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $run_flag > "$run_o" 2> "$run_e"; run_rc=$?
     [ "$run_rc" = "$LOCK_BUSY" ] && lock_timeout "apr run $rid ($b)"
+    run_out=$(cat "$run_o" "$run_e")
+    run_stdout_bytes=$(stat -c %s "$run_o" 2> /dev/null || echo null)
+    run_generated_bytes=$(grep -v '^verbose: ' "$run_o" | wc -c)
+    run_refusal_json=$(grep -h -m1 -F 'no CUDA forward for architecture' "$run_e" "$run_o" | head -1 | tr -d '\r\n' | json_str_or_null)
     fb=false; ran=true; esc=false
     if grep -qE 'falling back to CPU|path rejected, attempting fallback|runs on the CPU; the GPU backend' <<< "$run_out"; then fb=true; fi
     # #3743: realizar zero-width-escapes special tokens it finds INSIDE the user text,
@@ -839,12 +968,14 @@ PY
     # probed non-streaming and streaming, because the ollama-compat wire has its own
     # translation layer that has already diverged from the OpenAI-compat one twice
     # independently (#3825's tool_calls gap, and this defect).
-    serve_json=$(ladder_serve_probe "$path" "$(flag_for "serve run" "$flag")" "$rid" "$b")
+    serve_err="$WORK/serve-probe-$rid-$b.err"
+    serve_json=$(ladder_serve_probe "$path" "$(flag_for "serve run" "$flag")" "$rid" "$b" 2> "$serve_err")
     serve_rc=$?
+    [ -s "$serve_err" ] && cat "$serve_err" >&2
 
     [ $first = 1 ] || be_json="$be_json,"; first=0
     be_json="$be_json\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"escaped_special\":$esc,\"rc\":$run_rc"
-    be_json="$be_json,\"verbs\":{\"run\":{\"ran\":$ran,\"rc\":$run_rc}"
+    be_json="$be_json,\"verbs\":{\"run\":{\"ran\":$ran,\"rc\":$run_rc,\"stdout_bytes\":$run_stdout_bytes,\"generated_bytes\":$run_generated_bytes,\"refusal\":$run_refusal_json}"
     # #3921: `output_bad` carries the REASON, or null. A string here is a verdict
     # about what the verb produced; the rc beside it is only about whether it ran.
     chat_bad_json=$(printf '%s' "${chat_bad:-}" | json_str_or_null)
@@ -859,7 +990,17 @@ PY
     # SUBSHELL, so the parent carries on with an empty string). Substitute a
     # well-formed refusal, at the point where we still know which backend it was.
     if [ -z "$serve_json" ] || ! python3 -c 'import json,sys; json.load(sys.stdin)' <<< "$serve_json" 2>/dev/null; then
-      serve_json='{"probed":false,"why":"the serve probe produced no parseable object for backend '"$b"' — it exited rather than returned","routes":{}}'
+      # #3943: the exit STATUS is the cheapest discriminator there is -- 137/143 is a
+      # signal, 2 is lock_timeout's exit, anything else is a path nobody expected -- and
+      # it was being overwritten with 1 before anything recorded it.
+      serve_json=$(python3 -c '
+import json, sys
+print(json.dumps({"probed": False,
+                  "why": "the serve probe produced no parseable object for backend %s -- it exited (status %s) rather than returned" % (sys.argv[1], sys.argv[2]),
+                  "probe_exit": int(sys.argv[2]),
+                  "probe_stderr_tail": sys.argv[3] or None,
+                  "log_tail": sys.argv[4] or None, "routes": {}}))
+' "$b" "$serve_rc" "$(serve_log_tail "$serve_err" 6)" "$(serve_log_tail "$WORK/serve-$rid-$b.log")")
       serve_rc=1
     fi
     be_json="$be_json,\"serve\":$serve_json}}"
@@ -868,10 +1009,11 @@ PY
   # The receipt carries the MEASURED file hash (ONT-4c1): a resolver joining the ladder contract to
   # this receipt compares two measurements instead of trusting the receipt's own claim that it checked.
   row_err="$WORK/${rid//[^A-Za-z0-9._-]/_}.rowbuild.err"
-  row=$(python3 - "$rid" "$qa_row" "$be_json" "$qa_rc" "$rreq" "$got" "$rfile" "$rinv" 2>"$row_err" <<'PY'
+  row=$(python3 - "$rid" "$qa_row" "$be_json" "$qa_rc" "$rreq" "$got" "$rfile" "$rinv" "$row_arch" 2>"$row_err" <<'PY'
 import json, sys
 rid, qa, be, qa_rc = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3]), int(sys.argv[4])
 req, sha, rfile, inv_only = sys.argv[5] == "1", sys.argv[6], sys.argv[7], sys.argv[8] == "1"
+arch = sys.argv[9]
 cap = qa.get("capability_match", {})
 # `passed` is already normalised (skipped => passed=False) by the gate() reader above, but the
 # judge must not depend on that: a skipped gate counts only when no GPU backend is claimed.
@@ -936,7 +1078,12 @@ def verb_ok(v, name):
         return False
     return bool(x.get("ran")) and (x.get("rc") or 0) == 0
 
-green = cap_ok and qa.get("golden_output", {}).get("passed", False) \
+# #3965: a SKIPPED golden gate is not a pass. Older `apr` builds wrote skips as
+# passed:true, skipped:true, and receipts from them still exist, so the ladder guards
+# `skipped` itself instead of trusting the producer: the same guard cap_ok has above.
+golden_ok = qa.get("golden_output", {}).get("passed", False) \
+    and not qa.get("golden_output", {}).get("skipped", False)
+green = cap_ok and golden_ok \
         and all(v["ran"] and not v["fallback"] and not v.get("escaped_special") and serve_ok(v)
                 and verb_ok(v, "chat") and verb_ok(v, "code")
                 for v in be.values())
@@ -948,7 +1095,7 @@ green = cap_ok and qa.get("golden_output", {}).get("passed", False) \
 gates_failed = qa.get("gates_failed") or []
 accounts_for_rc = qa_rc == 0 or bool(gates_failed)
 print(json.dumps({"id": rid, "file": rfile, "inventory_only": inv_only, "present": True, "sha_ok": True,
-                  "sha256": sha, "required": req, "qa_rc": qa_rc, "capability_match": qa.get("capability_match"),
+                  "sha256": sha, "architecture": arch, "required": req, "qa_rc": qa_rc, "capability_match": qa.get("capability_match"),
                   "golden_output": qa.get("golden_output"), "gates": qa.get("gates"),
                   "gates_failed": gates_failed, "gates_reported": qa.get("gates_reported"),
                   "gates_account_for_rc": accounts_for_rc,

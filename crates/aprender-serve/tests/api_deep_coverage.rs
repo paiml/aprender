@@ -877,6 +877,7 @@ fn test_chat_completion_request_with_stop_sequences() {
 #[test]
 fn test_chat_completion_response_full() {
     let response = ChatCompletionResponse {
+        used_gpu: None,
         id: "chatcmpl-123".to_string(),
         object: "chat.completion".to_string(),
         created: 1677652288,
@@ -1420,6 +1421,7 @@ fn test_complete_chat_completion_flow() {
 
     // Simulate response
     let response = ChatCompletionResponse {
+        used_gpu: None,
         id: "chatcmpl-test".to_string(),
         object: "chat.completion".to_string(),
         created: 1234567890,
@@ -1919,6 +1921,7 @@ fn test_chat_completion_request_empty_messages() {
 #[test]
 fn test_chat_completion_response_empty_choices() {
     let response = ChatCompletionResponse {
+        used_gpu: None,
         id: "test".to_string(),
         object: "chat.completion".to_string(),
         created: 0,

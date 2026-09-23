@@ -1668,6 +1668,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             trace_level,
             profile,
             backend: BackendArg { backend },
+            thinking,
         } => {
             if let Some(ref b) = backend {
                 eprintln!("Backend override: {b}");
@@ -1691,6 +1692,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
                 system.as_deref(),
                 *inspect,
                 effective_no_gpu,
+                run_accelerator_forced(*gpu, *no_gpu, backend.as_deref()),
                 *trace,
                 trace_steps.as_deref(),
                 *trace_verbose,
@@ -1699,6 +1701,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
                 *profile,
                 cli.offline,
                 cli.json,
+                thinking.mode(),
             )
         }
 

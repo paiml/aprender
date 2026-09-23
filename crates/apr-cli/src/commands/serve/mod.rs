@@ -9,6 +9,7 @@ pub mod auth;
 pub mod handlers;
 #[cfg(feature = "inference")]
 pub mod ollama;
+pub(crate) mod route_index;
 pub mod routes;
 #[cfg(feature = "inference")]
 pub mod safetensors;
@@ -20,6 +21,8 @@ pub use types::*;
 // Test modules
 #[cfg(test)]
 mod tests;
+#[cfg(all(test, feature = "inference"))]
+mod tests_route_index_3979;
 // PP-LLAMA-001 PP-14/PP-15/§9 #8: the offload report the served process
 // publishes. `inference`-gated because the report type comes from realizar.
 #[cfg(all(test, feature = "inference"))]

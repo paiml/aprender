@@ -368,13 +368,22 @@ fn try_gguf_gpu_generate(
         );
     }
 
-    if !validate_gpu_first_token(&mut cuda_model, gen_config, input_tokens) {
-        // Validation failed — extract model back for CPU fallback
-        return Err(Box::new(cuda_model.into_model()));
+    // #3973: three states, each handled here. Routing is unchanged: only a MISMATCH
+    // leaves the GPU. A not-measured probe proceeds, and says it is unvalidated.
+    match validate_gpu_first_token(&mut cuda_model, gen_config, input_tokens) {
+        F2Outcome::Mismatch => {
+            // Validation failed — extract model back for CPU fallback
+            return Err(Box::new(cuda_model.into_model()));
+        },
+        F2Outcome::NotMeasured { reason } => {
+            eprintln!("[GH-480] F2 validation NOT MEASURED — {reason}. GPU output is UNVALIDATED (#3973)");
+        },
+        F2Outcome::Validated { .. } => {},
     }
 
     // Reuse existing CUDA model — generate_gpu_resident() creates fresh KV cache
     // and resets GPU KV positions internally, so validation doesn't "consume" it.
+    mark_generation_start(); // #3981: setup (upload + F2) ends here
     let result = cuda_model
         .generate_gpu_resident(input_tokens, gen_config)
         .map(|tokens| (tokens, true))
@@ -480,6 +489,7 @@ fn run_gguf_generate(
     }
 
     log_cpu_backend(config.verbose, has_legacy_quant);
+    mark_generation_start(); // #3981
     let tokens = model
         .generate_with_cache(input_tokens, gen_config)
         .map_err(|e| RealizarError::InferenceError(format!("CPU generation failed: {}", e)))?;
@@ -803,6 +813,7 @@ fn try_apr_wgpu_inference(
         inference_ms,
         load_ms: model_load_ms,
         tok_per_sec: if inference_ms > 0.0 { tokens_generated as f64 / (inference_ms / 1000.0) } else { 0.0 },
+        generation_ms: Some(inference_ms), // #3981: this path starts its clock AFTER setup, right before generation
         format: "APR".to_string(),
         used_gpu: true,
         gpu_attempted: true,
@@ -907,9 +918,12 @@ fn log_apr_cuda_info(
         "Architecture: {} ({} layers, vocab_size={})",
         info.arch, info.num_layers, info.vocab_size
     );
+    // #4006: the loaded weights' qtypes, not a backend name in the quant field.
+    let m = cuda_model.model();
     eprintln!(
-        "Config: hidden_size={}, quant=CUDA+KVCache, threads=1 (GPU)",
-        info.hidden_dim
+        "Config: hidden_size={}, quant={}, backend=CUDA+KVCache, threads=1 (GPU)",
+        info.hidden_dim,
+        body_quant_label(&model_body_qtypes(m), m.lm_head_weight.qtype)
     );
     eprintln!("Model loaded in {:.1}ms", load_ms);
     eprintln!(
@@ -961,11 +975,14 @@ fn try_apr_cuda_inference(
     config.apply_sampling_to(&mut gen_config);
 
     eprintln!("[GH-480] F2 validation starting...");
-    if !validate_gpu_first_token(&mut cuda_model, &gen_config, input_tokens) {
-        eprintln!("[GH-480] F2 validation FAILED — falling back to CPU");
+    // #3973: "PASSED" is printed ONLY for a comparison that ran and agreed, and it
+    // now carries the measured cosine. It used to print for every non-failure,
+    // including the two branches that compared nothing.
+    let f2 = validate_gpu_first_token(&mut cuda_model, &gen_config, input_tokens);
+    eprintln!("{}", f2_status_line(&f2));
+    if f2 == F2Outcome::Mismatch {
         return None;
     }
-    eprintln!("[GH-480] F2 validation PASSED — launching GPU generation");
 
     let infer_start = Instant::now();
 
@@ -1000,6 +1017,7 @@ fn try_apr_cuda_inference(
         generated_token_count,
         inference_ms,
         tok_per_sec: tok_per_sec(generated_token_count, inference_ms),
+        generation_ms: Some(inference_ms), // #3981: this path starts its clock AFTER setup, right before generation
         load_ms,
         format: "APR".to_string(),
         used_gpu: true,
@@ -1045,8 +1063,10 @@ fn run_apr_quantized_cpu_inference(
             model.config.architecture, model.config.num_layers, model.config.vocab_size
         );
         eprintln!(
-            "Config: hidden_size={}, quant=Q4_K (OwnedQuantizedModel CPU), threads={}",
+            "Config: hidden_size={}, quant={} (OwnedQuantizedModel CPU), threads={}",
             model.config.hidden_dim,
+            // #4006: a BF16 .apr printed Q4_K here; name what loaded.
+            body_quant_label(&model_body_qtypes(&model), model.lm_head_weight.qtype),
             rayon::current_num_threads()
         );
         eprintln!("Model loaded in {:.1}ms", load_ms);
@@ -1084,6 +1104,7 @@ fn run_apr_quantized_cpu_inference(
         generated_token_count,
         inference_ms,
         tok_per_sec: tok_per_sec(generated_token_count, inference_ms),
+        generation_ms: Some(inference_ms), // #3981: this path starts its clock AFTER setup, right before generation
         load_ms,
         format: "APR".to_string(),
         used_gpu: false,
@@ -1239,9 +1260,11 @@ fn try_safetensors_cuda_inference(
             cuda_model.config().vocab_size
         );
         eprintln!(
-            "Config: hidden_size={}, context_length={}, quant=F16/BF16, threads=1 (GPU)",
+            "Config: hidden_size={}, context_length={}, quant={}, threads=1 (GPU)",
             cuda_model.config().hidden_dim,
-            cuda_model.config().context_length
+            cuda_model.config().context_length,
+            // #4006: read from the header, not an either/or guess.
+            safetensors_quant_label(&config.model_path)
         );
         eprintln!("Model loaded in {:.1}ms", load_ms);
         eprintln!(
@@ -1276,6 +1299,7 @@ fn try_safetensors_cuda_inference(
         generated_token_count,
         inference_ms,
         tok_per_sec: tok_per_sec(generated_token_count, inference_ms),
+        generation_ms: Some(inference_ms), // #3981: this path starts its clock AFTER setup, right before generation
         load_ms,
         format: "SafeTensors".to_string(),
         used_gpu: true,

@@ -76,6 +76,7 @@
     #[test]
     fn test_inference_result_format_string_gguf_deep_icov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -93,6 +94,7 @@
     #[test]
     fn test_inference_result_format_string_apr_deep_icov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -110,6 +112,7 @@
     #[test]
     fn test_inference_result_format_string_safetensors_deep_icov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -129,6 +132,7 @@
     #[test]
     fn test_inference_result_used_gpu_true_deep_icov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -146,6 +150,7 @@
     #[test]
     fn test_inference_result_used_gpu_false_deep_icov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,

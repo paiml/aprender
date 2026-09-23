@@ -339,9 +339,19 @@ fn init_batch_model(
                         stop_tokens: stop_tokens.to_vec(), trace: false,
             ..Default::default()
                     };
-                    // batch model-init has no prompt yet → BOS-probe fallback (PMAT-742)
-                    if validate_gpu_first_token(&mut cuda_model, &probe_config, &[]) {
-                        return Ok(BatchModel { gpu: Some(cuda_model), #[cfg(feature = "gpu")] wgpu: None, cpu: None });
+                    // batch model-init has no prompt yet → BOS-probe fallback (PMAT-742).
+                    // #3973: a BOS-only probe has no real position, so this is ALWAYS
+                    // NotMeasured: batch serving was gated on a check that could not fail.
+                    // Routing is unchanged (it still serves on the GPU), and it now SAYS
+                    // it is unvalidated instead of passing silently.
+                    match validate_gpu_first_token(&mut cuda_model, &probe_config, &[]) {
+                        crate::infer::F2Outcome::Mismatch => {},
+                        outcome => {
+                            if let crate::infer::F2Outcome::NotMeasured { reason } = &outcome {
+                                eprintln!("[batch] F2 validation NOT MEASURED at model init — {reason}. GPU serving is UNVALIDATED (#3973)");
+                            }
+                            return Ok(BatchModel { gpu: Some(cuda_model), #[cfg(feature = "gpu")] wgpu: None, cpu: None });
+                        },
                     }
                     eprintln!("[batch] CUDA validation failed, trying wgpu...");
                     let model = cuda_model.into_model();

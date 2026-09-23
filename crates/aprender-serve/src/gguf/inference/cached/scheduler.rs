@@ -232,7 +232,7 @@ impl OwnedQuantizedModelCached {
 
         // GPU matmul
         scheduler
-            .matmul(input, &weight_f32, batch_size, in_dim, out_dim)
+            .matmul_transpose_b(input, &weight_f32, batch_size, in_dim, out_dim)
             .map_err(|e| RealizarError::UnsupportedOperation {
                 operation: "batch_matmul_gpu_with_scheduler".to_string(),
                 reason: format!("GPU matmul failed: {e}"),
@@ -269,8 +269,9 @@ impl OwnedQuantizedModelCached {
 
         // Try CUDA first (no buffer size limits)
         if let Ok(Some(mut cuda_sched)) = self.get_cuda_scheduler() {
+            // #3975: `weight_f32` is dequantized [out, in] = [n, k].
             return cuda_sched
-                .matmul(input, &weight_f32, batch_size, in_dim, out_dim)
+                .matmul_bt(input, &weight_f32, batch_size, in_dim, out_dim)
                 .map_err(|e| RealizarError::UnsupportedOperation {
                     operation: "batch_matmul_gpu_prefer_cuda".to_string(),
                     reason: format!("CUDA matmul failed: {e}"),
@@ -280,7 +281,7 @@ impl OwnedQuantizedModelCached {
         // Fallback to wgpu (may hit 256MB limit for large batches)
         let mut scheduler = self.get_scheduler()?;
         scheduler
-            .matmul(input, &weight_f32, batch_size, in_dim, out_dim)
+            .matmul_transpose_b(input, &weight_f32, batch_size, in_dim, out_dim)
             .map_err(|e| RealizarError::UnsupportedOperation {
                 operation: "batch_matmul_gpu_prefer_cuda".to_string(),
                 reason: format!("GPU matmul failed: {e}"),

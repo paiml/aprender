@@ -218,6 +218,58 @@ pub fn format_chat_messages(messages: &[ChatMessage], model_name: Option<&str>) 
     })
 }
 
+/// #3990: format chat messages the way the MODEL was trained -- with the GGUF's own
+/// `tokenizer.chat_template` -- and fall back to [`format_chat_messages`]' hand-coded
+/// family templates only when there is no GGUF, or the GGUF carries no template.
+///
+/// A template that is PRESENT but fails to render is not silently replaced: the error is
+/// printed on stderr with the reason, and only then does the legacy formatter answer.
+pub fn format_chat_messages_official(
+    gguf: Option<&crate::gguf::GGUFModel>,
+    messages: &[ChatMessage],
+    model_hint: Option<&str>,
+) -> String {
+    use crate::chat_template::{self, ChatMessage as TemplateMessage};
+
+    let Some(gguf) = gguf.filter(|g| g.metadata.contains_key("tokenizer.chat_template")) else {
+        return format_chat_messages(messages, model_hint);
+    };
+    let template_messages: Vec<TemplateMessage> = messages
+        .iter()
+        .map(|m| TemplateMessage::new(&m.role, &m.content))
+        .collect();
+    // Thinking OFF: production's default for every verb since #3801 -- now rendered the
+    // template's own way (`enable_thinking=false`), not by a hand-coded prefill.
+    match chat_template::render_official_for_model(gguf, &template_messages, Some(false)) {
+        Ok(prompt) => prompt,
+        Err(e) => {
+            eprintln!(
+                "[#3990] WARNING: the model's own chat_template failed to render ({e}); \
+                 falling back to the hand-coded template, which is NOT the prompt format this \
+                 model was trained on"
+            );
+            format_chat_messages(messages, model_hint)
+        },
+    }
+}
+
+/// [`format_chat_messages_official`] against whatever GGUF the server retained.
+///
+/// #4007: `model_hint` is often the HTTP client's `"model"` string (`"m"`, `"gpt-4"`), which
+/// says nothing about the loaded model. The template comes from the GGUF; failing that, the
+/// fallback is keyed on the LOADED model's architecture, and the caller's hint is used only
+/// when the server knows no architecture.
+pub fn format_chat_messages_for_state(
+    state: &AppState,
+    messages: &[ChatMessage],
+    model_hint: Option<&str>,
+) -> String {
+    let mapped = state.mapped_gguf_model();
+    let architecture = state.model_architecture();
+    let hint = architecture.as_deref().or(model_hint);
+    format_chat_messages_official(mapped.as_ref().map(|m| &m.model), messages, hint)
+}
+
 /// Clean chat output to prevent prompt injection (PMAT-088)
 ///
 /// Stops output at the first stop sequence to prevent the model from
@@ -579,3 +631,5 @@ pub struct CompletionChunkChoice {
 include!("realize_handlers_embed_completion.rs");
 include!("gpu_completions_handler.rs");
 include!("realize_handlers_model_lineage.rs");
+
+include!("realize_handlers_official_3990_tests.rs");

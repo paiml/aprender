@@ -83,6 +83,9 @@ pub enum ExtendedCommands {
         // PMAT-488 / #2583: shared `--backend` declaration (see `BackendArg`).
         #[command(flatten)]
         backend: BackendArg,
+        // #3723: shared `--thinking` declaration (see `ThinkingArg`).
+        #[command(flatten)]
+        thinking: crate::ThinkingArg,
     },
     /// Benchmark throughput (spec H12: >= 10 tok/s)
     Bench {

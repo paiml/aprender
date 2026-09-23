@@ -409,6 +409,7 @@ fn test_prefault_mmap_single_byte() {
 #[test]
 fn test_inference_result_debug_contains_all_fields() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "generated_text_here".to_string(),
         tokens: vec![1, 2, 3],
         input_token_count: 1,

@@ -1,0 +1,13 @@
+[
+ {"model": "Qwen3.5-2B",
+  "source": {"repo": "Qwen/Qwen3.5-2B", "revision": "15852e8c16360a2fea060d615a32b45270f8a8fc"},
+  "bf16_gguf": "dc11be2ca4519954a3e4b013ef59497b5522209987d67891851113eda89619f1",
+  "quants": {"Q4_K_M": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223"},
+  "thinking": ["on", "off"]},
+ {"model": "Qwen3.5-4B",
+  "source": {"repo": "Qwen/Qwen3.5-4B", "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"},
+  "bf16_gguf": "9e6e2841a75f503ccb330831832fd7861266e187e0dbf149a954219ccb8c197a",
+  "quants": {"Q4_K_M": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+             "UD-Q4_K_XL": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7"},
+  "thinking": ["on", "off"]}
+]

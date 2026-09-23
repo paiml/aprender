@@ -312,6 +312,7 @@
     #[test]
     fn test_result_empty_text() {
         let result = InferenceResult {
+            generation_ms: None,
             text: String::new(),
             tokens: vec![],
             input_token_count: 0,
@@ -331,6 +332,7 @@
     fn test_result_very_long_text() {
         let long_text = "a".repeat(100_000);
         let result = InferenceResult {
+            generation_ms: None,
             text: long_text.clone(),
             tokens: vec![1; 10000],
             input_token_count: 100,
@@ -350,6 +352,7 @@
     fn test_result_mismatched_counts() {
         // token counts don't have to match tokens vec length
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1, 2, 3],
             input_token_count: 100, // Doesn't match tokens.len()

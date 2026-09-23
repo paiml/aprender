@@ -18,6 +18,9 @@
 pub(crate) enum ParityArm {
     /// `Qwen35Model::forward_single_qwen35` vs `Qwen35CudaModel::forward_single`.
     Hybrid,
+    /// `OwnedQuantizedModel::forward_single_qwen3_moe_with_cache` (FP32
+    /// activations) vs `Qwen3MoeCudaModel::forward_single` (#3714 R2).
+    Moe,
     /// `OwnedQuantizedModel::forward_single_with_cache` vs `forward_gpu_resident`.
     Dense,
 }
@@ -34,6 +37,8 @@ pub(crate) enum ParityArm {
 pub(crate) fn parity_arm(architecture: &str) -> ParityArm {
     if realizar::gguf::hybrid_forward_handles(architecture) {
         ParityArm::Hybrid
+    } else if realizar::gguf::moe_forward_handles(architecture) {
+        ParityArm::Moe
     } else {
         ParityArm::Dense
     }

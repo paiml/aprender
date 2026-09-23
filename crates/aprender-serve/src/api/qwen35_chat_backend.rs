@@ -106,7 +106,7 @@ async fn try_qwen35_backend(
     };
 
     let architecture = state.model_architecture();
-    let prompt_text = format_chat_messages(&request.messages, architecture.as_deref());
+    let prompt_text = crate::api::format_chat_messages_official(Some(&mapped.model), &request.messages, architecture.as_deref());
     let input_ids = mapped.model.encode(&prompt_text).unwrap_or_default();
     if input_ids.is_empty() {
         return Some(fail_response(
@@ -212,6 +212,7 @@ async fn try_qwen35_backend(
         duration,
         request.tools.as_deref(),
         request_tool_choice(request),
+        None,
         None,
     ))
 }

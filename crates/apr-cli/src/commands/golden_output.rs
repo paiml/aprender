@@ -474,6 +474,63 @@ fn thinking_on_case(architecture: Option<&str>) -> Option<(String, Vec<&'static 
     Some((on_prompt, patterns))
 }
 
+/// #3990: the thinking-ON prompt is the model's OWN chat template rendered with thinking ON.
+///
+/// It used to be DERIVED: the no-think production prompt with its empty `<think></think>`
+/// prefill cut off, which ends `assistant\n`. Qwen3.5's official template ends
+/// `assistant\n<think>\n` -- it OPENS the block -- and on the derived prompt
+/// Qwen3.5-0.8B-Q4_K_M emitted an instant empty block it does not emit on the official one
+/// (aprender-36), so #3948's "closed EMPTY" on that model was the prompt, not the model.
+///
+/// The leg still exists for exactly the models it existed for (the production prompt
+/// suppresses thinking, `thinking_on_case`). A model whose template cannot be rendered is a
+/// named FAIL -- never a silent fallback to the derivation this replaces.
+#[cfg(feature = "inference")]
+fn official_on_case<F>(
+    architecture: Option<&str>,
+    render: F,
+) -> std::result::Result<Option<(String, Vec<&'static str>)>, String>
+where
+    F: FnOnce(&[realizar::chat_template::ChatMessage]) -> std::result::Result<String, String>,
+{
+    if thinking_on_case(architecture).is_none() {
+        return Ok(None);
+    }
+    let (question, patterns) = golden_questions()
+        .into_iter()
+        .next()
+        .ok_or_else(|| "no golden case to ask".to_string())?;
+    let prompt = render(&[realizar::chat_template::ChatMessage::user(question)]).map_err(|e| {
+        format!("the thinking-ON leg renders the model's own chat template (#3990) and could not: {e}")
+    })?;
+    Ok(Some((prompt, patterns)))
+}
+
+/// #3990: `official_on_case` for a loaded model, through f5's `render_official_for_model`.
+#[cfg(feature = "inference")]
+pub(crate) fn thinking_on_case_for_model(
+    architecture: Option<&str>,
+    gguf: Option<&realizar::gguf::GGUFModel>,
+) -> std::result::Result<Option<(String, Vec<&'static str>)>, String> {
+    official_on_case(architecture, |msgs| match gguf {
+        Some(g) => realizar::chat_template::render_official_for_model(g, msgs, Some(true))
+            .map_err(|e| e.to_string()),
+        None => Err("this model format carries no GGUF chat template to render".to_string()),
+    })
+}
+
+/// #3990: an official template may OPEN the think block inside the prompt, so the model's
+/// continuation starts mid-block with no `<think>` of its own. The judge must see the block
+/// whole, or a model that reasoned and closed reads as "never entered".
+#[cfg(feature = "inference")]
+pub(crate) fn on_leg_judged_text(on_prompt: &str, generated: &str) -> String {
+    if on_prompt.trim_end().ends_with("<think>") && !generated.trim_start().starts_with("<think>") {
+        format!("<think>{generated}")
+    } else {
+        generated.to_string()
+    }
+}
+
 /// Judge one generated ON-mode output: the block closed, and the answer is right.
 ///
 /// `generated` is the model's continuation with the prompt echo already removed.
@@ -494,12 +551,126 @@ fn judge_thinking_on_output(generated: &str, patterns: &[&str], budget: usize) -
                      — the thinking mode this leg exists to judge was never entered"
                 ));
             }
+            // #3948: a block that opened and closed with nothing in it is the same
+            // outcome as no block at all — the model skipped the reasoning. Judging
+            // only the answer after it scored "skipped reasoning, answered" as
+            // "reasoned, answered", so the leg could not fail on the case it exists
+            // to catch (Qwen3.5-0.8B Q4_K_M answered at budget 8).
+            match max_think_block_words(generated) {
+                0 => {
+                    return Some(format!(
+                        "golden_output_thinking_on: the <think> block closed EMPTY within {budget} tokens \
+                         — the model skipped the reasoning, so this leg judged an answer given without \
+                         thinking (#3948)"
+                    ))
+                },
+                n if n < MIN_THINK_WORDS => {
+                    return Some(format!(
+                        "golden_output_thinking_on: the <think> block closed within {budget} tokens holding \
+                         {n} word(s), below the {MIN_THINK_WORDS}-word minimum -- a token between the tags \
+                         is not reasoning (#3948)"
+                    ))
+                },
+                _ => {},
+            }
             match verify_output(&answer, "golden_output_thinking_on", patterns) {
                 OutputVerification::Fail { reason } => Some(reason),
                 OutputVerification::Pass => None,
             }
         }
     }
+}
+
+/// #3948 quorum item 1: the fewest words a closed `<think>` block must hold to count as
+/// reasoning. `<think>.</think>` -- one token between the tags -- passed the "any content"
+/// rule, so a model could skip reasoning with a single token. A word is a whitespace-split
+/// run holding at least one alphanumeric character. Measured controls on the same prompt
+/// reason for 445-2149 characters (#3961); the one model that skipped reasoning wrote 0.
+#[cfg(feature = "inference")]
+const MIN_THINK_WORDS: usize = 3;
+
+/// #3948: the most words any closed `<think>` block holds.
+#[cfg(feature = "inference")]
+fn max_think_block_words(generated: &str) -> usize {
+    let mut rest = generated;
+    let mut best = 0;
+    while let Some(start) = rest.find("<think>") {
+        let body = &rest[start + "<think>".len()..];
+        let Some(end) = body.find("</think>") else {
+            break;
+        };
+        let words = body[..end]
+            .split_whitespace()
+            .filter(|w| w.chars().any(char::is_alphanumeric))
+            .count();
+        best = best.max(words);
+        rest = &body[end + "</think>".len()..];
+    }
+    best
+}
+
+/// #3961: the characters inside every closed `<think>` block, for the pass receipt.
+#[cfg(feature = "inference")]
+pub(crate) fn think_body_chars(generated: &str) -> usize {
+    let mut rest = generated;
+    let mut n = 0;
+    while let Some(start) = rest.find("<think>") {
+        let body = &rest[start + "<think>".len()..];
+        let Some(end) = body.find("</think>") else {
+            break;
+        };
+        n += body[..end].trim().chars().count();
+        rest = &body[end + "</think>".len()..];
+    }
+    n
+}
+
+/// #3990: one golden question rendered with the model's OWN chat template -- a GGUF's
+/// `tokenizer.chat_template`, or a SafeTensors model's sibling `tokenizer_config.json` --
+/// thinking OFF (production's default since #3801, rendered the template's way). Without
+/// either it is [`golden_prompt_for`]'s detector render; a template that is present but fails
+/// to render says so on stderr before falling back.
+#[cfg(feature = "inference")]
+fn golden_prompt_for_model(
+    gguf: Option<&realizar::gguf::GGUFModel>,
+    tokenizer_config: Option<&str>,
+    key: Option<&str>,
+    question: &str,
+) -> String {
+    use realizar::chat_template::{
+        render_official_for_model, render_official_from_tokenizer_config, ChatMessage,
+    };
+
+    let msgs = [ChatMessage::user(question)];
+    let rendered = match (gguf.filter(|g| g.metadata.contains_key("tokenizer.chat_template")), tokenizer_config) {
+        (Some(g), _) => render_official_for_model(g, &msgs, Some(false)),
+        (None, Some(json)) if json.contains("\"chat_template\"") => {
+            render_official_from_tokenizer_config(json, &msgs, Some(false))
+        }
+        _ => return golden_prompt_for(key, question),
+    };
+    rendered.unwrap_or_else(|e| {
+        eprintln!(
+            "[#3990] WARNING: the model's own chat_template failed to render ({e}); the golden \
+             gate falls back to the detector's template, which is NOT this model's prompt format"
+        );
+        golden_prompt_for(key, question)
+    })
+}
+
+/// The golden cases for one model: [`golden_prompt_for_model`] over [`golden_questions`].
+#[cfg(feature = "inference")]
+fn golden_test_cases_for_model(
+    gguf: Option<&realizar::gguf::GGUFModel>,
+    tokenizer_config: Option<&str>,
+    key: Option<&str>,
+) -> Vec<(String, Vec<&'static str>)> {
+    golden_questions()
+        .into_iter()
+        .map(|(question, patterns)| {
+            (golden_prompt_for_model(gguf, tokenizer_config, key, question), patterns)
+        })
+        .collect()
 }
 
 /// The golden cases as (prompt, expected patterns) for one architecture.
@@ -719,24 +890,27 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     #[cfg(feature = "inference")]
     {
         use realizar::format::{detect_format, ModelFormat};
-        use realizar::gguf::{GGUFModel, MappedGGUFModel};
+        use realizar::gguf::MappedGGUFModel;
 
+        // #3711's helper (identical to #3714 R2's inline check, so one definition).
         let cuda_available = cuda_device_present();
-        let model_bytes = std::fs::read(path)
+        // #3750: the format from the 8-byte magic and the header from the map, never the whole
+        // model (it was read into memory here, beside a map of the same file)
+        let magic = super::model_header::read_prefix(path, 8)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-        let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
+        let format = detect_format(&magic)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
 
         // GH-239: Only create GGUF objects when format is actually GGUF
-        let (mapped, gguf_model) = if format == ModelFormat::Gguf {
-            let m = MappedGGUFModel::from_path(path)
-                .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-            let g = GGUFModel::from_bytes(&model_bytes)
-                .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
-            (Some(m), Some(g))
+        let mapped = if format == ModelFormat::Gguf {
+            Some(
+                MappedGGUFModel::from_path(path)
+                    .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?,
+            )
         } else {
-            (None, None)
+            None
         };
+        let gguf_model = mapped.as_ref().map(|m| &m.model);
 
         // #3711: the pass message names the GPU leg, so a skipped leg says which skip it was
         let mut gpu_leg = GpuGoldenLeg::NotRun("no golden case ran");
@@ -759,7 +933,13 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             model_name.as_deref(),
             declared.as_deref(),
         );
-        let test_cases = golden_test_cases_for(key.as_deref());
+        // #3990: a SafeTensors model's own template lives in its sibling tokenizer_config.json.
+        let tokenizer_config = (format == ModelFormat::SafeTensors)
+            .then(|| realizar::safetensors::find_sibling_file(path, "tokenizer_config.json"))
+            .flatten()
+            .and_then(|p| std::fs::read_to_string(p).ok());
+        let test_cases =
+            golden_test_cases_for_model(gguf_model, tokenizer_config.as_deref(), key.as_deref());
 
         for (prompt, expected_patterns) in &test_cases {
             match validate_golden_test_case(
@@ -769,7 +949,7 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                 config,
                 format,
                 mapped.as_ref(),
-                gguf_model.as_ref(),
+                gguf_model,
                 cuda_available,
                 start,
             )? {
@@ -779,7 +959,19 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         }
 
         // #3724 done_when 3: a thinking-capable model is judged in BOTH modes.
-        if let Some((on_prompt, on_patterns)) = thinking_on_case(key.as_deref()) {
+        let on_case = match thinking_on_case_for_model(key.as_deref(), gguf_model) {
+            Ok(c) => c,
+            Err(reason) => {
+                return Ok(GateResult::failed(
+                    "golden_output",
+                    &format!("golden_output_thinking_on: {reason}"),
+                    None,
+                    None,
+                    start.elapsed(),
+                ))
+            },
+        };
+        if let Some((on_prompt, on_patterns)) = on_case {
             // #3907: the budget is per-model with a basis, and a model with no measured
             // budget REFUSES here rather than inheriting an 8B's number. The refusal is
             // reported as a budget gap, not as "the model was still reasoning" — the two
@@ -806,9 +998,11 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                 on_budget,
                 format,
                 mapped.as_ref(),
-                gguf_model.as_ref(),
+                gguf_model, // #3750 made this a borrow of the map; `Option<&T>` is Copy
             )? {
                 let generated = on_text.strip_prefix(on_prompt.as_str()).unwrap_or(&on_text);
+                let judged = on_leg_judged_text(&on_prompt, generated);
+                let generated = judged.as_str();
                 if let Some(reason) = judge_thinking_on_output(generated, &on_patterns, on_budget)
                     .map(|r| format!("{r} [budget basis — {budget_basis}]"))
                 {
@@ -917,20 +1111,20 @@ fn measure_generate_throughput(
 #[cfg(feature = "inference")]
 fn throughput_gguf(
     path: &Path,
-    model_bytes: &[u8],
     config: &QaConfig,
     cuda_available: bool,
     tracer: &TracerImpl,
     prompt: &str,
 ) -> Result<(f64, Duration)> {
-    use realizar::gguf::{
-        GGUFModel, MappedGGUFModel, OwnedQuantizedModel,
-        QuantizedGenerateConfig,
-    };
+    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
 
-    let gguf = GGUFModel::from_bytes(model_bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
-    let prompt_tokens = golden_prompt_tokens(&gguf, prompt);
+    // #3750: the tokenizer comes from the mapped header, not a whole-file read.
+    // #3870: and the BOS comes from the MODEL, not `SpecialTokens::qwen2()` — the
+    // fold's other side reintroduced `vec![qwen2().bos_id, 9707]`, the exact
+    // hardcode #3870 removed (151643 does not exist in a 32000-entry vocabulary).
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let prompt_tokens = golden_prompt_tokens(&mapped.model, prompt);
     let gen_config = QuantizedGenerateConfig {
         max_tokens: config.max_tokens,
         temperature: 0.0,
@@ -939,8 +1133,6 @@ fn throughput_gguf(
     };
     let budget_us = config.max_tokens as u64 * config.iterations as u64 * 100_000;
 
-    let mapped = MappedGGUFModel::from_path(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
 
@@ -1052,10 +1244,21 @@ fn throughput_apr(
 mod thinking_budget_resolution {
     use super::{glob_match, thinking_on_budget_for};
 
+    /// `APR_THINKING_ON_BUDGET` is process-global and libtest runs these in parallel:
+    /// `the_probe_override_is_labelled_as_a_probe` sets it while a sibling resolves a
+    /// budget, and the sibling reads 8192 instead of refusing. Every test here that
+    /// resolves a budget holds this lock, so the override is seen by exactly one test.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     /// The listed model with NO budget must REFUSE, not inherit `default`. This is the
     /// whole mechanism: inheriting 2048 would republish an 8B's measurement as a 0.8B's.
     #[test]
     fn a_listed_model_without_a_budget_is_refused_not_defaulted() {
+        let _env = env_lock();
         let err = thinking_on_budget_for("Qwen3.5-0.8B-IQ4_XS.gguf")
             .expect_err("a model listed with no budget must refuse");
         assert!(err.contains("no measured thinking budget"), "{err}");
@@ -1067,6 +1270,7 @@ mod thinking_budget_resolution {
     /// default, so a reader of a failure can tell an inherited number from a measured one.
     #[test]
     fn an_unlisted_model_takes_the_default_and_says_so() {
+        let _env = env_lock();
         let (budget, basis) =
             thinking_on_budget_for("some-other-model-q4km.gguf").expect("default applies");
         assert_eq!(budget, 2048);
@@ -1079,6 +1283,7 @@ mod thinking_budget_resolution {
     /// number must never be mistakable for a measured one.
     #[test]
     fn the_probe_override_is_labelled_as_a_probe() {
+        let _env = env_lock();
         std::env::set_var("APR_THINKING_ON_BUDGET", "8192");
         let (budget, basis) = thinking_on_budget_for("Qwen3.5-0.8B-IQ4_XS.gguf")
             .expect("the override applies even to a refused model, so it can be probed");
@@ -1718,6 +1923,81 @@ mod golden_output_tests {
         );
     }
 
+    /// #3990 MUST-RED (pre-fix probe): the ON leg must ask the model the way its OWN template asks
+    /// it with thinking on. Qwen3.5's official template ends `assistant\n<think>\n`; the
+    /// derivation from the no-think production prompt ends `assistant\n`, and on that prompt
+    /// 0.8B-Q4_K_M emits an instant empty block that it does not emit on the official one.
+    #[test]
+    fn the_on_prompt_is_the_official_template() {
+        let tpl = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../aprender-serve/src/fixtures/chat_template_3990/qwen35.jinja"
+        ))
+        .expect("f5's qwen35 fixture");
+        let (question, _) = golden_questions().into_iter().next().expect("a golden case");
+        let official = realizar::chat_template::render_official(
+            &tpl,
+            None,
+            None,
+            &[realizar::chat_template::ChatMessage::user(question)],
+            true,
+            Some(true),
+        )
+        .expect("renders");
+        let (on_prompt, _) = official_on_case(Some("qwen35"), |msgs| {
+            realizar::chat_template::render_official(&tpl, None, None, msgs, true, Some(true))
+                .map_err(|e| e.to_string())
+        })
+        .expect("renders")
+        .expect("qwen35 has an ON leg");
+        assert_eq!(on_prompt, official, "the ON leg does not ask the way the model's template does");
+        assert!(on_prompt.ends_with("assistant\n<think>\n"), "{on_prompt:?}");
+        // a model the leg never covered still has none, and a template that will not render is a
+        // named failure, never a fallback to the derivation
+        assert_eq!(official_on_case(Some("qwen2"), |_| Ok(String::new())), Ok(None));
+        let refused = official_on_case(Some("qwen35"), |_| Err("no tokenizer.chat_template".into()))
+            .expect_err("an unrenderable template fails");
+        assert!(refused.contains("#3990") && refused.contains("no tokenizer.chat_template"), "{refused}");
+    }
+
+    /// #3990: BOTH gate ON legs (dense here, hybrid in output_verification.rs) take the official
+    /// renderer, and neither falls back to the derivation. Source read, above each test module,
+    /// because a behavioural discriminator needs a model file; "a fix reaching one of N sites"
+    /// is the #3907 defect shape.
+    #[test]
+    fn both_on_leg_sites_render_the_official_template() {
+        for (file, want) in [("golden_output.rs", 1), ("output_verification.rs", 1)] {
+            let src = std::fs::read_to_string(format!("{}/src/commands/{file}", env!("CARGO_MANIFEST_DIR")))
+                .expect("own source readable");
+            let code = src.split("#[cfg(test)]").next().unwrap_or(&src);
+            let calls = code.matches("thinking_on_case_for_model(key.as_deref()").count()
+                + code.matches("thinking_on_case_for_model(\n        architecture.as_deref()").count();
+            assert_eq!(calls, want, "{file}: the ON leg must render the official template (#3990)");
+            assert!(
+                !code.contains("= thinking_on_case(key.as_deref())") && !code.contains("= thinking_on_case(architecture.as_deref())"),
+                "{file}: an ON leg still takes the derived prompt"
+            );
+            assert!(code.contains("on_leg_judged_text(&on_prompt, generated)"), "{file}: the prefilled block is not judged whole");
+        }
+    }
+
+    /// #3990: the official prompt OPENS the block, so the continuation has no `<think>` of its
+    /// own. Judged raw, a model that reasoned and closed reads "never entered"; judged whole, it
+    /// passes -- and an empty prefilled block is still "closed EMPTY".
+    #[test]
+    fn a_prefilled_think_block_is_judged_whole() {
+        let prompt = "<|im_start|>assistant\n<think>\n";
+        let cont = "two plus two is four</think>\n\n2 + 2 = 4.";
+        let raw = judge_thinking_on_output(cont, &["4"], 2048).expect("raw reads as never entered");
+        assert!(raw.contains("never entered"), "{raw}");
+        assert_eq!(judge_thinking_on_output(&on_leg_judged_text(prompt, cont), &["4"], 2048), None);
+        let empty = judge_thinking_on_output(&on_leg_judged_text(prompt, "\n</think>\n\n2 + 2 = 4."), &["4"], 2048)
+            .expect("an empty prefilled block is still empty");
+        assert!(empty.contains("closed EMPTY"), "{empty}");
+        // a prompt that does not open the block is judged as generated
+        assert_eq!(on_leg_judged_text("assistant\n", "x"), "x");
+    }
+
     /// done_when 3: ON passes only when the block CLOSES and the answer is right.
     #[test]
     fn the_thinking_on_leg_judges_closure_and_the_answer() {
@@ -1740,10 +2020,54 @@ mod golden_output_tests {
             "{unclosed}"
         );
         assert!(!unclosed.contains("Empty output"), "{unclosed}");
+        // #3957 quorum round 2 (lane 3) asked whether an UNCLOSED block can reach the word
+        // count and be misreported as "closed EMPTY". It cannot: split_thinking_blocks returns
+        // Unclosed for ANY unmatched <think> before the count runs. Pinned both ways, including
+        // a closed-then-unclosed trace, so the refutation is a measurement, not an argument.
+        for open in ["<think>let me work through this", "<think>two plus two</think><think>and then"] {
+            let got = judge_thinking_on_output(open, &patterns, 2048).expect("unclosed fails");
+            assert!(got.contains("think block unclosed within 2048 tokens"), "{got}");
+            assert!(!got.contains("closed EMPTY"), "an unclosed block is not an empty one: {got}");
+        }
         // never entered thinking at all → the leg proved nothing, and says so
         let absent = judge_thinking_on_output("2 + 2 = 4.", &patterns, 2048)
             .expect("no think block means the leg judged nothing");
         assert!(absent.contains("never entered"), "{absent}");
+        // #3948: closed but EMPTY → the reasoning was skipped; a right answer does not save it.
+        // Space- and tab-only bodies are empty too (quorum item 5).
+        for empty in [
+            "<think></think>2 + 2 = 4.",
+            "<think>\n\n</think>\n\n2 + 2 = 4.",
+            "<think> \t  \t </think>2 + 2 = 4.",
+        ] {
+            let skipped = judge_thinking_on_output(empty, &patterns, 2048)
+                .expect("an empty think block proves no reasoning happened");
+            assert!(skipped.contains("closed EMPTY within 2048 tokens"), "{skipped}");
+            assert!(!skipped.contains("never entered"), "{skipped}");
+        }
+    }
+
+    /// #3948 quorum item 1, MUST-RED: a block holding one character or one token is not
+    /// reasoning either. `any_think_block_has_content` accepted `<think>.</think>`, so a
+    /// model that emitted a single token between the tags passed the leg it skipped.
+    #[test]
+    fn a_think_block_of_one_character_or_one_token_is_not_reasoning() {
+        let patterns = vec!["4"];
+        for thin in [
+            "<think>.</think>2 + 2 = 4.",
+            "<think> a </think>2 + 2 = 4.",
+            "<think>Hmm</think>2 + 2 = 4.",
+            "<think>ok so</think>2 + 2 = 4.",
+        ] {
+            let got = judge_thinking_on_output(thin, &patterns, 2048)
+                .unwrap_or_else(|| panic!("{thin:?} is not reasoning and must not pass"));
+            assert!(got.contains("golden_output_thinking_on"), "{got}");
+        }
+        // the boundary's other side: three words is the minimum that passes
+        assert_eq!(
+            judge_thinking_on_output("<think>2 plus 2</think>2 + 2 = 4.", &patterns, 2048),
+            None
+        );
     }
 
     /// The ON budget is the ON leg's alone. #3724's ruling: the fix is the prompt,
@@ -1887,5 +2211,64 @@ mod template_key_3914 {
     fn agreement_is_not_a_contradiction() {
         assert!(!contradicts_declared("<|im_start|>user\nx", QWEN_CHATML_DECLARED));
         assert!(contradicts_declared("<s>[INST] x [/INST]", TINYLLAMA_DECLARED));
+    }
+}
+
+/// #3990: the golden gate's DEFAULT (thinking-off) prompt is the GGUF's own chat_template.
+#[cfg(all(test, feature = "inference"))]
+mod golden_official_template_3990 {
+    use super::*;
+
+    /// REAL MODELS: for every system-less thinking=false oracle cell, the golden prompt for
+    /// the cell's question equals llama.cpp df03399's /apply-template byte for byte. SKIP by
+    /// name for a file not on this host.
+    #[test]
+    fn the_golden_default_prompt_equals_llama_cpp_on_real_ggufs_3990() {
+        let cells: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../../aprender-serve/src/fixtures/chat_template_3990/llama_cpp_df03399.json"
+        ))
+        .expect("oracle parses");
+        let mut ran = 0usize;
+        for c in cells.iter().filter(|c| c["thinking"] == false && c["system"] == false) {
+            let path = c["path"].as_str().expect("path");
+            if !std::path::Path::new(path).exists() {
+                eprintln!("SKIP: {path} not on this host -- this cell did NOT run");
+                continue;
+            }
+            let mapped = realizar::gguf::MappedGGUFModel::from_path(path).expect("map");
+            let question = c["messages"][0]["content"].as_str().expect("question");
+            let arch = mapped.model.architecture().map(String::from);
+            let got = golden_prompt_for_model(Some(&mapped.model), None, arch.as_deref(), question);
+            assert_eq!(got, c["prompt"].as_str().expect("prompt"), "{path}");
+            ran += 1;
+        }
+        eprintln!("#3990 golden: {ran}/4 real cells compared");
+    }
+
+    /// Without a GGUF the gate keeps the detector's render, unchanged.
+    #[test]
+    fn no_gguf_keeps_the_detector_render_3990() {
+        assert_eq!(golden_prompt_for_model(None, None, Some("qwen2"), "Q?"), golden_prompt_for(Some("qwen2"), "Q?"));
+        assert_eq!(golden_prompt_for_model(None, None, None, "Q?"), golden_prompt_for(None, "Q?"));
+        // A tokenizer_config.json with no chat_template is the same as none.
+        assert_eq!(golden_prompt_for_model(None, Some(r#"{"eos_token": "</s>"}"#), None, "Q?"), golden_prompt_for(None, "Q?"));
+    }
+
+    /// SafeTensors: the sibling tokenizer_config.json's template is what the gate asks with.
+    /// TinyLlama's (byte-identical to its GGUF template) must render the oracle's system-less
+    /// cell exactly as llama.cpp does.
+    #[test]
+    fn a_safetensors_tokenizer_config_is_the_golden_prompt_3990() {
+        let cfg = include_str!("../../../aprender-serve/src/fixtures/chat_template_3990/tinyllama_tokenizer_config.json");
+        let cells: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../../aprender-serve/src/fixtures/chat_template_3990/llama_cpp_df03399.json"
+        ))
+        .expect("oracle parses");
+        let c = cells
+            .iter()
+            .find(|c| c["model"] == "tinyllama" && c["system"] == false && c["thinking"] == false)
+            .expect("the tinyllama system-less cell");
+        let question = c["messages"][0]["content"].as_str().expect("question");
+        assert_eq!(golden_prompt_for_model(None, Some(cfg), Some("llama"), question), c["prompt"].as_str().expect("prompt"));
     }
 }

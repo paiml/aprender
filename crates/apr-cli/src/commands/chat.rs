@@ -64,6 +64,10 @@ pub(crate) struct ChatConfig {
     /// Force CPU inference (skip CUDA even if available)
     /// Default: false - GPU is preferred when available (F-GPU-134b)
     pub force_cpu: bool,
+    /// #3955: an accelerator was REQUESTED (`--gpu`, `--backend cuda|wgpu`),
+    /// derived by the same `run_accelerator_forced` `apr run` uses, so the
+    /// envelope's `requested` means the same thing on both surfaces.
+    pub accel_forced: bool,
     /// #3794: emit a machine-readable session summary naming the backend that
     /// actually answered. `apr run --format json` has reported
     /// `backend: {requested, ran, fell_back}` for some time; `apr chat`
@@ -73,6 +77,9 @@ pub(crate) struct ChatConfig {
     pub trace: bool,
     /// Trace output file path
     pub trace_output: Option<std::path::PathBuf>,
+    /// #3723: `--thinking on|off`, applied to every rendered turn
+    /// (`realizar::chat_template::apply_thinking_mode`). `None`: the production default.
+    pub thinking: Option<bool>,
 }
 
 impl Default for ChatConfig {
@@ -84,9 +91,11 @@ impl Default for ChatConfig {
             system: None,
             inspect: false,
             force_cpu: false, // F-GPU-134b: Default to GPU when available
+            accel_forced: false,
             json: false,
             trace: false,
             trace_output: None,
+            thinking: None,
         }
     }
 }
@@ -134,6 +143,7 @@ pub(crate) fn run(
     system: Option<&str>,
     inspect: bool,
     force_cpu: bool,
+    accel_forced: bool,
     trace: bool,
     trace_steps: Option<&[String]>,
     trace_verbose: bool,
@@ -142,6 +152,8 @@ pub(crate) fn run(
     profile: bool,
     offline: bool,
     json: bool,
+    // #3723: `--thinking on|off` (None: the production default).
+    thinking: Option<bool>,
 ) -> Result<(), CliError> {
     contract_pre_temperature_bounds!();
     contract_pre_session_state_machine!();
@@ -204,9 +216,11 @@ pub(crate) fn run(
         system: system.map(String::from),
         inspect,
         force_cpu,
+        accel_forced,
         json,
         trace,
         trace_output,
+        thinking,
     };
 
     print_welcome_banner_for(path, format, &config);

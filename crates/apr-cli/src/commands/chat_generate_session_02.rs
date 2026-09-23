@@ -99,10 +99,35 @@ impl ChatSession {
             messages.extend(self.history.iter().cloned());
             messages.push(ChatMessage::user(user_input));
 
-            let formatted_prompt = self
-                .chat_template
-                .format_conversation(&messages)
-                .map_err(|e| format!("[Template error: {}]", e))?;
+            // #3990: a GGUF carrying its OWN tokenizer.chat_template is rendered with it -- the same
+            // renderer and fallback rule `apr run` uses (realizar::chat_template::official_or_legacy).
+            // #3723: `--thinking` is its `enable_thinking`; `on` with no thinking mode is refused.
+            let own = self
+                .cached_gguf_mapped
+                .as_ref()
+                .filter(|m| m.model.metadata.contains_key("tokenizer.chat_template"))
+                .map(|m| {
+                    let msgs = &messages;
+                    move |t: Option<bool>| {
+                        realizar::chat_template::render_official_for_model(&m.model, msgs, t)
+                    }
+                });
+            let legacy_err = std::cell::RefCell::new(None);
+            let formatted_prompt = realizar::chat_template::official_or_legacy(
+                own,
+                || match self.chat_template.format_conversation(&messages) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        *legacy_err.borrow_mut() = Some(e.to_string());
+                        String::new()
+                    }
+                },
+                config.thinking,
+            )
+            .map_err(|e| format!("[Template error: {}]", e))?;
+            if let Some(e) = legacy_err.into_inner() {
+                return Err(format!("[Template error: {}]", e));
+            }
 
             if config.trace {
                 eprintln!(
@@ -291,6 +316,29 @@ impl ChatSession {
                     );
                 }
                 return Ok(mapped.model.decode(&turn.tokens[prompt_len..]));
+            }
+
+            // #3987: qwen3moe is served by the ONE dispatch `apr run` uses (#3714), never the
+            // dense model (it has no dense FFN). The dispatch tries CUDA unless --no-gpu, prints
+            // its reason if the GPU cannot serve, and reports which backend ran -- which is what
+            // the chat envelope then says. Per turn it reprocesses the whole history: correct,
+            // not fast (no cross-turn KV reuse), accepted for 0.69.1.
+            if is_qwen3_moe_gguf(mapped) {
+                let model = OwnedQuantizedModel::from_mapped(mapped)
+                    .map_err(|e| format!("Failed to create GGUF model: {e}"))?;
+                let (output_tokens, used_gpu) =
+                    realizar::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
+                        mapped,
+                        &model,
+                        &prompt_tokens,
+                        &gen_config,
+                        config.force_cpu,
+                    )
+                    .map_err(|e| format!("qwen3moe generate failed: {e}"))?;
+                self.generated_on_gpu = used_gpu;
+                let new_tokens = output_tokens.get(prompt_len..).unwrap_or(&[]);
+                trace_generated_tokens(config.trace, &mapped.model, new_tokens);
+                return Ok(mapped.model.decode(new_tokens));
             }
 
             // GH-224: Try cached CUDA model first (no re-upload)

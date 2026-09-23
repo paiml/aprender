@@ -31,6 +31,7 @@
     #[test]
     fn test_inference_result_with_zero_inference_time_cov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1, 2, 3],
             input_token_count: 1,
@@ -49,6 +50,7 @@
     #[test]
     fn test_inference_result_with_high_tok_per_sec_cov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "fast".to_string(),
             tokens: vec![1],
             input_token_count: 0,
@@ -66,6 +68,7 @@
     #[test]
     fn test_inference_result_empty_text_cov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: String::new(),
             tokens: vec![],
             input_token_count: 0,
@@ -84,6 +87,7 @@
     #[test]
     fn test_inference_result_empty_tokens_cov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: String::new(),
             tokens: vec![],
             input_token_count: 0,
@@ -103,6 +107,7 @@
     fn test_inference_result_large_tokens_cov() {
         let tokens: Vec<u32> = (0..10000).collect();
         let result = InferenceResult {
+            generation_ms: None,
             text: "large".to_string(),
             tokens: tokens.clone(),
             input_token_count: 100,
@@ -121,6 +126,7 @@
     fn test_inference_result_format_variations_cov() {
         for format in ["GGUF", "APR", "SafeTensors", "custom"] {
             let result = InferenceResult {
+                generation_ms: None,
                 text: "t".to_string(),
                 tokens: vec![1],
                 input_token_count: 1,
@@ -317,6 +323,7 @@
             stop_tokens: Vec::new(),
             use_mock_backend: false,
             force_chat_template: false,
+            thinking: None,
         };
         let debug_str = format!("{:?}", config);
         assert!(debug_str.contains("trace_verbose"));
@@ -347,6 +354,7 @@
             stop_tokens: Vec::new(),
             use_mock_backend: false,
             force_chat_template: false,
+            thinking: None,
         };
         let cloned = config.clone();
         assert_eq!(cloned.trace_verbose, config.trace_verbose);
@@ -357,6 +365,7 @@
     #[test]
     fn test_inference_result_all_fields_cov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "generated output".to_string(),
             tokens: vec![1, 2, 3, 4, 5],
             input_token_count: 2,

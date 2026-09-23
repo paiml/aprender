@@ -186,6 +186,9 @@ pub(crate) struct RunOptions {
     /// #3672: apply the model's chat template (`--chat`, or an instruct/chat source name)
     /// even when its metadata and file name say base model. The prompt itself stays raw.
     pub chat_template: bool,
+    /// #3723: `--thinking on|off`. `None` renders the production default; realizar applies it
+    /// to the rendered prompt and refuses `on` for a template with no thinking mode.
+    pub thinking: Option<bool>,
     /// `--stream`: emit one NDJSON event per generated token.
     ///
     /// Known here (not only at the print site) because streaming is the one
@@ -221,6 +224,7 @@ impl Default for RunOptions {
             repeat_last_n: 64,
             split_prompt: false,
             chat_template: false,
+            thinking: None,
             stream: false,
         }
     }
@@ -243,6 +247,13 @@ pub(crate) struct RunUsage {
     pub finish_reason: Option<&'static str>,
     /// The model's context window, from its metadata.
     pub context_length: Option<usize>,
+    /// #3981: generation wall time (prefill + decode), in ms, when the backend marked
+    /// where generation began. `None` means the path did not measure it, and then
+    /// `tok_per_sec` still includes setup.
+    pub generation_ms: Option<u64>,
+    /// #3981: the part of the inference window that was NOT generation: weight upload,
+    /// F2 validation. `None` when `generation_ms` is.
+    pub setup_ms: Option<u64>,
 }
 
 /// Run result

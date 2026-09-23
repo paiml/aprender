@@ -118,7 +118,8 @@ pub use gpu_handlers::{
 pub use gpu_handlers::{spawn_batch_processor, BatchConfig};
 mod realize_handlers;
 pub(crate) use realize_handlers::{
-    clean_chat_output, format_chat_messages, openai_completions_handler, openai_embeddings_handler,
+    clean_chat_output, format_chat_messages, format_chat_messages_for_state,
+    format_chat_messages_official, openai_completions_handler, openai_embeddings_handler,
     realize_embed_handler, realize_model_handler, realize_reload_handler,
 };
 #[cfg(feature = "cuda")]
@@ -216,6 +217,12 @@ pub struct AppState {
     /// and any future streaming/batch backends.
     /// See `contracts/qwen3-moe-serve-dispatch-v1.yaml` (V1_001, V1_003).
     mapped_gguf_model: Option<Arc<crate::gguf::MappedGGUFModel>>,
+    /// #3987: whether qwen3moe generation must stay on the CPU. `true` for every
+    /// constructor, which is exactly the pre-#3987 behaviour (the serve MoE backend
+    /// called the CPU-only generator). Only a CUDA server opts in, via
+    /// `with_moe_gpu()`, and then the MoE backend goes through the ONE dispatch
+    /// `apr run` uses (`run_qwen3_moe_generate_dispatch`), proven by #3714's parity tests.
+    moe_no_gpu: bool,
     /// #3571: the Qwen3.5 hybrid, resident for the server's lifetime. Its
     /// Gated-DeltaNet and attention layers live here, not in
     /// `quantized_model` — the hybrid has no dense layers — so a Qwen3.5

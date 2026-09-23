@@ -200,6 +200,7 @@ fn test_inference_config_builder_chain() {
 #[test]
 fn test_inference_result_fields() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "Generated output".to_string(),
         tokens: vec![1, 2, 3, 4, 5, 6],
         input_token_count: 3,
@@ -226,6 +227,7 @@ fn test_inference_result_fields() {
 #[test]
 fn test_inference_result_with_gpu() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "GPU generated".to_string(),
         tokens: vec![10, 20, 30],
         input_token_count: 1,
@@ -245,6 +247,7 @@ fn test_inference_result_with_gpu() {
 #[test]
 fn test_inference_result_clone() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "test".to_string(),
         tokens: vec![1],
         input_token_count: 0,
@@ -303,6 +306,7 @@ fn test_inference_config_unicode_path() {
 #[test]
 fn test_inference_result_empty_tokens() {
     let result = InferenceResult {
+        generation_ms: None,
         text: String::new(),
         tokens: vec![],
         input_token_count: 0,
@@ -322,6 +326,7 @@ fn test_inference_result_empty_tokens() {
 #[test]
 fn test_inference_result_high_throughput() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "high speed".to_string(),
         tokens: vec![1, 2, 3],
         input_token_count: 1,

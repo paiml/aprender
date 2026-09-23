@@ -271,8 +271,17 @@ quant_types:
     reason: no GPU GEMV kernel
   - name: Q2_K
     ggml_type: 10
-    gpu_supported: false
-    reason: no GPU GEMV kernel
+    gpu_supported: true
+    # Implemented for 0.69.1 (#3960, aprender-f5). CPU decoder (dequantize_q2_k)
+    # BITWISE vs llama.cpp gguf-py on every real Q2_K value of
+    # Qwen3.5-0.8B-UD-IQ2_XXS.gguf, 11,010,048 of 11,010,048. Device A/B vs that
+    # decoder with an f64 dot, RTX 4090 sm_89: synthetic k=512 n=48 0.000e0, k=3584
+    # n=1024 3.994e-9; every real tensor at the one shape the file uses,
+    # (k,n)=(3584,1024): blk.0 4.301e-9, blk.4 0.000e0, blk.5 4.342e-9 -- bar 1e-5.
+    # Planted faults RED on real bytes: scale/min nibbles swapped; half selector
+    # L&1 not (L&3)>>1 (the decoder's own historical bug class); affine min dropped;
+    # shift from h not s. Every run exclusive via scripts/lib/gpu_exclusive_run.sh.
+    reason: ''
   - name: Q3_K
     ggml_type: 11
     gpu_supported: false
@@ -293,16 +302,38 @@ quant_types:
     reason: no GPU GEMV kernel
   - name: IQ2_XXS
     ggml_type: 16
-    gpu_supported: false
-    reason: no GPU GEMV kernel; IQ also fails the CPU dequant path
+    gpu_supported: true
+    # Implemented for 0.69.1 (#3950). Device A/B against `iq_parallel_matvec`
+    # on RTX 4090 sm_89. Synthetic k=512 n=64 and k=300 n=16 (padded tail):
+    # EXACT, 0.000e0. Real bytes, EVERY IQ2_XXS tensor of
+    # Qwen3.5-0.8B-UD-IQ2_XXS.gguf (sha256 a369165c8ec45a92), 95/95 over all
+    # 6 shapes it uses -- (k,n) = (512,1024) (1024,2048) (1024,3584)
+    # (3584,1024) (4096,1024) (6144,1024) -- worst |err|/sum|w||x| 2.713e-7
+    # against a 1e-5 bar, output NaN-prefilled with 0 rows unwritten; positive
+    # control on the real bytes (corrupted block scales) -> 4.156e3, RED.
+    # Proved able to fail first on four
+    # mechanisms: sign-code width 7->8: GPU 378.9 vs CPU -2.6; aux1 u16 halves
+    # swapped: GPU 2753.4 vs CPU -2.6; row stride 66->64: GPU -10820048 vs
+    # CPU 4815.1; scale nibble dropped: GPU 351.4 vs CPU -2.6.
+    # "IQ also fails the CPU dequant path" was about aprender-CORE; the
+    # aprender-SERVE decoder (the A/B oracle) has worked since PMAT-3477.
+    reason: ''
   - name: IQ2_XS
     ggml_type: 17
     gpu_supported: false
     reason: no GPU GEMV kernel; IQ also fails the CPU dequant path
   - name: IQ3_XXS
     ggml_type: 18
-    gpu_supported: false
-    reason: no GPU GEMV kernel; IQ also fails the CPU dequant path
+    gpu_supported: true
+    # Implemented for 0.69.1 (#3963). CPU decoder BIT-EXACT vs llama.cpp gguf-py
+    # on all 24 real IQ3_XXS tensors of Qwen3.5-0.8B-UD-IQ2_XXS.gguf (sha256
+    # a369165c8ec45a92), 40,894,464 elements. Device A/B vs that decoder, RTX
+    # 4090 sm_89: synthetic k=512 n=64 and k=300 n=16 EXACT 0.000e0; every real
+    # tensor, 24/24, both shapes -- (k,n) (512,1024) worst |err|/sum|w||x| 2.381e-7,
+    # (2048,1024) 2.346e-7 -- bar 1e-5, NaN-prefilled, 0 unwritten; positive
+    # control on real bytes 8.005e3 RED. Planted faults RED first: sign-code width
+    # 7->8, aux u16 halves swapped, row stride 98->96, 2nd grid index reads 1st.
+    reason: ''
   - name: IQ1_S
     ggml_type: 19
     gpu_supported: false
@@ -331,8 +362,17 @@ quant_types:
     reason: ''
   - name: IQ2_S
     ggml_type: 22
-    gpu_supported: false
-    reason: no GPU GEMV kernel; IQ also fails the CPU dequant path
+    gpu_supported: true
+    # Implemented for 0.69.1 (#3953, aprender-f5). CPU decoder BIT-EXACT vs
+    # llama.cpp gguf-py on all 5 real IQ2_S tensors of Qwen3.5-0.8B-UD-IQ2_XXS.gguf,
+    # 18,350,080 elements -- confirmed by two independent methods (gguf-py's
+    # reader; aprender's mmap with a raw-byte sha256 manifest). Device A/B, RTX
+    # 4090 sm_89: synthetic k=512 and k=3584 EXACT 0.000e0; every real tensor at
+    # the one shape the file uses, (k,n)=(3584,1024), 14 super-blocks: worst
+    # |err|/sum|w||x| 1.903e-7, bar 1e-5, NaN-prefilled. Planted faults RED:
+    # sign bits ignored, qh high bits dropped, scale nibble by l&1 not l>>1,
+    # grid lo/hi words swapped. Runs via scripts/lib/gpu_exclusive_run.sh.
+    reason: ''
   - name: IQ4_XS
     ggml_type: 23
     gpu_supported: true

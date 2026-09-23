@@ -16,3 +16,35 @@ sources:
       repo: Qwen/Qwen2.5-Coder-1.5B-Instruct
       revision: 2e1fd397ee46e1388853d2af2c993145b0f1098a
       dtype: bfloat16
+  # #3962 prompt certification (aprender-dd, 2026-09-23). Every GGUF sha below equals its file's LFS
+  # oid at the pinned revision (HF API ?blobs=true), and the local file was sha256-checked on lambda and gx10.
+  aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223:
+    gguf:
+      repo: unsloth/Qwen3.5-2B-GGUF
+      revision: f6d5376be1edb4d416d56da11e5397a961aca8ae
+      file: Qwen3.5-2B-Q4_K_M.gguf
+      lfs_sha256_matches: true   # measured 2026-09-23
+    hf:
+      repo: Qwen/Qwen3.5-2B
+      revision: 15852e8c16360a2fea060d615a32b45270f8a8fc
+      dtype: bfloat16
+  00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4:
+    gguf:
+      repo: unsloth/Qwen3.5-4B-GGUF
+      revision: e87f176479d0855a907a41277aca2f8ee7a09523
+      file: Qwen3.5-4B-Q4_K_M.gguf
+      lfs_sha256_matches: true   # measured 2026-09-23
+    hf:
+      repo: Qwen/Qwen3.5-4B
+      revision: 851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a
+      dtype: bfloat16
+  b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7:
+    gguf:
+      repo: unsloth/Qwen3.5-4B-GGUF
+      revision: e87f176479d0855a907a41277aca2f8ee7a09523
+      file: Qwen3.5-4B-UD-Q4_K_XL.gguf
+      lfs_sha256_matches: true   # measured 2026-09-23
+    hf:
+      repo: Qwen/Qwen3.5-4B
+      revision: 851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a
+      dtype: bfloat16

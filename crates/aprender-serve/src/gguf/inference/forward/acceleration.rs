@@ -297,7 +297,8 @@ impl OwnedQuantizedModel {
 
         // Use same matmul approach as batch_matmul_gpu for consistency
         scheduler
-            .matmul(input, &weight_f32, batch_size, in_dim, out_dim)
+            // #3975: `weight_f32` is dequantized [out, in] = [n, k].
+            .matmul_transpose_b(input, &weight_f32, batch_size, in_dim, out_dim)
             .map_err(|e| RealizarError::UnsupportedOperation {
                 operation: "HybridScheduler::matmul".to_string(),
                 reason: format!("GPU batched matmul failed: {e}"),

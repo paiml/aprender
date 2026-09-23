@@ -817,11 +817,39 @@ fn try_quantized_completions(
         ..Default::default()
     };
 
+    // #3987: a qwen3moe model has no dense FFN, so the dense `generate_with_cache`
+    // cannot run it -- /v1/completions answered 500 on both hosts. Route it through the
+    // ONE dispatch `apr run` uses (#3714), which serves on the GPU when the server opted
+    // in (`with_moe_gpu`) and reports which backend actually ran. Qwen3.5-MoE spellings
+    // are left alone: the capability refusal names them (#3714 fold).
+    let moe_arch = state.model_architecture().filter(|a| {
+        crate::gguf::moe_forward_handles(a) && crate::capability::no_cuda_forward_reason(a).is_none()
+    });
     // aprender#2376(9): a context-budget rejection is a client error (400), not a
     // server failure — same classification as /generate.
-    let generated = quantized_model
-        .generate_with_cache(&prompt_ids, &q_config)
+    let (generated, used_gpu) = if moe_arch.is_some() {
+        let mapped = state.mapped_gguf_model().ok_or_else(|| {
+            rerr(
+                state,
+                StatusCode::NOT_IMPLEMENTED,
+                "qwen3moe needs the retained GGUF map, which this server did not keep (#3987)",
+            )
+        })?;
+        let (tokens, gpu) = crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
+            &mapped,
+            quantized_model,
+            &prompt_ids,
+            &q_config,
+            state.moe_no_gpu(),
+        )
         .map_err(|e| rerr(state, super::generation_error_status(&e), e))?;
+        (tokens, Some(gpu))
+    } else {
+        let tokens = quantized_model
+            .generate_with_cache(&prompt_ids, &q_config)
+            .map_err(|e| rerr(state, super::generation_error_status(&e), e))?;
+        (tokens, None)
+    };
     let token_ids: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
     let completion_tokens = token_ids.len();
     let text = tokenizer
@@ -840,8 +868,9 @@ fn try_quantized_completions(
         completion_tokens,
         max_tokens,
         request.stop.as_deref(),
-        // `generate_with_cache` returns tokens only — nothing records the backend.
-        None,
+        // The dense `generate_with_cache` returns tokens only, so it records no backend
+        // (None); the MoE dispatch reports the one that actually ran (#3987).
+        used_gpu,
     )))
 }
 

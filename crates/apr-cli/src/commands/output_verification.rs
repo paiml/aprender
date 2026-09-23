@@ -15,11 +15,11 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
         );
     }
 
-    // Extract metadata from the model file
-    let data = std::fs::read(path)
+    // #3750: the 4-byte magic here, and that format's header below, never the whole model
+    let magic = super::model_header::read_prefix(path, 4)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
 
-    if data.len() < 4 {
+    if magic.len() < 4 {
         let duration = start.elapsed();
         return Ok(GateResult::failed(
             "metadata_plausibility",
@@ -30,7 +30,7 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
         ));
     }
 
-    let (architecture, rope_theta, max_pos, rms_norm_eps) = extract_model_metadata(&data, path)?;
+    let (architecture, rope_theta, max_pos, rms_norm_eps) = extract_model_metadata(&magic, path)?;
 
     let mut violations: Vec<String> = Vec::new();
     let mut checks_passed = 0usize;
@@ -38,7 +38,7 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
     check_rope_theta(
         architecture.as_deref(),
         rope_theta,
-        &data,
+        &magic,
         &mut violations,
         &mut checks_passed,
     );
@@ -188,13 +188,16 @@ fn check_arch_theta_cross_validation(
 /// Metadata extracted from model file for plausibility validation.
 type ModelMetadata = (Option<String>, Option<f32>, Option<usize>, Option<f32>);
 
-/// Extract model metadata from file bytes (GGUF, APR, or SafeTensors format).
-fn extract_model_metadata(data: &[u8], path: &Path) -> Result<ModelMetadata> {
-    let magic = &data[0..4];
+/// Extract model metadata (GGUF, APR, or SafeTensors format) given the file's magic.
+///
+/// #3750: each format is read to the end of its header and no further: the GGUF header
+/// prefix, the APR header + metadata + tensor index, or SafeTensors' sibling config.json.
+fn extract_model_metadata(magic: &[u8], path: &Path) -> Result<ModelMetadata> {
+    let magic = &magic[0..4];
 
     if magic == b"GGUF" {
-        // GGUF format: use GgufReader
-        let reader = aprender::format::gguf::reader::GgufReader::from_bytes(data.to_vec())
+        // GGUF format: use GgufReader, over the header prefix
+        let reader = super::model_header::gguf_header(path)
             .map_err(|e| CliError::ValidationFailed(format!("GGUF parse failed: {e}")))?;
         let arch = reader.architecture();
         let rope_theta = reader.rope_theta();
@@ -204,7 +207,9 @@ fn extract_model_metadata(data: &[u8], path: &Path) -> Result<ModelMetadata> {
     } else if &magic[0..3] == b"APR" || magic == b"APRN" {
         // APR format: parse v2 header + JSON metadata
         use aprender::format::v2::AprV2Reader;
-        let reader = AprV2Reader::from_bytes(data)
+        let prefix = super::model_header::apr_header_prefix(path)
+            .map_err(|e| CliError::ValidationFailed(format!("APR parse failed: {e}")))?;
+        let reader = AprV2Reader::from_bytes(&prefix)
             .map_err(|e| CliError::ValidationFailed(format!("APR parse failed: {e}")))?;
         let meta = reader.metadata();
         let _ = path;
@@ -877,9 +882,9 @@ fn note_gpu_golden_skip(config: &QaConfig, message: &str) {
 /// (the same reason `golden_output_apr` does it). Stop tokens come from the
 /// model's own EOS, which `run_gguf_inference` merges in.
 ///
-/// Returns the text and the dispatch's own `used_gpu` (#3711).
+/// Returns the text, the dispatch's own `used_gpu` (#3711) and the generated token count (#3961).
 #[cfg(feature = "inference")]
-fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result<(String, bool)> {
+fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result<(String, bool, usize)> {
     use realizar::gguf::MappedGGUFModel;
     use realizar::{run_inference, InferenceConfig};
 
@@ -900,7 +905,7 @@ fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result
         .with_top_k(1);
     let result = run_inference(&infer_config)
         .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
-    Ok((result.text, result.used_gpu))
+    Ok((result.text, result.used_gpu, result.generated_token_count))
 }
 
 /// Gate 1 for an architecture the dense loader refuses: the same golden cases,
@@ -932,13 +937,12 @@ fn run_golden_output_gate_runtime(
     // asks them too — same detector, keyed on `general.architecture`. Reading the
     // header is cheap; a file that will not map is left to the generation call
     // below, which reports the mapping error properly.
-    let architecture = {
-        let mapped = realizar::gguf::MappedGGUFModel::from_path(path).ok();
-        mapped
-            .as_ref()
-            .and_then(|m| m.model.architecture())
-            .map(String::from)
-    };
+    // #3990: the header map is kept, because the thinking-ON leg renders the model's own template.
+    let mapped_header = realizar::gguf::MappedGGUFModel::from_path(path).ok();
+    let architecture = mapped_header
+        .as_ref()
+        .and_then(|m| m.model.architecture())
+        .map(String::from);
     let test_cases = golden_test_cases_for(architecture.as_deref());
     // GH-279-4: thinking models need room for <think>...</think> + the answer.
     let golden_max_tokens = config.max_tokens.max(512);
@@ -950,7 +954,7 @@ fn run_golden_output_gate_runtime(
 
     let mut served_by = String::new();
     for (prompt, expected_patterns) in &test_cases {
-        let (output_text, used_gpu) = golden_output_runtime(path, prompt.as_str(), golden_max_tokens)?;
+        let (output_text, used_gpu, _) = golden_output_runtime(path, prompt.as_str(), golden_max_tokens)?;
         // #3711: the backend first — a GPU that fell back is a FAIL even when the CPU's answer is right
         match runtime_golden_backend(used_gpu, gpu_not_run) {
             Ok(label) => served_by = label,
@@ -998,7 +1002,23 @@ fn run_golden_output_gate_runtime(
 
     // #3724 done_when 3: the hybrid rungs are thinking-capable too, and this leg
     // is where they are judged.
-    if let Some((on_prompt, on_patterns)) = thinking_on_case(architecture.as_deref()) {
+    let mut on_leg = String::new();
+    let on_case = match thinking_on_case_for_model(
+        architecture.as_deref(),
+        mapped_header.as_ref().map(|m| &m.model),
+    ) {
+        Ok(c) => c,
+        Err(reason) => {
+            return Ok(GateResult::failed(
+                "golden_output",
+                &format!("golden_output_thinking_on: {reason}"),
+                None,
+                None,
+                start.elapsed(),
+            ))
+        },
+    };
+    if let Some((on_prompt, on_patterns)) = on_case {
         // #3907 WIRING (#3907 landed the resolver and reached only the DENSE leg at
         // golden_output.rs:795; this is the HYBRID leg, and it kept passing the raw
         // `THINKING_ON_BUDGET` const to BOTH the generation and the judging). Measured
@@ -1011,7 +1031,7 @@ fn run_golden_output_gate_runtime(
             .file_name()
             .map(|f| f.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let (on_budget, _basis) = match thinking_on_budget_for(&model_file) {
+        let (on_budget, budget_basis) = match thinking_on_budget_for(&model_file) {
             Ok(v) => v,
             Err(reason) => {
                 return Ok(GateResult::failed(
@@ -1023,11 +1043,18 @@ fn run_golden_output_gate_runtime(
                 ))
             },
         };
-        // #3711 made this return the backend alongside the text; the ON leg judges
-        // the answer, and the backend was already judged on the OFF cases above.
-        let (on_text, _used_gpu) = golden_output_runtime(path, on_prompt.as_str(), on_budget)?;
+        let (on_text, on_used_gpu, on_tokens) = golden_output_runtime(path, on_prompt.as_str(), on_budget)?;
         let generated = on_text.strip_prefix(on_prompt.as_str()).unwrap_or(&on_text);
-        if let Some(reason) = judge_thinking_on_output(generated, &on_patterns, on_budget) {
+        let judged = on_leg_judged_text(&on_prompt, generated);
+        let generated = judged.as_str();
+        if let Some(reason) = thinking_on_leg_failure(
+            generated,
+            &on_patterns,
+            on_budget,
+            on_used_gpu,
+            gpu_not_run,
+            &budget_basis,
+        ) {
             return Ok(GateResult::failed(
                 "golden_output",
                 &reason,
@@ -1036,18 +1063,49 @@ fn run_golden_output_gate_runtime(
                 start.elapsed(),
             ));
         }
+        // #3961: a pass says what the ON leg did -- its own backend, how much it reasoned
+        // and how long it ran. `think_body_chars` is the number that told the 0.8B model
+        // that skipped reasoning (0) from the controls that did (445-2149).
+        on_leg = format!(
+            "; thinking-ON leg served by {}, think_body_chars={}, generated_tokens={on_tokens}",
+            if on_used_gpu { "GPU" } else { "CPU" },
+            think_body_chars(generated),
+        );
     }
 
     Ok(GateResult::passed(
         "golden_output",
         &format!(
-            "{} golden test cases passed through the runtime entry point (served by {served_by})",
+            "{} golden test cases passed through the runtime entry point (served by {served_by}){on_leg}",
             test_cases.len(),
         ),
         Some(test_cases.len() as f64),
         Some(test_cases.len() as f64),
         start.elapsed(),
     ))
+}
+
+/// #3961: the hybrid thinking-ON leg's whole verdict, pure so a table can drive it.
+#[cfg(feature = "inference")]
+pub(crate) fn thinking_on_leg_failure(
+    generated: &str,
+    on_patterns: &[&str],
+    on_budget: usize,
+    on_used_gpu: bool,
+    gpu_not_run: Option<&'static str>,
+    budget_basis: &str,
+) -> Option<String> {
+    // The backend first, as on the OFF cases: a GPU-expected leg the CPU served is a FAIL
+    // even when the CPU's answer is right. The ON leg used to skip this ("the backend was
+    // already judged on the OFF cases") -- an assumption nothing checked, on the longest
+    // generation the gate runs, the one most exposed to a mid-run fallback (#3961).
+    if let Err(failure) = runtime_golden_backend(on_used_gpu, gpu_not_run) {
+        return Some(format!(
+            "golden_output_thinking_on: {failure} [budget basis — {budget_basis}]"
+        ));
+    }
+    judge_thinking_on_output(generated, &on_patterns, on_budget)
+        .map(|r| format!("{r} [budget basis — {budget_basis}]"))
 }
 
 /// Without `inference` there is no runtime to certify.
@@ -1212,6 +1270,50 @@ mod pmat3782_degenerate_is_not_an_answer {
 }
 
 /// #3904: the golden gate's failure reason must say what it dropped.
+#[cfg(all(test, feature = "inference"))]
+mod thinking_on_leg_3961 {
+    use super::thinking_on_leg_failure;
+
+    const REASONED: &str = "<think>two plus two is four</think>2 + 2 = 4.";
+
+    /// #3961 MUST-RED: the ON leg fell back to the CPU where the GPU was expected. The OFF
+    /// cases judged THEIR backend; this leg is the longest generation the gate runs and was
+    /// judged on its text alone, so a CPU-served answer passed as a GPU cell (#3922 shape).
+    #[test]
+    fn an_on_leg_that_fell_back_is_red() {
+        let got = thinking_on_leg_failure(REASONED, &["4"], 2048, false, None, "row qwen35")
+            .expect("a GPU-expected ON leg the CPU served is not a pass");
+        assert!(got.contains("golden_output_thinking_on"), "{got}");
+        assert!(got.contains("fell back"), "{got}");
+    }
+
+    /// Positive controls: GPU-served, and CPU where the GPU was never expected.
+    #[test]
+    fn an_on_leg_on_its_expected_backend_passes() {
+        assert_eq!(thinking_on_leg_failure(REASONED, &["4"], 2048, true, None, "b"), None);
+        assert_eq!(
+            thinking_on_leg_failure(REASONED, &["4"], 2048, false, Some("no cuda build"), "b"),
+            None
+        );
+    }
+
+    /// #3948 quorum item 4: an ON-leg failure names the budget basis, as the dense leg's
+    /// does (golden_output.rs), so "closed EMPTY within 2048" cannot cite the wrong row.
+    #[test]
+    fn an_on_leg_failure_names_its_budget_basis() {
+        let got = thinking_on_leg_failure(
+            "<think>two plus two is four</think>It is five.",
+            &["4"],
+            2048,
+            true,
+            None,
+            "row Qwen3.5-0.8B-Q4_K_M",
+        )
+        .expect("a wrong answer fails");
+        assert!(got.contains("[budget basis — row Qwen3.5-0.8B-Q4_K_M]"), "{got}");
+    }
+}
+
 #[cfg(test)]
 mod loud_truncation_3904 {
     use super::*;

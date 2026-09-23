@@ -1,3 +1,30 @@
+// #3981: where generation BEGAN, marked by the backend on the dispatch thread after
+// its setup (weight upload, F2 validation). `inference_ms` wrapped the whole dispatch,
+// so `apr run --format json` reported 0.2 tok/s for a Qwen3-30B-A3B run that
+// generated at tens of tok/s: it divided by load + a 5.2 s F2 check. Thread-local
+// because generation is dispatched and returns on this thread; a mark left by an
+// earlier run is cleared before each dispatch.
+std::thread_local! {
+    static GENERATION_START: std::cell::Cell<Option<std::time::Instant>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Mark that generation starts now (call after setup, right before the first forward).
+pub(crate) fn mark_generation_start() {
+    GENERATION_START.with(|c| c.set(Some(std::time::Instant::now())));
+}
+
+fn take_generation_start() -> Option<std::time::Instant> {
+    GENERATION_START.with(std::cell::Cell::take)
+}
+
+/// #3981: tokens per second over generation when it was measured, else over the whole
+/// inference window. Pure, so the rule is tested without a model.
+#[must_use]
+pub(crate) fn throughput(generated: usize, inference_ms: f64, generation_ms: Option<f64>) -> f64 {
+    tok_per_sec(generated, generation_ms.unwrap_or(inference_ms))
+}
+
 /// Result from inference
 #[derive(Debug, Clone)]
 pub struct InferenceResult {
@@ -11,8 +38,15 @@ pub struct InferenceResult {
     pub generated_token_count: usize,
     /// Inference time in milliseconds
     pub inference_ms: f64,
-    /// Tokens per second
+    /// Tokens per second. #3981: over GENERATION time when the backend marked where
+    /// generation began (see `generation_ms`); otherwise over `inference_ms`, which
+    /// includes weight upload and the F2 check.
     pub tok_per_sec: f64,
+    /// #3981: wall time from the moment the backend started generating (after weight
+    /// upload and F2 validation) to the end of generation: prefill plus decode.
+    /// `None` when the path that ran does not mark it, and then `tok_per_sec` still
+    /// includes setup, so a consumer must not read it as a generation rate.
+    pub generation_ms: Option<f64>,
     /// Model load time in milliseconds
     pub load_ms: f64,
     /// Model format that was loaded
@@ -258,7 +292,7 @@ fn run_gguf_inference(
     let gguf_arch = mapped.model.architecture().unwrap_or("transformer");
 
     if config.verbose {
-        print_gguf_verbose_info(gguf_arch, &model, load_ms);
+        print_gguf_verbose_info(gguf_arch, &model, &body_qtypes(&mapped.model), load_ms);
     }
 
     // PMAT-236: Use PreparedTokens (chat template already applied by prepare_tokens)
@@ -291,21 +325,30 @@ fn run_gguf_inference(
     // run_gguf_generate as before. This replaces M32c.2.1's
     // gguf_gpu_generate.rs short-circuit with an actual forward pass.
     let infer_start = Instant::now();
+    let _ = take_generation_start(); // #3981: never inherit a mark from an earlier run
     let canonical_arch = crate::tensor_names::normalize_architecture(&model.config.architecture);
-    // #3826: `gpu_attempted` is threaded from the DENSE path, which is where the
-    // reported defect lives (a bare `apr run` on a cuda build attempts CUDA, is
-    // refused, and falls back). The qwen3_moe branch is CPU-only so it cannot
-    // attempt. The qwen35 dispatch does not yet report its attempt separately —
-    // it PRINTS its GPU failure rather than returning it, so a rejected hybrid
-    // still under-reports here. Named as an open obligation rather than guessed.
-    let (tokens, used_gpu, gpu_attempted) = if canonical_arch == "qwen3_moe" {
-        let tokens = crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
+    // #3714 R2: `moe_forward_handles` is the one dispatch predicate — `apr
+    // parity` and `apr qa` ask the same function, so no tool can route this
+    // architecture differently from `apr run`. (It is exactly
+    // `canonical_arch == "qwen3_moe"`, so taking it changes no routing.)
+    //
+    // #3826: `gpu_attempted` is part of the envelope, so a GPU that was tried and
+    // refused reads as `fell_back: true` rather than as a CPU run nobody asked for.
+    // The MoE dispatch now TRIES CUDA (#3714): it attempts exactly when this is a
+    // cuda build and `--no-gpu` was not given, and on failure prints its reason and
+    // runs the CPU chain. So its attempt is derived from those same two facts here,
+    // which is what makes #3817 (a silent `--gpu` fallback to CPU) visible as
+    // attempted && !used_gpu. The qwen35 dispatch still does not report its attempt
+    // separately; that obligation is unchanged.
+    let (tokens, used_gpu, gpu_attempted) = if crate::gguf::moe_forward_handles(&model.config.architecture) {
+        let (tokens, used_gpu) = crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
             &mapped,
             &model,
             &input_tokens,
             &gen_config,
+            config.no_gpu,
         )?;
-        (tokens, false, false) // CPU-only path; GPU MoE wiring is M32d follow-up
+        (tokens, used_gpu, cfg!(feature = "cuda") && !config.no_gpu)
     } else if is_qwen35 {
         // #3477: the hybrid now has a GPU forward (#3090), so `apr run --gpu`
         // routes to it and reports CUDA; the CPU forward (#3091) serves
@@ -323,6 +366,7 @@ fn run_gguf_inference(
         run_gguf_generate(model, &input_tokens, &gen_config, config)?
     };
     let inference_ms = infer_start.elapsed().as_secs_f64() * 1000.0;
+    let generation_ms = take_generation_start().map(|t| t.elapsed().as_secs_f64() * 1000.0);
 
     let generated_tokens = &tokens[input_token_count..];
     let raw_text = mapped.model.decode(generated_tokens);
@@ -344,7 +388,7 @@ fn run_gguf_inference(
     }
     let text = clean_model_output(&raw_text);
     let generated_token_count = generated_tokens.len();
-    let tps = tok_per_sec(generated_token_count, inference_ms);
+    let tps = throughput(generated_token_count, inference_ms, generation_ms);
 
     write_gguf_trace(
         config,
@@ -383,6 +427,7 @@ fn run_gguf_inference(
             generated_token_count,
             inference_ms,
             tok_per_sec: tps,
+            generation_ms,
             load_ms,
             format: "GGUF".to_string(),
             used_gpu,
@@ -396,6 +441,7 @@ fn run_gguf_inference(
 fn print_gguf_verbose_info(
     gguf_arch: &str,
     model: &crate::gguf::OwnedQuantizedModel,
+    body: &[u32],
     load_ms: f64,
 ) {
     let arch = match gguf_arch.to_lowercase().as_str() {
@@ -405,7 +451,8 @@ fn print_gguf_verbose_info(
         "phi" | "phi3" => "Phi",
         _ => "Transformer",
     };
-    let quant_type = qtype_to_dtype_str(model.lm_head_weight.qtype);
+    // #4006: the body's quantization, not the (possibly tied, higher-precision) head.
+    let quant_type = body_quant_label(body, model.lm_head_weight.qtype);
     let thread_count = rayon::current_num_threads();
     eprintln!(
         "Architecture: {} [GGUF: {}] ({} layers, vocab_size={})",
@@ -799,6 +846,10 @@ fn f2_cpu_reference_logits(
     num_layers: usize,
 ) -> Option<Vec<Vec<f32>>> {
     use crate::gguf::OwnedQuantizedKVCache;
+    #[cfg(test)]
+    if F2_FAIL_CPU_REFERENCE.with(std::cell::Cell::get) {
+        return None;
+    }
     let mut per_pos: Vec<Vec<f32>> = Vec::with_capacity(probe.len() + 1);
     let mut cpu_cache = OwnedQuantizedKVCache::new(num_layers, kv_dim, probe.len().max(2) + 1);
     for (pos, &tok) in probe.iter().enumerate() {
@@ -942,9 +993,65 @@ fn f2_gpu_batched_logits(
     Ok(per_pos)
 }
 
-/// The three ways the F2 check declines to judge at all, in one place. `None` means
-/// "nothing to validate — assume the GPU is fine"; `Some((kv_dim, num_layers, probe))`
-/// is a probe with at least one REAL position (≥1) in it.
+/// #3973: what the F2 check actually established. It returned a `bool`, and two
+/// branches returned `true` ("assume GPU is fine") when nothing was measured. A
+/// caller printed "F2 validation PASSED" for both, so a receipt citing that line could
+/// be citing a check that never ran. `batch` called it with an empty probe, which
+/// ALWAYS takes a not-measured branch, so batch serving was gated on a check that
+/// could not fail.
+///
+/// Three states, and only one of them is a validation:
+///   `Validated` a probe ran on both CPU and GPU and every real position agreed
+///   `Mismatch`  it ran and the GPU disagreed, or the GPU forward failed (fail closed)
+///   `NotMeasured` nothing was compared, and `reason` says why. It must never be
+///               reported as a pass. Whether a caller may still use the GPU is the
+///               caller's decision, made explicitly at the call site.
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone, PartialEq)]
+pub enum F2Outcome {
+    /// Compared and accepted.
+    Validated {
+        /// Worst cosine over the real positions.
+        min_cosine: f32,
+    },
+    /// Compared and rejected, or the GPU forward failed.
+    Mismatch,
+    /// Nothing was compared.
+    NotMeasured {
+        /// Why nothing was compared.
+        reason: String,
+    },
+}
+
+// #3973: test-only fault hook for the CPU-reference branch. No INPUT reaches it: an
+// out-of-vocabulary token embeds as zeros by contract (N-09, embedding-lookup-v1.yaml),
+// so the CPU forward does not fail. Thread-local, so it cannot leak across tests.
+#[cfg(all(test, feature = "cuda"))]
+thread_local! {
+    static F2_FAIL_CPU_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// #3973: the ONE line the run path prints for an F2 outcome. Only `Validated` may say
+/// PASSED, and it carries the measured cosine; `NotMeasured` names its reason and says
+/// the output is unvalidated. Pure, so that rule is tested without a GPU.
+#[cfg(feature = "cuda")]
+#[must_use]
+pub(crate) fn f2_status_line(outcome: &F2Outcome) -> String {
+    match outcome {
+        F2Outcome::Validated { min_cosine } => {
+            format!("[GH-480] F2 validation PASSED (min cosine {min_cosine:.4}) — launching GPU generation")
+        },
+        F2Outcome::Mismatch => "[GH-480] F2 validation FAILED — falling back to CPU".to_string(),
+        F2Outcome::NotMeasured { reason } => format!(
+            "[GH-480] F2 validation NOT MEASURED — {reason}. Launching GPU generation UNVALIDATED (#3973)"
+        ),
+    }
+}
+
+/// The three ways the F2 check declines to judge at all, in one place. `Err(reason)`
+/// means nothing will be validated, and says why (#3973: it was `None`, read as
+/// "assume the GPU is fine"); `Ok((kv_dim, num_layers, probe))` is a probe with at
+/// least one REAL position (≥1) in it.
 ///
 /// `SKIP_PARITY_GATE=1` bypasses both this F2 check and the cosine parity gate. A
 /// single-token probe (context-less BOS) has NO real position to validate — the pos0
@@ -954,18 +1061,24 @@ fn f2_gpu_batched_logits(
 fn f2_probe_to_judge(
     cuda_model: &crate::gguf::OwnedQuantizedModelCuda,
     probe_context: &[u32],
-) -> Option<(usize, usize, Vec<u32>)> {
+) -> std::result::Result<(usize, usize, Vec<u32>), String> {
     if std::env::var("SKIP_PARITY_GATE")
         .map(|v| v == "1")
         .unwrap_or(false)
     {
-        return None;
+        return Err("SKIP_PARITY_GATE=1 bypasses the check".to_string());
     }
-    let (kv_dim, num_layers, probe) = gpu_probe(cuda_model.model(), probe_context)?;
+    let Some((kv_dim, num_layers, probe)) = gpu_probe(cuda_model.model(), probe_context) else {
+        return Err("no probe could be built for this model".to_string());
+    };
     if probe.len() < 2 {
-        return None;
+        return Err(format!(
+            "the probe has {} token(s) and no REAL position to compare: a context-less BOS \
+             probe cannot validate anything (pos0 is a benign near-tie)",
+            probe.len()
+        ));
     }
-    Some((kv_dim, num_layers, probe))
+    Ok((kv_dim, num_layers, probe))
 }
 
 /// Run the probe through whichever prefill path the engine resolved (#3413 C).
@@ -1091,9 +1204,10 @@ pub fn validate_gpu_first_token(
     cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
     _gen_config: &crate::gguf::QuantizedGenerateConfig,
     probe_context: &[u32],
-) -> bool {
-    let Some((kv_dim, num_layers, probe)) = f2_probe_to_judge(cuda_model, probe_context) else {
-        return true;
+) -> F2Outcome {
+    let (kv_dim, num_layers, probe) = match f2_probe_to_judge(cuda_model, probe_context) {
+        Ok(p) => p,
+        Err(reason) => return F2Outcome::NotMeasured { reason },
     };
 
     // CPU reference: forward the whole probe (plus one greedy decode step),
@@ -1101,7 +1215,11 @@ pub fn validate_gpu_first_token(
     let Some(cpu_logits_per_pos) =
         f2_cpu_reference_logits(cuda_model.model(), &probe, kv_dim, num_layers)
     else {
-        return true; // CPU forward failed — can't validate, assume GPU is fine
+        // #3973: this returned `true`, "assume GPU is fine". Nothing was compared.
+        return F2Outcome::NotMeasured {
+            reason: "the CPU reference forward failed, so there is nothing to compare the GPU against"
+                .to_string(),
+        };
     };
     // The decode token both sides take after the probe: CPU's own greedy choice,
     // so the GPU is measured on the continuation a real run would generate.
@@ -1126,7 +1244,7 @@ pub fn validate_gpu_first_token(
         Err(msg) => {
             cuda_model.executor.reset_kv_cache_gpu();
             f2_report_forward_failure(&msg, via);
-            return false; // GPU forward failed — fail closed.
+            return F2Outcome::Mismatch; // GPU forward failed — fail closed.
         },
     };
     cuda_model.executor.reset_kv_cache_gpu();
@@ -1163,7 +1281,11 @@ pub fn validate_gpu_first_token(
         }
     }
 
-    f2_accept_or_reject(&report, via, cpu_logits_per_pos.len().saturating_sub(1))
+    if f2_accept_or_reject(&report, via, cpu_logits_per_pos.len().saturating_sub(1)) {
+        F2Outcome::Validated { min_cosine: report.min_cosine_real }
+    } else {
+        F2Outcome::Mismatch
+    }
 }
 
 /// #3413 C: retry the batched probe with FP8 prefill off iff the report was a miss,
@@ -2061,3 +2183,115 @@ mod pmat3477_f2_batched_probe_cuda_tests {
         );
     }
 }
+
+// ============================================================================
+// #3973: F2 must never report a validation it did not perform.
+#[cfg(all(test, feature = "cuda"))]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod f2_outcome_3973_tests {
+    use super::*;
+
+    fn model_path() -> Option<std::path::PathBuf> {
+        [
+            "/home/noah/.apr/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+            "/mnt/nvme-raid0/cache/apr-home/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+        ]
+        .into_iter()
+        .map(std::path::PathBuf::from)
+        .find(|p| p.exists())
+    }
+
+    /// The reporting rule, no GPU needed: only a comparison that ran and agreed may
+    /// print PASSED.
+    #[test]
+    fn only_a_validated_outcome_prints_passed() {
+        let v = f2_status_line(&F2Outcome::Validated { min_cosine: 0.9987 });
+        assert!(v.contains("PASSED") && v.contains("0.9987"), "{v}");
+        let m = f2_status_line(&F2Outcome::Mismatch);
+        assert!(m.contains("FAILED") && !m.contains("PASSED"), "{m}");
+        let n = f2_status_line(&F2Outcome::NotMeasured { reason: "because".into() });
+        assert!(!n.contains("PASSED"), "NotMeasured must never print PASSED: {n}");
+        assert!(n.contains("because") && n.contains("UNVALIDATED"), "{n}");
+    }
+
+    /// Both fail-open branches, on the device, against a real model. Each used to
+    /// return `true`, which the run path printed as PASSED.
+    #[test]
+    fn both_fail_open_branches_report_not_measured_and_a_real_probe_validates() {
+        use crate::gguf::{MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda};
+        let Some(path) = model_path() else {
+            eprintln!("SKIP: tinyllama not present");
+            return;
+        };
+        let mapped = MappedGGUFModel::from_path(&path).expect("map tinyllama");
+        let Ok(mut cuda) =
+            OwnedQuantizedModelCuda::new(OwnedQuantizedModel::from_mapped(&mapped).expect("model"), 0)
+        else {
+            eprintln!("SKIP: no CUDA device");
+            return;
+        };
+        let cfg = crate::gguf::QuantizedGenerateConfig::default();
+
+        // Branch 1: no real position (the BOS-only probe batch.rs always uses).
+        match validate_gpu_first_token(&mut cuda, &cfg, &[]) {
+            F2Outcome::NotMeasured { reason } => {
+                assert!(reason.contains("no REAL position"), "wrong reason: {reason}");
+            },
+            other => panic!("an empty probe compares nothing; got {other:?}"),
+        }
+
+        // Branch 2: the CPU reference forward fails, on a REAL prompt. No input can
+        // make it fail (an OOV token embeds as zeros by contract), so the test-only
+        // hook forces it. The same prompt validates below, so this NotMeasured is
+        // about the missing reference, not about the prompt.
+        let prompt = mapped.model.encode("The capital of France is").expect("encode");
+        F2_FAIL_CPU_REFERENCE.with(|c| c.set(true));
+        let forced = validate_gpu_first_token(&mut cuda, &cfg, &prompt);
+        F2_FAIL_CPU_REFERENCE.with(|c| c.set(false));
+        match forced {
+            F2Outcome::NotMeasured { reason } => {
+                assert!(reason.contains("CPU reference"), "wrong reason: {reason}");
+            },
+            other => panic!("a CPU reference that could not run compares nothing; got {other:?}"),
+        }
+
+        // Positive control: the same real prompt, reference intact, IS compared, so
+        // the two NotMeasured results above are about their branches.
+        match validate_gpu_first_token(&mut cuda, &cfg, &prompt) {
+            F2Outcome::Validated { min_cosine } => {
+                assert!(min_cosine >= F2_GATE_COSINE_MIN, "validated below the floor: {min_cosine}");
+                eprintln!("#3973 positive control: Validated, min cosine {min_cosine:.4}");
+            },
+            other => panic!("a real prompt on a sound model must validate; got {other:?}"),
+        }
+    }
+}
+
+// ============================================================================
+// #3981: tok_per_sec must be a GENERATION rate, not diluted by setup.
+#[cfg(test)]
+mod throughput_3981_tests {
+    use super::*;
+
+    /// The ticket's must-RED shape: 5 s of setup (load/upload + F2) around 1 s of
+    /// generating 100 tokens. The rate is 100 tok/s, not 100/6 = 16.7.
+    #[test]
+    fn a_five_second_setup_does_not_dilute_the_generation_rate() {
+        let rate = throughput(100, 6_000.0, Some(1_000.0));
+        assert!((rate - 100.0).abs() < 1e-9, "setup must not dilute tok/s: got {rate}");
+        let diluted = throughput(100, 6_000.0, None);
+        assert!(diluted < 17.0, "with no generation mark the old window is all there is: {diluted}");
+    }
+
+    /// The mark is consumed once, so a stale mark from an earlier run cannot be
+    /// read as this run's generation start.
+    #[test]
+    fn the_generation_mark_is_taken_once() {
+        let _ = take_generation_start();
+        assert!(take_generation_start().is_none(), "no mark yet");
+        mark_generation_start();
+        assert!(take_generation_start().is_some(), "the mark must be readable once");
+        assert!(take_generation_start().is_none(), "and then gone");
+    }
+}
+

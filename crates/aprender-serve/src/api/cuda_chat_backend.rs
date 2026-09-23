@@ -8,6 +8,10 @@ fn try_safetensors_cuda_backend(
     start: Instant,
     cancel: &CancelToken,
 ) -> Option<Response> {
+    // Residency FIRST: this backend is tried before the CPU quantized one, so a
+    // refusal ahead of the `?` refused `ignore_eos` for every model in a cuda
+    // build, not just SafeTensors CUDA ones (aprender#3956).
+    let model_lock = state.safetensors_cuda_model()?;
     // PERF-039: fail closed rather than silently dropping `ignore_eos`.
     if let Some(r) = super::openai_handlers::reject_unsupported_ignore_eos(
         state,
@@ -16,13 +20,13 @@ fn try_safetensors_cuda_backend(
     ) {
         return Some(r);
     }
-    let model_lock = state.safetensors_cuda_model()?;
     let tokenizer = match require_tokenizer(state) {
         Ok(t) => t,
         Err(r) => return Some(r),
     };
 
-    let prompt = crate::api::realize_handlers::format_chat_messages(&request.messages, Some(&request.model));
+    // #4007: the loaded model's architecture, not the client's `model` string.
+    let prompt = crate::api::realize_handlers::format_chat_messages_for_state(state, &request.messages, Some(&request.model));
     let input_ids = tokenizer.encode(&prompt);
     let max_tokens = request.max_tokens.unwrap_or(256).min(4096) as usize;
 
@@ -263,6 +267,7 @@ async fn try_cuda_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         timings,
+        None,
     ))
 }
 
@@ -392,6 +397,7 @@ fn try_quantized_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
+        None,
     ))
 }
 
@@ -421,6 +427,8 @@ fn try_apr_transformer_backend(
 ) -> Option<Response> {
     use crate::apr_transformer::GenerateConfig;
 
+    // Residency first, as in `try_safetensors_cuda_backend` (aprender#3956).
+    let apr_transformer = state.apr_transformer()?;
     // PERF-039: fail closed rather than silently dropping `ignore_eos`.
     if let Some(r) = super::openai_handlers::reject_unsupported_ignore_eos(
         state,
@@ -429,8 +437,6 @@ fn try_apr_transformer_backend(
     ) {
         return Some(r);
     }
-
-    let apr_transformer = state.apr_transformer()?;
     let tokenizer = match require_tokenizer(state) {
         Ok(t) => t,
         Err(r) => return Some(r),
@@ -500,6 +506,7 @@ fn try_apr_transformer_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
+        None,
     ))
 }
 
@@ -559,7 +566,7 @@ fn registry_fallback(
         Err(e) => return fail_response(state, super::model_resolution_status(&e), e),
     };
 
-    let prompt_text = format_chat_messages(&request.messages, Some(&request.model));
+    let prompt_text = format_chat_messages_for_state(state, &request.messages, Some(&request.model));
     let prompt_ids = tokenizer.encode(&prompt_text);
     if prompt_ids.is_empty() {
         return fail_response(state, StatusCode::BAD_REQUEST, "Messages cannot be empty");
@@ -618,6 +625,7 @@ fn registry_fallback(
         duration,
         request.tools.as_deref(),
         request_tool_choice(request),
+        None,
         None,
     )
 }
@@ -792,6 +800,7 @@ async fn try_apr_q4k_chat_backend(
         start.elapsed(),
         request.tools.as_deref(),
         request_tool_choice(request),
+        None,
         None,
     ))
 }
@@ -1094,11 +1103,15 @@ fn try_qwen3_moe_backend(
         ));
     }
 
-    let tokens = match crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
+    // #3987: the ONE dispatch `apr run` uses (#3714), not the CPU-only generator this
+    // used to call directly. On a CUDA server (`with_moe_gpu`) it serves on the GPU; a GPU
+    // that cannot serve prints its reason and the CPU chain runs, and `used_gpu` says so.
+    let (tokens, used_gpu) = match crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
         &mapped,
         &quantized,
         &input_ids,
         &gen_config,
+        state.moe_no_gpu(),
     ) {
         Ok(t) => t,
         Err(e) => {
@@ -1142,6 +1155,7 @@ fn try_qwen3_moe_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
+        Some(used_gpu),
     ))
 }
 
