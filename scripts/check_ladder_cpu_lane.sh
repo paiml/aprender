@@ -30,6 +30,9 @@
 #     cpu-decline        a decline (exit 2) inside the background lane ends the ladder with rc 2
 #     cuda-decline-kills-cpu-lane  a decline on the GPU lane ends the ladder AND the background lane:
 #                        an orphaned CPU apr would keep a model loaded and write into a deleted $WORK
+#     fg-decline-keeps-reason  on the DEFAULT (serial) path, a decline inside a foreground lane ends
+#                        the ladder with rc 2 AND its reason reaches stderr. A captured stderr lost
+#                        it: the exit skips the replay, and the EXIT trap deletes $WORK
 #
 # --self-test plants one regression per rule in a copy of the script, and each must turn a case RED.
 #
@@ -48,7 +51,10 @@ command -v flock > /dev/null && command -v choom > /dev/null \
   || { echo "  cannot check: flock and choom (util-linux) are required" >&2; exit 2; }
 [ -f "$SCRIPT" ] || { echo "  cannot check: $SCRIPT not found" >&2; exit 2; }
 
-T=$(mktemp -d) || { echo "  cannot check: mktemp failed" >&2; exit 2; }
+# A distinctive name, not tmp.XXXXXXXXXX: one run of 26 lost its whole case directory mid-run and never
+# reproduced (0/25 after, 12 of them 4-way parallel). Something outside this script removed a generic
+# /tmp/tmp.* dir. The case then failed, which is the safe direction, but a guard must not flake.
+T=$(mktemp -d -t check_ladder_cpu_lane.XXXXXXXX) || { echo "  cannot check: mktemp failed" >&2; exit 2; }
 case "$T" in /tmp/?*) ;; *) echo "  cannot check: expected a temp dir under /tmp, got '$T'" >&2; exit 2 ;; esac
 cleanup() {
   case "${T:-}" in
@@ -136,6 +142,7 @@ ladder_backend_cell() {
     cpu-decline:cpu) echo "decline: ENV planted decline in the cpu lane" >&2; exit 2 ;;
     cuda-decline:cpu) sleep 300 & echo $! > "$W/bg.pid"; wait; return 0 ;;
     cuda-decline:cuda) sleep 0.5; echo "decline: ENV planted decline in the cuda lane" >&2; exit 2 ;;
+    fg-decline:cuda) echo "decline: ENV the GPU lock was not free -- holder: pid 4242" >&2; exit 2 ;;
   esac
   s=$EPOCHREALTIME; sleep 1.5; e=$EPOCHREALTIME   # bash 5: no date(1) process, and no DET002 (check_bashrs_gate.sh)
   echo "$1 $s $e" >> "$W/spans"
@@ -185,10 +192,14 @@ print("yes" if a1 < e2 and a2 < e1 else "no")' "$T/$1/spans" 2> /dev/null; }
   lanes cpu-decline cuda,cpu cpu-decline MODEL_LADDER_CONCURRENT_LANES=1; r=$?
   { [ "$r" = 2 ] && [ ! -e "$T/cpu-decline/be.json" ] && grep -q '^decline: ENV planted decline in the cpu lane' "$T/cpu-decline/out"; } \
     && ok cpu-decline || bad cpu-decline "rc=$r be_written=$([ -e "$T/cpu-decline/be.json" ] && echo yes || echo no) $(head -c 200 "$T/cpu-decline/out")"
+  lanes fg-decline-keeps-reason cuda,cpu fg-decline; r=$?
+  { [ "$r" = 2 ] && grep -q '^decline: ENV the GPU lock was not free -- holder: pid 4242' "$T/fg-decline-keeps-reason/out"; } \
+    && ok fg-decline-keeps-reason \
+    || bad fg-decline-keeps-reason "rc=$r; want rc 2 with the decline's reason on stderr: $(head -c 200 "$T/fg-decline-keeps-reason/out")"
   lanes cuda-decline cuda,cpu cuda-decline MODEL_LADDER_CONCURRENT_LANES=1; r=$?
   sleep 1
   local bgp; bgp=$(cat "$T/cuda-decline/bg.pid" 2> /dev/null)
-  { [ "$r" = 2 ] && [ -n "$bgp" ] && ! kill -0 "$bgp" 2> /dev/null; } && ok cuda-decline-kills-cpu-lane \
+  { [ "$r" = 2 ] && [ -n "$bgp" ] && ! kill -0 "$bgp" 2> /dev/null && grep -q '^decline: ENV planted decline in the cuda lane' "$T/cuda-decline/out"; } && ok cuda-decline-kills-cpu-lane \
     || { bad cuda-decline-kills-cpu-lane "rc=$r; the background lane's child (pid ${bgp:-?}) outlived the ladder, or the exit waited on it (rc 124 = timed out)"; [ -n "$bgp" ] && kill "$bgp" 2> /dev/null; }
   return "$rc"
 }
@@ -213,6 +224,7 @@ if [ "$SELF_TEST" = 1 ]; then
   mutant no-red-fragment   cpu-silent  's/    if ! python3 -c \(.\)import json,sys; d = json.loads/    if false \&\& ! python3 -c \1import json,sys; d = json.loads/'
   mutant swallow-decline   cpu-decline '/grep -q .\^decline: . "\$lane_err" 2> \/dev\/null; then exit 2; fi/d'
   mutant orphan-cpu-lane   cuda-decline-kills-cpu-lane 's/      pkill -TERM -P "\$p" 2> \/dev\/null; kill -TERM "\$p" 2> \/dev\/null/      :/'
+  mutant fg-stderr-captured fg-decline-keeps-reason 's/    ladder_backend_cell "\$b" > "\$WORK\/\$rid_s.\$b.lane.json"; lane_rcs\[\$b\]=\$?/    ladder_backend_cell "$b" > "$WORK\/$rid_s.$b.lane.json" 2> "$WORK\/$rid_s.$b.lane.err"; lane_rcs[$b]=$?/'
   mutant green-ignores-ran green-needs-ran 's/and all(v\["ran"\] and not v\["fallback"\]/and all(not v["fallback"]/'
   [ "$bad" = 0 ] && { echo "SELF-TEST OK: every planted regression turns a case RED"; exit 0; }
   echo "SELF-TEST FAIL: a planted regression was not caught"; exit 1

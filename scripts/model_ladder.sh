@@ -1037,11 +1037,14 @@ ladder_run_lanes() {
       break
     done
   fi
+  # A FOREGROUND lane's stderr is NOT captured: it goes to the ladder's own stderr, as the old
+  # loop body's did. lock_timeout (and any decline) `exit 2`s from INSIDE the lane, which ends the
+  # ladder before a replay line after the call could run, and the EXIT trap then deletes $WORK.
+  # A captured decline would lose its reason, including the lock holder's pid (quorum lane,
+  # #4034 round 2; case `fg-decline-keeps-reason`).
   for b in "${bes[@]}"; do
     [ -n "$lane_bg" ] && [ "$b" = "$lane_bg_b" ] && continue
-    lane_frag="$WORK/$rid_s.$b.lane.json"; lane_err="$WORK/$rid_s.$b.lane.err"
-    ladder_backend_cell "$b" > "$lane_frag" 2> "$lane_err"; lane_rcs[$b]=$?
-    [ -s "$lane_err" ] && cat "$lane_err" >&2
+    ladder_backend_cell "$b" > "$WORK/$rid_s.$b.lane.json"; lane_rcs[$b]=$?
   done
   if [ -n "$lane_bg" ]; then
     wait "$lane_bg"; lane_rcs[$lane_bg_b]=$?; LADDER_LANE_BG_PID=""
@@ -1072,7 +1075,7 @@ measure() {
   local rid=$1 rfile=$2 path=$3 got=$4 rbackends=$5 rreq=$6 rinv=$7
   local probe_why
   probe_why=$(ladder_disk_probe "$WORK") || ladder_write_decline "before $rid: $probe_why"
-  local qa_json="$WORK/${rid//[^A-Za-z0-9._-]/_}.qa.json" cap_flag="" qa_rc qa_row be_json first b flag run_out run_rc fb ran row why
+  local qa_json="$WORK/${rid//[^A-Za-z0-9._-]/_}.qa.json" cap_flag="" qa_rc qa_row be_json first b row why
   # A rung that claims only the CPU is not asked whether the GPU can run it: capability_match is a
   # GPU-capability gate. The judge accepts a SKIPPED capability_match only when cuda is not claimed,
   # and check_model_ladder.sh refuses any Q4_K rung that does not claim cuda (#3712).

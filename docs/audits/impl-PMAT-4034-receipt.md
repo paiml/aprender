@@ -37,3 +37,16 @@ c60ac43be (concurrency opt-in per the cop's ruling), 67f396654 (header).
 - #4055: the serve teardown refused to kill its own survivor from a symlinked cwd (fix on its
   own branch, quorum AGREED).
 - #4090: the health wait reads a GPU-lock wait as a stalled server.
+
+## Round-2 quorum findings, fixed at the next head
+- (lane 2, measured) On the DEFAULT serial path, a foreground lane's stderr was captured into
+  $WORK/<rid>.<b>.lane.err. lock_timeout's `exit 2` ended the ladder before the replay line, and
+  the EXIT trap deleted $WORK, so a decline lost its reason (including the lock holder's pid).
+  Foreground lanes now write stderr straight through, as the old loop body did. New case
+  `fg-decline-keeps-reason` and mutant `fg-stderr-captured`; `cuda-decline-kills-cpu-lane` now
+  also asserts the reason text.
+- (lane 2) measure()'s dead locals (flag run_out run_rc fb ran) removed.
+- Guard flake, disclosed: 1 of 26 runs lost its whole case directory mid-run (`concurrent`) and
+  never reproduced (0/25 after, 12 of them 4-way parallel). The case failed RED, which is the
+  safe direction. The guard now uses a distinctive mktemp template.
+
