@@ -341,7 +341,18 @@ for r in d["ladder"]["rungs"]:
 PY
 ) || { echo "decline: ladder unreadable" >&2; exit 2; }
 [ -n "$RUNGS" ] || { echo "decline: ladder has no rungs" >&2; exit 2; }
-LADDER_FILES=$(cut -d'|' -f2 <<< "$RUNGS")   # the files the rungs name; section 2 skips re-measuring them
+LADDER_FILES=$(cut -d'|' -f2 <<< "$RUNGS")
+# #3943 (b): the serve health wait is bounded by the contract, not by a literal here.
+SERVE_WAIT=$(python3 - "$LADDER" <<'PY'
+import sys, yaml
+w = (yaml.safe_load(open(sys.argv[1]))["ladder"].get("serve_health") or {})
+c, s = w.get("ceiling_s"), w.get("stall_s")
+if not isinstance(c, int) or not isinstance(s, int) or not (0 < s <= c):
+    sys.exit(1)
+print(s, c)
+PY
+) || { echo "decline: the ladder declares no valid serve_health {stall_s, ceiling_s} (0 < stall_s <= ceiling_s) -- the serve wait would be unbounded or arbitrary (#3943)" >&2; exit 2; }
+read -r SERVE_STALL_S SERVE_CEILING_S <<< "$SERVE_WAIT"   # the files the rungs name; section 2 skips re-measuring them
 
 # The inventory spec (#3712). MODEL_LADDER_INVENTORY_DIRS (colon-separated) is a test seam only.
 INV_SPEC=$(python3 - "$LADDER" <<'PY'
@@ -512,6 +523,60 @@ ladder_serve_teardown() { # <wrapper-pid> <port> -> prints clean|escalated|faile
     printf 'clean'; return 0
 }
 
+# ── #3943 (b): wait on the SERVER, not on a clock ────────────────────────────
+# The health wait was a fixed 90 s. gx10's qwen35-27b-q4km serve log shows the server
+# reach "Model ready ... listening" AFTER the wait gave up: the bound was shorter than a
+# 27B load, so the cell was `probed:false` for a HARNESS reason, not a model reason.
+#
+# Cop ruling (b), 2026-09-23: wait while the server process is ALIVE and making
+# PROGRESS, under one hard ceiling from the ladder contract. Progress is the log
+# growing OR the process tree's CPU time growing. The log alone is not enough evidence:
+# that same 27B log is three lines (Loading / Model ready / listening), so a healthy
+# load can be silent for minutes, and a log-only rule would call it hung. A loading
+# process burns CPU; a hung one does not.
+#
+# Prints one of:  ready <s> | died <s> | stalled <s> | ceiling <s>
+ladder_tree_jiffies() { # <pid> -> utime+stime summed over pid and every descendant
+    local -a frontier next c
+    local p total=0 f
+    frontier=("$1")
+    while [ "${#frontier[@]}" -gt 0 ]; do
+        next=()
+        for p in "${frontier[@]}"; do
+            if read -r -a f < "/proc/$p/stat" 2>/dev/null; then
+                total=$((total + f[13] + f[14]))
+            fi
+            mapfile -t c < <(pgrep -P "$p" 2>/dev/null)
+            next+=("${c[@]}")
+        done
+        frontier=("${next[@]}")
+    done
+    printf '%s' "$total"
+}
+
+ladder_serve_wait_health() { # <wrapper-pid> <port> <log> <stall-s> <ceiling-s>
+    local pid="$1" port="$2" log="$3" stall="$4" ceiling="$5"
+    local waited=0 quiet=0 size last_size=-1 jif last_jif=-1
+    while :; do
+        if curl -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+            printf 'ready %s' "$waited"; return 0
+        fi
+        # A server that dies mid-load is RED now, not after a stall window: the
+        # wrapper (flock) exits only once its child has.
+        if ! kill -0 "$pid" 2>/dev/null; then printf 'died %s' "$waited"; return 1; fi
+        size=$(stat -c %s "$log" 2>/dev/null || printf 0)
+        jif=$(ladder_tree_jiffies "$pid")
+        if [ "$size" != "$last_size" ] || [ "$jif" != "$last_jif" ]; then
+            quiet=0; last_size="$size"; last_jif="$jif"
+        else
+            quiet=$((quiet + 1))
+        fi
+        if [ "$quiet" -ge "$stall" ]; then printf 'stalled %s' "$waited"; return 1; fi
+        if [ "$waited" -ge "$ceiling" ]; then printf 'ceiling %s' "$waited"; return 1; fi
+        sleep 1; waited=$((waited + 1))
+    done
+}
+
 ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <backend>
     local path="$1" flag="$2" rid="$3" bname="$4" td
     # The script cd's to the repo root at startup (line ~53), so this is relative by
@@ -536,16 +601,16 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
     port=$(( 20000 + (RANDOM % 20000) ))
     apr_locked serve run "$path" --port "$port" $flag > "$WORK/serve-$rid-$bname.log" 2>&1 &
     pid=$!
-    # Health, bounded. A server that never comes up is a FAIL naming the wait, never a skip.
-    while [ "$waited" -lt 90 ]; do
-        curl -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1 && break
-        kill -0 "$pid" 2>/dev/null || break
-        sleep 1; waited=$((waited + 1))
-    done
-    if ! curl -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+    # Health, bounded by the SERVER (#3943 b). A server that never comes up is a FAIL
+    # naming WHY the wait ended, never a skip.
+    local wait_out wait_why
+    wait_out=$(ladder_serve_wait_health "$pid" "$port" "$WORK/serve-$rid-$bname.log" \
+        "$SERVE_STALL_S" "$SERVE_CEILING_S") || true
+    wait_why=${wait_out%% *}; waited=${wait_out##* }
+    if [ "$wait_why" != "ready" ]; then
         td=$(ladder_serve_teardown "$pid" "$port")
-        printf '{"probed":false,"why":"apr serve did not answer /health within %ss (log: %s)","teardown":"%s","routes":{}}' \
-            "$waited" "$WORK/serve-$rid-$bname.log" "$td"
+        printf '{"probed":false,"why":"apr serve did not answer /health: %s after %ss (stall window %ss, ceiling %ss; log: %s)","teardown":"%s","routes":{}}' \
+            "$wait_why" "$waited" "$SERVE_STALL_S" "$SERVE_CEILING_S" "$WORK/serve-$rid-$bname.log" "$td"
         return 1
     fi
 
