@@ -52,7 +52,7 @@ port=""; while [ $# -gt 0 ]; do [ "$1" = --port ] && port="$2"; shift; done
 exec python3 - "$port" <<'PY'
 import json, os, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
-VOCAB = {1: "<think>", 2: "\n", 3: "</think>", 4: "4", 5: "<|im_end|>"}
+VOCAB = {1: "<think>", 2: "\n", 3: "</think>", 4: "4", 5: "<|im_end|>", 8: "<think>\n", 9: "x"}
 
 
 class H(BaseHTTPRequestHandler):
@@ -166,8 +166,8 @@ row apr off apr ids=[4, 5] text='4<|im_end|>' max=64 special=True"
   || { broke "apr with --thinking"; printf '%s\n--- want\n%s\n' "$got" "$want_up" | sed 's/^/        /'; }
 prov=$(python3 -c 'import json,sys
 r=[json.loads(l) for l in open(sys.argv[1])]; d=json.load(open([x for x in r if x["engine"]=="llama.cpp" and x["thinking"]=="on" and x["prompt_source"]=="apr"][0]["tokens"]))
-print(d["prompt_source"], d["prompt_ids"], d["template_prompt_ids"], d["prompt_ids_equal"])' "$TMP/up/manifest.jsonl")
-[ "$prov" = "apr [9, 9, 9, 8] [9, 9, 9, 8] True" ] && ok "the parity row ran on apr's OWN prompt ids, and they equal the template" \
+print(d["prompt_source"], d["prompt_ids"], d["template_prompt_ids"], d["prompt_ids_equal"], d["prompt_opens_think"])' "$TMP/up/manifest.jsonl")
+[ "$prov" = "apr [9, 9, 9, 8] [9, 9, 9, 8] True True" ] && ok "the parity row ran on apr's OWN prompt ids, and they equal the template" \
   || broke "llama parity provenance: '$prov'"
 
 run_case noflag "$LIB"

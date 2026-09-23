@@ -33,6 +33,15 @@ def detok(url, ids):
     return post(url, "/detokenize", {"tokens": ids})["content"]
 
 
+def opens_think(url, prompt_ids):
+    """Does the prompt this generation ran on END inside an opened think block? Qwen3.5's official ON template
+    prefills `<think>\\n` (measured, #3990), so its generated_text starts INSIDE the block with no opening tag; a
+    reader deciding closed/empty must know that. Decided from the ids themselves, decoded with specials."""
+    if not prompt_ids:
+        return None
+    return detok(url, prompt_ids).rstrip().endswith("<think>")
+
+
 def apr_json(path):
     """apr's `run --format json -v` stdout: -v puts `verbose: ...` lines BEFORE the JSON object (measured on
     lambda, 2026-09-23), so the object is decoded from its first `{`, as the judge's parse_apr does."""
@@ -104,6 +113,7 @@ def main(argv):
                    # the ids this generation RAN on, and llama.cpp's own template ids (field names agreed with
                    # aprender-36): equal on an "official" row by construction, compared on an "apr" row
                    "prompt_ids": prompt_ids, "template_prompt_ids": own_ids, "prompt_source": a.prompt_source,
+                   "prompt_opens_think": opens_think(a.url, prompt_ids),
                    "template_rendered": rendered, "apr_rendered_prompt": apr_rendered,
                    "prompt_ids_equal": (own_ids == apr_ids) if apr_ids else None,
                    "thinking": a.thinking, "stop_type": resp.get("stop_type"),
@@ -117,6 +127,7 @@ def main(argv):
             doc = {"generated_ids": ids, "generated_text": detok(a.url, ids), "greedy": True, "special": True,
                    "max_tokens": a.max_tokens, "apr_text": apr.get("text"), "finish_reason": apr.get("finish_reason"),
                    "prompt_ids": apr_ids, "rendered_prompt": apr_rendered,
+                   "prompt_opens_think": opens_think(a.url, apr_ids),
                    "backend": apr.get("backend"),
                    "decoded_by": "llama.cpp /detokenize of apr's own ids (one tokenizer for both engines' text)"}
     except Exception as e:  # noqa: BLE001 — every failure is a named refusal
