@@ -99,14 +99,35 @@ impl ChatSession {
             messages.extend(self.history.iter().cloned());
             messages.push(ChatMessage::user(user_input));
 
-            let formatted_prompt = self
-                .chat_template
-                .format_conversation(&messages)
-                .map_err(|e| format!("[Template error: {}]", e))?;
-            // #3723: `--thinking on` removes the empty <think> prefill; on a template with no
-            // thinking mode it is refused by name, never answered in OFF mode.
-            let formatted_prompt = realizar::chat_template::apply_thinking_mode(&formatted_prompt, config.thinking)
-                .map_err(|e| format!("[Template error: {}]", e))?;
+            // #3990: a GGUF carrying its OWN tokenizer.chat_template is rendered with it -- the same
+            // renderer and fallback rule `apr run` uses (realizar::chat_template::official_or_legacy).
+            // #3723: `--thinking` is its `enable_thinking`; `on` with no thinking mode is refused.
+            let own = self
+                .cached_gguf_mapped
+                .as_ref()
+                .filter(|m| m.model.metadata.contains_key("tokenizer.chat_template"))
+                .map(|m| {
+                    let msgs = &messages;
+                    move |t: Option<bool>| {
+                        realizar::chat_template::render_official_for_model(&m.model, msgs, t)
+                    }
+                });
+            let legacy_err = std::cell::RefCell::new(None);
+            let formatted_prompt = realizar::chat_template::official_or_legacy(
+                own,
+                || match self.chat_template.format_conversation(&messages) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        *legacy_err.borrow_mut() = Some(e.to_string());
+                        String::new()
+                    }
+                },
+                config.thinking,
+            )
+            .map_err(|e| format!("[Template error: {}]", e))?;
+            if let Some(e) = legacy_err.into_inner() {
+                return Err(format!("[Template error: {}]", e));
+            }
 
             if config.trace {
                 eprintln!(
