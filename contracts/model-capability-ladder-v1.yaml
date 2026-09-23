@@ -142,7 +142,9 @@ ladder:
         defect: wrong_answer
         thinking: "off"
         expect: "4"
-        prompts: [golden-2plus2]
+        # the certified v2 2+2 control the sweep runs (dd's set; `golden-2plus2` is v1, not in it --
+        # aprender-83). The claim is re-proven on the prompt the sweep measures, never on the v1 text.
+        prompts: [ctl-2plus2]
         control: Qwen3.5-0.8B-Q4_K_M.gguf
     # F10, operator ruling 2026-09-23 on #3957 (verbatim): "c". apr has no CUDA forward for
     # qwen35moe (hybrid SSM + MoE) and must REFUSE it by name on `apr run --gpu`: no fallback, no
