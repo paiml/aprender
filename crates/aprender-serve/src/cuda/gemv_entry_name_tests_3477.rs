@@ -366,10 +366,7 @@ mod gemv_entry_name_tests_3477 {
     fn the_types_found_in_the_wild_without_kernels_resolve_to_none() {
         use crate::cuda::types::WeightQuantType;
         let census: &[(u32, &str)] = &[
-            (10, "Q2_K"),
             (11, "Q3_K"),
-            (18, "IQ3_XXS"),
-            (22, "IQ2_S"),
         ];
         let admitted: Vec<String> = census
             .iter()
@@ -625,6 +622,57 @@ mod gemv_entry_name_tests_3477 {
             (0..32).any(|i| (qh >> i) & 1 != 0),
             "this fixture never sets a 5th bit, so it cannot see a 5th-bit bug"
         );
+    }
+
+    /// #3953/#3963/#3960: IQ2_S, IQ3_XXS and Q2_K are admitted BECAUSE their
+    /// kernels were measured, in one combined admission.
+    ///
+    /// The rows were `(22, "IQ2_S")`, `(18, "IQ3_XXS")` and `(10, "Q2_K")` in
+    /// `the_types_found_in_the_wild_without_kernels_resolve_to_none` — converted
+    /// here, not dropped. Each type's CPU decoder was proven BIT-EXACT against
+    /// llama.cpp gguf-py on every real tensor BEFORE it judged the kernel
+    /// (`quantize::iq_gguf_py_parity_tests`), because the decoder is what decides
+    /// admission.
+    ///
+    /// ```text
+    /// IQ2_S   (22)  decoder vs gguf-py  5/5 tensors, 18,350,080 elements bit-exact
+    ///               device, real bytes  (3584,1024) x5, worst |err|/sum|w||x| 1.903e-7
+    ///               faults RED: sign bits ignored; qh high bits dropped;
+    ///                           scale nibble by l&1 not l>>1; grid lo/hi swapped
+    /// IQ3_XXS (18)  decoder vs gguf-py  24/24 tensors, 40,894,464 elements bit-exact
+    ///               device, real bytes  (512,1024) x6 2.381e-7, (2048,1024) x18 2.346e-7
+    ///               positive control on real bytes: 8.005e3 RED
+    ///               faults RED: sign width 7->8; aux u16 halves swapped;
+    ///                           stride 98->96; 2nd grid index reads 1st
+    /// Q2_K    (10)  decoder vs gguf-py  11,010,048/11,010,048 values bitwise
+    ///               device, real bytes  (3584,1024) x3, worst 4.342e-9 (f64 dot)
+    ///               faults RED: scale/min nibbles swapped; half selector L&1;
+    ///                           affine min dropped; shift from h not s
+    /// ```
+    /// Bar 1e-5, NaN-prefilled, RTX 4090 sm_89, card exclusive. Qwen3.5-0.8B-UD-IQ2_XXS.
+    #[test]
+    fn iq2_s_iq3_xxs_and_q2_k_are_admitted_because_their_kernels_were_measured() {
+        use crate::cuda::types::{GemvKernel, WeightQuantType};
+        for (q, wqt, gk, bytes) in [
+            (22u32, WeightQuantType::IQ2S, GemvKernel::IQ2S, 82usize),
+            (18u32, WeightQuantType::IQ3XXS, GemvKernel::IQ3XXS, 98usize),
+            (10u32, WeightQuantType::Q2K, GemvKernel::Q2K, 84usize),
+        ] {
+            assert_eq!(WeightQuantType::from_ggml_type(q), Some(wqt), "type {q}");
+            assert_eq!(
+                crate::cuda::types::BoundWeight::bind(0x1000, bytes * 4, wqt, 4, 256).kernel(),
+                gk,
+                "binding type {q} to any other kernel decodes {bytes}-byte blocks as another scheme"
+            );
+            assert!(!crate::gguf::gpu_unsupported_quant_qtype(q), "type {q} must be GPU-eligible");
+            // Not ambiguous by size, and inferred at a real shape from the model.
+            let (k, n) = (3584usize, 1024usize);
+            assert_eq!(
+                WeightQuantType::from_size(n * k.div_ceil(256) * bytes, n, k),
+                Some(wqt),
+                "a [1024 x 3584] type-{q} tensor's byte count must resolve to it"
+            );
+        }
     }
 
     /// #3950: IQ2_XXS is admitted BECAUSE its kernel was measured.

@@ -178,10 +178,10 @@ fn test_is_legacy_gguf_quant() {
     assert!(!is_legacy_gguf_quant(20)); // IQ4_NL — #3869 GEMV kernel
     assert!(!is_legacy_gguf_quant(21)); // IQ3_S — #3884 GEMV kernel
     assert!(!is_legacy_gguf_quant(16)); // IQ2_XXS — #3950 GEMV kernel, 95/95 measured
-    assert!(is_legacy_gguf_quant(18)); // IQ3_XXS — still no kernel
-    assert!(is_legacy_gguf_quant(22)); // IQ2_S — still no kernel
+    assert!(!is_legacy_gguf_quant(18)); // IQ3_XXS — #3963 GEMV kernel, 24/24 measured
+    assert!(!is_legacy_gguf_quant(22)); // IQ2_S — #3953 GEMV kernel, 5/5 measured
     assert!(is_legacy_gguf_quant(9)); // Q8_1
-    assert!(is_legacy_gguf_quant(10)); // Q2_K
+    assert!(!is_legacy_gguf_quant(10)); // Q2_K — #3960 GEMV kernel, 3/3 measured
     assert!(is_legacy_gguf_quant(11)); // Q3_K
     assert!(is_legacy_gguf_quant(15)); // Q8_K
     assert!(!is_legacy_gguf_quant(30)); // BF16 — #3908 GEMV kernel, 0 ULP
@@ -223,14 +223,15 @@ fn test_model_has_legacy_quant_checks_qkv_and_gate() {
         "all-Q4K model must be GPU-eligible"
     );
 
-    // Q2_K (type 10) hidden ONLY in the fused QKV tensor must still gate to CPU.
+    // A type with no kernel hidden ONLY in the fused QKV tensor must still gate to
+    // CPU. Was Q2_K(10) until #3960 measured Q2_K's kernel; re-aimed at IQ1_S(19).
     let mut qkv_model = create_test_model_with_config(&config);
     if let OwnedQKVWeights::Fused(t) = &mut qkv_model.layers[0].qkv_weight {
-        t.qtype = 10; // Q2_K — no GPU kernel
+        t.qtype = 19; // IQ1_S — no GPU kernel
     }
     assert!(
         model_has_legacy_quant(&qkv_model),
-        "Q2_K in QKV must force CPU"
+        "IQ1_S in QKV must force CPU"
     );
 
     // Q3_K (type 11) hidden ONLY in the FFN gate must still gate to CPU.

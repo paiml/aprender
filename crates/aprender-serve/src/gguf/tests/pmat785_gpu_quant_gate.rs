@@ -38,7 +38,8 @@ fn test_config() -> GGUFConfig {
 
 /// The whitelist predicate is the single source of truth. GPU-eligible set is
 /// exactly {F32(0), F16(1), Q4_0(2), Q4_1(3), Q5_0(6), Q5_1(7), Q8_0(8),
-/// Q4_K(12), Q5_K(13), Q6_K(14), IQ2_XXS(16), IQ4_NL(20), IQ3_S(21), IQ4_XS(23), BF16(30)}; everything
+/// Q2_K(10), Q4_K(12), Q5_K(13), Q6_K(14), IQ2_XXS(16), IQ3_XXS(18), IQ4_NL(20), IQ3_S(21), IQ2_S(22),
+/// IQ4_XS(23), BF16(30)}; everything
 /// else gates to CPU. This is what the construction gate and the primary-path
 /// gate both consume — they MUST agree.
 #[test]
@@ -61,7 +62,14 @@ fn gpu_unsupported_quant_qtype_whitelist_is_exact() {
     // BIT-EXACT (0 ULP, 64 rows, RTX 4090 sm_89) rather than within a tolerance,
     // because bf16 decoding rounds nothing. Faults: shift 8 not 16, byte-swapped
     // halfword, and row stride k not k*2 (the LAYOUT-001 fault) - all RED first.
-    for &q in &[0u32, 1, 2, 3, 6, 7, 8, 12, 13, 14, 16, 20, 21, 23, 30] {
+    // #3953/#3963: IQ2_S(22) and IQ3_XXS(18) joined in one combined admission,
+    // each on every real tensor and shape of Qwen3.5-0.8B-UD-IQ2_XXS with its CPU
+    // decoder proven bit-exact against gguf-py first, and planted faults RED.
+    // #3960: Q2_K(10) joined in the same combined admission (every real value
+    // bitwise vs gguf-py; A/B 4.3e-9; four faults RED on real bytes).
+    for &q in &[
+        0u32, 1, 2, 3, 6, 7, 8, 10, 12, 13, 14, 16, 18, 20, 21, 22, 23, 30,
+    ] {
         assert!(
             !gpu_unsupported_quant_qtype(q),
             "qtype {q} has a verified GPU kernel and must be GPU-eligible"
@@ -70,11 +78,9 @@ fn gpu_unsupported_quant_qtype_whitelist_is_exact() {
     // Unsupported → gated to CPU (would hit resolve_qtype's unwrap_or(Q4K)).
     for &q in &[
         9u32, /*Q8_1*/
-        10,   /*Q2_K*/
         11,   /*Q3_K*/
         15,   /*Q8_K*/
-        18,   /*IQ3_XXS*/
-        22,   /*IQ2_S*/
+        17,   /*IQ2_XS*/
         100,  /*IQ*/
     ] {
         assert!(
@@ -97,18 +103,17 @@ fn supported_q4k_model_is_gpu_eligible() {
 
 /// An unsupported quant hidden in the lm_head must flag the whole model.
 ///
-/// #3885: the example was Q5_1(7) until Q5_1 got a measured GEMV kernel, at
-/// which point this row asserted that a SUPPORTED type forces CPU. Re-aimed at
-/// IQ3_XXS(18), which genuinely has no kernel and is present in the fleet
-/// (`Qwen3.5-0.8B-UD-IQ2_XXS`, 24 tensors). Same treatment F16 got here in
-/// #3477 when BF16 replaced it — a row is re-aimed, never deleted.
+/// #3885: the example was Q5_1(7) until Q5_1 got a measured GEMV kernel, then
+/// IQ3_XXS(18) until #3963 measured IQ3_XXS's. Re-aimed at IQ2_XS(17): a real
+/// ggml type with no GPU kernel (no claim that it is present in the fleet). A
+/// row is re-aimed, never deleted.
 #[test]
 fn unsupported_quant_in_lm_head_forces_cpu() {
     let mut model = create_test_model_with_config(&test_config());
-    model.lm_head_weight.qtype = 18; // IQ3_XXS — no GPU kernel
+    model.lm_head_weight.qtype = 17; // IQ2_XS — no GPU kernel
     assert!(
         model.has_gpu_unsupported_quant(),
-        "IQ3_XXS in lm_head must force CPU"
+        "IQ2_XS in lm_head must force CPU"
     );
 }
 
@@ -118,11 +123,11 @@ fn unsupported_quant_in_lm_head_forces_cpu() {
 fn unsupported_quant_in_qkv_forces_cpu() {
     let mut model = create_test_model_with_config(&test_config());
     if let OwnedQKVWeights::Fused(t) = &mut model.layers[0].qkv_weight {
-        t.qtype = 10; // Q2_K — no GPU kernel
+        t.qtype = 19; // IQ1_S — no GPU kernel (was Q2_K until #3960 measured it)
     }
     assert!(
         model.has_gpu_unsupported_quant(),
-        "Q2_K hidden in QKV must force CPU"
+        "IQ1_S hidden in QKV must force CPU"
     );
 }
 
@@ -183,8 +188,9 @@ fn first_gpu_unsupported_quant_names_the_type_and_stays_none_for_supported() {
     );
 
     let mut lm = create_test_model_with_config(&test_config());
-    lm.lm_head_weight.qtype = 18; // IQ3_XXS — was Q5_1(7) until #3885 gave it a kernel
-    assert_eq!(lm.first_gpu_unsupported_quant(), Some(18));
+    // Was Q5_1(7) until #3885, then IQ3_XXS(18) until #3963 gave each a kernel.
+    lm.lm_head_weight.qtype = 17; // IQ2_XS — no GPU kernel
+    assert_eq!(lm.first_gpu_unsupported_quant(), Some(17));
 
     let mut down = create_test_model_with_config(&test_config());
     // Was F16(1), the #3685 model, then BF16(30). Both now HAVE measured

@@ -33,10 +33,11 @@ fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
 /// this whitelist is SILENTLY decoded as Q4_K → garbage logits.
 ///
 /// The whitelist of GPU-eligible types is exactly:
-///   0=F32, 1=F16, 2=Q4_0, 3=Q4_1, 6=Q5_0, 7=Q5_1, 8=Q8_0, 12=Q4_K, 13=Q5_K,
-///   14=Q6_K, 16=IQ2_XXS, 20=IQ4_NL, 21=IQ3_S, 23=IQ4_XS, 30=BF16.
-/// Everything else — Q8_1(9), Q2_K(10), Q3_K(11), Q8_K(15), the rest of the
-/// IQ* families, unknown — is gated to CPU.
+///   0=F32, 1=F16, 2=Q4_0, 3=Q4_1, 6=Q5_0, 7=Q5_1, 8=Q8_0, 10=Q2_K, 12=Q4_K,
+///   13=Q5_K, 14=Q6_K, 16=IQ2_XXS, 18=IQ3_XXS, 20=IQ4_NL, 21=IQ3_S, 22=IQ2_S,
+///   23=IQ4_XS, 30=BF16.
+/// Everything else — Q8_1(9), Q3_K(11), Q8_K(15), the rest of the IQ*
+/// families, unknown — is gated to CPU.
 ///
 /// #3931: this list is PARSED by `the_prose_whitelist_equals_the_expression`
 /// and compared against the `matches!` below, so the two cannot drift again.
@@ -75,7 +76,10 @@ fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
 #[inline]
 #[must_use]
 pub(crate) fn gpu_unsupported_quant_qtype(qtype: u32) -> bool {
-    !matches!(qtype, 0 | 1 | 2 | 3 | 6 | 7 | 8 | 12 | 13 | 14 | 16 | 20 | 21 | 23 | 30)
+    !matches!(
+        qtype,
+        0 | 1 | 2 | 3 | 6 | 7 | 8 | 10 | 12 | 13 | 14 | 16 | 18 | 20 | 21 | 22 | 23 | 30
+    )
 }
 
 /// #3477 / PMAT-781/783/785: the quantized projections the Qwen3.5 hybrid
@@ -148,10 +152,11 @@ mod hybrid_gpu_unsupported_quant_tests {
     fn every_deltanet_projection_is_gpu_unsupported_quant_checked() {
         for stem in ["attn_qkv", "ssm_alpha", "ssm_beta", "attn_gate", "ssm_out"] {
             let name = format!("blk.7.{stem}.weight");
+            // Was Q2_K(10) until #3960 measured Q2_K's kernel; IQ1_S(19) has none.
             assert_eq!(
-                hybrid_gpu_unsupported_quant_tensor([(name.as_str(), 10u32)]),
-                Some((name.clone(), 10)),
-                "{stem}: Q2_K has no GPU GEMV kernel"
+                hybrid_gpu_unsupported_quant_tensor([(name.as_str(), 19u32)]),
+                Some((name.clone(), 19)),
+                "{stem}: IQ1_S has no GPU GEMV kernel"
             );
             assert_eq!(
                 hybrid_gpu_unsupported_quant_tensor([(name.as_str(), 12u32)]),
@@ -646,6 +651,6 @@ mod prose_whitelist_tests_3931 {
         let real = expression_whitelist();
         assert!(!real.contains(&99), "99 is not a real ggml type");
         assert!(real.contains(&21), "IQ3_S(21) is permitted — #3884 admitted it");
-        assert!(!real.contains(&18), "IQ3_XXS(18) is NOT permitted — no kernel yet");
+        assert!(!real.contains(&17), "IQ2_XS(17) is NOT permitted — no kernel");
     }
 }

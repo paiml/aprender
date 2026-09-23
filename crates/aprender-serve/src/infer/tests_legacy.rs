@@ -35,11 +35,11 @@ fn test_is_legacy_gguf_quant_q5_1_gh219() {
 }
 
 /// The property `test_is_legacy_gguf_quant_q5_1_gh219` used to carry, on a type
-/// that genuinely has no kernel. IQ3_XXS(18) is real and present in the fleet
-/// (`Qwen3.5-0.8B-UD-IQ2_XXS`, 24 tensors), so this is not a hypothetical id.
+/// that genuinely has no kernel. It was IQ3_XXS(18) until #3963 measured
+/// IQ3_XXS's kernel; re-aimed at IQ2_XS(17), a real ggml type with no GPU kernel.
 #[test]
 fn test_is_legacy_gguf_quant_gates_a_type_with_no_kernel() {
-    assert!(is_legacy_gguf_quant(18)); // IQ3_XXS — no GPU GEMV kernel
+    assert!(is_legacy_gguf_quant(17)); // IQ2_XS — no GPU GEMV kernel
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn test_is_legacy_gguf_quant_edge_values_gh219() {
     // PMAT-783: every type WITHOUT a verified GPU kernel fails closed to CPU.
     assert!(is_legacy_gguf_quant(4)); // Q4_2 (removed) — no kernel
     assert!(is_legacy_gguf_quant(5)); // Q4_3 (removed) — no kernel
-    assert!(is_legacy_gguf_quant(10)); // Q2_K — no kernel
+    assert!(!is_legacy_gguf_quant(10)); // Q2_K — #3960 GEMV kernel
     assert!(is_legacy_gguf_quant(11)); // Q3_K — no kernel
     assert!(is_legacy_gguf_quant(100)); // IQ* / unknown — no kernel
     assert!(is_legacy_gguf_quant(u32::MAX));
