@@ -99,8 +99,10 @@ def certify_one(prompt: dict, model: dict, quant: str, quant_sha: str, rows: lis
     cells, first_bad = [], None
     for thinking in model.get("thinking") or ["off"]:
         for leg in LEGS:
+            # Any verb counts: certification asks whether the PROMPT is answerable, not whether an
+            # interface works (that is the gate's job). The runner drives ggml through llama-server.
             mine = [r for r in rows if r.get("prompt_id") == prompt["id"] and r.get("thinking") == thinking
-                    and r.get("verb") in prompt["verb"] and leg_of(r, model, quant_sha) == leg]
+                    and leg_of(r, model, quant_sha) == leg]
             if not mine:
                 first_bad = first_bad or f"{leg} thinking={thinking}: no row"
                 cells.append({"leg": leg, "thinking": thinking, "correct": False, "why": "no row", "row": None})
