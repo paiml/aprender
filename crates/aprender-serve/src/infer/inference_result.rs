@@ -799,6 +799,10 @@ fn f2_cpu_reference_logits(
     num_layers: usize,
 ) -> Option<Vec<Vec<f32>>> {
     use crate::gguf::OwnedQuantizedKVCache;
+    #[cfg(test)]
+    if F2_FAIL_CPU_REFERENCE.with(std::cell::Cell::get) {
+        return None;
+    }
     let mut per_pos: Vec<Vec<f32>> = Vec::with_capacity(probe.len() + 1);
     let mut cpu_cache = OwnedQuantizedKVCache::new(num_layers, kv_dim, probe.len().max(2) + 1);
     for (pos, &tok) in probe.iter().enumerate() {
@@ -942,9 +946,65 @@ fn f2_gpu_batched_logits(
     Ok(per_pos)
 }
 
-/// The three ways the F2 check declines to judge at all, in one place. `None` means
-/// "nothing to validate — assume the GPU is fine"; `Some((kv_dim, num_layers, probe))`
-/// is a probe with at least one REAL position (≥1) in it.
+/// #3973: what the F2 check actually established. It returned a `bool`, and two
+/// branches returned `true` ("assume GPU is fine") when nothing was measured. A
+/// caller printed "F2 validation PASSED" for both, so a receipt citing that line could
+/// be citing a check that never ran. `batch` called it with an empty probe, which
+/// ALWAYS takes a not-measured branch, so batch serving was gated on a check that
+/// could not fail.
+///
+/// Three states, and only one of them is a validation:
+///   `Validated` a probe ran on both CPU and GPU and every real position agreed
+///   `Mismatch`  it ran and the GPU disagreed, or the GPU forward failed (fail closed)
+///   `NotMeasured` nothing was compared, and `reason` says why. It must never be
+///               reported as a pass. Whether a caller may still use the GPU is the
+///               caller's decision, made explicitly at the call site.
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone, PartialEq)]
+pub enum F2Outcome {
+    /// Compared and accepted.
+    Validated {
+        /// Worst cosine over the real positions.
+        min_cosine: f32,
+    },
+    /// Compared and rejected, or the GPU forward failed.
+    Mismatch,
+    /// Nothing was compared.
+    NotMeasured {
+        /// Why nothing was compared.
+        reason: String,
+    },
+}
+
+// #3973: test-only fault hook for the CPU-reference branch. No INPUT reaches it: an
+// out-of-vocabulary token embeds as zeros by contract (N-09, embedding-lookup-v1.yaml),
+// so the CPU forward does not fail. Thread-local, so it cannot leak across tests.
+#[cfg(all(test, feature = "cuda"))]
+thread_local! {
+    static F2_FAIL_CPU_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// #3973: the ONE line the run path prints for an F2 outcome. Only `Validated` may say
+/// PASSED, and it carries the measured cosine; `NotMeasured` names its reason and says
+/// the output is unvalidated. Pure, so that rule is tested without a GPU.
+#[cfg(feature = "cuda")]
+#[must_use]
+pub(crate) fn f2_status_line(outcome: &F2Outcome) -> String {
+    match outcome {
+        F2Outcome::Validated { min_cosine } => {
+            format!("[GH-480] F2 validation PASSED (min cosine {min_cosine:.4}) — launching GPU generation")
+        },
+        F2Outcome::Mismatch => "[GH-480] F2 validation FAILED — falling back to CPU".to_string(),
+        F2Outcome::NotMeasured { reason } => format!(
+            "[GH-480] F2 validation NOT MEASURED — {reason}. Launching GPU generation UNVALIDATED (#3973)"
+        ),
+    }
+}
+
+/// The three ways the F2 check declines to judge at all, in one place. `Err(reason)`
+/// means nothing will be validated, and says why (#3973: it was `None`, read as
+/// "assume the GPU is fine"); `Ok((kv_dim, num_layers, probe))` is a probe with at
+/// least one REAL position (≥1) in it.
 ///
 /// `SKIP_PARITY_GATE=1` bypasses both this F2 check and the cosine parity gate. A
 /// single-token probe (context-less BOS) has NO real position to validate — the pos0
@@ -954,18 +1014,24 @@ fn f2_gpu_batched_logits(
 fn f2_probe_to_judge(
     cuda_model: &crate::gguf::OwnedQuantizedModelCuda,
     probe_context: &[u32],
-) -> Option<(usize, usize, Vec<u32>)> {
+) -> std::result::Result<(usize, usize, Vec<u32>), String> {
     if std::env::var("SKIP_PARITY_GATE")
         .map(|v| v == "1")
         .unwrap_or(false)
     {
-        return None;
+        return Err("SKIP_PARITY_GATE=1 bypasses the check".to_string());
     }
-    let (kv_dim, num_layers, probe) = gpu_probe(cuda_model.model(), probe_context)?;
+    let Some((kv_dim, num_layers, probe)) = gpu_probe(cuda_model.model(), probe_context) else {
+        return Err("no probe could be built for this model".to_string());
+    };
     if probe.len() < 2 {
-        return None;
+        return Err(format!(
+            "the probe has {} token(s) and no REAL position to compare: a context-less BOS \
+             probe cannot validate anything (pos0 is a benign near-tie)",
+            probe.len()
+        ));
     }
-    Some((kv_dim, num_layers, probe))
+    Ok((kv_dim, num_layers, probe))
 }
 
 /// Run the probe through whichever prefill path the engine resolved (#3413 C).
@@ -1091,9 +1157,10 @@ pub fn validate_gpu_first_token(
     cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
     _gen_config: &crate::gguf::QuantizedGenerateConfig,
     probe_context: &[u32],
-) -> bool {
-    let Some((kv_dim, num_layers, probe)) = f2_probe_to_judge(cuda_model, probe_context) else {
-        return true;
+) -> F2Outcome {
+    let (kv_dim, num_layers, probe) = match f2_probe_to_judge(cuda_model, probe_context) {
+        Ok(p) => p,
+        Err(reason) => return F2Outcome::NotMeasured { reason },
     };
 
     // CPU reference: forward the whole probe (plus one greedy decode step),
@@ -1101,7 +1168,11 @@ pub fn validate_gpu_first_token(
     let Some(cpu_logits_per_pos) =
         f2_cpu_reference_logits(cuda_model.model(), &probe, kv_dim, num_layers)
     else {
-        return true; // CPU forward failed — can't validate, assume GPU is fine
+        // #3973: this returned `true`, "assume GPU is fine". Nothing was compared.
+        return F2Outcome::NotMeasured {
+            reason: "the CPU reference forward failed, so there is nothing to compare the GPU against"
+                .to_string(),
+        };
     };
     // The decode token both sides take after the probe: CPU's own greedy choice,
     // so the GPU is measured on the continuation a real run would generate.
@@ -1126,7 +1197,7 @@ pub fn validate_gpu_first_token(
         Err(msg) => {
             cuda_model.executor.reset_kv_cache_gpu();
             f2_report_forward_failure(&msg, via);
-            return false; // GPU forward failed — fail closed.
+            return F2Outcome::Mismatch; // GPU forward failed — fail closed.
         },
     };
     cuda_model.executor.reset_kv_cache_gpu();
@@ -1163,7 +1234,11 @@ pub fn validate_gpu_first_token(
         }
     }
 
-    f2_accept_or_reject(&report, via, cpu_logits_per_pos.len().saturating_sub(1))
+    if f2_accept_or_reject(&report, via, cpu_logits_per_pos.len().saturating_sub(1)) {
+        F2Outcome::Validated { min_cosine: report.min_cosine_real }
+    } else {
+        F2Outcome::Mismatch
+    }
 }
 
 /// #3413 C: retry the batched probe with FP8 prefill off iff the report was a miss,
@@ -2061,3 +2136,87 @@ mod pmat3477_f2_batched_probe_cuda_tests {
         );
     }
 }
+
+// ============================================================================
+// #3973: F2 must never report a validation it did not perform.
+#[cfg(all(test, feature = "cuda"))]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod f2_outcome_3973_tests {
+    use super::*;
+
+    fn model_path() -> Option<std::path::PathBuf> {
+        [
+            "/home/noah/.apr/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+            "/mnt/nvme-raid0/cache/apr-home/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+        ]
+        .into_iter()
+        .map(std::path::PathBuf::from)
+        .find(|p| p.exists())
+    }
+
+    /// The reporting rule, no GPU needed: only a comparison that ran and agreed may
+    /// print PASSED.
+    #[test]
+    fn only_a_validated_outcome_prints_passed() {
+        let v = f2_status_line(&F2Outcome::Validated { min_cosine: 0.9987 });
+        assert!(v.contains("PASSED") && v.contains("0.9987"), "{v}");
+        let m = f2_status_line(&F2Outcome::Mismatch);
+        assert!(m.contains("FAILED") && !m.contains("PASSED"), "{m}");
+        let n = f2_status_line(&F2Outcome::NotMeasured { reason: "because".into() });
+        assert!(!n.contains("PASSED"), "NotMeasured must never print PASSED: {n}");
+        assert!(n.contains("because") && n.contains("UNVALIDATED"), "{n}");
+    }
+
+    /// Both fail-open branches, on the device, against a real model. Each used to
+    /// return `true`, which the run path printed as PASSED.
+    #[test]
+    fn both_fail_open_branches_report_not_measured_and_a_real_probe_validates() {
+        use crate::gguf::{MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda};
+        let Some(path) = model_path() else {
+            eprintln!("SKIP: tinyllama not present");
+            return;
+        };
+        let mapped = MappedGGUFModel::from_path(&path).expect("map tinyllama");
+        let Ok(mut cuda) =
+            OwnedQuantizedModelCuda::new(OwnedQuantizedModel::from_mapped(&mapped).expect("model"), 0)
+        else {
+            eprintln!("SKIP: no CUDA device");
+            return;
+        };
+        let cfg = crate::gguf::QuantizedGenerateConfig::default();
+
+        // Branch 1: no real position (the BOS-only probe batch.rs always uses).
+        match validate_gpu_first_token(&mut cuda, &cfg, &[]) {
+            F2Outcome::NotMeasured { reason } => {
+                assert!(reason.contains("no REAL position"), "wrong reason: {reason}");
+            },
+            other => panic!("an empty probe compares nothing; got {other:?}"),
+        }
+
+        // Branch 2: the CPU reference forward fails, on a REAL prompt. No input can
+        // make it fail (an OOV token embeds as zeros by contract), so the test-only
+        // hook forces it. The same prompt validates below, so this NotMeasured is
+        // about the missing reference, not about the prompt.
+        let prompt = mapped.model.encode("The capital of France is").expect("encode");
+        F2_FAIL_CPU_REFERENCE.with(|c| c.set(true));
+        let forced = validate_gpu_first_token(&mut cuda, &cfg, &prompt);
+        F2_FAIL_CPU_REFERENCE.with(|c| c.set(false));
+        match forced {
+            F2Outcome::NotMeasured { reason } => {
+                assert!(reason.contains("CPU reference"), "wrong reason: {reason}");
+            },
+            other => panic!("a CPU reference that could not run compares nothing; got {other:?}"),
+        }
+
+        // Positive control: the same real prompt, reference intact, IS compared, so
+        // the two NotMeasured results above are about their branches.
+        match validate_gpu_first_token(&mut cuda, &cfg, &prompt) {
+            F2Outcome::Validated { min_cosine } => {
+                assert!(min_cosine >= F2_GATE_COSINE_MIN, "validated below the floor: {min_cosine}");
+                eprintln!("#3973 positive control: Validated, min cosine {min_cosine:.4}");
+            },
+            other => panic!("a real prompt on a sound model must validate; got {other:?}"),
+        }
+    }
+}
+
