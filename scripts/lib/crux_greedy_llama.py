@@ -23,10 +23,14 @@ import re
 import sys
 import urllib.request
 
+# Loopback only: every URL this file opens is a local server it just started. An http_proxy/HTTP_PROXY in the
+# environment (sandboxed runners set one) would otherwise route 127.0.0.1 through the proxy (quorum lane 2).
+NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
 
 def post(url, path, body):
     req = urllib.request.Request(url + path, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
-    return json.loads(urllib.request.urlopen(req, timeout=1800).read())
+    return json.loads(NO_PROXY_OPENER.open(req, timeout=1800).read())
 
 
 def detok(url, ids):

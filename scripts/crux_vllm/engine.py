@@ -31,6 +31,10 @@ import subprocess
 import sys
 import time
 import urllib.request
+
+# Loopback only: every URL this file opens is a local server it just started. An http_proxy/HTTP_PROXY in the
+# environment (sandboxed runners set one) would otherwise route 127.0.0.1 through the proxy (quorum lane 2).
+NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -298,7 +302,7 @@ def serve_session(a, log_path: Path):
             if proc.poll() is not None:
                 raise RuntimeError(f"vllm serve exited {proc.returncode} before answering (log: {log_path.name})")
             try:
-                urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/models", timeout=2).read()
+                NO_PROXY_OPENER.open(f"http://127.0.0.1:{port}/v1/models", timeout=2).read()
                 break
             except Exception:
                 if time.time() > deadline:
@@ -320,7 +324,7 @@ def serve_session(a, log_path: Path):
                 data=json.dumps(body).encode(),
                 headers={"Content-Type": "application/json"},
             )
-            body_bytes = urllib.request.urlopen(req, timeout=1800).read()
+            body_bytes = NO_PROXY_OPENER.open(req, timeout=1800).read()
             if stream:
                 sse = body_bytes.decode("utf-8", "replace")
                 if resp_path is not None:

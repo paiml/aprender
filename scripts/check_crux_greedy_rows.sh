@@ -31,6 +31,9 @@ for f in "$DOGFOOD" "$LIB" "$ROOT/scripts/lib/crux_greedy_llama.py"; do
 done
 
 TMP=$(mktemp -d) || exit 2
+# every server here is a loopback stub: no proxy may carry those requests (quorum lane 2, 2026-09-23)
+unset http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY
+export no_proxy="127.0.0.1,localhost" NO_PROXY="127.0.0.1,localhost"
 # `choom -n 1000` (run_cell's OOM-victim marking) is SHIMMED to a plain exec for this table: the table measures
 # the greedy rows, not OOM scoring, and an unprivileged sandbox denies the real one (quorum lane 2, 2026-09-23), which
 # turned every row into a false BREAK. The shim runs the command exactly as given after `--`.
