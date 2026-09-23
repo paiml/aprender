@@ -270,6 +270,13 @@ mod qwen35_serve_route_tests {
 fn serve_router(state: realizar::api::AppState, config: &ServerConfig) -> Result<()> {
     use realizar::api::create_router_with_config;
 
+    // aprender#2376(8): the banner is read from the router's own table, not restated.
+    // The previous hand-written list named 11 of the 31 mounted routes and omitted
+    // /tokenize, /realize/*, /models and the health probes entirely, while a
+    // separate list printed before format detection named routes that 404.
+    // #3991: read from the STATE the router is built with, before it moves.
+    let endpoints = realizar::api::advertised_routes(&config.router_config(), &state);
+
     // Create realizar's full inference router (Ollama-parity endpoints).
     // --no-cors / --no-metrics must reach the router, not stop at the banner.
     let app = create_router_with_config(state, config.router_config());
@@ -279,11 +286,6 @@ fn serve_router(state: realizar::api::AppState, config: &ServerConfig) -> Result
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
 
     let bind_addr = config.bind_addr();
-    // aprender#2376(8): the banner is read from the router's own table, not restated.
-    // The previous hand-written list named 11 of the 31 mounted routes and omitted
-    // /tokenize, /realize/*, /models and the health probes entirely, while a
-    // separate list printed before format detection named routes that 404.
-    let endpoints = realizar::api::advertised_routes(&config.router_config());
 
     runtime.block_on(async move {
         let listener = tokio::net::TcpListener::bind(&bind_addr)
