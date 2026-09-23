@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# check_ladder_cpu_lane.sh — the ladder's CPU lane runs OUTSIDE the GPU lock (and, opted in, CONCURRENTLY with
-# the GPU lane, without being able to touch a GPU or drop out of the receipt (#4034).
+# check_ladder_cpu_lane.sh — the ladder's CPU lane runs OUTSIDE the GPU lock (and, opted in, CONCURRENTLY
+# with the GPU lane) without being able to touch a GPU or drop out of the receipt (#4034).
 #
 # WHY. Every apr call in a cell took the fleet GPU lock, the `--no-gpu` lane included. On lambda's
 # qwen35-9b-q4km rung, 50 of 83 nvidia-smi samples (60%, about 16.5 of 27.4 min) show no process on
