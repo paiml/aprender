@@ -10178,7 +10178,7 @@
 <https://ont.paiml.dev/v1alpha1/receipt/0.69.1%2Fgx10%2Fqwen35-27b-q4km> <https://ont.paiml.dev/v1alpha1/model/capabilityPassed> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.69.1%2Fgx10%2Fqwen35-27b-q4km> <https://ont.paiml.dev/v1alpha1/model/cc> "12.1"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.69.1%2Fgx10%2Fqwen35-27b-q4km> <https://ont.paiml.dev/v1alpha1/model/gpu> "NVIDIA GB10"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/receipt/0.69.1%2Fgx10%2Fqwen35-27b-q4km> <https://ont.paiml.dev/v1alpha1/model/green> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://ont.paiml.dev/v1alpha1/receipt/0.69.1%2Fgx10%2Fqwen35-27b-q4km> <https://ont.paiml.dev/v1alpha1/model/green> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.69.1%2Fgx10%2Fqwen35-27b-q4km> <https://ont.paiml.dev/v1alpha1/model/receiptFile> "evidence/dogfood/models/0.69.1/gx10.json"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.69.1%2Fgx10%2Fqwen35-27b-q4km> <https://ont.paiml.dev/v1alpha1/model/receiptHost> "gx10"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.69.1%2Fgx10%2Fqwen35-27b-q4km> <https://ont.paiml.dev/v1alpha1/model/receiptOf> <https://ont.paiml.dev/v1alpha1/model/84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806> .

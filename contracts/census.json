@@ -1,8 +1,8 @@
 {
   "schema": "ont.paiml.dev/census/v1alpha1",
   "git_sha": null,
-  "n_files": 1831,
-  "n_parsed": 1831,
+  "n_files": 1833,
+  "n_parsed": 1833,
   "n_parse_errors": 0,
   "parse_errors": [],
   "quarantined_n": 0,
@@ -12,9 +12,9 @@
     "kernel": 387,
     "model-family": 28,
     "model-family-variant": 1,
-    "pattern": 92,
+    "pattern": 93,
     "pretraining-corpus": 2,
-    "registry": 520,
+    "registry": 521,
     "schema": 766,
     "tokenizer": 1,
     "training-loop": 8,
@@ -23,15 +23,15 @@
   "by_entity_type": {
     "gguf": 2,
     "json": 3,
-    "pv-contract": 1,
+    "pv-contract": 2,
     "release-evidence": 1
   },
   "by_anchoring": {
-    "unanchored": 1824,
+    "unanchored": 1825,
     "class": 5,
-    "instance": 2
+    "instance": 3
   },
-  "id_set_sha256": "2b1c3e8a7b9c5219419352ee6a19d6a136b9ebb37818a555d9d626b31d656a59",
+  "id_set_sha256": "1ae9816fac65671faf4ba26662a48f5adb84e2c803aa1eaaf958526499aef4b5",
   "declared_external": [
     {
       "name": "provable-contracts",
