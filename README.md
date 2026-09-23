@@ -159,7 +159,7 @@ apr list                                            # confirm cached
 
 ```bash
 apr qa qwen2.5-coder-1.5b-instruct-q4k              # 12 falsifiable gates
-apr validate qwen2.5-coder-1.5b-instruct-q4k --quality   # 100-pt structural audit
+apr validate qwen2.5-coder-1.5b-instruct-q4k --quality   # scores the checks that ran
 apr lint qwen2.5-coder-1.5b-instruct-q4k            # best-practice signals
 ```
 
