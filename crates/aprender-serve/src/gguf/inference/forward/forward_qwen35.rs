@@ -3,6 +3,10 @@ use crate::gguf::quantized::{OwnedQuantizedTensor, QuantizedTensorRef};
 use crate::gguf::{GGUFConfig, GGUFModel, OwnedQuantizedModel};
 use std::f32::consts::E;
 
+/// 0.69.1 load-time warning for Qwen3.5-0.8B (#4032, known issue #4030).
+#[path = "qwen35_known_issue.rs"]
+pub mod qwen35_known_issue;
+
 /// SiLU activation function
 pub fn silu(x: f32) -> f32 {
     x / (1.0 + (-x as f32).exp())
@@ -790,6 +794,8 @@ impl<'a> Qwen35Model<'a> {
         model: &crate::gguf::GGUFModel,
         data: &[u8],
     ) -> crate::error::Result<crate::gguf::OwnedQuantizedModel> {
+        // #4032: Qwen3.5-0.8B is a known RED in 0.69.1 (#4030): warn, never refuse.
+        qwen35_known_issue::warn_if_known_issue(model);
         let config = crate::gguf::config::ValidatedModelConfig::from_gguf(model)?.into_inner();
 
         let token_embedding = model.get_tensor_f32("token_embd.weight", data)?;
