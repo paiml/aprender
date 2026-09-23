@@ -170,7 +170,14 @@ def driver_leg(a, prompts, thinking_modes, manifest: Path, work: Path) -> None:
           flush=True)
 
 
+def _term(signum, _frame):
+    # gpu-q, timeout and a stopped leg all send SIGTERM. Python's default dies without running `finally`,
+    # which orphaned llama-server holding 4 GB of the card on gx10 (2026-09-23); exit through it instead.
+    raise SystemExit(128 + signum)
+
+
 def main(argv: list) -> int:
+    signal.signal(signal.SIGTERM, _term)
     ap = argparse.ArgumentParser(prog="crux_prompt_certify_run.py")
     ap.add_argument("--leg", required=True, choices=["ggml", "hf", "vllm"])
     ap.add_argument("--prompts", required=True)
