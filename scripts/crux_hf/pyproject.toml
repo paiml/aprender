@@ -12,4 +12,9 @@ dependencies = [
     "safetensors==0.8.0",
     "huggingface_hub==1.32.0",
     "requests==2.34.2",
+    # `transformers serve` loads a vision-language model's PROCESSOR (Qwen3.5 is Qwen3_5ForConditionalGeneration, so
+    # Qwen2VLImageProcessor), which needs torchvision + PIL. Without them every serve request was HTTP 500
+    # (measured on lambda, Qwen3.5-2B, 2026-09-23); the in-process path never builds the processor.
+    "torchvision",
+    "pillow",
 ]
