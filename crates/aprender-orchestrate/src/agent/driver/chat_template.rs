@@ -121,7 +121,8 @@ pub fn format_prompt_for_model(
     let msgs = realizar_messages(request);
     // #3990: the GGUF's OWN chat_template is the prompt format the model was trained on; it
     // outranks every detector below, the Llama-3 exception included.
-    if let Some(h) = header.as_ref().filter(|h| h.metadata.contains_key("tokenizer.chat_template")) {
+    if let Some(h) = header.as_ref().filter(|h| h.metadata.contains_key("tokenizer.chat_template"))
+    {
         // Thinking OFF, as every production verb renders it (#3801).
         match realizar::chat_template::render_official_for_model(h, &msgs, Some(false)) {
             Ok(prompt) => return prompt,
@@ -682,7 +683,13 @@ mod one_detector_tests {
                 }
             }
             let got = format_prompt_for_model(&r, path);
-            assert_eq!(got, c["prompt"].as_str().expect("prompt"), "{} system={}", path.display(), c["system"]);
+            assert_eq!(
+                got,
+                c["prompt"].as_str().expect("prompt"),
+                "{} system={}",
+                path.display(),
+                c["system"]
+            );
             ran += 1;
         }
         eprintln!("#3990 apr code: {ran}/8 real cells compared");

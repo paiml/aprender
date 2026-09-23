@@ -134,4 +134,34 @@ mod official_chat_template_3990 {
         assert_eq!(pinned % 4, 0, "a present TinyLlama file must yield all 4 pinned cells");
         assert!(bad.is_empty(), "rendered prompt ids differ from llama.cpp:{}", bad.concat());
     }
+
+    /// The SafeTensors entry point: TinyLlama's HuggingFace `tokenizer_config.json` (its
+    /// template is byte-identical to the GGUF's, bos/eos too) renders every TinyLlama oracle
+    /// cell exactly as llama.cpp does -- eos comes from the JSON, not from a GGUF.
+    #[test]
+    fn a_tokenizer_config_json_renders_equal_to_llama_cpp_3990() {
+        const CFG: &str = include_str!("fixtures/chat_template_3990/tinyllama_tokenizer_config.json");
+        let mut ran = 0usize;
+        for c in cells().into_iter().filter(|c| c["model"] == "tinyllama") {
+            let got = render_official_from_tokenizer_config(CFG, &messages_of(&c), c["thinking"].as_bool())
+                .expect("renders");
+            assert_eq!(got, c["prompt"].as_str().unwrap(), "system={}", c["system"]);
+            ran += 1;
+        }
+        assert_eq!(ran, 4, "all four TinyLlama cells");
+    }
+
+    /// Both special-token forms, and the list-of-templates form, parse; no template is a
+    /// named error.
+    #[test]
+    fn tokenizer_config_shapes_3990() {
+        let msgs = [ChatMessage::new("user", "hi")];
+        let obj = r#"{"chat_template": "{{ bos_token }}{{ messages[0]['content'] }}{{ eos_token }}",
+                      "bos_token": {"content": "<B>", "lstrip": false}, "eos_token": "<E>"}"#;
+        assert_eq!(render_official_from_tokenizer_config(obj, &msgs, None).unwrap(), "<B>hi<E>");
+        let list = r#"{"chat_template": [{"name": "tool_use", "template": "T"}, {"name": "default", "template": "D{{ messages[0]['content'] }}"}]}"#;
+        assert_eq!(render_official_from_tokenizer_config(list, &msgs, None).unwrap(), "Dhi");
+        let none = render_official_from_tokenizer_config(r#"{"eos_token": "<E>"}"#, &msgs, None).unwrap_err();
+        assert!(none.to_string().contains("no usable chat_template"), "{none}");
+    }
 }

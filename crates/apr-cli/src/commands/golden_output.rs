@@ -502,22 +502,31 @@ fn judge_thinking_on_output(generated: &str, patterns: &[&str], budget: usize) -
     }
 }
 
-/// #3990: one golden question rendered with the GGUF's OWN `tokenizer.chat_template`, thinking
-/// OFF (production's default since #3801, rendered the template's way). Without a GGUF or
-/// without a template it is [`golden_prompt_for`]'s detector render; a template that is
-/// present but fails to render says so on stderr before falling back.
+/// #3990: one golden question rendered with the model's OWN chat template -- a GGUF's
+/// `tokenizer.chat_template`, or a SafeTensors model's sibling `tokenizer_config.json` --
+/// thinking OFF (production's default since #3801, rendered the template's way). Without
+/// either it is [`golden_prompt_for`]'s detector render; a template that is present but fails
+/// to render says so on stderr before falling back.
 #[cfg(feature = "inference")]
 fn golden_prompt_for_model(
     gguf: Option<&realizar::gguf::GGUFModel>,
+    tokenizer_config: Option<&str>,
     key: Option<&str>,
     question: &str,
 ) -> String {
-    use realizar::chat_template::{render_official_for_model, ChatMessage};
-
-    let Some(gguf) = gguf.filter(|g| g.metadata.contains_key("tokenizer.chat_template")) else {
-        return golden_prompt_for(key, question);
+    use realizar::chat_template::{
+        render_official_for_model, render_official_from_tokenizer_config, ChatMessage,
     };
-    render_official_for_model(gguf, &[ChatMessage::user(question)], Some(false)).unwrap_or_else(|e| {
+
+    let msgs = [ChatMessage::user(question)];
+    let rendered = match (gguf.filter(|g| g.metadata.contains_key("tokenizer.chat_template")), tokenizer_config) {
+        (Some(g), _) => render_official_for_model(g, &msgs, Some(false)),
+        (None, Some(json)) if json.contains("\"chat_template\"") => {
+            render_official_from_tokenizer_config(json, &msgs, Some(false))
+        }
+        _ => return golden_prompt_for(key, question),
+    };
+    rendered.unwrap_or_else(|e| {
         eprintln!(
             "[#3990] WARNING: the model's own chat_template failed to render ({e}); the golden \
              gate falls back to the detector's template, which is NOT this model's prompt format"
@@ -530,11 +539,14 @@ fn golden_prompt_for_model(
 #[cfg(feature = "inference")]
 fn golden_test_cases_for_model(
     gguf: Option<&realizar::gguf::GGUFModel>,
+    tokenizer_config: Option<&str>,
     key: Option<&str>,
 ) -> Vec<(String, Vec<&'static str>)> {
     golden_questions()
         .into_iter()
-        .map(|(question, patterns)| (golden_prompt_for_model(gguf, key, question), patterns))
+        .map(|(question, patterns)| {
+            (golden_prompt_for_model(gguf, tokenizer_config, key, question), patterns)
+        })
         .collect()
 }
 
@@ -798,7 +810,13 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             model_name.as_deref(),
             declared.as_deref(),
         );
-        let test_cases = golden_test_cases_for_model(gguf_model, key.as_deref());
+        // #3990: a SafeTensors model's own template lives in its sibling tokenizer_config.json.
+        let tokenizer_config = (format == ModelFormat::SafeTensors)
+            .then(|| realizar::safetensors::find_sibling_file(path, "tokenizer_config.json"))
+            .flatten()
+            .and_then(|p| std::fs::read_to_string(p).ok());
+        let test_cases =
+            golden_test_cases_for_model(gguf_model, tokenizer_config.as_deref(), key.as_deref());
 
         for (prompt, expected_patterns) in &test_cases {
             match validate_golden_test_case(
@@ -1951,7 +1969,7 @@ mod golden_official_template_3990 {
             let mapped = realizar::gguf::MappedGGUFModel::from_path(path).expect("map");
             let question = c["messages"][0]["content"].as_str().expect("question");
             let arch = mapped.model.architecture().map(String::from);
-            let got = golden_prompt_for_model(Some(&mapped.model), arch.as_deref(), question);
+            let got = golden_prompt_for_model(Some(&mapped.model), None, arch.as_deref(), question);
             assert_eq!(got, c["prompt"].as_str().expect("prompt"), "{path}");
             ran += 1;
         }
@@ -1961,7 +1979,27 @@ mod golden_official_template_3990 {
     /// Without a GGUF the gate keeps the detector's render, unchanged.
     #[test]
     fn no_gguf_keeps_the_detector_render_3990() {
-        assert_eq!(golden_prompt_for_model(None, Some("qwen2"), "Q?"), golden_prompt_for(Some("qwen2"), "Q?"));
-        assert_eq!(golden_prompt_for_model(None, None, "Q?"), golden_prompt_for(None, "Q?"));
+        assert_eq!(golden_prompt_for_model(None, None, Some("qwen2"), "Q?"), golden_prompt_for(Some("qwen2"), "Q?"));
+        assert_eq!(golden_prompt_for_model(None, None, None, "Q?"), golden_prompt_for(None, "Q?"));
+        // A tokenizer_config.json with no chat_template is the same as none.
+        assert_eq!(golden_prompt_for_model(None, Some(r#"{"eos_token": "</s>"}"#), None, "Q?"), golden_prompt_for(None, "Q?"));
+    }
+
+    /// SafeTensors: the sibling tokenizer_config.json's template is what the gate asks with.
+    /// TinyLlama's (byte-identical to its GGUF template) must render the oracle's system-less
+    /// cell exactly as llama.cpp does.
+    #[test]
+    fn a_safetensors_tokenizer_config_is_the_golden_prompt_3990() {
+        let cfg = include_str!("../../../aprender-serve/src/fixtures/chat_template_3990/tinyllama_tokenizer_config.json");
+        let cells: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../../aprender-serve/src/fixtures/chat_template_3990/llama_cpp_df03399.json"
+        ))
+        .expect("oracle parses");
+        let c = cells
+            .iter()
+            .find(|c| c["model"] == "tinyllama" && c["system"] == false && c["thinking"] == false)
+            .expect("the tinyllama system-less cell");
+        let question = c["messages"][0]["content"].as_str().expect("question");
+        assert_eq!(golden_prompt_for_model(None, Some(cfg), Some("llama"), question), c["prompt"].as_str().expect("prompt"));
     }
 }
