@@ -137,7 +137,7 @@ ladder_backend_cell() {
     cuda-decline:cpu) sleep 300 & echo $! > "$W/bg.pid"; wait; return 0 ;;
     cuda-decline:cuda) sleep 0.5; echo "decline: ENV planted decline in the cuda lane" >&2; exit 2 ;;
   esac
-  s=$(date +%s.%N); sleep 1.5; e=$(date +%s.%N)
+  s=$EPOCHREALTIME; sleep 1.5; e=$EPOCHREALTIME   # bash 5: no date(1) process, and no DET002 (check_bashrs_gate.sh)
   echo "$1 $s $e" >> "$W/spans"
   printf "\"%s\":{\"ran\":true,\"fallback\":false,\"verbs\":{}}" "$1"
 }

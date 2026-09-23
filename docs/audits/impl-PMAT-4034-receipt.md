@@ -24,7 +24,11 @@ c60ac43be (concurrency opt-in per the cop's ruling), 67f396654 (header).
 - check_model_ladder.sh --self-test: 302 ok / 0 FAIL, the same as the base. The sibling guards
   (serve_teardown, serve_verdict, serve_probe_evidence, serve_backend_record, output_judged,
   write_errors, only_selection, provenance), check_guards_are_wired and check_apr_bin_pinned all
-  pass. bashrs: 0 errors.
+  pass. The wired bashrs gate (scripts/check_bashrs_gate.sh, `--no-ignore --level error`) reports
+  the SAME 8 findings as the base 0dccce21b (all pre-existing, none in this diff's files). An
+  earlier revision of this receipt said "bashrs: 0 errors" from a plain `bashrs lint`, and that
+  was wrong: quorum lane 3 measured a new DET002 at check_ladder_cpu_lane.sh:140 (`date` into a
+  file), now removed ($EPOCHREALTIME).
 - Yoga A/B, qwen35-2b (#4034 comment 5800622966): no measurable saving from concurrency at 2B,
   hence opt-in. The measured win that ships on by default is that the CPU lane never holds the
   fleet lock (the base's CPU serve held it ~30 s per cell).
