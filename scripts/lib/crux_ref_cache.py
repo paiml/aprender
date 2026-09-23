@@ -30,7 +30,9 @@ THREE OUTCOMES, never a fourth:
 
 Only rows that answered (rc 0, not refused) are stored. A refusal is not truth, so it is recomputed every run.
 
-  crux_ref_cache.py lookup  --cache D --work W --manifest M <key args> --out-rows F   exit 0 hit · 1 miss · 3 stale
+  crux_ref_cache.py lookup  --cache D --work W --manifest M <key args> --out-rows F   exit 0 hit · 10 miss · 11 stale
+Every other exit (1 a keying refusal, 2 a crash) is NONE of the three, and the dogfood declines the run on it: a
+crash that shared the miss code would turn a corrupted cache into a silent recompute (quorum round 3, lane 2).
   crux_ref_cache.py store   --cache D --work W --manifest M <key args>                exit 0 · prints "stored N"
 Key args: --model-sha --thinking --backend --host --engines e1,e2 --verbs v1,v2 --oracle eng=version (repeat) --source JSON
           --temperature --seed --context --max-tokens <the mode's global cap> --root <repo root>
@@ -45,6 +47,7 @@ import sys
 import tempfile
 
 SCHEMA = "crux-ref-cache/v1"
+HIT, MISS, STALE, CRASH = 0, 10, 11, 2
 CACHED_ENGINES = ("hf", "vllm", "llamafile")
 NOT_CACHEABLE = {"llama.cpp": "its llama-server is apr's reference renderer on the serve routes, so it must run "
                               "wherever apr runs (#4036, measured on gx10)"}
@@ -213,7 +216,17 @@ def why_stale(key, d, edir):
             return "a row's identity %r contradicts the key" % (ident,)
         if r.get("refused") or r.get("rc") != 0:
             return "it holds a refused or failed row, which is never truth"
+        for box, f in row_paths_rel(r):
+            rel = box[f][len("refcache:"):]
+            # A pointer is a plain name the entry's own files{} holds — never a path: `../` would read or write outside
+            # the cache and the work dir, and a name files{} does not hold is a row no sha256 vouches for.
+            if not rel or rel != os.path.basename(rel) or rel in (".", "..") or rel not in (ent.get("files") or {}):
+                return "a row's artifact pointer %r is not one of the entry's own hashed files" % box[f]
+        for box, f in row_paths(r):
+            return "a row still names an absolute path %r: its artifact was never stored" % box[f]
     for rel, want in (ent.get("files") or {}).items():
+        if not rel or rel != os.path.basename(rel) or rel in (".", ".."):
+            return "files{} names %r, which is not a plain file name" % rel
         p = os.path.join(edir, "files", rel)
         if not os.path.isfile(p):
             return "artifact %s is missing" % rel
@@ -234,11 +247,11 @@ def cmd_lookup(a):
         (stale if w else hits).append((k, d, w))
     if not entries:
         print("reference cache: nothing to look up")
-        return 1
+        return MISS
     if not stale and misses:
         print("reference cache MISS: %d of %d entries absent (e.g. %s %s %s): every engine runs"
               % (len(misses), len(entries), misses[0][0]["engine"], misses[0][0]["verb"], misses[0][0]["prompt_id"]))
-        return 1
+        return MISS
     out = open(a.out_rows, "w")
     for k, d, _ in hits:
         if stale:
@@ -267,10 +280,10 @@ def cmd_lookup(a):
         out.close()
         print("reference cache STALE: %d of %d entries (%s); every reference row of this mode is refused"
               % (len(stale), len(entries), w0))
-        return 3
+        return STALE
     out.close()
     print("reference cache HIT: %d entries, %d engines skipped this mode" % (len(hits), len({k["engine"] for k, _, _ in hits})))
-    return 0
+    return HIT
 
 
 def row_paths_rel(row):
@@ -361,4 +374,10 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001 — any crash is its own outcome, never a miss
+        sys.stderr.write("crux_ref_cache: CRASH %s: %s\n" % (e.__class__.__name__, e))
+        sys.exit(CRASH)

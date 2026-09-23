@@ -751,9 +751,10 @@ PY
       sed 's/^/  /' "$WORK/$SHA12/refcache-lookup.log"
       case "$rrc" in
         0) REF_SKIP=1; rres=hit ;;
-        3) REF_SKIP=1; rres=stale ;;
-        1) rres=miss ;;
-        *) decline "reference cache lookup failed (rc $rrc): $(tail -1 "$WORK/$SHA12/refcache-lookup.log")" ;;
+        11) REF_SKIP=1; rres=stale ;;
+        10) rres=miss ;;
+        # a keying refusal or a crash is none of the three: never a silent recompute of a corrupted cache
+        *) decline "reference cache lookup failed (rc $rrc, neither hit, miss nor stale): $(tail -1 "$WORK/$SHA12/refcache-lookup.log")" ;;
       esac
       printf '%s\t%s\t%s\t%s\n' "$SHA" "$THINK" "$rres" "$(IFS=,; printf '%s' "${REF_ENGINES[*]}")" >> "$WORK/refcache.tsv"
     fi

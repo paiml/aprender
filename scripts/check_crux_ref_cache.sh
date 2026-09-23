@@ -17,6 +17,11 @@
 #                                 catches it
 #   7. llama.cpp is refused by name: it is apr's reference renderer on the serve routes, so it always runs
 #   8. the global cap moved (a bigger budget elsewhere in the prompt set) → a MISS for run/chat, recomputed
+#   9. MUST-RED: a row's artifact pointer rewritten to a `../` traversal (key and files{} intact) → STALE, RED
+#  10. the lookup's exit contract: hit 0 · miss 10 · stale 11; a keying refusal (1) and a crash (2) are neither
+#  11. MUST-DECLINE: a lookup that crashes inside the real dogfood declines the run, never a silent recompute
+#  12. an edited pointer that resolves to the SAME hashed file: STALE on the real lib, REUSED by a mutant without the
+#      pointer rule — so the rule, not a sha256 or a crash, is what refuses it
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
@@ -303,6 +308,89 @@ nc=$(summary newcap)
 case "$nc" in
   "2 | "*"=GREEN"*) ok "a new global cap is a MISS for run/chat, recomputed GREEN ($nc)" ;;
   *) broke "new global cap: $nc (a hit would reuse a truth generated under another cap)" ;;
+esac
+
+# Row 9: MUST-RED — a row's artifact POINTER rewritten to a traversal, key and files{} untouched (quorum round 3,
+# lane 2 measured this passing as intact and reading outside the cache). It is STALE: 0 engine calls, every cell RED.
+cp -r "$CACHE" "$TMP/cache-ptr"
+python3 - "$TMP/cache-ptr" <<'PY' || exit 2
+import glob, json, sys
+# every entry: the cache holds entries of several keys by now (rows 4 and 8), and only this run's must be hit
+for p in glob.glob(sys.argv[1] + "/*/*/entry.json"):
+    e = json.load(open(p))
+    e["rows"][0]["stdout"] = "refcache:" + "../" * 8 + "etc/hostname"
+    json.dump(e, open(p, "w"), indent=1, sort_keys=True)
+PY
+run_row ptr "$T" "$TMP/cache-ptr"
+pt=$(summary ptr)
+case "$pt" in
+  "0 | "*"=RED"*) if grep -q "is not one of the entry's own hashed files" "$TMP/ptr.out/stub-gpu.json" && ! printf '%s' "$pt" | grep -q '=GREEN'; then
+                    ok "MUST-RED: a traversal pointer (key and files{} intact) is STALE, 0 engine calls, every cell RED ($pt)"
+                  else broke "pointer: RED but not for the pointer ($pt)"; fi ;;
+  *) broke "pointer: $pt — an edited pointer was reused or recomputed, not refused" ;;
+esac
+
+# Row 10: the lookup's exit contract — hit 0, miss 10, stale 11, and anything else is NOT one of them: a keying
+# refusal exits 1 and a crash 2 (a crash once shared the miss code, so a corrupted cache was silently recomputed).
+lk() { python3 "$T/scripts/lib/crux_ref_cache.py" lookup --cache "$1" --work "$2" --manifest /dev/null \
+  --model-sha "$MSHA" --thinking off --backend gpu --host stub --engines hf --verbs "$3" --oracle "hf=transformers=5.0.0" \
+  --temperature 0 --seed 42 --context 4096 --max-tokens 1024 --root "$T" --out-rows "$TMP/lk.rows" > /dev/null 2>&1; echo $?; }
+W10="$TMP/w10"; mkdir -p "$W10"; printf 'run ctl-2plus2\n' > "$W10/pids-all.txt"; printf '{}' > "$W10/prompt-ctl-2plus2.json"
+printf '["ctl-2plus2", ["serve run"]]\n' > "$W10/serve-prompts.jsonl"
+r_miss=$(lk "$TMP/c10" "$W10" run); r_key=$(lk "$TMP/c10" "$W10" run,serve); r_crash=$(lk "$TMP/c10" "$TMP/no-such-work" run)
+[ "$r_miss:$r_key:$r_crash" = "10:1:2" ] && ok "exit contract: miss 10, keying refusal 1 (no cap file), crash 2 — none of the latter two is a miss" \
+  || broke "exit contract: miss $r_miss (want 10), keying $r_key (want 1), crash $r_crash (want 2)"
+
+# Row 11: MUST-DECLINE — a lookup that CRASHES inside the real dogfood declines the run; it is never read as a miss
+# and recomputed GREEN.
+T3="$TMP/tree-crash"; mk_tree "$T3"
+python3 - "$T3/scripts/lib/crux_ref_cache.py" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+a = "def cmd_lookup(a):\n"
+assert s.count(a) == 1, "crash anchor moved: update this check with the lib"
+open(p, "w").write(s.replace(a, a + "    raise RuntimeError('planted crash')\n"))
+PY
+run_row crash "$T3" "$TMP/cache-crash"
+cr=$(summary crash)
+if [ "$(cat "$TMP/crash.rc")" = 2 ] && grep -q 'neither hit, miss nor stale' "$TMP/crash.log" && [ "${cr#* | }" = "NO-RECEIPT | -" ]; then
+  ok "a crashing lookup DECLINES the run (rc 2, no receipt), never a silent recompute"
+else
+  broke "crashing lookup: rc $(cat "$TMP/crash.rc"), $cr"
+fi
+
+# Row 12: the pointer check is what refuses an edited pointer. `refcache:./<same name>` resolves to the SAME hashed
+# file, so no sha256 and no crash can catch it; only the pointer rule can. Real lib: STALE. MUTANT with the pointer
+# rule disabled (its own cache, since the lib is in the digest): the edited entry is REUSED, 0 calls, GREEN.
+dot_ptr() { # dot_ptr <cache>: every entry's first row points at ./<its own file>
+  python3 - "$1" <<'PY' || exit 2
+import glob, json, sys
+for p in glob.glob(sys.argv[1] + "/*/*/entry.json"):
+    e = json.load(open(p))
+    v = e["rows"][0]["stdout"]
+    e["rows"][0]["stdout"] = "refcache:./" + v[len("refcache:"):]
+    json.dump(e, open(p, "w"), indent=1, sort_keys=True)
+PY
+}
+cp -r "$CACHE" "$TMP/cache-dot"; dot_ptr "$TMP/cache-dot"
+run_row dot "$T" "$TMP/cache-dot"
+dt=$(summary dot)
+MP="$TMP/mutant-ptr"; mk_tree "$MP"
+python3 - "$MP/scripts/lib/crux_ref_cache.py" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+a = "            if not rel or rel != os.path.basename(rel) or rel in (\".\", \"..\") or rel not in (ent.get(\"files\") or {}):"
+assert s.count(a) == 1, "pointer-rule anchor moved: update this check with the lib"
+open(p, "w").write(s.replace(a, "            if False:"))
+PY
+run_row mptr-cold "$MP" "$TMP/cache-mptr"; dot_ptr "$TMP/cache-mptr"
+run_row mptr "$MP" "$TMP/cache-mptr"
+mp=$(summary mptr)
+case "$dt|$mp" in
+  "0 | "*"=RED"*"|0 | "*"=GREEN"*) ok "an equivalent-but-edited pointer: STALE on the real lib ($dt); REUSED with the pointer rule disabled ($mp)" ;;
+  *) broke "pointer rule: real lib $dt, mutant $mp" ;;
 esac
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"

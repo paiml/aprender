@@ -17,7 +17,8 @@ Author: aprender-83 (claude-opus-5-5).
   - **Outcomes.** There are three, and no fourth:
     - hit: inject the rows, and the engines do not run;
     - miss: run the mode and store its clean rows;
-    - stale: refuse every reference row, which is RED and never reused.
+    - stale: refuse every reference row, which is RED and never reused. "Stale" includes a row whose artifact pointer is not a plain name that the entry's own hashed `files{}` holds (quorum round 3, lane 2).
+  - **Exit contract.** `lookup` exits 0 hit, 10 miss, 11 stale. A keying refusal (1) or a crash (2) is none of the three, and the dogfood declines the run on it. A crash once shared the miss code, so a corrupted cache was silently recomputed (quorum round 3, lane 2).
 - `scripts/crux_inference_dogfood.sh` changes:
   - `--reference-cache <dir>` adds a lookup per mode and an inject or store after the mode.
   - `crux_batched` + `plugin_batch_cells`: a source-weight driver that answers `gen-batch --help` loads once per mode per interface. That is one cell for run+chat in-process and one for serve+code through the engine's own server, instead of once per prompt × verb. `CRUX_NO_BATCH=1` keeps the per-cell path.
@@ -52,7 +53,7 @@ Author: aprender-83 (claude-opus-5-5).
 
 ## Hermetic tables (real dogfood + real judge, stub engines)
 
-**`scripts/check_crux_ref_cache.sh` — 8/8**
+**`scripts/check_crux_ref_cache.sh` — 12/12**
 
 1. Cold stores.
 2. Warm makes 0 reference calls, the receipt is identical cell for cell, and every injected row is provenanced.
@@ -62,6 +63,10 @@ Author: aprender-83 (claude-opus-5-5).
 6. MUTANT, stale check disabled: the mutant fills its own cache, then REUSES the edited entry (0 calls, GREEN). Row 3 is what catches it.
 7. llama.cpp is refused.
 8. A new global cap is a miss for run/chat.
+9. MUST-RED: a row's artifact pointer is rewritten to a `../` traversal while the key and `files{}` stay intact. It is STALE, with 0 engine calls, and every cell is RED.
+10. The exit contract: miss 10, keying refusal 1, crash 2.
+11. MUST-DECLINE: a lookup that crashes inside the real dogfood declines the run (rc 2, no receipt). It is never recomputed silently.
+12. An edited pointer that resolves to the SAME hashed file is STALE on the real lib, and REUSED by a mutant with the pointer rule disabled. The rule is what refuses it.
 
 **`scripts/check_crux_plugin_batch.sh` — 5/5**
 
