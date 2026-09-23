@@ -392,31 +392,44 @@ mod iq4_nl_device_ab_tests {
         let base = mapped.model.tensor_data_start;
         let mut seen = 0usize;
         for t in mapped.model.tensors.iter().filter(|t| t.qtype == 10) {
-            let (a, b) = (t.dims[0] as usize, t.dims[1] as usize);
-            let (k, n) = if Q2K_REAL_SHAPES.contains(&(a, b)) {
-                (a, b)
-            } else if Q2K_REAL_SHAPES.contains(&(b, a)) {
-                (b, a)
-            } else {
-                panic!("{}: dims {:?} match no shape in Q2K_REAL_SHAPES -- the census is stale", t.name, t.dims)
-            };
+            let (k, n) = q2k_real_kn(&t.name, &t.dims);
             let len = n * k.div_ceil(256) * 84;
             let start = base + usize::try_from(t.offset).unwrap();
             let bytes = &data[start..start + len];
-            let mut bad = 0usize;
-            for blk in bytes.chunks_exact(84) {
-                for off in [80usize, 82] {
-                    let v = half::f16::from_le_bytes([blk[off], blk[off + 1]]).to_f32();
-                    if !v.is_finite() || v.abs() > 1.0 {
-                        bad += 1;
-                    }
-                }
-            }
+            let bad = q2k_implausible_scales(bytes);
             assert_eq!(bad, 0, "{}: {bad} implausible d/dmin -- these bytes are not this tensor (offset {start})", t.name);
             q2_k_assert_within(&t.name, k, n, q2_k_device_ab(&mut exec, bytes, k, n));
             seen += 1;
         }
         assert_eq!(seen, 3, "expected the 3 type-10 tensors the census found, saw {seen}");
+    }
+
+    /// The (k, n) orientation of a real type-10 tensor, taken from Q2K_REAL_SHAPES, not
+    /// the API. Panics when the census is stale.
+    fn q2k_real_kn(name: &str, dims: &[u64]) -> (usize, usize) {
+        let (a, b) = (dims[0] as usize, dims[1] as usize);
+        if Q2K_REAL_SHAPES.contains(&(a, b)) {
+            (a, b)
+        } else if Q2K_REAL_SHAPES.contains(&(b, a)) {
+            (b, a)
+        } else {
+            panic!("{name}: dims {dims:?} match no shape in Q2K_REAL_SHAPES -- the census is stale")
+        }
+    }
+
+    /// Q2_K super-block scales (d at 80, dmin at 82) that are non-finite or larger than 1:
+    /// a nonzero count means these bytes are not this tensor's.
+    fn q2k_implausible_scales(bytes: &[u8]) -> usize {
+        let mut bad = 0usize;
+        for blk in bytes.chunks_exact(84) {
+            for off in [80usize, 82] {
+                let v = half::f16::from_le_bytes([blk[off], blk[off + 1]]).to_f32();
+                if !v.is_finite() || v.abs() > 1.0 {
+                    bad += 1;
+                }
+            }
+        }
+        bad
     }
 
     /// #3931: IQ2_XXS on the device, against the CPU decoder, at the shapes that
