@@ -143,9 +143,17 @@ fn test_3601_unknown_id_is_refused_as_a_gap_in_apr() {
 /// raw byte for ids 16..=23 and `Ok`; every IQ/TQ tensor must now be refused by type.
 /// With #3601 sizing these ids, raw import reaches the GH-375 fallback — so this refusal
 /// is what stops that fallback from importing invented weights.
+///
+/// #3947 narrowed this to the ids with no real decoder: IQ4_NL (20), IQ3_S (21) and
+/// IQ4_XS (23) now decode, see the test below.
 #[test]
 fn test_3656_get_tensor_f32_refuses_iq_and_tq_instead_of_approximating() {
-    for (id, name, blck, type_size) in IQ_AND_TQ {
+    let undecoded: Vec<_> = IQ_AND_TQ
+        .into_iter()
+        .filter(|(id, ..)| !DECODED_3947.contains(id))
+        .collect();
+    assert_eq!(undecoded.len(), IQ_AND_TQ.len() - DECODED_3947.len());
+    for (id, name, blck, type_size) in undecoded {
         let reader = one_tensor(&[blck as u64], id, &payload(type_size), 0);
         let err = reader
             .get_tensor_f32("t.weight")
@@ -198,4 +206,58 @@ fn test_3601_tensor_listing_accepts_a_correctly_sized_iq2_xxs_gguf() {
     assert_eq!(listing.tensors.len(), 1);
     assert_eq!(listing.tensors[0].dtype, "IQ2_XXS");
     assert_eq!(listing.tensors[0].size_bytes, 2 * 66);
+}
+
+/// #3947: the IQ ids with a real decoder (trueno_quant, bit-exact against gguf-py on
+/// every IQ tensor of the three #3947 release models).
+const DECODED_3947: [u32; 3] = [20, 21, 23];
+
+/// #3947: `get_tensor_f32` decodes IQ4_NL / IQ3_S / IQ4_XS through trueno_quant, reads
+/// exactly two blocks (the 0xEE tail after them must not reach the decoder), and
+/// reports the element count the header declared.
+#[test]
+fn test_3947_get_tensor_f32_decodes_iq4_nl_iq3_s_iq4_xs() {
+    for (id, name, blck, type_size) in IQ_AND_TQ
+        .into_iter()
+        .filter(|(id, ..)| DECODED_3947.contains(id))
+    {
+        let data = payload(2 * type_size);
+        let reader = one_tensor(&[2 * blck as u64], id, &data, type_size);
+        let (got, shape) = reader
+            .get_tensor_f32("t.weight")
+            .unwrap_or_else(|e| panic!("{name}: must decode, got {e}"));
+        let want = trueno_quant::dequantize_iq_to_f32(id, &data, 2 * blck).expect("two blocks");
+        assert_eq!(shape, vec![2 * blck], "{name}");
+        assert_eq!(got.len(), 2 * blck, "{name}");
+        assert!(
+            got.iter().zip(&want).all(|(a, b)| a.to_bits() == b.to_bits()),
+            "{name}: get_tensor_f32 disagrees with trueno_quant on the same bytes"
+        );
+        assert!(got.iter().all(|v| v.is_finite()), "{name}: non-finite value");
+    }
+}
+
+/// #3947 quorum (PR #3958): decoding is for inspection. The whole-model F32 loader, which
+/// `apr import`'s GH-375 fallback and `apr convert` use, still refuses IQ4_NL / IQ3_S /
+/// IQ4_XS, and not with a message that would re-trigger the GH-375 fallback.
+#[test]
+fn test_3947_whole_model_f32_load_still_refuses_decoded_iq_types() {
+    for (id, name, blck, type_size) in IQ_AND_TQ
+        .into_iter()
+        .filter(|(id, ..)| DECODED_3947.contains(id))
+    {
+        let reader = one_tensor(&[blck as u64], id, &payload(type_size), 0);
+        assert!(reader.get_tensor_f32("t.weight").is_ok(), "{name}: inspection must decode");
+        let err = reader
+            .get_all_tensors_f32()
+            .expect_err("whole-model F32 load must refuse an IQ type")
+            .to_string();
+        for needle in ["t.weight", name, &format!("ggml type {id}"), "inspection only"] {
+            assert!(err.contains(needle), "{name}: missing {needle:?} in: {err}");
+        }
+        assert!(
+            !err.contains("cannot represent exactly") && !err.contains("not yet supported"),
+            "{name}: must not read as a GH-375 fallback trigger: {err}"
+        );
+    }
 }

@@ -1,0 +1,108 @@
+{
+  "model": "/home/noah/models/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
+  "passed": false,
+  "gates": [
+    {
+      "name": "capability_match",
+      "passed": false,
+      "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run without --gpu to use the CPU path deliberately, or use a dense Q4_K model on the GPU. This is a refusal, not a fallback: nothing was loaded and nothing was generated.",
+      "value": 1.0,
+      "threshold": 0.0,
+      "duration_ms": 23986,
+      "skipped": false
+    },
+    {
+      "name": "tensor_contract",
+      "passed": true,
+      "message": "579 tensors passed all PMAT-235 contract gates",
+      "value": 579.0,
+      "threshold": 0.0,
+      "duration_ms": 138434,
+      "skipped": false
+    },
+    {
+      "name": "metadata_plausibility",
+      "passed": true,
+      "message": "4 metadata checks passed (arch=qwen3moe, rope_theta=none, max_pos=none)",
+      "value": 4.0,
+      "threshold": 0.0,
+      "duration_ms": 20188,
+      "skipped": false
+    },
+    {
+      "name": "classifier_head",
+      "passed": true,
+      "message": "Skipped: Not requested (use --assert-classifier-head)",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "golden_output",
+      "passed": true,
+      "message": "Skipped: Skipped due to capability match failure",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "throughput",
+      "passed": true,
+      "message": "Skipped: Skipped due to capability match failure",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "ollama_parity",
+      "passed": true,
+      "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "gpu_speedup",
+      "passed": true,
+      "message": "Skipped: The GPU backend declined this architecture; the CPU forward carries the report",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "format_parity",
+      "passed": true,
+      "message": "Skipped: Skipped due to capability match failure",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "ptx_parity",
+      "passed": true,
+      "message": "Skipped: The GPU backend declined this architecture; the CPU forward carries the report",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "gpu_state_isolation",
+      "passed": true,
+      "message": "Skipped: The GPU backend declined this architecture; the CPU forward carries the report",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "performance_regression",
+      "passed": true,
+      "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.json",
+      "value": 0.0,
+      "threshold": 0.1,
+      "duration_ms": 2,
+      "skipped": false
+    }
+  ],
+  "gates_executed": 4,
+  "gates_skipped": 8,
+  "total_duration_ms": 233981,
+  "timestamp": "2026-09-22T07:14:44.549706267+00:00",
+  "summary": "Failed gates: capability_match",
+  "system_info": {
+    "cpu_model": "AMD Ryzen Threadripper 7960X 24-Cores",
+    "gpu_model": "NVIDIA GeForce RTX 4090",
+    "gpu_driver": "580.119.02"
+  }
+}

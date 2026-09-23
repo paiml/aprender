@@ -444,3 +444,4 @@ async fn batch_processor_task(
 include!("batch_processing.rs");
 include!("batch.rs");
 include!("stream_generate.rs");
+include!("qwen35_raw_generate.rs");

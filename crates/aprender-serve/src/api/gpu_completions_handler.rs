@@ -43,7 +43,11 @@ fn try_gpu_completions(
     let gpu_config = GpuGenerateConfig {
         max_tokens,
         temperature,
-        top_k: 1,
+        // #3760: this was `top_k: 1`, which every loop reads as greedy, so a request
+        // `temperature` did nothing on the GpuModel completions path. The same rule
+        // the CPU completions handlers use; the request carries no top_k or seed.
+        top_k: if temperature == 0.0 { 1 } else { 40 },
+        seed: crate::sampling::DEFAULT_SEED,
         stop_tokens: Vec::new(),
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),
@@ -99,6 +103,8 @@ fn try_gpu_completions(
             completion_tokens,
             total_tokens: prompt_tokens + completion_tokens,
         },
+        // This arm records no backend (#3894).
+        used_gpu: None,
     }))
 }
 
@@ -188,6 +194,9 @@ fn try_apr_transformer_completions(
         completion_tokens,
         max_tokens,
         request.stop.as_deref(),
+        // The APR transformer arm reports no backend: nothing in its path records
+        // whether the generation ran on the accelerator (#3894).
+        None,
     )))
 }
 
@@ -264,6 +273,8 @@ fn registry_completions(
         completion_tokens,
         max_tokens,
         request.stop.as_deref(),
+        // The registry arm is the CPU fallback of last resort and records nothing.
+        None,
     ))
 }
 
@@ -305,6 +316,8 @@ async fn try_apr_q4k_completions(
             prompt_ids,
             max_tokens,
             temperature,
+            // #3786: the request seed reaches the APR Q4K sampler.
+            seed: crate::sampling::DEFAULT_SEED,
             eos_ids,
             cancel: cancel.clone(),
             response_tx,
@@ -335,6 +348,9 @@ async fn try_apr_q4k_completions(
         completion_tokens,
         max_tokens,
         request.stop.as_deref(),
+        // `AprQ4kResponse` carries output_tokens/tokens_generated/timings and NO
+        // backend flag, so this arm cannot report what ran (#3894).
+        None,
     )))
 }
 
@@ -429,6 +445,8 @@ async fn try_cuda_gguf_completions(
         completion_tokens,
         max_tokens,
         request.stop.as_deref(),
+        // The CUDA GGUF batch arm records no backend flag on its response.
+        None,
     )))
 }
 
@@ -523,8 +541,12 @@ async fn completions_inner(
         return Ok(r);
     }
 
+    // #3874 + the quantized arm, behind ONE branch. Both are ungated and both answer
+    // from a model already resident in `AppState`, so they belong together; folding
+    // them gives back the cognitive level the Qwen3.5 arm added to this function
+    // rather than leaving the chain one deeper than the ratchet's ceiling.
     if let Some(r) =
-        try_quantized_completions(&state, &request, max_tokens, temperature, start, &cancel)?
+        try_resident_completions(&state, &request, max_tokens, temperature, start, &cancel).await?
     {
         return Ok(r);
     }
@@ -566,7 +588,7 @@ async fn completions_inner(
         let config = QuantizedGenerateConfig {
             max_tokens: max_tokens.min(4096),
             temperature,
-            top_k: if temperature == 0.0 { 1 } else { 40 },
+            top_k: crate::infer::sampling_top_k(temperature, None),
             stop_tokens: vec![eos],
             ..Default::default()
         };
@@ -606,6 +628,8 @@ async fn completions_inner(
                 completion_tokens,
                 total_tokens: prompt_ids.len() + completion_tokens,
             },
+            // The inline CUDA block records no backend flag either (#3894).
+            used_gpu: None,
         });
     }
 
@@ -804,4 +828,30 @@ mod pmat795_finish_reason_tests {
         let stops = vec!["ZZZ".to_string()];
         assert_eq!(reason("abXc", Some(&stops), 256, 256), "length");
     }
+}
+
+include!("qwen35_completions_backend.rs");
+
+/// The two arms that answer from a model already resident in `AppState`, in order:
+/// the Qwen3.5 session (#3874), then the quantized dense model.
+///
+/// They are one function because they are one question — "is the model already
+/// loaded here?" — and because `completions_inner` is at the cognitive ceiling, so a
+/// seventh sibling `if let` there costs a level this does not.
+///
+/// `Ok(None)` when neither owns the request, so the caller's chain is unchanged.
+async fn try_resident_completions(
+    state: &AppState,
+    request: &CompletionRequest,
+    max_tokens: usize,
+    temperature: f32,
+    start: std::time::Instant,
+    cancel: &CancelToken,
+) -> Result<Option<CompletionResponse>, RErr> {
+    if let Some(r) =
+        try_qwen35_completions(state, request, max_tokens, temperature, start, cancel).await?
+    {
+        return Ok(Some(r));
+    }
+    try_quantized_completions(state, request, max_tokens, temperature, start, cancel)
 }

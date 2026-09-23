@@ -1,3 +1,42 @@
+/// APR-TRACE-001's prompt-token dump. Extracted from `generate_gguf_with_prompt`
+/// (#3844) to bring its cognitive complexity under the ratchet's ceiling of 25: a
+/// two-`eprintln!` debug block with its own slice arithmetic, inside a function whose
+/// job is generation. A no-op unless `--trace` is on.
+fn trace_prompt_tokens(trace: bool, model: &realizar::gguf::GGUFModel, prompt_tokens: &[u32]) {
+    if !trace {
+        return;
+    }
+    let prompt_len = prompt_tokens.len();
+    eprintln!(
+        "[APR-TRACE] Prompt tokens ({} tokens): {:?}",
+        prompt_len,
+        &prompt_tokens[..prompt_len.min(50)]
+    );
+    let decoded = model.decode(prompt_tokens);
+    eprintln!(
+        "[APR-TRACE] Decoded: {:?}",
+        crate::commands::log_head(&decoded, 200)
+    );
+}
+
+/// APR-TRACE-001's generated-token dump. Extracted from `generate_gguf_with_prompt`
+/// (#3844): a `for` nested inside an `if`, purely for tracing, in the middle of the
+/// generation path. A no-op unless `--trace` is on.
+fn trace_generated_tokens(trace: bool, model: &realizar::gguf::GGUFModel, new_tokens: &[u32]) {
+    if !trace {
+        return;
+    }
+    eprintln!(
+        "[APR-TRACE] Generated {} new tokens: {:?}",
+        new_tokens.len(),
+        &new_tokens[..new_tokens.len().min(50)]
+    );
+    for (i, &tok) in new_tokens.iter().take(20).enumerate() {
+        let decoded = model.decode(&[tok]);
+        eprintln!("[APR-TRACE] Token {}: {} -> {:?}", i, tok, decoded);
+    }
+}
+
 impl ChatSession {
 
         pub(super) fn generate(&mut self, user_input: &str, config: &ChatConfig) -> String {
@@ -60,10 +99,35 @@ impl ChatSession {
             messages.extend(self.history.iter().cloned());
             messages.push(ChatMessage::user(user_input));
 
-            let formatted_prompt = self
-                .chat_template
-                .format_conversation(&messages)
-                .map_err(|e| format!("[Template error: {}]", e))?;
+            // #3990: a GGUF carrying its OWN tokenizer.chat_template is rendered with it -- the same
+            // renderer and fallback rule `apr run` uses (realizar::chat_template::official_or_legacy).
+            // #3723: `--thinking` is its `enable_thinking`; `on` with no thinking mode is refused.
+            let own = self
+                .cached_gguf_mapped
+                .as_ref()
+                .filter(|m| m.model.metadata.contains_key("tokenizer.chat_template"))
+                .map(|m| {
+                    let msgs = &messages;
+                    move |t: Option<bool>| {
+                        realizar::chat_template::render_official_for_model(&m.model, msgs, t)
+                    }
+                });
+            let legacy_err = std::cell::RefCell::new(None);
+            let formatted_prompt = realizar::chat_template::official_or_legacy(
+                own,
+                || match self.chat_template.format_conversation(&messages) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        *legacy_err.borrow_mut() = Some(e.to_string());
+                        String::new()
+                    }
+                },
+                config.thinking,
+            )
+            .map_err(|e| format!("[Template error: {}]", e))?;
+            if let Some(e) = legacy_err.into_inner() {
+                return Err(format!("[Template error: {}]", e));
+            }
 
             if config.trace {
                 eprintln!(
@@ -72,7 +136,7 @@ impl ChatSession {
                 );
                 eprintln!(
                     "[APR-TRACE] {:?}",
-                    &formatted_prompt[..formatted_prompt.len().min(500)]
+                    crate::commands::log_head(&formatted_prompt, 500)
                 );
             }
 
@@ -211,18 +275,7 @@ impl ChatSession {
             let prompt_len = prompt_tokens.len();
 
             // APR-TRACE-001: Debug token IDs
-            if config.trace {
-                eprintln!(
-                    "[APR-TRACE] Prompt tokens ({} tokens): {:?}",
-                    prompt_len,
-                    &prompt_tokens[..prompt_len.min(50)]
-                );
-                let decoded = mapped.model.decode(&prompt_tokens);
-                eprintln!(
-                    "[APR-TRACE] Decoded: {:?}",
-                    &decoded[..decoded.len().min(200)]
-                );
-            }
+            trace_prompt_tokens(config.trace, &mapped.model, &prompt_tokens);
 
             // C-06 (Meyer DbC): EOS from GGUF metadata, not hardcoded.
             let stop_tokens = mapped
@@ -234,11 +287,59 @@ impl ChatSession {
             let gen_config = QuantizedGenerateConfig {
                 max_tokens: config.max_tokens,
                 temperature: config.temperature,
-                top_k: 40,
+                top_k: realizar::infer::sampling_top_k(config.temperature, None),
                 stop_tokens,
                 trace: config.trace,
                 ..Default::default()
             };
+
+            // #3595: the Qwen3.5 hybrid is resident — built, uploaded and validated once
+            // at load, its decode state carried from the last turn, so a turn prefills
+            // only what the history added since.
+            if let Some(session) = self.qwen35_session.as_mut() {
+                let turn = session
+                    .generate(&prompt_tokens, &gen_config, &mut |_| true)
+                    .map_err(|e| format!("Qwen3.5 generate failed: {e}"))?;
+                if config.trace {
+                    eprintln!(
+                        "[APR-TRACE] qwen35 session: {} prompt tokens reused, {} prefilled, {} generated on the {}",
+                        turn.reused,
+                        prompt_len - turn.reused,
+                        turn.tokens.len() - prompt_len,
+                        if turn.used_gpu { "GPU" } else { "CPU" }
+                    );
+                }
+                if turn.context_capped {
+                    eprintln!(
+                        "[the reply stopped at the model's declared context of {} tokens; /clear starts a new conversation]",
+                        session.context_length()
+                    );
+                }
+                return Ok(mapped.model.decode(&turn.tokens[prompt_len..]));
+            }
+
+            // #3987: qwen3moe is served by the ONE dispatch `apr run` uses (#3714), never the
+            // dense model (it has no dense FFN). The dispatch tries CUDA unless --no-gpu, prints
+            // its reason if the GPU cannot serve, and reports which backend ran -- which is what
+            // the chat envelope then says. Per turn it reprocesses the whole history: correct,
+            // not fast (no cross-turn KV reuse), accepted for 0.69.1.
+            if is_qwen3_moe_gguf(mapped) {
+                let model = OwnedQuantizedModel::from_mapped(mapped)
+                    .map_err(|e| format!("Failed to create GGUF model: {e}"))?;
+                let (output_tokens, used_gpu) =
+                    realizar::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
+                        mapped,
+                        &model,
+                        &prompt_tokens,
+                        &gen_config,
+                        config.force_cpu,
+                    )
+                    .map_err(|e| format!("qwen3moe generate failed: {e}"))?;
+                self.generated_on_gpu = used_gpu;
+                let new_tokens = output_tokens.get(prompt_len..).unwrap_or(&[]);
+                trace_generated_tokens(config.trace, &mapped.model, new_tokens);
+                return Ok(mapped.model.decode(new_tokens));
+            }
 
             // GH-224: Try cached CUDA model first (no re-upload)
             #[cfg(feature = "cuda")]
@@ -247,6 +348,8 @@ impl ChatSession {
                     let output_tokens = cuda_model
                         .generate_gpu_resident(&prompt_tokens, &gen_config)
                         .map_err(|e| format!("CUDA generate failed: {e}"))?;
+                    // #3794: record the backend that actually answered.
+                    self.generated_on_gpu = true;
 
                     let new_tokens = if output_tokens.len() > prompt_len {
                         &output_tokens[prompt_len..]
@@ -254,17 +357,7 @@ impl ChatSession {
                         &output_tokens[..]
                     };
 
-                    if config.trace {
-                        eprintln!(
-                            "[APR-TRACE] Generated {} new tokens: {:?}",
-                            new_tokens.len(),
-                            &new_tokens[..new_tokens.len().min(50)]
-                        );
-                        for (i, &tok) in new_tokens.iter().take(20).enumerate() {
-                            let decoded = mapped.model.decode(&[tok]);
-                            eprintln!("[APR-TRACE] Token {}: {} -> {:?}", i, tok, decoded);
-                        }
-                    }
+                    trace_generated_tokens(config.trace, &mapped.model, new_tokens);
 
                     return Ok(mapped.model.decode(new_tokens));
                 }
@@ -283,14 +376,12 @@ impl ChatSession {
             Ok(decoded)
         }
 
-        /// Generation for one GGUF chat turn that the cached dense CUDA model did not serve:
-        /// the Qwen3.5 hybrid forward, which the dense `OwnedQuantizedModel` loader refuses,
-        /// or the dense CPU model. Returns the prompt followed by the generated tokens.
+        /// Generation for one dense GGUF chat turn that the cached dense CUDA model did not
+        /// serve. Returns the prompt followed by the generated tokens.
         ///
-        /// #3477: the hybrid branch goes through the same serve entry point `apr run` uses
-        /// (`run_qwen35_generate_dispatch`), so `apr chat` without `--cpu` gets the GPU
-        /// forward (#3090) and its fallbacks are printed by the runtime, not re-implemented
-        /// here. `force_cpu` is the chat spelling of `--no-gpu`.
+        /// The Qwen3.5 hybrid never reaches here: it is served by the session built at load
+        /// (#3595). It used to be served HERE, by `run_qwen35_generate_dispatch` — which
+        /// builds, uploads and validates the model for one call — on every turn.
         fn generate_gguf_cpu_tokens(
             mapped: &realizar::gguf::MappedGGUFModel,
             prompt_tokens: &[u32],
@@ -298,25 +389,6 @@ impl ChatSession {
             config: &ChatConfig,
         ) -> Result<Vec<u32>, String> {
             use realizar::gguf::OwnedQuantizedModel;
-
-            if realizar::gguf::hybrid_forward_handles(
-                mapped.model.architecture().unwrap_or_default(),
-            ) {
-                let base = realizar::gguf::forward_qwen35::Qwen35Model::create_base_model(
-                    &mapped.model,
-                    mapped.data(),
-                )
-                .map_err(|e| format!("Failed to load the Qwen3.5 base model: {e}"))?;
-                return realizar::gguf::forward_qwen35::run_qwen35_generate_dispatch(
-                    mapped,
-                    &base,
-                    prompt_tokens,
-                    gen_config,
-                    config.force_cpu,
-                )
-                .map(|(tokens, _used_gpu)| tokens)
-                .map_err(|e| format!("Qwen3.5 generate failed: {e}"));
-            }
 
                 // CPU path — create fresh OwnedQuantizedModel from cached or fresh mapped
                 let model = OwnedQuantizedModel::from_mapped(mapped)
@@ -375,8 +447,20 @@ impl ChatSession {
             if !config.force_cpu && !self.cuda_init_failed {
                 if let Some(ref mut cuda_model) = self.cached_apr_cuda {
                     let max_tokens = config.max_tokens;
+                    // #3794: record the backend that actually answered.
+                    self.generated_on_gpu = true;
+                    // #3922: the fused path's API. `generate_cuda_with_cache` belonged
+                    // to `AprV2ModelCuda`; this is what `run` and `bench` call, and it
+                    // resets its own KV cache per generation (cache.rs:340, GH-260) —
+                    // which is why routing costs nothing per turn: there was never any
+                    // cross-turn KV reuse to lose.
+                    let gen_config = realizar::gguf::QuantizedGenerateConfig {
+                        max_tokens,
+                        stop_tokens: if eos_token_id == 0 { vec![] } else { vec![eos_token_id] },
+                        ..Default::default()
+                    };
                     return cuda_model
-                        .generate_cuda_with_cache(prompt, max_tokens, eos_token_id)
+                        .generate_gpu_resident(prompt, &gen_config)
                         .map_err(|e| format!("APR CUDA generate failed: {e}"));
                 }
             }
@@ -395,7 +479,7 @@ impl ChatSession {
                 max_tokens: config.max_tokens,
                 temperature: config.temperature,
                 top_p: config.top_p,
-                top_k: if config.temperature == 0.0 { 1 } else { 40 },
+                top_k: realizar::infer::sampling_top_k(config.temperature, None),
                 trace: config.trace,
                 ..Default::default()
             };
@@ -480,7 +564,7 @@ impl ChatSession {
             let gen_config = QuantizedGenerateConfig {
                 max_tokens: practical_max,
                 temperature: config.temperature,
-                top_k: 40,
+                top_k: realizar::infer::sampling_top_k(config.temperature, None),
                 stop_tokens,
                 trace: config.trace,
                 ..Default::default()

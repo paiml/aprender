@@ -21,11 +21,7 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("batched_q6k_gemv_{}_{}_{}", m, k, n);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -110,11 +106,7 @@ impl CudaExecutor {
         let cache_key = format!("q6k_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -185,11 +177,7 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("mwv_q6k_gemv_{}_{}_{}", k, n, num_warps);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -282,11 +270,7 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("dp4a_q6k_gemv_{}_{}_{}", k, n, num_warps);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -375,11 +359,7 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("hw_dp4a_q6k_gemv_{}_{}_{}", k, n, num_warps);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -456,11 +436,7 @@ impl CudaExecutor {
         let cache_key = format!("coalesced_q6k_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -522,11 +498,7 @@ impl CudaExecutor {
         let cache_key = format!("q8_0_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -599,11 +571,7 @@ impl CudaExecutor {
         let cache_key = format!("q5_0_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -676,11 +644,7 @@ impl CudaExecutor {
         let cache_key = format!("q4_0_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -745,11 +709,7 @@ impl CudaExecutor {
         let cache_key = format!("f32_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -779,6 +739,667 @@ impl CudaExecutor {
         }
 
         // trueno#243: Record kernel for manual graph construction
+        if self.graph_recording {
+            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let func = module.get_function(kernel_name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: vec![ptr_output, ptr_weights, ptr_input, k_val as u64, n_val as u64],
+            });
+        }
+
+        Ok(())
+    }
+
+    /// #3477: Execute IQ4_XS GEMV into an existing buffer (zero-allocation, async).
+    ///
+    /// CONTRACT: `weight_ptr` points at `N * ceil(K/256)` super-blocks of 136
+    /// bytes, ROW-MAJOR — row `i` starts at `weight_ptr + i * nb * 136`.
+    /// LAYOUT-001 applies exactly as for every other GEMV here.
+    ///
+    /// The block layout is a port of `quantize::iq4_xs::dequantize_iq4_xs_block`,
+    /// which is itself checked against llama.cpp and gguf-py. That function is
+    /// the oracle: a disagreement is this kernel's bug.
+    pub fn iq4_xs_gemv_into(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        validate_device_ptr(weight_ptr, "iq4_xs_gemv_into")?;
+        let kernel_type = KernelType::Iq4XsGemv { k, n };
+        let kernel_name = self.kernels.kernel_name(&kernel_type);
+        let cache_key = format!("iq4_xs_gemv_{}_{}", k, n);
+        let config = LaunchConfig::grid_2d(n, 1, 32, 1);
+
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
+
+        let module = self
+            .modules
+            .get_mut(&cache_key)
+            .expect("module just inserted");
+
+        let mut ptr_output = output.as_ptr();
+        let mut ptr_weights = weight_ptr;
+        let mut ptr_input = input.as_ptr();
+        let mut k_val = k;
+        let mut n_val = n;
+
+        // SAFETY: pointers validated above; params match the PTX entry signature.
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                kernel_name,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_weights) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_input) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
+        if self.graph_recording {
+            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let func = module.get_function(kernel_name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: vec![ptr_output, ptr_weights, ptr_input, k_val as u64, n_val as u64],
+            });
+        }
+
+        Ok(())
+    }
+
+    /// #3869: Execute IQ4_NL GEMV into an existing buffer (zero-allocation, async).
+    ///
+    /// CONTRACT: `weight_ptr` points at `N * ceil(K/32)` blocks of **18** bytes,
+    /// ROW-MAJOR - row `i` starts at `weight_ptr + i * nb * 18`. Note the 32,
+    /// not 256: IQ4_NL is the one type here whose block is not a super-block.
+    /// LAYOUT-001 applies exactly as for every other GEMV in this file.
+    ///
+    /// The block layout is a port of `quantize::iq4_nl::dequantize_iq4_nl_block`,
+    /// which is checked against llama.cpp's `dequantize_row_iq4_nl` and, more
+    /// usefully, against the independently transcribed IQ4_XS decoder. That
+    /// function is the oracle: a disagreement is this kernel's bug.
+    pub fn iq4_nl_gemv_into(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        validate_device_ptr(weight_ptr, "iq4_nl_gemv_into")?;
+        let kernel_type = KernelType::Iq4NlGemv { k, n };
+        let kernel_name = self.kernels.kernel_name(&kernel_type);
+        let cache_key = format!("iq4_nl_gemv_{}_{}", k, n);
+        let config = LaunchConfig::grid_2d(n, 1, 32, 1);
+
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
+
+        let module = self
+            .modules
+            .get_mut(&cache_key)
+            .expect("module just inserted");
+
+        let mut ptr_output = output.as_ptr();
+        let mut ptr_weights = weight_ptr;
+        let mut ptr_input = input.as_ptr();
+        let mut k_val = k;
+        let mut n_val = n;
+
+        // SAFETY: pointers validated above; params match the PTX entry signature.
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                kernel_name,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_weights) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_input) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
+        if self.graph_recording {
+            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let func = module.get_function(kernel_name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: vec![ptr_output, ptr_weights, ptr_input, k_val as u64, n_val as u64],
+            });
+        }
+
+        Ok(())
+    }
+
+    /// #3884: Execute IQ3_S GEMV into an existing buffer (zero-allocation, async).
+    ///
+    /// CONTRACT: `weight_ptr` points at `N * ceil(K/256)` super-blocks of 110
+    /// bytes, ROW-MAJOR - row `i` starts at `weight_ptr + i * nb * 110`.
+    /// LAYOUT-001 applies as for every other GEMV in this file.
+    ///
+    /// The block layout is a port of `quantize::iq3_s::dequantize_iq3_s_block`,
+    /// itself checked against llama.cpp and gguf-py. That function is the
+    /// oracle: a disagreement is this kernel's bug.
+    pub fn iq3_s_gemv_into(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        validate_device_ptr(weight_ptr, "iq3_s_gemv_into")?;
+        let kernel_type = KernelType::Iq3SGemv { k, n };
+        let kernel_name = self.kernels.kernel_name(&kernel_type);
+        let cache_key = format!("iq3_s_gemv_{}_{}", k, n);
+        let config = LaunchConfig::grid_2d(n, 1, 32, 1);
+
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
+
+        let module = self
+            .modules
+            .get_mut(&cache_key)
+            .expect("module just inserted");
+
+        let mut ptr_output = output.as_ptr();
+        let mut ptr_weights = weight_ptr;
+        let mut ptr_input = input.as_ptr();
+        let mut k_val = k;
+        let mut n_val = n;
+
+        // SAFETY: pointers validated above; params match the PTX entry signature.
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                kernel_name,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_weights) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_input) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
+        if self.graph_recording {
+            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let func = module.get_function(kernel_name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: vec![ptr_output, ptr_weights, ptr_input, k_val as u64, n_val as u64],
+            });
+        }
+
+        Ok(())
+    }
+
+    /// #3960: Execute Q2_K GEMV into an existing buffer (zero-allocation, async).
+    ///
+    /// CONTRACT: `weight_ptr` points at `N * ceil(K/256)` super-blocks of 84
+    /// bytes, ROW-MAJOR - row `i` starts at `weight_ptr + i * nb * 84`.
+    /// LAYOUT-001 applies as for every other GEMV in this file.
+    ///
+    /// The block layout is a port of `quantize::dequant::dequantize_q2_k` (proven bitwise against gguf-py, #3960),
+    /// itself checked against llama.cpp and gguf-py. That function is the
+    /// oracle: a disagreement is this kernel's bug.
+    pub fn q2_k_gemv_into(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        validate_device_ptr(weight_ptr, "q2_k_gemv_into")?;
+        let kernel_type = KernelType::Q2KGemv { k, n };
+        let kernel_name = self.kernels.kernel_name(&kernel_type);
+        let cache_key = format!("q2_k_gemv_{}_{}", k, n);
+        let config = LaunchConfig::grid_2d(n, 1, 32, 1);
+
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
+
+        let module = self
+            .modules
+            .get_mut(&cache_key)
+            .expect("module just inserted");
+
+        let mut ptr_output = output.as_ptr();
+        let mut ptr_weights = weight_ptr;
+        let mut ptr_input = input.as_ptr();
+        let mut k_val = k;
+        let mut n_val = n;
+
+        // SAFETY: pointers validated above; params match the PTX entry signature.
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                kernel_name,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_weights) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_input) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
+        if self.graph_recording {
+            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let func = module.get_function(kernel_name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: vec![ptr_output, ptr_weights, ptr_input, k_val as u64, n_val as u64],
+            });
+        }
+
+        Ok(())
+    }
+
+    /// #3931: Execute IQ2_XXS GEMV into an existing buffer (zero-allocation, async).
+    ///
+    /// CONTRACT: `weight_ptr` points at `N * ceil(K/256)` super-blocks of 66
+    /// bytes, ROW-MAJOR - row `i` starts at `weight_ptr + i * nb * 66`.
+    /// LAYOUT-001 applies as for every other GEMV in this file.
+    ///
+    /// The block layout is a port of `quantize::iq2_xxs::dequantize_iq2_xxs_block`,
+    /// itself checked against llama.cpp and gguf-py. That function is the
+    /// oracle: a disagreement is this kernel's bug.
+    pub fn iq2_xxs_gemv_into(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        validate_device_ptr(weight_ptr, "iq2_xxs_gemv_into")?;
+        let kernel_type = KernelType::Iq2XxsGemv { k, n };
+        let kernel_name = self.kernels.kernel_name(&kernel_type);
+        let cache_key = format!("iq2_xxs_gemv_{}_{}", k, n);
+        let config = LaunchConfig::grid_2d(n, 1, 32, 1);
+
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
+
+        let module = self
+            .modules
+            .get_mut(&cache_key)
+            .expect("module just inserted");
+
+        let mut ptr_output = output.as_ptr();
+        let mut ptr_weights = weight_ptr;
+        let mut ptr_input = input.as_ptr();
+        let mut k_val = k;
+        let mut n_val = n;
+
+        // SAFETY: pointers validated above; params match the PTX entry signature.
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                kernel_name,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_weights) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_input) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
+        if self.graph_recording {
+            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let func = module.get_function(kernel_name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: vec![ptr_output, ptr_weights, ptr_input, k_val as u64, n_val as u64],
+            });
+        }
+
+        Ok(())
+    }
+
+    /// #3953: Execute IQ2_S GEMV into an existing buffer (zero-allocation, async).
+    ///
+    /// CONTRACT: `weight_ptr` points at `N * ceil(K/256)` super-blocks of 82
+    /// bytes, ROW-MAJOR - row `i` starts at `weight_ptr + i * nb * 82`.
+    /// LAYOUT-001 applies as for every other GEMV in this file.
+    ///
+    /// The block layout is a port of `quantize::iq2_s::dequantize_iq2_s_block`,
+    /// itself checked against llama.cpp and gguf-py. That function is the
+    /// oracle: a disagreement is this kernel's bug.
+    pub fn iq2_s_gemv_into(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        validate_device_ptr(weight_ptr, "iq2_s_gemv_into")?;
+        let kernel_type = KernelType::Iq2SGemv { k, n };
+        let kernel_name = self.kernels.kernel_name(&kernel_type);
+        let cache_key = format!("iq2_s_gemv_{}_{}", k, n);
+        let config = LaunchConfig::grid_2d(n, 1, 32, 1);
+
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
+
+        let module = self
+            .modules
+            .get_mut(&cache_key)
+            .expect("module just inserted");
+
+        let mut ptr_output = output.as_ptr();
+        let mut ptr_weights = weight_ptr;
+        let mut ptr_input = input.as_ptr();
+        let mut k_val = k;
+        let mut n_val = n;
+
+        // SAFETY: pointers validated above; params match the PTX entry signature.
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                kernel_name,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_weights) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_input) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
+        if self.graph_recording {
+            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let func = module.get_function(kernel_name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: vec![ptr_output, ptr_weights, ptr_input, k_val as u64, n_val as u64],
+            });
+        }
+
+        Ok(())
+    }
+
+    /// #3963: Execute IQ3_XXS GEMV into an existing buffer (zero-allocation, async).
+    ///
+    /// CONTRACT: `weight_ptr` points at `N * ceil(K/256)` super-blocks of 98
+    /// bytes, ROW-MAJOR - row `i` starts at `weight_ptr + i * nb * 98`.
+    /// LAYOUT-001 applies as for every other GEMV in this file.
+    ///
+    /// The block layout is a port of `quantize::iq3_xxs::dequantize_iq3_xxs_block`,
+    /// itself checked against llama.cpp and gguf-py. That function is the
+    /// oracle: a disagreement is this kernel's bug.
+    pub fn iq3_xxs_gemv_into(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        validate_device_ptr(weight_ptr, "iq3_xxs_gemv_into")?;
+        let kernel_type = KernelType::Iq3XxsGemv { k, n };
+        let kernel_name = self.kernels.kernel_name(&kernel_type);
+        let cache_key = format!("iq3_xxs_gemv_{}_{}", k, n);
+        let config = LaunchConfig::grid_2d(n, 1, 32, 1);
+
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
+
+        let module = self
+            .modules
+            .get_mut(&cache_key)
+            .expect("module just inserted");
+
+        let mut ptr_output = output.as_ptr();
+        let mut ptr_weights = weight_ptr;
+        let mut ptr_input = input.as_ptr();
+        let mut k_val = k;
+        let mut n_val = n;
+
+        // SAFETY: pointers validated above; params match the PTX entry signature.
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                kernel_name,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_weights) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_input) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
+        if self.graph_recording {
+            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let func = module.get_function(kernel_name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: vec![ptr_output, ptr_weights, ptr_input, k_val as u64, n_val as u64],
+            });
+        }
+
+        Ok(())
+    }
+
+    /// #3885: Execute Q5_1 GEMV into an existing buffer (zero-allocation, async).
+    ///
+    /// CONTRACT: `weight_ptr` points at `N * ceil(K/32)` blocks of 24 bytes,
+    /// ROW-MAJOR - row `i` starts at `weight_ptr + i * nb * 24`.
+    ///
+    /// AFFINE: `w = q * d + m`. The per-block min is added after scaling, so a
+    /// kernel that drops it gives the right spread around the wrong centre.
+    /// Oracle is `quantize::dequantize_q5_1`, verified against llama.cpp's
+    /// `dequantize_row_q5_1` line by line in #3869.
+    pub fn q5_1_gemv_into(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        validate_device_ptr(weight_ptr, "q5_1_gemv_into")?;
+        let kernel_type = KernelType::Q5_1Gemv { k, n };
+        let kernel_name = self.kernels.kernel_name(&kernel_type);
+        let cache_key = format!("q5_1_gemv_{}_{}", k, n);
+        let config = LaunchConfig::grid_2d(n, 1, 32, 1);
+
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
+
+        let module = self
+            .modules
+            .get_mut(&cache_key)
+            .expect("module just inserted");
+
+        let mut ptr_output = output.as_ptr();
+        let mut ptr_weights = weight_ptr;
+        let mut ptr_input = input.as_ptr();
+        let mut k_val = k;
+        let mut n_val = n;
+
+        // SAFETY: pointers validated above; params match the PTX entry signature.
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                kernel_name,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_weights) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_input) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
+        if self.graph_recording {
+            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let func = module.get_function(kernel_name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: vec![ptr_output, ptr_weights, ptr_input, k_val as u64, n_val as u64],
+            });
+        }
+
+        Ok(())
+    }
+
+    /// #3477: Execute F16 GEMV into an existing buffer (zero-allocation, async).
+    ///
+    /// CONTRACT: `weight_ptr` points at N*K f16 values, 2 bytes each, ROW-MAJOR —
+    /// row `i` starts at `weight_ptr + i * K * 2`. LAYOUT-001: GGUF/APR data is
+    /// row-major here and there is no transpose on this path; the `*_colmajor`
+    /// kernels are forbidden for it.
+    ///
+    /// `Qwen3.5-4B-UD-Q4_K_XL` stores `ssm_alpha`/`ssm_beta` as F16. Without this
+    /// the hybrid refused the whole model to CPU, because `from_ggml_type(1)`
+    /// returned `None` and `hybrid_gpu_unsupported_quant_tensor` named
+    /// `blk.0.ssm_alpha` first.
+    pub fn f16_gemv_into(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        validate_device_ptr(weight_ptr, "f16_gemv_into")?;
+        let kernel_type = KernelType::F16Gemv { k, n };
+        let kernel_name = self.kernels.kernel_name(&kernel_type);
+        let cache_key = format!("f16_gemv_{}_{}", k, n);
+        // One warp per output row, exactly as every block-quantized GEMV here.
+        let config = LaunchConfig::grid_2d(n, 1, 32, 1);
+
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
+
+        let module = self
+            .modules
+            .get_mut(&cache_key)
+            .expect("module just inserted");
+
+        let mut ptr_output = output.as_ptr();
+        let mut ptr_weights = weight_ptr;
+        let mut ptr_input = input.as_ptr();
+        let mut k_val = k;
+        let mut n_val = n;
+
+        // SAFETY: pointers validated above; params match the PTX entry signature
+        // (y, w, x, k_dim, n_dim).
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                kernel_name,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_weights) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_input) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
+        if self.graph_recording {
+            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let func = module.get_function(kernel_name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: vec![ptr_output, ptr_weights, ptr_input, k_val as u64, n_val as u64],
+            });
+        }
+
+        Ok(())
+    }
+
+    /// #3908: Execute BF16 GEMV into an existing buffer (zero-allocation, async).
+    ///
+    /// CONTRACT: `weight_ptr` points at N*K bf16 values, 2 bytes each, ROW-MAJOR
+    /// -- row `i` starts at `weight_ptr + i * K * 2`. LAYOUT-001: identical to
+    /// [`Self::f16_gemv_into`] above, which is the point: BF16 and F16 are the
+    /// same 2-bytes-per-element row-major layout, so the indexing is inherited
+    /// rather than re-derived, and the `*_colmajor` kernels stay forbidden.
+    ///
+    /// `qwen2.5-coder-0.5b-instruct.apr` is 290 BF16 tensors + 1 F32. Before this,
+    /// `from_ggml_type(30)` returned `None`, so the .apr CUDA loader declined the
+    /// model, wgpu failed on type 30, CPU ran, and the forced-GPU refusal
+    /// (R-0b, #3002) correctly reported rc=14 rather than calling it success.
+    pub fn bf16_gemv_into(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        validate_device_ptr(weight_ptr, "bf16_gemv_into")?;
+        let kernel_type = KernelType::Bf16Gemv { k, n };
+        let kernel_name = self.kernels.kernel_name(&kernel_type);
+        let cache_key = format!("bf16_gemv_{}_{}", k, n);
+        // One warp per output row, exactly as every block-quantized GEMV here.
+        let config = LaunchConfig::grid_2d(n, 1, 32, 1);
+
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
+
+        let module = self
+            .modules
+            .get_mut(&cache_key)
+            .expect("module just inserted");
+
+        let mut ptr_output = output.as_ptr();
+        let mut ptr_weights = weight_ptr;
+        let mut ptr_input = input.as_ptr();
+        let mut k_val = k;
+        let mut n_val = n;
+
+        // SAFETY: pointers validated above; params match the PTX entry signature
+        // (y, w, x, k_dim, n_dim).
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                kernel_name,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_weights) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_input) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
         if self.graph_recording {
             let module = self.modules.get_mut(&cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;

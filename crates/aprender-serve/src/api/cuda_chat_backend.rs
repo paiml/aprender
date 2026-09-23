@@ -8,6 +8,10 @@ fn try_safetensors_cuda_backend(
     start: Instant,
     cancel: &CancelToken,
 ) -> Option<Response> {
+    // Residency FIRST: this backend is tried before the CPU quantized one, so a
+    // refusal ahead of the `?` refused `ignore_eos` for every model in a cuda
+    // build, not just SafeTensors CUDA ones (aprender#3956).
+    let model_lock = state.safetensors_cuda_model()?;
     // PERF-039: fail closed rather than silently dropping `ignore_eos`.
     if let Some(r) = super::openai_handlers::reject_unsupported_ignore_eos(
         state,
@@ -16,13 +20,22 @@ fn try_safetensors_cuda_backend(
     ) {
         return Some(r);
     }
-    let model_lock = state.safetensors_cuda_model()?;
     let tokenizer = match require_tokenizer(state) {
         Ok(t) => t,
         Err(r) => return Some(r),
     };
 
-    let prompt = crate::api::realize_handlers::format_chat_messages(&request.messages, Some(&request.model));
+    // #4007: the loaded model's architecture, not the client's `model` string.
+    // #3723: the request's thinking mode; an ON the template cannot express is refused by name.
+    let prompt = match crate::api::realize_handlers::format_chat_messages_for_state_thinking(
+        state,
+        &request.messages,
+        Some(&request.model),
+        request.thinking(),
+    ) {
+        Ok(p) => p,
+        Err(e) => return Some(fail_response(state, StatusCode::BAD_REQUEST, e.to_string())),
+    };
     let input_ids = tokenizer.encode(&prompt);
     let max_tokens = request.max_tokens.unwrap_or(256).min(4096) as usize;
 
@@ -106,7 +119,7 @@ async fn try_cuda_backend(
     // GH-319: Use actual model architecture for chat template detection
     let arch_hint = state.model_architecture();
     let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
+        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state) {
             Ok(ids) => ids,
             Err(r) => return Some(r),
         };
@@ -263,6 +276,7 @@ async fn try_cuda_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         timings,
+        None,
     ))
 }
 
@@ -304,7 +318,7 @@ fn try_quantized_backend(
     // GH-319: Use actual model architecture for chat template detection
     let arch_hint = state.model_architecture();
     let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
+        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state) {
             Ok(ids) => ids,
             Err(r) => return Some(r),
         };
@@ -392,6 +406,7 @@ fn try_quantized_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
+        None,
     ))
 }
 
@@ -421,6 +436,8 @@ fn try_apr_transformer_backend(
 ) -> Option<Response> {
     use crate::apr_transformer::GenerateConfig;
 
+    // Residency first, as in `try_safetensors_cuda_backend` (aprender#3956).
+    let apr_transformer = state.apr_transformer()?;
     // PERF-039: fail closed rather than silently dropping `ignore_eos`.
     if let Some(r) = super::openai_handlers::reject_unsupported_ignore_eos(
         state,
@@ -429,15 +446,13 @@ fn try_apr_transformer_backend(
     ) {
         return Some(r);
     }
-
-    let apr_transformer = state.apr_transformer()?;
     let tokenizer = match require_tokenizer(state) {
         Ok(t) => t,
         Err(r) => return Some(r),
     };
     let arch_hint = state.model_architecture();
     let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
+        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state) {
             Ok(ids) => ids,
             Err(r) => return Some(r),
         };
@@ -500,6 +515,7 @@ fn try_apr_transformer_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
+        None,
     ))
 }
 
@@ -559,7 +575,15 @@ fn registry_fallback(
         Err(e) => return fail_response(state, super::model_resolution_status(&e), e),
     };
 
-    let prompt_text = format_chat_messages(&request.messages, Some(&request.model));
+    let prompt_text = match crate::api::realize_handlers::format_chat_messages_for_state_thinking(
+        state,
+        &request.messages,
+        Some(&request.model),
+        request.thinking(),
+    ) {
+        Ok(p) => p,
+        Err(e) => return fail_response(state, StatusCode::BAD_REQUEST, e.to_string()),
+    };
     let prompt_ids = tokenizer.encode(&prompt_text);
     if prompt_ids.is_empty() {
         return fail_response(state, StatusCode::BAD_REQUEST, "Messages cannot be empty");
@@ -618,6 +642,7 @@ fn registry_fallback(
         duration,
         request.tools.as_deref(),
         request_tool_choice(request),
+        None,
         None,
     )
 }
@@ -706,7 +731,7 @@ async fn try_apr_q4k_chat_backend(
     };
     let arch_hint = state.model_architecture();
     let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
+        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state) {
             Ok(ids) => ids,
             Err(r) => return Some(r),
         };
@@ -727,6 +752,8 @@ async fn try_apr_q4k_chat_backend(
             prompt_ids,
             max_tokens,
             temperature,
+            // #3786: the request seed reaches the APR Q4K sampler.
+            seed: request.seed.unwrap_or(crate::sampling::DEFAULT_SEED),
             eos_ids,
             cancel: cancel.clone(),
             response_tx,
@@ -791,6 +818,7 @@ async fn try_apr_q4k_chat_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
+        None,
     ))
 }
 
@@ -828,6 +856,16 @@ pub async fn openai_chat_completions_handler(
             .unwrap_or_default()
             .as_millis()
     );
+
+    // #3723: two spellings of the thinking toggle that disagree are refused, never picked between.
+    if let Some(reason) = request.thinking_conflict() {
+        return fail_response(&state, StatusCode::BAD_REQUEST, reason);
+    }
+
+    // #3571: a Qwen3.5 hybrid is answered from its resident session or not at all.
+    if let Some(r) = try_qwen35_backend(&state, &request, &request_id, start, &cancel).await {
+        return r;
+    }
 
     if let Some(r) = try_qwen3_moe_backend(&state, &request, &request_id, start, &cancel) {
         return r;
@@ -1004,6 +1042,7 @@ fn try_qwen3_moe_backend(
         &tokenizer,
         &request.messages,
         Some(&request.model),
+        request.thinking(),
         state,
     ) {
         Ok(ids) => ids,
@@ -1051,7 +1090,12 @@ fn try_qwen3_moe_backend(
     // qwen3-moe-streaming-sse-v1: per-token SSE when stream=true.
     // Dispatches to the callback variant + builds an SSE response from
     // a tokio mpsc channel. Non-streaming path falls through below.
-    if request.stream {
+    //
+    // #3987: that callback variant is the CPU forward. A CUDA server
+    // (`with_moe_gpu`) must stream what the GPU generated, so it goes through
+    // the ONE dispatch below and replays the result — the same
+    // `stream_mode: "replayed"` every other CUDA chat stream declares.
+    if request.stream && state.moe_no_gpu() {
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(64);
         let mapped_clone = mapped.clone();
         let quantized_clone = quantized.clone();
@@ -1087,11 +1131,15 @@ fn try_qwen3_moe_backend(
         ));
     }
 
-    let tokens = match crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
+    // #3987: the ONE dispatch `apr run` uses (#3714), not the CPU-only generator this
+    // used to call directly. On a CUDA server (`with_moe_gpu`) it serves on the GPU; a GPU
+    // that cannot serve prints its reason and the CPU chain runs, and `used_gpu` says so.
+    let (tokens, used_gpu) = match crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
         &mapped,
         &quantized,
         &input_ids,
         &gen_config,
+        state.moe_no_gpu(),
     ) {
         Ok(t) => t,
         Err(e) => {
@@ -1106,6 +1154,19 @@ fn try_qwen3_moe_backend(
 
     let generated_ids: Vec<u32> = tokens[input_ids.len()..].to_vec();
     let completion_tokens = generated_ids.len();
+
+    if request.stream {
+        state.metrics.record_success(completion_tokens, start.elapsed());
+        return Some(pregenerated_sse_response(
+            generated_ids,
+            tokenizer,
+            request_id.to_string(),
+            request.model.clone(),
+            request.stop.as_deref(),
+            max_tokens,
+            prompt_token_count,
+        ));
+    }
 
     // Apply clean_chat_output to strip self-emitted "Human:" / "User:" /
     // "<|im_end|>" / etc. prefixes from response text. Mirrors the dense
@@ -1135,6 +1196,7 @@ fn try_qwen3_moe_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
+        Some(used_gpu),
     ))
 }
 

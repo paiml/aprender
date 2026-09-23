@@ -459,6 +459,20 @@ impl Qwen35State {
             ),
         }
     }
+
+    /// Return the state to position 0 in place (#3595): every conv window and
+    /// recurrent state zeroed and the KV cache emptied — what
+    /// [`Qwen35Model::new_state`] starts from, without reallocating it.
+    pub fn reset(&mut self) {
+        for v in self
+            .conv_states
+            .iter_mut()
+            .chain(self.ssm_states.iter_mut())
+        {
+            v.fill(0.0);
+        }
+        self.kv_cache.reset();
+    }
 }
 
 pub(crate) struct Qwen35OwnedDeltaNetLayer {
@@ -1391,7 +1405,7 @@ pub fn run_qwen35_generate_dispatch(
 /// Positions the F2 hybrid guard forwards on both backends before it will let
 /// the GPU serve a token. Same cap as the dense guard's `gpu_probe`.
 #[cfg(feature = "cuda")]
-const QWEN35_F2_PROBE_MAX: usize = 64;
+pub(crate) const QWEN35_F2_PROBE_MAX: usize = 64;
 
 /// The GPU twin of [`run_qwen35_generate`]: build the hybrid on CUDA, prove it
 /// against its own CPU forward, then decode.
@@ -1614,19 +1628,57 @@ fn f2_validate_qwen35_receipted(
     model_bytes: &[u8],
     device_name: &str,
 ) -> F2Outcome {
+    let hash = Qwen35ModelHash::of(model_bytes);
+    f2_validate_qwen35_receipted_hashed(gpu, cpu, probe_context, &hash, device_name)
+}
+
+/// The receipt key's model half, hashed once (#3595).
+///
+/// [`f2_validate_qwen35_receipted`] hashes the whole file on every call — 8 s
+/// on the 27B. A caller that keeps the model resident across calls hashes it
+/// once, when it loads, and hands this to
+/// [`f2_validate_qwen35_receipted_hashed`].
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone)]
+pub(crate) struct Qwen35ModelHash {
+    /// Hex sha256 of the model file's bytes.
+    pub(crate) sha256: String,
+    /// Wall time the hash took, reported in the guard's line.
+    pub(crate) sha256_ms: f64,
+}
+
+#[cfg(feature = "cuda")]
+impl Qwen35ModelHash {
+    pub(crate) fn of(model_bytes: &[u8]) -> Self {
+        let start = std::time::Instant::now();
+        let sha256 = crate::gguf::f2_receipt::model_sha256(model_bytes);
+        Self {
+            sha256,
+            sha256_ms: start.elapsed().as_secs_f64() * 1000.0,
+        }
+    }
+}
+
+/// [`f2_validate_qwen35_receipted`] with the model already hashed.
+#[cfg(feature = "cuda")]
+pub(crate) fn f2_validate_qwen35_receipted_hashed(
+    gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
+    cpu: &Qwen35Model<'_>,
+    probe_context: &[u32],
+    hash: &Qwen35ModelHash,
+    device_name: &str,
+) -> F2Outcome {
     use crate::gguf::f2_receipt::{
-        apr_version, decide, model_sha256, read_receipt, receipt_dir, receipt_path,
-        revalidate_requested, unix_now, write_receipt, F2Decision, F2Receipt, F2ReceiptKey,
-        F2_RECEIPT_SCHEMA,
+        apr_version, decide, read_receipt, receipt_dir, receipt_path, revalidate_requested,
+        unix_now, write_receipt, F2Decision, F2Receipt, F2ReceiptKey, F2_RECEIPT_SCHEMA,
     };
 
-    let hash_start = std::time::Instant::now();
     let key = F2ReceiptKey {
-        model_sha256: model_sha256(model_bytes),
+        model_sha256: hash.sha256.clone(),
         apr_version: apr_version(),
         device: device_name.to_string(),
     };
-    let sha256_ms = hash_start.elapsed().as_secs_f64() * 1000.0;
+    let sha256_ms = hash.sha256_ms;
 
     let path = receipt_dir().map(|d| receipt_path(&d, &key.model_sha256));
     let found = match path.as_deref() {

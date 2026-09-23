@@ -1106,6 +1106,8 @@ fn run_apr_cpu_inference(
         temperature,
         top_p: 0.9,
         top_k: 0,
+        // #3760: the sampler draws now; no seed is plumbed from this caller.
+        seed: realizar::apr_transformer::DEFAULT_SEED,
         repetition_penalty: 1.0,
         trace: false,
         stop_tokens: vec![],
@@ -1502,8 +1504,10 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
     let state_for_ollama_chat = state_for_chat.clone();
     let state_for_ollama_generate = state_for_chat.clone();
 
-    let router = Router::new()
+    // #3979: every route is mounted AND recorded; GET / and the 404 come from the record.
+    let router = super::route_index::Indexed::new()
         .route(
+            "GET",
             "/health",
             get(move || {
                 let s = state_for_health.clone();
@@ -1519,6 +1523,7 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
             }),
         )
         .route(
+            "POST",
             "/v1/completions",
             post(move |Json(req): Json<AprCompletionRequest>| {
                 let state = state_for_completions.clone();
@@ -1526,6 +1531,7 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
             }),
         )
         .route(
+            "POST",
             "/v1/chat/completions",
             post(
                 move |headers: axum::http::HeaderMap, Json(req): Json<serde_json::Value>| {
@@ -1538,6 +1544,7 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
         // client. `stream != false` (Ollama default) ⇒ NDJSON token stream;
         // `stream:false` ⇒ coalesced single object.
         .route(
+            "POST",
             "/api/chat",
             post(move |Json(req): Json<super::ollama::OllamaChatRequest>| {
                 let state = state_for_ollama_chat.clone();
@@ -1546,6 +1553,7 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
         )
         // PMAT-923/928: Ollama native single-prompt generate endpoint.
         .route(
+            "POST",
             "/api/generate",
             post(move |Json(req): Json<super::ollama::OllamaGenerateRequest>| {
                 let state = state_for_ollama_generate.clone();
@@ -1554,29 +1562,15 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
         )
         // PMAT-923: Ollama model-list — clients enumerate models before chatting.
         .route(
+            "GET",
             "/api/tags",
             get(move || {
                 let model = model_name_for_tags.clone();
                 async move { Json(super::ollama::ollama_tags_body(&model)) }
             }),
         )
-        .route(
-            "/",
-            get(|| async {
-                "APR v2 Inference Server - POST /v1/completions, /v1/chat/completions, /api/chat, /api/generate"
-            }),
-        )
-        // GH-672: Return JSON error body for unmatched routes (not empty 404)
-        .fallback(|| async {
-            (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "not_found",
-                    "message": "Route not found. Available: /health, /v1/completions, /v1/chat/completions, /api/chat, /api/generate, /api/tags"
-                })),
-            )
-        });
-    let router = super::ollama::add_ollama_stubs(router);
+        .routes(super::ollama::ollama_stub_table())
+        .finish();
     super::auth::layer(auth_gate, router)
 }
 

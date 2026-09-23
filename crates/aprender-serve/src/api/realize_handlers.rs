@@ -218,6 +218,87 @@ pub fn format_chat_messages(messages: &[ChatMessage], model_name: Option<&str>) 
     })
 }
 
+/// #3990: format chat messages the way the MODEL was trained -- with the GGUF's own
+/// `tokenizer.chat_template` -- and fall back to [`format_chat_messages`]' hand-coded
+/// family templates only when there is no GGUF, or the GGUF carries no template.
+///
+/// Thinking OFF: production's default for every verb since #3801. For a per-request mode
+/// see [`format_chat_messages_official_thinking`].
+pub fn format_chat_messages_official(
+    gguf: Option<&crate::gguf::GGUFModel>,
+    messages: &[ChatMessage],
+    model_hint: Option<&str>,
+) -> String {
+    // `None` is never refused (only an explicit ON can be), so the fallback is unreachable.
+    format_chat_messages_official_thinking(gguf, messages, model_hint, None)
+        .unwrap_or_else(|_| format_chat_messages(messages, model_hint))
+}
+
+/// #3723: [`format_chat_messages_official`] with the request's thinking mode, through the
+/// ONE rule `apr run` and `apr chat` share (`official_or_legacy`): the model's own template
+/// rendered with `enable_thinking` (absent = OFF); a template that fails to render is warned
+/// about, then the family template answers; and `Some(true)` on a template whose ON and OFF
+/// renders are identical is REFUSED by name -- it has no thinking mode to turn on.
+///
+/// # Errors
+/// That refusal, for the caller to answer as a client error.
+pub fn format_chat_messages_official_thinking(
+    gguf: Option<&crate::gguf::GGUFModel>,
+    messages: &[ChatMessage],
+    model_hint: Option<&str>,
+    thinking: Option<bool>,
+) -> Result<String, crate::error::RealizarError> {
+    use crate::chat_template::{self, ChatMessage as TemplateMessage};
+
+    let template_messages: Vec<TemplateMessage> = messages
+        .iter()
+        .map(|m| TemplateMessage::new(&m.role, &m.content))
+        .collect();
+    let own = gguf
+        .filter(|g| g.metadata.contains_key("tokenizer.chat_template"))
+        .map(|g| {
+            let msgs = &template_messages;
+            move |t: Option<bool>| chat_template::render_official_for_model(g, msgs, t)
+        });
+    chat_template::official_or_legacy(own, || format_chat_messages(messages, model_hint), thinking)
+}
+
+/// [`format_chat_messages_official`] against whatever GGUF the server retained.
+///
+/// #4007: `model_hint` is often the HTTP client's `"model"` string (`"m"`, `"gpt-4"`), which
+/// says nothing about the loaded model. The template comes from the GGUF; failing that, the
+/// fallback is keyed on the LOADED model's architecture, and the caller's hint is used only
+/// when the server knows no architecture.
+pub fn format_chat_messages_for_state(
+    state: &AppState,
+    messages: &[ChatMessage],
+    model_hint: Option<&str>,
+) -> String {
+    format_chat_messages_for_state_thinking(state, messages, model_hint, None)
+        .unwrap_or_else(|_| format_chat_messages(messages, model_hint))
+}
+
+/// #3723: [`format_chat_messages_for_state`] with the request's thinking mode.
+///
+/// # Errors
+/// See [`format_chat_messages_official_thinking`].
+pub fn format_chat_messages_for_state_thinking(
+    state: &AppState,
+    messages: &[ChatMessage],
+    model_hint: Option<&str>,
+    thinking: Option<bool>,
+) -> Result<String, crate::error::RealizarError> {
+    let mapped = state.mapped_gguf_model();
+    let architecture = state.model_architecture();
+    let hint = architecture.as_deref().or(model_hint);
+    format_chat_messages_official_thinking(
+        mapped.as_ref().map(|m| &m.model),
+        messages,
+        hint,
+        thinking,
+    )
+}
+
 /// Clean chat output to prevent prompt injection (PMAT-088)
 ///
 /// Stops output at the first stop sequence to prevent the model from
@@ -509,6 +590,24 @@ pub struct CompletionResponse {
     pub choices: Vec<CompletionChoice>,
     /// Usage statistics
     pub usage: Usage,
+    /// Whether THIS generation ran on the accelerator (#3894).
+    ///
+    /// `Some(true)`/`Some(false)` only when the arm that answered MEASURED it;
+    /// `None` when the arm cannot say. The three states are deliberate and the
+    /// absent one is the point: a ladder cell recording `200` proved only that
+    /// serve answered, never that it answered on CUDA — and #3889 is the measured
+    /// case where those differ (six 200s on a model whose accelerator attempt had
+    /// failed and whose generation ran on CPU, recorded in a `cuda` cell).
+    ///
+    /// `run` has had this since R-0b: it reconciles announced-vs-actual through
+    /// `registry::after_generation` and REFUSES a forced accelerator that fell
+    /// back. Serve has no equivalent, so it reports 200. This field is the
+    /// reporting half; the refusing half is a separate change with HTTP semantics.
+    ///
+    /// Additive: `skip_serializing_if` keeps the JSON byte-identical for any arm
+    /// that does not report, so no existing client sees a change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used_gpu: Option<bool>,
 }
 
 /// Completion choice
@@ -561,3 +660,5 @@ pub struct CompletionChunkChoice {
 include!("realize_handlers_embed_completion.rs");
 include!("gpu_completions_handler.rs");
 include!("realize_handlers_model_lineage.rs");
+
+include!("realize_handlers_official_3990_tests.rs");

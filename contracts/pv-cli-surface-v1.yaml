@@ -98,7 +98,66 @@ proof_obligations:
     formal: "PV-SURFACE-VERSION-PINNED"
     applies_to: all
 
+  - id: PCSE108-INV-007
+    type: invariant
+    property: "The enforcement grade ladder is written once, not twice"
+    formal: "∀ r: repoGrade(r) ≡ enforcementGrade(score(r))"
+    applies_to: all
+  - id: PCSE108-INV-008
+    type: invariant
+    property: "The fleet score of one repo is that repo's own score"
+    formal: "fleetScore([r]) ≡ penetration(r) · quality(r)"
+    applies_to: all
+  - id: PCSE108-INV-009
+    type: invariant
+    property: "Enforcement levels partition the call sites they are counted from"
+    formal: "e0 + e1 + e2 ≡ len(sites)"
+    applies_to: all
+
 falsification_tests:
+  - id: FALSIFY-PV-SURFACE-009
+    rule: "PV-KAIZEN-LADDER-SINGLE"
+    prediction: >
+      `enforcement_grade` and `repo_grade` carry the SAME cutoffs
+      (0.60/0.40/0.25/0.10) in two functions 30 lines apart, differing only in
+      the "Grade " prefix. Editing one copy alone makes the per-repo column and
+      the fleet line disagree about the same score, and nothing else reports it.
+      Each cutoff is >=, so a score ON the line belongs to the HIGHER band.
+    test_harness: "cargo test -p aprender-contracts-cli --lib kaizen"
+    expected_output: "11 passed on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-22 (#3839). MUTANT A, moving only enforcement_grade's
+      0.40 cutoff to 0.45: 2 rows RED. MUTANT B, weakening the top cutoff from
+      >= to >: 2 rows RED. The tests pin the two ladders TO EACH OTHER rather
+      than to a literal, so a deliberate change need only be made consistently.
+  - id: FALSIFY-PV-SURFACE-010
+    rule: "PV-KAIZEN-FLEET-AGGREGATES"
+    prediction: >
+      compute_fleet_score over a single repo equals that repo's own
+      penetration x quality, with weights 0.1/0.5/1.0 — the same formula
+      written twice. Both degenerate inputs (no bindings, no call sites) return
+      0.0 rather than NaN from a 0/0 quality term.
+    test_harness: "cargo test -p aprender-contracts-cli --lib kaizen"
+    expected_output: "11 passed on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-22 (#3839). MUTANT C, changing the E1 weight in
+      compute_fleet_score alone from 0.5 to 0.6: 1 row RED. NOT CLAIMED - the
+      `sites == 0` early return in repo_grade is an EQUIVALENT mutant: removing
+      it yields a NaN score, every >= comparison against NaN is false, and the
+      ladder falls through to "F" anyway. Recorded rather than counted as a kill.
+  - id: FALSIFY-PV-SURFACE-011
+    rule: "PV-KAIZEN-LEVELS-PARTITION"
+    prediction: >
+      count_levels assigns every call site to exactly one of e0/e1/e2, and
+      classify_macro promotes to E2 only when a domain predicate AND a matching
+      post macro are both present. The predicate search reads only the first 20
+      lines of the macro body.
+    test_harness: "cargo test -p aprender-contracts-cli --lib kaizen"
+    expected_output: "11 passed on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-22 (#3839). MUTANT D, widening the macro-body window
+      from 20 to 30 lines: 1 row RED. The window is load-bearing and invisible —
+      adding comments above a predicate demotes the macro.
   - id: FALSIFY-PV-SURFACE-001
     rule: "PV-SURFACE-RULE-REACH"
     prediction: >

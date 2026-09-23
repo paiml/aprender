@@ -2342,6 +2342,29 @@ jobs:
       # found by a Dependabot alert on a DOWNSTREAM repo. Text-only, no build.
       - name: No GHSA-only vulnerable crate in Cargo.lock
         run: bash scripts/check_no_ghsa_banned_crates.sh
+      # WIRED HERE, not in guard-tree, for the reason the nextest note below
+      # states: check_cascade_converges.sh calls `cargo metadata` (its own
+      # source, line 58), so guard_tree.sh's cargo_only_universe classification
+      # puts it OUTSIDE the --no-cargo population the dispatcher runs -- and
+      # guard-tree's contract (BSE-02) is that no step in that job runs cargo.
+      # A cargo-using guard therefore needs an explicit step, and until this one
+      # existed the guard was dark: check_guards_are_wired.sh reported "unwired
+      # guards grew 5 -> 6, NEW: check_cascade_converges.sh" and its baseline is
+      # shrink-only against origin/main, so the guard could not be ledgered
+      # either. It arrived with bc2e61e71 (#3892) and nothing named it.
+      #
+      # What it buys, and why it belongs on the PR rather than at release time:
+      # #3892 replaced the retry round with a drain loop that has no round cap,
+      # so the surviving failure is a `STUCK` exit AFTER the successful part of
+      # the cascade has already uploaded. crates.io is append-only, so a graph
+      # that cannot converge costs a HALF-PUBLISHED release, discovered at
+      # publish time by construction. This proves the cascade can finish before
+      # anything is uploaded. Measured on this tree: all 74 crates publish, the
+      # drain terminates in 6 passes.
+      - name: "The crates.io cascade can FINISH, proven before anything uploads (#3892)"
+        run: |
+          bash scripts/check_cascade_converges.sh --self-test
+          bash scripts/check_cascade_converges.sh
       - name: "GHSA guard must still turn RED (case table)"
         run: bash scripts/check_no_ghsa_banned_crates.sh --self-test
       # MOVED from guard-tree to guard-cargo (BSE-02, PMAT-1064): the guard

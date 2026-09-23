@@ -15,6 +15,8 @@
 # Semantic validation (data quality) prevents garbage data that parses correctly.
 
 metadata:
+  references:
+    - Internal contract
   version: "2.0.0"
   created: "2026-02-04"
   updated: "2026-02-05"
@@ -100,21 +102,38 @@ type_enforcement:
 
   enforcement_locations:
     aprender:
-      - "src/format/validated_tensors.rs"
-      - "src/format/converter/write.rs (uses ValidatedTensor)"
+      - "crates/aprender-core/src/format/validated_tensors.rs"
+      - "crates/aprender-core/src/format/converter/write.rs (uses ValidatedTensor)"
     realizar:
-      - "src/validated_tensors.rs"
-      - "src/apr_transformer/mod.rs (requires ValidatedEmbedding)"
-      - "src/safetensors_infer.rs (produces ValidatedTensor)"
+      - "crates/aprender-serve/src/safetensors/validation.rs"
+      - "crates/aprender-serve/src/apr_transformer/mod.rs (requires ValidatedEmbedding)"
+      - "crates/aprender-serve/src/safetensors_infer.rs (produces ValidatedTensor)"
 
   compiler_guarantee: |
-    It is IMPOSSIBLE to construct AprTransformer with unvalidated data because:
-    1. AprTransformer fields are ValidatedEmbedding, not Vec<f32>
-    2. ValidatedEmbedding::new() is the ONLY constructor (no Default, no unsafe)
-    3. ValidatedEmbedding::new() runs ALL validation checks
-    4. Inner data field is private - cannot be accessed without validation
+    NOT IN PLACE. This section describes an INTENDED design, not the shipped code.
+    Measured for aprender#3868 at crates/aprender-serve/src/apr_transformer/mod.rs:407:
 
-    This is Poka-Yoke: the mistake (using unvalidated data) is physically impossible.
+      #[derive(Debug, Clone, Serialize, Deserialize)]
+      pub struct AprTransformer {
+          pub token_embedding: Vec<f32>,   // NOT ValidatedEmbedding, and NOT private
+          ...
+
+    Of the four claims this field used to make:
+      1. FALSE  - the field is Vec<f32>, not ValidatedEmbedding.
+      2. DEFEATED - #[derive(Deserialize)] builds the struct from bytes with no
+         constructor at all, so ValidatedEmbedding::new() is not the only path even
+         where that type IS used.
+      3. Untestable as stated - the checks run only if the constructor is called.
+      4. FALSE  - the field is `pub`.
+
+    ValidatedEmbedding still exists (aprender-core/src/format/validated_tensors.rs,
+    aprender-serve/src/safetensors/validation.rs); it is simply not what
+    AprTransformer is made of. `ValidatedEmbedding` appears ZERO times anywhere under
+    crates/aprender-serve/src/apr_transformer/.
+
+    Do NOT read this contract as evidence that an embedding reaching inference has
+    been validated. It has not been, and the absence of a layout failure here has
+    never been a signal about any model.
 
 # Format conventions
 formats:
@@ -477,7 +496,7 @@ validation_rules_semantic:
 # implementation is BROKEN and must be fixed before release.
 #
 # STATUS (2026-02-24): FULL SPEC FALSIFICATION COMPLETE + KAIZEN FIXES
-#   FALSIFY-001..005: src/format/validated_tensors.rs (36 tests)
+#   FALSIFY-001..005: crates/aprender-core/src/format/validated_tensors.rs (36 tests)
 #   FALSIFY-006:      crates/apr-cli/tests/falsification_cross_crate_parity.rs (13 tests)
 #   FALSIFY-007:      realizar/src/quantize/contract_tests.rs (1 test, PMAT-334: 4/6 dispatch sites unscanned)
 #   FALSIFY-008:      realizar/src/quantize/contract_tests.rs (2 tests)
@@ -512,7 +531,7 @@ falsification_tests:
   - id: FALSIFY-001
     rule: "F-DATA-QUALITY-001 (Embedding density)"
     prediction: "It is impossible to construct ValidatedEmbedding with >50% zeros"
-    status: "IMPLEMENTED"  # 36 tests in src/format/validated_tensors.rs
+    status: "IMPLEMENTED"  # 36 tests in crates/aprender-core/src/format/validated_tensors.rs
     falsification_test: |
       #[test]
       #[should_panic(expected = "DENSITY FAILURE")]
@@ -540,7 +559,7 @@ falsification_tests:
   - id: FALSIFY-003
     rule: "F-DATA-QUALITY-002 (NaN rejection)"
     prediction: "It is impossible to construct ValidatedWeight containing NaN"
-    status: "IMPLEMENTED"  # In src/format/validated_tensors.rs
+    status: "IMPLEMENTED"  # In crates/aprender-core/src/format/validated_tensors.rs
     falsification_test: |
       #[test]
       #[should_panic(expected = "NaN")]
@@ -554,7 +573,7 @@ falsification_tests:
   - id: FALSIFY-004
     rule: "F-DATA-QUALITY-004 (Spot check)"
     prediction: "It is impossible to load SafeTensors with 94.5% leading zeros"
-    status: "IMPLEMENTED"  # In src/format/validated_tensors.rs
+    status: "IMPLEMENTED"  # In crates/aprender-core/src/format/validated_tensors.rs
     falsification_test: |
       #[test]
       fn falsify_004_spot_check() {
@@ -575,7 +594,7 @@ falsification_tests:
   - id: FALSIFY-005
     rule: "F-LAYOUT-CONTRACT-002 (lm_head shape)"
     prediction: "It is impossible to construct AprTransformer with wrong lm_head shape"
-    status: "IMPLEMENTED"  # In src/format/validated_tensors.rs
+    status: "IMPLEMENTED"  # In crates/aprender-core/src/format/validated_tensors.rs
     falsification_test: |
       #[test]
       #[should_panic(expected = "CONTRACT VIOLATION")]
@@ -666,12 +685,20 @@ falsification_tests:
 # Toyota Way application notes
 toyota_way_principles:
   jidoka: |
-    "Automation with a human touch" - The validation stops the line immediately
-    when a defect is detected. No garbage data propagates to inference.
+    NOT IN PLACE (aprender#3868). This claimed validation "stops the line
+    immediately" so no garbage propagates to inference. The runtime half does not
+    run: four of the six enforcers in
+    crates/aprender-core/src/format/layout_contract_enforce.rs have ZERO production
+    callers - enforce_embedding_contract (documented "MANDATORY ... prevents garbage
+    inference output"), enforce_matmul_contract, enforce_load_contract and
+    validate_ffn_shape_symmetry. Every external reference to the first is a test.
 
   poka_yoke: |
-    "Mistake-proofing" - The type system makes it physically impossible to
-    use unvalidated data. This is not a warning or a lint - it's a compile error.
+    NOT IN PLACE (aprender#3868). This claimed the type system makes unvalidated
+    data "physically impossible" and that using it is a compile error. It is not:
+    AprTransformer.token_embedding is a `pub Vec<f32>` and the struct derives
+    Deserialize, so unvalidated data is constructible in safe code with no error at
+    any stage. The newtypes exist but AprTransformer does not use them.
 
   genchi_genbutsu: |
     "Go and see" - The falsification tests require actually running the code
@@ -682,3 +709,130 @@ toyota_way_principles:
     "Continuous improvement" - When PMAT-234 revealed a new failure mode
     (94.5% zeros), we added F-DATA-QUALITY-004 and FALSIFY-004. The contract
     evolves to prevent every observed failure mode.
+
+equations:
+  identity:
+    formula: f(x) = x
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Identity
+  validated_tensor_construction:
+    formula: |
+      validate: (RawData, Shape, Name) -> Result<ValidatedTensor, ContractError>
+        data.len() == shape.product() -> Ok(ValidatedTensor)
+        contains_nan(data) -> Err(NaN)
+        contains_inf(data) -> Err(Inf)
+        zero_pct(data) > threshold -> Err(DensityFailure)
+    domain: Raw f32 data with expected dimensions
+    codomain: Result<ValidatedTensor, ContractError>
+    invariants:
+    - Private inner field prevents bypass
+    - No NaN or Inf values pass validation
+    - Density thresholds enforced (50% for embeddings, 80% for weights)
+    preconditions:
+    - data.len() > 0
+    - shape dimensions are positive
+    lean_theorem: Theorems.ValidatedTensorConstruction
+  transpose_invariant:
+    formula: |
+      transpose: (GgufShape, Format) -> AprShape
+        For 2D tensors: apr_shape == swap(gguf_shape)
+        For 1D tensors: apr_shape == gguf_shape
+    domain: GGUF tensor shape with format metadata
+    codomain: APR tensor shape
+    invariants:
+    - 2D transpose swaps dimensions exactly
+    - 1D tensors are identity
+    - Byte size preserved across transpose
+    preconditions:
+    - gguf_shape has 1 or 2 dimensions
+    lean_theorem: Theorems.TransposeInvariant
+  quant_dispatch_exhaustiveness:
+    formula: |
+      dispatch: WeightQuantType -> Kernel
+        For every variant V of WeightQuantType:
+          exists exactly one kernel K in dispatch table
+        No wildcard/catch-all arm
+    domain: WeightQuantType enum
+    codomain: Specific kernel function
+    invariants:
+    - Exhaustive match — every variant handled
+    - No catch-all arm (no _ =>)
+    - Each variant maps to exactly one kernel
+    preconditions:
+    - WeightQuantType is non-empty enum
+    lean_theorem: Theorems.QuantDispatchExhaustiveness
+
+proof_obligations:
+- id: TL7266-INV-001
+  type: invariant
+  property: Validated tensor rejects NaN and Inf
+  formal: for all v in ValidatedTensor, not contains_nan(v.data) and not contains_inf(v.data)
+  applies_to: all
+- id: TL7266-INV-002
+  type: invariant
+  property: Transpose shape correctness
+  formal: for all 2D tensors, apr_shape[0] == gguf_shape[1] and apr_shape[1] == gguf_shape[0]
+  applies_to: all
+  lean:
+    theorem: TensorLayout.transpose_shape_swap
+    module: ProvableContracts.Theorems.TensorLayout.IndexAlgebra
+    status: proved
+    depends_on:
+    - TensorLayout.transpose_size_preserved
+    - TensorLayout.transpose_shape_1d_identity
+    - TensorLayout.idx_lt
+    - TensorLayout.unrow_idx
+    - TensorLayout.uncol_idx
+    - TensorLayout.idx_unrow_uncol
+    - TensorLayout.idx_injective
+    - TensorLayout.transpose_reindex_bijective
+    - TensorLayout.row_stride
+    - TensorLayout.col_stride
+    notes: >-
+      Core-only Lean (no imports), verifies with `lean <file>`. Proves the
+      full row-major index algebra: 2-D transpose swaps the shape pair exactly
+      (apr_shape[0]=gguf_shape[1], apr_shape[1]=gguf_shape[0]), 1-D is identity,
+      element count preserved; and the underlying idx(i,j)=i*ncols+j is a
+      bijection on the valid rectangle (range + two-sided inverse unidx =
+      (·/ncols, ·%ncols) ⇒ injective/surjective), the transpose reindex
+      out[r*cols+c]=in[c*rows+r] is an element-preserving bijection, and strides
+      are contiguous (row=ncols, col=1).
+- id: TL7266-POST-003
+  type: postcondition
+  property: Density enforcement
+  formal: for ValidatedEmbedding, zero_pct(data) < 50%; for ValidatedWeight, zero_pct(data) < 80%
+  tolerance: 1e-6
+  applies_to: all
+- id: TL7266-INV-004
+  type: invariant
+  property: Quant dispatch exhaustiveness — no catch-all
+  formal: WeightQuantType match has zero wildcard arms across all dispatch sites
+  applies_to: all
+
+kani_harnesses:
+- id: KANI-LAYOUT-001
+  obligation: Validated tensor rejects NaN and Inf
+  property: No NaN or Inf passes ValidatedTensor::new()
+  bound: 16
+  strategy: stub_float
+  harness: verify_nan_inf_rejection
+- id: KANI-LAYOUT-002
+  obligation: Transpose shape correctness
+  property: apr_shape == swap(gguf_shape) for 2D tensors
+  bound: 8
+  strategy: exhaustive
+  harness: verify_transpose_shape_swap
+- id: KANI-LAYOUT-003
+  obligation: Density enforcement
+  property: "zero_pct < threshold for ValidatedEmbedding and ValidatedWeight"
+  bound: 8
+  strategy: exhaustive
+  harness: verify_density_enforcement
+- id: KANI-LAYOUT-004
+  obligation: "Quant dispatch exhaustiveness \u2014 no catch-all"
+  property: WeightQuantType match has zero wildcard arms
+  bound: 8
+  strategy: exhaustive
+  harness: verify_quant_dispatch_exhaustive

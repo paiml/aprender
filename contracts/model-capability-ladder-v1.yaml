@@ -58,9 +58,101 @@ ladder:
   hosts:
     - { id: lambda, isa: x86_64, gpu: "RTX 4090", cc: sm_89,  required: true }
     - { id: gx10,   isa: aarch64, gpu: "GB10",     cc: sm_121, required: true }
+  # #3943 (b), cop ruling 2026-09-23: the `serve` probe waits on the SERVER, not a clock.
+  # It waits while the process is alive AND making progress (serve log growing, or the
+  # process tree's CPU time growing). A load quiet on both for stall_s is HUNG -> RED.
+  # ceiling_s is the one hard bound on the whole wait, for every rung. A process that
+  # dies mid-load is RED at once. The old fixed 90 s was shorter than a 27B load on
+  # gx10 (the server reached "listening" after the probe had given up), so stall_s keeps
+  # the old number as a window of NO PROGRESS instead of a total.
+  serve_health:
+    stall_s: 90
+    ceiling_s: 900
   inventory:
+    # #3957 F2: `apr_sha_drift` (#3940) is DELETED. It declared, in prose no code read, that
+    # receipts measured at 9b7739951 stood for the cut 28c24207a. check_model_ladder.sh now
+    # binds every receipt to the cut by `apr_sha` (equal, or equal-tree outside evidence/)
+    # and refuses this key by name, so a delta is re-measured, never declared.
     dirs: ["~/models", "~/.apr/models", "~/.cache/apr/models"]   # depth 1, the fleet's model dirs
-    patterns: ["*q4_k*.gguf", "*q4k*.gguf", "*q4_k*.apr", "*q4k*.apr"]   # case-insensitive
+    # WIDENED 2026-09-22 by operator ruling: "don't leave behind. if it fits on this machine
+    # and/or gx10 with CUDA we must support for Qwen 3.5 and 2.5. we kick the MoE work to later".
+    # MEASURED before the change: 28 models held on lambda, 18 swept, 10 INVISIBLE TO EVERY GATE,
+    # because the universe was a filename glob over q4_k/q4k only. That is #3712's own defect in a
+    # new form -- it replaced a hand-picked list with a glob, which has the same omission property,
+    # moved from a human decision to a string match nobody reviews (#3846). Escapees included
+    # Qwen3-Coder-30B-A3B-Instruct-Q4_0 (a Q4 quant `*q4_k*` does not match) and
+    # Qwen3.5-35B-A3B-UD-IQ4_XS (a 35B Qwen3.5 no gate had ever loaded). The two `.apr` files
+    # escaped in PRINCIPLE rather than by accident: an .apr filename need not carry its
+    # quantisation at all, so a name-based universe cannot see them. The durable fix is to derive
+    # the universe from the file HEADER, which `apr inspect --json` already reports (#3846); these
+    # four patterns close the 2.5/3.5 hole now. Adds 7 measurable models (0.34-7.11 GB: IQ2_XXS,
+    # IQ3_M, IQ4_XS x2, f16, and both .apr) plus one deferred MoE.
+    patterns: ["*q4_k*.gguf", "*q4k*.gguf", "*q4_k*.apr", "*q4k*.apr",
+               "*qwen2.5*.gguf", "*qwen3.5*.gguf", "*qwen2.5*.apr", "*qwen3.5*.apr"]   # case-insensitive
+    # DEFERRED, per the same ruling's "we kick the MoE work to later". A match is printed DEFERRED
+    # and NEVER counted green: this build has no CUDA forward for qwen3moe at all (#3714), so an
+    # A3B model owes cells no code can satisfy. This is a DECLARED deferral carrying a reason, not
+    # an exemption -- an inventory model that fails and is not named here is still refused, which
+    # the case table proves. Delete this key when #3714 lands.
+    # EMPTY. The last deferral, "*A3B*", is RETIRED with this fold: the qwen3moe CUDA forward
+    # (#3714 R2, PMAT-3714-r2-on-v2@6f6fa9a83) is folded into 0.69.1 on the operator ruling of
+    # 2026-09-23, relayed verbatim by aprender-6a (cop): "fold in MoE". An A3B model now owes
+    # every cell like any other rung, and #3817 (run --gpu silently falling back to CPU) must be
+    # shown fixed by the envelope, not assumed from parity.
+    deferred: {}
+      # THE THREE FILENAME DEFERRALS DECLARED HERE ON 2026-09-23 ARE RETIRED.
+      # Operator doctrine, same day, verbatim: "no defer; from now forward we practice
+      # toyota way and oracle approach of crux with capabiltiy report style from Alfredo".
+      # A capability is ORACLE-PROVEN or it is RED; there is no third state, so
+      # "the model runs but tensor_contract cannot inspect it" is RED and the work is the
+      # missing IQ dequantizer in aprender-core (#3850), not a declaration. Stop the line.
+      #   retired: Qwen2.5-0.5B-Instruct-IQ3_M.gguf
+      #            Qwen2.5-0.5B-Instruct-IQ4_XS.gguf
+      #            Qwen3.5-4B-UD-Q4_K_XL.gguf
+      # *A3B* was the one deferral kept past that doctrine, as an explicit operator ruling of
+      # 2026-09-22 ("we kick the MoE work to later"). It is retired by the ruling of 2026-09-23
+      # above, which makes #3714 a 0.69.1 requirement.
+    # #3957 F9/F10: NAMED RED verdicts. Unlike `deferred`, they are not declarations. Each one is
+    # a claim about CAUSE that check_model_ladder.sh admits only when THIS sweep re-proves it
+    # (scripts/lib/model_ladder_redmodel.py); otherwise the row is plain FAIL and blocks. A proven
+    # cell prints RED-MODEL / RED-UNSUPPORTED, is never counted green, and does not block. A key
+    # matching no held file, or matching a green row, is refused.
+    #
+    # F9, operator ruling 2026-09-23 on #3957 (verbatim): "proceed with (a)". The FILE is
+    # defective, as proven each sweep by llama.cpp on the identical GGUF (the CRUX greedy rows),
+    # a positive control on the sibling, and apr CPU == GPU. Covers thinking ON only.
+    # red_model: EMPTY. Both candidates were REFUTED by the F9 oracle itself (aprender-83,
+    # evidence/crux/0.69.1/f9-greedy-apr-70d20d44c on PMAT-3952-crux-greedy2@a78301558): on the
+    # model's OFFICIAL thinking-ON template, llama.cpp closes the think block and answers
+    # correctly for Qwen3.5-0.8B-IQ4_XS (332 tok) and 0.8B-Q4_K_M (241 tok). The "never closes" /
+    # "closes empty" behaviour came from apr's non-official ON prompt (#3990), in BOTH engines.
+    # That is an apr defect, and a key for it would have laundered one into RED-MODEL.
+    #
+    # wrong_answer (cop ruling 2026-09-23, within ruling (a)): Qwen3.5-0.8B-UD-IQ2_XXS answers
+    # "What is 2+2?" without "4" on the OFFICIAL template, in apr AND llama.cpp (aprender-6c
+    # [3ada9a], #4004), while its Q4_K_M sibling answers "4". The key is INERT until a sweep
+    # re-proves it, all on the official ids: apr's first divergence from the llama.cpp CPU reference
+    # comes NO EARLIER than the reference's own CUDA leg diverges from it (parity calibrated per
+    # sweep against the oracle's noise; 6c measured oracle step 2, apr step 4); apr and both llama.cpp
+    # backends wrong; the control right in both engines; apr CPU == GPU. Until then the row is plain
+    # RED, as it would be without the key.
+    red_model:
+      Qwen3.5-0.8B-UD-IQ2_XXS.gguf:
+        ticket: "#4004"
+        defect: wrong_answer
+        thinking: "off"
+        expect: "4"
+        # the certified v2 2+2 control the sweep runs (dd's set; `golden-2plus2` is v1, not in it --
+        # aprender-83). The claim is re-proven on the prompt the sweep measures, never on the v1 text.
+        prompts: [ctl-2plus2]
+        control: Qwen3.5-0.8B-Q4_K_M.gguf
+    # F10, operator ruling 2026-09-23 on #3957 (verbatim): "c". apr has no CUDA forward for
+    # qwen35moe (hybrid SSM + MoE) and must REFUSE it by name on `apr run --gpu`: no fallback, no
+    # output (aprender-serve capability::no_cuda_forward_reason). The CUDA forward is 0.70.0 work.
+    red_unsupported:
+      "Qwen3.5-35B-A3B*.gguf":
+        architecture: qwen35moe
+        ticket: "#3977"
     backends: [cuda]
   # #3712 row B (operator 2026-09-21: "MORE than enough tokens for our needs (overdo it), and our verbs are
   # dogfooded, i.e chat with and without thinking, ditto run, ditto code"). A cell is (model, host, verb,
@@ -73,12 +165,27 @@ ladder:
   # the families below plus ONE representative per other arch, named here by file (cop 2026-09-21).
   cells:
     verbs: [run, chat, serve, code]
+    # #3828: a removal from this block must be DECLARED here with a reason, or the
+    # anti-shrink floor in check_model_ladder.sh refuses it as a silent shrink. The
+    # declaration is printed on every run, so a withdrawal cannot decay into an absence
+    # nobody re-reads. This is the mechanism #3817 needed and did not have.
+    withdrawn:
+      representatives:
+        qwen3moe: >-
+          #3817, 0.69.1: not a fit question and not a regression — this build has NO CUDA
+          forward for the qwen3moe architecture at all (#3714, lands 0.70.0). `apr run --gpu`
+          now refuses it by name at pre-load rather than silently falling back to CPU, so a
+          long-rung representative for it would owe cells no code can satisfy and a
+          RefusalCell would be a false arithmetic claim. Restore this key with #3714.
     long_rungs_for:
       families: [qwen35]                      # every consumer's family: the full rung set, through declared
       representatives:                        # one file per other arch the fleet holds
         qwen2: qwen2.5-coder-7b-instruct-q4_k_m.gguf      # lambda + gx10
         qwen3: Qwen3-8B-Q4_K_M.gguf                       # lambda + gx10
-        qwen3moe: Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf  # gx10 (128 GB unified); fits no 24 GB card long
+        # qwen3moe: REMOVED for 0.69.1 (#3817). Not a fit question — this build has no CUDA
+        # forward for the architecture at all (#3714, lands 0.70.0), so `apr run --gpu` refuses
+        # pre-load by name and there is no GPU cell to owe. The CPU path is unchanged and works.
+        # Restore this line with the GPU forward, not before.
   rungs:
     - id: qwen2-1.5b-q4km
       family: qwen2.5
@@ -102,8 +209,11 @@ ladder:
       gguf: Qwen3-8B-Q4_K_M.gguf
       sha256: d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785
       backends: [cpu, cuda]
-      required: false   # REFUSED by check_model_ladder.sh (#3712): T-2 is RED while this key stands
-      note: "second dense-Qwen3 size. No Q4_K model is optional (#3712), so the release gate refuses this key and the release cannot ship on it. It is not flipped here because the ARMED ladder-green shape reads the committed 0.68.2 lambda receipt (golden_output: Empty output — the 0.69.0 hold) and would turn pv lint red on every PR; the flip to true lands with the Qwen3-8B CUDA fix and a committed green lambda receipt"
+      required: true    # flipped 2026-09-22 (#3724): the empty-output defect this key was hiding is FIXED
+                        # and MEASURED green 8/8 on BOTH lambda (where it failed) and gx10 at 3ebb1c61e.
+                        # `required: false` on a Q4_K rung is what let 0.69.0 ship it as a note instead of a
+                        # failure -- FALSIFY-MCL-011's own if_fails says so -- and no Q4_K model is optional.
+      note: "second dense-Qwen3 size. No Q4_K model is optional (#3712), so the release gate refuses this key and the release cannot ship on it. FLIPPED to true for 0.69.1: the condition this note used to name as the reason for deferring — 'the flip lands with the Qwen3-8B CUDA fix and a committed green lambda receipt' — is the release's own work, not a reason to wait. Arming it surfaced what the key had masked since 0.69.0: the committed 0.68.2 lambda receipt carries qa_rc 5 / golden_output 'Empty output' / green false, so ladder-green fires missingGreenHost: lambda and takes contracts, pv lint, check_model_ladder and clean-room red together — ONE cause, four gates. resolve() unions green witnesses ACROSS versions, so a green 0.69.1 lambda receipt closes all four and no committed receipt is edited"
     - id: qwen35-0.8b-q4km
       family: qwen3.5
       arch: qwen35

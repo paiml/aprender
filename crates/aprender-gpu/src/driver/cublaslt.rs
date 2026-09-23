@@ -8,8 +8,8 @@
 //! must be FP16 or BF16. Caller converts FP16→FP32 if needed.
 
 use super::cublas_sys::{
-    CublasOperation, CUBLAS_COMPUTE_32F, CUBLAS_OP_N, CUBLAS_OP_T, CUDA_R_16F, CUDA_R_32F,
-    CUDA_R_8F_E4M3,
+    CublasOperation, CudaDataType, CUBLAS_COMPUTE_32F, CUBLAS_OP_N, CUBLAS_OP_T, CUDA_R_16BF,
+    CUDA_R_16F, CUDA_R_32F, CUDA_R_8F_E4M3,
 };
 use super::cublaslt_sys::*;
 use super::stream::CudaStream;
@@ -31,11 +31,34 @@ struct CachedFp8Plan {
     algo: CublasLtMatmulAlgo,
 }
 
+/// Element type of an FP8 GEMM's C/D tensor.
+///
+/// aprender#3728: the prefill GEMM writes `D = true_result × 448/act_absmax` and applies
+/// `act_absmax/448` only afterwards, so D's range must cover the activation quantization gain,
+/// not just the result. FP16 tops out at 65,504; qwen2.5-coder-7b's layer-1 QKV reached 85,807
+/// (input absmax 0.0602) and saturated. BF16 has FP32's exponent range, so that D cannot overflow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Fp8GemmOut {
+    /// IEEE half: 11-bit significand, max 65,504.
+    F16,
+    /// bfloat16: 8-bit significand, FP32's exponent range.
+    Bf16,
+}
+
+impl Fp8GemmOut {
+    fn cuda_type(self) -> CudaDataType {
+        match self {
+            Self::F16 => CUDA_R_16F,
+            Self::Bf16 => CUDA_R_16BF,
+        }
+    }
+}
+
 /// Safe wrapper around cuBLASLt handle
 pub struct CublasLtHandle {
     handle: CublasLtHandleRaw,
-    /// PMAT-086: Cached FP8→FP16 GEMM plans keyed by (m_padded, n, k)
-    fp8_plan_cache: std::collections::HashMap<(i32, i32, i32), CachedFp8Plan>,
+    /// PMAT-086: Cached FP8 GEMM plans keyed by (m_padded, n, k, output type)
+    fp8_plan_cache: std::collections::HashMap<(i32, i32, i32, Fp8GemmOut), CachedFp8Plan>,
 }
 
 // SAFETY: cuBLASLt handles are thread-safe when used with proper stream synchronization.
@@ -488,10 +511,81 @@ impl CublasLtHandle {
         ldd: i32,
         stream: &CudaStream,
     ) -> Result<(), GpuError> {
+        self.gemm_fp8_e4m3_cached(
+            Fp8GemmOut::F16,
+            m,
+            n,
+            k,
+            alpha,
+            a_ptr,
+            lda,
+            b_ptr,
+            ldb,
+            beta,
+            d_ptr,
+            ldd,
+            stream,
+        )
+    }
+
+    /// aprender#3728: the cached FP8 E4M3 × FP8 E4M3 GEMM with a **BF16** C/D.
+    ///
+    /// Same plan cache and layouts as `gemm_fp8_e4m3_to_f16_cached`; only the output element
+    /// type differs. Use it whenever D carries a quantization gain (see [`Fp8GemmOut`]).
+    #[allow(clippy::too_many_arguments)]
+    pub fn gemm_fp8_e4m3_to_bf16_cached(
+        &mut self,
+        m: i32,
+        n: i32,
+        k: i32,
+        alpha: f32,
+        a_ptr: u64,
+        lda: i32,
+        b_ptr: u64,
+        ldb: i32,
+        beta: f32,
+        d_ptr: u64,
+        ldd: i32,
+        stream: &CudaStream,
+    ) -> Result<(), GpuError> {
+        self.gemm_fp8_e4m3_cached(
+            Fp8GemmOut::Bf16,
+            m,
+            n,
+            k,
+            alpha,
+            a_ptr,
+            lda,
+            b_ptr,
+            ldb,
+            beta,
+            d_ptr,
+            ldd,
+            stream,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn gemm_fp8_e4m3_cached(
+        &mut self,
+        out: Fp8GemmOut,
+        m: i32,
+        n: i32,
+        k: i32,
+        alpha: f32,
+        a_ptr: u64,
+        lda: i32,
+        b_ptr: u64,
+        ldb: i32,
+        beta: f32,
+        d_ptr: u64,
+        ldd: i32,
+        stream: &CudaStream,
+    ) -> Result<(), GpuError> {
         let driver = CublasLtDriver::load()
             .ok_or_else(|| GpuError::CudaNotAvailable("cuBLASLt not loaded".to_string()))?;
 
-        let cache_key = (m, n, k);
+        let cache_key = (m, n, k, out);
 
         // PMAT-086: Build and cache plan on first use for this shape
         if !self.fp8_plan_cache.contains_key(&cache_key) {
@@ -538,11 +632,11 @@ impl CublasLtHandle {
                     ldb as i64,
                 ))?;
 
-                // C/D: FP16 [M, N] col-major
+                // C/D: FP16 or BF16 [M, N] col-major (aprender#3728)
                 let mut c_layout: CublasLtMatrixLayout = std::ptr::null_mut();
                 CublasLtDriver::check((driver.cublasLtMatrixLayoutCreate)(
                     &mut c_layout,
-                    CUDA_R_16F,
+                    out.cuda_type(),
                     m as u64,
                     n as u64,
                     ldd as i64,
@@ -551,7 +645,7 @@ impl CublasLtHandle {
                 let mut d_layout: CublasLtMatrixLayout = std::ptr::null_mut();
                 CublasLtDriver::check((driver.cublasLtMatrixLayoutCreate)(
                     &mut d_layout,
-                    CUDA_R_16F,
+                    out.cuda_type(),
                     m as u64,
                     n as u64,
                     ldd as i64,
@@ -641,7 +735,7 @@ impl CublasLtHandle {
 
             CublasLtDriver::check(matmul_status).map_err(|e| {
                 GpuError::CudaDriver(
-                    format!("cublasLtMatmul_fp8_cached(m={m}, n={n}, k={k}): {e}"),
+                    format!("cublasLtMatmul_fp8_cached({out:?}, m={m}, n={n}, k={k}): {e}"),
                     0,
                 )
             })
