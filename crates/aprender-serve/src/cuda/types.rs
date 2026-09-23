@@ -163,6 +163,24 @@ pub enum WeightQuantType {
     /// kernel that drops `m` gives the right spread around the wrong centre.
     /// 192 bytes per 256 elements is unique, so it is safe in `from_size`.
     Q5_1,
+    /// BF16 (type 30) - 2 bytes per element, the TOP HALF of an f32.
+    ///
+    /// #3908: `qwen2.5-coder-0.5b-instruct.apr` is 290 BF16 tensors + 1 F32, and
+    /// the .apr CUDA loader had no type-30 path, so CUDA declined, wgpu failed,
+    /// CPU ran, and the forced-GPU refusal (R-0b, #3002) returned rc=14. The
+    /// refusal is correct; the missing kernel was the defect.
+    ///
+    /// Unquantized like [`Self::F32`] and [`Self::F16`] — no blocks, no scales,
+    /// no codebook. It is the SIMPLEST type here: decoding is `f32::from_bits(
+    /// bits << 16)`, an EXACT widening with no rounding, because a bfloat16 is
+    /// literally the top 16 bits of an f32. So unlike every quantized variant
+    /// above, its GPU kernel can be held to BIT-EXACT agreement with the CPU
+    /// decoder rather than to a tolerance.
+    ///
+    /// Shares F16's size rule (2 bytes/element), which is why size alone can
+    /// never distinguish BF16 from F16 — the declared ggml type id is the only
+    /// discriminator, so it is deliberately ABSENT from `from_size`'s ladder.
+    BF16,
 }
 
 impl WeightQuantType {
@@ -178,6 +196,7 @@ impl WeightQuantType {
             Self::Q4_1 => 20 * 8, // Q4_1 uses 32-element blocks, so 8 blocks for 256 elements
             Self::F32 => 256 * 4, // F32: 4 bytes per element, 256 elements
             Self::F16 => 256 * 2, // F16: 2 bytes per element, 256 elements
+            Self::BF16 => 256 * 2, // BF16: 2 bytes per element, 256 elements
             Self::IQ4XS => 136,   // IQ4_XS: 136 bytes per 256-element super-block
             Self::IQ4NL => 18 * 8, // IQ4_NL uses 32-element blocks, so 8 blocks for 256 elements
             Self::IQ3S => 110,    // IQ3_S: 110 bytes per 256-element super-block
@@ -197,6 +216,7 @@ impl WeightQuantType {
             Self::Q4_1 => 20,
             Self::F32 => 128,  // F32: 4 bytes per element, 32 elements
             Self::F16 => 64,   // F16: 2 bytes per element, 32 elements
+            Self::BF16 => 64,  // BF16: 2 bytes per element, 32 elements
             Self::IQ4XS => 17, // IQ4_XS super-block: 136/8 = 17 per 32
             Self::IQ4NL => 18, // IQ4_NL is NATIVELY a 32-element block: exact, not a division
             Self::IQ3S => 13,  // IQ3_S super-block: 110/8 = 13.75, truncated as Q6K's 210/8 is
@@ -231,7 +251,10 @@ impl WeightQuantType {
             // F32: 4 bytes per element
             Self::F32 => size_bytes == n_rows * n_cols * 4,
             // F16: 2 bytes per element
-            Self::F16 => size_bytes == n_rows * n_cols * 2,
+            // #3908: BF16 shares F16's size rule exactly, which is why size can never
+            // tell them apart -- the declared ggml type id is the only discriminator,
+            // and BF16 therefore stays out of `from_size`'s inference ladder.
+            Self::F16 | Self::BF16 => size_bytes == n_rows * n_cols * 2,
             // Super-block formats (256 elements per super-block)
             Self::Q4K | Self::Q5K | Self::Q6K | Self::IQ4XS | Self::IQ3S => {
                 let n_superblocks = n_rows * ((n_cols + 255) / 256);
@@ -380,6 +403,9 @@ pub enum GemvKernel {
     /// Q5_1 GEMV kernel (24 bytes / 32 elements, affine w = q*d + m)
     /// #3885: the 24 Q5_1 tensors in Qwen2.5-0.5B-Instruct-IQ4_XS
     Q5_1,
+    /// BF16 GEMV kernel (2 bytes per element, exact widening load)
+    /// #3908: the 290 BF16 tensors in qwen2.5-coder-0.5b-instruct.apr
+    BF16,
 }
 
 impl BoundWeight {
@@ -404,6 +430,7 @@ impl BoundWeight {
             WeightQuantType::IQ4NL => GemvKernel::IQ4NL,
             WeightQuantType::IQ3S => GemvKernel::IQ3S,
             WeightQuantType::Q5_1 => GemvKernel::Q5_1,
+            WeightQuantType::BF16 => GemvKernel::BF16,
         };
         Self {
             ptr,
