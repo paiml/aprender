@@ -21444,3 +21444,22 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4029
+  github_issue: 4029
+  item_type: task
+  title: 'CRUX vLLM driver: max_model_len = context + the batch''s largest max_tokens, recorded per row (thinking-ON serve rows refused HTTP 400)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-75
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/crux_vllm/test_engine.py carries a run_batch case (context 4096, budgets 5/4096/300) that asserts the engine loads with max_model_len 8192 and every row records 8192, and goes RED against model_len() = a.context'
+  - 'a thinking-ON vllm serve row at the certified ON budget answers on a real rerun (GPU; after 0.69.1 is published)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

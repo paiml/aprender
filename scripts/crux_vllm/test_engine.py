@@ -138,6 +138,22 @@ print(f"{'ok  ' if _ok else 'FAIL'} [batch] a preflight refusal fans out and loa
 failed += not _ok
 CASES_TOTAL += bc.CASE_COUNT + bc.SSE_CASE_COUNT + bc.PROC_CASE_COUNT + 1
 
+# ── #4029: the engine must hold context + the batch's LARGEST budget, and every row must say so ──────────────
+_seen = []
+_fake = bc.fake_inproc()
+engine.preflight = lambda a: None
+engine.load_inproc = lambda a: (_seen.append(engine.model_len(a)), _fake(a))[1]
+_w = bc.batch_env()
+engine.run_batch(bc.model_args(context=4096), [
+    {"prompt_id": p, "verb": "run", "messages": bc.msgs(_w, p, ["q"]), "thinking": "on", "max_tokens": n}
+    for p, n in (("small", 5), ("on-budget", 4096), ("mid", 300))])
+_r = bc.rows(_w)
+_ok = _seen == [8192] and len(_r) == 3 and all(r.get("max_model_len") == 8192 for r in _r)
+print(f"{'ok  ' if _ok else 'FAIL'} [#4029] max_model_len = context + the batch's largest max_tokens, on every row"
+      + ("" if _ok else f"\n     engine saw {_seen}, rows {[r.get('max_model_len') for r in _r]}"))
+failed += not _ok
+CASES_TOTAL += 1
+
 for name, logs, must, must_not in CASES:
     got = engine.refusal(GENERIC, *logs)
     ok = got.startswith(f"RuntimeError: {GENERIC}") and (must is None or must in got) and (
