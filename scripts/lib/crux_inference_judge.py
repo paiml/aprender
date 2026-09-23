@@ -708,6 +708,7 @@ def collect(args):
     for k in keys:
         prompt = prompts[k[5]]
         entries = {}
+        unpinned = []
         for eng in ENGINES:
             row = by_key[k].get(eng)
             if row is None:
@@ -721,7 +722,16 @@ def collect(args):
                     entries[eng]["answered"] = False
                     entries[eng]["why"] = ("unpinned: the run's meta records no version for %s, so a verdict it "
                                            "vouched for could not name what produced it" % eng)
+                    unpinned.append(eng)
         verdict, ok = judge_cell(entries, prompt["expect_any"])
+        verdict_reason = None
+        if unpinned:
+            # No third state (operator doctrine, 2026-09-23; cop ruling on #3952): a cell whose oracle cannot be
+            # named is NOT PROVEN, and not-proven is RED. The reason says which kind of RED this is — it is not
+            # a finding that apr answered wrongly.
+            verdict = "RED"
+            verdict_reason = ("oracle unpinned: %s answered with no recorded version, so this cell is not proven "
+                              "(this is not a finding that apr was wrong)" % ", ".join(unpinned))
         for eng in ENGINES:
             entries[eng]["correct"] = ok[eng]
             # #3832: one indivisible record per engine — WHICH engine, at WHICH
@@ -735,6 +745,8 @@ def collect(args):
             "key": dict(zip(("model_sha256", "host", "verb", "thinking", "rung", "prompt_id"), k[:6]),
                         **({"mode": k[6]} if k[6] else {})),
             "verdict": verdict,
+            # #3952: why a verdict is what it is, when the reason is not the plain rule (None otherwise).
+            "verdict_reason": verdict_reason,
             # #3832: the cell states its own coverage, so a reader never has to
             # infer how many engines produced the verdict they are reading.
             "quorum": cell_quorum(entries),

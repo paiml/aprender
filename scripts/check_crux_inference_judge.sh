@@ -444,9 +444,20 @@ apr_out "$d" $P "5" gpu false; engine_out "$d" vllm $P "2 + 2 = 4" "cuda:0 NVIDI
 row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
 vllm_row "$d/manifest.jsonl" $P 0 "$d/vllm-$P.json"
 UNPIN_ENGINE=vllm run_judge "$d"; GOT_RC=$?
-expect "an UNPINNED vllm cannot vouch against apr (UNJUDGED, not RED)" "$d" 2 $P UNJUDGED
+expect "an UNPINNED vllm makes the cell RED: not proven (no third state)" "$d" 1 $P RED
 why=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cells"][0]["engines"]["vllm"]["why"])' "$d/receipt.json" 2>/dev/null)
 case "$why" in "unpinned:"*) ok "the unpinned vllm is named as unpinned" ;; *) broke "vllm unpinned why: '$why'" ;; esac
+rsn=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cells"][0]["verdict_reason"])' "$d/receipt.json" 2>/dev/null)
+case "$rsn" in "oracle unpinned: vllm"*"not a finding that apr was wrong"*) ok "the RED says it is an unpinned oracle, not apr being wrong" ;; *) broke "unpinned verdict_reason: '$rsn'" ;; esac
+# The same shape with apr RIGHT: an unpinned oracle still cannot make the cell GREEN.
+d=$(newcase vllm_unpinned_apr_right)
+apr_out "$d" $P "4" gpu false; engine_out "$d" vllm $P "2 + 2 = 4" "cuda:0 NVIDIA GeForce RTX 4090"
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+vllm_row "$d/manifest.jsonl" $P 0 "$d/vllm-$P.json"
+UNPIN_ENGINE=vllm run_judge "$d"; GOT_RC=$?
+expect "an UNPINNED vllm agreeing with a right apr is still RED, never GREEN" "$d" 1 $P RED
+rsn=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cells"][0]["verdict_reason"])' "$TMP/vllm_right_apr_wrong/receipt.json" 2>/dev/null)
+[ "$rsn" = "None" ] && ok "a plain-rule RED carries no verdict_reason" || broke "plain RED verdict_reason: '$rsn'"
 ver=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cells"][0]["engines"]["vllm"]["version"])' "$TMP/vllm_right_apr_wrong/receipt.json" 2>/dev/null)
 [ "$ver" = "vllm=fixture" ] && ok "a pinned vllm's cell carries its probe line as its version" || broke "vllm cell version: '$ver'"
 
