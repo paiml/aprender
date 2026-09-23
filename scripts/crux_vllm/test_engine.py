@@ -159,6 +159,10 @@ def _fake_llm(**kw):
     raise _Stop("fake LLM: stop after recording max_model_len")
 
 
+def _preflight_refuses(_a):
+    raise RuntimeError("preflight: refused for the #4029 case")
+
+
 def _fake_popen(cmd, **_kw):
     _given["serve"] = int(cmd[cmd.index("--max-model-len") + 1])
     raise _Stop("fake Popen: stop after recording --max-model-len")
@@ -176,31 +180,48 @@ try:
     engine.subprocess = types.SimpleNamespace(Popen=_fake_popen, STDOUT=None)
     engine.preflight = lambda a: None
     engine.load_inproc, engine.serve_session = REAL_LOAD_INPROC, REAL_SERVE_SESSION
-    # (label, path, context, items as (verb, max_tokens), expected max_model_len). The incident numbers (context 4096,
-    # ON budget 4096) plus a context that differs from every budget, so 2*context or a hardcoded +4096 cannot pass.
-    # A bad-verb item and a serve item refused for sharing the batch with run items must not size the engine.
+    # (label, path, context, items as (verb, max_tokens, thinking), expected max_model_len, how). The incident numbers
+    # (context 4096, ON budget 4096) plus a context that differs from every budget, so 2*context or a hardcoded +4096
+    # cannot pass; one past 8192 and one at odd sizes, so no clamp or rounding can. A bad-verb item and a serve item
+    # refused for sharing the batch with run items must not size the engine. Sizing never depends on thinking.
+    # how: "batch" (run_batch), "gen" (the single-cell verb), "preflight" (preflight refuses: rows still record the
+    # size the engine would have had), "none" (every item refused: nothing loads, rows record the context alone).
     _cases = [
-        ("inproc incident", "inproc", 4096, [("run", 5), ("run", 4096), ("run", 300), ("no-such-verb", 100_000)], 8192),
-        ("serve incident", "serve", 4096,
-         [("serve run", 5), ("serve run", 4096), ("serve run", 300), ("no-such-verb", 100_000)], 8192),
-        ("inproc context != budget", "inproc", 2048, [("run", 5), ("run", 1024), ("chat", 900)], 3072),
-        ("serve context != budget", "serve", 2048, [("serve run", 900), ("serve stream", 1024)], 3072),
+        ("inproc incident", "inproc", 4096,
+         [("run", 5, "on"), ("run", 4096, "on"), ("run", 300, "on"), ("no-such-verb", 100_000, "on")], 8192, "batch"),
+        ("serve incident", "serve", 4096, [("serve run", 5, "on"), ("serve run", 4096, "on"), ("serve run", 300, "on"),
+                                           ("no-such-verb", 100_000, "on")], 8192, "batch"),
+        ("inproc context != budget", "inproc", 2048, [("run", 5, "on"), ("run", 1024, "on"), ("chat", 900, "on")],
+         3072, "batch"),
+        ("serve context != budget", "serve", 2048, [("serve run", 900, "on"), ("serve stream", 1024, "on")], 3072,
+         "batch"),
         ("mixed: refused serve item does not size the run engine", "inproc", 4096,
-         [("run", 5), ("serve run", 100_000)], 4101),
-        # Past any incidental ceiling (a clamp at 8192 passed every case above) and at odd sizes (no rounding).
-        ("serve past 8192", "serve", 16384, [("serve run", 100), ("code", 4096)], 20480),
-        ("inproc odd sizes", "inproc", 1001, [("chat", 7), ("run", 3)], 1008),
+         [("run", 5, "on"), ("serve run", 100_000, "on")], 4101, "batch"),
+        ("serve past 8192", "serve", 16384, [("serve run", 100, "on"), ("code", 4096, "on")], 20480, "batch"),
+        ("inproc odd sizes", "inproc", 1001, [("chat", 7, "on"), ("run", 3, "on")], 1008, "batch"),
+        ("thinking off sizes the same", "inproc", 4096, [("run", 5, "on"), ("run", 4096, "off")], 8192, "batch"),
+        ("serve, thinking unset", "serve", 2048, [("serve run", 1500, "unset")], 3548, "batch"),
+        ("gen: one cell, the incident", "inproc", 4096, [("run", 4096, "off")], 8192, "gen"),
+        ("preflight refusal still records the size", None, 4096, [("run", 4096, "on"), ("run", 5, "on")], 8192,
+         "preflight"),
+        ("every item refused: rows record the context alone", None, 3000,
+         [("no-such-verb", 4096, "on"), ("run", 0, "on")], 3000, "none"),
     ]
-    for _label, _path, _ctx, _items, _want in _cases:
+    for _label, _path, _ctx, _items, _want, _how in _cases:
         _given.clear()
         _w = bc.batch_env()
-        engine.run_batch(bc.model_args(context=_ctx), [
-            {"prompt_id": f"p{i}", "verb": v, "messages": bc.msgs(_w, f"p{i}", ["q"]), "thinking": "on",
-             "max_tokens": n} for i, (v, n) in enumerate(_items)])
+        engine.preflight = (lambda a: None) if _how != "preflight" else _preflight_refuses
+        _batch = [{"prompt_id": f"p{i}", "verb": v, "messages": bc.msgs(_w, f"p{i}", ["q"]), "thinking": th,
+                   "max_tokens": n} for i, (v, n, th) in enumerate(_items)]
+        if _how == "gen":
+            (_one,) = _batch
+            engine.gen(bc.model_args(context=_ctx, **_one))
+        else:
+            engine.run_batch(bc.model_args(context=_ctx), _batch)
         _r = bc.rows(_w)
         _loaded = [r for r in _r if "fake" in (r.get("refused") or "")]
-        _ok = (_given.get(_path) == _want and len(_r) == len(_items) and _loaded
-               and all(r.get("max_model_len") == _want for r in _r))
+        _ok = (len(_r) == len(_items) and all(r.get("max_model_len") == _want for r in _r)
+               and (_given.get(_path) == _want and _loaded if _path else not _given and not _loaded))
         print(f"{'ok  ' if _ok else 'FAIL'} [#4029 {_label}] vLLM is handed context + the largest budget it will run, "
               "and every row records it" + ("" if _ok else f"\n     vLLM got {_given}, want {_want}; rows "
                                              f"{[(r.get('max_model_len'), (r.get('refused') or '')[:50]) for r in _r]}"))
