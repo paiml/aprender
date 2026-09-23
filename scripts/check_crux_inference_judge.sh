@@ -77,6 +77,7 @@ import hashlib, json, sys
 sys.path.insert(0, sys.argv[1]); import crux_prompt_certify as c
 json.dump({"schema": c.SCHEMA, "prompts": sys.argv[2], "prompts_sha256": hashlib.sha256(open(sys.argv[2], "rb").read()).hexdigest(),
            "admitted": {"fixture/Q4_K_M": ["golden-2plus2", "golden-greeting", "golden-paris", "chat-arith-2turn"]},
+           "admitted_by_sha": {"a" * 64: __import__("os").environ.get("ADMIT", "golden-2plus2,golden-greeting,golden-paris,chat-arith-2turn").split(",")},
            "rejected": {}, "uncontrolled": [], "cells": []}, open(sys.argv[3], "w"))
 PY
 }
@@ -854,6 +855,52 @@ python3 -c 'import sys; open(sys.argv[2],"w").write(open(sys.argv[1]).read() + "
 PROMPTS_SAVED=$PROMPTS; PROMPTS="$d/prompts.json"; run_judge "$d"; GOT_RC=$?; PROMPTS=$PROMPTS_SAVED
 expect "J2: one changed byte in the prompt set makes the certification stale: declines" "$d" 2 $P GREEN
 declined_has "  ...the certifier's own refusal is quoted" "$d" "an edited prompt set is uncertified"
+# ── #3962 joins (aprender-dd, aprender-19): each was a wrong verdict on the judge before this block.
+# hf/vLLM split the think block off before writing `text`: an UNCLOSED one arrives as `reasoning` + "".
+d=$(newcase j_hf_unclosed_reasoning)
+apr_out "$d" $P "$T4" gpu false; llama_out "$d" $P "$Q" "$T4"
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"; row "$d/manifest.jsonl" llama.cpp $P 0 "$d/llama-$P.out" "$d/llama-$P.err"
+python3 -c 'import json,sys; json.dump({"text": "", "reasoning": "2+2, let me carefully consider the", "reported": {"device": "cuda:0 fixture"}}, open(sys.argv[1], "w"))' "$d/hf-$P.json"
+row "$d/manifest.jsonl" hf $P 0 "$d/hf-$P.json" ""
+run_judge "$d"; GOT_RC=$?
+expect "J: an hf control whose think block never closed is RED" "$d" 1 $P RED
+reason_has "  ...read as UNCLOSED (the reasoning field rebuilt), not as a missing tag" "$d" $P "unclosed think"
+# aprender-19 R1: each serve ROUTE is its own cell; a wrong route cannot hide behind a right one.
+d=$(newcase j_route_is_a_key); control_green "$d"
+for rt in "POST /api/chat" "POST /v1/chat/completions"; do
+  f="$d/apr-route-${rt//[^a-z]/}.json"
+  case $rt in *api*) txt="<answer>5</answer>" ;; *) txt="$T4" ;; esac
+  python3 -c 'import json,sys; json.dump({"text": sys.argv[2], "reported": {"device": "fixture"}}, open(sys.argv[1], "w"))' "$f" "$txt"
+  python3 -c 'import json,sys; open(sys.argv[1],"a").write(json.dumps({"kind":"gen","engine":"apr","prompt_id":"golden-2plus2","rc":0,"stdout":sys.argv[2],"stderr":None,"refused":None,"model_sha256":"%s","host":"fixture","verb":"serve run","thinking":"off","backend":"gpu","mode":"nonstream","route":sys.argv[3]})+"\n")' "$d/manifest.jsonl" "$f" "$rt"
+done
+for e in llama hf; do serve_json "$d" $e $P nonstream "$T4"; done
+for rt in "POST /api/chat" "POST /v1/chat/completions"; do
+  for e in llama.cpp hf; do f="$d/${e%%.*}-$P-nonstream.json"; [ "$e" = llama.cpp ] && f="$d/llama-$P-nonstream.json"
+    python3 -c 'import json,sys; open(sys.argv[1],"a").write(json.dumps({"kind":"gen","engine":sys.argv[2],"prompt_id":"golden-2plus2","rc":0,"stdout":sys.argv[3],"stderr":None,"refused":None,"model_sha256":"%s","host":"fixture","verb":"serve run","thinking":"off","backend":"gpu","mode":"nonstream","route":sys.argv[4]})+"\n")' "$d/manifest.jsonl" "$e" "$f" "$rt"
+  done
+done
+run_judge "$d"; GOT_RC=$?
+got=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(sorted((c["key"].get("route"), c["verdict"]) for c in r["cells"] if c["key"]["verb"]=="serve run"))' "$d/receipt.json" 2>/dev/null)
+[ "$GOT_RC" = 1 ] && [ "$got" = "[('POST /api/chat', 'RED'), ('POST /v1/chat/completions', 'GREEN')]" ] && ok "J/R1: a wrong /api/chat is its own RED cell beside a right /v1 route" || broke "J/R1 route key: rc $GOT_RC '$got'"
+# aprender-19 R2: a broken wire is named, never read as a missing text field.
+d=$(newcase j_protocol_fault); control_green "$d"
+python3 -c 'import json,sys; json.dump({"text": None, "protocol_fault": "stream_truncated", "reported": {"device": "fixture"}}, open(sys.argv[1], "w"))' "$d/apr-$P-stream.json"
+serve_row "$d/manifest.jsonl" apr $P stream 0 "$d/apr-$P-stream.json"
+for e in llama hf; do serve_json "$d" $e $P stream "$T4"; done
+serve_row "$d/manifest.jsonl" llama.cpp $P stream 0 "$d/llama-$P-stream.json"; serve_row "$d/manifest.jsonl" hf $P stream 0 "$d/hf-$P-stream.json"
+run_judge "$d"; GOT_RC=$?
+got=$(python3 -c 'import json,sys; c=[x for x in json.load(open(sys.argv[1]))["cells"] if x["key"].get("mode")=="stream"][0]; print(c["verdict"], c["engines"]["apr"]["why"])' "$d/receipt.json" 2>/dev/null)
+case "$got" in "RED protocol fault: stream_truncated"*) ok "J/R2: a protocol_fault is named on the apr entry" ;; *) broke "J/R2 protocol fault: '$got'" ;; esac
+# dd's admitted_by_sha: a prompt the certification did not admit FOR THIS MODEL is RED, even if right.
+d=$(newcase j_not_admitted); control_green "$d"
+apr_out "$d" golden-paris "<answer>Paris</answer>" gpu false; llama_out "$d" golden-paris "What is the capital of France?" "<answer>Paris</answer>"
+row "$d/manifest.jsonl" apr golden-paris 0 "$d/apr-golden-paris.out" "$d/apr-golden-paris.err"
+row "$d/manifest.jsonl" llama.cpp golden-paris 0 "$d/llama-golden-paris.out" "$d/llama-golden-paris.err"; hf_ok "$d" golden-paris "<answer>Paris</answer>"
+ADMIT=golden-2plus2 cert_for "$PROMPTS" "$d/cert.json"
+CERT_SAVED=$CERT; CERT="$d/cert.json"; run_judge "$d"; GOT_RC=$?; CERT=$CERT_SAVED
+expect "J2: a right answer to a prompt NOT admitted for this model is RED" "$d" 1 golden-paris RED
+reason_has "  ...named as not certified for this model" "$d" golden-paris "not admitted for this model"
+
 d=$(newcase f6_all_green); three "$d" "$T4" "$T4" "$T4"
 run_judge "$d"; GOT_RC=$?
 expect "F6 positive control of this section: apr, ggml and the bf16 control all right is GREEN and PASSES" "$d" 0 $P GREEN
@@ -880,6 +927,9 @@ apr-differs-ignored|ANSWERED but WRONG does not corroborate|s/^        elif a.ge
 token-loop-off|named DEGENERATE|s/^    return top >= 0.9 \* len(chars) or token_loop(text) is not None$/    return top >= 0.9 * len(chars)/
 negative-control-off|the lane is blind|s/^    blind = sorted(v for v, r in negative.items() if r\["verdict"\] != "RED")$/    blind = []/
 per-verb-control-off|does not control the serve lane|s/^    uncontrolled = \["%s/    uncontrolled = [] and ["%s/
+reasoning-not-rebuilt|read as UNCLOSED|s/^    if isinstance(doc, dict) and isinstance(doc.get("reasoning"), str) and doc.get("reasoning"):$/    if False:/
+route-not-keyed|J\/R1 route key|s/, mode, r.get("route") or "")$/, mode, "")/
+admission-off|NOT admitted for this model is RED|s/^        if admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        if False:/
 certification-off|no certification receipt declines|s/^        certified = certification_ok(args.prompts, getattr(args, "certification", None))$/        certified = True/
 MUT
 fi

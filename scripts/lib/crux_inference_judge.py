@@ -304,6 +304,16 @@ def parse_engine_json(stdout):
     except ValueError as exc:
         out["why"] = "stdout is not the contract's JSON: %s" % exc
         return out
+    if isinstance(doc, dict) and doc.get("protocol_fault"):
+        # #3962 R2 (aprender-19): the wire broke. Named, never read as a missing text field.
+        out["why"] = "protocol fault: %s" % doc["protocol_fault"]
+        return out
+    if isinstance(doc, dict) and isinstance(doc.get("reasoning"), str) and doc.get("reasoning"):
+        # #3962 (aprender-dd): hf/vLLM split the think block off before writing `text`; an UNCLOSED
+        # block arrives as `reasoning` + "". Rebuild the raw reply (crux_prompt_certify.driver_raw's
+        # shape) so the oracle sees an unclosed think as unclosed, not as a missing <answer> tag.
+        t = doc.get("text") or ""
+        doc = dict(doc, text="<think>" + doc["reasoning"] + ("</think>" + t if t else ""))
     if not isinstance(doc, dict) or not isinstance(doc.get("text"), str):
         out["why"] = "stdout JSON has no text field"
         return out
@@ -798,13 +808,25 @@ def collect(args):
         # absent for run and chat. Plugin serve rows are non-streaming.
         mode = r.get("mode") or ("nonstream" if r["verb"] == "serve run" else "")
         pr = prompts[r["prompt_id"]]
+        # #3962 R1 (aprender-19): each serve ROUTE is its own cell, an additive key part like `mode`.
         k = (r["model_sha256"], r["host"], r["verb"], r["thinking"], pr.get("rung") or pr.get("tier") or "v2",
-             r["prompt_id"], mode)
+             r["prompt_id"], mode, r.get("route") or "")
         if k not in by_key:
             keys.append(k)
             by_key[k] = {}
         by_key[k][r["engine"]] = r
 
+    # #3962 J2 (per cell): the certification admits prompts PER MODEL (quant sha). A prompt it did not
+    # admit for this model is RED on that cell, however right the answer -- it was never shown answerable.
+    admitted = None
+    if pdoc.get("schema") == "crux-inference-prompts/v2" and getattr(args, "certification", None):
+        try:
+            with open(args.certification, encoding="utf-8") as fh:
+                admitted = json.load(fh).get("admitted_by_sha")
+        except (OSError, ValueError):
+            admitted = None
+        if not isinstance(admitted, dict):
+            admitted = {}   # a receipt with no per-model admission admits nothing
     cells = []
     for k in keys:
         prompt = prompts[k[5]]
@@ -825,6 +847,10 @@ def collect(args):
         fmt = next((by_key[k][e].get("format") for e in by_key[k] if by_key[k][e].get("format")), None) \
             or fmt_of_model.get(k[0])
         verdict, ok, reasons, extracted = judge_cell(entries, prompt, fmt)
+        if admitted is not None and k[5] not in admitted.get(k[0], ()):
+            reasons = reasons + ["prompt %s is not admitted for this model by the certification (admitted_by_sha) -- "
+                                 "never shown answerable here (#3962 J2)" % k[5]]
+            verdict = "RED"
         for eng in ENGINES:
             entries[eng]["correct"] = ok[eng]
             # #3832: one indivisible record per engine — WHICH engine, at WHICH
@@ -836,7 +862,7 @@ def collect(args):
         said = {e: norm(v["answer"]) for e, v in entries.items() if v.get("answered")}
         cells.append({
             "key": dict(zip(("model_sha256", "host", "verb", "thinking", "rung", "prompt_id"), k[:6]),
-                        **({"mode": k[6]} if k[6] else {})),
+                        **({"mode": k[6]} if k[6] else {}), **({"route": k[7]} if k[7] else {})),
             "verdict": verdict,
             # #3957: why a cell is RED, every reason, and what each engine's answer extracted to.
             "reasons": reasons,
