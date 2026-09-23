@@ -1,3 +1,16 @@
+# tool_version=none (candidate set derived by `bash scripts/check_no_silent_truncation.sh --list`)
+#
+# The instrument is scripts/lib/truncation_scan.py, which carries no version, so this
+# declares `none` in the spelling tree_reader_unwired_baseline.txt already uses for a
+# derived baseline with no versioned analyser (#3217 requires the declaration; the
+# version-comparison loop skips a tool that is not pinned in tools.toml).
+#
+# ONE DIFFERENCE FROM THAT PRECEDENT, STATED RATHER THAN GLOSSED: it says "regenerate
+# with --update". This file has no --update and deliberately will not get one. Only the
+# KEY and TEXT columns are derived; the CLASS column is a human reading that no command
+# reproduces. A regenerate button would also be the exact laundering vector the KEY note
+# below exists to close -- a baseline regenerated to clear churn takes any genuine new
+# truncation in the same commit with it. Add a row by hand, with its class and a reason.
 # silent_truncation_baseline.txt -- the surface #3904 ratchets down.
 #
 # THE RULE IS NOT "NEVER TRUNCATE", IT IS "NEVER TRUNCATE SILENTLY". A bare slice makes a
