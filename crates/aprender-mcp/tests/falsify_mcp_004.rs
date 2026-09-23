@@ -1,3 +1,4 @@
+#![cfg(feature = "apr-tools")] // apr's own tools (PMAT-3954: they exist only under this feature)
 //! FALSIFY-MCP-004 — `apr.qa` returns a JSON body whose shape matches the
 //! `QaReport` serialized by `apr qa --json`.
 //!
