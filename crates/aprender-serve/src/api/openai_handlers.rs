@@ -667,6 +667,7 @@ pub(crate) fn build_chat_response(
     tools: Option<&[super::OpenAiTool]>,
     tool_choice: Option<crate::grammar::ToolChoice>,
     timings: Option<super::Timings>,
+    used_gpu: Option<bool>,
 ) -> Response {
     let (brick_trace, step_trace, layer_trace) = build_trace_data(
         trace_level,
@@ -693,6 +694,7 @@ pub(crate) fn build_chat_response(
     };
 
     Json(ChatCompletionResponse {
+        used_gpu,
         id: request_id,
         object: "chat.completion".to_string(),
         created: unix_timestamp(),
@@ -1050,6 +1052,7 @@ fn try_gpu_backend(
         // This backend does not separate prefill from decode; §3 timings are
         // absent rather than zero.
         None,
+        None,
     ))
 }
 
@@ -1139,6 +1142,7 @@ fn try_cached_backend(
         request_tool_choice(request),
         // This backend does not separate prefill from decode; §3 timings are
         // absent rather than zero.
+        None,
         None,
     ))
 }

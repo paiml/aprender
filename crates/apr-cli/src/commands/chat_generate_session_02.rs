@@ -297,6 +297,29 @@ impl ChatSession {
                 return Ok(mapped.model.decode(&turn.tokens[prompt_len..]));
             }
 
+            // #3987: qwen3moe is served by the ONE dispatch `apr run` uses (#3714), never the
+            // dense model (it has no dense FFN). The dispatch tries CUDA unless --no-gpu, prints
+            // its reason if the GPU cannot serve, and reports which backend ran -- which is what
+            // the chat envelope then says. Per turn it reprocesses the whole history: correct,
+            // not fast (no cross-turn KV reuse), accepted for 0.69.1.
+            if is_qwen3_moe_gguf(mapped) {
+                let model = OwnedQuantizedModel::from_mapped(mapped)
+                    .map_err(|e| format!("Failed to create GGUF model: {e}"))?;
+                let (output_tokens, used_gpu) =
+                    realizar::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
+                        mapped,
+                        &model,
+                        &prompt_tokens,
+                        &gen_config,
+                        config.force_cpu,
+                    )
+                    .map_err(|e| format!("qwen3moe generate failed: {e}"))?;
+                self.generated_on_gpu = used_gpu;
+                let new_tokens = output_tokens.get(prompt_len..).unwrap_or(&[]);
+                trace_generated_tokens(config.trace, &mapped.model, new_tokens);
+                return Ok(mapped.model.decode(new_tokens));
+            }
+
             // GH-224: Try cached CUDA model first (no re-upload)
             #[cfg(feature = "cuda")]
             if !config.force_cpu && !self.cuda_init_failed {

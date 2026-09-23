@@ -592,6 +592,33 @@ fn start_gguf_server_cuda(
     use realizar::api::{create_router_with_config, AppState, BatchConfig};
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
+    // #3987: a qwen3moe file has no DENSE FFN, only per-expert tensors, so the dense
+    // `OwnedQuantizedModelCuda` built below dereferences a null `ffn_gate` on its first
+    // forward (measured through `apr chat`: "ffn_gate_ptr is null (0)"), and the state it
+    // makes has no quantized model, so the MoE chat backend answered 501. Serve it from
+    // the state the CPU server builds (quantized model + retained map) and opt its MoE
+    // backend into the ONE dispatch `apr run` uses. Qwen3.5-MoE spellings are excluded:
+    // they are folded into `qwen3_moe` by the normaliser but carry SSM layers the
+    // qwen3moe forward does not run, and the capability refusal names them.
+    let arch = quantized_model.config().architecture.clone();
+    if realizar::gguf::moe_forward_handles(&arch)
+        && realizar::capability::no_cuda_forward_reason(&arch).is_none()
+    {
+        println!(
+            "{}",
+            "qwen3moe: serving through the MoE CUDA dispatch (#3714, #3987)".cyan()
+        );
+        let model_source = measured_model_source(&quantized_model, config);
+        let state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
+            .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+            .with_model_source(model_source)
+            .with_mapped_gguf_model(mapped_model)
+            .with_moe_gpu()
+            .with_offload_report(offload)
+            .with_verbose(config.verbose);
+        return serve_router(state, config);
+    }
+
     println!(
         "{}",
         "Enabling optimized CUDA acceleration (PAR-111)...".cyan()
