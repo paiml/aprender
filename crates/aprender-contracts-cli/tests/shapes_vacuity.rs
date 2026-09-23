@@ -17,6 +17,7 @@
 //! |---|---|---|---|
 //! | `shapes-one-empty` | `empty-shape=0`, `tool-status=1` | yes | **exit 2**, decline naming `empty-shape` |
 //! | `shapes-one-empty-unarmed` | same | no | **Pass**, `declines: ["empty-shape"]` |
+//! | `shapes-one-empty-and-violating` | `empty-shape=0`, `tool-status=1` (violating) | yes | **exit 1**, Fail, `declines: ["empty-shape"]` |
 //! | `json-ok` | `tool-status=1` | yes | Pass, `declines: []` |
 //!
 //! The second row is what keeps the fix from being "refuse whenever anything is empty": an UNARMED
@@ -184,6 +185,36 @@ fn an_unarmed_shape_that_graded_nothing_is_reported_not_refused() {
             .any(|s| s.as_str() == Some("empty-shape")),
         "an UNARMED shape that graded nothing must not be filed under \
          not_armed_shapes either — `declines` is the only list it belongs in\n{}",
+        r.all()
+    );
+}
+
+/// A REAL VIOLATION OUTRANKS A VACUITY — found by all three lanes of the #3622 re-review.
+///
+/// `vacuous_armed` and `passed` are computed over DISJOINT shapes: one armed shape can grade
+/// nothing while another armed shape grades a node and finds it broken. The first cut checked
+/// vacuity first, so this corpus reported `Unknown(NoFocus)` / exit 2 — and a consumer that reads
+/// exit 2 as "unmeasured" never saw a Fail the gate had actually measured. The decline is still
+/// REPORTED in `declines`; it just may not hide the verdict.
+#[test]
+fn a_real_violation_is_a_fail_even_beside_a_vacuous_armed_shape() {
+    let r = shapes_on("shapes-one-empty-and-violating");
+    assert_eq!(
+        r.code,
+        1,
+        "a measured violation must FAIL, not decline, when another armed shape graded nothing\n{}",
+        r.all()
+    );
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&r.stdout).expect("json")["verdict"].as_str(),
+        Some("Fail"),
+        "{}",
+        r.all()
+    );
+    assert_eq!(
+        r.extra()["declines"][0].as_str(),
+        Some("empty-shape"),
+        "the vacuous shape must still be NAMED in declines on the Fail path\n{}",
         r.all()
     );
 }

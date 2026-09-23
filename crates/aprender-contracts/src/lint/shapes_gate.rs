@@ -243,10 +243,15 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
     // exit code, because pv already exits non-zero on Fail; a refusal that printed only a bare
     // `decline:` line would read to them as "no by_shape" and score UNMEASURED — the same defect as
     // a gate swallowing a decline, seen from the other side.
-    let verdict = if !vacuous_armed.is_empty() {
-        Verdict::Unknown(Reason::NoFocus)
-    } else if !passed {
+    //
+    // A MEASURED violation outranks a vacuity (#3622 re-review, all three lanes): `passed` and
+    // `vacuous_armed` range over DISJOINT shapes, so checking vacuity first turned a real Fail from
+    // one shape into exit 2 because a DIFFERENT shape graded nothing. The vacuity stays in
+    // `declines`; it may not hide the verdict.
+    let verdict = if !passed {
         Verdict::Fail
+    } else if !vacuous_armed.is_empty() {
+        Verdict::Unknown(Reason::NoFocus)
     } else if counted.warnings > 0 {
         Verdict::Unknown(Reason::Warn)
     } else {
