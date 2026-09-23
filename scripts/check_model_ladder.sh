@@ -55,9 +55,21 @@ cd "${MODEL_LADDER_ROOT:-$(dirname "$SELF")/..}" || exit 2
 
 # ---------------------------------------------------------------- the judge
 # judge <ladder> <ladder_at_main_or_empty> <receipt_dir> <version> [context-rungs.json] [its origin/main copy]  → exit 0/1/2
+# #3940 anti-vacuity, as a function so the case table can call it directly. A run that
+# cannot name the cut it is judging must stop BEFORE reporting on it: inside judge() an
+# empty value means "this case did not opt in", so if that state ever reached the real
+# path the binding would silently not run.
+cut_sha_or_die() { # cut_sha_or_die <resolved-sha>
+  if [ -z "${1:-}" ]; then
+    echo "FAIL  ladder  cannot determine the cut being judged (git rev-parse HEAD failed) -- the apr_sha binding would not run, and a ladder that cannot name its own cut does not pass vacuously (#3940)"
+    return 1
+  fi
+  return 0
+}
+
 judge() {
   python3 - "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" <<'PY'
-import fnmatch, json, os, sys, yaml
+import fnmatch, json, os, subprocess, sys, yaml
 ladder_p, main_p, rdir, version, rungs_p, rungs_main_p = sys.argv[1:7]
 sys.path.insert(0, os.environ.get("MODEL_LADDER_CELLS_LIB") or "scripts/lib")  # a mutant copy of the module, in --self-test
 import model_ladder_cells
@@ -253,6 +265,103 @@ if main_p and os.path.exists(main_p):
         print(f"FAIL  ladder at origin/main unreadable: {e}"); rc = 1
 else:
     print("!     BOOTSTRAP: no ladder at origin/main yet; the anti-shrink floor arms when this lands")
+# --- #3940: WHICH BINARY PRODUCED THE ROW ---------------------------------------
+# This gate already binds two axes of staleness: the model file's sha256 ("a different
+# file is a different measurement") and the release version (STALE, below). It has never
+# bound the third -- the `apr` that produced the receipt. Every tag decision this cycle
+# leaned on "receipt apr_sha == tagged HEAD", and that was cop and operator discipline
+# with no mechanism under it. The producer has always written the field; the judge never
+# read it.
+#
+# The version binding cannot cover this: within one release every candidate build reports
+# the same `version`. That is the live case -- the capability-mirror fix CHANGED the
+# binary (capability.rs `include_str!`s the packaged mirror, so the quant whitelist is
+# compiled in) while the ladders measured with the older build. Both say 0.69.1.
+#
+# WHY THIS IS NOT AN EQUALITY CHECK. A receipt is always produced BEFORE the fold that
+# lands it, so `apr_sha == HEAD` is false on every legitimate run -- measured, the two
+# committed receipts sit 291 commits behind their own release head. A rule that reds a
+# correct run is not a gate (CLAUDE.md: a gate never green on its own target is not a
+# gate). So drift is REPORTED always and REFUSED only when the delta touches what the
+# binary is compiled from.
+CUT_SHA = os.environ.get("LADDER_CUT_SHA", "").strip()
+BINARY_PATHS = ("crates/", "src/", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml")
+
+def _git(*args):
+    try:
+        r = subprocess.run(["git", *args], capture_output=True, text=True)
+        return r.returncode, r.stdout
+    except Exception:
+        return 127, ""
+
+def _binary_delta(a, b):
+    """Paths changed between two commits that the apr binary is compiled from."""
+    code, out = _git("diff", "--name-only", f"{a}..{b}")
+    if code != 0:
+        return None
+    return sorted({p for p in out.split("\n") if p.startswith(BINARY_PATHS)})
+
+# A declaration lives in the CONTRACT, not the receipt: a generated file that declares
+# its own exemption is self-certification. Same shape as `withdrawn:` and `deferred:`.
+apr_drift_declared = ((L.get("inventory") or {}).get("apr_sha_drift") or "").strip()
+apr_drift_used = 0
+
+def judge_apr_sha(hid, R):
+    """0 clean, 1 refused. Reports on EVERY run so drift cannot decay into an absence."""
+    global apr_drift_used
+    if not CUT_SHA:
+        # NOT EVALUATED -- and this is not the vacuity hole it looks like. The real
+        # invocation refuses BEFORE judging when git cannot name the cut (see the
+        # LADDER_CUT_SHA block at the bottom of this file), so an empty value here is
+        # reachable only from the case harness, where a case opts in with a `cut_sha`
+        # file. The door is held shut by `cut_sha_or_die`, whose two rows in the
+        # self-test below refuse an empty cut before judging ever starts.
+        return 0
+    apr_sha = (R.get("apr_sha") or "").strip()
+    if not apr_sha:
+        # The script's own :172 rule, applied to a second missing key: "absence scored as
+        # conformance is the shape this whole gate exists for." DELIBERATELY after the
+        # opt-in check: ordered first, it refused all 63 pre-#3940 fixtures, which carry no
+        # such key and never claimed to. The case table caught that, which is what it is for.
+        print(f"FAIL  {hid:7} receipt carries no `apr_sha` — which binary measured this is unrecorded, and an unrecorded instrument is not evidence (#3940)")
+        return 1
+    if _git("cat-file", "-e", apr_sha + "^{commit}")[0] != 0:
+        print(f"FAIL  {hid:7} apr_sha {apr_sha[:9]} is not a commit in this repository — the measurement is not of this history (#3940)")
+        return 1
+    if _git("merge-base", "--is-ancestor", apr_sha, CUT_SHA)[0] != 0:
+        print(f"FAIL  {hid:7} apr_sha {apr_sha[:9]} is NOT an ancestor of the cut {CUT_SHA[:9]} — measured on a commit this cut does not contain (#3940)")
+        return 1
+    if apr_sha == CUT_SHA:
+        print(f"ok    {hid:7} apr_sha {apr_sha[:9]} == the cut — the receipt is from this exact binary")
+        return 0
+    delta = _binary_delta(apr_sha, CUT_SHA)
+    count = (_git("rev-list", "--count", f"{apr_sha}..{CUT_SHA}")[1] or "?").strip()
+    if delta is None:
+        print(f"FAIL  {hid:7} apr_sha {apr_sha[:9]} differs from the cut and the delta could not be computed — an unknown delta is not a small one (#3940)")
+        return 1
+    if not delta:
+        print(f"ok    {hid:7} apr_sha {apr_sha[:9]} is {count} commit(s) behind the cut, none touching what apr is built from")
+        return 0
+    if apr_drift_declared:
+        apr_drift_used += 1
+        print(f"ok    {hid:7} apr_sha {apr_sha[:9]} is {count} commit(s) behind and {len(delta)} binary path(s) changed — DECLARED: {apr_drift_declared}")
+        return 0
+    print(f"FAIL  {hid:7} apr_sha {apr_sha[:9]} is {count} commit(s) behind the cut and {len(delta)} path(s) apr is built from changed since — the row was measured by a DIFFERENT binary (#3940)")
+    for pth in delta[:5]:
+        print(f"               {pth}")
+    if len(delta) > 5:
+        print(f"               ... and {len(delta) - 5} more path(s)")
+    print(f"               Re-measure at the cut, or declare it in the ladder contract as `inventory.apr_sha_drift` with a reason.")
+    return 1
+
+def judge_apr_drift_declaration():
+    """#3880's distinction, applied to this declaration. A key that excused nothing is
+    not harmless: it reads as coverage, and the next real drift hides behind it."""
+    if apr_drift_declared and apr_drift_used == 0:
+        print("FAIL  ladder  `inventory.apr_sha_drift` is declared but no receipt needed it — the drift it excused is gone and the key outlived it; remove it (#3940)")
+        return 1
+    return 0
+
 good = {}  # host id -> a receipt that passed the host-level checks; the cells judge reads only these
 for h in hosts:
     f = os.path.join(rdir, f"{h['id']}.json")
@@ -264,6 +373,11 @@ for h in hosts:
         print(f"FAIL  {h['id']:7} receipt unreadable: {e}"); rc = 1; continue
     if R.get("version") != version:
         print(f"FAIL  {h['id']:7} receipt is for {R.get('version')!r}, this cut is {version!r} — STALE"); rc = 1; continue
+    # #3842's rule applies: report and KEEP JUDGING. A `continue` here would suppress
+    # every real per-row refusal behind it, which is the suppression this file exists to
+    # expose. A wrong binary is an ADDITIONAL finding, not a reason to stop reading.
+    if judge_apr_sha(h["id"], R):
+        rc = 1
     if int(R.get("executed", 0)) < 1:
         print(f"FAIL  {h['id']:7} receipt executed=0 — a receipt that measured nothing is not evidence"); rc = 1; continue
     inv = R.get("inventory")
@@ -368,6 +482,7 @@ for pat in inv_deferred:
         rc = 1
 if model_ladder_cells.judge(L, good, rungs_doc, print, rungs_main):
     rc = 1
+rc = judge_apr_drift_declaration() or rc
 sys.exit(rc)
 PY
 }
@@ -432,6 +547,11 @@ if [ "$SELF_TEST" = 1 ]; then
     fi
     lad="$c/ladder.yaml"; [ -f "$lad" ] || lad="$LADDER"
     main=""; [ -f "$c/ladder_main.yaml" ] && main="$c/ladder_main.yaml"
+    # #3940: a case opts into the apr_sha binding by carrying a `cut_sha` file. Without
+    # one the binding is not evaluated, so the 60+ cases written before it keep their
+    # meaning instead of all reddening on a key they never had.
+    if [ -f "$c/cut_sha" ]; then LADDER_CUT_SHA=$(cat "$c/cut_sha"); else LADDER_CUT_SHA=""; fi
+    export LADDER_CUT_SHA
     out=$(judge "$lad" "$main" "$c/receipts" "$(cat "$c/version" 2>/dev/null || echo 0.0.0-case)" "$c/context-rungs.json" "$c/context-rungs_main.json"); got=$?
     n=$((n+1))
     # #3887 THE OTHER POLARITY. A case that exists to prove a gate stays QUIET rests on rc
@@ -450,6 +570,21 @@ if [ "$SELF_TEST" = 1 ]; then
       printf '%s\n' "$out" | sed 's/^/        /'; bad=$((bad+1))
     fi
   done
+  # #3940 anti-vacuity, checked directly rather than through a fixture: judge() treats an
+  # empty cut as "this case did not opt in", so the ONLY thing stopping that state from
+  # reaching a real run and silently skipping the binding is this guard.
+  if [ -z "$ONLY_CASE" ]; then
+    if cut_sha_or_die "" > /dev/null 2>&1; then
+      echo "FAIL  cut_sha_or_die accepted an EMPTY cut -- the apr_sha binding would not run and nothing would say so (#3940)"; bad=$((bad+1))
+    else
+      echo "ok    cut_sha_or_die  refuses an empty cut"
+    fi
+    if cut_sha_or_die "2f9fe2744d8b7f1429f38041806997a59654b109" > /dev/null 2>&1; then
+      echo "ok    cut_sha_or_die  accepts a resolved cut"
+    else
+      echo "FAIL  cut_sha_or_die rejected a real sha -- a guard that refuses every run is not a guard"; bad=$((bad+1))
+    fi
+  fi
   if [ "$n" -lt 6 ] && [ -z "$ONLY_CASE" ]; then echo "FAIL  only $n case(s) ran; the table needs >= 6 to discriminate"; bad=$((bad+1)); fi
   if [ -n "$ONLY_CASE" ] && [ "$n" -eq 0 ]; then echo "FAIL  no case named $ONLY_CASE under $CASES_DIR -- a case that did not run is not a pass"; bad=$((bad+1)); fi
   # Mutants (#3712): each refusal is deleted in a copy of this script, and the case that
@@ -572,6 +707,18 @@ fi
 printf -- '--- model capability ladder receipts for %s (%s) ---------------------\n' "$VERSION" "$RECEIPT_DIR"
 TMP_RUNGS=$(mktemp)
 git show "origin/main:evidence/release/context-rungs.json" > "$TMP_RUNGS" 2> /dev/null || : > "$TMP_RUNGS"   # absent at main: the bootstrap
+# #3940: the cut this run is judging. Exported, not passed positionally, because the
+# self-test calls judge() with six arguments in every case and a seventh would rewrite
+# all 63 of them.
+#
+# THIS IS THE ANTI-VACUITY GUARD for the apr_sha binding, and it lives here rather than
+# in the judge because this is the only place that knows the run is REAL. Inside judge(),
+# an unset value means "this case did not opt in"; out here it means git could not name
+# what we are judging, and a ladder run that cannot name its own cut must not proceed to
+# report on it.
+: "${LADDER_CUT_SHA:=$(git rev-parse HEAD 2>/dev/null || echo "")}"
+cut_sha_or_die "$LADDER_CUT_SHA" || exit 1
+export LADDER_CUT_SHA
 judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS"; rc=$?
 [ -n "$TMP_RUNGS" ] && [ -f "$TMP_RUNGS" ] && rm -f "$TMP_RUNGS"
 # The producer that writes these receipts must not bypass the fleet GPU lock (#3712): RED, not a decline.
