@@ -346,7 +346,9 @@ fn try_init_apr_cuda(
             return (None, true);
         },
     };
-    let mut cuda_model = match OwnedQuantizedModelCuda::new(model, 0) {
+    // #3955: read what loaded BEFORE the model moves into the CUDA wrapper.
+    let qtypes = loaded_weight_qtypes(&model);
+    let cuda_model = match OwnedQuantizedModelCuda::new(model, 0) {
         Ok(m) => m,
         Err(e) => {
             eprintln!("[APR CUDA init failed: {e}, will use CPU]");
@@ -386,7 +388,17 @@ fn try_init_apr_cuda(
     // That is a design change on the path being stabilised.
     eprintln!("{F2_CHAT_NOTE}");
 
-    println!("{}", "[APR CUDA: fused Q4K kernels, F2-validated]".bright_green());
+    // #3955: chat's F2 outcome at construction is always NotMeasured (above), so
+    // the banner can never say validated here; it names what actually loaded.
+    let f2 = realizar::infer::F2Outcome::NotMeasured {
+        reason: "no prompt at construction (#3924)".to_string(),
+    };
+    let banner = apr_cuda_banner(&qtypes, &f2);
+    if matches!(f2, realizar::infer::F2Outcome::Validated { .. }) {
+        println!("{}", banner.bright_green());
+    } else {
+        println!("{}", banner.yellow());
+    }
     (Some(cuda_model), false)
 }
 
@@ -549,6 +561,119 @@ mod one_detector_tests {
 #[cfg(feature = "cuda")]
 const F2_CHAT_NOTE: &str =
     "[GH-480] F2 validation SKIPPED — no prompt at construction, nothing was checked (#3924)";
+
+/// #3955: the distinct GGUF qtypes of every GEMV weight the CUDA model will run —
+/// Q/K/V (fused or separate), attention output, FFN up/down/gate, and the LM head.
+/// The banner names THESE, not the quantization the fused path was written for.
+#[cfg(feature = "cuda")]
+fn loaded_weight_qtypes(
+    model: &realizar::gguf::OwnedQuantizedModel,
+) -> std::collections::BTreeSet<u32> {
+    use realizar::gguf::OwnedQKVWeights;
+    let mut qtypes = std::collections::BTreeSet::new();
+    for layer in model.layers() {
+        match &layer.qkv_weight {
+            OwnedQKVWeights::Fused(t) => {
+                qtypes.insert(t.qtype);
+            },
+            OwnedQKVWeights::Separate { q, k, v } => {
+                qtypes.extend([q.qtype, k.qtype, v.qtype]);
+            },
+        }
+        qtypes.insert(layer.attn_output_weight.qtype);
+        qtypes.insert(layer.ffn_up_weight.qtype);
+        qtypes.insert(layer.ffn_down_weight.qtype);
+        if let Some(gate) = layer.ffn_gate_weight.as_ref() {
+            qtypes.insert(gate.qtype);
+        }
+    }
+    qtypes.insert(model.lm_head_weight().qtype);
+    qtypes
+}
+
+/// #3955: the APR CUDA load banner, derived from the loaded weight qtypes and the
+/// F2 outcome. It printed "fused Q4K kernels, F2-validated" as a literal — on a
+/// BF16 model, in the run whose own stderr said F2 was SKIPPED.
+#[cfg(feature = "cuda")]
+fn apr_cuda_banner(
+    qtypes: &std::collections::BTreeSet<u32>,
+    f2: &realizar::infer::F2Outcome,
+) -> String {
+    use realizar::infer::F2Outcome;
+    let weights = if qtypes.is_empty() {
+        "no GEMV".to_string()
+    } else {
+        qtypes
+            .iter()
+            .map(|&q| {
+                realizar::api::gguf_qtype_name(q)
+                    .map_or_else(|| format!("ggml type {q}"), str::to_string)
+            })
+            .collect::<Vec<_>>()
+            .join("+")
+    };
+    let f2 = match f2 {
+        F2Outcome::Validated { min_cosine } => {
+            format!("F2-validated (min cosine {min_cosine:.4})")
+        },
+        F2Outcome::Mismatch => "F2 MISMATCH".to_string(),
+        F2Outcome::NotMeasured { reason } => format!("F2 NOT MEASURED — {reason}"),
+    };
+    format!("[APR CUDA: {weights} weights, {f2}]")
+}
+
+#[cfg(all(test, feature = "cuda"))]
+mod apr_cuda_banner_tests_3955 {
+    use super::apr_cuda_banner;
+    use realizar::infer::F2Outcome;
+    use std::collections::BTreeSet;
+
+    fn not_measured() -> F2Outcome {
+        F2Outcome::NotMeasured { reason: "no prompt at construction (#3924)".to_string() }
+    }
+
+    /// The #3955 run: a BF16 `.apr` printed "fused Q4K kernels".
+    #[test]
+    fn a_bf16_model_is_not_announced_as_q4k() {
+        let banner = apr_cuda_banner(&BTreeSet::from([30]), &not_measured());
+        assert!(!banner.contains("Q4K") && !banner.contains("Q4_K"), "{banner}");
+        assert!(banner.contains("BF16"), "the banner must name what loaded: {banner}");
+    }
+
+    /// Only a `Validated` outcome may say validated — NotMeasured is the chat case.
+    #[test]
+    fn an_unmeasured_f2_is_never_called_validated() {
+        let banner = apr_cuda_banner(&BTreeSet::from([12]), &not_measured());
+        assert!(!banner.to_lowercase().contains("validated"), "{banner}");
+        assert!(banner.contains("NOT MEASURED") && banner.contains("#3924"), "{banner}");
+    }
+
+    #[test]
+    fn a_mismatch_is_never_called_validated() {
+        let banner = apr_cuda_banner(&BTreeSet::from([12]), &F2Outcome::Mismatch);
+        assert!(!banner.to_lowercase().contains("validated"), "{banner}");
+        assert!(banner.contains("MISMATCH"), "{banner}");
+    }
+
+    /// The positive control: a real validation on a mixed Q4_K/Q6_K model says so,
+    /// with the measured cosine, and names both types.
+    #[test]
+    fn a_validated_q4k_q6k_model_says_so_with_its_cosine() {
+        let banner = apr_cuda_banner(
+            &BTreeSet::from([12, 14]),
+            &F2Outcome::Validated { min_cosine: 0.9991 },
+        );
+        assert!(banner.contains("Q4_K+Q6_K"), "{banner}");
+        assert!(banner.contains("F2-validated") && banner.contains("0.9991"), "{banner}");
+    }
+
+    /// An id the name table does not know is shown as its number, never guessed.
+    #[test]
+    fn an_unknown_qtype_is_shown_by_number() {
+        let banner = apr_cuda_banner(&BTreeSet::from([9999]), &not_measured());
+        assert!(banner.contains("ggml type 9999"), "{banner}");
+    }
+}
 
 #[cfg(all(test, feature = "cuda"))]
 mod f2_chat_note_tests {

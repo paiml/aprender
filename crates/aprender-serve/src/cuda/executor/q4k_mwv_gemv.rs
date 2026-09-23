@@ -527,10 +527,11 @@ impl CudaExecutor {
     ///   V[kv_n] = W_v[kv_n, k] × x[k]
     ///
     /// Phase 1 (current): Shared Q8 quantization, 3 GEMV launches (saves Q8 recompute).
-    /// Phase 2 (trueno#237): Single fused kernel launch (saves 2 more launches).
+    /// Phase 2 (trueno#237): single fused launch — measured slower, not wired (below).
     ///
     /// GQA-aware: q_n may differ from kv_n.
-    /// Phase 2 (trueno#237): Q stays separate, K+V use fused kernel (1 launch instead of 2).
+    /// Phase 2 (trueno#237) was measured slower and is NOT wired: Q, K and V are
+    /// three `q4k_gemv_into` launches sharing one Q8 activation.
     #[inline]
     pub fn fused_qkv_hw_dp4a_q4k_gemv_into(
         &mut self,
@@ -553,95 +554,12 @@ impl CudaExecutor {
         // Phase 2 (trueno#237 fused K+V kernel) MEASURED: -3.1% regression at
         // kv_dim=256 (Qwen2.5-1.5B). Launch overhead savings (~5μs) smaller than
         // compute overhead from dual accumulators+weight loads (~10μs/row).
-        // Fused kernel left available for future models with larger kv_dim.
+        // The unwired K+V launcher was deleted (#3976): with a crate-wide
+        // allow(dead_code) nothing flagged it, and its KernelType had no PTX.
         self.q4k_gemv_into(q_weight_ptr, input, q_output, q_n, k_dim)?;
         // q8_activation_valid is now true — K and V skip quantization
         self.q4k_gemv_into(k_weight_ptr, input, k_output, kv_n, k_dim)?;
         self.q4k_gemv_into(v_weight_ptr, input, v_output, kv_n, k_dim)?;
-
-        Ok(())
-    }
-
-    /// trueno#237: Fused K+V HW DP4A Q4K GEMV — 2 projections in 1 kernel launch.
-    ///
-    /// Uses Q8-quantized activations (shared between K and V dot products).
-    /// Same pattern as `fused_gate_up_swiglu_hw_dp4a_q4k_gemv_into` but with
-    /// two raw outputs instead of SwiGLU activation.
-    fn fused_kv_hw_dp4a_q4k_gemv_into(
-        &mut self,
-        k_weight_ptr: u64,
-        v_weight_ptr: u64,
-        input: &GpuBuffer<f32>,
-        k_output: &GpuBuffer<f32>,
-        v_output: &GpuBuffer<f32>,
-        n: u32,
-        k: u32,
-    ) -> Result<(), GpuError> {
-        // Q8 quantize activations (skip if already valid — PMAT-027 cache)
-        let q8_ptr = self
-            .workspace
-            .q8_activation_buf
-            .as_ref()
-            .expect("fused_kv: workspace.q8_activation_buf not initialized")
-            .as_ptr();
-        let q8_len = self
-            .workspace
-            .q8_activation_buf
-            .as_ref()
-            .expect("q8_activation_buf must be initialized")
-            .len();
-        // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
-        let q8_buf = unsafe { GpuBuffer::<u8>::from_raw_parts(q8_ptr, q8_len) };
-
-        if !self.q8_activation_valid {
-            self.q8_quantize_into(input, &q8_buf, k)?;
-            self.q8_activation_valid = true;
-        }
-
-        let num_warps = self.gpu_profile.mwv_warps;
-        let kernel_type = KernelType::FusedKVHwDp4aQ4KGemv { k, n };
-        let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("fused_kv_hw_dp4a_q4k_{}_{}", k, n);
-
-        self.ensure_kernel_module(&cache_key, &kernel_type)?;
-
-        let module = self
-            .modules
-            .get_mut(&cache_key)
-            .expect("module just inserted");
-
-        let threads = num_warps * 32;
-        let grid_x = n.min(self.num_sms * 16);
-        let config = LaunchConfig::grid_2d(grid_x, 1, threads, 1);
-
-        let mut ptr_q8 = q8_buf.as_ptr();
-        let mut ptr_k_weights = k_weight_ptr;
-        let mut ptr_v_weights = v_weight_ptr;
-        let mut ptr_k_output = k_output.as_ptr();
-        let mut ptr_v_output = v_output.as_ptr();
-        let mut k_val = k;
-        let mut n_val = n;
-
-        // SAFETY: All device pointers are allocated by CudaExecutor and valid.
-        // Kernel params match trueno FusedQKVHwDp4aQ4KGemvKernel: x_ptr, wk_ptr, wv_ptr, y_k_ptr, y_v_ptr, k_dim, n_dim
-        unsafe {
-            self.stream.launch_kernel(
-                module,
-                kernel_name,
-                &config,
-                &mut [
-                    std::ptr::from_mut(&mut ptr_q8) as *mut std::ffi::c_void,
-                    std::ptr::from_mut(&mut ptr_k_weights) as *mut std::ffi::c_void,
-                    std::ptr::from_mut(&mut ptr_v_weights) as *mut std::ffi::c_void,
-                    std::ptr::from_mut(&mut ptr_k_output) as *mut std::ffi::c_void,
-                    std::ptr::from_mut(&mut ptr_v_output) as *mut std::ffi::c_void,
-                    std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
-                    std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
-                ],
-            )?;
-        }
-
-        std::mem::forget(q8_buf);
 
         Ok(())
     }

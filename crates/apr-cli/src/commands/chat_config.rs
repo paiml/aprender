@@ -308,7 +308,7 @@
     fn test_run_file_not_found() {
         let path = Path::new("/nonexistent/model.gguf");
         let result = run(
-            path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
+            path, 0.7, 0.9, 512, None, false, false, false /* #3955 accel_forced */, false, None, false, None, "info", false,
             false, // offline
             false, // #3794: --json
             None,  // #3723: --thinking
@@ -333,7 +333,7 @@
             512,
             Some("You are helpful"),
             true,
-            true,
+            true, false /* #3955 accel_forced */,
             true,
             Some(&["tokenize".to_string(), "sample".to_string()]),
             true,

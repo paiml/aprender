@@ -459,9 +459,13 @@ fn build_chat_response(
             "model": "safetensors",
             "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}]
         });
-        let stream = stream::once(async move {
-            Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string()))
-        });
+        // #3979: the OpenAI stream terminal is the finish_reason chunk AND `data: [DONE]`.
+        // This sent the chunk and stopped, so a client could not tell a complete stream
+        // from a truncated one (CRUX `stream_truncated`).
+        let stream = stream::iter([
+            Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string())),
+            Ok(Event::default().data("[DONE]")),
+        ]);
         Sse::new(stream).into_response()
     } else {
         let message = if has_tool_calls {
@@ -770,4 +774,34 @@ mod chat_helper_tests {
             "streaming mode is SSE, got {ct}"
         );
     }
+
+    /// #3979: a streamed OpenAI chat response ENDS with its terminal pair, a chunk
+    /// carrying `finish_reason` then `data: [DONE]`. It sent the chunk and stopped, so
+    /// a client could not tell a complete stream from a truncated one.
+    #[tokio::test]
+    async fn a_streamed_safetensors_chat_ends_with_finish_reason_then_done() {
+        let resp = build_chat_response(
+            "hi".to_string(),
+            None,
+            true,
+            1,
+            1,
+            std::time::Duration::from_millis(1),
+            1.0,
+        );
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.expect("body");
+        let events: Vec<String> = String::from_utf8_lossy(&body)
+            .lines()
+            .filter_map(|l| l.strip_prefix("data: ").map(str::to_string))
+            .collect();
+        assert_eq!(events.last().map(String::as_str), Some("[DONE]"), "must end with [DONE]: {events:?}");
+        let finish: Vec<serde_json::Value> = events
+            .iter()
+            .filter_map(|e| serde_json::from_str::<serde_json::Value>(e).ok())
+            .map(|v| v["choices"][0]["finish_reason"].clone())
+            .filter(|f| !f.is_null())
+            .collect();
+        assert_eq!(finish, vec![serde_json::json!("stop")], "exactly one finish_reason before [DONE]: {events:?}");
+    }
 }
+

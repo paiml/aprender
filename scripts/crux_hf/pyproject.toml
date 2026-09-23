@@ -1,0 +1,15 @@
+[project]
+name = "crux-hf-engine"
+version = "0.1.0"
+description = "The Hugging Face transformers CRUX engine (#3739): probe/gen/tok/tmpl/greedy rows for the CRUX judge"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "transformers[serving]==5.17.0",
+    "torch==2.14.0",
+    "tokenizers==0.23.2",
+    "jinja2==3.1.6",
+    "numpy==2.2.6",
+    "safetensors==0.8.0",
+    "huggingface_hub==1.32.0",
+    "requests==2.34.2",
+]
