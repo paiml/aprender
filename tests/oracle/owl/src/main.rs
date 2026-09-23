@@ -306,8 +306,16 @@ fn elk(repo: &Path) -> i32 {
         Some(r) => r,
         None => return decline(&mut doc, format!("{} unreadable", report_path.display())),
     };
-    let work = std::env::temp_dir().join(format!("ont-oracle-elk-{}", std::process::id()));
-    let _ = std::fs::create_dir_all(&work);
+    // Exclusive creation (quorum lane 3): `create_dir` fails if the path already exists — as a directory, a
+    // file or a planted symlink — so a predictable name in a shared temp dir cannot be pre-empted. The nanos
+    // suffix makes a collision unlikely; a collision is a decline, never a reuse.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos());
+    let work = std::env::temp_dir().join(format!("ont-oracle-elk-{}-{nanos}", std::process::id()));
+    if let Err(e) = std::fs::create_dir(&work) {
+        return decline(&mut doc, format!("cannot create a fresh work dir {}: {e}", work.display()));
+    }
     let live = match classify(&java, &jar, &ofn, &work) {
         Ok(c) => c,
         Err(e) => return decline(&mut doc, e),
