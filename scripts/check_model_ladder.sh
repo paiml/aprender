@@ -716,6 +716,7 @@ if [ "$SELF_TEST" = 1 ]; then
     rmutant wa-control-wrong  red-model-wrong-answer-control-wrong 's/^            elif not (answers(ca2.get("generated_text"), expect) and answers(co2.get("generated_text"), expect)):/            elif False:/'
     rmutant wa-official       red-model-wrong-answer-not-official 's/^            if a.get("prompt_ids") != ref.get("template_prompt_ids"):/            if False:/'
     rmutant wa-expect         red-model-wrong-answer-no-expect    's/^                if not isinstance(e.get("expect"), str) or not e\["expect"\].strip():/                if False:/'
+    rmutant greedy-only-read  green-red-model-wrong-answer-greedy-only-cpu 's/^            greedy_only = R.get("greedy_only") is True and not R.get("cells")$/            greedy_only = False/'
     rmutant axis-on           red-model-axis-not-on          's/^            elif e.get("thinking") != "on":/            elif False:/'
     rmutant residual          red-model-residual             's/^            if resid:/            if False:/'
     rmutant stale             red-model-stale                's/^        if not why:/        if False:/'
@@ -730,6 +731,8 @@ if [ "$SELF_TEST" = 1 ]; then
     rmutant unsup-arch-header red-unsupported-arch-mismatch  's/^        elif got != arch:/        elif False:/'
     rmutant unsup-has-path    red-unsupported-supported-arch 's/^                    if x.get("present") and x.get("architecture") == arch and green_on_cuda(x):/                    if False:/'
     # The crux-join half of F9/F10: the thinking-OFF axis stays owed, and a proven verdict is what lets a green case pass.
+    xmutant greedy-only-skip  green-red-model-wrong-answer-greedy-only-cpu 's/^        if R.get("greedy_only") is True:$/        if False:/'
+    xmutant greedy-only-cells red-crux-greedy-only-with-cells 's/^            if R.get("cells"):$/            if False:/'
     xmutant red-model-off-owed red-model-thinking-off-missing 's/^    if red_model and not got:/    if False:/'
     xmutant unsup-cell-named  green-red-unsupported-proven  's/^                    if named == "RED-UNSUPPORTED" and b in ("cuda", "gpu"):/                    if False:/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi

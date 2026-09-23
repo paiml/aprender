@@ -95,6 +95,18 @@ def load_crux(crux_dir, cut, equiv, out):
                 f"its cells are not evidence for this build (#3957 F2)")
             failed = True
             continue
+        # #4004: a GREEDY-ONLY receipt (crux_inference_dogfood --greedy-only) carries raw greedy rows for the
+        # F9 judge and NO cells, so its collect verdict is DECLINE ("no cell was measured"). It vouches for
+        # no cell and is not a lane verdict: skipped here, read by model_ladder_redmodel only. It must
+        # still be bound to the cut (above). One that carries cells claims both roles and is refused.
+        if R.get("greedy_only") is True:
+            if R.get("cells"):
+                out(f"FAIL  CRUX receipt {os.path.basename(f)} is marked greedy_only and carries {len(R['cells'])} cell(s) -- "
+                    f"a receipt is either a lane verdict or greedy evidence, never both (#4004)")
+                failed = True
+            else:
+                out(f"note  CRUX receipt {os.path.basename(f)} is greedy-only: no cells, evidence for the F9 judge only (#4004)")
+            continue
         summ = R.get("summary") or {}
         if summ.get("verdict") == "DECLINE":
             out(f"FAIL  CRUX receipt {os.path.basename(f)} DECLINED ({summ.get('declined_because')}) -- a lane that "
