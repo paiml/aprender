@@ -1,0 +1,282 @@
+{
+  "ticket": "GH-4162",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "296562b2e8796296d9f13a0e57846a9f238c175c",
+  "diff_sha256": "75f1bc2ea3b9aca6704ea29282e072b2ac9cbf547b3caf12b4807510aaeaf4bd",
+  "width": 2,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 33299,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The script fails to meet the ticket's requirements because it completely omits the requested model breakdown for agy token usage. Additionally, the F2 estimation contains a mathematical error that double-counts the baseline context tokens when a session is compacted.",
+      "findings": [
+        {
+          "claim": "The script does not extract or report agy token usage by model, violating the ticket's explicit request for 'measured token usage for the fleet -- Claude Code + agy, by project / model / lane / hour'.",
+          "file": "scripts/token_usage_report.py",
+          "fix": "Extract the model from the agy envelopes (e.g., `env.get(\"model\")`) when appending to `lanes`, and add a table in the output that breaks down agy usage by model.",
+          "grounding": "cited",
+          "line": 167
+        },
+        {
+          "claim": "The F2 estimation mathematically double-counts the restart context size `B` on the turn that triggers a compaction, artificially inflating the simulated cost and underestimating the net savings.",
+          "file": "scripts/token_usage_report.py",
+          "fix": "Remove `B` from `comp_cost += sim + S + B` so it only charges `sim + S` for the summarizer, since `B` is correctly added to the total when `read_sim += sim` runs on line 329.",
+          "grounding": "cited",
+          "line": 326
+        }
+      ],
+      "raw_bytes": 3657,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "REFUTED: The diff fails to satisfy ticket GH-4162. First, the ticket mandates measuring token usage for 'Claude Code + agy, by project / model / lane / hour', but agy token usage is never attributed or reported by model (lines 185-194 and 319-338 omit model extraction and reporting for agy). Second, the F2 estimation logic in `scripts/token_usage_report.py` (lines 439-443) double-counts the restart context baseline `B` on compaction turns in both `comp_cost` and `read_sim`, distorting the simulated cost and net savings. Verdict: FAIL.",
+      "findings": [
+        {
+          "claim": "The diff omits token usage breakdown by model for agy, failing to satisfy the ticket's explicit scope: 'P0: measured token usage for the fleet -- Claude Code + agy, by project / model / lane / hour, with the top levers'. While Claude Code usage is broken down by project (Table A2), model & lane (Table A3), subagent type (Table A4), and hour (Table A6), agy usage records in `agy()` (lines 185-194) do not extract model information, and Section B reports agy usage only in total (Table B1), by project (Table B2), and per hour (Table B3), omitting model breakdown entirely.",
+          "file": "scripts/token_usage_report.py",
+          "fix": "Extract model metadata for agy executions (e.g. by parsing model declarations from the corresponding `lane-*.log` files or `quorum-*.json` receipts) and include an agy usage breakdown by model in Section B.",
+          "grounding": "cited",
+          "line": 185
+        },
+        {
+          "claim": "In the F2 context cap replay simulation, the restart baseline context size `B` is double-counted on compaction turns. Line 439 charges `comp_cost += sim + S + B`, and then line 440 resets `sim = B`, which line 442 immediately adds to `read_sim += sim`. Because net savings are computed as `net = read_real - read_sim - comp_cost` (line 443), `B` is subtracted twice from `read_real`, artificially inflating the simulated compaction cost and deflating net savings.",
+          "file": "scripts/token_usage_report.py",
+          "fix": "In line 439, change `comp_cost += sim + S + B` to `comp_cost += sim + S` so that the restart context `B` is charged once when `read_sim += sim` records the prompt context for the turn.",
+          "grounding": "cited",
+          "line": 439
+        },
+        {
+          "claim": "The roadmap fragment `docs/roadmaps/entries/GH-4162.yaml` lists `status: inprogress` with empty `acceptance_criteria: []`, reflecting that the ticket requirements (specifically agy breakdown by model) are not yet fully completed.",
+          "file": "docs/roadmaps/entries/GH-4162.yaml",
+          "fix": "Implement the missing agy model attribution, define explicit acceptance criteria, and update status once complete.",
+          "grounding": "cited",
+          "line": 5
+        }
+      ],
+      "raw_bytes": 6518,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 1,
+      "verdict": "FAIL",
+      "summary": "The script fails to meet the ticket's requirements because it completely omits the requested model breakdown for agy token usage. Additionally, the F2 estimation contains a mathematical error that double-counts the baseline context tokens when a session is compacted.",
+      "findings": [
+        {
+          "claim": "The script does not extract or report agy token usage by model, violating the ticket's explicit request for 'measured token usage for the fleet -- Claude Code + agy, by project / model / lane / hour'.",
+          "file": "scripts/token_usage_report.py",
+          "fix": "Extract the model from the agy envelopes (e.g., `env.get(\"model\")`) when appending to `lanes`, and add a table in the output that breaks down agy usage by model.",
+          "grounding": "cited",
+          "line": 167
+        },
+        {
+          "claim": "The F2 estimation mathematically double-counts the restart context size `B` on the turn that triggers a compaction, artificially inflating the simulated cost and underestimating the net savings.",
+          "file": "scripts/token_usage_report.py",
+          "fix": "Remove `B` from `comp_cost += sim + S + B` so it only charges `sim + S` for the summarizer, since `B` is correctly added to the total when `read_sim += sim` runs on line 329.",
+          "grounding": "cited",
+          "line": 326
+        }
+      ]
+    },
+    {
+      "lane": 2,
+      "verdict": "FAIL",
+      "summary": "REFUTED: The diff fails to satisfy ticket GH-4162. First, the ticket mandates measuring token usage for 'Claude Code + agy, by project / model / lane / hour', but agy token usage is never attributed or reported by model (lines 185-194 and 319-338 omit model extraction and reporting for agy). Second, the F2 estimation logic in `scripts/token_usage_report.py` (lines 439-443) double-counts the restart context baseline `B` on compaction turns in both `comp_cost` and `read_sim`, distorting the simulated cost and net savings. Verdict: FAIL.",
+      "findings": [
+        {
+          "claim": "The diff omits token usage breakdown by model for agy, failing to satisfy the ticket's explicit scope: 'P0: measured token usage for the fleet -- Claude Code + agy, by project / model / lane / hour, with the top levers'. While Claude Code usage is broken down by project (Table A2), model & lane (Table A3), subagent type (Table A4), and hour (Table A6), agy usage records in `agy()` (lines 185-194) do not extract model information, and Section B reports agy usage only in total (Table B1), by project (Table B2), and per hour (Table B3), omitting model breakdown entirely.",
+          "file": "scripts/token_usage_report.py",
+          "fix": "Extract model metadata for agy executions (e.g. by parsing model declarations from the corresponding `lane-*.log` files or `quorum-*.json` receipts) and include an agy usage breakdown by model in Section B.",
+          "grounding": "cited",
+          "line": 185
+        },
+        {
+          "claim": "In the F2 context cap replay simulation, the restart baseline context size `B` is double-counted on compaction turns. Line 439 charges `comp_cost += sim + S + B`, and then line 440 resets `sim = B`, which line 442 immediately adds to `read_sim += sim`. Because net savings are computed as `net = read_real - read_sim - comp_cost` (line 443), `B` is subtracted twice from `read_real`, artificially inflating the simulated compaction cost and deflating net savings.",
+          "file": "scripts/token_usage_report.py",
+          "fix": "In line 439, change `comp_cost += sim + S + B` to `comp_cost += sim + S` so that the restart context `B` is charged once when `read_sim += sim` records the prompt context for the turn.",
+          "grounding": "cited",
+          "line": 439
+        },
+        {
+          "claim": "The roadmap fragment `docs/roadmaps/entries/GH-4162.yaml` lists `status: inprogress` with empty `acceptance_criteria: []`, reflecting that the ticket requirements (specifically agy breakdown by model) are not yet fully completed.",
+          "file": "docs/roadmaps/entries/GH-4162.yaml",
+          "fix": "Implement the missing agy model attribution, define explicit acceptance criteria, and update status once complete.",
+          "grounding": "cited",
+          "line": 5
+        }
+      ]
+    }
+  ],
+  "dedup": [
+    {
+      "file": "docs/roadmaps/entries/GH-4162.yaml",
+      "line": 5,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The roadmap fragment `docs/roadmaps/entries/GH-4162.yaml` lists `status: inprogress` with empty `acceptance_criteria: []`, reflecting that the ticket requirements (specifically agy breakdown by model) are not yet fully completed."
+      ]
+    },
+    {
+      "file": "scripts/token_usage_report.py",
+      "line": 167,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The script does not extract or report agy token usage by model, violating the ticket's explicit request for 'measured token usage for the fleet -- Claude Code + agy, by project / model / lane / hour'."
+      ]
+    },
+    {
+      "file": "scripts/token_usage_report.py",
+      "line": 185,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The diff omits token usage breakdown by model for agy, failing to satisfy the ticket's explicit scope: 'P0: measured token usage for the fleet -- Claude Code + agy, by project / model / lane / hour, with the top levers'. While Claude Code usage is broken down by project (Table A2), model & lane (Table A3), subagent type (Table A4), and hour (Table A6), agy usage records in `agy()` (lines 185-194) do not extract model information, and Section B reports agy usage only in total (Table B1), by project (Table B2), and per hour (Table B3), omitting model breakdown entirely."
+      ]
+    },
+    {
+      "file": "scripts/token_usage_report.py",
+      "line": 326,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The F2 estimation mathematically double-counts the restart context size `B` on the turn that triggers a compaction, artificially inflating the simulated cost and underestimating the net savings."
+      ]
+    },
+    {
+      "file": "scripts/token_usage_report.py",
+      "line": 439,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "In the F2 context cap replay simulation, the restart baseline context size `B` is double-counted on compaction turns. Line 439 charges `comp_cost += sim + S + B`, and then line 440 resets `sim = B`, which line 442 immediately adds to `read_sim += sim`. Because net savings are computed as `net = read_real - read_sim - comp_cost` (line 443), `B` is subtracted twice from `read_real`, artificially inflating the simulated compaction cost and deflating net savings."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=2 author=claude-opus-5-5/claude"
+  }
+}
