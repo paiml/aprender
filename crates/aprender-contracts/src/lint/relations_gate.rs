@@ -211,6 +211,24 @@ pub fn corpus_documents(
         .collect()
 }
 
+/// The colliding-id count on `contracts/` — 55 at ONT-9, measured 2026-09-24 over the files the census parses (the
+/// monorepo merge kept per-repo copies such as `contracts/aprender/apr-serve-v1.yaml` beside
+/// `contracts/apr-serve-v1.yaml`). Shrink-only.
+pub const COLLIDING_IDS_PINNED: usize = 55;
+
+/// ONT-9 `ont-self-v1` INV-1 — every id claimed by more than one parsed contract file, with those files. The census
+/// is keyed by stem, so all but one of each is invisible to `typed_graph`, the relations and the witness.
+#[must_use]
+pub fn colliding_ids(contract_dir: &Path) -> BTreeMap<String, Vec<std::path::PathBuf>> {
+    let (docs, _) = read_corpus(contract_dir, &contract_dir.join("ontology.yaml"));
+    let mut by: BTreeMap<String, Vec<std::path::PathBuf>> = BTreeMap::new();
+    for (stem, file, _) in docs {
+        by.entry(stem).or_default().push(file);
+    }
+    by.retain(|_, files| files.len() > 1);
+    by
+}
+
 /// Pass 1: every raw document the corpus parses, and every stem — so a target can be resolved against the set.
 fn read_corpus(contract_dir: &Path, sigma_path: &Path) -> (Vec<Doc>, BTreeSet<String>) {
     let mut files = Vec::new();
@@ -622,5 +640,43 @@ mod tests {
         dag.insert("x", vec!["y", "z"]);
         dag.insert("y", vec!["z"]);
         assert_eq!(first_cycle(&dag), None);
+    }
+
+    /// ONT-9 INV-1, measured on the repo: the colliding ids are pinned (shrink-only — a fix must lower the pin, as a
+    /// fixed ghost must leave the bindings allowlist), and none of them is an endpoint of a typed edge, so the witness
+    /// never reasons about an id whose file the census picked by walk order.
+    #[test]
+    fn the_repo_colliding_ids_are_pinned_and_none_is_in_the_typed_graph() {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
+        let colliding = colliding_ids(&repo);
+        assert_eq!(
+            colliding.len(),
+            COLLIDING_IDS_PINNED,
+            "INV-1: the colliding-id count moved; lower the pin if it shrank: {:?}",
+            colliding.keys().collect::<Vec<_>>()
+        );
+        let TypedGraph::Read { edges, .. } = typed_graph(&repo) else {
+            panic!("the repo corpus has a Σ")
+        };
+        let ambiguous: Vec<_> = edges
+            .iter()
+            .filter(|e| colliding.contains_key(&e.from) || colliding.contains_key(&e.to))
+            .collect();
+        assert!(
+            ambiguous.is_empty(),
+            "typed edges on a colliding id: {ambiguous:?}"
+        );
+    }
+
+    #[test]
+    fn colliding_ids_names_every_file_of_a_shared_stem() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("sub")).unwrap();
+        for f in ["a.yaml", "sub/a.yaml", "b.yaml"] {
+            std::fs::write(tmp.path().join(f), "metadata: {}\n").unwrap();
+        }
+        let c = colliding_ids(tmp.path());
+        assert_eq!(c.keys().collect::<Vec<_>>(), ["a"]);
+        assert_eq!(c["a"].len(), 2);
     }
 }
