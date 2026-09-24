@@ -299,10 +299,20 @@ if [ "${1:-}" = "--self-test" ]; then
   else
     printf 'FAIL  row 13 cfg(all/any(test)) handling, got: %s\n' "$got"; fails=1
   fi
+  # #4151: include!d .rs files are inside the formatting gate (cargo fmt cannot see them): its own case table
+  if bash "$REPO_ROOT/scripts/include_fmt_ratchet.sh" --self-test; then
+    printf 'ok    include_fmt_ratchet.sh case table\n'
+  else
+    printf 'FAIL  include_fmt_ratchet.sh case table\n'; fails=1
+  fi
   [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
   printf '\nSELF-TEST PASSED\n'
   exit 0
 fi
 
 printf '=== every include!() file must survive cargo package (check_package_includes.sh) ===\n'
-check_all "$REPO_ROOT"
+check_all "$REPO_ROOT"; rc=$?
+# #4151: the same include!d files, FORMATTED - `cargo fmt --check` never reaches them. New debt RED,
+# the baseline shrink-only (scripts/include_fmt_ratchet.sh). 2 (could not check) is a failure here too.
+bash "$REPO_ROOT/scripts/include_fmt_ratchet.sh" || rc=1
+exit "$rc"

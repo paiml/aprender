@@ -18191,6 +18191,27 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-4151
+  github_issue: 4151
+  item_type: task
+  kind: code
+  title: cargo fmt --check never sees include!d .rs files — CI's fmt gate is blind to them (two 140-col lines passed)
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T06:10:40.669338522+00:00
+  updated: 2026-09-24T06:10:40.669338522+00:00
+  spec: null
+  acceptance_criteria:
+  - 'include!d .rs files are enumerated from source and checked with the pinned rustfmt (the owning crate edition)'
+  - 'a NEW misformatted include!d file (not in scripts/include_fmt_baseline.txt) is RED, named'
+  - 'the baseline growing is RED (shrink-only against merge-base with origin/main, lib_baseline_ratchet.sh set mode)'
+  - 'wired through check_package_includes.sh (ci.yml guard-cargo), with no workflow edit'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Cop ruling (aprender-cf, 2026-09-24): option B, a shrink-only ratchet. The mass reformat (A) and touched=clean (C) are deferred to a quiet window after the 0.70 fold. MEASURED on main 49fe19c28 with rustfmt 1.8.0-stable (254b59607d): 1778 include!d .rs files, 1584 misformatted (baselined). A full pass over them changes 1783 files, +135611/-128345. 163 remain misformatted after one pass (non-convergent, listed in the receipt separately). The instrument is pinned exactly in the baseline header, and a different rustfmt is "cannot check" (2).'
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
