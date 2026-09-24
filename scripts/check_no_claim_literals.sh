@@ -543,7 +543,10 @@ count_stale() { # count_stale <baseline-file> <hits: one `path:LINE:content` per
     while IFS= read -r loc; do
         [ -n "$loc" ] || continue
         case "$loc" in '#'*) continue ;; esac
-        printf '%s\n' "$locs" | grep -qxF "$loc" || n=$((n + 1))
+        # A HERE-STRING, never `printf | grep -q`: under pipefail, grep -q exits on its first
+        # match, the rest of printf's output gets SIGPIPE (141), and the pipeline "fails", so a
+        # PRESENT entry was counted stale (#4113 quorum lane 2: intermittent false REPORTs).
+        grep -qxF "$loc" <<< "$locs" || n=$((n + 1))
     done < "$base"
     printf '%s' "$n"
 }
@@ -1032,6 +1035,14 @@ if [ "${1:-}" = "--selftest" ]; then
         if [ "$got" = "$want" ]; then printf '  ok    stale-count %-5s %s -> %s\n' "$name" "$(printf '%s' "$hits" | tr '\n' ' ')" "$got"
         else printf '  FAIL  stale-count %-5s want %s got %s (%s)\n' "$name" "$want" "$got" "$(printf '%s' "$hits" | tr '\n' ' ')"; f=$((f+1)); fi
     done
+
+    # The SIGPIPE shape: a large hit list whose FIRST line is the baselined location. With a
+    # `printf | grep -q` pipeline under pipefail this reported the present entry as stale.
+    big=$(printf 'x.md:1:a figure\n'; printf 'z.md:%s:a figure\n' $(seq 2 200000))
+    got=$(count_stale "$ST_TD/base" "$big")
+    t=$((t+1))
+    if [ "$got" = "0" ]; then printf '  ok    stale-count large payload, early match -> 0 (no SIGPIPE false stale)\n'
+    else printf '  FAIL  stale-count large payload, early match: want 0 got %s (SIGPIPE under pipefail?)\n' "$got"; f=$((f+1)); fi
 
     printf '  %s case(s), %s failure(s)\n' "$t" "$f"
     [ "$f" -eq 0 ] && [ "$cf" -eq 0 ] && [ "$rf" -eq 0 ] && [ "$mf" -eq 0 ] \
