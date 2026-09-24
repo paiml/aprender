@@ -113,12 +113,16 @@ def main():
     ap.add_argument("--label", default="")
     ap.add_argument("--llama-flags", default="",
                     help="llama engine: the output of llama_comparator_server_flags 999 1")
+    ap.add_argument("--non-gating", action="store_true",
+                    help="llama engine: an UNPINNED build (cop ruling: v0.5.0 is a separate "
+                         "column labelled non-gating, upstream latest); skips the pin check")
     ap.add_argument("--llama-build", default="",
                     help="llama engine: $LLAMA_BUILD from llama_bin_resolve (the pin proof)")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
-    stem = f"{args.engine}-{os.path.basename(args.model).removesuffix('.gguf')}"
+    engine_tag = "llama-nongating" if (args.engine == "llama" and args.non_gating) else args.engine
+    stem = f"{engine_tag}-{os.path.basename(args.model).removesuffix('.gguf')}"
     res_path = os.path.join(args.out, stem + ".json")
     log_path = os.path.join(args.out, stem + ".server.log")
 
@@ -141,7 +145,12 @@ def main():
         rec["llama_bin_resolve_build"] = args.llama_build
         rec["llama_flags_from_pin"] = args.llama_flags
         rec["llama_ctx_override"] = args.ctx
-        if not any("d1d3c3396" in line for line in rec["version"]):
+        rec["column"] = ("non-gating, upstream latest" if args.non_gating
+                         else "gating, pinned d1d3c3396")
+        if args.non_gating:
+            if any("d1d3c3396" in line for line in rec["version"]):
+                raise SystemExit("--non-gating was given the pinned build; drop the flag")
+        elif not any("d1d3c3396" in line for line in rec["version"]):
             raise SystemExit(f"llama-server is not the d1d3c3396 pin: {rec['version']}")
     if foreign:
         rec["void"] = "foreign GPU process present at start; not measured"
