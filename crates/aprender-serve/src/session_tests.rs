@@ -11,6 +11,9 @@ struct Scripted {
     calls: Vec<(usize, usize)>,
     reserves: usize,
     drop_on_reserve: bool,
+    /// What [`ArchForward::rewind`] answers, and the calls it got.
+    rewind_to: Option<usize>,
+    rewinds: usize,
 }
 
 impl Scripted {
@@ -21,6 +24,8 @@ impl Scripted {
             calls: Vec::new(),
             reserves: 0,
             drop_on_reserve: false,
+            rewind_to: None,
+            rewinds: 0,
         }
     }
 }
@@ -44,6 +49,10 @@ impl ArchForward for Scripted {
     fn reserve(&mut self, _positions: usize) -> Result<bool> {
         self.reserves += 1;
         Ok(self.drop_on_reserve)
+    }
+    fn rewind(&mut self, _tokens: &[u32], _processed: &[u32]) -> Result<Option<usize>> {
+        self.rewinds += 1;
+        Ok(self.rewind_to)
     }
     fn forward(&mut self, tokens: &[u32], start: usize) -> Result<Vec<f32>> {
         self.calls.push((tokens.len(), start));
@@ -93,6 +102,49 @@ fn an_extending_prompt_reuses_the_state_and_a_diverging_one_resets() {
         .expect("t3");
     assert_eq!(t3.reused, 0);
     assert_eq!(s.engine().calls.last(), Some(&(2, 0)));
+}
+
+/// #4214: a prompt that re-renders the last turn's tail does not extend what
+/// was processed; the arch's rewind point, when it honours the contract, is
+/// where the turn resumes — and one that breaks it is never trusted.
+#[test]
+fn a_diverging_prompt_resumes_from_the_rewind_point_the_arch_offers() {
+    let mut f = Scripted::new(3, 100);
+    f.rewind_to = Some(2);
+    let mut s = Session::new(f);
+    let t1 = s
+        .generate(&[7401, 7402, 7403, 7404], &greedy(1), &mut |_| true)
+        .expect("t1");
+    assert_eq!(t1.reused, 0);
+    assert_eq!(s.engine().rewinds, 0, "an empty state is never rewound");
+    // Diverges at position 2 (the "re-rendered tail").
+    let t2 = s
+        .generate(&[7401, 7402, 7499, 7498, 7497], &greedy(1), &mut |_| true)
+        .expect("t2");
+    assert_eq!(t2.reused, 2, "resumed from the rewind point");
+    assert_eq!(s.engine().rewinds, 1);
+    assert_eq!(s.engine().calls.last(), Some(&(5, 2)));
+    assert_eq!(s.processed_len(), 5);
+}
+
+#[test]
+fn a_rewind_point_that_breaks_the_contract_starts_over() {
+    for (point, why) in [
+        (3, "past the first difference"),
+        (5, "not short of the new prompt"),
+        (0, "zero is starting over already"),
+    ] {
+        let mut f = Scripted::new(3, 100);
+        f.rewind_to = Some(point);
+        let mut s = Session::new(f);
+        s.generate(&[7501, 7502, 7503, 7504], &greedy(1), &mut |_| true)
+            .expect("t1");
+        let t2 = s
+            .generate(&[7501, 7502, 7599, 7598, 7597], &greedy(1), &mut |_| true)
+            .expect("t2");
+        assert_eq!(t2.reused, 0, "rewind to {point} ({why}) is not trusted");
+        assert_eq!(s.engine().calls.last(), Some(&(5, 0)), "{why}");
+    }
 }
 
 #[test]

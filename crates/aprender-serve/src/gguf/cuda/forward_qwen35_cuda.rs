@@ -118,6 +118,23 @@ pub struct Qwen35CudaState {
     kv_len: usize,
 }
 
+/// The recurrent part of a [`Qwen35CudaState`] at one position, for a session
+/// to return to when the next prompt shares only a prefix of what it processed
+/// (#4214). `DeltaNet` state cannot be rolled back, only restored.
+pub struct Qwen35CudaCheckpoint {
+    conv: Vec<GpuBuffer<f32>>,
+    ssm: Vec<GpuBuffer<f32>>,
+    kv_len: usize,
+}
+
+impl Qwen35CudaCheckpoint {
+    /// The position this checkpoint returns a state to.
+    #[must_use]
+    pub const fn position(&self) -> usize {
+        self.kv_len
+    }
+}
+
 impl Qwen35CudaState {
     /// Elements in one layer's causal-conv window.
     #[must_use]
@@ -785,6 +802,135 @@ impl<'a> Qwen35CudaModel<'a> {
             .synchronize()
             .map_err(|e| gpu_err("qwen35_cuda_reset", &e))?;
         state.kv_len = 0;
+        Ok(())
+    }
+
+    /// A state with room for `max_seq_len` positions that holds exactly what
+    /// `old` held — its conv windows, recurrent states and K/V rows
+    /// `0..kv_len` — so a session that outgrows its state keeps its prefix
+    /// instead of prefilling it again (#4214).
+    ///
+    /// `old` is kept alive until the copies finish; both are resident at once.
+    ///
+    /// # Errors
+    /// A `max_seq_len` below `old`'s `kv_len`, or any CUDA allocation or copy
+    /// failure (the caller still owns `old` only if this returns `Ok`; on `Err`
+    /// both are dropped, as a fresh allocation would have dropped `old`).
+    pub fn grow_state(&self, old: Qwen35CudaState, max_seq_len: usize) -> Result<Qwen35CudaState> {
+        if max_seq_len < old.kv_len {
+            return Err(RealizarError::InvalidShape {
+                reason: format!(
+                    "qwen35_cuda: cannot grow a state holding {} positions into {max_seq_len}",
+                    old.kv_len
+                ),
+            });
+        }
+        let mut new = self.new_state_with_capacity(max_seq_len)?;
+        let stream = self.executor.compute_stream();
+        let rows = old.kv_len * old.kv_row;
+        let pairs = new
+            .conv
+            .iter_mut()
+            .zip(&old.conv)
+            .chain(new.ssm.iter_mut().zip(&old.ssm));
+        for (dst, src) in pairs {
+            // SAFETY: `old` and `new` both live until the synchronize below.
+            unsafe { dst.copy_from_buffer_async(src, stream) }
+                .map_err(|e| gpu_err("qwen35_cuda_grow", &e))?;
+        }
+        for (dst, src) in new.kv.iter_mut().zip(&old.kv) {
+            if let (Some((dk, dv)), Some((sk, sv))) = (dst.as_mut(), src.as_ref()) {
+                if rows > 0 {
+                    // SAFETY: as above.
+                    unsafe {
+                        dk.copy_from_buffer_at_async(sk, 0, 0, rows, stream)
+                            .and_then(|()| dv.copy_from_buffer_at_async(sv, 0, 0, rows, stream))
+                    }
+                    .map_err(|e| gpu_err("qwen35_cuda_grow", &e))?;
+                }
+            }
+        }
+        stream
+            .synchronize()
+            .map_err(|e| gpu_err("qwen35_cuda_grow", &e))?;
+        new.kv_len = old.kv_len;
+        drop(old);
+        Ok(new)
+    }
+
+    /// A copy of `state`'s recurrent part — conv windows and `DeltaNet`
+    /// states — at its current position (#4214).
+    ///
+    /// The K/V caches are not copied: attention at `position` writes row
+    /// `position` only, so rows `0..kv_len` stay valid for as long as nothing
+    /// re-processes a position below `kv_len`. [`Self::restore_checkpoint`]
+    /// relies on exactly that.
+    ///
+    /// # Errors
+    /// Any CUDA allocation or copy failure.
+    pub fn checkpoint(&self, state: &Qwen35CudaState) -> Result<Qwen35CudaCheckpoint> {
+        let stream = self.executor.compute_stream();
+        let copy = |bufs: &[GpuBuffer<f32>]| -> Result<Vec<GpuBuffer<f32>>> {
+            bufs.iter()
+                .map(|src| {
+                    let mut dst = GpuBuffer::new(self.executor.context(), src.len())
+                        .map_err(|e| gpu_err("qwen35_cuda_checkpoint", &e))?;
+                    // SAFETY: `src` and `dst` both live until the synchronize below.
+                    unsafe { dst.copy_from_buffer_async(src, stream) }
+                        .map_err(|e| gpu_err("qwen35_cuda_checkpoint", &e))?;
+                    Ok(dst)
+                })
+                .collect()
+        };
+        let conv = copy(&state.conv)?;
+        let ssm = copy(&state.ssm)?;
+        stream
+            .synchronize()
+            .map_err(|e| gpu_err("qwen35_cuda_checkpoint", &e))?;
+        Ok(Qwen35CudaCheckpoint {
+            conv,
+            ssm,
+            kv_len: state.kv_len,
+        })
+    }
+
+    /// Return `state` to the position `checkpoint` was taken at: its recurrent
+    /// part copied back, its K/V cache marked as holding `checkpoint`'s rows.
+    ///
+    /// Valid only while `state` still holds the rows `0..checkpoint.kv_len` it
+    /// held when the checkpoint was taken — i.e. no reset and no restore to an
+    /// earlier position since. The session owns that invariant.
+    ///
+    /// # Errors
+    /// A checkpoint of another shape, or any CUDA copy failure.
+    pub fn restore_checkpoint(
+        &self,
+        state: &mut Qwen35CudaState,
+        checkpoint: &Qwen35CudaCheckpoint,
+    ) -> Result<()> {
+        if checkpoint.conv.len() != state.conv.len()
+            || checkpoint.ssm.len() != state.ssm.len()
+            || checkpoint.kv_len > state.max_seq_len
+        {
+            return Err(RealizarError::InvalidShape {
+                reason: "qwen35_cuda: the checkpoint does not match this state".to_string(),
+            });
+        }
+        let stream = self.executor.compute_stream();
+        let pairs = state
+            .conv
+            .iter_mut()
+            .zip(&checkpoint.conv)
+            .chain(state.ssm.iter_mut().zip(&checkpoint.ssm));
+        for (dst, src) in pairs {
+            // SAFETY: both live until the synchronize below.
+            unsafe { dst.copy_from_buffer_async(src, stream) }
+                .map_err(|e| gpu_err("qwen35_cuda_restore", &e))?;
+        }
+        stream
+            .synchronize()
+            .map_err(|e| gpu_err("qwen35_cuda_restore", &e))?;
+        state.kv_len = checkpoint.kv_len;
         Ok(())
     }
 

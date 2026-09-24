@@ -260,6 +260,106 @@ mod gpu {
         );
     }
 
+    /// The chat template renders the last reply differently in the next prompt
+    /// than the model was prompted to write it: the generation prompt's empty
+    /// think block is dropped from the history turn. The next prompt therefore
+    /// shares only a prefix of what the state holds, and before #4214 every such
+    /// turn was prefilled again from position 0 — at 32k, the whole context.
+    #[test]
+    fn gpu_a_turn_that_rerenders_the_last_ones_tail_resumes_from_the_checkpoint() {
+        let mapped = mapped_or_skip!();
+        let Some(mut session) = gpu_session_or_skip(&mapped) else {
+            return;
+        };
+        let config = greedy(6);
+        let think = encode(&mapped, "<think>\n\n</think>\n\n");
+        let base = encode(
+            &mapped,
+            &user_turn(
+                "Name the capital of Peru, and say in one sentence why it was founded there.",
+            ),
+        );
+        assert!(
+            think.len() < CHECKPOINT_TAIL,
+            "the rerendered tail fits the margin"
+        );
+        let p1 = [base.as_slice(), &think].concat();
+        assert!(p1.len() > CHECKPOINT_TAIL);
+
+        let t1 = session
+            .generate(&p1, &config, &mut |_| true)
+            .expect("turn 1");
+        assert!(t1.used_gpu);
+
+        let reply = &t1.tokens[p1.len()..];
+        let next = encode(
+            &mapped,
+            &format!("<|im_end|>\n{}", user_turn("And of Chile?")),
+        );
+        let p2 = [base.as_slice(), reply, &next, &think].concat();
+        let t2 = session
+            .generate(&p2, &config, &mut |_| true)
+            .expect("turn 2");
+        assert!(t2.used_gpu, "turn 2 stays on the GPU");
+        assert_eq!(
+            t2.reused,
+            p1.len() - CHECKPOINT_TAIL,
+            "turn 2 resumed from the checkpoint, not from position 0"
+        );
+        assert_eq!(
+            t2.tokens,
+            one_shot_gpu(&mapped, &p2, &config),
+            "a restored device state must decode exactly what a fresh one does"
+        );
+    }
+
+    /// A conversation that outgrows its state keeps what it holds (#4214): the
+    /// first turn sizes the state to itself, so before this every turn past
+    /// MIN_CAPACITY positions reallocated it empty and prefilled from 0.
+    #[test]
+    fn gpu_a_conversation_that_outgrows_its_state_is_not_prefilled_again() {
+        let mapped = mapped_or_skip!();
+        let Some(mut session) = gpu_session_or_skip(&mapped) else {
+            return;
+        };
+        let config = greedy(4);
+        let filler = "The quick brown fox jumps over the lazy dog. ".repeat(500);
+        let p1 = encode(&mapped, &user_turn(&format!("{filler}\nHow many foxes?")));
+        assert!(
+            p1.len() + 4 > MIN_CAPACITY,
+            "turn 1 sizes the state past the minimum"
+        );
+        let t1 = session
+            .generate(&p1, &config, &mut |_| true)
+            .expect("turn 1");
+        assert!(t1.used_gpu);
+        let first_capacity = session.engine().capacity;
+
+        let mut p2 = t1.tokens.clone();
+        p2.extend(encode(
+            &mapped,
+            &format!("<|im_end|>\n{}", user_turn("And how many dogs?")),
+        ));
+        let t2 = session
+            .generate(&p2, &config, &mut |_| true)
+            .expect("turn 2");
+        assert!(t2.used_gpu, "turn 2 stays on the GPU");
+        assert!(
+            session.engine().capacity > first_capacity,
+            "turn 2 grew the state"
+        );
+        assert_eq!(
+            t2.reused,
+            t1.tokens.len() - 1,
+            "growing the state kept what it held"
+        );
+        assert_eq!(
+            t2.tokens,
+            one_shot_gpu(&mapped, &p2, &config),
+            "a grown device state must decode exactly what a fresh one does"
+        );
+    }
+
     /// Built on one thread, driven from another — the shape `apr serve` has. A
     /// CUDA context is current per thread; without binding it the first
     /// allocation fails with CUDA_ERROR_INVALID_CONTEXT and the session falls
@@ -450,4 +550,12 @@ fn successful_batched_prefill_returns_its_logits_unchanged() {
         Err(Step::Gpu(why)) => panic!("an Ok prefill became a GPU failure: {why}"),
         Err(Step::Fatal(e)) => panic!("an Ok prefill became a fatal error: {e}"),
     }
+}
+
+#[test]
+fn the_common_prefix_is_counted_up_to_the_first_difference() {
+    assert_eq!(common_prefix_len(&[1, 2, 3], &[1, 2, 4, 5]), 2);
+    assert_eq!(common_prefix_len(&[1, 2], &[1, 2, 3]), 2);
+    assert_eq!(common_prefix_len(&[], &[1]), 0);
+    assert_eq!(common_prefix_len(&[9], &[1]), 0);
 }

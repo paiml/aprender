@@ -86,6 +86,21 @@ pub trait ArchForward: Send {
     /// A forward failure no fallback can recover from.
     fn forward(&mut self, tokens: &[u32], start: usize) -> Result<Vec<f32>>;
 
+    /// The state holds `processed`, which `tokens` does NOT strictly extend:
+    /// return the state to a position `p` it saved earlier, with
+    /// `tokens[..p] == processed[..p]` and `p < tokens.len()`, and return `p`,
+    /// so the turn is prefilled from there instead of from 0 (#4214). A chat
+    /// template re-renders the last turn's tail, so the next prompt shares
+    /// only a prefix of what was processed, and a recurrent state cannot be
+    /// rolled back — only restored. `None`: no such point, the state is as it
+    /// was. The default has none.
+    ///
+    /// # Errors
+    /// A restore failure no fallback can recover from.
+    fn rewind(&mut self, _tokens: &[u32], _processed: &[u32]) -> Result<Option<usize>> {
+        Ok(None)
+    }
+
     /// [`ArchForward::forward`] for a greedy turn, where only the argmax is
     /// wanted: advance the state the same way and return the argmax token,
     /// chosen on the device, so the logits never cross to the host (#4268: the
@@ -203,14 +218,40 @@ impl<F: ArchForward> Session<F> {
             && tokens.starts_with(&self.processed)
     }
 
+    /// How many leading tokens of `tokens` the state holds once this returns:
+    /// all it processed when `tokens` strictly extends that, else the point
+    /// [`ArchForward::rewind`] returned it to, else 0 (the forward resets).
+    fn resume_point(&mut self, tokens: &[u32]) -> Result<usize> {
+        if self.extends(tokens) {
+            return Ok(self.processed.len());
+        }
+        if self.processed.is_empty() {
+            return Ok(0);
+        }
+        match self.forward.rewind(tokens, &self.processed) {
+            Ok(Some(p))
+                if p > 0
+                    && p < tokens.len()
+                    && p <= self.processed.len()
+                    && tokens[..p] == self.processed[..p] =>
+            {
+                self.processed.truncate(p);
+                Ok(p)
+            },
+            // No point, or one that breaks the contract: start over — a
+            // forward from 0 resets whatever the rewind left.
+            Ok(_) => Ok(0),
+            Err(e) => {
+                self.processed.clear();
+                Err(e)
+            },
+        }
+    }
+
     /// Make the state hold exactly `tokens`; return the logits after the last
     /// one and how many leading tokens were already held.
     fn advance_to(&mut self, tokens: &[u32]) -> Result<(Vec<f32>, usize)> {
-        let start = if self.extends(tokens) {
-            self.processed.len()
-        } else {
-            0
-        };
+        let start = self.resume_point(tokens)?;
         match self.forward.forward(tokens, start) {
             Ok(logits) => {
                 self.processed.truncate(start);
@@ -236,11 +277,7 @@ impl<F: ArchForward> Session<F> {
         rng: &mut rand::rngs::StdRng,
     ) -> Result<(u32, usize)> {
         if is_greedy(config) && !penalty_active(config) {
-            let start = if self.extends(tokens) {
-                self.processed.len()
-            } else {
-                0
-            };
+            let start = self.resume_point(tokens)?;
             match self.forward.forward_greedy(tokens, start) {
                 Ok(Some(next)) => {
                     self.processed.truncate(start);

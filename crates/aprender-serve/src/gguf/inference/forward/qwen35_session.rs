@@ -32,6 +32,13 @@ use crate::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 /// context (262 144 positions for every Qwen3.5 size).
 const MIN_CAPACITY: usize = 4096;
 
+/// How many tokens short of a prompt's end a resident session checkpoints the
+/// recurrent state (#4214). The next prompt re-renders the previous one's tail —
+/// the generation prompt and its empty think block become a history turn — so it
+/// diverges a few tokens before the end; this margin keeps the checkpoint before
+/// that.
+const CHECKPOINT_TAIL: usize = 16;
+
 /// Set to `per-token` to make a session prefill one token at a time, the path
 /// 0.69.1 served, instead of the batched prefill (0.69.3). It exists so the two
 /// can be compared token for token on ONE binary; the session says loudly that
@@ -66,6 +73,10 @@ struct GpuBackend {
     /// The F2 guard has accepted this device model (it runs once, on the first
     /// turn's real prompt).
     validated: bool,
+    /// The recurrent state [`CHECKPOINT_TAIL`] tokens short of the last prompt's
+    /// end, with the tokens it holds (#4214): what [`ArchForward::rewind`] returns
+    /// the state to when the next prompt re-renders that tail.
+    checkpoint: Option<(Vec<u32>, crate::gguf::cuda::Qwen35CudaCheckpoint)>,
 }
 
 #[cfg(feature = "cuda")]
@@ -118,6 +129,7 @@ impl GpuBackend {
             device_name,
             hash: Qwen35ModelHash::of(mapped.data()),
             validated: false,
+            checkpoint: None,
         })
     }
 }
@@ -433,19 +445,110 @@ impl Qwen35Forward {
         if start == 0 {
             self.reset_state()?;
         }
-        // A prompt, or a turn's new suffix, goes through the batched prefill (#3596)
-        // — the path `apr run` takes. Decode steps (one new token) stay one-token.
+        // A resident session prefills a prompt long enough to checkpoint in two
+        // parts, saving the recurrent state between them, so the next turn can
+        // resume from there when its prompt re-renders this one's tail (#4214).
+        // `apr run`'s one call (no minimum capacity) has no next turn.
+        let mark = tokens.len().saturating_sub(CHECKPOINT_TAIL);
+        if self.min_capacity > 0 && self.on_gpu_backend() && mark > start {
+            self.prefill_range(tokens, start, mark)?;
+            self.take_checkpoint(&tokens[..mark])?;
+            return self.prefill_range(tokens, mark, tokens.len());
+        }
+        self.prefill_range(tokens, start, tokens.len())
+    }
+
+    /// Process `tokens[from..to]` at positions `from..to` — batched on the GPU
+    /// when there is more than one (#3596, the path `apr run` takes), one token
+    /// at a time otherwise (decode steps) — and return the logits after the last.
+    fn prefill_range(
+        &mut self,
+        tokens: &[u32],
+        from: usize,
+        to: usize,
+    ) -> std::result::Result<Vec<f32>, Step> {
         #[cfg(feature = "cuda")]
-        if tokens.len().saturating_sub(start) > 1 {
-            if let Some(logits) = self.try_batched_prefill(&tokens[start..], start)? {
+        if to.saturating_sub(from) > 1 {
+            if let Some(logits) = self.try_batched_prefill(&tokens[from..to], from)? {
                 return Ok(logits);
             }
         }
         let mut logits = Vec::new();
-        for (pos, &token) in tokens.iter().enumerate().skip(start) {
+        for (pos, &token) in tokens.iter().enumerate().take(to).skip(from) {
             logits = self.forward_one(token, pos)?;
         }
         Ok(logits)
+    }
+
+    fn on_gpu_backend(&self) -> bool {
+        match self.backend {
+            #[cfg(feature = "cuda")]
+            Backend::Gpu(_) => true,
+            Backend::Cpu(_) => false,
+        }
+    }
+
+    /// Save the recurrent state, which holds `held`, replacing any earlier
+    /// checkpoint. A no-op on the CPU.
+    fn take_checkpoint(&mut self, held: &[u32]) -> std::result::Result<(), Step> {
+        #[cfg(feature = "cuda")]
+        if let Backend::Gpu(gpu) = &mut self.backend {
+            // Freed first: the new copy never has to fit beside the old one.
+            gpu.checkpoint = None;
+            let state = gpu
+                .state
+                .as_ref()
+                .ok_or_else(|| Step::Gpu("the device state was never allocated".to_string()))?;
+            let checkpoint = gpu
+                .model
+                .checkpoint(state)
+                .map_err(|e| Step::Gpu(format!("the recurrent state would not checkpoint: {e}")))?;
+            gpu.checkpoint = Some((held.to_vec(), checkpoint));
+        }
+        #[cfg(not(feature = "cuda"))]
+        let _ = held;
+        Ok(())
+    }
+
+    /// [`ArchForward::rewind`] on the current backend: restore the checkpoint
+    /// when `tokens` strictly extends the tokens it holds and the state still
+    /// holds them.
+    fn try_rewind(
+        &mut self,
+        tokens: &[u32],
+        processed: &[u32],
+    ) -> std::result::Result<Option<usize>, Step> {
+        #[cfg(feature = "cuda")]
+        if let Backend::Gpu(gpu) = &mut self.backend {
+            let Some((held, checkpoint)) = gpu.checkpoint.as_ref() else {
+                return Ok(None);
+            };
+            // The checkpoint's K/V rows are the state's rows 0..held.len() only
+            // while the state still holds that prefix.
+            if tokens.len() <= held.len()
+                || !tokens.starts_with(held)
+                || !processed.starts_with(held)
+            {
+                return Ok(None);
+            }
+            let state = gpu
+                .state
+                .as_mut()
+                .ok_or_else(|| Step::Gpu("the device state was never allocated".to_string()))?;
+            gpu.model
+                .restore_checkpoint(state, checkpoint)
+                .map_err(|e| Step::Gpu(format!("the recurrent state would not restore: {e}")))?;
+            let position = held.len();
+            eprintln!(
+                "[qwen35] session: resumed from the checkpoint at position {position} (the new \
+                 prompt diverges from what was processed at position {})",
+                common_prefix_len(tokens, processed)
+            );
+            return Ok(Some(position));
+        }
+        #[cfg(not(feature = "cuda"))]
+        let _ = (tokens, processed);
+        Ok(None)
     }
 
     /// Prefill `new` at positions `pos0..` in one batched call on the GPU and return
@@ -553,6 +656,7 @@ impl Qwen35Forward {
         match &mut self.backend {
             #[cfg(feature = "cuda")]
             Backend::Gpu(gpu) => {
+                gpu.checkpoint = None;
                 if let Some(state) = gpu.state.as_mut() {
                     gpu.model
                         .reset_state(state)
@@ -611,20 +715,39 @@ impl Qwen35Forward {
             .max(self.min_capacity)
             .min(self.context_length)
             .max(positions);
-        self.allocations += 1;
         let qwen = self.qwen;
         match &mut self.backend {
             #[cfg(feature = "cuda")]
             Backend::Gpu(gpu) => {
-                // Free the old state before asking for the larger one.
-                gpu.state = None;
+                // Carry what the old state holds into the larger one, so a
+                // conversation that outgrows its state is not prefilled again
+                // (#4214) — the first turn sizes the state to itself. If both do
+                // not fit at once, free the old one and start over, loudly.
+                if let Some(old) = gpu.state.take() {
+                    match gpu.model.grow_state(old, capacity) {
+                        Ok(grown) => {
+                            gpu.state = Some(grown);
+                            self.capacity = capacity;
+                            return Ok(());
+                        },
+                        Err(e) => eprintln!(
+                            "[qwen35] session: the decode state would not grow to {capacity} \
+                             positions in place ({e}); prefilling the conversation again"
+                        ),
+                    }
+                }
+                self.allocations += 1;
+                gpu.checkpoint = None;
                 gpu.state = Some(gpu.model.new_state_with_capacity(capacity).map_err(|e| {
                     Step::Gpu(format!(
                         "a decode state for {capacity} positions would not allocate: {e}"
                     ))
                 })?);
             },
-            Backend::Cpu(state) => *state = Some(qwen.new_state(capacity)),
+            Backend::Cpu(state) => {
+                self.allocations += 1;
+                *state = Some(qwen.new_state(capacity));
+            },
         }
         self.capacity = capacity;
         Ok(())
@@ -690,6 +813,15 @@ impl crate::session::ArchForward for Qwen35Forward {
         #[cfg(not(feature = "cuda"))]
         let _ = probe;
         Ok(())
+    }
+
+    fn rewind(&mut self, tokens: &[u32], processed: &[u32]) -> Result<Option<usize>> {
+        match self.try_rewind(tokens, processed) {
+            Ok(point) => Ok(point),
+            // The forward that follows starts from 0 on the CPU.
+            Err(Step::Gpu(reason)) => self.fall_back_to_cpu(&reason).map(|()| None),
+            Err(Step::Fatal(e)) => Err(e),
+        }
     }
 
     /// A GPU failure moves the forward to the CPU, loudly, and replays all of
@@ -800,6 +932,11 @@ fn batched_prefill_outcome<E: std::fmt::Display>(
 }
 
 /// Print `line` to stderr and keep it in the session's notices.
+/// How many leading tokens `a` and `b` share.
+fn common_prefix_len(a: &[u32], b: &[u32]) -> usize {
+    a.iter().zip(b).take_while(|(x, y)| x == y).count()
+}
+
 fn say(notices: &mut Vec<String>, line: String) {
     eprintln!("{line}");
     notices.push(line);
