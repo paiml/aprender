@@ -18191,6 +18191,26 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-4110
+  github_issue: 4110
+  item_type: task
+  title: 'apr --version prints +no-git on BOTH published surfaces (crates.io install, release binaries)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T23:59:54.621480081+00:00
+  updated: 2026-09-23T23:59:54.621480081+00:00
+  spec: null
+  acceptance_criteria:
+  - 'a packaged apr-cli (.cargo_vcs_info.json, no .git) emits APR_GIT_SHA = the 9-hex vcs sha, never +no-git (must-RED: the vcs rung removed)'
+  - 'an unpacked crate inside an UNRELATED repository still names its own vcs sha, not that repo HEAD (must-RED: vcs rung behind git rev-parse)'
+  - 'a checkout owned by another user (the root build container of binary-release.yml) still yields git rev-parse HEAD (must-RED: the safe.directory retry removed)'
+  - 'dev checkouts, the override, the malformed-sha and no-vcs fallbacks are unchanged'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Cop rows (aprender-cf, 2026-09-23/24): (1) build.rs reads the sha1 from .cargo_vcs_info.json with a must-RED fixture; scope widened after aprender-70 found the release binaries print +no-git too: cover both surfaces, each with its own must-RED, and keep any binary-release.yml edit a separate commit. ROOT CAUSE (b), measured: git inside rust:1.93.0-bookworm running as root refuses the runner-owned checkout (fatal: detected dubious ownership); main build.rs printed v0.69.1+no-git there, this one prints the HEAD. The retry marks ONLY the enclosing checkout safe.directory through a private GIT_CONFIG_GLOBAL under OUT_DIR (-c safe.directory is ignored before git 2.39, measured on 2.34.1), so NO workflow edit is needed. Tests: crates/apr-cli/src/build_rs_vcs_sha_tests.rs (8 rows, 3 plants), run by workspace-test. Also Cargo.lock chacha20 0.10.0 (yanked) -> 0.10.2, lock-only.'
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
@@ -19771,6 +19791,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered from gh#3610 done_when; see paiml-mcp-agent-toolkit#1414). The defect: NoFocus asked the question GLOBALLY (report.focus_nodes_n == 0), which is only ever true for a lone contract. In a DIRECTORY one empty shape is invisible — the others carry the total above zero, the empty one contributes no violations, and the aggregate reports Pass WHILE LISTING IT IN armed_shapes, which is the tool s claim about what it measured. Done when: vacuity is computed per-shape before any verdict is formed; an ARMED shape at zero declines (exit 2, Unknown(NoFocus), named in declines[]); an UNARMED shape at zero is REPORTED in declines[] and does not refuse; a vacuous shape appears in NEITHER armed_shapes NOR not_armed_shapes, because filing a vacuity as a policy choice is how it hid. BOTH VENUES: the lone-contract case already declined correctly, so a fix proved only there proves nothing. pass/fail/decline must stay distinct (0/1/2) and all three must still emit a parseable report with by_shape, since downstream captures stdout regardless of exit code. STOP: do not refuse whenever anything is empty — that breaks the unarmed direction. PRECEDENCE (#3622 re-review, cop ruling B, 2026-09-23): a measured violation outranks a vacuity — an armed zero-focus shape beside a violating armed shape is Fail/exit 1, with the vacuity still named in declines[]. The global NoFocus path (every shape at zero) declines with exit 2 but prints no report yet: #4100.'
+- id: PMAT-3611
+  github_issue: 3611
+  item_type: task
+  kind: code
+  title: 'pv: implement sh:lessThan / sh:lessThanOrEquals (SHACL Core property pairs)'
+  status: inprogress
+  priority: medium
+  assigned_to: pvl-b
+  created: 2026-09-24T18:24:24Z
+  updated: 2026-09-24T18:24:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-3618
   github_issue: 3618
   item_type: task
@@ -20644,6 +20681,22 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4110
+  github_issue: 4110
+  item_type: task
+  title: apr version names rc tag and commit
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-ea
+  created: 2026-09-24T17:50:47Z
+  updated: 2026-09-24T17:50:47Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-4233
   github_issue: 4233
   item_type: task
@@ -20671,6 +20724,128 @@ roadmap:
   assigned_to: aprender-ea
   created: 2026-09-24T16:52:28Z
   updated: 2026-09-24T16:52:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4252
+  github_issue: 4252
+  item_type: task
+  title: 'Mandatory apr dogfood: apr serve Qwen3.5-4B as an advisory 4th quorum lane (gx10 CUDA primary, yields to lambda CPU on any need for the box) (#4252)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-6c
+  created: 2026-09-24T11:30:00Z
+  updated: 2026-09-24T18:50:00Z
+  spec: null
+  acceptance_criteria:
+  - 'gx10 serve runs --backend cuda --gpu-layers all; an answer is labelled gx10-cuda only with used_gpu true and the server pid holding GPU memory (#4089)'
+  - 'Any need for the box (gpu lock, queue, foreign GPU app, claim file, disk/mem alarm) stops the gx10 server by recorded pid; asks pass to lambda CPU'
+  - 'Mutation proof: planted hold -> watcher YIELD -> lambda answers -> watcher resumes'
+  - 'The lane never hangs a quorum: one hard budget per ask, verdict unavailable on expiry; advisory, counts=false'
+  - 'Every serve failure is filed under #4252'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: "Landed on batch/0.70.0 by aprender-60 without scripts/bench_serve_4252.py (PERF-009); #4282 closed."
+- id: PMAT-4256
+  github_issue: 4256
+  item_type: task
+  title: release assets carry git sha
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-ea
+  created: 2026-09-24T17:50:48Z
+  updated: 2026-09-24T17:50:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4275
+  github_issue: 4275
+  item_type: task
+  kind: code
+  title: 'binary-release smoke: strip -rc.N and bind the asset to its commit'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T14:17:31Z
+  updated: 2026-09-24T14:17:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4285
+  github_issue: 4285
+  item_type: task
+  kind: code
+  title: 'rc cut: tag vX.Y.Z-rc.N on every green merge to release/X.Y.Z'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T14:01:18Z
+  updated: 2026-09-24T14:01:18Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4286
+  github_issue: 4286
+  item_type: task
+  kind: code
+  title: promote rc to final with no rebuild
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T14:17:31Z
+  updated: 2026-09-24T14:17:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4287
+  github_issue: 4287
+  item_type: task
+  kind: code
+  title: 'rc gate: run the publish preflight + cargo package cascade at rc cut'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T14:33:50Z
+  updated: 2026-09-24T14:33:50Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4327
+  github_issue: 4327
+  item_type: task
+  title: rc staged on every fleet host before publish, darwin-arm64 asset
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-ea
+  created: 2026-09-24T18:11:17Z
+  updated: 2026-09-24T18:11:17Z
   spec: null
   acceptance_criteria: []
   phases: []

@@ -1,0 +1,23 @@
+# vendored: w3c/data-shapes@gh-pages data-shapes-test-suite/tests/core/property/lessThan-002.ttl (tests/oracle/w3c/property/lessThan-002.ttl)
+id: property/lessThan-002
+label: "Test of sh:lessThan at property shape 002"
+prefix: "http://datashapes.org/sh/tests/core/property/lessThan-002.test#"
+targeting: "sh:targetNode → rdf:type ex:Focus + targetClass. Numbers against strings are incomparable, so every pair is a result: four, value 1 twice and value 2 twice"
+shapes:
+  - id: TestShape
+    targetClass: ex:Focus
+    properties:
+      - {path: ex:first, lessThan: ex:second}
+data: |
+  ex:InvalidInstance1 rdf:type ex:Focus .
+  ex:InvalidInstance1 ex:first 1 .
+  ex:InvalidInstance1 ex:first 2 .
+  ex:InvalidInstance1 ex:second "a" .
+  ex:InvalidInstance1 ex:second "b" .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidInstance1, path: ex:first, component: lessThan}
+    - {focus: ex:InvalidInstance1, path: ex:first, component: lessThan}
+    - {focus: ex:InvalidInstance1, path: ex:first, component: lessThan}
+    - {focus: ex:InvalidInstance1, path: ex:first, component: lessThan}

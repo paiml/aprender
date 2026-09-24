@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check_release_assets.sh — a tagged release carries the SIXTEEN assets it owes,
+# check_release_assets.sh — a tagged release carries the EIGHTEEN assets it owes,
 # or this exits non-zero (row 67-A1, PMAT-1098, issue #3082).
 #
 # WHY THIS EXISTS
@@ -9,7 +9,8 @@
 # inline, in a loop that lived in the workflow — so it could not be run on release
 # day by a human, by the dogfood, or by the release-criteria table. No gate asserted
 # the ASSET SET. The operator's rule (2026-09-10) is four `apr` binaries on every
-# tag: {cuda, cpu} x {x86_64, aarch64}, each with a .sha256.
+# tag: {cuda, cpu} x {x86_64, aarch64}, each with a .sha256. Since #4327 also the cpu
+# apr for aarch64-apple-darwin: mini is fleet hardware and took no rc without it.
 #
 # This script is that assertion, in ONE place, so the workflow and the release-day
 # protocol share one checker.
@@ -46,7 +47,7 @@ usage: check_release_assets.sh <tag> [--assets-from FILE]
 USAGE
 }
 
-# expected_assets TAG — the sixteen names, derived from the two matrices, printed
+# expected_assets TAG — the eighteen names, derived from the two matrices, printed
 # one per line. The apr set is the operator's hard requirement; the pv set is what
 # the `build` lane of binary-release.yml has always produced.
 expected_assets() {
@@ -57,6 +58,8 @@ expected_assets() {
             printf 'apr-%s-%s-unknown-linux-gnu-%s.tar.gz.sha256\n' "$tag" "$arch" "$flavour"
         done
     done
+    printf 'apr-%s-aarch64-apple-darwin-cpu.tar.gz\n' "$tag"
+    printf 'apr-%s-aarch64-apple-darwin-cpu.tar.gz.sha256\n' "$tag"
     for arch in x86_64 aarch64; do
         for libc in musl gnu; do
             printf 'pv-%s-%s-unknown-linux-%s.tar.gz\n' "$tag" "$arch" "$libc"
@@ -93,7 +96,9 @@ read_assets() {
         return 2
     }
     json=$(curl -sSf -H "Authorization: Bearer $token" -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${repo}/releases/tags/${tag}" 2>/dev/null); rc=$?
+        "https://api.github.com/repos/${repo}/releases?per_page=100" 2>/dev/null \
+        | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$tag" 2>/dev/null); rc=$?
+    # ^ by listing: an rc is a DRAFT until every fleet host runs it (#4327); releases/tags/ hides drafts
     [ "$rc" -eq 0 ] && [ -n "$json" ] || {
         printf '%s: ENV — REST read of %s release %s failed (rc=%s)\n' "$PROG" "$repo" "$tag" "$rc" >&2
         return 2
@@ -119,9 +124,9 @@ check_tag() { # check_tag TAG -> 0 complete · 1 missing · 2 ENV
         fi
     done <<< "$(expected_assets "$tag")"
     if [ "$rc" -eq 0 ]; then
-        printf '%s: %s carries all 16 expected assets (4 apr + 4 sha256 + 8 pv)\n' "$PROG" "$tag"
+        printf '%s: %s carries all 18 expected assets (5 apr + 5 sha256 + 8 pv)\n' "$PROG" "$tag"
     else
-        printf '%s: %s is MISSING %s expected asset(s) — a release without its four apr binaries is not done (operator rule 2026-09-10)\n' "$PROG" "$tag" "$miss" >&2
+        printf '%s: %s is MISSING %s expected asset(s) — a release without its five apr binaries is not done (operator rule 2026-09-10)\n' "$PROG" "$tag" "$miss" >&2
     fi
     return "$rc"
 }
@@ -135,6 +140,7 @@ selftest() {
     grep -vx "apr-$tag-aarch64-unknown-linux-gnu-cpu.tar.gz" "$work/complete.txt" > "$work/mutant.txt"
     grep -vx "apr-$tag-x86_64-unknown-linux-gnu-cuda.tar.gz.sha256" "$work/complete.txt" > "$work/nosha.txt"
     grep -v '^pv-' "$work/complete.txt" > "$work/nopv.txt"
+    grep -vx "apr-$tag-aarch64-apple-darwin-cpu.tar.gz" "$work/complete.txt" > "$work/nodarwin.txt"
     : > "$work/empty.txt"
 
     row() { # row <want-rc> <label> <cmd...>
@@ -152,6 +158,7 @@ selftest() {
 
     row 0 "the complete asset set is credited"                bash "$0" "$tag" --assets-from "$work/complete.txt"
     row 1 "MUTATION: apr-<tag>-aarch64-...-cpu.tar.gz removed" bash "$0" "$tag" --assets-from "$work/mutant.txt"
+    row 1 "MUTATION: the darwin apr removed (mini takes no rc, #4327)" bash "$0" "$tag" --assets-from "$work/nodarwin.txt"
     row 1 "a missing .sha256 is as fatal as a missing tarball" bash "$0" "$tag" --assets-from "$work/nosha.txt"
     row 1 "the eight pv assets are required too"               bash "$0" "$tag" --assets-from "$work/nopv.txt"
     row 1 "an empty release is MISSING (1), not ENV"           bash "$0" "$tag" --assets-from "$work/empty.txt"
@@ -165,9 +172,9 @@ selftest() {
     out=$(bash "$0" "$tag" --assets-from "$work/mutant.txt" 2>&1)
     row 0 "the missing asset is named in the output" \
         grep -q "MISSING apr-$tag-aarch64-unknown-linux-gnu-cpu.tar.gz" <<< "$out"
-    # Sixteen, not "some": a table that expected four would pass the rows above.
-    row 0 "sixteen assets are expected, and four of them are apr tarballs" \
-        bash -c "[ \$(bash '$0' --list '$tag' | grep -c .) -eq 16 ] && [ \$(bash '$0' --list '$tag' | grep -c '^apr-.*tar.gz\$') -eq 4 ]"
+    # Eighteen, not "some": a table that expected four would pass the rows above.
+    row 0 "eighteen assets are expected, and five of them are apr tarballs (one darwin)" \
+        bash -c "[ \$(bash '$0' --list '$tag' | grep -c .) -eq 18 ] && [ \$(bash '$0' --list '$tag' | grep -c '^apr-.*tar.gz\$') -eq 5 ] && bash '$0' --list '$tag' | grep -qx 'apr-$tag-aarch64-apple-darwin-cpu.tar.gz'"
 
     printf '%s/%s rows\n' "$((n - red))" "$n"
     [ "$red" = 0 ] || return 1
