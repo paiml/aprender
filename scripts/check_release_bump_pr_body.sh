@@ -109,7 +109,14 @@ while [ $# -gt 0 ]; do
 done
 printf 'https://github.com/paiml/aprender/pull/99999\n'
 STUB
-chmod +x "$TMP/bin/kind" "$TMP/bin/gh"
+cat > "$TMP/bin/ssh" <<'STUB'
+#!/usr/bin/env bash
+while [ "${1:-}" = -o ]; do shift 2; done
+host=${1:-}; shift
+[ "$host" = gx10 ] && [ "$*" = "bash -s" ] || exit 255
+exec env -u APR_NIGHTLY_ROOT HOME="$FX_GX10_HOME" bash -s
+STUB
+chmod +x "$TMP/bin/kind" "$TMP/bin/gh" "$TMP/bin/ssh"
 export PR_CLOSES_REF_KIND_CMD="$TMP/bin/kind"
 
 # write_receipt DIR HOST -> a green apr-model-ladder-receipt/v2 for 9.9.9: the fixture rung's file is
@@ -160,8 +167,12 @@ json.dump({"schema": "crux-inference-receipt/v1", "host": host, "backend": "cpu"
 PY
 }
 
-# run_ship NAME SUBJECT CHANGELOG_SECTION [LADDER: all|no-gx10|ignored] -> the fixture dir;
-# the exit code is in $TMP/NAME/rc
+# run_ship NAME SUBJECT CHANGELOG_SECTION [LADDER: all|release-nonight|no-gx10|ignored] -> the fixture dir;
+# the exit code is in $TMP/NAME/rc.
+# #4117 (cop ruling (a)): `all` (the default) and `release-nonight` are a RELEASE-GATE tree -- the fixture contract
+# records release_gate.from 9.9.0, so --ship requires an ADMISSIBLE nightly (the real nightly_admission.py over both
+# hosts' nights, gx10's gathered through the ssh stub) and NO full-ladder receipts are written. `no-gx10` / `ignored`
+# stay a pre-`from` tree (the full ladder); that fixture's drift behind the judge is #4128.
 run_ship() {
     local name=$1 subject=$2 section=$3 ladder=${4:-all} d
     d="$TMP/$name"
@@ -184,18 +195,22 @@ run_ship() {
     cp -- "$LADDER_JUDGE" "$d/seed/scripts/check_model_ladder.sh"
     cp -- "$LADDER_PRODUCER" "$d/seed/scripts/model_ladder.sh"
     for m in "$LADDER_LIB"/*.py; do [ -f "$m" ] && cp -- "$m" "$d/seed/scripts/lib/"; done
-    python3 - "$LADDER_CONTRACT" "$d/seed/contracts/model-capability-ladder-v1.yaml" <<'PY' || return 2
+    mkdir -p "$d/seed/scripts/release" && cp -- "$ROOT/scripts/release/gather_nightly.sh" "$d/seed/scripts/release/" || return 2
+    local rel=0; case "$ladder" in all|release-nonight) rel=1 ;; esac
+    python3 - "$LADDER_CONTRACT" "$d/seed/contracts/model-capability-ladder-v1.yaml" "$rel" <<'PY' || return 2
 import sys, yaml
 inv = yaml.safe_load(open(sys.argv[1]))["ladder"]["inventory"]
 # the real contract's red_* verdicts name REAL model files the fixture hosts do not hold; the judge
 # refuses a verdict for a file nobody holds (#3957 F9/F10), so they are not the fixture's (#4128)
 inv = {k: v for k, v in inv.items() if k not in ("red_model", "red_unsupported")}
-yaml.safe_dump({"ladder": {
+lad = {
     "hosts": [{"id": "lambda", "required": True, "gpu": "fixture", "cc": "sm_89"},
               {"id": "gx10", "required": True, "gpu": "fixture", "cc": "sm_121"}],
     "inventory": inv,
-    "rungs": [{"id": "fx-rung", "gguf": "fx.gguf", "required": True, "backends": ["cpu"]}]}},
-    open(sys.argv[2], "w"), sort_keys=False)
+    "rungs": [{"id": "fx-rung", "gguf": "fx.gguf", "required": True, "backends": ["cpu"]}]}
+if sys.argv[3] == "1":
+    lad["release_gate"] = {"from": "9.9.0", "ruling": "fixture"}
+yaml.safe_dump({"ladder": lad}, open(sys.argv[2], "w"), sort_keys=False)
 PY
     git init -q --bare -b main "$d/origin.git" \
         && git -C "$d/seed" init -q -b main && git -C "$d/seed" add -A \
@@ -204,18 +219,41 @@ PY
         && git -C "$d/ap/bump" checkout -q -b release-9.9.9 || return 2
     printf '# Changelog\n\n## [Unreleased]\n\n## [9.9.9] - 2026-01-01\n\n%s\n\n## [9.9.8] - 2025-12-01\n\n- older\n' \
         "$section" > "$d/ap/bump/CHANGELOG.md"
+    if [ "$rel" = 1 ]; then
+        # the release-gate tree: both hosts' nights at the candidate's base (an ancestor), GREEN, fresh, recording
+        # their receipts relative to themselves; `release-nonight` has none. No ladder receipt is written.
+        [ "$ladder" = release-nonight ] || python3 - "$(git -C "$d/ap/bump" rev-parse origin/main)" "$d/nightly-lambda" "$d/gx10home/.cache/aprender-nightly" <<'PY' || return 2
+import json, os, sys, time
+sha, lroot, groot = sys.argv[1:4]
+for host, root in (("lambda", lroot), ("gx10", groot)):
+    d = os.path.join(root, sha, host)
+    os.makedirs(os.path.join(d, "ladder")); os.makedirs(os.path.join(d, "crux"))
+    json.dump({"apr_sha": sha, "executed": 1, "red": 0}, open(os.path.join(d, "ladder", host + ".json"), "w"))
+    for lane in ("gpu", "cpu"):
+        json.dump({"schema": "crux-inference-receipt/v1", "apr": {"sha": sha}, "summary": {"verdict": "PASS"}},
+                  open(os.path.join(d, "crux", "%s-%s.json" % (host, lane)), "w"))
+    open(os.path.join(d, "prompt-certification.json"), "w").write("{}")
+    json.dump({"schema": "apr-nightly-certification/v1", "sha": sha, "host": host, "version": "9.9.9", "t_start": time.time() - 60,
+               "t_end": time.time() - 30, "green": True, "why": [], "ladder": {"rc": 0, "receipt": "ladder/%s.json" % host},
+               "crux": {"rc": 0, "lanes": {lane: {"receipt": "crux/%s-%s.json" % (host, lane), "verdict": "PASS"} for lane in ("gpu", "cpu")}},
+               "certification": {"path": "prompt-certification.json", "sha256": None}}, open(os.path.join(d, "verdict.json"), "w"))
+PY
+        mkdir -p "$d/nightly-lambda" "$d/gx10home/.cache/aprender-nightly"
+    else
     # the model-ladder receipts for 9.9.9, UNCOMMITTED in the bump tree as model_ladder.sh leaves them
     write_receipt "$d/ap/bump/evidence/dogfood/models/9.9.9" lambda
     case "$ladder" in
         no-gx10) ;;
         *) write_receipt "$d/ap/bump/evidence/dogfood/models/9.9.9" gx10 ;;
     esac
+    fi
     [ "$ladder" = ignored ] && printf 'evidence/dogfood/models/\n' > "$d/ap/bump/.gitignore"
     printf 'GO %s fixture\n' "$(git -C "$d/ap/bump" rev-parse origin/main)" \
         > "$d/ap/preflight-$(git -C "$d/ap/bump" rev-parse origin/main).verdict"
     : > "$d/gh.log"
     ( export RELEASE_AP="$d/ap" RELEASE_EPIC=9002 CARGO_HOME="$d/cargo" \
-          PATH="$TMP/bin:$PATH" FIXTURE_GH_LOG="$d/gh.log" FIXTURE_BODY="$d/body.md"
+          PATH="$TMP/bin:$PATH" FIXTURE_GH_LOG="$d/gh.log" FIXTURE_BODY="$d/body.md" \
+          APR_NIGHTLY_ROOT="$d/nightly-lambda" FX_GX10_HOME="$d/gx10home"
       bash "$d/repo/scripts/release/prepare_bump.sh" 9.9.9 --ship ) > "$d/out.log" 2>&1
     printf '%s\n' "$?" > "$d/rc"
 }
@@ -242,6 +280,8 @@ row_epic_and_refs() {
     local d="$TMP/epic-$1" line
     run_ship "epic-$1" "$2" "$EPIC_SECTION" || return 2
     [ "$(cat "$d/rc")" = 0 ] || { printf 'prepare_bump.sh --ship exited %s: %s\n' "$(cat "$d/rc")" "$(tail -1 "$d/out.log")"; return 1; }
+    grep -qF 'RELEASE GATE: an admissible nightly for the candidate on lambda gx10' "$d/out.log" \
+        || { printf 'the bump did not pass through the release gate'"'"'s nightly admission: %s\n' "$(tail -2 "$d/out.log" | tr '\n' ' ')"; return 1; }
     grep -q '^pr create' "$d/gh.log" || { printf 'no gh pr create was issued\n'; return 1; }
     [ "$(guard_rc "$d/body.md")" = 0 ] || { printf 'the opened body FAILS the guard: %s\n' "$(bash "$GUARD" --body "$d/body.md" 2>&1)"; return 1; }
     [ "$(grep -c '^keep-open:' "$d/body.md")" = 1 ] || { printf 'expected ONE keep-open line, found %s\n' "$(grep -c '^keep-open:' "$d/body.md")"; return 1; }
@@ -331,8 +371,23 @@ row_ladder() {
 }
 msg=$(row_ladder ladder-missing-real "$SUBJECT" no-gx10 "evidence/dogfood/models/9.9.9/gx10.json"); row ladder-missing-gx10 "$?" "$msg"
 msg=$(row_ladder ladder-ignored-real "$SUBJECT" ignored "are gitignored"); row ladder-ignored "$?" "$msg"
+# #4117: a release-gate bump with NO admissible nightly is refused by name, before push and PR
+msg=$(row_ladder release-nonight-real "$SUBJECT" release-nonight "RELEASE GATE: no admissible nightly for this candidate"); row release-no-nightly-refuses "$?" "$msg"
 
 # --- the mutants -------------------------------------------------------------
+# #4117: the admission replaced by `true` -> a bump with no night ships; the gate never chosen -> the full ladder
+ADMIT_ANCHOR='python3 scripts/lib/nightly_admission.py "$nt/root" "$(git rev-parse HEAD)" "$nt/admitted" $hosts'
+PICK_ANCHOR='gw=$(python3 -B scripts/lib/crux_smoke_scope.py applies contracts/model-capability-ladder-v1.yaml "$V" 2>&1); grc=$?'
+python3 -c 'import sys; s=open(sys.argv[1]).read(); assert s.count(sys.argv[3])==1; open(sys.argv[2],"w").write(s.replace(sys.argv[3], sys.argv[4]))' \
+    "$SUBJECT" "$TMP/mutant-drop-admission.sh" "$ADMIT_ANCHOR" 'true' || env_die "drop-admission mutant did not apply"
+msg=$(row_ladder release-nonight-mutant "$TMP/mutant-drop-admission.sh" release-nonight "RELEASE GATE: no admissible nightly for this candidate"); mrc=$?
+[ "$mrc" = 2 ] && env_die "drop-admission mutant could not build its fixture"
+[ "$mrc" != 0 ]; row "mutant drop-admission is killed by release-no-nightly-refuses (${msg:-survived})" "$?" "the mutant PASSED release-no-nightly-refuses -- the row does not discriminate"
+python3 -c 'import sys; s=open(sys.argv[1]).read(); assert s.count(sys.argv[3])==1; open(sys.argv[2],"w").write(s.replace(sys.argv[3], sys.argv[4]))' \
+    "$SUBJECT" "$TMP/mutant-never-release.sh" "$PICK_ANCHOR" 'gw="forced"; grc=1' || env_die "never-release mutant did not apply"
+msg=$(row_epic_and_refs never-release "$TMP/mutant-never-release.sh"); mrc=$?
+[ "$mrc" = 2 ] && env_die "never-release mutant could not build its fixture"
+[ "$mrc" != 0 ]; row "mutant never-release is killed by epic-and-refs (${msg:-survived})" "$?" "the mutant PASSED epic-and-refs -- the row does not discriminate"
 grep -vF -- "$KEEP_OPEN_ANCHOR" "$SUBJECT" > "$TMP/mutant-drop-keep-open.sh"
 cmp -s "$SUBJECT" "$TMP/mutant-drop-keep-open.sh" && env_die "drop-keep-open mutant is identical to the subject"
 msg=$(row_epic_and_refs mutant "$TMP/mutant-drop-keep-open.sh"); mrc=$?

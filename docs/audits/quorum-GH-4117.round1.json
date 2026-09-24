@@ -1,0 +1,219 @@
+{
+  "ticket": "GH-4117",
+  "base": "origin/feat/4033-release-process-0.70",
+  "base_resolved": "origin/feat/4033-release-process-0.70",
+  "base_note": "no origin/origin/feat/4033-release-process-0.70 exists; judged against the local ref",
+  "head": "d3786c2afcaba9101e90273c8ce4253bb55490c5",
+  "diff_sha256": "4f367de36136cce745244f8dccb9dbe436eb089f67f2d1fb0ea1d7df8d4fb215",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 100360,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The implementation in `gather_nightly.sh` hardcodes the paths to copy (`ladder`, `crux`, `prompt-certification.json`) rather than reading the `verdict.json` to copy the receipts it actually names. This directly contradicts the receipt claim that it \"copies each night's verdict and the receipts it names\".",
+      "findings": [
+        {
+          "claim": "It copies each night's verdict and the receipts it names",
+          "file": "scripts/release/gather_nightly.sh",
+          "fix": "The python script `PICK` in `gather_nightly.sh` hardcodes the paths `ladder`, `crux`, and `prompt-certification.json` and copies them blindly. It does not parse `verdict.json` to find and copy the specific receipts it actually names, contrary to the receipt claim.",
+          "grounding": "cited",
+          "line": 36
+        }
+      ],
+      "raw_bytes": 3928,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for GH-4117 cleanly and rigorously implements the 0.70 release gate across all required publish callers: autopilot's models step (scripts/release/models_t1.sh), R7 preflight (scripts/check_publish_preflight.sh), candidate watch (scripts/release/candidate_watch.sh), and prepare_bump --ship (scripts/release/prepare_bump.sh). Gate applicability is unified in crux_smoke_scope.py (release_gate_applies), nightly certifications store paths relative to verdict.json for cross-host admissibility (certify_nightly.sh, nightly_admission.py), and nightly artifacts are gathered cleanly via gather_nightly.sh. All verification tables and mutant controls were independently executed and passed (check_publish_preflight.sh 63/63, check_release_models_t1.sh 38/38 + 4 mutants killed, check_publish_reads_watch.sh PASS, check_release_shift_left.sh PASS, check_certify_nightly.sh PASS, nightly_admission_cases.py 19/19 + 14/14 mutants killed). No gates are weakened and no refutations were found.",
+      "findings": [],
+      "raw_bytes": 7884,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "UNPARSABLE",
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": [],
+      "raw_bytes": 0,
+      "err_bytes": 0,
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": null,
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "other"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 1,
+      "verdict": "FAIL",
+      "summary": "The implementation in `gather_nightly.sh` hardcodes the paths to copy (`ladder`, `crux`, `prompt-certification.json`) rather than reading the `verdict.json` to copy the receipts it actually names. This directly contradicts the receipt claim that it \"copies each night's verdict and the receipts it names\".",
+      "findings": [
+        {
+          "claim": "It copies each night's verdict and the receipts it names",
+          "file": "scripts/release/gather_nightly.sh",
+          "fix": "The python script `PICK` in `gather_nightly.sh` hardcodes the paths `ladder`, `crux`, and `prompt-certification.json` and copies them blindly. It does not parse `verdict.json` to find and copy the specific receipts it actually names, contrary to the receipt claim.",
+          "grounding": "cited",
+          "line": 36
+        }
+      ]
+    },
+    {
+      "lane": 3,
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": []
+    }
+  ],
+  "dedup": [
+    {
+      "file": "scripts/release/gather_nightly.sh",
+      "line": 36,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "It copies each night's verdict and the receipts it names"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 2: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 3: lane file did not parse as JSON"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}

@@ -117,6 +117,9 @@ fi
 #     apr built from $MC and proved to be it. One red cell, an unreachable host, a failed build, a
 #     missing receipt or a judge decline is a STOP here, with no tag cut. The same judge re-reads the
 #     receipts committed in the bump at T-4 (check_publish_preflight.sh R7).
+#     From ladder.release_gate.from (#4117) the step is the NORMAL release gate instead: CRUX smoke on the
+#     release binary on both hosts + both hosts' nightly, judged `--scope release`; R7 re-judges exactly
+#     those outputs at T-4 (run_preflight hands them over).
 if run_step models; then
   bash scripts/release/models_t1.sh "$V" "$MC" "$AP/models-t1" > "$AP/models-t1.log" 2>&1; rc=$?
   grep -E '^MODELS ' "$AP/models-t1.log" >> "$STATUS"
@@ -275,7 +278,12 @@ PY
 }
 run_preflight() {
     watch_gate "${CANDIDATE_WATCH_STATE:-$HOME/.local/state/aprender-candidate-watch}" "$V" "$MC" "${CANDIDATE_WATCH_MAX_AGE_H:-6}"
-    bash scripts/check_publish_preflight.sh > "$AP/preflight.log" 2>&1; rc=$?
+    # #4117: from ladder.release_gate.from, R7 is the NORMAL release gate, judged on what the T-1 `models` step
+    # produced -- the smoke on the binary built from $MC and the nightly it gathered. Handed over here, never read
+    # from the tree (the smoke of $MC cannot be committed into $MC); unset, R7 is RED by name. Before `from` R7
+    # ignores them and judges the committed matrix.
+    PUBLISH_PREFLIGHT_NIGHTLY_ROOT="$AP/models-t1/nightly" PUBLISH_PREFLIGHT_CRUX_DIR="$AP/models-t1/crux" PUBLISH_PREFLIGHT_CUT_COMMIT="$MC" \
+        bash scripts/check_publish_preflight.sh > "$AP/preflight.log" 2>&1; rc=$?
     tail -3 "$AP/preflight.log" >> "$STATUS"
     [ $rc -eq 0 ] || die "publish preflight refused rc=$rc"
     say "PREFLIGHT PASS"

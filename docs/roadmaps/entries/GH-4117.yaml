@@ -1,0 +1,16 @@
+- id: GH-4117
+  github_issue: 4117
+  item_type: task
+  title: '0.70 release gate: wire --scope release (smoke on the release binary + admitted nightly) into autopilot models step, R7 and the candidate watch'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T01:10:13.463161937+00:00
+  updated: 2026-09-24T01:10:13.463161937+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
