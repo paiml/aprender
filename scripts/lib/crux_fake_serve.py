@@ -10,11 +10,13 @@ planted and seen to go RED. The answer it gives is always `<answer>4</answer>`.
   --index none     GET / is plain text (the APR-CPU fallback router's shape)
   --fault NAME     break every stream/body the named way:
                    ok | no_done | zero_deltas | no_finish | empty_text | http_500 | bad_json
+                   | slow (answers right, 1 s late: a sweep outlived by its timeout, #4341)
 Also serves POST /apply-template (the reference renderer), echoing a rendered prompt.
 Usage: crux_fake_serve.py --port P [--index normal] [--fault ok]
 """
 import argparse
 import json
+import time
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -50,6 +52,8 @@ class H(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         if self.path == "/apply-template":
             return self.send(200, json.dumps({"prompt": "<|user|>" + body["messages"][-1]["content"] + "<|assistant|>"}))
+        if A.fault == "slow":
+            time.sleep(1)
         if A.fault == "http_500":
             return self.send(500, '{"error":"planted"}')
         text = "" if A.fault in ("empty_text", "zero_deltas") else ANSWER

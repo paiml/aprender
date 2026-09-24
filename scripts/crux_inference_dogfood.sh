@@ -383,8 +383,10 @@ fi
 # rule's clause 2), under choom. Exit 75 from either tool means the lock was not
 # had within the bound: every engine of that cell is a refused row, never skipped.
 cell_add() { # cell_add <cell script> <prefix> cmd... — one engine line: out, err, rc files
+  # CELL_TMO (#4341): a line that drives MANY requests (a serve sweep) needs its own budget --
+  # $TMO bounds one request, and one $TMO over ~285 CPU requests killed a sweep 199 rows in.
   local cell="$1" prefix="$2"; shift 2
-  { printf 'timeout %q ' "$TMO"; printf '%q ' "$@"
+  { printf 'timeout %q ' "${CELL_TMO:-$TMO}"; printf '%q ' "$@"
     printf '> %q 2> %q < /dev/null; echo $? > %q\n' "$prefix.out" "$prefix.err" "$prefix.rc"; } >> "$cell"
 }
 cell_add_ollama_unload() { # cell_add_ollama_unload <cell> <prefix> <model name>
