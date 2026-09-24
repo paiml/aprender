@@ -21486,3 +21486,25 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4126
+  github_issue: 4126
+  item_type: bug
+  title: 'ladder: serve probe wrote "http":000 (invalid JSON) for a route with no response, so the whole serve record was discarded as "exited rather than returned" (#4126)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-36
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: scripts/model_ladder.sh
+  acceptance_criteria:
+  - 'a serve route with no HTTP response (curl timeout or failure) is recorded as http null plus a curl_error naming why (a timeout says so); the serve object stays parseable'
+  - 'one such route never erases the other routes'' records, and the verdict stays RED (a route with no response is not a 200)'
+  - 'the row''s RED reason names the curl_error for a route without an http code'
+  - 'check_ladder_serve_probe_timeout.sh runs the SHIPPED probe against a fake serve whose /api/chat hangs past LADDER_ROUTE_MAX_TIME; a planted bare "http":$code turns it RED'
+  - 'the /api/chat token bound and the route timeout are NOT changed until the CPU 9B /api/chat duration is measured (cop ruling)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

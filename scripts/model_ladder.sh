@@ -742,7 +742,7 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
     # design — there is no WS_ROOT in this script and inventing one would resolve to
     # "/crates/..." under `set -u`-less expansion and silently find nothing.
     local router="crates/aprender-serve/src/api/router.rs"
-    local routes port pid rc=0 out first=1 json="{" waited=0 code body
+    local routes port pid rc=0 out first=1 json="{" waited=0 code body crc http_json cerr_json
 
     if [ ! -f "$router" ]; then
         printf '{"probed":false,"why":"router source not found at %s — the route set is derived from it, and a hand-listed set is what let /api/chat go unprobed","routes":{}}' "$router"
@@ -803,9 +803,23 @@ print(json.dumps({"probed": False,
             # measured case where those differ — six 200s recorded in a `cuda` cell
             # while the accelerator attempt had failed and CPU generated.
             bodyf="$WORK/probe-${rid//[^A-Za-z0-9._-]/_}-$bname.body"
-            code=$(curl -sS -o "$bodyf" -w '%{http_code}' --max-time 60 \
+            # #4126: curl's `%{http_code}` is `000` when no response came back (a timeout, a
+            # refused connection). Written into the record as a bare number, `"http":000` is
+            # INVALID JSON, and one such route made the WHOLE serve object unparseable, so the
+            # caller reported "exited rather than returned" and every route's evidence was lost.
+            # A route that got no response records http:null plus WHY.
+            code=$(curl -sS -o "$bodyf" -w '%{http_code}' --max-time "${LADDER_ROUTE_MAX_TIME:-60}" \
                 -H 'Content-Type: application/json' -d "$body" \
-                "http://127.0.0.1:$port$r" 2>/dev/null) || code=000
+                "http://127.0.0.1:$port$r" 2>/dev/null); crc=$?
+            if [ "$crc" = 0 ] && [[ "$code" =~ ^[1-5][0-9][0-9]$ ]]; then
+                http_json=$code; cerr_json=null
+            else
+                http_json=null; code=000
+                case "$crc" in
+                    28) cerr_json="\"timeout: no response within ${LADDER_ROUTE_MAX_TIME:-60}s\"" ;;
+                    *)  cerr_json="\"no HTTP response (curl exit $crc)\"" ;;
+                esac
+            fi
             [ "$code" = 200 ] || rc=1
             # THREE states, and `null` is the honest one: the field is absent from a
             # response whose arm does not measure its backend, and absent from every
@@ -828,7 +842,7 @@ print("null" if v is None else ("true" if v else "false"))
             rbad=$(serve_route_bad "$bodyf" "$r|stream=$stream")
             rbad_json=$(printf '%s' "$rbad" | json_str_or_null)
             [ $first = 1 ] || json="$json,"; first=0
-            json="$json\"$r|stream=$stream\":{\"http\":$code,\"ok\":$([ "$code" = 200 ] && echo true || echo false),\"used_gpu\":$ug,\"output_bad\":$rbad_json}"
+            json="$json\"$r|stream=$stream\":{\"http\":$http_json,\"curl_error\":$cerr_json,\"ok\":$([ "$code" = 200 ] && echo true || echo false),\"used_gpu\":$ug,\"output_bad\":$rbad_json}"
         done
     done
     # A server that will not die is a real property of the `serve` verb, and until
@@ -1300,7 +1314,7 @@ for b,v in r["backends"].items():
         routes=sv.get("routes") or {}
         bad=sorted(k for k,x in routes.items() if (x or {}).get("http")!=200)
         if bad:
-            w.append(b+": serve routes non-200: "+", ".join("%s=%s"%(k,(routes[k] or {}).get("http")) for k in bad))
+            w.append(b+": serve routes non-200: "+", ".join("%s=%s"%(k,(routes[k] or {}).get("http") or (routes[k] or {}).get("curl_error")) for k in bad))
         # #3921: separate from the status, for the same reason as the verbs.
         garbled=sorted(k for k,x in routes.items() if (x or {}).get("http")==200 and (x or {}).get("output_bad"))
         if garbled:
