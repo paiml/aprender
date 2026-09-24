@@ -144,6 +144,23 @@ pub enum GateDetail {
 /// it and none can `match` it. That is what makes it extensible where `GateDetail` is
 /// not, and it is `#[non_exhaustive]` from birth so the *next* post-0.3.1 gate does
 /// not have to repeat this exercise.
+// `Shapes` is 304 bytes against a 88-byte second-largest, and adding `declines` to it is what
+// crossed the threshold — `origin/main` at 237fbc32f lints clean, this branch does not, so the
+// finding is this PR's and not inherited.
+//
+// ALLOWED RATHER THAN BOXED, deliberately. `large_enum_variant` is a cost heuristic about copying
+// and stack size: a `GateExtra` is built ONCE PER GATE RUN, moved a handful of times, and then
+// serialised. There is no hot path here for 216 bytes to matter on, so the lint is measuring a cost
+// this type does not pay.
+//
+// The alternatives are worse. Boxing one field (clippy suggests `pc_extract`) reclaims 16 bytes and
+// does not clear the ratio, so it would be churn that silences nothing. Boxing the whole payload —
+// `Shapes(Box<ShapesExtra>)` — turns a struct variant into a newtype variant, which CHANGES THE
+// SERDE REPRESENTATION of a `#[serde(tag = "type")]` enum that downstream consumers parse; the SLK
+// gate reads this JSON. Breaking a wire format to satisfy a stack-size heuristic is the wrong trade.
+//
+// If `GateExtra` ever ends up in a loop or a large collection, this allow is the thing to revisit.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
 #[non_exhaustive]
@@ -221,6 +238,27 @@ pub enum GateExtra {
         armed_shapes: Vec<String>,
         /// Shapes computed and reported but not armed — their violations are in `unarmed_violations`.
         not_armed_shapes: Vec<String>,
+        /// #3610: shapes that graded ZERO focus nodes, named — the reach the gate did not have.
+        ///
+        /// A separate list from `not_armed_shapes` on purpose. "Not armed by policy" and "armed and
+        /// measured nothing" are different facts, and folding the second into the first would file a
+        /// vacuity as a deliberate choice — which is how the defect hid in the first place.
+        ///
+        /// **This carries EVERY shape that graded zero, armed or unarmed**, and it is the only list
+        /// any of them appears in: a vacuity is in neither `armed_shapes` (the tool's claim about
+        /// what it MEASURED) nor `not_armed_shapes` (a policy choice it never made).
+        ///
+        /// The two differ in what they do to the verdict, not in whether they are listed here. An
+        /// ARMED vacuity drives the verdict to `Unknown(NoFocus)` and the run declines — unless an
+        /// armed shape that DID grade something found a violation, in which case the verdict is
+        /// `Fail` (a measured violation outranks a vacuity, #3622). An UNARMED one leaves the
+        /// verdict alone, because it never fed it. Both are named, because a reader
+        /// needs to know the gate looked at nothing for them either way.
+        ///
+        /// An earlier draft of this comment said an armed vacuity "does not reach here at all",
+        /// which was false — nothing returns early at the verdict, and both kinds reach this field.
+        /// A quorum lane caught the sentence; the code beside it had the matching bug.
+        declines: Vec<String>,
         /// Violations from unarmed shapes (named in the findings as warnings; never in the meet).
         unarmed_violations: usize,
         /// Focus nodes each extractor produced: `pv-contract`, `gguf`, `apr-model`.

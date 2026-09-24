@@ -261,6 +261,9 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
     }
     let graph = &extraction.graph;
 
+    // #3610: the per-shape reach, computed BEFORE any verdict — did this shape grade anything at all?
+    let focus_of = focus_of(graph, &shapes);
+    let (vacuous_any, armed_vacuity) = vacuities(&focus_of, &shapes, &arming);
     let (mut report, plant_violations) = validate_with_plant(graph, &shapes, &arming);
     if opts.only.is_some() {
         order_by_family(&mut report, &shapes);
@@ -268,9 +271,12 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
     carry_extract_warnings(&mut report, &extraction.warnings);
     let pc_extract = extract_controls();
     let unmeasured = needs_receipts(&shapes) && extraction.receipts.is_empty();
+    // Every shape in scope empty is the global vacuity — unless every one of them declared it (#3610 quorum).
+    let all_allow_empty = shapes.iter().all(|s| s.allow_empty.is_some());
     if let Some(d) = decline(
         shapes.len(),
         &report,
+        all_allow_empty,
         unmeasured,
         plant_violations,
         &pc_extract,
@@ -290,11 +296,15 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
         &extraction.apr_model,
     );
     let passed = counted.violations == 0;
-    let verdict = verdict_of(&counted);
-    let by_shape = by_shape(graph, &shapes);
+    let verdict = verdict_of(&counted, armed_vacuity);
+    let by_shape = by_shape(&focus_of);
+    // A shape that graded nothing appears in NEITHER list: `armed_shapes` is the tool's claim about
+    // what it MEASURED, and `not_armed_shapes` means "not armed by policy". Filing a vacuity as a
+    // policy choice is how this defect hid, so it is named in `declines` only.
     let (armed_names, not_armed): (Vec<String>, Vec<String>) = shapes
         .iter()
         .map(|s| s.id.clone())
+        .filter(|id| !vacuous_any.contains(id))
         .partition(|id| arming.is_armed(id));
     let by_entity_type = match by_entity_type(&extraction, &sigma_implemented(contract_dir)) {
         Ok(m) => m,
@@ -329,6 +339,13 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
             triples: graph.len(),
             armed_shapes: armed_names,
             not_armed_shapes: not_armed,
+            // Every shape that graded NOTHING, armed or not — this is the ONLY list a
+            // vacuity appears in. An armed vacuity also drove the verdict to
+            // `Unknown(NoFocus)` above (nothing returns early there; the verdict is set
+            // and the run continues, so both armed and unarmed vacuities reach here).
+            // A field that can only ever be empty is decoration, which is the defect one
+            // layer up from this one.
+            declines: vacuous_any.clone(),
             unarmed_violations: counted.unarmed_violations,
             by_entity_type,
             pc_extract,
@@ -392,10 +409,59 @@ fn needs_receipts(shapes: &[NodeShape]) -> bool {
     })
 }
 
-/// Violations fail; warnings alone are `Unknown{Warn}`, never a pass; nothing is `Pass`.
-fn verdict_of(counted: &Counted) -> Verdict {
+/// #3610: each shape's focus-node count, in declaration order.
+fn focus_of(graph: &Graph, shapes: &[NodeShape]) -> Vec<(String, usize)> {
+    shapes
+        .iter()
+        .map(|s| {
+            (
+                s.id.clone(),
+                shapes::instances_closed(graph, &s.target_class).len(),
+            )
+        })
+        .collect()
+}
+
+/// #3610: every shape that graded ZERO focus nodes, and whether any of them is ARMED.
+///
+/// TWO answers, because they are two questions and conflating them was the defect a quorum lane
+/// caught (#3610 round 1, two lanes independently). The list decides where a vacuity is REPORTED —
+/// `declines` only, never `not_armed_shapes`, or an unarmed vacuity is filed as a policy choice,
+/// which is how the original defect hid. The flag decides the VERDICT: only an armed shape fed it, and a
+/// shape that declares `allowEmpty: "<why>"` (a target class empty by design) is named but does not refuse.
+fn vacuities(
+    focus_of: &[(String, usize)],
+    shapes: &[NodeShape],
+    arming: &ArmedShapes,
+) -> (Vec<String>, bool) {
+    let vacuous: Vec<String> = focus_of
+        .iter()
+        .filter(|(_, n)| *n == 0)
+        .map(|(id, _)| id.clone())
+        .collect();
+    let may_be_empty = |id: &str| shapes.iter().any(|s| s.id == id && s.allow_empty.is_some());
+    let armed = vacuous
+        .iter()
+        .any(|id| arming.is_armed(id) && !may_be_empty(id));
+    (vacuous, armed)
+}
+
+/// Violations fail; an ARMED shape that graded nothing is `Unknown{NoFocus}` (#3610); warnings alone are
+/// `Unknown{Warn}`, never a pass; nothing is `Pass`.
+///
+/// THE REFUSAL IS THE EXIT CODE; THE REPORT IS THE EVIDENCE. A vacuity declines through the ordinary
+/// result path rather than short-circuiting, so stdout still carries the full JSON (`by_shape` naming the
+/// zero-focus shape, `declines`) and `meet_exit` turns Unknown into exit 2 — downstream consumers (infra's
+/// SLK gate) parse stdout regardless of the exit code.
+///
+/// A MEASURED violation outranks a vacuity (#3622 re-review, all three lanes): violations and vacuities
+/// range over DISJOINT shapes, so checking vacuity first would turn a real Fail from one shape into exit 2
+/// because a DIFFERENT shape graded nothing.
+fn verdict_of(counted: &Counted, armed_vacuity: bool) -> Verdict {
     if counted.violations > 0 {
         Verdict::Fail
+    } else if armed_vacuity {
+        Verdict::Unknown(Reason::NoFocus)
     } else if counted.warnings > 0 {
         Verdict::Unknown(Reason::Warn)
     } else {
@@ -404,14 +470,8 @@ fn verdict_of(counted: &Counted) -> Verdict {
 }
 
 /// `shape=focus-count` per shape, sorted.
-fn by_shape(graph: &Graph, shapes: &[NodeShape]) -> Vec<String> {
-    let mut out: Vec<String> = shapes
-        .iter()
-        .map(|s| {
-            let n = shapes::instances_closed(graph, &s.target_class).len();
-            format!("{}={}", s.id, n)
-        })
-        .collect();
+fn by_shape(focus_of: &[(String, usize)]) -> Vec<String> {
+    let mut out: Vec<String> = focus_of.iter().map(|(id, n)| format!("{id}={n}")).collect();
     out.sort();
     out
 }
@@ -497,14 +557,18 @@ fn by_entity_type(
 
 /// The answers that are not corpus verdicts, in the order they are asked: no focus node, receipts needed and
 /// none tracked, the plant silent, an extractor control silent. `None` when the corpus gets a verdict.
+///
+/// No focus node at all is `NoFocus` unless EVERY shape in scope declares `allowEmpty` (#3610): then the run
+/// reaches the per-shape path, which names each one in `declines` and does not refuse for them.
 fn decline(
     shapes_n: usize,
     report: &Report,
+    all_allow_empty: bool,
     unmeasured: bool,
     plant_violations: usize,
     pc_extract: &BTreeMap<String, String>,
 ) -> Option<ShapesOutcome> {
-    if report.focus_nodes_n == 0 {
+    if report.focus_nodes_n == 0 && !all_allow_empty {
         return Some(ShapesOutcome::NoFocus { shapes_n });
     }
     if unmeasured {
