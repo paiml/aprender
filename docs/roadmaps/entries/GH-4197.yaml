@@ -1,0 +1,17 @@
+- id: GH-4197
+  github_issue: 4197
+  item_type: task
+  title: 'PVL-001 EV-6c — PVL-6c: Kani assume baseline'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T08:24:32.273397348+00:00
+  updated: 2026-09-24T08:24:32.273397348+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ont-0.70
+  notes: null

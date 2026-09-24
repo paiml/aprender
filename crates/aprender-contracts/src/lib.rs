@@ -48,6 +48,7 @@ pub mod generate;
 pub mod graph;
 pub mod infer;
 pub mod invariant_gen;
+pub mod kani_assume;
 pub mod kani_gen;
 pub mod kernels;
 pub mod latex;
