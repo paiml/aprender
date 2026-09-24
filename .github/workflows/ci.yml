@@ -958,6 +958,43 @@ jobs:
   # discriminating runner label, so a bare [self-hosted, X64, Linux] selector
   # can never again silently land a job on a GPU/dev runner without the
   # sovereign-ci registry. Pure text check; runs on the clean-room pool.
+  # #3668: ONE docs-only decision for the run. A roadmap-only PR paid ~26 min of
+  # guard-cargo and ~6 of determinism for a diff neither reads. This job asks
+  # scripts/ci_docs_only.sh (which asks ci_test_tier.sh's #3658 definition:
+  # every path under docs/roadmaps/ or docs/audits/ and present at HEAD) and
+  # publishes docs_only. The consumers are written FAIL-CLOSED: they read
+  # `!cancelled() && needs.changes.outputs.docs_only != 'true'`, so this job
+  # being skipped (every non-PR event), failing, or printing anything but
+  # `true` runs everything. `gate` accepts their `skipped` only when this job
+  # SUCCEEDED and said true (GATE-DOCS-ONLY-RULE,
+  # scripts/check_ci_gate_docs_only_rule.sh).
+  changes:
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
+    timeout-minutes: 10   # shallow checkout + one git diff + one script
+    if: github.event_name == 'pull_request'
+    outputs:
+      docs_only: ${{ steps.decide.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Is this PR docs-only? (#3668)
+        id: decide
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin \
+            "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+          # --no-renames (#3664): a source moved into docs/ must list BOTH paths.
+          git diff --no-renames --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
+          printf 'touched (tip vs tip): %s path(s)\n' "$(wc -l < "$RUNNER_TEMP/touched.txt" | tr -d ' ')"
+          bash scripts/ci_docs_only.sh --event "${GITHUB_EVENT_NAME}" --diff-from "$RUNNER_TEMP/touched.txt" \
+            > "$RUNNER_TEMP/docs_only.txt"
+          cat "$RUNNER_TEMP/docs_only.txt"
+          grep -E '^docs_only=(true|false)$' "$RUNNER_TEMP/docs_only.txt" >> "$GITHUB_OUTPUT"
+      - name: The docs-only decision can still go RED (case table)
+        run: bash scripts/ci_docs_only.sh --self-test
+
   guard-tree:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     # 20: the operator's hard PR budget (rule E, 2026-09-10), and it OVERRIDES
@@ -1094,6 +1131,70 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/guard_tree.sh --no-cargo
+      # #3668: these three ran in guard-cargo, but none of them invokes cargo --
+      # guard_tree.sh --no-cargo files them as cargo guards only because their
+      # SOURCE says `cargo doc` / `cargo install` in a comment or a pattern. They
+      # are the guard-cargo steps whose reads include docs/roadmaps/ or docs/audits/
+      # (docs/**/*.md, a `git ls-files | grep dogfood.sh$`), so they live here:
+      # guard-cargo is skipped on a docs-only PR (the `changes` job) and guard-tree
+      # never is, so a docs-only diff is still judged by every guard that reads it.
+      # One runner, one prose, and the user-scope copy stays a <=70-line shim
+      # that fails CLOSED. The cap lives here, in the repo on protected main;
+      # the file it caps lives at user scope, where it could otherwise raise its
+      # own ceiling.
+      - name: One dogfood runner, and the user-scope copy is a gated shim
+        run: bash scripts/check_dogfood_shim.sh
+      # §4.1 names BOTH of these in the merge-phase blocking set, alongside the
+      # fabricated-baseline guard above. They shipped unwired, which is why the
+      # five `2.93x Ollama` claims in book/ and the four deleted harnesses were
+      # each caught by a person rather than by CI.
+      #
+      # Neither is baselined as an exemption, deliberately. The tip commit of
+      # this epic says PERF-009 is "enforced by a shrink-only guard"; a guard
+      # named by no workflow enforces nothing, and recording that in a baseline
+      # file would make the claim true only in the sense that the gap is
+      # written down.
+      #
+      # This step is ALSO the I-12 `[X]`-figure gate, which v2.2 §5 listed as
+      # "not written" against this file. It was right: the comparator pattern
+      # required the competitor's name to sit immediately after the ratio, in
+      # ASCII, so of the six shapes §0.1 names it caught one. PERF-010 admits
+      # the connector ("36.9x over FasterTransformer") and U+00D7, and adds
+      # placeholders bound to a unit ("XX tok/s"). Twelve pre-existing sites
+      # surfaced and are baselined shrink-only; one was a LIVE comparator claim
+      # in book/ and is deleted.
+      - name: No claim literals on user-facing surfaces
+        run: bash scripts/check_no_claim_literals.sh
+      - name: No claim-literal guard regression (case table)
+        run: bash scripts/check_no_claim_literals.sh --selftest
+      # PERF-010, the receipt rule's namesake check. The guard above is the
+      # NEGATIVE half -- a comparator ratio may not appear at all. This is the
+      # POSITIVE half over the class that is allowed to stay: a speed comparison
+      # naming no competitor is legal iff it cites the evidence/ receipt that
+      # produced it (v2.2 section 3.2). Text-only and deterministic, so it
+      # belongs in the merge phase (section 4.1) rather than at release.
+      #
+      # It found 146 uncited speed comparisons across 30 files and ZERO citing a
+      # receipt -- a 0% citation rate on the very number class this epic is
+      # named for. Baselined shrink-only; the count is the finding.
+      - name: Performance claims cite their receipts (PERF-010)
+        run: bash scripts/check_perf_claims_cite_receipts.sh
+      - name: Claims-cite-receipts guard can still go RED (case table)
+        run: bash scripts/check_perf_claims_cite_receipts.sh --selftest
+      # The gate's two skip rules, executed from ci.yml's own marker blocks. Neither
+      # was run by any step: guard_tree.sh files both as cargo guards (their text
+      # names guard-cargo) and no workflow dispatches --cargo-only, so the mutants
+      # rule (#3676) passed check_guards_are_wired.sh on a comment mention alone.
+      # They read only ci.yml and invoke no build tool, so they run here -- the job
+      # that runs on every PR, including the one that edits the gate (#3668).
+      - name: gate accepts a skipped mutants job only when that is its filter (#3676)
+        run: bash scripts/check_ci_gate_mutants_rule.sh
+      - name: gate mutants rule can still go RED (#3676)
+        run: bash scripts/check_ci_gate_mutants_rule.sh --self-test
+      - name: gate accepts a skipped guard-cargo/determinism only on a docs-only PR (#3668)
+        run: bash scripts/check_ci_gate_docs_only_rule.sh
+      - name: gate docs-only rule can still go RED (#3668)
+        run: bash scripts/check_ci_gate_docs_only_rule.sh --self-test
       # scripts/tests/guard_tree_test.sh is guard_tree.sh's OWN case table
       # (BSE-01, PMAT-1062) -- it proves guard_tree.sh's no-fail-fast
       # behaviour against a fixture, proves a fail-fast MUTANT of it goes RED
@@ -1501,6 +1602,11 @@ jobs:
   # minutes onto every green run for no ordering that anything requires.
   guard-cargo:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
+    # #3668: skipped on a docs-only PR -- no step here reads docs/roadmaps/ or
+    # docs/audits/ (the three that did moved to guard-tree). Fail-closed: a
+    # skipped/failed `changes` job leaves docs_only empty, and this runs.
+    needs: [changes]
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     # 20: the operator's hard PR budget (rule E, 2026-09-10), and it OVERRIDES
     # the BSE-05 formula rather than being derived from it.
     #
@@ -1671,12 +1777,6 @@ jobs:
       # It found `pmat analyze reachability` bare in BOTH copies on its first run.
       - name: The release runner must not resolve a verifier through PATH
         run: bash scripts/check_verifier_pinning.sh
-      # One runner, one prose, and the user-scope copy stays a <=70-line shim
-      # that fails CLOSED. The cap lives here, in the repo on protected main;
-      # the file it caps lives at user scope, where it could otherwise raise its
-      # own ceiling.
-      - name: One dogfood runner, and the user-scope copy is a gated shim
-        run: bash scripts/check_dogfood_shim.sh
       # deny.toml is 7.2 KB of licence / banned-crate / source-allowlist policy
       # that ran in NO workflow -- only `make deny`, which is not a prerequisite
       # of any tier, so nothing but a human typing it ever invoked it. Meanwhile
@@ -2007,43 +2107,6 @@ jobs:
       # ollama never invoked (#2679).
       - name: No fabricated comparator baselines
         run: bash scripts/check_no_fabricated_baselines.sh
-      # §4.1 names BOTH of these in the merge-phase blocking set, alongside the
-      # fabricated-baseline guard above. They shipped unwired, which is why the
-      # five `2.93x Ollama` claims in book/ and the four deleted harnesses were
-      # each caught by a person rather than by CI.
-      #
-      # Neither is baselined as an exemption, deliberately. The tip commit of
-      # this epic says PERF-009 is "enforced by a shrink-only guard"; a guard
-      # named by no workflow enforces nothing, and recording that in a baseline
-      # file would make the claim true only in the sense that the gap is
-      # written down.
-      #
-      # This step is ALSO the I-12 `[X]`-figure gate, which v2.2 §5 listed as
-      # "not written" against this file. It was right: the comparator pattern
-      # required the competitor's name to sit immediately after the ratio, in
-      # ASCII, so of the six shapes §0.1 names it caught one. PERF-010 admits
-      # the connector ("36.9x over FasterTransformer") and U+00D7, and adds
-      # placeholders bound to a unit ("XX tok/s"). Twelve pre-existing sites
-      # surfaced and are baselined shrink-only; one was a LIVE comparator claim
-      # in book/ and is deleted.
-      - name: No claim literals on user-facing surfaces
-        run: bash scripts/check_no_claim_literals.sh
-      - name: No claim-literal guard regression (case table)
-        run: bash scripts/check_no_claim_literals.sh --selftest
-      # PERF-010, the receipt rule's namesake check. The guard above is the
-      # NEGATIVE half -- a comparator ratio may not appear at all. This is the
-      # POSITIVE half over the class that is allowed to stay: a speed comparison
-      # naming no competitor is legal iff it cites the evidence/ receipt that
-      # produced it (v2.2 section 3.2). Text-only and deterministic, so it
-      # belongs in the merge phase (section 4.1) rather than at release.
-      #
-      # It found 146 uncited speed comparisons across 30 files and ZERO citing a
-      # receipt -- a 0% citation rate on the very number class this epic is
-      # named for. Baselined shrink-only; the count is the finding.
-      - name: Performance claims cite their receipts (PERF-010)
-        run: bash scripts/check_perf_claims_cite_receipts.sh
-      - name: Claims-cite-receipts guard can still go RED (case table)
-        run: bash scripts/check_perf_claims_cite_receipts.sh --selftest
       # The single source of truth needs a truth check. An authorless policy
       # number, a `inherited_from` pointing at a document with no history in any
       # ref, a compute_class no build in this tree reaches, and a cell exception
@@ -3047,6 +3110,10 @@ jobs:
   # font, a locale or a cached artefact from a previous job and quietly agree for the wrong reason.
   determinism:
     name: determinism (${{ matrix.arch }})
+    # #3668: a docs-only PR renders nothing new; determinism-compare is skipped
+    # with it, and gate accepts that only under docs_only=true.
+    needs: [changes]
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     strategy:
       fail-fast: false   # if one arch fails we still want the other's receipt to compare against
       matrix:
@@ -3192,20 +3259,13 @@ jobs:
     # `needs.*.result`; the 20-minute term is the headroom BSE-05 adds so a
     # slow runner is never the thing that fails a required check.
     timeout-minutes: 22
-    needs: [ci, workspace-test, mutants, guard-tree, guard-cargo, determinism-compare]
+    needs: [ci, workspace-test, mutants, guard-tree, guard-cargo, determinism-compare, changes]
     if: always()
     steps:
       - name: Check required jobs
         run: |
           if [ "${{ needs.guard-tree.result }}" != "success" ]; then
             echo "guard-tree failed: ${{ needs.guard-tree.result }}"
-            exit 1
-          fi
-          # guard-cargo is the cargo half of the same guard universe (BSE-01).
-          # It is judged exactly like guard-tree: a required check that
-          # is not read by `gate` is not a required check.
-          if [ "${{ needs.guard-cargo.result }}" != "success" ]; then
-            echo "guard-cargo failed: ${{ needs.guard-cargo.result }}"
             exit 1
           fi
           if [ "${{ needs.ci.result }}" != "success" ]; then
@@ -3216,12 +3276,29 @@ jobs:
             echo "workspace-test failed: ${{ needs.workspace-test.result }}"
             exit 1
           fi
-          # APEX-001 EV-2a: the two-architecture determinism comparison. A required check that
-          # `gate` does not read is not a required check, so it is read here like guard-tree.
-          if [ "${{ needs.determinism-compare.result }}" != "success" ]; then
-            echo "determinism-compare failed: ${{ needs.determinism-compare.result }}"
-            exit 1
-          fi
+          # guard-cargo is the cargo half of the same guard universe (BSE-01), and
+          # determinism-compare is APEX-001 EV-2a's two-architecture comparison. A
+          # required check that `gate` does not read is not a required check, so both
+          # are read here -- and each may be `skipped` ONLY on a docs-only PR (#3668).
+          DOCS="${{ needs.changes.outputs.docs_only }}"
+          CHG="${{ needs.changes.result }}"
+          GC="${{ needs.guard-cargo.result }}"
+          DC="${{ needs.determinism-compare.result }}"
+          # --- GATE-DOCS-ONLY-RULE-BEGIN (#3668; scripts/check_ci_gate_docs_only_rule.sh runs this block) ---
+          # A skip is the docs-only skip only when the `changes` job SUCCEEDED and
+          # said docs_only=true. Any other skip -- changes skipped, failed, or said
+          # false -- means a job that should have run did not, and that is a failure.
+          skip_ok=0
+          if [ "$CHG" = success ] && [ "$DOCS" = true ]; then skip_ok=1; fi
+          for pair in "guard-cargo=$GC" "determinism-compare=$DC"; do
+            job=${pair%%=*}; res=${pair#*=}
+            case "$res:$skip_ok" in
+              success:*) echo "$job: success" ;;
+              skipped:1) echo "$job: skipped -- docs-only PR (changes: docs_only=true, #3668)" ;;
+              *) echo "$job failed: $res (changes=$CHG docs_only='$DOCS'; a skip passes only on a docs-only PR)"; exit 1 ;;
+            esac
+          done
+          # --- GATE-DOCS-ONLY-RULE-END ---
           # Diff-scoped mutation gate (PMAT gap #1): blocking on PRs.
           # `skipped` is the expected result on push-to-main (the job has
           # `if: github.event_name == 'pull_request'`); treat it as pass so
