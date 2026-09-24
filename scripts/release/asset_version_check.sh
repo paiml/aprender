@@ -7,12 +7,14 @@
 # TAG is vX.Y.Z or vX.Y.Z-rc.N. COMMIT is the full sha the tag points at.
 # VERSION_LINE is the first line of the asset's `apr --version`: `apr X.Y.Z (<sha>)`.
 #
-# Cargo stays at X.Y.Z for an rc; it never carries a -rc semver, because that breaks
-# the internal =version pins (cop ruling, 2026-09-24). So an rc asset reports
-# X.Y.Z, and the -rc.N label is stripped from the tag before comparing. What binds an
-# rc asset to ITS commit is then the sha, so the sha is required, not optional:
-# an asset built without one (`vX.Y.Z+no-git`, what every container build reported
-# before binary-release.yml passed APR_GIT_SHA_OVERRIDE) is refused.
+# The printed version must equal the tag EXACTLY, -rc.N included (operator 2026-09-24: "we
+# need actual version numbers", "version number needs release canidate info in it"). The rc
+# commit's Cargo.toml says X.Y.Z; binary-release.yml runs stamp_rc_version.sh on the tag tree
+# before building, so an rc asset's CARGO_PKG_VERSION is X.Y.Z-rc.N. The v0.69.3-rc.2 asset,
+# built before that, printed `apr 0.69.3 (v0.69.3+no-git)`: refused twice over, since the sha
+# is required too. The version names WHICH rc; only the sha binds it to the tag's commit
+# (`vX.Y.Z+no-git`, what every container build reported before binary-release.yml passed
+# APR_GIT_SHA_OVERRIDE, is refused).
 #
 # The smoke this replaces tested `case "$v" in *"${TAG#v}"*)`: a substring match. It
 # refused every rc (0.69.3 does not contain 0.69.3-rc.1) and accepted 0.69.30 for
@@ -26,17 +28,17 @@ PROG=asset_version_check
 avc_decide() {
     local tag=$1 commit=$2 line=$3 want got sha
     if [[ $tag =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-rc\.[0-9]+)?$ ]]; then
-        want=${BASH_REMATCH[1]}
+        want=${tag#v}
     else
         echo "bad tag '$tag' is not vX.Y.Z or vX.Y.Z-rc.N"; return
     fi
     if [[ ! $commit =~ ^[0-9a-f]{40}$ ]]; then
         echo "bad commit '$commit' is not a full 40-hex sha"; return
     fi
-    if [[ $line =~ ^apr\ ([0-9]+\.[0-9]+\.[0-9]+)\ \((.*)\)$ ]]; then
-        got=${BASH_REMATCH[1]}; sha=${BASH_REMATCH[2]}
+    if [[ $line =~ ^apr\ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?)\ \((.*)\)$ ]]; then
+        got=${BASH_REMATCH[1]}; sha=${BASH_REMATCH[3]}
     else
-        echo "bad version line '$line' is not 'apr X.Y.Z (<sha>)'"; return
+        echo "bad version line '$line' is not 'apr X.Y.Z[-rc.N] (<sha>)'"; return
     fi
     if [ "$got" != "$want" ]; then
         echo "bad asset reports $got; tag $tag wants $want"; return
@@ -59,8 +61,13 @@ self_test() {
         if [ "${got%% *}" = "$want" ]; then echo "  ok   $why"; else echo "  FAIL $why: wanted $want, got '$got'"; fail=1; fi
     done <<EOF
 ok	v0.69.3	$c	apr 0.69.3 (7ff50ec2a)	a final tag matches its version
-ok	v0.69.3-rc.1	$c	apr 0.69.3 (7ff50ec2a)	an rc tag matches X.Y.Z once -rc.N is stripped
-ok	v0.69.3-rc.12	$c	apr 0.69.3 (7ff50ec)	a two-digit rc and a 7-hex short sha
+ok	v0.69.3-rc.1	$c	apr 0.69.3-rc.1 (7ff50ec2a)	an rc asset prints its rc (stamp_rc_version.sh)
+ok	v0.69.3-rc.12	$c	apr 0.69.3-rc.12 (7ff50ec)	a two-digit rc and a 7-hex short sha
+bad	v0.69.3-rc.1	$c	apr 0.69.3 (7ff50ec2a)	an rc asset printing bare X.Y.Z is refused (never bare 0.69.3 on an rc)
+bad	v0.69.3-rc.2	$c	apr 0.69.3-rc.1 (7ff50ec2a)	rc.1's version on the rc.2 tag
+bad	v0.69.3-rc.1	$c	apr 0.69.3-rc.12 (7ff50ec2a)	rc.12 is not rc.1 (compared whole)
+bad	v0.69.3	$c	apr 0.69.3-rc.2 (7ff50ec2a)	an rc version on the final tag
+bad	v0.69.3-rc.2	$c	apr 0.69.3 (v0.69.3+no-git)	the measured v0.69.3-rc.2 asset (2026-09-24): no rc, no sha
 ok	v0.69.3	$c	apr 0.69.3 ($c)	a full-length sha
 bad	v0.69.3-rc.1	$c	apr 0.69.2 (7ff50ec2a)	an rc tag does not match the previous version
 bad	v0.69.3	$c	apr 0.69.30 (7ff50ec2a)	0.69.30 is not 0.69.3 (the old substring glob said it was)
@@ -69,7 +76,6 @@ bad	v0.69.3	$c	apr 0.69.3 (v0.69.3+no-git)	an asset built without a sha cannot b
 bad	v0.69.3	$c	apr 0.69.3 ()	an empty sha
 bad	v0.69.3	$c	apr 0.69.3 (7ff50e)	a 6-hex sha is too short to bind anything
 bad	v0.69.3-beta	$c	apr 0.69.3 (7ff50ec2a)	a tag that is neither vX.Y.Z nor vX.Y.Z-rc.N
-bad	v0.69.3-rc.1	$c	apr 0.69.3-rc.1 (7ff50ec2a)	a -rc Cargo version is refused (cop ruling: Cargo stays X.Y.Z)
 bad	v0.69.3	7ff50ec2a	apr 0.69.3 (7ff50ec2a)	the expected commit must be a full sha
 bad	v0.69.3	$c	pv 0.69.3 (7ff50ec2a)	a line that is not apr's
 EOF
