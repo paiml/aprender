@@ -2512,11 +2512,16 @@ mod golden_official_template_3990 {
     #[test]
     fn a_safetensors_tokenizer_config_is_the_golden_prompt_3990() {
         let test = "a_safetensors_tokenizer_config_is_the_golden_prompt_3990";
-        let Some(cfg) = workspace_file_or_skip(test, "crates/aprender-serve/src/fixtures/chat_template_3990/tinyllama_tokenizer_config.json")
-        else {
+        let Some(cfg) = workspace_file_or_skip(
+            test,
+            "crates/aprender-serve/src/fixtures/chat_template_3990/tinyllama_tokenizer_config.json",
+        ) else {
             return;
         };
-        let Some(oracle) = workspace_file_or_skip(test, "crates/aprender-serve/src/fixtures/chat_template_3990/llama_cpp_df03399.json") else {
+        let Some(oracle) = workspace_file_or_skip(
+            test,
+            "crates/aprender-serve/src/fixtures/chat_template_3990/llama_cpp_df03399.json",
+        ) else {
             return;
         };
         let cells: Vec<serde_json::Value> = serde_json::from_str(&oracle).expect("oracle parses");
