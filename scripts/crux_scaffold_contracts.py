@@ -35,6 +35,7 @@ CATEGORY_NAMES = {
     "L": "HF kernels-community integration",
     "M": "APR-QA Playbook Canonicalization",
     "N": "Rust ML Framework Parity",
+    "O": "AutoML Parity",
 }
 
 STATUS_BADGE = {

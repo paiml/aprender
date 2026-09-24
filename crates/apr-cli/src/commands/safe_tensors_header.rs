@@ -163,23 +163,26 @@ struct SafeTensorsHeader {
 }
 
 fn parse_safetensors_header(bytes: &[u8]) -> Result<SafeTensorsHeader, CliError> {
+    // #3691: every refusal here names the format the magic bytes identify.
+    // It used to be `InvalidFormat`, which printed "Invalid APR format: …".
     if bytes.len() < 9 {
-        return Err(CliError::InvalidFormat(
-            "SafeTensors file too small".to_string(),
-        ));
+        return Err(CliError::invalid_model_bytes(bytes, "SafeTensors file too small"));
     }
     let header_len = u64::from_le_bytes([
         bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
     ]) as usize;
     if 8 + header_len > bytes.len() {
-        return Err(CliError::InvalidFormat(
-            "SafeTensors header length exceeds file size".to_string(),
+        return Err(CliError::invalid_model_bytes(
+            bytes,
+            "SafeTensors header length exceeds file size",
         ));
     }
-    let header_json = std::str::from_utf8(&bytes[8..8 + header_len])
-        .map_err(|e| CliError::InvalidFormat(format!("Invalid SafeTensors header UTF-8: {e}")))?;
-    let header: serde_json::Value = serde_json::from_str(header_json)
-        .map_err(|e| CliError::InvalidFormat(format!("Invalid SafeTensors JSON: {e}")))?;
+    let header_json = std::str::from_utf8(&bytes[8..8 + header_len]).map_err(|e| {
+        CliError::invalid_model_bytes(bytes, format!("Invalid SafeTensors header UTF-8: {e}"))
+    })?;
+    let header: serde_json::Value = serde_json::from_str(header_json).map_err(|e| {
+        CliError::invalid_model_bytes(bytes, format!("Invalid SafeTensors JSON: {e}"))
+    })?;
     Ok(SafeTensorsHeader { header_len, header })
 }
 
@@ -189,7 +192,7 @@ fn run_safetensors(opts: &HexOptions, bytes: &[u8]) -> Result<(), CliError> {
     let header_len = parsed.header_len;
 
     let tensor_map = parsed.header.as_object().ok_or_else(|| {
-        CliError::InvalidFormat("SafeTensors header is not a JSON object".to_string())
+        CliError::invalid_model_bytes(bytes, "SafeTensors header is not a JSON object")
     })?;
 
     let tensor_names: Vec<&String> = tensor_map.keys().filter(|k| *k != "__metadata__").collect();
@@ -415,7 +418,7 @@ fn slice_safetensors(
 ) -> Result<(), CliError> {
     let parsed = parse_safetensors_header(bytes)?;
     let tensor_map = parsed.header.as_object().ok_or_else(|| {
-        CliError::InvalidFormat("SafeTensors header is not a JSON object".to_string())
+        CliError::invalid_model_bytes(bytes, "SafeTensors header is not a JSON object")
     })?;
 
     let info = tensor_map.get(tensor_name).ok_or_else(|| {

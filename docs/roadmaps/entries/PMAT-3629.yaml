@@ -1,0 +1,17 @@
+- id: PMAT-3629
+  github_issue: 3629
+  item_type: task
+  title: 'fleet_utilization.sh --selftest: printf | grep -q under pipefail reads a MATCH as FAIL when grep closes the pipe first — red main''s guard-tree on gx10-pool3; 55 sibling sites in 31 scripts'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T21:34:44Z
+  updated: 2026-09-20T21:34:44Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3629 done_when; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Done when: scripts/fleet_utilization.sh --selftest has no pipe into grep -q; a mutation that restores the pipe AND forces EPIPE (out padded to >64 KiB so the write cannot complete before grep exits) turns the self-test RED deterministically — the positive control for the race, in the PR body the 55-site count is in the PR body from the command that produced it, and a guard refuses a new site (check_guards_are_wired.sh names it; ratchet baseline committed) main''s guard-tree green on the merge commit without rerun '

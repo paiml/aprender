@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-04-05'
   author: PAIML Engineering
   description: "apr inspect/rosetta dtype naming contract — DType column must render human-readable GGML type names (F32, Q4_K, Q6_K), never raw integer discriminants"
@@ -7,6 +7,7 @@ metadata:
     - "paiml/aprender#619 (inspect/rosetta: DType column shows integer IDs instead of names)"
     - "paiml/aprender#605 (DType IDs historical pattern)"
     - "paiml/aprender#603 (quantization field shows '0' — downstream of same root cause)"
+    - "paiml/aprender#3601 (names read from trueno_quant::TRAITS; ids 31-42 — TQ1_0, TQ2_0, MXFP4, NVFP4, Q1_0, Q2_0 — are named, removed ids stay 'unknown')"
   registry: true
   tags:
     - cli
@@ -24,7 +25,7 @@ equations:
     invariants:
       - "TensorInfo.dtype is ALWAYS a human-readable name from the GGML canonical set"
       - "TensorInfo.dtype NEVER parses as an integer via str::parse::<u32>"
-      - "GGML_NAMES = {F32, F16, Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, Q8_1, Q2_K, Q3_K, Q4_K, Q5_K, Q6_K, Q8_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ4_NL, IQ3_S, IQ2_S, IQ4_XS, I8, I16, BF16, I32, I64, F64, IQ1_M, unknown}"
+      - "GGML_NAMES = {F32, F16, Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, Q8_1, Q2_K, Q3_K, Q4_K, Q5_K, Q6_K, Q8_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ4_NL, IQ3_S, IQ2_S, IQ4_XS, I8, I16, BF16, I32, I64, F64, IQ1_M, TQ1_0, TQ2_0, MXFP4, NVFP4, Q1_0, Q2_0, unknown}"
 
   cross_cmd_consistency:
     formula: "∀ tensor T in file F: dtype(inspect F, T) = dtype(tensors F, T)"
@@ -81,8 +82,8 @@ falsification_tests:
 
 kani_harnesses:
   - id: KANI-INSPECT-DTYPE-001
-    obligation: "Every GGML u32 discriminant ∈ [0,30] maps to a non-integer name"
-    bound: 31
+    obligation: "Every GGML u32 discriminant ∈ [0,42] (GGML_TYPE_COUNT = 43) maps to a non-integer name"
+    bound: 43
     strategy: bounded_int
 
 qa_gate:

@@ -959,6 +959,7 @@ fn ignored_test_still_counts() {}
             test_harness: Some(harness.into()),
             name: Some(name.into()),
             if_fails: "investigate".into(),
+            ..Default::default()
         });
         vec![("fixture".to_string(), c)]
     }

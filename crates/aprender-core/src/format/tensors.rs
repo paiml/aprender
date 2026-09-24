@@ -569,16 +569,11 @@ fn list_tensors_v1(data: &[u8], options: TensorListOptions) -> Result<TensorList
 /// Made pub(crate) so `format::rosetta::validate_inspect` can render dtype names
 /// consistently with `apr tensors` output.
 pub(crate) fn ggml_dtype_name(dtype: u32) -> &'static str {
-    // Indexed by GGML type code (ggml.h GGML_TYPE_*). The tail (24-30) was
-    // misordered — BF16 was at 26, mislabeling BF16 tensors (code 30) as
-    // "IQ1_M", I32 (26) as "BF16", etc. Correct order per ggml.h:
-    //   I8=24, I16=25, I32=26, I64=27, F64=28, IQ1_M=29, BF16=30.
-    const NAMES: [&str; 31] = [
-        "F32", "F16", "Q4_0", "Q4_1", "unknown", "unknown", "Q5_0", "Q5_1", "Q8_0", "Q8_1", "Q2_K",
-        "Q3_K", "Q4_K", "Q5_K", "Q6_K", "Q8_K", "IQ2_XXS", "IQ2_XS", "IQ3_XXS", "IQ1_S", "IQ4_NL",
-        "IQ3_S", "IQ2_S", "IQ4_XS", "I8", "I16", "I32", "I64", "F64", "IQ1_M", "BF16",
-    ];
-    NAMES.get(dtype as usize).copied().unwrap_or("unknown")
+    // #3601: read from ggml's own type table (`trueno_quant::TRAITS`, PMAT-3430) instead
+    // of a hand-typed copy. The copy stopped at id 30, so TQ1_0/TQ2_0 (34/35) — which
+    // `get_tensor_raw` now sizes — would have printed "unknown"; an earlier copy had the
+    // 24-30 tail misordered. Removed and never-defined ids stay "unknown".
+    trueno_quant::GgmlType::from_id(dtype).map_or("unknown", trueno_quant::GgmlType::as_str)
 }
 
 include!("safetensors.rs");

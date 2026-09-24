@@ -1,0 +1,21 @@
+- id: PMAT-3381
+  github_issue: 3381
+  item_type: task
+  title: 'P1: Decision-threshold calibration for binary metrics (calibrate_decision_threshold) — CRUX-O-11'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-11, competitor autogluon, demand 4. Probability calibration exists (PlattScaling, IsotonicRegression, TemperatureScaling in calibration.rs) but nothing searches the decision threshold that maximises f1 / balanced_accuracy / mcc on validation data and stores it on the predictor (`decision_threshold`, `set_decision_threshold`). FALSIFIABLE (contracts/crux-O-11-v1.yaml): the calibrated threshold beats 0.5 on the calibration metric and the gain is asserted, not the search — on an imbalanced fixture (5% positives) f1 at the calibrated threshold > f1 at 0.5 by >= 0.05 absolute; the threshold is persisted with the model — save then load reproduces predict() bit-identically including the threshold; a mutation that resets the threshold to 0.5 on load turns this RED. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

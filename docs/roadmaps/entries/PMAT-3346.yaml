@@ -1,0 +1,17 @@
+- id: PMAT-3346
+  github_issue: 3346
+  item_type: task
+  title: 'QE2E-INV-001: ModelConstraints dropped the gated-DeltaNet shape, so 18 of every 24 Qwen3.5 layers were counted as if their tensors did not exist (#3346)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-20T22:54:24Z
+  updated: 2026-09-20T22:54:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE, from issue #3346 ("decide which side is wrong, with a measurement") as PR #3350 answers it — the answer is neither the range nor the descriptor but the TYPE that reads the descriptor: (1) ModelConstraints carries inner_size, state_size, conv_kernel, group_count and full_attention_interval from contracts/model-families/qwen3_5.yaml, which it previously dropped; (2) the config-derived model_parameter_count equals the measured GGUF tensor sum of a REAL file — ~/models/Qwen3.5-0.8B-Q4_K_M.gguf, 320 tensors, 752,393,024 parameters, delta 0 — with the gated-DeltaNet layer (21,555,360) and the full-attention layer (18,352,640) each matching the measured blk; (3) the two shapes that contradict dense accounting are modelled from the tensors, not assumed: attn_q is [d, 2*n_h*d_k] (the q projection emits the output gate) and the DeltaNet mixer projections/conv/state norm are counted for the 18-of-24 linear layers; (4) the 9B range instantiation is NOT asserted in this PR — the repo 9b descriptor disagrees with itself (inner_size 2048 at hidden 4096; group_count 8 fails group_count*state_size == inner_size) so P(9B) computes to 8.345B, and settling it needs a real Qwen3.5-9B GGUF, recorded in the QE2E-INV-001 binding note; (5) the note edit leaves contracts/binding.yaml valid YAML (156 entries, same as main) and the tracked contracts.nt equals a fresh extraction. Out of scope: acquiring the 9B GGUF; widening the range.'

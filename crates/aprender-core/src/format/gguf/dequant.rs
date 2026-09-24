@@ -2,8 +2,9 @@
 //!
 //! K-quant formats (Q4_K, Q5_K, Q6_K) delegate to `trueno_quant` — the single
 //! source of truth in the Sovereign AI Stack.  Legacy GGML formats (Q4_0, Q8_0,
-//! Q5_0, Q5_1, Q4_1, Q2_K, Q3_K, IQ*) have no trueno equivalent and keep their
-//! inline implementations.
+//! Q5_0, Q5_1, Q4_1, Q2_K, Q3_K) have no trueno equivalent and keep their
+//! inline implementations. IQ* has no dequantizer here: `get_tensor_f32` refuses
+//! it (#3656) rather than approximate it.
 
 use crate::error::{AprenderError, Result};
 use provable_contracts_macros::ensures;

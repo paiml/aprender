@@ -1,0 +1,420 @@
+#!/usr/bin/env bash
+# parity_receipt_denominator.sh — PMAT-3577 / #3577.
+#
+# THE PREDICATE, not the extractor. `evidence/parity/EXPECTED_RECEIPTS` records how many logit-parity
+# receipts the tree holds; this script recomputes that number from the tree itself, by a rule written
+# INDEPENDENTLY of the Rust extractor. Two implementations of one question is the whole point: an
+# extractor checked against a number the extractor produced proves nothing.
+#
+# The rule: a file under `evidence/parity/**` is a receipt iff it is JSON whose top-level `schema` is
+# `apr-parity-receipt/v2`. Anything else is not counted, and an UNMIGRATED legacy record — no schema but a
+# top-level `metrics[]` or `parity` — is REFUSED, because a record the extractor cannot see is a record no
+# shape can refuse.
+#
+# The universe is `git ls-files`, never `find`: `.claude/worktrees/lane-*` holds full clones at other
+# commits, and `find` returns them (aprender#3579).
+#
+#   bash scripts/parity_receipt_denominator.sh            # verify against EXPECTED_RECEIPTS
+#   bash scripts/parity_receipt_denominator.sh --print    # print the measured count and exit 0
+#   bash scripts/parity_receipt_denominator.sh --self-test
+#
+# Exit: 0 agree · 1 disagree (or an unmigrated record) · 2 usage / the file is missing / git cannot
+# list the tree (ENV: e.g. "dubious ownership" on a bind-mounted docker checkout, #3669) / the
+# classifier gave no answer (ENV: an awk that is missing, crashes or prints nothing is RED, #3695).
+#
+# The classifier is POSIX awk, not python (#3694). The fleet is python-free for automation (infra#708),
+# and on a runner without python3 this used to be an UNMEASURED exit 3 (#3695). awk is on every runner,
+# so there is no unmeasured runner any more: the count is measured everywhere, or it is RED.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+EXPECTED_FILE="evidence/parity/EXPECTED_RECEIPTS"
+SCHEMA="apr-parity-receipt/v2"
+AWK_BIN="${PARITY_AWK:-awk}"   # test seam: a missing or silent classifier is ENV exit 2, never a count (#3695)
+
+count_and_check() {
+    local root=$1 records=0 unmigrated=() listing
+    # #3669: on the docker runners git refuses the bind-mounted tree ("detected dubious ownership"),
+    # and this listing used to discard that refusal (`2>/dev/null` inside a process substitution,
+    # whose exit status nothing reads), so the loop saw an empty universe and reported "the tree
+    # holds 0". A git failure is an ENV exit 2 that names git, never a count. git's own stderr is kept.
+    if ! listing=$(git -c safe.directory="$root" -C "$root" ls-files \
+            'evidence/parity/*.json' 'evidence/parity/**/*.json'); then
+        printf 'ENV   git ls-files failed in %s: the receipt universe cannot be read, so no count is reported\n' \
+            "$root" >&2
+        return 2
+    fi
+    local f class
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        class=$(classify "$root/$f") || class=""
+        case "$class" in
+            record) records=$((records + 1)) ;;
+            legacy) unmigrated+=("$f") ;;
+            other) : ;;
+            # a classifier that is missing or answers nothing (a crash, an empty print) is ENV, RED:
+            # it used to fall through here as "other", and the tree "held 0" (#3695)
+            *) printf 'ENV   the classifier (%s) gave no answer for %s: %s -- no count is reported\n' \
+                   "$AWK_BIN" "$f" "${class:-<nothing>}" >&2
+               return 2 ;;
+        esac
+    done < <(printf '%s\n' "$listing" | sort -u)
+    if [ "${#unmigrated[@]}" -gt 0 ]; then
+        printf 'FAIL  %s unmigrated legacy record(s) - no schema, but a top-level metrics[]/parity:\n' \
+            "${#unmigrated[@]}" >&2
+        printf '        %s\n' "${unmigrated[@]}" >&2
+        return 1
+    fi
+    printf '%s\n' "$records"
+}
+
+# The classifier: one JSON document -> record | legacy | other, by a PARSE, never a substring match (a
+# substring test is satisfied by `{"note":"schema apr-parity-receipt/v2"}` and by a schema nested one level
+# down; the self-test holds both). A strict RFC 8259 parse: iterative, with an explicit container stack, so
+# nesting depth is no limit. It runs byte-wise under LC_ALL=C and validates UTF-8 inside strings. Any syntax
+# error is "other". Only the ROOT object's keys are kept: each value's kind, and the decoded text of a string
+# value. As in json.load, a later duplicate key wins. The one deliberate difference from the python it
+# replaces: NaN / Infinity are not JSON (RFC 8259), and serde_json, the extractor's parser, refuses them too.
+read -r -d '' CLASSIFY_AWK <<'AWK' || true
+BEGIN {
+    for (i = 1; i < 256; i++) ORD[sprintf("%c", i)] = i
+    HEX = "0123456789abcdef"
+    ESC["\""] = "\""; ESC["\\"] = "\\"; ESC["/"] = "/"; ESC["b"] = sprintf("%c", 8)
+    ESC["f"] = sprintf("%c", 12); ESC["n"] = "\n"; ESC["r"] = "\r"; ESC["t"] = "\t"
+    KINDOF["\""] = "string"; KINDOF["["] = "array"; KINDOF["{"] = "object"
+}
+{ doc = doc $0 "\n" }
+END { print classify_doc(doc) }
+
+function isdigit(ch) { return ch != "" && index("0123456789", ch) > 0 }
+
+# The string whose opening quote is at p-1: sets STR (decoded only when want) and returns the index
+# after the closing quote, or 0 on any error.
+function pstring(s, p, n, want,    out, c, e, h, cp, k, d, o, need, lo, hi, b) {
+    out = ""
+    while (p <= n) {
+        c = substr(s, p, 1)
+        if (c == "\"") { STR = out; return p + 1 }
+        if (c == "\\") {
+            e = substr(s, p + 1, 1)
+            if (e != "" && (e in ESC)) { if (want) out = out ESC[e]; p += 2; continue }
+            if (e != "u") return 0
+            h = tolower(substr(s, p + 2, 4))
+            if (length(h) != 4) return 0
+            cp = 0
+            for (k = 1; k <= 4; k++) {
+                d = index(HEX, substr(h, k, 1))
+                if (d == 0) return 0
+                cp = cp * 16 + d - 1
+            }
+            # ASCII decodes to itself. NUL and non-ASCII keep a backslash marker: nothing this
+            # classifier compares against contains a backslash, so neither can ever equal it.
+            if (want) {
+                if (cp >= 1 && cp < 128) out = out sprintf("%c", cp)
+                else out = out "\\u" h
+            }
+            p += 6; continue
+        }
+        o = ORD[c] + 0
+        if (o < 32) return 0                      # a raw control character is not JSON
+        if (o < 128) { if (want) out = out c; p++; continue }
+        # UTF-8, RFC 3629: no overlongs, no surrogates, nothing past U+10FFFF
+        lo = 128; hi = 191
+        if (o >= 194 && o <= 223) need = 1
+        else if (o == 224) { need = 2; lo = 160 }
+        else if (o == 237) { need = 2; hi = 159 }
+        else if (o >= 225 && o <= 239) need = 2
+        else if (o == 240) { need = 3; lo = 144 }
+        else if (o >= 241 && o <= 243) need = 3
+        else if (o == 244) { need = 3; hi = 143 }
+        else return 0
+        b = ORD[substr(s, p + 1, 1)] + 0
+        if (b < lo || b > hi) return 0
+        for (k = 2; k <= need; k++) {
+            b = ORD[substr(s, p + k, 1)] + 0
+            if (b < 128 || b > 191) return 0
+        }
+        if (want) out = out substr(s, p, need + 1)
+        p += need + 1
+    }
+    return 0                                      # unterminated
+}
+
+# States: V a value · A a value or "]" · K a key or "}" · N a key (after a comma) · C a colon ·
+# E after a value: "," or the container's close, or the end of input at depth 0.
+function classify_doc(s,    n, p, c, sp, stk, st, key, root, q) {
+    n = length(s); p = 1; sp = 0; st = "V"; root = ""
+    while (1) {
+        while (p <= n && index(" \t\n\r", substr(s, p, 1)) > 0) p++
+        if (p > n) break
+        c = substr(s, p, 1)
+        if (st == "E") {
+            if (sp == 0) return "other"               # content after the document
+            if (c == ",") { p++; st = (stk[sp] == "o") ? "N" : "V"; continue }
+            if ((c == "}" && stk[sp] == "o") || (c == "]" && stk[sp] == "a")) { p++; sp--; continue }
+            return "other"
+        }
+        if (st == "C") { if (c != ":") return "other"; p++; st = "V"; continue }
+        if (st == "K" || st == "N") {
+            if (c == "}" && st == "K") { p++; sp--; st = "E"; continue }
+            if (c != "\"") return "other"
+            p = pstring(s, p + 1, n, sp == 1)
+            if (p == 0) return "other"
+            if (sp == 1) key = STR
+            st = "C"; continue
+        }
+        if (st == "A" && c == "]") { p++; sp--; st = "E"; continue }
+        # a value (st is V or A)
+        if (sp == 0) root = c
+        if (sp == 1 && stk[1] == "o") { HAS[key] = 1; KIND[key] = (c in KINDOF) ? KINDOF[c] : "scalar" }
+        if (c == "{") { stk[++sp] = "o"; p++; st = "K"; continue }
+        if (c == "[") { stk[++sp] = "a"; p++; st = "A"; continue }
+        st = "E"
+        if (c == "\"") {
+            p = pstring(s, p + 1, n, sp == 1 && stk[1] == "o")
+            if (p == 0) return "other"
+            if (sp == 1 && stk[1] == "o") VAL[key] = STR
+            continue
+        }
+        if (substr(s, p, 4) == "true" || substr(s, p, 4) == "null") { p += 4; continue }
+        if (substr(s, p, 5) == "false") { p += 5; continue }
+        # a number: -?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?
+        q = p
+        if (substr(s, q, 1) == "-") q++
+        if (substr(s, q, 1) == "0") q++
+        else if (isdigit(substr(s, q, 1))) { while (isdigit(substr(s, q, 1))) q++ }
+        else return "other"
+        if (substr(s, q, 1) == ".") {
+            q++
+            if (!isdigit(substr(s, q, 1))) return "other"
+            while (isdigit(substr(s, q, 1))) q++
+        }
+        if (substr(s, q, 1) == "e" || substr(s, q, 1) == "E") {
+            q++
+            if (substr(s, q, 1) == "+" || substr(s, q, 1) == "-") q++
+            if (!isdigit(substr(s, q, 1))) return "other"
+            while (isdigit(substr(s, q, 1))) q++
+        }
+        p = q
+    }
+    if (st != "E" || sp != 0) return "other"          # empty, or truncated
+    if (root != "{") return "other"
+    if (KIND["schema"] == "string" && VAL["schema"] == schema) return "record"
+    if (KIND["metrics"] == "array" || ("parity" in HAS)) return "legacy"
+    return "other"
+}
+AWK
+
+# record | legacy | other — one file, by its own content.
+classify() {
+    local f=$1 all nonul
+    # A raw NUL is never JSON, so such a file is "other" by the rule. It is decided here rather than in
+    # awk because some awks (busybox) hold C strings, and there a NUL would truncate the document, which
+    # could turn a non-JSON file into a record. Here the answer is the same under every awk.
+    all=$(wc -c < "$f") && nonul=$(tr -d '\000' < "$f" | wc -c) || return 1
+    if [ "$all" -ne "$nonul" ]; then printf 'other\n'; return 0; fi
+    LC_ALL=C "$AWK_BIN" -v schema="$SCHEMA" "$CLASSIFY_AWK" "$f"
+}
+
+expected_of() {
+    grep -vE '^\s*(#|$)' "$1/$EXPECTED_FILE" | head -1 | tr -d '[:space:]'
+}
+
+# Remove a directory this script created, and NOTHING else. The validation is here, immediately above
+# the `rm`, rather than at the call site: a guard the reader has to go and find is a guard that gets
+# moved away from what it protects (bashrs SEC011).
+discard_tempdir() {
+    dir=$1
+    [ -n "$dir" ] || return 0
+    [ -d "$dir" ] || return 0
+    case "$dir" in
+        /tmp/*|/var/folders/*) : ;;
+        *) printf 'refusing to remove %s: not a temp directory this script made\n' "$dir" >&2; return 0 ;;
+    esac
+    rm -rf -- "$dir"
+}
+
+self_test() {
+    local rc=0 td
+    td=$(mktemp -d)
+    [ -n "$td" ] && [ -d "$td" ] && [ "${#td}" -gt 8 ] || { printf 'FAIL  mktemp -d gave %s\n' "${td:-<empty>}" >&2; return 2; }
+    trap 'discard_tempdir "$td"' RETURN
+    # hooksPath off: the self-test's throwaway repos must not run the developer's global pre-commit hook.
+    (cd "$td" && git init -q . && git config user.email t@t && git config user.name t \
+        && git config core.hooksPath /dev/null)
+    mkdir -p "$td/evidence/parity/l0-1/lambda"
+    printf '{"schema":"%s","host":"h"}\n' "$SCHEMA" > "$td/evidence/parity/l0-1/lambda/a.json"
+    printf '{"seed":1}\n' > "$td/evidence/parity/props-x.json"
+    printf '1\n' > "$td/$EXPECTED_FILE"
+    (cd "$td" && git add -A && git commit -qm t)
+
+    # ONE record, one unrelated document, denominator 1 -> agree.
+    if out=$(count_and_check "$td" 2>&1) && [ "$out" = 1 ]; then
+        printf 'ok    a record is counted and an unrelated document is not (measured %s)\n' "$out"
+    else
+        printf 'FAIL  expected 1, got %s\n' "$out"; rc=1
+    fi
+
+    # A legacy record appears -> REFUSED, never counted, never skipped.
+    printf '{"model":"./m.gguf","parity":true,"metrics":[]}\n' > "$td/evidence/parity/l0-1/lambda/legacy.json"
+    (cd "$td" && git add -A && git commit -qm legacy)
+    if count_and_check "$td" >/dev/null 2>&1; then
+        printf 'FAIL  an unmigrated legacy record did not refuse\n'; rc=1
+    else
+        printf 'ok    an unmigrated legacy record is refused by name\n'
+    fi
+    rm "$td/evidence/parity/l0-1/lambda/legacy.json"
+    (cd "$td" && git add -A && git commit -qm rm)
+
+    # A receipt added without bumping the denominator -> disagree. THE falsifier the row names.
+    printf '{"schema":"%s","host":"h2"}\n' "$SCHEMA" > "$td/evidence/parity/l0-1/lambda/b.json"
+    (cd "$td" && git add -A && git commit -qm add)
+    if verify "$td" >/dev/null 2>&1; then
+        printf 'FAIL  a receipt added without bumping the denominator passed\n'; rc=1
+    else
+        printf 'ok    a receipt added without bumping the denominator disagrees\n'
+    fi
+
+    # And bumping it makes them agree again — BOTH directions, or the control proves nothing.
+    printf '2\n' > "$td/$EXPECTED_FILE"
+    (cd "$td" && git add -A && git commit -qm bump)
+    if verify "$td" >/dev/null 2>&1; then
+        printf 'ok    bumping the denominator makes them agree\n'
+    else
+        printf 'FAIL  the denominator was bumped and they still disagree\n'; rc=1
+    fi
+
+    # #3669: git itself refuses, as it does on the docker runners (exit 128, "dubious ownership").
+    # That is ENV (exit 2) naming git. It is never "the tree holds 0".
+    mkdir -p "$td/nogit"
+    printf '#!/bin/sh\necho "fatal: detected dubious ownership in repository" >&2\nexit 128\n' > "$td/nogit/git"
+    chmod 755 "$td/nogit/git"
+    local got=0 gout
+    gout=$(PATH="$td/nogit:$PATH" verify "$td" 2>&1) || got=$?
+    if [ "$got" -eq 2 ] && grep -q 'git' <<<"$gout" && ! grep -q 'holds 0' <<<"$gout"; then
+        printf 'ok    git refusing the tree is ENV exit 2 naming git, never a count of 0\n'
+    else
+        printf 'FAIL  git refused and the result was exit %s: %s\n' "$got" "$gout"; rc=1
+    fi
+
+    # #3694: the python-free fleet (infra#708). A PATH holding ONLY the tools this script runs, and no
+    # python3, measures the same count. This row also lists the script's dependencies: a new tool must be
+    # added here, and a python3 cannot come back without this row going RED.
+    mkdir -p "$td/minpath"
+    local t
+    for t in git awk sort grep head tr wc; do
+        ln -s "$(command -v "$t")" "$td/minpath/$t"
+    done
+    got=0; gout=$(PATH="$td/minpath" verify "$td" 2>&1) || got=$?
+    if [ "$got" -eq 0 ] && grep -q '^PASS  2 receipt' <<<"$gout" \
+        && ! PATH="$td/minpath" command -v python3 > /dev/null 2>&1; then
+        printf 'ok    a PATH with no python3 (only git awk sort grep head tr wc) measures the same PASS (#3694)\n'
+    else
+        printf 'FAIL  a python-free PATH gave exit %s: %s\n' "$got" "$gout"; rc=1
+    fi
+
+    # #3695: a classifier that is MISSING is ENV exit 2 naming it. There is no unmeasured runner to
+    # excuse it any more (#3694): never "the tree holds 0", never UNMEASURED, never a pass.
+    got=0; gout=$(AWK_BIN="$td/no-such-awk" verify "$td" 2>&1) || got=$?
+    if [ "$got" -eq 2 ] && grep -q "the classifier ($td/no-such-awk) gave no answer" <<<"$gout" \
+        && ! grep -qE 'holds 0|UNMEASURED' <<<"$gout"; then
+        printf 'ok    a missing classifier is ENV exit 2 naming it, never a count of 0 or UNMEASURED (#3694)\n'
+    else
+        printf 'FAIL  a missing classifier gave exit %s: %s\n' "$got" "$gout"; rc=1
+    fi
+    # ...and one that EXISTS but answers nothing (a crash) is ENV exit 2, RED (#3695)
+    got=0; gout=$(AWK_BIN=/bin/true verify "$td" 2>&1) || got=$?
+    if [ "$got" -eq 2 ] && grep -q 'gave no answer' <<<"$gout" && ! grep -q 'holds 0' <<<"$gout"; then
+        printf 'ok    a classifier that answers nothing is ENV exit 2, never a count of 0 (#3695)\n'
+    else
+        printf 'FAIL  a silent classifier gave exit %s: %s\n' "$got" "$gout"; rc=1
+    fi
+
+    classify_table "$td" || rc=1
+    return "$rc"
+}
+
+# The parse, case by case: each row is the class the RULE gives and a document. A substring test fails the
+# nested / noted / escaped rows, a parser that ignores the grammar fails the truncated / trailing / NaN rows,
+# and one that keeps the first duplicate key fails the duplicate rows. A document is written with printf %b
+# (\xNN is a byte, \\ one backslash), and @S@ stands for the schema.
+classify_table() {
+    local td=$1 bad=0 rows=0 want doc got f
+    f="$td/case.json"
+    while IFS='|' read -r want doc; do
+        [ -n "$want" ] || continue
+        rows=$((rows + 1))
+        doc=${doc//@S@/$SCHEMA}
+        printf '%b' "$doc" > "$f"
+        got=$(classify "$f") || got="rc=$?"
+        if [ "$got" != "$want" ]; then
+            printf 'FAIL  classify gave %s, the rule says %s, for: %s\n' "${got:-<nothing>}" "$want" "$doc"
+            bad=1
+        fi
+    done <<'EOF'
+record|{"schema":"@S@","host":"h"}
+record| \r\n\t{ "schema" : "@S@" } \n
+record|{"schema":"apr-parity-receipt\\/v2"}
+record|{"\\u0073chema":"@S@"}
+record|{"a":"}\\"{,:[","schema":"@S@"}
+record|{"a":{"schema":"x"},"b":[{"parity":1}],"metrics":"m","schema":"@S@"}
+record|{"n":"caf\xc3\xa9 \xe2\x82\xac","x":[0,-0,1.5,-2e10,3E+2,true,false,null],"schema":"@S@"}
+record|{"schema":"x","schema":"@S@"}
+other|{"schema":"@S@","schema":"x"}
+other|{"schema":"@S@","schema":2}
+other|{"note":"schema @S@"}
+other|{"inner":{"schema":"@S@"}}
+other|[{"schema":"@S@"}]
+other|"@S@"
+other|
+other|{"schema":"@S@"
+other|{"schema":"@S@"} x
+other|{"schema":"@S@",}
+other|{'schema':'@S@'}
+other|{"schema":2}
+other|{"schema":"@S@","x":NaN}
+other|{"schema":"@S@","x":01}
+other|{"schema":"@S@","x":"a\tb"}
+other|{"schema":"@S@","x":"\\q"}
+other|{"schema":"@S@","x":"caf\xe9"}
+other|{"schema":"@S@","x":"\xed\xa0\x80"}
+other|{"schema":"@S@"}\x00
+other|{"sch\\u0000ema":"@S@"}
+other|\xef\xbb\xbf{"schema":"@S@"}
+legacy|{"model":"m","parity":true,"metrics":[]}
+legacy|{"parity":null}
+legacy|{"m\\u0065trics":[{"a":1}]}
+legacy|{"schema":"x","parity":1}
+other|{"metrics":"x"}
+other|{"a":{"parity":1}}
+EOF
+    # fewer rows than the table holds means the heredoc was cut short, and a short table is not a pass
+    if [ "$bad" -eq 0 ] && [ "$rows" -eq 35 ]; then
+        printf 'ok    %s classification rows: a parse, never a substring match (#3694)\n' "$rows"
+    else
+        printf 'FAIL  the classification table (%s of 35 rows read)\n' "$rows"
+        return 1
+    fi
+}
+
+verify() {
+    local root=$1 measured expected
+    [ -f "$root/$EXPECTED_FILE" ] || { printf 'FAIL  %s is missing\n' "$EXPECTED_FILE" >&2; return 2; }
+    measured=$(count_and_check "$root") || return $?
+    expected=$(expected_of "$root")
+    if [ "$measured" = "$expected" ]; then
+        printf 'PASS  %s receipt(s) under evidence/parity/**, and %s says %s.\n' \
+            "$measured" "$EXPECTED_FILE" "$expected"
+        return 0
+    fi
+    printf 'FAIL  %s says %s; the tree holds %s.\n' "$EXPECTED_FILE" "$expected" "$measured" >&2
+    printf '      Unknown{WrongCorpus}: update the denominator in the SAME commit as the receipt.\n' >&2
+    return 1
+}
+
+case "${1:-}" in
+    --self-test) self_test ;;
+    --print)     count_and_check "$ROOT" ;;
+    "")          verify "$ROOT" ;;
+    *)           printf 'usage: %s [--print|--self-test]\n' "$(basename "$0")" >&2; exit 2 ;;
+esac

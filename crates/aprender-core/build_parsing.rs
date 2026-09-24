@@ -52,6 +52,34 @@ struct ConstraintsData {
     position: String,
     mlp: String,
     qk_norm: bool,
+    /// #3346: Gated DeltaNet shape keys. `None` unless the descriptor declares
+    /// both `inner_size` and `state_size`.
+    deltanet: Option<DeltaNetData>,
+}
+
+/// #3346: the `inner_size`/`state_size`/`conv_kernel`/`group_count` +
+/// `full_attention_interval` block of a hybrid family's `constraints:`.
+struct DeltaNetData {
+    inner_size: usize,
+    state_size: usize,
+    conv_kernel: usize,
+    group_count: usize,
+    full_attention_interval: usize,
+}
+
+/// #3346: read the Gated DeltaNet shape out of a `constraints:` section.
+/// Both `inner_size` and `state_size` are required — they are what make the
+/// block a DeltaNet mixer — so every other family yields `None`.
+fn parse_deltanet_data(section: &str) -> Option<DeltaNetData> {
+    let inner_size = get_usize(section, "inner_size")?;
+    let state_size = get_usize(section, "state_size")?;
+    Some(DeltaNetData {
+        inner_size,
+        state_size,
+        conv_kernel: get_usize(section, "conv_kernel").unwrap_or(0),
+        group_count: get_usize(section, "group_count").unwrap_or(0),
+        full_attention_interval: get_usize(section, "full_attention_interval").unwrap_or(0),
+    })
 }
 
 // ============================================================================
@@ -144,6 +172,7 @@ fn parse_family_yaml(content: &str, path: &Path) -> FamilyData {
         position: c_str("positional_encoding", "rope"),
         mlp: c_str("mlp_type", "swiglu"),
         qk_norm: get_bool(&constraints_section, "qk_norm").unwrap_or(false),
+        deltanet: parse_deltanet_data(&constraints_section),
     };
 
     // Parse tensor_template

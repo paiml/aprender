@@ -1,0 +1,75 @@
+# CRUX-O-17 — Tabular foundation model: in-context prediction with a pretrained transformer (TabPFN / TabICL / Mitra class)
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3387, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-17
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  github_issue: 3387
+  description: >
+    Tabular foundation model: in-context prediction with a pretrained transformer (TabPFN / TabICL / Mitra class). Competitor verb: hyperparameters={"TABPFNV2": {}, "TABICL": {}, "MITRA": {}}  # in the extreme_quality preset. Gap measured in aprender at eb262f8eb: No tabular in-context learner. nn/ and the inference crates run causal LMs; nothing consumes (X_train, y_train, X_test) as one context and predicts without gradient steps. AutoGluon 1.4-1.6 added TabPFNv2/2.5/2.6/3, TabICL/v2, Mitra, TabDPT, Nori and made them the extreme preset.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3387'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  zero_gradient_prediction_matches_a_pinned_reference_within_t:
+    formula: |
+      loading a pinned small checkpoint via apr pull and predicting a 100-row fixture matches the committed reference probabilities within 1e-4
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "zero-gradient prediction matches a pinned reference within tolerance"
+  the_context_limit_is_enforced__not_silently_truncated:
+    formula: |
+      a context of rows > the model's documented max is an Err naming the limit; a mutation that truncates instead turns this RED
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "the context limit is enforced, not silently truncated"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-17-001
+  rule: "zero-gradient prediction matches a pinned reference within tolerance"
+  prediction: "loading a pinned small checkpoint via apr pull and predicting a 100-row fixture matches the committed reference probabilities within 1e-4"
+  test: >-
+    LIVE-PENDING - zero-gradient prediction matches a pinned reference within tolerance. No test surface exists today because the capability is unimplemented: Tabular foundation model: in-context prediction with a pretrained transformer (TabPFN / TabICL / Mitra class) (aprender#3387, CRUX-O-17). PROMOTE by authoring a test named icl_matches_pinned_reference in module `models/tabular_fm/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'zero-gradient prediction matches a pinned reference within tolerance' is violated — the autogluon parity claim for CRUX-O-17 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-17-002
+  rule: "the context limit is enforced, not silently truncated"
+  prediction: "a context of rows > the model's documented max is an Err naming the limit; a mutation that truncates instead turns this RED"
+  test: >-
+    LIVE-PENDING - the context limit is enforced, not silently truncated. No test surface exists today because the capability is unimplemented: Tabular foundation model: in-context prediction with a pretrained transformer (TabPFN / TabICL / Mitra class) (aprender#3387, CRUX-O-17). PROMOTE by authoring a test named context_limit_is_an_error in module `models/tabular_fm/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'the context limit is enforced, not silently truncated' is violated — the autogluon parity claim for CRUX-O-17 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "zero-gradient prediction matches a pinned reference within tolerance"
+- type: invariant
+  property: "the context limit is enforced, not silently truncated"
+
+kani_harnesses:
+- id: KH-CRUX-O-17-001
+  obligation: zero_gradient_prediction_matches_a_pinned_reference_within_t
+  property: zero_gradient_prediction_matches_a_pinned_reference_within_t_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-17-002
+  obligation: the_context_limit_is_enforced__not_silently_truncated
+  property: the_context_limit_is_enforced__not_silently_truncated_holds_on_bounded_input
+  bound: 4

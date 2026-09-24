@@ -1,0 +1,75 @@
+# CRUX-O-02 — Problem-type inference: binary / multiclass / regression / quantile from the label column
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3372, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-02
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  github_issue: 3372
+  description: >
+    Problem-type inference: binary / multiclass / regression / quantile from the label column. Competitor verb: predictor.problem_type  (inferred in fit unless problem_type= given). Gap measured in aprender at eb262f8eb: No function infers a task from a label column. Estimators are chosen by type name (LogisticRegression vs LinearRegression); DataFrame in crates/aprender-core/src/data/mod.rs carries ColumnStats but no label-kind classifier.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3372'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  two_unique_label_values_infer_binary__3___n_small_cardinalit:
+    formula: |
+      a table of (label column, expected kind) fixtures including the ambiguous cases {0,1} as int, {0.0,1.0} as float, and 30 unique floats over 1000 rows all classify as documented
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "two unique label values infer binary, 3..=N small-cardinality infer multiclass, many-unique numeric infers regression"
+  the_override_wins_and_a_contradictory_override_is_rejected:
+    formula: |
+      problem_type=regression on a string label column is an Err naming the column, not a silent cast
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "the override wins and a contradictory override is rejected"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-02-001
+  rule: "two unique label values infer binary, 3..=N small-cardinality infer multiclass, many-unique numeric infers regression"
+  prediction: "a table of (label column, expected kind) fixtures including the ambiguous cases {0,1} as int, {0.0,1.0} as float, and 30 unique floats over 1000 rows all classify as documented"
+  test: >-
+    LIVE-PENDING - two unique label values infer binary, 3..=N small-cardinality infer multiclass, many-unique numeric infers regression. No test surface exists today because the capability is unimplemented: Problem-type inference: binary / multiclass / regression / quantile from the label column (aprender#3372, CRUX-O-02). PROMOTE by authoring a test named label_kind_table in module `automl/problem_type/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'two unique label values infer binary, 3..=N small-cardinality infer multiclass, many-unique numeric infers regression' is violated — the autogluon parity claim for CRUX-O-02 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-02-002
+  rule: "the override wins and a contradictory override is rejected"
+  prediction: "problem_type=regression on a string label column is an Err naming the column, not a silent cast"
+  test: >-
+    LIVE-PENDING - the override wins and a contradictory override is rejected. No test surface exists today because the capability is unimplemented: Problem-type inference: binary / multiclass / regression / quantile from the label column (aprender#3372, CRUX-O-02). PROMOTE by authoring a test named override_contradiction_is_error in module `automl/problem_type/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'the override wins and a contradictory override is rejected' is violated — the autogluon parity claim for CRUX-O-02 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "two unique label values infer binary, 3..=N small-cardinality infer multiclass, many-unique numeric infers regression"
+- type: invariant
+  property: "the override wins and a contradictory override is rejected"
+
+kani_harnesses:
+- id: KH-CRUX-O-02-001
+  obligation: two_unique_label_values_infer_binary__3___n_small_cardinalit
+  property: two_unique_label_values_infer_binary__3___n_small_cardinalit_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-02-002
+  obligation: the_override_wins_and_a_contradictory_override_is_rejected
+  property: the_override_wins_and_a_contradictory_override_is_rejected_holds_on_bounded_input
+  bound: 4

@@ -19,7 +19,7 @@ impl OwnedQuantizedModel {
     /// [`RealizarError::ContextLimitExceeded`] when the PROMPT alone exceeds the
     /// context window (GH-167) — that one is unsatisfiable, and callers map it to
     /// HTTP 400 because it is determined entirely by the request.
-    fn effective_max_tokens(&self, prompt_len: usize, requested: usize) -> Result<usize> {
+    pub(crate) fn effective_max_tokens(&self, prompt_len: usize, requested: usize) -> Result<usize> {
         if prompt_len > self.config.context_length {
             return Err(RealizarError::ContextLimitExceeded {
                 provided: prompt_len,

@@ -216,10 +216,25 @@ fn the_tracked_repo_graph_is_fresh() {
     assert_eq!(r.code, 0, "{}", show(&r));
     let v = json_of(&r);
     assert!(v["triples"].as_u64().unwrap_or(0) > 5000, "{}", show(&r));
+    // MEASURED on this branch: `pv extract contracts --check` reports
+    // shapes_n=9, triples=15851 (the 0.69 batch, #3669, pinned pv 0.68.2 built from
+    // the tree; was 6 / 15620 before #3600 folded in). The count is deliberately hardcoded rather
+    // than derived — a shape added without anyone noticing is the thing this
+    // assertion exists to prevent, so adding one is SUPPOSED to turn it red and
+    // make you name the new shape here.
+    //
+    // It did exactly that for #3605's `refusal-receipt-v1`, and a quorum lane
+    // caught it rather than I did. Note for whoever merges second: this counter
+    // is shared across branches, so a sibling PR that also adds a shape
+    // (#3600's parity-receipt-v2) will need the number raised again at merge —
+    // that is the ratchet working, not a conflict to route around. It did: the
+    // 0.69 batch folded #3600 in and the count went 6 -> 9 with its three shapes. #3715 added the nine-shape
+    // `release-readiness-v1` family (shapes_n=18, triples=15863, measured on its branch); it contributes no focus
+    // node to a PR's graph — the release evidence is extracted only under `--release-*`.
     assert_eq!(
         v["shapes_n"],
-        5,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2)\n{}",
+        18,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715)\n{}",
         show(&r)
     );
 }

@@ -1,0 +1,293 @@
+{
+  "ticket": "PMAT-3644",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "d18529e56a5d2199e69c21a3c7af04155ec22efa",
+  "diff_sha256": "97335d80da3ee08206561778de09e5acedc0b313570eb35d49009f69eba5a2b6",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 32102,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "All acceptance criteria have been verified via static diff analysis. The diff correctly drops `name:` lines before checking for dispatches, adds the 3 case rows testing the step name blindness, adjusts `check_pathonly_devdeps_unused_in_src.sh` to gracefully fallback or exit with ENV (rc=2) and implements the SCAN-DONE trailer, rewrites the build tool comments to remove it from `cargo-using`, expands `unwired_guards_baseline.txt` with the other 3 now-visible dark guards, and updates `lib_baseline_ratchet.sh` to handle NAME-entry admissions via `set-aperture` with exactly 6 case rows matching criteria. No workflow files were edited.",
+      "findings": [
+        {
+          "claim": "check_guards_are_wired.sh drops name: lines before the invocation match, in dispatcher_wired() and the per-guard scan",
+          "file": "scripts/check_guards_are_wired.sh",
+          "grounding": "cited"
+        },
+        {
+          "claim": "rows 8-10 check the exact ci.yml step-name fixture, a quoted run: line, and a step named after a guard wires nothing",
+          "file": "scripts/check_guards_are_wired.sh",
+          "grounding": "cited"
+        },
+        {
+          "claim": "the mutation (remove the drop) turns rows 8 and 10 RED",
+          "file": "scripts/check_guards_are_wired.sh",
+          "grounding": "asserted"
+        },
+        {
+          "claim": "check_pathonly_devdeps_unused_in_src.sh falls back to tomli, exits with ENV rc=2, and requires a SCAN-DONE trailer",
+          "file": "scripts/check_pathonly_devdeps_unused_in_src.sh",
+          "grounding": "cited"
+        },
+        {
+          "claim": "five death rows incl. the whole guard under the intel shape",
+          "file": "scripts/check_pathonly_devdeps_unused_in_src.sh",
+          "grounding": "cited"
+        },
+        {
+          "claim": "comments reworded so CARGO_RE no longer classifies it out of --no-cargo",
+          "file": "scripts/check_pathonly_devdeps_unused_in_src.sh",
+          "grounding": "cited"
+        },
+        {
+          "claim": "unwired_guards_baseline.txt records the other three dark guards as APERTURE REVEALS",
+          "file": "scripts/unwired_guards_baseline.txt",
+          "grounding": "cited"
+        },
+        {
+          "claim": "set-aperture gains a NAME-entry admission with six case rows for acceptance vs refusal",
+          "file": "scripts/lib_baseline_ratchet.sh",
+          "grounding": "cited"
+        },
+        {
+          "claim": "No workflow file is edited",
+          "file": "docs/roadmaps/entries/PMAT-3644.yaml",
+          "grounding": "asserted"
+        }
+      ],
+      "raw_bytes": 7984,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly matches the requirements in PMAT-3644. All expected behaviors, tests, and file modifications requested in the acceptance criteria have been found exactly as specified.",
+      "findings": [
+        {
+          "claim": "The name: dropping logic is wired correctly before invocation match, and tests 8-10 verify it.",
+          "file": "scripts/check_guards_are_wired.sh",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The check_pathonly_devdeps_unused_in_src.sh now properly handles python 3.10 environments missing tomllib by falling back to tomli, and exits with ENV rc=2 if neither is available. It also enforces SCAN-DONE trailer.",
+          "file": "scripts/check_pathonly_devdeps_unused_in_src.sh",
+          "grounding": "cited"
+        },
+        {
+          "claim": "unwired_guards_baseline.txt includes the 3 dark guards added as set-aperture reveals, correctly explaining why check_pathonly_devdeps_unused_in_src.sh is omitted.",
+          "file": "scripts/unwired_guards_baseline.txt",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The check_baseline_ratchets.sh has exactly 6 case rows for NAME entries, matching the acceptance criteria perfectly.",
+          "file": "scripts/check_baseline_ratchets.sh",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 4383,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff reviewed and verified against PMAT-3644. All requirements have been met without refutation:\n1. `check_guards_are_wired.sh` drops `name:` lines before matching dispatches, preventing step names from miscounting as guard invocations. Self-tests 8-10 verify this, and mutating out `_not_a_name_line` turns rows 8 and 10 RED.\n2. `check_pathonly_devdeps_unused_in_src.sh` supports `tomllib` -> `tomli` -> ENV `rc=2`, requires `SCAN-DONE` trailer, and passes 5 death rows. Reworded comments remove `cargo ` token matches so `guard_tree.sh --no-cargo` now runs it.\n3. `unwired_guards_baseline.txt` records the 3 dark guards revealed as `set-aperture` admissions owned by `check_guards_are_wired.sh`, with `lib_baseline_ratchet.sh` supporting NAME-entry admissions and 6 test case rows in `check_baseline_ratchets.sh`. No workflow files were edited.",
+      "findings": [
+        {
+          "claim": "check_guards_are_wired.sh filters out name: lines prior to matching invocations in both dispatcher_wired() and unwired_in(), correctly preventing step names like \"guard_tree.sh's own case table\" from blinding the meta-guard. Passes self-test rows 8-10, and removing the drop turns rows 8 and 10 RED.",
+          "command": "bash /tmp/ws_test/scripts/check_guards_are_wired.sh --self-test",
+          "file": "scripts/check_guards_are_wired.sh",
+          "grounding": "measured",
+          "line": 80,
+          "output": "ok    row 1 the unwired guard is reported, the wired one is not\nok    row 2 wiring it clears the report\nok    row 3 a guard dispatched by guard_tree.sh --no-cargo counts as wired\nok    row 4 removing the dispatcher line brings the guard back as unwired\nok    row 5 a guard wired only in guards-nightly.yml counts as wired\nok    row 6 a guard wired in no workflow at all is still reported\nok    row 7 deleting the nightly workflow brings its guard back as unwired\nok    row 8 a step NAMED guard_tree.sh's ... is not a dispatch; the guard stays unwired\nok    row 9 a QUOTED run: line still dispatches (the control for row 8)\nok    row 10 a step named after a guard wires nothing\n\nSELF-TEST PASSED (10/10)"
+        },
+        {
+          "claim": "check_pathonly_devdeps_unused_in_src.sh now tries tomllib then tomli and returns ENV rc=2 when neither is present; requires a SCAN-DONE trailer to ensure the scanner completed; passes all 5 death rows; and rewording comments eliminates CARGO_RE matches so it is included in --no-cargo execution.",
+          "command": "bash scripts/check_pathonly_devdeps_unused_in_src.sh --selftest",
+          "file": "scripts/check_pathonly_devdeps_unused_in_src.sh",
+          "grounding": "measured",
+          "line": 55,
+          "output": "ok    death  rc=2  both TOML readers absent (the intel shape) -> ENV rc=2\nok    death  rc=2  interpreter exits 1 with no output -> ENV rc=2, never 1\nok    death  rc=2  no interpreter at all (rc=127) -> ENV rc=2\nok    death  rc=0  the working interpreter, as the control -> rc=0\nok    death  rc=2  the whole guard under the intel shape exits ENV with no row verdict\nPASS: case table (4 must-match, 7 must-not-match, 5 death rows)"
+        },
+        {
+          "claim": "check_baseline_ratchets.sh classifies unwired_guards_baseline.txt as set-aperture owned by scripts/check_guards_are_wired.sh, and lib_baseline_ratchet.sh implements NAME-entry set-aperture rules with 6 case rows in self-test.",
+          "command": "bash scripts/check_baseline_ratchets.sh --self-test",
+          "file": "scripts/check_baseline_ratchets.sh",
+          "grounding": "measured",
+          "line": 96,
+          "output": "PASS  case table only: 61 rows (set, count, keyed, keyed2, comparand resolver,\n      end-to-end, classification totality). NO baseline in this tree was\n      compared — run with no arguments for that."
+        },
+        {
+          "claim": "unwired_guards_baseline.txt records the 3 dark guards revealed by fixing check_guards_are_wired.sh (check_model_ladder.sh, check_pr_review_counts.sh, check_pr_review_receipt.sh) with detailed notes, while check_pathonly_devdeps_unused_in_src.sh is correctly omitted as it is now wired via guard_tree.sh --no-cargo.",
+          "file": "scripts/unwired_guards_baseline.txt",
+          "grounding": "cited",
+          "line": 5
+        }
+      ],
+      "raw_bytes": 10261,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "docs/roadmaps/entries/PMAT-3644.yaml",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "No workflow file is edited"
+      ]
+    },
+    {
+      "file": "scripts/check_baseline_ratchets.sh",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The check_baseline_ratchets.sh has exactly 6 case rows for NAME entries, matching the acceptance criteria perfectly."
+      ]
+    },
+    {
+      "file": "scripts/check_baseline_ratchets.sh",
+      "line": 96,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "check_baseline_ratchets.sh classifies unwired_guards_baseline.txt as set-aperture owned by scripts/check_guards_are_wired.sh, and lib_baseline_ratchet.sh implements NAME-entry set-aperture rules with 6 case rows in self-test."
+      ]
+    },
+    {
+      "file": "scripts/check_guards_are_wired.sh",
+      "line": null,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "The name: dropping logic is wired correctly before invocation match, and tests 8-10 verify it.",
+        "check_guards_are_wired.sh drops name: lines before the invocation match, in dispatcher_wired() and the per-guard scan",
+        "rows 8-10 check the exact ci.yml step-name fixture, a quoted run: line, and a step named after a guard wires nothing",
+        "the mutation (remove the drop) turns rows 8 and 10 RED"
+      ]
+    },
+    {
+      "file": "scripts/check_guards_are_wired.sh",
+      "line": 80,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "check_guards_are_wired.sh filters out name: lines prior to matching invocations in both dispatcher_wired() and unwired_in(), correctly preventing step names like \"guard_tree.sh's own case table\" from blinding the meta-guard. Passes self-test rows 8-10, and removing the drop turns rows 8 and 10 RED."
+      ]
+    },
+    {
+      "file": "scripts/check_pathonly_devdeps_unused_in_src.sh",
+      "line": null,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "The check_pathonly_devdeps_unused_in_src.sh now properly handles python 3.10 environments missing tomllib by falling back to tomli, and exits with ENV rc=2 if neither is available. It also enforces SCAN-DONE trailer.",
+        "check_pathonly_devdeps_unused_in_src.sh falls back to tomli, exits with ENV rc=2, and requires a SCAN-DONE trailer",
+        "comments reworded so CARGO_RE no longer classifies it out of --no-cargo",
+        "five death rows incl. the whole guard under the intel shape"
+      ]
+    },
+    {
+      "file": "scripts/check_pathonly_devdeps_unused_in_src.sh",
+      "line": 55,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "check_pathonly_devdeps_unused_in_src.sh now tries tomllib then tomli and returns ENV rc=2 when neither is present; requires a SCAN-DONE trailer to ensure the scanner completed; passes all 5 death rows; and rewording comments eliminates CARGO_RE matches so it is included in --no-cargo execution."
+      ]
+    },
+    {
+      "file": "scripts/lib_baseline_ratchet.sh",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "set-aperture gains a NAME-entry admission with six case rows for acceptance vs refusal"
+      ]
+    },
+    {
+      "file": "scripts/unwired_guards_baseline.txt",
+      "line": null,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "unwired_guards_baseline.txt includes the 3 dark guards added as set-aperture reveals, correctly explaining why check_pathonly_devdeps_unused_in_src.sh is omitted.",
+        "unwired_guards_baseline.txt records the other three dark guards as APERTURE REVEALS"
+      ]
+    },
+    {
+      "file": "scripts/unwired_guards_baseline.txt",
+      "line": 5,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "unwired_guards_baseline.txt records the 3 dark guards revealed by fixing check_guards_are_wired.sh (check_model_ladder.sh, check_pr_review_counts.sh, check_pr_review_receipt.sh) with detailed notes, while check_pathonly_devdeps_unused_in_src.sh is correctly omitted as it is now wired via guard_tree.sh --no-cargo."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

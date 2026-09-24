@@ -226,6 +226,19 @@ impl fmt::Display for UnknownGate {
 
 impl std::error::Error for UnknownGate {}
 
+/// aprender#3715: a `--shape` / `--release-*` flag set that cannot name a release (a partial subject, a short
+/// sha, a flag outside `--gate shapes`). The CALLER's error, exit 3 — never a verdict about the evidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseArgsRefused(pub String);
+
+impl fmt::Display for ReleaseArgsRefused {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for ReleaseArgsRefused {}
+
 /// Exit status of an `armed_gates` list that dropped a gate its comparand armed (ONT-001 §3.9).
 pub const ARMED_GATES_SHRANK_EXIT: i32 = 3;
 
@@ -239,6 +252,7 @@ pub fn exit_code_for(err: &(dyn std::error::Error + 'static)) -> i32 {
     } else if err.downcast_ref::<ArmedGatesShrank>().is_some()
         || err.downcast_ref::<ArmedShapesShrank>().is_some()
         || err.downcast_ref::<SigmaMalformed>().is_some()
+        || err.downcast_ref::<ReleaseArgsRefused>().is_some()
     {
         ARMED_GATES_SHRANK_EXIT
     } else {

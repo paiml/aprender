@@ -1,0 +1,21 @@
+- id: PMAT-3385
+  github_issue: 3385
+  item_type: task
+  title: 'P2: Inference-latency constraint during model selection (infer_limit, infer_limit_batch_size) — CRUX-O-15'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-15, competitor autogluon, demand 3. No model or ensemble is ever excluded for being slow at predict time; leaderboard timings (O-04) do not exist to compare against. FALSIFIABLE (contracts/crux-O-15-v1.yaml): the selected ensemble respects the per-row latency limit — with infer_limit=L the measured pred_time per row of the final model <= L AND at least one faster-but-worse model was preferred over a slower-but-better one (asserted on a fixture built to force the trade). Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

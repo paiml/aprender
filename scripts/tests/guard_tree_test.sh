@@ -554,6 +554,93 @@ else
         "matches=${n_real_ledger:-0}"
 fi
 
+# ---------------------------------------------------------------------------
+# 22-27. A PASSING guard's UNMEASURED / SUMMARY lines reach the log (#3651).
+#     guard_tree.sh recorded a passing guard as its label alone, so a guard
+#     that exits 0 on "not measured here" and one that measured and passed
+#     printed the same `PASS` row. The fixture holds one guard per shape; the
+#     rows assert what is surfaced AND what is not, and 27 deletes the
+#     surfacing and proves 22 and 23 turn RED.
+# ---------------------------------------------------------------------------
+sfix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $sfix"
+mkdir -p "$sfix/.empty-git-template" "$sfix/scripts"
+git -C "$sfix" init -q --template="$sfix/.empty-git-template"
+git -C "$sfix" config user.email test@example.invalid
+git -C "$sfix" config user.name "guard_tree_test"
+cp "$GUARD_TREE" "$sfix/scripts/guard_tree.sh"
+printf '#!/usr/bin/env bash\necho "noise before"\necho "UNMEASURED runner=r1 reason=no-pin -- not measured here"\nexit 0\n' \
+    >"$sfix/scripts/check_s_unmeasured.sh"
+printf '#!/usr/bin/env bash\necho "SUMMARY PASS verdict=Pass runner=r2 pv=/x version=9"\necho "detail line"\nexit 0\n' \
+    >"$sfix/scripts/check_s_summary.sh"
+printf '#!/usr/bin/env bash\necho "ok    row 3 the word UNMEASURED mid-line and SUMMARY mid-line are not markers"\necho "UNMEASUREDX is not the word"\nexit 0\n' \
+    >"$sfix/scripts/check_s_midline.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$sfix/scripts/check_s_silent.sh"
+printf '#!/usr/bin/env bash\nfor i in 1 2 3 4 5 6 7; do echo "SUMMARY line $i"; done\nexit 0\n' \
+    >"$sfix/scripts/check_s_chatty.sh"
+git -C "$sfix" add -A
+git -C "$sfix" -c commit.gpgsign=false commit -q -m fixture
+
+s_out="$(cd "$sfix" && bash scripts/guard_tree.sh 2>&1)"
+# the row a guard's line lands under: the nearest PASS/FAIL row above it
+under() { # under <guard-basename> -> the surfaced lines beneath that guard's [run] row
+    awk -v g="scripts/$1 [run]" '
+        /^(PASS|FAIL)  / { cur = ($0 == "PASS  " g || $0 == "FAIL  " g); next }
+        cur && /^      ~ / { print }
+    ' <<<"$s_out"
+}
+
+u="$(under check_s_unmeasured.sh)"
+if [ "$u" = "      ~ UNMEASURED runner=r1 reason=no-pin -- not measured here" ]; then
+    pass_row "22: a passing guard's UNMEASURED line is surfaced under its PASS row (no opt-in)"
+else
+    fail_row "22: a passing guard's UNMEASURED line is surfaced under its PASS row" "got [$u] in: $s_out"
+fi
+
+u="$(under check_s_summary.sh)"
+if [ "$u" = "      ~ SUMMARY PASS verdict=Pass runner=r2 pv=/x version=9" ]; then
+    pass_row "23: a passing guard's SUMMARY line is surfaced; its other output is not"
+else
+    fail_row "23: a passing guard's SUMMARY line is surfaced" "got [$u]"
+fi
+
+u="$(under check_s_midline.sh)"
+if [ -z "$u" ]; then
+    pass_row "24: the words mid-line (or as a prefix of another word) are not markers"
+else
+    fail_row "24: the words mid-line are not markers" "surfaced [$u]"
+fi
+
+u="$(under check_s_silent.sh)"
+if [ -z "$u" ] && grep -qx 'PASS  scripts/check_s_silent.sh \[run\]' <<<"$s_out"; then
+    pass_row "25: a silent passing guard prints its PASS row and nothing under it"
+else
+    fail_row "25: a silent passing guard prints only its PASS row" "got [$u]"
+fi
+
+u="$(under check_s_chatty.sh)"
+n_u="$(grep -c . <<<"$u")"
+if [ "${n_u:-0}" -eq 6 ] && grep -qx '      ~ (+2 more UNMEASURED/SUMMARY line(s))' <<<"$u"; then
+    pass_row "26: seven SUMMARY lines are capped at 5 plus a (+2 more) count"
+else
+    fail_row "26: SUMMARY lines are capped at 5 plus a count" "got $n_u line(s): [$u]"
+fi
+
+# 27. The mutant: surfacing deleted. 22 and 23 must turn RED over the same fixture.
+sed 's/^            surface_pass_summary "\$w_cap" >> "\$w_rows"$/            :/' \
+    "$GUARD_TREE" >"$sfix/scripts/guard_tree.sh"
+if cmp -s "$GUARD_TREE" "$sfix/scripts/guard_tree.sh"; then
+    fail_row "27: mutant with the surfacing deleted" "the sed did not apply -- the mutant is the original"
+else
+    s_out="$(cd "$sfix" && bash scripts/guard_tree.sh 2>&1)"
+    if [ -z "$(under check_s_unmeasured.sh)" ] && [ -z "$(under check_s_summary.sh)" ]; then
+        pass_row "27: mutant with the surfacing deleted loses rows 22 and 23 (the assertion can fail)"
+    else
+        fail_row "27: mutant with the surfacing deleted" "rows 22/23 still green under the mutant"
+    fi
+fi
+cp "$GUARD_TREE" "$sfix/scripts/guard_tree.sh"
+
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then
     exit 1

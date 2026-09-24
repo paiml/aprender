@@ -13,8 +13,8 @@ use std::path::Path;
 
 use crate::error::{AprenderError, Result};
 use crate::format::model_family::{
-    Activation, AttentionType, CertificationConfig, ChatTemplateConfig, DynModelFamily,
-    FamilyRegistry, GgufFusionRule, GgufTensorTemplate, MlpType, ModelConstraints,
+    Activation, AttentionType, CertificationConfig, ChatTemplateConfig, DeltaNetShape,
+    DynModelFamily, FamilyRegistry, GgufFusionRule, GgufTensorTemplate, MlpType, ModelConstraints,
     ModelFamilyConfig, ModelSizeConfig, NormType, PositionalEncoding, ShapeTemplate,
     TensorTemplate,
 };

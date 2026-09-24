@@ -2,6 +2,7 @@ use std::path::Path;
 
 use provable_contracts::lint::config::{find_config, load_config};
 use provable_contracts::lint::rules::RuleSeverity;
+use provable_contracts::lint::shapes_gate::ShapesOptions;
 use provable_contracts::lint::trend;
 use provable_contracts::lint::{run_lint, GateDetail, LintConfig, LintReport};
 use provable_contracts::ontology::verdict::Verdict;
@@ -48,10 +49,16 @@ pub fn run(
     strict_test_binding: bool,
     armed_baseline_ref: Option<&str>,
     gate: Option<&str>,
+    shapes_opts: ShapesOptions,
 ) -> Result<(), Box<dyn std::error::Error>> {
     refuse_missing_corpus(contract_dir)?;
+    // Both preconditions before any dispatch: a single file under
+    // --strict-test-binding is refused (this PR) whether or not --gate (ONT-6)
+    // is asked for, because run_single_gate would otherwise report every ref
+    // missing on exactly the input the refusal exists for.
+    refuse_single_file_strict_binding(contract_dir, strict_test_binding)?;
     if let Some(name) = gate {
-        return run_single_gate(contract_dir, name);
+        return run_single_gate(contract_dir, name, &shapes_opts);
     }
     if watch {
         return run_watch(
@@ -155,6 +162,28 @@ fn report_coverage(
     }
 }
 
+/// aprender#3715: `--shape` and `--release-*` as the shapes gate's options. They mean something ONLY under
+/// `--gate shapes`; anywhere else they are refused (exit 3), because a release flag that was silently ignored is
+/// a release gate that silently did not run.
+pub fn shapes_options(
+    gate: Option<&str>,
+    shape: Option<String>,
+    release: &crate::cli::ReleaseArgs,
+) -> Result<ShapesOptions, crate::contract_walk::ReleaseArgsRefused> {
+    use crate::contract_walk::ReleaseArgsRefused;
+    if (shape.is_some() || release.any()) && gate != Some("shapes") {
+        return Err(ReleaseArgsRefused(
+            "--shape and --release-* / --receipts* / --kernel-receipts / --dogfood-receipt apply only to \
+             `--gate shapes`"
+                .into(),
+        ));
+    }
+    Ok(ShapesOptions {
+        only: shape,
+        release: release.subject().map_err(ReleaseArgsRefused)?,
+    })
+}
+
 /// One gate's report. NOT a `LintReport`: `--gate` answers about one gate, and a reader must be able to tell the
 /// two apart without counting keys.
 #[derive(serde::Serialize)]
@@ -182,8 +211,12 @@ struct SingleGateFinding<'a> {
 
 /// ONT-2b: `--gate <name>` runs ONE gate and reports only it, mapping its verdict through ONT-6's lattice —
 /// Pass 0 · Fail 1 `reject:` · no Σ 2 `decline:` (R-2, zero is a decline) · malformed Σ 3 `error:`.
-fn run_single_gate(contract_dir: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let (result, findings) = decide_named_gate(contract_dir, name)?;
+fn run_single_gate(
+    contract_dir: &Path,
+    name: &str,
+    shapes_opts: &ShapesOptions,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (result, findings) = decide_named_gate(contract_dir, name, shapes_opts)?;
 
     let report = SingleGateReport {
         gate: &result.name,
@@ -230,12 +263,13 @@ type NamedGateAnswer = (
 fn decide_named_gate(
     contract_dir: &Path,
     name: &str,
+    shapes_opts: &ShapesOptions,
 ) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
     use provable_contracts::lint::{
         relations_gate::RelationsOutcome, sigma_gate::SigmaOutcome, NamedGateOutcome, NAMED_GATES,
     };
 
-    match provable_contracts::lint::run_named_gate(contract_dir, name) {
+    match provable_contracts::lint::run_named_gate_with(contract_dir, name, shapes_opts) {
         NamedGateOutcome::UnknownGate => Err(crate::contract_walk::UnknownGate {
             asked: name.to_string(),
             known: NAMED_GATES.iter().map(|g| (*g).to_string()).collect(),
@@ -287,6 +321,23 @@ fn decide_shapes_gate(
             reason: Reason::NoFocus,
         }
         .into()),
+        ShapesOutcome::WrongCorpus {
+            shapes_n,
+            expected,
+            found,
+            refused,
+        } => {
+            eprintln!(
+                "shapes: extract:parity-receipt matched {found} focus node(s);                  evidence/parity/EXPECTED_RECEIPTS says {expected} ({shapes_n} shape(s))"
+            );
+            for r in &refused {
+                eprintln!("shapes: refused {r}");
+            }
+            Err(LintDeclined {
+                reason: Reason::WrongCorpus,
+            }
+            .into())
+        }
         ShapesOutcome::NoReceipts { shapes_n, dir } => {
             // ONT-4c1: the WHY travels with the decline — the lattice has no ReceiptUnmeasured element (ONT-6's
             // 15 reasons), so the reason is NoCheckable and this line says what could not be checked.
@@ -431,6 +482,56 @@ fn show_trend_history(contract_dir: &Path) {
 /// Permission denied` AHEAD of the refusal: two stderr lines for one decline,
 /// three under `--diff`. `has_contract_files` does not parse; the post-report
 /// guard in `run` stays for a corpus that parses to nothing.
+/// `pv lint <one-file> --strict-test-binding` REFUSES rather than reporting a
+/// false negative (#3347).
+///
+/// The gate resolves cited test names against a source index rooted at the
+/// contract path's PARENT. For the directory form that parent is the repo
+/// root and the index finds `crates/`; for a single file it is `contracts/`,
+/// which holds no source at all, so every cited ref resolves to nothing and
+/// every one is reported missing.
+///
+/// Measured on `contracts/pv-artifact-kinds-v1.yaml`, a contract whose eight
+/// refs all resolve:
+///
+/// ```text
+/// pv lint contracts/pv-artifact-kinds-v1.yaml --strict-test-binding
+///     total_refs 8, existing 0, missing 8
+/// pv lint contracts/ --strict-test-binding
+///     total_refs 548, existing 521, missing 27   <- and none of the 27 is this contract
+/// ```
+///
+/// A control contract failing identically to a broken one is the definition
+/// of a gate that cannot discriminate, so the single-file form is refused.
+///
+/// REFUSED rather than repaired: the scan root is computed inside
+/// `provable_contracts::lint`, which this ticket does not own. A refusal is
+/// in the caller, is honest, and cannot be mistaken for a clean bill.
+///
+/// Exit 1, not the exit-2 `decline:` class: exit 2 belongs to `ZeroContracts`
+/// and its message ("0 contracts under ...") would be false here -- there IS
+/// a contract, it is the gate that cannot run over it.
+fn refuse_single_file_strict_binding(
+    path: &Path,
+    strict_test_binding: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !strict_test_binding || !path.is_file() {
+        return Ok(());
+    }
+    let dir = path.parent().unwrap_or(Path::new("contracts"));
+    Err(format!(
+        "--strict-test-binding cannot run over a single contract file ({}): \
+         the gate resolves cited test names against a source tree rooted at \
+         that file's parent directory, which holds contracts and no source, \
+         so every reference would be reported missing -- including those that \
+         do resolve. Run the directory form instead: \
+         `pv lint {} --strict-test-binding`.",
+        path.display(),
+        dir.display(),
+    )
+    .into())
+}
+
 fn refuse_missing_corpus(contract_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     if crate::contract_walk::has_contract_files(contract_dir) {
         return Ok(());

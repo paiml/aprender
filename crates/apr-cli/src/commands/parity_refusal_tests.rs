@@ -5,7 +5,7 @@
 
 #[cfg(all(test, feature = "inference"))]
 mod parity_refusal_case_table {
-    use super::{parity_refusal_for, PARITY_REFUSED_EXIT};
+    use super::{capability_refusal, cuda_init_error, parity_refusal_for, PARITY_REFUSED_EXIT};
 
     /// The three architectures the 0.68.0 T-2 dogfood measured as FAIL rows.
     /// Each one is a TOOL refusal, not a model defect.
@@ -182,5 +182,75 @@ mod parity_refusal_case_table {
         // judge reads, or `check_model_parity.sh` would judge an empty run.
         assert!(v.get("metrics").is_none(), "a refusal has no metrics");
         assert!(v.get("parity").is_none(), "a refusal makes no parity claim");
+    }
+
+    /// #3685: what the PMAT-785 capability gate returns for an F16 model, verbatim in shape.
+    fn f16_capability_mismatch() -> realizar::error::RealizarError {
+        realizar::error::RealizarError::CapabilityMismatch {
+            architecture: "qwen2".to_string(),
+            missing_ops: "GPU GEMV kernel for the model's quantization type".to_string(),
+            suggestion: "Model carries a quant type without a verified GPU kernel (e.g. \
+                         Q5_1/Q8_1/Q2_K/Q3_K/Q8_K/F16/IQ*). It will use CPU inference to avoid \
+                         silent Q4_K-decode garbage (PMAT-785)."
+                .to_string(),
+        }
+    }
+
+    /// #3685: a CUDA init the capability gate refused is a REFUSAL (exit 12) carrying the
+    /// one line check_model_parity.sh reads as UNMEASURED-TOOL, never "parity disproven"
+    /// (exit 5): nothing was compared.
+    #[test]
+    fn parity_refusal_3685_capability_refused_quant_is_exit_12_with_the_refusal_line() {
+        let err = f16_capability_mismatch();
+        let r = capability_refusal("qwen2", Some(1), &err).expect("a capability refusal");
+        assert_eq!(
+            r.line(),
+            format!("parity: REFUSED architecture=qwen2 quant=F16 reason={err}"),
+            "the one stderr line the issue specifies"
+        );
+        assert!(r.line().starts_with("parity: REFUSED architecture="), "the prefix C14 greps");
+        let code = r.into_error().exit_code_value();
+        assert_eq!(code, PARITY_REFUSED_EXIT, "a refusal exits 12");
+        assert_ne!(code, 5, "5 means a comparison ran and failed; none ran");
+    }
+
+    /// The gate can also refuse for a missing op rather than a quant type: still a refusal,
+    /// and the line then names no quant.
+    #[test]
+    fn parity_refusal_3685_capability_refusal_without_a_named_quant_is_still_exit_12() {
+        let err = f16_capability_mismatch();
+        let r = capability_refusal("phi3", None, &err).expect("a capability refusal");
+        assert!(r.line().contains("architecture=phi3") && !r.line().contains("quant="));
+        assert_eq!(r.into_error().exit_code_value(), PARITY_REFUSED_EXIT);
+    }
+
+    /// Any OTHER CUDA init failure (an OOM, a driver error) is not a refusal: the caller
+    /// keeps mapping it as before, so a real crash is never laundered as UNMEASURED-TOOL.
+    #[test]
+    fn parity_refusal_3685_other_cuda_init_errors_are_not_refusals() {
+        let oom = realizar::error::RealizarError::InferenceError("cuMemAlloc: out of memory".into());
+        assert!(capability_refusal("qwen2", Some(1), &oom).is_none());
+    }
+
+    /// `--json` carries the quant too, and still no parity result.
+    #[test]
+    fn parity_refusal_3685_capability_refusal_json_names_the_quant() {
+        let r = capability_refusal("qwen2", Some(1), &f16_capability_mismatch()).expect("refused");
+        let v = r.json();
+        let refused = v.get("refused").expect("top-level `refused` key");
+        assert_eq!(refused.get("quant").and_then(|q| q.as_str()), Some("F16"));
+        assert!(v.get("metrics").is_none() && v.get("parity").is_none());
+    }
+
+    /// #3685, the decision `apr parity` actually takes on a failed CUDA init: a capability
+    /// refusal is exit 12, and any other init error is still 5. Map the refusal back to
+    /// `ValidationFailed` and this row fails; that is the issue's mutation.
+    #[test]
+    fn parity_refusal_3685_cuda_init_error_maps_refusal_to_12_and_the_rest_to_5() {
+        let refused = cuda_init_error("qwen2", Some(1), f16_capability_mismatch(), false);
+        assert_eq!(refused.exit_code_value(), PARITY_REFUSED_EXIT, "capability refusal");
+        let oom = realizar::error::RealizarError::InferenceError("cuMemAlloc: out of memory".into());
+        let crashed = cuda_init_error("qwen2", Some(1), oom, false);
+        assert_eq!(crashed.exit_code_value(), 5, "a real init failure keeps its old code");
     }
 }

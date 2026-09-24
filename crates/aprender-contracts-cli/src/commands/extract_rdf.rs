@@ -10,6 +10,9 @@ use std::path::Path;
 
 use provable_contracts::lint::shapes_gate::collect_shapes;
 use provable_contracts::ontology::extract;
+use provable_contracts::ontology::extract::release_inputs::Subject;
+
+use crate::contract_walk::ReleaseArgsRefused;
 use provable_contracts::ontology::shapes::to_turtle;
 use sha2::{Digest, Sha256};
 
@@ -22,8 +25,24 @@ struct ExtractReport<'a> {
     check: Option<Vec<String>>,
 }
 
-/// `check == true` → compare and report drift, write nothing.
-pub fn run(contract_dir: &Path, check: bool) -> Result<(), Box<dyn std::error::Error>> {
+/// `check == true` → compare and report drift, write nothing. With a release `subject` (aprender#3715) the
+/// release evidence joins the graph, and the result goes ONLY to `out`: the tracked `contracts.nt` is the corpus,
+/// and a release's receipts written into it would be a release baked into every later PR's baseline.
+pub fn run(
+    contract_dir: &Path,
+    check: bool,
+    subject: Option<&Subject>,
+    out: Option<&Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(subject) = subject {
+        return run_release(contract_dir, check, subject, out);
+    }
+    if out.is_some() {
+        return Err(ReleaseArgsRefused(
+            "--out writes the release evidence graph; it needs --release-version and --release-commit".into(),
+        )
+        .into());
+    }
     let extraction = match extract::all(contract_dir) {
         Ok(x) => x,
         Err(e) => {
@@ -88,5 +107,56 @@ pub fn run(contract_dir: &Path, check: bool) -> Result<(), Box<dyn std::error::E
         }
         std::process::exit(1);
     }
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct ReleaseExtractReport<'a> {
+    triples: usize,
+    sha256: String,
+    out: &'a str,
+    release: provable_contracts::ontology::extract::release_evidence::ReleaseStats,
+}
+
+/// `pv extract --release-version V --release-commit MC … --out FILE`: the corpus graph plus the release evidence,
+/// written to FILE (never to the tracked files), with its content address and what was derived.
+fn run_release(
+    contract_dir: &Path,
+    check: bool,
+    subject: &Subject,
+    out: Option<&Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if check {
+        return Err(ReleaseArgsRefused(
+            "--check compares the TRACKED corpus files; a release graph is never tracked, so --check with \
+             --release-* has nothing to compare"
+                .into(),
+        )
+        .into());
+    }
+    let Some(out) = out else {
+        return Err(ReleaseArgsRefused(
+            "--release-* needs --out FILE: the release graph is never written into the tracked contracts.nt".into(),
+        )
+        .into());
+    };
+    let extraction = match extract::all_with(contract_dir, Some(subject)) {
+        Ok(x) => x,
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::exit(3);
+        }
+    };
+    let nt = extraction.graph.to_ntriples();
+    let mut hasher = Sha256::new();
+    hasher.update(nt.as_bytes());
+    std::fs::write(out, &nt)?;
+    let report = ReleaseExtractReport {
+        triples: extraction.graph.len(),
+        sha256: format!("{:x}", hasher.finalize()),
+        out: out.to_str().unwrap_or("?"),
+        release: extraction.release.unwrap_or_default(),
+    };
+    println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }

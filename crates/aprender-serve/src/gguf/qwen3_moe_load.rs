@@ -83,35 +83,26 @@ pub struct Qwen3MoeQuantizedLayer {
 /// fails if the two drift in either direction.
 pub(crate) const SUPPORTED_EXPERT_QTYPES: &[u32] = &[GGUF_TYPE_Q4_K, GGUF_TYPE_Q6_K];
 
-/// `(ggml type id, name)` for the qtypes this crate's GGUF reader knows.
+/// Render a qtype id as `NAME(id)`, or bare `qtype N` when the id is not a
+/// live ggml type.
 ///
-/// Used only to make a refusal readable ("Q4_0 (2)" rather than "2").
-/// A table rather than a `match` so the lookup stays complexity-1.
-const QTYPE_LABELS: &[(u32, &str)] = &[
-    (0, "F32"),
-    (1, "F16"),
-    (2, "Q4_0"),
-    (3, "Q4_1"),
-    (6, "Q5_0"),
-    (7, "Q5_1"),
-    (8, "Q8_0"),
-    (10, "Q2_K"),
-    (11, "Q3_K"),
-    (12, "Q4_K"),
-    (13, "Q5_K"),
-    (14, "Q6_K"),
-    (30, "BF16"),
-];
-
-/// Render a qtype id as `NAME (id)`, or bare `qtype N` when unknown.
+/// PMAT-3430: this used to consult `QTYPE_LABELS`, a private 13-row table of
+/// (id, name) — the FOURTH copy in the tree of the same fact, added by #3405
+/// while three enums of it already existed. It now reads the one table.
+///
+/// Two consequences, both deliberate:
+/// - **it goes through `from_id`, never `TRAITS[id]`**, because this function
+///   takes an arbitrary `u32` from a file and a raw index would panic for any
+///   id >= 43;
+/// - **it is not filtered by serve's admitted set.** This is a DIAGNOSTIC, not
+///   an admission boundary: naming ids 9, 15 and 16..29 in a refusal instead of
+///   printing `qtype 21` is strictly better for the reader, and the refusal
+///   still happens either way. The 13 names it used to produce are unchanged.
 fn qtype_label(qtype: u32) -> String {
-    QTYPE_LABELS
-        .iter()
-        .find(|(id, _)| *id == qtype)
-        .map_or_else(
-            || format!("qtype {qtype}"),
-            |(_, n)| format!("{n}({qtype})"),
-        )
+    crate::gguf::GgmlQuantType::from_id(qtype).map_or_else(
+        || format!("qtype {qtype}"),
+        |t| format!("{}({qtype})", t.as_str()),
+    )
 }
 
 /// Render [`SUPPORTED_EXPERT_QTYPES`] for an error message.

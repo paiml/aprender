@@ -1,0 +1,75 @@
+# CRUX-O-09 — Time-budgeted portfolio fit: time_limit split across models, each model early-stopped on its share
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3379, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-09
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  github_issue: 3379
+  description: >
+    Time-budgeted portfolio fit: time_limit split across models, each model early-stopped on its share. Competitor verb: fit(..., time_limit=3600). Gap measured in aprender at eb262f8eb: TimeBudget and EarlyStopping exist in automl/tuner.rs but budget ONE tuner. There is no allocation of a global limit across an ordered portfolio, no per-model time share, and no 'skip the rest' when the budget is exhausted.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3379'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  the_wall_clock_of_fit_never_exceeds_time_limit_by_more_than_:
+    formula: |
+      with time_limit=5s on a portfolio that would take >60s unconstrained, elapsed <= 5s + 1s AND at least one model was skipped with reason=budget in the summary
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "the wall-clock of fit never exceeds time_limit by more than the tolerance"
+  the_budget_is_redistributed_when_a_model_finishes_early:
+    formula: |
+      a model that uses 10% of its share returns the remainder to the pool; the next model's share is asserted larger than the naive equal split
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "the budget is redistributed when a model finishes early"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-09-001
+  rule: "the wall-clock of fit never exceeds time_limit by more than the tolerance"
+  prediction: "with time_limit=5s on a portfolio that would take >60s unconstrained, elapsed <= 5s + 1s AND at least one model was skipped with reason=budget in the summary"
+  test: >-
+    LIVE-PENDING - the wall-clock of fit never exceeds time_limit by more than the tolerance. No test surface exists today because the capability is partial: Time-budgeted portfolio fit: time_limit split across models, each model early-stopped on its share (aprender#3379, CRUX-O-09). PROMOTE by authoring a test named portfolio_respects_global_budget in module `automl/budget/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'the wall-clock of fit never exceeds time_limit by more than the tolerance' is violated — the autogluon parity claim for CRUX-O-09 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-09-002
+  rule: "the budget is redistributed when a model finishes early"
+  prediction: "a model that uses 10% of its share returns the remainder to the pool; the next model's share is asserted larger than the naive equal split"
+  test: >-
+    LIVE-PENDING - the budget is redistributed when a model finishes early. No test surface exists today because the capability is partial: Time-budgeted portfolio fit: time_limit split across models, each model early-stopped on its share (aprender#3379, CRUX-O-09). PROMOTE by authoring a test named unused_share_is_redistributed in module `automl/budget/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'the budget is redistributed when a model finishes early' is violated — the autogluon parity claim for CRUX-O-09 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "the wall-clock of fit never exceeds time_limit by more than the tolerance"
+- type: invariant
+  property: "the budget is redistributed when a model finishes early"
+
+kani_harnesses:
+- id: KH-CRUX-O-09-001
+  obligation: the_wall_clock_of_fit_never_exceeds_time_limit_by_more_than_
+  property: the_wall_clock_of_fit_never_exceeds_time_limit_by_more_than__holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-09-002
+  obligation: the_budget_is_redistributed_when_a_model_finishes_early
+  property: the_budget_is_redistributed_when_a_model_finishes_early_holds_on_bounded_input
+  bound: 4

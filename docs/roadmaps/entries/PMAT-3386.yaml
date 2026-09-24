@@ -1,0 +1,21 @@
+- id: PMAT-3386
+  github_issue: 3386
+  item_type: task
+  title: 'P2: Fit diagnostics: fit_summary, model_failures and learning curves — CRUX-O-16'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-16, competitor autogluon, demand 3. ProgressCallback in automl/tuner.rs streams trial results; there is no post-fit summary object listing models trained, models failed with their error, per-model hyperparameters and per-iteration validation curves. FALSIFIABLE (contracts/crux-O-16-v1.yaml): a model that raises during fit is recorded, not swallowed and not fatal — a portfolio containing a deliberately failing model finishes; model_failures() has exactly one row naming the model and the error string; the leaderboard omits it; learning curves have one point per boosting/epoch iteration — for a GBM with n_estimators=50 and learning_curves=true the curve has 50 validation points, monotone non-increasing after early-stopping''s best iteration is asserted absent. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

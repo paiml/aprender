@@ -357,8 +357,12 @@ fn test_gguf_tensor_byte_size_q4_1() {
         dtype: GgmlType::Q4_1,
         data: vec![],
     };
-    // (96 + 31) / 32 = 3 blocks * 18 bytes = 54
-    assert_eq!(tensor.byte_size(), 54);
+    // PMAT-3430: 3 blocks * 20 bytes = 60, NOT 54. This test asserted 54 for as
+    // long as the hand-written arm sized Q4_1 the same as Q4_0, at 18 bytes per
+    // block. Upstream ggml says 20 — `block_q4_1` is 2 x ggml_half (scale AND
+    // min) plus QK4_1/2 = 16 nibble bytes — and core's own `format/gguf/shape.rs`
+    // has always said 20. The 54 was a test pinning a defect.
+    assert_eq!(tensor.byte_size(), 60);
 }
 
 #[test]

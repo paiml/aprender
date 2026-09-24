@@ -1,0 +1,259 @@
+{
+ "schema": "apr-model-ladder-receipt/v2",
+ "host": "lambda",
+ "version": "0.69.0",
+ "sha": "225b2a9ab",
+ "apr_sha": "225b2a9abbd171b3249794722f8da5fc8027e565",
+ "apr_version": "apr 0.69.0 (225b2a9ab)",
+ "cc": "8.9",
+ "gpu": "NVIDIA GeForce RTX 4090",
+ "translated_from": [
+  "rel-069-state/ladder/0.69.0/lambda.json",
+  "q4k-sweep-lambda.jsonl",
+  "inventory listing of ~/models, ~/.apr/models, ~/.cache/apr/models (2026-09-21T16:20:36Z)"
+ ],
+ "inventory": [
+  {
+   "file": "Qwen3-1.7B-Q4_K_M.gguf",
+   "bytes": 1107409472,
+   "sha256": "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897",
+   "arch": "qwen3"
+  },
+  {
+   "file": "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
+   "bytes": 18556686752
+  },
+  {
+   "file": "Qwen3-8B-Q4_K_M.gguf",
+   "bytes": 5027783488,
+   "sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+   "arch": "qwen3"
+  },
+  {
+   "file": "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+   "bytes": 18556689568
+  },
+  {
+   "file": "Qwen3.5-0.8B-Q4_K_M.gguf",
+   "bytes": 532517120,
+   "sha256": "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
+   "arch": "qwen35"
+  },
+  {
+   "file": "Qwen3.5-27B-Q4_K_M.gguf",
+   "bytes": 16740812704,
+   "sha256": "84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806",
+   "arch": "qwen35"
+  },
+  {
+   "file": "Qwen3.5-2B-Q4_K_M.gguf",
+   "bytes": 1280835840,
+   "sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+   "arch": "qwen35"
+  },
+  {
+   "file": "Qwen3.5-4B-Q4_K_M.gguf",
+   "bytes": 2740937888,
+   "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+   "arch": "qwen35"
+  },
+  {
+   "file": "Qwen3.5-4B-UD-Q4_K_XL.gguf",
+   "bytes": 2912109728
+  },
+  {
+   "file": "Qwen3.5-9B-Q4_K_M.gguf",
+   "bytes": 5680522464,
+   "sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
+   "arch": "qwen35"
+  },
+  {
+   "file": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+   "bytes": 1117320736,
+   "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+   "arch": "qwen2"
+  },
+  {
+   "file": "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+   "bytes": 491400064
+  },
+  {
+   "file": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+   "bytes": 1117320768
+  },
+  {
+   "file": "qwen2.5-coder-1.5b-instruct-q4k-v2.apr",
+   "bytes": 1115198720
+  },
+  {
+   "file": "qwen2.5-coder-1.5b-instruct-q4k.apr",
+   "bytes": 1115198720
+  },
+  {
+   "file": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+   "bytes": 4683073536
+  },
+  {
+   "file": "qwen2.5-coder-1.5b-q4k.apr",
+   "bytes": 1115528900
+  },
+  {
+   "file": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+   "bytes": 668788096
+  }
+ ],
+ "cells": [
+  {
+   "sha256": "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897",
+   "file": "Qwen3-1.7B-Q4_K_M.gguf",
+   "verb": "run",
+   "thinking": "off",
+   "context": "4k",
+   "verdict": "pass",
+   "backend": "cuda",
+   "fallback": false,
+   "rc": 0,
+   "reason": "0.69.0 ladder row (golden prompts; prompt_tokens and answer_chars not recorded)"
+  },
+  {
+   "sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+   "file": "Qwen3-8B-Q4_K_M.gguf",
+   "verb": "run",
+   "thinking": "off",
+   "context": "4k",
+   "verdict": "fail",
+   "backend": "cuda",
+   "fallback": false,
+   "rc": 0,
+   "reason": "0.69.0 ladder row (golden prompts; prompt_tokens and answer_chars not recorded): golden_output: Empty output"
+  },
+  {
+   "sha256": "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
+   "file": "Qwen3.5-0.8B-Q4_K_M.gguf",
+   "verb": "run",
+   "thinking": "off",
+   "context": "4k",
+   "verdict": "pass",
+   "backend": "cuda",
+   "fallback": false,
+   "rc": 0,
+   "reason": "0.69.0 ladder row (golden prompts; prompt_tokens and answer_chars not recorded)"
+  },
+  {
+   "sha256": "84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806",
+   "file": "Qwen3.5-27B-Q4_K_M.gguf",
+   "verb": "run",
+   "thinking": "off",
+   "context": "4k",
+   "verdict": "pass",
+   "backend": "cuda",
+   "fallback": false,
+   "rc": 0,
+   "reason": "0.69.0 ladder row (golden prompts; prompt_tokens and answer_chars not recorded)"
+  },
+  {
+   "sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+   "file": "Qwen3.5-2B-Q4_K_M.gguf",
+   "verb": "run",
+   "thinking": "off",
+   "context": "4k",
+   "verdict": "pass",
+   "backend": "cuda",
+   "fallback": false,
+   "rc": 0,
+   "reason": "0.69.0 ladder row (golden prompts; prompt_tokens and answer_chars not recorded)"
+  },
+  {
+   "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+   "file": "Qwen3.5-4B-Q4_K_M.gguf",
+   "verb": "run",
+   "thinking": "off",
+   "context": "4k",
+   "verdict": "pass",
+   "backend": "cuda",
+   "fallback": false,
+   "rc": 0,
+   "reason": "0.69.0 ladder row (golden prompts; prompt_tokens and answer_chars not recorded)"
+  },
+  {
+   "sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
+   "file": "Qwen3.5-9B-Q4_K_M.gguf",
+   "verb": "run",
+   "thinking": "off",
+   "context": "4k",
+   "verdict": "pass",
+   "backend": "cuda",
+   "fallback": false,
+   "rc": 0,
+   "reason": "0.69.0 ladder row (golden prompts; prompt_tokens and answer_chars not recorded)"
+  },
+  {
+   "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+   "file": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+   "verb": "run",
+   "thinking": "off",
+   "context": "4k",
+   "verdict": "pass",
+   "backend": "cuda",
+   "fallback": false,
+   "rc": 0,
+   "reason": "0.69.0 ladder row (golden prompts; prompt_tokens and answer_chars not recorded)"
+  },
+  {
+   "file": "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+   "verb": "run",
+   "thinking": "off",
+   "context": "4k",
+   "verdict": "fail",
+   "backend": "cuda",
+   "fallback": true,
+   "rc": 14,
+   "reason": "0.69.0 Q4_K sweep row (no sha256 recorded): GPU output failed (CPU passed): golden_output_gpu: gibberish (fragment \"```\\n\" repeats 3+ times)"
+  },
+  {
+   "file": "qwen2.5-coder-1.5b-instruct-q4k.apr",
+   "verb": "run",
+   "thinking": "off",
+   "context": "4k",
+   "verdict": "pass",
+   "backend": "cuda",
+   "fallback": false,
+   "rc": 0,
+   "reason": "0.69.0 Q4_K sweep row (no sha256 recorded): 3 golden test cases passed"
+  },
+  {
+   "file": "qwen2.5-coder-1.5b-instruct-q4k-v2.apr",
+   "verb": "run",
+   "thinking": "off",
+   "context": "4k",
+   "verdict": "pass",
+   "backend": "cuda",
+   "fallback": false,
+   "rc": 0,
+   "reason": "0.69.0 Q4_K sweep row (no sha256 recorded): 3 golden test cases passed"
+  },
+  {
+   "file": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+   "verb": "run",
+   "thinking": "off",
+   "context": "4k",
+   "verdict": "fail",
+   "backend": "cuda",
+   "fallback": true,
+   "rc": 14,
+   "reason": "0.69.0 Q4_K sweep row (no sha256 recorded): 3 golden test cases passed"
+  },
+  {
+   "file": "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
+   "verb": "run",
+   "thinking": "off",
+   "context": "4k",
+   "verdict": "fail",
+   "backend": "cuda",
+   "fallback": false,
+   "rc": 14,
+   "reason": "0.69.0 Q4_K sweep row (no sha256 recorded): gate absent"
+  }
+ ],
+ "rungs": []
+}

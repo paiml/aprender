@@ -1,0 +1,19 @@
+leading    spaces
+    indented four
+	one tab
+		two tabs
+trailing spaces   
+crlf line
+another
+
+blank crlf above
+mixed 	 	 tabs and spaces
+
+
+
+three newlines above
+   
+  
+ spaces-only lines above
+formfeed andvertical tab
+end with spaces   

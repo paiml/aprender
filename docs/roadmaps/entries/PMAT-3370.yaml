@@ -1,0 +1,22 @@
+- id: PMAT-3370
+  github_issue: 3370
+  item_type: task
+  title: 'EPIC: CRUX category O — AutoML parity vs AutoGluon 1.6.3 — 9 P0, 9 P1, 6 P2 (24 stories)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: docs/specifications/crux-competitive-research-ux-workflows.md
+  acceptance_criteria:
+  - 'All 24 children (#3371-#3394) closed or explicitly re-cut; apr automl fit/predict on iris and apr forecast fit on a 5-item panel run end to end; each child lands with a contract and mutation-RED evidence.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - epic
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

@@ -1,0 +1,75 @@
+# CRUX-O-24 — Zero-shot pretrained forecaster (Chronos-2 / Toto-2 class) loaded by apr pull, with optional fine-tuning
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3394, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-24
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  github_issue: 3394
+  description: >
+    Zero-shot pretrained forecaster (Chronos-2 / Toto-2 class) loaded by apr pull, with optional fine-tuning. Competitor verb: hyperparameters={"Chronos2": {"fine_tune": True}}  # 1.5 spotlight; 1.6 adds Toto-2. Gap measured in aprender at eb262f8eb: apr pull fetches LLM checkpoints (Category A) and the inference crates run decoder transformers, but no forecasting head exists: nothing tokenises a numeric series into the model's input, samples a horizon, and maps it back to quantiles.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3394'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  zero_shot_output_matches_a_pinned_reference:
+    formula: |
+      a pinned small checkpoint pulled by `apr pull` forecasts the committed fixture within 1e-3 of the reference quantiles
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "zero-shot output matches a pinned reference"
+  fine_tuning_changes_the_weights_and_improves_the_in_domain_m:
+    formula: |
+      after fine_tune on the fixture the WQL improves by >= 5% relative AND at least one weight tensor differs from the pulled checkpoint
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "fine-tuning changes the weights and improves the in-domain metric"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-24-001
+  rule: "zero-shot output matches a pinned reference"
+  prediction: "a pinned small checkpoint pulled by `apr pull` forecasts the committed fixture within 1e-3 of the reference quantiles"
+  test: >-
+    LIVE-PENDING - zero-shot output matches a pinned reference. No test surface exists today because the capability is unimplemented: Zero-shot pretrained forecaster (Chronos-2 / Toto-2 class) loaded by apr pull, with optional fine-tuning (aprender#3394, CRUX-O-24). PROMOTE by authoring a test named zero_shot_matches_reference in module `forecast/pretrained/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'zero-shot output matches a pinned reference' is violated — the autogluon parity claim for CRUX-O-24 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-24-002
+  rule: "fine-tuning changes the weights and improves the in-domain metric"
+  prediction: "after fine_tune on the fixture the WQL improves by >= 5% relative AND at least one weight tensor differs from the pulled checkpoint"
+  test: >-
+    LIVE-PENDING - fine-tuning changes the weights and improves the in-domain metric. No test surface exists today because the capability is unimplemented: Zero-shot pretrained forecaster (Chronos-2 / Toto-2 class) loaded by apr pull, with optional fine-tuning (aprender#3394, CRUX-O-24). PROMOTE by authoring a test named finetune_improves_and_changes_weights in module `forecast/pretrained/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'fine-tuning changes the weights and improves the in-domain metric' is violated — the autogluon parity claim for CRUX-O-24 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "zero-shot output matches a pinned reference"
+- type: invariant
+  property: "fine-tuning changes the weights and improves the in-domain metric"
+
+kani_harnesses:
+- id: KH-CRUX-O-24-001
+  obligation: zero_shot_output_matches_a_pinned_reference
+  property: zero_shot_output_matches_a_pinned_reference_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-24-002
+  obligation: fine_tuning_changes_the_weights_and_improves_the_in_domain_m
+  property: fine_tuning_changes_the_weights_and_improves_the_in_domain_m_holds_on_bounded_input
+  bound: 4

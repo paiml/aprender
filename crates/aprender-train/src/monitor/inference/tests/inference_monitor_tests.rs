@@ -22,10 +22,13 @@ fn test_monotonic_ns_increasing() {
 fn test_monotonic_ns_non_zero() {
     use crate::monitor::inference::monotonic_ns;
 
-    // The first call might be 0 if called at exactly initialization time
-    // but subsequent calls should not be 0
+    // #3703: the first call in the process initializes the epoch and can read 0 (two back-to-back
+    // clock reads are equal on a coarse timer). Sleeping BEFORE that call guarded nothing when this
+    // test ran first. Initialize, then sleep: the sleep, not host speed, puts the second read ahead.
+    let first = monotonic_ns();
     std::thread::sleep(std::time::Duration::from_micros(1));
     let ts = monotonic_ns();
+    assert!(ts > first, "monotonic_ns should advance across a sleep");
     assert!(ts > 0, "monotonic_ns should return a positive value after initialization");
 }
 

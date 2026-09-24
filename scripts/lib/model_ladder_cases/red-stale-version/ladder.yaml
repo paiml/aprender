@@ -8,6 +8,15 @@ ladder:
     gpu: GB10
     id: gx10
     required: true
+  inventory:
+    backends:
+    - cuda
+    dirs:
+    - ~/models
+    patterns:
+    - '*q4_k*.gguf'
+    - '*q4k*.apr'
+    - '*q4_k*.apr'
   rungs:
   - arch: qwen2
     backends:
@@ -25,10 +34,3 @@ ladder:
     id: q3-q4km
     required: true
     sha256: '1111111111111111111111111111111111111111111111111111111111111111'
-  - arch: phi3
-    backends:
-    - cpu
-    gguf: o.gguf
-    id: opt-q4km
-    required: false
-    sha256: '2222222222222222222222222222222222222222222222222222222222222222'

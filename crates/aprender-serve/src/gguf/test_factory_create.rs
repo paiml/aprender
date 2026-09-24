@@ -298,6 +298,15 @@ pub fn build_minimal_llama_gguf(
 /// - num_layers: 1
 #[must_use]
 pub fn build_executable_pygmy_gguf() -> Vec<u8> {
+    build_executable_pygmy_gguf_with(|builder| builder)
+}
+
+/// [`build_executable_pygmy_gguf`] with extra metadata (a tokenizer, a chat
+/// template) added by `metadata` before the tensors.
+#[must_use]
+pub fn build_executable_pygmy_gguf_with(
+    metadata: impl FnOnce(GGUFBuilder) -> GGUFBuilder,
+) -> Vec<u8> {
     // Active Pygmy dimensions (T-COV-95)
     // All dimensions chosen to align with Q4_0's 32-element block size
     const VOCAB_SIZE: usize = 32;
@@ -335,17 +344,19 @@ pub fn build_executable_pygmy_gguf() -> Vec<u8> {
     // This is separate from token_embd to avoid the "type 0" fallback
     let lm_head_data = create_q4_0_data(HIDDEN_DIM * VOCAB_SIZE); // 32x32 = 1024 elements
 
-    GGUFBuilder::new()
-        // Metadata - full LLaMA config
-        .architecture("llama")
-        .hidden_dim("llama", HIDDEN_DIM as u32)
-        .num_layers("llama", 1)
-        .num_heads("llama", NUM_HEADS as u32)
-        .num_kv_heads("llama", NUM_KV_HEADS as u32)
-        .context_length("llama", CONTEXT_LENGTH as u32)
-        .rope_freq_base("llama", 10000.0)
-        .rms_epsilon("llama", 1e-5)
-        .ffn_hidden_dim("llama", INTERMEDIATE_DIM as u32)
+    metadata(
+        GGUFBuilder::new()
+            // Metadata - full LLaMA config
+            .architecture("llama")
+            .hidden_dim("llama", HIDDEN_DIM as u32)
+            .num_layers("llama", 1)
+            .num_heads("llama", NUM_HEADS as u32)
+            .num_kv_heads("llama", NUM_KV_HEADS as u32)
+            .context_length("llama", CONTEXT_LENGTH as u32)
+            .rope_freq_base("llama", 10000.0)
+            .rms_epsilon("llama", 1e-5)
+            .ffn_hidden_dim("llama", INTERMEDIATE_DIM as u32),
+    )
         // Token embedding - F32 (lookup table, not matmul)
         .add_f32_tensor(
             "token_embd.weight",

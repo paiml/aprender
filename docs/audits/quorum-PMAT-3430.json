@@ -2,13 +2,13 @@
   "ticket": "PMAT-3430",
   "base": "main",
   "base_resolved": "origin/main",
-  "base_note": "local main differs from origin/main by 118 commit(s); judged against origin/main",
-  "head": "9bbcaa42b7ada310dcdbb5900b9e42fe6e86acd6",
-  "diff_sha256": "351e341eb58c9acff059a06e525b9f83fd54cc87bd02d92e9f8c62e94858b84b",
+  "base_note": "local main differs from origin/main by 125 commit(s); judged against origin/main",
+  "head": "5420b7e982a47ab1073870efb04aedce7e22ea86",
+  "diff_sha256": "3ffa5e395ff598bd9a3aa4270f26c38805c5317856857a427aa4484c6a7a6bb1",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 96474,
+  "prompt_bytes": 57672,
   "author": {
     "model": "claude-opus-5",
     "family": "claude",
@@ -20,9 +20,40 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff correctly implements PMAT-3430 by adding the `GgmlType` enum and the 43-row `TRAITS` table in `aprender-quant` (which sits below `aprender-core` and `aprender-compute`). \n\n1. **Ticket Match**: It introduces precisely 35 live variants and 8 removed variants as documented, extracted directly from the upstream `llama.cpp` using the newly added C probe (`scripts/extract_ggml_traits.sh`).\n2. **Strict Verification**: The implementation is backed by robust compilation-time assertions (in `aprender-quant/src/lib.rs` and `ggml_type.rs`), integration tests ensuring that the `TRAITS` table identically matches the checked-in fixture, and Kani property-based tests verifying absence of panics across the entire ID space.\n3. **Receipt Validation**: The claims in the receipt (`docs/audits/impl-PMAT-3430-m1-leaf-receipt.md`) exactly align with the diff. All test mutations predicted in the receipt are enforced by tests like `falsify_ggml_001` and `traits_table_equals_the_upstream_fixture_row_for_row`.\n4. **No Unrequested Changes**: There is no behavioral drift or weakening of gates. Legacy values are kept but strictly bound to the `TRAITS` oracle at compile time.\n\nNo findings refute the implementation.",
-      "findings": [],
-      "raw_bytes": 3807,
+      "summary": "The diff correctly implements PMAT-3430 by consolidating three redundant GGML enums into a single import from `trueno_quant::GgmlType`. It meticulously preserves the exact parsing boundaries of each crate using crate-specific `ADMITTED` subsets (15 for compute, 16 for serve), ensuring parsers do not silently widen to support new IDs they lack kernels for. The behavior preservation is well-proven by characterization tests. The one expected change—correcting the `Q4_1` block size in `core` from 18 to 20 bytes—is precisely implemented and tested. The added CI guard script is robust and prevents future regressions. No flaws or weakened gates were found.",
+      "findings": [
+        {
+          "claim": "The diff successfully removes the 3 redundant enums (serve's 16-id GgmlQuantType, core's 12-id GgmlType, compute's 15-id GgmlType) and replaces them with a re-export of trueno_quant::GgmlType, satisfying the primary ticket requirement.",
+          "file": "crates/aprender-serve/src/gguf/types.rs",
+          "grounding": "cited",
+          "line": 84
+        },
+        {
+          "claim": "The parsing boundaries for compute correctly reject any GGML ID not in its historic 15-id set, preventing silent parser widening. This is enforced via an explicit ADMITTED array and the `from_u32` boundary wrapper.",
+          "file": "crates/aprender-compute/src/inference/gguf.rs",
+          "grounding": "cited",
+          "line": 65
+        },
+        {
+          "claim": "The parsing boundaries for serve correctly reject any GGML ID/name not in its historic 16-id set. This is enforced via `admitted_from_id` and `admitted_from_name` wrappers checking against a hardcoded 16-id array.",
+          "file": "crates/aprender-serve/src/gguf/types.rs",
+          "grounding": "cited",
+          "line": 143
+        },
+        {
+          "claim": "The size calculation for `Q4_1` in `core` is correctly updated from 18 to 20 bytes per block, delegating to the unified upstream truth. The test assertion is updated to reflect 3 blocks * 20 bytes = 60 bytes.",
+          "file": "crates/aprender-core/src/format/gguf/types_tests.rs",
+          "grounding": "cited",
+          "line": 360
+        },
+        {
+          "claim": "The CI guard script `check_one_ggml_type_enum.sh` is robustly implemented with a self-test array and properly detects definitions while ignoring aliases and references.",
+          "file": "scripts/check_one_ggml_type_enum.sh",
+          "grounding": "cited",
+          "line": 35
+        }
+      ],
+      "raw_bytes": 6562,
       "err_bytes": 100,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -36,15 +67,15 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Lane 2 verdict: PASS. PMAT-3430 (PP-QUANT-001 M1) introduces the leaf `#[repr(u32)] GgmlType` enum with 35 live variants (and 8 removed ids distinguishable via `try_from_id`), dense `TRAITS[43]` table in `crates/aprender-quant/src/ggml_type.rs` below core/compute, upstream-extracted fixture `fixtures/ggml_traits.json`, extraction tooling and self-test suite, monorepo pin invariants, contract `contracts/ggml-type-v1.yaml`, and CI wiring. All 8 fixture tests, 19 quant crate unit tests, 3 monorepo falsification invariant tests, the 7-case extractor self-test, and `check_explicit_test_commands.sh` pass cleanly with zero warnings under clippy and shellcheck. No gates were weakened, all receipt claims are grounded in the diff, and no unrequested behavior changes were introduced.",
+      "summary": "I have reviewed the diff against the ticket PMAT-3430 and the provided receipt. The diff successfully collapses the 3 distinct `GgmlType`/`GgmlQuantType` enums into a single import from `trueno_quant::GgmlType`. \n\n1. `check_one_ggml_type_enum.sh` is correctly implemented with a robust regex and self-tests, validating the core ticket goal.\n2. The characterization tests effectively snapshot the prior behavior (e.g., specific ID boundaries, size calculations, failure modes) and ensure that the transition to the unified enum does not change expected outcomes, apart from the deliberate `Q4_1` fix.\n3. The size correction for `Q4_1` from 18 to 20 bytes is accurately reflected and justified.\n4. Each crate maintains its own `ADMITTED` list and boundaries (`from_u32`, `admitted_from_id`, etc.), maintaining the strict parser behaviors preventing unknown types from being decoded.\n\nNo regressions, weakened gates, or unbacked claims were found.",
       "findings": [],
-      "raw_bytes": 2848,
+      "raw_bytes": 4052,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
-      "model": "gemini-3.8-flash-high",
-      "model_measured": "gemini-3.8-flash-high",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
       "model_source": "measured",
       "family": "gemini"
     },
@@ -52,51 +83,43 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Lane 3 of 3 review PASS for PMAT-3430 (PP-QUANT-001 M1).\n\nThe diff was rigorously checked against ticket PMAT-3430 and all requirements:\n1. Implements `#[repr(u32)] GgmlType` with 35 live variants corresponding to upstream ggml IDs 0..=42 in `crates/aprender-quant/src/ggml_type.rs`.\n2. Implements `TRAITS[43]` dense table covering all 43 slots (35 live and 8 removed), located in `crates/aprender-quant` (`trueno_quant`), strictly below `aprender-compute`, `aprender-core`, and `aprender-serve` in the dependency hierarchy.\n3. Oracle-derived fixture: verified against `scripts/llama_pin.toml` (`build_commit = \"d1d3c3396\"`), extracted from upstream checkout `/home/noah/src/llama.cpp-d1d3c3396` via `scripts/extract_ggml_traits.sh` and compiled probe. Re-running the extractor independently reproduced `crates/aprender-quant/fixtures/ggml_traits.json` byte-for-byte.\n4. Contract & Formal Verification: `contracts/ggml-type-v1.yaml` validated clean with `pv validate` (0 errors, 0 warnings). The Kani harness `verify_ggml_type_id_space` verified successfully via `cargo kani` (100/100 checks passed, 0 failures).\n5. All test suites pass: `cargo test -p aprender-quant` (28/28 passed), `cargo test -p aprender-core --test monorepo_invariants falsify_ggml` (3/3 passed), `scripts/extract_ggml_traits_selftest.sh` (7/7 cases passed), `scripts/check_explicit_test_commands.sh` (49 fragments ok).\n6. Linting & syntax: `cargo clippy -p aprender-quant --tests` (0 warnings), `bash -n` and `shellcheck -S error` (0 errors), `ruff check` (clean).\n7. Receipt verification: all claims in `docs/audits/impl-PMAT-3430-m1-leaf-receipt.md` are grounded by the diff and measurements. No gates were weakened, no tests assert opposite of ticket, and no out-of-scope modifications were introduced.",
+      "summary": "Review of PMAT-3430 (PP-QUANT-001 M1): PASS. The diff successfully unifies all GGML tensor type enums across `aprender-compute`, `aprender-core`, and `aprender-serve` into a single re-exported `trueno_quant::GgmlType` enum definition. Each crate maintains its established admission boundaries (15 types for compute, 16 types for serve) via `ADMITTED` lookup arrays and helper functions (`from_u32`, `admitted_from_id`, `admitted_from_name`). Extensive characterization tests verify that admission sets and tensor byte calculations remain untouched (with the single intended correction of Q4_1 block size from 18 to 20 bytes/block, matching upstream GGML). The guard script `scripts/check_one_ggml_type_enum.sh` is introduced with complete `--self-test` coverage to prevent duplicate enum declarations in CI.",
       "findings": [
         {
-          "claim": "GgmlType is defined as #[repr(u32)] with exactly 35 live variants matching active ggml tensor type IDs 0..=42 in the pinned comparator commit.",
-          "file": "crates/aprender-quant/src/ggml_type.rs",
-          "fix": "Verified enum definition with #[repr(u32)] and 35 live variants matching upstream ggml IDs 0..=42.",
-          "grounding": "cited",
-          "line": 140
-        },
-        {
-          "claim": "TRAITS is a dense 43-row table indexed by ggml ID (35 live + 8 Removed) with exact block size, byte size, and family classifications.",
-          "file": "crates/aprender-quant/src/ggml_type.rs",
-          "fix": "Verified pub const TRAITS: [QuantTraits; 43] dense array with 0 blck_size/type_size on all 8 removed entries.",
-          "grounding": "cited",
-          "line": 198
-        },
-        {
-          "claim": "Compile-time const assertions prevent drift between legacy K-quant constants and TRAITS.",
-          "file": "crates/aprender-quant/src/lib.rs",
-          "fix": "Verified const assertions for Q4_K, Q5_K, and Q6_K block size and byte constants against TRAITS table.",
-          "grounding": "cited",
-          "line": 115
-        },
-        {
-          "claim": "Integration test suite in ggml_traits_fixture.rs executes 8 tests verifying row-for-row equivalence with upstream fixture, family flags, and backwards compatibility.",
-          "file": "crates/aprender-quant/tests/ggml_traits_fixture.rs",
-          "fix": "Ran `cargo test -p aprender-quant --test ggml_traits_fixture` (8 passed, 0 failed).",
+          "claim": "scripts/check_one_ggml_type_enum.sh --self-test passes all 15 test cases and correctly asserts single enum compliance.",
+          "command": "/tmp/test_script.sh --self-test",
+          "file": "scripts/check_one_ggml_type_enum.sh",
+          "fix": "",
           "grounding": "measured",
-          "line": 42
+          "line": 1,
+          "output": "check_one_ggml_type_enum self-test\n  PASS  serve's GgmlQuantType definition                         matched 1\n  PASS  core's GgmlType definition                               matched 1\n  PASS  an indented (nested) definition                          matched 1\n  PASS  definition with the brace spaced off                     matched 1\n  PASS  a re-export                                              matched 0\n  PASS  a re-export under the old alias                          matched 0\n  PASS  a commented-out definition                               matched 0\n  PASS  an indented commented-out definition                     matched 0\n  PASS  a doc comment naming the enum                            matched 0\n  PASS  a DIFFERENT enum with a similar name                     matched 0\n  PASS  the metadata value-type enum                             matched 0\n  PASS  the metadata value enum                                  matched 0\n  PASS  APR's own on-disk quant enum                             matched 0\n  PASS  a private enum of the same name                          matched 0\n  PASS  a use of the type in a signature                         matched 0\n\n15 case(s), 0 failure(s)"
         },
         {
-          "claim": "Monorepo invariants falsify_ggml_001, falsify_ggml_002, and falsify_ggml_003 pass and enforce pin synchronization and extractor self-testing.",
-          "file": "crates/aprender-core/tests/monorepo_invariants.rs",
-          "fix": "Ran `cargo test -p aprender-core --test monorepo_invariants falsify_ggml` (3 passed, 0 failed).",
-          "grounding": "measured",
-          "line": 920
+          "claim": "aprender-compute re-exports GgmlType from trueno_quant and enforces its 15-type admission boundary via ADMITTED array.",
+          "file": "crates/aprender-compute/src/inference/gguf.rs",
+          "grounding": "cited",
+          "line": 33
+        },
+        {
+          "claim": "aprender-core re-exports GgmlType from trueno_quant and delegates byte_size calculation to self.dtype.tensor_bytes.",
+          "file": "crates/aprender-core/src/format/gguf/types.rs",
+          "grounding": "cited",
+          "line": 60
+        },
+        {
+          "claim": "aprender-serve re-exports GgmlType from trueno_quant and preserves its 16-type admission boundary via ADMITTED array and helper functions.",
+          "file": "crates/aprender-serve/src/gguf/types.rs",
+          "grounding": "cited",
+          "line": 95
         }
       ],
-      "raw_bytes": 8345,
-      "err_bytes": 0,
+      "raw_bytes": 8238,
+      "err_bytes": 100,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
-      "model": "gemini-3.7-flash-high",
-      "model_measured": "gemini-3.7-flash-high",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
       "model_source": "measured",
       "family": "gemini"
     }
@@ -104,53 +127,93 @@
   "dissent": [],
   "dedup": [
     {
-      "file": "crates/aprender-core/tests/monorepo_invariants.rs",
-      "line": 920,
+      "file": "crates/aprender-compute/src/inference/gguf.rs",
+      "line": 33,
       "lanes_agreeing": [
         3
       ],
       "claims": [
-        "Monorepo invariants falsify_ggml_001, falsify_ggml_002, and falsify_ggml_003 pass and enforce pin synchronization and extractor self-testing."
+        "aprender-compute re-exports GgmlType from trueno_quant and enforces its 15-type admission boundary via ADMITTED array."
       ]
     },
     {
-      "file": "crates/aprender-quant/src/ggml_type.rs",
-      "line": 140,
+      "file": "crates/aprender-compute/src/inference/gguf.rs",
+      "line": 65,
       "lanes_agreeing": [
-        3
+        1
       ],
       "claims": [
-        "GgmlType is defined as #[repr(u32)] with exactly 35 live variants matching active ggml tensor type IDs 0..=42 in the pinned comparator commit."
+        "The parsing boundaries for compute correctly reject any GGML ID not in its historic 15-id set, preventing silent parser widening. This is enforced via an explicit ADMITTED array and the `from_u32` boundary wrapper."
       ]
     },
     {
-      "file": "crates/aprender-quant/src/ggml_type.rs",
-      "line": 198,
+      "file": "crates/aprender-core/src/format/gguf/types.rs",
+      "line": 60,
       "lanes_agreeing": [
         3
       ],
       "claims": [
-        "TRAITS is a dense 43-row table indexed by ggml ID (35 live + 8 Removed) with exact block size, byte size, and family classifications."
+        "aprender-core re-exports GgmlType from trueno_quant and delegates byte_size calculation to self.dtype.tensor_bytes."
       ]
     },
     {
-      "file": "crates/aprender-quant/src/lib.rs",
-      "line": 115,
+      "file": "crates/aprender-core/src/format/gguf/types_tests.rs",
+      "line": 360,
       "lanes_agreeing": [
-        3
+        1
       ],
       "claims": [
-        "Compile-time const assertions prevent drift between legacy K-quant constants and TRAITS."
+        "The size calculation for `Q4_1` in `core` is correctly updated from 18 to 20 bytes per block, delegating to the unified upstream truth. The test assertion is updated to reflect 3 blocks * 20 bytes = 60 bytes."
       ]
     },
     {
-      "file": "crates/aprender-quant/tests/ggml_traits_fixture.rs",
-      "line": 42,
+      "file": "crates/aprender-serve/src/gguf/types.rs",
+      "line": 84,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The diff successfully removes the 3 redundant enums (serve's 16-id GgmlQuantType, core's 12-id GgmlType, compute's 15-id GgmlType) and replaces them with a re-export of trueno_quant::GgmlType, satisfying the primary ticket requirement."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/types.rs",
+      "line": 95,
       "lanes_agreeing": [
         3
       ],
       "claims": [
-        "Integration test suite in ggml_traits_fixture.rs executes 8 tests verifying row-for-row equivalence with upstream fixture, family flags, and backwards compatibility."
+        "aprender-serve re-exports GgmlType from trueno_quant and preserves its 16-type admission boundary via ADMITTED array and helper functions."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/types.rs",
+      "line": 143,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The parsing boundaries for serve correctly reject any GGML ID/name not in its historic 16-id set. This is enforced via `admitted_from_id` and `admitted_from_name` wrappers checking against a hardcoded 16-id array."
+      ]
+    },
+    {
+      "file": "scripts/check_one_ggml_type_enum.sh",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "scripts/check_one_ggml_type_enum.sh --self-test passes all 15 test cases and correctly asserts single enum compliance."
+      ]
+    },
+    {
+      "file": "scripts/check_one_ggml_type_enum.sh",
+      "line": 35,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The CI guard script `check_one_ggml_type_enum.sh` is robustly implemented with a self-test array and properly detects definitions while ignoring aliases and references."
       ]
     }
   ],

@@ -1,0 +1,94 @@
+# CRUX-O-23 — Local statistical baselines: SeasonalNaive, ETS, Theta, AutoARIMA, Croston
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3393, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-23
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  github_issue: 3393
+  description: >
+    Local statistical baselines: SeasonalNaive, ETS, Theta, AutoARIMA, Croston. Competitor verb: hyperparameters={"SeasonalNaive": {}, "AutoETS": {}, "Theta": {}, "AutoARIMA": {}, "Croston": {}}. Gap measured in aprender at eb262f8eb: ARIMA exists (fixed order; no auto-order search). SeasonalNaive, ETS, Theta and the intermittent-demand family (Croston, ADIDA, IMAPA) are absent. AutoGluon runs these as its 'local' tier (timeseries/models/local/) and they anchor every leaderboard.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3393'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  seasonalnaive_is_exactly_the_lag_m_copy:
+    formula: |
+      forecast[t] == y[t - m] for the whole horizon on a fixture with m=24, byte-equal
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "SeasonalNaive is exactly the lag-m copy"
+  autoarima_selects_the_planted_order:
+    formula: |
+      on a fixture generated from ARIMA(2,1,1) the selected (p,d,q) equals (2,1,1) in >= 9 of 10 seeds
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "AutoARIMA selects the planted order"
+  ets_and_theta_match_the_statsforecast_reference:
+    formula: |
+      point forecasts on the AirPassengers fixture equal the statsforecast reference within 1e-6
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "ETS and Theta match the statsforecast reference"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-23-001
+  rule: "SeasonalNaive is exactly the lag-m copy"
+  prediction: "forecast[t] == y[t - m] for the whole horizon on a fixture with m=24, byte-equal"
+  test: >-
+    LIVE-PENDING - SeasonalNaive is exactly the lag-m copy. No test surface exists today because the capability is partial: Local statistical baselines: SeasonalNaive, ETS, Theta, AutoARIMA, Croston (aprender#3393, CRUX-O-23). PROMOTE by authoring a test named seasonal_naive_is_lag_copy in module `forecast/local/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'SeasonalNaive is exactly the lag-m copy' is violated — the autogluon parity claim for CRUX-O-23 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-23-002
+  rule: "AutoARIMA selects the planted order"
+  prediction: "on a fixture generated from ARIMA(2,1,1) the selected (p,d,q) equals (2,1,1) in >= 9 of 10 seeds"
+  test: >-
+    LIVE-PENDING - AutoARIMA selects the planted order. No test surface exists today because the capability is partial: Local statistical baselines: SeasonalNaive, ETS, Theta, AutoARIMA, Croston (aprender#3393, CRUX-O-23). PROMOTE by authoring a test named autoarima_recovers_planted_order in module `forecast/local/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'AutoARIMA selects the planted order' is violated — the autogluon parity claim for CRUX-O-23 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-23-003
+  rule: "ETS and Theta match the statsforecast reference"
+  prediction: "point forecasts on the AirPassengers fixture equal the statsforecast reference within 1e-6"
+  test: >-
+    LIVE-PENDING - ETS and Theta match the statsforecast reference. No test surface exists today because the capability is partial: Local statistical baselines: SeasonalNaive, ETS, Theta, AutoARIMA, Croston (aprender#3393, CRUX-O-23). PROMOTE by authoring a test named ets_theta_match_statsforecast in module `forecast/local/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'ETS and Theta match the statsforecast reference' is violated — the autogluon parity claim for CRUX-O-23 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "SeasonalNaive is exactly the lag-m copy"
+- type: invariant
+  property: "AutoARIMA selects the planted order"
+- type: invariant
+  property: "ETS and Theta match the statsforecast reference"
+
+kani_harnesses:
+- id: KH-CRUX-O-23-001
+  obligation: seasonalnaive_is_exactly_the_lag_m_copy
+  property: seasonalnaive_is_exactly_the_lag_m_copy_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-23-002
+  obligation: autoarima_selects_the_planted_order
+  property: autoarima_selects_the_planted_order_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-23-003
+  obligation: ets_and_theta_match_the_statsforecast_reference
+  property: ets_and_theta_match_the_statsforecast_reference_holds_on_bounded_input
+  bound: 4

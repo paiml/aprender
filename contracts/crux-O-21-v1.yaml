@@ -1,0 +1,75 @@
+# CRUX-O-21 — Rolling-window backtesting: num_val_windows, refit_every_n_windows, backtest_predictions
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3391, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-21
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  github_issue: 3391
+  description: >
+    Rolling-window backtesting: num_val_windows, refit_every_n_windows, backtest_predictions. Competitor verb: fit(..., num_val_windows="auto", refit_every_n_windows="auto"); predictor.backtest_predictions(). Gap measured in aprender at eb262f8eb: No time-aware validation. KFold shuffles rows; nothing cuts the last k horizons of each item as expanding-window validation sets, and there is no API that returns the validation forecasts for inspection.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3391'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  validation_windows_never_contain_a_timestamp_later_than_the_:
+    formula: |
+      for num_val_windows=3 and val_step_size=h, each window's max training timestamp < min validation timestamp per item, asserted for every item and window
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "validation windows never contain a timestamp later than the training cut for that window"
+  backtest_predictions_rows_align_with_backtest_targets:
+    formula: |
+      the two frames have identical (window, item_id, timestamp) index sets and no NaN targets
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "backtest_predictions rows align with backtest_targets"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-21-001
+  rule: "validation windows never contain a timestamp later than the training cut for that window"
+  prediction: "for num_val_windows=3 and val_step_size=h, each window's max training timestamp < min validation timestamp per item, asserted for every item and window"
+  test: >-
+    LIVE-PENDING - validation windows never contain a timestamp later than the training cut for that window. No test surface exists today because the capability is unimplemented: Rolling-window backtesting: num_val_windows, refit_every_n_windows, backtest_predictions (aprender#3391, CRUX-O-21). PROMOTE by authoring a test named windows_never_leak_future in module `forecast/backtest/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'validation windows never contain a timestamp later than the training cut for that window' is violated — the autogluon parity claim for CRUX-O-21 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-21-002
+  rule: "backtest_predictions rows align with backtest_targets"
+  prediction: "the two frames have identical (window, item_id, timestamp) index sets and no NaN targets"
+  test: >-
+    LIVE-PENDING - backtest_predictions rows align with backtest_targets. No test surface exists today because the capability is unimplemented: Rolling-window backtesting: num_val_windows, refit_every_n_windows, backtest_predictions (aprender#3391, CRUX-O-21). PROMOTE by authoring a test named backtest_frames_align in module `forecast/backtest/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'backtest_predictions rows align with backtest_targets' is violated — the autogluon parity claim for CRUX-O-21 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "validation windows never contain a timestamp later than the training cut for that window"
+- type: invariant
+  property: "backtest_predictions rows align with backtest_targets"
+
+kani_harnesses:
+- id: KH-CRUX-O-21-001
+  obligation: validation_windows_never_contain_a_timestamp_later_than_the_
+  property: validation_windows_never_contain_a_timestamp_later_than_the__holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-21-002
+  obligation: backtest_predictions_rows_align_with_backtest_targets
+  property: backtest_predictions_rows_align_with_backtest_targets_holds_on_bounded_input
+  bound: 4

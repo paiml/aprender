@@ -1,0 +1,136 @@
+{
+  "ticket": "PMAT-3658",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "6c43aadf57ec04712f5618805cd13952da52f94e",
+  "diff_sha256": "6d7475db1bb74b1ba0537f9bedd743fba826abbbbe2e0c65b9382694e863dc3d",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 28103,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements all acceptance criteria in PMAT-3658 and its amendments without introducing out-of-scope changes or weakening any rules.\n\n- The SQUASH queue handling removes the `HEAD^2` constraint, elegantly using `HEAD^1..HEAD` to re-derive the PR diff, resolving the ~1 hour cost for text-only PRs.\n- `ci.yml` modifications are strictly bounded to the two authorized places: adding a fallback log for `tier == none` and adding the `--no-renames` flag to `pull_request` touch-lists.\n- `diff_into` similarly incorporates `--no-renames` to prevent rename detections from concealing deleted source files as purely docs additions.\n- The `docs_only` implementation is precisely scoped to `docs/roadmaps/` and `docs/audits/`, enforcing that all diff paths must exist at HEAD to pass as docs-only (preventing un-tested file deletions).\n- Testing is thorough, featuring the requisite `mutant-head2.sh`, `mutant-renames.sh`, and `contains_all` assertions.\n\nAll assertions are correct. Verdict is PASS.",
+      "findings": [],
+      "raw_bytes": 5968,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements all acceptance criteria in the PMAT-3658 ticket and amendments without any unauthorized changes. \n\n1. `ci.yml` changes are strictly limited to the two authorized places: adding the log step for `tier == none` and adding `--no-renames` to the `pull_request` touch-list line.\n2. `ci_test_tier.sh` modifies `diff_into` to use `--no-renames` as required.\n3. The SQUASH queue cases (using `HEAD^1` and gracefully degrading) are fully handled and covered by case-table rows, including a mutant test for the `HEAD^2` reversion.\n4. Docs-only diffs and empty diffs correctly emit `tier=none`, well-verified by corresponding test coverage. \n5. Pushes to SQUASH landing gracefully utilize `HEAD^1`. \n\nNo rules were weakened, and all receipt claims are backed exactly by the diff logic and its tests.",
+      "findings": [],
+      "raw_bytes": 3773,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 3 Review: PASS. The diff correctly implements all requirements of ticket PMAT-3658 without weakening any gates or adding unrequested changes. Squash merge queue entries with one parent now correctly re-derive their test tier using HEAD^1..HEAD, docs-only diffs correctly skip workspace-test with tier=none, and --no-renames ensures both sides of renames are tracked. Self-tests pass.",
+      "findings": [
+        {
+          "claim": "ci_test_tier.sh --self-test executes squash merge queue re-derivation, docs-only tier=none filtering, and --no-renames rename detection self-tests without failures.",
+          "command": "bash scripts/ci_test_tier.sh --self-test",
+          "file": "scripts/ci_test_tier.sh",
+          "grounding": "measured",
+          "line": 458,
+          "output": "ok    row 1  rc=0  schedule -> full (FULL still lives on the nightlies — decision D-1)\nok    row 2  rc=0  workflow_dispatch -> full\nok    row 3  rc=2  unknown event -> ENV (exit 2), never a guess\nok    row 4  rc=0  pull_request, scripts-only diff -> quick with NO crates\nok    row 5  rc=0    ...and the tree-reader targets are in it (readme_contract, the reader that bit #3039)\nok    row 6  rc=0    ...including the lib module whose unit test reads a baseline (aprender-contracts)\nok    row 7  rc=0  pull_request, root Cargo.toml touched -> full (fail closed)\nok    row 8  rc=0  pull_request over the cap (aprender-core) -> quick, NOT an hour of full workspace tests\nok    row 9  rc=0    ...with check_workspace=1: ONE cargo check --workspace covers every reverse dependent (rule (i))\nok    row 10 rc=0    ...and the touched crate itself still runs its tests\nok    row 11 rc=0  pull_request WITHIN the cap emits NO check_workspace line (the workspace check is not free)"
+        },
+        {
+          "claim": ".github/workflows/ci.yml incorporates --no-renames on git diff for pull_request touched.txt and adds an auditable step logging tier=none execution as specified in PMAT-3658.",
+          "file": ".github/workflows/ci.yml",
+          "grounding": "cited",
+          "line": 448
+        },
+        {
+          "claim": "ci_test_tier.sh removes the mandatory HEAD^2 check for merge_group events, allowing squash merge queues (one parent) to re-derive the PR tier from HEAD^1..HEAD instead of falling closed to tier=full.",
+          "file": "scripts/ci_test_tier.sh",
+          "grounding": "cited",
+          "line": 292
+        }
+      ],
+      "raw_bytes": 6804,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "line": 448,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        ".github/workflows/ci.yml incorporates --no-renames on git diff for pull_request touched.txt and adds an auditable step logging tier=none execution as specified in PMAT-3658."
+      ]
+    },
+    {
+      "file": "scripts/ci_test_tier.sh",
+      "line": 292,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "ci_test_tier.sh removes the mandatory HEAD^2 check for merge_group events, allowing squash merge queues (one parent) to re-derive the PR tier from HEAD^1..HEAD instead of falling closed to tier=full."
+      ]
+    },
+    {
+      "file": "scripts/ci_test_tier.sh",
+      "line": 458,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "ci_test_tier.sh --self-test executes squash merge queue re-derivation, docs-only tier=none filtering, and --no-renames rename detection self-tests without failures."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}

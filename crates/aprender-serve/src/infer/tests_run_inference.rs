@@ -362,6 +362,7 @@
             trace_steps: Some(vec!["embed".to_string()]),
             verbose: true,
             use_mock_backend: false,
+            force_chat_template: false,
         };
 
         let debug = format!("{:?}", config);
@@ -395,6 +396,7 @@
             trace_steps: Some(vec!["a".to_string(), "b".to_string()]),
             verbose: true,
             use_mock_backend: false,
+            force_chat_template: false,
         };
 
         let cloned = original.clone();

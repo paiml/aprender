@@ -1,0 +1,75 @@
+# CRUX-O-13 — Model distillation: compress the ensemble into one fast student
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3383, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-13
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 3  # 1..5, medium priority in pmat work
+  intake_status: missing
+  github_issue: 3383
+  description: >
+    Model distillation: compress the ensemble into one fast student. Competitor verb: predictor.distill(time_limit=..., augment_method="spunge"). Gap measured in aprender at eb262f8eb: Distillation exists only for LLMs in the training crate (knowledge distillation of transformers); nothing trains a single tabular student on the teacher ensemble's soft labels with data augmentation.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3383'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  the_student_is_faster_and_within_tolerance_of_the_teacher:
+    formula: |
+      student pred_time < 0.25 x teacher pred_time AND student validation score >= teacher score - 0.02 on a fixture
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "the student is faster and within tolerance of the teacher"
+  augmentation_produces_rows_the_training_set_does_not_contain:
+    formula: |
+      with augment_method=spunge the student's training set has > n_train rows and the added rows are not row-equal to any original
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "augmentation produces rows the training set does not contain"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-13-001
+  rule: "the student is faster and within tolerance of the teacher"
+  prediction: "student pred_time < 0.25 x teacher pred_time AND student validation score >= teacher score - 0.02 on a fixture"
+  test: >-
+    LIVE-PENDING - the student is faster and within tolerance of the teacher. No test surface exists today because the capability is unimplemented: Model distillation: compress the ensemble into one fast student (aprender#3383, CRUX-O-13). PROMOTE by authoring a test named student_faster_within_tolerance in module `automl/distill/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'the student is faster and within tolerance of the teacher' is violated — the autogluon parity claim for CRUX-O-13 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-13-002
+  rule: "augmentation produces rows the training set does not contain"
+  prediction: "with augment_method=spunge the student's training set has > n_train rows and the added rows are not row-equal to any original"
+  test: >-
+    LIVE-PENDING - augmentation produces rows the training set does not contain. No test surface exists today because the capability is unimplemented: Model distillation: compress the ensemble into one fast student (aprender#3383, CRUX-O-13). PROMOTE by authoring a test named augmented_rows_are_novel in module `automl/distill/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'augmentation produces rows the training set does not contain' is violated — the autogluon parity claim for CRUX-O-13 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "the student is faster and within tolerance of the teacher"
+- type: invariant
+  property: "augmentation produces rows the training set does not contain"
+
+kani_harnesses:
+- id: KH-CRUX-O-13-001
+  obligation: the_student_is_faster_and_within_tolerance_of_the_teacher
+  property: the_student_is_faster_and_within_tolerance_of_the_teacher_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-13-002
+  obligation: augmentation_produces_rows_the_training_set_does_not_contain
+  property: augmentation_produces_rows_the_training_set_does_not_contain_holds_on_bounded_input
+  bound: 4

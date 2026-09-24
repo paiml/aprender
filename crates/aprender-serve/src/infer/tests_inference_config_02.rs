@@ -315,6 +315,7 @@
             verbose: false,
             stop_tokens: Vec::new(),
             use_mock_backend: false,
+            force_chat_template: false,
         };
         let debug_str = format!("{:?}", config);
         assert!(debug_str.contains("trace_verbose"));
@@ -343,6 +344,7 @@
             verbose: true,
             stop_tokens: Vec::new(),
             use_mock_backend: false,
+            force_chat_template: false,
         };
         let cloned = config.clone();
         assert_eq!(cloned.trace_verbose, config.trace_verbose);

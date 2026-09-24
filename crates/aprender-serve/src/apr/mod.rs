@@ -321,7 +321,7 @@ impl TensorEntry {
             8 => "q4".to_string(), // Legacy AprQ4 (was Q4=8 before GH-438)
             9 => "q8".to_string(), // Legacy AprQ8 (was Q8=9 before GH-438)
             // GGML-standard types
-            _ => crate::gguf::GgmlQuantType::from_id(u32::from(dtype_byte))
+            _ => crate::gguf::admitted_from_id(u32::from(dtype_byte))
                 .map_or_else(
                     || {
                         eprintln!("WARN: Unknown APR dtype byte {dtype_byte}, treating as F32");
@@ -407,3 +407,10 @@ impl TensorEntry {
 include!("metadata.rs");
 include!("tokenizer_loading.rs");
 include!("special_tokens.rs");
+
+// PMAT-3430 Q1-c: the characterization snapshot for the four remaining
+// id-or-name admission boundaries (infer, this module's `from_binary` dtype
+// arm, special_tokens, dequant). This `mod` line is the only non-test edit.
+#[cfg(test)]
+#[path = "boundary_characterization_tests.rs"]
+mod boundary_characterization_tests;

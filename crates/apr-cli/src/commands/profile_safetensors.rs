@@ -29,7 +29,7 @@ fn profile_safetensors_real(
     let rosetta = aprender::format::rosetta::RosettaStone::new();
     let report = rosetta
         .inspect(path)
-        .map_err(|e| CliError::InvalidFormat(format!("Inspection failed: {e}")))?;
+        .map_err(|e| CliError::invalid_model_file(path, "Inspection failed", &e))?;
 
     let num_layers = report
         .tensors

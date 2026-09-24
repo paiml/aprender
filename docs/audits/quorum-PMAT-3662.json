@@ -1,0 +1,205 @@
+{
+  "ticket": "PMAT-3662",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "6b04f66a82ef40f9349d88d12faf8fe289b77866",
+  "diff_sha256": "4f3cb2d4adf71ae1a404f78110835ee97073997800c89a181b0e98ec139a5160",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 19429,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly addresses all four acceptance criteria of PMAT-3662.\n\n1. It replaces the hand-typed `match` arms in all three sites (`sliding_window_entropy.rs`, `validate_manifest.rs`, and `model_source.rs`) with `trueno_quant::GgmlType::from_id(...).map_or(...)` or `.map(...)`, as requested.\n2. It adds a new test per site that feeds ids 10 (Q2_K), 16 (IQ2_XXS), 23 (IQ4_XS), and 30 (BF16), resolving correctly to the upstream names.\n3. Unknown ids (e.g. 4, 5, 999) are explicitly tested and continue to print each site's existing unknown token (`\"Unknown\"`, `\"UNKNOWN\"`, or `None`), maintaining stability.\n4. `apr-cli`'s `Cargo.toml` properly adds the workspace dependency `trueno-quant = { workspace = true }`. As noted in the roadmap facts, `aprender-serve` already compiles correctly and thus its existing dependencies suffice. No claims from the ticket are weakened or missing.",
+      "findings": [],
+      "raw_bytes": 3954,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements all four acceptance criteria of PMAT-3662 exactly as specified.\n\n1. It replaces the hand-typed match arms in `sliding_window_entropy.rs`, `validate_manifest.rs`, and `model_source.rs` with `trueno_quant::GgmlType::from_id(id).map_or(..., GgmlType::as_str)` or equivalent.\n2. It adds a test to each site that feeds the required ids `10`, `16`, `23`, and `30` and checks they map to their correct upstream names (`Q2_K`, `IQ2_XXS`, `IQ4_XS`, `BF16`).\n3. Unknown ids `4` and `5` (and `999`/`9999` either newly added or via pre-existing tests) return the site's specific unknown tokens (`\"Unknown\"`, `\"UNKNOWN\"`, and `None` respectively).\n4. `apr-cli/Cargo.toml` correctly adds `trueno-quant = { workspace = true }` as a dependency.",
+      "findings": [],
+      "raw_bytes": 3670,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "As Lane 3 of 3 independent reviewers, I have reviewed the diff against Ticket PMAT-3662. All four acceptance criteria are fully met:\n\n1. Every non-example id->name mapping in `apr-cli` (`sliding_window_entropy.rs:297`, `validate_manifest.rs:795`) and `aprender-serve` (`model_source.rs:209`) routes through `trueno_quant::GgmlType::from_id(id)`.\n2. Tests covering IDs 10 (Q2_K), 16 (IQ2_XXS), 23 (IQ4_XS), 30 (BF16), and unknown IDs have been added for all three sites (`hex_options_detect.rs:145`, `validate_manifest.rs:1676`, `model_source.rs:304`).\n3. Unknown IDs maintain site-specific unknown tokens (\"Unknown\", \"UNKNOWN\", None).\n4. `apr-cli` workspace dependency on `trueno-quant` is added to `Cargo.toml:158` and reflected in `Cargo.lock:268`.\n\nNo refutations, weakened gates, or out-of-scope changes were found. Verdict: PASS.",
+      "findings": [
+        {
+          "claim": "apr-cli Cargo.toml adds dependency trueno-quant = { workspace = true }, satisfying acceptance criterion 4.",
+          "file": "crates/apr-cli/Cargo.toml",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 158
+        },
+        {
+          "claim": "ggml_dtype_name in apr-cli/src/commands/sliding_window_entropy.rs is routed through trueno_quant::GgmlType::from_id(dtype).map_or(\"Unknown\", trueno_quant::GgmlType::as_str), preserving the \"Unknown\" fallback token.",
+          "file": "crates/apr-cli/src/commands/sliding_window_entropy.rs",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 297
+        },
+        {
+          "claim": "test_ggml_dtype_name_names_every_family in apr-cli/src/commands/hex_options_detect.rs verifies IDs 10 (Q2_K), 16 (IQ2_XXS), 23 (IQ4_XS), 30 (BF16) and unknown IDs 4, 5, 999.",
+          "file": "crates/apr-cli/src/commands/hex_options_detect.rs",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 145
+        },
+        {
+          "claim": "ggml_type_name in apr-cli/src/commands/validate_manifest.rs is routed through trueno_quant::GgmlType::from_id(t).map_or(\"UNKNOWN\", trueno_quant::GgmlType::as_str), preserving the \"UNKNOWN\" fallback token.",
+          "file": "crates/apr-cli/src/commands/validate_manifest.rs",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 795
+        },
+        {
+          "claim": "pm008_ggml_type_name_is_the_upstream_table in apr-cli/src/commands/validate_manifest.rs verifies IDs 10, 16, 23, 30 and unknown IDs 4, 5, 999.",
+          "file": "crates/apr-cli/src/commands/validate_manifest.rs",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 1676
+        },
+        {
+          "claim": "gguf_qtype_name in aprender-serve/src/api/model_source.rs is routed through trueno_quant::GgmlType::from_id(qtype).map(trueno_quant::GgmlType::as_str), preserving the Option return type.",
+          "file": "crates/aprender-serve/src/api/model_source.rs",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 209
+        },
+        {
+          "claim": "qtype_names_cover_every_live_family in aprender-serve/src/api/model_source.rs verifies IDs 10, 16, 23, 30 and unknown IDs 4, 5.",
+          "file": "crates/aprender-serve/src/api/model_source.rs",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 304
+        }
+      ],
+      "raw_bytes": 7916,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/Cargo.toml",
+      "line": 158,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "apr-cli Cargo.toml adds dependency trueno-quant = { workspace = true }, satisfying acceptance criterion 4."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/hex_options_detect.rs",
+      "line": 145,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "test_ggml_dtype_name_names_every_family in apr-cli/src/commands/hex_options_detect.rs verifies IDs 10 (Q2_K), 16 (IQ2_XXS), 23 (IQ4_XS), 30 (BF16) and unknown IDs 4, 5, 999."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/sliding_window_entropy.rs",
+      "line": 297,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "ggml_dtype_name in apr-cli/src/commands/sliding_window_entropy.rs is routed through trueno_quant::GgmlType::from_id(dtype).map_or(\"Unknown\", trueno_quant::GgmlType::as_str), preserving the \"Unknown\" fallback token."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/validate_manifest.rs",
+      "line": 795,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "ggml_type_name in apr-cli/src/commands/validate_manifest.rs is routed through trueno_quant::GgmlType::from_id(t).map_or(\"UNKNOWN\", trueno_quant::GgmlType::as_str), preserving the \"UNKNOWN\" fallback token."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/validate_manifest.rs",
+      "line": 1676,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "pm008_ggml_type_name_is_the_upstream_table in apr-cli/src/commands/validate_manifest.rs verifies IDs 10, 16, 23, 30 and unknown IDs 4, 5, 999."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/api/model_source.rs",
+      "line": 209,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "gguf_qtype_name in aprender-serve/src/api/model_source.rs is routed through trueno_quant::GgmlType::from_id(qtype).map(trueno_quant::GgmlType::as_str), preserving the Option return type."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/api/model_source.rs",
+      "line": 304,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "qtype_names_cover_every_live_family in aprender-serve/src/api/model_source.rs verifies IDs 10, 16, 23, 30 and unknown IDs 4, 5."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

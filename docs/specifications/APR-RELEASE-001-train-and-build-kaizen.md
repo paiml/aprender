@@ -13,6 +13,10 @@ tag inheritance from the release commit, B2 split by capability (cpu shards + gp
 derived from `cargo metadata` (TIERS deleted), unattended cascade under standing authorization with
 receipts, v0.68.0 = GitHub-only / 0.68.1 = crates.io, P0·Fan-out as the 0.69 train's first PR.
 Earlier revisions kept where still true. *(Merged 2026-09-18 onto the `main` lineage — #3268 §4.1–4.3, §5.1, §6.1–6.4, §10–§12 and #3455 `check_milestone_cut.sh` — which the 09-15/16/17 working copy had been cut before; where the two disagreed the later operator ruling wins and the older text is kept as history.)*
+**Revision 2026-09-21** — §13: integration batches are the DEFAULT merge path (operator: "we are
+arbitrarily going slow because each PR adds time, but in most cases 80% of PR can be batched"),
+assembled by `scripts/batch_fold.sh`. Hard rule 9 and the §8 "hand-squashed batch" stop are amended
+to match (§13.9 says what that costs).
 **Revision 2026-09-16** — adds §1.6 critical path for 0.68, milestone hygiene (§6), the
 CI-wedge mechanism and its two sanctioned rules (P0·Unwedge), clean-room-on-tag (T-3), reaper
 budget as a manifest fact, and the capacity-source rule (no runners API, ever).
@@ -178,9 +182,15 @@ that decides a gate.
    2026-09-13 stands: "T4 is never mine … releases are automated by release train … for ALL releases".)*
 8. `pmat work add` from the driver session only. Stop the line on RED — no reruns-as-passes,
    no `--skip`, no waivers.
-9. **No hand-squash of batches.** Batch verification is the merge queue's job (merge_group,
-   group size 8); each PR lands as its own commit. A red batch fans out one job per PR, never
-   hand-bisected.
+9. **A batch is an integration PR assembled by `scripts/batch_fold.sh`, never by hand (§13,
+   operator 2026-09-21).** Receipted PRs fold into `release/<train>-batch`; only the generated set is
+   ever resolved by the tool, every other conflict leaves that PR out, and a red batch is traced to
+   its constituent with `git log --merges` on the batch branch (§13.7).
+   *(Superseded 2026-09-21. Until then this rule read: "No hand-squash of batches. Batch
+   verification is the merge queue's job (merge_group, group size 8); each PR lands as its own
+   commit. A red batch fans out one job per PR, never hand-bisected." The queue it described was
+   not the queue we had: mergeMethod SQUASH, maximumEntriesToMerge=1, measured on #3658 — so every
+   PR paid its own CI run, queue slot and roadmap re-merge.)*
 10. **WIP is enforced at the producer.** paiml-implement's pre-push hook refuses to mint a PR when
    open aprender PRs ≥ 13 (basis: measured drain 8.8/day × 1.5 day, 2026-09-15; ratchet after 20
    records) and emits an issue instead. Sweeps emit issues, not PRs.
@@ -654,7 +664,7 @@ next:    train eligible at <timestamp>
 - Any queue entry ejected twice on the same cause → stop, five-whys, no third re-queue.
 - Any measurement whose tree line shows `behind≠0`, or taken outside a per-session worktree →
   discard and re-measure from `origin/main`.
-- Any step would need an invented threshold, a hand-squashed batch, a hand-cancelled run with started
+- Any step would need an invented threshold, a batch assembled by hand instead of `scripts/batch_fold.sh` (§13), a hand-cancelled run with started
   jobs, a label edit to dodge a runner, an env bypass of a prejob gate, `--allow-dirty`, or a host CONFIG change made over SSH
   instead of through forjar (§3.5 — SSH for measurement and for unclogging is expected) → stop.
 - The upstream ontology spec, at the version this spec cites, is not reachable at a committed sha
@@ -987,3 +997,106 @@ them are report lines.
 | FX-3 | §12.1.3 | every counter on a §7 line has a named ratchet target and moves one way | move one backward by hand → RED |
 | FX-4 | §12.2.C | `beats:` says `measured-on published` only when the dogfood ran on a `cargo install aprender` binary (G13: no embedded SHA, `DOGFOOD_ALLOW_UNPINNED=1`) | report `published` from a dev build → RED |
 | FX-5 | §12.2.C | a beat's status in `docs/BEATS.md` matches its contract | change the status without the contract → `readme_contract` RED |
+
+## §13 Integration batches — the default merge path (operator 2026-09-21)
+
+> "we are arbitrarily going slow because each PR adds time, but in most cases 80% of PR can be batched."
+
+The per-PR queue is the slow path. Every PR paid one CI run (~32 min median wall, ~68 runner-min),
+one queue slot (~26 min per merge, measured), and, while `roadmap.yaml` is committed (#3650), about
+one re-merge of the generated files per landing. The default is now ONE integration batch PR that
+carries every receipted PR that is ready. First run: #3669, 18 PRs plus an andon fix.
+
+### §13.1 Who does what
+
+- **An author** stops at the receipt: branch, roadmap fragment, AD-04 quorum,
+  `docs/audits/quorum-<T>.json` committed on the branch, lanes path to the batch driver. **Never
+  arms, and never merges main just to stay current.**
+- **The batch driver** (the traffic cop) folds, regenerates, pushes and arms the batch.
+- **A folded PR** is never pushed to again. Fixes go to the batch branch, or to the author's
+  branch followed by a re-fold.
+
+### §13.2 Assembly
+
+```
+git worktree add -b release/<train>-batch <dir> origin/main
+cd <dir> && bash scripts/batch_fold.sh --regen <branch> <branch> ...   # priority order, cut-blockers first
+```
+
+Run it under **bash**. zsh does not word-split `$var`, which breaks a hand-rolled loop over branch
+names. `batch_fold.sh` merges each branch `--no-ff`. It resolves ONLY the **generated set**:
+`docs/roadmaps/roadmap.yaml`, `contracts/census.json`, `contracts/contracts.nt`,
+`contracts/shapes.ttl`, and the `CONTRACT_COUNT` blocks of `README.md`. README is merged three-way
+with the counts normalised out, so a README conflict outside a count block is a real conflict. Every
+other conflict aborts that branch's merge (`SKIP <branch>: conflict in <paths>`). A clean fold that
+touches the generated set still marks it stale, because two PRs that each add a contract merge
+textually and the census is then wrong.
+
+`--regen` regenerates the set ONCE with the pv built from the batch tree (`scripts/pv_bin.sh`):
+roadmap aggregate, `pv census`, `pv extract`, `readme_sync.sh --write`. It then asserts the fixed
+points (`make roadmap-aggregate-check`, `pv extract --check`, `readme_sync.sh --check`) and commits
+the regeneration. Exit codes:
+
+| Exit | Meaning |
+|---|---|
+| 0 | all folded, set consistent |
+| 1 | a SKIP |
+| 2 | a usage, git or regeneration failure, including a failed fixed point |
+| 3 | folded, but the generated set is stale (`REGEN REQUIRED`) |
+
+### §13.3 Left out, and said so
+
+A PR is left out of the batch for exactly two reasons, and the batch body names which:
+
+- a real conflict (`SKIP`, e.g. #3606 against #3634);
+- a tree-wide gate it fails on its own (e.g. `pv census` refused #3642's YAML).
+
+Nothing else keeps a receipted PR out.
+
+### §13.4 What needs a new quorum
+
+Each constituent's receipt stands, because its diff is unchanged inside the batch. Only content
+NEW to the batch needs a quorum: fixes made in the batch branch, run with `--base <its parent>`. The
+regeneration needs none; its fixed points are asserted by `--regen`. While paiml-implement#317 is
+open, a review lane whose agy conversation store (`~/.gemini/antigravity-cli/conversations/<id>.db`)
+never references the judged worktree is **VOID**. Stale shared scratch clones have produced
+`measured` PASSes from another branch with rewritten baselines (#3664). A NON-author's measured
+verification in the judged tree, posted on the PR with commands and outputs, fills the seat.
+
+### §13.5 Push, then disarm
+
+1. Push the batch first so CI starts.
+2. Run `cargo check --workspace --all-targets` locally in parallel.
+3. Comment "folded into #N" on each constituent and disarm it.
+4. Cancel in-flight PR CI outside the batch; it goes stale when the batch moves main.
+5. Dequeue anything the batch supersedes.
+
+### §13.6 The batch body, arming, closing
+
+The body has a table of constituents: PR, receipt path, head sha. It carries every constituent's
+closing keywords, plus a `keep-open:` line naming the constituent PR numbers, or
+`check_pr_closes_issue.sh` fails. Arm the batch. After it merges, close each constituent as "landed
+in #N".
+
+### §13.7 A red batch
+
+1. Run `git log --merges` on the batch branch.
+2. Find the constituent whose merge introduced the red, and reproduce it on that merge.
+3. Either fix it in the batch (new content, so §13.4 applies) or drop it: rebuild the batch without
+   it, then `--regen`.
+4. Push once.
+
+### §13.8 What this costs, stated rather than found
+
+The queue is SQUASH, so a batch lands on main as ONE commit. `git bisect` on main therefore stops at
+the batch, not the constituent. The constituent history survives on the batch branch (the `--no-ff`
+merges) and in the body's head-sha table, so the batch branch is kept until the train's next tag.
+Deleting it early turns "which PR broke main" into a rebuild.
+
+### §13.9 Falsifiers
+
+| # | Assertion | Mutation |
+|---|---|---|
+| FX-B1 | `batch_fold.sh` resolves only the generated set: a code conflict and a README prose conflict are SKIP, a count-block conflict folds (`check_batch_fold.sh`, run by guard-tree on every PR) | treat README as wholly generated, or take every conflict → `check_batch_fold.sh --self-test` RED |
+| FX-B2 | a stale generated set is never silent: a clean fold touching the census exits 3 | never mark a clean fold stale → RED |
+| FX-B3 | a failed fixed point stops the batch (exit 2, the check named) | ignore `pv extract --check` → RED |

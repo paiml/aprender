@@ -26,9 +26,9 @@ impl GgufReader {
         Self::from_bytes_keep(data, false)
     }
 
-    /// Parse GGUF from bytes. When `keep_all` is true EVERY metadata key is
-    /// retained; otherwise only `tokenizer.` / `general.` / known-arch keys are
-    /// parsed (the rest skipped for efficiency).
+    /// Parse GGUF from bytes. When `keep_all` is true EVERY metadata key goes to
+    /// `metadata`; otherwise only `tokenizer.` / `general.` / known-arch keys do,
+    /// and the rest go to `display_only_metadata` (#3733). No key is dropped.
     pub fn from_bytes_keep(data: Vec<u8>, keep_all: bool) -> Result<Self> {
         if data.len() < 24 {
             return Err(AprenderError::FormatError {
@@ -78,6 +78,7 @@ impl GgufReader {
         // Parse metadata section (extract vocabulary and other tokenizer data)
         let mut offset = 24;
         let mut metadata = BTreeMap::new();
+        let mut display_only_metadata = BTreeMap::new();
         for _ in 0..metadata_kv_count {
             // Read key
             let (key, key_len) = read_string(&data, offset)?;
@@ -103,8 +104,10 @@ impl GgufReader {
                 metadata.insert(key, value);
                 offset += value_len;
             } else {
-                // Skip other metadata for efficiency
-                let value_len = skip_metadata_value(&data, offset, value_type)?;
+                // #3733: kept, not skipped. `apr inspect` must show every key the
+                // header carries; only the config accessors are kept to the list.
+                let (value, value_len) = read_metadata_value(&data, offset, value_type)?;
+                display_only_metadata.insert(key, value);
                 offset += value_len;
             }
         }
@@ -164,6 +167,7 @@ impl GgufReader {
             tensors,
             data_offset,
             metadata,
+            display_only_metadata,
         })
     }
 

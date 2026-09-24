@@ -247,6 +247,50 @@ pub struct ModelSizeConfig {
     pub norm_eps: f64,
 }
 
+/// #3346: the Gated DeltaNet shape of a hybrid family.
+///
+/// `contracts/model-families/qwen3_5.yaml` declares `inner_size`,
+/// `state_size`, `conv_kernel`, `group_count` and `full_attention_interval`
+/// under `constraints:`, and until #3346 [`ModelConstraints`] carried none of
+/// them. A DeltaNet layer's parameters live entirely in these dimensions — the
+/// conv, the in/out projections and the gates — so a type that drops them
+/// cannot count a hybrid model: dense accounting under-counted the real
+/// `Qwen3.5-0.8B-Q4_K_M.gguf` by 14.4%.
+///
+/// Tensor names below are the GGUF names of that measured file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DeltaNetShape {
+    /// Width of the DeltaNet mixer — `attn_gate`/`ssm_out` are `inner_size`
+    /// wide and `attn_qkv`/`ssm_conv1d` are `3 * inner_size` wide.
+    pub inner_size: usize,
+    /// Per-head state width; `ssm_norm` is a vector of this length.
+    pub state_size: usize,
+    /// Depthwise conv width: `ssm_conv1d` is `[conv_kernel, 3 * inner_size]`.
+    pub conv_kernel: usize,
+    /// Number of DeltaNet heads — the length of `ssm_a` and `ssm_dt.bias`, and
+    /// the output width of `ssm_alpha`/`ssm_beta`.
+    pub group_count: usize,
+    /// Period of the hybrid schedule: every `full_attention_interval`-th layer
+    /// runs softmax attention instead, the LAST of each group (measured: layers
+    /// 3, 7, 11, 15, 19, 23 of 24 at interval 4).
+    pub full_attention_interval: usize,
+}
+
+impl DeltaNetShape {
+    /// `group_count * state_size`, which must equal `inner_size` for the
+    /// declared shape to describe one mixer.
+    ///
+    /// This is a CHECK, not a repair: the measured 0.8B satisfies it
+    /// (16 * 128 = 2048) and the 9b descriptor does not (8 * 128 != 2048).
+    #[must_use]
+    pub const fn heads_span_the_mixer(&self) -> bool {
+        match self.group_count.checked_mul(self.state_size) {
+            Some(span) => span == self.inner_size,
+            None => false,
+        }
+    }
+}
+
 /// Architectural constraints for a model family.
 #[derive(Debug, Clone)]
 pub struct ModelConstraints {
@@ -259,6 +303,9 @@ pub struct ModelConstraints {
     pub mlp_type: MlpType,
     /// GH-280: Whether Q and K projections have per-head RMSNorm (e.g., Qwen3)
     pub qk_norm: bool,
+    /// #3346: Gated DeltaNet shape, for hybrid families that declare one.
+    /// `None` for every family whose descriptor has no `inner_size`.
+    pub deltanet: Option<DeltaNetShape>,
 }
 
 /// Tensor name template for a model family.

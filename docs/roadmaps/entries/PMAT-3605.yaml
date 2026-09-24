@@ -1,0 +1,17 @@
+- id: PMAT-3605
+  github_issue: 3605
+  item_type: task
+  title: 'removed_by gets a shape: refusal-receipt-v1 with a closed escape set'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-21T00:00:00Z
+  updated: 2026-09-21T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from gh#3605 done_when; see paiml-mcp-agent-toolkit#1414). Done when: contracts/refusal-receipt-v1.yaml exists with a shape over removed_by, and the value space is a CLOSED SET rather than free text: pattern ^(v[0-9]+\\.[0-9]+|never|unscheduled)$. The point of the closed set is that legitimately-nothing stays SAYABLE and CHECKABLE — never and unscheduled are honest answers with a shape behind them, instead of a required field manufacturing a fake version. Fixtures cover each arm of the alternation plus a rejecting case. STOP: do not admit free text; do not make the field optional, which would make absence indistinguishable from a deliberate never.'

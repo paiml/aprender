@@ -1,0 +1,21 @@
+- id: PMAT-3393
+  github_issue: 3393
+  item_type: task
+  title: 'P1: Local statistical baselines: SeasonalNaive, ETS, Theta, AutoARIMA, Croston — CRUX-O-23'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-23, competitor autogluon, demand 4. ARIMA exists (fixed order; no auto-order search). SeasonalNaive, ETS, Theta and the intermittent-demand family (Croston, ADIDA, IMAPA) are absent. AutoGluon runs these as its ''local'' tier (timeseries/models/local/) and they anchor every leaderboard. FALSIFIABLE (contracts/crux-O-23-v1.yaml): SeasonalNaive is exactly the lag-m copy — forecast[t] == y[t - m] for the whole horizon on a fixture with m=24, byte-equal; AutoARIMA selects the planted order — on a fixture generated from ARIMA(2,1,1) the selected (p,d,q) equals (2,1,1) in >= 9 of 10 seeds; ETS and Theta match the statsforecast reference — point forecasts on the AirPassengers fixture equal the statsforecast reference within 1e-6. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

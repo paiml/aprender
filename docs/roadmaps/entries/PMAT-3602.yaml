@@ -1,0 +1,17 @@
+- id: PMAT-3602
+  github_issue: 3602
+  item_type: task
+  title: 'apr run --gpu reported a CPU fallback as success: registry::after_generation had no production caller'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T00:00:00Z
+  updated: 2026-09-21T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from gh#3602 done_when; pmat work add derives neither spec: nor acceptance_criteria: — paiml-mcp-agent-toolkit#1414). Item 1: the GPU rejection is surfaced on a stream a user reads AND in --json. Item 2: SATISFIED BY #3606 — validate_ms instruments validate_gpu_first_token, measured 15.1s on qwen2.5-coder-0.5b; not owed again here. Item 3: root cause named for the dense path — ANSWERED, it is FP8 PREFILL, established by a 2x2 over FP8_PREFILL x FP8_DECODE with both flags named in every cell (divergence tracks FP8_PREFILL exactly, independent of FP8_DECODE; 34.3s used_gpu=false vs 16.9s used_gpu=true); a single-knob bisect could not separate them because detect_fp8_decode falls through to fp8_prefill. Item 4: the fail-vs-fall-back decision RECORDED — it already was, in registry::after_generation (R-0b, gh#3002/#3042): forced accelerator that fell to CPU = refusal exit 14, default selection = corrective line. The defect was that it had NO PRODUCTION CALLER; nor do registry::announce or registry::parity_line, which is why a real run prints zero selected: and zero parity: lines. Item 5: falsifier both ways — 6 cases in run_tests_accel_reconcile.rs; planting the pre-fix behaviour turns the two defect tests RED while the healthy-GPU control stays green. Measured on lambda RTX 4090 sm_89, apr 0.68.2 (e6f77c98c). NOT IN SCOPE, deliberately: the rejection REASON (cosine, position) is not plumbed into --json — it is produced inside realizar F2 and no channel carries it to the CLI; that is a #3606-shaped follow-up, not a value to approximate. STOP: do not widen f2_should_retry_without_fp8 here — that band belongs to gh#3483, reopened with the contradicting measurement. BLAST RADIUS: exit code changes on a shipped surface; 14 files under scripts/ and .github/workflows/ pass --gpu, incl. perf_gate.sh, parity_host_receipt.sh, model_ladder.sh — CI going red on one is the measurement, and its fix belongs on that gate.'

@@ -1,0 +1,17 @@
+- id: PMAT-3658
+  github_issue: 3658
+  item_type: task
+  title: 'Every merge-group run is tier=full: ci_test_tier.sh requires HEAD^2 but the queue is SQUASH (one parent) — a text-only PR runs ~2 runner-hours of unit tests; HEAD^1..HEAD is already the PR diff'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-21T06:03:14Z
+  updated: 2026-09-21T06:03:14Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE — issue #3658 done_when as AMENDED 2026-09-21 06:10Z (the amendment supersedes the original list; operator instruction quoted there: "you will fix ASAP this is P0, and NO roadmap shouldn''t even have 10 minutes testing"). (1) A squash-shaped merge-group fixture (one parent, main moved, a leaf crate touched) gives tier=quick with that crate, not full. The same fixture with a roadmap entry only gives tier=none. Both are case-table rows. (2) Mutation: restoring the HEAD^2 gate sends the squash group back to full (a RED row). (3) A failing git diff HEAD^1..HEAD still gives tier=full (the fail-closed row is kept). (4) On a pull_request: roadmap + audit paths only -> tier=none; the same with a deleted docs path -> quick; roadmap plus any non-docs path -> quick; docs/specifications/ only -> quick. (5) A push of a squash landing (one parent, no reflog) -> quick over HEAD^1..HEAD, not full. (6) [AMENDMENT 2, 2026-09-21 06:55Z, supersedes amendment 1 item 6] ci.yml changes in exactly two places, and nothing else in the workflow changes: (a) one step, if: tier == none, that logs the reason through env:; (b) the pull_request touched-list line (git diff ... > "$RUNNER_TEMP/touched.txt" in the tier step) gains --no-renames, so both sides of every rename are touched paths. diff_into in ci_test_tier.sh gains the same flag. Rows: default --name-only on a rename fixture lists only the new path (the trap is real); the rename into docs/audits/ gives quick with the crate it left; a mutant without --no-renames gives none (RED); and a file-shaped row asserts the ci.yml line carries the flag. The other touched-list builder with the same shape (ci.yml:2783, the ci_gpu_touched feed) is pre-existing, has a different consumer, is out of scope, and is #3667. (7) After landing: the next 5 merge-group runs'' shard-1 logs show a tier= other than full for the docs-only and small-crate groups. This is observed after the merge, and the issue stays open until it is. SCOPE ADDITIONS in the amendment: A. docs-only diffs (every path under docs/roadmaps/ or docs/audits/ and present at HEAD; never a delete) and an empty diff get tier=none; B. a push landing a squash uses HEAD^1..HEAD. NOT IN SCOPE: guard-cargo and the reusable ci/* jobs on docs-only changes (the next row). Refs #3650, #3643.'

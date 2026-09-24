@@ -159,9 +159,94 @@ fn generate_golden_for_format(
     }
 }
 
+/// Is there a CUDA device this build can use? Both golden rungs ask (#3711).
+#[cfg(feature = "cuda")]
+fn cuda_device_present() -> bool {
+    use realizar::cuda::CudaExecutor;
+    CudaExecutor::is_available() && CudaExecutor::num_devices() > 0
+}
+
+/// Without the cuda feature there is no device this build can use.
+#[cfg(not(feature = "cuda"))]
+fn cuda_device_present() -> bool {
+    false
+}
+
+/// One golden case, judged (#3711).
+#[cfg(feature = "inference")]
+enum GoldenCaseOutcome {
+    /// The CPU answer is right, and so is the GPU's when its leg ran; the leg says which.
+    Passed(GpuGoldenLeg),
+    /// The gate's verdict for this case: a failure, or the tokenizer skip.
+    Verdict(GateResult),
+}
+
+/// The GPU half of one golden case (#3711): run and judged when a cuda build has a device
+/// and the model is a GGUF, else `NotRun` naming which of those it lacks.
+#[cfg(all(feature = "inference", feature = "cuda"))]
+fn gpu_golden_leg(
+    prompt: &str,
+    expected_patterns: &[&str],
+    config: &QaConfig,
+    format: realizar::format::ModelFormat,
+    mapped: Option<&realizar::gguf::MappedGGUFModel>,
+    gguf_model: Option<&realizar::gguf::GGUFModel>,
+    cuda_available: bool,
+    golden_max_tokens: usize,
+) -> Result<GpuGoldenLeg> {
+    use realizar::format::ModelFormat;
+    use realizar::gguf::QuantizedGenerateConfig;
+
+    if let Some(why) = gpu_golden_not_run(true, cuda_available, format == ModelFormat::Gguf) {
+        return Ok(GpuGoldenLeg::NotRun(why));
+    }
+    // Safe: format==Gguf guarantees these are Some
+    let gguf_ref = gguf_model.expect("GGUF model required for GPU golden output");
+    let mapped_ref = mapped.expect("GGUF mapped model required for GPU golden output");
+    let specials = aprender::demo::SpecialTokens::qwen2();
+    let prompt_tokens = gguf_ref
+        .encode(prompt)
+        .unwrap_or_else(|| vec![specials.bos_id, 9707]);
+    // #1864: GPU path mirrors the CPU gate's fix above — set stop_tokens
+    // to EOS so generation terminates at end-of-turn rather than running
+    // the full 512-token budget and drifting into `<|im_start|>` repeats.
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens: golden_max_tokens, // GH-279-4: match CPU budget
+        temperature: 0.0,
+        top_k: 1,
+        stop_tokens: vec![specials.eos_id],
+        ..Default::default()
+    };
+    validate_gpu_golden_output(
+        mapped_ref,
+        &prompt_tokens,
+        &gen_config,
+        gguf_ref,
+        expected_patterns,
+        config,
+    )
+}
+
+/// Without the cuda feature the GPU leg never starts, and says so.
+#[cfg(all(feature = "inference", not(feature = "cuda")))]
+fn gpu_golden_leg(
+    prompt: &str,
+    expected_patterns: &[&str],
+    config: &QaConfig,
+    format: realizar::format::ModelFormat,
+    mapped: Option<&realizar::gguf::MappedGGUFModel>,
+    gguf_model: Option<&realizar::gguf::GGUFModel>,
+    cuda_available: bool,
+    golden_max_tokens: usize,
+) -> Result<GpuGoldenLeg> {
+    let _ = (prompt, expected_patterns, config, mapped, gguf_model, golden_max_tokens);
+    let gguf = format == realizar::format::ModelFormat::Gguf;
+    Ok(GpuGoldenLeg::NotRun(
+        gpu_golden_not_run(false, cuda_available, gguf).unwrap_or("this build has no cuda feature"),
+    ))
+}
+
 /// Validate a single golden test case: generate output, check GPU parity, verify patterns.
-///
-/// Returns `Ok(None)` on success, `Ok(Some(GateResult))` on failure/skip.
 #[cfg(feature = "inference")]
 fn validate_golden_test_case(
     path: &Path,
@@ -173,9 +258,7 @@ fn validate_golden_test_case(
     gguf_model: Option<&realizar::gguf::GGUFModel>,
     cuda_available: bool,
     start: Instant,
-) -> Result<Option<GateResult>> {
-    use realizar::format::ModelFormat;
-
+) -> Result<GoldenCaseOutcome> {
     // GH-279-4: Thinking models (Qwen3) need extra tokens for <think>...</think>
     // chain-of-thought before the answer. 32 tokens is not enough — the model
     // exhausts the budget on reasoning and never emits the answer. Qwen3's
@@ -186,51 +269,32 @@ fn validate_golden_test_case(
     let Some((_, output_text)) =
         generate_golden_for_format(path, prompt, golden_max_tokens, format, mapped, gguf_model)?
     else {
-        return Ok(Some(GateResult::skipped(
+        return Ok(GoldenCaseOutcome::Verdict(GateResult::skipped(
             "golden_output",
             "SafeTensors: tokenizer.json not found",
         )));
     };
 
-    #[cfg(feature = "cuda")]
-    if cuda_available && format == ModelFormat::Gguf {
-        use realizar::gguf::QuantizedGenerateConfig;
-        // Safe: format==Gguf guarantees these are Some
-        let gguf_ref = gguf_model.expect("GGUF model required for GPU golden output");
-        let mapped_ref = mapped.expect("GGUF mapped model required for GPU golden output");
-        let specials = aprender::demo::SpecialTokens::qwen2();
-        let prompt_tokens = gguf_ref
-            .encode(prompt)
-            .unwrap_or_else(|| vec![specials.bos_id, 9707]);
-        // #1864: GPU path mirrors the CPU gate's fix above — set stop_tokens
-        // to EOS so generation terminates at end-of-turn rather than running
-        // the full 512-token budget and drifting into `<|im_start|>` repeats.
-        let gen_config = QuantizedGenerateConfig {
-            max_tokens: golden_max_tokens, // GH-279-4: match CPU budget
-            temperature: 0.0,
-            top_k: 1,
-            stop_tokens: vec![specials.eos_id],
-            ..Default::default()
-        };
-        if let Some(failure) = validate_gpu_golden_output(
-            mapped_ref,
-            &prompt_tokens,
-            &gen_config,
-            gguf_ref,
-            expected_patterns,
-            config,
-        )? {
-            return Ok(Some(GateResult::failed(
-                "golden_output",
-                &failure,
-                None,
-                None,
-                start.elapsed(),
-            )));
-        }
+    // #3711: a GPU leg that errored is a FAIL naming the error, never a skip.
+    let gpu_leg = gpu_golden_leg(
+        prompt,
+        expected_patterns,
+        config,
+        format,
+        mapped,
+        gguf_model,
+        cuda_available,
+        golden_max_tokens,
+    )?;
+    if let Some(failure) = gpu_leg.failure() {
+        return Ok(GoldenCaseOutcome::Verdict(GateResult::failed(
+            "golden_output",
+            &failure,
+            None,
+            None,
+            start.elapsed(),
+        )));
     }
-    #[cfg(not(feature = "cuda"))]
-    let _ = cuda_available;
 
     // GH-279-4: generate_with_cache returns prompt + generated tokens.
     // Strip the prompt echo so we verify only the model's generated output.
@@ -241,7 +305,7 @@ fn validate_golden_test_case(
     if let OutputVerification::Fail { reason } =
         verify_output(&answer_text, "golden_output", expected_patterns)
     {
-        return Ok(Some(GateResult::failed(
+        return Ok(GoldenCaseOutcome::Verdict(GateResult::failed(
             "golden_output",
             &reason,
             None,
@@ -250,7 +314,7 @@ fn validate_golden_test_case(
         )));
     }
 
-    Ok(None)
+    Ok(GoldenCaseOutcome::Passed(gpu_leg))
 }
 
 fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
@@ -267,13 +331,7 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         use realizar::format::{detect_format, ModelFormat};
         use realizar::gguf::{GGUFModel, MappedGGUFModel};
 
-        #[cfg(feature = "cuda")]
-        let cuda_available = {
-            use realizar::cuda::CudaExecutor;
-            CudaExecutor::is_available() && CudaExecutor::num_devices() > 0
-        };
-        #[cfg(not(feature = "cuda"))]
-        let cuda_available = false;
+        let cuda_available = cuda_device_present();
         let model_bytes = std::fs::read(path)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
         let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
@@ -290,8 +348,10 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             (None, None)
         };
 
+        // #3711: the pass message names the GPU leg, so a skipped leg says which skip it was
+        let mut gpu_leg = GpuGoldenLeg::NotRun("no golden case ran");
         for (prompt, expected_patterns) in &test_cases {
-            if let Some(result) = validate_golden_test_case(
+            match validate_golden_test_case(
                 path,
                 prompt,
                 expected_patterns,
@@ -302,13 +362,18 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                 cuda_available,
                 start,
             )? {
-                return Ok(result);
+                GoldenCaseOutcome::Verdict(result) => return Ok(result),
+                GoldenCaseOutcome::Passed(leg) => gpu_leg = leg,
             }
         }
 
         Ok(GateResult::passed(
             "golden_output",
-            &format!("{} golden test cases passed", test_cases.len()),
+            &format!(
+                "{} golden test cases passed ({})",
+                test_cases.len(),
+                gpu_leg.describe()
+            ),
             Some(test_cases.len() as f64),
             Some(test_cases.len() as f64),
             start.elapsed(),
@@ -594,6 +659,119 @@ mod golden_output_tests {
                  margin and verify it on BOTH backends before adding it."
             );
         }
+    }
+
+    // =========================================================================
+    // #3711: the GPU leg's verdicts. An ERROR is a FAIL naming the error, never
+    // a skip; a skip is only a leg that never started, and it names which.
+    // =========================================================================
+
+    const TWO_PLUS_TWO: &[&str] = &["4"];
+
+    #[test]
+    fn gpu_generation_error_fails_the_gate_naming_the_error() {
+        let leg = GpuGoldenLeg::judge(
+            Err("GPU generation: CUDA_ERROR_ILLEGAL_ADDRESS".to_string()),
+            TWO_PLUS_TWO,
+        );
+        assert_eq!(
+            leg,
+            GpuGoldenLeg::Errored("GPU generation: CUDA_ERROR_ILLEGAL_ADDRESS".to_string())
+        );
+        let failure = leg.failure().expect("a GPU generation error must FAIL the gate");
+        assert!(failure.contains("CUDA_ERROR_ILLEGAL_ADDRESS"), "{failure}");
+        assert!(failure.contains("not a skip"), "{failure}");
+    }
+
+    #[test]
+    fn cuda_init_error_on_a_host_with_a_device_fails_the_gate() {
+        let leg = GpuGoldenLeg::judge(
+            Err("CUDA init on device 0: CUDA_ERROR_OUT_OF_MEMORY".to_string()),
+            TWO_PLUS_TWO,
+        );
+        let failure = leg.failure().expect("a CUDA init error must FAIL the gate");
+        assert!(failure.contains("CUDA_ERROR_OUT_OF_MEMORY"), "{failure}");
+    }
+
+    #[test]
+    fn gpu_wrong_answer_fails_the_gate() {
+        let leg = GpuGoldenLeg::judge(Ok("2 + 2 = 5".to_string()), TWO_PLUS_TWO);
+        assert!(matches!(leg, GpuGoldenLeg::WrongAnswer(_)), "{leg:?}");
+        let failure = leg.failure().expect("a wrong GPU answer must FAIL the gate");
+        assert!(failure.starts_with("GPU output failed (CPU passed)"), "{failure}");
+    }
+
+    #[test]
+    fn gpu_right_answer_passes_and_says_it_was_judged() {
+        for text in ["2 + 2 = 4", "<think>two and two</think>The answer is 4."] {
+            let leg = GpuGoldenLeg::judge(Ok(text.to_string()), TWO_PLUS_TWO);
+            assert_eq!(leg, GpuGoldenLeg::Passed, "{text:?}");
+            assert_eq!(leg.failure(), None);
+            assert_eq!(leg.describe(), "GPU leg judged on CUDA device 0");
+        }
+    }
+
+    #[test]
+    fn no_device_is_the_skip_and_names_it() {
+        let why = gpu_golden_not_run(true, false, true).expect("no device: the leg never starts");
+        assert_eq!(why, "no CUDA device on this host");
+        let leg = GpuGoldenLeg::NotRun(why);
+        assert_eq!(leg.failure(), None, "a leg that never started is not a failure");
+        assert_eq!(leg.describe(), "GPU leg SKIPPED: no CUDA device on this host");
+    }
+
+    #[test]
+    fn each_skip_names_which_and_a_cuda_host_runs_the_leg() {
+        assert_eq!(
+            gpu_golden_not_run(false, true, true),
+            Some("this build has no cuda feature")
+        );
+        assert_eq!(
+            gpu_golden_not_run(false, false, false),
+            Some("this build has no cuda feature")
+        );
+        assert_eq!(
+            gpu_golden_not_run(true, true, false),
+            Some("the dense GPU leg judges GGUF only")
+        );
+        // a cuda build with a device and a GGUF: the leg STARTS, so no skip can be reported
+        assert_eq!(gpu_golden_not_run(true, true, true), None);
+    }
+
+    // The runtime rung (the hybrid, and architectures the GPU declines) names the
+    // backend the dispatch REPORTED. It never names the one the build could have used.
+
+    #[test]
+    fn runtime_cuda_build_with_no_device_is_labelled_cpu_never_gpu() {
+        // the old message said "GPU hybrid forward" on every cuda build
+        let not_run = gpu_golden_not_run(true, false, true);
+        let label = runtime_golden_backend(false, not_run).expect("CPU was expected: a pass");
+        assert!(label.starts_with("CPU: the dispatch reported used_gpu=false"), "{label}");
+        assert!(label.contains("no CUDA device on this host"), "{label}");
+        assert!(!label.contains("GPU:"), "{label}");
+    }
+
+    #[test]
+    fn runtime_gpu_fallback_on_a_cuda_host_fails_the_gate() {
+        // a cuda build, a device, an architecture the GPU runs, and the dispatch reported CPU
+        let failure = runtime_golden_backend(false, gpu_golden_not_run(true, true, true))
+            .expect_err("a GPU that fell back to the CPU must FAIL the gate");
+        assert!(failure.contains("fell back"), "{failure}");
+        assert!(failure.contains("not a pass"), "{failure}");
+    }
+
+    #[test]
+    fn runtime_gpu_that_served_is_labelled_gpu_from_the_dispatch() {
+        let label = runtime_golden_backend(true, gpu_golden_not_run(true, true, true))
+            .expect("the GPU served: a pass");
+        assert_eq!(label, "GPU: the dispatch reported used_gpu=true");
+    }
+
+    #[test]
+    fn runtime_architecture_the_gpu_declines_is_a_cpu_pass_that_says_why() {
+        let label = runtime_golden_backend(false, Some("the GPU backend declines this architecture"))
+            .expect("CPU was expected: a pass");
+        assert!(label.contains("the GPU backend declines this architecture"), "{label}");
     }
 }
 

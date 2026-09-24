@@ -1,0 +1,173 @@
+# ──────────────────────────────────────────────
+# refusal-receipt-v1 — a refused verb, under contract (issue #3605, PMAT-3605; blocks #3597)
+#
+# THE DEFECT THIS CLOSES. `removed_by` had **0 occurrences tree-wide**, no schema and no validator.
+# Every refusal #3597 writes would have minted an unenforced convention, and a tree full of
+# consistent-looking `removed_by:` lines reads as validated when it is decoration — the
+# `pv validate`-accepts-a-key-by-ignoring-it class.
+#
+# ── PHASE 0: WHY ITS OWN CONTRACT, DECIDED FROM Σ AT HEAD ──────────────────────────────────────
+#
+# The ruling offered two options — `refusal-receipt-v1`, or a field on `parity-receipt-v1` — and
+# warned against defaulting to a new contract because it is easier to write. It is not the easier
+# one; it is the one the measurements leave standing.
+#
+# **Option B is refused on a fact: `parity-receipt-v1` DOES NOT EXIST AT HEAD.** It is in unmerged
+# PR #3600, and there it is deliberately the RETIRED logit-parity layout carrying **no shape and no
+# instances** — every record was migrated to v2. A live, validated field on a superseded contract
+# with zero focus nodes is a field nothing can carry. Independently, by the discriminator this tree
+# has now used twice (an artifact family is named by its REQUIRED KEYS, never by its filename): a
+# parity receipt requires host, backend, comparator, threshold_source and per-position metrics; a
+# refusal requires a verb, a reason, an exit code and `removed_by`. **They share no required key.**
+#
+# **A third option was considered and refused, and it is the one worth writing down** because it is
+# more attractive than B: put `removed_by` on `apr-cli-commands-v1.yaml`, where the verb already is
+# the focus node and the universe is already the trustworthy 111 (FALSIFY-CLI-001/002). Refused
+# because the registry is the **universe**, and #3597's whole method is to DIFF the registry against
+# the V / V2 / refusal buckets. If the buckets live inside the registry, the denominator and the
+# numerator are the same artifact and the diff is vacuous by construction — a counter measuring its
+# own decoration. The registry says what EXISTS; a refusal says what was TRIED and what happened.
+# Keeping them apart is what lets that diff be a real diff.
+#
+# So: its own contract, joined to the registry by `verb`, so a refusal naming a verb the registry
+# does not carry is a dangling reference and red.
+#
+# ── THE FORCED-BINDING TRAP, AND THE ESCAPE THAT MAKES `minCount 1` SAFE ────────────────────────
+#
+# A required field with no escape MANUFACTURES FALSE DATA. Two instances were on the table:
+# `pv validate` requires a `kani_harnesses` block, so authors fabricate one; and apex#57, where
+# `lean_theorem: Theorems.RowMerged` was copied verbatim into TWELVE contracts, resolved to nothing,
+# and the gate stayed green throughout.
+#
+# The fix copied from apex is a **closed set of declared sentinels**: "there is legitimately nothing
+# here" must be SAYABLE and still CHECKABLE. `removed_by` is therefore `minCount 1` — every refusal
+# must answer — and the answer may be a release OR one of exactly two sentinels, with everything
+# else refused as hard as a dangling value:
+#
+#   v<major>.<minor>   the release that removes this refusal          e.g. v0.70
+#   never              refused permanently and by design; nothing will remove it
+#   unscheduled        a defect or gap with no release chosen yet
+#
+# `tbd`, `soon`, `n/a`, `pending`, `0.70` (no `v`), `v0.70.1` (a patch is not a release boundary)
+# and a git sha are ALL RED. That is the arm that matters: a validator which only accepts cannot
+# tell a real value from an invented one, so the falsifier plants a PLAUSIBLE-but-undeclared
+# sentinel and requires red.
+#
+# WHY A VERSION AND NOT A SHA (`done_when` 2 asks for the choice and the reason). A refusal answers
+# a user's question — *"which release do I need?"* — and a sha does not answer it. A sha is precise
+# about the tree and silent about the boundary; `v0.70` is the thing a person can wait for, and the
+# thing `check_milestone_cut.sh` can count. The sha form is made invalid rather than merely
+# discouraged, because a shape that permits two spellings gets both.
+#
+# KIND: pattern. One JSON document, shaped through the `extract:json` path (ONT-001 §3.7) — no new
+# extractor: `entity: {type: json, ref}` + `vocabulary:` is exactly the machinery for "validate this
+# document", and a second reader for one more family is the thing this tree keeps filing against.
+# ──────────────────────────────────────────────
+name: refusal-receipt
+version: "1.0.0"
+scope: >
+  What a refused verb must state — the verb, one reason line, the exit code a caller sees, and the
+  release that removes the refusal or a declared sentinel saying none will. Out of scope: WHICH verbs
+  are refused (that is #3597's bucket over the 111-verb registry), the V / V2 classification, and
+  parity receipts, which share none of these required keys.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-20'
+  last_modified: '2026-09-20'
+  author: PAIML Engineering
+  description: >
+    A refusal is a measurement about a verb: what was tried, what the caller sees, and when it ends.
+    removed_by is required so no refusal is silent about its own lifetime, and answerable with a
+    closed sentinel so a required field never manufactures a fabricated release.
+  references:
+    - 'aprender#3605 (this row), #3597 (the refusal bucket this unblocks), #3080'
+    - 'contracts/apr-cli-commands-v1.yaml — the 111-verb registry this joins to by `verb`'
+    - 'apex#57 — lean_theorem copied into twelve contracts, resolving to nothing, gate green: the forced-binding precedent'
+    - 'tests/fixtures/ont/refusal-{ok,undeclared-sentinel,sha,missing} — the case table, both arms'
+
+entity:
+  type: json
+  ref: evidence/verbs/refusals.json
+
+vocabulary:
+  prefix: refusal
+  root_class: refusal:Ledger
+  nested:
+    refusals: refusal:Refusal
+
+shape:
+  targetClass: refusal:Refusal
+  closed: true
+  properties:
+    # The join into the registry. A refusal naming a verb `apr --help` does not carry is a dangling
+    # reference; the registry is the universe and this field is the only thing pointing at it.
+    - {path: refusal:verb, minCount: 1, maxCount: 1, datatype: xsd:string}
+    # One line, and it must say something: #3597 records that a refusal whose text names the wrong
+    # defect is a fail-open, so an empty reason is refused before a wrong one can be written.
+    - {path: refusal:reason, minCount: 1, maxCount: 1, datatype: xsd:string, minLength: 12}
+    # What the CALLER sees. A refusal with no distinct exit code is indistinguishable from success
+    # to anything that is not reading prose.
+    - {path: refusal:exit_code, minCount: 1, maxCount: 1, datatype: xsd:integer}
+    # THE FIELD. Required — every refusal answers — with the closed sentinel set as the escape, so
+    # "nothing will remove this" is sayable without inventing a release. Anything outside the three
+    # declared forms is as red as a dangling value.
+    - {path: refusal:removed_by, minCount: 1, maxCount: 1,
+       pattern: "^(v[0-9]+\\.[0-9]+|never|unscheduled)$"}
+
+equations:
+  answerable:
+    formula: "∀ r ∈ Refusal: removed_by(r) ∈ {v<major>.<minor>} ∪ {never, unscheduled}"
+    domain: "every entry of evidence/verbs/refusals.json"
+    codomain: "conforms, or a violation naming the focus node and the value"
+    invariants:
+      - "a required field with a closed escape cannot be satisfied by inventing a release"
+      - "a plausible-but-undeclared sentinel (tbd, soon, n/a, pending) is refused, not tolerated"
+      - "a sha is refused: it is precise about the tree and silent about the boundary a user waits for"
+    preconditions:
+      - "the verb names an entry of contracts/apr-cli-commands-v1.yaml"
+    postconditions:
+      - "no refusal is silent about its own lifetime"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: RFS-INV-001
+    property: every refusal answers for its own lifetime
+    formal: '|removed_by(r)| = 0 ⇒ Fail(refusal-receipt-v1, r)'
+    prose: false
+  - id: RFS-INV-002
+    property: the escape is closed, so the required field cannot manufacture a release
+    formal: 'removed_by(r) ∉ {v<major>.<minor>, never, unscheduled} ⇒ Fail(refusal-receipt-v1, r)'
+    prose: false
+  - id: RFS-INV-003
+    property: a refusal states an exit code a caller can branch on
+    formal: '|exit_code(r)| = 0 ⇒ Fail(refusal-receipt-v1, r)'
+    prose: false
+  - id: RFS-INV-004
+    property: a refusal states a reason, so a wrong one is at least visible
+    formal: 'len(reason(r)) < 12 ⇒ Fail(refusal-receipt-v1, r)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-RFS-001
+    rule: both arms of the sentinel set
+    prediction: >
+      a refusal carrying `v0.70`, `never` or `unscheduled` conforms; one carrying the PLAUSIBLE but
+      undeclared `tbd` is refused naming the focus node and the value; so is a git sha, a bare
+      `0.70`, and a patch-level `v0.70.1`
+    test: cargo test -p aprender-contracts-cli --test ont_refusal_receipt
+    if_fails: a validator that only accepts cannot tell a real value from an invented one
+  - id: FALSIFY-RFS-002
+    rule: the required field, with its escape
+    prediction: >
+      a refusal with no `removed_by` at all is refused; adding `never` makes it conform without
+      naming a release that does not exist
+    test: cargo test -p aprender-contracts-cli --test ont_refusal_receipt
+    if_fails: the field is required with no escape and starts manufacturing fabricated releases
+  - id: FALSIFY-RFS-003
+    rule: a refusal is legible to a caller
+    prediction: an entry with no exit_code, or a one-word reason, is refused
+    test: cargo test -p aprender-contracts-cli --test ont_refusal_receipt
+    if_fails: a refusal is indistinguishable from success to anything not reading prose

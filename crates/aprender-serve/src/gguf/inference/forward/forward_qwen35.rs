@@ -1435,11 +1435,23 @@ fn run_qwen35_generate_gpu(
         "Backend: GPU (CUDA, {device_name}, {vram_mb} MB VRAM) [qwen35 hybrid forward, #3090]"
     );
 
-    let (f2_ok, validate_ms) = crate::infer::stage_timings::timed("validate", || {
-        f2_validate_qwen35(&mut gpu, &qwen, input_tokens, stages)
+    // #3604: the guard runs once per (model sha256, apr version, device) and
+    // leaves a receipt; a later run whose triple matches reads it instead of
+    // re-deriving a 64-position CPU forward that was 67 % of a 14 s TTFT.
+    // PMAT-3598: the whole guard — hash, receipt read, and (on a miss) both forwards — is `validate`.
+    // On a receipt hit it is ~the hash alone, and the stage says so instead of vanishing.
+    let (f2, validate_ms) = crate::infer::stage_timings::timed("validate", || {
+        f2_validate_qwen35_receipted(
+            &mut gpu,
+            &qwen,
+            input_tokens,
+            mapped.data(),
+            &device_name,
+            stages,
+        )
     });
     stages.validate_ms = Some(validate_ms);
-    if !f2_ok {
+    if !f2.accepted {
         return Err("the F2 CPU-parity guard rejected the GPU path".to_string());
     }
     stages.backend = "cuda-qwen35".to_string();
@@ -1520,22 +1532,52 @@ fn qwen35_gpu_decode(
 ///
 /// Both states are throwaway: the guard allocates its own, and the generation
 /// that follows allocates another.
+/// What the F2 guard concluded — and, separately, whether it concluded
+/// anything at all.
+///
+/// The distinction exists for the receipt (#3604): three of this guard's exits
+/// return "let the GPU serve" WITHOUT having compared a single position —
+/// `SKIP_PARITY_GATE=1`, a probe shorter than two tokens, a CPU reference that
+/// would not run. A receipt written on any of those would let a one-token
+/// prompt "validate" the (model, apr, device) triple for every prompt after it.
+/// So the wrapper writes a receipt on `Accepted` only.
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum F2Verdict {
+    /// CPU and GPU agreed on `positions_judged` positions.
+    Accepted {
+        /// Probe positions plus the one greedy decode step.
+        positions_judged: usize,
+    },
+    /// They disagreed, or the GPU probe failed: fail closed.
+    Rejected,
+    /// Nothing was compared. The GPU may serve, but nothing was proved.
+    NotJudged,
+}
+
+#[cfg(feature = "cuda")]
+impl F2Verdict {
+    const fn lets_the_gpu_serve(self) -> bool {
+        !matches!(self, Self::Rejected)
+    }
+}
+
 #[cfg(feature = "cuda")]
 fn f2_validate_qwen35(
     gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
     cpu: &Qwen35Model<'_>,
     probe_context: &[u32],
     stages: &mut crate::infer::stage_timings::StageTimings,
-) -> bool {
+) -> F2Verdict {
     // Same escape hatch as the dense gate, and the same one `apr parity` uses.
     if std::env::var("SKIP_PARITY_GATE").is_ok_and(|v| v == "1") {
-        return true;
+        return F2Verdict::NotJudged;
     }
     let probe = &probe_context[probe_context.len().saturating_sub(QWEN35_F2_PROBE_MAX)..];
     // A one-token probe has no REAL position (≥1) to judge; position 0 is the
     // context-less near-tie the dense gate excludes for the same reason.
     if probe.len() < 2 {
-        return true;
+        return F2Verdict::NotJudged;
     }
     // #3604 needs to know WHICH half the 9.55 s is, so the guard reports its two forwards
     // separately. Both are inside `validate_ms` and are excluded from the stage sum.
@@ -1543,7 +1585,7 @@ fn f2_validate_qwen35(
         crate::infer::stage_timings::timed("validate_ref", || f2_qwen35_cpu_reference(cpu, probe));
     stages.validate_ref_ms = Some(ref_ms);
     let Some(cpu_per_pos) = cpu_ref else {
-        return true; // the CPU forward itself failed: nothing to judge against.
+        return F2Verdict::NotJudged; // the CPU forward itself failed: nothing to judge against.
     };
     let decode_token = cpu_per_pos
         .get(probe.len().saturating_sub(1))
@@ -1556,18 +1598,154 @@ fn f2_validate_qwen35(
         Ok(v) => v,
         Err(msg) => {
             eprintln!("{msg}");
-            return false; // fail closed.
+            return F2Verdict::Rejected; // fail closed.
         },
     };
     let report = crate::infer::f2_multi_position_report(&cpu_per_pos, &gpu_per_pos);
     if report.accepted {
-        true
+        F2Verdict::Accepted {
+            positions_judged: cpu_per_pos.len(),
+        }
     } else {
         eprintln!(
             "{}",
             crate::infer::f2_divergence_msg(&report, crate::infer::F2ProbePath::Serial)
         );
-        false
+        F2Verdict::Rejected
+    }
+}
+
+/// The outcome of the receipted guard, for the caller and — once #3606's
+/// `StageTimings` lands — for `apr run --json`, where `source` is what makes
+/// a cached validation distinguishable from a fresh one (#3604 `done_when` 5).
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct F2Outcome {
+    /// May the GPU serve this run?
+    pub accepted: bool,
+    /// `"receipt"` when the forward was skipped on a matching receipt,
+    /// `"fresh"` when it ran, `"not-judged"` when it ran but compared nothing.
+    pub source: &'static str,
+    /// Wall time of the guard itself, EXCLUDING the hash. ~0 on a receipt hit.
+    pub validate_ms: f64,
+    /// Wall time of hashing the model file — the price of the receipt's key,
+    /// paid on every run, reported separately so it cannot hide in either
+    /// number above.
+    pub sha256_ms: f64,
+    /// Where the receipt was read from or written to, if a cache dir exists.
+    pub receipt_path: Option<std::path::PathBuf>,
+}
+
+/// [`f2_validate_qwen35`] behind its receipt (#3604).
+///
+/// Validate once per (model sha256, apr version, device); later runs of the
+/// same triple read the receipt and skip the forward; `--revalidate` forces a
+/// fresh run and rewrites it. Every path that is not a three-key match
+/// validates — see `f2_receipt.rs` for the table — and a receipt is written on
+/// [`F2Verdict::Accepted`] only, never on a verdict that judged nothing.
+///
+/// Nothing in here can fail the run except the guard's own rejection: an
+/// unwritable cache directory is reported and the next run simply validates
+/// again.
+#[cfg(feature = "cuda")]
+fn f2_validate_qwen35_receipted(
+    gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
+    cpu: &Qwen35Model<'_>,
+    probe_context: &[u32],
+    model_bytes: &[u8],
+    device_name: &str,
+    stages: &mut crate::infer::stage_timings::StageTimings,
+) -> F2Outcome {
+    use crate::gguf::f2_receipt::{
+        apr_version, decide, model_sha256, read_receipt, receipt_dir, receipt_path,
+        revalidate_requested, unix_now, write_receipt, F2Decision, F2Receipt, F2ReceiptKey,
+        F2_RECEIPT_SCHEMA,
+    };
+
+    let hash_start = std::time::Instant::now();
+    let key = F2ReceiptKey {
+        model_sha256: model_sha256(model_bytes),
+        apr_version: apr_version(),
+        device: device_name.to_string(),
+    };
+    let sha256_ms = hash_start.elapsed().as_secs_f64() * 1000.0;
+
+    let path = receipt_dir().map(|d| receipt_path(&d, &key.model_sha256));
+    let found = match path.as_deref() {
+        Some(p) => read_receipt(p),
+        None => Ok(None),
+    };
+
+    match decide(found, &key, revalidate_requested()) {
+        F2Decision::Skip { receipt } => {
+            let age_s = unix_now().saturating_sub(receipt.validated_at);
+            eprintln!(
+                "F2 guard: receipt matches (model sha256 {}…, apr {}, {}) — validated {}s ago on {} positions; CPU reference forward skipped [source=receipt, sha256 {:.0} ms]. `apr run --revalidate` forces a fresh run.",
+                &key.model_sha256[..12],
+                key.apr_version,
+                key.device,
+                age_s,
+                receipt.positions_judged,
+                sha256_ms
+            );
+            return F2Outcome {
+                accepted: true,
+                source: "receipt",
+                validate_ms: 0.0,
+                sha256_ms,
+                receipt_path: path,
+            };
+        },
+        F2Decision::Validate(reason) => {
+            eprintln!("F2 guard: validating on this run ({reason}) [source=fresh]");
+        },
+    }
+
+    let start = std::time::Instant::now();
+    let verdict = f2_validate_qwen35(gpu, cpu, probe_context, stages);
+    let validate_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+    let source = match verdict {
+        F2Verdict::Accepted { positions_judged } => {
+            match path.as_deref() {
+                Some(p) => {
+                    let receipt = F2Receipt {
+                        schema: F2_RECEIPT_SCHEMA,
+                        key,
+                        validated_at: unix_now(),
+                        positions_judged,
+                    };
+                    match write_receipt(p, &receipt) {
+                        Ok(()) => eprintln!(
+                            "F2 guard: passed in {validate_ms:.0} ms on {positions_judged} positions; receipt written to {} — the next run of this (model, apr, device) skips it.",
+                            p.display()
+                        ),
+                        Err(e) => eprintln!(
+                            "F2 guard: passed in {validate_ms:.0} ms, but the receipt could not be written ({e}); the next run validates again. Set APR_F2_RECEIPT_DIR to a writable directory."
+                        ),
+                    }
+                }
+                None => eprintln!(
+                    "F2 guard: passed in {validate_ms:.0} ms; no cache directory (no HOME, XDG_CACHE_HOME or APR_F2_RECEIPT_DIR), so no receipt — every run validates."
+                ),
+            }
+            "fresh"
+        },
+        F2Verdict::NotJudged => {
+            eprintln!(
+                "F2 guard: nothing was compared on this run (probe too short, SKIP_PARITY_GATE, or the CPU reference did not run); the GPU serves, and NO receipt is written."
+            );
+            "not-judged"
+        },
+        F2Verdict::Rejected => "fresh",
+    };
+
+    F2Outcome {
+        accepted: verdict.lets_the_gpu_serve(),
+        source,
+        validate_ms,
+        sha256_ms,
+        receipt_path: path,
     }
 }
 
@@ -1654,8 +1832,7 @@ mod qwen35_route_tests {
         );
         assert!(
             !notice.contains("#3090"),
-            "#3090 is the GPU forward, which now exists — citing it here is the \
-             withdrawn 'the GPU does not implement it' notice: {notice}"
+            "#3090 is the GPU forward, which now exists — citing it here is the  withdrawn 'the GPU does not implement it' notice: {notice}"
         );
     }
 

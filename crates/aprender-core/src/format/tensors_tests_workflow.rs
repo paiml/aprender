@@ -50,6 +50,29 @@ fn test_ggml_dtype_name_unknown() {
     assert_eq!(ggml_dtype_name(255), "unknown");
 }
 
+/// #3601: names come from `trueno_quant::TRAITS` now. Ids 0-30 render exactly as the
+/// hand-typed table did (transcribed below), and the ids past it are named rather than
+/// "unknown" — `get_tensor_raw` sizes TQ1_0/TQ2_0, so inspect must be able to say them.
+#[test]
+fn test_3601_ggml_dtype_name_keeps_0_to_30_and_names_the_ids_past_it() {
+    const PRE_3601: [&str; 31] = [
+        "F32", "F16", "Q4_0", "Q4_1", "unknown", "unknown", "Q5_0", "Q5_1", "Q8_0", "Q8_1", "Q2_K",
+        "Q3_K", "Q4_K", "Q5_K", "Q6_K", "Q8_K", "IQ2_XXS", "IQ2_XS", "IQ3_XXS", "IQ1_S", "IQ4_NL",
+        "IQ3_S", "IQ2_S", "IQ4_XS", "I8", "I16", "I32", "I64", "F64", "IQ1_M", "BF16",
+    ];
+    for (id, name) in PRE_3601.iter().enumerate() {
+        assert_eq!(ggml_dtype_name(id as u32), *name, "id {id}");
+    }
+    let named = [(34, "TQ1_0"), (35, "TQ2_0"), (39, "MXFP4"), (40, "NVFP4"), (41, "Q1_0"), (42, "Q2_0")];
+    for (id, name) in named {
+        assert_eq!(ggml_dtype_name(id), name, "id {id}");
+    }
+    // Removed upstream (repacked at load time) and past the table: still "unknown".
+    for id in [31, 32, 33, 36, 37, 38, 43] {
+        assert_eq!(ggml_dtype_name(id), "unknown", "id {id}");
+    }
+}
+
 #[test]
 fn test_ggml_dtype_element_size() {
     assert!((ggml_dtype_element_size(0) - 4.0).abs() < 0.001); // F32

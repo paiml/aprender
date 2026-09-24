@@ -1,0 +1,56 @@
+# CRUX-O-15 — Inference-latency constraint during model selection (infer_limit, infer_limit_batch_size)
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3385, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-15
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 3  # 1..5, medium priority in pmat work
+  intake_status: missing
+  github_issue: 3385
+  description: >
+    Inference-latency constraint during model selection (infer_limit, infer_limit_batch_size). Competitor verb: fit(..., infer_limit=0.001, infer_limit_batch_size=10000). Gap measured in aprender at eb262f8eb: No model or ensemble is ever excluded for being slow at predict time; leaderboard timings (O-04) do not exist to compare against.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3385'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  the_selected_ensemble_respects_the_per_row_latency_limit:
+    formula: |
+      with infer_limit=L the measured pred_time per row of the final model <= L AND at least one faster-but-worse model was preferred over a slower-but-better one (asserted on a fixture built to force the trade)
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "the selected ensemble respects the per-row latency limit"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-15-001
+  rule: "the selected ensemble respects the per-row latency limit"
+  prediction: "with infer_limit=L the measured pred_time per row of the final model <= L AND at least one faster-but-worse model was preferred over a slower-but-better one (asserted on a fixture built to force the trade)"
+  test: >-
+    LIVE-PENDING - the selected ensemble respects the per-row latency limit. No test surface exists today because the capability is unimplemented: Inference-latency constraint during model selection (infer_limit, infer_limit_batch_size) (aprender#3385, CRUX-O-15). PROMOTE by authoring a test named infer_limit_prunes_slow_models in module `automl/budget/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'the selected ensemble respects the per-row latency limit' is violated — the autogluon parity claim for CRUX-O-15 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "the selected ensemble respects the per-row latency limit"
+
+kani_harnesses:
+- id: KH-CRUX-O-15-001
+  obligation: the_selected_ensemble_respects_the_per_row_latency_limit
+  property: the_selected_ensemble_respects_the_per_row_latency_limit_holds_on_bounded_input
+  bound: 4

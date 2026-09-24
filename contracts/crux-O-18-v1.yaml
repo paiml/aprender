@@ -1,0 +1,75 @@
+# CRUX-O-18 — Memory-aware fit: per-model memory estimate and a memory_limit that skips models that would not fit
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3388, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-18
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 3  # 1..5, medium priority in pmat work
+  intake_status: missing
+  github_issue: 3388
+  description: >
+    Memory-aware fit: per-model memory estimate and a memory_limit that skips models that would not fit. Competitor verb: fit(..., memory_limit="auto")  # ag.max_memory_usage_ratio; 1.6 calibrated CPU/GPU estimates. Gap measured in aprender at eb262f8eb: No estimator reports an expected peak memory before fitting and nothing checks a limit. AutoGluon 1.6 spent 4 PRs on this (#5757, #5768, #5791, GPU budgeting for parallel folds).
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3388'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  a_model_whose_estimate_exceeds_the_limit_is_skipped_with_rea:
+    formula: |
+      with memory_limit=64MiB on a fixture where the estimate for the largest model is > 64MiB, that model is absent from the leaderboard and present in the skip list with its estimate
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "a model whose estimate exceeds the limit is skipped with reason=memory"
+  the_estimate_is_not_a_constant:
+    formula: |
+      the estimate for a 10x larger fixture is asserted larger than for the base fixture; a mutation returning a constant turns this RED
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "the estimate is not a constant"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-18-001
+  rule: "a model whose estimate exceeds the limit is skipped with reason=memory"
+  prediction: "with memory_limit=64MiB on a fixture where the estimate for the largest model is > 64MiB, that model is absent from the leaderboard and present in the skip list with its estimate"
+  test: >-
+    LIVE-PENDING - a model whose estimate exceeds the limit is skipped with reason=memory. No test surface exists today because the capability is unimplemented: Memory-aware fit: per-model memory estimate and a memory_limit that skips models that would not fit (aprender#3388, CRUX-O-18). PROMOTE by authoring a test named memory_limit_skips_and_records in module `automl/budget/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'a model whose estimate exceeds the limit is skipped with reason=memory' is violated — the autogluon parity claim for CRUX-O-18 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-18-002
+  rule: "the estimate is not a constant"
+  prediction: "the estimate for a 10x larger fixture is asserted larger than for the base fixture; a mutation returning a constant turns this RED"
+  test: >-
+    LIVE-PENDING - the estimate is not a constant. No test surface exists today because the capability is unimplemented: Memory-aware fit: per-model memory estimate and a memory_limit that skips models that would not fit (aprender#3388, CRUX-O-18). PROMOTE by authoring a test named estimate_scales_with_data in module `automl/budget/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'the estimate is not a constant' is violated — the autogluon parity claim for CRUX-O-18 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "a model whose estimate exceeds the limit is skipped with reason=memory"
+- type: invariant
+  property: "the estimate is not a constant"
+
+kani_harnesses:
+- id: KH-CRUX-O-18-001
+  obligation: a_model_whose_estimate_exceeds_the_limit_is_skipped_with_rea
+  property: a_model_whose_estimate_exceeds_the_limit_is_skipped_with_rea_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-18-002
+  obligation: the_estimate_is_not_a_constant
+  property: the_estimate_is_not_a_constant_holds_on_bounded_input
+  bound: 4

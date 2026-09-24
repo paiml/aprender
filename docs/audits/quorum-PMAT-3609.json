@@ -1,0 +1,264 @@
+{
+  "ticket": "PMAT-3609",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "9cc89e3a9ffeab96fe6ff0215f567286b329067c",
+  "diff_sha256": "516acb17e9e2a4f78c868d3faca0fdef748d04a9b6e3d8d9dc9479a4e5ed7bbb",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 64146,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly changes the unknown token parameter to an `Option` and completely removes the logic that synthesized a placeholder `<unk>` vocabulary. It instead fails securely with `no_vocabulary` when a model has no tokenizer. The required prose changes to the book and model_cache examples have been made. The Qwen3.5 falsification test correctly uses a truncated real GGUF header to verify that a model with no unknown token builds without synthesis and without dropping input.",
+      "findings": [
+        {
+          "claim": "unk becomes Option; absent means absent. No synthesis in either direction. `BPETokenizer::new` accepts `unk_token: impl Into<Option<&'a str>>`.",
+          "file": "crates/aprender-serve/src/tokenizer.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The `vocab[0] = \"<unk>\"` placeholder for an absent vocabulary goes too. A GGUF with no vocabulary refuses by name.",
+          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "When the glyph for a byte is ALSO absent, encode must refuse with an error naming the byte. It must never drop the input or emit nothing. Tested during construction.",
+          "file": "crates/aprender-serve/src/tokenizer.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "Prose changes in the same PR removing the belief that the vocabulary must include `<unk>`.",
+          "file": "crates/aprender-serve/book/src/examples/api-server.md",
+          "grounding": "cited"
+        },
+        {
+          "claim": "Mutation: reintroduce the `ok_or_else` -> the Qwen3.5 fixture goes RED. Fixture is a real Qwen3.5 GGUF header without `unknown_token_id`.",
+          "file": "crates/aprender-serve/src/tokenizer_tests_unk_3609.rs",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 5514,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff satisfies all acceptance criteria for PMAT-3609. The unknown token is now optional (absent means absent), placeholder synthesis is removed, models with no vocabulary correctly refuse to load, the required prose changes are made, and fixture tests verify the behavior in both directions (Qwen3.5 and TinyLlama). The missing glyph guard is also implemented and tested.",
+      "findings": [
+        {
+          "claim": "`unk` becomes `Option`; absent means absent.",
+          "file": "crates/aprender-serve/src/tokenizer.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "No synthesis (fallback to placeholder tokens removed).",
+          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "Model with no vocabulary refuses.",
+          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "Prose changes are present in book and examples.",
+          "file": "crates/aprender-serve/book/src/examples/api-server.md",
+          "grounding": "cited"
+        },
+        {
+          "claim": "Fixture tests for Qwen3.5 (no unknown token) and TinyLlama (with `<unk>`) are included.",
+          "file": "crates/aprender-serve/src/tokenizer_tests_unk_3609.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "Guard: missing glyph refused by name.",
+          "file": "crates/aprender-serve/src/tokenizer.rs",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 4806,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fully satisfies all acceptance criteria of PMAT-3609. The BPE tokenizer unknown token parameter (`unk_token`) was changed from a hardcoded compulsory string requirement (`\"<unk>\"`) to an `Option`, matching model family realities where byte-level models like Qwen3.5 do not declare an unknown token. Additionally, all fallback mechanisms that generated dummy placeholder `token0..tokenN` vocabularies with `<unk>` at slot 0 were replaced with explicit `no_vocabulary` refusal errors. Documentation and example references were updated, real Qwen3.5 and TinyLlama GGUF header fixtures were added, and comprehensive unit tests were added to verify behavior in both directions (models with `<unk>` and models without). No gates were weakened, no extra unrequested changes were introduced, and tests verify the implementation.",
+      "findings": [
+        {
+          "claim": "BPETokenizer::new parameter unk_token changed to impl Into<Option<&'a str>> and unk_token_id changed to Option<u32> to allow model families without an unknown token (such as Qwen3.5) to construct without requiring a synthesised '<unk>' token.",
+          "file": "crates/aprender-serve/src/tokenizer.rs",
+          "fix": "pub fn new<'a>(vocab: Vec<String>, _merges: Vec<(String, String)>, unk_token: impl Into<Option<&'a str>>) -> Result<Self>",
+          "grounding": "cited",
+          "line": 168
+        },
+        {
+          "claim": "Placeholder token substitution (`vocab[0] = \"<unk>\"`) on missing vocabulary in GGUF models was removed and replaced with explicit `no_vocabulary` refusal by name.",
+          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+          "fix": "fn extract_gguf_vocab(mapped_model: &realizar::gguf::MappedGGUFModel) -> Result<Vec<String>> { mapped_model.model.vocabulary().ok_or_else(|| no_vocabulary(\"the GGUF (no tokenizer.ggml.tokens)\")) }",
+          "grounding": "cited",
+          "line": 473
+        },
+        {
+          "claim": "qwen35_real_vocabulary_builds_a_tokenizer_with_no_unknown_token verifies that real Qwen3.5 vocabulary without '<unk>' token constructs a tokenizer with unk_token_id = None without failing or synthesising a fake '<unk>' token.",
+          "file": "crates/aprender-serve/src/tokenizer_tests_unk_3609.rs",
+          "fix": "let tok = BPETokenizer::new(vocab, vec![], unk).expect(\"a real vocabulary without <unk> is not refused (#3609)\");",
+          "grounding": "cited",
+          "line": 65
+        },
+        {
+          "claim": "Existing tokenizer unit tests pass with the optional unk_token changes.",
+          "command": "cargo test -p aprender-serve --lib tokenizer_tests",
+          "file": "crates/aprender-serve/src/tokenizer.rs",
+          "fix": "Verified via cargo test execution",
+          "grounding": "measured",
+          "line": 156,
+          "output": "running 45 tests\ntest tokenizer_04::tokenizer_tests_bpe_encode::test_bpe_encode_basic ... ok\ntest tokenizer_04::tokenizer_tests_bpe_encode::test_bpe_encode_empty ... ok\ntest tokenizer_04::tokenizer_tests_bpe_encode::test_bpe_encode_hierarchy ... ok\ntest tokenizer_04::tokenizer_tests_bpe_encode::test_bpe_encode_no_matching_merges ... ok\ntest tokenizer_04::tokenizer_tests_bpe_encode::test_bpe_encode_special_tokens ... ok\ntest tokenizer_04::tokenizer_tests_sentencepiece_viterbi::test_viterbi_all_unk ... ok\ntest tokenizer_04::tokenizer_tests_sentencepiece_viterbi::test_viterbi_bpe_encode ... ok\ntest tokenizer_04::tokenizer_tests_sentencepiece_viterbi::test_viterbi_empty_input ... ok\ntest tokenizer_04::tokenizer_tests_sentencepiece_viterbi::test_viterbi_greedy_match ... ok\ntest tokenizer_04::tokenizer_tests_sentencepiece_viterbi::test_viterbi_impossible_string ... ok\ntest tokenizer_04::tokenizer_tests_sentencepiece_viterbi::test_viterbi_multiple_candidate_matches ... ok\ntest tokenizer_04::tokenizer_tests_sentencepiece_viterbi::test_viterbi_prefers_higher_score ... ok\ntest tokenizer_04::tokenizer_tests_sentencepiece_viterbi::test_viterbi_real_tokens ... ok\ntest tokenizer_04::tokenizer_tests_sentencepiece_viterbi::test_viterbi_single_char ... ok\ntest tokenizer_04::tokenizer_tests_sentencepiece_viterbi::test_viterbi_space_token ... ok\ntest tokenizer_04::tokenizer_tests_sentencepiece_viterbi::test_viterbi_unseen_char ... ok\ntest tokenizer::tests::test_bpe_decode ... ok\ntest tokenizer::tests::test_bpe_decode_empty ... ok\ntest tokenizer::tests::test_bpe_decode_unknown_token ... ok\ntest tokenizer::tests::test_bpe_encode ... ok\ntest tokenizer::tests::test_bpe_encode_empty ... ok\ntest tokenizer::tests::test_bpe_encode_unknown_chars ... ok\ntest tokenizer::tests::test_bpe_tokenizer_creation ... ok\ntest tokenizer::tests::test_bpe_tokenizer_empty_vocab ... ok\ntest tokenizer::tests::test_bpe_tokenizer_invalid_unk ... ok\ntest tokenizer::tests::test_bpe_tokenizer_properties ... ok\ntest tokenizer::tests::test_bpe_tokenizer_vocab_helpers ... ok\ntest tokenizer::tests::test_bpe_with_merges ... ok\ntest tokenizer::tests::test_bpe_with_merges_empty ... ok\ntest tokenizer::tests::test_bpe_with_merges_no_matches ... ok\ntest tokenizer::tests::test_bpe_with_merges_non_ascii ... ok\ntest tokenizer::tests::test_byte_fallback ... ok\ntest tokenizer::tests::test_get_token ... ok\ntest tokenizer::tests::test_get_token_id ... ok\ntest tokenizer::tests::test_latin1_byte_level_roundtrip ... ok\ntest tokenizer::tests::test_special_tokens ... ok\ntest tokenizer::tests::test_tokenizer_trait_implementation ... ok\ntest tokenizer::tests::test_unknown_token ... ok\ntest tokenizer::tests::test_vocab_size ... ok\ntest tokenizer::tests::test_sentencepiece_score ... ok\ntest tokenizer::tests::test_sentencepiece_tokenization ... ok\ntest tokenizer::tests::test_viterbi_best_sequence ... ok\ntest tokenizer::tests::test_viterbi_decoding ... ok\ntest tokenizer::tests::test_viterbi_empty_vocab ... ok\ntest tokenizer::tests::test_viterbi_tokenizer_trait ... ok\n\ntest result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 7238 filtered out; finished in 0.05s"
+        }
+      ],
+      "raw_bytes": 18741,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "Model with no vocabulary refuses.",
+        "No synthesis (fallback to placeholder tokens removed).",
+        "The `vocab[0] = \"<unk>\"` placeholder for an absent vocabulary goes too. A GGUF with no vocabulary refuses by name."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+      "line": 473,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Placeholder token substitution (`vocab[0] = \"<unk>\"`) on missing vocabulary in GGUF models was removed and replaced with explicit `no_vocabulary` refusal by name."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/book/src/examples/api-server.md",
+      "line": null,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "Prose changes are present in book and examples.",
+        "Prose changes in the same PR removing the belief that the vocabulary must include `<unk>`."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/tokenizer.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "Guard: missing glyph refused by name.",
+        "When the glyph for a byte is ALSO absent, encode must refuse with an error naming the byte. It must never drop the input or emit nothing. Tested during construction.",
+        "`unk` becomes `Option`; absent means absent.",
+        "unk becomes Option; absent means absent. No synthesis in either direction. `BPETokenizer::new` accepts `unk_token: impl Into<Option<&'a str>>`."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/tokenizer.rs",
+      "line": 156,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Existing tokenizer unit tests pass with the optional unk_token changes."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/tokenizer.rs",
+      "line": 168,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "BPETokenizer::new parameter unk_token changed to impl Into<Option<&'a str>> and unk_token_id changed to Option<u32> to allow model families without an unknown token (such as Qwen3.5) to construct without requiring a synthesised '<unk>' token."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/tokenizer_tests_unk_3609.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "Fixture tests for Qwen3.5 (no unknown token) and TinyLlama (with `<unk>`) are included.",
+        "Mutation: reintroduce the `ok_or_else` -> the Qwen3.5 fixture goes RED. Fixture is a real Qwen3.5 GGUF header without `unknown_token_id`."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/tokenizer_tests_unk_3609.rs",
+      "line": 65,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "qwen35_real_vocabulary_builds_a_tokenizer_with_no_unknown_token verifies that real Qwen3.5 vocabulary without '<unk>' token constructs a tokenizer with unk_token_id = None without failing or synthesising a fake '<unk>' token."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

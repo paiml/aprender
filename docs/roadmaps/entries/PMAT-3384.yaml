@@ -1,0 +1,21 @@
+- id: PMAT-3384
+  github_issue: 3384
+  item_type: task
+  title: 'P1: Deployment artifact: clone_for_deployment / keep_only_best / save_space / persist into one loadable file — CRUX-O-14'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-14, competitor autogluon, demand 4. Single estimators serialize to .apr (bundle/, serialization/). No artifact holds a fitted feature pipeline (O-05) plus several models plus ensemble weights plus a decision threshold and loads them as one predictor. Nothing prunes non-selected models from disk. FALSIFIABLE (contracts/crux-O-14-v1.yaml): a deployment clone is smaller and predicts identically — clone_for_deployment artifact bytes < 0.5 x full artifact bytes AND predict() on the clone is bit-identical to predict() on the original for the test fixture; the artifact is self-describing and refuses a schema drift — load() on an artifact whose feature schema disagrees with the input columns is an Err naming the first mismatched column, not a wrong prediction. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

@@ -1,0 +1,17 @@
+- id: PMAT-3604
+  github_issue: 3604
+  item_type: task
+  title: 'f2_validate_qwen35 runs a full CPU reference forward on EVERY call (67% of a 14s TTFT) — run it once per (model sha256, apr version, device) and receipt it'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T22:25:52Z
+  updated: 2026-09-20T22:25:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE — transcribed from issue #3604 done_when (minted by the cop so the AD-04 quorum for PR #3634 can run; pmat work status refused on a missing item). (1) Validation runs once per (model sha256, apr version, device); subsequent runs of the same triple read the receipt. (2) --revalidate forces a fresh validation and rewrites the receipt. (3) Falsifier: a planted receipt carrying the wrong model sha256 must cause re-validation, not a skip. Same for a receipt written by a different apr version, and one written for a different device. Three planted-receipt cases, each asserted to re-validate. (4) A missing or unreadable receipt validates — absence is never consent. (Unknown/skip is not an option here; the fallback is to do the work.) (5) validate_ms in apr run --json (#3598) reports the cached case distinguishably from the fresh case, so the saving is readable from the receipt rather than inferred from a stopwatch. (6) Measured before/after TTFT on the 144-word row, on the same box with GPU occupancy recorded at start. ADMISSION: 0.69 if it is green by the cut, 0.70 otherwise — readiness rule, not date pressure. EXPLICITLY OUT OF SCOPE (three questions the instrument lane raised and did not answer; none block this row and none should be folded in): whether the CPU reference or the GPU probe dominates the 9.5 s (timed as one unit); whether a cheaper equivalent guard exists; the flat ~1.18 s unattributed_ms residual — recorded rather than absorbed into a neighbour, and the next stage to name. Refs #3596, #3598, #3080.'

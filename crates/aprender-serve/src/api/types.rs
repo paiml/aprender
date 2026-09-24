@@ -196,55 +196,10 @@ pub struct ModelsResponse {
 
 /// Why a completion stopped, in OpenAI's vocabulary.
 ///
-/// Dogfood 0.63.0 (#2375 finding 6): the STREAMING chat path emitted the string
-/// literal `"stop"` in its terminal chunk no matter what happened, while the
-/// non-streaming path on the identical request correctly reported `"length"`
-/// when the generation hit `max_tokens`. A client that streams therefore cannot
-/// tell a truncated answer from a finished one, and every "continue from where
-/// you stopped" flow silently breaks.
-///
-/// The type exists so that literal cannot come back: the terminal-chunk
-/// constructor takes a `FinishReason`, which is only obtainable from
-/// [`FinishReason::from_generation`] (or an explicit, named variant). There is
-/// no `&str` parameter left to hardcode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FinishReason {
-    /// The model emitted a stop token or a stop string matched.
-    Stop,
-    /// Generation was cut off at the `max_tokens` budget.
-    Length,
-}
-
-impl FinishReason {
-    /// Decide the reason from what the generation actually did.
-    ///
-    /// Mirrors `finalize_chat_text` / `completion_finish_reason`: a matched stop
-    /// string wins over the budget, and a model that terminated early is
-    /// `Stop`. Only "ran to the budget with no stop match" is `Length`.
-    #[must_use]
-    pub fn from_generation(stopped: bool, completion_tokens: usize, max_tokens: usize) -> Self {
-        if !stopped && completion_tokens >= max_tokens {
-            Self::Length
-        } else {
-            Self::Stop
-        }
-    }
-
-    /// The wire string OpenAI clients match on.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Stop => "stop",
-            Self::Length => "length",
-        }
-    }
-}
-
-impl std::fmt::Display for FinishReason {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+/// Declared once in [`crate::infer::run_report`] so `apr run --json` and this
+/// server spell the same outcome the same way (#3718); `infer` is not behind the
+/// `server` feature, so the CLI can reach it without the HTTP stack.
+pub use crate::infer::run_report::FinishReason;
 
 /// The OpenAI `n` field: how many completions the client asked for.
 ///

@@ -17,8 +17,11 @@
 # used to answer `full` for every merge_group whose tree had moved and for
 # every push to main, so the queue paid a ~1h full workspace run each time main
 # moved under a PR — the single largest cost in the merge queue. Now:
-#   merge_group, tree moved: the queue ref's first parent is main's tip and its
-#     second is the PR head, so HEAD^1..HEAD IS the PR's diff on the new base.
+#   merge_group, tree moved: the queue ref's first parent is main's tip (or the
+#     previous entry), so HEAD^1..HEAD IS the PR's diff on the new base -- for a
+#     squash queue (one parent, this repo's setting) and a merge queue alike (#3658).
+#   docs-only: every touched path under docs/roadmaps/ or docs/audits/ and present
+#     at HEAD -> tier=none; workspace-test has nothing to measure (#3658).
 #     Re-derive the PR's own selection from it and run the tier the PR ran.
 #   push to main: the same, over the push's own diff (HEAD^1..HEAD for a queue
 #     merge; origin/main@{1}..HEAD for a non-merge tip; neither -> full).
@@ -168,8 +171,40 @@ filterset_from_targets() { # <space list of crate:--lib|crate:--bins|crate:--tes
 # that carry a diff (pull_request, merge_group on a moved main, push to main):
 # the queue and main must not answer a different question about the same diff
 # than the PR did, and one code path is how that stays true.
+docs_only() { # $1 = diff file -> 0 iff every non-empty path is docs/roadmaps/** or docs/audits/** AND exists at HEAD of $ROOT
+    local p any=0
+    while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        any=1
+        case "$p" in docs/roadmaps/*|docs/audits/*) ;; *) return 1 ;; esac
+        git -C "$ROOT" cat-file -e "HEAD:$p" 2>/dev/null || return 1
+    done < "$1"
+    [ "$any" = 1 ]
+}
+
 selection() { # $1 = reason prefix (names the event and how the diff was derived), $2 = diff file ("" -> gate_touched_crates' own git diff)
     local prefix=$1 diff=$2 chk sel crates rule touched nreg
+    # #3658 EMPTY DIFF: the change lands no path at all (its tree equals its
+    # base's), so there is nothing to measure. Callers check that the diff
+    # COMMAND succeeded before handing over the file, so empty here means empty,
+    # not a failed git read as "nothing touched".
+    if [ -n "$diff" ] && [ -f "$diff" ] && ! [ -s "$diff" ]; then
+        printf 'tier=none\nreason=%s: empty diff -- the change lands no path, so workspace-test has nothing to measure (#3658)\n' "$prefix"
+        return 0
+    fi
+    # #3658 DOCS-ONLY: a diff whose EVERY path is under docs/roadmaps/ or
+    # docs/audits/ AND present at HEAD (an add or an edit, never a delete) gives
+    # workspace-test nothing to measure. No Rust source, test or tree-reader
+    # target reads those two directories at run time -- measured by grep over
+    # crates/ and src/: the only hits are doc comments citing an audit, and the
+    # tests that read docs/ read docs/specifications/. A delete falls through,
+    # because a tree reader (readme_contract) asserts cited paths EXIST. Guards
+    # over these files (roadmap, fragments, receipts) run in guard-tree, not here.
+    if [ -n "$diff" ] && [ -s "$diff" ] && docs_only "$diff"; then
+        printf 'tier=none\nreason=%s: docs-only -- all %s touched path(s) are under docs/roadmaps/ or docs/audits/ and present at HEAD; no Rust source, test or tree-reader target reads those paths, so workspace-test has nothing to measure (#3658)\n' \
+            "$prefix" "$(grep -c . "$diff")"
+        return 0
+    fi
     if ! chk=$(bash "$TREE/scripts/check_tree_reader_tests.sh" 2>&1); then printf 'ENV: %s\n' "$chk" >&2; return 2; fi
     sel=$(bash "$TREE/scripts/gate_touched_crates.sh" --print-selection ${COMPARAND:+--comparand "$COMPARAND"} ${diff:+--diff-from "$diff"} 2>/dev/null | tail -1)
     crates=$(printf '%s' "$sel" | sed -n 's/^selection=[a-z]* crates=\(.*\) rule=.*$/\1/p'); rule=${sel#*rule=}
@@ -209,7 +244,12 @@ selection() { # $1 = reason prefix (names the event and how the diff was derived
 # base..HEAD and base...HEAD name the same tree comparison, and the two-dot form
 # needs no merge-base — which a shallow CI checkout usually cannot compute.
 diff_into() { # $1 = out file, $2 = base rev
-    git -C "$ROOT" diff --name-only "$2" HEAD > "$1" 2>/dev/null
+    # --no-renames (#3664, found by aprender-b3): git's default rename
+    # detection makes --name-only print only the NEW path of a rename, so a
+    # move crates/x/src/lib.rs -> docs/audits/lib.rs would list one docs path
+    # and read as docs-only (tier=none: zero tests for a removed source file).
+    # Both sides of every rename are touched paths.
+    git -C "$ROOT" diff --no-renames --name-only "$2" HEAD > "$1" 2>/dev/null
 }
 
 decide() {
@@ -227,8 +267,15 @@ decide() {
                 base='HEAD^1'; how="the merge commit's own diff, HEAD^1..HEAD"
             elif git -C "$ROOT" rev-parse -q --verify 'origin/main@{1}' >/dev/null 2>&1; then
                 base='origin/main@{1}'; how='a non-merge tip diffed against the previous main, origin/main@{1}..HEAD'
+            elif git -C "$ROOT" rev-parse -q --verify 'HEAD^1' >/dev/null 2>&1; then
+                # #3658: main is protected and the queue is SQUASH with
+                # maximumEntriesToMerge=1, so every push to main is ONE squash
+                # commit: its first parent is the previous main and HEAD^1..HEAD
+                # is the landed PR's diff. A shallow CI checkout has no reflog,
+                # which is why the branch above never answered in CI.
+                base='HEAD^1'; how="a squash landing (one parent), HEAD^1..HEAD"
             else
-                printf 'tier=full\nreason=push: neither a merge commit (no HEAD^2) nor a previous origin/main in the reflog -- the pushed diff cannot be derived, so this falls closed to full\n'; return 0
+                printf 'tier=full\nreason=push: no parent at all (a root commit) and no previous origin/main in the reflog -- the pushed diff cannot be derived, so this falls closed to full\n'; return 0
             fi
             df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX")
             if ! diff_into "$df" "$base"; then rm -f "$df"; printf 'tier=full\nreason=push: git diff %s..HEAD failed -- the pushed diff cannot be derived, so this falls closed to full\n' "$base"; return 0; fi
@@ -242,12 +289,16 @@ decide() {
             if [ -z "$ht" ] || [ -z "$pt" ]; then printf 'tier=full\nreason=merge_group: a tree could not be resolved (HEAD=%s pr-head=%s)\n' "${ht:-?}" "${pt:-?}"; return 0; fi
             if [ "$ht" != "$pt" ]; then
                 # THE QUEUE MIRRORS THE PR: main moved, the PR's diff did not.
-                if ! git -C "$ROOT" rev-parse -q --verify 'HEAD^2' >/dev/null 2>&1; then
-                    printf 'tier=full\nreason=merge_group: main moved under the PR (queue tree %s != PR head tree %s) and the queue ref is not a merge commit, so the PR diff cannot be re-derived -- fail closed\n' "${ht:0:9}" "${pt:0:9}"; return 0
-                fi
+                # #3658: the queue is SQUASH (mergeQueue.configuration.mergeMethod),
+                # so a queue ref has ONE parent and HEAD^2 never exists. This used to
+                # demand HEAD^2 and fall closed to full on every group -- 10 of 10
+                # sampled groups paid the full hour, text-only PRs included. For a
+                # squash AND for a merge, HEAD^1 is the base the entry was built on
+                # (main's tip, or the previous entry in the group), so HEAD^1..HEAD
+                # IS this PR's diff on the new base. A failed diff still falls closed.
                 df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX")
                 if ! diff_into "$df" 'HEAD^1'; then rm -f "$df"; printf 'tier=full\nreason=merge_group: main moved under the PR but git diff HEAD^1..HEAD failed, so the PR diff cannot be re-derived -- fail closed\n'; return 0; fi
-                selection "merge_group: main moved under the PR (queue tree ${ht:0:9} != PR head tree ${pt:0:9}); the PR's own selection re-derived on the queue ref" "$df" || rc=$?
+                selection "merge_group: main moved under the PR (queue tree ${ht:0:9} != PR head tree ${pt:0:9}); the PR's own selection re-derived on the queue ref from HEAD^1..HEAD" "$df" || rc=$?
                 rm -f "$df"; return $rc
             fi
             if [ "$PR_CONCLUSION" != "success" ]; then printf 'tier=full\nreason=merge_group: same tree but the PR head'"'"'s workspace-test concluded %s, not success\n' "${PR_CONCLUSION:-unknown}"; return 0; fi
@@ -362,7 +413,10 @@ self_test() {
     row 0 "merge_group, same tree + PR head workspace-test success -> reuse, citing the head" "^cite=$same" bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$same" --pr-head-conclusion success
     row 0 "merge_group, same tree but PR head conclusion failure -> full" 'concluded failure' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$same" --pr-head-conclusion failure
     diff1=$(git -C "$td/repo" rev-parse HEAD~2)
-    row 0 "merge_group, different tree on a ref that is NOT a merge -> full (the PR diff cannot be re-derived)" 'not a merge commit' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$diff1" --pr-head-conclusion success
+    # #3658: this row USED to want 'not a merge commit' -> full. That was the bug:
+    # the queue is SQUASH, so a one-parent queue ref is the NORMAL shape and
+    # HEAD^1..HEAD is still the PR's diff. It now re-derives instead of paying the hour.
+    row 0 "merge_group, different tree on a ONE-PARENT (squash-shaped) ref -> re-derived from HEAD^1..HEAD, not full (this fixture's queue commit is empty -> none)" '^tier=none$' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$diff1" --pr-head-conclusion success
     row 0 "merge_group without a PR head -> full" 'without a PR head' bash "$T" --event merge_group --repo-root "$td/repo"
     # PMAT-1098 67-E2 (#3084): THE QUEUE MIRRORS THE PR. A rebase is not new
     # evidence about the PR's diff, it is the same diff on a new base — so a
@@ -404,6 +458,65 @@ self_test() {
     cap push-cap bash "$T" --event push --repo-root "$td/q-cap"
     row 0 "push over the cap -> quick + check_workspace=1 (rule (i))" '^check_workspace=1$' bash -c "$(replay push-cap)"
     row 0 "push whose diff cannot be derived (root commit, no reflog) -> full (fail closed)" '^tier=full' bash -c "d=$td/p-root; git init -q -b main \"\$d\"; git -C \"\$d\" -c user.name=t -c user.email=t@t commit -q --allow-empty -m only; bash '$T' --event push --repo-root \"\$d\""
+    # #3658 SQUASH QUEUE: the shape this repo's merge queue actually produces --
+    # main moved, then the PR landed as ONE squash commit (one parent).
+    mksquash() { # $1 dir, $2 touched path -> HEAD = squash(PR) on a moved main; branch pr = the PR head
+        local d=$1 f=$2
+        git init -q -b main "$d"
+        ( cd "$d" \
+          && export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+          && export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
+          && git commit -q --allow-empty -m base \
+          && git branch pr \
+          && printf 'moved\n' > main-moved.txt && git add -A && git commit -q -m "main moved under the PR" \
+          && git checkout -q pr && mkdir -p "$(dirname "$f")" && printf 'x\n' > "$f" && git add -A && git commit -q -m "the PR" \
+          && git checkout -q main && git merge -q --squash pr && git commit -q -m "queue squash" )
+    }
+    mksquash "$td/s-leaf" "crates/$leaf/src/lib.rs"
+    mksquash "$td/s-docs" "docs/roadmaps/entries/PMAT-9999.yaml"
+    row 0 "  ...and its reason still names the re-derivation, so the path taken is auditable" 're-derived on the queue ref from HEAD\^1\.\.HEAD: empty diff' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$diff1" --pr-head-conclusion success
+    row 0 "  (fixture) the squash queue ref really has ONE parent" '^ONE-PARENT$' bash -c "if git -C '$td/s-leaf' rev-parse -q --verify 'HEAD^2' >/dev/null; then echo TWO; else echo ONE-PARENT; fi"
+    cap sq-leaf bash "$T" --event merge_group --repo-root "$td/s-leaf" --pr-head "$(qh "$td/s-leaf")" --pr-head-conclusion success
+    row 0 "merge_group on a SQUASH queue ref, leaf crate -> quick, NOT full (#3658: 10/10 groups paid the hour)" '^tier=quick' bash -c "$(replay sq-leaf)"
+    row 0 "  ...with the PR's own crate ($leaf), re-derived from HEAD^1..HEAD" "^crates=.*$leaf" bash -c "$(replay sq-leaf)"
+    cap sq-docs bash "$T" --event merge_group --repo-root "$td/s-docs" --pr-head "$(qh "$td/s-docs")" --pr-head-conclusion success
+    row 0 "merge_group on a SQUASH queue ref, roadmap entry only -> none: workspace-test has nothing to measure" '^tier=none$' bash -c "$(replay sq-docs)"
+    row 0 "  ...and the reason says docs-only, so the skip is auditable in the log" 'docs-only' bash -c "$(replay sq-docs)"
+    row 0 "push of a SQUASH landing (one parent, no reflog) -> quick over HEAD^1..HEAD, not full" "^crates=.*$leaf" bash "$T" --event push --repo-root "$td/s-leaf"
+    # MUTANT: restore the HEAD^2 gate -- the squash rows above must go back to full.
+    sed "s|^\( *\)# IS this PR's diff on the new base. A failed diff still falls closed.|&\n\1if ! git -C \"\$ROOT\" rev-parse -q --verify 'HEAD^2' >/dev/null 2>\&1; then printf 'tier=full\\\\nreason=MUTANT-HEAD2\\\\n'; return 0; fi|" "$T" > "$td/mutant-head2.sh"
+    row 0 "mutant with the HEAD^2 gate restored sends the squash group back to full -- the rows discriminate" 'MUTANT-FULL' bash -c "o=\$(bash '$td/mutant-head2.sh' --event merge_group --repo-root '$td/s-leaf' --pr-head '$(qh "$td/s-leaf")' --pr-head-conclusion success 2>&1); case \"\$o\" in *reason=MUTANT-HEAD2*) echo MUTANT-FULL ;; *) echo MUTANT-NOT-APPLIED ;; esac"
+    # #3658 DOCS-ONLY on a pull_request (paths that exist in this tree).
+    printf 'docs/roadmaps/roadmap.yaml\ndocs/audits/pp-066-plan-quorum.md\n' > "$td/d-docs.txt"
+    row 0 "pull_request, roadmap + audit only -> tier=none (no Rust test reads those paths)" '^tier=none$' bash "$T" --event pull_request --diff-from "$td/d-docs.txt"
+    printf 'docs/roadmaps/roadmap.yaml\ndocs/roadmaps/entries/PMAT-DELETED-3658.yaml\n' > "$td/d-docs-del.txt"
+    row 0 "  ...but a DELETED docs path falls through to quick (a tree reader asserts cited paths exist)" '^tier=quick$' bash "$T" --event pull_request --diff-from "$td/d-docs-del.txt"
+    printf 'docs/roadmaps/roadmap.yaml\nscripts/foo.sh\n' > "$td/d-docs-mixed.txt"
+    row 0 "  ...and roadmap + ANY non-docs path is not docs-only -> quick" '^tier=quick$' bash "$T" --event pull_request --diff-from "$td/d-docs-mixed.txt"
+    printf 'docs/specifications/aprender-monorepo-consolidation.md\n' > "$td/d-spec.txt"
+    row 0 "  ...and docs/specifications/ is NOT docs-only (falsification_spec_v10_tests reads it)" '^tier=quick$' bash "$T" --event pull_request --diff-from "$td/d-spec.txt"
+    # #3664 RENAME: a source file moved INTO docs/audits/ removes the source.
+    # With rename detection on, --name-only lists only the new (docs) path.
+    mkrename() { # $1 dir, $2 source path, $3 destination -> HEAD = squash of "git mv $2 $3" on a moved main
+        local d=$1 f=$2 t=$3
+        git init -q -b main "$d"
+        ( cd "$d" \
+          && export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+          && export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
+          && mkdir -p "$(dirname "$f")" && printf 'pub fn f() {}\n' > "$f" && git add -A && git commit -q -m base \
+          && git branch pr \
+          && printf 'moved\n' > main-moved.txt && git add -A && git commit -q -m "main moved under the PR" \
+          && git checkout -q pr && mkdir -p "$(dirname "$t")" && git mv "$f" "$t" && git commit -q -m "the PR: a rename out of a crate" \
+          && git checkout -q main && git merge -q --squash pr && git commit -q -m "queue squash" )
+    }
+    mkrename "$td/s-rename" "crates/$leaf/src/lib.rs" "docs/audits/lib.rs"
+    row 0 "  (fixture) default git diff --name-only on the rename lists ONLY the new docs path -- the trap is real" '^docs/audits/lib\.rs$' git -C "$td/s-rename" diff --name-only HEAD^1 HEAD
+    cap sq-rename bash "$T" --event merge_group --repo-root "$td/s-rename" --pr-head "$(qh "$td/s-rename")" --pr-head-conclusion success
+    row 0 "merge_group, a crate source RENAMED into docs/audits/ -> NOT none (the removed source is a touched path)" '^tier=quick$' bash -c "$(replay sq-rename)"
+    row 0 "  ...and the crate it left is in the selection" "^crates=.*$leaf" bash -c "$(replay sq-rename)"
+    sed 's| diff --no-renames --name-only | diff --name-only |' "$T" > "$td/mutant-renames.sh"
+    row 0 "mutant without --no-renames reads the rename as docs-only (tier=none) -- the rows discriminate" 'MUTANT-NONE' bash -c "o=\$(bash '$td/mutant-renames.sh' --event merge_group --repo-root '$td/s-rename' --pr-head '$(qh "$td/s-rename")' --pr-head-conclusion success 2>&1); case \"\$o\" in *tier=none*) echo MUTANT-NONE ;; *) echo MUTANT-NOT-NONE ;; esac"
+    row 0 "ci.yml builds the pull_request touched list with --no-renames (the list docs_only judges)" '^ALL-PRESENT$' contains_all "$TREE/.github/workflows/ci.yml" 'git diff --no-renames --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"'
     # MUTANT: a copy whose queue branch ignores the re-derived diff and always
     # says full is exactly today's behaviour — the rows above must lose the crates.
     sed 's|^\( *\)selection "merge_group|\1printf "tier=full\\nreason=MUTANT\\n"; return 0; selection "merge_group|' "$T" > "$td/mutant-queue.sh"

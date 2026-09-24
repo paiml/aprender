@@ -1,0 +1,137 @@
+{
+  "ticket": "PMAT-3670",
+  "base": "053992448",
+  "base_resolved": "053992448",
+  "base_note": "no origin/053992448 exists; judged against the local ref",
+  "head": "984fc76a9cff6f0dc41808e7d40ee4608baea9f1",
+  "diff_sha256": "ce7046a5caea951e585a96e515490e92af76e29b2d0894ceb02e0480d19e2558",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 15152,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly identifies and handles all fleet state errors (forjar drift, pin-mismatch, incapable tool, no JSON output, and missing Python/parser errors), converting them from `FAIL` (exit code 1) to `UNMEASURED` (exit code 0). It maintains the correct failure behavior (exit code 1) for actual gate/lint failures, ensuring the gate is not weakened while fixing the issue described in PMAT-3670. All tests match the intended behavior.",
+      "findings": [],
+      "raw_bytes": 3022,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements exactly what PMAT-3670 requests. It successfully replaces all occurrences of fleet-state failures (e.g. forjar drift, pin-mismatch, missing binary capabilities, and parsing environment failures) with a proper UNMEASURED output line and an exit code of 0 instead of `FAIL` with a non-zero exit code. It updates the self-test table to verify the new behaviors. I found no evidence that this weakens any gates for actual shape violations or contradicts the ticket.",
+      "findings": [],
+      "raw_bytes": 3115,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 3 Reviewer Verdict: PASS. The diff satisfies PMAT-3670 by correctly mapping fleet state errors (no-binary, pin-mismatch, incapable, pv-env, judge-env) to UNMEASURED (exit 0) with detailed reason tags, preventing fleet state drift from failing PR gates while preserving FAIL (exit 1) for actual shape violations. Self-test suite verified with 14 passing rows including mutation tests.",
+      "findings": [
+        {
+          "claim": "The updated check_fleet_pv_shapes_gate.sh passes all 14 self-test cases, verifying that fleet state errors (pin-mismatch, no-binary, incapable, pv-env, judge-env) are UNMEASURED (exit 0) and real violations remain FAIL (exit 1).",
+          "command": "bash /home/noah/.gemini/antigravity-cli/scratch/lane-3-check/check_fleet_pv_shapes_gate.sh --self-test",
+          "file": "scripts/check_fleet_pv_shapes_gate.sh",
+          "grounding": "measured",
+          "line": 175,
+          "output": "=== fleet pv shapes gate: case table (stub pvs, no network, no real fleet binary) ===\nok    row 1  capable pv + Pass verdict -> PASS, row names the runner\nok    row 2  planted violation (verdict=Fail) -> RED\nok    row 3  0.65.2 condition (no --gate) -> UNMEASURED reason=incapable, by capability not version, never PASS\nok    row 4  pin present, no fleet path has the binary -> UNMEASURED reason=no-binary, never PASS\nok    row 5  no pin -> UNMEASURED row (exit 0, never a PASS line)\nok    row 6  verdict=Pass but pc_shape not fired -> RED (a checker firing on nothing cannot pass)\nok    row 7  first fleet path absent, second present -> resolved to the second, row names it\nok    row 8  binary 0.65.2 under pin 0.68.2 -> UNMEASURED reason=pin-mismatch, names both versions and the runner, never PASS (before any lint)\nok    row 9  mutant restoring FAIL on pin-mismatch exits 1 -- the pin-mismatch row would go RED under it\nok    row 10 pinned pv exits 2 with no JSON -> UNMEASURED reason=pv-env with pv's stderr, never PASS\nok    row 11 mutant restoring the ENV exit on pv-env exits 2 -- the pv-env row would go RED under it\nok    row 12 no python3 for the verdict parser -> UNMEASURED reason=judge-env (rc=127), never PASS\nok    row 13 pv without a pc_shape field -> PASS, row says control=unreported\nok    row 14 pin '  0.68.2-rc1 \\n' strips to 0.68.2-rc1 -- no tr, no busybox class bug\nSELF-TEST PASSED: 14 rows"
+        },
+        {
+          "claim": "Fleet state conditions (no-binary, pin-mismatch, incapable, pv-env, judge-env) return UNMEASURED with exit code 0 rather than FAIL with exit code 1.",
+          "file": "scripts/check_fleet_pv_shapes_gate.sh",
+          "grounding": "cited",
+          "line": 95
+        },
+        {
+          "claim": "Real shape violations (verdict != Pass or pc_shape control failure) still return FAIL with exit code 1.",
+          "file": "scripts/check_fleet_pv_shapes_gate.sh",
+          "grounding": "cited",
+          "line": 119
+        }
+      ],
+      "raw_bytes": 10682,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "scripts/check_fleet_pv_shapes_gate.sh",
+      "line": 95,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Fleet state conditions (no-binary, pin-mismatch, incapable, pv-env, judge-env) return UNMEASURED with exit code 0 rather than FAIL with exit code 1."
+      ]
+    },
+    {
+      "file": "scripts/check_fleet_pv_shapes_gate.sh",
+      "line": 119,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Real shape violations (verdict != Pass or pc_shape control failure) still return FAIL with exit code 1."
+      ]
+    },
+    {
+      "file": "scripts/check_fleet_pv_shapes_gate.sh",
+      "line": 175,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The updated check_fleet_pv_shapes_gate.sh passes all 14 self-test cases, verifying that fleet state errors (pin-mismatch, no-binary, incapable, pv-env, judge-env) are UNMEASURED (exit 0) and real violations remain FAIL (exit 1)."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane 3: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (10682 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
+  ],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}

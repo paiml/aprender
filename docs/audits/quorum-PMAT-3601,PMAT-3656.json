@@ -1,0 +1,231 @@
+{
+  "ticket": "PMAT-3601,PMAT-3656",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "171a0b2938439d9b8c385a3fe9ea249e19d16dfd",
+  "diff_sha256": "87f49f1c8079bdf2048475e6320bf713ce5397393fc2196e6857525f124e1c2d",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 50043,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff meticulously implements all requirements for both PMAT-3601 and PMAT-3656. All ad-hoc size/name tables have been removed in favor of delegating to `trueno_quant::TRAITS`, ensuring types are perfectly sized and named. A comprehensive suite of regression, backward-compatibility, and error-handling tests was introduced, strictly asserting that unknown IDs or missing dequantizers produce well-formatted, contract-referencing errors rather than inventing approximate weights or raising confusing format errors. Contracts and roadmaps were also correspondingly updated. There is no evidence of regression or unsupported behavior.",
+      "findings": [
+        {
+          "claim": "apr inspect succeeds on a GGUF containing any of the 10 listed ids (repro: Qwen3.5-4B-UD-Q4_K_XL.gguf, dtype 23)",
+          "file": "crates/aprender-core/src/format/gguf/reader_tests_ggml_sizes.rs",
+          "fix": "Added `test_3601_rosetta_inspect_accepts_an_iq4_xs_gguf` which explicitly builds a synthetic GGUF with dtype 23 (IQ4_XS) and ensures `inspect()` extracts the name and size correctly.",
+          "grounding": "cited",
+          "line": 181
+        },
+        {
+          "claim": "A regression test pins all 10 ids against shape.rs's byte_size",
+          "file": "crates/aprender-core/src/format/gguf/reader_tests_ggml_sizes.rs",
+          "fix": "Added `test_3601_get_tensor_raw_sizes_every_iq_and_tq_type` which tests 11 IDs (including 16..=23) against `get_tensor_raw()` to verify exactly correct byte sizing in bytes/blocks.",
+          "grounding": "cited",
+          "line": 47
+        },
+        {
+          "claim": "The error message, if a truly unknown id is ever hit, names the id and points at contracts/apr-cli-commands-v1.yaml's inspect docs or similar — not a bare \"Unsupported dtype N\"",
+          "file": "crates/aprender-core/src/format/gguf/reader.rs",
+          "fix": "`unsized_ggml_type_error` now names the tensor and type ID, explains why it failed, and points to `contracts/ggml-type-v1.yaml`. A test `test_3601_unknown_id_is_refused_as_a_gap_in_apr` asserts this format.",
+          "grounding": "cited",
+          "line": 257
+        },
+        {
+          "claim": "apr tensors sized tensors from a second hand-typed table ... now type_size/blck_size from TRAITS",
+          "file": "crates/aprender-core/src/format/safetensors.rs",
+          "fix": "`ggml_dtype_element_size` was rewritten to calculate size via `trueno_quant::GgmlType::from_id`. `tensors_tests_stats.rs` was updated to verify the corrected byte elements for IQ-types and the 24-30 tail.",
+          "grounding": "cited",
+          "line": 10
+        },
+        {
+          "claim": "ggml_dtype_name ... reads TRAITS so TQ1_0/TQ2_0 are named rather than \"unknown\"",
+          "file": "crates/aprender-core/src/format/tensors.rs",
+          "fix": "`ggml_dtype_name` delegates to `trueno_quant::GgmlType::from_id`. `test_3601_ggml_dtype_name_keeps_0_to_30_and_names_the_ids_past_it` checks backward compatibility for 0..=30 and correct naming for IDs like TQ1_0.",
+          "grounding": "cited",
+          "line": 572
+        },
+        {
+          "claim": "get_tensor_f32 on any IQ tensor returns Err naming the tensor and its type; no path in aprender-core returns approximated IQ values; dequantize_iq_approximate is deleted",
+          "file": "crates/aprender-core/src/format/gguf/shape.rs",
+          "fix": "`dequantize_iq_approximate` was completely removed from `dequantize.rs`. The match arm for IQ types in `shape.rs` now falls through to an explicit refusal error naming the tensor and its ID. This is backed by `test_3656_get_tensor_f32_refuses_iq_and_tq_instead_of_approximating`.",
+          "grounding": "cited",
+          "line": 131
+        }
+      ],
+      "raw_bytes": 8820,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully resolves both tickets PMAT-3601 and PMAT-3656. It transitions `aprender-core` from using hardcoded, incomplete tables to reading `trueno_quant::TRAITS` for tensor block sizes and names. It also removes the `dequantize_iq_approximate` function to prevent inventing IQ-quant weights during import/conversion, and returns clear, descriptive error messages for unsupported or unknown types, pointing to relevant contracts. The regression tests fully cover the new functionality.",
+      "findings": [
+        {
+          "claim": "apr inspect sizes and names ggml types from trueno_quant::TRAITS, removing the hardcoded tables for sizing and naming.",
+          "file": "crates/aprender-core/src/format/gguf/shape.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "Removes the IQ approximation in dequantization and properly refuses the formats it does not have a dequantizer for.",
+          "file": "crates/aprender-core/src/format/gguf/shape.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The error message for a truly unknown id names the id (via Display on GgmlTypeError) and points at contracts/ggml-type-v1.yaml, avoiding a bare 'Unsupported dtype N'.",
+          "file": "crates/aprender-core/src/format/gguf/shape.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "Regression test pins all 10 ids against shape.rs's byte_size.",
+          "file": "crates/aprender-core/src/format/gguf/reader_tests_ggml_sizes.rs",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 4837,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed diff origin/main...HEAD against PMAT-3601 and PMAT-3656 tickets. The diff completely resolves both tickets by replacing hand-typed GGML size and name tables with trueno_quant::TRAITS in aprender-core (shape.rs, safetensors.rs, tensors.rs), deleting the IQ approximation code (dequantize_iq_approximate), and enforcing explicit refusal on get_tensor_f32 for unsupported IQ/TQ types while correctly sizing raw tensors for apr inspect / apr tensors. Contract invariants, Kani bounds, and comprehensive unit tests were updated and added. All 3,979 unit tests pass cleanly. No gates weakened, no unasked changes, no refutations found. Verdict: PASS.",
+      "findings": [],
+      "raw_bytes": 3584,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-core/src/format/gguf/reader.rs",
+      "line": 257,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The error message, if a truly unknown id is ever hit, names the id and points at contracts/apr-cli-commands-v1.yaml's inspect docs or similar — not a bare \"Unsupported dtype N\""
+      ]
+    },
+    {
+      "file": "crates/aprender-core/src/format/gguf/reader_tests_ggml_sizes.rs",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Regression test pins all 10 ids against shape.rs's byte_size."
+      ]
+    },
+    {
+      "file": "crates/aprender-core/src/format/gguf/reader_tests_ggml_sizes.rs",
+      "line": 47,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "A regression test pins all 10 ids against shape.rs's byte_size"
+      ]
+    },
+    {
+      "file": "crates/aprender-core/src/format/gguf/reader_tests_ggml_sizes.rs",
+      "line": 181,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "apr inspect succeeds on a GGUF containing any of the 10 listed ids (repro: Qwen3.5-4B-UD-Q4_K_XL.gguf, dtype 23)"
+      ]
+    },
+    {
+      "file": "crates/aprender-core/src/format/gguf/shape.rs",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Removes the IQ approximation in dequantization and properly refuses the formats it does not have a dequantizer for.",
+        "The error message for a truly unknown id names the id (via Display on GgmlTypeError) and points at contracts/ggml-type-v1.yaml, avoiding a bare 'Unsupported dtype N'.",
+        "apr inspect sizes and names ggml types from trueno_quant::TRAITS, removing the hardcoded tables for sizing and naming."
+      ]
+    },
+    {
+      "file": "crates/aprender-core/src/format/gguf/shape.rs",
+      "line": 131,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "get_tensor_f32 on any IQ tensor returns Err naming the tensor and its type; no path in aprender-core returns approximated IQ values; dequantize_iq_approximate is deleted"
+      ]
+    },
+    {
+      "file": "crates/aprender-core/src/format/safetensors.rs",
+      "line": 10,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "apr tensors sized tensors from a second hand-typed table ... now type_size/blck_size from TRAITS"
+      ]
+    },
+    {
+      "file": "crates/aprender-core/src/format/tensors.rs",
+      "line": 572,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "ggml_dtype_name ... reads TRAITS so TQ1_0/TQ2_0 are named rather than \"unknown\""
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

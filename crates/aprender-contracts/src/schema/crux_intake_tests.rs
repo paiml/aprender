@@ -216,6 +216,8 @@ fn competitor_registry_covers_the_corpus_vocabulary() {
         // 17 contracts: burn ×7, linfa ×10.
         "burn",
         "linfa",
+        // Category O — AutoML Parity (aprender#3370, 2026-09-16). 24 contracts.
+        "autogluon",
     ] {
         assert!(
             CRUX_COMPETITORS.contains(&required),
@@ -258,6 +260,8 @@ fn beat_incumbents_cannot_name_the_crux_corpus() {
         // is why category N required a registry edit rather than a reuse.
         "burn",
         "linfa",
+        // AutoGluon: not a BEAT pillar either; scikit-learn stays the pillar.
+        "autogluon",
     ] {
         assert!(!beat_accepts(c), "BEAT_INCUMBENTS unexpectedly accepts {c}");
     }

@@ -1,0 +1,133 @@
+You are one of 3 independent reviewers. Judge whether this diff does what its ticket says, and nothing the ticket forbids. Try to REFUTE it: default to FAIL when a test asserts the opposite of the ticket, when a gate is weakened, when a receipt claim is not backed by the diff, or when the change does something the ticket does not ask for. Every finding needs file, line, claim and grounding (cited = you quote the diff; measured = you ran a command; asserted = neither). Return PASS only if you found nothing that refutes it.
+
+## Ticket(s) ONT-2a
+
+commit f6fb83dd44838fd9217eda8a5ecb4810d1714a28
+Author: Noah Gift <noah.gift@gmail.com>
+Date:   Mon Sep 14 01:01:33 2026 +0000
+
+    ONT-2a: andon — L4/L5 print self-declared until grounded (#3224)
+    
+    * ONT-2a RED: four tests for an L4 claim nothing grounds (Refs PMAT-3222)
+    
+    ONT-001 v3.1 row ONT-2a, the andon. `is_lean_proved` treats a contract's own `verification_summary` as
+    authoritative whenever it claims `l4_lean_proved > 0`, so a YAML file asserting its own proof IS the
+    evidence for that proof. These four tests say what the row requires instead, and they do not compile
+    against the current API — which is the point: the words the report has to print do not exist yet.
+    
+        $ cargo test -p aprender-contracts --lib proof_status
+        error[E0425]: cannot find function `is_l4_self_declared` in this scope
+        error[E0609]: no field `l4_self_declared_excluded` on type `proof_status::ProofStatusReport`
+        error[E0609]: no field `l4_self_declared` on type `ProofStatusTotals`
+        error[E0609]: no field `lean_grounded` on type `ProofStatusTotals`
+        error[E0609]: no field `l4_self_declared` on type `ContractProofStatus`
+        error[E0425]: cannot find function `is_l4_self_declared` in this scope
+    
+    The four: a claim covering every obligation with no in-tree theorem is not L4, and bindings cannot promote
+    it to L5; the report flags it, counts zero grounded and says the total excludes it; the text output prints
+    both `self-declared` and `grounded`; and a contract that claims nothing is NOT flagged, because the flag
+    marks an unbacked claim rather than the absence of a proof.
+    
+    Pmat-Ticket: PMAT-3222
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+    
+    * refactor(proof-status): the theorem scan was 132 cognitive, so the file could not be committed at all (Refs PMAT-3222)
+    
+    `lean_theorem_names` was one 95-line closure eight levels deep: base → domain → file → content → line →
+    theorem name → CamelCase → first word. `pmat analyze complexity` put it at cyclomatic 19 / cognitive 132,
+    against the pre-commit gate's ceiling of 30 / 25, and the gate runs over every STAGED source file — so any
+    change to proof_status.rs, including a comment, was refused. A gate nothing can pass is the one that
+    teaches people to reach for --no-verify; this makes the function honest instead.
+    
+    Six named pieces, behaviour for behaviour: insert_name_forms (the namespaced / bare / lowercased trio),
+    camel_case, first_camel_word, insert_theorem_names_from_content, insert_domain_theorems (which is where
+    `sorry` still disqualifies a file), scan_theorem_base. The base loop keeps its "first base that yields
+    anything wins" rule.
+    
+        before: 13 functions over the file, max cyclomatic 19, max cognitive 132 — 1 error at the gate
+        after:  22 functions,               max cyclomatic  7, max cognitive  13 — 0 over threshold
+        cargo test -p aprender-contracts --lib: 1505 passed, 0 failed
+    
+    No behaviour changed here: this is the commit that makes the next one possible.
+    
+    Pmat-Ticket: PMAT-3222
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+    
+    * ONT-2a: L4 is what the tree grounds, not what the contract claims (Refs PMAT-3222)
+    
+    `is_lean_proved` took a contract's own `verification_summary` as authoritative whenever it claimed
+    `l4_lean_proved > 0`, and consulted the in-tree Lean scan only when it claimed nothing. A YAML file
+    asserting its own proof was therefore the evidence for that proof. ONT-001 R-4 (andon before mechanism)
+    says to withdraw that credit now, in the open, and let ONT-3b earn it back with real grounding.
+    
+    WHAT GROUNDS A CLAIM is a sorry-free in-tree Lean theorem an equation names and `lean_theorem_names()`
+    resolves. That is now the only thing granting L4/L5. A claim with nothing under it is SELF-DECLARED:
+    flagged per contract, counted in the totals, printed in its own `L4 evidence` column as `self-declared`
+    beside `grounded`, and excluded from L4. `not_applicable` credit still comes from the summary — it is a
+    claim about APPLICABILITY, not about a proof, and ONT-8's evidence block is where it gets its provenance.
+    
+    MEASURED over the corpus (1828 contracts), before → after:
+    
+        L1 1074 → 1075     L2 305 → 306     L3 417 → 442     L4 32 → 5 entries
+        unique L4 stems 31 → 4      self-declared and excluded: 27
+        lean obligations: 181 claimed, 70 grounded
+    
+    Nothing downstream encodes those numbers: no README, no `lint-baseline.json` key, no Makefile target and
+    no workflow regenerates or diffs proof-status output (rg over each, 2026-09-13).
+    
+    GROUNDING IS A PARAMETER, not a hidden read. The scan resolves paths relative to the process CWD, so from
+    a unit test it finds nothing and every fixture is ungrounded by construction — a suite in which the andon
+    could withdraw ALL credit for ever and no test would notice. `*_with_grounding` takes the count and the
+    public wrappers do the scan, so the eight existing level tests now say which side they test; two assert
+    both sides on one contract.
+    
+    MUTATION (the row's own): let the claim stand in for the grounding again — `effective = claimed | grounded`
+    — and 4 of 47 proof_status tests fail; restored, 47 pass. Whole crate: 1505 passed, 0 failed.
+    
+    Pmat-Ticket: PMAT-3222
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+    
+    * ONT-2a: quorum agreed, 3/3 PASS (Refs PMAT-3222)
+    
+    Three independent agy lanes over the diff at 34877899d4: gemini-3.1-pro-high, gemini-3.7-flash-high and
+    gemini-3.6-flash-high, all PASS, all model_measured, author family claude.
+    
+    It took three rounds, and the two that failed said nothing about this diff. In both, lane 2
+    (gemini-3.8-flash-high, entry 2 of the default lane_models list) returned NO-VERDICT while lanes 1 and 3
+    returned substantive PASS: round 1 spent 926s narrating "waiting for the background task to complete" at
+    one turn, round 2 ended status=ERROR at 379s. Filed as paiml-implement#190; round 3 put
+    gemini-3.6-flash-high in that slot and finished normally.
+    
+    Pmat-Ticket: PMAT-3222
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+    
+    * fix(clippy): the split left an orphaned doc block and a negated is_some_and (Refs PMAT-3222)
+    
+    ci / lint failed on two errors in the ONT-2a change, both artefacts of splitting is_lean_proved into is_lean_proved_with_grounding:
+    
+      - empty line after doc comment (proof_status.rs:234) — the original function's doc block was left standing above a blank line with no item under it, and the block below it opened with an intra-doc link to [is_lean_proved], a name this file no longer defines. The blank line becomes /// so the two blocks are one doc, and the dangling link is replaced by the sentence it was trying to make.
+      - nonminimal_bool (proof_status.rs:430) — !path.extension().is_some_and(|e| e == "lean") is is_none_or(|e| e != "lean").
+    
+    cargo clippy -p aprender-contracts --lib --all-features -- -D warnings: clean. cargo test -p aprender-contracts --lib: 1505 passed, 0 failed.
+    
+    Pmat-Ticket: PMAT-3222
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+    
+    * receipt(PMAT-3222): the ONT-2a andon, and why the split and the N/A credit are what they are (Refs PMAT-3222)
+    
+    A review lane refused the head on three grounds and the branch carried no receipt to answer any of them. Measured, not argued: level_strict_summary_cannot_understate_total PASSES (the lane predicted it would fail, and read its fixture's l4_lean_proved as 2 where it is 3); the L4 rule is a strengthening because the binding constraint moved from the summary's self-report to a grounding count read out of the Lean tree; and the scan was split because it stood at cognitive complexity 132 against a gate that refuses it, with the file's worst function now 13.
+    
+    Pmat-Ticket: PMAT-3222
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+    
+    * quorum(PMAT-3222): 3/3 PASS on the head that carries the receipt (Refs PMAT-3222)
+    
+[... diff truncated for the corpus ...]
+
+
+---
+Answer with ONE JSON object and nothing else. The object has exactly these four keys:
+- "verdict": one of "PASS", "FAIL", "do-not-implement-as-written"
+- "summary": a string
+- "findings": an array of objects, each with "file", "line", "claim", "grounding" and "fix"
+- "tree_witness": this token, copied verbatim: 6d559b3160867e925d622cf976ee6f65

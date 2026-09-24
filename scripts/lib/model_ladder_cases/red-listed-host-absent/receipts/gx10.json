@@ -1,5 +1,5 @@
 {
- "schema": "apr-model-ladder-receipt/v1",
+ "schema": "apr-model-ladder-receipt/v2",
  "host": "gx10",
  "version": "1.2.3",
  "sha": "abc1234",
@@ -35,7 +35,8 @@
      "rc": 0
     }
    },
-   "green": true
+   "green": true,
+   "file": "c.gguf"
   },
   {
    "id": "q3-q4km",
@@ -64,12 +65,20 @@
      "rc": 0
     }
    },
-   "green": true
+   "green": true,
+   "file": "q.gguf"
+  }
+ ],
+ "inventory": [
+  {
+   "file": "c.gguf",
+   "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+   "bytes": 1
   },
   {
-   "id": "opt-q4km",
-   "present": false,
-   "required": false
+   "file": "q.gguf",
+   "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+   "bytes": 1
   }
  ]
 }

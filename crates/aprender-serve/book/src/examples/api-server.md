@@ -31,7 +31,10 @@ let config = ModelConfig {
     eps: 1e-5,
 };
 let model = Model::new(config)?;
-let tokenizer = BPETokenizer::new(vocab, merges, "<unk>")?;
+// The unknown token is the model's own, if it has one: LLaMA-style vocabularies declare
+// `<unk>`, byte-level ones (GPT-2, Qwen) have none. BPETokenizer requires neither (#3609).
+let unk = realizar::tokenizer::vocabulary_unk_token(&vocab); // Some("<unk>") or None
+let tokenizer = BPETokenizer::new(vocab, merges, unk)?;
 
 // Create server
 let state = AppState::new(model, tokenizer);

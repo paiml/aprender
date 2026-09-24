@@ -290,72 +290,54 @@
     }
 
     // =========================================================================
-    // --chat flag logic: effective_prompt with ChatML wrapping
+    // --chat: the prompt reaches realizar RAW; the flag carries the intent (#3672)
     // =========================================================================
+    //
+    // These replace three tests that re-implemented the old ChatML pre-wrap inline and
+    // asserted on their own copy: they could not fail, and they pinned the double
+    // template as the contract.
 
-    /// Test that --chat flag wraps prompt in ChatML format (verified via parse)
+    /// An instruct source auto-enables the template, and the prompt is NOT pre-wrapped:
+    /// realizar applies the model's own template exactly once.
     #[test]
-    fn test_chat_flag_chatml_wrapping_logic() {
-        // We cannot call execute_command with --chat on a non-existent model
-        // without error, but we can verify the ChatML wrapping logic directly.
-        let prompt = "What is the meaning of life?";
-        let chat = true;
-
-        let effective_prompt = if chat {
-            Some(format!(
-                "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
-                prompt
-            ))
-        } else {
-            Some(prompt.to_string())
-        };
-
-        assert!(effective_prompt
-            .as_ref()
-            .expect("prompt should exist")
-            .starts_with("<|im_start|>user\n"));
-        assert!(effective_prompt
-            .as_ref()
-            .expect("prompt should exist")
-            .ends_with("<|im_start|>assistant\n"));
-        assert!(effective_prompt
-            .as_ref()
-            .expect("prompt should exist")
-            .contains("What is the meaning of life?"));
+    fn test_3672_instruct_source_sets_the_flag_and_leaves_the_prompt_raw() {
+        let prompt = "What is the meaning of life?".to_string();
+        let (run_prompt, chat) =
+            run_prompt_and_chat(Some(&prompt), None, "Qwen2.5-0.5B-Instruct-f16.gguf", false);
+        assert_eq!(run_prompt.as_deref(), Some("What is the meaning of life?"));
+        assert!(chat, "an instruct source must ask realizar for the chat template");
+        assert!(
+            !run_prompt.unwrap_or_default().contains("<|im_start|>"),
+            "a pre-wrapped prompt is templated a second time by realizar (#3672)"
+        );
     }
 
-    /// Test that without --chat, prompt is passed through unchanged
+    /// `--chat` on a source whose name says nothing still asks for the template.
     #[test]
-    fn test_no_chat_flag_passthrough() {
-        let prompt = Some("Hello world".to_string());
-        let chat = false;
-
-        let effective_prompt = if chat {
-            prompt
-                .as_ref()
-                .map(|p| format!("<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", p))
-        } else {
-            prompt.clone()
-        };
-
-        assert_eq!(effective_prompt, Some("Hello world".to_string()));
+    fn test_3672_explicit_chat_flag_on_a_plain_source() {
+        let prompt = "Hello".to_string();
+        let (run_prompt, chat) = run_prompt_and_chat(Some(&prompt), None, "model.gguf", true);
+        assert_eq!(run_prompt.as_deref(), Some("Hello"));
+        assert!(chat);
     }
 
-    /// Test that --chat with no prompt produces None
+    /// A base model with no `--chat` gets neither a wrap nor the flag.
     #[test]
-    fn test_chat_flag_no_prompt() {
-        let prompt: Option<String> = None;
-        let chat = true;
+    fn test_3672_base_source_without_chat_is_untouched() {
+        let prompt = "Hello world".to_string();
+        let (run_prompt, chat) = run_prompt_and_chat(Some(&prompt), None, "smollm-base.gguf", false);
+        assert_eq!(run_prompt.as_deref(), Some("Hello world"));
+        assert!(!chat);
+    }
 
-        let effective_prompt = if chat {
-            prompt
-                .as_ref()
-                .map(|p| format!("<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", p))
-        } else {
-            prompt.clone()
-        };
-
-        assert!(effective_prompt.is_none());
+    /// No prompt: nothing to template; `-p` wins over the positional prompt.
+    #[test]
+    fn test_3672_prompt_precedence_and_absence() {
+        let (none, chat) = run_prompt_and_chat(None, None, "x-instruct.gguf", false);
+        assert!(none.is_none() && !chat, "the name heuristic needs a prompt to template");
+        let (p, pos) = ("from -p".to_string(), "positional".to_string());
+        let (got, _) = run_prompt_and_chat(Some(&p), Some(&pos), "m.gguf", false);
+        assert_eq!(got.as_deref(), Some("from -p"));
     }
 
     // =========================================================================

@@ -1,0 +1,11 @@
+{
+ "schema": "apr-refusal-ledger/v1",
+ "refusals": [
+  {
+   "verb": "bench",
+   "reason": "the subcommand routes through the dense loader and cannot measure this architecture",
+   "exit_code": 8,
+   "removed_by": "v0.70.1"
+  }
+ ]
+}

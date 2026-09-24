@@ -1,0 +1,21 @@
+- id: PMAT-3380
+  github_issue: 3380
+  item_type: task
+  title: 'P1: Predictor-level permutation feature importance with p-values and confidence intervals — CRUX-O-10'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-10, competitor autogluon, demand 4. PermutationImportance exists in crates/aprender-core/src/interpret/ for a single estimator. Missing: the predictor-level call on raw (pre-pipeline) columns, num_shuffle_sets repeats, stddev / p-value / p99 columns, and subsampling. AutoGluon 1.6 also cut this call''s memory 25x (#5645). FALSIFIABLE (contracts/crux-O-10-v1.yaml): importance is reported per raw input column — on a fixture whose datetime column expands to 4 features, the importance table has one row for the datetime column, not four; a pure-noise column has importance statistically indistinguishable from zero — with num_shuffle_sets=10 the noise column''s p-value > 0.05 AND the signal column''s p-value < 0.01 on the same run. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

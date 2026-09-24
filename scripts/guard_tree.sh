@@ -233,6 +233,30 @@ advertises_self_test() {
 # process group with it, a pool that is torn down) leaves rows and no verdict,
 # and the parent turns a MISSING verdict into a FAILURE -- fail-closed. The
 # one thing a run-all dispatcher may never do is drop a guard quietly.
+# A PASS ROW IS NOT A VERDICT WHEN THE GUARD SAID "NOT MEASURED" (#3651).
+# A passing guard's output was dropped: only its label reached the log. Twelve
+# guards exit 0 on UNMEASURED by design (a runner without the tool must not red
+# every PR), so `PASS  <guard> [run]` meant either "measured and passed" or "not
+# measured here", and the log could not say which -- main run 35561048727 showed
+# check_fleet_pv_shapes_gate.sh as a bare PASS on gx10-build, and #3567's
+# criterion (the verdict measured inside a runner) was unobservable anywhere.
+#
+# So under a PASS row, every captured line whose FIRST token is UNMEASURED or
+# SUMMARY is surfaced, indented `      ~ `. UNMEASURED needs no opt-in: a guard
+# that says it did not measure is heard whether or not it meant to be. SUMMARY
+# is how a guard puts its measured row (runner, tool, version, verdict, corpus)
+# into the log. The word anywhere else on a line is not a marker. Capped at 5
+# lines plus a count, so a chatty guard cannot bury the rows around it.
+surface_pass_summary() { # surface_pass_summary <capture-file>
+    awk '
+        /^(UNMEASURED|SUMMARY)([[:space:]]|$)/ {
+            n++
+            if (n <= 5) printf "      ~ %s\n", $0
+        }
+        END { if (n > 5) printf "      ~ (+%d more UNMEASURED/SUMMARY line(s))\n", n - 5 }
+    ' "$1"
+}
+
 worker_run_one() {
     spec="$1"
     w_idx="${spec%%:*}"
@@ -254,6 +278,7 @@ worker_run_one() {
         w_total=$((w_total + 1))
         if "$@" >"$w_cap" 2>&1; then
             printf 'PASS  %s\n' "$label" >> "$w_rows"
+            surface_pass_summary "$w_cap" >> "$w_rows"
         else
             w_failed=$((w_failed + 1))
             printf 'FAIL  %s\n' "$label" >> "$w_rows"

@@ -1,0 +1,75 @@
+# CRUX-O-19 — Multi-series forecasting predictor: (item_id, timestamp) panel data, prediction_length, freq
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3389, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-19
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  github_issue: 3389
+  description: >
+    Multi-series forecasting predictor: (item_id, timestamp) panel data, prediction_length, freq. Competitor verb: TimeSeriesPredictor(prediction_length=48, freq="h").fit(TimeSeriesDataFrame). Gap measured in aprender at eb262f8eb: crates/aprender-core/src/time_series/mod.rs is one struct, ARIMA, on one f32 series (fit/forecast/order). There is no panel container keyed by item and timestamp, no frequency, no horizon-first API and no per-item forecast.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3389'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  a_panel_of_n_items_forecasts_n_x_prediction_length_rows:
+    formula: |
+      on a fixture of 5 items with 200 hourly points each and prediction_length=24 the output has exactly 120 rows, each (item_id, timestamp) unique, timestamps continuing each item's last stamp at freq=h
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "a panel of N items forecasts N x prediction_length rows"
+  irregular_timestamps_are_rejected_or_regularised__never_sile:
+    formula: |
+      an item with a missing hour is an Err naming the item and gap unless fill=forward is passed, in which case the filled row is flagged
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "irregular timestamps are rejected or regularised, never silently misaligned"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-19-001
+  rule: "a panel of N items forecasts N x prediction_length rows"
+  prediction: "on a fixture of 5 items with 200 hourly points each and prediction_length=24 the output has exactly 120 rows, each (item_id, timestamp) unique, timestamps continuing each item's last stamp at freq=h"
+  test: >-
+    LIVE-PENDING - a panel of N items forecasts N x prediction_length rows. No test surface exists today because the capability is unimplemented: Multi-series forecasting predictor: (item_id, timestamp) panel data, prediction_length, freq (aprender#3389, CRUX-O-19). PROMOTE by authoring a test named panel_forecast_shape in module `forecast/predictor/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'a panel of N items forecasts N x prediction_length rows' is violated — the autogluon parity claim for CRUX-O-19 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-19-002
+  rule: "irregular timestamps are rejected or regularised, never silently misaligned"
+  prediction: "an item with a missing hour is an Err naming the item and gap unless fill=forward is passed, in which case the filled row is flagged"
+  test: >-
+    LIVE-PENDING - irregular timestamps are rejected or regularised, never silently misaligned. No test surface exists today because the capability is unimplemented: Multi-series forecasting predictor: (item_id, timestamp) panel data, prediction_length, freq (aprender#3389, CRUX-O-19). PROMOTE by authoring a test named irregular_index_is_error in module `forecast/predictor/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'irregular timestamps are rejected or regularised, never silently misaligned' is violated — the autogluon parity claim for CRUX-O-19 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "a panel of N items forecasts N x prediction_length rows"
+- type: invariant
+  property: "irregular timestamps are rejected or regularised, never silently misaligned"
+
+kani_harnesses:
+- id: KH-CRUX-O-19-001
+  obligation: a_panel_of_n_items_forecasts_n_x_prediction_length_rows
+  property: a_panel_of_n_items_forecasts_n_x_prediction_length_rows_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-19-002
+  obligation: irregular_timestamps_are_rejected_or_regularised__never_sile
+  property: irregular_timestamps_are_rejected_or_regularised__never_sile_holds_on_bounded_input
+  bound: 4

@@ -1,0 +1,21 @@
+- id: PMAT-3387
+  github_issue: 3387
+  item_type: task
+  title: 'P1: Tabular foundation model: in-context prediction with a pretrained transformer (TabPFN / TabICL / Mitra class) — CRUX-O-17'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-17, competitor autogluon, demand 4. No tabular in-context learner. nn/ and the inference crates run causal LMs; nothing consumes (X_train, y_train, X_test) as one context and predicts without gradient steps. AutoGluon 1.4-1.6 added TabPFNv2/2.5/2.6/3, TabICL/v2, Mitra, TabDPT, Nori and made them the extreme preset. FALSIFIABLE (contracts/crux-O-17-v1.yaml): zero-gradient prediction matches a pinned reference within tolerance — loading a pinned small checkpoint via apr pull and predicting a 100-row fixture matches the committed reference probabilities within 1e-4; the context limit is enforced, not silently truncated — a context of rows > the model''s documented max is an Err naming the limit; a mutation that truncates instead turns this RED. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

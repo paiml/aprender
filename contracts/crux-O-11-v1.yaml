@@ -1,0 +1,75 @@
+# CRUX-O-11 — Decision-threshold calibration for binary metrics (calibrate_decision_threshold)
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3381, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-11
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  github_issue: 3381
+  description: >
+    Decision-threshold calibration for binary metrics (calibrate_decision_threshold). Competitor verb: fit(..., calibrate_decision_threshold="auto"); predictor.calibrate_decision_threshold(metric="f1"). Gap measured in aprender at eb262f8eb: Probability calibration exists (PlattScaling, IsotonicRegression, TemperatureScaling in calibration.rs) but nothing searches the decision threshold that maximises f1 / balanced_accuracy / mcc on validation data and stores it on the predictor (`decision_threshold`, `set_decision_threshold`).
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3381'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  the_calibrated_threshold_beats_0_5_on_the_calibration_metric:
+    formula: |
+      on an imbalanced fixture (5% positives) f1 at the calibrated threshold > f1 at 0.5 by >= 0.05 absolute
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "the calibrated threshold beats 0.5 on the calibration metric and the gain is asserted, not the search"
+  the_threshold_is_persisted_with_the_model:
+    formula: |
+      save then load reproduces predict() bit-identically including the threshold; a mutation that resets the threshold to 0.5 on load turns this RED
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "the threshold is persisted with the model"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-11-001
+  rule: "the calibrated threshold beats 0.5 on the calibration metric and the gain is asserted, not the search"
+  prediction: "on an imbalanced fixture (5% positives) f1 at the calibrated threshold > f1 at 0.5 by >= 0.05 absolute"
+  test: >-
+    LIVE-PENDING - the calibrated threshold beats 0.5 on the calibration metric and the gain is asserted, not the search. No test surface exists today because the capability is partial: Decision-threshold calibration for binary metrics (calibrate_decision_threshold) (aprender#3381, CRUX-O-11). PROMOTE by authoring a test named calibrated_threshold_beats_half in module `automl/threshold/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'the calibrated threshold beats 0.5 on the calibration metric and the gain is asserted, not the search' is violated — the autogluon parity claim for CRUX-O-11 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-11-002
+  rule: "the threshold is persisted with the model"
+  prediction: "save then load reproduces predict() bit-identically including the threshold; a mutation that resets the threshold to 0.5 on load turns this RED"
+  test: >-
+    LIVE-PENDING - the threshold is persisted with the model. No test surface exists today because the capability is partial: Decision-threshold calibration for binary metrics (calibrate_decision_threshold) (aprender#3381, CRUX-O-11). PROMOTE by authoring a test named threshold_persisted_roundtrip in module `automl/threshold/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'the threshold is persisted with the model' is violated — the autogluon parity claim for CRUX-O-11 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "the calibrated threshold beats 0.5 on the calibration metric and the gain is asserted, not the search"
+- type: invariant
+  property: "the threshold is persisted with the model"
+
+kani_harnesses:
+- id: KH-CRUX-O-11-001
+  obligation: the_calibrated_threshold_beats_0_5_on_the_calibration_metric
+  property: the_calibrated_threshold_beats_0_5_on_the_calibration_metric_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-11-002
+  obligation: the_threshold_is_persisted_with_the_model
+  property: the_threshold_is_persisted_with_the_model_holds_on_bounded_input
+  bound: 4

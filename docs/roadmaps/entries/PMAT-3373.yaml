@@ -1,0 +1,21 @@
+- id: PMAT-3373
+  github_issue: 3373
+  item_type: task
+  title: 'P0: Quality presets (medium / good / high / best / extreme) that name a model portfolio and a time budget — CRUX-O-03'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-03, competitor autogluon, demand 5. No preset vocabulary. AutoTuner takes a SearchSpace the caller hand-builds (crates/aprender-core/src/automl/params.rs); there is no named bundle of {models, bagging, stacking, time_limit}. FALSIFIABLE (contracts/crux-O-03-v1.yaml): every preset name resolves to a portfolio and unknown names are rejected with the valid list — the five quality presets each yield a non-empty ordered model list; `presets="bestest"` is an Err whose message contains all five valid names; presets are ordered: a higher preset never fits FEWER model families than the one below it — for medium < good < high < best the family count is monotone non-decreasing, asserted pairwise. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

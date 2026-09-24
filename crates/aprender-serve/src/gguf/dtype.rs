@@ -13,7 +13,7 @@
 /// policy this now follows: an unsupported quant must fail loudly rather than be
 /// silently decoded as something else.
 fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
-    crate::gguf::GgmlQuantType::from_id(qtype)
+    crate::gguf::admitted_from_id(qtype)
         .map(crate::gguf::GgmlQuantType::as_str)
         .ok_or_else(|| RealizarError::FormatError {
             reason: format!(
@@ -194,7 +194,7 @@ mod hybrid_gpu_unsupported_quant_tests {
 /// GH-321: Convert APR dtype string to byte using unified enum.
 /// GH-191 FIX: Use GGML dtype values directly so they match TensorEntry::from_binary reader.
 fn apr_dtype_to_byte(dtype: &str) -> u8 {
-    crate::gguf::GgmlQuantType::from_str_lossy(dtype).map_or_else(
+    crate::gguf::admitted_from_name(dtype).map_or_else(
         || {
             eprintln!(
                 "WARN: Unknown dtype '{}' in dtype_to_byte, writing as F32",
@@ -262,25 +262,33 @@ impl OwnedQuantizedModel {
     /// whitelist; do not read a `false` here as "this hybrid model is GPU-safe".
     #[must_use]
     pub(crate) fn has_gpu_unsupported_quant(&self) -> bool {
-        if gpu_unsupported_quant_qtype(self.lm_head_weight.qtype) {
-            return true;
+        self.first_gpu_unsupported_quant().is_some()
+    }
+
+    /// #3685: the first GGML quant type, among the tensors the GPU-resident forward reads,
+    /// that has no verified GPU GEMV kernel, or `None` when every one is GPU-eligible.
+    ///
+    /// The same tensors, order and whitelist as [`Self::has_gpu_unsupported_quant`], which
+    /// is defined through this, so the two cannot drift. It exists so that a caller refused
+    /// by the PMAT-785 capability gate can NAME the type (`apr parity` reports
+    /// `quant=F16`) instead of re-deriving the whitelist.
+    #[must_use]
+    pub fn first_gpu_unsupported_quant(&self) -> Option<u32> {
+        let bad = |q: u32| gpu_unsupported_quant_qtype(q).then_some(q);
+        if let Some(q) = bad(self.lm_head_weight.qtype) {
+            return Some(q);
         }
-        self.layers.iter().any(|l| {
-            let qkv_bad = match &l.qkv_weight {
-                OwnedQKVWeights::Fused(t) => gpu_unsupported_quant_qtype(t.qtype),
+        self.layers.iter().find_map(|l| {
+            let qkv = match &l.qkv_weight {
+                OwnedQKVWeights::Fused(t) => bad(t.qtype),
                 OwnedQKVWeights::Separate { q, k, v } => {
-                    gpu_unsupported_quant_qtype(q.qtype)
-                        || gpu_unsupported_quant_qtype(k.qtype)
-                        || gpu_unsupported_quant_qtype(v.qtype)
+                    bad(q.qtype).or_else(|| bad(k.qtype)).or_else(|| bad(v.qtype))
                 },
             };
-            qkv_bad
-                || gpu_unsupported_quant_qtype(l.attn_output_weight.qtype)
-                || gpu_unsupported_quant_qtype(l.ffn_up_weight.qtype)
-                || gpu_unsupported_quant_qtype(l.ffn_down_weight.qtype)
-                || l.ffn_gate_weight
-                    .as_ref()
-                    .is_some_and(|g| gpu_unsupported_quant_qtype(g.qtype))
+            qkv.or_else(|| bad(l.attn_output_weight.qtype))
+                .or_else(|| bad(l.ffn_up_weight.qtype))
+                .or_else(|| bad(l.ffn_down_weight.qtype))
+                .or_else(|| l.ffn_gate_weight.as_ref().and_then(|g| bad(g.qtype)))
         })
     }
 
@@ -526,3 +534,10 @@ impl OwnedQuantizedModel {
 
 include!("embedding.rs");
 include!("loader_apr_quantized.rs");
+
+// PMAT-3430 Q1-c: the characterization snapshot for this module's two admission
+// boundaries. A child module, so it reaches the private fns without widening
+// anything. This `mod` line is the only non-test edit Phase 1 makes here.
+#[cfg(test)]
+#[path = "dtype_characterization_tests.rs"]
+mod dtype_characterization_tests;

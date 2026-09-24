@@ -121,6 +121,7 @@ fn make_test_reader(metadata: std::collections::BTreeMap<String, GgufValue>) -> 
         tensors: vec![],
         data_offset: 0,
         metadata,
+        display_only_metadata: std::collections::BTreeMap::new(),
     }
 }
 

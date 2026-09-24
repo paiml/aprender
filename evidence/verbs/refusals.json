@@ -1,0 +1,12 @@
+{
+  "schema": "apr-refusal-ledger/v1",
+  "note": "The refusal bucket of the verb-set audit (#3597). Every entry is shaped by contracts/refusal-receipt-v1.yaml: a verb from the 111-verb registry, one reason line, the exit code a caller sees, and the release that removes the refusal or a declared sentinel saying none will. #3597 owns WHICH verbs land here; this file is seeded with the one refusal already measured so the shape has a real focus node rather than passing vacuously over an empty list.",
+  "refusals": [
+    {
+      "verb": "bench",
+      "reason": "apr bench refuses qwen35 outright: the subcommand routes through the dense QuantizedGGUFTransformer loader, which does not carry the Gated-DeltaNet hybrid, so the benchmark verb cannot measure the architecture the last release shipped.",
+      "exit_code": 8,
+      "removed_by": "unscheduled"
+    }
+  ]
+}

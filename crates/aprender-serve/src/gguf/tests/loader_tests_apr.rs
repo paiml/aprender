@@ -308,7 +308,10 @@ fn test_to_apr_bytes_various_qtypes() {
         // emitted quantized bytes under that label, so the file was structurally
         // valid and its weights were garbage. The test asserting is_ok() on an
         // invalid input is what made that permanent.
-        if crate::gguf::GgmlQuantType::from_id(qtype).is_some() {
+        // PMAT-3430: asks the same predicate the writer now asks. The leaf knows
+        // 35 live ggml types; serve admits 16, and this test is about serve's
+        // boundary, not about what ggml has ids for.
+        if crate::gguf::admitted_from_id(qtype).is_some() {
             assert!(
                 result.is_ok(),
                 "to_apr_bytes should succeed for known qtype {}: {:?}",

@@ -1,0 +1,75 @@
+# CRUX-O-22 — Known covariates, past covariates and static features in forecasting
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3392, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-22
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 3  # 1..5, medium priority in pmat work
+  intake_status: missing
+  github_issue: 3392
+  description: >
+    Known covariates, past covariates and static features in forecasting. Competitor verb: TimeSeriesPredictor(known_covariates_names=["holiday"]); train_data.static_features = df. Gap measured in aprender at eb262f8eb: ARIMA is univariate. No container carries per-item static features or time-varying covariates, and no model consumes them.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3392'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  a_known_covariate_that_fully_determines_the_target_is_used:
+    formula: |
+      on a fixture where y = 10*holiday + noise, a model given known_covariates has MASE < 0.5 x the same model without them
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "a known covariate that fully determines the target is used"
+  future_covariates_missing_for_the_horizon_is_an_error:
+    formula: |
+      predict() without known_covariates for all prediction_length steps is an Err naming the first missing timestamp
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "future covariates missing for the horizon is an error"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-22-001
+  rule: "a known covariate that fully determines the target is used"
+  prediction: "on a fixture where y = 10*holiday + noise, a model given known_covariates has MASE < 0.5 x the same model without them"
+  test: >-
+    LIVE-PENDING - a known covariate that fully determines the target is used. No test surface exists today because the capability is unimplemented: Known covariates, past covariates and static features in forecasting (aprender#3392, CRUX-O-22). PROMOTE by authoring a test named known_covariate_reduces_error in module `forecast/covariates/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'a known covariate that fully determines the target is used' is violated — the autogluon parity claim for CRUX-O-22 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-22-002
+  rule: "future covariates missing for the horizon is an error"
+  prediction: "predict() without known_covariates for all prediction_length steps is an Err naming the first missing timestamp"
+  test: >-
+    LIVE-PENDING - future covariates missing for the horizon is an error. No test surface exists today because the capability is unimplemented: Known covariates, past covariates and static features in forecasting (aprender#3392, CRUX-O-22). PROMOTE by authoring a test named missing_future_covariates_is_error in module `forecast/covariates/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'future covariates missing for the horizon is an error' is violated — the autogluon parity claim for CRUX-O-22 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "a known covariate that fully determines the target is used"
+- type: invariant
+  property: "future covariates missing for the horizon is an error"
+
+kani_harnesses:
+- id: KH-CRUX-O-22-001
+  obligation: a_known_covariate_that_fully_determines_the_target_is_used
+  property: a_known_covariate_that_fully_determines_the_target_is_used_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-22-002
+  obligation: future_covariates_missing_for_the_horizon_is_an_error
+  property: future_covariates_missing_for_the_horizon_is_an_error_holds_on_bounded_input
+  bound: 4

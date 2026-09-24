@@ -1,0 +1,34 @@
+# #3726 tokenizer parity with 4 real consumer briefs (read in place, not committed: they quote private-repo diffs)
+# host: noah-Lambda-Vector  measured: 2026-09-21T17:34:37Z
+# command: bash scripts/tokenizer_parity.sh --apr <apr 0.69.0 (9026b70a5)> --llama-tokenize <llama.cpp d1d3c3396> --corpus <6 committed> --corpus brief18.txt brief18-ascii.txt <c9 lane.json.prompt.txt> <r891 lane.json.prompt.txt>
+
+apr:            /mnt/nvme-raid0/work-c3/bin/apr-fixed-9026b70a5 (apr 0.69.0 (9026b70a5))
+llama-tokenize: /mnt/nvme-raid0/work-c3/llama-cpu-build/bin/llama-tokenize (version: 0.4.1-dev (build 10987, commit d1d3c3396))
+models: 21   corpus files: 10
+# PASS lines condensed: 210 PASS over 21 model(s), 10 file(s) each (9 distinct basenames: two lane prompts share one).
+# full per-pair log: lambda:/mnt/nvme-raid0/work-c3/3726-parity-lambda-briefs-final.log
+# model                                          files-passed  total-ids
+#   Qwen2.5-0.5B-Instruct-f16.gguf                     10            37761
+#   Qwen2.5-0.5B-Instruct-IQ3_M.gguf                   10            37761
+#   Qwen2.5-0.5B-Instruct-IQ4_XS.gguf                  10            37761
+#   qwen2.5-1.5b-instruct-q4_k_m.gguf                  10            37761
+#   qwen2.5-coder-0.5b-instruct-q4_k_m.gguf            10            37761
+#   qwen2.5-coder-1.5b-instruct-q4_k_m.gguf            10            37761
+#   qwen2.5-coder-7b-instruct-q4_k_m.gguf              10            37761
+#   Qwen3-0.6B-BF16.gguf                               10            37759
+#   Qwen3-1.7B-Q4_K_M.gguf                             10            37759
+#   Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf            10            37759
+#   Qwen3.5-0.8B-IQ4_XS.gguf                           10            39540
+#   Qwen3.5-0.8B-Q4_K_M.gguf                           10            39540
+#   Qwen3.5-0.8B-UD-IQ2_XXS.gguf                       10            39540
+#   Qwen3.5-27B-Q4_K_M.gguf                            10            39540
+#   Qwen3.5-2B-Q4_K_M.gguf                             10            39540
+#   Qwen3.5-35B-A3B-UD-IQ4_XS.gguf                     10            39540
+#   Qwen3.5-4B-Q4_K_M.gguf                             10            39540
+#   Qwen3.5-4B-UD-Q4_K_XL.gguf                         10            39540
+#   Qwen3.5-9B-Q4_K_M.gguf                             10            39540
+#   Qwen3-8B-Q4_K_M.gguf                               10            37759
+#   Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf           10            37759
+# files: brief-review.txt, brief18-ascii.txt, brief18.txt, chat-template.txt, code-rust-token.txt, identifiers.txt, lane.json.prompt.txt, nonascii.txt, whitespace.txt
+--- tokenizer parity: 210 pass, 0 fail, 0 uncovered ---
+rc=0 elapsed=549s

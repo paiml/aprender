@@ -201,27 +201,12 @@ fn read_magic(path: &Path) -> Option<Vec<u8>> {
 ///
 /// Derived from the qtype actually stored in the loaded tensors, which is the
 /// ground truth — `general.file_type` in GGUF metadata is advisory and is
-/// known to go stale when a file is requantized.
+/// known to go stale when a file is requantized. The names come from the ggml type
+/// table; the hand-typed copy this replaced knew 15 ids and reported no quantization
+/// at all for every IQ type (#3662).
 #[must_use]
 pub fn gguf_qtype_name(qtype: u32) -> Option<&'static str> {
-    Some(match qtype {
-        0 => "F32",
-        1 => "F16",
-        2 => "Q4_0",
-        3 => "Q4_1",
-        6 => "Q5_0",
-        7 => "Q5_1",
-        8 => "Q8_0",
-        9 => "Q8_1",
-        10 => "Q2_K",
-        11 => "Q3_K",
-        12 => "Q4_K",
-        13 => "Q5_K",
-        14 => "Q6_K",
-        15 => "Q8_K",
-        30 => "BF16",
-        _ => return None,
-    })
+    trueno_quant::GgmlType::from_id(qtype).map(trueno_quant::GgmlType::as_str)
 }
 
 #[cfg(test)]
@@ -312,5 +297,18 @@ mod tests {
         assert_eq!(gguf_qtype_name(0), Some("F32"));
         // Unknown ids must not be reported as some plausible quantization.
         assert_eq!(gguf_qtype_name(9999), None);
+    }
+
+    /// #3662: the hand-typed table knew 15 ids, so every IQ quantization reported
+    /// no quantization at all.
+    #[test]
+    fn qtype_names_cover_every_live_family() {
+        assert_eq!(gguf_qtype_name(10), Some("Q2_K"));
+        assert_eq!(gguf_qtype_name(16), Some("IQ2_XXS"));
+        assert_eq!(gguf_qtype_name(23), Some("IQ4_XS"));
+        assert_eq!(gguf_qtype_name(30), Some("BF16"));
+        // Removed upstream (Q4_2, Q4_3): not a quantization anything can hold.
+        assert_eq!(gguf_qtype_name(4), None);
+        assert_eq!(gguf_qtype_name(5), None);
     }
 }

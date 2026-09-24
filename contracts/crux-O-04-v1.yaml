@@ -1,0 +1,94 @@
+# CRUX-O-04 — Leaderboard: per-model validation/test score, fit time, predict time and stack level
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3374, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-04
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  github_issue: 3374
+  description: >
+    Leaderboard: per-model validation/test score, fit time, predict time and stack level. Competitor verb: predictor.leaderboard(test_data, extra_info=True). Gap measured in aprender at eb262f8eb: No leaderboard type. GridSearchCVResult in model_selection/ ranks parameter settings of one estimator; TuneResult in automl/tuner.rs is a single best trial. Nothing tabulates several fitted models with timings.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3374'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  the_leaderboard_is_sorted_by_validation_score_descending_and:
+    formula: |
+      columns == [model, score_val, score_test?, pred_time_val, fit_time, stack_level, fit_order] and score_val is non-increasing row to row
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "the leaderboard is sorted by validation score descending and its columns are fixed"
+  timings_are_measured__not_defaulted:
+    formula: |
+      every fit_time and pred_time_val is > 0 after a real fit; a leaderboard built with no fit has zero rows, not zero timings
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "timings are measured, not defaulted"
+  apr_automl_leaderboard_prints_the_same_table_from_a_saved_ar:
+    formula: |
+      `apr automl leaderboard model.apr --json` emits the rows byte-equal to the in-process leaderboard
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "apr automl leaderboard prints the same table from a saved artifact"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-04-001
+  rule: "the leaderboard is sorted by validation score descending and its columns are fixed"
+  prediction: "columns == [model, score_val, score_test?, pred_time_val, fit_time, stack_level, fit_order] and score_val is non-increasing row to row"
+  test: >-
+    LIVE-PENDING - the leaderboard is sorted by validation score descending and its columns are fixed. No test surface exists today because the capability is unimplemented: Leaderboard: per-model validation/test score, fit time, predict time and stack level (aprender#3374, CRUX-O-04). PROMOTE by authoring a test named leaderboard_sorted_and_typed in module `automl/leaderboard/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'the leaderboard is sorted by validation score descending and its columns are fixed' is violated — the autogluon parity claim for CRUX-O-04 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-04-002
+  rule: "timings are measured, not defaulted"
+  prediction: "every fit_time and pred_time_val is > 0 after a real fit; a leaderboard built with no fit has zero rows, not zero timings"
+  test: >-
+    LIVE-PENDING - timings are measured, not defaulted. No test surface exists today because the capability is unimplemented: Leaderboard: per-model validation/test score, fit time, predict time and stack level (aprender#3374, CRUX-O-04). PROMOTE by authoring a test named leaderboard_timings_are_measured in module `automl/leaderboard/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'timings are measured, not defaulted' is violated — the autogluon parity claim for CRUX-O-04 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-04-003
+  rule: "apr automl leaderboard prints the same table from a saved artifact"
+  prediction: "`apr automl leaderboard model.apr --json` emits the rows byte-equal to the in-process leaderboard"
+  test: >-
+    LIVE-PENDING - apr automl leaderboard prints the same table from a saved artifact. No test surface exists today because the capability is unimplemented: Leaderboard: per-model validation/test score, fit time, predict time and stack level (aprender#3374, CRUX-O-04). PROMOTE by authoring a test named cli_leaderboard_matches_library in module `commands/automl_tests` of crate `apr-cli`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'apr automl leaderboard prints the same table from a saved artifact' is violated — the autogluon parity claim for CRUX-O-04 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "the leaderboard is sorted by validation score descending and its columns are fixed"
+- type: invariant
+  property: "timings are measured, not defaulted"
+- type: invariant
+  property: "apr automl leaderboard prints the same table from a saved artifact"
+
+kani_harnesses:
+- id: KH-CRUX-O-04-001
+  obligation: the_leaderboard_is_sorted_by_validation_score_descending_and
+  property: the_leaderboard_is_sorted_by_validation_score_descending_and_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-04-002
+  obligation: timings_are_measured__not_defaulted
+  property: timings_are_measured__not_defaulted_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-04-003
+  obligation: apr_automl_leaderboard_prints_the_same_table_from_a_saved_ar
+  property: apr_automl_leaderboard_prints_the_same_table_from_a_saved_ar_holds_on_bounded_input
+  bound: 4

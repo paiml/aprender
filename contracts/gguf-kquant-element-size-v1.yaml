@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.0.1
   created: '2026-06-19'
   author: PAIML Engineering
   description: |
@@ -25,11 +25,11 @@ metadata:
   - 'ggml-common.h: sizeof(block_q6_K) = QK_K/2 + QK_K/4 + QK_K/16 + sizeof(ggml_half) = 210'
   - 'ggml-common.h: sizeof(block_q8_K) = sizeof(float) + QK_K + QK_K/16*sizeof(int16_t) = 292'
   - 'ggml-common.h: QK_K = 256'
-  - 'crates/aprender-core/src/format/safetensors.rs — ggml_dtype_element_size SIZES table (idx 10/11/14/15)'
+  - 'crates/aprender-core/src/format/safetensors.rs — ggml_dtype_element_size, which since #3601 computes type_size / blck_size from trueno_quant::TRAITS (the hand-typed SIZES table is gone)'
   - 'crates/aprender-core/src/format/tensors.rs — ggml_dtype_name GGML type enum order'
 
 name: gguf-kquant-element-size
-version: 1.0.0
+version: 1.0.1
 scope: aprender-core GGUF K-quant byte-size reporting (safetensors.rs ggml_dtype_element_size)
 
 description: |
@@ -96,7 +96,7 @@ falsification_tests:
     0.8203125 (Q6_K), 1.140625 (Q8_K). Before the fix it returned 0.3125,
     0.4375, 0.8125, 1.0625 respectively.
   test: cargo test -p aprender-core --lib test_kquant_element_size_exact_block_ratio_pmat869
-  if_fails: 'a K-quant SIZES table entry (idx 10/11/14/15) regressed to a wrong byte/elem value.'
+  if_fails: 'a K-quant bytes/elem (id 10/11/14/15) regressed to a wrong value — check ggml_dtype_element_size still reads trueno_quant::TRAITS.'
   evidence: |
     RED (buggy table): panics "Q2_K (code 10): expected 0.328125 (= 84/256), got 0.3125".
     GREEN (fixed table): test passes; 256-element Q2_K tensor reports 84 bytes.

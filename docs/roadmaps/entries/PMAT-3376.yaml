@@ -1,0 +1,21 @@
+- id: PMAT-3376
+  github_issue: 3376
+  item_type: task
+  title: 'P1: K-fold bagging with out-of-fold predictions (num_bag_folds, predict_oof) — CRUX-O-06'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-06, competitor autogluon, demand 4. KFold and StratifiedKFold exist (model_selection/) and cross_validate scores them, but no wrapper trains one child per fold, keeps all children, averages them at predict time and exposes the out-of-fold matrix. RandomForest bags trees internally and is not reusable for other estimators. FALSIFIABLE (contracts/crux-O-06-v1.yaml): OOF predictions cover every training row exactly once — for n rows and k folds the OOF matrix has n rows, no NaN, and each row was predicted by the one child that did not see it (asserted through a fold-id trace); bagged prediction is the mean of the children — predict_proba of the bag equals the elementwise mean of the k children''s predict_proba within 1e-12. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

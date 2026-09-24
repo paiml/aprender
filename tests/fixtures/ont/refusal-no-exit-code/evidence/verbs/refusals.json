@@ -1,0 +1,10 @@
+{
+ "schema": "apr-refusal-ledger/v1",
+ "refusals": [
+  {
+   "verb": "bench",
+   "reason": "the subcommand routes through the dense loader and cannot measure this",
+   "removed_by": "never"
+  }
+ ]
+}

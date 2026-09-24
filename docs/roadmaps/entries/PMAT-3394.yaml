@@ -1,0 +1,21 @@
+- id: PMAT-3394
+  github_issue: 3394
+  item_type: task
+  title: 'P1: Zero-shot pretrained forecaster (Chronos-2 / Toto-2 class) loaded by apr pull, with optional fine-tuning — CRUX-O-24'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-24, competitor autogluon, demand 4. apr pull fetches LLM checkpoints (Category A) and the inference crates run decoder transformers, but no forecasting head exists: nothing tokenises a numeric series into the model''s input, samples a horizon, and maps it back to quantiles. FALSIFIABLE (contracts/crux-O-24-v1.yaml): zero-shot output matches a pinned reference — a pinned small checkpoint pulled by `apr pull` forecasts the committed fixture within 1e-3 of the reference quantiles; fine-tuning changes the weights and improves the in-domain metric — after fine_tune on the fixture the WQL improves by >= 5% relative AND at least one weight tensor differs from the pulled checkpoint. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

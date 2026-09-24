@@ -21,84 +21,59 @@ use crate::error::TruenoError;
 
 const GGUF_MAGIC: u32 = 0x4655_4747; // "GGUF" in little-endian
 
-/// GGML tensor type IDs (subset used for LLM inference).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u32)]
-pub enum GgmlType {
-    F32 = 0,
-    F16 = 1,
-    Q4_0 = 2,
-    Q4_1 = 3,
-    Q5_0 = 6,
-    Q5_1 = 7,
-    Q8_0 = 8,
-    Q8_1 = 9,
-    Q2K = 10,
-    Q3K = 11,
-    Q4K = 12,
-    Q5K = 13,
-    Q6K = 14,
-    Q8K = 15,
-    Bf16 = 30,
-}
+// PMAT-3430 M1 Phase 3: the enum that used to be declared here is now the
+// workspace's ONE ggml tensor-type enum, re-exported from the leaf crate.
+//
+// compute's copy listed 15 ids and carried the block geometry for them. Every
+// one of those 15 rows agreed with upstream ggml exactly — it was the only one
+// of the three in-tree enums that did — so nothing about sizes changes here;
+// `block_bytes`, `block_size` and `tensor_bytes` now read the same numbers out
+// of `TRAITS`, which is extracted from ggml at the pinned commit rather than
+// typed. `crates/aprender-compute/src/inference/gguf_characterization_tests.rs`
+// asserts all 15 rows and the rounding are unchanged.
+pub use trueno_quant::GgmlType;
 
-impl GgmlType {
-    fn from_u32(v: u32) -> Option<Self> {
-        match v {
-            0 => Some(Self::F32),
-            1 => Some(Self::F16),
-            2 => Some(Self::Q4_0),
-            3 => Some(Self::Q4_1),
-            6 => Some(Self::Q5_0),
-            7 => Some(Self::Q5_1),
-            8 => Some(Self::Q8_0),
-            9 => Some(Self::Q8_1),
-            10 => Some(Self::Q2K),
-            11 => Some(Self::Q3K),
-            12 => Some(Self::Q4K),
-            13 => Some(Self::Q5K),
-            14 => Some(Self::Q6K),
-            15 => Some(Self::Q8K),
-            30 => Some(Self::Bf16),
-            _ => None,
+/// The ids compute ACCEPTS at its GGUF parse boundary.
+///
+/// The leaf knows all 35 live ggml types; this crate knew 15 and must keep
+/// knowing exactly 15 (#3430 Q1-c: M1 changes no crate's admitted set, because
+/// widening one silently is how a loader starts decoding bytes it has no kernel
+/// for). Adding a row here is a deliberate act with its own ticket, not a
+/// side effect of the enum growing.
+const ADMITTED: [GgmlType; 15] = [
+    GgmlType::F32,
+    GgmlType::F16,
+    GgmlType::Q4_0,
+    GgmlType::Q4_1,
+    GgmlType::Q5_0,
+    GgmlType::Q5_1,
+    GgmlType::Q8_0,
+    GgmlType::Q8_1,
+    GgmlType::Q2K,
+    GgmlType::Q3K,
+    GgmlType::Q4K,
+    GgmlType::Q5K,
+    GgmlType::Q6K,
+    GgmlType::Q8K,
+    GgmlType::BF16,
+];
+
+/// The GGUF parse boundary: an id becomes a type only if compute admits it.
+///
+/// This was `GgmlType::from_u32`, an inherent method. An inherent method cannot
+/// follow a type that is now defined in another crate, so it survives as a free
+/// function under the same name — the one call-site change #3430 Q1-c named in
+/// advance (`GgmlType::from_u32(x)` -> `from_u32(x)`).
+fn from_u32(v: u32) -> Option<GgmlType> {
+    let t = GgmlType::from_id(v)?;
+    let mut i = 0;
+    while i < ADMITTED.len() {
+        if ADMITTED[i] as u32 == t as u32 {
+            return Some(t);
         }
+        i += 1;
     }
-
-    /// Bytes per block for this quantization type.
-    pub fn block_bytes(&self) -> usize {
-        match self {
-            Self::F32 => 4,
-            Self::F16 | Self::Bf16 => 2,
-            Self::Q4_0 => 18, // 32 weights: 2 (scale) + 16 (4-bit)
-            Self::Q4_1 => 20, // 32 weights: 2+2 (scale+min) + 16
-            Self::Q5_0 => 22, // 32 weights
-            Self::Q5_1 => 24,
-            Self::Q8_0 => 34, // 32 weights: 2 (scale) + 32 (8-bit)
-            Self::Q8_1 => 36,
-            Self::Q2K => 84, // 256 weights
-            Self::Q3K => 110,
-            Self::Q4K => 144, // 256 weights
-            Self::Q5K => 176,
-            Self::Q6K => 210,
-            Self::Q8K => 292,
-        }
-    }
-
-    /// Weights per block.
-    pub fn block_size(&self) -> usize {
-        match self {
-            Self::F32 | Self::F16 | Self::Bf16 => 1,
-            Self::Q4_0 | Self::Q4_1 | Self::Q5_0 | Self::Q5_1 | Self::Q8_0 | Self::Q8_1 => 32,
-            Self::Q2K | Self::Q3K | Self::Q4K | Self::Q5K | Self::Q6K | Self::Q8K => 256,
-        }
-    }
-
-    /// Total bytes for `n_elements` weights.
-    pub fn tensor_bytes(&self, n_elements: usize) -> usize {
-        let bs = self.block_size();
-        let n_blocks = (n_elements + bs - 1) / bs;
-        n_blocks * self.block_bytes()
-    }
+    None
 }
 
 /// Info about a single tensor in the GGUF file.
@@ -223,7 +198,7 @@ impl GgufFile {
                 dims.push(read_u64(&mut cursor)?);
             }
             let dtype_u32 = read_u32(&mut cursor)?;
-            let dtype = GgmlType::from_u32(dtype_u32).ok_or_else(|| {
+            let dtype = from_u32(dtype_u32).ok_or_else(|| {
                 TruenoError::InvalidInput(format!(
                     "Unknown GGML type {dtype_u32} for tensor '{name}'"
                 ))
@@ -437,3 +412,10 @@ mod tests {
         assert_eq!(file.tensors.len(), 0);
     }
 }
+
+// PMAT-3430 Q1-c: the characterization snapshot for compute's one id boundary
+// and its block geometry. A child module, so it reaches the private `from_u32`
+// without widening it. This `mod` line is the only non-test edit Phase 1 makes.
+#[cfg(test)]
+#[path = "gguf_characterization_tests.rs"]
+mod gguf_characterization_tests;

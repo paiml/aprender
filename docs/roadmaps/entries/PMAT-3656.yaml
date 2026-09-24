@@ -1,0 +1,17 @@
+- id: PMAT-3656
+  github_issue: 3656
+  item_type: task
+  title: 'apr convert/import invent IQ-quant weights: get_tensor_f32 approximated IQ2..IQ4 from raw bytes and exited 0'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T05:47:55Z
+  updated: 2026-09-21T05:47:55Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3656 done_when, verbatim; minted on the PR branch so the AD-04 quorum can run). Done when: (1) get_tensor_f32 on any IQ tensor returns Err naming the tensor and its type; no path in aprender-core returns approximated IQ values; dequantize_iq_approximate is deleted. (2) apr convert … --quantize q4k and apr import on Qwen3.5-0.8B-IQ4_XS.gguf exit non-zero and write no output file. (3) A unit test fails if an approximation arm is restored (mutation: restore the 16..=23 arm → RED). Not in scope: real IQ dequantization in aprender-core (aprender-serve has dequantize_iq*, core cannot depend on serve; the route is PP-QUANT-001 #3421). Why it rides with PMAT-3601: once IQ tensors are sized, raw apr import reaches map_gguf_dtype, whose Q8_0/Q5_K refusal says "cannot represent exactly" — a GH-375 fallback trigger — so without this fix an IQ file could import invented weights where it used to be refused.'

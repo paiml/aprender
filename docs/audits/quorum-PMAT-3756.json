@@ -1,0 +1,225 @@
+{
+  "ticket": "PMAT-3756",
+  "base": "8fe36c080",
+  "base_resolved": "8fe36c080",
+  "base_note": "no origin/8fe36c080 exists; judged against the local ref",
+  "head": "d0c506a053c7c5ea7a37c67272fe9489eb8f95d3",
+  "diff_sha256": "7a7ed5496c2fc3d119e874efacf99e0c49c249e9cce4c89a337657f4cacc366e",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 11235,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly fulfills the first clause of PMAT-3756. It fixes the `llama_bin.sh` sed compatibility issue on macOS (mini) by passing the commands as separate `-e` flags, which resolves the 'undefined label' BSD sed error. It also includes the required resolution evidence for both 'intel' and 'mini' hosts in the `evidence/parity` directory. The roadmap correctly specifies that this PR only completes the first clause and refs (rather than closes) the ticket. The changes strictly follow the ticket requirements and forbid nothing.",
+      "findings": [
+        {
+          "claim": "The sed command was correctly updated to use separate -e arguments, fixing the 'undefined label' error on BSD sed (mini).",
+          "file": "scripts/llama_bin.sh",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The evidence file for intel host is properly committed and shows the pin resolving correctly.",
+          "file": "evidence/parity/pin-bump-d1d3c3396/RESOLVE-intel.txt",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The evidence file for mini host is properly committed and shows the pin resolving correctly.",
+          "file": "evidence/parity/pin-bump-d1d3c3396/RESOLVE-mini.txt",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 3589,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for PMAT-3756 satisfies the ticket requirements and refutation criteria:\n1. It delivers the first clause of PMAT-3756's acceptance criteria: `llama_bin.sh` resolves the pin on intel and mini with committed evidence in `evidence/parity/pin-bump-d1d3c3396/RESOLVE-{intel,mini}.txt` matching the format of lambda/gx10.\n2. It correctly scopes the delivery as 'Refs #3756' rather than 'Closes #3756' because the second clause (host_receipt.sh parity block) depends on #3731; the roadmap entry records status as `in_progress` (50% progress).\n3. The portable sed fix in `scripts/llama_bin.sh` (using separate `-e` options for `t` and `s/.../p`) resolves BSD sed's branch label parsing issue on macOS (`undefined label`) while remaining completely compatible with GNU sed.\n4. Verified via `scripts/check_llama_pin.sh`: all 43 tests pass and both mutants remain killed.\n5. Verified via `make roadmap-aggregate-check`: roadmap.yaml matches aggregate of 107 fragments and is idempotent.\n6. Shellcheck on `scripts/llama_bin.sh` reports 0 errors. No gates were weakened, no receipt claims were unsupported, and no out-of-scope changes were introduced.",
+      "findings": [],
+      "raw_bytes": 3589,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PASS. The diff (8fe36c080...HEAD) precisely implements the first clause of PMAT-3756 (Refs #3756):\n1. Fixes the non-portable BSD sed `t` label interpretation in `scripts/llama_bin.sh` (line 415) by splitting `-e` arguments (`-e 's/.*commit ([0-9a-f]{7,40}).*/\\1/p' -e 't' -e 's/.*\\(([0-9a-f]{7,40})\\).*/\\1/p'`), restoring resolution on Darwin / macOS (mini) while remaining 100% compatible with GNU sed (intel / linux).\n2. Commits resolution proof files `evidence/parity/pin-bump-d1d3c3396/RESOLVE-intel.txt` and `evidence/parity/pin-bump-d1d3c3396/RESOLVE-mini.txt` with rc=0.\n3. Adds roadmap fragment `docs/roadmaps/entries/PMAT-3756.yaml` and aggregates into `docs/roadmaps/roadmap.yaml`.\n4. Verified `bash scripts/check_llama_pin.sh` passes (43 ok rows, both mutants killed, rc 0).\nNo gates were weakened, no receipt claims are unbacked, and the diff contains no out-of-scope changes.",
+      "findings": [],
+      "raw_bytes": 3091,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "evidence/parity/pin-bump-d1d3c3396/RESOLVE-intel.txt",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The evidence file for intel host is properly committed and shows the pin resolving correctly."
+      ]
+    },
+    {
+      "file": "evidence/parity/pin-bump-d1d3c3396/RESOLVE-mini.txt",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The evidence file for mini host is properly committed and shows the pin resolving correctly."
+      ]
+    },
+    {
+      "file": "scripts/llama_bin.sh",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The sed command was correctly updated to use separate -e arguments, fixing the 'undefined label' error on BSD sed (mini)."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

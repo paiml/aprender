@@ -97,7 +97,7 @@ fn golden_gate_for(
     config: &QaConfig,
 ) -> Result<GateResult> {
     if cpu_only || hybrid {
-        run_golden_output_gate_runtime(path, config)
+        run_golden_output_gate_runtime(path, config, cpu_only)
     } else {
         run_golden_output_gate(path, config)
     }

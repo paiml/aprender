@@ -541,7 +541,7 @@ fn load_f32_or_dequant_tensor(
         .ok_or_else(|| TruenoError::InvalidInput(format!("Missing tensor data: {name}")))?;
 
     match info.dtype {
-        GgmlType::F32 | GgmlType::F16 | GgmlType::Bf16 => {
+        GgmlType::F32 | GgmlType::F16 | GgmlType::BF16 => {
             Ok(to_f32_from_any(data, info.dtype, expected_elements))
         }
         GgmlType::Q4K => {
@@ -606,7 +606,7 @@ fn load_weight_matrix(
 
     match info.dtype {
         GgmlType::Q4K => Ok(WeightMatrix::Q4K { data: data.to_vec(), rows: out_dim }),
-        GgmlType::F32 | GgmlType::F16 | GgmlType::Bf16 => {
+        GgmlType::F32 | GgmlType::F16 | GgmlType::BF16 => {
             let f32_data = to_f32_from_any(data, info.dtype, n_elements);
             Ok(WeightMatrix::F32 { data: f32_data, rows: out_dim })
         }
@@ -721,7 +721,7 @@ fn to_f32_from_any(data: &[u8], dtype: GgmlType, n_elements: usize) -> Vec<f32> 
                 })
                 .collect()
         }
-        GgmlType::Bf16 => {
+        GgmlType::BF16 => {
             let count = n_elements.min(data.len() / 2);
             (0..count)
                 .map(|i| {

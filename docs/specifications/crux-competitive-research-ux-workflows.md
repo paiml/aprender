@@ -2,8 +2,8 @@
 
 **Subspec ID**: `CRUX-001`
 **Status**: DRAFT
-**Version**: 2.2 (2026-04-21 — Category L [HF kernels-community, 15 stories] and Category M [APR-QA Playbook canonicalization, 10 stories] added; §13 chain-of-thought derivation appended; §3 matrix and §6 coverage recomputed; story total 250 → 275)
-**Date**: 2026-04-21
+**Version**: 2.3 (2026-09-16 — Category O [AutoGluon AutoML parity, 24 stories] added, epic aprender#3370; Category N [linfa + burn, 17 stories, aprender#3146, 2026-09-12] exists in the master contract and is recorded here in §3 for the first time; story total in the master registry 267 → 291)
+**Date**: 2026-09-16
 **Author**: PAIML Engineering
 **Parent**: [aprender-spec.md](aprender-spec.md), [aprender-monorepo-consolidation.md](aprender-monorepo-consolidation.md)
 **Master contract**: [`contracts/crux-competitive-research-ux-v1.yaml`](../../contracts/crux-competitive-research-ux-v1.yaml)
@@ -93,8 +93,10 @@ larger workflow surface area (HF Transformers covers training + data + hub).
 | 7 | **Ecosystem interop** | — | 30 | SDKs, MCP, observability, deployment |
 | 8 | **HF kernels-community** | `get_kernel("kernels-community/<name>")` | 15 | optimized GPU kernels as drop-in `.so` packages (v2.2) |
 | 9 | **APR-QA Playbook** | `apr qa --gate=<N>` / `apr-model-qa-playbook` | 10 | Popperian falsification framework for model qualification (v2.2) |
+| 10 | **linfa + Burn** | `linfa::traits::Fit` / `burn::module::Module` | 17 | Rust-native ML frameworks; substrates (SVD, spatial index, rank-typed tensor) + breadth (Category N, 2026-09-12, aprender#3146) |
+| 11 | **AutoGluon** | `TabularPredictor(label).fit()` / `TimeSeriesPredictor.fit()` | 24 | AutoML: one-call tabular fit, presets, leaderboard, bagging/stacking/weighted ensemble, panel forecasting with quantiles (Category O, v2.3, aprender#3370) |
 
-Total = 275 stories. See §5 for the full registry.
+Total = 275 stories in this document's §5 as of v2.2; the master registry carries 291 (Categories L and M are contract-only, see §6 note). See §5 for the full registry.
 (Counts derived from `yq '[.stories[] | .competitor] | ...'` on master contract; drift between
 this table and the YAML is falsified by FALSIFY-CRUX-010.)
 
@@ -501,7 +503,38 @@ always `contracts/crux-{ID}-v1.yaml` unless noted.
 | CRUX-M-09 | Property-based falsifier ≥ 1000 fuzz cases per gate | `apr-qa fuzz --cases 1000` | ❌ | 4 |
 | CRUX-M-10 | Upstream-fix enforcement (reject workarounds; route to aprender/trueno/realizar) | playbook "no-workarounds" rule | 🔨 | 4 |
 
-**Total: 275 stories** across 13 categories; 5 ID gaps (`C-14`, `F-10`, `H-04`, `I-05`, `K-06`) intentional and documented.
+### Category O — AutoML Parity, AutoGluon (24 stories)
+
+> Added v2.3 (2026-09-16). Competitor source: [autogluon/autogluon](https://github.com/autogluon/autogluon) 1.6.3, surveyed from `../autogluon` @ 77946149; evidence in `evidence/crux/autogluon/`. Canonical verb: `TabularPredictor(label="class").fit("train.csv", presets="best")` — the README's only code block. Aprender target surface: `apr automl fit|predict|leaderboard` over a predictor-level AutoML in `aprender-core::automl` (today a single-estimator tuner) and `apr forecast` over a panel `TimeSeriesPredictor` (today one univariate `ARIMA`). Epic aprender#3370; one GitHub issue per row (#3371–#3394). `MultiModalPredictor`, `autogluon.cloud`, MLZero and Ray-parallel fits are CUT on the epic. Not a BEAT pillar.
+
+| ID | Story | Competitor verb | S | D |
+|----|-------|----------------|---|---|
+| CRUX-O-01 | One-call tabular AutoML: fit(label) -> predict on a CSV | `TabularPredictor(label="class").fit("train.csv"); predictor.predict("test.csv")` | ❌ | 5 |
+| CRUX-O-02 | Problem-type inference: binary / multiclass / regression / quantile from the label column | `predictor.problem_type  (inferred in fit unless problem_type= given)` | ❌ | 5 |
+| CRUX-O-03 | Quality presets (medium / good / high / best / extreme) that name a model portfolio and a time budget | `fit(..., presets="best_quality")` | ❌ | 5 |
+| CRUX-O-04 | Leaderboard: per-model validation/test score, fit time, predict time and stack level | `predictor.leaderboard(test_data, extra_info=True)` | ❌ | 5 |
+| CRUX-O-05 | Automatic feature-type inference and the AutoML feature pipeline (numeric, categorical, datetime, text n-gram, drop-unique, drop-duplicate) | `AutoMLPipelineFeatureGenerator` | 🔨 | 5 |
+| CRUX-O-06 | K-fold bagging with out-of-fold predictions (num_bag_folds, predict_oof) | `fit(..., num_bag_folds=8); predictor.predict_proba_oof()` | ❌ | 4 |
+| CRUX-O-07 | Multi-layer stack ensembling with a leakage guard (num_stack_levels, auto_stack, dynamic_stacking) | `fit(..., num_stack_levels=1, dynamic_stacking="auto")` | ❌ | 4 |
+| CRUX-O-08 | Greedy weighted-ensemble selection over fitted models (Caruana ensemble selection) | `fit_weighted_ensemble=True (default)` | ❌ | 5 |
+| CRUX-O-09 | Time-budgeted portfolio fit: time_limit split across models, each model early-stopped on its share | `fit(..., time_limit=3600)` | 🔨 | 5 |
+| CRUX-O-10 | Predictor-level permutation feature importance with p-values and confidence intervals | `predictor.feature_importance(test_data, num_shuffle_sets=10)` | 🔨 | 4 |
+| CRUX-O-11 | Decision-threshold calibration for binary metrics (calibrate_decision_threshold) | `fit(..., calibrate_decision_threshold="auto"); predictor.calibrate_decision_threshold(metric="f1")` | 🔨 | 4 |
+| CRUX-O-12 | refit_full: retrain the selected models on train+validation after model selection | `fit(..., refit_full=True, set_best_to_refit_full=True); predictor.refit_full()` | ❌ | 3 |
+| CRUX-O-13 | Model distillation: compress the ensemble into one fast student | `predictor.distill(time_limit=..., augment_method="spunge")` | ❌ | 3 |
+| CRUX-O-14 | Deployment artifact: clone_for_deployment / keep_only_best / save_space / persist into one loadable file | `predictor.clone_for_deployment(path); predictor.persist()` | ❌ | 4 |
+| CRUX-O-15 | Inference-latency constraint during model selection (infer_limit, infer_limit_batch_size) | `fit(..., infer_limit=0.001, infer_limit_batch_size=10000)` | ❌ | 3 |
+| CRUX-O-16 | Fit diagnostics: fit_summary, model_failures and learning curves | `predictor.fit_summary(); predictor.model_failures(); fit(..., learning_curves=True)` | ❌ | 3 |
+| CRUX-O-17 | Tabular foundation model: in-context prediction with a pretrained transformer (TabPFN / TabICL / Mitra class) | `hyperparameters={"TABPFNV2": {}, "TABICL": {}, "MITRA": {}}` | ❌ | 4 |
+| CRUX-O-18 | Memory-aware fit: per-model memory estimate and a memory_limit that skips models that would not fit | `fit(..., memory_limit="auto")` | ❌ | 3 |
+| CRUX-O-19 | Multi-series forecasting predictor: (item_id, timestamp) panel data, prediction_length, freq | `TimeSeriesPredictor(prediction_length=48, freq="h").fit(TimeSeriesDataFrame)` | ❌ | 5 |
+| CRUX-O-20 | Probabilistic forecasts: quantile_levels and the forecasting metric family (WQL, MQL, MASE, SMAPE, RMSSE, WAPE) | `TimeSeriesPredictor(eval_metric="WQL", quantile_levels=[0.1,0.5,0.9])` | ❌ | 5 |
+| CRUX-O-21 | Rolling-window backtesting: num_val_windows, refit_every_n_windows, backtest_predictions | `fit(..., num_val_windows="auto", refit_every_n_windows="auto"); predictor.backtest_predictions()` | ❌ | 4 |
+| CRUX-O-22 | Known covariates, past covariates and static features in forecasting | `TimeSeriesPredictor(known_covariates_names=["holiday"]); train_data.static_features = df` | ❌ | 3 |
+| CRUX-O-23 | Local statistical baselines: SeasonalNaive, ETS, Theta, AutoARIMA, Croston | `hyperparameters={"SeasonalNaive": {}, "AutoETS": {}, "Theta": {}, "AutoARIMA": {}, "Croston": {}}` | 🔨 | 4 |
+| CRUX-O-24 | Zero-shot pretrained forecaster (Chronos-2 / Toto-2 class) loaded by apr pull, with optional fine-tuning | `hyperparameters={"Chronos2": {"fine_tune": True}}` | ❌ | 4 |
+
+**Total: 275 stories in §5 (v2.2) + 24 in Category O = 299 documented rows; the master registry holds 291** (Categories L and M have contracts but no registry rows — pre-existing drift recorded on aprender#3146) across 15 categories; 5 ID gaps (`C-14`, `F-10`, `H-04`, `I-05`, `K-06`) intentional and documented.
 
 ---
 
@@ -516,6 +549,8 @@ Counts verified from §5 table (via `awk` emoji extraction). Δ columns show v2.
 | ❌ missing   | 156 | +16 (15 × L + M-09) | 56.7 % | Implementation ticket required |
 | 🤔 unclear   | 0  | 0 | 0.0 % | — |
 | **total**    | **275** | +25 | 100 % | |
+
+> **v2.3 note (2026-09-16):** the master contract's `coverage_intake` is now asserted from `stories[]` by the aprender-contracts test-suite and reads supported 43 / partial 77 / missing 171 / total 291 after Category O (+5 partial, +19 missing). This table is the v2.2 intake and is left as history; the YAML is the source of truth.
 
 Demand-weighted view — **high-demand (D≥4)** stories still ❌ missing are
 the fast path to adoption parity and become the first `pmat work` items

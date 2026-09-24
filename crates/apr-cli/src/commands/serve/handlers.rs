@@ -594,16 +594,13 @@ fn wgpu_smoke_test(
 }
 
 /// PMAT-340: Extract the real vocab from the GGUF for tokenize/detokenize.
+/// #3609: a GGUF with no vocabulary refuses by name (see `extract_gguf_vocab`).
 #[cfg(feature = "wgpu")]
-fn wgpu_vocabulary(mapped: &realizar::gguf::MappedGGUFModel, vocab_size: usize) -> Vec<String> {
-    mapped.model.vocabulary().unwrap_or_else(|| {
-        eprintln!("Warning: No vocabulary in GGUF, using placeholder");
-        let mut v: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
-        if !v.is_empty() {
-            v[0] = "<unk>".to_string();
-        }
-        v
-    })
+fn wgpu_vocabulary(mapped: &realizar::gguf::MappedGGUFModel) -> Result<Vec<String>> {
+    mapped
+        .model
+        .vocabulary()
+        .ok_or_else(|| no_vocabulary("the GGUF (no tokenizer.ggml.tokens)"))
 }
 
 /// PMAT-341: Build a BPE tokenizer from the GGUF merge rules.
@@ -822,7 +819,7 @@ fn serve_wgpu_backend(
     println!("{}", "Starting WGPU inference server...".cyan());
 
     // PMAT-340: Extract real vocab from GGUF for tokenization/detokenization
-    let vocab = wgpu_vocabulary(mapped, vocab_size);
+    let vocab = wgpu_vocabulary(mapped)?;
     // PMAT-341: Extract BPE merge rules for proper tokenization
     let merges = mapped.model.merge_rules().unwrap_or_default();
     println!(
@@ -930,11 +927,11 @@ fn try_start_wgpu_backend(model_path: &Path, config: &ServerConfig) -> Result<bo
     );
 
     // Step 1: Load GGUF model
-    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
+    use realizar::gguf::MappedGGUFModel;
     let mapped = MappedGGUFModel::from_path(model_path)
         .map_err(|e| CliError::ModelLoadFailed(format!("GGUF load: {e}")))?;
-    let quantized = OwnedQuantizedModel::from_mapped(&mapped)
-        .map_err(|e| CliError::ModelLoadFailed(format!("Quantized model: {e}")))?;
+    // #3571: the same loader — and the same zero-layer refusal — as every other GGUF route.
+    let quantized = build_serve_model(&mapped)?;
     let num_layers = quantized.layers().len();
     println!(
         "{}",
@@ -1074,6 +1071,8 @@ struct AprInferenceOutput {
     tokens_generated: usize,
     gen_duration: std::time::Duration,
     input_token_count: usize,
+    /// Why the loop ended, judged against the budget it ran with (#3718).
+    finish_reason: realizar::infer::run_report::FinishReason,
 }
 
 /// Run the tokenize → generate → decode pipeline for APR CPU inference.
@@ -1123,12 +1122,11 @@ fn run_apr_cpu_inference(
     };
     let gen_duration = gen_start.elapsed();
 
-    // Extract new tokens
-    let new_tokens = if output_tokens.len() > input_tokens.len() {
-        &output_tokens[input_tokens.len()..]
-    } else {
-        &output_tokens[..]
-    };
+    // Extract new tokens. `generate_with_cache` returns prompt + generated, so
+    // nothing past the prompt means nothing was generated. The old fallback
+    // (`&output_tokens[..]`) handed the PROMPT back as the completion, decoded it
+    // as the reply, and counted it as `completion_tokens` (#3718).
+    let new_tokens = output_tokens.get(input_tokens.len()..).unwrap_or(&[]);
 
     // Decode: embedded APR tokenizer → sibling tokenizer.json → character-level fallback
     let text = if let Some(ref tok) = state.embedded_tokenizer {
@@ -1142,11 +1140,19 @@ fn run_apr_cpu_inference(
             .collect()
     };
 
+    // #3718: the chat handler hardcoded "stop", so a reply cut at `max_tokens`
+    // (which the handler caps at 4096) read as finished. The loop's stop set is
+    // `gen_config.stop_tokens` (empty here) plus token 0, which it pushes before
+    // breaking (`is_eos_token`, apr_transformer/generation.rs).
+    let finish_reason =
+        realizar::infer::run_report::FinishReason::from_decode(new_tokens, &[0], max_tokens);
+
     Ok(AprInferenceOutput {
         text,
         tokens_generated: new_tokens.len(),
         gen_duration,
         input_token_count,
+        finish_reason,
     })
 }
 
@@ -1227,6 +1233,12 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
     let transformer = if is_transformer {
         match realizar::apr_transformer::AprTransformer::from_apr_file(model_path) {
             Ok(t) => {
+                // #3571: a stack with no layers has no answer to give — refused at load.
+                if let Some(refusal) =
+                    zero_layer_refusal(&t.config.architecture, t.config.num_layers)
+                {
+                    return Err(refusal);
+                }
                 println!(
                     "{}",
                     format!(
@@ -1427,6 +1439,12 @@ fn try_apr_quantized_cpu(model_path: &Path, config: &ServerConfig) -> Result<()>
 
     let quantized = OwnedQuantizedModel::from_apr(&mapped)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create quantized model: {e}")))?;
+    // #3571: a stack with no layers has no answer to give — refused at load, as on every route.
+    if let Some(refusal) =
+        zero_layer_refusal(&quantized.config().architecture, quantized.layers().len())
+    {
+        return Err(refusal);
+    }
 
     println!(
         "{}",
@@ -1443,15 +1461,7 @@ fn try_apr_quantized_cpu(model_path: &Path, config: &ServerConfig) -> Result<()>
     let vocab = mapped
         .metadata
         .get_embedded_vocabulary()
-        .unwrap_or_else(|| {
-            let vocab_size = mapped.metadata.vocab_size.unwrap_or(32000);
-            eprintln!("Warning: No embedded vocabulary in APR, using placeholder tokens");
-            let mut v: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
-            if !v.is_empty() {
-                v[0] = "<unk>".to_string();
-            }
-            v
-        });
+        .ok_or_else(|| no_vocabulary("the APR file (no embedded vocabulary)"))?;
 
     println!("{}", "Q4K CPU inference ready".green());
 

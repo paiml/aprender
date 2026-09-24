@@ -169,6 +169,9 @@ pub(crate) struct RunOptions {
     pub repeat_last_n: usize,
     /// Process prompt tokens one-by-one (debug prefill)
     pub split_prompt: bool,
+    /// #3672: apply the model's chat template (`--chat`, or an instruct/chat source name)
+    /// even when its metadata and file name say base model. The prompt itself stays raw.
+    pub chat_template: bool,
     /// `--stream`: emit one NDJSON event per generated token.
     ///
     /// Known here (not only at the print site) because streaming is the one
@@ -202,9 +205,29 @@ impl Default for RunOptions {
             repeat_penalty: 1.0,
             repeat_last_n: 64,
             split_prompt: false,
+            chat_template: false,
             stream: false,
         }
     }
+}
+
+/// What `apr run --json` reports about the prompt and how generation ended (#3718).
+///
+/// RAH (#3716) rebuilt Qwen3.5's tokenizer from the GGUF just to learn how many
+/// prompt tokens the model saw, and could not tell a reply cut at `--max-tokens`
+/// from one that finished. Every field is `None` when the inference path did not
+/// report it, which is `null` in the JSON and never a zero that reads as measured.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct RunUsage {
+    /// Tokens actually fed to the model: after the chat template, including BOS.
+    pub prompt_tokens: Option<usize>,
+    /// Tokens the engine generated. Unlike `RunResult::tokens_generated`, never a
+    /// word-count stand-in.
+    pub completion_tokens: Option<usize>,
+    /// `"stop"` (a stop token ended it) or `"length"` (the budget did).
+    pub finish_reason: Option<&'static str>,
+    /// The model's context window, from its metadata.
+    pub context_length: Option<usize>,
 }
 
 /// Run result
@@ -230,6 +253,8 @@ pub(crate) struct RunResult {
     /// could be resolved. `--stream` used to emit `"text":""` for every token
     /// because nothing ever decoded the ids one at a time.
     pub token_texts: Option<Vec<String>>,
+    /// Prompt and completion counts plus the finish reason (#3718).
+    pub usage: RunUsage,
     /// PMAT-3598 row 1 (#3542): the stage breakdown `--json` reports.
     #[cfg(feature = "inference")]
     pub stages: realizar::infer::stage_timings::StageTimings,
@@ -246,6 +271,7 @@ impl Default for RunResult {
             used_gpu: None,
             generated_tokens: None,
             token_texts: None,
+            usage: RunUsage::default(),
             #[cfg(feature = "inference")]
             stages: realizar::infer::stage_timings::StageTimings::default(),
         }
@@ -338,6 +364,7 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         used_gpu: output.used_gpu,
         generated_tokens: output.generated_tokens,
         token_texts: output.token_texts,
+        usage: output.usage,
     })
 }
 

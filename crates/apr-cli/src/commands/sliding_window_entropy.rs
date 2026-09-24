@@ -291,22 +291,10 @@ fn f16_to_f32(h: u16) -> f32 {
     f32::from_bits((sign << 31) | (exp32 << 23) | mant32)
 }
 
-/// GGML dtype name from u32 discriminant
+/// GGML dtype name from u32 discriminant, read from the ggml type table rather than a
+/// copy of it: the hand-typed copy knew 11 ids and printed "Unknown" for the rest (#3662).
 fn ggml_dtype_name(dtype: u32) -> &'static str {
-    match dtype {
-        0 => "F32",
-        1 => "F16",
-        2 => "Q4_0",
-        3 => "Q4_1",
-        6 => "Q5_0",
-        7 => "Q5_1",
-        8 => "Q8_0",
-        9 => "Q8_1",
-        12 => "Q4_K",
-        13 => "Q5_K",
-        14 => "Q6_K",
-        _ => "Unknown",
-    }
+    trueno_quant::GgmlType::from_id(dtype).map_or("Unknown", trueno_quant::GgmlType::as_str)
 }
 
 /// Print an annotated hex field

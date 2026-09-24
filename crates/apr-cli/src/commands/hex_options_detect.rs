@@ -140,6 +140,20 @@
         assert_eq!(ggml_dtype_name(255), "Unknown");
     }
 
+    /// #3662: the hand-typed table knew 11 ids, so a K-quant below Q4_K, every IQ
+    /// type and BF16 printed "Unknown" in `apr hex`.
+    #[test]
+    fn test_ggml_dtype_name_names_every_family() {
+        assert_eq!(ggml_dtype_name(10), "Q2_K");
+        assert_eq!(ggml_dtype_name(16), "IQ2_XXS");
+        assert_eq!(ggml_dtype_name(23), "IQ4_XS");
+        assert_eq!(ggml_dtype_name(30), "BF16");
+        // Ids ggml removed (Q4_2, Q4_3) are not live types: same token as never-existed.
+        assert_eq!(ggml_dtype_name(4), "Unknown");
+        assert_eq!(ggml_dtype_name(5), "Unknown");
+        assert_eq!(ggml_dtype_name(999), "Unknown");
+    }
+
     // ========================================================================
     // parse_hex_offset
     // ========================================================================

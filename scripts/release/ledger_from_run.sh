@@ -29,10 +29,14 @@ scc=$(command grep -m1 -oE 'B2-cpu: sccache=.*' "$log" | sed -E 's/B2-cpu: //; s
 sha=$(command grep -m1 -oE 'tested-sha: [0-9a-f]{40}' "$log" | cut -d' ' -f2 || true)
 runner=$(command grep -m1 -oE "Runner name: '[^']+'" "$log" | sed -E "s/Runner name: '([^']+)'/\1/" || true)
 concl=$(gh run view "$run" --repo paiml/infra --json conclusion -q .conclusion)
+# the tag is the one the tested commit carries, never a literal (#3618: this said "v0.68.1")
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+tag=""
+[ -n "$sha" ] && tag=$(git -C "$root" tag --points-at "$sha" --list 'v[0-9]*' --sort=-v:refname | sed -n 1p)
 cat <<EOF
 {
  "sha": "${sha:-unknown}",
- "tag": "v0.68.1",
+ "tag": "${tag:-untagged}",
  "host": "$host",
  "runner": "${runner:-unknown}",
  "job": "clean-room (aprender)",

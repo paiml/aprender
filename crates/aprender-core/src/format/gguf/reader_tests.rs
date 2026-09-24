@@ -449,3 +449,5 @@ fn test_from_bytes_invalid_magic() {
 mod builder;
 #[path = "reader_tests_accessors.rs"]
 mod reader_tests_accessors;
+#[path = "reader_tests_ggml_sizes.rs"]
+mod reader_tests_ggml_sizes;

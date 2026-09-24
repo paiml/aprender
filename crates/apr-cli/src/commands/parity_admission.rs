@@ -387,7 +387,15 @@ mod sentinel_tests {
     fn record(rel: &str) -> (usize, f32) {
         let text = std::fs::read_to_string(evidence(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"));
         let v: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
-        let rows = v["metrics"].as_array().expect("metrics is an array");
+        // A v2 receipt (#3577) embeds the raw `apr parity --json` document under `raw`, so the
+        // readings live at `raw.metrics`; a fresh run carries them at the top level. One rule,
+        // stated once: look inside the envelope when there is one.
+        let doc = if v.get("raw").is_some_and(serde_json::Value::is_object) {
+            &v["raw"]
+        } else {
+            &v
+        };
+        let rows = doc["metrics"].as_array().expect("metrics is an array");
         let cos: Vec<f32> = rows
             .iter()
             .filter_map(|r| r["cosine_similarity"].as_f64())

@@ -1,0 +1,94 @@
+# CRUX-O-01 — One-call tabular AutoML: fit(label) -> predict on a CSV
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3371, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-01
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  github_issue: 3371
+  description: >
+    One-call tabular AutoML: fit(label) -> predict on a CSV. Competitor verb: TabularPredictor(label="class").fit("train.csv"); predictor.predict("test.csv"). Gap measured in aprender at eb262f8eb: No predictor-level AutoML entry point exists. crates/aprender-core/src/automl/ is a hyperparameter TUNER (AutoTuner, TPE, GridSearch, RandomSearch, DESearch, TimeBudget) that tunes ONE estimator the caller already chose; nothing takes a labelled table and returns a fitted model. `apr train` is causal-LM pre-training only (crates/apr-cli/src/commands/train.rs:1-5) and `apr finetune --task classify` is text classification.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3371'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  fit_on_a_labelled_csv_returns_a_predictor_whose_predictions_:
+    formula: |
+      on the iris fixture (crates/aprender-core/src/datasets/iris.csv) accuracy >= 0.90 AND the majority-class baseline is asserted at 0.333 in the same test
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "fit on a labelled CSV returns a predictor whose predictions score above the majority-class baseline"
+  the_same_call_works_for_a_regression_label_without_a_problem:
+    formula: |
+      a numeric label column yields a regressor whose R^2 on a held-out split exceeds 0.5 AND the mean-predictor baseline is asserted at ~0.0
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "the same call works for a regression label without a problem_type argument"
+  apr_automl_fit_is_reachable_from_the_cli:
+    formula: |
+      `apr automl fit --label class train.csv --out model.apr` exits 0 and writes a loadable artifact; a missing --label exits 2 with a message naming the flag
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "apr automl fit is reachable from the CLI"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-01-001
+  rule: "fit on a labelled CSV returns a predictor whose predictions score above the majority-class baseline"
+  prediction: "on the iris fixture (crates/aprender-core/src/datasets/iris.csv) accuracy >= 0.90 AND the majority-class baseline is asserted at 0.333 in the same test"
+  test: >-
+    LIVE-PENDING - fit on a labelled CSV returns a predictor whose predictions score above the majority-class baseline. No test surface exists today because the capability is unimplemented: One-call tabular AutoML: fit(label) -> predict on a CSV (aprender#3371, CRUX-O-01). PROMOTE by authoring a test named fit_beats_majority_baseline_on_iris in module `automl/predictor/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'fit on a labelled CSV returns a predictor whose predictions score above the majority-class baseline' is violated — the autogluon parity claim for CRUX-O-01 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-01-002
+  rule: "the same call works for a regression label without a problem_type argument"
+  prediction: "a numeric label column yields a regressor whose R^2 on a held-out split exceeds 0.5 AND the mean-predictor baseline is asserted at ~0.0"
+  test: >-
+    LIVE-PENDING - the same call works for a regression label without a problem_type argument. No test surface exists today because the capability is unimplemented: One-call tabular AutoML: fit(label) -> predict on a CSV (aprender#3371, CRUX-O-01). PROMOTE by authoring a test named fit_infers_regression_from_numeric_label in module `automl/predictor/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'the same call works for a regression label without a problem_type argument' is violated — the autogluon parity claim for CRUX-O-01 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-01-003
+  rule: "apr automl fit is reachable from the CLI"
+  prediction: "`apr automl fit --label class train.csv --out model.apr` exits 0 and writes a loadable artifact; a missing --label exits 2 with a message naming the flag"
+  test: >-
+    LIVE-PENDING - apr automl fit is reachable from the CLI. No test surface exists today because the capability is unimplemented: One-call tabular AutoML: fit(label) -> predict on a CSV (aprender#3371, CRUX-O-01). PROMOTE by authoring a test named cli_automl_fit_roundtrip in module `commands/automl_tests` of crate `apr-cli`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'apr automl fit is reachable from the CLI' is violated — the autogluon parity claim for CRUX-O-01 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "fit on a labelled CSV returns a predictor whose predictions score above the majority-class baseline"
+- type: invariant
+  property: "the same call works for a regression label without a problem_type argument"
+- type: invariant
+  property: "apr automl fit is reachable from the CLI"
+
+kani_harnesses:
+- id: KH-CRUX-O-01-001
+  obligation: fit_on_a_labelled_csv_returns_a_predictor_whose_predictions_
+  property: fit_on_a_labelled_csv_returns_a_predictor_whose_predictions__holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-01-002
+  obligation: the_same_call_works_for_a_regression_label_without_a_problem
+  property: the_same_call_works_for_a_regression_label_without_a_problem_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-01-003
+  obligation: apr_automl_fit_is_reachable_from_the_cli
+  property: apr_automl_fit_is_reachable_from_the_cli_holds_on_bounded_input
+  bound: 4

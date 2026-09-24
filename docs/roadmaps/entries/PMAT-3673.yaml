@@ -1,0 +1,17 @@
+- id: PMAT-3673
+  github_issue: 3673
+  item_type: task
+  title: 'Batching is the default merge path: scripts/batch_fold.sh + APR-RELEASE-001 §13 (operator 2026-09-21)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-21T08:23:21Z
+  updated: 2026-09-21T08:23:21Z
+  spec: docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (quoted from issue #3673 "What lands"): 1. scripts/batch_fold.sh — fold receipted PR branches into one release/<train>-batch branch, git merge --no-ff in the given order: a conflict ONLY in the generated set {docs/roadmaps/roadmap.yaml, contracts/census.json, contracts/contracts.nt, contracts/shapes.ttl, the CONTRACT_COUNT blocks of README.md} is taken and marked for regeneration; a conflict ANYWHERE else — including README prose outside a count block — aborts that branch''s merge and reports SKIP with the paths, never resolved by picking a side; --regen regenerates the generated set ONCE with the tree-built pv (scripts/pv_bin.sh), asserts the fixed points (aggregate --check, pv extract --check, readme_sync.sh --check), and commits the regeneration; exit 0 all folded; 1 any SKIP; 2 usage/git/regeneration failure; a folded-but-unregenerated generated set is never silent; --self-test case table, wired into CI. 2. APR-RELEASE-001 §13 — the batching procedure as the default path (cop prompt §7): assembly, generated-set regeneration, left-out rules, what needs a new quorum (only content new to the batch), constituent disarm/close, a red batch, and the review-lane VOID rule while paiml-implement#317 is open. AUTHOR NOTES (not criteria): the case table lives in scripts/check_batch_fold.sh (guard-tree runs it) because a --self-test case inside batch_fold.sh made check_guards_are_wired.sh RED; §13 required amending hard rule 9 ("No hand-squash of batches") and the matching §8 stop, which the new default contradicts.'

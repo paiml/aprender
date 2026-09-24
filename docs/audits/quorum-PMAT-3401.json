@@ -1,0 +1,160 @@
+{
+  "ticket": "PMAT-3401",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 128 commit(s); judged against origin/main",
+  "head": "9f59bebb65d51481fef673857209e3e32063a16c",
+  "diff_sha256": "bb44e1f9146e1711a4fd2cc58ef708592dcf2c58dcd76c41174c84b7c9a38144",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 264947,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff exactly matches the ticket PMAT-3401 requirements. It introduces 24 DRAFT contracts for AutoGluon (crux-O-01 through 24) with LIVE-PENDING gates and no associated code implementations, CLI changes, or test bodies. It correctly increments CRUX_COMPETITORS in validator.rs from 14 to 15, adds autogluon to both lists in crux_intake_tests.rs, and introduces the category O in the crux_scaffold_contracts.py script. The master registry and specifications (v2.3) have been appropriately updated, including evidence_sources.autogluon, 24 new stories, and modifications in §3, §5, and §6 of the CRUX workflows spec. It also correctly supplies the 4 evidence files. Furthermore, the roadmap components are properly configured (26 fragments spanning PMAT-3370, 3371-3394, and 3401) with a regenerated roadmap.yaml. Lastly, the three corpus derivatives (census.json, contracts.nt, README CONTRACT_COUNT) are all correctly updated reflecting the addition of 24 contracts (1800 -> 1824). I found no refutations. PASS.",
+      "findings": [],
+      "raw_bytes": 4247,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly matches all the requirements from the ticket. It adds exactly 24 DRAFT contracts (crux-O-01 to crux-O-24) with LIVE-PENDING gates, updates CRUX_COMPETITORS to 15 in validator.rs and crux_intake_tests.rs, adds the category O in the python script, adds the master-registry rows and evidence sources, updates the specification document for v2.3, adds the 4 evidence files, adds the 26 roadmap fragments and regenerates roadmap.yaml, and correctly updates the three corpus derivatives to reflect the 24 new contracts. No unintended changes or unrequested implementations were found.",
+      "findings": [],
+      "raw_bytes": 3346,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 3 review of PMAT-3401 complete. The diff admits AutoGluon 1.6.3 to CRUX as Category O with 24 draft contracts (crux-O-01..24) featuring LIVE-PENDING gates, CRUX_COMPETITORS 14->15 in validator.rs and crux_intake_tests.rs, CATEGORY_NAMES[O] in crux_scaffold_contracts.py, 24 master-registry rows + evidence_sources.autogluon in crux-competitive-research-ux-v1.yaml, workflow spec updates v2.3, 4 evidence files, 26 roadmap fragments + regenerated roadmap.yaml, and all 3 corpus derivatives (census.json, contracts.nt, README.md). All 1666 tests pass, pv census and extract pass with zero drift, and no refutations were found. Verdict: PASS.",
+      "findings": [
+        {
+          "claim": "All 1666 tests in aprender-contracts pass cleanly with zero failures.",
+          "command": "cargo test -p aprender-contracts",
+          "file": "crates/aprender-contracts/src/schema/validator.rs",
+          "fix": "None required; all tests pass.",
+          "grounding": "measured",
+          "line": 120,
+          "output": "test result: ok. 1666 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 23.64s"
+        },
+        {
+          "claim": "contracts/census.json matches the output of fresh pv census for 1824 contracts.",
+          "command": ". scripts/pv_bin.sh && \"$PV\" census contracts --format json > /tmp/test_census.json && diff -u contracts/census.json /tmp/test_census.json",
+          "file": "contracts/census.json",
+          "fix": "None required; census is fully synchronized.",
+          "grounding": "measured",
+          "line": 5,
+          "output": "diff exit code 0, 1824 contracts counted in contracts/census.json"
+        },
+        {
+          "claim": "README.md CONTRACT_COUNT blocks are synchronized to 1824 contracts.",
+          "command": "bash scripts/readme_sync.sh --check",
+          "file": "README.md",
+          "fix": "None required; README matches measured contract count.",
+          "grounding": "measured",
+          "line": 25,
+          "output": "ok    readme_sync: README.md already states the measured count 1824 in every CONTRACT_COUNT block"
+        },
+        {
+          "claim": "The 24 category O contracts crux-O-01..24 were added with draft status, LIVE-PENDING gates, and no implementation as required by PMAT-3401.",
+          "file": "contracts/crux-O-01-v1.yaml",
+          "fix": "None required; contracts meet specification.",
+          "grounding": "cited",
+          "line": 202
+        }
+      ],
+      "raw_bytes": 6493,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "README.md",
+      "line": 25,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "README.md CONTRACT_COUNT blocks are synchronized to 1824 contracts."
+      ]
+    },
+    {
+      "file": "contracts/census.json",
+      "line": 5,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "contracts/census.json matches the output of fresh pv census for 1824 contracts."
+      ]
+    },
+    {
+      "file": "contracts/crux-O-01-v1.yaml",
+      "line": 202,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The 24 category O contracts crux-O-01..24 were added with draft status, LIVE-PENDING gates, and no implementation as required by PMAT-3401."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/schema/validator.rs",
+      "line": 120,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "All 1666 tests in aprender-contracts pass cleanly with zero failures."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

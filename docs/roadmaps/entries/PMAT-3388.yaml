@@ -1,0 +1,21 @@
+- id: PMAT-3388
+  github_issue: 3388
+  item_type: task
+  title: 'P2: Memory-aware fit: per-model memory estimate and a memory_limit that skips models that would not fit — CRUX-O-18'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-18, competitor autogluon, demand 3. No estimator reports an expected peak memory before fitting and nothing checks a limit. AutoGluon 1.6 spent 4 PRs on this (#5757, #5768, #5791, GPU budgeting for parallel folds). FALSIFIABLE (contracts/crux-O-18-v1.yaml): a model whose estimate exceeds the limit is skipped with reason=memory — with memory_limit=64MiB on a fixture where the estimate for the largest model is > 64MiB, that model is absent from the leaderboard and present in the skip list with its estimate; the estimate is not a constant — the estimate for a 10x larger fixture is asserted larger than for the base fixture; a mutation returning a constant turns this RED. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
