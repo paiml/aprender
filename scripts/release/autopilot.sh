@@ -134,8 +134,27 @@ fi
 #   2 = the gate could not judge (Unknown)    -> no tag. Never a silent pass.
 # scripts/check_tag_step_gated.sh runs this function against stubs and requires each
 # of those three paths, plus a gate-call-removed MUTANT, to behave as stated.
+#
+# #3459 part 2 (cop ruling 2026-09-24): three steps, in this order, all ahead of `git tag`:
+#   (a) --must-carry: an open ISSUE labelled must-carry BLOCKS the cut. It is never carried.
+#   (b) carry_milestone_items.sh MOVES every other open item (to the next release when its epic
+#       lists it, else to backlog, one comment each). It runs only when (a) is clean.
+#   (c) STRICT: the milestone now holds nothing open but its release epic. An item the carry
+#       missed, or one that reappeared, is RED here: a tagged milestone is never left with an
+#       open item.
 cut_tag() {
     local v=$1 t=$2 mc=$3 rc=0
+    bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" --must-carry >> "$LOG" 2>&1 || rc=$?
+    case "$rc" in
+        0) say "MUST-CARRY $v: no open must-carry issue (check_milestone_cut.sh --must-carry rc=0)" ;;
+        1) die "milestone $v holds open must-carry issue(s) -- nothing carried, no tag (check_milestone_cut.sh --must-carry rc=1)" ;;
+        *) die "milestone $v could not be judged for must-carry (rc=$rc) -- nothing carried, no tag; Unknown is not a pass" ;;
+    esac
+    rc=0
+    bash "$REPO_ROOT/scripts/release/carry_milestone_items.sh" "$v" >> "$LOG" 2>&1 || rc=$?
+    [ "$rc" -eq 0 ] || die "carrying the open items out of $v failed (carry_milestone_items.sh rc=$rc) -- no tag"
+    say "CARRIED the non-must-carry open items out of $v"
+    rc=0
     bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" >> "$LOG" 2>&1 || rc=$?
     case "$rc" in
         0) say "MILESTONE-GATE $v clean at the cut (check_milestone_cut.sh rc=0)" ;;
