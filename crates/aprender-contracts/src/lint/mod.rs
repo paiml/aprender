@@ -18,6 +18,7 @@ pub mod finding;
 mod gates;
 pub use gates::collect_yaml_files;
 mod gates_extended;
+pub mod refines_gate;
 pub mod relations_gate;
 pub mod rules;
 pub mod sarif;
@@ -268,6 +269,9 @@ pub enum GateExtra {
         /// The witness this run checked.
         witness: consistency_gate::WitnessReport,
     },
+    /// ONT-4e (R-20): every `A refines B` is Liskov, by a witness pv-sat wrote and this run re-checked.
+    #[serde(rename = "refines")]
+    Refines(Box<refines_gate::RefinesCounters>),
 }
 
 /// Counters a `shapes` run reports, flattened into [`GateExtra::Shapes`]'s JSON.
@@ -601,6 +605,12 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     gates.push(consistency_gate_result);
     all_findings.append(&mut consistency_findings);
 
+    // Gate 18: refines (ONT-4e, R-20). Same R-8 shape: computed in every run, armed per repo.
+    let (refines_gate_result, mut refines_findings) =
+        refines_result(config.contract_dir, validation_passed);
+    gates.push(refines_gate_result);
+    all_findings.append(&mut refines_findings);
+
     // Gate 9: strict test-binding (Issue #1510, opt-in via --strict-test-binding)
     if config.strict_test_binding {
         push_gate(
@@ -680,10 +690,12 @@ pub enum NamedGateOutcome {
     Relations(relations_gate::RelationsOutcome),
     /// The `shapes` gate (ONT-4b), with four non-verdict answers (unsupported shape, no shapes, no focus, control failed).
     Shapes(shapes_gate::ShapesOutcome),
-    /// The `tbox` gate (ONT-2c): advisory classification. It has no Pass answer at all (R-7).
-    Tbox(tbox_gate::TboxOutcome),
     /// The `ont-consistency` gate (ONT-5): no Σ, malformed Σ, nothing checkable, a control that did not fire, a stale witness.
     Consistency(consistency_gate::ConsistencyOutcome),
+    /// The `refines` gate (ONT-4e): no Σ, malformed Σ, a control that did not fire, a stale witness.
+    Refines(refines_gate::RefinesOutcome),
+    /// The `tbox` gate (ONT-2c): advisory classification. It has no Pass answer at all (R-7).
+    Tbox(tbox_gate::TboxOutcome),
     /// A gate that ran and judged the corpus.
     Ran {
         result: Box<GateResult>,
@@ -715,10 +727,13 @@ pub fn run_named_gate_with(
             NamedGateOutcome::Shapes(shapes_gate::run_shapes_gate_with(contract_dir, shapes_opts))
         }
         "sigma" => NamedGateOutcome::Sigma(sigma_gate::run_sigma_gate(contract_dir)),
-        "tbox" => NamedGateOutcome::Tbox(tbox_gate::run_tbox_gate(contract_dir)),
         consistency_gate::GATE => {
             NamedGateOutcome::Consistency(consistency_gate::run_consistency_gate(contract_dir))
         }
+        refines_gate::GATE => {
+            NamedGateOutcome::Refines(refines_gate::run_refines_gate(contract_dir))
+        }
+        "tbox" => NamedGateOutcome::Tbox(tbox_gate::run_tbox_gate(contract_dir)),
         "validate" => {
             let (contracts, parse_errors) = load_contracts(contract_dir);
             let (result, findings) = run_validate_gate(&contracts, &parse_errors);
@@ -732,8 +747,9 @@ pub fn run_named_gate_with(
 }
 
 /// The gate names `--gate` computes alone, for the refusal message.
-pub const NAMED_GATES: [&str; 6] = [
+pub const NAMED_GATES: [&str; 7] = [
     consistency_gate::GATE,
+    refines_gate::GATE,
     "relations",
     "shapes",
     "sigma",
@@ -855,6 +871,25 @@ fn consistency_result(
     }
     let mut g = skipped_gate(consistency_gate::GATE, &consistency_gate::why(&outcome));
     if let Some(reason) = consistency_gate::decline_reason(&outcome) {
+        g.verdict = Verdict::Unknown(reason);
+    }
+    (g, Vec::new())
+}
+
+/// The `refines` gate as `run_lint` reports it; declines keep their lattice reason, as `ont-consistency`'s do.
+fn refines_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, Vec<LintFinding>) {
+    if !validation_passed {
+        return (
+            skipped_gate(refines_gate::GATE, "validation failed"),
+            Vec::new(),
+        );
+    }
+    let outcome = refines_gate::run_refines_gate(contract_dir);
+    if let refines_gate::RefinesOutcome::Ran { result, findings } = outcome {
+        return (*result, findings);
+    }
+    let mut g = skipped_gate(refines_gate::GATE, &refines_gate::why(&outcome));
+    if let Some(reason) = refines_gate::decline_reason(&outcome) {
         g.verdict = Verdict::Unknown(reason);
     }
     (g, Vec::new())

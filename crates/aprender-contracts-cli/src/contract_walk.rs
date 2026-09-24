@@ -213,6 +213,18 @@ impl fmt::Display for ObligationsRejected {
 }
 
 impl std::error::Error for ObligationsRejected {}
+/// One `--gate` run measured and failed, and says WHAT failed: the line after `reject:` is the gate's own findings
+/// (ONT-4e: `reject: A refines B: precondition strengthened (PRE-1)`), not a gate count. Exit 1.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GateRejected(pub String);
+
+impl fmt::Display for GateRejected {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for GateRejected {}
 
 /// `pv lint --gate sigma` found Σ itself malformed (ONT-001 §5 ONT-2b): the DECLARATION is wrong, not the corpus,
 /// so it is `error:` at exit 3 and never `reject:`.
@@ -294,6 +306,7 @@ pub fn verdict_for(err: &(dyn std::error::Error + 'static)) -> &'static str {
     } else if err.downcast_ref::<ParseErrors>().is_some()
         || err.downcast_ref::<LintRejected>().is_some()
         || err.downcast_ref::<ObligationsRejected>().is_some()
+        || err.downcast_ref::<GateRejected>().is_some()
     {
         "reject"
     } else {

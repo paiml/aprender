@@ -4,6 +4,7 @@
 //! ```text
 //! pv-sat [CONTRACT_DIR]     write (or confirm) the witness; default `contracts`
 //! pv-sat --self-test        the reasoner's plant, its satisfiable twin, and the checker's corrupt core
+//!                           (and ONT-4e's: `pc_liskov_reasoner`, `pc_liskov_checker`)
 //! ```
 //!
 //! Private to this bin target (F-7): the library exports the graph and the checker, and nothing in it can reach
@@ -12,9 +13,13 @@
 //! untouched, so `make contracts` leaves a clean tree clean. Other `<sha>.json` files in `witness/` are pruned —
 //! one graph, one witness.
 //!
+//! ONT-4e: once the consistency witness stands, pv-sat also certifies every checkable `A refines B` (R-20) in
+//! `contracts/witness/liskov/<liskov_sha256>.json` — see `liskov.rs`.
+//!
 //! Exit: 0 written or confirmed · 1 a control failed · 2 nothing to reason over (no Σ, no typed relation) · 3 Σ
 //! malformed or the witness could not be written.
 
+mod liskov;
 mod plant;
 mod sat;
 
@@ -46,10 +51,15 @@ fn main() -> ExitCode {
 }
 
 fn self_test() -> ExitCode {
-    let checks: [(&str, Result<(), String>); 3] = [
+    let checks: [(&str, Result<(), String>); 5] = [
         ("pc_reasoner", plant::pc_reasoner().map(|_| ())),
         ("pc_model", plant::pc_model()),
         ("pc_checker", pc_checker().map(|_| ())),
+        ("pc_liskov_reasoner", liskov::pc_reasoner().map(|_| ())),
+        (
+            "pc_liskov_checker",
+            provable_contracts::ontology::liskov::pc_checker().map(|_| ()),
+        ),
     ];
     let mut ok = true;
     for (name, r) in &checks {
@@ -68,7 +78,20 @@ fn self_test() -> ExitCode {
     }
 }
 
+/// The consistency witness, then (ONT-4e) the Liskov witness for every checkable `refines` pair.
 fn write_witness(dir: &Path) -> ExitCode {
+    let code = write_consistency(dir);
+    if code != ExitCode::SUCCESS {
+        return code;
+    }
+    let TypedGraph::Read { edges, .. } = typed_graph(dir) else {
+        return code;
+    };
+    let pairs = liskov::checkable_pairs(dir, &edges);
+    liskov::write(dir, &pairs, git_head(dir)).map_or_else(ExitCode::from, |()| ExitCode::SUCCESS)
+}
+
+fn write_consistency(dir: &Path) -> ExitCode {
     let pc = match plant::pc_reasoner() {
         Ok(fired) => fired,
         Err(e) => {

@@ -12,8 +12,8 @@ fn lint_passes_on_real_contracts() {
     assert!(report.passed, "lint should pass: {report:?}");
     // 12 gates: validate, audit, score, verify, enforce, enforcement-level, reverse-coverage,
     // duplicate-stems (PV-DUP-001), composition, sigma (ONT-2b), relations (ONT-4), shapes (ONT-4b),
-    // ont-consistency (ONT-5).
-    assert_eq!(report.gates.len(), 13);
+    // ont-consistency (ONT-5), refines (ONT-4e).
+    assert_eq!(report.gates.len(), 14);
 }
 
 #[test]
@@ -170,7 +170,7 @@ fn lint_validation_failure_skips_audit_and_score() {
     let report = run_lint(&config);
     assert!(!report.passed);
     // validate should fail, all subsequent gates should be skipped
-    assert_eq!(report.gates.len(), 13);
+    assert_eq!(report.gates.len(), 14);
     assert!(!report.gates[0].passed); // validate failed
     assert!(report.gates[1].skipped); // audit skipped
     assert!(report.gates[2].skipped); // score skipped
@@ -379,6 +379,8 @@ fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus() {
             "shapes".to_string(),
             // ONT-5: computed everywhere (R-8), armed by nobody until its quorum passes.
             "ont-consistency".to_string(),
+            // ONT-4e (gate 18) likewise.
+            "refines".to_string(),
         ]
     );
 }

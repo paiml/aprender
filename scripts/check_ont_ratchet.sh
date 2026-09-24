@@ -88,6 +88,7 @@ count_extractors() {
 
 # Keys under `ont` that OTHER gates own and this script does not measure: `formal_prose` (the sigma gate's
 # prose-debt ratchet) and `legacy_unresolved_depends_on` (the relations gate's, PV-ONT-010). Both are read
+# (ONT-4e adds `liskov_prose`, the refines gate's PV-ONT-027 prose ratchet, on the same terms.)
 # from this file by `lint/{sigma,relations}_gate.rs` and neither is computed here — so `--write` used to
 # DELETE them, disarming two shrink-only ratchets in the act of updating a third. They ride through verbatim,
 # the same rule `armed_gates` and `armed_shapes` already follow: what this script does not measure, it does
@@ -95,7 +96,7 @@ count_extractors() {
 foreign_ont_keys() { # foreign_ont_keys FILE -> `    "k": v,` lines, in file order
     [ -f "$1" ] || return 0
     local key
-    for key in formal_prose legacy_unresolved_depends_on; do
+    for key in formal_prose legacy_unresolved_depends_on liskov_prose; do
         { grep -E "\"$key\"[[:space:]]*:" "$1" || true; } | head -1 | sed 's/^[[:space:]]*/    /; s/,\{0,1\}[[:space:]]*$/,/'
     done
 }
@@ -290,15 +291,16 @@ self_test() {
     cp "$t/sigma.yaml" "$t/repo/contracts/ontology.yaml"
     row "entity types counted from Σ, not from a Rust form nobody writes" "$(REPO_ROOT="$t/repo" count_entity_types)" 2
     row "extractors counted from Σ's implemented: true" "$(REPO_ROOT="$t/repo" count_extractors)" 1
-    printf '{\n  "armed_gates": ["validate"],\n  "ont": {\n    "formal_prose": 1464,\n    "legacy_unresolved_depends_on": 8\n  }\n}\n' > "$t/foreign.json"
+    printf '{\n  "armed_gates": ["validate"],\n  "ont": {\n    "formal_prose": 1464,\n    "legacy_unresolved_depends_on": 8,\n    "liskov_prose": 0\n  }\n}\n' > "$t/foreign.json"
     BASELINE="$t/foreign.json" measure > "$t/f.json"
     row "measure() keeps formal_prose (the sigma gate reads it)" "$(grep -c '"formal_prose": 1464' "$t/f.json")" 1
     row "measure() keeps legacy_unresolved_depends_on (the relations gate reads it)" "$(grep -c '"legacy_unresolved_depends_on": 8' "$t/f.json")" 1
+    row "measure() keeps liskov_prose (the refines gate reads it)" "$(grep -c '"liskov_prose": 0' "$t/f.json")" 1
     cp "$t/foreign.json" "$t/fw.json"
     set +e
     BASELINE="$t/fw.json" main --write >/dev/null 2>&1
     set -e
-    row "--write keeps both foreign keys in place" "$(grep -cE '"formal_prose"|"legacy_unresolved_depends_on"' "$t/fw.json")" 2
+    row "--write keeps all three foreign keys in place" "$(grep -cE '"formal_prose"|"legacy_unresolved_depends_on"|"liskov_prose"' "$t/fw.json")" 3
     if command -v python3 >/dev/null 2>&1; then
         python3 -c "import json,sys;json.load(open('$t/f.json'))" >/dev/null 2>&1 \
             && row "measure() with foreign keys is valid JSON" ok ok || row "measure() with foreign keys is valid JSON" bad ok
