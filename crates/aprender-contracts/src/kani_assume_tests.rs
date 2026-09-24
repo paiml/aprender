@@ -111,7 +111,10 @@ fn an_inconsistent_baseline_is_refused() {
 fn baseline_json_has_exactly_the_three_fields_and_refuses_others() {
     let b = baseline_of(&count_of(&[("a.rs", 2)]), "make kani-ratchet");
     let v: serde_json::Value = serde_json::to_value(&b).unwrap();
-    let keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+    // Sorted: the workspace build unifies serde_json's `preserve_order`, so
+    // the map's order is the struct's there and alphabetical under `-p`.
+    let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort_unstable();
     assert_eq!(keys, ["command", "files", "total"]);
     let extra = r#"{"command":"c","total":0,"files":{},"extra":1}"#;
     assert!(serde_json::from_str::<Baseline>(extra).is_err());
