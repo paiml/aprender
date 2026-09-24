@@ -23,12 +23,14 @@
 #
 # FORMAT: `<seconds on run 34449608126><TAB><step name, verbatim>`. (The perf-gate
 # line, added by #3676, is seconds on main run 35563537942: it stays at PR time
-# PATH-SCOPED via scripts/check_perf_gate_selftest_scoped.sh and runs whole here.) The step
+# PATH-SCOPED via scripts/check_perf_gate_selftest_scoped.sh and runs whole here.) The CRUX judge line (#4098) is
+# seconds measured on lambda, 2026-09-23, on #4046's head: its PR run is a sampled subset, and the whole set runs here. The step
 # name is the join key: it must appear VERBATIM as a `- name:` in
 # .github/workflows/guards-nightly.yml (that workflow's first step asserts it,
 # and fails closed if a line here names a step nothing runs), and it is also
 # what keeps scripts/check_guards_are_wired.sh finding these guards wired --
 # that guard greps every file under .github/workflows/, not ci.yml alone.
+655	CRUX judge, every F6 mutant (#4098)
 586	Test-tier decision case table (BSE-17): quick/full/reuse, drift is ENV
 405	Perf gate can still discriminate (APR-PERF-GATE-001, case table)
 256	model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)

@@ -1074,17 +1074,17 @@ d=$(b2 b2_floored_cut "Two and two make <answer>4</answer>" "$LL_CLOSED" "x$(pri
 expect "B2: a rendering floored to a char boundary (199 bytes) is NOT read as whole -- unknown, so RED by name" "$d" 1 $P RED
 
 # ── #3957 F6 MUTANTS. Each rule deleted in a copy of the judge; the WHOLE table must then break.
+# #4098: each mutant re-runs the whole table (~26 s; the full set ~630 of 655 s), so which mutants run is planned by
+# scripts/lib/crux_mutant_plan.py: every mutant locally, on schedule/dispatch and in guards-nightly.yml
+# (CRUX_MUTANTS=all); on a PR, merge group or push, every mutant when the diff touches a file they test, else a
+# rotating slice keyed by the head sha. A table that judged too few rows is refused first, sampled or not.
 if [ -z "${CRUX_NO_MUTANTS:-}" ]; then
-  # label|the row that MUST break (#3887: a kill for the wrong reason is no kill)|sed deleting the rule
-  while IFS='|' read -r label must expr; do
-    [ -n "$label" ] || continue
-    m="$TMP/mut-$label.py"; sed "$expr" "$JUDGE" > "$m"
-    if cmp -s "$JUDGE" "$m"; then broke "F6 mutant $label did not apply"; continue; fi
-    CRUX_JUDGE_OVERRIDE="$m" CRUX_NO_MUTANTS=1 bash "$ROOT/scripts/check_crux_inference_judge.sh" > "$TMP/mut-$label.log" 2>&1
-    nb=$(grep -c '^  BROKE' "$TMP/mut-$label.log")
-    if grep -q "^  BROKE.*$must" "$TMP/mut-$label.log"; then ok "F6 mutant $label killed by '$must' ($nb row(s) broke)"
-    else broke "F6 mutant $label SURVIVED: '$must' stayed ok ($nb other row(s) broke)"; fi
-  done <<'MUT'
+  MIN_ROWS="${CRUX_MIN_TABLE_ROWS:-120}"
+  if [ "$PASS" -lt "$MIN_ROWS" ]; then
+    broke "the table judged only $PASS row(s) ok before the mutants, under the floor of $MIN_ROWS: a thin table proves nothing"
+  fi
+  mutant_list() {
+    cat <<'MUT'
 bad-control-ignored|the only control a token loop|s/^        if bad:$/        if False:/
 no-control-ok|is no control: RED|s/^    if not ctl:$/    if False:/
 split-ignored|is a SPLIT|s/^        elif len(set(vals.values())) > 1 or None in vals.values():$/        elif False:/
@@ -1110,6 +1110,35 @@ admission-mode-off|admitted only for thinking ON|s/^        if admitted_mode is 
 admission-off|NOT admitted for this model is RED|s/^        elif admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        elif False:/
 certification-off|no certification receipt declines|s/^        certified = certification_ok(args.prompts, getattr(args, "certification", None))$/        certified = True/
 MUT
+  }
+  MUTANTS=$(mutant_list)
+  labels=$(printf '%s\n' "$MUTANTS" | cut -d'|' -f1 | paste -sd,)
+  changed_arg=()
+  diff_base="${CRUX_MUTANT_DIFF_BASE:-${GITHUB_BASE_REF:+origin/$GITHUB_BASE_REF}}"
+  if [ -n "$diff_base" ] && git -C "$ROOT" diff --name-only "$diff_base...HEAD" > "$TMP/changed.txt" 2>/dev/null; then
+    changed_arg=(--changed "$TMP/changed.txt")
+  fi
+  plan=$(python3 "$ROOT/scripts/lib/crux_mutant_plan.py" --labels "$labels" --event "${GITHUB_EVENT_NAME:-}" \
+    --mode "${CRUX_MUTANTS:-}" --head "$(git -C "$ROOT" rev-parse HEAD 2>/dev/null)" \
+    --sample "${CRUX_MUTANT_SAMPLE:-6}" --floor "${CRUX_MUTANT_FLOOR:-6}" "${changed_arg[@]}" 2> "$TMP/plan.err")
+  if [ -z "$plan" ]; then
+    broke "F6 mutant plan refused: $(cat "$TMP/plan.err")"
+    selected=""
+  else
+    printf '  F6 mutants: %s\n' "$(python3 -c 'import json,sys; p=json.loads(sys.argv[1]); print("%s, %d of %d -- %s" % (p["mode"], len(p["selected"]), p["total"], p["reason"]))' "$plan")"
+    selected=$(python3 -c 'import json,sys; print(" ".join(json.loads(sys.argv[1])["selected"]))' "$plan")
+  fi
+  # label|the row that MUST break (#3887: a kill for the wrong reason is no kill)|sed deleting the rule
+  while IFS='|' read -r label must expr; do
+    [ -n "$label" ] || continue
+    case " $selected " in *" $label "*) ;; *) continue ;; esac
+    m="$TMP/mut-$label.py"; sed "$expr" "$JUDGE" > "$m"
+    if cmp -s "$JUDGE" "$m"; then broke "F6 mutant $label did not apply"; continue; fi
+    CRUX_JUDGE_OVERRIDE="$m" CRUX_NO_MUTANTS=1 bash "$ROOT/scripts/check_crux_inference_judge.sh" > "$TMP/mut-$label.log" 2>&1
+    nb=$(grep -c '^  BROKE' "$TMP/mut-$label.log")
+    if grep -q "^  BROKE.*$must" "$TMP/mut-$label.log"; then ok "F6 mutant $label killed by '$must' ($nb row(s) broke)"
+    else broke "F6 mutant $label SURVIVED: '$must' stayed ok ($nb other row(s) broke)"; fi
+  done <<< "$MUTANTS"
 fi
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"

@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# check_crux_mutant_plan.sh: the case table for scripts/lib/crux_mutant_plan.py (#4098), the planner that decides
+# which F6 mutants scripts/check_crux_inference_judge.sh runs. A sampling rule is a guard: each row below is a
+# must-match or a must-refuse, and the last row proves the table itself can see a planner that never samples.
+#
+# Rows:
+#   1. no CI event (a local run)            → all 24
+#   2. schedule / workflow_dispatch        → all
+#   3. pull_request, diff untouched        → exactly 6, deterministic for a head, a different slice for another head
+#   4. pull_request, the judge touched     → all, the reason names the file
+#   5. every WATCHED file touched alone    → all (none of them can be dropped from the list silently)
+#   6. pull_request, diff unreadable       → the sample, its reason naming the unreadable diff
+#   7. rotation: the slices of 24 consecutive offsets together cover every mutant
+#   8. refusals (exit 2): a sample under the floor, an unknown CRUX_MUTANTS, an unknown event, no labels
+#   9. the judge table refuses a thin run: CRUX_MIN_TABLE_ROWS above what it judged → a BROKE naming the floor
+#  10. MUTANT: WATCHED emptied → row 4 sees a sample where it must see all
+#
+# Exit: 0 every row behaved · 1 a row broke · 2 ENV.
+set -uo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
+PROG=check_crux_mutant_plan
+PLAN="$ROOT/scripts/lib/crux_mutant_plan.py"
+command -v python3 >/dev/null 2>&1 || { printf '%s: ENV - python3 is missing\n' "$PROG" >&2; exit 2; }
+[ -f "$PLAN" ] || { printf '%s: ENV - %s not found\n' "$PROG" "$PLAN" >&2; exit 2; }
+TMP=$(mktemp -d) || exit 2
+_rm_tmp() {
+  case "${TMP:-}" in
+    /tmp/?*|/var/folders/?*) rm -rf -- "$TMP" || : ;;
+    *) : ;;
+  esac
+}
+trap _rm_tmp EXIT
+
+PASS=0
+FAIL=0
+ok()   { printf '  ok    %s\n' "$1"; PASS=$((PASS + 1)); }
+broke(){ printf '  BROKE %s\n' "$1"; FAIL=$((FAIL + 1)); }
+
+LABELS=$(seq -f 'm%02g' 1 24 | paste -sd,)
+HEAD_A=375b34522aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+HEAD_B=c460c63a7bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+: > "$TMP/none.txt"
+printf 'scripts/lib/crux_inference_judge.py\nREADME.md\n' > "$TMP/judge.txt"
+
+# pl <planner> <args...> -> "<mode> <n selected> <selected csv>|<reason>" or "REFUSED <rc>"
+pl() {
+  local p="$1"; shift
+  local out rc
+  out=$(python3 "$p" --labels "$LABELS" "$@" 2> /dev/null); rc=$?
+  [ "$rc" -eq 0 ] || { echo "REFUSED $rc"; return; }
+  python3 -c 'import json,sys; p=json.loads(sys.argv[1]); print("%s %d %s|%s" % (p["mode"], len(p["selected"]), ",".join(p["selected"]), p["reason"]))' "$out"
+}
+
+printf '%s: the F6 mutant planner (#4098)\n' "$PROG"
+
+r=$(pl "$PLAN" --head "$HEAD_A")
+case "$r" in "all 24 "*) ok "no CI event: all 24" ;; *) broke "no event: $r" ;; esac
+
+a=$(pl "$PLAN" --event schedule --head "$HEAD_A"); b=$(pl "$PLAN" --event workflow_dispatch --head "$HEAD_A")
+case "$a|$b" in "all 24 "*"|all 24 "*) ok "schedule and workflow_dispatch: all 24" ;; *) broke "full events: $a / $b" ;; esac
+
+a=$(pl "$PLAN" --event pull_request --changed "$TMP/none.txt" --head "$HEAD_A")
+a2=$(pl "$PLAN" --event pull_request --changed "$TMP/none.txt" --head "$HEAD_A")
+b=$(pl "$PLAN" --event pull_request --changed "$TMP/none.txt" --head "$HEAD_B")
+if [ "${a%%|*}" = "${a2%%|*}" ] && [ "${a%%|*}" != "${b%%|*}" ]; then
+  case "$a|$b" in "sample 6 "*"|sample 6 "*) ok "pull_request, untouched: 6, the same for one head, another slice for another head" ;;
+    *) broke "untouched sample: $a / $b" ;; esac
+else
+  broke "sample not deterministic per head or not rotating: $a / $a2 / $b"
+fi
+
+r=$(pl "$PLAN" --event pull_request --changed "$TMP/judge.txt" --head "$HEAD_A")
+case "$r" in "all 24 "*"crux_inference_judge.py"*) ok "pull_request, the judge touched: all 24, the file named" ;; *) broke "judge touched: $r" ;; esac
+
+miss=""
+for f in $(python3 -c 'import importlib.util,sys; s=importlib.util.spec_from_file_location("p", sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(" ".join(m.WATCHED))' "$PLAN"); do
+  printf '%s\n' "$f" > "$TMP/one.txt"
+  r=$(pl "$PLAN" --event merge_group --changed "$TMP/one.txt" --head "$HEAD_A")
+  case "$r" in "all 24 "*) ;; *) miss="$miss $f" ;; esac
+done
+n_watched=$(python3 -c 'import importlib.util,sys; s=importlib.util.spec_from_file_location("p", sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(len(m.WATCHED))' "$PLAN")
+if [ -z "$miss" ] && [ "$n_watched" -ge 6 ]; then ok "each of the $n_watched watched files, touched alone, runs all 24"
+else broke "watched files that did not force all: ${miss:-none} (watched: $n_watched)"; fi
+
+r=$(pl "$PLAN" --event push --head "$HEAD_A")
+case "$r" in "sample 6 "*"could not be read"*) ok "an unreadable diff is named, never read as untouched; the sample still runs" ;; *) broke "unreadable diff: $r" ;; esac
+
+cover=$(for off in $(seq 0 23); do
+  h=$(printf '%08x' "$off")aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  pl "$PLAN" --event pull_request --changed "$TMP/none.txt" --head "$h" | cut -d' ' -f3 | cut -d'|' -f1 | tr ',' '\n'
+done | sort -u | wc -l)
+[ "$cover" -eq 24 ] && ok "24 consecutive offsets cover every mutant (none skipped for ever)" || broke "rotation covered $cover of 24"
+
+r1=$(pl "$PLAN" --event pull_request --changed "$TMP/none.txt" --head "$HEAD_A" --sample 3 --floor 6)
+r2=$(pl "$PLAN" --mode bogus --head "$HEAD_A")
+r3=$(pl "$PLAN" --event release --head "$HEAD_A")
+r4=$(python3 "$PLAN" --labels "" > /dev/null 2>&1; echo "REFUSED $?")
+if [ "$r1|$r2|$r3|$r4" = "REFUSED 2|REFUSED 2|REFUSED 2|REFUSED 2" ]; then
+  ok "refused (exit 2): a sample under the floor, an unknown CRUX_MUTANTS, an unknown event, no labels"
+else
+  broke "refusals: floor $r1, mode $r2, event $r3, labels $r4"
+fi
+
+out=$(CRUX_MUTANTS=none CRUX_MIN_TABLE_ROWS=100000 timeout 600 bash "$ROOT/scripts/check_crux_inference_judge.sh" 2>&1); rc=$?
+case "$rc:$out" in
+  1:*"under the floor of 100000"*) ok "the judge table refuses a thin run: a floor above what it judged is a BROKE" ;;
+  *) broke "table floor: rc $rc, $(printf '%s' "$out" | tail -2 | tr '\n' ' ')" ;;
+esac
+
+python3 - "$PLAN" "$TMP/mutant-plan.py" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+m = re.search(r"WATCHED = \((.*?)\n\)", s, re.S)
+assert m, "WATCHED anchor moved: update this check with the planner"
+open(sys.argv[2], "w").write(s[:m.start()] + "WATCHED = ()" + s[m.end():])
+PY
+r=$(pl "$TMP/mutant-plan.py" --event pull_request --changed "$TMP/judge.txt" --head "$HEAD_A")
+case "$r" in "all 24 "*) broke "MUTANT (WATCHED emptied) not caught: $r" ;; *) ok "MUTANT (WATCHED emptied) caught: the judge-touched PR samples ($r)" ;; esac
+
+printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"
+[ "$FAIL" -eq 0 ] || exit 1
+exit 0

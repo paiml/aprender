@@ -170,6 +170,14 @@ jobs:
         run: bash scripts/check_hermetic_stdin_tests.sh
       - name: Publish safety (binary/oversize files in published packages)
         run: bash scripts/check_publish_safety.sh
+      # #4098: the CRUX judge table's F6 mutants each re-run the whole table (655 s in all on
+      # lambda). On a PR, merge group or push the table runs a rotating sample of them
+      # (scripts/lib/crux_mutant_plan.py; every mutant when the diff touches the judge), so
+      # the WHOLE set runs here, once a day, and fails the job like any guard.
+      - name: CRUX judge, every F6 mutant (#4098)
+        env:
+          CRUX_MUTANTS: all
+        run: bash scripts/check_crux_inference_judge.sh
       - name: Perf gate can still discriminate (APR-PERF-GATE-001, case table)
         run: bash scripts/perf_gate.sh --selftest
       - name: Book rust examples compile
