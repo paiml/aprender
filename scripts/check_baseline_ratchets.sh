@@ -77,6 +77,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassified
     case "$1" in
         assertion_exclusion_baseline.txt)        printf 'keyed\n' ;;
+        bin_cli_unwired_baseline.txt)            printf 'set\n' ;;   # spawning test targets no lane runs (scripts/check_bin_cli_tests_wired.sh, #4059): may only shrink
         claim_literal_baseline.txt)              printf 'set-aperture\tscripts/check_no_claim_literals.sh\n' ;;
         contract_duplicate_stem_baseline.txt)    printf 'set\n' ;;
         contract_test_binding_baseline.txt)      printf 'keyed\n' ;;
