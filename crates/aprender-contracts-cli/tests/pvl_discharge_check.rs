@@ -395,3 +395,39 @@ fn no_root_file_declines() {
     std::fs::remove_file(fx.path("lean/ProvableContracts.lean")).expect("rm");
     assert_rc(&fx.check(&[]), 2, "decline: no ProvableContracts.lean");
 }
+
+/// PVL-001 EV-6a's probe, on the REAL tree: the escapes are all allowlisted, Axioms.lean is its regeneration, no
+/// new unresolved label, no MISSING-ROOT — and `check` leaves the label set's bytes alone. Reading the tree is
+/// also what puts this target in scripts/tree_reader_tests.txt, i.e. in CI's quick tier, with no workflow edit.
+#[test]
+fn the_real_lean_tree_passes_the_ev_6a_probe() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lean = "crates/aprender-contracts-staging/lean";
+    let labels = root.join(lean).join("unresolved-labels.json");
+    let before = std::fs::read(&labels).expect("the label set is tracked");
+    let run = |args: &[&str]| {
+        let out = Command::new(pv_bin())
+            .current_dir(&root)
+            .args(args)
+            .output()
+            .expect("spawn pv");
+        Run {
+            code: out.status.code().unwrap_or(-1),
+            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        }
+    };
+    assert_rc(
+        &run(&["discharge", "gen-axioms", lean, "--check"]),
+        0,
+        "is its regeneration",
+    );
+    let r = run(&["discharge", "check", lean, "--no-lake"]);
+    assert_rc(&r, 0, "PENDING (7)");
+    assert!(r.stdout.contains("ok    discharge"), "{}", r.show());
+    assert_eq!(
+        std::fs::read(&labels).expect("label set"),
+        before,
+        "check wrote the label set"
+    );
+}
