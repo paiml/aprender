@@ -6,7 +6,7 @@
   priority: critical
   assigned_to: aprender-49
   created: 2026-09-24 14:00:00+00:00
-  updated: '2026-09-24T16:30:00Z'
+  updated: '2026-09-24T19:00:00Z'
   spec: null
   acceptance_criteria: []
   phases: []
@@ -14,4 +14,4 @@
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'D1 (this PR): DenseForward (CPU + CUDA) implements ArchForward in gguf/inference/forward/dense_session.rs; apr run (run_gguf_generate) and apr run --batch (BatchModel) drive DenseSession through dense_turn, which answers token-for-token what generate_with_cache answered (greedy, seeded sampled, stop token dropped, ContextLimitExceeded kept). Witness guards in infer/tests_dense_session_4268.rs turn RED when either route goes back to its own loop (mutation measured). --trace keeps the instrumented loops (the engine has no brick profiler). The wgpu fallback keeps its own greedy loop (out of scope). The CUDA arms are free fns (cuda_reset/cuda_forward/cuda_forward_greedy) for aprender-98''s serve cuda_batch_scheduler (#4280). D2 (next PR): dense chat and serve CPU/CUDA backends. CUDA path is not yet run on a GPU in this PR.'
+  notes: 'D1 (this PR): DenseForward (CPU + CUDA) implements ArchForward in gguf/inference/forward/dense_session.rs; apr run (run_gguf_generate) and apr run --batch (BatchModel) drive DenseSession through dense_turn, which answers token-for-token what generate_with_cache answered (greedy, seeded sampled, stop token dropped, ContextLimitExceeded kept). Witness guards in infer/tests_dense_session_4268.rs turn RED when either route goes back to its own loop (mutation measured). --trace keeps the instrumented loops (the engine has no brick profiler). The wgpu fallback keeps its own greedy loop (out of scope). The CUDA arms are free fns (cuda_reset/cuda_forward/cuda_forward_greedy) for aprender-98''s serve cuda_batch_scheduler (#4280). D2: apr chat (GGUF and APR) holds a DenseSession (CUDA, or a lazily built CPU one) and answers through dense_turn; apr serve''s CPU quantized backend (streaming and not) and CUDA non-scheduler RwLock path run a per-request Session (DenseForward::cpu, or aprender-98''s BorrowedCudaForward under the write lock); dense_stream never streams the stop token. Serve witness guards in api/tests/dense_session_4268.rs turn RED when the CPU route goes back to generate_with_cache (mutation measured). The CUDA paths are not yet run on a GPU.'
