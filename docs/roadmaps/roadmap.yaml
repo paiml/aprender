@@ -20668,11 +20668,11 @@ roadmap:
   github_issue: 3972
   item_type: task
   title: 'ONT-4c5: capability cells — a required ladder cell is oracle-proven or RED; Unknown{NotRun} on a required cell never arms (#3972, #4047)'
-  status: planned
+  status: in_progress
   priority: medium
-  assigned_to: null
+  assigned_to: aprender-pvl-a
   created: 2026-09-23T18:17:18Z
-  updated: 2026-09-23T18:17:18Z
+  updated: 2026-09-24T19:30:00Z
   spec: null
   acceptance_criteria: []
   phases: []
