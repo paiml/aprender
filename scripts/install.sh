@@ -6,6 +6,7 @@
 #   curl -LsSf https://raw.githubusercontent.com/paiml/aprender/main/scripts/install.sh | sh
 #   curl -LsSf https://raw.githubusercontent.com/paiml/aprender/main/scripts/install.sh | sh -s -- --version v0.67.0
 #   curl -LsSf https://raw.githubusercontent.com/paiml/aprender/main/scripts/install.sh | sh -s -- --nightly
+#   curl -LsSf https://raw.githubusercontent.com/paiml/aprender/main/scripts/install.sh | sh -s -- --channel rc
 #
 # Env vars (flags below take precedence over these):
 #   INSTALL_DIR   Where to place the binary (default: $HOME/.local/bin)
@@ -28,6 +29,7 @@ INSTALL_DIR="${INSTALL_DIR:-${HOME}/.local/bin}"
 VARIANT="${APR_VARIANT:-}"
 TAG=''
 NIGHTLY=0
+CHANNEL=''
 
 # ── Presentation ──────────────────────────────────────────────────────────
 # Colors and box-drawing degrade cleanly: NO_COLOR, a non-tty stdout, or a
@@ -175,6 +177,20 @@ detect_variant() {
 
 # Latest non-prerelease tag. GitHub's /releases/latest endpoint already
 # excludes the "nightly" prerelease, so this always lands on a stable tag.
+# Newest release candidate OR stable tag (#4283). `/releases` is newest-first
+# and, unlike `/releases/latest`, includes prereleases, so the first tag_name
+# shaped vX.Y.Z or vX.Y.Z-rc.N is the rc channel: it never picks the rolling
+# `nightly` tag and never an rc older than the newest stable release.
+get_rc_version() {
+    version=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=50" \
+        | grep '"tag_name":' \
+        | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/' \
+        | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$' \
+        | head -n 1) || true
+    [ -n "$version" ] || error "Could not determine the newest release candidate from the GitHub API. Pass --version <tag> to skip this lookup."
+    echo "$version"
+}
+
 get_latest_version() {
     version=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
         | grep '"tag_name":' \
@@ -219,6 +235,9 @@ install() {
         asset="${BINARY_NAME}-${target}"
         base_url="https://github.com/${REPO}/releases/download/nightly"
     else
+        if [ -z "$TAG" ] && [ "$CHANNEL" = 'rc' ]; then
+            TAG=$(get_rc_version)
+        fi
         tag="${TAG:-$(get_latest_version)}"
         display_version="$tag"
         version="${tag#v}"
@@ -296,8 +315,13 @@ Installer for the apr CLI
 Usage: install.sh [OPTIONS]
 
 Options:
-  --version <tag>     Install a specific stable tag, e.g. v0.67.0
+  --version <tag>     Install a specific tag: stable (v0.67.0) or a release
+                       candidate prerelease (v0.69.3-rc.1)
                        (default: the latest stable release)
+  --channel (stable|rc|nightly)
+                      stable: the latest stable release (default)
+                      rc: the newest -rc.N prerelease, or stable if newer
+                      nightly: same as --nightly
   --nightly           Install today's nightly build instead of a stable tag
                        (CPU only; rebuilt daily from main, less stable)
   --cpu               Force the CPU build even if an NVIDIA GPU is detected
@@ -314,6 +338,7 @@ Examples:
   install.sh                          # latest stable release, auto-detect cpu/cuda
   install.sh --version v0.67.0        # a specific stable release
   install.sh --nightly                # today's nightly build
+  install.sh --channel rc             # newest release candidate
   install.sh --cpu                    # force cpu even with a GPU present
   INSTALL_DIR=/usr/local/bin install.sh
 EOF
@@ -328,6 +353,15 @@ parse_args() {
                 ;;
             --nightly)
                 NIGHTLY=1
+                shift
+                ;;
+            --channel)
+                [ $# -ge 2 ] || error "--channel requires an argument: stable, rc or nightly"
+                CHANNEL="$2"
+                shift 2
+                ;;
+            --channel=*)
+                CHANNEL="${1#--channel=}"
                 shift
                 ;;
             --cpu)
@@ -368,6 +402,15 @@ parse_args() {
                 ;;
         esac
     done
+
+    case "$CHANNEL" in
+        '' | stable) ;;
+        rc)
+            [ -z "$TAG" ] || error "--channel rc and --version/${TAG} are mutually exclusive"
+            ;;
+        nightly) NIGHTLY=1 ;;
+        *) error "channel must be stable, rc or nightly (got '${CHANNEL}')" ;;
+    esac
 
     if [ "$NIGHTLY" -eq 1 ] && [ -n "$TAG" ]; then
         error "--nightly and --version/${TAG} are mutually exclusive"
