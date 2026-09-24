@@ -217,11 +217,20 @@ fn plain_greedy_takes_the_device_argmax_and_a_penalty_or_sampling_does_not() {
         .expect("turn");
     assert_eq!(turn.tokens, vec![7701, 7702, 5, 5]);
     assert_eq!(s.engine().greedy_calls, 2);
-    assert_eq!(s.engine().inner.calls, vec![(2, 0), (3, 2)], "the state still advances by extension");
+    assert_eq!(
+        s.engine().inner.calls,
+        vec![(2, 0), (3, 2)],
+        "the state still advances by extension"
+    );
 
     let mut penalized = greedy(2);
     penalized.repeat_penalty = 1.3;
     let mut s = Session::new(device(5));
-    s.generate(&[7703], &penalized, &mut |_| true).expect("turn");
-    assert_eq!(s.engine().greedy_calls, 0, "a repeat penalty needs the logits");
+    s.generate(&[7703], &penalized, &mut |_| true)
+        .expect("turn");
+    assert_eq!(
+        s.engine().greedy_calls,
+        0,
+        "a repeat penalty needs the logits"
+    );
 }

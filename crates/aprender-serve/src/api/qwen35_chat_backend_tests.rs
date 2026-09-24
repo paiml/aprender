@@ -744,3 +744,95 @@ fn chat_template_kwargs_parse_and_refuse_unknown_keys_3723() {
     assert_eq!(parse(with("think", serde_json::json!(false))).expect("parses").thinking(), Some(false));
     assert!(parse(with("chat_template_kwargs", serde_json::json!({"reasoning_effort": "high"}))).is_err(), "an unknown kwarg is refused");
 }
+
+/// #4272: the stream's release rule. Nothing is sent while the decode ends in
+/// half a character, and a tail that could still become a stop sequence is held.
+#[test]
+fn a_stream_delta_holds_back_half_characters_and_possible_stops() {
+    use crate::api::realize_handlers::qwen35_stream_delta;
+    assert_eq!(qwen35_stream_delta("Lima", 0, &[]).as_deref(), Some("Lima"));
+    assert_eq!(qwen35_stream_delta("Lima", 4, &[]), None, "nothing new");
+    assert_eq!(qwen35_stream_delta("Lim\u{FFFD}", 0, &[]), None, "half a char");
+    let stops = ["END".to_string()];
+    // "EN" could still become "END": two bytes are held.
+    assert_eq!(qwen35_stream_delta("LimaEN", 0, &stops).as_deref(), Some("Lima"));
+    assert_eq!(qwen35_stream_delta("LimaEN", 4, &stops), None);
+    // The hold never splits a character.
+    assert_eq!(qwen35_stream_delta("aé", 0, &["xy".to_string()]).as_deref(), Some("a"));
+}
+
+/// #4272: `stream: true` on `/v1/completions` was BUFFERED — the whole completion
+/// was generated, then sliced into chunks, and no chunk carried `usage`. Now the
+/// session's `on_token` drives the stream. Measured here, on the real hybrid:
+/// the first text chunk arrives well before the stream ends (a buffered stream
+/// delivers every chunk at the same instant), the chunks concatenate to exactly
+/// the non-streamed text, and the terminal chunk carries the same `usage`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_streamed_completion_arrives_token_by_token_and_ends_with_usage() {
+    use http_body_util::BodyExt;
+    let Some((state, _)) = state_or_skip(true) else {
+        return;
+    };
+    let body = |stream: bool| {
+        serde_json::json!({"model": "x", "prompt": "The capital of Peru is",
+            "max_tokens": 24, "temperature": 0.0, "stream": stream})
+    };
+    let (status, plain) = post(create_router(state.clone()), "/v1/completions", body(false)).await;
+    assert_eq!(status, StatusCode::OK, "{plain}");
+    let plain: serde_json::Value = serde_json::from_str(&plain).expect("JSON");
+    let plain_text = plain["choices"][0]["text"].as_str().expect("text").to_string();
+
+    let t0 = std::time::Instant::now();
+    let response = create_router(state)
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/completions")
+                .header("content-type", "application/json")
+                .body(Body::from(body(true).to_string()))
+                .expect("request"),
+        )
+        .await
+        .expect("the router answers");
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut body = response.into_body();
+    let (mut buf, mut first_text_at, mut text, mut deltas, mut usage) =
+        (String::new(), None, String::new(), 0usize, None);
+    while let Some(frame) = body.frame().await {
+        let frame = frame.expect("frame");
+        let Some(data) = frame.data_ref() else {
+            continue;
+        };
+        buf.push_str(&String::from_utf8_lossy(data));
+        while let Some(end) = buf.find("\n\n") {
+            let event: String = buf.drain(..end + 2).collect();
+            let Some(payload) = event.trim().strip_prefix("data:").map(str::trim) else {
+                continue;
+            };
+            if payload == "[DONE]" {
+                continue;
+            }
+            let chunk: serde_json::Value = serde_json::from_str(payload).expect("chunk JSON");
+            let piece = chunk["choices"][0]["text"].as_str().unwrap_or_default();
+            if !piece.is_empty() {
+                first_text_at.get_or_insert_with(|| t0.elapsed());
+                deltas += 1;
+                text.push_str(piece);
+            }
+            if !chunk["usage"].is_null() {
+                usage = Some(chunk["usage"].clone());
+            }
+        }
+    }
+    let total = t0.elapsed();
+    let first = first_text_at.expect("at least one text chunk");
+    eprintln!("#4272: first text chunk at {first:?} of {total:?}, {deltas} deltas");
+    assert_eq!(text, plain_text, "the stream must say what the body says");
+    assert!(deltas >= 2, "one delta is a buffered reply: {deltas}");
+    assert!(
+        first.as_secs_f64() < 0.8 * total.as_secs_f64(),
+        "the first chunk came at {first:?} of {total:?}: buffered, not streamed"
+    );
+    let usage = usage.expect("the terminal chunk carries usage (#4272)");
+    assert_eq!(usage, plain["usage"], "the stream's usage is the body's");
+}

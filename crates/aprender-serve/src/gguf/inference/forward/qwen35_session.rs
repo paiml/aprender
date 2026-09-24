@@ -385,7 +385,8 @@ impl Qwen35Forward {
         }
         let backend = match route {
             #[cfg(feature = "cuda")]
-            Qwen35Route::Gpu => match GpuBackend::build(qwen, mapped, &mut notices, plan_positions) {
+            Qwen35Route::Gpu => match GpuBackend::build(qwen, mapped, &mut notices, plan_positions)
+            {
                 Ok(gpu) => Backend::Gpu(Box::new(gpu)),
                 Err(GpuBuild::Refused(refusal)) => {
                     return Err(RealizarError::CapacityRefused(refusal));
@@ -399,7 +400,11 @@ impl Qwen35Forward {
         };
         // A one-call state is sized to the call: the plan above was made for
         // exactly `plan_positions`, not for MIN_CAPACITY.
-        let min_capacity = if plan_positions.is_some() { 0 } else { MIN_CAPACITY };
+        let min_capacity = if plan_positions.is_some() {
+            0
+        } else {
+            MIN_CAPACITY
+        };
         Ok(Self {
             qwen,
             backend,
