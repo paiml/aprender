@@ -167,8 +167,22 @@ jobs:
   # The check-run every consumer reads -- branch protection, `gate`, the BSE-17
   # reuse lookup by check_name -- is the fan-in job `workspace-test` below, which
   # fails unless every shard passed.
+  #
+  # #3177: the shards WAIT ON guard-tree. A merge group whose guard-tree was
+  # already red kept all three shards running to the end, and `gate` could only
+  # report the red after them: 2.8 h of clean-room time over the last 20 red
+  # merge groups (aprender-dd, 2026-09-24). With `needs: [guard-tree]` and no
+  # `if:`, a failed or cancelled guard-tree SKIPS every shard before it takes a
+  # runner, and the fan-in `workspace-test` below still reports -- red, naming
+  # guard-tree -- so the required check is never missing from a merge group.
+  # Green-path cost, measured on the last 10 successful runs per event (job
+  # start->end, queue excluded): merge_group +73 s median (+196 mean, +1048
+  # worst), push to main +432 s median, because the shards now start after
+  # guard-tree instead of beside it. Case table:
+  # scripts/check_workspace_test_waits_on_guard_tree.sh.
   workspace-test-shard:
     name: workspace-test-shard (${{ matrix.shard }}/${{ matrix.shards }})
+    needs: [guard-tree]
     strategy:
       fail-fast: false
       matrix:
@@ -942,9 +956,11 @@ jobs:
   # check_name on the PR head -- so the name stays on ONE job that fans the
   # shards in. `if: always()` so a failed shard still produces a red check here
   # instead of a skipped one (a skipped required check blocks nothing and says
-  # nothing). Every non-success matrix result is named.
+  # nothing). Every non-success matrix result is named. #3177: it also needs
+  # guard-tree, only to NAME it -- the shards wait on guard-tree, so when they
+  # were skipped the red here says which guard verdict skipped them.
   workspace-test:
-    needs: [workspace-test-shard]
+    needs: [guard-tree, workspace-test-shard]
     # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
     if: ${{ always() && !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     runs-on: [self-hosted, Linux, clean-room]
@@ -953,11 +969,13 @@ jobs:
       - name: Every shard passed
         env:
           SHARD_RESULT: ${{ needs.workspace-test-shard.result }}
+          GUARD_RESULT: ${{ needs.guard-tree.result }}
         run: |
           set -euo pipefail
-          printf 'workspace-test-shard matrix result: %s\n' "$SHARD_RESULT"
+          printf 'workspace-test-shard matrix result: %s (guard-tree: %s)\n' "$SHARD_RESULT" "$GUARD_RESULT"
           case "$SHARD_RESULT" in
             success) echo "workspace-test: all shards green" ;;
+            skipped) echo "::error::workspace-test: shards skipped because guard-tree was '$GUARD_RESULT' (#3177: the shards wait on guard-tree; fix the guard first)"; exit 1 ;;
             *) echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1 ;;
           esac
 
