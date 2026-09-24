@@ -290,6 +290,9 @@ def _f9_red_model_cases():
                 c["verdict"] = "RED"
     write("red-model-control-cell-red", L, rec, crux, 1, r"positive-control CRUX cells are not all GREEN")
 
+
+def _f9_red_model_declaration_cases():
+    # F9 RED-MODEL: the inventory declaration itself (keys, tickets, residual failures)
     L, rec, crux = build_f9()   # a key matching no held file (#3880)
     L["ladder"]["inventory"]["red_model"]["Qwen9-0.1B-*.gguf"] = dict(L["ladder"]["inventory"]["red_model"][D])
     write("red-model-key-no-file", L, rec, crux, 1, r"red_model\['Qwen9-0.1B-\*.gguf'\] matches NO held file")
@@ -454,6 +457,7 @@ def _f10_unsupported_cases():
 def main():
     _clear_generated()
     _f9_red_model_cases()
+    _f9_red_model_declaration_cases()
     _f9_wrong_answer_cases()
     _f10_unsupported_cases()
 

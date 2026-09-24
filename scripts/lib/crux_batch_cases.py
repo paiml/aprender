@@ -64,135 +64,142 @@ def rows(w):
     return [json.loads(line) for line in open(w / "manifest.jsonl")]
 
 
+def _item(i, verb="run", turns=None, thinking="off", max_tokens=5, w=None):
+    return {"prompt_id": f"p{i}", "verb": verb, "messages": msgs(w, f"m{i}", turns or [f"q{i}"]),
+            "thinking": thinking, "max_tokens": max_tokens}
+
+def _case_one_load(engine):
+    w = batch_env()
+    engine.load_inproc = fake_inproc()
+    engine.run_batch(model_args(), [_item(i, max_tokens=10 + i, w=w) for i in range(5)])
+    r = rows(w)
+    good = (LOADS["inproc"] == 1 and [x["prompt_id"] for x in r] == [f"p{i}" for i in range(5)]
+            and all(x["rc"] == 0 for x in r) and len({x["batch"]["id"] for x in r}) == 1
+            and r[0]["batch"]["size"] == 5 and [c[2] for c in CALLS] == [10, 11, 12, 13, 14])
+    return True if good else (dict(LOADS), [(x["prompt_id"], x["rc"]) for x in r], CALLS)
+
+def _case_load_fails(engine):
+    w = batch_env()
+    engine.load_inproc = fake_inproc(fail="engine init exploded")
+    engine.run_batch(model_args(), [_item(i, w=w) for i in range(3)])
+    r = rows(w)
+    return True if (len(r) == 3 and all(x["rc"] is None and "engine init exploded" in (x["refused"] or "")
+                                        for x in r) and LOADS["inproc"] == 1) else r
+
+def _case_isolation(engine):
+    w = batch_env()
+    engine.load_inproc = fake_inproc(boom_on="q1")
+    engine.run_batch(model_args(), [_item(i, thinking="on", w=w) for i in range(3)])
+    r = rows(w)
+    return True if ([x["rc"] for x in r] == [0, None, 0] and "item-level failure" in r[1]["refused"]) else r
+
+def _case_mixed(engine):
+    w = batch_env()
+    engine.load_inproc = fake_inproc()
+    engine.run_batch(model_args(), [_item("a", w=w), _item("b", verb="serve run", w=w),
+                                    _item("c", verb="chat", turns=["q1", "q2"], w=w)])
+    r = {x["prompt_id"]: x for x in rows(w)}
+    good = (LOADS == {"inproc": 1, "serve": 0} and r["pa"]["rc"] == 0 and r["pc"]["rc"] == 0
+            and r["pb"]["rc"] is None and "on the same card" in (r["pb"]["refused"] or ""))
+    return True if good else (dict(LOADS), {k: (v["rc"], v["refused"]) for k, v in r.items()})
+
+def _case_chat_turns(engine):
+    w = batch_env()
+    engine.load_inproc = fake_inproc()
+    engine.run_batch(model_args(), [_item("c", verb="chat", turns=["q1", "q2", "q3"], w=w)])
+    doc = json.load(open(rows(w)[0]["stdout"]))
+    return True if (doc["turns"] == ["ans:q1", "ans:q2", "ans:q3"] and len(CALLS) == 3) else (doc, CALLS)
+
+def _case_invalid(engine):
+    w = batch_env()
+    engine.load_inproc = fake_inproc()
+    bad = _item("bad", w=w)
+    del bad["max_tokens"]
+    engine.run_batch(model_args(), [_item("ok", w=w), bad])
+    r = {x["prompt_id"]: x for x in rows(w)}
+    return True if (r["pok"]["rc"] == 0 and "no 'max_tokens'" in (r["pbad"]["refused"] or "")) else r
+
+def _case_serve_one_server(engine):
+    w = batch_env()
+    engine.run_batch(model_args(), [_item(i, verb="serve run", w=w) for i in range(4)])
+    r = rows(w)
+    return True if (LOADS["serve"] == 1 and all(x["rc"] == 0 for x in r) and len(r) == 4) else (dict(LOADS), r)
+
+def _case_gen_one(engine):
+    w = batch_env()
+    engine.load_inproc = fake_inproc()
+    engine.gen(model_args(prompt_id="g", verb="run", messages=msgs(w, "g", ["q"]), thinking="off",
+                          max_tokens=9))
+    r = rows(w)
+    return True if (len(r) == 1 and r[0]["batch"]["size"] == 1 and LOADS["inproc"] == 1
+                    and CALLS[0][2] == 9) else r
+
+def _case_serve_stream(engine):
+    w = batch_env()
+    engine.run_batch(model_args(), [_item("n", verb="serve run", w=w), _item("s", verb="serve stream", w=w)])
+    r = {x["prompt_id"]: x for x in rows(w)}
+    docs = {k: json.load(open(v["stdout"])) for k, v in r.items() if v["stdout"]}
+    good = (LOADS["serve"] == 1 and CALLS == [("serve", False), ("serve", True)]
+            and docs["ps"]["reported"]["interface"].endswith("(stream)")
+            and not docs["pn"]["reported"]["interface"].endswith("(stream)"))
+    return True if good else (dict(LOADS), CALLS, {k: v["reported"]["interface"] for k, v in docs.items()})
+
+def _case_prefilled(engine, text, want_text, want_reasoning):
+    w = batch_env()
+
+    def loader(_a):
+        LOADS["inproc"] += 1
+        return (lambda convo, thinking, max_tokens: (text, 7, 2, True)), "inproc-fake", "cuda:0 fake"
+    engine.load_inproc = loader
+    engine.run_batch(model_args(), [_item("t", thinking="on", w=w)])
+    doc = json.load(open(rows(w)[0]["stdout"]))
+    good = (doc["text"] == want_text and doc.get("reasoning", "") == want_reasoning
+            and doc["reported"]["prompt_opens_think"] is True and doc["raw_text"].startswith("<think>"))
+    return True if good else doc
+
+def _case_not_prefilled(engine):
+    w = batch_env()
+    engine.load_inproc = fake_inproc()  # a 3-tuple respond: no prefill signal
+    engine.run_batch(model_args(), [_item("n", w=w)])
+    doc = json.load(open(rows(w)[0]["stdout"]))
+    return True if (doc["reported"]["prompt_opens_think"] is False and doc["raw_text"] == doc["text"]) else doc
+
+
+def _cases(serve_interface):
+    """(name, case(engine)) in the order the table has always run them."""
+    return [("a prompt that OPENED the think block (#3990): the closed block splits into answer + reasoning",
+             lambda e: _case_prefilled(e, "add them</think>4", "4", "add them")),
+            ("...and a block that never closes is NO answer, not the reasoning handed back as one",
+             lambda e: _case_prefilled(e, "still adding", "", "still adding")),
+            ("without a prefill signal nothing is prepended", _case_not_prefilled),
+            ("serve run and serve stream share ONE server; only the stream item streams", _case_serve_stream),
+            ("5 items, ONE engine load, rows in order, per-item max_tokens", _case_one_load),
+            ("a failed load refuses EVERY item with the load's reason", _case_load_fails),
+            ("one item failing does not take the others down", _case_isolation),
+            ("mixed interfaces: serve refused by name, only one engine loaded", _case_mixed),
+            ("a chat item drives every user turn on the shared engine", _case_chat_turns),
+            ("an invalid item is refused by name; the rest run", _case_invalid),
+            ("4 serve items share ONE server", _case_serve_one_server),
+            ("gen is a batch of one through the same path", _case_gen_one)]
+
+
+def _run_case(engine, fn):
+    LOADS.update(inproc=0, serve=0)
+    CALLS.clear()
+    try:
+        detail = fn(engine)
+        return detail is True, detail
+    except Exception as e:  # a case that raises is a broken case, not a pass
+        return False, f"{type(e).__name__}: {e}"
+
+
 def run(engine, serve_interface: str) -> int:
     """serve_interface: the name the driver's item_doc uses to pass resp_path ("vllm serve",
     "transformers serve")."""
     engine.serve_session = fake_serve_for(serve_interface)
     failed = 0
-
-    def item(i, verb="run", turns=None, thinking="off", max_tokens=5, w=None):
-        return {"prompt_id": f"p{i}", "verb": verb, "messages": msgs(w, f"m{i}", turns or [f"q{i}"]),
-                "thinking": thinking, "max_tokens": max_tokens}
-
-    def one_load():
-        w = batch_env()
-        engine.load_inproc = fake_inproc()
-        engine.run_batch(model_args(), [item(i, max_tokens=10 + i, w=w) for i in range(5)])
-        r = rows(w)
-        good = (LOADS["inproc"] == 1 and [x["prompt_id"] for x in r] == [f"p{i}" for i in range(5)]
-                and all(x["rc"] == 0 for x in r) and len({x["batch"]["id"] for x in r}) == 1
-                and r[0]["batch"]["size"] == 5 and [c[2] for c in CALLS] == [10, 11, 12, 13, 14])
-        return True if good else (dict(LOADS), [(x["prompt_id"], x["rc"]) for x in r], CALLS)
-
-    def load_fails():
-        w = batch_env()
-        engine.load_inproc = fake_inproc(fail="engine init exploded")
-        engine.run_batch(model_args(), [item(i, w=w) for i in range(3)])
-        r = rows(w)
-        return True if (len(r) == 3 and all(x["rc"] is None and "engine init exploded" in (x["refused"] or "")
-                                            for x in r) and LOADS["inproc"] == 1) else r
-
-    def isolation():
-        w = batch_env()
-        engine.load_inproc = fake_inproc(boom_on="q1")
-        engine.run_batch(model_args(), [item(i, thinking="on", w=w) for i in range(3)])
-        r = rows(w)
-        return True if ([x["rc"] for x in r] == [0, None, 0] and "item-level failure" in r[1]["refused"]) else r
-
-    def mixed():
-        w = batch_env()
-        engine.load_inproc = fake_inproc()
-        engine.run_batch(model_args(), [item("a", w=w), item("b", verb="serve run", w=w),
-                                        item("c", verb="chat", turns=["q1", "q2"], w=w)])
-        r = {x["prompt_id"]: x for x in rows(w)}
-        good = (LOADS == {"inproc": 1, "serve": 0} and r["pa"]["rc"] == 0 and r["pc"]["rc"] == 0
-                and r["pb"]["rc"] is None and "on the same card" in (r["pb"]["refused"] or ""))
-        return True if good else (dict(LOADS), {k: (v["rc"], v["refused"]) for k, v in r.items()})
-
-    def chat_turns():
-        w = batch_env()
-        engine.load_inproc = fake_inproc()
-        engine.run_batch(model_args(), [item("c", verb="chat", turns=["q1", "q2", "q3"], w=w)])
-        doc = json.load(open(rows(w)[0]["stdout"]))
-        return True if (doc["turns"] == ["ans:q1", "ans:q2", "ans:q3"] and len(CALLS) == 3) else (doc, CALLS)
-
-    def invalid():
-        w = batch_env()
-        engine.load_inproc = fake_inproc()
-        bad = item("bad", w=w)
-        del bad["max_tokens"]
-        engine.run_batch(model_args(), [item("ok", w=w), bad])
-        r = {x["prompt_id"]: x for x in rows(w)}
-        return True if (r["pok"]["rc"] == 0 and "no 'max_tokens'" in (r["pbad"]["refused"] or "")) else r
-
-    def serve_one_server():
-        w = batch_env()
-        engine.run_batch(model_args(), [item(i, verb="serve run", w=w) for i in range(4)])
-        r = rows(w)
-        return True if (LOADS["serve"] == 1 and all(x["rc"] == 0 for x in r) and len(r) == 4) else (dict(LOADS), r)
-
-    def gen_one():
-        w = batch_env()
-        engine.load_inproc = fake_inproc()
-        engine.gen(model_args(prompt_id="g", verb="run", messages=msgs(w, "g", ["q"]), thinking="off",
-                              max_tokens=9))
-        r = rows(w)
-        return True if (len(r) == 1 and r[0]["batch"]["size"] == 1 and LOADS["inproc"] == 1
-                        and CALLS[0][2] == 9) else r
-
-    def serve_stream():
-        w = batch_env()
-        engine.run_batch(model_args(), [item("n", verb="serve run", w=w), item("s", verb="serve stream", w=w)])
-        r = {x["prompt_id"]: x for x in rows(w)}
-        docs = {k: json.load(open(v["stdout"])) for k, v in r.items() if v["stdout"]}
-        good = (LOADS["serve"] == 1 and CALLS == [("serve", False), ("serve", True)]
-                and docs["ps"]["reported"]["interface"].endswith("(stream)")
-                and not docs["pn"]["reported"]["interface"].endswith("(stream)"))
-        return True if good else (dict(LOADS), CALLS, {k: v["reported"]["interface"] for k, v in docs.items()})
-
-    def prefilled(text, want_text, want_reasoning):
-        def case():
-            w = batch_env()
-
-            def loader(_a):
-                LOADS["inproc"] += 1
-                return (lambda convo, thinking, max_tokens: (text, 7, 2, True)), "inproc-fake", "cuda:0 fake"
-            engine.load_inproc = loader
-            engine.run_batch(model_args(), [item("t", thinking="on", w=w)])
-            doc = json.load(open(rows(w)[0]["stdout"]))
-            good = (doc["text"] == want_text and doc.get("reasoning", "") == want_reasoning
-                    and doc["reported"]["prompt_opens_think"] is True and doc["raw_text"].startswith("<think>"))
-            return True if good else doc
-        return case
-
-    def not_prefilled():
-        w = batch_env()
-        engine.load_inproc = fake_inproc()  # a 3-tuple respond: no prefill signal
-        engine.run_batch(model_args(), [item("n", w=w)])
-        doc = json.load(open(rows(w)[0]["stdout"]))
-        return True if (doc["reported"]["prompt_opens_think"] is False and doc["raw_text"] == doc["text"]) else doc
-
-    for name, fn in [("a prompt that OPENED the think block (#3990): the closed block splits into answer + reasoning",
-                      prefilled("add them</think>4", "4", "add them")),
-                     ("...and a block that never closes is NO answer, not the reasoning handed back as one",
-                      prefilled("still adding", "", "still adding")),
-                     ("without a prefill signal nothing is prepended", not_prefilled),
-                     ("serve run and serve stream share ONE server; only the stream item streams", serve_stream),
-                     ("5 items, ONE engine load, rows in order, per-item max_tokens", one_load),
-                     ("a failed load refuses EVERY item with the load's reason", load_fails),
-                     ("one item failing does not take the others down", isolation),
-                     ("mixed interfaces: serve refused by name, only one engine loaded", mixed),
-                     ("a chat item drives every user turn on the shared engine", chat_turns),
-                     ("an invalid item is refused by name; the rest run", invalid),
-                     ("4 serve items share ONE server", serve_one_server),
-                     ("gen is a batch of one through the same path", gen_one)]:
-        LOADS.update(inproc=0, serve=0)
-        CALLS.clear()
-        try:
-            detail = fn()
-            ok = detail is True
-        except Exception as e:  # a case that raises is a broken case, not a pass
-            ok, detail = False, f"{type(e).__name__}: {e}"
+    for name, fn in _cases(serve_interface):
+        ok, detail = _run_case(engine, fn)
         print(f"{'ok  ' if ok else 'FAIL'} [batch] {name}" + ("" if ok else f"\n     got: {str(detail)[:300]}"))
         failed += not ok
     return failed

@@ -416,44 +416,74 @@ def item_error(it: dict) -> str | None:
     return None
 
 
+def _batch_slot(a, work, it, batch_id, size):
+    verb = it.get("verb") if it.get("verb") in VERBS else "invalid"
+    d = workdir(work, a.model_sha256, verb)
+    stem = f"{ENGINE}-{it.get('prompt_id', 'noid')}-{it.get('thinking', 'unset')}"
+    out, err = d / f"{stem}.json", d / f"{stem}.err"
+    row = {
+        "kind": "gen", "engine": ENGINE, "model_sha256": a.model_sha256, "host": a.host, "verb": it.get("verb"),
+        "thinking": it.get("thinking"), "backend": a.backend, "prompt_id": it.get("prompt_id"),
+        "rc": 0, "stdout": str(out), "stderr": str(err), "refused": None,
+        # The comparison this row is: apr's file (model_sha256) against these SOURCE weights, never the file.
+        "source": {"repo": a.source_repo, "revision": a.source_revision, "dtype": a.dtype, "compares": COMPARES},
+        "gpu_memory_utilization": gpu_memory_utilization(),
+        "batch": {"id": batch_id, "size": size},
+    }
+    return {"it": it, "row": row, "d": d, "stem": stem, "out": out, "err": err, "reason": item_error(it)}
+
+
+def _refuse_slot(slot, reason):
+    slot["err"].write_text(reason, encoding="utf-8")
+    slot["row"].update(rc=None, stdout=None, refused=reason)
+
+
+def _interface_group(slots):
+    """The ONE interface group this batch loads an engine for; every other item is refused by name."""
+    live = [s for s in slots if s["reason"] is None]
+    for s in slots:
+        if s["reason"] is not None:
+            _refuse_slot(s, s["reason"])
+    inproc = [s for s in live if s["it"]["verb"] in INPROC]
+    serve = [s for s in live if s["it"]["verb"] in SERVE]
+    if inproc and serve:
+        for s in serve:
+            _refuse_slot(s, "this batch also holds in-process items (run, chat), and a second interface would be a "
+                            "second engine on the same card; send serve/code items in their own gen-batch call")
+        serve = []
+    return (inproc, True) if inproc else (serve, False)
+
+
+def _run_group(a, group, is_inproc, engine_log, server_log):
+    with fd2_to(engine_log), contextlib.ExitStack() as stack:
+        try:
+            if is_inproc:
+                respond, interface, device = load_inproc(a)
+            else:
+                respond, interface, device = stack.enter_context(serve_session(a, server_log))
+        except Exception as e:
+            # The load itself failed: every item of the batch is refused with the engine's own root cause.
+            reason = refusal(e, engine_log, server_log)
+            for s in group:
+                _refuse_slot(s, reason)
+            return
+        for s in group:
+            try:
+                resp_path = s["d"] / f"{s['stem']}.resp.json" if interface == "vllm serve" else None
+                doc = item_doc(s["it"], respond, interface, device, resp_path)
+                s["out"].write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+                s["err"].write_text("", encoding="utf-8")
+            except Exception as e:
+                _refuse_slot(s, refusal(e))
+
+
 def run_batch(a, items: list) -> None:
     """Every item gets exactly one row, in order; the engine is loaded at most ONCE for the batch."""
     manifest, work = env_paths()
     check_sha(a.model_sha256)
     batch_id = f"{os.getpid()}-{time.time_ns()}"
-    slots = []
-    for it in items:
-        verb = it.get("verb") if it.get("verb") in VERBS else "invalid"
-        d = workdir(work, a.model_sha256, verb)
-        stem = f"{ENGINE}-{it.get('prompt_id', 'noid')}-{it.get('thinking', 'unset')}"
-        out, err = d / f"{stem}.json", d / f"{stem}.err"
-        row = {
-            "kind": "gen", "engine": ENGINE, "model_sha256": a.model_sha256, "host": a.host, "verb": it.get("verb"),
-            "thinking": it.get("thinking"), "backend": a.backend, "prompt_id": it.get("prompt_id"),
-            "rc": 0, "stdout": str(out), "stderr": str(err), "refused": None,
-            # The comparison this row is: apr's file (model_sha256) against these SOURCE weights, never the file.
-            "source": {"repo": a.source_repo, "revision": a.source_revision, "dtype": a.dtype, "compares": COMPARES},
-            "gpu_memory_utilization": gpu_memory_utilization(),
-            "batch": {"id": batch_id, "size": len(items)},
-        }
-        slots.append({"it": it, "row": row, "d": d, "stem": stem, "out": out, "err": err, "reason": item_error(it)})
-
-    def refuse(slot, reason):
-        slot["err"].write_text(reason, encoding="utf-8")
-        slot["row"].update(rc=None, stdout=None, refused=reason)
-
-    live = [s for s in slots if s["reason"] is None]
-    for s in slots:
-        if s["reason"] is not None:
-            refuse(s, s["reason"])
-    inproc = [s for s in live if s["it"]["verb"] in INPROC]
-    serve = [s for s in live if s["it"]["verb"] in SERVE]
-    if inproc and serve:
-        for s in serve:
-            refuse(s, "this batch also holds in-process items (run, chat), and a second interface would be a second "
-                      "engine on the same card; send serve/code items in their own gen-batch call")
-        serve = []
-    group = inproc or serve
+    slots = [_batch_slot(a, work, it, batch_id, len(items)) for it in items]
+    group, is_inproc = _interface_group(slots)
     engine_log = work / a.model_sha256[:12] / f"{ENGINE}-batch-{batch_id}.engine.log"
     server_log = work / a.model_sha256[:12] / f"{ENGINE}-batch-{batch_id}.server.log"
     for s in group:
@@ -463,29 +493,10 @@ def run_batch(a, items: list) -> None:
             preflight(a)
         except Exception as e:
             for s in group:
-                refuse(s, refusal(e))
+                _refuse_slot(s, refusal(e))
             group = []
     if group:
-        with fd2_to(engine_log), contextlib.ExitStack() as stack:
-            try:
-                if group is inproc:
-                    respond, interface, device = load_inproc(a)
-                else:
-                    respond, interface, device = stack.enter_context(serve_session(a, server_log))
-            except Exception as e:
-                # The load itself failed: every item of the batch is refused with the engine's own root cause.
-                reason = refusal(e, engine_log, server_log)
-                for s in group:
-                    refuse(s, reason)
-            else:
-                for s in group:
-                    try:
-                        resp_path = s["d"] / f"{s['stem']}.resp.json" if interface == "vllm serve" else None
-                        doc = item_doc(s["it"], respond, interface, device, resp_path)
-                        s["out"].write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
-                        s["err"].write_text("", encoding="utf-8")
-                    except Exception as e:
-                        refuse(s, refusal(e))
+        _run_group(a, group, is_inproc, engine_log, server_log)
     for s in slots:
         append_row(manifest, s["row"])
 
