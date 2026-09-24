@@ -10,10 +10,12 @@ fn lint_passes_on_real_contracts() {
     let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
     assert!(report.passed, "lint should pass: {report:?}");
-    // 15 gates: validate, audit, score, verify, enforce, enforcement-level, reverse-coverage,
+    // 16 gates: validate, audit, score, verify, enforce, enforcement-level, reverse-coverage,
     // duplicate-stems (PV-DUP-001), composition, sigma (ONT-2b), relations (ONT-4), shapes (ONT-4b),
-    // valid-under (ONT-7), theorem-pairing and depends-on-present (PVL-001 EV-11).
-    assert_eq!(report.gates.len(), 15);
+    // valid-under (ONT-7), theorem-pairing and depends-on-present (PVL-001 EV-11), and
+    // challenge-fresh (PVL-001 EV-7a; MEASURED here, not skipped: the repo's Lean base and its committed Challenge/
+    // files are real, so `report.passed` requires them fresh).
+    assert_eq!(report.gates.len(), 16);
 }
 
 #[test]
@@ -30,7 +32,13 @@ fn lint_empty_dir() {
     let tmp = tempfile::tempdir().unwrap();
     let config = LintConfig::new(tmp.path(), None, 0.0);
     let report = run_lint(&config);
-    assert!(report.passed);
+    let failing: Vec<_> = report
+        .gates
+        .iter()
+        .filter(|g| !g.passed)
+        .map(|g| (&g.name, &g.detail))
+        .collect();
+    assert!(report.passed, "{failing:?}");
 }
 
 #[test]
@@ -163,7 +171,7 @@ fn lint_validation_failure_skips_audit_and_score() {
     let report = run_lint(&config);
     assert!(!report.passed);
     // validate should fail, all subsequent gates should be skipped
-    assert_eq!(report.gates.len(), 15);
+    assert_eq!(report.gates.len(), 16);
     assert!(!report.gates[0].passed); // validate failed
     assert!(report.gates[1].skipped); // audit skipped
     assert!(report.gates[2].skipped); // score skipped
@@ -361,7 +369,7 @@ fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus() {
         Verdict::Pass,
         "the repo corpus passes its armed meet"
     );
-    // `run_lint` arms the DEFAULT set (the 8), so the three gates outside it are reported and excluded. The repo's
+    // `run_lint` arms the DEFAULT set (the 8), so the gates outside it are reported and excluded. The repo's
     // own `lint-baseline.json` arms `sigma` and `relations` as well — per-repo declarations, not the default.
     assert_eq!(
         report.not_armed,
@@ -375,7 +383,9 @@ fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus() {
             // PVL-001 EV-11: computed in every run (R-8), armed per repo.
             "theorem-pairing".to_string(),
             "depends-on-present".to_string(),
-        ]
+            "challenge-fresh".to_string(),
+        ],
+        "challenge-fresh is reported, never armed by default: it moves only via `make ont-ratchet`"
     );
 }
 

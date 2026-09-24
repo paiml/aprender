@@ -254,6 +254,18 @@ pub enum GateExtra {
         /// Findings.
         violations: usize,
     },
+    /// PVL-001 EV-7a (#4200): `<lean>/Challenge/` against its regeneration (`pv challenge check`).
+    #[serde(rename = "challenge_fresh")]
+    ChallengeFresh {
+        /// The Lean dir judged.
+        lean_dir: String,
+        /// Challenge files the contracts render.
+        files: usize,
+        /// Extra, missing or differing files, one line each.
+        stale: Vec<String>,
+        /// Bound roots whose statement could not be lifted, as `contract: fqn: why`.
+        unrestated: Vec<String>,
+    },
     /// ONT-4b: the shapes gate — every `shape:` block over the extracted graph, with the plant.
     #[serde(rename = "shapes")]
     Shapes {
@@ -627,6 +639,10 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
         all_findings.append(&mut findings);
     }
 
+    // Gate 16: challenge-fresh (PVL-001 EV-7a). Same R-8 shape: computed wherever a Lean theorem base exists,
+    // armed per repo (only through `make ont-ratchet`).
+    gates.push(challenge_result(config.contract_dir));
+
     // Gate 9: strict test-binding (Issue #1510, opt-in via --strict-test-binding)
     if config.strict_test_binding {
         push_gate(
@@ -922,6 +938,54 @@ fn shapes_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, V
             g.verdict = Verdict::Unknown(crate::ontology::verdict::Reason::Differential);
             (g, Vec::new())
         }
+    }
+}
+
+/// The `challenge-fresh` gate: `pv challenge check` as a gate. No Lean theorem base, a tree that does not load, or
+/// zero challenges is SKIPPED (not measured), never green.
+fn challenge_result(contract_dir: &Path) -> GateResult {
+    const NAME: &str = "challenge-fresh";
+    let start = Instant::now();
+    let root = crate::ontology::extract::repo_root(contract_dir);
+    let Some(lean) = crate::ontology::extract::lean::base_under(&root) else {
+        return skipped_gate(NAME, "no Lean theorem base under the repo root");
+    };
+    let r = match crate::discharge::challenge::render(&lean, contract_dir) {
+        Ok(r) => r,
+        Err(e) => return skipped_gate(NAME, &format!("the Lean tree does not load: {e}")),
+    };
+    if r.files.is_empty() && r.unrestated.is_empty() {
+        return skipped_gate(
+            NAME,
+            "zero challenges: no contract binds a theorem — R-2: zero is a decline",
+        );
+    }
+    let stale = crate::discharge::challenge::diff(&lean, &r);
+    let unrestated: Vec<String> = r
+        .unrestated
+        .iter()
+        .map(|(c, fqn, why)| format!("{c}: {fqn}: {why}"))
+        .collect();
+    let passed = stale.is_empty() && unrestated.is_empty();
+    GateResult {
+        name: NAME.into(),
+        passed,
+        skipped: false,
+        verdict: Verdict::from_gate(passed, false),
+        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+        // `GateDetail` is FROZEN at the 0.3.1 variants: the shape is borrowed, the payload rides in `GateExtra`.
+        detail: GateDetail::Validate {
+            contracts: r.files.len(),
+            errors: stale.len() + unrestated.len(),
+            warnings: 0,
+            error_messages: stale.iter().chain(&unrestated).cloned().collect(),
+        },
+        extra: Some(GateExtra::ChallengeFresh {
+            lean_dir: lean.display().to_string(),
+            files: r.files.len(),
+            stale,
+            unrestated,
+        }),
     }
 }
 

@@ -14,6 +14,7 @@
 //!   exact `#guard_msgs in #print axioms`. Bound theorems outside the cone are ORPHANED-ROOT: `lake env lean`
 //!   cannot see a module `lake build` never built (EV-5a's orphans; EV-5c drains them).
 
+pub mod challenge;
 pub mod comparator;
 pub mod lex;
 
@@ -283,6 +284,8 @@ pub struct Root {
 #[derive(Debug, Clone, Default)]
 pub struct Binding {
     pub roots: BTreeSet<Root>,
+    /// The same roots, per contract stem: what `pv challenge` pins, one `Challenge/<stem>.lean` each (EV-7a).
+    pub by_contract: BTreeMap<String, BTreeSet<Root>>,
     /// `(contract stem, exact-name reference)` naming no declaration.
     pub missing: BTreeSet<(String, String)>,
     /// `(contract stem, label reference)` matching no theorem, file or domain.
@@ -376,6 +379,10 @@ fn bind_one(
         match theorems.get(r) {
             Some(root) => {
                 b.roots.insert(root.clone());
+                b.by_contract
+                    .entry(stem.to_string())
+                    .or_default()
+                    .insert(root.clone());
             }
             None => {
                 b.missing.insert((stem.to_string(), r.to_string()));
@@ -392,6 +399,12 @@ fn bind_one(
     if hits.is_empty() {
         b.unresolved_labels
             .insert((stem.to_string(), r.to_string()));
+    }
+    if !hits.is_empty() {
+        b.by_contract
+            .entry(stem.to_string())
+            .or_default()
+            .extend(hits.iter().map(|r| (*r).clone()));
     }
     b.roots.extend(hits.into_iter().cloned());
 }

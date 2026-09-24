@@ -89,6 +89,12 @@ pub enum Commands {
         #[command(subcommand)]
         action: DischargeAction,
     },
+    /// Pin each contract-bound theorem's STATEMENT apart from its proof: `<lean>/Challenge/<contract>.lean`
+    /// (PVL-001 EV-7a, #4200)
+    Challenge {
+        #[command(subcommand)]
+        action: ChallengeAction,
+    },
     /// Census the contract corpus: one cardinality, by_anchoring, by_entity_type (ONT-001 ONT-1)
     Census {
         /// Directory containing contract YAML files
@@ -529,6 +535,25 @@ pub enum DischargeAction {
         lean_dir: PathBuf,
         #[arg(long, default_value = "contracts")]
         contracts: PathBuf,
+    },
+}
+
+/// `pv challenge` actions (PVL-001 EV-7a, #4200).
+#[derive(Subcommand, Clone, Debug)]
+pub enum ChallengeAction {
+    /// Write `<lean-dir>/Challenge/<contract>.lean`: every bound theorem restated as `PvlChallenge.<fqn>` with
+    /// its proof replaced by `sorry`. Stale files are removed.
+    Gen {
+        /// Directory of the contracts whose `lean_theorem:` references bind the roots
+        contracts: PathBuf,
+        /// The Lean dir (holds ProvableContracts.lean)
+        lean_dir: PathBuf,
+    },
+    /// Regenerate in memory and compare with `<lean-dir>/Challenge/`: rc 1 on any difference, rc 2 on zero
+    /// challenges
+    Check {
+        contracts: PathBuf,
+        lean_dir: PathBuf,
     },
 }
 
