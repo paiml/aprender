@@ -21,12 +21,15 @@
 #          graphs of 2-8 ids consistent by construction or carrying a planted
 #          contradiction; verdict == construction, and every adversarial core
 #          or model is refused); `kani_ont_9_1_twin` (2048 samples of the
-#          harness body).
-#   * L3 — DECLARED, NO VERDICT. KANI-ONT-9-1 is a real #[kani::proof] in
-#          witness.rs. `cargo kani` ran 2026-09-24 and was cut off at 2400 s
-#          in CBMC symex (BTreeSet<String>), no verdict, so l3_kani_proved is 0 and
-#          proof.status is `declared`. The bound is 3 ids and cores of at most
-#          3 steps; nothing is claimed for 4 ids.
+#          harness body, over BOTH id instantiations, asserting identical
+#          verdicts).
+#   * L3 — PROVED at 3 ids. KANI-ONT-9-1 is four #[kani::proof] fns in
+#          witness.rs (cores of 1, 2, 3 steps; models) over check_with, the
+#          one checker implementation, instantiated at u8 ids in fixed arrays.
+#          Kani 0.67.0, 2026-09-24: all four VERIFICATION:- SUCCESSFUL, and
+#          all three planted checker mutants FAILED. The bound is 3 ids and
+#          cores of at most 3 steps; nothing is claimed for 4 ids. The String
+#          instantiation production runs is tied to it by the L2 twin, not by Kani.
 #   * L4 — not declared. There is no Lean theorem.
 #   RESIDUAL — spec-level common mode: the checker, the oracle and the planted
 #   constructions all read the same Horn reading of the relations (§3.5). A
@@ -131,15 +134,15 @@ proof_obligations:
 verification_summary:
   total_obligations: 7
   l2_property_tested: 7
-  l3_kani_proved: 0
+  l3_kani_proved: 1
   l4_lean_proved: 0
   l4_sorry_count: 0
   l4_not_applicable: 7
 
 proof:
-  status: declared
+  status: proved
   kani:
-    harnesses: [KANI-ONT-9-1]
+    harnesses: [KANI-ONT-9-1, KANI-ONT-9-1-LEN1, KANI-ONT-9-1-LEN2, KANI-ONT-9-1-MODEL]
 
 kani_harnesses:
 - id: KANI-ONT-9-1
@@ -149,12 +152,37 @@ kani_harnesses:
   strategy: exhaustive
   solver: cadical
   harness: kani_ont_9_1
+- id: KANI-ONT-9-1-LEN1
+  obligation: ONTSELF-INV-007
+  property: every 1-step core check accepts over 3 ids is a real contradiction naming only known ids
+  bound: 3
+  strategy: exhaustive
+  solver: cadical
+  harness: kani_ont_9_1_len1
+- id: KANI-ONT-9-1-LEN2
+  obligation: ONTSELF-INV-007
+  property: every 2-step core check accepts over 3 ids is a real contradiction naming only known ids
+  bound: 3
+  strategy: exhaustive
+  solver: cadical
+  harness: kani_ont_9_1_len2
+- id: KANI-ONT-9-1-MODEL
+  obligation: ONTSELF-INV-007
+  property: every model check accepts over 3 ids satisfies the graph
+  bound: 3
+  strategy: exhaustive
+  solver: cadical
+  harness: kani_ont_9_1_model
 kani_harnesses_note: >
-  DECLARED, NOT EXECUTED. kani_ont_9_1 (witness.rs, cfg(kani)) is bounded at CORE_BOUND = 3 steps over 3 ids,
-  unwind 12. The bound is measured, not chosen: the pv-sat plant's core is 3 steps and the committed corpus witness
-  is a model. Over 3 ids a core of at most 3 steps is complete (each step derives one id). `cargo kani` has not
-  been run; until it has, proof.status stays `declared` and l3_kani_proved stays 0 (ont9_self_contract enforces the
-  pair). kani_ont_9_1_twin samples the same body under proptest.
+  PROVED at the bound, measured 2026-09-24 with Kani 0.67.0 (unwind 9, cadical). Each harness finished
+  VERIFICATION:- SUCCESSFUL: kani_ont_9_1 (3-step cores) 52 s, _len1 20 s, _len2 278 s, _model 406 s. The four
+  together are KANI-ONT-9-1: every graph over 3 ids, every core of 1..=CORE_BOUND steps, every conflict pair,
+  every model. They run check_with, the one checker implementation, at u8 ids over heap-free fixed arrays. Two
+  earlier runs hit their time caps with no verdict: the BTreeSet<String> instantiation at 2400 s, and u8 over Vec
+  with a symbolic core length at 1800 s. Checking discriminates: with the premise check off, any conflict accepted, or
+  the model check skipping conflicts, the harness goes VERIFICATION:- FAILED on its property assertion. The bound is
+  measured, not chosen: the pv-sat plant's core is 3 steps and the committed corpus witness is a model. Nothing is
+  claimed for 4+ ids.
 
 falsification_tests:
 - id: FALSIFY-ONTSELF-001
