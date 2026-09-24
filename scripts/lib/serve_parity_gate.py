@@ -126,9 +126,9 @@ def correctness_reasons(model, gate):
         for d in dis:
             gap = d.get("gap")
             rank = d.get("rank")
-            if not _count(rank) or not 2 <= rank <= c["max_rank"]:
-                out.append("%s prompt %d step %s: the oracle's token is apr's rank %r, outside [2, %d] "
-                           "(rank 1 is agreement; a disagreement is rank >= 2)"
+            if not _count(rank) or not 1 <= rank <= c["max_rank"]:
+                out.append("%s prompt %d step %s: the oracle's token is apr's rank %r, outside [1, %d] "
+                           "(rank 1 is a disagreement tied on the logit)"
                            % (size, i, d.get("step"), rank, c["max_rank"]))
             if not _finite(gap) or not 0 <= gap < c["tau"]:
                 out.append("%s prompt %d step %s: apr disagrees with the oracle at gap "
@@ -474,7 +474,9 @@ def verdict_rows(gate, pin):
          _set(["control", "models", 0], {"size": "70B", "receipt": _fx_receipt(0.4, pin)}),
          lambda b: (b["models"].update({"70B": {"point": 0.9}}), b)[1], RED),  # a stale baseline key
         ("negative gap is RED", _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0, "gap"], -0.5), 0.9, RED),
-        ("rank below 2 is RED", _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0, "rank"], -1), 0.9, RED),
+        ("rank below 1 is RED", _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0, "rank"], 0), 0.9, RED),
+        ("tied-logit disagreement (rank 1, gap 0) PASSes",
+         _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0], {"step": 3, "gap": 0.0, "rank": 1}), 0.9, PASS),
         ("zero RSS is RED", _set(["models", 0, "memory", "apr_rss_kb"], 0), 0.9, RED),
         ("malformed models is RED", _set(["models"], "not-a-list"), 0.9, RED),
         ("oracle token deep in apr's ranking is RED",
@@ -549,7 +551,7 @@ MUTANTS = [
      ["control mislabeled to another size is RED"]),
     ("control comparator not bound", "        if comp != pin_commit:\n            out.append(\"control", "        if False:\n            out.append(\"control",
      ["control on an unpinned comparator is RED"]),
-    ("rank check dropped", "2 <= rank <= c[\"max_rank\"]", "2 <= rank",
+    ("rank check dropped", "1 <= rank <= c[\"max_rank\"]", "1 <= rank",
      ["oracle token deep in apr's ranking is RED"]),
     ("unrecorded disk read as fine", "out.append(\"free disk at %s was not recorded\"", "pass  # (\"free disk at %s was not recorded\"",
      ["unrecorded free disk is NO-GO"]),
@@ -557,13 +559,12 @@ MUTANTS = [
      ["disk measured elsewhere is NO-GO"]),
     ("disk resolution not read", "if not isinstance(disk.get(\"resolved\"), str) or not disk.get(\"resolved\"):", "if False:",
      ["unresolved disk path is NO-GO"]),
-    # Equivalent today: the negated range `not 0 <= gap < tau` and `not 2 <= rank
-    # <= max_rank` already fail closed on NaN and on a bool (True == 1 < 2), so
-    # _finite/_count there are defence in depth. They must flip nothing.
+    # Equivalent today: the negated range `not 0 <= gap < tau` already fails
+    # closed on NaN, so _finite there is defence in depth. It must flip nothing.
     ("gap NaN-blind", "if not _finite(gap) or not 0", "if not isinstance(gap, (int, float)) or not 0",
      []),
-    ("rank admits bool", "if not _count(rank) or not 2", "if not isinstance(rank, int) or not 2",
-     []),
+    ("rank admits bool", "if not _count(rank) or not 1", "if not isinstance(rank, int) or not 1",
+     ["bool rank is RED"]),
     ("steps floor dropped", "steps < c[\"min_teacher_forced_steps\"]", "False",
      ["too few teacher-forced steps is RED"]),
     # Equivalent today: band_ratio and the baseline check already refuse a
@@ -585,8 +586,10 @@ MUTANTS = [
      ["two c=1 bands is RED"]),
     ("gap lower bound dropped", "not 0 <= gap < c[\"tau\"]", "not gap < c[\"tau\"]",
      ["negative gap is RED"]),
-    ("rank lower bound dropped", "not 2 <= rank <= c[\"max_rank\"]", "not rank <= c[\"max_rank\"]",
-     ["rank below 2 is RED"]),
+    ("rank lower bound dropped", "not 1 <= rank <= c[\"max_rank\"]", "not rank <= c[\"max_rank\"]",
+     ["rank below 1 is RED"]),
+    ("rank floor too strict", "not 1 <= rank <= c[\"max_rank\"]", "not 2 <= rank <= c[\"max_rank\"]",
+     ["tied-logit disagreement (rank 1, gap 0) PASSes"]),
     ("memory sign not read", "if not _count(mem.get(key)) or mem.get(key) <= 0:", "if not _count(mem.get(key)):",
      ["zero RSS is RED"]),
     ("malformed record crashes", "    except (AttributeError, TypeError, KeyError, IndexError, ValueError) as exc:\n", "    except ZeroDivisionError as exc:\n",
