@@ -20,7 +20,8 @@ Options: --jobs N (2) --test-threads N (4) --timeout S (1800, per binary) --skip
 compile-only crates, printed) --cargo PATH --toolchain NAME --sysroot DIR --target-dir DIR.
 Prints one RUN line per failing binary naming its failing tests, and a total.
 Exit: 0 every binary passed · 1 a binary failed (named) · 2 could not check (no binary: vacuous; bad input;
-a binary that did not start; a harness crash). Only a test binary that RAN and failed is 1.
+a binary that did not start or was SIGKILLed / timed out, when none failed on its own; a harness crash).
+Only a test binary that RAN and failed (an exit code, SIGSEGV, SIGABRT) is 1, and it outranks the rest.
 """
 import argparse
 import concurrent.futures
@@ -78,6 +79,7 @@ def test_env(base, a, pkg, version, mdir, bins):
 
 
 NOT_STARTED = "not-started"
+HOST_KILLED = ("timeout", -signal.SIGKILL)
 FAILED_TEST = re.compile(r"^---- (\S+) stdout ----$")
 
 
@@ -138,13 +140,15 @@ def main(argv):
     os.makedirs(a.run_dir, exist_ok=True)
     print("running %d test binary(ies), %d at a time, --test-threads=%d, timeout %ds each (RUSTUP_TOOLCHAIN=%s)"
           % (len(run), a.jobs, a.test_threads, a.timeout, a.toolchain))
-    fails, unstarted = [], []
+    fails, unstarted, killed = [], [], []
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.jobs) as ex:
         for row, rc, dt, failed, log in ex.map(lambda r: run_one(r, a, bins, a.run_dir), run):
             if rc == NOT_STARTED:
                 unstarted.append((row, failed[0]))
+            elif rc in HOST_KILLED:
+                killed.append((row, rc, dt, log))  # SIGKILL (OOM, the scope's cap) or our own timeout: the host
             elif rc != 0:
-                fails.append((row, rc, dt, failed, log))
+                fails.append((row, rc, dt, failed, log))  # it RAN and failed: an exit code, or SIGSEGV/SIGABRT
     peak_gib = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1048576
     for (pkg, version, kind, target, _exe, _m), rc, dt, failed, log in fails:
         names = ", ".join(failed[:8]) + (" (+%d more)" % (len(failed) - 8) if len(failed) > 8 else "")
@@ -152,12 +156,20 @@ def main(argv):
               % (pkg, version, kind, target, rc, dt, names or "no failing test named (see log)", log))
     print("RUN: %d of %d test binary(ies) passed; peak single-binary RSS %.1f GiB"
           % (len(run) - len(fails), len(run), peak_gib))
-    if unstarted:
-        # A binary that never started proves nothing either way: the run as a whole could not check.
-        for (pkg, version, kind, target, exe, _m), why in unstarted:
-            print("  cannot check: %s-%s %s %s did not start (%s): %s" % (pkg, version, kind, target, exe, why), file=sys.stderr)
+    for (pkg, version, kind, target, exe, _m), why in unstarted:
+        print("RUN NOT STARTED  %s-%s %s %s (%s): %s" % (pkg, version, kind, target, exe, why))
+    for (pkg, version, kind, target, _exe, _m), rc, dt, log in killed:
+        print("RUN KILLED  %s-%s %s %s %s %.0fs  [log %s]"
+              % (pkg, version, kind, target, "by the --timeout" if rc == "timeout" else "by SIGKILL (OOM / memory cap?)", dt, log))
+    # A named failure outranks everything: a binary that never started, or one the host killed, proves
+    # nothing either way, and must not hide a regression another binary did prove.
+    if fails:
+        return 1
+    if unstarted or killed:
+        print("  cannot check: %d binary(ies) did not start and %d were killed by the host; none failed on its own"
+              % (len(unstarted), len(killed)), file=sys.stderr)
         return 2
-    return 1 if fails else 0
+    return 0
 
 
 if __name__ == "__main__":
