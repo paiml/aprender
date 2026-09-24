@@ -51,6 +51,20 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
+/// A scratch copy of a fixture's `contracts/`, for a command that writes beside its input (`pv extract` writes
+/// `contracts.nt` and `shapes.ttl`): the tracked fixture is never written, and a failing assert leaves nothing behind
+/// (quorum PMAT-4160, agy lanes 1 and 2).
+fn scratch_copy(name: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("scratch");
+    let to = dir.path().join("contracts");
+    std::fs::create_dir_all(&to).expect("scratch contracts/");
+    for e in std::fs::read_dir(fixture(name).join("contracts")).expect("fixture contracts/") {
+        let e = e.expect("dir entry");
+        std::fs::copy(e.path(), to.join(e.file_name())).expect("copy fixture file");
+    }
+    dir
+}
+
 fn json_of(r: &Run) -> serde_json::Value {
     serde_json::from_str(&r.stdout).unwrap_or_else(|e| panic!("stdout is JSON: {e}\n{}", show(r)))
 }
@@ -167,16 +181,15 @@ fn a_property_the_shape_does_not_declare_fails_on_closed_naming_it() {
 
 #[test]
 fn the_properties_are_namespaced_by_the_entity_type_and_land_in_the_extraction() {
-    let dir = fixture("entity-props-ok");
-    let r = pv_in(&dir, &["extract", "contracts"]);
+    let scratch = scratch_copy("entity-props-ok");
+    let dir = scratch.path();
+    let r = pv_in(dir, &["extract", "contracts"]);
     assert_eq!(r.code, 0, "{}", show(&r));
     let nt = std::fs::read_to_string(dir.join("contracts/contracts.nt")).expect("contracts.nt");
     assert!(nt.contains("/study/scale> \"linear\""), "{nt}");
     assert!(nt.contains("/study/vintage> \"2026-09-12\""), "{nt}");
     // Never under ont:, which would let a shape over one entity type constrain another's `scale`.
     assert!(!nt.contains("/v1alpha1/scale>"), "{nt}");
-    let _ = std::fs::remove_file(dir.join("contracts/contracts.nt"));
-    let _ = std::fs::remove_file(dir.join("contracts/shapes.ttl"));
 }
 
 // #4160 (apex EV-19b) — a shape can target ONE entity type. `ont:Contract` is every contract, so apex's closed
@@ -244,8 +257,9 @@ fn a_contract_of_the_wrong_type_fails_its_types_shape_and_only_that_one() {
 
 #[test]
 fn the_entity_class_lands_in_the_extraction() {
-    let dir = fixture("entity-types-scoped");
-    let r = pv_in(&dir, &["extract", "contracts"]);
+    let scratch = scratch_copy("entity-types-scoped");
+    let dir = scratch.path();
+    let r = pv_in(dir, &["extract", "contracts"]);
     assert_eq!(r.code, 0, "{}", show(&r));
     let nt = std::fs::read_to_string(dir.join("contracts/contracts.nt")).expect("contracts.nt");
     let ty = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
@@ -265,6 +279,4 @@ fn the_entity_class_lands_in_the_extraction() {
         !nt.contains("/contract/claim-shape-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/entity/"),
         "no entity.type, no entity class: {nt}"
     );
-    let _ = std::fs::remove_file(dir.join("contracts/contracts.nt"));
-    let _ = std::fs::remove_file(dir.join("contracts/shapes.ttl"));
 }
