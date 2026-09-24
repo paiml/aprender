@@ -1112,6 +1112,8 @@ b4-unmapped-borrows|J\/B4 unmapped route|s/^        orc = crux_serve_routes.orac
 admission-mode-off|admitted only for thinking ON|s/^        if admitted_mode is not None:$/        if False:/
 admission-off|NOT admitted for this model is RED|s/^        elif admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        elif False:/
 certification-off|no certification receipt declines|s/^        certified = certification_ok(args.prompts, getattr(args, "certification", None))$/        certified = True/
+serve-mode-dropped|serve green|s/^        mode = r.get("mode") or ("nonstream" if r\["verb"\] == "serve run" else "")$/        mode = ""/
+serve-backend-flag-dropped|serve green|/apr serve's responses report no backend/{n;s/^            e\["backend_verified"\] = False$/            pass/}
 MUT
 fi
 
