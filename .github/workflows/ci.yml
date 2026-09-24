@@ -1396,11 +1396,13 @@ jobs:
       # 0.67.0 reconcile found 48 merged PRs since the previous tag of which only
       # 9 closed anything; that is what this guard exists to stop.
       #
-      # THE BODY ARRIVES THROUGH `env:`, NEVER INTERPOLATED INTO THE SCRIPT.
-      # `${{ }}` is substituted textually BEFORE bash sees the line, so a body
-      # containing a backtick or $(...) would execute on the runner -- and this
-      # body is attacker-controlled by construction. `env:` passes it as data.
-      # scripts/check_workflow_env_defined.sh enforces the same rule.
+      # THE BODY IS NEVER INTERPOLATED INTO THE SCRIPT. `${{ }}` is substituted
+      # textually BEFORE bash sees the line, so a body containing a backtick or
+      # $(...) would execute on the runner -- and this body is attacker-controlled
+      # by construction. Since #3298 it is fetched live by `gh api` straight into
+      # a file (it used to arrive through `env:` from the stale event payload);
+      # either way it is data. scripts/check_workflow_env_defined.sh enforces
+      # the env: side of that rule.
       #
       # pull_request only: on merge_group there is no pull_request payload, and
       # a body is fixed before a PR is ever enqueued.
@@ -1414,12 +1416,19 @@ jobs:
         # so no guard result can be its precondition. (#3282 classifies the other
         # 46, which is a judgment call per step rather than one blanket edit.)
         if: "!cancelled() && github.event_name == 'pull_request'"
+        # #3298: the body is read LIVE from the API, not from the event payload.
+        # `github.event.pull_request.body` is frozen when the event is minted and
+        # `gh run rerun` replays that payload, so fixing the body per the guard's
+        # own FAIL message could never be re-graded by a rerun -- only by a push.
+        # Still data, never interpolated: gh writes it straight to the file.
         env:
-          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           bash scripts/check_pr_closes_issue.sh --self-test
-          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.txt"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            --jq '.body // ""' > "$RUNNER_TEMP/pr-body.txt"
           bash scripts/check_pr_closes_issue.sh --body "$RUNNER_TEMP/pr-body.txt"
       # APR-RELEASE-001 §11.1, WIRED. The section shipped as prose in #3268 and
       # nothing read it: `grep -rl ont-delta scripts/ .github/ Makefile` returned
@@ -1428,9 +1437,9 @@ jobs:
       # and whose only mechanism IS a review comment is this repo's anti-theater
       # class, one level up from the guard it sits beside.
       #
-      # Same body-handling rule as the step above: the body arrives through
-      # `env:` as DATA and is never interpolated into the script. It is
-      # attacker-controlled by construction.
+      # Same body-handling rule as the step above: the body is fetched live by
+      # `gh api` into a file as DATA and is never interpolated into the script.
+      # It is attacker-controlled by construction.
       #
       # The changed-file list is the other input, and it is what makes the guard
       # non-trivial: half the sweep surface ("a known-red list anywhere") is
@@ -1447,13 +1456,16 @@ jobs:
         # so no guard result can be its precondition. (#3282 classifies the other
         # 46, which is a judgment call per step rather than one blanket edit.)
         if: "!cancelled() && github.event_name == 'pull_request'"
+        # #3298: body and file list now come from the same place (the live API)
+        # at the same time. The body used to be the event SNAPSHOT while the file
+        # list was live, so a rerun after a body edit re-graded the OLD body.
         env:
-          PR_BODY: ${{ github.event.pull_request.body }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/ont-body.txt"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            --jq '.body // ""' > "$RUNNER_TEMP/ont-body.txt"
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate \
             --jq '.[].filename' > "$RUNNER_TEMP/ont-files.txt"
           bash scripts/check_pr_ont_delta.sh \
