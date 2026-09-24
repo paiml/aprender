@@ -1,0 +1,17 @@
+- id: PMAT-4280
+  github_issue: 4280
+  item_type: task
+  title: 'Workstream D2b (#4263): apr serve dense CUDA scheduler single-request path through the one engine (realizar::session::Session)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-98
+  created: 2026-09-24 11:00:00+00:00
+  updated: '2026-09-24T12:00:00Z'
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'cuda_batch_scheduler generate_single_request (the m==1 fast path, shared with the iteration scheduler) runs one Session::generate over BorrowedCudaForward, a dense CUDA ArchForward over the scheduler''s borrowed model built on aprender-49''s cuda_reset/cuda_forward/cuda_forward_greedy. Stop tokens are filtered in the callback so none is sent (pre-port semantics). The m>1 batched path (batched_setup_and_prefill/batched_decode_step) is multi-slot and stays as is. Known delta: the per-request prefix cache (establish_prompt_kv/populate_prefix_cache) is not used on the ported path.'
