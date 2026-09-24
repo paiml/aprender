@@ -124,8 +124,7 @@ fn golden_output_gguf_cpu(
     };
     let model = OwnedQuantizedModel::from_mapped(mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-    let tokens = model
-        .generate_with_cache(&prompt_tokens, &gen_config)
+    let tokens = qa_dense_generate(&mut qa_dense_cpu(model), &prompt_tokens, &gen_config, false)
         .map_err(|e| CliError::ValidationFailed(format!("CPU generation failed: {e}")))?;
     let text = gguf.decode(&tokens);
     Ok((tokens, text))
@@ -1182,7 +1181,8 @@ fn throughput_gguf(
     if cuda_available {
         use realizar::gguf::OwnedQuantizedModelCuda;
         match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
-            Ok(mut cuda_model) => {
+            Ok(cuda_model) => {
+                let mut session = qa_dense_cuda(cuda_model);
                 return Ok(measure_generate_throughput(
                     config.warmup,
                     config.iterations,
@@ -1192,14 +1192,13 @@ fn throughput_gguf(
                     budget_us,
                     config.verbose,
                     || {
-                        cuda_model
-                            .generate_gpu_resident(&prompt_tokens, &gen_config)
+                        qa_dense_generate(&mut session, &prompt_tokens, &gen_config, true)
                             .unwrap_or_default()
                     },
                 ));
             }
             Err(e) => {
-                let model = e.into_model();
+                let mut session = qa_dense_cpu(e.into_model());
                 return Ok(measure_generate_throughput(
                     config.warmup,
                     config.iterations,
@@ -1209,14 +1208,14 @@ fn throughput_gguf(
                     budget_us,
                     config.verbose,
                     || {
-                        model
-                            .generate_with_cache(&prompt_tokens, &gen_config)
+                        qa_dense_generate(&mut session, &prompt_tokens, &gen_config, false)
                             .unwrap_or_default()
                     },
                 ));
             }
         }
     }
+    let mut session = qa_dense_cpu(model);
     Ok(measure_generate_throughput(
         config.warmup,
         config.iterations,
@@ -1226,8 +1225,7 @@ fn throughput_gguf(
         budget_us,
         config.verbose,
         || {
-            model
-                .generate_with_cache(&prompt_tokens, &gen_config)
+            qa_dense_generate(&mut session, &prompt_tokens, &gen_config, false)
                 .unwrap_or_default()
         },
     ))

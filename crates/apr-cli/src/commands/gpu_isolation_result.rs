@@ -229,17 +229,17 @@ fn run_gpu_isolation_test(path: &Path) -> Result<GpuIsolationResult> {
 
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-    let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
+    let cuda_model = OwnedQuantizedModelCuda::new(model, 0)
         .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
+    // #4270 V2b: three turns on ONE engine session — the state-leak check is
+    // now a check of the session's reset between turns.
+    let mut session = qa_dense_cuda(cuda_model);
 
-    let output_a = cuda_model
-        .generate_gpu_resident(&tokens_a, &gen_config)
+    let output_a = qa_dense_generate(&mut session, &tokens_a, &gen_config, true)
         .map_err(|e| CliError::ValidationFailed(format!("Gen 1 failed: {e}")))?;
-    let output_b = cuda_model
-        .generate_gpu_resident(&tokens_b, &gen_config)
+    let output_b = qa_dense_generate(&mut session, &tokens_b, &gen_config, true)
         .map_err(|e| CliError::ValidationFailed(format!("Gen 2 failed: {e}")))?;
-    let output_a2 = cuda_model
-        .generate_gpu_resident(&tokens_a, &gen_config)
+    let output_a2 = qa_dense_generate(&mut session, &tokens_a, &gen_config, true)
         .map_err(|e| CliError::ValidationFailed(format!("Gen 3 failed: {e}")))?;
 
     if output_a != output_a2 {
