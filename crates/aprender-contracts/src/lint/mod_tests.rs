@@ -12,7 +12,8 @@ fn lint_passes_on_real_contracts() {
     assert!(report.passed, "lint should pass: {report:?}");
     // 13 gates: validate, audit, score, verify, enforce, enforcement-level, reverse-coverage,
     // duplicate-stems (PV-DUP-001), composition, sigma (ONT-2b), relations (ONT-4), shapes (ONT-4b),
-    // challenge-fresh (PVL-001 EV-7a; skipped here: a tempdir has no Lean theorem base).
+    // challenge-fresh (PVL-001 EV-7a; MEASURED here, not skipped: the repo's Lean base and its committed Challenge/
+    // files are real, so `report.passed` requires them fresh).
     assert_eq!(report.gates.len(), 13);
 }
 
