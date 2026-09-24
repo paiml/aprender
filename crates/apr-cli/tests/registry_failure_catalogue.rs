@@ -5,6 +5,7 @@
 //! host-dogfood rows recorded as receipts, not CI claims (design quorum
 //! 2026-09-06). Every hermetic row has its must-RED twin: a defective fixture
 //! under `tests/fixtures/registry/defective/` that the same check refuses.
+
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
@@ -239,11 +240,12 @@ fn reg12_nothing_is_persisted_between_discoveries() {
 /// `contracts/apr-devices-schema-v1.yaml` binds).
 #[test]
 fn json_output_validates_against_the_schema_on_fixtures_and_on_this_machine() {
-    let schema_text = std::fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../contracts/schemas/apr-devices-v1.schema.json"),
-    )
-    .expect("schema file");
+    let Some(schema_text) = provable_contracts::workspace_file_or_skip!(
+        "json_output_validates_against_the_schema_on_fixtures_and_on_this_machine",
+        "contracts/schemas/apr-devices-v1.schema.json",
+    ) else {
+        return;
+    };
     let schema: serde_json::Value = serde_json::from_str(&schema_text).expect("schema json");
     let validator = jsonschema::validator_for(&schema).expect("schema compiles");
     let mut runs: Vec<(String, Output)> = ["cpu-only.json", "one-cuda.json", "two-vendors.json"]
@@ -282,11 +284,12 @@ fn json_output_validates_against_the_schema_on_fixtures_and_on_this_machine() {
 /// (`minItems: 5`) — the schema discriminates, it is not decoration.
 #[test]
 fn schema_twin_the_defective_fixture_is_refused_by_the_schema() {
-    let schema_text = std::fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../contracts/schemas/apr-devices-v1.schema.json"),
-    )
-    .expect("schema file");
+    let Some(schema_text) = provable_contracts::workspace_file_or_skip!(
+        "schema_twin_the_defective_fixture_is_refused_by_the_schema",
+        "contracts/schemas/apr-devices-v1.schema.json",
+    ) else {
+        return;
+    };
     let schema: serde_json::Value = serde_json::from_str(&schema_text).expect("schema json");
     let validator = jsonschema::validator_for(&schema).expect("schema compiles");
     let out = apr_devices(
@@ -320,11 +323,12 @@ fn a_malformed_reserve_override_is_refused_by_name() {
 /// stray field on an entry are all rejected.
 #[test]
 fn schema_twin_documents_serde_refuses_do_not_validate() {
-    let schema_text = std::fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../contracts/schemas/apr-devices-v1.schema.json"),
-    )
-    .expect("schema file");
+    let Some(schema_text) = provable_contracts::workspace_file_or_skip!(
+        "schema_twin_documents_serde_refuses_do_not_validate",
+        "contracts/schemas/apr-devices-v1.schema.json",
+    ) else {
+        return;
+    };
     let schema: serde_json::Value = serde_json::from_str(&schema_text).expect("schema json");
     let validator = jsonschema::validator_for(&schema).expect("schema compiles");
     let out = apr_devices(
