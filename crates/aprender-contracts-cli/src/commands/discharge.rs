@@ -237,7 +237,13 @@ pub(crate) fn run_all(
         }
     }
     let tree = Tree::load(lean_dir).ok();
-    let s = summary::summarize(&r, tree.as_ref(), lean_dir, tree_sha(lean_dir), build_exit);
+    let s = summary::summarize(
+        &r,
+        tree.as_ref(),
+        lean_dir,
+        summary::current_tree_sha(lean_dir),
+        build_exit,
+    );
     let spath = summary::summary_path(lean_dir);
     // The summary first: the log is built after it, so a summary that cannot be written is in the log's verdict.
     write_or_reject(&mut r, &spath, Ok(s.render()));
@@ -279,18 +285,6 @@ struct RunLog<'a> {
     decline: Option<&'a str>,
     lines: &'a [String],
     summary: &'a summary::Summary,
-}
-
-/// `git rev-parse HEAD:<lean-dir>`, content-addressed: the tree the summary describes. `None` outside a git
-/// checkout, or when the dir is not in HEAD.
-fn tree_sha(lean_dir: &Path) -> Option<String> {
-    let o = Command::new("git")
-        .args(["rev-parse", "HEAD:./"])
-        .current_dir(lean_dir)
-        .output()
-        .ok()?;
-    let sha = String::from_utf8_lossy(&o.stdout).trim().to_string();
-    (o.status.success() && !sha.is_empty()).then_some(sha)
 }
 
 /// `lake env lean Axioms.lean`: the subset and capstone pins, elaborated against the BUILT tree (run `build.sh`
