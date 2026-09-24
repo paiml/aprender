@@ -371,10 +371,12 @@ mod gpu {
         let o1 = one_token
             .generate(&p1, &config, &mut |_| true)
             .expect("turn 1");
+        // #4214: a prompt is prefilled in two spans, split at its generation header so the
+        // checkpoint can be taken there; each span goes through the batched prefill.
         assert_eq!(
             batched.batched_prefills(),
-            1,
-            "turn 1's prompt went through the batched prefill"
+            2,
+            "both spans of turn 1's prompt went through the batched prefill"
         );
         assert_eq!(
             one_token.batched_prefills(),
@@ -398,8 +400,8 @@ mod gpu {
         assert_eq!(b2.reused, b1.tokens.len() - 1, "turn 2 extended the state");
         assert_eq!(
             batched.batched_prefills(),
-            2,
-            "turn 2's new suffix went through the batched prefill, from a nonzero position"
+            4,
+            "both spans of turn 2's new suffix went through the batched prefill, from a nonzero position"
         );
         assert!(b2.used_gpu && o2.used_gpu, "neither fell back to the CPU");
         assert_eq!(b2.tokens, o2.tokens, "turn 2: batched == one-token");
