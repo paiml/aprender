@@ -137,31 +137,42 @@ pub fn refresh(net: &dyn Net, p: &Product, target: &str, path: &Path, now: u64) 
 }
 
 /// Call at the top of `main`. Never blocks, never fails, never errors aloud.
-pub fn startup(p: &'static Product, args: &[String]) {
+pub fn startup(p: &Product, args: &[String]) {
     if policy::check_allowed(&env, std::io::stderr().is_terminal(), args).is_err() {
-        return;
-    }
-    if args.get(1).is_some_and(|a| a == "update") {
         return;
     }
     let Some(path) = cache::path(&env, p.bin) else {
         return;
     };
-    let t = now();
-    let c = cache::load(&path);
-    if let Some(line) = c
-        .as_ref()
-        .and_then(|c| cache::notice(p, c, &this_host_installs()))
-    {
+    if let Some(line) = startup_with(p, args, &path, now(), &this_host_installs(), &spawn_refresh) {
         eprintln!("{line}");
     }
-    if cache::needs_refresh(p, c.as_ref(), t) {
-        // Claim the day before spawning, so concurrent runs start one refresh,
-        // not one each. A refresh that dies leaves the claim: next try in 24 h.
-        if cache::store(&path, &cache::claim(p, c.as_ref(), t)).is_ok() {
-            spawn_refresh();
-        }
+}
+
+/// The startup check after the skip rules. It takes no [`Net`]: it cannot
+/// block on the network by construction. It reads the cache, claims the day
+/// and hands the refresh to `spawn`. Returns the notice to print, if any.
+pub fn startup_with(
+    p: &Product,
+    args: &[String],
+    path: &Path,
+    now: u64,
+    installs: &Installs,
+    spawn: &dyn Fn(),
+) -> Option<String> {
+    if args.get(1).is_some_and(|a| a == "update") {
+        return None;
     }
+    let c = cache::load(path);
+    let line = c.as_ref().and_then(|c| cache::notice(p, c, installs));
+    // Claim the day before spawning, so concurrent runs start one refresh,
+    // not one each. A refresh that dies leaves the claim: next try in 24 h.
+    if cache::needs_refresh(p, c.as_ref(), now)
+        && cache::store(path, &cache::claim(p, c.as_ref(), now)).is_ok()
+    {
+        spawn();
+    }
+    line
 }
 
 /// Run `<exe> update --refresh-cache` as a detached child. A thread would die
@@ -455,6 +466,39 @@ mod tests {
             (c2.checked_at, c2.available, c2.error.is_some()),
             (200, c.available, true)
         );
+    }
+
+    #[test]
+    fn startup_spawns_once_a_day_and_never_refreshes_inline() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let path = d.path().join("pv/update-check.json");
+        let spawned = std::cell::Cell::new(0);
+        let spawn = || spawned.set(spawned.get() + 1);
+        let run = |args: &[&str], now| {
+            let a: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
+            startup_with(&P, &a, &path, now, &Installs::User, &spawn)
+        };
+        assert_eq!(
+            run(&["pv", "validate"], 1000),
+            None,
+            "cold cache: no notice yet"
+        );
+        assert_eq!(
+            spawned.get(),
+            1,
+            "cold cache: the refresh is spawned, not run"
+        );
+        let claim = cache::load(&path).expect("the day is claimed before spawning");
+        assert_eq!((claim.checked_at, claim.available), (1000, None));
+        assert_eq!(run(&["pv", "validate"], 2000), None);
+        assert_eq!(spawned.get(), 1, "within 24 h: no second refresh");
+        refresh(&Fake(with_release("v0.69.1"), false), &P, T, &path, 3000);
+        let n = run(&["pv"], 4000).expect("the cached update is announced");
+        assert!(n.starts_with("pv 0.69.0 -> 0.69.1 available"), "{n}");
+        assert_eq!(run(&["pv", "update"], 1 + 3000 + cache::TTL_SECS), None);
+        assert_eq!(spawned.get(), 1, "`update` itself never spawns a refresh");
+        assert!(run(&["pv"], 3000 + cache::TTL_SECS).is_some());
+        assert_eq!(spawned.get(), 2, "after 24 h: one more refresh");
     }
 
     #[test]
