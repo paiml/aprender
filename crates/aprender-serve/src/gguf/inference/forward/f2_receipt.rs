@@ -219,31 +219,41 @@ pub fn decide(
     }
     // Each key is compared and NAMED on its own. A combined "keys differ" would
     // hide which of the three moved, and the three falsifiers are one per key.
-    if receipt.key.model_sha256 != expected.model_sha256 {
-        return F2Decision::Validate(F2ValidateReason::ModelSha256Mismatch {
-            found: receipt.key.model_sha256,
+    match key_mismatch(&receipt.key, expected) {
+        Some(reason) => F2Decision::Validate(reason),
+        None => F2Decision::Skip { receipt },
+    }
+}
+
+/// The first key of `found` that differs from `expected`, as the reason that
+/// names it; `None` when all four agree. Split out of [`decide`] so each key's
+/// comparison reads on its own line (complexity ratchet, #4290).
+fn key_mismatch(found: &F2ReceiptKey, expected: &F2ReceiptKey) -> Option<F2ValidateReason> {
+    if found.model_sha256 != expected.model_sha256 {
+        return Some(F2ValidateReason::ModelSha256Mismatch {
+            found: found.model_sha256.clone(),
             expected: expected.model_sha256.clone(),
         });
     }
-    if receipt.key.apr_version != expected.apr_version {
-        return F2Decision::Validate(F2ValidateReason::AprVersionMismatch {
-            found: receipt.key.apr_version,
+    if found.apr_version != expected.apr_version {
+        return Some(F2ValidateReason::AprVersionMismatch {
+            found: found.apr_version.clone(),
             expected: expected.apr_version.clone(),
         });
     }
-    if receipt.key.build_id != expected.build_id {
-        return F2Decision::Validate(F2ValidateReason::BuildIdMismatch {
-            found: receipt.key.build_id,
+    if found.build_id != expected.build_id {
+        return Some(F2ValidateReason::BuildIdMismatch {
+            found: found.build_id.clone(),
             expected: expected.build_id.clone(),
         });
     }
-    if receipt.key.device != expected.device {
-        return F2Decision::Validate(F2ValidateReason::DeviceMismatch {
-            found: receipt.key.device,
+    if found.device != expected.device {
+        return Some(F2ValidateReason::DeviceMismatch {
+            found: found.device.clone(),
             expected: expected.device.clone(),
         });
     }
-    F2Decision::Skip { receipt }
+    None
 }
 
 /// Where receipts live. `APR_F2_RECEIPT_DIR` wins (tests and operators pin it),
