@@ -1128,11 +1128,30 @@ mod tests {
     /// A passing `Comparator.lean --self-test`: the three FIPS vector lines, rc 0 (#4238).
     const SELF_TEST_OK: &str = "if [ \"$5\" = --self-test ]; then printf 'ok    sha256 \"\" = e3\\nok    sha256 \"abc\" = ba\\nok    sha256 \"abcdbcde\" = 24\\n'; exit 0; fi";
 
+    /// The root EV-7a's `render` declares for the fixture's one solution. The cross-check (#4240) counts
+    /// these lines, so an empty Challenge file would make every fixture row an UNEXPECTED-ROW.
+    const GELU_CHALLENGE: &str =
+        "theorem _root_.PvlChallenge.ProvableContracts.Gelu.gelu_bound : True := by\n  sorry\n";
+
     /// A `lake` for `--comparator`: `env lean --run …` writes `rows` to stdout, `stderr` to stderr, and exits
     /// `rc`; every other `env lean` passes. The tree gets `Challenge/gelu-v1.lean` and the comparator script.
     fn comparator_lake(dir: &Path, lean: &Path, rc: i32, rows: &str, stderr: &str) -> String {
         std::fs::create_dir_all(lean.join(CHALLENGE_DIR)).expect("mkdir");
-        std::fs::write(lean.join(CHALLENGE_DIR).join("gelu-v1.lean"), "").expect("w");
+        // The Challenge file declares exactly the roots the canned rows name (#4240 cross-checks the two);
+        // output that is not rows declares nothing, so those cases still judge the output alone.
+        let decls: String = comparator::parse_rows(rows)
+            .map(|rs| {
+                rs.iter()
+                    .map(|r| {
+                        format!(
+                            "theorem _root_.PvlChallenge.{} : True := by\n  sorry\n",
+                            r.name
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        std::fs::write(lean.join(CHALLENGE_DIR).join("gelu-v1.lean"), decls).expect("w");
         std::fs::create_dir_all(lean.join("scripts")).expect("mkdir");
         std::fs::write(lean.join(COMPARATOR), "").expect("w");
         std::fs::write(dir.join(format!("rows-{rc}")), rows).expect("w");
@@ -1324,7 +1343,11 @@ mod tests {
     /// `printenv` names a sysroot with a leanchecker, and `env leanchecker` exits `lc_rc`.
     fn run_lake(dir: &Path, lean: &Path, lc_rc: i32) -> String {
         std::fs::create_dir_all(lean.join(CHALLENGE_DIR)).expect("mkdir");
-        std::fs::write(lean.join(CHALLENGE_DIR).join("gelu-v1.lean"), "").expect("w");
+        std::fs::write(
+            lean.join(CHALLENGE_DIR).join("gelu-v1.lean"),
+            GELU_CHALLENGE,
+        )
+        .expect("w");
         std::fs::create_dir_all(lean.join("scripts")).expect("mkdir");
         std::fs::write(lean.join(COMPARATOR), "").expect("w");
         let root = dir.join("run-sysroot");
@@ -1550,7 +1573,11 @@ mod tests {
     fn every_lake_call_is_bounded_and_a_held_pipe_cannot_stall_it() {
         let (d, lean, _) = tree();
         std::fs::create_dir_all(lean.join(CHALLENGE_DIR)).expect("mkdir");
-        std::fs::write(lean.join(CHALLENGE_DIR).join("gelu-v1.lean"), "").expect("w");
+        std::fs::write(
+            lean.join(CHALLENGE_DIR).join("gelu-v1.lean"),
+            GELU_CHALLENGE,
+        )
+        .expect("w");
         std::fs::create_dir_all(lean.join("scripts")).expect("mkdir");
         std::fs::write(lean.join(COMPARATOR), "").expect("w");
         let bounded = |lake: &str, cmp: bool, lc: Option<Leanchecker>| {
