@@ -28,3 +28,4 @@ The artifact is kept in `docs/audits/quorum-GH-4162-r1/`.
   - 18 lanes have no log on disk (probes and older rounds) and are shown as `(unrecorded)` rather than guessed.
 - **F2 counted the restart baseline B twice** (lanes 1 + 2): once in the compaction cost and again in `read_sim` on the next turn. Removed from the compaction cost.
   - Re-measured, 24 h: 200k → 303 compactions, net 69.4%; 300k → 59.6%; 400k → 50.1%; 600k → 32.3%. That's within 0.6 points of the posted figures.
+- The round 1 lane logs are not committed; only the artifact is (sha256 `9613f8f95715e44b2454fdb781da8321f8208e336cc8209d5618379be6d8392c`). Each lane's measured model is recorded in it.
