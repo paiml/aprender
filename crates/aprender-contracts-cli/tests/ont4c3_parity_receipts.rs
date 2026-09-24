@@ -87,9 +87,18 @@ fn a_complete_receipt_passes_with_one_focus_node() {
     assert_eq!(r.code, 0, "{}", r.all());
     assert_eq!(violations(&r), 0, "{}", r.all());
     assert_eq!(focus_nodes(&r), 1, "{}", r.all());
-    // The shapes are ARMED in the fixture (no lint-baseline.json narrows them), so a violation here would be
-    // a real Fail rather than a reported one — which is what makes the two FAIL cases below meaningful.
+    // The two shapes this receipt reaches are ARMED (the fixture's lint-baseline.json), so a violation here
+    // would be a real Fail rather than a reported one — which is what makes the two FAIL cases below
+    // meaningful. `parity-comparator-oracle` is left UNARMED on purpose: a self-comparator receipt gives it
+    // zero focus nodes, and an ARMED shape that grades nothing declines (#3610) rather than passing.
     assert!(r.stdout.contains("parity-receipt-complete"), "{}", r.all());
+    let v: serde_json::Value = serde_json::from_str(&r.stdout).expect("json report");
+    assert_eq!(
+        v["extra"]["declines"],
+        serde_json::json!(["parity-comparator-oracle"]),
+        "the unarmed vacuity is still NAMED\n{}",
+        r.all()
+    );
 }
 
 #[test]
