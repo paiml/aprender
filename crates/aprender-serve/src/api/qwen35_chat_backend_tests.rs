@@ -3,7 +3,7 @@
 //! dense endpoint decodes through the zero-layer base any more.
 
 use super::*;
-use crate::api::{create_router, Qwen35Served};
+use crate::api::{create_router, Qwen35Served, Qwen35Slots};
 use crate::gguf::qwen35_session::Qwen35Session;
 use crate::gguf::{MappedGGUFModel, QuantizedGenerateConfig};
 use axum::body::Body;
@@ -256,7 +256,7 @@ async fn a_prompt_past_the_declared_context_is_a_400_naming_both_numbers() {
     state.qwen35_session = Some(Arc::new(Qwen35Served {
         context_length: CONTEXT,
         on_gpu: std::sync::atomic::AtomicBool::new(false),
-        session: std::sync::Mutex::new(Qwen35Session::load(&mapped, true).expect("load")),
+        session: Qwen35Slots::new(Qwen35Session::load(&mapped, true).expect("load"), 1),
     }));
     let (status, body) = post(
         create_router(state),
@@ -299,7 +299,7 @@ async fn a_reply_the_context_cuts_short_decodes_the_budget_and_reports_length() 
     state.qwen35_session = Some(Arc::new(Qwen35Served {
         context_length: prompt_tokens + 2,
         on_gpu: std::sync::atomic::AtomicBool::new(false),
-        session: std::sync::Mutex::new(Qwen35Session::load(&mapped, true).expect("load")),
+        session: Qwen35Slots::new(Qwen35Session::load(&mapped, true).expect("load"), 1),
     }));
     let mut body = chat_body(false, 50);
     body["ignore_eos"] = serde_json::json!(true);
