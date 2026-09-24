@@ -22,9 +22,6 @@
 //! `decode_tok_per_sec` = 1000 / `itl_p50_ms`, the inter-token rate, which
 //! excludes time-to-first-token by construction and so cannot absorb a model
 //! load. Reading a field beats deriving a number.
-// #4041: a `--no-default-features` build has no tokio, so `dispatch` cannot run a benchmark and the benchmark
-// code is unreachable there. Dead in that build only; every build with `inference` still lints it.
-#![cfg_attr(not(feature = "inference"), allow(dead_code))]
 use crate::error::{CliError, Result};
 use apr_test::llm::{
     benchmark::{Benchmark, BenchmarkConfig, BenchmarkReport},
