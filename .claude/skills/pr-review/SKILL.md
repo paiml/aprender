@@ -1192,7 +1192,7 @@ the real merged commits, not from the spec's reasoning about them.
 ## §13 Autonomous merge on quorum (DESIGNED AND BUILT, **NOT ARMED**)
 
 Spec §13. Operator instruction, 2026-08-31: PRs auto-merge once the review quorum passes.
-The mechanism exists — `scripts/pr_review_quorum_arm.sh`, a table of 89 rows, a 134-mutant
+The mechanism exists — `scripts/pr_review_quorum_arm.sh`, a table of 90 rows, a 134-mutant
 set at 100% — and **it is reachable from no workflow that can merge anything.** §13.11 is
 the arming ladder; rung 0 is where this file is written.
 
@@ -1345,7 +1345,7 @@ That is the first falsifiable property of the section, and `q-44` plus the
 ### §13.9 Verifying the mechanism
 
 ```bash
-bats tests/pr-review-quorum.bats            # 89 rows: one per refusal path, four that PERMIT
+bats tests/pr-review-quorum.bats            # 90 rows: one per refusal path, four that PERMIT
 bash scripts/mutate_quorum_arm.sh           # 134/134 — §13.10 fixes this at one, no ratchet
 bash scripts/mutate_quorum_arm.sh --list    # the catalogue, no mutants run
 ```

@@ -161,7 +161,7 @@ impl InstructPipeline {
         let num_layers = _model_config.num_hidden_layers;
         let num_heads = _model_config.num_attention_heads as u32;
         let num_kv_heads = _model_config.num_kv_heads as u32;
-        let head_dim = (hidden / num_heads);
+        let head_dim = hidden / num_heads;
         let inter = _model_config.intermediate_size as u32;
 
         // Create WgslForwardPass with persistent weight buffers + tiled GEMM
@@ -174,6 +174,8 @@ impl InstructPipeline {
             head_dim as usize,
             inter as usize,
         );
+        // #4056: the WGSL RMSNorm takes the model's eps (it hardcoded 1e-6).
+        fwd.set_rms_norm_eps(_model_config.rms_norm_eps);
 
         // KAIZEN: Only upload norm weights (tiny: 14 KB each, 28 layers = ~800 KB total).
         let mut uploaded = 0usize;

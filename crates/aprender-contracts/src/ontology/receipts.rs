@@ -55,6 +55,9 @@ pub struct Row {
     pub capability_passed: bool,
     /// backend → (ran, fallback)
     pub backends: BTreeMap<String, (bool, bool)>,
+    /// ONT-4c5: the row's fleet verdict labels (`verdict`, `label`), verbatim, in that key order. A label is
+    /// read, never judged here: `capability_cells` maps it through `Verdict::from_label`.
+    pub labels: Vec<String>,
 }
 
 /// One model the host HOLDS (v2 `inventory[]`): the universe the release must prove, measured on the host.
@@ -89,6 +92,18 @@ pub struct InventoryItem {
 /// One (model × verb × thinking × context rung) row of v2 `cells[]` (#3712 / #3715).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CellRow {
+    /// aprender#3745 S2: the DERIVED cell this row measures (`pv extract --cells-out` names them). A row keys onto
+    /// its cell by this id and nothing else.
+    pub cell_id: Option<String>,
+    /// S2.5: a digest of the observable output (stdout bytes, the JSON fields, the token ids) — what the
+    /// flag-effect oracle compares between an effect cell and its base.
+    pub output_sha256: Option<String>,
+    /// Wall time of the cell, for the per-host projection (D1).
+    pub wall_ms: Option<u64>,
+    /// #3748: where the CPU-reference forward (F2) came from — `fresh`, or `receipt` of the binary named in
+    /// `f2_receipt_binary_sha` (full 40-hex). A receipt from ANOTHER binary validated nothing for this one.
+    pub f2_source: Option<String>,
+    pub f2_receipt_binary_sha: Option<String>,
     pub sha256: Option<String>,
     pub file: String,
     pub verb: String,
@@ -285,6 +300,10 @@ fn parse_row(r: &serde_json::Value) -> Row {
         green: bool_of(r, "green"),
         capability_passed: gate_passed(r.get("capability_match")),
         backends,
+        labels: ["verdict", "label"]
+            .iter()
+            .filter_map(|k| str_of(r, k))
+            .collect(),
     }
 }
 
@@ -312,6 +331,11 @@ fn parse_inventory_item(r: &serde_json::Value) -> InventoryItem {
 
 fn parse_cell(r: &serde_json::Value) -> CellRow {
     CellRow {
+        cell_id: str_of(r, "cell_id"),
+        output_sha256: str_of(r, "output_sha256").map(|x| x.to_ascii_lowercase()),
+        wall_ms: r.get("wall_ms").and_then(serde_json::Value::as_u64),
+        f2_source: str_of(r, "f2_source"),
+        f2_receipt_binary_sha: str_of(r, "f2_receipt_binary_sha").map(|x| x.to_ascii_lowercase()),
         sha256: str_of(r, "sha256").map(|x| x.to_ascii_lowercase()),
         file: str_of(r, "file").unwrap_or_default(),
         verb: str_of(r, "verb").unwrap_or_default(),
@@ -349,7 +373,7 @@ pub fn resolve(g: &mut Graph, rungs: &[Rung], receipts: &[Receipt]) -> ResolveSt
         receipts: receipts.len(),
         ..ResolveStats::default()
     };
-    let all_hosts: BTreeSet<String> = receipts.iter().map(|r| r.host.clone()).collect();
+    let all_hosts = receipt_hosts(receipts);
     for rung in rungs {
         let s = iri("model", &rung.sha256);
         let green_hosts = witness_rows(g, &s, rung, receipts, &mut stats);
@@ -357,11 +381,7 @@ pub fn resolve(g: &mut Graph, rungs: &[Rung], receipts: &[Receipt]) -> ResolveSt
             stats.green_on += 1;
             g.insert(s.clone(), model("greenOn"), Term::string(h));
         }
-        let expected: BTreeSet<String> = if rung.hosts.is_empty() {
-            all_hosts.clone()
-        } else {
-            rung.hosts.iter().cloned().collect()
-        };
+        let expected = expected_hosts(rung, &all_hosts);
         for h in expected.difference(&green_hosts) {
             stats.missing_green_hosts += 1;
             g.insert(s.clone(), model("missingGreenHost"), Term::string(h));
@@ -402,12 +422,36 @@ fn witness_rows(
             stats.witnesses += 1;
             let node = emit_receipt_node(g, rec, row, rung);
             g.insert(s.to_string(), model("parityReceipt"), Term::iri(node));
-            if row.green && row.capability_passed && backends_ok(rung, row) {
+            if row_is_green(rung, row) {
                 green_hosts.insert(rec.host.clone());
             }
         }
     }
     green_hosts
+}
+
+/// Every host with a tracked receipt: the host axis of a rung that lists no `hosts:` (ONT-4c1).
+#[must_use]
+pub fn receipt_hosts(receipts: &[Receipt]) -> BTreeSet<String> {
+    receipts.iter().map(|r| r.host.clone()).collect()
+}
+
+/// The hosts a rung must be green on: `hosts:` when it lists them, else every host with a tracked receipt.
+/// ONE definition — ladder-green's `missingGreenHost` and ONT-4c5's capability-cell domain both read it.
+#[must_use]
+pub fn expected_hosts(rung: &Rung, all_hosts: &BTreeSet<String>) -> BTreeSet<String> {
+    if rung.hosts.is_empty() {
+        all_hosts.clone()
+    } else {
+        rung.hosts.iter().cloned().collect()
+    }
+}
+
+/// ladder-green's per-row predicate: green ∧ capability passed (not skipped) ∧ every claimed backend ran
+/// without fallback. ONE definition — ONT-4c5's Pass cell is this predicate on its V* row.
+#[must_use]
+pub fn row_is_green(rung: &Rung, row: &Row) -> bool {
+    row.green && row.capability_passed && backends_ok(rung, row)
 }
 
 /// Every backend the rung claims ran on this row without falling back.

@@ -78,6 +78,7 @@ pub fn gemm_forward_f16(
 /// Note: trueno gemm_f16 uses CUBLAS_COMPUTE_32F (fp32 accumulation), which
 /// is safe for transposed backward GEMMs (unlike TF32 per ALB-076).
 #[cfg(feature = "cuda")]
+#[allow(dead_code)] // PMAT-458 fp16 backward GEMM; the backward pass still runs fp32
 pub(crate) fn cublas_gemm_backward_a_f16(
     cublas: &CublasHandle,
     grad_output: &GpuBuffer<u16>,
@@ -110,6 +111,7 @@ pub(crate) fn cublas_gemm_backward_a_f16(
 ///
 /// Contract: fp16-cublas-gemm-v1.yaml C-FP16GEMM-002 (PMAT-458)
 #[cfg(feature = "cuda")]
+#[allow(dead_code)] // PMAT-458 fp16 backward GEMM; the backward pass still runs fp32
 pub(crate) fn cublas_gemm_backward_b_f16(
     cublas: &CublasHandle,
     a: &GpuBuffer<u16>,

@@ -39,7 +39,7 @@ use trueno_gpu::driver::{CudaStream, GpuBuffer};
 use crate::autograd::cuda_backward::{gemm_backward_a, gemm_backward_b, rms_norm_backward};
 #[cfg(feature = "cuda")]
 use crate::autograd::cuda_forward::{
-    gemm_forward, pre_warm_forward_kernels, rms_norm_forward, rms_norm_forward_with_eps,
+    gemm_forward, pre_warm_forward_kernels, rms_norm_forward_with_eps,
 };
 #[cfg(feature = "cuda")]
 use crate::autograd::cuda_optim::{
@@ -135,6 +135,7 @@ fn compute_workspace_clip_scale_gpu(
 ///
 /// R-004: Returns pre-clip gradient L2 norm for observability logging.
 #[cfg(feature = "cuda")]
+#[allow(dead_code)] // C-CLIP-001 / entrenar#312: per-block clipping is disabled; kept for re-enable
 fn clip_workspace_gradients(ws: &mut CudaGradWorkspace, max_norm: f32, stream: &CudaStream) -> f32 {
     let (scale, grad_norm) = compute_workspace_clip_scale_gpu(ws, max_norm, stream);
     if (scale - 1.0).abs() < 1e-7 {
@@ -174,6 +175,7 @@ fn clip_workspace_gradients(ws: &mut CudaGradWorkspace, max_norm: f32, stream: &
 ///
 /// Zero sync points, zero D2H transfers per block.
 #[cfg(feature = "cuda")]
+#[allow(dead_code)] // C-CLIP-001 / entrenar#312: per-block clipping is disabled; kept for re-enable
 fn fused_clip_workspace_gradients(
     ws: &mut CudaGradWorkspace,
     max_norm: f32,
@@ -407,6 +409,8 @@ pub struct CudaTransformerTrainer {
     d2h_staging: Vec<f32>,
     /// ALB-078: Pre-allocated state for fused gradient clipping pipeline.
     /// Eliminates 24 stream.synchronize() calls per step.
+    #[allow(dead_code)]
+    // C-CLIP-001 / entrenar#312: per-block clipping is disabled; kept for re-enable
     fused_clip: Option<FusedClipState>,
     /// Pre-allocated host zero buffer for zeroing final norm grad [hidden_size].
     /// BatchedRmsNormBackwardKernel accumulates grad_gamma via atomicAdd,

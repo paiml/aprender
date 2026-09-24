@@ -75,6 +75,16 @@ LOCK_BUSY=75   # flock -E: the lock was not free in LOCK_WAIT seconds (an apr ex
 command -v flock > /dev/null && command -v choom > /dev/null \
   || { echo "decline: flock and choom (util-linux) are required -- every apr call runs under the fleet GPU lock" >&2; exit 2; }
 apr_locked() { flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$APR" "$@"; }
+# THE LOCK IS NOT EXCLUSIVITY (#3964). The lock serializes only the processes that take it, and
+# Ollama's daemon never does: on lambda it loaded 1328 MiB onto the card in the MIDDLE of a
+# locked device A/B. So a GPU run leg goes through gpu_exclusive_run: the same lock, plus a
+# whole-run sample of the card by full path. A foreign process refuses the leg (exit 75,
+# CONTENDED -> an ENV decline, never a model verdict). Only the GPU leg: the helper refuses a
+# command it never saw on the card (UNVERIFIED), which is every CPU leg by construction.
+apr_exclusive() {
+  GPU_OWNED_PREFIX="$(readlink -f "$APR")" GPU_LOCK="$GPU_LOCK" GPU_WAIT_SECS="$LOCK_WAIT" \
+    choom -n 1000 -- bash scripts/lib/gpu_exclusive_run.sh "$APR" "$@"
+}
 lock_timeout() { # lock_timeout <what> -> exit 2, naming the holder from /proc/locks (by inode; lslocks
   local ino pid holder   # leaves PATH empty for a file it cannot resolve, so it cannot be matched by path)
   ino=$(stat -c %i "$GPU_LOCK" 2> /dev/null)
@@ -219,8 +229,19 @@ PY
   IFS=',' read -r -a bes <<< "$rbackends"
   for b in "${bes[@]}"; do
     case "$b" in cpu) flag="--no-gpu" ;; cuda|gpu) flag="--gpu" ;; *) flag="" ;; esac
-    run_out=$(apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 $flag 2>&1); run_rc=$?
-    [ "$run_rc" = "$LOCK_BUSY" ] && lock_timeout "apr run $rid ($b)"
+    if [ "$flag" = --gpu ] && [ -n "$GPU_NAME" ]; then
+      run_out=$(apr_exclusive run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 $flag 2>&1); run_rc=$?
+      # CONTENDED: a foreign process shared the card, or the card/lock never cleared. UNVERIFIED
+      # (apr never appeared on the card) is NOT declined: a GPU leg that ran on the CPU is the
+      # fallback defect this ladder exists to catch, and rc=75 already records it as ran=false.
+      if grep -q 'gpu_exclusive_run: CONTENDED' <<< "$run_out"; then
+        echo "decline: ENV the GPU was not exclusive for apr run $rid ($b) -- $(grep -A3 'gpu_exclusive_run: CONTENDED' <<< "$run_out" | tr '\n' ' ' | cut -c1-300). Not a model verdict." >&2
+        exit 2
+      fi
+    else
+      run_out=$(apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 $flag 2>&1); run_rc=$?
+      [ "$run_rc" = "$LOCK_BUSY" ] && lock_timeout "apr run $rid ($b)"
+    fi
     fb=false; ran=true
     if grep -qE 'falling back to CPU|path rejected, attempting fallback|runs on the CPU; the GPU backend' <<< "$run_out"; then fb=true; fi
     if [ "$b" != cpu ] && [ -z "$GPU_NAME" ]; then ran=false; fi

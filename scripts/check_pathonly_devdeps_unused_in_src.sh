@@ -60,6 +60,13 @@
 #
 # Runs bare, no arguments, from anywhere in the repo. `--selftest` runs the case
 # table only. A bare run does BOTH: the case table first, then the tree.
+#
+# `--rc-gate ROOT` (#4287) judges ANOTHER tree -- a release candidate's checkout --
+# against THIS file's baseline, which is the default branch's triage. The rc tree's
+# own baseline is not trusted: v0.68.0's listed `aprender-core|entrenar`, so the
+# guard was green on the exact commit #3425 could not publish. Only NEW pairs refuse
+# (a stale row describes this tree, not the rc's), and a missing tool is ENV rc 2,
+# never fleet state: a release gate that cannot measure has not passed.
 #   PATHONLY_GUARD_PYTHON=<interpreter>   test seam: a missing one is fleet state, a dead one is ENV
 #   PATHONLY_GUARD_FORCE_NO_TOML=1        test seam: both readers fail to import, for real (the intel shape)
 set -euo pipefail
@@ -294,13 +301,49 @@ selftest() {
   return "$rc"
 }
 
+# rc_gate ROOT (#4287): NEW pairs in ROOT against this file's baseline; no stale check.
+rc_gate() {
+  local root=$1 out pairs new scan_rc=0
+  if [ -z "$root" ] || [ ! -f "$root/Cargo.toml" ]; then
+    printf 'ENV: --rc-gate needs the root of a checked-out tree (got %s)\n' "${root:-nothing}"
+    return 2
+  fi
+  out="$(scan "$root")" || scan_rc=$?
+  if [ "$scan_rc" -ne 0 ]; then
+    printf 'ENV: the rc tree was not scanned (rc=%s); a release gate that cannot measure has not passed\n' "$scan_rc"
+    return 2
+  fi
+  pairs="$(printf '%s\n' "$out" | awk -F'|' 'NF>=2 {print $1"|"$2}' | sort -u)"
+  new="$(comm -23 <(printf '%s\n' "$pairs" | grep -v '^$' || true) \
+                  <(grep -vE '^\s*(#|$)' "$BASELINE" | sort -u))"
+  if [ -z "$new" ]; then
+    printf 'OK: the rc tree uses no publish-stripped dev-dep from src/ beyond the %s triaged pair(s) on the default branch\n' \
+      "$(grep -cvE '^\s*(#|$)' "$BASELINE")"
+    return 0
+  fi
+  printf 'FAIL: the rc tree cannot publish -- src/ uses a dev-dep the publish step deletes, so the\n'
+  printf 'published crate cannot compile its own lib tests (the #3425 defect: v0.68.0 never reached crates.io):\n'
+  printf '%s\n' "$new" | while IFS='|' read -r manifest alias; do
+    printf '  %s declares %s path-only, and src/ uses it:\n' "$manifest" "$alias"
+    printf '%s\n' "$out" | awk -F'|' -v m="$manifest" -v a="$alias" \
+      '$1==m && $2==a {print "      " $3}' | head -5
+  done
+  return 1
+}
+
 main() {
   local st_rc=0
   selftest || st_rc=$?
+  # a release gate never takes the fleet-state exit: a runner without the tool has not measured
+  if [ "$st_rc" -eq 3 ] && [ "${1:-}" = "--rc-gate" ]; then
+    echo 'ENV: --rc-gate cannot measure on this runner (no TOML reader); not a pass'
+    return 2
+  fi
   # fleet state (#3692): the UNMEASURED line is already printed; exit 0, and no tree verdict
   [ "$st_rc" -eq 3 ] && return 0
   [ "${1:-}" = "--selftest" ] && return "$st_rc"
   [ "$st_rc" -eq 0 ] || return "$st_rc"
+  if [ "${1:-}" = "--rc-gate" ]; then rc_gate "${2:-}"; return; fi
 
   local out pairs rc=0 new stale scan_rc=0
   out="$(scan "$REPO")" || scan_rc=$?
