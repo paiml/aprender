@@ -283,6 +283,69 @@ mod gpu {
         assert_eq!(turn.tokens, want);
     }
 
+    /// 0.69.3: `apr serve` prefills through the batched prefill, not one token at a
+    /// time. Engagement is read off the session's counter (a speed would only look
+    /// like it), and the tokens must be exactly the one-token path's — on a first
+    /// turn (position 0) and on an extending turn (a nonzero start, which reads the
+    /// first call's KV rows and recurrent state).
+    #[test]
+    fn gpu_serve_prefill_is_batched_and_token_identical_to_the_one_token_path() {
+        let mapped = mapped_or_skip!();
+        let Some(mut batched) = gpu_session_or_skip(&mapped) else {
+            return;
+        };
+        let Some(mut one_token) = gpu_session_or_skip(&mapped) else {
+            return;
+        };
+        one_token.per_token_prefill = true;
+        let config = greedy(8);
+
+        let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
+        let b1 = batched
+            .generate(&p1, &config, &mut |_| true)
+            .expect("turn 1");
+        let o1 = one_token
+            .generate(&p1, &config, &mut |_| true)
+            .expect("turn 1");
+        assert_eq!(
+            batched.batched_prefills(),
+            1,
+            "turn 1's prompt went through the batched prefill"
+        );
+        assert_eq!(
+            one_token.batched_prefills(),
+            0,
+            "the control prefilled per token"
+        );
+        assert!(b1.used_gpu && o1.used_gpu, "neither fell back to the CPU");
+        assert_eq!(b1.tokens, o1.tokens, "turn 1: batched == one-token");
+
+        let mut p2 = b1.tokens.clone();
+        p2.extend(encode(
+            &mapped,
+            &format!("<|im_end|>\n{}", user_turn("And of Chile?")),
+        ));
+        let b2 = batched
+            .generate(&p2, &config, &mut |_| true)
+            .expect("turn 2");
+        let o2 = one_token
+            .generate(&p2, &config, &mut |_| true)
+            .expect("turn 2");
+        assert_eq!(b2.reused, b1.tokens.len() - 1, "turn 2 extended the state");
+        assert_eq!(
+            batched.batched_prefills(),
+            2,
+            "turn 2's new suffix went through the batched prefill, from a nonzero position"
+        );
+        assert!(b2.used_gpu && o2.used_gpu, "neither fell back to the CPU");
+        assert_eq!(b2.tokens, o2.tokens, "turn 2: batched == one-token");
+        assert_eq!(
+            b2.tokens,
+            one_shot_gpu(&mapped, &p2, &config),
+            "and both are what `apr run` decodes"
+        );
+    }
+
     #[test]
     fn gpu_a_turn_that_does_not_extend_resets_in_place_and_matches_one_shot() {
         let mapped = mapped_or_skip!();

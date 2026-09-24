@@ -32,6 +32,12 @@ use crate::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig}
 /// context (262 144 positions for every Qwen3.5 size).
 const MIN_CAPACITY: usize = 4096;
 
+/// Set to `per-token` to make a session prefill one token at a time, the path
+/// 0.69.1 served, instead of the batched prefill (0.69.3). It exists so the two
+/// can be compared token for token on ONE binary; the session says loudly that
+/// it is set.
+pub const QWEN35_SESSION_PREFILL_ENV: &str = "APR_QWEN35_SESSION_PREFILL";
+
 /// What one [`Qwen35Session::generate`] call did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Qwen35Turn {
@@ -148,6 +154,11 @@ pub struct Qwen35Session {
     context_length: usize,
     /// Every line the session has told the user about its route, in order.
     notices: Vec<String>,
+    /// [`QWEN35_SESSION_PREFILL_ENV`] asked for the one-token prefill.
+    per_token_prefill: bool,
+    /// Prompts the GPU prefilled in one batched call — the evidence that `apr
+    /// serve` took the batched path, not a speed that merely looks like it.
+    batched_prefills: usize,
 }
 
 impl Qwen35Session {
@@ -170,6 +181,14 @@ impl Qwen35Session {
         ));
 
         let mut notices = Vec::new();
+        let per_token_prefill =
+            std::env::var(QWEN35_SESSION_PREFILL_ENV).as_deref() == Ok("per-token");
+        if per_token_prefill {
+            say(
+                &mut notices,
+                format!("[qwen35] {QWEN35_SESSION_PREFILL_ENV}=per-token: prompts prefill one token at a time, not batched"),
+            );
+        }
         let route = qwen35_route(no_gpu, cfg!(feature = "cuda"));
         if let Some(notice) = qwen35_route_notice(route) {
             say(&mut notices, notice.to_string());
@@ -193,6 +212,8 @@ impl Qwen35Session {
             turn_positions: 0,
             context_length,
             notices,
+            per_token_prefill,
+            batched_prefills: 0,
         })
     }
 
@@ -226,6 +247,13 @@ impl Qwen35Session {
     #[must_use]
     pub fn notices(&self) -> &[String] {
         &self.notices
+    }
+
+    /// How many prompts (or new prompt suffixes) the GPU prefilled in one batched
+    /// call rather than token by token.
+    #[must_use]
+    pub const fn batched_prefills(&self) -> usize {
+        self.batched_prefills
     }
 
     /// Positions the decode state currently holds.
@@ -340,12 +368,76 @@ impl Qwen35Session {
             self.reset_state()?;
             0
         };
+        // A prompt, or a turn's new suffix, goes through the batched prefill (#3596)
+        // — the path `apr run` takes. Decode steps (one new token) stay one-token.
+        #[cfg(feature = "cuda")]
+        if tokens.len().saturating_sub(start) > 1 {
+            if let Some(logits) = self.try_batched_prefill(&tokens[start..], start)? {
+                self.processed.extend_from_slice(&tokens[start..]);
+                return Ok((logits, start));
+            }
+        }
         let mut logits = Vec::new();
         for (pos, &token) in tokens.iter().enumerate().skip(start) {
             logits = self.forward(token, pos)?;
             self.processed.push(token);
         }
         Ok((logits, start))
+    }
+
+    /// Prefill `new` at positions `pos0..` in one batched call on the GPU and return
+    /// the last position's logits; `None` when the session is not on the GPU, was
+    /// told to prefill per token, or the prefill's workspace does not fit (said
+    /// loudly — the caller then prefills one token at a time, on the GPU still).
+    ///
+    /// A failed prefill is a GPU failure: the session moves to the CPU, which is
+    /// also what `prefill`'s "on Err the state must be discarded" requires.
+    #[cfg(feature = "cuda")]
+    fn try_batched_prefill(
+        &mut self,
+        new: &[u32],
+        pos0: usize,
+    ) -> std::result::Result<Option<Vec<f32>>, Step> {
+        let qwen = self.qwen;
+        let Backend::Gpu(gpu) = &mut self.backend else {
+            return Ok(None);
+        };
+        if self.per_token_prefill {
+            return Ok(None);
+        }
+        let end = pos0 + new.len();
+        if let Err(why) = fit_prefill_plan(qwen, &mut gpu.model, end) {
+            eprintln!(
+                "[qwen35] batched prefill: {} tokens at position {pos0} would not fit ({why}); \
+                 prefilling one token at a time on the GPU",
+                new.len()
+            );
+            return Ok(None);
+        }
+        let state = gpu
+            .state
+            .as_mut()
+            .ok_or_else(|| Step::Gpu("the device state was never allocated".to_string()))?;
+        // `prefill` ends in the logits download, so this clock stops on finished work.
+        let t0 = std::time::Instant::now();
+        let logits = gpu.model.prefill(new, state, pos0).map_err(|e| {
+            Step::Gpu(format!(
+                "the GPU batched prefill of {} tokens at position {pos0} failed: {e}",
+                new.len()
+            ))
+        })?;
+        let ms = t0.elapsed().as_secs_f64() * 1000.0;
+        // The line `apr run` prints, plus the start position: a serve log must show
+        // WHICH prefill it took, or a per-token regression reads as a slow GPU.
+        eprintln!(
+            "[qwen35] batched prefill: {} tokens in {ms:.0} ms ({:.0} tok/s, chunk {} rows, attention {}, from position {pos0})",
+            new.len(),
+            new.len() as f64 * 1000.0 / ms.max(1e-9),
+            gpu.model.prefill_chunk_rows(end),
+            gpu.model.prefill_attention_mode().as_str(),
+        );
+        self.batched_prefills += 1;
+        Ok(Some(logits))
     }
 
     /// The F2 guard, once per session, on the first prompt the GPU sees — the
@@ -502,6 +594,51 @@ impl Qwen35Session {
             }),
         }
     }
+}
+
+/// Choose the prefill attention and chunk rows for a prefill ending at `end`, the
+/// way `apr run` plans them (cuBLAS f32 attention while it fits, flash when only
+/// flash fits; bigger chunks on a unified-memory host), against the device memory
+/// free NOW — the resident weights and the session's decode state are already
+/// allocated, so only the prefill's own workspace and the overhead are asked for.
+#[cfg(feature = "cuda")]
+fn fit_prefill_plan(
+    qwen: &Qwen35Model<'_>,
+    model: &mut crate::gguf::cuda::Qwen35CudaModel<'static>,
+    end: usize,
+) -> std::result::Result<(), String> {
+    let memory = crate::capacity::measure_device_memory(model.executor_mut())?;
+    let (free, _) = memory.plan_free_total();
+    let rows_to_try: &[usize] = match memory {
+        crate::capacity::DeviceMemory::Unified { .. } => &[
+            crate::gguf::cuda::UNIFIED_PREFILL_CHUNK_ROWS,
+            crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS,
+        ],
+        crate::capacity::DeviceMemory::Discrete { .. } => {
+            &[crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS]
+        },
+    };
+    let attentions = crate::gguf::cuda::Qwen35CudaModel::prefill_attention_candidates_for(
+        qwen,
+        model.executor_mut(),
+    );
+    let mut refused = Vec::new();
+    for &attention in &attentions {
+        for &rows in rows_to_try {
+            model.set_prefill_attention(attention);
+            model.set_prefill_chunk_rows(rows);
+            let need = model.prefill_workspace_bytes(end) as u64 + crate::capacity::OVERHEAD_BYTES;
+            if need <= free {
+                return Ok(());
+            }
+            refused.push(format!(
+                "{} at {rows} rows needs {} MiB",
+                attention.as_str(),
+                need >> 20
+            ));
+        }
+    }
+    Err(format!("{}; {} MiB free", refused.join(", "), free >> 20))
 }
 
 /// Print `line` to stderr and keep it in the session's notices.
