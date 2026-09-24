@@ -1155,12 +1155,14 @@ release tree; a declined probe is not done.
 ### §14.3 Shift-left (M8): no publish-blocking gate is first evaluated at publish
 From the freeze, every gate that can block a publish runs on the release branch's candidate sha, on every push to it
 and at least hourly. REAL gates protect users and andon on red: ladder/CRUX, the tag-is-what-was-judged rule, clean-room,
-dogfood, `contracts` (it runs `pv lint` falsification; its census half still gets a proposed auto-fix), and G-ONT.
-BOOKKEEPING gates auto-fix or report, and never block the publish: complexity, census/README counts, bashrs on
+dogfood, `contracts` / `pv-lint` / `pv-contracts` (they run `pv` falsification; the census half still gets a proposed
+auto-fix), coverage (the operator's 88% ruling), and G-ONT.
+BOOKKEEPING gates auto-fix or report, and are DESIGNED never to block the publish (what is wired today: §14.4b, #4118): complexity, census/README counts, bashrs on
 release scripts, CB-200, claim literals. The classes are `scripts/release/gate_classes.yaml`, over a gate set DERIVED
 from the publish path. The publish RE-READS the watch's verdict, which must be for the release commit, fresh by its
 own timestamp (the newest by that timestamp, never by file mtime), and carry no real red (`autopilot.sh watch_gate`).
-The verdict binds when it IS the release commit, or when its tree equals the release commit's outside `evidence/` and
+The watched sha is fetched first, and if it cannot be, the publish refuses. The verdict binds when it IS the release
+commit, or when its tree equals the release commit's outside `evidence/` and
 `docs/`: the bump PR is squash-merged, so the release commit is never the sha the watch measured. The measure per release is **0 gates first-seen-red at publish** (ledger, M7).
 
 ### §14.4 Phase 2 — retired by design, NOT yet in code

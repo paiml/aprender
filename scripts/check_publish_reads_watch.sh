@@ -43,6 +43,10 @@ if case == "other-sha":
     w["sha"] = "b" * 40
 if case in ("squash-same-tree", "squash-code-differs"):
     w["sha"] = cand   # the watch measured the candidate; the release commit is its squash
+if case == "corrupt-newest":
+    json.dump(w, open(os.path.join(d, "watch-a.json"), "w"))            # a fresh green ...
+    open(os.path.join(d, "watch-b.json"), "w").write("{corrupt")        # ... beside an unreadable (maybe newer) verdict
+    sys.exit(0)
 if case == "older-green-newer-andon":
     newer = dict(w, andon=True, real_red=["dogfood:model-parity"], at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 60)))
     json.dump(newer, open(os.path.join(d, "watch-b.json"), "w"))
@@ -73,11 +77,12 @@ table() { # table <autopilot> -> ok/FAIL <row> lines
   out=$(run "$ap" squash-same-tree)
   if grep -q '^SAY WATCH GREEN ' <<< "$out" && grep -q '^PREFLIGHT-RAN' <<< "$out"; then echo "ok    squash-same-tree-admitted"
   else echo "FAIL  squash-same-tree-admitted -- $(tr '\n' ' ' <<< "$out" | cut -c1-160)"; fi
-  for c in missing other-sha squash-code-differs stale stale-fresh-mtime andon older-green-newer-andon; do
+  for c in missing other-sha squash-code-differs stale stale-fresh-mtime andon older-green-newer-andon corrupt-newest; do
     out=$(run "$ap" "$c")
     case "$c" in
       missing) needle="no candidate-watch verdict" ;; other-sha) needle="not the release commit" ;;
       squash-code-differs) needle="not the release commit" ;; older-green-newer-andon) needle="ANDON" ;;
+      corrupt-newest) needle="cannot be read -- the newest cannot be told" ;;
       stale|stale-fresh-mtime) needle="h old (> 6 h)" ;; andon) needle="ANDON: REAL gate(s) red: dogfood:model-parity" ;;
     esac
     if grep -q "^DIE candidate watch: .*$needle" <<< "$out" && ! grep -q '^PREFLIGHT-RAN' <<< "$out"; then echo "ok    $c-refused"
@@ -97,6 +102,7 @@ mutant gate-uncalled missing-refused '    watch_gate "${CANDIDATE_WATCH_STATE:-$
 mutant sha-unchecked other-sha-refused 'if w.get("schema") != "apr-candidate-watch/v1" or not same:' 'if w.get("schema") != "apr-candidate-watch/v1":'
 mutant age-unchecked stale-refused 'if age > max_h or age < -0.1:' 'if False:'
 mutant tree-equivalence-off squash-same-tree-admitted 'same = ws_sha == sha or (bool(ws_sha) and subprocess.run(' 'same = ws_sha == sha or (False and subprocess.run('
+mutant corrupt-skipped corrupt-newest-refused '        print("the watch verdict %s cannot be read -- the newest cannot be told" % os.path.basename(f)); sys.exit(1)' '        pass'
 mutant newest-by-mtime older-green-newer-andon-refused 'w = max(ws, key=at_of)' 'w = json.load(open(max(glob.glob(os.path.join(state, v, "watch-*.json")), key=os.path.getmtime)))'
 mutant age-from-mtime stale-fresh-mtime-refused 'age = (time.time() - at_of(w)) / 3600.0' 'age = (time.time() - max(os.path.getmtime(f) for f in glob.glob(os.path.join(state, v, "watch-*.json")))) / 3600.0'
 mutant andon-unchecked andon-refused 'if w.get("andon") or w.get("real_red"):' 'if False:'

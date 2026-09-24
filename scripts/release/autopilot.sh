@@ -245,7 +245,8 @@ for f in glob.glob(os.path.join(state, v, "watch-*.json")):
     try:
         ws.append(json.load(open(f)))
     except (OSError, ValueError):
-        pass
+        # an unreadable verdict may be the NEWEST: skipping it would admit an older green (quorum, Fable)
+        print("the watch verdict %s cannot be read -- the newest cannot be told" % os.path.basename(f)); sys.exit(1)
 if not ws:
     print("no candidate-watch verdict under %s/%s -- the gates were never run on the candidate" % (state, v)); sys.exit(1)
 if any(at_of(w) is None for w in ws):
@@ -256,10 +257,12 @@ age = (time.time() - at_of(w)) / 3600.0
 # parent). The verdict binds when it IS the release commit, or when its tree equals the release commit's outside
 # evidence/ and docs/ -- the same code, measured on the release branch from the freeze (quorum, Fable).
 ws_sha = str(w.get("sha") or "")
+if ws_sha and ws_sha != sha:   # the watched candidate may live only on the release branch: fetch it (failure = refusal below)
+    subprocess.run(["git", "fetch", "-q", "origin", ws_sha], capture_output=True)
 same = ws_sha == sha or (bool(ws_sha) and subprocess.run(
     ["git", "diff", "--quiet", ws_sha, sha, "--", ".", ":(exclude)evidence", ":(exclude)docs"], capture_output=True).returncode == 0)
 if w.get("schema") != "apr-candidate-watch/v1" or not same:
-    print("the latest watch verdict is for %s, not the release commit %s nor a tree equal to it outside evidence/ and docs/" % (ws_sha[:9], sha[:9])); sys.exit(1)
+    print("the latest watch verdict is for %s, not the release commit %s nor a tree equal to it outside evidence/ and docs/ (or %s could not be fetched)" % (ws_sha[:9], sha[:9], ws_sha[:9])); sys.exit(1)
 if age > max_h or age < -0.1:
     print("the latest watch verdict is %.1f h old (> %g h) -- re-run the watch on the candidate" % (age, max_h)); sys.exit(1)
 if w.get("andon") or w.get("real_red"):

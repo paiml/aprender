@@ -11,10 +11,10 @@ Receipt for paiml/aprender#4045 on branch feat/4045-release-gate-normal, base = 
   - release_gate_classes (69 derived gates, 50 real / 19 bookkeeping after the Sonnet round (`contracts`) and the Fable round (`coverage`, `pv-lint`, `pv-contracts`) made them real; 13 rows / 11 mutants).
   - candidate_watch.sh, including G-ONT as the REAL row `g-ont:complete` (fail-closed when unconfigured) and autofix proposals; rows and mutants are in check_release_shift_left.sh.
   - check_no_shadowed_repo_skill.sh (5 rows / 3 mutants).
-  - autopilot watch_gate/run_preflight: the publish re-reads the watch, aged by its own timestamp, the newest chosen by that timestamp, bound across the squash merge by tree equality (check_publish_reads_watch.sh, 9 rows / 7 mutants).
+  - autopilot watch_gate/run_preflight: the publish re-reads the watch, aged by its own timestamp, the newest chosen by that timestamp, bound across the squash merge by tree equality, an unreadable verdict refused (check_publish_reads_watch.sh, 10 rows / 8 mutants).
   - bookkeeping_autofix.sh + autofix_invariants.py (check_bookkeeping_autofix.sh, 9 rows / 7 mutants).
 - **G-ONT**
-  - check_ont_complete.sh: 9 rows / 8 mutants; live RED as designed.
+  - check_ont_complete.sh: 11 rows / 9 mutants; live RED as designed.
   - REPORT-only in CI with no `--infra`.
 
 All new guards are cargo-free, so guard_tree runs them on every PR. check_guards_are_wired PASSes. check_model_ladder.sh --self-test: 155/0. bashrs: 0 errors on the new scripts.
