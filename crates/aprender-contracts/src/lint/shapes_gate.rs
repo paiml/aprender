@@ -271,9 +271,12 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
     carry_extract_warnings(&mut report, &extraction.warnings);
     let pc_extract = extract_controls();
     let unmeasured = needs_receipts(&shapes) && extraction.receipts.is_empty();
+    // Every shape in scope empty is the global vacuity — unless every one of them declared it (#3610 quorum).
+    let all_allow_empty = shapes.iter().all(|s| s.allow_empty.is_some());
     if let Some(d) = decline(
         shapes.len(),
         &report,
+        all_allow_empty,
         unmeasured,
         plant_violations,
         &pc_extract,
@@ -500,14 +503,18 @@ fn by_entity_type(extraction: &extract::Extraction) -> BTreeMap<String, usize> {
 
 /// The answers that are not corpus verdicts, in the order they are asked: no focus node, receipts needed and
 /// none tracked, the plant silent, an extractor control silent. `None` when the corpus gets a verdict.
+///
+/// No focus node at all is `NoFocus` unless EVERY shape in scope declares `allowEmpty` (#3610): then the run
+/// reaches the per-shape path, which names each one in `declines` and does not refuse for them.
 fn decline(
     shapes_n: usize,
     report: &Report,
+    all_allow_empty: bool,
     unmeasured: bool,
     plant_violations: usize,
     pc_extract: &BTreeMap<String, String>,
 ) -> Option<ShapesOutcome> {
-    if report.focus_nodes_n == 0 {
+    if report.focus_nodes_n == 0 && !all_allow_empty {
         return Some(ShapesOutcome::NoFocus { shapes_n });
     }
     if unmeasured {

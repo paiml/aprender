@@ -20,6 +20,7 @@
 //! | `shapes-one-empty-and-violating` | `empty-shape=0`, `tool-status=1` (violating) | yes | **exit 1**, Fail, `declines: ["empty-shape"]` |
 //! | `json-ok` | `tool-status=1` | yes | Pass, `declines: []` |
 //! | `shapes-one-empty-allowed` | same, `allowEmpty: "<why>"` on `empty-shape` | yes | **Pass**, `declines: ["empty-shape"]` |
+//! | `shapes-all-empty-allowed` | `empty-shape=0` (the only shape), `allowEmpty` | yes | **Pass**, `declines: ["empty-shape"]` |
 //! | `shapes-all-empty` | `empty-shape=0` (the only shape) | yes | **exit 2** via the global path, no report yet (#4100) |
 //!
 //! The second row is what keeps the fix from being "refuse whenever anything is empty": an UNARMED
@@ -339,4 +340,21 @@ fn names(v: &serde_json::Value) -> Vec<&str> {
     v.as_array()
         .map(|a| a.iter().filter_map(serde_json::Value::as_str).collect())
         .unwrap_or_default()
+}
+
+#[test]
+fn a_lone_allow_empty_shape_passes_through_the_global_path_too() {
+    // Quorum lane C (#3610): the GLOBAL NoFocus early-return (every shape in scope at zero) fired before the
+    // per-shape exemption was consulted, so a contract whose ONLY shape is empty by design still exited 2 —
+    // with no report at all. Every shape declaring allowEmpty now reaches the per-shape path.
+    let r = shapes_on("shapes-all-empty-allowed");
+    assert_eq!(r.code, 0, "{}", r.all());
+    assert_eq!(
+        names(&r.extra()["declines"]),
+        vec!["empty-shape"],
+        "{}",
+        r.all()
+    );
+    // The control: the same lone shape WITHOUT the declaration still declines through the global path.
+    assert_eq!(shapes_on("shapes-all-empty").code, 2);
 }
