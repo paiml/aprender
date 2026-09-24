@@ -13,6 +13,7 @@ mod composition_gate;
 pub mod config;
 pub mod diff;
 pub mod duplicate_stems;
+pub mod evidence_gate;
 pub mod finding;
 mod gates;
 pub use gates::collect_yaml_files;
@@ -196,6 +197,28 @@ pub enum GateExtra {
         legacy_depends_on: usize,
         /// Of those, how many name no contract — ratcheted shrink-only in the baseline.
         legacy_unresolved_depends_on: usize,
+        /// Findings.
+        violations: usize,
+    },
+    /// ONT-8: one evidence block — PROV-O names, one L-enum, every entity type.
+    #[serde(rename = "evidence")]
+    Evidence {
+        /// Contract files read.
+        contracts_checked: usize,
+        /// Of those, how many carry an `evidence` block.
+        contracts_with_evidence: usize,
+        /// Distinct `entity.type` among the contracts carrying evidence — counted, never branched on (R-17).
+        entity_types_checked: usize,
+        /// Those types, sorted.
+        entity_types: Vec<String>,
+        /// `enum`: levels are parsed through `ProofLevel`, never matched against a list kept in the gate.
+        levels_source: String,
+        /// `level=count` over the evidence blocks that passed every rule.
+        by_level: Vec<String>,
+        /// The census `git_sha` a `[V]` claim binds to; `None` (the 2026-09-16 ruling) binds it to the repository.
+        census_git_sha: Option<String>,
+        /// `[V]` shas git could not look for — non-zero makes the verdict `Unknown{ToolAbsent}`, never `Pass`.
+        unresolved_git_shas: usize,
         /// Findings.
         violations: usize,
     },
@@ -583,6 +606,12 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     gates.push(valid_under_gate_result);
     all_findings.append(&mut valid_under_findings);
 
+    // Gate 16: evidence (ONT-8). Same R-8 shape: computed in every run, armed per repo. (14/15 are EV-11.)
+    let (evidence_gate_result, mut evidence_findings) =
+        evidence_result(config.contract_dir, validation_passed);
+    gates.push(evidence_gate_result);
+    all_findings.append(&mut evidence_findings);
+
     // Gate 9: strict test-binding (Issue #1510, opt-in via --strict-test-binding)
     if config.strict_test_binding {
         push_gate(
@@ -662,6 +691,8 @@ pub enum NamedGateOutcome {
     Relations(relations_gate::RelationsOutcome),
     /// The `shapes` gate (ONT-4b), with four non-verdict answers (unsupported shape, no shapes, no focus, control failed).
     Shapes(shapes_gate::ShapesOutcome),
+    /// The `evidence` gate (ONT-8), with three non-verdict answers (no Σ, malformed Σ, no evidence block).
+    Evidence(evidence_gate::EvidenceOutcome),
     /// The `valid-under` gate (ONT-7), with three non-verdict answers (no Σ, malformed Σ, no kernel contract).
     ValidUnder(valid_under_gate::ValidUnderOutcome),
     /// A gate that ran and judged the corpus.
@@ -688,6 +719,7 @@ pub fn run_named_gate_with(
     shapes_opts: &shapes_gate::ShapesOptions,
 ) -> NamedGateOutcome {
     match name {
+        "evidence" => NamedGateOutcome::Evidence(evidence_gate::run_evidence_gate(contract_dir)),
         "relations" => {
             NamedGateOutcome::Relations(relations_gate::run_relations_gate(contract_dir))
         }
@@ -711,7 +743,14 @@ pub fn run_named_gate_with(
 }
 
 /// The gate names `--gate` computes alone, for the refusal message.
-pub const NAMED_GATES: [&str; 5] = ["relations", "shapes", "sigma", "valid-under", "validate"];
+pub const NAMED_GATES: [&str; 6] = [
+    "evidence",
+    "relations",
+    "shapes",
+    "sigma",
+    "valid-under",
+    "validate",
+];
 
 /// The `sigma` gate as `run_lint` reports it. Σ's two non-verdict answers become SKIPPED gates here — under
 /// `--gate sigma` they are an exit of their own (decline / error), but inside a full run "skipped" is how the
@@ -728,6 +767,34 @@ fn sigma_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, Ve
         ),
         sigma_gate::SigmaOutcome::Malformed(e) => (
             skipped_gate("sigma", &format!("Σ is malformed: {e}")),
+            Vec::new(),
+        ),
+    }
+}
+
+/// The `evidence` gate as `run_lint` reports it (ONT-8). Its three non-verdict answers become SKIPPED gates here, as
+/// sigma's do — under `--gate evidence` they are exits of their own (decline / error).
+fn evidence_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, Vec<LintFinding>) {
+    if !validation_passed {
+        return (skipped_gate("evidence", "validation failed"), Vec::new());
+    }
+    match evidence_gate::run_evidence_gate(contract_dir) {
+        evidence_gate::EvidenceOutcome::Ran { result, findings } => (*result, findings),
+        evidence_gate::EvidenceOutcome::NoSigma => (
+            skipped_gate("evidence", "no contracts/ontology.yaml"),
+            Vec::new(),
+        ),
+        evidence_gate::EvidenceOutcome::Malformed(e) => (
+            skipped_gate("evidence", &format!("Σ is malformed: {e}")),
+            Vec::new(),
+        ),
+        evidence_gate::EvidenceOutcome::NoEvidence { contracts_checked } => (
+            skipped_gate(
+                "evidence",
+                &format!(
+                    "no evidence block in {contracts_checked} contracts — R-2: zero is a decline"
+                ),
+            ),
             Vec::new(),
         ),
     }

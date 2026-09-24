@@ -20685,6 +20685,24 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4077
+  github_issue: 4077
+  item_type: task
+  title: 'ONT-8: one evidence block — PROV-O names, one L-enum, every entity type'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T08:42:58Z
+  updated: 2026-09-24T08:42:58Z
+  spec: null
+  acceptance_criteria:
+  - paiml/infra docs/specifications/paiml-ontology.md v4.14 row ONT-8, probe (:667). Stacked on PMAT-4076 (ONT-7), gate 16 (EV-11 PMAT-4166 takes 14/15). Cop (aprender-cf) assignment 2026-09-24.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4127
   github_issue: 4127
   item_type: task

@@ -266,7 +266,7 @@ fn decide_named_gate(
     shapes_opts: &ShapesOptions,
 ) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
     use provable_contracts::lint::{
-        relations_gate::RelationsOutcome, sigma_gate::SigmaOutcome,
+        evidence_gate::EvidenceOutcome, relations_gate::RelationsOutcome, sigma_gate::SigmaOutcome,
         valid_under_gate::ValidUnderOutcome, NamedGateOutcome, NAMED_GATES,
     };
 
@@ -293,6 +293,22 @@ fn decide_named_gate(
             Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
         NamedGateOutcome::Shapes(outcome) => decide_shapes_gate(outcome),
+        NamedGateOutcome::Evidence(EvidenceOutcome::NoSigma) => Err(LintDeclined {
+            reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+        }
+        .into()),
+        NamedGateOutcome::Evidence(EvidenceOutcome::NoEvidence { contracts_checked }) => {
+            eprintln!(
+                "evidence: no evidence block in {contracts_checked} contract(s) — nothing was measured"
+            );
+            Err(LintDeclined {
+                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+            }
+            .into())
+        }
+        NamedGateOutcome::Evidence(EvidenceOutcome::Malformed(e)) => {
+            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
         NamedGateOutcome::ValidUnder(ValidUnderOutcome::NoSigma) => Err(LintDeclined {
             reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
         }
@@ -312,6 +328,7 @@ fn decide_named_gate(
         NamedGateOutcome::Sigma(SigmaOutcome::Ran { result, findings })
         | NamedGateOutcome::Relations(RelationsOutcome::Ran { result, findings })
         | NamedGateOutcome::ValidUnder(ValidUnderOutcome::Ran { result, findings })
+        | NamedGateOutcome::Evidence(EvidenceOutcome::Ran { result, findings })
         | NamedGateOutcome::Ran { result, findings } => Ok((result, findings)),
     }
 }

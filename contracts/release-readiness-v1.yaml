@@ -260,3 +260,14 @@ qa_gate:
     - no_subject_declines
   pass_criteria: All 3 falsification tests pass; `pv lint contracts --gate shapes --shape release-readiness-v1 --release-version V --release-commit MC --receipts DIR --dogfood-receipt FILE` exits 0 only when every cell passes
   falsification: 'flip one cell row of tests/fixtures/ont/release-green to verdict skip → the gate exits 1 naming that cell'
+
+# ONT-8: one evidence block — PROV-O names, one L-enum (ProofLevel). The level is MEASURED, not declared: it is what
+# the cited command printed for this contract at the time below. Checked by `pv lint --gate evidence`.
+evidence:
+  level: L1
+  mark: C
+  provenance:
+    wasGeneratedBy:
+      command: "pv proof-status contracts/ --format json"
+    wasAttributedTo: pv
+    generatedAtTime: "2026-09-24T08:22:07Z"
