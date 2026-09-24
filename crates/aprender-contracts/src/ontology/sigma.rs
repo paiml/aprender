@@ -118,6 +118,21 @@ pub struct EntityTypeDecl {
     #[serde(default)]
     pub extractor: String,
     pub implemented: bool,
+    /// ONT-4f: the vocabulary `extract:json` reads a SNAPSHOT entity type with — the GitHub entities under
+    /// `evidence/github/<name>/`. Absent for every other type. `root_class` must be `ont:<a declared concept>`,
+    /// because the type closure (R-19) reaches only Σ concepts; `version` names the snapshot's own field that
+    /// the ref's `@<version>` slot must equal.
+    #[serde(default)]
+    pub vocabulary: Option<EntityVocabulary>,
+}
+
+/// ONT-4f: a snapshot entity type's vocabulary (`prefix:key` predicates, one root class, one version field).
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct EntityVocabulary {
+    pub prefix: String,
+    pub root_class: String,
+    pub version: String,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -166,6 +181,8 @@ pub enum SigmaError {
     SubsumesUndeclared { concept: String },
     /// ONT-4d (R-19): `subsumes` is cyclic. `path` walks the cycle and repeats its first concept at the end.
     SubsumesCycle { path: Vec<String> },
+    /// ONT-4f: an entity type's `vocabulary` is incomplete, or its `root_class` is not a declared `ont:` concept.
+    VocabularyMalformed { entity_type: String, why: String },
 }
 
 impl fmt::Display for SigmaError {
@@ -204,6 +221,12 @@ impl fmt::Display for SigmaError {
                 )
             }
             Self::SubsumesCycle { path } => write!(f, "subsumes cycle {}", path.join(" -> ")),
+            Self::VocabularyMalformed { entity_type, why } => {
+                write!(
+                    f,
+                    "entity_type `{entity_type}` vocabulary is malformed: {why}"
+                )
+            }
         }
     }
 }
@@ -267,6 +290,7 @@ impl Sigma {
     /// [`SigmaError`] — every variant is exit 3, because a malformed declaration is not the corpus's fault.
     pub fn check_integrity(&self) -> Result<(), SigmaError> {
         self.check_entity_types()?;
+        self.check_vocabularies()?;
         self.check_readers()?;
         self.check_not_expressible()?;
         self.check_extractors()?;
@@ -332,6 +356,35 @@ impl Sigma {
             .filter(|c| c.as_str() != concept && self.supers(c).contains(concept))
             .cloned()
             .collect()
+    }
+
+    /// ONT-4f: a vocabulary names a non-empty prefix and version, and a root class `ont:<concept>` for a concept
+    /// Σ declares — a root class the closure cannot reach types nodes no Σ shape can inherit onto.
+    fn check_vocabularies(&self) -> Result<(), SigmaError> {
+        for et in &self.entity_types {
+            let Some(v) = &et.vocabulary else { continue };
+            let bad = |why: String| SigmaError::VocabularyMalformed {
+                entity_type: et.name.clone(),
+                why,
+            };
+            if v.prefix.trim().is_empty() {
+                return Err(bad("empty `prefix`".into()));
+            }
+            if v.version.trim().is_empty() {
+                return Err(bad("empty `version`".into()));
+            }
+            if !v
+                .root_class
+                .strip_prefix("ont:")
+                .is_some_and(|c| self.concepts.contains_key(c))
+            {
+                return Err(bad(format!(
+                    "root_class `{}` is not `ont:<a concept Σ declares>`",
+                    v.root_class
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Class 1: every `entity_types` entry names an extractor `extractors[]` declares.
@@ -749,5 +802,39 @@ readers:
         assert!(
             matches!(s.check_integrity(), Err(SigmaError::KeyWithoutReader { key }) if key == "subsumes")
         );
+    }
+
+    fn with_vocabulary(root_class: &str, version: &str) -> Sigma {
+        let yaml = good().replace(
+            "  - {name: pv-contract, extractor: pv_contract, implemented: false}\n",
+            &format!(
+                "  - {{name: pv-contract, extractor: pv_contract, implemented: false}}\n  - {{name: repo, extractor: pv_contract, implemented: false, vocabulary: {{prefix: repo, root_class: \"{root_class}\", version: \"{version}\"}}}}\n"
+            ),
+        );
+        Sigma::from_yaml(&yaml).expect("Σ with a vocabulary parses")
+    }
+
+    #[test]
+    fn ont4f_a_vocabulary_over_a_declared_concept_is_well_formed() {
+        let s = with_vocabulary("ont:Code", "sha");
+        let v = s.entity_types[1].vocabulary.as_ref().expect("vocabulary");
+        assert_eq!((v.prefix.as_str(), v.version.as_str()), ("repo", "sha"));
+        assert!(s.check_integrity().is_ok(), "{:?}", s.check_integrity());
+    }
+
+    #[test]
+    fn ont4f_a_vocabulary_whose_root_class_the_closure_cannot_reach_is_refused() {
+        for bad in ["ont:Ghost", "repo:Repo", ""] {
+            let s = with_vocabulary(bad, "sha");
+            let err = s.check_integrity().expect_err(bad);
+            assert!(
+                matches!(&err, SigmaError::VocabularyMalformed { entity_type, .. } if entity_type == "repo"),
+                "{err}"
+            );
+        }
+        let err = with_vocabulary("ont:Code", " ")
+            .check_integrity()
+            .unwrap_err();
+        assert!(err.to_string().contains("empty `version`"), "{err}");
     }
 }

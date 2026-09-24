@@ -46,6 +46,8 @@ pub struct Extraction {
     pub lean: lean::LeanStats,
     /// ONT-4c3: the logit-parity receipts under `evidence/parity/**`, and the files this extractor refused.
     pub parity: parity_receipt::ParityStats,
+    /// ONT-4f: the GitHub snapshots under `evidence/github/<type>/`, per Σ snapshot type, and the refused files.
+    pub github: json::github::GithubStats,
     /// aprender#3715: the release evidence — `None` unless a release subject was given (an ordinary PR has none).
     pub release: Option<release_evidence::ReleaseStats>,
     /// ONT-4d: how many `rdf:type` triples the Σ closure added.
@@ -140,11 +142,20 @@ pub fn all_with(
     out.code = code::extract(contract_dir, &mut out.graph);
     out.lean = lean::extract(contract_dir, &mut out.graph);
     out.parity = parity_receipt::extract(root, &mut out.graph);
+    // ONT-4f: the Σ snapshot types (repo, issue, pull-request, milestone), read by extract:json from the committed
+    // snapshots only. No Σ is no snapshot types, so nothing under evidence/github/ is read — the sigma gate reports it.
+    let sigma = sigma_of(contract_dir);
+    let snapshot_types = sigma
+        .as_ref()
+        .map(json::github::snapshot_types)
+        .unwrap_or_default();
+    out.github = json::github::extract(&repo_root(contract_dir), &snapshot_types, &mut out.graph);
     // ONT-4d (R-19): the rdf:type closure over Σ's `subsumes`, materialized AFTER every extractor has run, so a
     // focus node an extractor typed with a sub-concept is also an instance of every super-concept. This is
     // how a shape on a super-concept reaches it (shapes.rs selects focus nodes by rdf:type).
-    out.type_closure_added =
-        sigma_of(contract_dir).map_or(0, |s| materialize_type_closure(&mut out.graph, &s));
+    out.type_closure_added = sigma
+        .as_ref()
+        .map_or(0, |s| materialize_type_closure(&mut out.graph, s));
     if let Some(subject) = release {
         out.release = Some(
             release_evidence::extract(&mut out.graph, contract_dir, subject)
