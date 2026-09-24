@@ -69,12 +69,13 @@ fn run_provenance(bin: &str, model: &str) -> (bool, Option<bool>) {
         .expect("spawn apr run");
     let stdout = String::from_utf8_lossy(&out.stdout);
     // The object is pretty-printed over many lines: take it from its first `{`.
-    let json = stdout.find('{').map(|i| &stdout[i..]).unwrap_or_else(|| {
+    let start = stdout.find('{').unwrap_or_else(|| {
         panic!(
             "apr run --json printed no JSON (rc {:?}):\n{stdout}",
             out.status.code()
         )
     });
+    let json = &stdout[start..];
     let v: serde_json::Value = serde_json::from_str(json.trim_end())
         .unwrap_or_else(|e| panic!("apr run --json does not parse ({e}):\n{stdout}"));
     let used = used_gpu_of(&v).unwrap_or_else(|| panic!("apr run --json carries no used_gpu: {v}"));
