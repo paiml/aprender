@@ -27,6 +27,7 @@ concepts:
   Statement: {doc: "a Lean theorem in the in-tree Theorems tree; the focus node of extract:lean (ONT-4b2: ont:Statement with lean:sorryFree, lean:modelOf)"}
   Model: {doc: "a model file — an .apr container or a GGUF; the ladder's rungs are the ones the release measures (ONT-4c1: model:Model, model:RequiredModel, model:Receipt)"}
   Dataset: {doc: "a CSV or corpus file"}
+  Example: {doc: "a cargo example target — examples/*.rs or examples/*/main.rs of a workspace member; the focus node of extract:example (#3560 R1: example:file, example:crate, example:name, example:namesModel, example:namesQwen35)"}
 
 roles:
   binds:
@@ -135,6 +136,7 @@ entity_types:
   - {name: json, extractor: json, implemented: true}
   - {name: code, extractor: code, implemented: true}
   - {name: lean, extractor: lean, implemented: true}
+  - {name: example, extractor: example, implemented: true}
   - {name: readme, extractor: readme, implemented: false}
   - {name: llm-context, extractor: llm_context, implemented: false}
   - {name: apr-model, extractor: apr_model, implemented: true}
@@ -153,6 +155,7 @@ extractors:
   - {name: json, reader: ontology/extract/json.rs, implemented: true}
   - {name: code, reader: ontology/extract/code.rs, implemented: true}
   - {name: lean, reader: ontology/extract/lean.rs, implemented: true}
+  - {name: example, reader: ontology/extract/example.rs, implemented: true}
   - {name: readme, reader: ontology/extract/readme.rs, implemented: false}
   - {name: llm_context, reader: ontology/extract/llm_context.rs, implemented: false}
   - {name: apr_model, reader: ontology/extract/apr_model.rs, implemented: true}

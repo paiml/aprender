@@ -215,7 +215,7 @@ impl Workspace {
 
 /// `[workspace] members` / `exclude` of the root manifest, plus whether the root is itself a package.
 #[derive(Debug, Default, PartialEq, Eq)]
-struct Membership {
+pub(crate) struct Membership {
     members: Vec<String>,
     exclude: Vec<String>,
     root_package: bool,
@@ -223,7 +223,7 @@ struct Membership {
 
 impl Membership {
     /// Is the crate in `dir` a member? Paths compare relative to the root, `.` for the root itself.
-    fn admits(&self, root: &Path, dir: &Path) -> bool {
+    pub(crate) fn admits(&self, root: &Path, dir: &Path) -> bool {
         let rel = dir
             .strip_prefix(root)
             .unwrap_or(dir)
@@ -239,7 +239,7 @@ impl Membership {
 
 /// The `[workspace]` table's `members` and `exclude` arrays (single- or multi-line, either quote), or `None` when
 /// the manifest has no `[workspace]` table.
-fn workspace_membership(text: &str) -> Option<Membership> {
+pub(crate) fn workspace_membership(text: &str) -> Option<Membership> {
     let mut out = Membership::default();
     let mut section = String::new();
     let mut seen = false;
@@ -304,15 +304,15 @@ fn glob_match(pattern: &str, rel: &str) -> bool {
 }
 
 #[derive(Debug, Default)]
-struct ManifestNames {
-    package: Option<String>,
+pub(crate) struct ManifestNames {
+    pub(crate) package: Option<String>,
     lib: Option<String>,
     lib_path: Option<String>,
 }
 
 /// `[package] name`, `[lib] name` and `[lib] path` by a section-aware line scan — the two keys this walk needs,
 /// read without a TOML crate.
-fn manifest_names(text: &str) -> ManifestNames {
+pub(crate) fn manifest_names(text: &str) -> ManifestNames {
     let mut out = ManifestNames::default();
     let mut section = String::new();
     for line in text.lines() {

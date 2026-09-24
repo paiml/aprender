@@ -15,7 +15,7 @@
     "refused": []
   },
   "consistent": true,
-  "classes": 11,
+  "classes": 12,
   "entailed_subsumptions": [
     [
       "Kernel",
