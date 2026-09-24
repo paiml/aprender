@@ -20033,6 +20033,28 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-3668
+  github_issue: 3668
+  item_type: task
+  title: 'Docs-only PRs still spend ~45 min in guard-cargo and guard-tree: gate them on a single docs_only decision so a roadmap PR''s CI is < 10 min'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-a2
+  created: 2026-09-21T07:19:59Z
+  updated: 2026-09-24T19:00:00Z
+  spec: null
+  acceptance_criteria:
+  - scripts/ci_docs_only.sh prints docs_only=true only when every touched path is under docs/roadmaps/ or docs/audits/ and present at HEAD (ci_test_tier.sh docs-only, #3658); every other event, diff or error gives false. The 13-row --self-test has discriminator rows
+  - guard-cargo and determinism are skipped when needs.changes.outputs.docs_only == 'true' and run otherwise, including when changes is skipped or fails
+  - gate's GATE-DOCS-ONLY-RULE accepts a skip only when changes succeeded with docs_only=true. check_ci_gate_docs_only_rule.sh runs 14 rows over the block, and 3 planted wrong rules go RED
+  - the guard-cargo steps that read docs/** run in guard-tree unconditionally
+  - a real docs-only PR run finishes in under 10 min (observed after landing)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-3670
   github_issue: 3670
   item_type: task
@@ -20866,28 +20888,6 @@ roadmap:
   acceptance_criteria:
   - scripts/check_sovereign_release_assets.sh --live exits 10 when any manifest repo's latest release lacks linux-x86_64 (musl or gnu.2.NN<=35), linux-aarch64 or darwin-arm64 for a binary, or an archive lacks its .sha256
   - bare run is an offline 17-case table (guard_tree), each removed platform / missing .sha256 / plain-gnu x86_64 RED; 5 checker mutants killed
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-- id: PMAT-3668
-  github_issue: 3668
-  item_type: task
-  title: 'Docs-only PRs still spend ~45 min in guard-cargo and guard-tree: gate them on a single docs_only decision so a roadmap PR''s CI is < 10 min'
-  status: inprogress
-  priority: critical
-  assigned_to: aprender-a2
-  created: 2026-09-21T07:19:59Z
-  updated: 2026-09-24T19:00:00Z
-  spec: null
-  acceptance_criteria:
-  - scripts/ci_docs_only.sh prints docs_only=true only when every touched path is under docs/roadmaps/ or docs/audits/ and present at HEAD (ci_test_tier.sh docs-only, #3658); every other event, diff or error gives false. The 13-row --self-test has discriminator rows
-  - guard-cargo and determinism are skipped when needs.changes.outputs.docs_only == 'true' and run otherwise, including when changes is skipped or fails
-  - gate's GATE-DOCS-ONLY-RULE accepts a skip only when changes succeeded with docs_only=true. check_ci_gate_docs_only_rule.sh runs 14 rows over the block, and 3 planted wrong rules go RED
-  - the guard-cargo steps that read docs/** run in guard-tree unconditionally
-  - a real docs-only PR run finishes in under 10 min (observed after landing)
   phases: []
   subtasks: []
   estimated_effort: null
