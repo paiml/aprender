@@ -143,8 +143,8 @@ run() {
 expect_stop() {
     run "$1" "$2" "$3" "${6:-}"
     [ "$RC" -eq 2 ] || return 1
-    printf '%s\n' "$OUT" | grep -qE "\] Error $4\$" || return 1
-    printf '%s\n' "$OUT" | grep -qF -- "$5" && return 1
+    grep -qE "\] Error $4\$" <<<"$OUT" || return 1
+    grep -qF -- "$5" <<<"$OUT" && return 1
     return 0
 }
 
@@ -154,7 +154,7 @@ M="$TMP/Makefile.shipped"
 # The case table, against the recipes as shipped.
 # ---------------------------------------------------------------------------
 run "$M" contracts none
-{ [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -qF 'test result: ok'; }
+{ [ "$RC" -eq 0 ] && grep -qF 'test result: ok' <<<"$OUT"; }
 row "contracts: every step passes -> rc 0, and the last step ran" $?
 
 expect_stop "$M" contracts lint 7 '== census'
@@ -176,7 +176,7 @@ expect_stop "$M" contracts cargo 101 '@@unreachable@@'
 row "contracts: engine tests fail (rc 101, through grep | tail) -> Error 101" $?
 
 expect_stop "$M" contracts none 1 '== census' "$TMP/bin/stale-pv"
-{ [ $? -eq 0 ] && printf '%s\n' "$OUT" | grep -qF 'STALE pv BINARY'; }
+{ [ $? -eq 0 ] && grep -qF 'STALE pv BINARY' <<<"$OUT"; }
 row "contracts: pv_bin.sh refuses a stale PV_BIN -> Error 1 naming it, census never starts" $?
 
 expect_stop "$M" contract-test cargo 101 'Contract tests passed'
@@ -224,8 +224,8 @@ went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: contract-audit without its rc a
 real_row() { # real_row <makefile> -> 0 iff Error 7 from the fake's lint
     OUT=$(cd "$REPO_ROOT" && FAIL_AT=lint PV_BIN="$TMP/bin/pv" make -s -f "$1" contracts 2>&1)
     RC=$?
-    [ "$RC" -eq 2 ] && printf '%s\n' "$OUT" | grep -qE '\] Error 7$' \
-        && printf '%s\n' "$OUT" | grep -qF 'FAKE pv lint fails'
+    [ "$RC" -eq 2 ] && grep -qE '\] Error 7$' <<<"$OUT" \
+        && grep -qF 'FAKE pv lint fails' <<<"$OUT"
 }
 real_row "$MAKEFILE"
 row "real tree: exported PV_BIN reaches pv_bin.sh -> the fake's lint rc 7 is make's Error 7" $?
