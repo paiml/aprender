@@ -1,7 +1,6 @@
 # tool_version=none (derived by scripts/check_bin_cli_tests_wired.sh --print; regenerate with --update, never edit)
 # Test targets that SPAWN a workspace binary and that no workflow or ci/explicit-test-commands.d/
 # fragment runs (#4059). Each line is a finding. The file may only shrink against origin/main.
-apr-cli	--test	qwen3_moe_apr_run_live_falsifier
 aprender-data	--test	cli_repl_tests
 aprender-explain	--test	integration_tests
 aprender-mcp	--test	falsify_mcp_dogfood_001
