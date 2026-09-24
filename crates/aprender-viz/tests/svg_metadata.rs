@@ -8,6 +8,9 @@
 //!   timestamp taken at build time is caught as surely as one taken at render time.
 //! - **RED (c)**: a payload that is not well-formed XML is refused, never emitted, including one
 //!   that closes the wrapper early to break out into the drawing.
+//!
+//! The package is `aprender-viz` but its `[lib] name` is `trueno_viz` (Cargo.toml `[lib]`), so
+//! integration tests import it as `trueno_viz`, as every other file in `tests/` does.
 
 use trueno_viz::color::Rgba;
 use trueno_viz::error::Error;
