@@ -264,6 +264,8 @@ tier3:
 	@echo "Checking no contract names an enforcement command that cannot run (aprender#2504)..."
 	@bash scripts/check_contract_enforcement.sh --self-test
 	@bash scripts/check_contract_enforcement.sh
+	@echo "Checking the serve-parity release gate separates PASS/RED/NO-GO, each row flipped by a mutant (aprender#4218)..."
+	@bash scripts/check_serve_parity_receipt.sh --selftest
 	@echo "Checking no test asserts about the fd 0 it inherited (aprender#2307)..."
 	@bash scripts/check_hermetic_stdin_tests.sh --self-test
 	@bash scripts/check_hermetic_stdin_tests.sh

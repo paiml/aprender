@@ -1,0 +1,153 @@
+contract: serve-parity-gate
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    RELEASE GATE (aprender#4218, operator: "make the scoreboard a release gate",
+    "use gx10 runner lane"). `apr serve` is measured against the PINNED llama.cpp
+    `llama-server` (scripts/llama_pin.toml build_commit, resolved by
+    scripts/llama_bin.sh) on the SAME Qwen3.5 GGUF, on the same host, in the same
+    run, for every model in `gate.models`. The verdict is the ratio against the
+    comparator measured IN THAT RUN, never against a remembered number. The
+    comparator absorbs the host and the day, and the ratio isolates apr.
+
+    Three verdicts and no fourth:
+      PASS   every model passed its correctness precondition, and its band c=1
+             decode ratio point is at or above baseline x (1 - tolerance), and
+             the positive control on the same harness went RED.
+      RED    blocks the tag. The causes are: any wrong output, a ratio under the
+             ratchet, a model with no committed baseline, a GGUF whose sha is not
+             the one pinned here, a comparator that is not the pinned build, an
+             unrecorded memory field, or a control that did not go RED (a harness
+             blind to a slowdown proves nothing).
+      NO-GO  the HOST could not be measured: the GPU lock was busy, a foreign
+             process was on the device, or free disk was under the floor.
+             NO-GO blocks too, and it is never recorded as a PASS. It is kept
+             apart from RED because re-running on a quiet host is the remedy,
+             not a code change.
+
+    The RATCHET blocks, and PARITY is published. `parity_target` is where apr
+    wants to be (ratio 1.0). Reaching it or missing it is reported in the
+    receipt and never changes the verdict. The ratchet is what stops a release
+    from being slower against llama.cpp than the last one was, on this silicon.
+
+    The baseline is per HOST CLASS (gx10 = GB10, aarch64, sm_121). The sm_89
+    no-collapse floor in contracts/beat-ollama-decode-throughput-speed-v1.yaml
+    does NOT transfer (aprender#2835). No baseline is invented. The first
+    committed baseline is promoted from a real PASS whose own positive control
+    went RED on the same harness (`serve_parity_gate.py promote`). Until that
+    exists, the gate is RED ("no committed baseline"), which is honest: the
+    release has no evidence yet.
+  references:
+  - "scripts/lib/serve_parity_gate.py (verdict, promote, release receipt check, selftest)"
+  - "scripts/check_serve_parity_receipt.sh (the release decision surfaces call this)"
+  - "scripts/llama_pin.toml (comparator pin: build_commit, pin_expiry)"
+  - "scripts/lib/perf_receipt.py (the v3 band ratios this gate reads: bands[c=1].ratios.dec)"
+  - "crates/aprender-serve/examples/qwen35_parity.rs (teacher-forced correctness record, tau)"
+  - "contracts/beat-ollama-decode-throughput-speed-v1.yaml (why the sm_89 floor does not transfer)"
+version: 1
+status: enforced
+date: 2026-09-24
+
+# The only numbers serve_parity_gate.py uses. The script reads them from this
+# block and has no defaults of its own, so a parameter missing here is a refusal,
+# not a silent fallback.
+gate:
+  host_class: gx10
+  band_concurrency: 1
+  metric: ratios.dec          # paired-percentile-bootstrap decode ratio, apr / llama-server
+  tolerance: 0.10             # RED when point < baseline_point * (1 - 0.10).
+  tolerance_basis: >
+    PROVISIONAL. It was chosen, not measured, because no gx10 serve-parity series
+    exists yet. Re-derive it from the spread of the first five committed gx10 PASS
+    runs, and set it to at least twice the largest run-to-run drop of the point.
+    Change it only here, in a reviewed diff.
+  parity_target: 1.00         # published, never blocking
+  disk_floor_gb: 40           # free GB at readlink -f of disk_path; under it = NO-GO
+  disk_path: /mnt/nvme-raid0  # a symlink on gx10 (the root disk); resolved, never trusted
+  correctness:
+    tau: 0.25                 # a teacher-forced disagreement is excused only when the oracle's own gap < tau
+    max_rank: 2               # ...and only when the oracle's token is apr's rank <= 2 (qwen35_parity.rs's own pass rule)
+    min_teacher_forced_steps: 16
+    template: official        # the prompt comes from the model's own chat template, never from apr's output
+  baseline_file: evidence/serve-parity/gx10/baseline.json
+  receipt_dir: evidence/serve-parity/gx10
+  vllm_row_status: [measured, unsupported]   # informational only; never read by the verdict
+  models:
+    - size: 0.8B
+      repo: unsloth/Qwen3.5-0.8B-GGUF
+      revision: 6ab461498e2023f6e3c1baea90a8f0fe38ab64d0
+      file: Qwen3.5-0.8B-Q4_K_M.gguf
+      sha256: bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517
+    - size: 2B
+      repo: unsloth/Qwen3.5-2B-GGUF
+      revision: f6d5376be1edb4d416d56da11e5397a961aca8ae
+      file: Qwen3.5-2B-Q4_K_M.gguf
+      sha256: aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223
+    - size: 4B
+      repo: unsloth/Qwen3.5-4B-GGUF
+      revision: e87f176479d0855a907a41277aca2f8ee7a09523
+      file: Qwen3.5-4B-Q4_K_M.gguf
+      sha256: 00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4
+    - size: 9B
+      repo: unsloth/Qwen3.5-9B-GGUF
+      revision: 3885219b6810b007914f3a7950a8d1b469d598a5
+      file: Qwen3.5-9B-Q4_K_M.gguf
+      sha256: 03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8
+    - size: 27B
+      repo: unsloth/Qwen3.5-27B-GGUF
+      revision: 3221f178a6b842d04f1fb42f1c413534adcc0a6a
+      file: Qwen3.5-27B-Q4_K_M.gguf
+      sha256: 84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806
+
+proof_obligations:
+  - id: SPG-INV-001
+    type: invariant
+    property: >
+      OBLIG-SPG-RATCHET: for every gated model m, verdict(run) = PASS implies
+      point(run, m) >= baseline_point(m) * (1 - tolerance), with tolerance read
+      from gate.tolerance. A model with no baseline entry is RED.
+  - id: SPG-INV-002
+    type: invariant
+    property: >
+      OBLIG-SPG-CORRECTNESS-PRECONDITION: verdict(run) = PASS implies that, for every
+      model and every prompt, the prompt ids equal the oracle's ids on the official
+      template, teacher_forced_steps >= min_teacher_forced_steps, and every
+      disagreement has gap < tau and rank <= max_rank. The gate recomputes this from the disagreements.
+      A record's own `pass` field is never read.
+  - id: SPG-INV-003
+    type: invariant
+    property: >
+      OBLIG-SPG-POSITIVE-CONTROL: verdict(run) = PASS implies that the run carries a
+      control record, made on the same harness sha, whose verdict under this same
+      function is RED on its ratio.
+  - id: SPG-INV-004
+    type: invariant
+    property: >
+      OBLIG-SPG-NO-GO-IS-NOT-PASS: a run whose preflight records a busy GPU lock, a
+      non-empty foreign compute-app list, or free disk under disk_floor_gb has
+      verdict NO-GO. That holds whatever its ratios are.
+  - id: SPG-INV-005
+    type: invariant
+    property: >
+      OBLIG-SPG-RELEASE-BINDING: check-release(tag_sha, asset_sha256) exits 0 only
+      when all of these hold:
+      - a receipt exists for tag_sha;
+      - its green_sha equals tag_sha;
+      - its verdict is PASS;
+      - its bin_sha256 equals the release asset's sha256.
+      A missing verdict is a refusal. It is never read as a pass.
+
+falsification_tests:
+  - id: FALSIFY-SPG-001
+    name: serve_parity_gate_selftest
+    prediction: "each obligation has a mutant that flips its row. For example: the ratchet disabled makes a slowed run PASS, the correctness check that reads `pass` accepts a scrambled output, and the release check ignoring the binary sha accepts a foreign binary. The selftest reports every row as caught."
+    test_harness: "python3 scripts/lib/serve_parity_gate.py selftest"
+    expected_output: "PASS"
+    if_fails: "a release gate that cannot tell a slowed or wrong apr serve from a good one; the tag ships on a green that measured nothing."
+  - id: FALSIFY-SPG-002
+    name: serve_parity_release_receipt_case_table
+    prediction: "the release check refuses the missing, sha-not-commit, verdict-FAIL, verdict-absent and binary-sha-mismatch receipts, and accepts only the PASS receipt that is bound to the tag and to the asset"
+    test_harness: "bash scripts/check_serve_parity_receipt.sh --selftest"
+    expected_output: "PASS"
+    if_fails: "a tag can be cut on a receipt for another commit, another binary, or a failed run."
