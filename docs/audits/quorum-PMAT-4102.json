@@ -1,0 +1,115 @@
+{
+ "ticket": "PMAT-4102",
+ "issue": 4102,
+ "pr": 4150,
+ "executor": "agy-quorum + claude-code-agent (operator 2026-09-24 shape: 2 agy non-Claude + 1 claude-haiku-4-5)",
+ "width": 3,
+ "base": "origin/main",
+ "merge_base": "49fe19c28f1a3ef53f6b51096bafddc6609dc6c7",
+ "head": "d1dc6c310",
+ "reviewed_commit": "c9ac0e1e2",
+ "reviewed_note": "c9ac0e1e2 is on the local ref quorum/4102-431c706d2 so lanes could start; its tree is byte-identical to PR tip d1dc6c310 (git diff d1dc6c310 c9ac0e1e2 is empty)",
+ "diff_sha256": "3f6c617fca1795af6cd0cba019948cd05b3fe1adcd519364c917c3444ca2b885",
+ "author": {
+  "model": "claude-opus-5-5",
+  "family": "claude"
+ },
+ "gate": {
+  "exit": 0,
+  "sha256": "fd302c8ede2fbfe4839989a49178ff7c018c777ee90b80641d6662a518fd542f",
+  "covers": [
+   "ci_run_target_release.sh --self-test (11 cases)",
+   "ci.yml parses",
+   "bashrs gate",
+   "shell lint ratchet"
+  ],
+  "orchestrator_rerun": "self-test re-run on d1dc6c310: exit 0, PASS"
+ },
+ "rounds": [
+  {
+   "round": 1,
+   "verdicts": "3/3 gemini PASS",
+   "acted_on": "delegate found register non-fatal: a job with no marker is invisible to a sibling's release -> 47daf2a59 makes register FATAL"
+  },
+  {
+   "round": 2,
+   "verdicts": "1 FAIL (lock-file leak, real)",
+   "acted_on": "77dd5227b: last release unlinks <dir>.lock, with an inode check in locked() so a waiter never holds a stale lock"
+  },
+  {
+   "round": 3,
+   "commit": "7a0e5e687",
+   "verdicts": "2/2 agy PASS + haiku PASS (inode, unlink and flock mutants all RED)",
+   "acted_on": "delegate found a release on an already-gone tree leaked the lock it created -> d1dc6c310"
+  },
+  {
+   "round": 4,
+   "commit": "c9ac0e1e2",
+   "verdicts": "2/2 agy PASS + haiku PASS",
+   "acted_on": "none: no findings, no dissent"
+  }
+ ],
+ "lanes": [
+  {
+   "lane": 1,
+   "model": "gemini-3.1-pro-high",
+   "family": "gemini",
+   "verdict": "PASS",
+   "exit": 3,
+   "conversation": "4377e0dd-8368-465d-adea-d15add70e476",
+   "file_writes_in_transcript": 0
+  },
+  {
+   "lane": 2,
+   "model": "gemini-3.8-flash-high",
+   "family": "gemini",
+   "verdict": "PASS",
+   "exit": 3,
+   "conversation": "398e2c30-a4ea-4b06-a8c0-9132a193d3d1",
+   "file_writes_in_transcript": 0
+  },
+  {
+   "lane": 3,
+   "model": "claude-haiku-4-5-20251001",
+   "family": "claude",
+   "executor": "claude-code-agent",
+   "verdict": "PASS",
+   "measured": [
+    "self-test 11/11 PASS",
+    "mutant: gone-tree unlink -> ':' turns 'releasing a gone tree leaves no lock file behind' FAIL",
+    "mutant: inode check -> 'break' turns the two-inode waiter case FAIL",
+    "mutant: flock -w -> no-op turns the race cases FAIL",
+    "ci.yml: both registers fatal, both releases last with if: always()"
+   ]
+  }
+ ],
+ "isolation": {
+  "lanes_1_2_exit": 3,
+  "attribution": "every moved ref attributed by reflog to a named foreign worktree: ci/4133-guard-steps-setsid (/home/noah/src/aprender-4133), fix/4108-guard-tree-zero-checks (/home/noah/src/aprender-4108), fix/3459-must-carry-universe (/mnt/nvme-raid0/agent-wt/aprender-f5-3459), PMAT-4166-pvl-11-lint-ratchets (another session's ev11 scratch worktree); both lane clones removed byte-identical; tree witness verified in both",
+  "cop_ruling_abc": "(a)(b)(c) hold for refs",
+  "open": "lanes also flagged a shared .git/config change; it is only branch.* upstream stanzas written by the same two sibling branches, no user.* keys. The cop ruling names refs only; whether it covers this config line is for the cop to rule"
+ },
+ "agreed": "the gone-tree rm -f of <dir>.lock runs under the held flock; a woken waiter's post-acquire inode check mismatches, closes fd 9 and re-opens (<=50 tries), so no waiter is stranded and no two holders exist; live_list keeps a live sibling's tree; register is fatal; release steps are terminal with if: always(); no runs-on/secret/permission change; roadmap entry not overclaimed",
+ "verdict": "PASS 3/3 (2 non-Claude + 1 haiku)",
+ "partial": false,
+ "ci_proof": {
+  "run": 35963100366,
+  "runner": "gx10-pool2",
+  "what": "planted failing step in guard-cargo (commit 4928b67f8, reverted a25163490): register ran, plant exited 1, the if: always() release still ran and printed 'released: deleted .../4150/run-35963100366-guards', and the dir is gone on the host. Only that run was cancelled, after the release reported."
+ },
+ "size_split": {
+  "measured_on": "gx10, 16-17G shard target dirs",
+  "rlib_rmeta_pct": "57-59",
+  "test_executables_pct": "~30",
+  "so_pct": "6-7",
+  "build_pct": "~5"
+ },
+ "not_measured": [
+  "debug = \"line-tables-only\" as the next size lever: before/after NOT measured",
+  "full-size du before/after of the release: comes from the final head's normal CI run logs (the release step logs du before and after)"
+ ],
+ "auto_merge": "not armed by the author; workflow-edit PR -> cop arms under the standing rule (3/3 non-Claude quorum + green CI, no runner-host/secret/permission change). Note: this round is 2 non-Claude + 1 haiku per the 2026-09-24 operator rule; whether that satisfies the 3/3 non-Claude standing rule is the cop's call",
+ "artifacts": {
+  "agy_round_dir": "/run/user/1000/paiml-implement/agy/PMAT-4102/2f99f3bc-15d6-462a-981d-94c98c779790/r4"
+ }
+}
