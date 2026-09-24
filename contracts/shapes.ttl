@@ -2,6 +2,164 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ont: <https://ont.paiml.dev/v1alpha1/> .
 
+<https://ont.paiml.dev/v1alpha1/shape/github-repo> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/Repo> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/repo/ref> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/repo/nameWithOwner> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/repo/sha> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[0-9a-f]{40}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/repo/url> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/github-issue> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/Issue> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/ref> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/repo> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/number> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/title> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/state> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "OPEN" "CLOSED" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/updatedAt> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/milestone> ;
+        sh:maxCount 1 ;
+        sh:class <https://ont.paiml.dev/v1alpha1/Milestone> ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/issue/milestoneUnresolved> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/github-pull-request> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/PullRequest> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/ref> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/repo> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/number> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/title> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/state> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "OPEN" "CLOSED" "MERGED" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/updatedAt> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/mergedAt> ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/baseRepo> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:class <https://ont.paiml.dev/v1alpha1/Repo> ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/pr/baseRepoUnresolved> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/github-milestone> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/Milestone> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/milestone/ref> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/milestone/repo> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/milestone/number> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/milestone/title> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/milestone/state> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "OPEN" "CLOSED" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/milestone/updatedAt> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/bound-symbols-resolve> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/Symbol> ;
     sh:property [

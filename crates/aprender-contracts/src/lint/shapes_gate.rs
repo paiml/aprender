@@ -288,6 +288,7 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
         graph,
         &extraction.gguf,
         &extraction.apr_model,
+        &extraction.github,
     );
     let (inherited_shapes_applied, inherited_by_shape) =
         subsumption_of(contract_dir, graph, &shapes, &mut counted);
@@ -444,6 +445,9 @@ fn by_entity_type(extraction: &extract::Extraction) -> BTreeMap<String, usize> {
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
+    // ONT-4f: every Σ snapshot type (repo, issue, pull-request, milestone), 0 when its directory is empty —
+    // the extractor seeds each declared type, so the key is never absent.
+    .chain(extraction.github.by_type.clone())
     .collect()
 }
 
@@ -498,6 +502,15 @@ fn extract_controls() -> BTreeMap<String, String> {
         ),
         // aprender#3715: drawn every run, subject or not — a cell owed without a receipt stays a node
         ("release-evidence", release_evidence::positive_control()),
+        // ONT-4f: the GitHub snapshot types — a version mismatch (repo, milestone), a merge with no time
+        // (pull-request), a milestone reference to nothing tracked (issue)
+        ("repo", json::github::positive_control("repo")),
+        ("issue", json::github::positive_control("issue")),
+        (
+            "pull-request",
+            json::github::positive_control("pull-request"),
+        ),
+        ("milestone", json::github::positive_control("milestone")),
     ]
     .into_iter()
     .map(|(k, fired)| {
@@ -525,6 +538,7 @@ fn findings_of(
     graph: &Graph,
     gguf_stats: &gguf::GgufStats,
     apr_stats: &apr_model::AprStats,
+    github: &json::github::GithubStats,
 ) -> Counted {
     let mut c = Counted {
         findings: Vec::new(),
@@ -573,6 +587,19 @@ fn findings_of(
         c.findings.push(f);
     }
     for e in gguf_stats.errors.iter().chain(apr_stats.errors.iter()) {
+        c.violations += 1;
+        let mut f = LintFinding::new(
+            "PV-ONT-012",
+            RuleSeverity::Error,
+            format!("extractor refused {}: {}", e.file, e.what),
+            e.file.clone(),
+        );
+        f.contract_stem = None;
+        c.findings.push(f);
+    }
+    // ONT-4f: a refused GitHub snapshot is the corpus being wrong (a version that disagrees, a merge with no time),
+    // so it is a Fail naming the file, exactly like a lying model header.
+    for e in &github.errors {
         c.violations += 1;
         let mut f = LintFinding::new(
             "PV-ONT-012",

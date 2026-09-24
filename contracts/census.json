@@ -1,8 +1,8 @@
 {
   "schema": "ont.paiml.dev/census/v1alpha1",
   "git_sha": null,
-  "n_files": 1835,
-  "n_parsed": 1835,
+  "n_files": 1836,
+  "n_parsed": 1836,
   "n_parse_errors": 0,
   "parse_errors": [],
   "quarantined_n": 0,
@@ -12,7 +12,7 @@
     "kernel": 387,
     "model-family": 28,
     "model-family-variant": 1,
-    "pattern": 97,
+    "pattern": 98,
     "pretraining-corpus": 2,
     "registry": 519,
     "schema": 766,
@@ -24,27 +24,33 @@
     "gguf": 2,
     "json": 3,
     "pv-contract": 1,
-    "release-evidence": 1
+    "release-evidence": 1,
+    "repo": 1
   },
   "by_concept": {
     "Code": 168,
-    "Contract": 1770,
+    "Contract": 1771,
     "Dataset": 0,
     "Doc": 0,
     "Entity": 0,
+    "Issue": 1,
+    "Json": 4,
     "Kernel": 835,
+    "Milestone": 1,
     "Model": 0,
     "Proof": 0,
+    "PullRequest": 1,
+    "Repo": 1,
     "Statement": 408,
     "Symbol": 168,
     "Test": 0
   },
   "by_anchoring": {
     "unanchored": 1828,
-    "class": 5,
+    "class": 6,
     "instance": 2
   },
-  "id_set_sha256": "5f1b063b68843007a34362964894da29ce7caf7261fa0fd81fa93080ff8c8f67",
+  "id_set_sha256": "54b229b62c268a67dc6a84ed1c0f8a7e6b4529bc2f77f6eaece11f98ece190b3",
   "declared_external": [
     {
       "name": "provable-contracts",
