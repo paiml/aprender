@@ -13,9 +13,10 @@ or a disk/memory alarm. Its work, including a request in flight, passes to lambd
 Subcommands
   watch   (runs ON gx10)  every --period s: if the box is needed, stop the server by its
                           recorded pid; if free, (re)start it. State: STATE_DIR/state.json.
-  ask     (runs on lambda) send one chat request: gx10 if its state says serving and
-                          /health answers, else lambda CPU; a gx10 failure mid-request is
-                          re-sent to lambda. Prints ONE JSON receipt.
+  ask     (runs on lambda) send one chat request to gx10's loopback server over ssh; any
+                          gx10 failure (yielded, stopped mid-request, ssh loss) re-sends it
+                          to lambda CPU. One hard budget (--timeout, default 120 s) covers
+                          both; on expiry the verdict is "unavailable". Prints ONE JSON receipt.
   need    (runs ON gx10)  print the need signals (for receipts and the mutation proof).
 
 The lane is ADVISORY: a late or missing answer never blocks a quorum (the rail's side).
@@ -32,7 +33,8 @@ import sys
 import time
 import urllib.request
 
-STATE_DIR = os.path.expanduser("~/.local/state/apr-dogfood-4252")
+STATE_REL = ".local/state/apr-dogfood-4252"   # under $HOME on the host that runs `watch`
+STATE_DIR = os.path.join(os.path.expanduser("~"), STATE_REL)
 CLAIM = "/tmp/apr-gx10-claim"          # another session's claim: any content, any owner
 LOCK = "/tmp/apr-gpu.lock"
 QUEUE = "/tmp/apr-gpu-queue"
@@ -40,10 +42,17 @@ DF_FLOOR_GB = 60                        # yield above the 50G alarm so a build n
 MEM_FLOOR_GB = 16
 GX10_PORT = 18253
 LAMBDA_URL = "http://127.0.0.1:18252"
+PROBE_TIMEOUT = 15                      # a hung probe (nvidia-smi) is a reason to yield
 
 
-def sh(cmd, **kw):
-    return subprocess.run(cmd, capture_output=True, text=True, **kw)
+def sh(cmd, timeout=None, **kw):
+    """A probe that does not answer in time reads as failed (rc 124), never as a hang:
+    a hung nvidia-smi would otherwise freeze the watcher and silence every yield."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=timeout or PROBE_TIMEOUT, **kw)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(cmd, 124, "", f"timed out: {cmd[0]}")
 
 
 def load_state():
@@ -86,7 +95,8 @@ def need_signals(own_pid):
     # 1. gpu-q: a held lock or a queued ticket
     r = sh(["flock", "-n", LOCK, "true"])
     if r.returncode != 0:
-        why.append(f"gpu lock held ({LOCK})")
+        why.append(f"gpu lock held ({LOCK})" if r.returncode != 124
+                   else f"gpu lock probe timed out ({LOCK})")
     try:
         q = [n for n in os.listdir(QUEUE) if not n.startswith(".")]
         if q:
@@ -150,6 +160,13 @@ def start_server(st, args):
     st.update({"serving": False, "pid": proc.pid, "cmd": cmd, "started_at": time.time()})
     save_state(st)
     for _ in range(300):
+        # a need that appears while the model loads is honoured now, not after the load
+        why = need_signals(proc.pid)
+        if why:
+            stop_server(st, why)
+            print(f"{time.strftime('%H:%M:%SZ', time.gmtime())} YIELD (during start) {why}",
+                  flush=True)
+            return
         if proc.poll() is not None:
             st.update({"pid": None, "last_error": f"exited rc={proc.returncode}"})
             save_state(st)
@@ -159,6 +176,8 @@ def start_server(st, args):
             save_state(st)
             return
         time.sleep(1)
+    # never healthy: stop it and say so, rather than leave a live pid marked not-serving
+    stop_server(st, ["startup timeout: /health never answered in 300 s"])
 
 
 def health(url):
@@ -204,7 +223,8 @@ def gx10_ask(messages, max_tokens, timeout):
     payload = json.dumps({"model": "default", "messages": messages,
                           "max_tokens": max_tokens, "temperature": 0.0})
     # state.json is written indented; the protocol is line-based, so emit it on ONE line.
-    remote = (f"S={STATE_DIR}; python3 -c 'import json,sys; "
+    # $HOME is expanded by gx10's shell: the state dir is the WATCHER's, not this host's.
+    remote = (f"S=$HOME/{STATE_REL}; python3 -c 'import json,sys; "
               f"print(json.dumps(json.load(open(sys.argv[1]))))' $S/state.json; "
               f"L=$(wc -l < $S/serve.log); "
               f"curl -sf -m {timeout} http://127.0.0.1:{GX10_PORT}/v1/chat/completions "
