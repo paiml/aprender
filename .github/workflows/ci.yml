@@ -397,12 +397,12 @@ jobs:
       - name: Register this job on the run's target dir (last-one-out, #4102)
         # A marker under <run dir>/.live/, taken under a flock on the host-local sibling <run dir>.lock. The
         # always() step at the end of this job releases it, and deletes the tree only if no other job's marker
-        # remains. Non-fatal: a missing marker can only make the tree deletable sooner, never keep it alive.
+        # remains. FATAL on purpose: a job with no marker is invisible to a sibling's release, which would then
+        # delete this job's tree while it builds. A job that cannot register must not build on a shared tree.
         run: |
           bash scripts/ci_run_target_release.sh register \
             "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}" \
-            "${GITHUB_JOB}-s${SHARD}-a${GITHUB_RUN_ATTEMPT}" \
-            || echo "::warning::target-dir register failed; the release step still runs"
+            "${GITHUB_JOB}-s${SHARD}-a${GITHUB_RUN_ATTEMPT}"
       - name: Pre-build chown — fix per-RUN root ownership
         # Root cause (five-whys):
         #   1. Why do fresh runs sometimes fail with "failed to create
@@ -1650,9 +1650,9 @@ jobs:
           }
           heal_path /mnt/nvme-raid0/targets/aprender-ci "$GUARD_TARGET_DIR"
           heal_path /mnt/nvme-raid0/cargo-ci/home "$GUARD_CARGO_HOME/registry"
-          # #4102: last-one-out marker; the always() step at the end of this job releases it.
-          bash scripts/ci_run_target_release.sh register "$GUARD_TARGET_DIR" "${GITHUB_JOB}-a${GITHUB_RUN_ATTEMPT}" \
-            || echo "::warning::target-dir register failed; the release step still runs"
+          # #4102: last-one-out marker; the always() step at the end of this job releases it. FATAL on purpose:
+          # without a marker a sibling's release could delete this job's live tree.
+          bash scripts/ci_run_target_release.sh register "$GUARD_TARGET_DIR" "${GITHUB_JOB}-a${GITHUB_RUN_ATTEMPT}"
           printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
           printf 'cargo home: %s (registry/ .package-cache .package-cache-mutate travel together)\n' "$GUARD_CARGO_HOME"
       # Poka-yoke: a beat that no workflow executes reads as enforcement, is
