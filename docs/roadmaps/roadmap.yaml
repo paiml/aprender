@@ -21701,6 +21701,18 @@ roadmap:
   updated: '2026-09-24T19:00:00Z'
   spec: null
   acceptance_criteria: []
+- id: PMAT-4259
+  github_issue: 4259
+  item_type: task
+  title: 'GPU argmax kernel keeps the later index on an exact tie; CPU argmax keeps the first — breaks greedy token identity once #4215(b) moves argmax to GPU'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:01:41Z
+  updated: 2026-09-24T12:01:41Z
+  spec: null
+  acceptance_criteria:
+  - 'The GPU argmax returns the FIRST index of an exact maximum, as the CPU argmax does; a red-first tie-break falsifier covers ties within a thread, across threads, and across blocks.'
   phases: []
   subtasks: []
   estimated_effort: null
@@ -21759,3 +21771,4 @@ roadmap:
   - kind:code
   notes: 'cuda_batch_scheduler generate_single_request (the m==1 fast path, shared with the iteration scheduler) runs one Session::generate over BorrowedCudaForward, a dense CUDA ArchForward over the scheduler''s borrowed model built on aprender-49''s cuda_reset/cuda_forward/cuda_forward_greedy. Stop tokens are filtered in the callback so none is sent (pre-port semantics). The m>1 batched path (batched_setup_and_prefill/batched_decode_step) is multi-slot and stays as is. Known delta: the per-request prefix cache (establish_prompt_kv/populate_prefix_cache) is not used on the ported path.'
   notes: 'Option (a) from the ticket: the two header slices, MANIFEST.json and generate.py move from tests/fixtures/gguf-header-slices/ to src/fixtures/gguf-header-slices/ (the src/fixtures/chat_template_3990/ pattern), so they ship and the test runs for crates.io users. MEASURED: in tree, cargo test -p aprender-serve --lib tokenizer_tests_unk_3609 gives 9/9 pass. Tarball: the commit cherry-picked onto v0.69.1, packaged, and swapped into aprender-3a''s #4114 tarball workspace; cargo test -p aprender-serve --lib --no-run has 0 errors at tokenizer_tests_unk_3609.rs (it was 2). The one remaining error in that target is contracts/kernel-fusion-v1.yaml in fusion_call_site_guard_3985.rs, which is #4048 and out of scope. .crate is 8,224,489 bytes (under the 10 MB crates.io limit).'
+  notes: 'Ported from c8ce988c3 (perf/4215, based on 0.69.3) onto main; prerequisite for #4215(b), greedy GPU argmax.'
