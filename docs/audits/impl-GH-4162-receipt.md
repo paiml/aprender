@@ -29,3 +29,17 @@ The artifact is kept in `docs/audits/quorum-GH-4162-r1/`.
 - **F2 counted the restart baseline B twice** (lanes 1 + 2): once in the compaction cost and again in `read_sim` on the next turn. Removed from the compaction cost.
   - Re-measured, 24 h: 200k → 303 compactions, net 69.4%; 300k → 59.6%; 400k → 50.1%; 600k → 32.3%. That's within 0.6 points of the posted figures.
 - The round 1 lane logs are not committed; only the artifact is (sha256 `9613f8f95715e44b2454fdb781da8321f8208e336cc8209d5618379be6d8392c`). Each lane's measured model is recorded in it.
+
+## Quorum round 2 (2 agy lanes): AGREED, PASS / PASS
+
+- The artifact is `docs/audits/quorum-GH-4162.json`, head f38703f46, diff_sha256 `8a447051…3ab42`.
+- The brief was hard-link captured: 51,711 B, sha256 `58e20e900bc2f1b468ecf7e8d035167815dc366dfb50c97f78d169ef8989da99`.
+- Each lane's own tokens:
+
+| lane | model (measured) | input | output | thinking | cache read | total | seconds |
+|---|---|---|---|---|---|---|---|
+| 1 | gemini-3.1-pro-high | 38,805 | 12,180 | 12,007 | 8,160 | 50,985 | 91 |
+| 2 | gemini-3.8-flash-high | 889,945 | 18,323 | 11,772 | 3,661,227 | 908,268 | 333 |
+
+- On the same brief, lane 2 spent **17.8× lane 1's tokens** (plus 3.7 M cache reads), so it read far beyond the brief. That matches B2b, where gemini-3.8-flash-high is 35 lanes and 44.3 M tokens, the largest agy line.
+- **Haiku seat: PENDING.** The shared subagent-lock hook's kind-gate refuses GH-4162, because it reads the MAIN checkout's roadmap, where this branch's fragment isn't filed. That fix is a #390 requirement (pi-21), per the cop's ruling not to route around it.
