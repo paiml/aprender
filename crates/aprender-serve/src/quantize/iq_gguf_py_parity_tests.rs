@@ -110,7 +110,11 @@ fn every_tensor_decodes_like_gguf_py() {
                 } else {
                     tensor_exact = false;
                     let rel = f64::from((a - e).abs()) / f64::from(e.abs()).max(1e-30);
-                    if !(rel <= worst.0) {
+                    // NaN-inclusive on purpose: a NaN rel must land in `worst`, exactly as `!(rel <= worst.0)`.
+                    if !matches!(
+                        rel.partial_cmp(&worst.0),
+                        Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+                    ) {
                         worst = (
                             rel,
                             format!("{name}[{row},{c}]: ours {a:e} vs gguf-py {e:e}"),
