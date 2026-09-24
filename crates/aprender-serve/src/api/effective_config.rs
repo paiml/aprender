@@ -580,7 +580,46 @@ pub fn backend_loaded(state: &AppState) -> Vec<&'static str> {
     if state.quantized_model().is_some() || state.apr_transformer().is_some() {
         loaded.push("cpu");
     }
+    // #4254: the Qwen3.5 hybrid holds no `quantized_model`; its resident session
+    // says where it runs — the predicate `/health`'s `compute_mode` reads.
+    if let Some(session) = state.qwen35_session() {
+        let on = if session.on_gpu.load(std::sync::atomic::Ordering::Relaxed) {
+            "cuda"
+        } else {
+            "cpu"
+        };
+        if !loaded.contains(&on) {
+            loaded.push(on);
+        }
+    }
     loaded
+}
+
+/// #4254: the accelerators the LAUNCHING binary can dispatch to.
+///
+/// `realizar` is always built with `gpu` (its default), but a request reaches
+/// wgpu only when `apr` itself was built with `wgpu` — without it, `apr serve
+/// --backend wgpu` refuses and `--list-devices` says no accelerator is compiled
+/// in. When the launcher reported its own features (`cli`), an accelerator it
+/// cannot dispatch to is not reported. Without that report the crate's own set
+/// stands.
+#[must_use]
+pub fn dispatchable_build_features(
+    features: Vec<&'static str>,
+    cli: Option<&[String]>,
+) -> Vec<&'static str> {
+    let Some(cli) = cli else {
+        return features;
+    };
+    let has = |name: &str| cli.iter().any(|f| f == name);
+    features
+        .into_iter()
+        .filter(|f| match *f {
+            "gpu" => has("wgpu"),
+            "cuda" => has("cuda"),
+            _ => true,
+        })
+        .collect()
 }
 
 /// PP-2: the dispatch path this process will take, read from the process.
@@ -671,7 +710,13 @@ pub fn effective_config(state: &AppState) -> EffectiveConfigResponse {
             server
         },
         compute_class: compute_class_from_residency(state),
-        build_features: build_features(),
+        build_features: dispatchable_build_features(
+            build_features(),
+            effective
+                .offload
+                .as_deref()
+                .map(|o| o.build_features.as_slice()),
+        ),
         build_features_cli: effective.offload.as_ref().map(|o| o.build_features.clone()),
         backend_loaded: backend_loaded(state),
         model: ModelReport::from_state(state),
@@ -1053,6 +1098,27 @@ mod effective_config_tests {
         assert!(
             features.len() <= 4,
             "a feature reported that this crate does not have: {features:?}"
+        );
+    }
+
+    /// #4254: an accelerator the launcher cannot dispatch to is not reported; with
+    /// no launcher report the crate's own set stands.
+    #[test]
+    fn build_features_drop_an_accelerator_the_launcher_cannot_dispatch() {
+        let all = vec!["server", "cli", "gpu", "cuda"];
+        let cli = |f: &[&str]| f.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        assert_eq!(dispatchable_build_features(all.clone(), None), all);
+        assert_eq!(
+            dispatchable_build_features(all.clone(), Some(&cli(&["inference"]))),
+            vec!["server", "cli"]
+        );
+        assert_eq!(
+            dispatchable_build_features(all.clone(), Some(&cli(&["inference", "wgpu"]))),
+            vec!["server", "cli", "gpu"]
+        );
+        assert_eq!(
+            dispatchable_build_features(all, Some(&cli(&["inference", "cuda"]))),
+            vec!["server", "cli", "cuda"]
         );
     }
 

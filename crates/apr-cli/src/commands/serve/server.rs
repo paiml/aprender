@@ -27,6 +27,26 @@ fn dominant_quantization(model: &realizar::gguf::OwnedQuantizedModel) -> Option<
         .map(|(name, _)| name)
 }
 
+/// #4254: [`dominant_quantization`] for a model served from its tensor table:
+/// the modal qtype across the per-layer (`blk.*`) matrices. `None` when none
+/// carries a qtype this build names.
+#[cfg(feature = "inference")]
+fn tensor_table_quantization(model: &realizar::gguf::GGUFModel) -> Option<&'static str> {
+    use std::collections::HashMap;
+
+    let mut counts: HashMap<u32, usize> = HashMap::new();
+    for t in &model.tensors {
+        if t.name.starts_with("blk.") && t.dims.len() == 2 {
+            *counts.entry(t.qtype).or_insert(0) += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .filter_map(|(qtype, n)| realizar::api::gguf_qtype_name(qtype).map(|name| (name, n)))
+        .max_by_key(|&(name, n)| (n, name))
+        .map(|(name, _)| name)
+}
+
 /// Everything this process actually knows about the model it just loaded.
 ///
 /// Facts come from three places, all measured: the file (size, container
@@ -180,7 +200,17 @@ fn build_qwen35_state(
         .unwrap_or_default()
         .with_architecture("qwen35")
         .with_model_max_context_length(context_length)
-        .with_context_length(config.context_length);
+        .with_context_length(config.context_length)
+        .with_parameter_count(
+            realizar::gguf::forward_qwen35::qwen35_known_issue::gguf_param_count(
+                &mapped_model.model,
+            ),
+        );
+    // #4254: the hybrid has no `OwnedQuantizedModel` to tally, so its tensor table is.
+    let model_source = match tensor_table_quantization(&mapped_model.model) {
+        Some(quantization) => model_source.with_quantization(quantization),
+        None => model_source,
+    };
     let state = AppState::with_qwen35_session(session, mapped_model, vocab)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
         .with_model_source(model_source)
@@ -245,6 +275,70 @@ mod qwen35_serve_route_tests {
         let served = state.qwen35_session().expect("a resident session");
         let layers = served.session.lock().expect("lock").num_layers();
         assert!(layers > 0, "the session holds the hybrid's layers: {layers}");
+    }
+
+    /// #4254: one process, two endpoints, one answer. `/v1/effective-config` on the
+    /// hybrid named no backend (`backend_loaded: []`, `compute_class: unknown`), no
+    /// quantization and no parameter count while `/health` said `cpu` — and listed a
+    /// `gpu` feature this binary cannot dispatch to.
+    #[test]
+    fn qwen35_effective_config_agrees_with_health() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt;
+
+        if !Path::new(MODEL).exists() {
+            eprintln!("SKIP: {MODEL} is absent");
+            return;
+        }
+        let mapped = std::sync::Arc::new(
+            realizar::gguf::MappedGGUFModel::from_path(MODEL).expect("map the GGUF"),
+        );
+        let want_params =
+            realizar::gguf::forward_qwen35::qwen35_known_issue::gguf_param_count(&mapped.model);
+        let config = ServerConfig {
+            no_gpu: true,
+            ..ServerConfig::default()
+        };
+        let state = build_qwen35_state(mapped, &config).expect("qwen35 state");
+        let router = realizar::api::create_router_with_config(state, config.router_config());
+        let get = |uri: &'static str| {
+            let router = router.clone();
+            async move {
+                let req = Request::builder().uri(uri).body(Body::empty()).expect("request");
+                let resp = router.oneshot(req).await.expect("route");
+                let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+                    .await
+                    .expect("body");
+                serde_json::from_slice::<serde_json::Value>(&bytes).expect("JSON")
+            }
+        };
+        let (health, ec) = tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(async { (get("/health").await, get("/v1/effective-config").await) });
+
+        assert_eq!(health["compute_mode"], "cpu", "{health}");
+        assert_eq!(ec["compute_class"], "cpu", "must agree with /health: {ec}");
+        assert_eq!(ec["backend_loaded"], serde_json::json!(["cpu"]), "{ec}");
+        let q = ec["model"]["quantization"].as_str().expect("quantization named");
+        assert!(q.starts_with('Q'), "a GGUF qtype name, got {q:?}");
+        assert_eq!(ec["model"]["parameter_count"], want_params, "{ec}");
+        assert!(
+            (600_000_000..1_000_000_000).contains(&want_params),
+            "fixture: the 0.8B file counts {want_params}"
+        );
+        // The launcher's own set decides which accelerators are dispatchable.
+        let features: Vec<&str> = ec["build_features"]
+            .as_array()
+            .expect("build_features")
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect();
+        assert_eq!(features.contains(&"gpu"), cfg!(feature = "wgpu"), "{features:?}");
+        assert_eq!(features.contains(&"cuda"), cfg!(feature = "cuda"), "{features:?}");
+        let commit = ec["server"]["build_commit"].as_str().expect("build_commit");
+        assert_eq!(commit, env!("APR_GIT_SHA"));
+        assert!(!commit.ends_with("+no-git"), "built from a checkout: {commit}");
     }
 
     /// The startup line's thinking mode is read off what the template renders.
