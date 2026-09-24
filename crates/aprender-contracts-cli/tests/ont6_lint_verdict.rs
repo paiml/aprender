@@ -291,6 +291,9 @@ fn json_report_carries_the_lattice() {
             serde_json::Value::String("ont-consistency".into()),
             // ONT-4e (gate 18) likewise.
             serde_json::Value::String("refines".into()),
+            // ONT-3a's bindings gate and ONT-3b's refinement gate likewise.
+            serde_json::Value::String("bindings".into()),
+            serde_json::Value::String("refinement".into()),
         ]),
         "{}",
         show(&r)

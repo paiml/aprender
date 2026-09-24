@@ -20,6 +20,7 @@ pub use gates::collect_yaml_files;
 pub mod bindings_gate;
 mod gates_extended;
 pub mod ratchet_gates;
+pub mod refinement_gate;
 pub mod refines_gate;
 pub mod relations_gate;
 pub mod rules;
@@ -366,6 +367,9 @@ pub enum GateExtra {
     /// ONT-3a: every implemented/partial binding resolves to workspace code, or the allowlist names it.
     #[serde(rename = "bindings")]
     Bindings(Box<bindings_gate::BindingsCounters>),
+    /// ONT-3b: every `model_of` resolves, and the unrefined-module count holds its shrink-only baseline.
+    #[serde(rename = "refinement")]
+    Refinement(Box<refinement_gate::RefinementCounters>),
 }
 
 /// Counters a `shapes` run reports, flattened into [`GateExtra::Shapes`]'s JSON.
@@ -734,6 +738,16 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     gates.push(bindings_gate_result);
     all_findings.append(&mut bindings_findings);
 
+    // Gate 21: refinement (ONT-3b). Same R-8 shape.
+    let (refinement_gate_result, mut refinement_findings) = ratchet_result(
+        config.contract_dir,
+        validation_passed,
+        refinement_gate::GATE,
+        refinement_gate::run_refinement_gate,
+    );
+    gates.push(refinement_gate_result);
+    all_findings.append(&mut refinement_findings);
+
     // Gate 9: strict test-binding (Issue #1510, opt-in via --strict-test-binding)
     if config.strict_test_binding {
         push_gate(
@@ -863,6 +877,9 @@ pub fn run_named_gate_with(
         bindings_gate::GATE => {
             NamedGateOutcome::Ratchet(bindings_gate::run_bindings_gate(contract_dir))
         }
+        refinement_gate::GATE => {
+            NamedGateOutcome::Ratchet(refinement_gate::run_refinement_gate(contract_dir))
+        }
         "tbox" => NamedGateOutcome::Tbox(tbox_gate::run_tbox_gate(contract_dir)),
         "valid-under" => {
             NamedGateOutcome::ValidUnder(valid_under_gate::run_valid_under_gate(contract_dir))
@@ -889,8 +906,9 @@ pub fn run_named_gate_with(
 }
 
 /// The gate names `--gate` computes alone, for the refusal message.
-pub const NAMED_GATES: [&str; 12] = [
+pub const NAMED_GATES: [&str; 13] = [
     bindings_gate::GATE,
+    refinement_gate::GATE,
     "depends-on-present",
     consistency_gate::GATE,
     "proved-is-derived",

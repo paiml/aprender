@@ -427,6 +427,42 @@ struct TreeGrounding {
     grounding: crate::discharge::summary::Grounding,
 }
 
+/// ONT-3b (#4073): a discharged theorem stays L4 only when an `extraction`/`simulation` model whose `model_of`
+/// resolves covers its module. The workspace walk runs only when the discharge grounds something.
+fn refine(lean_dir: &std::path::Path, grounding: &mut crate::discharge::summary::Grounding) {
+    use crate::discharge::refinement;
+    if grounding.derived.is_empty() {
+        return;
+    }
+    let l4 = match refinement::load(lean_dir) {
+        Ok(rec) => {
+            let modules = grounding.module_of.values().cloned().collect();
+            let root = workspace_root(lean_dir);
+            refinement::l4_modules(&refinement::judge(
+                &rec.models,
+                &modules,
+                refinement::workspace_resolver(&root),
+            ))
+        }
+        Err(_) => std::collections::BTreeSet::new(),
+    };
+    grounding.require_refinement(&l4);
+}
+
+/// The nearest ancestor of `dir` whose Cargo.toml has a `[workspace]` table, else `.`.
+fn workspace_root(dir: &std::path::Path) -> std::path::PathBuf {
+    let abs = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    abs.ancestors()
+        .find(|a| {
+            std::fs::read_to_string(a.join("Cargo.toml"))
+                .is_ok_and(|t| t.lines().any(|l| l.trim() == "[workspace]"))
+        })
+        .map_or_else(
+            || std::path::PathBuf::from("."),
+            std::path::Path::to_path_buf,
+        )
+}
+
 fn tree_grounding() -> &'static TreeGrounding {
     use crate::discharge::summary::{current_tree_sha, load, summary_path, Grounding};
     use std::sync::OnceLock;
@@ -437,8 +473,9 @@ fn tree_grounding() -> &'static TreeGrounding {
             let Ok(tree) = crate::discharge::Tree::load(dir) else {
                 continue;
             };
-            let grounding =
+            let mut grounding =
                 Grounding::from_summary(load(&summary_path(dir)), current_tree_sha(dir).as_deref());
+            refine(dir, &mut grounding);
             return TreeGrounding {
                 resolver: Some(crate::discharge::Resolver::new(&tree)),
                 grounding,

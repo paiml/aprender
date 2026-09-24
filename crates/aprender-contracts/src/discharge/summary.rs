@@ -10,7 +10,7 @@
 //! when a GREEN summary lists its theorem. The summary is a claim until EV-9's job regenerates it and diffs
 //! (summary-fresh); a hand edit toward pass is caught there, not here.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -228,6 +228,10 @@ pub struct Grounding {
     pub source: L4Source,
     pub derived: BTreeSet<String>,
     pub withheld: Option<String>,
+    /// Discharged theorems ONT-3b dropped because no L4 model covers their module.
+    pub unrefined: BTreeSet<String>,
+    /// Every theorem the summary lists, by the module that proves it.
+    pub module_of: BTreeMap<String, String>,
 }
 
 impl Grounding {
@@ -265,6 +269,12 @@ impl Grounding {
                 source: L4Source::Discharge,
                 derived: s.derived().into_iter().map(str::to_string).collect(),
                 withheld: None,
+                unrefined: BTreeSet::new(),
+                module_of: s
+                    .modules
+                    .iter()
+                    .flat_map(|m| m.theorems.iter().map(|t| (t.clone(), m.path.clone())))
+                    .collect(),
             },
         }
     }
@@ -274,7 +284,23 @@ impl Grounding {
             source,
             derived: BTreeSet::new(),
             withheld: Some(why),
+            unrefined: BTreeSet::new(),
+            module_of: BTreeMap::new(),
         }
+    }
+
+    /// ONT-3b (#4073): keep only the theorems whose module an L4 model covers (`extraction`/`simulation`, resolving
+    /// `model_of`). The rest move to `unrefined`: discharged, but nothing ties the statement to the Rust.
+    pub fn require_refinement(&mut self, l4_modules: &BTreeSet<String>) {
+        let (kept, dropped) = std::mem::take(&mut self.derived)
+            .into_iter()
+            .partition(|t| {
+                self.module_of
+                    .get(t)
+                    .is_some_and(|m| l4_modules.contains(m))
+            });
+        self.derived = kept;
+        self.unrefined = dropped;
     }
 
     /// Does this grounding hold every one of `theorems`? An empty list (a reference naming nothing) grounds nothing.
