@@ -49,6 +49,14 @@ pub struct Sigma {
     /// `extract::all` materializes.
     #[serde(default)]
     pub subsumes: Vec<Subsumes>,
+    /// v4.16 D-T1 (qd4c4): `entity.type` → the class a shape with no `targetClass` targets
+    /// (`shapes.rs::default_target`). An `entity.type` absent here gives such a shape no target: malformed, exit 3.
+    #[serde(default)]
+    pub entity_type_target_class: BTreeMap<String, String>,
+    /// v4.16 D5b (qd4c3): the `##` headings of an `llm-context` file that satisfy each role
+    /// (`Purpose`, `Rules`, `Commands`, `Layout`) — `extract:llm-context` emits `llm:<role>Section` per match.
+    #[serde(default)]
+    pub llm_context_role_synonyms: BTreeMap<String, Vec<String>>,
     /// Which reader claims each Σ key. The anti-decoration rule: a key nobody reads is refused (exit 3).
     #[serde(default)]
     pub readers: BTreeMap<String, String>,
@@ -276,7 +284,7 @@ fn find_cycle<'a>(
 }
 
 /// The Σ keys that must be claimed by a reader when they are present and non-empty.
-pub const READABLE_KEYS: [&str; 10] = [
+pub const READABLE_KEYS: [&str; 12] = [
     "concepts",
     "roles",
     "symbols",
@@ -286,6 +294,8 @@ pub const READABLE_KEYS: [&str; 10] = [
     "extractors",
     "not_expressible",
     "subsumes",
+    "entity_type_target_class",
+    "llm_context_role_synonyms",
     // The contract schema owns this one; Σ only carries it (see `Sigma::metadata`).
     "metadata",
 ];
@@ -497,6 +507,12 @@ impl Sigma {
         }
         if !self.subsumes.is_empty() {
             keys.insert("subsumes");
+        }
+        if !self.entity_type_target_class.is_empty() {
+            keys.insert("entity_type_target_class");
+        }
+        if !self.llm_context_role_synonyms.is_empty() {
+            keys.insert("llm_context_role_synonyms");
         }
         if self.metadata.is_some() {
             keys.insert("metadata");
