@@ -380,6 +380,38 @@ fn classify_bos_eos(content: &str) -> (bool, bool) {
 include!("chat.rs");
 include!("simple.rs");
 
+/// #4269 (workstream M of #4263): the ONE SafeTensors CPU generate both serve
+/// handlers (`/v1/chat/completions` in chat.rs, `/generate` in simple.rs) call.
+/// Returns the prompt followed by the generated tokens, like
+/// `AprTransformer::generate_with_cache` did.
+#[cfg(feature = "inference")]
+fn st_cpu_generate(
+    model: &realizar::apr_transformer::AprTransformer,
+    input_ids: &[u32],
+    max_tokens: usize,
+    temperature: f32,
+) -> std::result::Result<Vec<u32>, String> {
+    let gen_config = realizar::apr_transformer::GenerateConfig {
+        max_tokens,
+        temperature,
+        top_p: 0.9,
+        top_k: 0,
+        // #3760: the sampler draws now; no seed is plumbed from this caller.
+        seed: realizar::apr_transformer::DEFAULT_SEED,
+        repetition_penalty: 1.0,
+        trace: false,
+        stop_tokens: vec![],
+        cancel: realizar::generate::CancelToken::never(),
+    };
+    model
+        .generate_with_cache(input_ids, &gen_config)
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(all(test, feature = "inference"))]
+#[path = "tests_st_serve_session_4269.rs"]
+mod tests_st_serve_session_4269;
+
 /// #3979: the SafeTensors HTTP surface, in ONE place. It was assembled inline twice
 /// (single-file and sharded), differing only in the `/tensors` payload. Every route is
 /// mounted AND recorded, so `GET /` and the 404 list exactly what is served; the
