@@ -208,9 +208,13 @@ pub fn entity_predicate(entity_type: &str, key: &str) -> String {
 /// expands to, so a shape can select one entity type and nothing else. The literal `ont:entityType` stays: it is
 /// what a shape's `path:` reads, and a class is not a value. Nothing is inferred — a contract with no
 /// `entity.type` gets no entity class, as it gets no `<type>:<key>` predicates.
+///
+/// Built like [`entity_predicate`], never through `iri()`: `iri()` percent-encodes and `expand` does not, so a
+/// type holding a character outside `iri()`'s safe set would type its contracts with a class no shape can name
+/// (quorum PMAT-4160, haiku seat).
 #[must_use]
 pub fn entity_class(entity_type: &str) -> String {
-    iri("entity", entity_type)
+    format!("{}entity/{entity_type}", crate::ontology::rdf::ONT_BASE)
 }
 
 /// A YAML scalar as a string: strings as they are, numbers and booleans by their YAML spelling. Mappings and
@@ -350,6 +354,14 @@ mod tests {
             "https://ont.paiml.dev/v1alpha1/entity/pv-contract"
         );
         assert_ne!(entity_class("study"), ont("Contract"));
+        // Every character class, not only the ones iri() leaves alone: the equality holds by construction.
+        for t in ["a b", "x/y", "q?r#s", "é", "100%", "a:b"] {
+            assert_eq!(
+                entity_class(t),
+                expand(&format!("entity:{t}")),
+                "entity type {t:?}"
+            );
+        }
     }
 
     #[test]
