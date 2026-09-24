@@ -2,6 +2,7 @@ pub mod audit;
 pub mod book;
 pub mod census;
 pub mod certify;
+pub mod challenge;
 pub mod check_parity;
 pub mod codegen;
 pub mod coq;

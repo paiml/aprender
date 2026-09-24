@@ -20799,6 +20799,24 @@ roadmap:
   labels:
   - kind:code
   notes: 'ONT-001 §5 row ONT-4e. Stacked on #4248 (ONT-5) and #4137 (ONT-4d). Receipt: docs/audits/impl-PMAT-4075-receipt.md'
+- id: PMAT-4076
+  github_issue: 4076
+  item_type: task
+  title: 'ONT-7: valid_under — kernel-kind contracts carry a world index'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-23T20:51:06Z
+  updated: 2026-09-23T20:51:06Z
+  spec: null
+  acceptance_criteria:
+  - paiml/infra docs/specifications/paiml-ontology.md v4.12 @948ae923 row ONT-7 (:656), probe (:657). depends_on ONT-1, ONT-6. K̂ 60. Cop (aprender-cf) assignment 2026-09-23.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4122
   github_issue: 4122
   item_type: task
@@ -20840,3 +20858,21 @@ roadmap:
   labels:
   - kind:code
   notes: 'Stacked on EV-5a (#4122). Scope from #4139 and PVL-001 EV-6a as amended by infra#992 (cop relay, 2026-09-24). Also withdraws a false L4 claim: cooperative-matrix-gemm-v1 cited the AXIOM f16_accumulation_error_bound as its lean_theorem; the reference becomes the `none -- ...` sentinel. MEASURED on lambda: check with lake elaboration rc 0 (164 pinned, 85 ORPHANED-ROOT, 7 PENDING); --strict rc 1; the pvl_mutation mutation turns scan and pin RED.'
+- id: PMAT-4166
+  github_issue: 4166
+  item_type: task
+  title: 'PVL-11: pv lint ratchets — theorem pairing and depends_on'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T07:10:50Z
+  updated: 2026-09-24T07:10:50Z
+  spec: null
+  acceptance_criteria:
+  - paiml/infra PVL-001 EV-11 (00553b0b). Cop (aprender-cf) assignment 2026-09-24.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

@@ -19,6 +19,7 @@ mod gates;
 pub use gates::collect_yaml_files;
 mod gates_extended;
 pub mod refines_gate;
+pub mod ratchet_gates;
 pub mod relations_gate;
 pub mod rules;
 pub mod sarif;
@@ -29,6 +30,7 @@ mod strict_test_binding;
 pub mod subsumption;
 pub mod tbox_gate;
 pub mod trend;
+pub mod valid_under_gate;
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -201,6 +203,94 @@ pub enum GateExtra {
         legacy_unresolved_depends_on: usize,
         /// Findings.
         violations: usize,
+    },
+    /// ONT-7: kernel-kind contracts carry a world index (`metadata.valid_under.world`, a key of Σ's `worlds`).
+    #[serde(rename = "valid_under")]
+    ValidUnder {
+        /// The worlds Σ declares — the index a `valid_under.world` must resolve into.
+        worlds: Vec<String>,
+        /// Contract files read.
+        contracts_checked: usize,
+        /// Of those, kernel-kind and not a registry — the class the row obliges.
+        kernel_contracts: usize,
+        /// Contracts (any kind) carrying `metadata.valid_under`.
+        contracts_with_valid_under: usize,
+        /// Kernel-kind contracts carrying none — the debt, shrink-only against the baseline.
+        contracts_without_valid_under: usize,
+        /// The top-level `contracts_without_valid_under` in `lint-baseline.json`; `None` = not recorded.
+        baseline: Option<usize>,
+        /// `world=count` over the contracts whose `valid_under` passed every rule.
+        by_world: Vec<String>,
+        /// Findings.
+        violations: usize,
+    },
+    /// PVL-001 EV-11: Lean theorem modules named by a book page — the `unpaired_theorem_modules` ratchet.
+    #[serde(rename = "theorem_pairing")]
+    TheoremPairing {
+        /// The Lean base the modules were read under.
+        lean_base: String,
+        /// `.md` pages read under the book roots.
+        book_pages: usize,
+        /// `.lean` files under `<base>/ProvableContracts/Theorems/`.
+        theorem_modules: usize,
+        /// Of those, named in full by at least one book page.
+        paired: usize,
+        /// The debt, shrink-only against the baseline.
+        unpaired_theorem_modules: usize,
+        /// The top-level `unpaired_theorem_modules` in `lint-baseline.json`; `None` = not recorded (reported only).
+        baseline: Option<usize>,
+        /// The unpaired modules, dotted, in byte order.
+        unpaired: Vec<String>,
+        /// Findings.
+        violations: usize,
+    },
+    /// PVL-001 EV-11: kernel-kind contracts with an empty `metadata.depends_on` — the ratchet.
+    #[serde(rename = "depends_on_present")]
+    DependsOnPresent {
+        /// Contract files parsed.
+        contracts_checked: usize,
+        /// Of those, kernel-kind and not a registry.
+        kernel_contracts: usize,
+        /// Kernel-kind contracts whose `metadata.depends_on` is empty — the debt, shrink-only.
+        contracts_without_depends_on: usize,
+        /// The top-level `contracts_without_depends_on` in `lint-baseline.json`; `None` = not recorded (reported only).
+        baseline: Option<usize>,
+        /// Findings.
+        violations: usize,
+    },
+    /// PVL-001 EV-8a (#4202): `status: proved` claims no green `discharge-summary.json` derives — the ratchet.
+    #[serde(rename = "proved_is_derived")]
+    ProvedIsDerived {
+        /// The summary read (beside the Lean base); `None` = no Lean base.
+        summary: Option<String>,
+        /// Why it derived nothing when it could not be read; `None` = it was read.
+        summary_error: Option<String>,
+        /// Every Lean step ran and passed. Only a green summary derives a claim.
+        summary_green: bool,
+        /// Contract files parsed.
+        contracts_checked: usize,
+        /// `proof_obligations[].lean.status: proved` claims.
+        proved_claims: usize,
+        /// Of those, not derived — the debt, shrink-only against the baseline, and it must reach 0.
+        underived_proved_claims: usize,
+        /// The top-level `underived_proved_claims` in `lint-baseline.json`; `None` = not recorded (reported only).
+        baseline: Option<usize>,
+        /// The underived claims, as `contract: theorem`, in contract order.
+        underived: Vec<String>,
+        /// Findings.
+        violations: usize,
+    },
+    /// PVL-001 EV-7a (#4200): `<lean>/Challenge/` against its regeneration (`pv challenge check`).
+    #[serde(rename = "challenge_fresh")]
+    ChallengeFresh {
+        /// The Lean dir judged.
+        lean_dir: String,
+        /// Challenge files the contracts render.
+        files: usize,
+        /// Extra, missing or differing files, one line each.
+        stale: Vec<String>,
+        /// Bound roots whose statement could not be lifted, as `contract: fqn: why`.
+        unrestated: Vec<String>,
     },
     /// ONT-4b: the shapes gate — every `shape:` block over the extracted graph, with the plant.
     #[serde(rename = "shapes")]
@@ -598,14 +688,33 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     gates.push(shapes_gate_result);
     all_findings.append(&mut shapes_findings);
 
-    // Gate 17 (numbered by agreement: ONT-7 13, EV-11 14-15, ONT-8 16): ont-consistency (ONT-5). Same R-8 shape:
+    // Gate 13: valid-under (ONT-7). Same R-8 shape: computed in every run, armed per repo.
+    let (valid_under_gate_result, mut valid_under_findings) =
+        valid_under_result(config.contract_dir, validation_passed);
+    gates.push(valid_under_gate_result);
+    all_findings.append(&mut valid_under_findings);
+
+    // Gates 14, 15, 16: theorem-pairing, depends-on-present (PVL-001 EV-11), proved-is-derived (EV-8a). Same R-8
+    // shape: computed in every run, armed per repo.
+    for (name, run) in RATCHET_GATES {
+        let (result, mut findings) =
+            ratchet_result(config.contract_dir, validation_passed, name, run);
+        gates.push(result);
+        all_findings.append(&mut findings);
+    }
+
+    // Gate 17: challenge-fresh (PVL-001 EV-7a). Same R-8 shape: computed wherever a Lean theorem base exists,
+    // armed per repo (only through `make ont-ratchet`).
+    gates.push(challenge_result(config.contract_dir));
+
+    // Gate 18 (numbered by agreement: ONT-7 13, EV-11 14-16, EV-7a 17): ont-consistency (ONT-5). Same R-8 shape:
     // computed in every run, armed per repo.
     let (consistency_gate_result, mut consistency_findings) =
         consistency_result(config.contract_dir, validation_passed);
     gates.push(consistency_gate_result);
     all_findings.append(&mut consistency_findings);
 
-    // Gate 18: refines (ONT-4e, R-20). Same R-8 shape: computed in every run, armed per repo.
+    // Gate 19: refines (ONT-4e, R-20). Same R-8 shape: computed in every run, armed per repo.
     let (refines_gate_result, mut refines_findings) =
         refines_result(config.contract_dir, validation_passed);
     gates.push(refines_gate_result);
@@ -696,6 +805,10 @@ pub enum NamedGateOutcome {
     Refines(refines_gate::RefinesOutcome),
     /// The `tbox` gate (ONT-2c): advisory classification. It has no Pass answer at all (R-7).
     Tbox(tbox_gate::TboxOutcome),
+    /// The `valid-under` gate (ONT-7), with three non-verdict answers (no Σ, malformed Σ, no kernel contract).
+    ValidUnder(valid_under_gate::ValidUnderOutcome),
+    /// A PVL-001 EV-11 ratchet (`theorem-pairing`, `depends-on-present`), whose one non-verdict answer is a decline.
+    Ratchet(ratchet_gates::RatchetOutcome),
     /// A gate that ran and judged the corpus.
     Ran {
         result: Box<GateResult>,
@@ -734,6 +847,18 @@ pub fn run_named_gate_with(
             NamedGateOutcome::Refines(refines_gate::run_refines_gate(contract_dir))
         }
         "tbox" => NamedGateOutcome::Tbox(tbox_gate::run_tbox_gate(contract_dir)),
+        "valid-under" => {
+            NamedGateOutcome::ValidUnder(valid_under_gate::run_valid_under_gate(contract_dir))
+        }
+        "theorem-pairing" => {
+            NamedGateOutcome::Ratchet(ratchet_gates::run_theorem_pairing_gate(contract_dir))
+        }
+        "depends-on-present" => {
+            NamedGateOutcome::Ratchet(ratchet_gates::run_depends_on_present_gate(contract_dir))
+        }
+        "proved-is-derived" => {
+            NamedGateOutcome::Ratchet(ratchet_gates::run_proved_is_derived_gate(contract_dir))
+        }
         "validate" => {
             let (contracts, parse_errors) = load_contracts(contract_dir);
             let (result, findings) = run_validate_gate(&contracts, &parse_errors);
@@ -747,15 +872,50 @@ pub fn run_named_gate_with(
 }
 
 /// The gate names `--gate` computes alone, for the refusal message.
-pub const NAMED_GATES: [&str; 7] = [
+pub const NAMED_GATES: [&str; 11] = [
+    "depends-on-present",
     consistency_gate::GATE,
+    "proved-is-derived",
     refines_gate::GATE,
     "relations",
     "shapes",
     "sigma",
     "tbox",
+    "theorem-pairing",
+    "valid-under",
     "validate",
 ];
+
+/// The EV-11 ratchet gates, by name, in the order the full run computes them.
+type RatchetRun = fn(&Path) -> ratchet_gates::RatchetOutcome;
+const RATCHET_GATES: [(&str, RatchetRun); 3] = [
+    ("theorem-pairing", ratchet_gates::run_theorem_pairing_gate),
+    (
+        "depends-on-present",
+        ratchet_gates::run_depends_on_present_gate,
+    ),
+    (
+        "proved-is-derived",
+        ratchet_gates::run_proved_is_derived_gate,
+    ),
+];
+
+/// An EV-11 ratchet as `run_lint` reports it. Its decline becomes a SKIPPED gate here, as sigma's non-verdict
+/// answers do — under `--gate <name>` it is an exit of its own (2).
+fn ratchet_result(
+    contract_dir: &Path,
+    validation_passed: bool,
+    name: &str,
+    run: RatchetRun,
+) -> (GateResult, Vec<LintFinding>) {
+    if !validation_passed {
+        return (skipped_gate(name, "validation failed"), Vec::new());
+    }
+    match run(contract_dir) {
+        ratchet_gates::RatchetOutcome::Ran { result, findings } => (*result, findings),
+        ratchet_gates::RatchetOutcome::Declined(why) => (skipped_gate(name, &why), Vec::new()),
+    }
+}
 
 /// The `sigma` gate as `run_lint` reports it. Σ's two non-verdict answers become SKIPPED gates here — under
 /// `--gate sigma` they are an exit of their own (decline / error), but inside a full run "skipped" is how the
@@ -772,6 +932,35 @@ fn sigma_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, Ve
         ),
         sigma_gate::SigmaOutcome::Malformed(e) => (
             skipped_gate("sigma", &format!("Σ is malformed: {e}")),
+            Vec::new(),
+        ),
+    }
+}
+
+/// The `valid-under` gate as `run_lint` reports it (ONT-7). Its three non-verdict answers become SKIPPED gates
+/// here, as sigma's do — under `--gate valid-under` they are exits of their own (decline / error).
+fn valid_under_result(
+    contract_dir: &Path,
+    validation_passed: bool,
+) -> (GateResult, Vec<LintFinding>) {
+    if !validation_passed {
+        return (skipped_gate("valid-under", "validation failed"), Vec::new());
+    }
+    match valid_under_gate::run_valid_under_gate(contract_dir) {
+        valid_under_gate::ValidUnderOutcome::Ran { result, findings } => (*result, findings),
+        valid_under_gate::ValidUnderOutcome::NoSigma => (
+            skipped_gate("valid-under", "no contracts/ontology.yaml"),
+            Vec::new(),
+        ),
+        valid_under_gate::ValidUnderOutcome::Malformed(e) => (
+            skipped_gate("valid-under", &format!("Σ is malformed: {e}")),
+            Vec::new(),
+        ),
+        valid_under_gate::ValidUnderOutcome::NoKernels { contracts_checked } => (
+            skipped_gate(
+                "valid-under",
+                &format!("no kernel-kind contract and no valid_under in {contracts_checked} contracts — R-2: zero is a decline"),
+            ),
             Vec::new(),
         ),
     }
@@ -893,6 +1082,54 @@ fn refines_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, 
         g.verdict = Verdict::Unknown(reason);
     }
     (g, Vec::new())
+}
+
+/// The `challenge-fresh` gate: `pv challenge check` as a gate. No Lean theorem base, a tree that does not load, or
+/// zero challenges is SKIPPED (not measured), never green.
+fn challenge_result(contract_dir: &Path) -> GateResult {
+    const NAME: &str = "challenge-fresh";
+    let start = Instant::now();
+    let root = crate::ontology::extract::repo_root(contract_dir);
+    let Some(lean) = crate::ontology::extract::lean::base_under(&root) else {
+        return skipped_gate(NAME, "no Lean theorem base under the repo root");
+    };
+    let r = match crate::discharge::challenge::render(&lean, contract_dir) {
+        Ok(r) => r,
+        Err(e) => return skipped_gate(NAME, &format!("the Lean tree does not load: {e}")),
+    };
+    if r.files.is_empty() && r.unrestated.is_empty() {
+        return skipped_gate(
+            NAME,
+            "zero challenges: no contract binds a theorem — R-2: zero is a decline",
+        );
+    }
+    let stale = crate::discharge::challenge::diff(&lean, &r);
+    let unrestated: Vec<String> = r
+        .unrestated
+        .iter()
+        .map(|(c, fqn, why)| format!("{c}: {fqn}: {why}"))
+        .collect();
+    let passed = stale.is_empty() && unrestated.is_empty();
+    GateResult {
+        name: NAME.into(),
+        passed,
+        skipped: false,
+        verdict: Verdict::from_gate(passed, false),
+        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+        // `GateDetail` is FROZEN at the 0.3.1 variants: the shape is borrowed, the payload rides in `GateExtra`.
+        detail: GateDetail::Validate {
+            contracts: r.files.len(),
+            errors: stale.len() + unrestated.len(),
+            warnings: 0,
+            error_messages: stale.iter().chain(&unrestated).cloned().collect(),
+        },
+        extra: Some(GateExtra::ChallengeFresh {
+            lean_dir: lean.display().to_string(),
+            files: r.files.len(),
+            stale,
+            unrestated,
+        }),
+    }
 }
 
 fn skipped_gate(name: &str, reason: &str) -> GateResult {

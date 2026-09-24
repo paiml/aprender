@@ -10,10 +10,12 @@ fn lint_passes_on_real_contracts() {
     let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
     assert!(report.passed, "lint should pass: {report:?}");
-    // 12 gates: validate, audit, score, verify, enforce, enforcement-level, reverse-coverage,
+    // 19 gates: validate, audit, score, verify, enforce, enforcement-level, reverse-coverage,
     // duplicate-stems (PV-DUP-001), composition, sigma (ONT-2b), relations (ONT-4), shapes (ONT-4b),
-    // ont-consistency (ONT-5), refines (ONT-4e).
-    assert_eq!(report.gates.len(), 14);
+    // valid-under (ONT-7), theorem-pairing and depends-on-present (PVL-001 EV-11), and
+    // challenge-fresh (PVL-001 EV-7a; MEASURED here, not skipped: the repo's Lean base and its committed Challenge/
+    // files are real, so `report.passed` requires them fresh), ont-consistency (ONT-5), refines (ONT-4e).
+    assert_eq!(report.gates.len(), 19);
 }
 
 #[test]
@@ -35,7 +37,13 @@ fn lint_empty_dir() {
     std::fs::create_dir_all(&dir).unwrap();
     let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
-    assert!(report.passed, "empty dir should pass: {report:?}");
+    let failing: Vec<_> = report
+        .gates
+        .iter()
+        .filter(|g| !g.passed)
+        .map(|g| (&g.name, &g.detail))
+        .collect();
+    assert!(report.passed, "{failing:?}");
 }
 
 #[test]
@@ -170,7 +178,7 @@ fn lint_validation_failure_skips_audit_and_score() {
     let report = run_lint(&config);
     assert!(!report.passed);
     // validate should fail, all subsequent gates should be skipped
-    assert_eq!(report.gates.len(), 14);
+    assert_eq!(report.gates.len(), 19);
     assert!(!report.gates[0].passed); // validate failed
     assert!(report.gates[1].skipped); // audit skipped
     assert!(report.gates[2].skipped); // score skipped
@@ -377,11 +385,20 @@ fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus() {
             "sigma".to_string(),
             "relations".to_string(),
             "shapes".to_string(),
+            // ONT-7, R-8: computed in every run, armed only when the baseline names it.
+            "valid-under".to_string(),
+            // PVL-001 EV-11: computed in every run (R-8), armed per repo.
+            "theorem-pairing".to_string(),
+            "depends-on-present".to_string(),
+            // PVL-001 EV-8a: born armed in the repo's own baseline, not in the default set.
+            "proved-is-derived".to_string(),
+            "challenge-fresh".to_string(),
             // ONT-5: computed everywhere (R-8), armed by nobody until its quorum passes.
             "ont-consistency".to_string(),
-            // ONT-4e (gate 18) likewise.
+            // ONT-4e (gate 19) likewise.
             "refines".to_string(),
-        ]
+        ],
+        "challenge-fresh is reported, never armed by default: it moves only via `make ont-ratchet`"
     );
 }
 
@@ -414,4 +431,43 @@ fn a_gate_a_flag_ran_is_reported_but_not_armed() {
         .iter()
         .any(|g| g.name == "strict-test-binding"));
     assert_eq!(report.armed_gates.len(), 8);
+}
+
+/// ONT-7, R-8: gate 13 is COMPUTED when validation passes and SKIPPED, naming why, when it fails. Both halves
+/// at the lib level, because the CI mutation lane runs `--lib` only (#4076 round-2 review): a mutant that
+/// inverts `validation_passed` in `valid_under_result` must fail here, not only in the CLI integration test.
+#[test]
+fn valid_under_is_computed_when_validation_passes_and_skipped_when_it_fails() {
+    let report = run_lint(&LintConfig::new(&contracts_dir(), None, 0.0));
+    let g = report
+        .gates
+        .iter()
+        .find(|g| g.name == "valid-under")
+        .expect("gate 13 is in every run");
+    assert!(
+        !g.skipped && g.passed,
+        "computed and Pass on the repo corpus: {g:?}"
+    );
+
+    // Σ and a kernel contract are present, so the ONLY reason to skip is the failed validation.
+    let tmp = tempfile::tempdir().unwrap();
+    let fixture = contracts_dir().join("../tests/fixtures/ont/valid-under-ok");
+    for f in ["ontology.yaml", "fixture-vu-v1.yaml"] {
+        std::fs::copy(fixture.join(f), tmp.path().join(f)).unwrap();
+    }
+    std::fs::write(tmp.path().join("bad.yaml"), "not: valid: yaml: {{{{").unwrap();
+    let report = run_lint(&LintConfig::new(tmp.path(), None, 0.0));
+    let g = report
+        .gates
+        .iter()
+        .find(|g| g.name == "valid-under")
+        .expect("gate 13 is in every run");
+    assert!(
+        g.skipped,
+        "validation failed, so the gate is skipped: {g:?}"
+    );
+    assert!(
+        matches!(&g.detail, GateDetail::Skipped { reason } if reason == "validation failed"),
+        "{g:?}"
+    );
 }

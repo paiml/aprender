@@ -89,6 +89,12 @@ pub enum Commands {
         #[command(subcommand)]
         action: DischargeAction,
     },
+    /// Pin each contract-bound theorem's STATEMENT apart from its proof: `<lean>/Challenge/<contract>.lean`
+    /// (PVL-001 EV-7a, #4200)
+    Challenge {
+        #[command(subcommand)]
+        action: ChallengeAction,
+    },
     /// Census the contract corpus: one cardinality, by_anchoring, by_entity_type (ONT-001 ONT-1)
     Census {
         /// Directory containing contract YAML files
@@ -297,9 +303,11 @@ pub enum Commands {
         /// merge-base(HEAD, origin/main), else the origin/main tip; with neither, NOT CHECKED is printed.
         #[arg(long)]
         armed_baseline_ref: Option<String>,
-        /// Run ONE named gate and report only it (ONT-001 section 5 ONT-2b): `--gate sigma`.
+        /// Run ONE named gate and report only it (ONT-001 section 5 ONT-2b): `--gate sigma`. Repeatable
+        /// (PVL-001 EV-11): every named gate runs and reports, and the exit is their meet — a refusal over a
+        /// reject over a decline over a pass.
         #[arg(long)]
-        gate: Option<String>,
+        gate: Vec<String>,
         /// With `--gate shapes`: grade only this shape family (the shape and every `<id>.*` shape), armed
         /// whatever `armed_shapes` says (aprender#3715: `--shape release-readiness-v1`).
         #[arg(long)]
@@ -537,12 +545,45 @@ pub enum DischargeAction {
         #[arg(long, conflicts_with = "no_lake")]
         comparator: bool,
     },
+    /// `build.sh`, then `check` with every arm (`--strict`, the comparator, `--leanchecker`), then write the
+    /// untracked full log `<lean-dir>/discharge.json` and the TRACKED `<lean-dir>/../discharge-summary.json` --
+    /// on failure too. The Lean steps run only after `build.sh` exits 0 (PVL-001 EV-8a, #4202)
+    Run {
+        lean_dir: PathBuf,
+        #[arg(long, default_value = "contracts")]
+        contracts: PathBuf,
+        /// The leanchecker arm's wall-clock limit, seconds
+        #[arg(long, default_value_t = 3600)]
+        leanchecker_timeout: u64,
+        /// The leanchecker arm under `ulimit -v <KIB>` (virtual memory, KiB); unset = no limit
+        #[arg(long)]
+        leanchecker_ulimit_v: Option<u64>,
+    },
     /// `make label-ratchet`: rewrite <lean-dir>/unresolved-labels.json DOWNWARD (it never gains a label; a missing
     /// file is seeded). `check` never writes it.
     LabelRatchet {
         lean_dir: PathBuf,
         #[arg(long, default_value = "contracts")]
         contracts: PathBuf,
+    },
+}
+
+/// `pv challenge` actions (PVL-001 EV-7a, #4200).
+#[derive(Subcommand, Clone, Debug)]
+pub enum ChallengeAction {
+    /// Write `<lean-dir>/Challenge/<contract>.lean`: every bound theorem restated as `PvlChallenge.<fqn>` with
+    /// its proof replaced by `sorry`. Stale files are removed.
+    Gen {
+        /// Directory of the contracts whose `lean_theorem:` references bind the roots
+        contracts: PathBuf,
+        /// The Lean dir (holds ProvableContracts.lean)
+        lean_dir: PathBuf,
+    },
+    /// Regenerate in memory and compare with `<lean-dir>/Challenge/`: rc 1 on any difference, rc 2 on zero
+    /// challenges
+    Check {
+        contracts: PathBuf,
+        lean_dir: PathBuf,
     },
 }
 

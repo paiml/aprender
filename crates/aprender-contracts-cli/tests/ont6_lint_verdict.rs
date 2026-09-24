@@ -278,7 +278,16 @@ fn json_report_carries_the_lattice() {
             serde_json::Value::String("sigma".into()),
             serde_json::Value::String("relations".into()),
             serde_json::Value::String("shapes".into()),
-            // ONT-5 (gate 17) likewise: computed everywhere, armed by nobody yet.
+            // ONT-7's gate: same R-8 shape.
+            serde_json::Value::String("valid-under".into()),
+            // PVL-001 EV-11's two ratchets: same R-8 shape.
+            serde_json::Value::String("theorem-pairing".into()),
+            serde_json::Value::String("depends-on-present".into()),
+            // PVL-001 EV-8a's ratchet: same R-8 shape.
+            serde_json::Value::String("proved-is-derived".into()),
+            // PVL-001 EV-7b's gate: same R-8 shape.
+            serde_json::Value::String("challenge-fresh".into()),
+            // ONT-5 (gate 19) likewise: computed everywhere, armed by nobody yet.
             serde_json::Value::String("ont-consistency".into()),
             // ONT-4e (gate 18) likewise.
             serde_json::Value::String("refines".into()),
@@ -335,9 +344,11 @@ fn repo_baseline_arms_the_eight_ruled_gates_and_every_later_row_that_armed_one()
             "composition",
             "sigma",
             "relations",
-            "shapes"
+            "shapes",
+            "proved-is-derived"
         ]
         .to_vec(),
-        "the ruled 8 plus the gates later rows armed (ONT-2b: sigma; ONT-4: relations; ONT-4b: shapes)"
+        "the ruled 8 plus the gates later rows armed (ONT-2b: sigma; ONT-4: relations; ONT-4b: shapes; \
+         PVL-001 EV-8a: proved-is-derived)"
     );
 }

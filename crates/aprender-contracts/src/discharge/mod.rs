@@ -14,8 +14,10 @@
 //!   exact `#guard_msgs in #print axioms`. Bound theorems outside the cone are ORPHANED-ROOT: `lake env lean`
 //!   cannot see a module `lake build` never built (EV-5a's orphans; EV-5c drains them).
 
+pub mod challenge;
 pub mod comparator;
 pub mod lex;
+pub mod summary;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -283,6 +285,8 @@ pub struct Root {
 #[derive(Debug, Clone, Default)]
 pub struct Binding {
     pub roots: BTreeSet<Root>,
+    /// The same roots, per contract stem: what `pv challenge` pins, one `Challenge/<stem>.lean` each (EV-7a).
+    pub by_contract: BTreeMap<String, BTreeSet<Root>>,
     /// `(contract stem, exact-name reference)` naming no declaration.
     pub missing: BTreeSet<(String, String)>,
     /// `(contract stem, label reference)` matching no theorem, file or domain.
@@ -376,6 +380,10 @@ fn bind_one(
         match theorems.get(r) {
             Some(root) => {
                 b.roots.insert(root.clone());
+                b.by_contract
+                    .entry(stem.to_string())
+                    .or_default()
+                    .insert(root.clone());
             }
             None => {
                 b.missing.insert((stem.to_string(), r.to_string()));
@@ -392,6 +400,12 @@ fn bind_one(
     if hits.is_empty() {
         b.unresolved_labels
             .insert((stem.to_string(), r.to_string()));
+    }
+    if !hits.is_empty() {
+        b.by_contract
+            .entry(stem.to_string())
+            .or_default()
+            .extend(hits.iter().map(|r| (*r).clone()));
     }
     b.roots.extend(hits.into_iter().cloned());
 }
@@ -584,6 +598,10 @@ pub struct Report {
     pub leanchecker_exit: Option<i32>,
     /// What `--comparator` closed (EV-7b); `None` when it never judged a row set.
     pub challenges: Option<comparator::Closure>,
+    /// The escape scan added no failure (EV-8a's `escapes_ok`); `None` when `check` never scanned.
+    pub escapes_ok: Option<bool>,
+    /// `Axioms.lean` is its regeneration (half of EV-8a's `axioms_ok`); `None` when `check` never compared it.
+    pub axioms_fresh: Option<bool>,
 }
 
 impl Report {
@@ -691,10 +709,15 @@ pub fn check(lean_dir: &Path, contract_dir: &Path, opts: CheckOpts) -> Report {
             return r;
         }
     };
+    let fails = |r: &Report| r.lines.iter().filter(|l| l.starts_with("FAIL")).count();
+    let before = fails(&r);
     judge_escapes(&escapes(&g.tree), &g.allow, opts.strict, &mut r);
+    r.escapes_ok = Some(fails(&r) == before);
     judge_roots(&g, &mut r);
     judge_ratchet(lean_dir, &g.binding, &mut r);
+    let before = fails(&r);
     judge_axioms_file(lean_dir, &g.text, &mut r);
+    r.axioms_fresh = Some(fails(&r) == before);
     let cone = g.tree.cone();
     let roots = &g.binding.roots;
     let pinned = roots.iter().filter(|x| cone.contains(&x.module)).count();

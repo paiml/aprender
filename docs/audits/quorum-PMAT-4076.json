@@ -1,0 +1,129 @@
+{
+  "ticket": "PMAT-4076",
+  "issue": 4076,
+  "head": "e6cf9f10b791431daf613510827b18f6c5246acd",
+  "base": "49fe19c28f1a3ef53f6b51096bafddc6609dc6c7",
+  "diff_sha256": "52a53e7f0708a7ee737d6ba5689c062c5ab4c858f90011d97ed1454951748bf3",
+  "diff_scope": "base...head excluding docs/roadmaps/roadmap.yaml",
+  "executor": "claude-code-headless (claude -p --json-schema), sequential",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "degraded": "same-family",
+  "authority": "operator verbatim \"no wait, fall back fast\" + CLAUDE.md quorum fallback (non-author model id: Opus author → Sonnet 5 lanes); receipt-lint refuses same-family by design, so this record is for the cop ruling, not pmat-merge",
+  "rounds": [
+    {
+      "round": 1,
+      "head": "e27e782a5",
+      "verdict": "FAIL (lanes 1–2 FAIL; lane 3 stopped when the head changed)"
+    },
+    {
+      "round": 2,
+      "head": "3e60721f2",
+      "verdict": "PASS, PASS, lane 3 NO-VERDICT (account session limit)"
+    },
+    {
+      "round": 3,
+      "head": "e6cf9f10b791431daf613510827b18f6c5246acd",
+      "verdict": "PASS ×3"
+    }
+  ],
+  "lanes": [
+    {
+      "model_measured": [
+        "claude-sonnet-5"
+      ],
+      "session_id": "ca481c03-0520-439b-b744-de9f0b7cad69",
+      "turns": 62,
+      "verdict": "PASS",
+      "summary": "I read all 3561 lines of .quorum-brief.md (ticket, spec probe, the whole core diff, and each distinct fixture) and checked it against the checkout at e6cf9f10b; I did not build or run tests, because script/python execution was not permitted here and the brief says to judge the record. The row's probe is met by construction: contracts/lint-baseline.json carries a top-level, integer contracts_without_valid_under (386); `pv lint --gate valid-under` goes through run_single_gate, which prints top-level `verdict`/`gate`/`extra`, exits 0 on Pass, 1 on Fail, 2 on decline and 3 on malformed Σ; and the new GateExtra fields do not collide with SingleGateReport's keys under serde flatten. Design claims match the code: the omitted world defaults to `committed` (Σ declares it; the Σ under contracts/ is untouched and all fixture Σ copies are byte-equal to it), a bad valid_under on a non-kernel contract still rejects because the decline requires kernels==0 AND carrying==0, gate 13 is computed in run_lint but not armed (armed_gates is unchanged, and ont6's 11-name armed-list test still passes, so the R-8 shape is preserved), the ratchet copies the formal_prose precedent in sigma_gate.rs almost line for line, and PV-ONT-013..016 collide with nothing in this tree or on origin/main. The round-3 claims are backed: the new lib test asserts both halves of `validation_passed` (computed+Pass on the real corpus, skipped with reason \"validation failed\" on a Σ+kernel corpus with a bad file, so inverting the condition reddens it); `find contracts -name '*.yaml'` returns 1883, matching the restamped contracts_total; the PV-ONT-013 message now says world is optional; README 1830 agrees with census.json n_files 1830. The check_ont_ratchet.sh change is correct by reading (foreign_top_keys and the measure() splice reproduce the committed key order, and the self-test rows discriminate carry-over from invention), and the new lib/CLI tests, the 455 .cmd ordinal and the tree_reader_tests.txt entries are all present and sorted. I checked that no existing gate or test is weakened (the only edits to existing tests add \"valid-under\" to the not_armed list and move 12→13 gates, both forced by the new R-8 gate). The three findings below are non-blocking: one contract-formal imprecision, one Σ reader-list omission, and one design limit that the round-3 commit message already discloses.",
+      "findings": [
+        {
+          "file": "contracts/ont-valid-under-v1.yaml",
+          "line": 68,
+          "claim": "NON-BLOCKING: VU-INV-003 (\"a valid_under block is never empty\", prose:false) has formal `valid_under(c) ≠ ∅ ⇒ len(keys(valid_under(c))) ≥ 1`, which is a tautology — an empty block `{}` equals ∅ so the implication is vacuous, and the admission formula at line 44 (`valid_under(c) = ∅ ∨ …`) would even admit `{}`. The gate does reject `valid_under: {}` (PV-ONT-013, fixture valid-under-empty, lib table row), so behaviour is right and tested; only the contract's formal fails to encode it.",
+          "grounding": "cited",
+          "fix": "Distinguish absent from empty in the formal, e.g. `present(valid_under(c)) ⇒ len(keys(valid_under(c))) ≥ 1`, and use `absent(valid_under(c))` in the admission formula."
+        },
+        {
+          "file": "contracts/ontology.yaml",
+          "line": 175,
+          "claim": "NON-BLOCKING: Σ's `readers.worlds` still names only `ontology/sigma.rs`, although valid_under_gate.rs is now the first real consumer of `worlds`. Siblings updated their reader when a gate began reading a key (`roles: lint/sigma_gate.rs, lint/relations_gate.rs`), and the file header's rule is that every key names its reader. Nothing enforces it (a reader is only a non-empty declared name), so this is convention drift, not a defect.",
+          "grounding": "cited",
+          "fix": "Follow-up: `worlds: ontology/sigma.rs, lint/valid_under_gate.rs` (Σ and the ten fixture copies would move together)."
+        },
+        {
+          "file": "crates/aprender-contracts/src/lint/valid_under_gate.rs",
+          "line": 1106,
+          "claim": "NON-BLOCKING, disclosed design: baseline_without_valid_under returns None for an absent, string, float or negative value, and ratchet_finding(None, _) yields no finding, so a corrupted baseline value silently leaves the gate at Pass with the ratchet unjudged (JSON shows `baseline: null` but the verdict does not change). This matches the formal_prose precedent (sigma_gate.rs:153-160) and the round-3 commit message discloses it, so it does not refute the row.",
+          "grounding": "cited",
+          "fix": "Optionally make a present-but-non-integer baseline an error/Unknown rather than the same as absent, in a later row."
+        }
+      ]
+    },
+    {
+      "model_measured": [
+        "claude-sonnet-5"
+      ],
+      "session_id": "1fcf55a0-8529-4dbd-8707-f0bf85a42ebc",
+      "turns": 64,
+      "verdict": "PASS",
+      "summary": "I read the whole brief, ticket and spec context, all 186 KB of diff, then checked the claims against the checkout at e6cf9f10b. I did not re-run the build, as instructed, so the recorded `make gate` and test results are taken on the record. That record is consistent with the diff. The ticket's probe needs a top-level `contracts_without_valid_under` in lint-baseline.json and `pv lint contracts/ --gate valid-under --format json` returning Pass. The diff supplies the key (386) and the gate, and `the_row_probe_passes_on_the_repo_corpus` reproduces the probe on the real corpus.\n\nI measured that the 386 baseline is tight, not slack. `census.json` (built with `contract.kind()`, the same predicate the gate uses) counts 387 kernel contracts, and a grep shows `valid_under` in exactly one kernel contract, `ont-verdict-lattice-v1`. So 386 kernels lack it. A slack baseline would have let unrecorded debt in, so this was the weakening I most wanted to rule out.\n\nI read every rule in `check_valid_under` (PV-ONT-013/014/015), the ratchet (PV-ONT-016) and the decline logic, and checked the fixtures. A non-mapping, empty block, unknown key, non-string or undeclared world, malformed qualifier, and a rise over baseline each hit their own rule id. Zero kernels with no `valid_under` declines (exit 2), but a bad block on a non-kernel contract still rejects. An omitted `world` reads `committed`, so the spec's own Appendix B example is admitted. All ten fixture `ontology.yaml` copies are byte-identical to `contracts/ontology.yaml` (same md5), so the fixtures exercise the real Σ. The rule ids PV-ONT-013..016 do not collide with any existing id (010–012 are relations and shapes). `Sigma.worlds` is a BTreeMap, so messages and JSON are deterministic.\n\nWiring: gate 13 sits in `run_lint` with the sigma shape and is skipped, naming the reason, when validation fails. `report.verdict`, not `report.passed`, decides the CLI exit, so an unarmed gate 13 cannot fail a run. `armed_gates` is untouched, so the ruled-eight and armed-set tests still hold and `valid-under` appears only in `not_armed`. The CLI decline/error mapping mirrors sigma and relations. The new lib-level test in `mod_tests.rs` mirrors the existing `lint_validation_failure_skips_audit_and_score`. I traced the mutants from the commit messages (zero-kernel `&&`→`||`, `<=`→`<`, empty-list and toolchain checks, the omitted-world default) against the tests and each one is killed. `check_ont_ratchet.sh` carries the top-level key through `measure()` and `--write` in the position the baseline file uses, with self-test rows for keep, no-invent and valid JSON. CI fragment 455 is a free ordinal in the existing format. The README count, `census.json` and `contracts.nt` deltas agree at 1830, and `contracts.nt` gains only the new contract's ten triples. The FALSIFY-VU test paths in the new contract name tests that exist.\n\nI found nothing that refutes the change. The tests do not assert the opposite of the ticket, no gate is weakened, and every receipt claim I could check against the diff holds. The author's own design choices (closed qualifier key set, `world` indexing Σ, gate computed but not armed) are disclosed in the ticket text. The two notes below are non-blocking.",
+      "findings": [
+        {
+          "file": "contracts/ontology.yaml",
+          "line": 175,
+          "claim": "NON-BLOCKING: Σ's `readers:` still lists `worlds: ontology/sigma.rs` only, although `lint/valid_under_gate.rs` is now the first code to interpret `worlds`. Other keys list every consumer (e.g. `roles: lint/sigma_gate.rs, lint/relations_gate.rs`). `ont-valid-under-v1.yaml` cites 'reader ontology/sigma.rs', so the omission is deliberate. `check_readers` only requires a non-empty entry, so no gate fails. Updating it would need all ten fixture Σ copies to change too, since they must stay identical.",
+          "grounding": "cited"
+        },
+        {
+          "file": "contracts/lint-baseline.json",
+          "line": 5,
+          "claim": "NON-BLOCKING, disclosed by the author as the formal_prose precedent: `contracts_without_valid_under` (386) is carried verbatim by `make ont-ratchet` and compared only as measured ≤ baseline. Nothing compares the baseline against the merge-base, so a later PR could raise it by hand. On this tree the value equals the measured count (387 kernels − 1 carrying), so nothing is slack today.",
+          "grounding": "measured"
+        }
+      ]
+    },
+    {
+      "model_measured": [
+        "claude-sonnet-5"
+      ],
+      "session_id": "b4468dbd-882c-4ca6-84db-489d17efffe3",
+      "turns": 70,
+      "verdict": "PASS",
+      "summary": "I read all 3561 lines of .quorum-brief.md, including the ticket, the spec probe, the design and the full diff, and checked its claims against the checkout at e6cf9f10b. I found nothing that refutes the change. I did not re-run the build or tests, as instructed, so the recorded `make gate` exit 0 and the MUST-RED mutant results are taken from the author's record.\n\nChecks that support PASS:\n- **Probe.** `contracts/lint-baseline.json` now carries a top-level `contracts_without_valid_under: 386`. `--gate valid-under --format json` emits `verdict` and `extra`. The test `the_row_probe_passes_on_the_repo_corpus` reproduces the probe clause by clause and also demands a non-vacuous `committed=` world count.\n- **Baseline is tight.** In `crates/aprender-contracts/src/schema/types.rs`, `kind()` returns Kernel only when `is_registry()` is false. The census counts by `kind()` over the same `collect_yaml_files` walker (which excludes `ontology.yaml`) and reports `kernel: 387` in `contracts/census.json`. Exactly one kernel contract now carries `valid_under` (grep found it only in `ont-verdict-lattice-v1.yaml`), so 387 − 1 = 386 equals the baseline. The ratchet neither loosens the debt nor rejects the current tree.\n- **`contracts_total`.** A `find contracts -name '*.yaml' -type f | wc -l` returned 1883, matching the restamped `contracts_total`. The README and census count of 1830 matches the new `kind: pattern` contract (pattern 91→92).\n- **Scope and arming.** `armed_gates` is unchanged, so the gate is computed as gate 13 (R-8) but not armed, exactly as the design states. No thresholds, `.github/workflows` files or baseline values were weakened. `check_ont_ratchet.sh`, the CI `.cmd` fragment (455 is free between 450 and 440), `tree_reader_tests.txt` and the README count are all required wiring for the new gate and key.\n- **No rule-id collision.** A repo grep shows PV-ONT-013..016 are new; the previous maximum was 012.\n- **Sigma gate stays green.** The new contract's `⇔` is in `formula:`, which `sigma_symbols` never scans (it reads only `formal:`). Every `formal:` in the new contract uses declared glyphs. `formal_prose` therefore stays at 1464 and the armed sigma gate should not trip on the new contract.\n- **Falsification bindings.** Every `test:` in `ont-valid-under-v1.yaml` names a test that exists (`lint::tests`, `valid_under_gate::tests::*`, `--test ont7_valid_under_gate`).\n- **Zero-kernel handling.** `c.kernels == 0 && c.carrying == 0` declines, while a bad `valid_under` on a non-kernel contract still rejects. This is R-2-consistent and is pinned by the `valid-under-nonkernel-bad` and `valid-under-no-kernels` fixtures.\n- **Fixtures.** The ten fixture directories match the table in `every_fixture_draws_exactly_its_rule`. The `ontology.yaml` fixtures are byte-identical per their diff blob id (ae7c0aa0c).\n- **Ratchet script.** `measure()` places `top_line` before `\"ont\"`, which matches the committed key order, and the four new self-test rows cover survival and non-invention of the key.\n- **Excluded files.** `contracts.nt` (+10 lines) and `docs/roadmaps/roadmap.yaml` (+18 lines) contain only the new contract's triples and the PMAT-4076 tracker entry.\n\nNon-blocking observations are listed in the findings.",
+      "findings": [
+        {
+          "file": "contracts/ontology.yaml",
+          "line": 122,
+          "claim": "Non-blocking doc drift: Σ's `readers:` block still lists `worlds: ontology/sigma.rs` only, but `lint/valid_under_gate.rs` now also reads `sigma.worlds` to resolve `valid_under.world`. `check_readers` only requires a non-empty reader per populated key, so no gate fails.",
+          "fix": "Optionally append `lint/valid_under_gate.rs` to `readers.worlds` in a follow-up, as `roles:` lists several readers.",
+          "grounding": "cited"
+        },
+        {
+          "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+          "line": 296,
+          "claim": "Non-blocking: `--gate valid-under` on a corpus with no Σ declines (exit 2) with no stderr reason, while the NoKernels arm explains itself. This matches the existing sigma and relations NoSigma arms, so it is parity rather than a regression.",
+          "fix": "Optionally add a one-line `eprintln!` naming the missing contracts/ontology.yaml.",
+          "grounding": "cited"
+        },
+        {
+          "file": "crates/aprender-contracts/src/lint/valid_under_gate.rs",
+          "line": 959,
+          "claim": "Non-blocking design note: only `metadata.valid_under` is read. A contract using the spec Appendix B top-level spelling `metadata_valid_under` would be counted as 'without' rather than flagged. The brief states that spelling is a confirmed spec typo with a fix due in spec v4.14, so this matches the author's stated design.",
+          "fix": "None required; revisit if spec v4.14 keeps the alternate spelling.",
+          "grounding": "cited"
+        },
+        {
+          "file": "contracts/lint-baseline.json",
+          "line": 5,
+          "claim": "Measured, supports PASS: the baseline is exactly tight (387 kernel-kind non-registry contracts per census, minus 1 carrying `valid_under`, equals 386), and `contracts_total` 1883 matches `find contracts -name '*.yaml' -type f | wc -l`. A concurrent PR adding a kernel contract without `valid_under` will therefore fail lib and CLI tests at merge time. That is the intended shrink-only behaviour (same as `formal_prose`), not a defect.",
+          "fix": "None.",
+          "grounding": "measured"
+        }
+      ]
+    }
+  ],
+  "agreed": true
+}
