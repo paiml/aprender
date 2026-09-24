@@ -1,0 +1,246 @@
+{
+  "ticket": "PMAT-4023",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "54157e6ee3d2156078fe390b6944d18b5f2b871b",
+  "diff_sha256": "e92256f06230a5e5caa5f3b1d1d1be61404643cdbf6cb25bc1d55688f2728681",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 43066,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements all ticket requirements: it introduces a script to enforce explicitly scoped reports, a script to guard against killed test binaries that `--ignore-run-fail` would swallow, and a script to shard `aprender-serve` tests to avoid OOM kills. It also introduces `COV_REFUSE_GLOBAL_MOLD` to refuse measuring when mold is globally enabled, porting the #3839 fix cleanly. The coverage floor is bumped from 88 to 89 reflecting the newly measured baseline. The ratchets are updated to handle the new text files. No ticket constraints are violated and no regressions are introduced.",
+      "findings": [
+        {
+          "claim": "Replaces the global mold config mv workaround with COV_REFUSE_GLOBAL_MOLD to fail early if mold is globally enabled.",
+          "file": "Makefile",
+          "grounding": "cited",
+          "line": 466
+        },
+        {
+          "claim": "Parses the test log to catch binaries killed by signal, avoiding partial coverage reports caused by --ignore-run-fail swallowing crashes.",
+          "file": "scripts/check_coverage_log_complete.sh",
+          "grounding": "cited",
+          "line": 30
+        },
+        {
+          "claim": "Groups tests by module and shards deep/large modules into separate lists so they can run in isolated processes.",
+          "file": "scripts/coverage_serve_shards.py",
+          "grounding": "cited",
+          "line": 71
+        },
+        {
+          "claim": "Requires explicitly scoped llvm-cov report invocations across Makefiles and CI scripts to prevent empty reports.",
+          "file": "scripts/check_coverage_report_scoped.sh",
+          "grounding": "cited",
+          "line": 31
+        }
+      ],
+      "raw_bytes": 5886,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff for PMAT-4023 / GH-4023 verified. The diff implements all four components required by the ticket:\n1. Port #3839: Concurrency-safe mold linker refusal (COV_REFUSE_GLOBAL_MOLD) replacing destructive config moving, exact test path exclusion (scripts/coverage-skips.txt) restoring 2,711 previously skipped tests, --ignore-run-fail to record test failures without dropping coverage, and raising COV_FLOOR ratchet from 88 to 89.\n2. Killed-binary guard: scripts/check_coverage_log_complete.sh detects signal-terminated test binaries (SIGTERM/SIGKILL) to prevent incomplete coverage verdicts, with an anti-vacuous self-test suite (4/4 cases OK).\n3. Per-module aprender-serve sharding: scripts/coverage_serve_shards.py and scripts/coverage-solo.txt isolate high-memory tests and partition the ~16k suite into per-module and <=200 test GPU chunks with memory tracking via getrusage.\n4. Scoped reports: scripts/coverage_report_scope.py dynamically scopes cargo llvm-cov report across all workspace crates to fix root facade zero-coverage reports, and scripts/check_coverage_report_scoped.sh enforces scoping across all build/CI scripts with self-tests (8/8 cases OK).\n\nAll shell scripts pass syntax and lint checks (bash -n, shellcheck -S error), ratchets pass (check_baseline_ratchets.sh), all guards are wired (check_guards_are_wired.sh), and roadmap aggregation is verified. No gates were weakened and no unauthorized scope was added.",
+      "findings": [],
+      "raw_bytes": 4211,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff for PMAT-4023 / GH-4023 verified. The diff implements all four components required by the ticket:\n1. Port #3839: Concurrency-safe mold linker refusal (COV_REFUSE_GLOBAL_MOLD) replacing destructive config moving, exact test path exclusion (scripts/coverage-skips.txt) restoring 2,711 previously skipped tests, --ignore-run-fail to record test failures without dropping coverage, and raising COV_FLOOR ratchet from 88 to 89.\n2. Killed-binary guard: scripts/check_coverage_log_complete.sh detects signal-terminated test binaries (SIGTERM/SIGKILL) to prevent incomplete coverage verdicts, with an anti-vacuous self-test suite (4/4 cases OK).\n3. Per-module aprender-serve sharding: scripts/coverage_serve_shards.py and scripts/coverage-solo.txt isolate high-memory tests and partition the ~16k suite into per-module and <=200 test GPU chunks with memory tracking via getrusage.\n4. Scoped reports: scripts/coverage_report_scope.py dynamically scopes cargo llvm-cov report across all workspace crates to fix root facade zero-coverage reports, and scripts/check_coverage_report_scoped.sh enforces scoping across all build/CI scripts with self-tests (8/8 cases OK).\n\nAll shell scripts pass syntax and lint checks (bash -n, shellcheck -S error), ratchets pass (check_baseline_ratchets.sh), all guards are wired (check_guards_are_wired.sh), and roadmap aggregation is verified. No gates were weakened and no unauthorized scope was added.",
+      "findings": [],
+      "raw_bytes": 8641,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "Makefile",
+      "line": 466,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Replaces the global mold config mv workaround with COV_REFUSE_GLOBAL_MOLD to fail early if mold is globally enabled."
+      ]
+    },
+    {
+      "file": "scripts/check_coverage_log_complete.sh",
+      "line": 30,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Parses the test log to catch binaries killed by signal, avoiding partial coverage reports caused by --ignore-run-fail swallowing crashes."
+      ]
+    },
+    {
+      "file": "scripts/check_coverage_report_scoped.sh",
+      "line": 31,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Requires explicitly scoped llvm-cov report invocations across Makefiles and CI scripts to prevent empty reports."
+      ]
+    },
+    {
+      "file": "scripts/coverage_serve_shards.py",
+      "line": 71,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Groups tests by module and shards deep/large modules into separate lists so they can run in isolated processes."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}
