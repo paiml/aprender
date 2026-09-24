@@ -298,13 +298,13 @@ nred=$(printf '%s\n' "$got" | grep -c '^row .* REFUSED cell teardown FAILED: ser
 inline_kill() { grep -nE '^[^#]*(^|[^[:alnum:]_-])(p?kill|killall)([^[:alnum:]_-]|$)' "$@"; }
 ct_ok=1
 for l in "  [ \"\$HAVE_LLAMA\" = 1 ] && printf 'kill \"\$(cat %q)\" 2> /dev/null\\n' \"\$d/x.pid\" >> \"\$cell\"" \
-         'kill "$pid"' '  pkill -f llama-server' 'x; killall llama-server'; do
+         'kill "$pid"' 'kill -TERM "$pid"' 'kill -9 $(cat p.pid)' '  pkill -f llama-server' 'x; killall llama-server'; do
   printf '%s\n' "$l" | inline_kill > /dev/null || { ct_ok=0; broke "inline-kill scan missed: $l"; }
 done
 for l in '# a timeout kill runs the trap too' '  crux_teardown_trap "$cell" "$d/t" "$d/p.pid"' 'skill=1' 'kill_seam=x' '--no-kill'; do
   printf '%s\n' "$l" | inline_kill > /dev/null && { ct_ok=0; broke "inline-kill scan false positive: $l"; }
 done
-[ "$ct_ok" = 1 ] && ok "inline-kill scan: case table (4 must-match, 5 must-not-match)"
+[ "$ct_ok" = 1 ] && ok "inline-kill scan: case table (6 must-match incl. kill -TERM / kill -9, 5 must-not-match)"
 hits=$(inline_kill "$ROOT"/scripts/lib/crux_cells_*.sh)
 [ -z "$hits" ] && ok "no scripts/lib/crux_cells_*.sh stops a server inline: the teardown trap is the only way" \
   || { broke "inline server kill in a crux cell lib (route it through crux_teardown_trap):"; printf '%s\n' "$hits" | sed 's/^/        /'; }

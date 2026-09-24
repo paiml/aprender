@@ -21515,3 +21515,21 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4225
+  github_issue: 4225
+  item_type: task
+  title: 'check_crux_greedy_rows: list kill -TERM / kill -9 forms explicitly in the inline-kill case table (#4225)'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-09-24T09:10:00Z
+  updated: 2026-09-24T09:10:00Z
+  spec: null
+  acceptance_criteria:
+  - The row-6c case table lists kill -TERM and kill -9 as must-match; a scan regex that drops flag forms turns the table RED.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
