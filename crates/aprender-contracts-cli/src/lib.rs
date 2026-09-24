@@ -115,6 +115,7 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
         } => commands::audit::run(&contract, binding.as_deref()),
         Commands::Diff { old, new } => commands::diff::run(&old, &new),
         Commands::Discharge { action } => commands::discharge::run(action),
+        Commands::Challenge { action } => commands::challenge::run(action),
         Commands::Census {
             contract_dir,
             format,
