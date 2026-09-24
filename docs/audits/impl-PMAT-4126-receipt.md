@@ -55,3 +55,22 @@ A 200 whose body stalled past --max-time (curl exit 28 AFTER a status line) was 
 reads `timeout after HTTP <code>: body incomplete within <N>s`. New case stall-named: the fake
 /v1/chat/completions stream sends a 200 and stalls. A mutant restoring the old branch order turns
 stall-named RED with exactly that contradiction.
+
+## Follow-up: the cop's timeout-policy ruling (branch fix/4126-timeout-policy, stacked on a7b14b0cb)
+- (a) TIMEOUT: a curl-28 route is flagged `timeout:true`. The row reason reads `serve TIMEOUT
+  (harness/host condition, not a model verdict; route bound <N>s): <routes>`, and such a route is
+  NOT also listed as failed. The row stays not-green (proven or RED; TIMEOUT is a named RED class).
+- (b) Per-backend bound: contracts/model-capability-ladder-v1.yaml `serve_health.route_timeout_s:
+  {cpu: 300, cuda: 60}` (`gpu` reads cuda). ladder_route_timeout reads it. An undeclared backend
+  gets a decline by name. The bound is stamped per route (timeout_s) and per record
+  (route_timeout_s). LADDER_ROUTE_MAX_TIME remains a test override only.
+- (c) Host load: ladder_host_load reads the 1-min loadavg and core count (seams:
+  LADDER_LOADAVG_FILE, LADDER_NPROC), stamped as `host_load`. A cpu serve with load > cores gets a
+  decline by name (rc 2, carried out of $( ) by #4090's carry-out).
+- Guards: check_ladder_serve_probe_timeout.sh +stamped, +load-decline, +contract-timeout (8 cases).
+  Its self-test has 3 plants: bare code -> parses, deleted load check -> load-decline, hard-coded
+  60 -> contract-timeout; all killed. check_ladder_serve_verdict.sh +reason:timeout; an ad-hoc
+  mutation emptying the TIMEOUT list turns it RED ("unknown"). check_ladder_serve_teardown.sh lifts
+  the two new functions. pv validate / pv lint on the contract: valid / PASS.
+- check_model_ladder.sh --self-test 302/0, and the sibling guards all rc 0. check_bashrs_gate.sh:
+  the base's 8, none added.

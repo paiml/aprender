@@ -14,6 +14,9 @@
   - 'the row''s RED reason names the curl_error for a route without an http code'
   - 'check_ladder_serve_probe_timeout.sh runs the SHIPPED probe against a fake serve whose /api/chat hangs past LADDER_ROUTE_MAX_TIME; a planted bare "http":$code turns it RED'
   - 'the /api/chat token bound and the route timeout are NOT changed until the CPU 9B /api/chat duration is measured (cop ruling)'
+  - '(cop ruling a) a route that times out (curl exit 28) is flagged timeout:true and the row reason names it serve TIMEOUT, a harness/host condition and not a model verdict; the row is still never green'
+  - '(cop ruling b) the route bound is per backend (cpu 300 s, cuda 60 s), declared once in the ladder contract serve_health.route_timeout_s, stamped into every route (timeout_s) and the record (route_timeout_s); an undeclared backend declines by name'
+  - '(cop ruling c) before a cpu serve the 1-minute loadavg is compared with the core count and recorded (host_load); above it the ladder declines by name'
   phases: []
   subtasks: []
   estimated_effort: null

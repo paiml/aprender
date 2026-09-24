@@ -736,6 +736,32 @@ ladder_serve_wait_health() { # <wrapper-pid> <port> <log> <stall-s> <ceiling-s>
     done
 }
 
+# #4126 (cop ruling): the serve probe's per-route curl bound, PER BACKEND, from the ladder contract's
+# serve_health.route_timeout_s and nowhere else. `gpu` reads the `cuda` entry. LADDER_ROUTE_MAX_TIME is a
+# TEST override. Prints the seconds, or nothing with rc 1 when the contract declares none (the caller
+# declines by name: an unbounded or invented timeout is not a measurement).
+ladder_route_timeout() { # <backend>
+    if [ -n "${LADDER_ROUTE_MAX_TIME:-}" ]; then printf '%s' "$LADDER_ROUTE_MAX_TIME"; return 0; fi
+    python3 -c '
+import sys, yaml
+b = "cuda" if sys.argv[2] == "gpu" else sys.argv[2]
+t = ((yaml.safe_load(open(sys.argv[1]))["ladder"].get("serve_health") or {}).get("route_timeout_s") or {}).get(b)
+if not isinstance(t, int) or t <= 0:
+    sys.exit(1)
+print(t, end="")
+' "${LADDER:-contracts/model-capability-ladder-v1.yaml}" "$1" 2>/dev/null
+}
+
+# #4126 (cop ruling): a CPU serve measured on an oversubscribed host measures the NEIGHBOURS. Before a
+# cpu serve cell, the 1-minute loadavg is compared with the core count; above it is an ENV decline by
+# name. LADDER_LOADAVG_FILE / LADDER_NPROC are test seams. Prints "<load1> <cores>" for the record.
+ladder_host_load() {
+    local l n
+    l=$(awk '{print $1}' "${LADDER_LOADAVG_FILE:-/proc/loadavg}" 2>/dev/null)
+    n=${LADDER_NPROC:-$(nproc 2>/dev/null)}
+    printf '%s %s' "${l:-unknown}" "${n:-unknown}"
+}
+
 ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <backend>
     local path="$1" flag="$2" rid="$3" bname="$4" td
     # The script cd's to the repo root at startup (line ~53), so this is relative by
@@ -743,6 +769,18 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
     # "/crates/..." under `set -u`-less expansion and silently find nothing.
     local router="crates/aprender-serve/src/api/router.rs"
     local routes port pid rc=0 out first=1 json="{" waited=0 code body crc http_json cerr_json
+    local rto load1 cores tmo_json
+    # #4126: the route bound for THIS backend, from the contract, or a decline by name.
+    rto=$(ladder_route_timeout "$bname") || rto=""
+    if [ -z "$rto" ]; then
+        echo "decline: ENV the ladder declares no serve_health.route_timeout_s for backend $bname -- the serve probe's route bound would be invented (#4126)" >&2
+        return 2
+    fi
+    read -r load1 cores <<< "$(ladder_host_load)"
+    if [ "$bname" = cpu ] && python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) > float(sys.argv[2]) else 1)' "$load1" "$cores" 2>/dev/null; then
+        echo "decline: ENV host load $load1 exceeds $cores cores before the cpu serve of $rid -- a CPU serve measured now measures the neighbours, not apr (#4126)" >&2
+        return 2
+    fi
 
     if [ ! -f "$router" ]; then
         printf '{"probed":false,"why":"router source not found at %s — the route set is derived from it, and a hand-listed set is what let /api/chat go unprobed","routes":{}}' "$router"
@@ -808,7 +846,7 @@ print(json.dumps({"probed": False,
             # INVALID JSON, and one such route made the WHOLE serve object unparseable, so the
             # caller reported "exited rather than returned" and every route's evidence was lost.
             # A route that got no response records http:null plus WHY.
-            code=$(curl -sS -o "$bodyf" -w '%{http_code}' --max-time "${LADDER_ROUTE_MAX_TIME:-60}" \
+            code=$(curl -sS -o "$bodyf" -w '%{http_code}' --max-time "$rto" \
                 -H 'Content-Type: application/json' -d "$body" \
                 "http://127.0.0.1:$port$r" 2>/dev/null); crc=$?
             # A status line that DID arrive is kept even when the transfer then failed (curl exit
@@ -820,13 +858,13 @@ print(json.dumps({"probed": False,
             elif [ "$http_json" != null ]; then
                 # a status line DID arrive; a timeout after it is named as such, never as "no response"
                 if [ "$crc" = 28 ]; then
-                    cerr_json="\"timeout after HTTP $http_json: body incomplete within ${LADDER_ROUTE_MAX_TIME:-60}s\""
+                    cerr_json="\"timeout after HTTP $http_json: body incomplete within ${rto}s\""
                 else
                     cerr_json="\"transfer failed after HTTP $http_json (curl exit $crc)\""
                 fi
                 code=000
             elif [ "$crc" = 28 ]; then
-                cerr_json="\"timeout: no response within ${LADDER_ROUTE_MAX_TIME:-60}s\""; code=000
+                cerr_json="\"timeout: no response within ${rto}s\""; code=000
             else
                 cerr_json="\"no HTTP response (curl exit $crc)\""; code=000
             fi
@@ -852,14 +890,15 @@ print("null" if v is None else ("true" if v else "false"))
             rbad=$(serve_route_bad "$bodyf" "$r|stream=$stream")
             rbad_json=$(printf '%s' "$rbad" | json_str_or_null)
             [ $first = 1 ] || json="$json,"; first=0
-            json="$json\"$r|stream=$stream\":{\"http\":$http_json,\"curl_error\":$cerr_json,\"ok\":$([ "$code" = 200 ] && echo true || echo false),\"used_gpu\":$ug,\"output_bad\":$rbad_json}"
+            if [ "$crc" = 28 ]; then tmo_json=true; else tmo_json=false; fi
+            json="$json\"$r|stream=$stream\":{\"http\":$http_json,\"curl_error\":$cerr_json,\"timeout\":$tmo_json,\"timeout_s\":$rto,\"ok\":$([ "$code" = 200 ] && echo true || echo false),\"used_gpu\":$ug,\"output_bad\":$rbad_json}"
         done
     done
     # A server that will not die is a real property of the `serve` verb, and until
     # now it was invisible: the script simply stopped. Record it in the cell.
     td=$(ladder_serve_teardown "$pid" "$port")
     [ "$td" = failed ] && rc=1
-    printf '{"probed":true,"teardown":"%s","routes":{%s}}' "$td" "${json#\{}"
+    printf '{"probed":true,"teardown":"%s","host_load":{"loadavg1":"%s","cores":"%s"},"route_timeout_s":%s,"routes":{%s}}' "$td" "$load1" "$cores" "$rto" "${json#\{}"
     return $rc
 }
 
@@ -1327,7 +1366,10 @@ for b,v in r["backends"].items():
             w.append(b+": serve routes non-200: "+", ".join("%s=%s"%(k,(routes[k] or {}).get("http")) for k in bad))
         # #4126: a route whose transfer failed (a timeout, or a body cut short after its status line)
         # says HOW, whatever status it got.
-        cut=sorted(k for k,x in routes.items() if (x or {}).get("curl_error"))
+        tmo=sorted(k for k,x in routes.items() if (x or {}).get("timeout"))
+        if tmo:
+            w.append(b+": serve TIMEOUT (harness/host condition, not a model verdict; route bound %ss): "%(sv.get("route_timeout_s") or "?")+", ".join(tmo))
+        cut=sorted(k for k,x in routes.items() if (x or {}).get("curl_error") and not (x or {}).get("timeout"))
         if cut:
             w.append(b+": serve routes without a complete response: "+", ".join("%s (%s)"%(k,routes[k]["curl_error"]) for k in cut))
         # #3921: separate from the status, for the same reason as the verbs.

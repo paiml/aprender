@@ -19,7 +19,14 @@
 #   stall-named     /v1/chat/completions stream sends a 200 then STALLS past the timeout: http 200 kept,
 #                   curl_error says "timeout after HTTP 200", never "no response"
 #   others-kept     every other route is present with http 200. The evidence survives
-# --self-test plants the old bare `"http":$code` and requires `parses` to turn RED.
+#   stamped         every route carries timeout_s and a timeout flag (true only on the curl-28 routes); the
+#                   record carries host_load and route_timeout_s (cop ruling on #4126)
+#   load-decline    loadavg above the core count DECLINES a cpu serve by name (rc 2); the same load does
+#                   not decline a cuda serve
+#   contract-timeout  with no test override the bound comes from the contract (cpu 300, cuda 60); a
+#                   contract without serve_health.route_timeout_s DECLINES by name
+# --self-test plants the old bare `"http":$code` (parses RED), a deleted load check (load-decline RED)
+# and a hard-coded 60 s bound (contract-timeout RED).
 #
 # Exit: 0 all as expected · 1 a case landed wrong · 2 could not check.
 set -uo pipefail
@@ -93,10 +100,11 @@ run_cases() { # <script> -> 0 when every case lands
   bad() { printf '  FAIL  %s: %s\n' "$1" "$2"; rc=1; }
   body=$(lift_fns "$src" apr_locked apr_cpu_unlocked apr_lane lock_timeout serve_log_tail json_str_or_null \
          gibberish_reason serve_reply_text serve_route_bad assistant_reply ladder_tree_jiffies \
-         ladder_tree_waits_on_lock ladder_serve_wait_health ladder_td_verdict ladder_serve_teardown ladder_serve_probe)
+         ladder_tree_waits_on_lock ladder_serve_wait_health ladder_td_verdict ladder_serve_teardown \
+         ladder_route_timeout ladder_host_load ladder_serve_probe)
   grep -q '^ladder_serve_probe() {' <<< "$body" || { bad lift "$src defines no ladder_serve_probe()"; return 1; }
-  mkdir -p "$T/work"; : > "$T/lock"
-  out=$(GPU_LOCK="$T/lock" LOCK_WAIT=10 LOCK_BUSY=75 APR="$T/apr" WORK="$T/work" CPU_LANE_NICE=10 \
+  mkdir -p "$T/work"; : > "$T/lock"; echo "0.50 0.40 0.30 1/100 1" > "$T/loadavg.low"; echo "99.00 99.00 99.00 1/100 1" > "$T/loadavg.high"
+  out=$(LADDER_LOADAVG_FILE="$T/loadavg.low" LADDER_NPROC=4 GPU_LOCK="$T/lock" LOCK_WAIT=10 LOCK_BUSY=75 APR="$T/apr" WORK="$T/work" CPU_LANE_NICE=10 \
         SERVE_STALL_S=10 SERVE_CEILING_S=30 LADDER_ROUTE_MAX_TIME=2 \
         timeout 120 bash -c "$body"$'\n''ladder_serve_probe /fake.gguf "" r1 cpu' 2> "$T/probe.err"); prc=$?
   printf '%s' "$out" > "$T/probe.json"
@@ -126,6 +134,10 @@ print("STALL:" + ("" if (st.get("http") == 200 and "timeout after HTTP 200" in s
 others = [k for k in r if not k.startswith("/api/chat|") and not k.startswith("/v1/completions|") and k != "/v1/chat/completions|stream=true"]
 ob = [k for k in others if r[k].get("http") != 200]
 print("OTHERS:%d:%s" % (len(others), ",".join(ob)))
+sb = [k for k, x in r.items() if x.get("timeout_s") != 2 or x.get("timeout") is not (k.startswith("/api/chat|") or k == "/v1/chat/completions|stream=true")]
+if not isinstance(d.get("host_load"), dict) or d.get("route_timeout_s") != 2:
+    sb.append("record: host_load=%s route_timeout_s=%s" % (d.get("host_load"), d.get("route_timeout_s")))
+print("STAMP:" + ",".join(sb))
 PY
 )
   if grep -q '^TIMEOUT:$' <<< "$out"; then ok timeout-named; else bad timeout-named "$(grep -m1 -E '^(TIMEOUT|unparseable)' <<< "$out")"; fi
@@ -133,6 +145,32 @@ PY
   if grep -qE '^CUT:[1-9][0-9]*:$' <<< "$out"; then ok cut-kept; else bad cut-kept "$(grep -m1 -E '^(CUT|unparseable)' <<< "$out")"; fi
   if grep -qE '^OTHERS:[1-9][0-9]*:$' <<< "$out"; then ok "others-kept ($(grep -oE '^OTHERS:[0-9]+' <<< "$out" | cut -d: -f2) routes with http 200)"
   else bad others-kept "$(grep -m1 -E '^(OTHERS|unparseable)' <<< "$out")"; fi
+  if grep -q '^STAMP:$' <<< "$out"; then ok stamped; else bad stamped "$(grep -m1 -E '^(STAMP|unparseable)' <<< "$out")"; fi
+  pkill -f "$T/fake_serve.py" 2> /dev/null || :
+
+  # load-decline: loadavg 99 on 4 cores declines a CPU serve by name, never a cuda one
+  out=$(LADDER_LOADAVG_FILE="$T/loadavg.high" LADDER_NPROC=4 GPU_LOCK="$T/lock" LOCK_WAIT=10 LOCK_BUSY=75 APR="$T/apr" \
+        WORK="$T/work" SERVE_STALL_S=10 SERVE_CEILING_S=30 LADDER_ROUTE_MAX_TIME=2 \
+        timeout 60 bash -c "$body"$'\n''ladder_serve_probe /fake.gguf "" r1 cpu' 2>&1); prc=$?
+  local cprc=$prc cout="$out"
+  pkill -f "$T/fake_serve.py" 2> /dev/null || :
+  out=$(LADDER_LOADAVG_FILE="$T/loadavg.high" LADDER_NPROC=4 GPU_LOCK="$T/lock" LOCK_WAIT=10 LOCK_BUSY=75 APR="$T/apr" \
+        WORK="$T/work" SERVE_STALL_S=10 SERVE_CEILING_S=30 LADDER_ROUTE_MAX_TIME=2 \
+        timeout 120 bash -c "$body"$'\n''ladder_serve_probe /fake.gguf "" r1 cuda' 2> /dev/null); prc=$?
+  pkill -f "$T/fake_serve.py" 2> /dev/null || :
+  if [ "$cprc" = 2 ] && grep -q '^decline: ENV host load 99.00 exceeds 4 cores before the cpu serve of r1' <<< "$cout" \
+     && [ "$prc" != 2 ] && grep -q '"probed":true' <<< "$out"; then ok load-decline
+  else bad load-decline "cpu rc=$cprc ($(head -c 160 <<< "$cout")), cuda rc=$prc (want cpu 2 + the named decline, cuda probed)"; fi
+
+  # contract-timeout: no override -> the contract's per-backend bound; no declaration -> a named decline
+  local tb="$body"$'\n'
+  out=$(LADDER=contracts/model-capability-ladder-v1.yaml bash -c "$tb"'printf "%s %s" "$(ladder_route_timeout cpu)" "$(ladder_route_timeout cuda)"' 2>&1)
+  sed '/^    route_timeout_s:$/,/^      cuda: [0-9]*$/d' contracts/model-capability-ladder-v1.yaml > "$T/ladder-no-rto.yaml"
+  local dout; dout=$(LADDER="$T/ladder-no-rto.yaml" LADDER_LOADAVG_FILE="$T/loadavg.low" LADDER_NPROC=4 GPU_LOCK="$T/lock" WORK="$T/work" \
+        timeout 30 bash -c "$body"$'\n''ladder_serve_probe /fake.gguf "" r1 cuda' 2>&1); prc=$?
+  if [ "$out" = "300 60" ] && ! grep -q 'route_timeout_s' "$T/ladder-no-rto.yaml" && [ "$prc" = 2 ] \
+     && grep -q '^decline: ENV the ladder declares no serve_health.route_timeout_s for backend cuda' <<< "$dout"; then ok contract-timeout
+  else bad contract-timeout "resolved '$out' (want '300 60'); undeclared rc=$prc: $(head -c 160 <<< "$dout")"; fi
   pkill -f "$T/fake_serve.py" 2> /dev/null || :
   return "$rc"
 }
@@ -142,8 +180,21 @@ if [ "$SELF_TEST" = 1 ]; then
   sed 's/{\\"http\\":\$http_json,\\"curl_error\\":\$cerr_json,/{\\"http\\":$code,/' "$SCRIPT" > "$m"
   if cmp -s "$SCRIPT" "$m"; then echo "  FAIL  mutant bare-code did not apply -- the check proves nothing"; exit 1; fi
   o=$(run_cases "$m" 2>&1) || true
-  if grep -q 'FAIL  parses' <<< "$o"; then echo "  ok    mutant bare-code killed by parses"; echo "SELF-TEST OK"; exit 0; fi
-  printf '%s\n' "$o"; echo "SELF-TEST FAIL: the bare \"http\":\$code plant left parses green"; exit 1
+  grep -q 'FAIL  parses' <<< "$o" || { printf '%s\n' "$o"; echo "SELF-TEST FAIL: the bare \"http\":\$code plant left parses green"; exit 1; }
+  echo "  ok    mutant bare-code killed by parses"
+  m="$T/m-no-load.sh"
+  sed 's/    if \[ "\$bname" = cpu \] && python3 -c .import sys; sys.exit(0 if float/    if false \&\& python3 -c '"'"'import sys; sys.exit(0 if float/' "$SCRIPT" > "$m"
+  cmp -s "$SCRIPT" "$m" && { echo "  FAIL  mutant no-load-check did not apply"; exit 1; }
+  o=$(run_cases "$m" 2>&1) || true
+  grep -q 'FAIL  load-decline' <<< "$o" || { printf '%s\n' "$o"; echo "SELF-TEST FAIL: a deleted load check left load-decline green"; exit 1; }
+  echo "  ok    mutant no-load-check killed by load-decline"
+  m="$T/m-fixed-60.sh"
+  sed 's/^    rto=\$(ladder_route_timeout "\$bname") || rto=""$/    rto=${LADDER_ROUTE_MAX_TIME:-60}/' "$SCRIPT" > "$m"
+  cmp -s "$SCRIPT" "$m" && { echo "  FAIL  mutant fixed-60 did not apply"; exit 1; }
+  o=$(run_cases "$m" 2>&1) || true
+  grep -q 'FAIL  contract-timeout' <<< "$o" || { printf '%s\n' "$o"; echo "SELF-TEST FAIL: a hard-coded 60 s bound left contract-timeout green"; exit 1; }
+  echo "  ok    mutant fixed-60 killed by contract-timeout"
+  echo "SELF-TEST OK"; exit 0
 fi
 echo "ladder serve probe: a route with no response keeps the record parseable and the other routes' evidence ($SCRIPT)"
 if run_cases "$SCRIPT"; then echo "PASS"; exit 0; fi

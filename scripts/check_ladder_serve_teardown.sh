@@ -257,7 +257,7 @@ lift_fns() { # <src> <fn...> -> each function's text; a one-line `f() { ...; }` 
 serve_decline_case() { # <src>
   local src="$1" pbody hp out rc
   pbody=$(lift_fns "$src" apr_locked lock_timeout serve_log_tail ladder_tree_jiffies ladder_tree_waits_on_lock \
-          ladder_serve_wait_health ladder_td_verdict ladder_serve_teardown ladder_serve_probe)
+          ladder_serve_wait_health ladder_td_verdict ladder_serve_teardown ladder_route_timeout ladder_host_load ladder_serve_probe)
   grep -q '^ladder_serve_probe() {' <<< "$pbody" && grep -q '^apr_locked() {' <<< "$pbody" \
     || { echo "  serve-lock-busy-declines: could not lift ladder_serve_probe/apr_locked" >&2; return 2; }
   : > "$TMP/declock"; mkdir -p "$TMP/decwork"

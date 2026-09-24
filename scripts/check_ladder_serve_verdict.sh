@@ -132,6 +132,15 @@ RED_ONLY_ON_CUT='{"capability_match":{"passed":true,"skipped":false,"message":"o
      "/v1/completions|stream=false":{"http":200,"curl_error":"transfer failed after HTTP 200 (curl exit 18)"},
      "/api/chat|stream=false":{"http":200}}}}}}}'
 
+# #4126 (cop ruling): a TIMED-OUT route is its own verdict. The row is still not green, but the reason
+# names TIMEOUT as a harness/host condition, never a model FAIL.
+RED_ONLY_ON_TIMEOUT='{"capability_match":{"passed":true,"skipped":false,"message":"ok"},
+ "golden_output":{"passed":true,"skipped":false,"message":"ok"},
+ "backends":{"cpu":{"ran":true,"fallback":false,"escaped_special":false,"rc":0,
+   "verbs":{'"$_verbs_ok"'"serve":{"probed":true,"teardown":"clean","route_timeout_s":300,"routes":{
+     "/api/chat|stream=false":{"http":null,"curl_error":"timeout: no response within 300s","timeout":true,"timeout_s":300},
+     "/v1/completions|stream=false":{"http":200,"timeout":false,"timeout_s":300}}}}}}}'
+
 why_of() { # why_of <src> -> the reason line that row would print
   # The builder already reads its row from STDIN, so it just gets piped. (The first
   # version of this helper rebuilt it through `exec` and string-splitting, which is
@@ -157,6 +166,14 @@ check_reason() { # check_reason <src> -> 0 explained, 1 not
     *'without a complete response: /v1/completions|stream=false (transfer failed after HTTP 200 (curl exit 18))'*)
       printf '  ok    %-16s %s\n' "reason:cut" "$cut" ;;
     *) printf '  FAIL  %-16s a cut-short route says: %s\n' "reason:cut" "${cut:-empty}"; return 1 ;;
+  esac
+  tmo=$(why_of "$src" "$RED_ONLY_ON_TIMEOUT") || return 2
+  case "$tmo" in
+    *'cpu: serve TIMEOUT (harness/host condition, not a model verdict; route bound 300s): /api/chat|stream=false'*)
+      case "$tmo" in *'without a complete response'*|*'non-200'*)
+        printf '  FAIL  %-16s a timeout is ALSO reported as a failed route: %s\n' "reason:timeout" "$tmo"; return 1 ;; esac
+      printf '  ok    %-16s %s\n' "reason:timeout" "$tmo" ;;
+    *) printf '  FAIL  %-16s a timed-out route says: %s\n' "reason:timeout" "${tmo:-empty}"; return 1 ;;
   esac
   got=$(why_of "$src") || return 2
   case "$got" in
