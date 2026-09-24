@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# guard-tree: serial
+# (guard_tree.sh runs this guard after the pool, alone: its rows assert a server is ready within 10 s; under the 8-way pool on a clean-room runner they miss the window (#4046))
 # check_ladder_serve_teardown.sh — `ladder_serve_teardown` must never print `clean`
 # while a process it launched is alive (#3943).
 #
@@ -116,6 +118,8 @@ alive() { kill -0 "$1" 2>/dev/null; }
 
 run_cases() { # <teardown-function-body> -> 0 if every case lands, 1 otherwise
   local body="$1" fails=0 port pid spid td fpid
+  # bashrs SEC001: evals a function body extracted by awk from this repo's own scripts/model_ladder.sh, so the real function is under test; no external input.
+  # bashrs disable-next-line=SEC001
   eval "$body"
 
   # loading
@@ -188,6 +192,8 @@ wait_case() { # <name> <mode> <secs> <stall> <ceiling> <want-verdict> <max-secon
 
 run_wait_cases() { # <wait-function-bodies> -> 0 if every case lands
   local body="$1" fails=0
+  # bashrs SEC001: evals function bodies extracted by awk from this repo's own scripts/model_ladder.sh; no external input.
+  # bashrs disable-next-line=SEC001
   eval "$body"
   wait_case slow-log slow-log 6 3 30 ready 10    || fails=1
   wait_case slow-cpu slow-cpu 6 3 30 ready 10    || fails=1

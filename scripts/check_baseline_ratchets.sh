@@ -111,6 +111,11 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         # count would say nothing about whether the rows are still true.
         unwired_capabilities_acknowledged.txt)
             printf 'none\tsuppression ledger; each row names an open issue and is printed every run, and a row MUST be deleted when its issue closes or it exempts the next instance (scripts/check_unwired_capabilities.sh)\n' ;;
+        # NOT a ratchet. The exact test paths `make coverage` excludes (`--exact --skip <line>`,
+        # #3839): each row is a reviewed exclusion with its reason in the file's own comments, and
+        # the set must be free to grow when a new flaky or host-bound test is excluded.
+        coverage-skips.txt)
+            printf 'none\tcoverage exclusion list, one exact test path per line with its reason (Makefile coverage target, #3839); not a ratchet\n' ;;
         pipe_grep_q_baseline.txt)                printf 'count\n' ;;   # `producer | grep -q` sites under pipefail (scripts/check_no_pipe_into_grep_q.sh)
         pathonly_devdeps_baseline.txt)           printf 'set\n' ;;   # (manifest,alias) pairs whose src/ uses a publish-stripped dev-dep (scripts/check_pathonly_devdeps_unused_in_src.sh, #3305/#3306)
         roadmap_uncited_completion_baseline.txt) printf 'set\n' ;;

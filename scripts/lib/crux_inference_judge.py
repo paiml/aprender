@@ -1098,9 +1098,9 @@ def collect(args):
     # #3957 F6: ONE positive control per (model, host, verb, thinking) -- a control measured on
     # `run` says nothing about whether the `chat` lane can see a right answer.
     lanes = sorted({(c["key"]["model_sha256"], c["key"]["host"], c["key"]["verb"], c["key"]["thinking"]) for c in cells})
-    uncontrolled = ["%s/%s/%s/%s" % (m[:12], h, v, t) for (m, h, v, t) in lanes
+    uncontrolled = ["%s/%s/%s/%s" % (model_sha[:12], h, v, t) for (model_sha, h, v, t) in lanes
                     if not any((c["key"]["model_sha256"], c["key"]["host"], c["key"]["verb"], c["key"]["thinking"])
-                               == (m, h, v, t) and c["positive_control"] for c in cells)]
+                               == (model_sha, h, v, t) and c["positive_control"] for c in cells)]
     # #3957 F6 / J3: a NEGATIVE control per verb. The judge plants a wrong apr answer into a GREEN
     # control cell of that verb and must see RED; a lane that cannot see a wrong answer vouches
     # for nothing. The planted text is the prompt's own `negative` (#3962), else a fixed non-answer.

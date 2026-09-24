@@ -209,8 +209,8 @@ pub(crate) fn resolve_gpu_layers(
 ///
 /// `cargo install aprender` produces exactly that build — root `Cargo.toml` has
 /// `default = ["cli"]` and `cuda` is opt-in. Measured on 2026-08-24 with an
-/// idle RTX 4090 in the machine: 15.7 tok/s decode against llama.cpp's 158.9,
-/// and 7.5 SECONDS to first token. A tenth of the speed, no diagnostic, and a
+/// idle RTX 4090 in the machine (the numbers are on #2696): about a tenth of
+/// llama.cpp's decode rate, and 7.5 SECONDS to first token. A tenth of the speed, no diagnostic, and a
 /// plausible-looking number at the end of it.
 ///
 /// The remedy in the message is checked to be real. #2527 is the counter-case:

@@ -38,6 +38,51 @@ STRINGY = re.compile(
     r"""(f"|f'|print\(|format!|str\(|\.stderr|\.stdout|reason|message|msg|why|detail|%s|\{\})"""
 )
 SKIP = re.compile(r"coverage_report|/target/|_baseline\.txt|truncation_scan\.py")
+# THE IDENTIFIER-PREFIX CLASS (#4046, cop ruling A'). `sha[:12]` is not a message cut short:
+# it is the conventional short form of an identifier, it loses nothing a reader needs, and
+# the guard's own FAIL text always said it belongs in the baseline "WITH its class". But the
+# baseline ratchet (`set`, and even `set-aperture`) refuses any line the branch WROTE, so
+# for new code the class has to live here, argued once, not appended row by row.
+# A line is exempt ONLY if EVERY slice on it is a head slice with a LITERAL width of 1-16
+# applied to a NAME that says it is an identifier. Everything else stays a finding:
+#   - a display slice of any other name              (msg[:80], got[:300])
+#   - a variable-width id slice                      (sha[:n])
+#   - an id slice wider than 16                      (sha[:40] is the whole id, or prose)
+#   - a tail slice, even of an id                    (sha[-8:])
+#   - a line mixing an id slice with a display slice (the display slice still counts)
+ID_NAME = re.compile(r"(sha|hash|digest|revision)[a-z0-9_]*$|_id$", re.I)
+ANY_SLICE = re.compile(r"\[\s*-?[A-Za-z0-9_.]*\s*:\s*-?[A-Za-z0-9_.]*\s*\]")
+
+
+# THE COMPUTED-LOUD CLASS (#4046). The guard's own remedy is "say how much was dropped
+# (`... and N more chars`)". A line that does exactly that, with N COMPUTED on the same line
+# (`len(...)`), is not a silent truncation, and until now only a baseline row could say so.
+# The ratchet refuses new rows, so the class lives here too. Exempt ONLY when the drop marker
+# and a computed count sit on the SAME line as the slice:
+#   - a literal count ("... and 80 more chars") is still a finding (it can lie);
+#   - a marker on a different line is still a finding (the scan is per line on purpose).
+DROP_MARKER = re.compile(r"(more chars|earlier chars dropped|more error\(s\)|earlier lines dropped|more lines)")
+COMPUTED = re.compile(r"\blen\(")
+
+
+def loud_on_line(line):
+    """True iff the line's truncation announces a COMPUTED count of what it dropped."""
+    return bool(DROP_MARKER.search(line) and COMPUTED.search(line))
+
+
+def id_prefix_only(line):
+    """True iff every slice on the line is an identifier prefix of literal width 1-16."""
+    slices = list(ANY_SLICE.finditer(line))
+    if not slices:
+        return False
+    for m in slices:
+        head = line[:m.start()]
+        # the name is the last identifier (or string key) before the slice
+        nm = re.search(r"""([A-Za-z_][A-Za-z0-9_]*)["']?\]?\s*$""", head)
+        w = re.fullmatch(r"\[:\s*(\d{1,2})\s*\]", m.group(0).replace(" ", ""))
+        if not nm or not w or not ID_NAME.search(nm.group(1)) or not 1 <= int(w.group(1)) <= 16:
+            return False
+    return True
 EXTS = (".py", ".sh", ".rs")
 
 
@@ -66,6 +111,8 @@ def scan(root):
                     continue
                 for n, line in enumerate(lines, 1):
                     if not SLICE.search(line) or not STRINGY.search(line):
+                        continue
+                    if id_prefix_only(line) or loud_on_line(line):
                         continue
                     text = normalize(line)
                     h = hashlib.sha1(text.encode()).hexdigest()[:8]

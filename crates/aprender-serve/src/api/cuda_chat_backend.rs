@@ -540,6 +540,45 @@ fn build_gen_config(request: &ChatCompletionRequest) -> GenerationConfig {
     )
 }
 
+/// The registry chat prompt, rendered with the request's thinking mode and tokenized; an ON the
+/// template cannot express, or an empty prompt, is the client's error (#3723).
+/// Extracted from `registry_fallback` (complexity ratchet, #4046); behaviour unchanged.
+#[allow(clippy::result_large_err)]
+fn registry_prompt_ids(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    tokenizer: &BPETokenizer,
+) -> Result<Vec<u32>, Response> {
+    let prompt_text = match crate::api::realize_handlers::format_chat_messages_for_state_thinking(
+        state,
+        &request.messages,
+        Some(&request.model),
+        request.thinking(),
+    ) {
+        Ok(p) => p,
+        Err(e) => return Err(fail_response(state, StatusCode::BAD_REQUEST, e.to_string())),
+    };
+    let prompt_ids = tokenizer.encode(&prompt_text);
+    if prompt_ids.is_empty() {
+        return Err(fail_response(state, StatusCode::BAD_REQUEST, "Messages cannot be empty"));
+    }
+    Ok(prompt_ids)
+}
+
+/// A registry model's generated ids as u32, or the failure response.
+/// Extracted from `registry_fallback` (complexity ratchet, #4046); behaviour unchanged.
+#[allow(clippy::result_large_err)]
+fn registry_token_ids<E: std::fmt::Display>(
+    state: &AppState,
+    generated: Result<Vec<usize>, E>,
+) -> Result<Vec<u32>, Response> {
+    let generated = match generated {
+        Ok(g) => g,
+        Err(e) => return Err(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
+    };
+    convert_token_ids(&generated).map_err(|e| fail_response(state, StatusCode::BAD_REQUEST, e))
+}
+
 /// Registry-based model fallback (no specialized backend).
 fn registry_fallback(
     state: &AppState,
@@ -575,32 +614,18 @@ fn registry_fallback(
         Err(e) => return fail_response(state, super::model_resolution_status(&e), e),
     };
 
-    let prompt_text = match crate::api::realize_handlers::format_chat_messages_for_state_thinking(
-        state,
-        &request.messages,
-        Some(&request.model),
-        request.thinking(),
-    ) {
-        Ok(p) => p,
-        Err(e) => return fail_response(state, StatusCode::BAD_REQUEST, e.to_string()),
+    let prompt_ids = match registry_prompt_ids(state, request, &tokenizer) {
+        Ok(ids) => ids,
+        Err(r) => return r,
     };
-    let prompt_ids = tokenizer.encode(&prompt_text);
-    if prompt_ids.is_empty() {
-        return fail_response(state, StatusCode::BAD_REQUEST, "Messages cannot be empty");
-    }
 
     let prompt_tokens = prompt_ids.len();
     let prompt: Vec<usize> = prompt_ids.iter().map(|&id| id as usize).collect();
     let config = build_gen_config(request).with_cancel(cancel.clone());
 
-    let generated = match model.generate(&prompt, &config) {
-        Ok(g) => g,
-        Err(e) => return fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e),
-    };
-
-    let token_ids: Vec<u32> = match convert_token_ids(&generated) {
+    let token_ids: Vec<u32> = match registry_token_ids(state, model.generate(&prompt, &config)) {
         Ok(ids) => ids,
-        Err(e) => return fail_response(state, StatusCode::BAD_REQUEST, e),
+        Err(r) => return r,
     };
 
     let generated_ids: Vec<u32> = token_ids[prompt.len()..].to_vec();
@@ -988,6 +1013,129 @@ fn stop_tokens_unless_ignore_eos(
 ///
 /// Discharges FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_001 + V1_003 in
 /// `contracts/qwen3-moe-serve-dispatch-v1.yaml`.
+/// The retained mapped GGUF and the quantized model a qwen3_moe chat needs, or the refusal (#1789).
+/// Extracted from `try_qwen3_moe_backend` (complexity ratchet, #4046); behaviour unchanged.
+#[allow(clippy::result_large_err)]
+fn moe_models(
+    state: &AppState,
+    raw_arch: &str,
+) -> Result<(Arc<crate::gguf::MappedGGUFModel>, Arc<crate::gguf::OwnedQuantizedModel>), Response> {
+    let mapped = match state.mapped_gguf_model() {
+        Some(m) => m,
+        None => {
+            eprintln!(
+                "[WARN] aprender#1789: qwen3_moe arch detected at \
+                 /v1/chat/completions (raw_arch={raw_arch}, canonical=qwen3_moe) \
+                 but AppState has no retained MappedGGUFModel. This means the \
+                 CLI server-command load path didn't call \
+                 .with_mapped_gguf_model(). Returning NOT_IMPLEMENTED. \
+                 See contracts/qwen3-moe-serve-dispatch-v1.yaml + \
+                 https://github.com/paiml/aprender/issues/1789"
+            );
+            return Err(fail_response(
+                state,
+                StatusCode::NOT_IMPLEMENTED,
+                "qwen3_moe arch detected but mapped GGUF not retained in AppState. \
+                 See aprender#1789 + contracts/qwen3-moe-serve-dispatch-v1.yaml.",
+            ));
+        }
+    };
+    let quantized = match state.quantized_model() {
+        Some(q) => q.clone(),
+        None => {
+            return Err(fail_response(
+                state,
+                StatusCode::NOT_IMPLEMENTED,
+                "qwen3_moe arch detected but no OwnedQuantizedModel in AppState. \
+                 See aprender#1789.",
+            ));
+        }
+    };
+    Ok((mapped, quantized))
+}
+
+/// The qwen3_moe generation config from the request (3-knob toolkit + EOS fallback chain).
+/// Extracted from `try_qwen3_moe_backend` (complexity ratchet, #4046); behaviour unchanged.
+fn moe_gen_config(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    tokenizer: &BPETokenizer,
+    max_tokens: usize,
+    cancel: &CancelToken,
+) -> crate::gguf::QuantizedGenerateConfig {
+    use crate::gguf::QuantizedGenerateConfig;
+    let defaults = QuantizedGenerateConfig::default();
+    let eos_id = state.model_eos_token_id().or_else(|| {
+        tokenizer
+            .get_token_id("<|im_end|>")
+            .or_else(|| tokenizer.get_token_id("<|endoftext|>"))
+    });
+    let stop_tokens: Vec<u32> = stop_tokens_unless_ignore_eos(request, eos_id);
+    QuantizedGenerateConfig {
+        max_tokens,
+        temperature: request.temperature.unwrap_or(defaults.temperature),
+        top_k: request.top_k.unwrap_or(defaults.top_k),
+        top_p: request.top_p.unwrap_or(defaults.top_p),
+        repeat_penalty: request.repeat_penalty.unwrap_or(defaults.repeat_penalty),
+        repeat_last_n: request.repeat_last_n.unwrap_or(defaults.repeat_last_n),
+        seed: request.seed.unwrap_or(defaults.seed),
+        stop_tokens,
+        cancel: cancel.clone(),
+        ..defaults
+    }
+}
+
+/// The CPU (`moe_no_gpu`) per-token SSE stream for a qwen3_moe chat.
+/// Extracted from `try_qwen3_moe_backend` (complexity ratchet, #4046); behaviour unchanged.
+#[allow(clippy::too_many_arguments)]
+fn moe_stream_cpu(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    request_id: &str,
+    start: Instant,
+    mapped: &Arc<crate::gguf::MappedGGUFModel>,
+    quantized: &Arc<crate::gguf::OwnedQuantizedModel>,
+    input_ids: &[u32],
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+    tokenizer: Arc<BPETokenizer>,
+    max_tokens: usize,
+    prompt_token_count: usize,
+) -> Response {
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(64);
+    let mapped_clone = mapped.clone();
+    let quantized_clone = quantized.clone();
+    let input_ids_clone = input_ids.to_vec();
+    let gen_config_clone = gen_config.clone();
+    let sink_metrics = state.metrics.clone();
+
+    tokio::task::spawn_blocking(move || {
+        let result = crate::infer::qwen3_moe_generate::run_qwen3_moe_generate_streaming(
+            &mapped_clone,
+            &quantized_clone,
+            &input_ids_clone,
+            &gen_config_clone,
+            // Stops when the client goes away — see `streaming_token_sink`.
+            crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics),
+        );
+        if let Err(e) = result {
+            let _ = tx.blocking_send(Err(e.to_string()));
+        }
+    });
+
+    crate::api::openai_handlers::true_streaming_sse_response(
+        rx,
+        tokenizer,
+        request_id.to_string(),
+        request.model.clone(),
+        state.metrics.clone(),
+        start,
+        max_tokens,
+        prompt_token_count,
+        // The MoE generator reports no phase split; §3 timings are absent.
+        None,
+    )
+}
+
 fn try_qwen3_moe_backend(
     state: &AppState,
     request: &ChatCompletionRequest,
@@ -1002,36 +1150,9 @@ fn try_qwen3_moe_backend(
         return None;
     }
 
-    let mapped = match state.mapped_gguf_model() {
-        Some(m) => m,
-        None => {
-            eprintln!(
-                "[WARN] aprender#1789: qwen3_moe arch detected at \
-                 /v1/chat/completions (raw_arch={raw_arch}, canonical=qwen3_moe) \
-                 but AppState has no retained MappedGGUFModel. This means the \
-                 CLI server-command load path didn't call \
-                 .with_mapped_gguf_model(). Returning NOT_IMPLEMENTED. \
-                 See contracts/qwen3-moe-serve-dispatch-v1.yaml + \
-                 https://github.com/paiml/aprender/issues/1789"
-            );
-            return Some(fail_response(
-                state,
-                StatusCode::NOT_IMPLEMENTED,
-                "qwen3_moe arch detected but mapped GGUF not retained in AppState. \
-                 See aprender#1789 + contracts/qwen3-moe-serve-dispatch-v1.yaml.",
-            ));
-        }
-    };
-    let quantized = match state.quantized_model() {
-        Some(q) => q.clone(),
-        None => {
-            return Some(fail_response(
-                state,
-                StatusCode::NOT_IMPLEMENTED,
-                "qwen3_moe arch detected but no OwnedQuantizedModel in AppState. \
-                 See aprender#1789.",
-            ));
-        }
+    let (mapped, quantized) = match moe_models(state, &raw_arch) {
+        Ok(m) => m,
+        Err(r) => return Some(r),
     };
     let tokenizer = match require_tokenizer(state) {
         Ok(t) => t,
@@ -1067,25 +1188,7 @@ fn try_qwen3_moe_backend(
     //   2. tokenizer "<|im_end|>" — ChatML standard (Qwen, OpenHermes, Yi)
     //   3. tokenizer "<|endoftext|>" — GPT-style alternative
     //   4. None → empty stop_tokens (no behavior change from pre-fix)
-    let defaults = QuantizedGenerateConfig::default();
-    let eos_id = state.model_eos_token_id().or_else(|| {
-        tokenizer
-            .get_token_id("<|im_end|>")
-            .or_else(|| tokenizer.get_token_id("<|endoftext|>"))
-    });
-    let stop_tokens: Vec<u32> = stop_tokens_unless_ignore_eos(request, eos_id);
-    let gen_config = QuantizedGenerateConfig {
-        max_tokens,
-        temperature: request.temperature.unwrap_or(defaults.temperature),
-        top_k: request.top_k.unwrap_or(defaults.top_k),
-        top_p: request.top_p.unwrap_or(defaults.top_p),
-        repeat_penalty: request.repeat_penalty.unwrap_or(defaults.repeat_penalty),
-        repeat_last_n: request.repeat_last_n.unwrap_or(defaults.repeat_last_n),
-        seed: request.seed.unwrap_or(defaults.seed),
-        stop_tokens,
-        cancel: cancel.clone(),
-        ..defaults
-    };
+    let gen_config = moe_gen_config(state, request, &tokenizer, max_tokens, cancel);
 
     // qwen3-moe-streaming-sse-v1: per-token SSE when stream=true.
     // Dispatches to the callback variant + builds an SSE response from
@@ -1096,38 +1199,9 @@ fn try_qwen3_moe_backend(
     // the ONE dispatch below and replays the result — the same
     // `stream_mode: "replayed"` every other CUDA chat stream declares.
     if request.stream && state.moe_no_gpu() {
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(64);
-        let mapped_clone = mapped.clone();
-        let quantized_clone = quantized.clone();
-        let input_ids_clone = input_ids.clone();
-        let gen_config_clone = gen_config.clone();
-        let sink_metrics = state.metrics.clone();
-
-        tokio::task::spawn_blocking(move || {
-            let result = crate::infer::qwen3_moe_generate::run_qwen3_moe_generate_streaming(
-                &mapped_clone,
-                &quantized_clone,
-                &input_ids_clone,
-                &gen_config_clone,
-                // Stops when the client goes away — see `streaming_token_sink`.
-                crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics),
-            );
-            if let Err(e) = result {
-                let _ = tx.blocking_send(Err(e.to_string()));
-            }
-        });
-
-        return Some(crate::api::openai_handlers::true_streaming_sse_response(
-            rx,
-            tokenizer,
-            request_id.to_string(),
-            request.model.clone(),
-            state.metrics.clone(),
-            start,
-            max_tokens,
-            prompt_token_count,
-            // The MoE generator reports no phase split; §3 timings are absent.
-            None,
+        return Some(moe_stream_cpu(
+            state, request, request_id, start, &mapped, &quantized, &input_ids, &gen_config, tokenizer,
+            max_tokens, prompt_token_count,
         ));
     }
 

@@ -627,6 +627,8 @@ FXJUDGE
     FX_LADDER_RC=1 row no_scope_matrix_still_gates 1 "FAIL  R7 model matrix NOT green" "$d"
     # the receipts committed on top of the cut: HEAD differs from the cut ONLY under evidence/
     d="$tmp/sc-evidence"; build_repo "$d"; cut="$(git -C "$d" rev-parse HEAD)"
+    # bashrs SEC010: self-test fixture: $d is under this script's own mktemp -d dir.
+    # bashrs disable-next-line=SEC010
     mkdir -p "$d/evidence/crux/1.2.3"; printf '{}\n' > "$d/evidence/crux/1.2.3/lambda-gpu.json"
     git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'receipts' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
@@ -640,6 +642,8 @@ FXJUDGE
     FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_source_change_over_the_cut_refuses 1 "differs from the cut ${cut:0:12} in PUBLISHED paths" "$d"
     # scripts/contracts arriving after the cut (the scope's own reader and entry do) are not published
     d="$tmp/sc-tooling"; build_repo "$d"; cut="$(git -C "$d" rev-parse HEAD)"
+    # bashrs SEC010: self-test fixture: $d is under this script's own mktemp -d dir.
+    # bashrs disable-next-line=SEC010
     printf '# tooling\n' > "$d/scripts/new_tool.sh"; mkdir -p "$d/contracts"; printf 'x: 1\n' > "$d/contracts/c.yaml"
     git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'tooling' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3

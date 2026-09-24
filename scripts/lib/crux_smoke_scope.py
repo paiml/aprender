@@ -28,7 +28,7 @@ import model_ladder_crux
 HEX40 = re.compile(r"[0-9a-f]{40}")
 
 
-def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
+def judge(L, version, crux_dir, cert_p, cut_sha, scope_name, out):
     """-> True when the emergency scope is NOT satisfied (RED)."""
     failed = False
     entry = next((e for e in (L.get("emergency_scopes") or [])
@@ -45,8 +45,8 @@ def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
         out(f"FAIL  emergency scope {scope_name} is recorded for release {entry['release']} ONLY, and this cut is {version} "
             f"-- the full gate applies")
         return True
-    if not HEX40.fullmatch(cut or ""):
-        out(f"FAIL  the cut {cut!r} is not a full 40-hex sha -- smoke receipts are bound to the release binary's commit")
+    if not HEX40.fullmatch(cut_sha or ""):
+        out(f"FAIL  the cut {cut_sha!r} is not a full 40-hex sha -- smoke receipts are bound to the release binary's commit")
         return True
     certified, cfail = model_ladder_crux.load_certified(cert_p, out)
     if cfail or not certified:
@@ -65,7 +65,7 @@ def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
         m = by_mode.get(sha) if isinstance(by_mode.get(sha), dict) else {}
         matrix[sha] = [t for t in entry["thinking"] if m.get(t)]
     out("smoke matrix (certified model -> admitted thinking modes): "
-        + "; ".join(f"{s[:12]} -> {','.join(m) or 'NONE'}" for s, m in matrix.items()))
+        + "; ".join(f"{model_sha[:12]} -> {','.join(models) or 'NONE'}" for model_sha, models in matrix.items()))
     for sha, m in matrix.items():
         if not m:
             out(f"FAIL  certified model {sha[:12]} has NO admitted thinking mode -- nothing about it can be smoke-proven"); failed = True
@@ -84,8 +84,8 @@ def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
             out(f"FAIL  {os.path.basename(f)} is not a crux-inference-receipt/v1"); failed = True
             continue
         asha = model_ladder_crux.apr_sha_of(R)
-        if asha != cut:
-            out(f"FAIL  CRUX receipt {os.path.basename(f)} is from apr sha {asha!r}, not the release binary {cut[:12]} "
+        if asha != cut_sha:
+            out(f"FAIL  CRUX receipt {os.path.basename(f)} is from apr sha {asha!r}, not the release binary {cut_sha[:12]} "
                 f"-- the emergency scope accepts only receipts from the binary being released"); failed = True
             continue
         if (R.get("summary") or {}).get("verdict") == "DECLINE":

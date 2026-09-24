@@ -121,7 +121,7 @@ impl CudaScheduler {
             })
     }
 
-    /// Cache a weight matrix on GPU (PARITY-120: 10x speedup)
+    /// Cache a weight matrix on GPU (PARITY-120)
     ///
     /// Weights stay on GPU and are reused for all forward passes.
     ///
@@ -149,7 +149,7 @@ impl CudaScheduler {
         self.executor.cached_weight_count()
     }
 
-    /// Execute matmul using cached weight (PARITY-120: 10x speedup)
+    /// Execute matmul using cached weight (PARITY-120)
     ///
     /// Uses pre-loaded weight on GPU, only transfers input/output.
     /// This is the fast path for single-token generation.

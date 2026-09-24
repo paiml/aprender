@@ -101,21 +101,6 @@ proof_obligations:
   formal: '∀ P: fromStr(toJson(P)) ≡ P ∧ fromStr(toYaml(P)) ≡ P'
   applies_to: all
 falsification_tests:
-- id: FALSIFY-CLASS-007
-  rule: Blocked plans are refused
-  prediction: 'execute_plan refuses a Blocked plan even when the model path is a real directory, and the blocked refusal OUTRANKS a missing path when both hold'
-  test: 'aprender-train finetune::training_plan::tests::a_blocked_plan_is_refused_even_when_everything_else_is_in_order and ::the_blocked_verdict_outranks_a_missing_model_path'
-  if_fails: 'The verdict precondition was removed or reordered below the path check; a plan the auditor blocked would then start training. MUTANT: deleting the PlanVerdict::Blocked arm turns 3 rows RED.'
-- id: FALSIFY-CLASS-008
-  rule: Plan serialization round-trips
-  prediction: 'to_json and to_yaml both produce non-empty text that from_str parses back with the same version, task, verdict, check_counts and issue count'
-  test: 'aprender-train finetune::training_plan::tests::a_plan_survives_a_round_trip_through_both_formats'
-  if_fails: 'to_json/to_yaml swallow failure with unwrap_or_default(), so a broken derive returns the EMPTY string rather than an error. Only a round trip distinguishes "wrote the plan" from "wrote nothing". MUTANT: to_yaml -> String::new() turns 3 rows RED.'
-- id: FALSIFY-CLASS-009
-  rule: Check counts partition
-  prediction: 'pass + warn + fail equals the number of pre-flight checks, so none is counted twice or dropped'
-  test: 'aprender-train finetune::training_plan::tests::check_counts_partitions_every_preflight_check'
-  if_fails: 'A status bucket was dropped or a filter loosened; the displayed summary and the verdict would then disagree about the same checks. MUTANT: fail = 0 turns 2 rows RED.'
 - id: FALSIFY-CLASS-001
   rule: Logit shape
   prediction: ValidatedClassLogits::new rejects data.len() != num_classes
@@ -146,6 +131,21 @@ falsification_tests:
   prediction: ValidatedClassLogits::new rejects num_classes < 2
   test: proptest with num_classes in {0, 1}
   if_fails: Minimum class count not enforced
+- id: FALSIFY-CLASS-007
+  rule: Blocked plans are refused
+  prediction: 'execute_plan refuses a Blocked plan even when the model path is a real directory, and the blocked refusal OUTRANKS a missing path when both hold'
+  test: 'aprender-train finetune::training_plan::tests::a_blocked_plan_is_refused_even_when_everything_else_is_in_order and ::the_blocked_verdict_outranks_a_missing_model_path'
+  if_fails: 'The verdict precondition was removed or reordered below the path check; a plan the auditor blocked would then start training. MUTANT: deleting the PlanVerdict::Blocked arm turns 3 rows RED.'
+- id: FALSIFY-CLASS-008
+  rule: Plan serialization round-trips
+  prediction: 'to_json and to_yaml both produce non-empty text that from_str parses back with the same version, task, verdict, check_counts and issue count'
+  test: 'aprender-train finetune::training_plan::tests::a_plan_survives_a_round_trip_through_both_formats'
+  if_fails: 'to_json/to_yaml swallow failure with unwrap_or_default(), so a broken derive returns the EMPTY string rather than an error. Only a round trip distinguishes "wrote the plan" from "wrote nothing". MUTANT: to_yaml -> String::new() turns 3 rows RED.'
+- id: FALSIFY-CLASS-009
+  rule: Check counts partition
+  prediction: 'pass + warn + fail equals the number of pre-flight checks, so none is counted twice or dropped'
+  test: 'aprender-train finetune::training_plan::tests::check_counts_partitions_every_preflight_check'
+  if_fails: 'A status bucket was dropped or a filter loosened; the displayed summary and the verdict would then disagree about the same checks. MUTANT: fail = 0 turns 2 rows RED.'
 kani_harnesses:
 - id: KANI-FT-001
   obligation: FT-INV-001
@@ -204,5 +204,5 @@ qa_gate:
   - softmax_sum_invariant
   - nan_inf_rejection
   - config_factory_contract_sync
-  pass_criteria: All 6 falsification tests pass
+  pass_criteria: All 9 falsification tests pass
   falsification: Bypass ValidatedClassLogits::new() with unsafe or wrong constructor

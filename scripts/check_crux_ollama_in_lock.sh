@@ -22,6 +22,9 @@
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
+# guard_tree.sh probes `--help` to decide whether to run a self-test. Answer it before any work:
+# a probe that fell through to the body ran this whole guard a second time, serially (#4046).
+case "${1:-}" in -h|--help) printf 'usage: bash scripts/check_crux_ollama_in_lock.sh (no arguments: runs its rows)\n'; exit 0 ;; esac
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
 PROG=check_crux_ollama_in_lock
@@ -149,6 +152,8 @@ case "${1:-}" in
     if flock -n "$STUB_LOCK" true 2>/dev/null; then h=no; else h=yes; fi
     echo "LOAD cli-run held=$h keepalive=$ka" >> "$STUB_LOG"
     echo "4"
+    # bashrs SEC001: the word 'eval' here is a literal printf argument (ollama's 'eval count'/'eval rate' output), not an eval call.
+    # bashrs disable-next-line=SEC001
     printf 'total duration:       1s\nprompt %s count:    3 token(s)\n%s count:           1 token(s)\n%s rate:            1.00 tokens/s\n' eval eval eval >&2 ;;
   *) echo "stub ollama: unhandled '$*'" >&2; exit 1 ;;
 esac
@@ -215,7 +220,7 @@ printf '%s: every ollama model load runs inside the GPU lock (#3964)\n' "$PROG"
 
 # Row 1: the real dogfood through gpu-q (the production path on lambda and gx10).
 GPUQ_REAL="${GPUQ_BIN_UNDER_TEST:-$HOME/.local/bin/gpu-q}"
-if [ -x "$GPUQ_REAL" ] && "$GPUQ_REAL" --caps 2>/dev/null | grep -q wait; then
+if [ -x "$GPUQ_REAL" ] && grep -q wait <<< "$("$GPUQ_REAL" --caps 2>/dev/null)"; then
   run_row gpuq "$ROOT" "$GPUQ_REAL"
   expect_held gpuq "gpu-q path"
 else

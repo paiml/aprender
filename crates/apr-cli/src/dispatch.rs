@@ -134,6 +134,91 @@ fn run_accelerator_forced(gpu: bool, no_gpu: bool, backend: Option<&str>) -> boo
     )
 }
 
+/// GH-614: announce a `--backend` override, and refuse `--backend cuda` on a build
+/// without the `cuda` feature (FALSIFY-BACKEND-CUDA-HONESTY-001). Extracted from
+/// `dispatch_runtime_commands` unchanged, to keep that function under the complexity
+/// ratchet.
+fn check_run_backend(backend: Option<&str>) -> Result<(), CliError> {
+    if let Some(b) = backend {
+        if b != "cpu" {
+            eprintln!("Backend override: {b}");
+        }
+    }
+    // FALSIFY-BACKEND-CUDA-HONESTY-001: refuse `--backend cuda` on a build
+    // that has no CUDA compiled in, instead of silently serving wgpu/CPU.
+    //
+    // The CUDA generate path is behind `#[cfg(feature = "cuda")]`
+    // (aprender-serve/src/infer/gguf_gpu_generate.rs:356). On a build without
+    // that feature the whole block VANISHES, control falls through to the
+    // GH-559 wgpu fallback, and the run prints:
+    //     Backend override: cuda
+    //     Backend: wgpu (Vulkan)
+    // wgpu then fails its own cpu-parity gate (cosine 0.884 < 0.99) and
+    // degrades again — ~20 tok/s where CUDA gives ~400. Measured 2026-07-27
+    // on an RTX 4090 with nvcc 12.8 present, so this is NOT a
+    // missing-hardware case; it is a build that cannot honour the flag
+    // reporting success anyway.
+    //
+    // This silently invalidates any measurement taken through it. The
+    // Pillar-4 decode beat run against such a binary reports
+    // `ratio_median=0.070x` and a BEAT-REGRESSION panic — a fabricated 14x
+    // regression with nothing wrong in apr's decode path.
+    //
+    // A 20x silent downgrade is never what the caller asked for. Fail.
+    //
+    // NOTE: this checks build capability only. When CUDA *is* compiled in
+    // but fails at runtime (e.g. the Blackwell sm_121 JIT), the GH-559
+    // wgpu fallback is deliberate and stays.
+    if backend == Some("cuda") && !cfg!(feature = "cuda") {
+        return Err(CliError::ValidationFailed(
+            "--backend cuda requested, but this `apr` was built WITHOUT the \
+`cuda` feature, so the CUDA backend does not exist in this binary. \
+Refusing to silently fall back to wgpu/CPU: that path is ~20x slower \
+(~20 tok/s vs ~400) and makes any throughput measurement taken through it \
+meaningless. Rebuild the ROOT facade with CUDA: `cargo build --release \
+--features cuda` (build the root, not `-p apr-cli`: BOTH packages define a \
+binary named `apr`, and only the root's cuda = [\"cli\", \"apr-cli/cuda\"] \
+chain enables this path). To run on this build anyway, pass `--backend cpu` \
+or drop `--backend`."
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Batch JSONL mode: load the model once and process every prompt. #3723: the batch path
+/// renders its own prompts, so `--thinking`, which it cannot honour, is refused by name
+/// rather than ignored. Extracted from `dispatch_runtime_commands` unchanged.
+#[cfg(feature = "inference")]
+#[allow(clippy::too_many_arguments)]
+fn run_batch_jsonl(
+    source: &str,
+    batch_file: &std::path::Path,
+    thinking_requested: bool,
+    max_tokens: usize,
+    temperature: f32,
+    top_k: usize,
+    no_gpu: bool,
+    verbose: bool,
+) -> Result<(), CliError> {
+    if thinking_requested {
+        return Err(CliError::ValidationFailed(
+            "--thinking is not supported with --batch-jsonl (#3723): the batch path \
+renders its own prompts. Run the prompts through `apr run --thinking` instead."
+                .to_string(),
+        ));
+    }
+    run::run_batch(
+        source,
+        batch_file,
+        max_tokens,
+        temperature,
+        top_k,
+        no_gpu,
+        verbose,
+    )
+}
+
 /// Dispatch runtime commands: check, run, serve.
 fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(match cli.command.as_ref() {
@@ -178,49 +263,8 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             request_f2_revalidate(*revalidate);
             // GH-614: --backend cpu forces CPU-only inference
             let backend_forces_cpu = backend.as_deref() == Some("cpu");
-            if let Some(ref b) = backend {
-                if b != "cpu" {
-                    eprintln!("Backend override: {b}");
-                }
-            }
-            // FALSIFY-BACKEND-CUDA-HONESTY-001: refuse `--backend cuda` on a build
-            // that has no CUDA compiled in, instead of silently serving wgpu/CPU.
-            //
-            // The CUDA generate path is behind `#[cfg(feature = "cuda")]`
-            // (aprender-serve/src/infer/gguf_gpu_generate.rs:356). On a build without
-            // that feature the whole block VANISHES, control falls through to the
-            // GH-559 wgpu fallback, and the run prints:
-            //     Backend override: cuda
-            //     Backend: wgpu (Vulkan)
-            // wgpu then fails its own cpu-parity gate (cosine 0.884 < 0.99) and
-            // degrades again — ~20 tok/s where CUDA gives ~400. Measured 2026-07-27
-            // on an RTX 4090 with nvcc 12.8 present, so this is NOT a
-            // missing-hardware case; it is a build that cannot honour the flag
-            // reporting success anyway.
-            //
-            // This silently invalidates any measurement taken through it. The
-            // Pillar-4 decode beat run against such a binary reports
-            // `ratio_median=0.070x` and a BEAT-REGRESSION panic — a fabricated 14x
-            // regression with nothing wrong in apr's decode path.
-            //
-            // A 20x silent downgrade is never what the caller asked for. Fail.
-            //
-            // NOTE: this checks build capability only. When CUDA *is* compiled in
-            // but fails at runtime (e.g. the Blackwell sm_121 JIT), the GH-559
-            // wgpu fallback is deliberate and stays.
-            if backend.as_deref() == Some("cuda") && !cfg!(feature = "cuda") {
-                return Some(Err(CliError::ValidationFailed(
-                    "--backend cuda requested, but this `apr` was built WITHOUT the \
-`cuda` feature, so the CUDA backend does not exist in this binary. \
-Refusing to silently fall back to wgpu/CPU: that path is ~20x slower \
-(~20 tok/s vs ~400) and makes any throughput measurement taken through it \
-meaningless. Rebuild the ROOT facade with CUDA: `cargo build --release \
---features cuda` (build the root, not `-p apr-cli`: BOTH packages define a \
-binary named `apr`, and only the root's cuda = [\"cli\", \"apr-cli/cuda\"] \
-chain enables this path). To run on this build anyway, pass `--backend cpu` \
-or drop `--backend`."
-                        .to_string(),
-                )));
+            if let Err(e) = check_run_backend(backend.as_deref()) {
+                return Some(Err(e));
             }
             // PERF-021: `apr run` is the surface #2696 was MEASURED through —
             // 15.7 tok/s decode, 0.099x llama.cpp — and it was the surface with
@@ -249,18 +293,10 @@ or drop `--backend`."
             // Batch JSONL mode: load model once, process all prompts
             #[cfg(feature = "inference")]
             if let Some(ref batch_file) = batch_jsonl {
-                // #3723: the batch path renders its own prompts; a flag it cannot honour is
-                // refused by name rather than ignored.
-                if thinking.mode().is_some() {
-                    return Some(Err(CliError::ValidationFailed(
-                        "--thinking is not supported with --batch-jsonl (#3723): the batch path \
-renders its own prompts. Run the prompts through `apr run --thinking` instead."
-                            .to_string(),
-                    )));
-                }
-                return Some(run::run_batch(
+                return Some(run_batch_jsonl(
                     source,
                     batch_file,
+                    thinking.mode().is_some(),
                     *max_tokens,
                     *temperature,
                     *top_k,
@@ -309,7 +345,6 @@ renders its own prompts. Run the prompts through `apr run --thinking` instead."
         Commands::Serve { command } => dispatch_serve_command(command, cli),
 
         // PMAT-182: apr code — sovereign coding assistant
-        
         Commands::Code {
             model,
             project,
@@ -498,9 +533,7 @@ fn dispatch_debug(
     })?;
     let (drama, hex, strings, limit) = flags;
     let (j, verb) = (cli.json, cli.verbose);
-    crate::pipe::with_stdin_support(file, |p| {
-        debug::run(p, drama, hex, strings, limit, j, verb)
-    })
+    crate::pipe::with_stdin_support(file, |p| debug::run(p, drama, hex, strings, limit, j, verb))
 }
 
 /// Dispatch inspection commands: inspect, debug, validate, lint, explain, canary.

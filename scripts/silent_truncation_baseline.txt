@@ -56,7 +56,6 @@
 display	crates/aprender-train/scripts/benchmark_cuda_training.py|0500258e|0	print(f" stderr: {result.stderr[:500]}")
 display	crates/aprender-train/scripts/benchmark_cuda_training.py|4a0c7150|0	print(f" Output preview: {output[:1000]}")
 display	crates/aprender-train/src/transformer/cuda_block.rs|4d37766d|0	eprintln!("[TRACE] uploaded ptr={:?} len={} copy_ok={verify_ok} nonzero={nz} verify[:5]={verify5:?}", buf.as_ptr(), buf.len());
-display	scripts/check_crux_inference_judge.sh|f487c027|0	got=$(python3 -c 'import json,sys; c=[x for x in json.load(open(sys.argv[1]))["cells"] if x["key"]["prompt_id"]=="golden-greeting"][0]; print(c["engines"]["hf"]["answered"], c["engines"]["hf"]["why"][:18])' "$d/receipt.json" 2>/dev/null)
 display	scripts/check_kind_labels_derived.sh|b81ad491|0	undecidable.append((r['id'], pid, [str(x)[:70] for x in (r.get('A') or ['-'])][:2]))
 display	scripts/check_pathonly_devdeps_unused_in_src.sh|e29ba384|0	print(f"{rel_m}|{alias}|{rel_s}:{n}:{stripped[:100]}")
 display	scripts/check_thresholds_in_matrix.sh|553c4ce1|0	"constant `%s`" % stripped[:96]))
@@ -96,13 +95,9 @@ fatal	scripts/render_dag.py|42dbf339|0	print(f"NOT ARMED: {spec_path} carries no
 id-prefix	scripts/check_no_silent_truncation.sh|dda62789|0	k = "%s|%s|%s" % (k.split("|")[0], hashlib.sha1(t.encode()).hexdigest()[:8], k.split("|")[2])
 id-prefix	scripts/check_perf041_marker.sh|b774b180|0	str(marker.get("commit"))[:12], marker.get("max_m"), age_days,
 id-prefix	scripts/derive_model_manifest.sh|5556cac7|0	for c in cites[:12]: lines.append(f" - {c}")
-id-prefix	scripts/lib/crux_inference_judge.py|704d9042|0	broken = sorted({"%s/%s" % (c["key"]["model_sha256"][:12], c["key"]["prompt_id"])
 id-prefix	scripts/lib/model_ladder_cells.py|c3205e9b|0	out(f"FAIL cell {verb}/{mode}/{rid} of model {str(sha)[:12]} PASSES on no required host -- every declared rung must pass somewhere (#3710 'a')")
 id-prefix	scripts/lib/obligation_ids.py|2fd73de0|0	f"{base}{hashlib.sha256(me.encode()).hexdigest()[:4].upper()}"
 id-prefix	scripts/release/ledger.py|6844e991|0	out = f"{ap}/{mc[:9]}-lambda-vector-train.json"
-loud	scripts/check_no_silent_truncation.sh|6db1b160|0	return s if len(s) <= n else f"{s[:n]} ... and {len(s) - n} more chars"
-loud	scripts/lib/model_ladder_cells.py|6db1b160|0	return s if len(s) <= n else f"{s[:n]} ... and {len(s) - n} more chars"
-loud	scripts/lib/perf_receipt.py|a05beb43|0	return s if len(s) <= n else f"[... and {len(s) - n} more chars before this] {s[-n:]}"
 numeric	scripts/generate_qwen3_moe_fp16_logits.py|e6fd4547|0	print(f" logits[:5]: {logits[:5].tolist()}")
 numeric	scripts/golden_layer0_2plus2.py|0a89e741|0	print(f" V bias first 5: {layer0.self_attn.v_proj.bias[:5].tolist()}")
 numeric	scripts/golden_layer0_2plus2.py|113af131|0	print(f"\n Q bias first 5: {layer0.self_attn.q_proj.bias[:5].tolist()}")

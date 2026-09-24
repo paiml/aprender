@@ -183,29 +183,6 @@ proof_obligations:
   formal: "'apr-cookbook' ∈ links(README.md)"
   applies_to: metadata
 falsification_tests:
-- id: FALSIFY-README-007
-  rule: |
-    The README's cookbook example count equals `cookbook_recipe_count_pin` in this
-    contract, and states the date it was measured.
-  prediction: |
-    `README.md` states "**N** worked examples (apr-cookbook, YYYY-MM-DD)" ↔ N ==
-    cookbook_recipe_count_pin. Either side wrong is the same failed equality.
-  test: |
-    bash scripts/check_readme_claims.sh --claim cookbook_recipe_count
-  test_harness: |
-    bash scripts/check_readme_claims.sh --self-test
-  if_fails: |
-    The cookbook grew or shrank and the pin was not refreshed, or the README was
-    edited by hand. Re-measure against paiml/apr-cookbook:
-      git show <sha>:Cargo.toml | grep -c '^\[\[example\]\]'
-    then update BOTH cookbook_recipe_count_pin (with its sha and date) and the
-    README line. The post-release step (#3769 part 3) does this automatically.
-  ship_blocking: false
-  counter_example_classes:
-  - stale_number
-  - dateless_count
-  - wrong_population_counted
-  - missing_pin
 - id: FALSIFY-README-001
   rule: |
     Workspace crate count in README matches `ls crates/ | wc -l`.
@@ -221,6 +198,7 @@ falsification_tests:
   - stale_number
   - off_by_one_new_crate
   - off_by_one_removed_crate
+
 - id: FALSIFY-README-002
   rule: |
     Contract count in README matches `find contracts/ -name "*.yaml" | wc -l`.
@@ -237,6 +215,7 @@ falsification_tests:
   - stale_number
   - missed_kernel_add
   - missed_registry_add
+
 - id: FALSIFY-README-003
   rule: |
     CLI command count in README matches `apr --help` subcommand list.
@@ -253,6 +232,7 @@ falsification_tests:
   - stale_number
   - subcommand_added_without_doc
   - subcommand_renamed_without_doc
+
 - id: FALSIFY-README-004
   rule: |
     README contains a discoverable link to `paiml/apr-cookbook`.
@@ -269,6 +249,7 @@ falsification_tests:
   - link_removed
   - link_404
   - link_renamed_without_sync
+
 - id: FALSIFY-README-005
   name: book_cli_chapter_coverage
   description: |
@@ -306,6 +287,30 @@ falsification_tests:
   - new_pub_mod_without_chapter
   - chapter_removed_but_pub_mod_remains
 
+- id: FALSIFY-README-007
+  rule: |
+    The README's cookbook example count equals `cookbook_recipe_count_pin` in this
+    contract, and states the date it was measured.
+  prediction: |
+    `README.md` states "**N** worked examples (apr-cookbook, YYYY-MM-DD)" ↔ N ==
+    cookbook_recipe_count_pin. Either side wrong is the same failed equality.
+  test: |
+    bash scripts/check_readme_claims.sh --claim cookbook_recipe_count
+  test_harness: |
+    bash scripts/check_readme_claims.sh --self-test
+  if_fails: |
+    The cookbook grew or shrank and the pin was not refreshed, or the README was
+    edited by hand. Re-measure against paiml/apr-cookbook:
+      git show <sha>:Cargo.toml | grep -c '^\[\[example\]\]'
+    then update BOTH cookbook_recipe_count_pin (with its sha and date) and the
+    README line. The post-release step (#3769 part 3) does this automatically.
+  ship_blocking: false
+  counter_example_classes:
+  - stale_number
+  - dateless_count
+  - wrong_population_counted
+  - missing_pin
+
 kani_harnesses: []
 qa_gate:
   id: QA-README-001
@@ -318,5 +323,5 @@ qa_gate:
   - apr_cookbook_link_present
   - book_cli_chapter_coverage
   - book_lib_chapter_coverage
-  pass_criteria: All 6 falsification tests pass
+  pass_criteria: All 7 falsification tests pass
   falsification: Any single claim mismatch fails the gate

@@ -86,9 +86,22 @@ for verb, path, fn, pred, must, after in ENTRY:
         print(f"  FAIL  {verb:18s} still calls the CPU-ONLY generator, not the dispatch"); bad = 1; continue
     # #3987b: the live CPU streamer is legitimate only on a CPU server; a CUDA server's
     # stream=true must reach the dispatch (measured: gx10 streamed on the CPU, U+FFFD).
-    st = body.find("run_qwen3_moe_generate_streaming(")
-    if verb == "serve chat" and st >= 0 and not (0 <= body.find("request.stream && state.moe_no_gpu()") < st):
-        print(f"  FAIL  {verb:18s} stream=true reaches the CPU-ONLY streamer on a CUDA server"); bad = 1; continue
+    # The streamer is reached DIRECTLY or through a helper of this file whose body calls it
+    # (#4046's complexity split moved it into `moe_stream_cpu`, and a direct-only search then
+    # found nothing and skipped this rule in silence -- the self-test's mutant stayed green).
+    # The helpers are DERIVED from the file, and a serve-chat body that reaches no streamer at
+    # all FAILS: this rule may never again be skipped because the code it anchors on moved.
+    if verb == "serve chat":
+        src = open(os.path.join(root, path), encoding="utf-8").read()
+        STREAMER = "run_qwen3_moe_generate_streaming("
+        helpers = [n for n in re.findall(r'\bfn\s+(\w+)\s*(?:<[^>]*>)?\s*\(', src)
+                   if n != fn and STREAMER in (fn_body(path, n) or "")]
+        calls = [i for i in [body.find(STREAMER)] + [body.find(h + "(") for h in helpers] if i >= 0]
+        if not calls:
+            print(f"  FAIL  {verb:18s} {fn}() reaches no CPU streamer (direct or via {helpers or 'no helper'}) -- the stream route moved; re-audit this rule"); bad = 1; continue
+        st = min(calls)
+        if not (0 <= body.find("request.stream && state.moe_no_gpu()") < st):
+            print(f"  FAIL  {verb:18s} stream=true reaches the CPU-ONLY streamer on a CUDA server"); bad = 1; continue
     if p < 0 or d < 0:
         print(f"  FAIL  {verb:18s} predicate {'present' if p >= 0 else 'MISSING'}, `{must}` {'present' if d >= 0 else 'MISSING'}"); bad = 1; continue
     if a >= 0 and not (p < a and d < a):
@@ -180,6 +193,8 @@ if [ "$SELF_TEST" = 1 ]; then
     esac
   }
   trap _rm EXIT
+  # bashrs SEC010: copies git-tracked sources into $T, a mktemp -d dir this script created and removes on EXIT.
+  # bashrs disable-next-line=SEC010
   git -C "$ROOT" ls-files -z crates/apr-cli/src crates/aprender-serve/src | (cd "$ROOT" && xargs -0 cp --parents -t "$T")
   git -C "$T" init -q && git -C "$T" add -A >/dev/null
   check "$T" > /dev/null || { echo "SELF-TEST FAILED: the shipped tree is already red" >&2; exit 1; }
@@ -198,6 +213,10 @@ if [ "$SELF_TEST" = 1 ]; then
       "s.replace('crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(', 'crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(', 1)"
   mut "serve chat streams on the CPU on a CUDA server" crates/aprender-serve/src/api/cuda_chat_backend.rs \
       "s.replace('if request.stream && state.moe_no_gpu() {', 'if request.stream {', 1)"
+  # #4046: the rule was skipped in silence once the streamer moved into a helper. A stream route
+  # this rule cannot find must be RED, never a pass.
+  mut "serve chat's CPU stream route renamed out of sight" crates/aprender-serve/src/api/cuda_chat_backend.rs \
+      "s.replace('return Some(moe_stream_cpu(', 'return Some(moe_stream_elsewhere(', 1).replace('fn moe_stream_cpu(', 'fn moe_stream_elsewhere_unrelated(', 1).replace('run_qwen3_moe_generate_streaming(', 'unrelated_streaming(', 1)"
   mut "serve completions loses its MoE route" crates/aprender-serve/src/api/realize_handlers_embed_completion.rs \
       "s.replace('run_qwen3_moe_generate_dispatch(', 'removed_dispatch(', 1)"
   mkdir -p "$T/crates/apr-cli/src/commands"

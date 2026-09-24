@@ -20,6 +20,9 @@
 #
 # Exit: 0 every row behaved · 1 a row broke or the prompt set drifted · 2 ENV.
 set -uo pipefail
+# guard_tree.sh probes `--help` to decide whether to run a self-test. Answer it before any work:
+# a probe that fell through to the body ran this whole guard a second time, serially (#4046).
+case "${1:-}" in -h|--help) printf 'usage: bash scripts/check_crux_inference_judge.sh (no arguments: runs the CRUX judge case table)\n'; exit 0 ;; esac
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
 PROG=check_crux_inference_judge
@@ -474,7 +477,7 @@ row "$d/manifest.jsonl" llama.cpp golden-greeting 0 "$d/llama-golden-greeting.ou
 control_green "$d"
 run_judge "$d"; GOT_RC=$?
 expect "apr's degenerate '!!!!' is no answer: RED where llama.cpp answered" "$d" 1 golden-greeting RED
-got=$(python3 -c 'import json,sys; c=[x for x in json.load(open(sys.argv[1]))["cells"] if x["key"]["prompt_id"]=="golden-greeting"][0]; print(c["engines"]["hf"]["answered"], c["engines"]["hf"]["why"][:18])' "$d/receipt.json" 2>/dev/null)
+got=$(python3 -c 'import json,sys; c=[x for x in json.load(open(sys.argv[1]))["cells"] if x["key"]["prompt_id"]=="golden-greeting"][0]; print(c["engines"]["hf"]["answered"], c["engines"]["hf"]["why"])' "$d/receipt.json" 2>/dev/null)
 case "$got" in "False degenerate output"*) ok "hf's degenerate '!!!!' cannot vouch either" ;; *) broke "hf degenerate: '$got'" ;; esac
 
 # V1-V5. vLLM (#3952): a plugin engine under the same rule. vLLM 0.30.0 cannot load
@@ -853,8 +856,8 @@ apr_out "$d" $P "2 + 2 equals 4." gpu false; row "$d/manifest.jsonl" apr $P 0 "$
 engine_out "$d" vllm $P "$NAV" "cuda:0 NVIDIA GeForce RTX 4090"; vllm_row "$d/manifest.jsonl" $P 0 "$d/vllm-$P.json"
 run_judge "$d"; GOT_RC=$?
 expect "F6/#3971: vLLM answering 'NavController' x12 never makes a cell GREEN" "$d" 1 $P RED
-got=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cells"][0]["engines"]["vllm"]["why"][:10])' "$d/receipt.json" 2>/dev/null)
-[ "$got" = "degenerate" ] && ok "  ...and the token loop is named DEGENERATE, not an answer" || broke "  ...and the token loop is named DEGENERATE: got '$got'"
+got=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cells"][0]["engines"]["vllm"]["why"])' "$d/receipt.json" 2>/dev/null)
+[ "${got#degenerate}" != "$got" ] && ok "  ...and the token loop is named DEGENERATE, not an answer" || broke "  ...and the token loop is named DEGENERATE: got '$got'"
 d=$(newcase f6_navcontroller_control); three "$d" "$T4" "$T4" "$T4"
 : > "$d/hf-$P.json.unused"; python3 -c 'import sys; lines=[l for l in open(sys.argv[1]) if "\"engine\": \"hf\"" not in l]; open(sys.argv[1],"w").writelines(lines)' "$d/manifest.jsonl"
 engine_out "$d" vllm $P "$NAV" "cuda:0 NVIDIA GeForce RTX 4090"; vllm_row "$d/manifest.jsonl" $P 0 "$d/vllm-$P.json"
