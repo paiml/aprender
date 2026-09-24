@@ -159,7 +159,7 @@ post_ok() {  # post_ok <want code> <what> <api_post output>
 }
 
 run_cut() {
-    local run_id=$1 dry=$2 run v page body n decision tag out merged_at notes ref
+    local run_id=$1 dry=$2 run v page body n decision tag out merged_at notes ref rc
     : "${GH_TOKEN:?GH_TOKEN is required}" "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
     run=$(api_get "actions/runs/$run_id") || { echo "$PROG: cannot read run $run_id" >&2; return 2; }
     D_REPO=$GITHUB_REPOSITORY
@@ -201,6 +201,19 @@ for ref in json.load(sys.stdin):
     esac
     emit tag "$tag"
     emit sha "$D_HEAD_SHA"   # rc-cut.yml gates exactly this commit before the real cut (#4287)
+
+    # 0. The fleet (#4328 C4): no rc is cut while a fleet cell is RED, unless a dated waiver
+    #    in scripts/release/fleet-waivers.tsv names it. The cells are infra-64's andon output
+    #    (C3) on the fleet-state branch; missing or stale cells refuse too.
+    local cells gate
+    cells=$(mktemp) || return 2
+    api_get "contents/fleet/cells.tsv?ref=fleet-state" 2>/dev/null \
+        | json 'import base64; sys.stdout.write(base64.b64decode(d["content"]).decode())' > "$cells" 2>/dev/null || : > "$cells"
+    gate=$(bash "$(dirname -- "${BASH_SOURCE[0]}")/fleet_cells_gate.sh" --cells "$cells" \
+        --waivers "$(dirname -- "${BASH_SOURCE[0]}")/fleet-waivers.tsv"); rc=$?
+    rm -f -- "$cells"
+    summary "fleet cells: $gate"
+    [ "$rc" = 0 ] || { echo "$PROG: REFUSED to cut $tag -- $gate (#4328 C4)" >&2; emit result fleet-red; return 1; }
     if [ "$dry" = 1 ]; then summary "(dry run: no tag, release or dispatch written)"; emit result dry-run; return 0; fi
 
     # 1. The tag. Creating the ref first makes the name the lock: a concurrent cut of
@@ -208,17 +221,22 @@ for ref in json.load(sys.stdin):
     out=$(api_post git/refs "{\"ref\":\"refs/tags/$tag\",\"sha\":\"$D_HEAD_SHA\"}") || return 1
     post_ok 201 "creating tag $tag" "$out" || return 1
 
-    # 2. The prerelease, never latest. The notes carry the provenance the fleet pins by
-    #    (commit and gating run) and the merge time the <=45 min target is measured from.
+    # 2. The prerelease, never latest, created as a DRAFT (#4327). Operator, 2026-09-24:
+    #    "THE INSTANT we do a release candidate it needs to be on all hardware either before
+    #    or same time". A draft is invisible to install.sh and the fleet poller; it becomes
+    #    visible only when rc_fleet_stage.sh has installed and verified it on every
+    #    reachable fleet host. The notes carry the provenance the fleet pins by (commit and
+    #    gating run) and the merge time the <=45 min target is measured from.
     merged_at=$(api_get "commits/$D_HEAD_SHA" | json 'print(d["commit"]["committer"]["date"])') || merged_at=unknown
     notes="Release candidate of ${v}, cut by CI (#4285). Not on crates.io.
 
 Commit \`$D_HEAD_SHA\` on \`release/$v\`, merged $merged_at.
 Gated by CI run https://github.com/$GITHUB_REPOSITORY/actions/runs/$run_id (\`ci / gate\` and \`workspace-test\` green).
-Cut at $(date -u +%Y-%m-%dT%H:%M:%SZ). binary-release.yml attaches the apr and pv assets.
+Cut at $(date -u +%Y-%m-%dT%H:%M:%SZ). binary-release.yml attaches the apr and pv assets to this DRAFT;
+scripts/release/rc_fleet_stage.sh publishes it only after every reachable fleet host runs it (#4327).
 
 Install: \`install.sh --version $tag\`, or \`install.sh --channel rc\` for the newest rc."
-    body=$(TAG=$tag NOTES=$notes python3 -c 'import json,os; print(json.dumps({"tag_name":os.environ["TAG"],"name":os.environ["TAG"],"body":os.environ["NOTES"],"prerelease":True,"make_latest":"false"}))') || return 1
+    body=$(TAG=$tag NOTES=$notes python3 -c 'import json,os; print(json.dumps({"tag_name":os.environ["TAG"],"name":os.environ["TAG"],"body":os.environ["NOTES"],"prerelease":True,"draft":True,"make_latest":"false"}))') || return 1
     out=$(api_post releases "$body") || return 1
     post_ok 201 "creating prerelease $tag (the tag exists; create the release and dispatch binary-release.yml by hand)" "$out" || return 1
 
@@ -226,7 +244,7 @@ Install: \`install.sh --version $tag\`, or \`install.sh --channel rc\` for the n
     ref=$(api_get "" | json 'print(d["default_branch"])') || ref=main
     out=$(api_post actions/workflows/binary-release.yml/dispatches "{\"ref\":\"$ref\",\"inputs\":{\"tag\":\"$tag\"}}") || return 1
     post_ok 204 "dispatching binary-release.yml for $tag" "$out" || return 1
-    summary "Cut $tag at ${D_HEAD_SHA:0:9} as a prerelease and dispatched binary-release.yml on $ref."
+    summary "Cut $tag at ${D_HEAD_SHA:0:9} as a DRAFT prerelease and dispatched binary-release.yml on $ref. Next: rc_fleet_stage.sh $tag --publish (#4327)."
     emit result cut
 }
 
