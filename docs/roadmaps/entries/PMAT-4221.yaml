@@ -1,0 +1,20 @@
+- id: PMAT-4221
+  github_issue: 4221
+  item_type: task
+  title: 'CRUX parity spike: apr serve vs llama.cpp on Qwen3.5 (0.8B/2B/4B/9B/27B) — measure gap, name techniques, file fixes'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-6c
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Deliverable 1, from #4221: a same-GGUF, same-host table (apr serve vs llama.cpp llama-server, latest release) with prefill tok/s at 850/4k/32k, decode tok/s and TTFT; correctness first (temp 0, token-identical or divergence named); GPU proven by a trace line; llama.cpp version and SHA recorded.'
+  - 'Deliverable 2: the top 3-5 llama.cpp techniques apr lacks, with file/kernel and estimated gain, ranked by gain/effort.'
+  - 'Deliverable 3: one child ticket per technique with a milestone (0.69.3 only if it lands before the tag, else backlog/0.70).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: 'Assigned by the cop aprender-cf, 2026-09-24. Coordinate, do not duplicate: #3596 (batched prefill, aprender-f5), #4214/#4215/#4030 (infra-c2/infra-76), #4218 (speed gate, aprender-75).'
