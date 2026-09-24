@@ -55,7 +55,7 @@ proof_obligations:
     mathlib_imports:
     - Mathlib.Analysis.SpecialFunctions.Pow.Real
     notes: 'Exponent -8(h+1)/n < 0 for h >= 0, n > 0; base 2 > 1 so 2^(neg) < 1.
-      Companion alibi_slope_pos proves 0 < m[h] (strictly positive geometric sequence).'
+      Companion alibi_slope_real_pos proves 0 < m[h] (strictly positive geometric sequence).'
 - id: AS-EQ-003
   type: equivalence
   property: Matches ggml reference exponent
@@ -89,7 +89,7 @@ verification_summary:
     theorem: Alibi.alibi_slope_lt_one
     file: ProvableContracts/Theorems/Alibi/Slopes.lean
     note: 'exponent -8(h+1)/n < 0 for h>=0, n>0, and base 2>1, so 2^(neg) < 1
-      (Real.rpow_lt_one_of_one_lt_of_neg). alibi_slope_pos additionally proves 0 < m[h].'
+      (Real.rpow_lt_one_of_one_lt_of_neg). alibi_slope_real_pos additionally proves 0 < m[h].'
   - obligation: Matches ggml reference exponent
     theorem: Alibi.alibi_slope_ggml
     file: ProvableContracts/Theorems/Alibi/Slopes.lean
@@ -97,7 +97,7 @@ verification_summary:
       matching llama.cpp soft_max_ext.'
   notes: 'All 3 obligations proved sorry-free in Lean 4 over the reals (Mathlib
     Real.rpow). Zero N/A — the contract is fully analytic. Slopes are a positive,
-    strictly-decreasing geometric sequence: alibi_slope_pos (m[h]>0) and
+    strictly-decreasing geometric sequence: alibi_slope_real_pos (m[h]>0) and
     alibi_slope_strict_anti (m[0]>m[1]>...>m[n-1]) additionally proved. Verified via
     lake env lean ProvableContracts/Theorems/Alibi/Slopes.lean (exit 0, 0 sorry).'
 kernel_structure:

@@ -18191,26 +18191,6 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: GH-4198
-  github_issue: 4198
-  item_type: task
-  title: 'PVL-001 EV-10: pv obligations [ROOT] --gate (commands/obligations.rs, cli/lib/mod wiring) = pv-obligation-gate.py; 11 golden tests, fixtures, ci fragment 460; tree_reader registry +2, surface_audit pv cites +11 lines. NO ci.yml/Makefile/pmat edit'
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-09-24T08:50:11.471932980+00:00
-  updated: 2026-09-24T08:50:11.471932980+00:00
-  spec: null
-  acceptance_criteria:
-  - 'cargo test -p aprender-contracts-cli --test pvl_obligations_golden: 11 passed. Goldens (pmat, broken, edge .stdout/.rc) were written by running pmat''s scripts/pv-obligation-gate.py (sha256 e4fa9719, pmat d70a78f67, PyYAML 6.0.3) over each fixture, never by pv; pv matches stdout byte for byte and the exit code (pmat 0 over 35 rc 0; broken 6 over 4 rc 1; edge 3 over 4 rc 1: merge keys incl. a chained merge, falsy applies_to/proved_type/document). A duplicate-key and a >64-bit-integer contract match the script''s measured output: the validate line only, 1 over 1 rc 1.'
-  - 'Mutations in obligations.rs, each planted alone, restored sha-identical, 17/17 red, each naming the test it reds: validate-always-passes, falsification-counts-every-entry, fn/type word boundary (3), binding-yaml-included, gate-flag-ignored, empty-corpus-reported-as-pass, equation-targets-not-skipped, merge-keys-not-resolved, merge-single-pass, everything-truthy, falsy-document-rejected, unused-bad-type-reported-eagerly (edge_fixture_follows_pyyaml_and_python_truthiness_as_the_script_does), symlinked-contracts-skipped (a_symlinked_contract_is_checked_like_its_target), reached-bad-type-silent (a_non_string_proved_type_is_named_where_a_bound_fn_reaches_it), parse-line-after-validate (a_document_serde_yaml_refuses_fails_validate_so_the_verdict_agrees).'
-  - 'Deliberate differences from the script, documented in the module doc: zero contracts is decline rc 2 (PVL-1), non-YAML/non-mapping/non-string input is a named problem not a traceback, src/ walked on disk, YAML 1.2 vs PyYAML 1.1 plain booleans, checks 2-3 not run on a document serde_yaml refuses (it fails validate on both sides, so the verdict agrees), word chars next to non-ASCII. Largest function cog 17 / cyc 6.'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - ont-0.70
-  notes: The PVL-001 EV-10 probe greps .github/workflows/ci.yml and uses repo-root tests/ paths; aprender wires integration tests via ci/explicit-test-commands.d fragments and the test lives under crates/aprender-contracts-cli/tests/. Reported to the PVL-001 owner (infra) as a stale probe. The src/ fixture files end .rs.txt because ten aprender gates scan tracked .rs files.
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
@@ -20613,63 +20593,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'The cop (aprender-04) requested this, verbatim: "Please land a pure-refactor commit on a branch OFF release/0.69.1-batch-1 (not your old branch) that brings it under threshold with no behaviour change. Proof: `bash scripts/check_complexity_ratchet.sh` rc 0, `cargo test -p aprender-contracts --lib` green, and `pv lint contracts --gate shapes` 8/8 controls fired." SCOPE: this ticket IS the refactor. It is NOT #3715''s feature, which was already folded at ded8a932a; the diff against ded8a932a is only this refactor plus this fragment and receipt. The ratchet was RED on release/0.69.1-batch-1 (ded8a932a) vs main a9502d992: run_shapes_gate_with cyclomatic 13 cognitive 28 (the limit is 25). The fix moves the preamble (collect -> empty -> arming -> family, same order), the family ordering, the verdict rule and the two report maps into prepare / order_by_family / needs_receipts / verdict_of / by_shape / by_entity_type. MEASURED at 2a40dda85: the ratchet no longer lists run_shapes_gate_with (rc stays 1 only for crates/aprender-serve/src/constrain/tests.rs::generate_intent, not in this diff and not this ticket''s); cargo test -p aprender-contracts --lib 1701 passed; pv lint contracts --gate shapes Pass, 8/8 pc_extract fired; ont_release_readiness / ont4b / ont4c1 / ont4c3 CLI targets 34/11/12/10 passed; clippy -D warnings clean. A prior round under PMAT-3715 had a lane FAIL on SCOPE because it judged this delta against the #3715 feature ticket; the cop ruled that this refactor gets its own ticket.'
-- id: PMAT-3810
-  github_issue: 3810
+- id: PMAT-4122
+  github_issue: 4122
   item_type: task
-  title: 'CI cuda-unit runs every cuda-gated aprender-serve lib test (cuda:: filter, single-threaded, SKIP fails) (#3810)'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-23T16:13:45Z
-  updated: 2026-09-23T16:13:45Z
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-- id: PMAT-4071
-  github_issue: 4071
-  item_type: task
-  title: 'ONT-2c: in-house OWL 2 EL writer; TBox check via the oracle, advisory'
+  title: 'PVL-001 EV-5a: pin Mathlib, scoped Lean warning gate, orphan allowlist'
   status: in_progress
   priority: high
-  assigned_to: aprender-19
-  created: 2026-09-23T18:30:00Z
-  updated: 2026-09-23T20:50:00Z
-  spec: paiml/infra docs/specifications/paiml-ontology.md@948ae923 (ONT-2c, line 626; §3.8)
+  assigned_to: aprender-6c
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
   acceptance_criteria:
-  - 'Row ONT-2c RED, verbatim: "writer output re-parsed by the oracle equals the fixture''s axiom set; two writes byte-identical; every Σ key mapped or in `not_expressible`; `acyclic` yields no axiom; `tbox-report.json` has `advisory: true`; gate maps it to `Unknown{Advisory}`; inferred subsumption between distinct Σ concepts → `unintended_subsumptions` non-empty."'
-  - 'Row ONT-2c mutation: "write `acyclic` as transitive + irreflexive → oracle round-trip RED."'
-  - 'Cop ruling 2026-09-23 (aprender-cf, refined per infra-83): (B) told-closure in-tree, precondition-guarded, advisory; (A) ELK 0.4.3 via a JVM as the independent oracle, agreement required at the RELEASE gate only; no JVM is a `decline:` NOT MEASURED, RED at release; a planted unintended subsumption must go RED in both.'
+  - 'Issue #4122 done_when 1, verbatim: "the pinned build is reproducible from a clean cache"'
+  - 'done_when 2, verbatim: "the warning gate goes RED on a planted warning inside its scope and ignores one outside it"'
+  - 'done_when 3, verbatim: "the orphan allowlist goes RED on a new unlisted orphan"'
   phases: []
   subtasks: []
   estimated_effort: null
   labels:
   - kind:code
-  - orch:fable
-  - orch-basis:state
-  notes: 'ONT-001 R-22: kind:code,orch:fable,orch-basis:state admits Fable or Opus. No Rust EL reasoner exists (infra ont-oracle-ledger [V 2026-09-14]); ELK 0.4.3 pinned (zip 965ad946…, jar de1fffaf…, Apache-2.0), sent to infra-83 for the ledger. The OWL oracle is its own detached crate tests/oracle/owl/: oxigraph (via shacl) enables oxrdf Triple and breaks horned-owl''s horned-pretty-rdf under feature unification (E0004, measured).'
-- id: PMAT-4074
-  github_issue: 4074
-  item_type: task
-  title: 'ONT-5: pv-sat offline behind a bin boundary; witness checked in the gate; two positive controls'
-  status: planned
-  priority: high
-  assigned_to: null
-  created: 2026-09-24T12:00:00Z
-  updated: 2026-09-24T12:00:00Z
-  spec: docs/specifications/paiml-ontology.md
-  acceptance_criteria:
-  - 'witness.rs: typed relations as propositional Horn (live ids are units, depends_on/refines imply, contradicts conflicts, supersedes withdraws a unit); census_id_set_sha256 + relations_sha256 name the witness; check() refuses any core that is not a derivation in the current graph and any model that falsifies a clause; pc_checker refuses fixtures/unsat-core-corrupt.json every run'
-  - 'pv lint --gate ont-consistency: PV-ONT-022 names the core, PV-ONT-023 a witness that does not check; exit 2 NoCheckable / WitnessStale (prints make contracts) / PositiveControlFailed; a malformed Σ exits 3; computed and NOT armed'
-  - 'pv-sat bin, private to its target (F-7: no mod sat in lib.rs): plant pc_reasoner draws [A, B, C] before it writes; every answer over a 500-seed sweep checks; the witness is byte-stable on rerun'
-  - 'make contracts runs pv-sat then pv lint --gate ont-consistency and fails if contracts/witness/ differs; contracts/ont-consistency-v1.yaml names 7 falsification tests that exist; ci/explicit-test-commands.d 460 (ont5_consistency_gate) and 470 (--bin pv-sat) run what workspace-test --lib cannot'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: 'ONT-001 §5 row ONT-5. Handed off by rmedia-82 at e4577f7bd. Receipt: docs/audits/impl-PMAT-4074-receipt.md'
+  notes: 'Scope, verbatim from #4122: "pin Mathlib; add a scoped Lean warning gate; add an orphan allowlist. The Lean build runs on lambda ... No workflow edit." The branch also fixes the root lake build that is broken on main (a duplicate ProvableContracts.Alibi.alibi_slope_pos in Alibi.Basic and Alibi.Slopes; Slopes renamed alibi_slope_real_pos, contracts.nt regenerated by pv extract), without which no gate over the root build could be green. It also adds `lake exe cache unpack`, because `cache get` decompressed nothing on a fresh checkout. MEASURED on lambda from a fresh checkout at d18e411aa: 0 Mathlib modules elaborated, 16435 jobs, build.sh rc 0 in 804 s; check-orphans 162/103/59/59. A degraded same-family round (Sonnet 5 + Fable 5.1) passed at d18e411aa: docs/audits/quorum-GH-4122-pvl-5a-degraded.json.'

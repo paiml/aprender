@@ -1,0 +1,241 @@
+# orphan-allowlist.yaml -- PVL-001 EV-5a (#4122). Modules under ProvableContracts/** that the root
+# ProvableContracts.lean does not import (transitively), so `lake build` never checks them. Measured on main:
+# 59 of 162. One issue per module group. check-orphans.sh refuses an unlisted orphan, an entry without
+# ticket:/reason:, and a STALE entry (no longer an orphan). EV-5c drains this list; an entry is never deleted
+# for a module that will not compile -- it keeps its issue.
+
+- module: ProvableContracts.Defs.GPU
+  ticket: "#4125"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Defs.Image
+  ticket: "#4125"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Defs.Rand
+  ticket: "#4125"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Defs.Tensor
+  ticket: "#4125"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.AdamW.Adam_Moments
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.AdamW.Adam_Variance
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.AdamW.Analytic
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.AdamW.Bias_Correction
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.AdamW.Weight_Update
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.AprCode.HarnessIrRoundtrip
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.BLAS.Trmm
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.BLAS.Trsm
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.CrossEntropy.CoreSoftmaxInvariants
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.DPO
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.F16.Conversion
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.FFT.Bluestein
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.FFT.Fft2d
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.FFT.Fft3d
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.FFT.FftBatched
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Fusion.Correctness
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.GPU.DimensionIndependence
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.GatedDeltaNet.Recurrence
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.GgufExportSymmetry.Roundtrip
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Image.Canny
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Image.ConnectedComponents
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Image.Conv2d
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Image.Histogram
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Image.HsvRoundtrip
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Image.Morphology
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Image.Resize
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Image.RgbToGray
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Image.Sobel
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.LoRA.Dare_Unbiased
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.LoRA.Lora_Shape
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.LoRA.Shape_Preservation
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.LoRA.Task_Vector
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Lora.MergeForwardEquiv
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.MatMul.CooperativeTiling
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.MatMul.Distributivity
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.MatMul.MatVecLinearity
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.MatMul.Shape
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.MatMul.TransposeMul
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Metrics.Regression
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Metrics.RegressionAnalytic
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Quantization.NF4Dequant
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.RMSNorm.NormalizedRMS
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Rand.Philox
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Rand.Threefry
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Rope.Rope
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Sigmoid.SiluAsymptotic
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Sigmoid.SiluSign
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Sparse.BsrSpmv
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Sparse.SellSpmv
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Sparse.Spgemm
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Sparse.Spmm
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Tensor.Einsum
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.TensorLayout.IndexAlgebra
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.TensorTranspose.Roundtrip
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
+
+- module: ProvableContracts.Theorems.Tokenizer
+  ticket: "#4124"
+  reason: not in the root import cone at EV-5a (measured); EV-5c brings it in or keeps it with its issue
