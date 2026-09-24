@@ -21626,6 +21626,23 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4234
+  github_issue: 4234
+  item_type: task
+  title: 'perf(serve): continuous batching for Qwen3.5 in apr serve — sibling sessions whose decode steps run as one batched forward (CRUX #4222 T2)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-v2b
+  created: 2026-09-24 09:14:57+00:00
+  updated: '2026-09-24T18:00:00Z'
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Qwen35CudaModel::forward_batch runs one decode step for B sequences layer-major, using the same kernels in the same per-sequence order, so each row is bitwise forward_single (witness: forward_qwen35_cuda_batch_tests). Qwen35Forward::sibling shares the host and device models and owns its state. SharedGpu::decode is a leader/follower batcher (one forward_batch per step). apr serve holds APR_QWEN35_SERVE_SLOTS sessions behind Qwen35Slots::lock (default 1). Witness: 16 sibling streams token-identical to each alone, widest step >= 2. Next: a batched GEMV (one weight read per step) measured against the bitwise baseline.'
 - id: PMAT-4242
   github_issue: 4242
   item_type: task
