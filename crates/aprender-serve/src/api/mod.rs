@@ -380,3 +380,7 @@ include!("mod_app_state_qwen35.rs");
 include!("mod_create_demo.rs");
 include!("router.rs");
 include!("dispatch_metrics.rs");
+
+#[cfg(test)]
+#[path = "tests_engine_identity.rs"]
+mod tests_engine_identity;

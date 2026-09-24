@@ -433,6 +433,7 @@ pub mod sampling;
 pub mod scheduler;
 #[cfg(feature = "aprender-serve")]
 pub mod serve;
+pub mod session;
 /// Speculative decoding for LLM inference acceleration
 ///
 /// Per spec §8.3: Implements speculative decoding based on SGLang/DeepMind research.

@@ -54,13 +54,24 @@ fn one_shot_answer(mapped: &MappedGGUFModel, max_tokens: usize, no_gpu: bool) ->
         stop_tokens: eos.clone(),
         ..Default::default()
     };
-    let base =
-        crate::gguf::forward_qwen35::Qwen35Model::create_base_model(&mapped.model, mapped.data())
-            .expect("base");
-    let (tokens, used_gpu) = crate::gguf::forward_qwen35::run_qwen35_generate_dispatch(
-        mapped, &base, &prompt, &config, no_gpu,
+    // #4263: `apr run`'s load — the host once per file, a device state sized
+    // to the one call.
+    let qwen = crate::gguf::qwen35_session::Qwen35Forward::cached_host(
+        std::path::Path::new(MODEL_PATH),
+        mapped,
     )
-    .expect("one-shot generate");
+    .expect("host");
+    let mut one = crate::gguf::qwen35_session::Qwen35Session::load_for_run(
+        qwen,
+        mapped,
+        no_gpu,
+        prompt.len() + max_tokens,
+    )
+    .expect("load");
+    let turn = one
+        .generate(&prompt, &config, &mut |_| true)
+        .expect("one-shot generate");
+    let (tokens, used_gpu) = (turn.tokens, turn.used_gpu);
     assert_eq!(
         used_gpu, !no_gpu,
         "the reference ran on the route asked for"
@@ -374,6 +385,95 @@ async fn gpu_a_chat_request_answers_from_the_gpu_session() {
     );
 }
 
+/// #4250 (the #3596 countermeasure, 0.69.3 G0): every serve route that takes a
+/// prompt prefills it through the BATCHED prefill, not one token at a time.
+///
+/// 0.69.3 shipped the batched prefill on `apr run` only; serve kept looping
+/// `forward_single` over the prompt (~77 tok/s at 0.69.1, the decode rate), and
+/// every gate stayed green because none of them sent a prompt through the
+/// router. The counter is `Qwen35Session::batched_prefills`, which moves only
+/// when `Qwen35CudaModel::prefill` returned logits — the F2 probe, the
+/// per-token fallback and decode steps never move it. Each request below
+/// starts a prompt the session does not hold, so each must add exactly one.
+///
+/// RED under `APR_QWEN35_SESSION_PREFILL=per-token` (the session's own
+/// switch back to the one-token loop), and with the batched branch deleted
+/// from `try_advance_to`.
+#[cfg(feature = "cuda")]
+#[tokio::test(flavor = "multi_thread")]
+async fn gpu_every_serve_route_prefills_through_the_batched_prefill() {
+    if !crate::cuda::CudaExecutor::is_available() {
+        eprintln!("SKIP: no CUDA device");
+        return;
+    }
+    let Some((state, mapped)) = state_or_skip(false) else {
+        return;
+    };
+    let served = state.qwen35_session().expect("session");
+    let prefills = || served.session.lock().expect("lock").batched_prefills();
+    assert!(
+        served.session.lock().expect("lock").on_gpu(),
+        "a CUDA host serves from the GPU"
+    );
+    assert_eq!(prefills(), 0, "no prompt has been served yet");
+    let want = one_shot_answer(&mapped, 16, false);
+
+    // 1. /v1/chat/completions, not streamed — and the batched answer is right.
+    let (status, body) = post(
+        create_router(state.clone()),
+        "/v1/chat/completions",
+        chat_body(false, 16),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("JSON");
+    assert_eq!(
+        json["choices"][0]["message"]["content"].as_str(),
+        Some(want.as_str()),
+        "the batched serve prefill answers what apr run --gpu answers: {body}"
+    );
+    assert_eq!(
+        prefills(),
+        1,
+        "/v1/chat/completions prefilled its prompt one token at a time (#3596)"
+    );
+
+    // 2. /v1/chat/completions, streamed — the SSE path spawns its own generate.
+    // The session holds prompt + reply, so the same prompt again does not
+    // extend it: a fresh prefill from position 0.
+    let (status, body) = post(
+        create_router(state.clone()),
+        "/v1/chat/completions",
+        chat_body(true, 8),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        prefills(),
+        2,
+        "streamed /v1/chat/completions prefilled one token at a time (#3596)"
+    );
+
+    // 3. /v1/completions — a raw prompt of several tokens.
+    let (status, body) = post(
+        create_router(state.clone()),
+        "/v1/completions",
+        serde_json::json!({"model": "x", "prompt": "The capital of Peru is", "max_tokens": 8}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        prefills(),
+        3,
+        "/v1/completions prefilled its prompt one token at a time (#3596)"
+    );
+
+    assert!(
+        served.session.lock().expect("lock").on_gpu(),
+        "no fallback to the CPU during the requests — a CPU prefill is never batched"
+    );
+}
+
 // ── #3715: the OLLAMA wire reaches the hybrid too ──────────────────────────
 //
 // Alfredo reported `/api/chat` 500ing on a Qwen3.5 hybrid, on the grounds that
@@ -643,4 +743,96 @@ fn chat_template_kwargs_parse_and_refuse_unknown_keys_3723() {
     assert_eq!(parse(with("chat_template_kwargs", serde_json::json!({"enable_thinking": true}))).expect("parses").thinking(), Some(true));
     assert_eq!(parse(with("think", serde_json::json!(false))).expect("parses").thinking(), Some(false));
     assert!(parse(with("chat_template_kwargs", serde_json::json!({"reasoning_effort": "high"}))).is_err(), "an unknown kwarg is refused");
+}
+
+/// #4272: the stream's release rule. Nothing is sent while the decode ends in
+/// half a character, and a tail that could still become a stop sequence is held.
+#[test]
+fn a_stream_delta_holds_back_half_characters_and_possible_stops() {
+    use crate::api::realize_handlers::qwen35_stream_delta;
+    assert_eq!(qwen35_stream_delta("Lima", 0, &[]).as_deref(), Some("Lima"));
+    assert_eq!(qwen35_stream_delta("Lima", 4, &[]), None, "nothing new");
+    assert_eq!(qwen35_stream_delta("Lim\u{FFFD}", 0, &[]), None, "half a char");
+    let stops = ["END".to_string()];
+    // "EN" could still become "END": two bytes are held.
+    assert_eq!(qwen35_stream_delta("LimaEN", 0, &stops).as_deref(), Some("Lima"));
+    assert_eq!(qwen35_stream_delta("LimaEN", 4, &stops), None);
+    // The hold never splits a character.
+    assert_eq!(qwen35_stream_delta("aé", 0, &["xy".to_string()]).as_deref(), Some("a"));
+}
+
+/// #4272: `stream: true` on `/v1/completions` was BUFFERED — the whole completion
+/// was generated, then sliced into chunks, and no chunk carried `usage`. Now the
+/// session's `on_token` drives the stream. Measured here, on the real hybrid:
+/// the first text chunk arrives well before the stream ends (a buffered stream
+/// delivers every chunk at the same instant), the chunks concatenate to exactly
+/// the non-streamed text, and the terminal chunk carries the same `usage`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_streamed_completion_arrives_token_by_token_and_ends_with_usage() {
+    use http_body_util::BodyExt;
+    let Some((state, _)) = state_or_skip(true) else {
+        return;
+    };
+    let body = |stream: bool| {
+        serde_json::json!({"model": "x", "prompt": "The capital of Peru is",
+            "max_tokens": 24, "temperature": 0.0, "stream": stream})
+    };
+    let (status, plain) = post(create_router(state.clone()), "/v1/completions", body(false)).await;
+    assert_eq!(status, StatusCode::OK, "{plain}");
+    let plain: serde_json::Value = serde_json::from_str(&plain).expect("JSON");
+    let plain_text = plain["choices"][0]["text"].as_str().expect("text").to_string();
+
+    let t0 = std::time::Instant::now();
+    let response = create_router(state)
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/completions")
+                .header("content-type", "application/json")
+                .body(Body::from(body(true).to_string()))
+                .expect("request"),
+        )
+        .await
+        .expect("the router answers");
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut body = response.into_body();
+    let (mut buf, mut first_text_at, mut text, mut deltas, mut usage) =
+        (String::new(), None, String::new(), 0usize, None);
+    while let Some(frame) = body.frame().await {
+        let frame = frame.expect("frame");
+        let Some(data) = frame.data_ref() else {
+            continue;
+        };
+        buf.push_str(&String::from_utf8_lossy(data));
+        while let Some(end) = buf.find("\n\n") {
+            let event: String = buf.drain(..end + 2).collect();
+            let Some(payload) = event.trim().strip_prefix("data:").map(str::trim) else {
+                continue;
+            };
+            if payload == "[DONE]" {
+                continue;
+            }
+            let chunk: serde_json::Value = serde_json::from_str(payload).expect("chunk JSON");
+            let piece = chunk["choices"][0]["text"].as_str().unwrap_or_default();
+            if !piece.is_empty() {
+                first_text_at.get_or_insert_with(|| t0.elapsed());
+                deltas += 1;
+                text.push_str(piece);
+            }
+            if !chunk["usage"].is_null() {
+                usage = Some(chunk["usage"].clone());
+            }
+        }
+    }
+    let total = t0.elapsed();
+    let first = first_text_at.expect("at least one text chunk");
+    eprintln!("#4272: first text chunk at {first:?} of {total:?}, {deltas} deltas");
+    assert_eq!(text, plain_text, "the stream must say what the body says");
+    assert!(deltas >= 2, "one delta is a buffered reply: {deltas}");
+    assert!(
+        first.as_secs_f64() < 0.8 * total.as_secs_f64(),
+        "the first chunk came at {first:?} of {total:?}: buffered, not streamed"
+    );
+    let usage = usage.expect("the terminal chunk carries usage (#4272)");
+    assert_eq!(usage, plain["usage"], "the stream's usage is the body's");
 }

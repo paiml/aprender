@@ -1,10 +1,13 @@
 //! #3595: a resident session must produce exactly what a one-shot generate of
 //! the same prompt produces — on the state it reused, on a state it reset in
-//! place, on either backend. Every assertion here compares against the path
-//! `apr run` takes; a session that drifts from it is serving a different model.
+//! place, on either backend. On the CPU the one-shot is the per-token
+//! reference loop (an independent oracle, #4263); on the GPU it is a fresh
+//! `apr run` load, so reuse is compared with no reuse.
 
 use super::*;
-use crate::gguf::forward_qwen35::run_qwen35_generate;
+use crate::gguf::forward_qwen35::qwen35_reference_generate;
+use crate::gguf::QuantizedGenerateConfig;
+use crate::session::turn_budget;
 
 /// The real hybrid file the rest of the Qwen3.5 tests are specified against.
 const MODEL_PATH: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
@@ -41,14 +44,14 @@ fn user_turn(text: &str) -> String {
     format!("<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n")
 }
 
-/// The one-shot CPU path `apr run --no-gpu` takes.
+/// The per-token CPU reference (test-only since #4263).
 fn one_shot_cpu(
     mapped: &MappedGGUFModel,
     prompt: &[u32],
     config: &QuantizedGenerateConfig,
 ) -> Vec<u32> {
     let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
-    run_qwen35_generate(mapped, &base, prompt, config).expect("one-shot generate")
+    qwen35_reference_generate(mapped, &base, prompt, config).expect("one-shot generate")
 }
 
 #[test]
@@ -179,19 +182,26 @@ fn on_token_returning_false_ends_the_turn_after_that_token() {
 #[cfg(feature = "cuda")]
 mod gpu {
     use super::*;
-    use crate::gguf::forward_qwen35::run_qwen35_generate_dispatch;
 
-    /// The one-shot GPU path `apr run --gpu` takes.
+    /// The one-shot GPU path `apr run --gpu` takes: a fresh load sized to the
+    /// one call, one turn.
     fn one_shot_gpu(
         mapped: &MappedGGUFModel,
         prompt: &[u32],
         config: &QuantizedGenerateConfig,
     ) -> Vec<u32> {
-        let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
-        let (tokens, used_gpu) =
-            run_qwen35_generate_dispatch(mapped, &base, prompt, config, false).expect("one-shot");
-        assert!(used_gpu, "the one-shot reference must itself be a GPU run");
-        tokens
+        let qwen =
+            Qwen35Forward::cached_host(std::path::Path::new(MODEL_PATH), mapped).expect("host");
+        let positions = prompt.len() + config.max_tokens;
+        let mut one = Qwen35Session::load_for_run(qwen, mapped, false, positions).expect("load");
+        let turn = one
+            .generate(prompt, config, &mut |_| true)
+            .expect("one-shot");
+        assert!(
+            turn.used_gpu,
+            "the one-shot reference must itself be a GPU run"
+        );
+        turn.tokens
     }
 
     fn gpu_session_or_skip(mapped: &MappedGGUFModel) -> Option<Qwen35Session> {
@@ -283,6 +293,69 @@ mod gpu {
         assert_eq!(turn.tokens, want);
     }
 
+    /// 0.69.3: `apr serve` prefills through the batched prefill, not one token at a
+    /// time. Engagement is read off the session's counter (a speed would only look
+    /// like it), and the tokens must be exactly the one-token path's — on a first
+    /// turn (position 0) and on an extending turn (a nonzero start, which reads the
+    /// first call's KV rows and recurrent state).
+    #[test]
+    fn gpu_serve_prefill_is_batched_and_token_identical_to_the_one_token_path() {
+        let mapped = mapped_or_skip!();
+        let Some(mut batched) = gpu_session_or_skip(&mapped) else {
+            return;
+        };
+        let Some(mut one_token) = gpu_session_or_skip(&mapped) else {
+            return;
+        };
+        one_token.engine_mut().per_token_prefill = true;
+        let config = greedy(8);
+
+        let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
+        let b1 = batched
+            .generate(&p1, &config, &mut |_| true)
+            .expect("turn 1");
+        let o1 = one_token
+            .generate(&p1, &config, &mut |_| true)
+            .expect("turn 1");
+        assert_eq!(
+            batched.batched_prefills(),
+            1,
+            "turn 1's prompt went through the batched prefill"
+        );
+        assert_eq!(
+            one_token.batched_prefills(),
+            0,
+            "the control prefilled per token"
+        );
+        assert!(b1.used_gpu && o1.used_gpu, "neither fell back to the CPU");
+        assert_eq!(b1.tokens, o1.tokens, "turn 1: batched == one-token");
+
+        let mut p2 = b1.tokens.clone();
+        p2.extend(encode(
+            &mapped,
+            &format!("<|im_end|>\n{}", user_turn("And of Chile?")),
+        ));
+        let b2 = batched
+            .generate(&p2, &config, &mut |_| true)
+            .expect("turn 2");
+        let o2 = one_token
+            .generate(&p2, &config, &mut |_| true)
+            .expect("turn 2");
+        assert_eq!(b2.reused, b1.tokens.len() - 1, "turn 2 extended the state");
+        assert_eq!(
+            batched.batched_prefills(),
+            2,
+            "turn 2's new suffix went through the batched prefill, from a nonzero position"
+        );
+        assert!(b2.used_gpu && o2.used_gpu, "neither fell back to the CPU");
+        assert_eq!(b2.tokens, o2.tokens, "turn 2: batched == one-token");
+        assert_eq!(
+            b2.tokens,
+            one_shot_gpu(&mapped, &p2, &config),
+            "and both are what `apr run` decodes"
+        );
+    }
+
     #[test]
     fn gpu_a_turn_that_does_not_extend_resets_in_place_and_matches_one_shot() {
         let mapped = mapped_or_skip!();
@@ -304,5 +377,77 @@ mod gpu {
         assert!(t2.used_gpu);
         assert_eq!(t2.reused, 0);
         assert_eq!(t2.tokens, one_shot_gpu(&mapped, &p2, &config));
+    }
+}
+
+// #4255: the two #4247 branches no GPU test reaches — the prefill that does not
+// fit, and the prefill that fails. Pure, so they run in CPU `workspace-test`.
+
+const MIB: u64 = 1 << 20;
+
+fn plan(
+    free: u64,
+    need: impl FnMut(&'static str, usize) -> u64,
+) -> std::result::Result<(&'static str, usize), String> {
+    choose_prefill_plan(free, &["cublas", "flash"], &[512, 128], need, |a| a)
+}
+
+#[test]
+fn prefill_plan_that_fits_nowhere_is_refused_naming_every_candidate() {
+    let why = plan(100 * MIB, |_, rows| rows as u64 * MIB).expect_err("512 and 128 MiB > 100 MiB");
+    assert_eq!(
+        why,
+        "cublas at 512 rows needs 512 MiB, cublas at 128 rows needs 128 MiB, \
+         flash at 512 rows needs 512 MiB, flash at 128 rows needs 128 MiB; 100 MiB free"
+    );
+}
+
+#[test]
+fn prefill_plan_takes_the_first_fit_attention_major() {
+    // Every candidate fits: the first one is apr run's choice.
+    assert_eq!(plan(u64::MAX, |_, _| MIB), Ok(("cublas", 512)));
+    // Only the smaller chunk fits under cuBLAS: fewer rows beat a different attention.
+    assert_eq!(
+        plan(200 * MIB, |_, rows| rows as u64 * MIB),
+        Ok(("cublas", 128))
+    );
+    // cuBLAS fits nowhere; flash at the big chunk does.
+    let need = |a: &str, rows: usize| if a == "flash" { rows as u64 } else { u64::MAX };
+    assert_eq!(plan(1024, need), Ok(("flash", 512)));
+}
+
+#[test]
+fn prefill_plan_boundary_need_equal_to_free_fits() {
+    assert_eq!(plan(512 * MIB, |_, _| 512 * MIB), Ok(("cublas", 512)));
+    assert!(plan(512 * MIB - 1, |_, _| 512 * MIB).is_err());
+}
+
+#[test]
+fn prefill_plan_with_no_candidates_is_refused() {
+    let why = choose_prefill_plan::<&str>(u64::MAX, &[], &[512], |_, _| 0, |a| a)
+        .expect_err("no attention to try");
+    assert!(why.ends_with("MiB free"), "{why}");
+}
+
+#[test]
+fn failed_batched_prefill_is_a_gpu_step_so_the_session_moves_to_the_cpu() {
+    match batched_prefill_outcome::<&str>(Err("CUDA_ERROR_OUT_OF_MEMORY"), 851, 17) {
+        Err(Step::Gpu(why)) => assert_eq!(
+            why,
+            "the GPU batched prefill of 851 tokens at position 17 failed: CUDA_ERROR_OUT_OF_MEMORY"
+        ),
+        Err(Step::Fatal(e)) => {
+            panic!("a prefill failure must fall back to the CPU, not end the turn: {e}")
+        },
+        Ok(logits) => panic!("a failed prefill returned {} logits", logits.len()),
+    }
+}
+
+#[test]
+fn successful_batched_prefill_returns_its_logits_unchanged() {
+    match batched_prefill_outcome::<&str>(Ok(vec![0.5, -1.0, 2.0]), 3, 0) {
+        Ok(logits) => assert_eq!(logits, [0.5, -1.0, 2.0]),
+        Err(Step::Gpu(why)) => panic!("an Ok prefill became a GPU failure: {why}"),
+        Err(Step::Fatal(e)) => panic!("an Ok prefill became a fatal error: {e}"),
     }
 }

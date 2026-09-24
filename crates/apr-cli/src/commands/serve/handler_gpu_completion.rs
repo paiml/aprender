@@ -49,7 +49,7 @@ async fn handle_gpu_completion(
 
             // CPU fallback also in spawn_blocking
             let result = tokio::task::spawn_blocking(move || {
-                run_apr_cpu_inference(&s, &prompt, max_tokens, 0.0)
+                run_apr_cpu_inference(&s, &prompt, max_tokens, 0.0, None)
             })
             .await;
 
@@ -116,6 +116,7 @@ async fn gpu_cpu_fallback(
     prompt: String,
     max_tokens: usize,
     temperature: f32,
+    top_p: Option<f32>,
     start: Instant,
 ) -> axum::response::Response {
     use axum::{response::IntoResponse, Json};
@@ -132,7 +133,7 @@ async fn gpu_cpu_fallback(
     };
 
     let result = tokio::task::spawn_blocking(move || {
-        run_apr_cpu_inference(&s, &prompt, max_tokens, temperature)
+        run_apr_cpu_inference(&s, &prompt, max_tokens, temperature, top_p)
     })
     .await;
 
@@ -266,6 +267,7 @@ async fn handle_gpu_chat_completion(
     let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);
     let max_tokens = req.get("max_tokens").and_then(serde_json::Value::as_u64).unwrap_or(32) as usize;
     let temperature = req.get("temperature").and_then(serde_json::Value::as_f64).unwrap_or(0.0) as f32;
+    let top_p = req.get("top_p").and_then(serde_json::Value::as_f64).map(|v| v as f32);
 
     let Some(msgs) = messages else {
         return Json(serde_json::json!({"error": "Missing messages"})).into_response();
@@ -289,7 +291,7 @@ async fn handle_gpu_chat_completion(
     let output_tokens = match gen_result {
         Ok(Ok(t)) => t,
         Ok(Err(gpu_err)) => {
-            return gpu_cpu_fallback(gpu_err, &cpu_state, prompt, max_tokens_clamped, temperature, start).await;
+            return gpu_cpu_fallback(gpu_err, &cpu_state, prompt, max_tokens_clamped, temperature, top_p, start).await;
         }
         Err(e) => {
             return Json(serde_json::json!({"error": format!("GPU task failed: {e}")})).into_response();
@@ -725,6 +727,8 @@ fn start_gguf_server_cuda(
             run_server_async(app, &config.bind_addr(), "CUDA-optimized")
         }
         Err(e) => {
+            // #4089: an explicit request does not fall back.
+            config.refuse_unengaged_accelerator(&format!("CUDA init failed: {e}"))?;
             eprintln!(
                 "{}",
                 format!("CUDA init failed, falling back to CPU: {e}").yellow()

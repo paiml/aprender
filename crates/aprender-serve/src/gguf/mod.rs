@@ -129,6 +129,15 @@ mod quantized_tests;
 #[cfg(test)]
 mod tests;
 
+/// The dense (llama/qwen2/qwen3/...) forward behind the one engine (#4268):
+/// `apr run`, `run --batch`, `chat` and `serve` drive a dense GGUF through
+/// [`crate::session::Session`] on the CPU or the CUDA backend.
+#[path = "inference/forward/dense_session.rs"]
+pub mod dense_session;
+/// The dense CUDA forward over a borrowed model: serve's scheduler turn (#4280).
+#[cfg(feature = "cuda")]
+#[path = "inference/forward/dense_session_borrowed.rs"]
+pub mod dense_session_borrowed;
 /// #3604: the F2 hybrid guard's receipt. CUDA-free on purpose, so its decision
 /// table is tested on every build.
 #[path = "inference/forward/f2_receipt.rs"]

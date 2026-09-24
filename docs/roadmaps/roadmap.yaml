@@ -18191,25 +18191,6 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: GH-4140
-  github_issue: 4140
-  item_type: task
-  kind: code
-  title: '#4129 on the 0.69.1 lineage: apr-cli and aprender-orchestrate tests include #3990 fixtures / thinking-budgets source from outside their crate'
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-09-24T04:53:51.420416768+00:00
-  updated: 2026-09-24T04:53:51.420416768+00:00
-  spec: null
-  acceptance_criteria:
-  - 'apr-cli and aprender-orchestrate are absent from the #4114 tarball gate RED rows on this lineage'
-  - 'in tree each converted test RUNS (no out-of-tree SKIP) and a moved fixture FAILS it; out of tree it SKIPs by name'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: 'Cop row (aprender-cf, 2026-09-24): the 0.69.1-lineage instances of #4129, branched off chore/0.69.1-merge-back @ f1b09d4d6, NOT part of #4046 single push; folds in the 0.70 batch after #4046. Same pattern as #4048/#4129/#4130.'
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
@@ -19802,6 +19783,23 @@ roadmap:
     Shape of the fix: realizar gains `Qwen35Session` (gguf/inference/forward/qwen35_session.rs) — the hybrid built ONCE, F2-validated once on the first turn''s real prompt (the file hashed once, at load), and a decode state that outlives the turn. A prompt that extends the tokens the state already holds prefills only the new suffix; any other prompt resets the state in place (conv + recurrent state zeroed on the device, KV marked empty) and prefills it whole, on the SAME resident model. The state grows by doubling up to the GGUF''s declared context length; a prompt that cannot fit is refused by name, and a generation budget cut by the context is reported, never silent. The GPU fallback stays loud and keeps QWEN35_GPU_FALLBACK_PREFIX. The same type is what #3571 routes `apr serve` to.
 
     OUT OF SCOPE here, and why: issue done_when 4 (a tree-wide guard for "a pub fn whose doc says live behaviour elsewhere is wrong, with zero callers") is a guard with its own universe and falsifier, filed as a follow-up rather than bundled; so the PR says Refs #3595, not Closes. The --thinking on|off switch is #3723 (aprender-fd); chat consumes it once it lands. aprender-fd''s qwen3-8b chat-template change (f46063527) touches chat_load_tokenizers.rs and chat_session_02.rs in hunks disjoint from this row''s.'
+- id: PMAT-3596
+  github_issue: 3596
+  item_type: task
+  title: 'Qwen3.5 hybrid has NO batched CUDA prefill — qwen35_gpu_decode loops forward_single over every prompt token (9B: 235 s for one output token on an ~5.7k-token brief, ~24 tok/s prefill); batched/chunked prefill usable to the declared context'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-3e
+  created: 2026-09-21 16:20:00+00:00
+  updated: '2026-09-21T17:20:00Z'
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE — transcribed VERBATIM from issue #3596 "## done_when (added)" (comment 2026-09-21T15:57:35Z, the 0.69.1 P0 move): "- [ ] a batched (chunked) CUDA prefill for the Qwen3.5 hybrid (attention layers batched; the Gated DeltaNet recurrence in chunked form) on lambda and gx10, parity-checked against the per-token path at ≥ 64 positions and at 20k" · "- [ ] TTFT for a 20k-token prompt on the 9B measured on both hosts and recorded in the receipt, against llama.cpp at the pinned comparator on the same prompt (the ratio is reported, never claimed as a target)" · "- [ ] `apr run --json` reports `prefill_ms` and `prompt_tokens` (with #3718)". AMENDMENTS — VERBATIM from the cop''s comment on #3596 (2026-09-21T16:12:21Z): "**Amendments (cop, 2026-09-21), for the quorum to judge against:** 1. **"chunked form" is defined:** a chunk-resident scan of the Gated DeltaNet recurrence (state held on-chip across the chunk) that is **bitwise-identical to the per-token recurrence**, measured, is acceptable. The WY/UT chunkwise-parallel form is required only if the scan''s measured share of prefill exceeds 15 %. (aprender-3e''s design note §3, issuecomment-5763674795.) 2. **Context rungs** (operator, verbatim: "lets ensure this release has MORE than enough tokens for our needs (overdo it)"): TTFT is recorded and output is correct at **4k · 8k · 20k · 60k · 148k · 262,144** (every Qwen3.5 GGUF declares `context_length = 262144`, measured) on lambda AND gx10. Where a host''s memory can''t hold a rung (3e''s arithmetic: the 27B on a 24 GB 4090 tops out ≈98k with f16 KV; the 9B at 262k needs f16 KV), apr **refuses before loading, naming the arithmetic**, never OOMs mid-run. Whether that cell may be waived is the operator''s decision (below), not this row''s. 3. **KV precision:** f16 KV is allowed where parity against the f32 path holds (measured at each rung). The choice is printed in `--json`. 4. Decode speed at long context (split-K for the 16-block decode kernel) is a **separate row**, filed next." · F16 SPLIT — VERBATIM from #3596 (2026-09-21T16:20:40Z): "**f16 KV split (agreed with aprender-3e, 2026-09-21):** f16 KV is a storage format touched at four sites: (1) prefill K/V row writes, (2) prefill attention reads, (3) per-token decode row writes, (4) decode attention reads. **#3596** owns the storage type (the f32|f16 tag on `Qwen35CudaState`) plus sites 1–3 and the capacity check that picks f32 / f16 / refuse. **#3725** owns site 4 (the split-K decode kernel reads f16 as well as f32). Until #3725 lands, #3596 ships the f16 branch wired but REFUSING, with the reason "f16 KV decode read not available (#3725)"; no path serves f16 half-done. f16 vs f32 parity is measured on gx10 once both land." · OPERATOR DECISION (relayed by the cop 2026-09-21; verbatim choice "a"): the 27B rungs above what the 4090 holds are owed on gx10 at 262,144; on lambda apr REFUSES before loading, naming the arithmetic; KV quantization (q8/q4) is NOT in 0.69.1. The ORIGINAL done_when items 1–6 of #3596 (TTFT in BEATS.md, apr bench accepting hybrids, the (cached) suffix, the pinned comparator, root-causing the 14 s) belong to #3598/#3604/#3606 rows and are NOT claimed here; this row uses `Refs #3596` unless the issue owner rules the whole issue closable. File boundaries agreed with aprender-c3 (#3693): new kernel files under aprender-gpu/src/kernels/gdn/, new gguf/cuda/forward_qwen35_cuda_prefill.rs, edits limited to forward_qwen35.rs (qwen35_gpu_decode + F2 GPU probe) and forward_qwen35_cuda.rs (state sizing); decode_attention.rs untouched. prefill_ms definition agreed with aprender-a8 (#3718, #3606 StageTimings): forward over post-template prompt tokens up to the first generated token logits, excluding load/h2d/validate/tokenization; null never 0.'
 - id: PMAT-3601
   github_issue: 3601
   item_type: task
@@ -21497,3 +21495,99 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4250
+  github_issue: 4250
+  item_type: task
+  title: '0.69.4 G0: serve-level test fails unless apr serve prefills Qwen3.5 batched (#4250)'
+  status: planned
+  priority: medium
+  assigned_to: aprender-ac
+  created: 2026-09-24T10:04:37Z
+  updated: 2026-09-24T10:04:37Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4263
+  github_issue: 4263
+  item_type: task
+  title: "one engine (0.69.3): every Qwen3.5 verb through realizar::session::Session"
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-ac
+  labels:
+  - kind:code
+- id: GH-4140
+  github_issue: 4140
+  item_type: task
+  kind: code
+  title: '#4129 on the 0.69.1 lineage: apr-cli and aprender-orchestrate tests include #3990 fixtures / thinking-budgets source from outside their crate'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T04:53:51.420416768+00:00
+  updated: 2026-09-24T04:53:51.420416768+00:00
+  spec: null
+  acceptance_criteria:
+  - 'apr-cli and aprender-orchestrate are absent from the #4114 tarball gate RED rows on this lineage'
+  - 'in tree each converted test RUNS (no out-of-tree SKIP) and a moved fixture FAILS it; out of tree it SKIPs by name'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Cop row (aprender-cf, 2026-09-24): the 0.69.1-lineage instances of #4129, branched off chore/0.69.1-merge-back @ f1b09d4d6, NOT part of #4046 single push; folds in the 0.70 batch after #4046. Same pattern as #4048/#4129/#4130.'
+- id: PMAT-4268
+  github_issue: 4268
+  item_type: task
+  title: 'Workstream D (#4263): dense GGUF (llama, qwen2, qwen3, mistral, ...) CUDA and CPU forwards behind the one engine (realizar::session); apr run, run --batch, chat and serve dense route through it'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-49
+  created: 2026-09-24 14:00:00+00:00
+  updated: '2026-09-24T16:30:00Z'
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'D1 (this PR): DenseForward (CPU + CUDA) implements ArchForward in gguf/inference/forward/dense_session.rs; apr run (run_gguf_generate) and apr run --batch (BatchModel) drive DenseSession through dense_turn, which answers token-for-token what generate_with_cache answered (greedy, seeded sampled, stop token dropped, ContextLimitExceeded kept). Witness guards in infer/tests_dense_session_4268.rs turn RED when either route goes back to its own loop (mutation measured). --trace keeps the instrumented loops (the engine has no brick profiler). The wgpu fallback keeps its own greedy loop (out of scope). The CUDA arms are free fns (cuda_reset/cuda_forward/cuda_forward_greedy) for aprender-98''s serve cuda_batch_scheduler (#4280). D2 (next PR): dense chat and serve CPU/CUDA backends. CUDA path is not yet run on a GPU in this PR.'
+- id: PMAT-4269
+  github_issue: 4269
+  item_type: task
+  title: 'one-engine workstream M: port qwen3_moe run, ST CUDA run, APR CPU serve, APR Q4K scheduler, ST serve and ST chat onto realizar::session::Session (child of #4263)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-cb
+  created: 2026-09-24T11:30:00Z
+  updated: 2026-09-24T11:30:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Roadmap id authorized by the 0.69.3 captain (aprender-36). Targets release/0.69.3 via the #4263 one-engine branch; #4265 (APR CPU stop/top_p) closed from this workstream.'
+- id: PMAT-4280
+  github_issue: 4280
+  item_type: task
+  title: 'Workstream D2b (#4263): apr serve dense CUDA scheduler single-request path through the one engine (realizar::session::Session)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-98
+  created: 2026-09-24 11:00:00+00:00
+  updated: '2026-09-24T12:00:00Z'
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'cuda_batch_scheduler generate_single_request (the m==1 fast path, shared with the iteration scheduler) runs one Session::generate over BorrowedCudaForward, a dense CUDA ArchForward over the scheduler''s borrowed model built on aprender-49''s cuda_reset/cuda_forward/cuda_forward_greedy. Stop tokens are filtered in the callback so none is sent (pre-port semantics). The m>1 batched path (batched_setup_and_prefill/batched_decode_step) is multi-slot and stays as is. Known delta: the per-request prefix cache (establish_prompt_kv/populate_prefix_cache) is not used on the ported path.'

@@ -326,7 +326,13 @@ pub fn plan(i: &CapacityInputs) -> CapacityVerdict {
             "(MemTotal - headroom) - (MemAvailable - headroom) = {unplannable:.0} MiB of host \
              memory is not available to plan against"
         ),
-        _ => format!("other processes hold {unplannable:.0} MiB of it"),
+        // Discrete: `cuMemGetInfo` is read after this process's CUDA context exists,
+        // so the gap is other processes AND that context — measured on the 4090 at
+        // #3596's 262k rung: 606 MiB in use before the run, 896 MiB in the gap.
+        _ => format!(
+            "{unplannable:.0} MiB of it is already in use (other processes, and this \
+             process's own CUDA context)"
+        ),
     };
     let co_tenant = |b: CapacityBudget| {
         CapacityVerdict::Refused(CapacityRefusal {
@@ -365,6 +371,43 @@ pub fn plan(i: &CapacityInputs) -> CapacityVerdict {
         ),
         budget: b16,
     })
+}
+
+/// The first `(path, rows)` whose plan fits, trying every row count of a path before
+/// the next path — so the caller's order IS the preference (#3596, cop ruling
+/// 2026-09-21: cuBLAS f32 attention while it fits, flash only when it alone fits).
+///
+/// # Errors
+/// Nothing fits: the refusal of the LAST plan tried, which the caller orders to be
+/// the smallest footprint, so its arithmetic is the closest the device came. With
+/// no candidates at all, `None`.
+pub fn plan_first_fit<A: Copy>(
+    paths: &[A],
+    rows: &[usize],
+    mut plan_one: impl FnMut(A, usize) -> CapacityVerdict,
+) -> Result<(A, usize, CapacityBudget), Option<Box<CapacityRefusal>>> {
+    let mut last = None;
+    for &path in paths {
+        for &r in rows {
+            match plan_one(path, r) {
+                CapacityVerdict::Fits(budget) => return Ok((path, r, budget)),
+                CapacityVerdict::Refused(refusal) => last = Some(Box::new(refusal)),
+            }
+        }
+    }
+    Err(last)
+}
+
+/// One line naming a plan [`plan_first_fit`] passed over, so a fallback is never
+/// silent (#3596: a gx10 27B run at 60k prefilled at 512 rows, not 2048, and nothing
+/// said why). The budget is the dtype the refusal last tried, so the dtype is named.
+#[must_use]
+pub fn passed_over_line(path: &str, rows: usize, refusal: &CapacityRefusal) -> String {
+    let b = &refusal.budget;
+    format!(
+        "{path} at {rows} rows needs {:.0} MiB ({:?} KV), {:.0} MiB plannable ({:?})",
+        b.total_mb, b.kv_dtype, b.gpu_free_mb, refusal.kind
+    )
 }
 
 #[cfg(test)]
@@ -588,6 +631,51 @@ mod tests {
         assert_eq!(discrete.plan_free_total(), (5, 9));
     }
 
+    /// #3596 lambda 262k, forced f32: the gap `cuMemGetInfo` leaves is not all other
+    /// tenants — it includes this process's own context — and the text says so.
+    #[test]
+    fn capacity_discrete_co_tenant_names_what_holds_the_gap() {
+        let mut i = nine_b(262_013, 23_140 * MIB_U, 24_036 * MIB_U, false);
+        i.weights_bytes = 4_861 * MIB_U;
+        i.workspace_bytes = 1_593 * MIB_U;
+        i.memory = Some(DeviceMemory::Discrete {
+            free: 23_140 * MIB_U,
+            total: 24_036 * MIB_U,
+        });
+        let CapacityVerdict::Refused(r) = plan(&i) else {
+            panic!("23,342 MiB into 23,140 MiB free must refuse")
+        };
+        assert_eq!(r.kind, RefusalKind::CoTenant, "{}", r.reason);
+        assert!(
+            r.reason.contains("896 MiB of it is already in use"),
+            "{}",
+            r.reason
+        );
+        assert!(
+            r.reason.contains("this process's own CUDA context"),
+            "{}",
+            r.reason
+        );
+        assert!(!r.reason.contains("other processes hold"), "{}", r.reason);
+        assert!(!r.reason.contains("  "), "a run of spaces in: {}", r.reason);
+    }
+
+    #[test]
+    fn capacity_a_passed_over_plan_is_named_with_its_numbers() {
+        let i = nine_b(262_013, 23_140 * MIB_U, 24_036 * MIB_U, false);
+        let CapacityVerdict::Refused(r) = plan(&CapacityInputs {
+            weights_bytes: 4_861 * MIB_U,
+            workspace_bytes: 1_593 * MIB_U,
+            ..i
+        }) else {
+            panic!("the measured 262k f32 plan must refuse")
+        };
+        assert_eq!(
+            passed_over_line("cuBLAS f32", 512, &r),
+            "cuBLAS f32 at 512 rows needs 23342 MiB (F32 KV), 23140 MiB plannable (CoTenant)"
+        );
+    }
+
     #[test]
     fn capacity_the_boundary_is_inclusive() {
         let mut i = nine_b(1000, 0, 24 * GIB, false);
@@ -596,5 +684,51 @@ mod tests {
         assert!(matches!(plan(&i), CapacityVerdict::Fits(b) if b.kv_dtype == KvDtype::F32));
         i.gpu_free_bytes = need - 1;
         assert!(!matches!(plan(&i), CapacityVerdict::Fits(b) if b.kv_dtype == KvDtype::F32));
+    }
+
+    /// #3596 lambda, 9B, 262,144 positions beside a 924 MiB co-tenant (23,112 MiB
+    /// free): the f32 path's 1 GiB of scores does not fit and the flash path does —
+    /// the measured refusal that the first-fit order turns into a flash run. At 20k
+    /// both fit and f32, the faster and exact path on sm_89, is taken.
+    #[test]
+    fn capacity_first_fit_takes_f32_while_it_fits_and_flash_when_only_flash_does() {
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        enum Path {
+            F32,
+            Flash,
+        }
+        let at = |seq_len: u64| {
+            move |path: Path, rows: usize| {
+                let scores = if path == Path::F32 { 1024 * MIB_U } else { 0 };
+                plan(&CapacityInputs {
+                    weights_bytes: 4_861 * MIB_U,
+                    workspace_bytes: 569 * MIB_U + scores + rows as u64 * MIB_U / 512,
+                    ..nine_b(seq_len, 23_112 * MIB_U, CARD_4090, false)
+                })
+            }
+        };
+        let order = [Path::F32, Path::Flash];
+        let (p, r, _) = plan_first_fit(&order, &[512], at(20_085)).expect("20k fits");
+        assert_eq!((p, r), (Path::F32, 512));
+        let (p, r, b) = plan_first_fit(&order, &[512], at(263_091)).expect("flash fits");
+        assert_eq!((p, r, b.kv_dtype), (Path::Flash, 512, KvDtype::F32));
+        // Every row count of a path is tried before the next path (unified: 2048 → 512).
+        let mut tried = Vec::new();
+        let _ = plan_first_fit(&order, &[2048, 512], |p, r| {
+            tried.push((p, r));
+            at(263_091)(p, r)
+        });
+        assert_eq!(
+            tried,
+            [(Path::F32, 2048), (Path::F32, 512), (Path::Flash, 2048)],
+            "flash at 2048 fits here, so 512 is never tried"
+        );
+        // Nothing fits: the LAST plan's refusal (the smallest footprint) is returned.
+        let refusal = plan_first_fit(&order, &[512], at(400_000)).expect_err("too big");
+        let r = refusal.expect("a plan was tried");
+        assert!(r.reason.contains("400000 positions"), "{}", r.reason);
+        assert!(plan_first_fit::<Path>(&[], &[512], at(1))
+            .expect_err("no paths")
+            .is_none());
     }
 }

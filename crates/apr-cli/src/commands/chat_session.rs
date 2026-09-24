@@ -69,6 +69,12 @@ include!("chat_load_tokenizers.rs");
 include!("chat_session_02.rs");
 include!("chat_generate_session_02.rs");
 include!("chat_generate_safetensors.rs");
+
+    #[cfg(test)]
+    mod engine_identity_4263 {
+        use super::*;
+        include!("chat_engine_identity_4263.rs");
+    }
 }
 
 
