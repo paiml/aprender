@@ -2,8 +2,9 @@
 //!
 //! The first batched prefill materialised the attention scores — cuBLAS `QKᵀ` into a
 //! scratch, a causal softmax over it, cuBLAS `PV` — so its memory traffic grew as
-//! `L²` and made long context attention-bound (9B, 4090: 1,749 tok/s at 20k, 576 at
-//! 148k). This kernel never writes a score: the FA2 recurrence runs in registers.
+//! `L²` and made long context attention-bound (the rungs are in
+//! `docs/audits/impl-PMAT-3596-receipt.md`). This kernel never writes a score: the FA2
+//! recurrence runs in registers.
 //!
 //! ## Precision (the cop's #3596 ruling: f16 INPUTS, f32 ACCUMULATION)
 //!

@@ -43,9 +43,9 @@ fn layer_trace_share(step: &str) -> f64 {
 ///    to derive it is printed next to it. A reader cannot mistake a derived
 ///    number for a measured one.
 /// 2. `TOTAL` is labelled wall-clock **including model load**, and its rate is
-///    labelled end-to-end. Reporting `1.0 tok/s` next to the profiler's
-///    `19.2 tok/s` for the same run, with neither labelled, is a 19x
-///    contradiction inside one screen of output.
+///    labelled end-to-end. An unlabelled end-to-end rate printed next to the
+///    profiler's decode rate for the same run disagrees with it by more than an
+///    order of magnitude, a contradiction inside one screen of output.
 ///
 /// Returned as a `String` so the rendering is directly assertable; the caller
 /// prints it to stderr.

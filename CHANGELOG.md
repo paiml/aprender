@@ -11,15 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 0.69.3 is an emergency early release, authorized by the operator: "we need near parity apr serve
 for qwen 3.5 ASAP". It is 0.69.1 plus one thing, **batched CUDA prefill for the Qwen3.5 hybrid**
-(#3596). Until now the hybrid prefilled one token at a time on the GPU: 0.69.1 measured 77 tok/s
-prefill on Qwen3.5-4B Q4_K_M on an RTX 4090, and a 14–16 s time-to-first-token against llama.cpp's
-1.8–2.9 s on the same box.
+(#3596). Until now the hybrid prefilled one token at a time on the GPU, so 0.69.1's
+time-to-first-token on Qwen3.5-4B Q4_K_M (RTX 4090) was several times llama.cpp's on the same box
+(the measured rungs are in `docs/audits/impl-PMAT-3596-receipt.md`).
 
 ### Qwen3.5 on CUDA: batched prefill (#3596)
 - The Qwen3.5 hybrid prefills in chunks of rows on the GPU instead of one token at a time. The
   Gated DeltaNet layers run a sequence causal-conv1d and delta-rule scan; the attention layers run
   batched GEMMs. Prefill is token-identical to the one-token path at temperature 0 (the
-  `qwen35-batched-prefill-v1` contract, four falsifiers).
+  `qwen35-batched-prefill-v1` contract, five falsifiers).
 - Prefill attention defaults to cuBLAS f32 while it fits, and uses a fused flash-attention kernel
   for the 256-wide heads (no materialised scores) only when flash alone fits (C-QBP-005).
 - A context the GPU cannot hold is refused BEFORE the model loads, with the arithmetic. A prompt
