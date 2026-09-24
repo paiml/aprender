@@ -13,12 +13,25 @@ use tower::ServiceExt;
 /// The real hybrid file the rest of the Qwen3.5 tests are specified against.
 const MODEL_PATH: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
 
+/// #4251: a runner that keeps the file elsewhere names it here (the PERF-053 `APR_*_MODEL`
+/// override pattern). cuda-nightly resolves the file itself and fails on a `SKIP:` line, so an
+/// absent model is RED there and a skip only on a dev box.
+const MODEL_ENV: &str = "APR_QWEN35_MODEL";
+
+fn model_path() -> String {
+    std::env::var(MODEL_ENV)
+        .ok()
+        .filter(|p| !p.is_empty())
+        .unwrap_or_else(|| MODEL_PATH.to_string())
+}
+
 fn state_or_skip(no_gpu: bool) -> Option<(AppState, Arc<MappedGGUFModel>)> {
-    if !std::path::Path::new(MODEL_PATH).exists() {
-        eprintln!("SKIP: {MODEL_PATH} is absent");
+    let path = model_path();
+    if !std::path::Path::new(&path).exists() {
+        eprintln!("SKIP: {path} is absent");
         return None;
     }
-    let mapped = Arc::new(MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF"));
+    let mapped = Arc::new(MappedGGUFModel::from_path(&path).expect("map the GGUF"));
     let vocab = mapped
         .model
         .vocabulary()
@@ -57,7 +70,7 @@ fn one_shot_answer(mapped: &MappedGGUFModel, max_tokens: usize, no_gpu: bool) ->
     // #4263: `apr run`'s load — the host once per file, a device state sized
     // to the one call.
     let qwen = crate::gguf::qwen35_session::Qwen35Forward::cached_host(
-        std::path::Path::new(MODEL_PATH),
+        std::path::Path::new(&model_path()),
         mapped,
     )
     .expect("host");
