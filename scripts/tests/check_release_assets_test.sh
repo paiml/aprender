@@ -62,6 +62,8 @@ trap 'rm -rf "$WORK"' EXIT
       printf 'apr-%s-%s-unknown-linux-gnu-%s.tar.gz.sha256\n' "$TAG" "$t_arch" "$flavour"
     done
   done
+  printf 'apr-%s-aarch64-apple-darwin-cpu.tar.gz\n' "$TAG"
+  printf 'apr-%s-aarch64-apple-darwin-cpu.tar.gz.sha256\n' "$TAG"
   for t_arch in x86_64 aarch64; do
     for libc in musl gnu; do
       printf 'pv-%s-%s-unknown-linux-%s.tar.gz\n' "$TAG" "$t_arch" "$libc"
@@ -74,6 +76,7 @@ MUTANT_NAME="apr-$TAG-aarch64-unknown-linux-gnu-cpu.tar.gz"
 grep -vx "$MUTANT_NAME" "$WORK/complete.txt" > "$WORK/mutant.txt"
 grep -vx "apr-$TAG-x86_64-unknown-linux-gnu-cuda.tar.gz.sha256" "$WORK/complete.txt" > "$WORK/nosha.txt"
 grep -v '^pv-' "$WORK/complete.txt" > "$WORK/nopv.txt"
+grep -vx "apr-$TAG-aarch64-apple-darwin-cpu.tar.gz" "$WORK/complete.txt" > "$WORK/nodarwin.txt"
 
 # 1. the guard's own table, and it is not vacuous
 t 0 "$GUARD --selftest is green" bash "$GUARD" --selftest
@@ -87,6 +90,7 @@ t 0 "the mutation is NAMED, not merely counted" \
   bash -c "bash '$GUARD' '$TAG' --assets-from '$WORK/mutant.txt' 2>&1 | grep -q '$MUTANT_NAME'"
 t 1 "a missing .sha256 is as fatal as a missing tarball" bash "$GUARD" "$TAG" --assets-from "$WORK/nosha.txt"
 t 1 "the eight pv assets are required too" bash "$GUARD" "$TAG" --assets-from "$WORK/nopv.txt"
+t 1 "the darwin asset is required (#4292)" bash "$GUARD" "$TAG" --assets-from "$WORK/nodarwin.txt"
 
 # 3. unreadable is ENV (2), never a pass
 t 2 "an unreadable asset list is ENV (2), never 0" bash "$GUARD" "$TAG" --assets-from "$WORK/does-not-exist.txt"
@@ -99,6 +103,9 @@ t 0 "the verify job requires all four apr assets (it is no longer cuda-only)" \
   bash -c "grep -q 'verify-apr-assets:' '$WF'"
 t 0 "a build-apr-cpu lane exists" bash -c "grep -q 'build-apr-cpu:' '$WF'"
 t 0 "a smoke-cpu lane exists" bash -c "grep -q 'smoke-cpu:' '$WF'"
+t 0 "a build-apr-darwin lane exists (#4292)" bash -c "grep -q 'build-apr-darwin:' '$WF'"
+t 0 "verify-apr-assets waits for the darwin lane" \
+  bash -c "grep -A2 'verify-apr-assets:' '$WF' | grep -q 'needs:.*build-apr-darwin'"
 
 printf '%s/%s rows\n' "$((n - red))" "$n"
 [ "$red" = 0 ] || exit 1
