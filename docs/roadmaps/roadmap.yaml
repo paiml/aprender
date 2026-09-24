@@ -21412,6 +21412,15 @@ roadmap:
   assigned_to: null
   created: 2026-09-23T07:00:57Z
   updated: 2026-09-23T07:00:57Z
+- id: PMAT-4152
+  github_issue: 4152
+  item_type: task
+  title: '#4152: clippy over every workspace member — shrink-only ratchet; aprender-serve clippy-clean'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T06:55:27Z
+  updated: 2026-09-24T06:55:27Z
   spec: null
   acceptance_criteria: []
   phases: []

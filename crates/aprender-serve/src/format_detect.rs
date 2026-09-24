@@ -363,7 +363,7 @@ mod tests {
                 .expect("an 8-byte prefix must be sufficient to classify a known format");
             // Same 8-byte prefix + arbitrary trailing bytes → identical verdict.
             let mut full = prefix.to_vec();
-            full.extend(std::iter::repeat(0xAB_u8).take(4096));
+            full.extend(std::iter::repeat_n(0xAB_u8, 4096));
             assert_eq!(
                 detect_format(&full).expect("full buffer must classify"),
                 from_prefix,

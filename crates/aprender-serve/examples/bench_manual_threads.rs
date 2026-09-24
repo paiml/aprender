@@ -40,19 +40,12 @@ fn main() {
     for _ in 0..iterations {
         thread::scope(|s| {
             let mut handles = Vec::with_capacity(num_threads);
-            for t in 0..num_threads {
+            // Disjoint row blocks from `chunks_mut`: no raw-pointer carve (#4152).
+            for (t, output_slice) in output.chunks_mut(rows_per_thread).enumerate() {
                 let start_row = t * rows_per_thread;
-                let end_row = ((t + 1) * rows_per_thread).min(out_dim);
                 let weight_data = &weight_data;
                 let q8k_scales = &q8k_scales;
                 let q8k_quants = &q8k_quants;
-                // Get mutable slice
-                let output_slice = unsafe {
-                    std::slice::from_raw_parts_mut(
-                        output.as_mut_ptr().add(start_row),
-                        end_row - start_row,
-                    )
-                };
                 handles.push(s.spawn(move || {
                     for (i, out) in output_slice.iter_mut().enumerate() {
                         let row = start_row + i;
@@ -77,18 +70,12 @@ fn main() {
     for _ in 0..iterations {
         thread::scope(|s| {
             let mut handles = Vec::with_capacity(num_threads);
-            for t in 0..num_threads {
+            // Disjoint row blocks from `chunks_mut`: no raw-pointer carve (#4152).
+            for (t, output_slice) in output.chunks_mut(rows_per_thread).enumerate() {
                 let start_row = t * rows_per_thread;
-                let end_row = ((t + 1) * rows_per_thread).min(out_dim);
                 let weight_data = &weight_data;
                 let q8k_scales = &q8k_scales;
                 let q8k_quants = &q8k_quants;
-                let output_slice = unsafe {
-                    std::slice::from_raw_parts_mut(
-                        output.as_mut_ptr().add(start_row),
-                        end_row - start_row,
-                    )
-                };
                 handles.push(s.spawn(move || {
                     for (i, out) in output_slice.iter_mut().enumerate() {
                         let row = start_row + i;
@@ -109,18 +96,12 @@ fn main() {
     let start = Instant::now();
     for _ in 0..iterations {
         thread::scope(|s| {
-            for t in 0..num_threads {
+            // Disjoint row blocks from `chunks_mut`: no raw-pointer carve (#4152).
+            for (t, output_slice) in output.chunks_mut(rows_per_thread).enumerate() {
                 let start_row = t * rows_per_thread;
-                let end_row = ((t + 1) * rows_per_thread).min(out_dim);
                 let weight_data = &weight_data;
                 let q8k_scales = &q8k_scales;
                 let q8k_quants = &q8k_quants;
-                let output_slice = unsafe {
-                    std::slice::from_raw_parts_mut(
-                        output.as_mut_ptr().add(start_row),
-                        end_row - start_row,
-                    )
-                };
                 s.spawn(move || {
                     for (i, out) in output_slice.iter_mut().enumerate() {
                         let row = start_row + i;

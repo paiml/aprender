@@ -23,6 +23,13 @@ use tower::ServiceExt;
 // (await_holding_lock). FALSIFY-001/004 tests expect the env var *unset*;
 // FALSIFY-005 tests set it. Sharing one serial key keeps both sides mutually
 // exclusive while leaving no guard live across any await.
+//
+// ENV_SAFETY (#4152): `set_var`/`remove_var` are `unsafe` because another thread may be reading
+// the environment at the same time. Here none can be. EVERY test in this binary carries
+// `#[serial(env_force_loading)]`, so no two run at once, and each is a default `#[tokio::test]`,
+// a current-thread runtime, so the router it drives (which reads the variable in `router.rs`'s
+// force-loading hook) runs on the same thread that set it. (An earlier comment here cited an
+// `ENV_LOCK` that does not exist.)
 
 fn router_with_model() -> axum::Router {
     let state = AppState::demo().expect("demo state should build");
@@ -262,9 +269,7 @@ async fn falsify_crux_c_34_004_main_health_agrees_with_ready() {
 #[serial(env_force_loading)]
 async fn falsify_crux_c_34_005_force_loading_env_flips_status() {
     let prior = std::env::var("APR_TEST_FORCE_LOADING").ok();
-    // SAFETY: std::env::{set_var, remove_var} are marked unsafe as of the
-    // 2024 edition due to threading concerns. We serialize access through
-    // ENV_LOCK above, and the env var is scoped to this single test.
+    // SAFETY: see ENV_SAFETY at the top of this file.
     unsafe {
         std::env::set_var("APR_TEST_FORCE_LOADING", "1");
     }
@@ -276,6 +281,7 @@ async fn falsify_crux_c_34_005_force_loading_env_flips_status() {
     let json = json_body(resp).await;
 
     // Restore env before asserting (so a panic still cleans up).
+    // SAFETY: see ENV_SAFETY at the top of this file.
     unsafe {
         match prior {
             Some(v) => std::env::set_var("APR_TEST_FORCE_LOADING", v),
@@ -301,6 +307,7 @@ async fn falsify_crux_c_34_005_force_loading_ready_is_503() {
     // The readiness probe MUST also flip to 503 under the force-loading hook.
 
     let prior = std::env::var("APR_TEST_FORCE_LOADING").ok();
+    // SAFETY: see ENV_SAFETY at the top of this file.
     unsafe {
         std::env::set_var("APR_TEST_FORCE_LOADING", "1");
     }
@@ -309,6 +316,7 @@ async fn falsify_crux_c_34_005_force_loading_ready_is_503() {
     let resp = app.oneshot(get("/health/ready")).await.expect("oneshot");
     let status = resp.status();
 
+    // SAFETY: see ENV_SAFETY at the top of this file.
     unsafe {
         match prior {
             Some(v) => std::env::set_var("APR_TEST_FORCE_LOADING", v),
