@@ -549,12 +549,23 @@ fi
 #    The index is the guard's LINE NUMBER IN THE PLAN, so a worker's files are
 #    addressable by the parent without any communication back from the pool.
 WORKLIST="$RUN_DIR/worklist"
+SERIAL_LIST="$RUN_DIR/serial"
 : > "$WORKLIST"
+: > "$SERIAL_LIST"
 idx=0
 while IFS="$TAB" read -r kind g reason; do
     idx=$((idx + 1))
     [ "$kind" = RUN ] || continue
-    printf '%d:%s\n' "$idx" "$g" >> "$WORKLIST"
+    # THE SERIAL LANE (#4046). A guard carrying the line `# guard-tree: serial` asserts
+    # wall-clock windows (a server must be ready within N s) that do not hold while seven
+    # other guards share the CPU; on CI's clean-room runners check_ladder_serve_teardown
+    # failed only under the pool. It runs AFTER the pool, one at a time, so nothing overlaps it.
+    # This does not change what the guard asserts, only what runs beside it.
+    if grep -qx '# guard-tree: serial' "$g" 2>/dev/null; then
+        printf '%d:%s\n' "$idx" "$g" >> "$SERIAL_LIST"
+    else
+        printf '%d:%s\n' "$idx" "$g" >> "$WORKLIST"
+    fi
 done < "$PLAN"
 
 if [ -s "$WORKLIST" ]; then
@@ -567,6 +578,10 @@ if [ -s "$WORKLIST" ]; then
     GUARD_TREE_RUN_DIR="$RUN_DIR" xargs -a "$WORKLIST" -r -I{} -P "$GUARD_TREE_JOBS" \
         bash "$SELF" "--internal-run-one={}" || true
 fi
+while IFS= read -r spec; do
+    [ -n "$spec" ] || continue
+    GUARD_TREE_RUN_DIR="$RUN_DIR" bash "$SELF" "--internal-run-one=$spec" || true
+done < "$SERIAL_LIST"
 
 # ---------------------------------------------------------------------------
 # 3. THE OUTPUT -- plan order, one guard's rows at a time, never interleaved.

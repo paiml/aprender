@@ -687,6 +687,57 @@ else
 fi
 cp "$GUARD_TREE" "$pfix/scripts/guard_tree.sh"
 
+# ---------------------------------------------------------------------------
+# 53-55 (#4046): THE SERIAL LANE. A guard carrying `# guard-tree: serial` runs
+# after the pool, alone. Fixture: one serial guard and two pool guards that append
+# start/end events to one log (append order, no clock). 53: nothing interleaves
+# with the serial guard. 54: its verdict is still reported. 55: the mutant with the
+# serial routing removed shows the overlap (the assertion can fail).
+# ---------------------------------------------------------------------------
+lfix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $lfix"
+mkdir -p "$lfix/.empty-git-template" "$lfix/scripts"
+git -C "$lfix" init -q --template="$lfix/.empty-git-template"
+git -C "$lfix" config user.email test@example.invalid
+git -C "$lfix" config user.name "guard_tree_test"
+cp "$GUARD_TREE" "$lfix/scripts/guard_tree.sh"
+for nm in l_pool_a l_pool_b; do
+    printf '#!/usr/bin/env bash\n[ "${1:-}" = --help ] && { echo usage; exit 0; }\necho "start %s" >> "%s/events"\nsleep 2\necho "end %s" >> "%s/events"\nexit 0\n' \
+        "$nm" "$lfix" "$nm" "$lfix" >"$lfix/scripts/check_$nm.sh"
+done
+printf '#!/usr/bin/env bash\n# guard-tree: serial\n[ "${1:-}" = --help ] && { echo usage; exit 0; }\necho "start l_serial" >> "%s/events"\nsleep 2\necho "end l_serial" >> "%s/events"\nexit 0\n' \
+    "$lfix" "$lfix" >"$lfix/scripts/check_l_serial.sh"
+git -C "$lfix" add -A && git -C "$lfix" commit -q -m fixture
+serial_alone() { # -> 0 iff no other event falls between "start l_serial" and "end l_serial"
+    awk '/^start l_serial$/{f=1; next} /^end l_serial$/{f=0; next} f{bad=1} END{exit bad}' "$lfix/events"
+}
+: > "$lfix/events"
+l_out="$(cd "$lfix" && GUARD_TREE_JOBS=8 bash scripts/guard_tree.sh 2>&1)"
+if [ "$(grep -c . "$lfix/events")" = 6 ] && serial_alone; then
+    pass_row "53: a serial-marked guard never overlaps another guard"
+else
+    fail_row "53: a serial-marked guard never overlaps another guard" "$(tr '\n' '|' < "$lfix/events")"
+fi
+if grep -q '^PASS  scripts/check_l_serial.sh \[run\]' <<<"$l_out"; then
+    pass_row "54: the serial guard's verdict is still reported"
+else
+    fail_row "54: the serial guard's verdict is still reported" "$(tail -n 5 <<<"$l_out" | tr '\n' '|')"
+fi
+sed "s/    if grep -qx '# guard-tree: serial' \"\$g\" 2>\/dev\/null; then/    if false; then/" \
+    "$GUARD_TREE" >"$lfix/scripts/guard_tree.sh"
+if cmp -s "$GUARD_TREE" "$lfix/scripts/guard_tree.sh"; then
+    fail_row "55: mutant with the serial routing removed" "the sed did not apply -- the mutant is the original"
+else
+    : > "$lfix/events"
+    (cd "$lfix" && GUARD_TREE_JOBS=8 bash scripts/guard_tree.sh >/dev/null 2>&1)
+    if serial_alone; then
+        fail_row "55: mutant with the serial routing removed" "no overlap under the mutant: $(tr '\n' '|' < "$lfix/events")"
+    else
+        pass_row "55: mutant with the serial routing removed overlaps (row 53 can fail)"
+    fi
+fi
+cp "$GUARD_TREE" "$lfix/scripts/guard_tree.sh"
+
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then
     exit 1

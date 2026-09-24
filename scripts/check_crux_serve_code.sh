@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# guard-tree: serial
+# (guard_tree.sh runs this guard after the pool, alone: its serve rows time real child processes; it failed only inside the 8-way pool (#4046))
 # check_crux_serve_code.sh: the case table for the CRUX serve and code producers (#3962):
 # scripts/lib/crux_serve_routes.py (every route apr serve mounts, both modes) and
 # scripts/lib/crux_apr_code.py (`apr code -p`). Hermetic: the server is

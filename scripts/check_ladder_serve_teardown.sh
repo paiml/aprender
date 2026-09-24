@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# guard-tree: serial
+# (guard_tree.sh runs this guard after the pool, alone: its rows assert a server is ready within 10 s; under the 8-way pool on a clean-room runner they miss the window (#4046))
 # check_ladder_serve_teardown.sh — `ladder_serve_teardown` must never print `clean`
 # while a process it launched is alive (#3943).
 #
