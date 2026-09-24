@@ -806,33 +806,76 @@ pub(crate) fn run_batch(
 }
 
 /// Print benchmark results with optional JSON output.
+///
+/// #4211: with `--json`, stdout carries exactly one JSON document and the
+/// human block goes to stderr, so `apr run --benchmark --json | jq .` parses.
 fn print_benchmark_results(
     result: &RunResult,
     source: &str,
     output_format: &str,
     max_tokens: usize,
 ) {
+    let (stdout, stderr) = render_benchmark_results(result, source, output_format, max_tokens);
+    eprint!("{stderr}");
+    print!("{stdout}");
+}
+
+/// The one throughput a benchmark run reports, and what it was measured over.
+///
+/// #4211: the engine's own figure (generated tokens over the inference time,
+/// prefill + decode, model load excluded) is the number stderr's
+/// `Generated N tokens in X ms (Y tok/s)` line prints, so it is preferred. Only
+/// when the engine reports none does the run fall back to wall clock over the
+/// whole run, load included. Either way the basis is named.
+fn benchmark_throughput(result: &RunResult, tokens_generated: usize) -> (f64, &'static str) {
+    match result.tok_per_sec {
+        Some(t) if t.is_finite() && t > 0.0 => (t, "inference"),
+        _ if result.duration_secs > 0.0 => {
+            (tokens_generated as f64 / result.duration_secs, "wall")
+        }
+        _ => (0.0, "wall"),
+    }
+}
+
+/// Render the benchmark report as `(stdout, stderr)`.
+///
+/// Human format: the block on stdout, as before. JSON format: ONE JSON
+/// document on stdout, the human block on stderr (#4211).
+pub(crate) fn render_benchmark_results(
+    result: &RunResult,
+    source: &str,
+    output_format: &str,
+    max_tokens: usize,
+) -> (String, String) {
     let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
-    let tok_per_sec = if result.duration_secs > 0.0 {
-        tokens_generated as f64 / result.duration_secs
+    let (tok_per_sec, basis) = benchmark_throughput(result, tokens_generated);
+    let wall_ms = result.duration_secs * 1000.0;
+    let basis_label = if basis == "inference" {
+        "inference: prefill + decode, load excluded"
     } else {
-        0.0
+        "wall clock, load included"
     };
 
-    println!();
-    println!("{}", "=== Benchmark Results ===".cyan().bold());
-    println!("tok/s: {:.1}", tok_per_sec);
-    println!("tokens: {}", tokens_generated);
-    println!("latency: {:.2}ms", result.duration_secs * 1000.0);
-    println!("model: {}", source);
-    println!();
+    let human = format!(
+        "\n{}\ntok/s: {:.1} ({})\ntokens: {}\nlatency: {:.2}ms (wall clock, load included)\nmodel: {}\n\n",
+        "=== Benchmark Results ===".cyan().bold(),
+        tok_per_sec,
+        basis_label,
+        tokens_generated,
+        wall_ms,
+        source
+    );
 
     if output_format == "json" {
-        println!(
-            r#"{{"tok_s": {:.1}, "tokens": {}, "latency_ms": {:.2}}}"#,
-            tok_per_sec,
-            tokens_generated,
-            result.duration_secs * 1000.0
-        );
+        let json = serde_json::json!({
+            "tok_s": (tok_per_sec * 10.0).round() / 10.0,
+            "tok_s_basis": basis,
+            "tokens": tokens_generated,
+            "latency_ms": (wall_ms * 100.0).round() / 100.0,
+            "latency_basis": "wall",
+        });
+        (format!("{json}\n"), human)
+    } else {
+        (human, String::new())
     }
 }

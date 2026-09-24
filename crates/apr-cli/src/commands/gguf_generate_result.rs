@@ -507,31 +507,56 @@ fn print_payload_trace(result: &RunResult, max_tokens: usize) {
     eprintln!();
 }
 
-/// Print roofline profiling analysis (PMAT-480).
+/// Roofline classification of one run: `(compute %, memory %, bottleneck, recommendation)`.
 ///
-/// Estimates compute vs memory boundedness from throughput. For real
-/// per-brick µs timing, use `apr profile <model> --granular` which
-/// integrates with trueno's BrickProfiler.
-fn print_roofline_profile(result: &RunResult, max_tokens: usize) {
-    let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
-    let total_ms = result.duration_secs * 1000.0;
-    let tok_per_sec = if result.duration_secs > 0.0 {
-        tokens_generated as f64 / result.duration_secs
-    } else {
-        0.0
-    };
-
-    // Roofline classification based on Ivanov et al. (2021):
-    // M=1 decode is memory-bandwidth bound. High tok/s implies GPU
-    // compute is engaged (batched prefill or tensor cores).
-    let (compute_pct, memory_pct, bottleneck, recommendation) = if tok_per_sec > 50.0 {
-        (
-            65,
-            35,
-            "Compute (GPU tensor cores engaged)",
-            "Efficient — GPU-accelerated path active",
-        )
-    } else if tok_per_sec > 20.0 {
+/// Based on Ivanov et al. (2021): M=1 decode is memory-bandwidth bound.
+///
+/// #4211: the backend that RAN is an input. The tok/s thresholds alone once
+/// told a CUDA run (`GPU used: yes`) that it was CPU-bound and to "Enable GPU
+/// with --gpu". On a GPU run the throughput is wall clock including load and
+/// one-off CUDA setup, so a low number is not evidence of a CPU bottleneck;
+/// the GPU arm never names the CPU and never recommends `--gpu`. A CPU run
+/// never claims tensor cores. `None` (backend not reported) keeps the
+/// throughput-only reading, which is all it can support.
+fn classify_roofline(
+    tok_per_sec: f64,
+    used_gpu: Option<bool>,
+) -> (u8, u8, &'static str, &'static str) {
+    if used_gpu == Some(true) {
+        return if tok_per_sec > 50.0 {
+            (
+                65,
+                35,
+                "Compute (GPU tensor cores engaged)",
+                "Efficient — GPU-accelerated path active",
+            )
+        } else {
+            (
+                20,
+                80,
+                "Memory bandwidth (GPU VRAM); wall-clock tok/s includes load and one-off CUDA setup",
+                "Measure decode-only throughput with `apr bench` before tuning",
+            )
+        };
+    }
+    if tok_per_sec > 50.0 {
+        return if used_gpu == Some(false) {
+            (
+                40,
+                60,
+                "Mixed (CPU SIMD path, memory bandwidth limited)",
+                "Efficient for CPU — enable GPU with --gpu for more",
+            )
+        } else {
+            (
+                65,
+                35,
+                "Compute (GPU tensor cores engaged)",
+                "Efficient — GPU-accelerated path active",
+            )
+        };
+    }
+    if tok_per_sec > 20.0 {
         (
             40,
             60,
@@ -552,12 +577,30 @@ fn print_roofline_profile(result: &RunResult, max_tokens: usize) {
             "Memory bandwidth (CPU, no SIMD saturation)",
             "Model too large for CPU — use GPU or smaller model",
         )
+    }
+}
+
+/// Print roofline profiling analysis (PMAT-480).
+///
+/// Estimates compute vs memory boundedness from throughput. For real
+/// per-brick µs timing, use `apr profile <model> --granular` which
+/// integrates with trueno's BrickProfiler.
+fn print_roofline_profile(result: &RunResult, max_tokens: usize) {
+    let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
+    let total_ms = result.duration_secs * 1000.0;
+    let tok_per_sec = if result.duration_secs > 0.0 {
+        tokens_generated as f64 / result.duration_secs
+    } else {
+        0.0
     };
+
+    let (compute_pct, memory_pct, bottleneck, recommendation) =
+        classify_roofline(tok_per_sec, result.used_gpu);
 
     eprintln!();
     eprintln!("{}", "=== Roofline Profile (PMAT-480) ===".cyan().bold());
     eprintln!();
-    eprintln!("  Throughput:     {tok_per_sec:.1} tok/s");
+    eprintln!("  Throughput:     {tok_per_sec:.1} tok/s (wall clock, load included)");
     eprintln!("  Latency:        {total_ms:.1} ms ({tokens_generated} tokens)");
     eprintln!("  Per-token:      {:.2} ms", total_ms / tokens_generated.max(1) as f64);
     eprintln!("  GPU used:       {}", result.used_gpu.map_or("unknown", |g| if g { "yes" } else { "no" }));
