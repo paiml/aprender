@@ -1,8 +1,9 @@
 //! ONT-001 §3.7, §5 ONT-4b — `extract:pv-contract`: the contract YAML itself becomes triples.
 //!
-//! One contract file → one subject, `https://ont.paiml.dev/v1alpha1/contract/<stem>`, typed `ont:Contract` and
-//! `prov:Entity`, carrying what the corpus already says about it: `ont:id` (the stem — every contract has one, which
-//! is why the first shape can require it), `ont:file`, `ont:kind` (`metadata.kind`), `ont:name`, `ont:version`,
+//! One contract file → one subject, `https://ont.paiml.dev/v1alpha1/contract/<stem>`, typed `ont:Contract`,
+//! `prov:Entity` and — when it has an `entity.type` T — `entity:T` (#4160, so a shape can target one type),
+//! carrying what the corpus already says about it: `ont:id` (the stem — every contract has one, which is why the
+//! first shape can require it), `ont:file`, `ont:kind` (`metadata.kind`), `ont:name`, `ont:version`,
 //! `ont:status`, `ont:evidenceLevel`, `ont:entityType`/`ont:entityRef` (§4.2 `entity:`), and ONT-4's typed relations
 //! as `ont:<role>` edges to `contract/<target>`. Nothing is inferred; a key the contract does not carry produces no
 //! triple, so a shape's `minCount` over it is a real constraint and not a tautology.
@@ -84,6 +85,7 @@ pub fn extract_one(g: &mut Graph, stem: &str, file: &str, doc: &serde_yaml::Valu
     if let Some(entity) = doc.get("entity") {
         let entity_type = scalar(entity.get("type"));
         if let Some(t) = entity_type.clone() {
+            g.insert(s.clone(), RDF_TYPE, Term::iri(entity_class(&t)));
             g.insert(s.clone(), ont("entityType"), Term::string(t));
         }
         if let Some(r) = scalar(entity.get("ref")) {
@@ -106,14 +108,15 @@ pub fn extract_one(g: &mut Graph, stem: &str, file: &str, doc: &serde_yaml::Valu
     }
 }
 
-/// The positive control (R-3, PMAT-3704), in memory every gate run: a contract carrying `metadata.kind` and a
-/// `depends_on` relation must come out with `ont:kind` and the typed edge, and the planted copy with `metadata`
-/// removed must carry NO `ont:kind` — "nothing is inferred", measured rather than stated.
+/// The positive control (R-3, PMAT-3704), in memory every gate run: a contract carrying `metadata.kind`, a
+/// `depends_on` relation and an `entity.type` must come out with `ont:kind`, the typed edge and its entity class
+/// (#4160), and the planted copy with `metadata` and `entity` removed must carry NO `ont:kind` and NO entity class
+/// — "nothing is inferred", measured rather than stated.
 #[must_use]
 pub fn positive_control() -> bool {
     const STEM: &str = "__pc_extract__";
     let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(
-        "metadata: {kind: kernel}\nrelations: {depends_on: [contracts/__pc_target__-v1.yaml]}\n",
+        "metadata: {kind: kernel}\nrelations: {depends_on: [contracts/__pc_target__-v1.yaml]}\nentity: {type: __pc__}\n",
     ) else {
         return false;
     };
@@ -128,13 +131,22 @@ pub fn positive_control() -> bool {
         .objects(&s, &ont("depends_on"))
         .iter()
         .any(|t| t.as_iri() == Some(iri("contract", "__pc_target__-v1").as_str()));
+    let class = g
+        .objects(&s, RDF_TYPE)
+        .iter()
+        .any(|t| t.as_iri() == Some(entity_class("__pc__").as_str()));
     let mut planted = doc;
     if let Some(m) = planted.as_mapping_mut() {
         m.remove("metadata");
+        m.remove("entity");
     }
     let mut g2 = Graph::new();
     extract_one(&mut g2, STEM, "contracts/__pc_extract__.yaml", &planted);
-    kind && edge && g2.objects(&s, &ont("kind")).is_empty()
+    let class_absent = !g2
+        .objects(&s, RDF_TYPE)
+        .iter()
+        .any(|t| t.as_iri() == Some(entity_class("__pc__").as_str()));
+    kind && edge && class && class_absent && g2.objects(&s, &ont("kind")).is_empty()
 }
 
 /// §4.2 `entity: {type, ref, properties}` — the entity's OWN properties, as `<type>:<key>` on the contract node.
@@ -187,6 +199,22 @@ fn emit_entity_properties(
 #[must_use]
 pub fn entity_predicate(entity_type: &str, key: &str) -> String {
     format!("{}{entity_type}/{key}", crate::ontology::rdf::ONT_BASE)
+}
+
+/// The class of every contract whose `entity.type` is `entity_type`: `<ONT_BASE>entity/<type>` (#4160).
+///
+/// `ont:Contract` is every contract, so a shape targeting it fires on every entity type in the directory — apex's
+/// closed `study` shape failed each of its 18 `claim` contracts. This class is what `targetClass: entity:study`
+/// expands to, so a shape can select one entity type and nothing else. The literal `ont:entityType` stays: it is
+/// what a shape's `path:` reads, and a class is not a value. Nothing is inferred — a contract with no
+/// `entity.type` gets no entity class, as it gets no `<type>:<key>` predicates.
+///
+/// Built like [`entity_predicate`], never through `iri()`: `iri()` percent-encodes and `expand` does not, so a
+/// type holding a character outside `iri()`'s safe set would type its contracts with a class no shape can name
+/// (quorum PMAT-4160, haiku seat).
+#[must_use]
+pub fn entity_class(entity_type: &str) -> String {
+    format!("{}entity/{entity_type}", crate::ontology::rdf::ONT_BASE)
 }
 
 /// A YAML scalar as a string: strings as they are, numbers and booleans by their YAML spelling. Mappings and
@@ -310,6 +338,58 @@ mod tests {
         assert!(
             g.predicates_of(&s).iter().all(|p| !p.ends_with("scale")),
             "{:?}",
+            g.to_ntriples()
+        );
+    }
+
+    /// #4160: `targetClass: entity:study` (and its `ont:` spelling) is the class the extractor writes, so a shape
+    /// scoped to one entity type selects exactly those contracts.
+    #[test]
+    fn the_entity_class_is_the_expansion_of_the_prefixed_form() {
+        use crate::ontology::shapes::expand;
+        assert_eq!(entity_class("study"), expand("entity:study"));
+        assert_eq!(entity_class("study"), expand("ont:entity/study"));
+        assert_eq!(
+            entity_class("pv-contract"),
+            "https://ont.paiml.dev/v1alpha1/entity/pv-contract"
+        );
+        assert_ne!(entity_class("study"), ont("Contract"));
+        // Every character class, not only the ones iri() leaves alone: the equality holds by construction.
+        for t in ["a b", "x/y", "q?r#s", "é", "100%", "a:b"] {
+            assert_eq!(
+                entity_class(t),
+                expand(&format!("entity:{t}")),
+                "entity type {t:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_contract_is_an_instance_of_its_entity_type_class_and_of_no_other() {
+        let mut g = Graph::new();
+        for (stem, ty) in [("s", "study"), ("c1", "claim"), ("c2", "claim")] {
+            let doc: serde_yaml::Value =
+                serde_yaml::from_str(&format!("entity:\n  type: {ty}\n")).expect("yaml");
+            extract_one(&mut g, stem, &format!("contracts/{stem}.yaml"), &doc);
+        }
+        let none: serde_yaml::Value = serde_yaml::from_str("name: n\n").expect("yaml");
+        extract_one(&mut g, "bare", "contracts/bare.yaml", &none);
+        let at = |t: &str| crate::ontology::shapes::instances_closed(&g, &entity_class(t));
+        assert_eq!(at("study"), vec![iri("contract", "s")]);
+        assert_eq!(
+            at("claim"),
+            vec![iri("contract", "c1"), iri("contract", "c2")]
+        );
+        // ont:Contract still selects all four — the new class is additive, not a re-typing.
+        assert_eq!(g.instances_of(&ont("Contract")).len(), 4);
+        // No entity.type, no entity class: nothing is inferred.
+        let bare = iri("contract", "bare");
+        assert!(
+            g.objects(&bare, RDF_TYPE)
+                .iter()
+                .filter_map(|t| t.as_iri())
+                .all(|t| !t.contains("/v1alpha1/entity/")),
+            "{}",
             g.to_ntriples()
         );
     }
