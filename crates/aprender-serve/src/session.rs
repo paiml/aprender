@@ -156,6 +156,9 @@ pub struct Session<F: ArchForward> {
     /// call entered, so a guard can ask "did THIS verb's session serve it?"
     /// without re-deriving the verb's prompt tokens.
     id: u64,
+    /// The tokens whose forward the forward's saved copy holds (#4214), or
+    /// `None` when it keeps no copy the session trusts.
+    checkpoint: Option<Vec<u32>>,
 }
 
 static NEXT_SESSION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -167,6 +170,7 @@ impl<F: ArchForward> Session<F> {
             forward,
             processed: Vec::new(),
             id: NEXT_SESSION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            checkpoint: None,
         }
     }
 
@@ -238,15 +242,75 @@ impl<F: ArchForward> Session<F> {
         } else {
             0
         };
+        Ok((self.step(tokens, start)?, start))
+    }
+
+    /// Bring the state up to a strict prefix of `prompt` that
+    /// [`Self::advance_and_choose`] then extends with the rest: resume from the
+    /// checkpoint an earlier turn left when `prompt` does not extend the state
+    /// but repeats what the checkpoint holds (#4214: the same prompt again;
+    /// #4274: a chat history re-rendered with the last reply changed), and
+    /// prefill up to a new checkpoint where [`ArchForward::checkpoint_at`] says.
+    /// Returns how many leading tokens of `prompt` were already held.
+    fn prepare_prompt(&mut self, prompt: &[u32]) -> Result<usize> {
+        let mut start = if self.extends(prompt) {
+            self.processed.len()
+        } else {
+            0
+        };
+        if start == 0 {
+            if let Some(held) = self.checkpoint.take() {
+                if prompt.len() > held.len() && prompt.starts_with(&held) {
+                    match self.forward.restore_checkpoint() {
+                        Ok(true) => {
+                            start = held.len();
+                            self.processed.clone_from(&held);
+                            self.checkpoint = Some(held);
+                        },
+                        Ok(false) => {},
+                        Err(e) => {
+                            self.processed.clear();
+                            return Err(e);
+                        },
+                    }
+                } else {
+                    self.checkpoint = Some(held);
+                }
+            }
+        }
+        let reused = start;
+        if let Some(k) = self
+            .forward
+            .checkpoint_at(prompt)
+            .filter(|&k| k > start && k < prompt.len())
+        {
+            self.step(&prompt[..k], start)?;
+            self.checkpoint = match self.forward.save_checkpoint() {
+                Ok(()) => Some(prompt[..k].to_vec()),
+                Err(_) => None,
+            };
+        }
+        Ok(reused)
+    }
+
+    /// Forward `tokens` from `start` (the state holds `tokens[..start]`) and
+    /// record what the state then holds.
+    fn step(&mut self, tokens: &[u32], start: usize) -> Result<Vec<f32>> {
+        // Positions under the checkpoint are about to be rewritten: the copy
+        // no longer matches the attention rows it would resume on.
+        if self.checkpoint.as_ref().is_some_and(|c| start < c.len()) {
+            self.checkpoint = None;
+        }
         match self.forward.forward(tokens, start) {
             Ok(logits) => {
                 self.processed.truncate(start);
                 self.processed.extend_from_slice(&tokens[start..]);
-                Ok((logits, start))
+                Ok(logits)
             },
             Err(e) => {
                 // What the state holds after a failed forward is unknown.
                 self.processed.clear();
+                self.checkpoint = None;
                 Err(e)
             },
         }
@@ -268,6 +332,9 @@ impl<F: ArchForward> Session<F> {
             } else {
                 0
             };
+            if self.checkpoint.as_ref().is_some_and(|c| start < c.len()) {
+                self.checkpoint = None;
+            }
             match self.forward.forward_greedy(tokens, start) {
                 Ok(Some(next)) => {
                     self.processed.truncate(start);
@@ -277,6 +344,7 @@ impl<F: ArchForward> Session<F> {
                 Ok(None) => {},
                 Err(e) => {
                     self.processed.clear();
+                    self.checkpoint = None;
                     return Err(e);
                 },
             }
@@ -294,6 +362,7 @@ impl<F: ArchForward> Session<F> {
     fn reserve(&mut self, positions: usize) -> Result<()> {
         if self.forward.reserve(positions)? {
             self.processed.clear();
+            self.checkpoint = None;
         }
         Ok(())
     }
@@ -348,8 +417,9 @@ impl<F: ArchForward> Session<F> {
             turn_budget(prompt.len(), config.max_tokens, context_length);
         self.reserve(prompt.len() + budget)?;
 
+        let reused = self.prepare_prompt(prompt)?;
         let mut rng = rand::rngs::StdRng::seed_from_u64(config.seed);
-        let (mut next, reused) = self.advance_and_choose(prompt, config, &mut rng)?;
+        let (mut next, _) = self.advance_and_choose(prompt, config, &mut rng)?;
         let mut tokens = prompt.to_vec();
         let mut context_capped = false;
         for generated in 1..=budget {
