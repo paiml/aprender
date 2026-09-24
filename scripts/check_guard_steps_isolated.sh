@@ -37,8 +37,9 @@ scan() {
         /^[[:space:]]*(-[[:space:]]+)?(run:[[:space:]]*)?scripts\/check_[A-Za-z0-9_]+\.sh/ { printf "%s:%d: %s\n", f, NR, $0; next }
         # a BARE guard path in command position MID-line -- after a chain operator, `(`/`$(`,
         # or a shell keyword -- is refused the same way (#4133 ph6, sonnet lane: `setsid --wait
-        # bash scripts/check_a.sh && scripts/check_b.sh` scanned clean)
-        /([;&|(]|(^|[[:space:]])(then|do|else|if|while|until|!))[[:space:]]*scripts\/check_[A-Za-z0-9_]+\.sh/ { printf "%s:%d: %s\n", f, NR, $0; next }
+        # bash scripts/check_a.sh && scripts/check_b.sh` scanned clean). `elif` and a case-arm `)`
+        # are command position too (#4133 ph7, sonnet seat 3: `elif scripts/check_a.sh; then` scanned clean)
+        /([;&|()]|(^|[[:space:]])(then|do|else|elif|if|while|until|!))[[:space:]]*scripts\/check_[A-Za-z0-9_]+\.sh/ { printf "%s:%d: %s\n", f, NR, $0; next }
         {
             line = $0
             while (match(line, /(^|[^a-z_.\/-])(bash scripts|sh scripts|\.\/scripts)\/check_[A-Za-z0-9_]+\.sh/)) {
@@ -102,6 +103,9 @@ self_test() {
     row "bare in command substitution"      1 $'          x="$(scripts/check_a.sh --list)"\n'
     row "bare after if"                     1 $'          if scripts/check_a.sh; then echo ok; fi\n'
     row "bare after then"                   1 $'          if true; then scripts/check_a.sh; fi\n'
+    row "bare after elif"                   1 $'          if false; then :; elif scripts/check_a.sh; then echo ok; fi\n'
+    row "bare in a one-line case arm"       1 $'          case x in x) scripts/check_a.sh ;; esac\n'
+    row "wrapped after elif"                0 $'          if false; then :; elif setsid --wait bash scripts/check_a.sh; then :; fi\n'
     row "a path argument is not an invocation" 0 $'          cat scripts/check_a.sh && echo scripts/check_b.sh\n'
     # the MUTANT the ticket names: the real ci.yml with ONE wrapper removed must go RED
     if [ -f .github/workflows/ci.yml ]; then
