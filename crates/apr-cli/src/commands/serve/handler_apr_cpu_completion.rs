@@ -26,10 +26,11 @@ async fn handle_apr_cpu_completion(
     let max_tokens = req.max_tokens.min(4096);
     let prompt = req.prompt.clone();
     let temperature = req.temperature.unwrap_or(0.0);
+    let top_p = req.top_p;
 
     // GH-284: Run inference off the async runtime to avoid blocking
     let result = tokio::task::spawn_blocking(move || {
-        run_apr_cpu_inference(&s, &prompt, max_tokens, temperature)
+        run_apr_cpu_inference(&s, &prompt, max_tokens, temperature, top_p)
     })
     .await;
 
@@ -114,6 +115,7 @@ fn spawn_cpu_streaming_task(
     prompt: String,
     max_tokens: usize,
     temperature: f32,
+    top_p: Option<f32>,
     tx: tokio::sync::mpsc::Sender<std::result::Result<u32, String>>,
 ) {
     tokio::task::spawn_blocking(move || {
@@ -129,16 +131,8 @@ fn spawn_cpu_streaming_task(
             None => prompt.chars().map(|c| c as u32).collect(),
         };
 
-        let gen_config = realizar::apr_transformer::GenerateConfig {
-            max_tokens,
-            temperature,
-            top_p: 0.9,
-            top_k: 0,
-            repetition_penalty: 1.0,
-            trace: false,
-            stop_tokens: vec![],
-            cancel: realizar::generate::CancelToken::never(),
-        };
+        let gen_config =
+            apr_cpu_generate_config(max_tokens, temperature, top_p, apr_cpu_stop_tokens(&s));
 
         let Ok(t) = transformer.lock() else {
             if tx.blocking_send(Err("Lock poisoned".to_string())).is_err() {
@@ -171,6 +165,7 @@ fn spawn_cpu_token_text_stream(
     prompt: String,
     max_tokens: usize,
     temperature: f32,
+    top_p: Option<f32>,
     tx: tokio::sync::mpsc::Sender<std::result::Result<String, String>>,
 ) {
     // Test seam: replay a scripted token sequence through the channel.
@@ -203,16 +198,8 @@ fn spawn_cpu_token_text_stream(
             None => prompt.chars().map(|c| c as u32).collect(),
         };
 
-        let gen_config = realizar::apr_transformer::GenerateConfig {
-            max_tokens,
-            temperature,
-            top_p: 0.9,
-            top_k: 0,
-            repetition_penalty: 1.0,
-            trace: false,
-            stop_tokens: vec![],
-            cancel: realizar::generate::CancelToken::never(),
-        };
+        let gen_config =
+            apr_cpu_generate_config(max_tokens, temperature, top_p, apr_cpu_stop_tokens(&s));
 
         let Ok(t) = transformer.lock() else {
             if tx.blocking_send(Err("Lock poisoned".to_string())).is_err() {
@@ -335,6 +322,7 @@ async fn handle_apr_cpu_chat_completion(
     let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);
     let max_tokens = req.get("max_tokens").and_then(serde_json::Value::as_u64).unwrap_or(32) as usize;
     let temperature = req.get("temperature").and_then(serde_json::Value::as_f64).unwrap_or(0.0) as f32;
+    let top_p = req.get("top_p").and_then(serde_json::Value::as_f64).map(|v| v as f32);
 
     let Some(msgs) = messages else {
         return Json(serde_json::json!({"error": "Missing messages"})).into_response();
@@ -345,7 +333,7 @@ async fn handle_apr_cpu_chat_completion(
     // GH-284: True SSE streaming path
     if stream_mode {
         let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<u32, String>>(16);
-        spawn_cpu_streaming_task(s.clone(), prompt, max_tokens.min(4096), temperature, tx);
+        spawn_cpu_streaming_task(s.clone(), prompt, max_tokens.min(4096), temperature, top_p, tx);
         return build_cpu_sse_stream(rx, s.tokenizer.clone(), s.model_name.clone());
     }
 
@@ -356,7 +344,7 @@ async fn handle_apr_cpu_chat_completion(
     let max_t = max_tokens.min(4096);
 
     let result = tokio::task::spawn_blocking(move || {
-        run_apr_cpu_inference(&s_for_blocking, &prompt_owned, max_t, temperature)
+        run_apr_cpu_inference(&s_for_blocking, &prompt_owned, max_t, temperature, top_p)
     })
     .await;
 
@@ -432,7 +420,8 @@ async fn handle_apr_cpu_ollama_chat(
         let (max_tokens, temperature) = ollama_sampling(&req.options);
         let prompt_eval_count = count_prompt_tokens(&s, &prompt);
         let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(16);
-        spawn_cpu_token_text_stream(s, prompt, max_tokens, temperature, tx);
+        let top_p = req.options.as_ref().and_then(|o| o.top_p);
+        spawn_cpu_token_text_stream(s, prompt, max_tokens, temperature, top_p, tx);
         return super::ollama::ollama_ndjson_stream(
             super::ollama::OllamaStreamKind::Chat,
             model,
@@ -475,7 +464,8 @@ async fn handle_apr_cpu_ollama_generate(
         let (max_tokens, temperature) = ollama_sampling(&req.options);
         let prompt_eval_count = count_prompt_tokens(&s, &prompt);
         let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(16);
-        spawn_cpu_token_text_stream(s, prompt, max_tokens, temperature, tx);
+        let top_p = req.options.as_ref().and_then(|o| o.top_p);
+        spawn_cpu_token_text_stream(s, prompt, max_tokens, temperature, top_p, tx);
         return super::ollama::ollama_ndjson_stream(
             super::ollama::OllamaStreamKind::Generate,
             model,
