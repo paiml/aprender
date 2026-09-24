@@ -11,7 +11,7 @@
           "duration": 23.151644468,
           "process_status": "Success",
           "argv": [
-            "/home/noah/.rustup/toolchains/1.93.0-aarch64-unknown-linux-gnu/bin/cargo",
+            "cargo",
             "test",
             "--no-run",
             "--verbose",
@@ -24,7 +24,7 @@
           "duration": 59.082406528,
           "process_status": "Success",
           "argv": [
-            "/home/noah/.rustup/toolchains/1.93.0-aarch64-unknown-linux-gnu/bin/cargo",
+            "cargo",
             "test",
             "--verbose",
             "--package=aprender-contracts@0.69.0",
@@ -79,7 +79,7 @@
             "Failure": 101
           },
           "argv": [
-            "/home/noah/.rustup/toolchains/1.93.0-aarch64-unknown-linux-gnu/bin/cargo",
+            "cargo",
             "test",
             "--no-run",
             "--verbose",
@@ -131,7 +131,7 @@
           "duration": 35.61587292,
           "process_status": "Success",
           "argv": [
-            "/home/noah/.rustup/toolchains/1.93.0-aarch64-unknown-linux-gnu/bin/cargo",
+            "cargo",
             "test",
             "--no-run",
             "--verbose",
@@ -145,7 +145,7 @@
             "Failure": 101
           },
           "argv": [
-            "/home/noah/.rustup/toolchains/1.93.0-aarch64-unknown-linux-gnu/bin/cargo",
+            "cargo",
             "test",
             "--verbose",
             "--package=aprender-contracts@0.69.0",
