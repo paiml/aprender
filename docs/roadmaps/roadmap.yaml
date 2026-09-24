@@ -21917,6 +21917,18 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   updated: 2026-09-22T15:13:29Z
   spec: null
   acceptance_criteria: []
+- id: PMAT-4261
+  github_issue: 4261
+  item_type: task
+  title: 'Qwen3.5-9B has no temp-0 refs: 0.69.3 G1 shows 9B SKIPPED; refs owed before 0.69.4 acceptance'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T16:47:18Z
+  updated: 2026-09-24T16:47:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Temp-0 refs for Qwen3.5-9B-Q4_K_M (sha256 03b74727…) at 850/4k/32k exist and are receipted: apr rc ids per prompt, compared to base 0.69.1 and to llama.cpp on the official template, every divergence measured as a near-tie or reported.'
   phases: []
   subtasks: []
   estimated_effort: null
