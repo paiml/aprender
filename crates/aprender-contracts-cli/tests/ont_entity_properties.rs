@@ -280,3 +280,50 @@ fn the_entity_class_lands_in_the_extraction() {
         "no entity.type, no entity class: {nt}"
     );
 }
+
+/// PMAT-4160 (quorum round 3, sonnet seat 2): Σ refuses to DECLARE the reserved type, but a contract could still
+/// CARRY it, and `pv extract` and `--gate shapes` never consult Σ. Both must refuse the extraction, with no graph
+/// written, rather than emit an `entity/entity/<key>` predicate that aliases the class of type `<key>`.
+#[test]
+fn a_contract_carrying_the_reserved_entity_type_is_refused_by_extract_and_by_the_shapes_gate() {
+    let scratch = scratch_copy("entity-types-scoped");
+    let dir = scratch.path();
+    let rogue = std::fs::read_to_string(dir.join("contracts/PMAT-001.yaml"))
+        .expect("PMAT-001")
+        .replace("name: PMAT-001", "name: ROGUE-001")
+        .replace("  type: claim", "  type: entity")
+        .replace("    row: EV-19b", "    study: EV-19b");
+    assert!(
+        rogue.contains("  type: entity"),
+        "the fixture edit applied: {rogue}"
+    );
+    std::fs::write(dir.join("contracts/ROGUE-001.yaml"), rogue).expect("write rogue");
+
+    let r = pv_in(dir, &["extract", "contracts"]);
+    assert_ne!(r.code, 0, "{}", show(&r));
+    assert!(
+        r.stderr.contains("ROGUE-001") && r.stderr.contains("reserved"),
+        "{}",
+        show(&r)
+    );
+    assert!(
+        !dir.join("contracts/contracts.nt").exists(),
+        "a refused extraction writes no graph"
+    );
+
+    let r = pv_in(
+        dir,
+        &["lint", "contracts", "--gate", "shapes", "--format", "json"],
+    );
+    assert_ne!(r.code, 0, "{}", show(&r));
+    assert!(
+        format!("{}{}", r.stdout, r.stderr).contains("reserved"),
+        "{}",
+        show(&r)
+    );
+
+    // Control: the same corpus without the rogue contract extracts.
+    std::fs::remove_file(dir.join("contracts/ROGUE-001.yaml")).expect("rm rogue");
+    let r = pv_in(dir, &["extract", "contracts"]);
+    assert_eq!(r.code, 0, "{}", show(&r));
+}
