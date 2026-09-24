@@ -401,7 +401,7 @@ self_test() {
 
     # MUTANT: drop the macro pattern from the oracle -> eta vanishes (the #4175 row is load-bearing)
     row 0 "mutant oracle without the workspace_*_or_skip! pattern loses eta via_macro" 'MUTANT-LOST-ETA' \
-        env ORACLE="${ORACLE/|workspace_(path|file)_or_skip!\\(/}" bash -c "if bash '$T' --derive '$td' 2>/dev/null | grep -q '^eta'; then echo MUTANT-KEPT-ETA; else echo MUTANT-LOST-ETA; fi"
+        env ORACLE="${ORACLE/|workspace_(path|file)_or_skip!\\(/}" bash -c "if grep -q '^eta' <<< \"\$(bash '$T' --derive '$td' 2>/dev/null)\"; then echo MUTANT-KEPT-ETA; else echo MUTANT-LOST-ETA; fi"
 
     # --- PMAT-3120: module granularity, against the COMMITTED fixture crate.
     # Hermetic (no cargo, no workspace): tests/fixtures/tree_reader/crates/** is
