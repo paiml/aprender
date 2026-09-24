@@ -1,0 +1,154 @@
+{
+  "ticket": "PMAT-4036",
+  "base": "origin/chore/0.69.1-merge-back",
+  "base_resolved": "origin/chore/0.69.1-merge-back",
+  "base_note": "no origin/origin/chore/0.69.1-merge-back exists; judged against the local ref",
+  "head": "ab9e84f4c1e26c1255b58e1ae277fb789b0acb31",
+  "diff_sha256": "23587b83ea839ac71f9d775bd64511b5505492e5e72f614ddeecb17d6e7ecd01",
+  "width": 3,
+  "executor": "mixed: agy x1 (quorum-review.sh, patched copy) + claude-code sonnet-5 + claude-code haiku-4-5",
+  "prompt_mode": "file",
+  "prompt_bytes": 106309,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements the CRUX reference cache as specified by PMAT-4036. The cache binds accurately to model sha256, thinking mode, backend, engine, verb, prompt sha256, sampling, oracle version, and producing harness files, notably excluding the host. The entry storage correctly restricts to only clean rows and rejects any corrupted or partially edited stale entries (handling the MUST-RED falsifiers in scripts/check_crux_ref_cache.sh). The cache successfully delegates purely to comparators (hf, vLLM, llamafile) while explicitly denying llama.cpp caching. The batched engine (plugin_batch_cells / crux_batched) enforces a single source-weight load per mode per interface, producing correctly formatted identical outputs. All MUST-RED validations pass successfully.",
+      "findings": [],
+      "raw_bytes": 2928,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      },
+      "brief_sha256": "5defa267c5e180b9c31f97aafadc0793c143ee7fd7331ed5575aba2d0e8f1796"
+    },
+    {
+      "lane": 2,
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "sonnet-seat",
+      "verdict": "PASS",
+      "brief_sha256": "5defa267c5e180b9c31f97aafadc0793c143ee7fd7331ed5575aba2d0e8f1796",
+      "summary": "Read the full brief/diff and the worktree at ab9e84f4c. Ran both hermetic checks fresh: check_crux_ref_cache.sh 17/17 and check_crux_plugin_batch.sh 6/6. Recomputed the gx10 evidence JSONs: all six GREEN legs are 32/32 and byte-identical cell-for-cell, matching times.txt; reference-texts.json confirms batched vs unbatched hf/vLLM text identical (batch sizes 1 vs 5 prove batching engaged). Probed two MUST-RED rows: disabling only the pointer rule still lets the converse files{} rule catch a traversal pointer; disabling content_sha256 alone turns an origin-only edit into a false-provenance HIT, so that check is load-bearing. All five acceptance criteria verified. No refuting finding.",
+      "findings": [],
+      "executor": "claude-code Agent lane a8164144adf2c9e87, read docs/audits/quorum-PMAT-4036.brief.md"
+    },
+    {
+      "lane": 3,
+      "model": "claude-haiku-4-5-20251001",
+      "model_measured": "claude-haiku-4-5-20251001",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "cheap-claude-seat",
+      "verdict": "PASS",
+      "brief_sha256": "5defa267c5e180b9c31f97aafadc0793c143ee7fd7331ed5575aba2d0e8f1796",
+      "summary": "CRUX reference cache implementation passes all 23 hermetic tests (17 cache integrity + 6 batching). Stale detection catches seven independent corruption patterns via content digest, key validation, artifact integrity, pointer validation, and field validation. Exit codes match contract: 0 hit, 10 miss, 11 stale, 1 keying refusal, 2 crash (never silent recompute). llama.cpp correctly refused. All-or-nothing cache consistency enforced.",
+      "findings": [],
+      "executor": "claude-code Agent lane a492f43b0343fb062, read docs/audits/quorum-PMAT-4036.brief.md"
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lanes 2-3 are hand-run Claude Code seats on the same brief file; receipt-lint refuses same-family lanes, so the cop overrides per operator rule"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config \u2014 the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=1 author=claude-opus-5-5/claude"
+  },
+  "brief_sha256": "5defa267c5e180b9c31f97aafadc0793c143ee7fd7331ed5575aba2d0e8f1796",
+  "brief_bytes": 106309,
+  "brief_path": "docs/audits/quorum-PMAT-4036.brief.md",
+  "brief_exclusions": [
+    "evidence/crux/4036-measure/*.json",
+    "docs/audits/quorum-PMAT-4036*.json",
+    "docs/status/* (script default)"
+  ],
+  "brief_builder": {
+    "how": "quorum-review.sh run from a scratch copy with the patch below: QR_EXCLUDE_PATHS adds :(exclude) pathspecs to the brief diff; QR_KEEP_BRIEF copies the exact brief the agy lane read. diff_sha256 is unchanged judged-diff.sh over the FULL diff.",
+    "patch": "241c241,242\n< DIFF=$(git diff \"$BASE_RESOLVED...HEAD\" -- . ':(exclude)docs/status/*'); [ -n \"$DIFF\" ] || fail \"empty diff against $BASE_RESOLVED\"\n---\n> QR_EXCL=(); read -ra _qx <<<\"${QR_EXCLUDE_PATHS:-}\"; for _x in \"${_qx[@]}\"; do QR_EXCL+=(\":(exclude)$_x\"); done\n> DIFF=$(git diff \"$BASE_RESOLVED...HEAD\" -- . ':(exclude)docs/status/*' \"${QR_EXCL[@]}\"); [ -n \"$DIFF\" ] || fail \"empty diff against $BASE_RESOLVED\"\n321a323\n> [ -n \"${QR_KEEP_BRIEF:-}\" ] && cp -- \"$PROMPT_FILE\" \"$QR_KEEP_BRIEF\"\n"
+  },
+  "operator_rule": "OPERATOR, verbatim via aprender-cf 2026-09-24: 'we are STILL draining agy too quick.  we need to switch default to sonnet, agy, haiku'. Lanes 2-3 are same-family as the author (claude-opus-5-5): degraded: same-family, cop override.",
+  "degraded": "same-family (lanes 2 and 3)",
+  "supersedes": "quorum-PMAT-4036.mixed.json (not counted: the briefs differed)"
+}
