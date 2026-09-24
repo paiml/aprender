@@ -122,10 +122,7 @@ impl CudaExecutor {
         let q8_buf = unsafe { GpuBuffer::<u8>::from_raw_parts(q8_ptr, q8_len) };
 
         // Step 1: Quantize activations to Q8_1 (skip if already valid — PMAT-027)
-        if !self.q8_activation_valid {
-            self.q8_quantize_into(input, &q8_buf, k)?;
-            self.q8_activation_valid = true;
-        }
+        self.ensure_q8_activation(input, &q8_buf, k)?;
 
         // Step 2: Launch DP4A GEMV kernel
         let num_warps = self.gpu_profile.mwv_warps;
@@ -223,10 +220,7 @@ impl CudaExecutor {
         let q8_buf = unsafe { GpuBuffer::<u8>::from_raw_parts(q8_ptr, q8_len) };
 
         // Step 1: Quantize activations to Q8_1 (skip if already valid — PMAT-027)
-        if !self.q8_activation_valid {
-            self.q8_quantize_into(input, &q8_buf, k)?;
-            self.q8_activation_valid = true;
-        }
+        self.ensure_q8_activation(input, &q8_buf, k)?;
 
         // Step 2: Launch half-warp DP4A GEMV kernel
         let num_warps = self.gpu_profile.mwv_warps;
@@ -455,10 +449,7 @@ impl CudaExecutor {
         // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let q8_buf = unsafe { GpuBuffer::<u8>::from_raw_parts(q8_ptr, q8_len) };
 
-        if !self.q8_activation_valid {
-            self.q8_quantize_into(input, &q8_buf, k)?;
-            self.q8_activation_valid = true;
-        }
+        self.ensure_q8_activation(input, &q8_buf, k)?;
 
         let num_warps = self.gpu_profile.mwv_warps;
         let kernel_type = KernelType::FusedGateUpSwigluHwDp4aQ4KGemv { k, n };
@@ -616,11 +607,7 @@ impl CudaExecutor {
         // Skip Q8 quantize when the same input buffer was already quantized
         // (e.g., K/V projections share input with Q, up shares with gate).
         // Saves 3 Q8 launches per layer × 28 layers = 84 launches per step.
-        if !self.q8_activation_valid {
-            let total_elements = m * k;
-            self.q8_quantize_into(input, &q8_buf, total_elements)?;
-            self.q8_activation_valid = true;
-        }
+        self.ensure_q8_activation(input, &q8_buf, m * k)?;
 
         // Step 2: Launch batched HW DP4A kernel
         let num_warps = self.gpu_profile.mwv_warps;

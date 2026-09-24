@@ -154,6 +154,7 @@ impl CudaExecutor {
         hidden_size: u32,
         epsilon: f32,
     ) -> Result<(), GpuError> {
+        self.q8_activation_written(output.as_ptr()); // #4258
         // GH-559 DIAGNOSTIC: CPU RMSNorm bypass for Blackwell
         static CPU_RMSNORM: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let use_cpu_rmsnorm = *CPU_RMSNORM.get_or_init(|| {
@@ -308,6 +309,7 @@ impl CudaExecutor {
         num_heads: u32,
         epsilon: f32,
     ) -> Result<(), GpuError> {
+        self.q8_activation_written(output.as_ptr()); // #4258
         let kernel_type = KernelType::PerHeadRmsNorm {
             head_dim,
             num_heads,

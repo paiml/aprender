@@ -317,6 +317,33 @@ impl CudaExecutor {
         Ok(buf_output)
     }
 
+    /// #4258: quantize the first `n` elements of `input` into `q8_buf` unless the
+    /// Q8 activation cache already holds exactly that. The cache is keyed on the
+    /// source buffer, so a GEMV over a different buffer quantizes its own input
+    /// instead of reusing the last one (PMAT-027 keyed only on a bool).
+    pub(crate) fn ensure_q8_activation(
+        &mut self,
+        input: &GpuBuffer<f32>,
+        q8_buf: &GpuBuffer<u8>,
+        n: u32,
+    ) -> Result<(), GpuError> {
+        let src = (input.as_ptr(), n);
+        if !self.q8_activation_valid || self.q8_activation_src != src {
+            self.q8_quantize_into(input, q8_buf, n)?;
+            self.q8_activation_valid = true;
+            self.q8_activation_src = src;
+        }
+        Ok(())
+    }
+
+    /// #4258: a kernel is about to write device buffer `dst`; if that buffer is
+    /// the one the Q8 activation cache was quantized from, the cache is stale.
+    pub(crate) fn q8_activation_written(&mut self, dst: u64) {
+        if dst == self.q8_activation_src.0 {
+            self.q8_activation_valid = false;
+        }
+    }
+
     /// PAR-PERF-DP4A: Q8 quantize into PRE-ALLOCATED buffer (zero allocation)
     ///
     /// Five-Whys root cause (2026-02-09):

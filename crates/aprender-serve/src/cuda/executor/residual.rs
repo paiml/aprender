@@ -301,6 +301,7 @@ impl CudaExecutor {
         output: &GpuBuffer<f32>,
         n: u32,
     ) -> Result<(), GpuError> {
+        self.q8_activation_written(output.as_ptr()); // #4258
         let kernel_type = KernelType::ResidualAdd { n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         // GH-129: PTX is n-independent (n is a runtime param), so use constant cache key.
