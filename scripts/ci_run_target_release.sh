@@ -53,7 +53,13 @@ live_list() { # <dir> -> comma list of live markers, or "none"
 
 do_release() { # <dir> <token> <delete cmd…>
   local dir=$1 token=$2; shift 2
-  [ -d "$dir" ] || { echo "released: $dir is already gone"; return 0; }
+  if [ ! -d "$dir" ]; then
+    # Tree already gone (a failed register, or a re-run after a reclaim). locked() just created the lock file to
+    # take the lock; unlink it too, or every such release leaves a 0-byte file (round-3 delegate finding).
+    rm -f -- "${dir%/}.lock"
+    echo "released: $dir is already gone"
+    return 0
+  fi
   rm -f -- "$dir/.live/$token"
   local live; live=$(live_list "$dir")
   if [ "$live" != none ]; then
@@ -160,6 +166,9 @@ self_test() {
 
   out=$(bash "$me" release "$T/never-existed/run-1" j); rc=$?
   [ "$rc" = 0 ] && case_line ok "releasing a tree that is already gone is not an error" || case_line FAIL "rc $rc on a gone tree"
+  mkdir -p "$T/h"; out=$(bash "$me" release "$T/h/run-1" j); rc=$?
+  { [ "$rc" = 0 ] && [ ! -e "$T/h/run-1.lock" ]; } && case_line ok "releasing a gone tree leaves no lock file behind" \
+    || case_line FAIL "a release on a gone tree left $T/h/run-1.lock (rc $rc)"
 
   for bad in "" "../x" ".hidden" "a/b"; do
     bash "$me" register "$T/f/run-1" "$bad" > /dev/null 2>&1; rc=$?
