@@ -26,6 +26,19 @@
     "pv-contract": 1,
     "release-evidence": 1
   },
+  "by_concept": {
+    "Code": 168,
+    "Contract": 1764,
+    "Dataset": 0,
+    "Doc": 0,
+    "Entity": 0,
+    "Kernel": 835,
+    "Model": 0,
+    "Proof": 0,
+    "Statement": 408,
+    "Symbol": 168,
+    "Test": 0
+  },
   "by_anchoring": {
     "unanchored": 1823,
     "class": 5,

@@ -176,8 +176,17 @@ not_expressible:
   - {key: entity_types, reader: ontology/owl.rs}
   - {key: extractors, reader: ontology/owl.rs}
 
+# ONT-4d (R-19): the subsumption hierarchy. Each edge is read off the two concepts' own `doc` above, never
+# asserted for convenience: `Kernel` is "a contract whose kind is kernel", and `Symbol` is "a Rust symbol … a free
+# fn or an impl method", which is a `Code` item ("a Rust item — a function, type or module"). Shapes on the super
+# apply to every instance of the sub, through the rdf:type closure `pv extract` materializes into contracts.nt.
+subsumes:
+  - {sub: Kernel, sup: Contract}
+  - {sub: Symbol, sup: Code}
+
 readers:
   concepts: ontology/sigma.rs
+  subsumes: ontology/sigma.rs, ontology/extract/mod.rs, lint/subsumption.rs, ontology/owl.rs
   roles: lint/sigma_gate.rs, lint/relations_gate.rs
   symbols: lint/sigma_symbols.rs
   worlds: ontology/sigma.rs

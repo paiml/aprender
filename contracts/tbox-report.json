@@ -16,6 +16,15 @@
   },
   "consistent": true,
   "classes": 11,
-  "entailed_subsumptions": [],
+  "entailed_subsumptions": [
+    [
+      "Kernel",
+      "Contract"
+    ],
+    [
+      "Symbol",
+      "Code"
+    ]
+  ],
   "unintended_subsumptions": []
 }
