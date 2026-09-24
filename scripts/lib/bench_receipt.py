@@ -726,7 +726,48 @@ def validate_parity(block):
         return errors
     for i, lane in enumerate(lanes):
         _check_parity_lane(lane, i, errors)
+    _check_accel_absent(block, lanes, errors)
     return errors
+
+
+def _check_accel_absent(block, lanes, errors):
+    """`accel_absent` says no accelerator lane COULD be measured (#3805). It
+    must carry its reason, and it cannot sit beside a measured accel lane:
+    a block that says both is contradicting itself."""
+    if "accel_absent" not in block:
+        return
+    absent = block["accel_absent"]
+    if not isinstance(absent, dict) or not str(absent.get("reason") or "").strip():
+        _err(errors, "parity.accel_absent: must be an object with a non-empty "
+                     "reason -- an unmeasured lane owes its reason")
+        return
+    accel = sorted({str(l.get("lane")) for l in lanes
+                    if isinstance(l, dict) and l.get("lane") != "cpu"})
+    if accel:
+        _err(errors, "parity.accel_absent: declared, yet lane(s) %s were measured "
+                     "-- a block cannot both lack and carry an accel lane" % accel)
+
+
+def required_parity_lanes(receipt):
+    """(lanes the release gate requires, REPORT lines) for one host receipt.
+
+    The accel lane comes from the host's declared accelerator, so a host that
+    gains a GPU gains a required lane without anyone remembering. It is waived
+    only when the block's own `accel_absent` says the ARTIFACT resolved no
+    accelerator (#3805): the published crate has no cuda feature, and a gate
+    that demands a lane its producer cannot emit is unsatisfiable."""
+    accel = str(receipt.get("accelerator") or "")
+    want, extra = ["cpu"], None
+    if any(k in accel for k in ("sm_", "NVIDIA", "CUDA")):
+        extra = "cuda"
+    elif any(k in accel for k in ("Metal", "M1", "M2", "M3", "M4")):
+        extra = "metal"
+    block = _parity_of(receipt) or {}
+    absent = block.get("accel_absent")
+    if extra and isinstance(absent, dict) and str(absent.get("reason") or "").strip():
+        return want, ["REPORT %s lane unmeasured: %s (the artifact resolved no "
+                      "accelerator; #3805)" % (extra, absent["reason"])]
+    return want + ([extra] if extra else []), []
 
 
 def _parity_of(receipt):
@@ -779,6 +820,18 @@ def _mode_parity_ratio(path):
             return 1
     return 0
 
+def _mode_parity_required_lanes(path):
+    """Print the required lanes on one line, then any REPORT lines."""
+    try:
+        receipt = _load(path)
+    except (OSError, ValueError):
+        return 2
+    lanes, reports = required_parity_lanes(receipt)
+    print(" ".join(lanes))
+    for line in reports:
+        print(line)
+    return 0
+
 MODES = {
     "--has-bench": _mode_has_bench,
     "--bench": _mode_bench,
@@ -786,6 +839,7 @@ MODES = {
     "--has-parity": _mode_has_parity,
     "--parity": _mode_parity,
     "--parity-ratio": _mode_parity_ratio,
+    "--parity-required-lanes": _mode_parity_required_lanes,
 }
 
 
@@ -795,7 +849,7 @@ def main(argv):
     if len(argv) < 2:
         sys.stderr.write("usage: bench_receipt.py [--bench|--has-bench|"
                          "--bench-median|--parity|--has-parity|"
-                         "--parity-ratio] <receipt.json> [...]\n")
+                         "--parity-ratio|--parity-required-lanes] <receipt.json> [...]\n")
         return 2
     rc = 0
     for path in argv[1:]:
