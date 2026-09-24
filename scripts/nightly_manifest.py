@@ -28,6 +28,14 @@ on fleet from nightly build; the end. fix".
            Moves the `nightly` tag to S, replaces the assets of every target
            whose green_sha is S, and uploads the manifest LAST. It never
            deletes the release, so one red arch never unpublishes the other.
+  bins     --metadata F [--format list|cargo]
+           The shipped set, DERIVED from `cargo metadata --no-deps`: every
+           workspace [[bin]], never a hand list (#4189 -- the nightly shipped 1
+           of 28 while a list said "apr,pv"). `list` prints the comma-joined
+           bin names (NIGHTLY_BINS); `cargo` prints the `-p P --bin B` args,
+           plus `--features P/F` for each required feature. A bin name that two
+           packages define (the root facade re-exports `apr`) ships once, from
+           the member crate.
   --self-test
 
 Schema aprender-nightly-manifest/v1, agreed 2026-09-24 with aprender-49 (the
@@ -60,7 +68,7 @@ TARGETS = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
 VERSION_SHA = re.compile(r"\(([0-9a-f]{7,40})[\s),]")
 # A BUILD verdict on S means S has been handled. red-ci / ci-pending do not:
 # CI can be rerun green, and then S is work again.
-BUILD_VERDICTS = {"build-failed", "version-mismatch", "version-failed", "missing-artifact"}
+BUILD_VERDICTS = {"build-failed", "version-mismatch", "version-no-sha", "version-failed", "missing-artifact"}
 
 
 class GateError(Exception):
@@ -181,14 +189,19 @@ def record(target, sha, bins, bin_dir, dist, build_outcome="success", probe=prob
         rc, line = probe(exe)
         m = VERSION_SHA.search(line + " ")
         vsha = m.group(1) if m else None
-        # Only apr prints the commit, so a bin is bound to its SHA by bin_sha256,
-        # not by --version: a MISSING sha is fine, a DIFFERENT one is not.
+        # #4219: every [[bin]] prints its build SHA via aprender-build-sha, so a
+        # bin that prints NONE (a +no-git build, or one that never adopted the
+        # crate) is as red as one printing ANOTHER sha -- the fleet could not
+        # tell which commit it is running.
         if rc != 0 or (version and not re.search(rf"(?<![\d.]){re.escape(version)}(?![\d])", line)):
             red = red or {"sha": sha, "reason": "version-failed",
                           "detail": f"{b}: rc={rc}, wanted {version or 'any version'}: {line}"}
         elif vsha and not sha.startswith(vsha):
             red = red or {"sha": sha, "reason": "version-mismatch",
                           "detail": f"{b} prints {vsha}, built at {sha[:9]}"}
+        elif not vsha:
+            red = red or {"sha": sha, "reason": "version-no-sha",
+                          "detail": f"{b}: --version names no build SHA: {line}"}
         tools[b] = {
             "asset": os.path.basename(tar),
             "sha256": sha256_file(tar),
@@ -197,6 +210,40 @@ def record(target, sha, bins, bin_dir, dist, build_outcome="success", probe=prob
             "version_output": line,
         }
     return {"target": target, "sha": sha, "status": "red" if red else "green", "red": red, "tools": tools}
+
+
+# ---------------------------------------------------------------- bins
+
+def workspace_bins(meta):
+    """[(bin, package, required_features)] for every workspace [[bin]], one per
+    bin name, sorted. A name defined twice resolves to the package NOT at the
+    workspace root (the facade), so one cargo build never has two outputs
+    fighting over target/<t>/release/<bin>."""
+    root = os.path.join(meta["workspace_root"], "Cargo.toml")
+    members = set(meta.get("workspace_members", []))
+    by_name = {}
+    for p in meta["packages"]:
+        if members and p["id"] not in members:
+            continue
+        for t in p["targets"]:
+            if "bin" not in t["kind"]:
+                continue
+            cand = (t["name"], p["name"], tuple(t.get("required-features", [])), p["manifest_path"] == root)
+            cur = by_name.get(t["name"])
+            if cur is None or (cur[3] and not cand[3]):
+                by_name[t["name"]] = cand
+            elif not cur[3] and not cand[3] and cur[1] != cand[1]:
+                raise ValueError(f"bin {t['name']} is defined by both {cur[1]} and {cand[1]}")
+    return [(b, pkg, list(f)) for b, pkg, f, _ in sorted(by_name.values())]
+
+
+def cargo_args(bins):
+    args, pkgs = [], []
+    for b, pkg, feats in bins:
+        if pkg not in pkgs:
+            pkgs.append(pkg)
+        args += ["--bin", b] + [x for f in feats for x in ("--features", f"{pkg}/{f}")]
+    return [x for p in pkgs for x in ("-p", p)] + args
 
 
 # ---------------------------------------------------------------- merge
@@ -347,16 +394,50 @@ def self_test():
     check("a look-alike check name does not satisfy a required one",
           gate(S, None, T, [run("gate", "completed", "success"), green[1]])[0], "ci-pending")
 
+    print("bins:")
+    def pkg(name, bins, root=False, feats=None):
+        return {"id": name, "name": name,
+                "manifest_path": "/w/Cargo.toml" if root else f"/w/crates/{name}/Cargo.toml",
+                "targets": [{"name": "lib" + name, "kind": ["lib"]}] +
+                           [{"name": b, "kind": ["bin"], **({"required-features": feats} if feats else {})}
+                            for b in bins]}
+    meta = {"workspace_root": "/w", "packages": [
+        pkg("aprender", ["apr"], root=True), pkg("apr-cli", ["apr", "apr-corpus-ingest"]),
+        pkg("contracts-cli", ["pv"]), pkg("db", ["aprender-db"], feats=["server"]), pkg("core", [])]}
+    meta["workspace_members"] = [p["id"] for p in meta["packages"]]
+    wb = workspace_bins(meta)
+    check("every workspace [[bin]] ships, a lib-only crate adds none",
+          [b for b, _, _ in wb], ["apr", "apr-corpus-ingest", "aprender-db", "pv"])
+    check("a bin the facade re-exports ships from the member crate", dict((b, p) for b, p, _ in wb)["apr"], "apr-cli")
+    check("required-features become --features pkg/feat",
+          cargo_args(wb), ["-p", "apr-cli", "-p", "db", "-p", "contracts-cli", "--bin", "apr",
+                           "--bin", "apr-corpus-ingest", "--bin", "aprender-db", "--features", "db/server",
+                           "--bin", "pv"])
+    ext = dict(meta, packages=meta["packages"] + [pkg("vendored", ["tool"])])
+    check("a package outside workspace_members ships nothing", [b for b, _, _ in workspace_bins(ext)],
+          ["apr", "apr-corpus-ingest", "aprender-db", "pv"])
+    dup = dict(meta, packages=meta["packages"] + [pkg("other", ["pv"])])
+    dup["workspace_members"] = [p["id"] for p in dup["packages"]]
+    try:
+        workspace_bins(dup)
+        check("two member crates defining one bin name -> refused", "accepted", "refused")
+    except ValueError:
+        check("two member crates defining one bin name -> refused", "refused", "refused")
+
     print("record:")
     with tempfile.TemporaryDirectory() as d:
         for b in ("apr", "pv"):
             open(os.path.join(d, b), "wb").write(b"exe-" + b.encode())
             open(os.path.join(d, f"{b}-{T[0]}.tar.gz"), "wb").write(b"tar-" + b.encode())
         fake = lambda out: (lambda exe: out[os.path.basename(exe)])  # noqa: E731
-        good = {"apr": (0, f"apr 0.69.0 ({S[:9]})"), "pv": (0, "pv 0.69.0 (aprender provable-contracts verifier)")}
+        good = {"apr": (0, f"apr 0.69.0 ({S[:9]})"), "pv": (0, f"pv 0.69.0 ({S[:9]}) (aprender provable-contracts verifier)")}
         ok = record(T[0], S, ["apr", "pv"], d, d, probe=fake(good))
         check("every bin runs and prints its build SHA -> green", ok["status"], "green")
-        check("pv prints no SHA -> version_sha null", ok["tools"]["pv"]["version_sha"], None)
+        check("pv's short SHA is recorded as the full build SHA", ok["tools"]["pv"]["version_sha"], S)
+        ns = record(T[0], S, ["apr", "pv"], d, d,
+                    probe=fake(dict(good, pv=(0, "pv 0.69.0 (aprender provable-contracts verifier)"))))
+        check("a bin printing NO SHA -> version-no-sha (#4219)", (ns["status"], (ns["red"] or {}).get("reason"),
+              ns["tools"]["pv"]["version_sha"]), ("red", "version-no-sha", None))
         check("apr's short SHA is recorded as the full build SHA", ok["tools"]["apr"]["version_sha"], S)
         check("bin_sha256 hashes the EXECUTABLE, not the tarball",
               ok["tools"]["pv"]["bin_sha256"], hashlib.sha256(b"exe-pv").hexdigest())
@@ -364,8 +445,8 @@ def self_test():
         check("a binary printing ANOTHER SHA -> version-mismatch", (mm["status"], mm["red"]["reason"]),
               ("red", "version-mismatch"))
         ng = record(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, apr=(0, "apr 0.69.1 (v0.69.1+no-git)"))))
-        check("a +no-git build is not a mismatch; its version_sha is null",
-              (ng["status"], ng["tools"]["apr"]["version_sha"]), ("green", None))
+        check("a +no-git build names no SHA -> version-no-sha; its version_sha is null",
+              (ng["status"], (ng["red"] or {}).get("reason"), ng["tools"]["apr"]["version_sha"]), ("red", "version-no-sha", None))
         vf = record(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, pv=(101, "panicked"))))
         check("--version failing -> version-failed", (vf["status"], vf["red"]["reason"]), ("red", "version-failed"))
         bf = record(T[0], S, ["apr", "pv"], d, d, build_outcome="failure", probe=fake(good))
@@ -484,6 +565,9 @@ def main(argv):
     m.add_argument("--run-id", type=int, default=0)
     m.add_argument("--run-url", default="")
     m.add_argument("--now")
+    bn = sub.add_parser("bins")
+    bn.add_argument("--metadata", required=True, help="`cargo metadata --no-deps --format-version 1` output")
+    bn.add_argument("--format", default="list", choices=["list", "cargo"])
     p = sub.add_parser("publish")
     for a in ("--manifest", "--dist", "--sha"):
         p.add_argument(a, required=True)
@@ -515,6 +599,10 @@ def main(argv):
         now = a.now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         out = merge(load_manifest(a.prev), frags, a.sha, a.decision, a.targets.split(","), a.run_id, a.run_url, now)
         print(json.dumps(out, indent=1, sort_keys=True))
+        return 0
+    if a.cmd == "bins":
+        wb = workspace_bins(load(a.metadata))
+        print(",".join(b for b, _, _ in wb) if a.format == "list" else " ".join(cargo_args(wb)))
         return 0
     if a.cmd == "publish":
         publish(a.manifest, a.dist, a.sha, a.repo, os.environ["GH_TOKEN"])

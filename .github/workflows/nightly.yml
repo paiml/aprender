@@ -20,7 +20,7 @@
 # (infra-8d) files the per-SHA ticket from the manifest -- this token has
 # `contents: write` only.
 #
-# Produces, per target: {apr,pv}-{target}.tar.gz (+ .sha256; each holds
+# Produces, per target: <bin>-{target}.tar.gz for EVERY workspace [[bin]] (+ .sha256; each holds
 # <bin>-{target}/<bin>) and nightly-manifest.json, on the "nightly" prerelease.
 #
 # #3073 (operator rule 2026-09-10: "WE DO NOT USE HOSTED GITHUB RUNNERS"): every
@@ -55,8 +55,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # The bins shipped nightly. #4189 extends this to every workspace [[bin]].
-  NIGHTLY_BINS: apr,pv
+  # The shipped bins are NOT listed here: the build step derives them from
+  # `cargo metadata` (nightly_manifest.py bins) and exports NIGHTLY_BINS, so
+  # every workspace [[bin]] ships and a new one cannot be left out (#4189).
   MANIFEST_URL: https://github.com/${{ github.repository }}/releases/download/nightly/nightly-manifest.json
 
 jobs:
@@ -116,6 +117,17 @@ jobs:
           T="${{ matrix.target }}"
           CACHE="$(cd "$GITHUB_WORKSPACE/../.." && pwd)/cache-nightly/$T"
           mkdir -p "$CACHE/registry" "$CACHE/target" "$GITHUB_WORKSPACE/target"
+          # Every workspace [[bin]], derived -- never a hand list (#4189).
+          $DOCKER run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$CACHE/registry:/usr/local/cargo/registry" \
+            -w /workspace \
+            rust:1.93.0-bullseye \
+            cargo metadata --locked --no-deps --format-version 1 > "$RUNNER_TEMP/metadata.json"
+          NIGHTLY_BINS=$(python3 scripts/nightly_manifest.py bins --metadata "$RUNNER_TEMP/metadata.json")
+          BIN_ARGS=$(python3 scripts/nightly_manifest.py bins --metadata "$RUNNER_TEMP/metadata.json" --format cargo)
+          echo "NIGHTLY_BINS=$NIGHTLY_BINS" >> "$GITHUB_ENV"
+          echo "Shipping $(echo "$NIGHTLY_BINS" | tr ',' '\n' | wc -l) bins: $NIGHTLY_BINS"
           $DOCKER run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -v "$CACHE/registry:/usr/local/cargo/registry" \
@@ -124,11 +136,12 @@ jobs:
             -e CARGO_TARGET_DIR=/workspace/target \
             -e CARGO_INCREMENTAL=0 \
             -e T="$T" \
+            -e BIN_ARGS="$BIN_ARGS" \
             rust:1.93.0-bullseye \
-            sh -c 'set -e; ldd --version | head -1; cargo build --locked --release -p apr-cli -p aprender-contracts-cli --bin apr --bin pv --target "$T"'
+            sh -c 'set -e; ldd --version | head -1; cargo build --locked --release $BIN_ARGS --target "$T"'
           mkdir -p "target/$T/release" dist
-          # The --bin list above and NIGHTLY_BINS must agree; a bin named only in
-          # NIGHTLY_BINS fails this cp, which fails this step: build-failed.
+          # BIN_ARGS and NIGHTLY_BINS come from one derivation; a bin that did not
+          # build fails this cp, which fails this step: build-failed.
           for b in ${NIGHTLY_BINS//,/ }; do
             cp "$CACHE/target/$T/release/$b" "target/$T/release/$b"
             A="$b-$T"
@@ -148,12 +161,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          # Every bin's --version must print the workspace crate version. The SHA
-          # is bound by bin_sha256 in the manifest; only apr prints it today.
+          # Every bin's --version must print the workspace crate version AND its
+          # build SHA (aprender-build-sha, #4219); a bin printing none is red.
           V=$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p&&/^version *=/{gsub(/"/,"",$3);print $3;exit}' Cargo.toml)
           if [ -z "$V" ]; then echo "::error::no [workspace.package] version in Cargo.toml"; exit 1; fi
           python3 scripts/nightly_manifest.py record --target "${{ matrix.target }}" --sha "$GITHUB_SHA" \
-            --bins "$NIGHTLY_BINS" --bin-dir "target/${{ matrix.target }}/release" --dist dist \
+            --bins "${NIGHTLY_BINS:-none}" --bin-dir "target/${{ matrix.target }}/release" --dist dist \
             --build-outcome "${{ steps.build.outcome }}" --version "$V" > "dist/fragment-${{ matrix.target }}.json"
           cat "dist/fragment-${{ matrix.target }}.json"
 
