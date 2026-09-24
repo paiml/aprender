@@ -504,6 +504,17 @@ pub enum DischargeAction {
         /// Allowlist entries still `confirmed_by: pending` are RED
         #[arg(long)]
         strict: bool,
+        /// Also re-check the BUILT tree's .olean files: `timeout <T> lake env leanchecker ProvableContracts`
+        /// (non-fresh; `--fresh`, which replays Mathlib, is the nightly's, PVL-F7). rc != 0 rejects; no
+        /// `leanchecker` in the toolchain declines (PVL-001 EV-6b, #4199)
+        #[arg(long, conflicts_with = "no_lake")]
+        leanchecker: bool,
+        /// `--leanchecker`'s wall-clock limit, seconds
+        #[arg(long, default_value_t = 3600, requires = "leanchecker")]
+        leanchecker_timeout: u64,
+        /// `--leanchecker` under `ulimit -v <KIB>` (virtual memory, KiB); unset = no limit
+        #[arg(long, requires = "leanchecker")]
+        leanchecker_ulimit_v: Option<u64>,
     },
     /// `make label-ratchet`: rewrite <lean-dir>/unresolved-labels.json DOWNWARD (it never gains a label; a missing
     /// file is seeded). `check` never writes it.
