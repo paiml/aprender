@@ -61,6 +61,13 @@ root, ledger, main, build, pin_rel = sys.argv[1:6]
 sup = sys.argv[6:]
 import hashlib
 pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s[:7]) + r"[0-9a-f]*") for s in sup]
+ENCS = ("utf-8", "utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be")
+def decode_citing(raw, sup):  # SAME in judge() and pin_line(): the first encoding in which a superseded pin appears
+    for enc in ENCS:
+        if any(s[:7].encode(enc) in raw for s in sup):
+            t = raw.decode(enc, errors="replace")  # a UTF-16-BE stream also holds the LE needle one byte off: keep
+            if any(s[:7] in t for s in sup): return t  # the encoding whose DECODED text really cites
+    return None
 def pin_of(texts):  # the SAME formula --pin prints; the self-test's fixtures are pinned by --pin, so C1 proves they agree
     return f"{len(texts)}:{hashlib.sha256(chr(10).join(texts).encode()).hexdigest()[:12]}"
 date_re = re.compile(r"20[0-9]{2}-[01][0-9]-[0-3][0-9]")
@@ -79,7 +86,7 @@ led = entries(ledger)
 tracked = subprocess.run(["git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], capture_output=True).stdout.decode(errors="replace").split("\0")
 tracked = sorted({t for t in tracked if t})
 if len(tracked) < 1: print("FAIL  the tracked universe is empty"); sys.exit(1)
-citing, pinned = {}, {}
+citing, pinned, decoded = {}, {}, {}
 for rel in tracked:
     if rel in (os.path.relpath(ledger, root), pin_rel):
         continue  # the ledger and the pin file declare the old pins. NOTHING else is exempt by path or shape: a roadmap
@@ -90,14 +97,15 @@ for rel in tracked:
             raw = h.read()
     except OSError:
         continue
-    # NO binary skip: a NUL byte made git diff AND this scan blind to a planted receipt (#3741 quorum r5). The byte
-    # prefilter keeps real binaries cheap; one that happens to contain the hex is ledgered like any file.
-    if not any(s[:7].encode() in raw for s in sup): continue
-    text = raw.decode("utf-8", errors="replace")
+    # NO binary skip: a NUL byte made git diff AND this scan blind to a planted receipt (#3741 quorum r5), and so did
+    # UTF-16 (r6). The byte prefilter, in every encoding a text tool writes, keeps real binaries cheap; one that
+    # happens to contain the hex is ledgered like any file.
+    text = decode_citing(raw, sup)
+    if text is None: continue
     lines, texts = [], []
     for i, line in enumerate(text.splitlines(), 1):
         if any(pt.search(line) for pt in pats): lines.append(i); texts.append(line)
-    if lines: citing[rel] = lines; pinned[rel] = pin_of(texts)
+    if lines: citing[rel] = lines; pinned[rel] = pin_of(texts); decoded[rel] = text
 for rel, lines in sorted(citing.items()):
     if rel not in led:
         print(f"FAIL  R1 {rel}:{lines[0]} cites a superseded comparator pin and is not on {os.path.relpath(ledger, root)} "
@@ -117,7 +125,7 @@ for rel, (cls, why, pin) in sorted(led.items()):
         print(f"FAIL  R6 {rel} citing line(s) {','.join(map(str, citing[rel]))} pin {pinned[rel]}, the ledger pins {pin}: {what} "
               f"(bash scripts/check_comparator_pin_citations.sh --pin {rel})"); bad = 1
     if cls == "historical":
-        text = open(os.path.join(root, rel), encoding="utf-8", errors="replace").read()
+        text = decoded[rel]  # as the scan decoded it (a UTF-16 record's date is not readable as UTF-8)
         if not (date_re.search(text) or date_re.search(rel) or date_re.search(why)):
             print(f"FAIL  R3 {rel} is ledgered as historical but neither it, its path nor its ledger line carries a date (YYYY-MM-DD)"); bad = 1
 if main != "-":
@@ -140,7 +148,16 @@ pin_line() {
 import hashlib, re, sys
 root, rel = sys.argv[1:3]
 pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s[:7]) + r"[0-9a-f]*") for s in sys.argv[3:]]
-texts = [l for l in open(f"{root}/{rel}", encoding="utf-8", errors="replace").read().splitlines() if any(p.search(l) for p in pats)]
+sup = sys.argv[3:]
+ENCS = ("utf-8", "utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be")
+def decode_citing(raw, sup):  # SAME in judge() and pin_line(): the first encoding in which a superseded pin appears
+    for enc in ENCS:
+        if any(s[:7].encode(enc) in raw for s in sup):
+            t = raw.decode(enc, errors="replace")  # a UTF-16-BE stream also holds the LE needle one byte off: keep
+            if any(s[:7] in t for s in sup): return t  # the encoding whose DECODED text really cites
+    return None
+text = decode_citing(open(f"{root}/{rel}", "rb").read(), sup) or ""
+texts = [l for l in text.splitlines() if any(p.search(l) for p in pats)]
 if not texts: sys.exit(f"{rel} cites no superseded pin")
 print(f"{len(texts)}:{hashlib.sha256(chr(10).join(texts).encode()).hexdigest()[:12]}")
 PY
@@ -211,6 +228,11 @@ if [ "${1:-}" = "--self-test" ]; then
         && printf 'dated 2026-08-24 elsewhere in the file\n' >> "$TMP/c17/evidence/parity/old-ratio.md"
     fixture c18 && printf '\0comparator %s measured just now, CURRENT\n' "$OLD" > "$TMP/c18/evidence/parity/nul.md" && git -C "$TMP/c18" add -A
     expect 'C18 a planted receipt behind a NUL byte (git diff shows "Binary files differ") -> R1' "$TMP/c18" 1 'R1 evidence/parity/nul.md:1'
+    fixture c19 && python3 -c 'import sys; open(sys.argv[1], "wb").write(("comparator %s measured just now, CURRENT\n" % sys.argv[2]).encode("utf-16"))' "$TMP/c19/evidence/parity/u16.md" "$OLD" && git -C "$TMP/c19" add -A
+    expect 'C19 a planted receipt saved as UTF-16 (git diff: "Binary files differ") -> R1' "$TMP/c19" 1 'R1 evidence/parity/u16.md:1'
+    fixture c19b && python3 -c 'import sys; open(sys.argv[1], "wb").write(("dated 2026-08-24, comparator %s\n" % sys.argv[2]).encode("utf-16-be"))' "$TMP/c19b/evidence/parity/u16.md" "$OLD" \
+        && printf 'evidence/parity/u16.md\thistorical\ta UTF-16 record\t%s\n' "$(pin_line "$TMP/c19b" evidence/parity/u16.md)" >> "$TMP/c19b/scripts/comparator_pin_citations.txt" && git -C "$TMP/c19b" add -A
+    expect 'C19b --pin and the judge decode UTF-16 the same way: ledgered by --pin -> green' "$TMP/c19b" 0 'every one ledgered'
     expect 'C17 a dated line EDITED IN PLACE into a live claim (same count, a date elsewhere) -> R6' "$TMP/c17" 1 'a citing line was EDITED in place'
     fixture c16 && printf 'evidence/parity/old-ratio.md\thistorical\tdated in the file\ntests/fx/case.json\tfixture\ta sample value\n' > "$TMP/c16/scripts/comparator_pin_citations.txt"
     expect 'C16 a ledger line with no pin -> RED, never a pass' "$TMP/c16" 1 'TAB<n>:<sha12>'
@@ -240,7 +262,8 @@ PY
         print(f"FAIL  R2' 1 'R2 stale ledger entry' "$TMP/c4"
     mutant drop-r3 '        if not (date_re.search(text) or date_re.search(rel) or date_re.search(why)):' '        if False:' 1 'R3 evidence/parity/old-ratio.md' "$TMP/c5"
     mutant drop-r6 '    if pinned[rel] != pin:' '    if False:' 1 'R6 evidence/parity/old-ratio.md' "$TMP/c14"
-    mutant nul-skip '    if not any(s[:7].encode() in raw for s in sup): continue' '    if b"\0" in raw[:4096] or not any(s[:7].encode() in raw for s in sup): continue' 1 'R1 evidence/parity/nul.md:1' "$TMP/c18"
+    mutant nul-skip '    if text is None: continue' '    if text is None or b"\0" in raw[:4096]: continue' 1 'R1 evidence/parity/nul.md:1' "$TMP/c18"
+    mutant utf8-only 'ENCS = ("utf-8", "utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be")' 'ENCS = ("utf-8",)' 1 'R1 evidence/parity/u16.md:1' "$TMP/c19"
     mutant count-only '    if pinned[rel] != pin:' '    if pinned[rel].split(":")[0] != pin.split(":")[0]:' 1 'EDITED in place' "$TMP/c17"
     mutant drop-r4 '    if mled is not None and len(led) > len(mled):' '    if False:' 1 'R4 the ledger GREW' "$TMP/c6" "$TMP/c6/main-ledger.txt"
     mutant shape-exempt 'pin_rel):' 'pin_rel) or rel.startswith("docs/roadmaps/entries/PMAT-"):' 1 'R1 docs/roadmaps/entries/PMAT-9.yaml:1' "$TMP/c11"

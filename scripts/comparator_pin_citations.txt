@@ -22,8 +22,8 @@ docs/audits/impl-PMAT-929-receipt.md	historical	a dated record of a measurement 
 docs/audits/parity-evidence-pr-plan.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1:53bf7fae5dc1
 docs/roadmaps/entries/PMAT-3563.yaml	historical	ticket record quoting its issue, which names the old pin; dated 2026-09-24 [39173bcac]	2:d49fdd8340f2
 docs/roadmaps/entries/PMAT-3740.yaml	historical	ticket record quoting its issue, which names the old pin; dated 2026-09-24 [39173bcac]	1:232f9d7fb82a
-docs/roadmaps/entries/PMAT-3741.yaml	historical	ticket record quoting its issue, which names the old pin; dated 2026-09-24 [39173bcac]	14:3ef4c888b28f
-docs/roadmaps/roadmap.yaml	historical	ticket record quoting its issue, which names the old pin; dated 2026-09-24 [39173bcac]	18:44c3ec66b475
+docs/roadmaps/entries/PMAT-3741.yaml	historical	ticket record quoting its issue, which names the old pin; dated 2026-09-24 [39173bcac]	14:6f18188b0fbe
+docs/roadmaps/roadmap.yaml	historical	ticket record quoting its issue, which names the old pin; dated 2026-09-24 [39173bcac]	18:401bf0009da6
 docs/specifications/0.66-performance-parity-report.md	historical	a dated spec/contract line naming the pin a measurement was made against [39173bcac]	1:ee1a37d8d96d
 docs/specifications/PP-LLAMA-001-MASTER.md	historical	a dated spec/contract line naming the pin a measurement was made against [39173bcac]	2:ef251fe400ce
 docs/specifications/PP-LLAMA-001-RATIONALE.md	historical	a dated spec/contract line naming the pin a measurement was made against [39173bcac]	3:678133cbf553
