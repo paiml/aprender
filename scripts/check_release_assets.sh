@@ -115,7 +115,9 @@ check_tag() { # check_tag TAG -> 0 complete · 1 missing · 2 ENV
     have=$(read_assets "$tag") || return 2
     while IFS= read -r want; do
         [ -n "$want" ] || continue
-        if printf '%s\n' "$have" | grep -qxF "$want"; then
+        # a here-string, never `printf | grep -q`: under pipefail grep's early exit on a
+        # match SIGPIPEs printf, and a PRESENT asset read as MISSING (~1 run in 8)
+        if grep -qxF -- "$want" <<< "$have"; then
             printf 'ok      %s\n' "$want"
         else
             printf 'MISSING %s\n' "$want"
@@ -174,7 +176,7 @@ selftest() {
         grep -q "MISSING apr-$tag-aarch64-unknown-linux-gnu-cpu.tar.gz" <<< "$out"
     # Eighteen, not "some": a table that expected four would pass the rows above.
     row 0 "eighteen assets are expected, and five of them are apr tarballs (one darwin)" \
-        bash -c "[ \$(bash '$0' --list '$tag' | grep -c .) -eq 18 ] && [ \$(bash '$0' --list '$tag' | grep -c '^apr-.*tar.gz\$') -eq 5 ] && bash '$0' --list '$tag' | grep -qx 'apr-$tag-aarch64-apple-darwin-cpu.tar.gz'"
+        bash -c "[ \$(bash '$0' --list '$tag' | grep -c .) -eq 18 ] && [ \$(bash '$0' --list '$tag' | grep -c '^apr-.*tar.gz\$') -eq 5 ] && [ \$(bash '$0' --list '$tag' | grep -cx 'apr-$tag-aarch64-apple-darwin-cpu.tar.gz') -eq 1 ]"
 
     printf '%s/%s rows\n' "$((n - red))" "$n"
     [ "$red" = 0 ] || return 1
