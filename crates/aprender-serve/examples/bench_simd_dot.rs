@@ -16,6 +16,8 @@ mod x86 {
     const Q4_BLOCK_BYTES: usize = 18; // 2 bytes scale + 16 bytes quants
 
     fn has_avx_vnni() -> bool {
+        // SAFETY: `cpuid` exists on every x86_64 CPU (this module is x86_64-only), and leaf 7
+        // sub-leaf 1 is a read-only feature query with no side effects.
         let result = unsafe { __cpuid_count(7, 1) };
         (result.eax & (1 << 4)) != 0
     }
@@ -121,6 +123,13 @@ mod x86 {
     }
 
     pub fn main() {
+        // Both kernels are `#[target_feature(enable = "avx2", enable = "fma")]`: calling either on
+        // a CPU without them is undefined behaviour, so this is the precondition every `unsafe`
+        // call below relies on (#4152 found the calls made with no check at all).
+        if !(is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma")) {
+            eprintln!("bench_simd_dot: this CPU lacks AVX2+FMA; nothing to run");
+            return;
+        }
         println!("=== SIMD Dot Product Benchmark ===\n");
         println!("CPU: Intel Core Ultra 7 155H");
         println!("AVX-VNNI available: {}", has_avx_vnni());
@@ -143,6 +152,8 @@ mod x86 {
 
         // Warmup
         for _ in 0..1000 {
+            // SAFETY: AVX2 and FMA were detected at the top of `main`, the whole
+            // `#[target_feature]` contract; the slices are live borrows for the call.
             unsafe {
                 let _ = dot_avx2(&q4_data, &q8_scales, &q8_quants);
             }
@@ -152,6 +163,8 @@ mod x86 {
         let start = Instant::now();
         let mut result_avx2 = 0.0f32;
         for _ in 0..ITERATIONS {
+            // SAFETY: AVX2 and FMA were detected at the top of `main`, the whole
+            // `#[target_feature]` contract; the slices are live borrows for the call.
             unsafe {
                 result_avx2 = dot_avx2(&q4_data, &q8_scales, &q8_quants);
             }
@@ -164,6 +177,8 @@ mod x86 {
         if has_avx_vnni() {
             // Warmup
             for _ in 0..1000 {
+                // SAFETY: AVX2 and FMA were detected at the top of `main`, the whole
+                // `#[target_feature]` contract; the slices are live borrows for the call.
                 unsafe {
                     let _ = dot_avx_vnni(&q4_data, &q8_scales, &q8_quants);
                 }
@@ -172,6 +187,8 @@ mod x86 {
             let start = Instant::now();
             let mut r = 0.0f32;
             for _ in 0..ITERATIONS {
+                // SAFETY: AVX2 and FMA were detected at the top of `main`, the whole
+                // `#[target_feature]` contract; the slices are live borrows for the call.
                 unsafe {
                     r = dot_avx_vnni(&q4_data, &q8_scales, &q8_quants);
                 }
