@@ -66,5 +66,5 @@ Each "mutant … killed" below means the named row went RED on a copy with that 
 
 ## Limits
 
-- **No live run:** the real smoke and gather have not been run end to end on lambda + gx10 in this branch. The case tables stub `crux_sweep_shards.sh`, `ssh` and the judge's release scope. The real judge's release scope is tested in `check_model_ladder.sh --self-test`, and the real admission in `nightly_admission_cases.py`.
+- **No live run yet: #4132.** The real smoke and gather have not been run end to end on lambda + gx10 in this branch. The case tables stub `crux_sweep_shards.sh`, `ssh` and the judge's release scope. The real judge's release scope is tested in `check_model_ladder.sh --self-test`, and the real admission in `nightly_admission_cases.py`. The live dress rehearsal through all four callers is **#4132**. Its done_when: a SCOPED verdict through all four callers on real hardware before the 0.70 freeze, with both negative controls RED.
 - **Legacy nights:** nights written before 215da7f79 record absolute paths. Measured on another host, they're refused as "receipts are gone". The nightly timer (paiml/infra#959) isn't applied yet, so none exist in production.
