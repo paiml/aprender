@@ -17754,6 +17754,27 @@ roadmap:
   - bug
   notes: null
 
+- id: PMAT-3177
+  github_issue: 3177
+  item_type: task
+  title: 'ci: workspace-test shards wait on guard-tree, so a RED guard stops burning shard runner time (#3177)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-36
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: .github/workflows/ci.yml
+  acceptance_criteria:
+  - 'workspace-test-shard declares needs: [guard-tree]; a failed guard-tree skips every shard'
+  - 'the required check workspace-test still REPORTS (red) when the shards are skipped, so the merge queue never waits on a missing check'
+  - 'case table: guard red -> shards skipped, workspace-test red; guard green -> shards run; planted mutants go RED'
+  - 'green-path cost recorded from measured guard-tree and shard durations'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-3186
   github_issue: 3186
   item_type: task
