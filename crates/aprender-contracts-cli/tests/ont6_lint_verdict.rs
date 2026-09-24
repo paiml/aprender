@@ -47,9 +47,27 @@ fn repo_contracts() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts")
 }
 
+struct Corpus {
+    dir: PathBuf,
+    _root: tempfile::TempDir,
+}
+
+impl Corpus {
+    fn path(&self) -> &Path {
+        &self.dir
+    }
+}
+
 /// A corpus directory holding the PVL-1 control contract, and optionally a `lint-baseline.json`.
-fn corpus(baseline: Option<&str>) -> tempfile::TempDir {
-    let d = tempfile::tempdir().expect("corpus dir is creatable");
+/// Nested one level inside a private tempdir: `pv lint` takes the dir's PARENT as the
+/// project root, and a bare tempdir's parent is the shared `/tmp` (#4207).
+fn corpus(baseline: Option<&str>) -> Corpus {
+    let root = tempfile::tempdir().expect("corpus dir is creatable");
+    let d = Corpus {
+        dir: root.path().join("contracts"),
+        _root: root,
+    };
+    std::fs::create_dir(d.path()).expect("nested corpus dir is creatable");
     std::fs::copy(
         repo_contracts().join("softmax-kernel-v1.yaml"),
         d.path().join("softmax-kernel-v1.yaml"),
@@ -109,12 +127,9 @@ fn explicit_empty_armed_set_declines_r2() {
 
 #[test]
 fn a_failing_armed_gate_rejects_at_exit_1() {
-    let d = tempfile::tempdir().expect("corpus dir");
-    std::fs::copy(
-        repo_contracts().join("softmax-kernel-v1.yaml"),
-        d.path().join("softmax-kernel-v1.yaml"),
-    )
-    .expect("control copies");
+    // Through `corpus()`, not a bare tempdir: on a host with a stray `/tmp/scripts/`
+    // baseline, PV-DUP-002 would also reject, and this test could pass for the wrong reason.
+    let d = corpus(None);
     std::fs::write(
         d.path().join("broken-v1.yaml"),
         "metadata:\n  version: not-a-contract\n",
