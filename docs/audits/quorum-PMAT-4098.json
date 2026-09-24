@@ -1,0 +1,146 @@
+{
+  "ticket": "PMAT-4098",
+  "base": "origin/chore/0.69.1-merge-back",
+  "base_resolved": "origin/chore/0.69.1-merge-back",
+  "base_note": "no origin/origin/chore/0.69.1-merge-back exists; judged against the local ref",
+  "head": "217b29ac97048e789cb351fde51242b6386e6b28",
+  "diff_sha256": "6d26591178a97b5ddfeac419358c479ac3b4957382392998c39ca102c6662bf1",
+  "width": 2,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 35491,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements PMAT-4098.\n\n- \"On a PR, merge group or push the table runs a deterministic sample ... every mutant when the diff touches a file they test, else a rotating slice keyed by the head sha\" is satisfied. The `crux_mutant_plan.py` script checks if `changed` overlaps with `WATCHED`, falling back to `off = int((head or \"\")[:8], 16) % total` for rotation.\n- \"The PR mode refuses vacuously small runs: a floor on the mutants sampled and on the rows the table judged\" is satisfied. The python planner verifies `if sample < floor:` and `if len(sel) < floor:`, and `check_crux_inference_judge.sh` verifies `if [ \"$PASS\" -lt \"$MIN_ROWS\" ]; then broke ...` (defaulting to a floor of 120).\n- \"The full set runs nightly ... and fails the job loudly\" is fulfilled by adding the step in `.github/workflows/guards-nightly.yml` using `CRUX_MUTANTS: all` and the updated `guards_nightly_manifest.txt`.\n- \"Not in scope: raising guard-tree's timeout\" is respected, as `guard-tree.yml` and timeouts were left untouched.\n\nThere is no weakening of CI checks; in fact, the script has been hardened against false positives (e.g., exiting 3 when `CRUX_NO_MUTANTS` is set to ensure these runs never erroneously pass as a CI verdict).",
+      "findings": [],
+      "raw_bytes": 3814,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements CI-fast mode for check_crux_inference_judge.sh (#4098) as specified by ticket PMAT-4098:\n1. On PRs, merge groups, and pushes, a deterministic sample of F6 mutants is run: all 24 mutants when the diff touches any of the tested files (WATCHED), otherwise a rotating slice of 6 mutants keyed by the head sha.\n2. Anti-vacuity floors are strictly enforced: a floor on the mutants sampled (MIN_FLOOR = 6, refusing smaller samples with exit 2) and on the table rows judged (MIN_ROWS = 120, failing with exit 1 if under floor). Zero-mutant runs and overrides exit 3 (never a verdict).\n3. The full set runs nightly in .github/workflows/guards-nightly.yml with CRUX_MUTANTS=all, joined in scripts/guards_nightly_manifest.txt and verified by check_guards_nightly_manifest.sh.\n4. guard-tree timeout was not raised (ci.yml untouched).\nAll 17 case table tests in scripts/check_crux_mutant_plan.sh pass (measured), shellcheck -S error and bash -n pass (measured), and check_guards_are_wired.sh passes (measured). No refuting findings found.",
+      "findings": [],
+      "raw_bytes": 3528,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 2: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=2 author=claude-opus-5-5/claude"
+  }
+}
