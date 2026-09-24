@@ -1,0 +1,366 @@
+{
+  "ticket": "PMAT-4116",
+  "base": "origin/chore/0.69.1-merge-back",
+  "base_resolved": "origin/chore/0.69.1-merge-back",
+  "base_note": "no origin/origin/chore/0.69.1-merge-back exists; judged against the local ref",
+  "head": "a48ab262109faa75efa4fabbef901b68296851eb",
+  "diff_sha256": "787949a1b38712e2b8fa7e08983892604fe62ec36e0dd406d5184d3e9e5c15c0",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 63931,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff completely satisfies the requirements of PMAT-4116. The R4 `--via` check and R7 `--scope-tree`/`--crux` flags are properly added to the `check_publish_preflight.sh` gate. The `crux-smoke` judge skips `*.meta.json` files by name as specified while still failing on other invalid receipts. The control-only smoke output correctly rewords the ok line without skipping validation. The `apr capability` CLI reference is completely stubbed out with its chapter, PCU contract, and `SUMMARY.md` entry. Finally, the newly added `SEC010` bashrs suppression provides its reason directly on the line above it as requested. No omissions or unintended changes were found.",
+      "findings": [
+        {
+          "claim": "f5 preflight tooling (R4 cut-contained-in-main with --via, R7 --scope-tree / --crux DIR, r7_scope_judge.sh, KNOWN-RED adjudicator) lands",
+          "file": "scripts/check_publish_preflight.sh",
+          "fix": "",
+          "grounding": "cited",
+          "line": 365
+        },
+        {
+          "claim": "the crux-smoke judge skips the sweep's *.meta.json merge meta by name; any other non-receipt still FAILs",
+          "file": "scripts/lib/crux_smoke_scope.py",
+          "fix": "",
+          "grounding": "cited",
+          "line": 86
+        },
+        {
+          "claim": "rewords the ok line when EVERY cell of a leg is a positive control: \"every cell is a positive control (control-only smoke)\" instead of \"control GREEN\". No check is bypassed.",
+          "file": "scripts/lib/crux_smoke_scope.py",
+          "fix": "",
+          "grounding": "cited",
+          "line": 122
+        },
+        {
+          "claim": "apr capability has a book chapter, a page contract and a SUMMARY entry",
+          "file": "book/src/cli/capability.md",
+          "fix": "",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "any suppression is per line, with its reason on the line above",
+          "file": "scripts/check_publish_preflight.sh",
+          "fix": "",
+          "grounding": "cited",
+          "line": 795
+        }
+      ],
+      "raw_bytes": 4710,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PASS: Diff origin/chore/0.69.1-merge-back...HEAD for PMAT-4116 completely satisfies all ticket acceptance criteria, passes all gates, and contains nothing forbidden or unrequested.\n\nMeasured verification results:\n1. `check_publish_preflight.sh --selftest`: 59/59 rows PASS.\n2. `check_model_ladder.sh --self-test`: 147 cases, 0 bad. Mutants `meta-not-skipped`, `any-json-skipped`, and `control-only-hidden` all killed.\n3. `check_bashrs_gate.sh`: PASS, 413 files linted, 0 SEC/DET/IDEM errors. The bashrs SEC010 suppression in check_publish_preflight.sh is per-line with reason documented on the line above.\n4. Quality gates:\n   - `check_shell_lint_ratchet.sh`: PASS (ratcheted, baseline did not grow).\n   - `check_no_claim_literals.sh`: PASS (0 new claim literals).\n   - `check_no_fabricated_baselines.sh`: PASS (0 asserted competitor baselines).\n   - `check_perf_claims_cite_receipts.sh`: PASS (0 new uncited speed comparisons, all citations resolve).\n   - `check_tree_reader_tests.sh`: PASS (151 tree-reader targets, registry equals derived set).\n5. CLI chapter & contract:\n   - `book/src/cli/capability.md`, `contracts/apr-page-cli-capability-v1.yaml`, and `book/src/SUMMARY.md` entry present.\n   - CLI command parity: 113/113 subcommands covered (0 missing).\n   - `pv validate contracts/apr-page-cli-capability-v1.yaml`: 0 errors, 0 warnings.\n6. Crux-smoke:\n   - Skips `*.meta.json` merge meta by name when `schema` and `cells` are absent; any other non-receipt fails.\n   - Control-only smoke rewording sits strictly after the control validation branch; no check is bypassed.\n7. No crate code is modified (`git diff` over `crates/`, `src/`, `Cargo.toml`, `Cargo.lock` is empty). All receipt claims are backed by the diff and measured on tree.",
+      "findings": [
+        {
+          "claim": "f5 preflight tooling (R4 cut-contained-in-main with --via, R7 --scope-tree / --crux DIR, r7_scope_judge.sh, KNOWN-RED adjudicator) lands; check_publish_preflight.sh --selftest passes (59/59 rows)",
+          "file": "scripts/check_publish_preflight.sh",
+          "fix": "",
+          "grounding": "measured",
+          "line": 365
+        },
+        {
+          "claim": "crux-smoke judge skips the sweep's *.meta.json merge meta by name (schema and cells absent), while any other non-receipt still FAILs",
+          "file": "scripts/lib/crux_smoke_scope.py",
+          "fix": "",
+          "grounding": "cited",
+          "line": 86
+        },
+        {
+          "claim": "control-only smoke ok line rewording is wording only and sits after the elif checking for missing or non-GREEN control; check_model_ladder.sh --self-test passes (147 cases, 0 bad; meta-not-skipped, any-json-skipped, control-only-hidden killed)",
+          "file": "scripts/lib/crux_smoke_scope.py",
+          "fix": "",
+          "grounding": "measured",
+          "line": 122
+        },
+        {
+          "claim": "apr capability CLI chapter, page contract, and SUMMARY.md entry added; CLI chapter parity is 113/113 (0 missing); pv validate contracts/apr-page-cli-capability-v1.yaml is valid with 0 errors",
+          "file": "book/src/cli/capability.md",
+          "fix": "",
+          "grounding": "measured",
+          "line": 1
+        },
+        {
+          "claim": "bashrs SEC010 suppression is per-line with reason on the line above; check_bashrs_gate.sh passes (413 files, 0 SEC/DET/IDEM); shell-lint, claim-literal, fabricated-baseline, perf-citation, and tree-reader gates all PASS",
+          "file": "scripts/check_publish_preflight.sh",
+          "fix": "",
+          "grounding": "measured",
+          "line": 795
+        }
+      ],
+      "raw_bytes": 8308,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fully satisfies all acceptance criteria of ticket PMAT-4116. Preflight tooling incorporates R4 containment verification with `--via` as well as R7 `--scope-tree` and `--crux` parameters, along with the supporting scripts (`lock_contained.py`, `r7_scope_judge.sh`, and `adjudicate_known_red_receipt.py`). The `crux_smoke_scope.py` judge cleanly ignores `*.meta.json` merge metadata while continuing to reject any unrecognized JSON or non-receipts, and correctly handles control-only smoke output without bypassing positive control checks. The `apr capability` CLI documentation chapter, page contract, and summary entry are added. Finally, bashrs suppressions adhere to the per-line comment format with justification above. No refutations, regressions, or unauthorized changes were found.",
+      "findings": [
+        {
+          "claim": "f5 preflight tooling (R4 cut-contained-in-main with --via, R7 --scope-tree / --crux DIR, r7_scope_judge.sh, KNOWN-RED adjudicator) lands cleanly",
+          "file": "scripts/check_publish_preflight.sh",
+          "fix": "",
+          "grounding": "cited",
+          "line": 357
+        },
+        {
+          "claim": "the crux-smoke judge skips the sweep's *.meta.json merge meta by name; any other non-receipt still FAILs",
+          "file": "scripts/lib/crux_smoke_scope.py",
+          "fix": "",
+          "grounding": "cited",
+          "line": 86
+        },
+        {
+          "claim": "rewords the ok line when EVERY cell of a leg is a positive control: 'every cell is a positive control (control-only smoke)' instead of 'control GREEN', positioned after the failure check so validation is never bypassed",
+          "file": "scripts/lib/crux_smoke_scope.py",
+          "fix": "",
+          "grounding": "cited",
+          "line": 122
+        },
+        {
+          "claim": "apr capability has a book chapter, a page contract and a SUMMARY entry satisfying CLI parity requirements",
+          "file": "book/src/cli/capability.md",
+          "fix": "",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "bashrs SEC010 suppression is per-line with reason documented directly on the line above",
+          "file": "scripts/check_publish_preflight.sh",
+          "fix": "",
+          "grounding": "cited",
+          "line": 795
+        }
+      ],
+      "raw_bytes": 5192,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "book/src/cli/capability.md",
+      "line": 1,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "apr capability CLI chapter, page contract, and SUMMARY.md entry added; CLI chapter parity is 113/113 (0 missing); pv validate contracts/apr-page-cli-capability-v1.yaml is valid with 0 errors",
+        "apr capability has a book chapter, a page contract and a SUMMARY entry",
+        "apr capability has a book chapter, a page contract and a SUMMARY entry satisfying CLI parity requirements"
+      ]
+    },
+    {
+      "file": "scripts/check_publish_preflight.sh",
+      "line": 357,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "f5 preflight tooling (R4 cut-contained-in-main with --via, R7 --scope-tree / --crux DIR, r7_scope_judge.sh, KNOWN-RED adjudicator) lands cleanly"
+      ]
+    },
+    {
+      "file": "scripts/check_publish_preflight.sh",
+      "line": 365,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "f5 preflight tooling (R4 cut-contained-in-main with --via, R7 --scope-tree / --crux DIR, r7_scope_judge.sh, KNOWN-RED adjudicator) lands",
+        "f5 preflight tooling (R4 cut-contained-in-main with --via, R7 --scope-tree / --crux DIR, r7_scope_judge.sh, KNOWN-RED adjudicator) lands; check_publish_preflight.sh --selftest passes (59/59 rows)"
+      ]
+    },
+    {
+      "file": "scripts/check_publish_preflight.sh",
+      "line": 795,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "any suppression is per line, with its reason on the line above",
+        "bashrs SEC010 suppression is per-line with reason documented directly on the line above",
+        "bashrs SEC010 suppression is per-line with reason on the line above; check_bashrs_gate.sh passes (413 files, 0 SEC/DET/IDEM); shell-lint, claim-literal, fabricated-baseline, perf-citation, and tree-reader gates all PASS"
+      ]
+    },
+    {
+      "file": "scripts/lib/crux_smoke_scope.py",
+      "line": 86,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "crux-smoke judge skips the sweep's *.meta.json merge meta by name (schema and cells absent), while any other non-receipt still FAILs",
+        "the crux-smoke judge skips the sweep's *.meta.json merge meta by name; any other non-receipt still FAILs"
+      ]
+    },
+    {
+      "file": "scripts/lib/crux_smoke_scope.py",
+      "line": 122,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "control-only smoke ok line rewording is wording only and sits after the elif checking for missing or non-GREEN control; check_model_ladder.sh --self-test passes (147 cases, 0 bad; meta-not-skipped, any-json-skipped, control-only-hidden killed)",
+        "rewords the ok line when EVERY cell of a leg is a positive control: \"every cell is a positive control (control-only smoke)\" instead of \"control GREEN\". No check is bypassed.",
+        "rewords the ok line when EVERY cell of a leg is a positive control: 'every cell is a positive control (control-only smoke)' instead of 'control GREEN', positioned after the failure check so validation is never bypassed"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 2: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}
