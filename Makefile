@@ -485,10 +485,14 @@ COV_REFUSE_GLOBAL_MOLD = @if [ -f "$${CARGO_HOME:-$$HOME/.cargo}/config.toml" ] 
 #   Test infrastructure:
 #     - test_factory      : Test code, not production
 #     - demo/             : Demo/example code
-# NOTE: Coverage tracks the main aprender library only.
-# Subcrate tests still RUN (--workspace), exercising main lib code paths,
-# but subcrate source files are excluded from the coverage REPORT.
-# External deps (trueno, realizar, .cargo) also excluded.
+# NOTE (#3839): coverage measures the MONOREPO. #4023 scopes every report by a derived
+# `-p` list, so aprender-serve/-train/-compute (formerly realizar/entrenar/trueno) are
+# measured. The pre-monorepo `trueno|realizar/|entrenar/` alternatives were removed: in-tree
+# `entrenar/` matched 0 files, `realizar/` 7 unrelated aprender-train files, and `trueno`
+# 54/56 of aprender-zram while missing aprender-compute entirely.
+#   aprender-compute/src/backends/gpu/ : no coverage runner executes it (no GPU lane), so it
+#   is kept out of the denominator until one exists - excluded AND unrun, never "measured 0%".
+# Named subcrates below (apr-cli, aprender-shell, ...) and .cargo stay excluded.
 # Subcrate code, external deps, and modules requiring external model files for coverage.
 # models/ = dead code per UCBD §9.1 (scheduled for deletion).
 # serialization/ = SafeTensors IO (needs actual .safetensors files).
@@ -498,7 +502,7 @@ COV_REFUSE_GLOBAL_MOLD = @if [ -f "$${CARGO_HOME:-$$HOME/.cargo}/config.toml" ] 
 # format/rosetta = cross-format parity (needs model files).
 # transfer/ = transfer learning (needs pretrained models).
 # bench/ = benchmark visualization (non-core).
-COVERAGE_EXCLUDE_REGEX := \.cargo/|trueno|realizar/|entrenar/|fuzz/|golden_traces/|hf_hub/|demo/|test_factory|pacha/|showcase/|apr-cli/|aprender-shell/|aprender-tsp/|aprender-monte-carlo/|chaos\.rs|audio/|format/quantize\.rs|format/signing\.rs|voice/|playback\.rs|rustlib/src/rust|models/|serialization/|speech/|format/onnx|format/converter|format/rosetta|transfer/|bench_viz/
+COVERAGE_EXCLUDE_REGEX := \.cargo/|aprender-compute/src/backends/gpu/|fuzz/|golden_traces/|hf_hub/|demo/|test_factory|pacha/|showcase/|apr-cli/|aprender-shell/|aprender-tsp/|aprender-monte-carlo/|chaos\.rs|audio/|format/quantize\.rs|format/signing\.rs|voice/|playback\.rs|rustlib/src/rust|models/|serialization/|speech/|format/onnx|format/converter|format/rosetta|transfer/|bench_viz/
 
 # Coverage threshold (enforced: fail if below)
 COV_THRESHOLD := 95
