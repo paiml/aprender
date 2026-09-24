@@ -18191,6 +18191,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-4045
+  github_issue: 4045
+  item_type: task
+  kind: code
+  title: 'Release process for 0.70+: CRUX-smoke gate on the release binary; full ladder + full CRUX move to nightly; #4033 levers wired into the workflow'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-e6
+  created: 2026-09-23T20:30:19.864488525+00:00
+  updated: 2026-09-23T20:30:19.864488525+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: GH-4110
   github_issue: 4110
   item_type: task
@@ -21284,6 +21301,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
+- id: PMAT-4041
+  github_issue: 4041
+  item_type: task
+  title: 'apr-cli --no-default-features compiles and lints clean: gate the inference-only sites; add the axis to the feature-matrix lint'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-75
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo clippy -p apr-cli --lib --no-default-features -- -D warnings exits 0 (was 8 compile errors on main@49fe19c28)'
+  - 'supported, not dark: crates/apr-cli/Cargo.toml documents the minimal crates.io install; a gate runs the axis so it cannot rot again'
+  - 'the other single-feature axes are measured and each is green or ticketed'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-4076
   github_issue: 4076
