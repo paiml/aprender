@@ -308,6 +308,17 @@ fn emit_provable_contract_bindings() {
 }
 
 fn main() {
+    // ── Phase 0 (#4130): `aprender_monorepo` — the repository-root `contracts/` is present ──
+    // Some unit tests `include_str!` a contract from ../../contracts/ to pin the code to its source of truth.
+    // The published .crate has no such directory, so those tests cannot COMPILE from the tarball
+    // (scripts/package_tarball_build.sh). They are `#[cfg(aprender_monorepo)]`: in the workspace they run as
+    // before; built from the .crate they are absent rather than broken. Same presence test Phase 2 uses.
+    println!("cargo:rustc-check-cfg=cfg(aprender_monorepo)");
+    println!("cargo:rerun-if-changed=../../contracts");
+    if Path::new("../../contracts").is_dir() {
+        println!("cargo:rustc-cfg=aprender_monorepo");
+    }
+
     // ── Phase 1: Provable-contracts binding.yaml → CONTRACT_* env vars ──
     emit_provable_contract_bindings();
 
