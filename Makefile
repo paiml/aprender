@@ -585,15 +585,25 @@ coverage-check: coverage
 # CLAUDE.md, and the dogfood protocol looked for a target that did not exist, so
 # it WARNed instead of checking. `pv lint` runs validate + audit + score across
 # contracts/ and is the documented entry point (never hand-rolled bash).
+# EXIT PROPAGATION (PVL-001 EV-4, aprender#4168). Under .ONESHELL this whole
+# recipe is ONE shell script, so without errexit its status is the LAST line's
+# and every earlier step -- `pv lint` included -- was advisory: a failing lint
+# printed its tail and the gate exited 0. `set -e` stops at a failing step.
+# It is NOT enough on the pv lines: errexit ignores a failure on the LEFT of
+# `&&`, so a pv_bin.sh that REFUSES the binary (stale, wrong identity) would
+# fall through to the next step. Hence `|| exit` there as well, which exits
+# with that list's own status (pv's rc through the pipe, via -o pipefail).
+# Case table + mutants: scripts/tests/make_contracts_propagates.sh.
 contracts:
+	@set -e
 	@echo "== provable contracts: pv lint contracts/ =="
-	@. scripts/pv_bin.sh && "$$PV" lint contracts/ 2>&1 | tail -5
+	@. scripts/pv_bin.sh && "$$PV" lint contracts/ 2>&1 | tail -5 || exit
 	@echo "== census: tracked contracts/census.json == a fresh one (ONT-001 ONT-1, F-1) =="
 	@git ls-files --error-unmatch contracts/census.json >/dev/null || { echo "FAIL: contracts/census.json is not tracked, so diffing it proves nothing"; exit 1; }
-	@. scripts/pv_bin.sh && "$$PV" census contracts --format json > contracts/census.json
+	@. scripts/pv_bin.sh && "$$PV" census contracts --format json > contracts/census.json || exit
 	@git diff --exit-code contracts/census.json || { echo "FAIL: the tracked census differs from a fresh one — commit the regenerated contracts/census.json"; exit 1; }
 	@echo "== graph: tracked contracts/contracts.nt + shapes.ttl == a fresh extraction (ONT-001 ONT-4b, R-18) =="
-	@. scripts/pv_bin.sh && "$$PV" extract contracts --check >/dev/null
+	@. scripts/pv_bin.sh && "$$PV" extract contracts --check >/dev/null || exit
 	@echo "== README states the censused count =="
 	@bash scripts/readme_sync.sh --check
 	@echo "== provenance marks, interim (ONT-001 R-10) =="
@@ -1128,7 +1138,12 @@ test-audio-full: ## Run all audio tests including ALSA (if available)
 # contracts/aprender/binding.yaml. Generated tests: tests/contracts/.
 # Pre-consolidation `../provable-contracts/` references retired.
 
-PV_BIN := cargo run --release -p aprender-contracts-cli --bin pv --
+# NOT named PV_BIN (PVL-001 EV-4): a makefile assignment overrides an inherited
+# environment variable AND is what make exports to recipes, so `PV_BIN := cargo
+# run ...` handed scripts/pv_bin.sh the string "cargo run ..." whenever a caller
+# exported PV_BIN=/path/to/pv -- the one override pv_bin.sh honours -- and every
+# `. scripts/pv_bin.sh` step refused with `not executable: cargo run ...`.
+PV_CARGO_RUN := cargo run --release -p aprender-contracts-cli --bin pv --
 BINDING := contracts/aprender/binding.yaml
 CONTRACTS := contracts/softmax-kernel-v1.yaml \
              contracts/rmsnorm-kernel-v1.yaml \
@@ -1176,30 +1191,35 @@ contract-validate: ## Validate all kernel contracts (schema + staleness)
 	@echo "Validating kernel contracts..."
 	@for contract in $(CONTRACTS); do \
 		echo "  $$contract"; \
-		$(PV_BIN) validate "$$contract" || exit 1; \
+		$(PV_CARGO_RUN) validate "$$contract" || exit 1; \
 	done
 	@echo "Contract validation passed"
 
 contract-test: ## Run contract-driven property tests
+	@set -e
 	@echo "Running contract property tests..."
 	@PROPTEST_CASES=100 cargo test -p aprender-core --test contract_tests
 	@echo "Contract tests passed"
 
 contract-audit: ## Audit binding coverage (equations -> implementations)
 	@echo "Running binding audit..."
-	@for contract in $(CONTRACTS); do \
+	@rc=0; for contract in $(CONTRACTS); do \
 		echo ""; \
-		$(PV_BIN) audit "$$contract" --binding $(BINDING); \
+		$(PV_CARGO_RUN) audit "$$contract" --binding $(BINDING) || rc=$$?; \
 	done
 	@echo ""
+	@if [ "$$rc" -ne 0 ]; then echo "Binding audit FAILED: at least one audit exited non-zero (last rc=$$rc)"; exit "$$rc"; fi
 	@echo "Binding audit complete"
 
+# contract-regen keeps `|| true` ON PURPOSE (PVL-001 EV-4): it is not a gate --
+# it writes .rs.new files for a human to review, and one contract probar cannot
+# render must not stop the others being written.
 contract-regen: ## Regenerate wired test files from contracts
 	@echo "Regenerating contract test files..."
 	@for contract in $(CONTRACTS); do \
 		name=$$(basename "$$contract" .yaml | sed 's/-kernel-v[0-9]*//;s/-v[0-9]*//'); \
 		echo "  $$name <- $$contract"; \
-		$(PV_BIN) probar "$$contract" --binding $(BINDING) > tests/contracts/$${name}_contract.rs.new 2>/dev/null || true; \
+		$(PV_CARGO_RUN) probar "$$contract" --binding $(BINDING) > tests/contracts/$${name}_contract.rs.new 2>/dev/null || true; \
 	done
 	@echo "Regeneration complete (review .rs.new files)"
 
