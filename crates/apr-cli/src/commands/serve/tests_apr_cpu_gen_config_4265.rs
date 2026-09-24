@@ -76,7 +76,8 @@ fn no_tokenizer_means_no_invented_stop_ids() {
 #[test]
 fn config_carries_the_stop_set_and_the_requests_top_p() {
     let c = apr_cpu_generate_config(16, 0.7, Some(0.5), vec![151_645]);
-    assert_eq!(c.stop_tokens, vec![151_645]);
+    // PMAT-4269: token 0 joins the set — Session has no implicit token-0 rule.
+    assert_eq!(c.stop_tokens, vec![151_645, 0]);
     assert!(
         (c.top_p - 0.5).abs() < f32::EPSILON,
         "request top_p ignored: {}",
