@@ -1,82 +1,82 @@
 # Files that cite a SUPERSEDED llama.cpp comparator pin (scripts/llama_pin.toml superseded_commits), each as
-# dated HISTORY or as a FIXTURE value -- never a live claim (#3741). <path>TAB<historical|fixture>TAB<why>TAB<n>, n = the exact number of citing lines (R6).
+# dated HISTORY or as a FIXTURE value -- never a live claim (#3741). <path>TAB<historical|fixture>TAB<why>TAB<n>:<sha12>, the count and text hash of the citing lines (R6; --pin PATH prints it).
 # SHRINK-ONLY against origin/main (scripts/check_comparator_pin_citations.sh R4): a line leaves when its
 # file stops citing the old pin (a stale line is RED); none is ever added -- a new citation is a defect.
 # tool_version=none (measured by scripts/check_comparator_pin_citations.sh: a python regex over tracked text files; not a versioned analyser)
-CHANGELOG.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2
-contracts/batch-admission-v1.yaml	historical	a dated spec/contract line naming the pin a measurement was made against [39173bcac]	1
-contracts/ggml-type-v1.yaml	historical	a dated spec/contract line naming the pin a measurement was made against [39173bcac]	1
-contracts/pp-llama-001-comparator-pin-v1.yaml	historical	a dated spec/contract line naming the pin a measurement was made against [39173bcac]	5
-crates/apr-cli/src/commands/test_llm_band.rs	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-crates/apr-cli/src/extended_commands.rs	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	2
-crates/aprender-contracts/src/ontology/extract/parity_receipt_tests.rs	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	2
-crates/aprender-serve/src/gguf/cuda/forward_qwen35_cuda_tests.rs	fixture	a sample value in a self-test / fixture, not a claim about the comparator [60b06ab9a]	1
-crates/aprender-serve/src/gguf/inference/forward/forward_qwen35_gqa_tests.rs	fixture	a sample value in a self-test / fixture, not a claim about the comparator [60b06ab9a]	2
-crates/aprender-test-lib/src/perf_gate/mod.rs	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	3
-docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2
-docs/archive/perf-2026-09-02/benchmarking-gate-spec.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2
-docs/archive/perf-2026-09-02/performance-parity-llama.cpp.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2
-docs/audits/autonomous-run-2026-09-15.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1
-docs/audits/impl-PMAT-3430-m1-leaf-receipt.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1
-docs/audits/impl-PMAT-929-receipt.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1
-docs/audits/parity-evidence-pr-plan.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1
-docs/roadmaps/entries/PMAT-3563.yaml	historical	ticket record quoting its issue, which names the old pin; dated 2026-09-24 [39173bcac]	2
-docs/roadmaps/entries/PMAT-3740.yaml	historical	ticket record quoting its issue, which names the old pin; dated 2026-09-24 [39173bcac]	1
-docs/roadmaps/entries/PMAT-3741.yaml	historical	ticket record quoting its issue, which names the old pin; dated 2026-09-24 [39173bcac]	14
-docs/roadmaps/roadmap.yaml	historical	ticket record quoting its issue, which names the old pin; dated 2026-09-24 [39173bcac]	18
-docs/specifications/0.66-performance-parity-report.md	historical	a dated spec/contract line naming the pin a measurement was made against [39173bcac]	1
-docs/specifications/PP-LLAMA-001-MASTER.md	historical	a dated spec/contract line naming the pin a measurement was made against [39173bcac]	2
-docs/specifications/PP-LLAMA-001-RATIONALE.md	historical	a dated spec/contract line naming the pin a measurement was made against [39173bcac]	3
-evidence/dogfood/0.65.2/VERDICT.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1
-evidence/dogfood/0.65.2/gx10.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2
-evidence/dogfood/0.65.2/intel.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2
-evidence/dogfood/0.65.2/lambda.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	15
-evidence/dogfood/0.65.2/mini.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1
-evidence/parity-http/findings.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2
-evidence/parity-http/llamacpp-39173bcac.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	3
-evidence/parity/LEDGER.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	4
-evidence/parity/l0-1/intel/RECORD.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	7
-evidence/parity/l0-1/intel/qwen35-apr-vs-reference/scalar/gate4.transcript	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1
-evidence/parity/l0-1/intel/qwen35-apr-vs-reference/scalar/gate_llama_pin.transcript	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1
-evidence/parity/pin-bump-d1d3c3396/LOAD.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2
-evidence/parity/pin-bump-d1d3c3396/llamacpp-39173bcac-ctrl-r2.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	3
-evidence/parity/pin-bump-d1d3c3396/llamacpp-39173bcac-ctrl.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	3
-evidence/parity/props-39173bcac-np16.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	3
-evidence/parity/props-39173bcac-template.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	3
-evidence/parity/thresholds.yaml	historical	a dated record of a measurement or decision made at that pin [39173bcac]	4
-evidence/perf-054/campaign-scope.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	4
-evidence/perf-060/calibration.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2
-evidence/perf-060/intel-llamacpp-reference.txt	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1
-evidence/section-72-ship-live-cascade-2026-05-12/ship-004-llama-cli-stdout.txt	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1
-evidence/ship-004-full-discharge/discharge-evidence-v1.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2
-evidence/ship-004-full-discharge/llama-cli-run.txt	historical	dated 2026-05-12 (SHIP-004 discharge; see evidence/section-72-ship-live-cascade-2026-05-12/) [39173bcac]	1
-scripts/check_llama_pin.sh	historical	a comment recording the OLD build's measured behaviour, beside the pin of record [39173bcac]	3
-scripts/check_tokenizer_parity.sh	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/bench_receipt.py	historical	a comment recording the OLD build's measured behaviour, beside the pin of record [39173bcac]	1
-scripts/lib/parity_receipt_cases/01_all_bands_in_band.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/02_a_band_below_floor_fails_honestly.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/03_cpu_lane_against_cpu_comparator.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/04_cross_class_marked_and_declines_a_verdict.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/04_cross_class_marked_declines_a_verdict.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/05_cross_class_unmarked.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/06_cross_class_claims_PASS.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/07_cross_class_carries_a_floor.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/08_stated_ratio_does_not_follow_from_samples.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/12_subject_does_not_say_which_artifact.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/13_summary_instead_of_samples.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/15_cuda_class_without_the_cuda_feature.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/17_zero_throughput_sample.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/18_aggregate_collapses_while_decode_looks_great.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/19_a_declared_band_is_missing.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/20_band_ratio_does_not_follow_from_its_samples.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/21_lane_claims_PASS_while_a_band_FAILS.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/22_no_bands_at_all.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/23_a_ratio_above_the_ceiling_must_be_explained.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/parity_receipt_cases/24_neither_declared_nor_measured.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-scripts/lib/perf_receipt.py	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	2
-scripts/llama_bin.sh	historical	a comment recording the OLD build's measured --version behaviour (2026-08-24, lambda), beside the resolver of the pin of record [39173bcac+60b06ab9a]	4
-scripts/perf_gate.sh	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	2
-tests/fixtures/ont/release-green/evidence/dogfood/tokenizer/0.69.1/parity.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [60b06ab9a]	1
-tests/fixtures/perf-gate/parity-host-work/README.md	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-tests/fixtures/perf-gate/parity-host-work/llama-cpu-c1.props.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
-tests/fixtures/perf-gate/parity-host-work/llama-cpu-c4.props.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1
+CHANGELOG.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2:42ec13def204
+contracts/batch-admission-v1.yaml	historical	a dated spec/contract line naming the pin a measurement was made against [39173bcac]	1:e6abeea5b730
+contracts/ggml-type-v1.yaml	historical	a dated spec/contract line naming the pin a measurement was made against [39173bcac]	1:6c838f8f574c
+contracts/pp-llama-001-comparator-pin-v1.yaml	historical	a dated spec/contract line naming the pin a measurement was made against [39173bcac]	5:0fd1f2c77bf2
+crates/apr-cli/src/commands/test_llm_band.rs	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:dab67ddbc826
+crates/apr-cli/src/extended_commands.rs	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	2:ff8c71125701
+crates/aprender-contracts/src/ontology/extract/parity_receipt_tests.rs	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	2:c5c9c8c6156e
+crates/aprender-serve/src/gguf/cuda/forward_qwen35_cuda_tests.rs	fixture	a sample value in a self-test / fixture, not a claim about the comparator [60b06ab9a]	1:431592277927
+crates/aprender-serve/src/gguf/inference/forward/forward_qwen35_gqa_tests.rs	fixture	a sample value in a self-test / fixture, not a claim about the comparator [60b06ab9a]	2:a8896c851a33
+crates/aprender-test-lib/src/perf_gate/mod.rs	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	3:54a9733703b8
+docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2:edf599e272c3
+docs/archive/perf-2026-09-02/benchmarking-gate-spec.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2:d979be70ea73
+docs/archive/perf-2026-09-02/performance-parity-llama.cpp.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2:c963e461b50d
+docs/audits/autonomous-run-2026-09-15.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1:b728846eca16
+docs/audits/impl-PMAT-3430-m1-leaf-receipt.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1:d297236f564b
+docs/audits/impl-PMAT-929-receipt.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1:db51dc9c7de6
+docs/audits/parity-evidence-pr-plan.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1:53bf7fae5dc1
+docs/roadmaps/entries/PMAT-3563.yaml	historical	ticket record quoting its issue, which names the old pin; dated 2026-09-24 [39173bcac]	2:d49fdd8340f2
+docs/roadmaps/entries/PMAT-3740.yaml	historical	ticket record quoting its issue, which names the old pin; dated 2026-09-24 [39173bcac]	1:232f9d7fb82a
+docs/roadmaps/entries/PMAT-3741.yaml	historical	ticket record quoting its issue, which names the old pin; dated 2026-09-24 [39173bcac]	14:017a19ac5b57
+docs/roadmaps/roadmap.yaml	historical	ticket record quoting its issue, which names the old pin; dated 2026-09-24 [39173bcac]	18:b554576fb745
+docs/specifications/0.66-performance-parity-report.md	historical	a dated spec/contract line naming the pin a measurement was made against [39173bcac]	1:ee1a37d8d96d
+docs/specifications/PP-LLAMA-001-MASTER.md	historical	a dated spec/contract line naming the pin a measurement was made against [39173bcac]	2:ef251fe400ce
+docs/specifications/PP-LLAMA-001-RATIONALE.md	historical	a dated spec/contract line naming the pin a measurement was made against [39173bcac]	3:678133cbf553
+evidence/dogfood/0.65.2/VERDICT.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1:7f78171e06bf
+evidence/dogfood/0.65.2/gx10.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2:b865e72545ca
+evidence/dogfood/0.65.2/intel.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2:bf44a247d4ad
+evidence/dogfood/0.65.2/lambda.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	15:1449b55e17e4
+evidence/dogfood/0.65.2/mini.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1:a5218a1e3c4e
+evidence/parity-http/findings.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2:49de2461a44f
+evidence/parity-http/llamacpp-39173bcac.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	3:6ea8782ada0c
+evidence/parity/LEDGER.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	4:c4b45d1bd2c4
+evidence/parity/l0-1/intel/RECORD.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	7:1770b2cd6c64
+evidence/parity/l0-1/intel/qwen35-apr-vs-reference/scalar/gate4.transcript	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1:97edff305aa7
+evidence/parity/l0-1/intel/qwen35-apr-vs-reference/scalar/gate_llama_pin.transcript	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1:97edff305aa7
+evidence/parity/pin-bump-d1d3c3396/LOAD.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2:7344d5ff325b
+evidence/parity/pin-bump-d1d3c3396/llamacpp-39173bcac-ctrl-r2.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	3:84b26d97fd73
+evidence/parity/pin-bump-d1d3c3396/llamacpp-39173bcac-ctrl.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	3:570032fbc697
+evidence/parity/props-39173bcac-np16.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	3:5c37ead7b052
+evidence/parity/props-39173bcac-template.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	3:5c37ead7b052
+evidence/parity/thresholds.yaml	historical	a dated record of a measurement or decision made at that pin [39173bcac]	4:5df21102ded4
+evidence/perf-054/campaign-scope.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	4:9a28d0b23ed6
+evidence/perf-060/calibration.md	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2:1d79447b807e
+evidence/perf-060/intel-llamacpp-reference.txt	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1:84a94c3adf5c
+evidence/section-72-ship-live-cascade-2026-05-12/ship-004-llama-cli-stdout.txt	historical	a dated record of a measurement or decision made at that pin [39173bcac]	1:91dd4df48b0e
+evidence/ship-004-full-discharge/discharge-evidence-v1.json	historical	a dated record of a measurement or decision made at that pin [39173bcac]	2:b986e6d9c70d
+evidence/ship-004-full-discharge/llama-cli-run.txt	historical	dated 2026-05-12 (SHIP-004 discharge; see evidence/section-72-ship-live-cascade-2026-05-12/) [39173bcac]	1:91dd4df48b0e
+scripts/check_llama_pin.sh	historical	a comment recording the OLD build's measured behaviour, beside the pin of record [39173bcac]	3:5e75fe7b1590
+scripts/check_tokenizer_parity.sh	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:990e63b0e073
+scripts/lib/bench_receipt.py	historical	a comment recording the OLD build's measured behaviour, beside the pin of record [39173bcac]	1:c6557b942820
+scripts/lib/parity_receipt_cases/01_all_bands_in_band.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/02_a_band_below_floor_fails_honestly.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/03_cpu_lane_against_cpu_comparator.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/04_cross_class_marked_and_declines_a_verdict.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/04_cross_class_marked_declines_a_verdict.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/05_cross_class_unmarked.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/06_cross_class_claims_PASS.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/07_cross_class_carries_a_floor.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/08_stated_ratio_does_not_follow_from_samples.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/12_subject_does_not_say_which_artifact.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/13_summary_instead_of_samples.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/15_cuda_class_without_the_cuda_feature.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/17_zero_throughput_sample.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/18_aggregate_collapses_while_decode_looks_great.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/19_a_declared_band_is_missing.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/20_band_ratio_does_not_follow_from_its_samples.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/21_lane_claims_PASS_while_a_band_FAILS.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/22_no_bands_at_all.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/23_a_ratio_above_the_ceiling_must_be_explained.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/parity_receipt_cases/24_neither_declared_nor_measured.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:6ef9a5761aa4
+scripts/lib/perf_receipt.py	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	2:aadb96fb7a72
+scripts/llama_bin.sh	historical	a comment recording the OLD build's measured --version behaviour (2026-08-24, lambda), beside the resolver of the pin of record [39173bcac+60b06ab9a]	4:54cbe8e7e478
+scripts/perf_gate.sh	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	2:7a7c5be96365
+tests/fixtures/ont/release-green/evidence/dogfood/tokenizer/0.69.1/parity.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [60b06ab9a]	1:7925667c23d4
+tests/fixtures/perf-gate/parity-host-work/README.md	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:807385628c10
+tests/fixtures/perf-gate/parity-host-work/llama-cpu-c1.props.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:3e85278108f3
+tests/fixtures/perf-gate/parity-host-work/llama-cpu-c4.props.json	fixture	a sample value in a self-test / fixture, not a claim about the comparator [39173bcac]	1:3e85278108f3
