@@ -1165,10 +1165,27 @@ The watched sha is fetched first, and if it cannot be, the publish refuses. The 
 commit, or when its tree equals the release commit's outside `evidence/` and
 `docs/`: the bump PR is squash-merged, so the release commit is never the sha the watch measured. The measure per release is **0 gates first-seen-red at publish** (ledger, M7).
 
-### §14.4 Phase 2 — retired by design, NOT yet in code
-The design retires Phase 2 (a full ladder + full CRUX sweep on release night) into the nightly. **It is not wired yet**
-(#4117): autopilot's `models` step and R7 still run the full-ladder judge, and nothing calls `--scope release` in the
-publish path. Until #4117 lands, a 0.70 release still needs the full-ladder receipts.
+### §14.4 Phase 2 — retired into the nightly (#4117)
+Phase 2 (a full ladder + full CRUX sweep on release night) is retired into the nightly. From `release_gate.from`, every
+caller in the publish path runs the §14.1 gate, and ONE rule decides which gate applies to a version
+(`scripts/lib/crux_smoke_scope.py applies`: 0 the release gate, 1 the full ladder before `from`, 2 undecidable → refuse):
+- **`prepare_bump.sh --ship`**: requires an ADMISSIBLE nightly for the candidate on every required host (the judge's own
+  `nightly_admission.py`), in place of the full-ladder receipts. The gate is moved, not deleted.
+- **autopilot `models` (T-1, `models_t1.sh`)**: builds and proves the release binary on each host, then runs the CRUX
+  smoke on it (`crux_sweep_shards.sh`, the committed certification), gathers both hosts' nights into one root
+  (`scripts/release/gather_nightly.sh`), and judges `--scope release --nightly <root> --crux <smoke> --cut-commit <sha>`.
+- **R7 (T-4)**: re-judges exactly those outputs, which autopilot hands over (`PUBLISH_PREFLIGHT_NIGHTLY_ROOT`,
+  `_CRUX_DIR`, `_CUT_COMMIT`). The smoke of the release commit cannot be committed into it, so R7 never reads it
+  from the tree. It is RED by name when they are unset, and it never falls back to the full ladder.
+- **The candidate watch**: runs the gate as the REAL row `models:release-scope`. It measures the smoke once per
+  candidate sha and re-judges it against a freshly gathered nightly on every later run.
+
+Two hosts are judged on one host, so a night records its receipts RELATIVE to its own `verdict.json`, and
+admission resolves them there (a `..` escape is refused). Nights written earlier with absolute paths are still accepted
+where those paths exist. Falsifiers: the case tables of `check_publish_preflight.sh`, `check_release_models_t1.sh`,
+`check_publish_reads_watch.sh`, `check_release_shift_left.sh`, `check_release_bump_pr_body.sh`,
+`check_certify_nightly.sh` and `nightly_admission_cases.py`. Each caller has a mutant that drops the scope or its
+input, and each such mutant is killed.
 
 ### §14.4b What a BOOKKEEPING class does today
 It governs the candidate watch: a bookkeeping red does not raise ANDON, and it gets a proposed auto-fix. It does **not**

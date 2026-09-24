@@ -96,6 +96,34 @@ sys.exit(0 if f and v(sys.argv[1]) >= v(f) else 1)' "$VERSION" 2> /dev/null; the
   fi
 fi
 
+# #4117: the RELEASE GATE as a REAL row, from release_gate.from -- the same gate the models step and R7 judge:
+# `--scope release` = CRUX smoke on the candidate's binary (both hosts) + the admitted nightly. The smoke takes hours,
+# so it is MEASURED ONCE PER CANDIDATE SHA (scripts/release/models_t1.sh, into <state>/models-<sha>) and every later
+# run RE-JUDGES it against a freshly gathered nightly (admission is time-bound: <= 24 h). Seams for the case table
+# (never set in production): WATCH_MODELS_CMD (the producer, called <version> <sha> <dir>), WATCH_RELEASE_JUDGE_CMD
+# (the re-judge, called <dir> <version> <sha>).
+python3 -B scripts/lib/crux_smoke_scope.py applies contracts/model-capability-ladder-v1.yaml "$VERSION" > "$D/release-gate-$TS.log" 2>&1; rg=$?
+# release_rejudge <dir> <version> <sha>: a fresh nightly gathered beside the cached smoke, then the release judge
+release_rejudge() {
+  local md="${1:-}"
+  [ -n "$md" ] && [ "$md" != / ] || return 2
+  rm -rf -- "$md/nightly" && bash scripts/release/gather_nightly.sh "$md/nightly" lambda gx10 \
+    && bash scripts/check_model_ladder.sh --version "$2" --scope release --nightly "$md/nightly" --crux "$md/crux" --cut-commit "$3"
+}
+if [ "$rg" = 0 ]; then
+  md="$D/models-$SHA"
+  smoked=1
+  for h in lambda gx10; do [ -f "$md/crux/$h-gpu.json" ] || smoked=0; done
+  [ -f "$md/crux/prompt-certification.json" ] || smoked=0
+  if [ "$smoked" = 1 ]; then
+    run_rc models:release-scope ${WATCH_RELEASE_JUDGE_CMD:-release_rejudge} "$md" "$VERSION" "$SHA"
+  else
+    run_rc models:release-scope ${WATCH_MODELS_CMD:-bash scripts/release/models_t1.sh} "$VERSION" "$SHA" "$md"
+  fi
+elif [ "$rg" != 1 ]; then
+  printf 'models:release-scope\tFAIL\twhich gate judges %s cannot be decided: %s\n' "$VERSION" "$(tail -1 "$D/release-gate-$TS.log" | cut -c1-140)" >> "$RESULTS"
+fi
+
 # 2 + 3. classify, age, table, verdict
 python3 - "$RESULTS" "scripts/release/gate_classes.yaml" "$D/first-red.json" "$D/watch-$TS" "$SHA" "$VERSION" <<'PY'
 import json, os, sys, time, yaml
@@ -114,7 +142,7 @@ for ln in open(res_p):
     gid, verdict, note = (ln.rstrip("\n").split("\t") + ["", ""])[:3]
     c = (classes.get(gid) or {}).get("class")
     cls = c if c in ("real", "bookkeeping") else "real"   # UNCLASSIFIED is real: never quietly waived
-    if gid in ("shadow:skills", "g-ont:complete"):   # the watch's own gates: real by definition
+    if gid in ("shadow:skills", "g-ont:complete", "models:release-scope"):   # the watch's own gates: real by definition
         cls = "real"
     red = verdict in RED
     if red:
@@ -122,7 +150,7 @@ for ln in open(res_p):
         (real_red if cls == "real" else book_red).append(gid)
     else:
         first.pop(gid, None)
-    rows.append({"gate": gid, "class": cls + ("" if c or gid in ("shadow:skills", "g-ont:complete") else " (UNCLASSIFIED)"), "verdict": verdict,
+    rows.append({"gate": gid, "class": cls + ("" if c or gid in ("shadow:skills", "g-ont:complete", "models:release-scope") else " (UNCLASSIFIED)"), "verdict": verdict,
                  "first_red_at": first.get(gid, {}).get("at") if red else None, "note": note})
 json.dump(first, open(first_p, "w"), indent=1)
 doc = {"schema": "apr-candidate-watch/v1", "version": version, "sha": sha, "at": now, "rows": rows,

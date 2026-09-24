@@ -38,9 +38,27 @@ def _load(p):
         return None
 
 
+def resolve(v, p):
+    """#4117: a receipt path recorded in a verdict -> (path on THIS host, why-not). A RELATIVE path is resolved
+    against the directory of the verdict.json it was read from, so a night measured on one host and copied under
+    another root (the two-host release gate judges on one) is still found; one that climbs out of that directory
+    (`..`) is refused, never followed. An ABSOLUTE path is taken as recorded: nights written before this change."""
+    if not p:
+        return None, "no receipt recorded"
+    if os.path.isabs(p):
+        return p, None
+    base = os.path.dirname(os.path.abspath(v.get("_path") or ""))
+    q = os.path.normpath(os.path.join(base, p))
+    if not q.startswith(base + os.sep):
+        return None, "the recorded path %r escapes the verdict's directory" % p
+    return q, None
+
+
 def coherent(v):
     """-> None when the verdict's own receipts say green, else why not. Re-derived, never read from `green`."""
-    lad_p = (v.get("ladder") or {}).get("receipt")
+    lad_p, why = resolve(v, (v.get("ladder") or {}).get("receipt"))
+    if why and "escapes" in why:
+        return "its ladder receipt: %s" % why
     lad = _load(lad_p) if lad_p else None
     if not isinstance(lad, dict):
         return "its ladder receipt %s is unreadable" % lad_p
@@ -50,7 +68,10 @@ def coherent(v):
         return "its ladder receipt is RED (executed=%s red=%s)" % (lad.get("executed"), lad.get("red"))
     lanes = (v.get("crux") or {}).get("lanes") or {}
     for lane in REQUIRED_LANES:
-        r = _load((lanes.get(lane) or {}).get("receipt"))
+        rp, why = resolve(v, (lanes.get(lane) or {}).get("receipt"))
+        if why and "escapes" in why:
+            return "its CRUX %s receipt: %s" % (lane, why)
+        r = _load(rp) if rp else None
         if not isinstance(r, dict) or (r.get("summary") or {}).get("verdict") != "PASS":
             return "its CRUX %s receipt is missing or not PASS" % lane
         # the same binding as the ladder receipt: the lane measured THIS nightly's binary (degraded quorum, Sonnet)
@@ -121,8 +142,8 @@ def assemble(chosen, out):
     os.makedirs(os.path.join(out, "crux"), exist_ok=True)
     cert = None
     for h, v in sorted(chosen.items()):
-        lad = (v.get("ladder") or {}).get("receipt")
-        lanes = {k: (x or {}).get("receipt") for k, x in ((v.get("crux") or {}).get("lanes") or {}).items()}
+        lad = resolve(v, (v.get("ladder") or {}).get("receipt"))[0]
+        lanes = {k: resolve(v, (x or {}).get("receipt"))[0] for k, x in ((v.get("crux") or {}).get("lanes") or {}).items()}
         gone = [p for p in [lad] + [lanes.get(k) for k in REQUIRED_LANES] if not (p and os.path.isfile(p))]
         if gone:
             bad.append("%s: the nightly's receipts are gone (%s)" % (h, ", ".join(map(str, gone))))
@@ -130,7 +151,7 @@ def assemble(chosen, out):
         os.symlink(os.path.abspath(lad), os.path.join(out, "receipts", h + ".json"))
         for k in REQUIRED_LANES:
             os.symlink(os.path.abspath(lanes[k]), os.path.join(out, "crux", "%s-%s.json" % (h, k)))
-        c = (v.get("certification") or {}).get("path")
+        c = resolve(v, (v.get("certification") or {}).get("path"))[0]
         if c and os.path.isfile(c) and cert is None:
             cert = c
             os.symlink(os.path.abspath(c), os.path.join(out, "crux", "prompt-certification.json"))

@@ -182,14 +182,18 @@ else:
             s = r.get("summary") or {}
             why.append("CRUX %s is %s: %s" % (lane, s.get("verdict"), s.get("declined_because") or "RED %s" % s.get("RED")))
 cert_sha = hashlib.sha256(open(cert, "rb").read()).hexdigest() if cert and os.path.isfile(cert) else None
+# #4117: every path is recorded RELATIVE to this verdict's directory, which holds them all (the certification is
+# copied in above). The release gate judges both hosts' nights on ONE host, so a night is copied under another
+# root; nightly_admission.resolve() finds a relative path from the verdict.json it loaded.
+rel = lambda x: os.path.relpath(x, d) if x and os.path.abspath(x).startswith(os.path.abspath(d) + os.sep) else x
 print(json.dumps({
     "schema": "apr-nightly-certification/v1", "sha": sha, "host": host, "version": version,
     "apr_version_line": got or None, "t_start": float(t0), "t_end": float(t1),
-    "ladder": {"rc": int(lrc) if lrc else None, "receipt": lad_p if lad is not None else None},
+    "ladder": {"rc": int(lrc) if lrc else None, "receipt": rel(lad_p) if lad is not None else None},
     "crux": {"rc": int(crc) if crc else None,
-             "lanes": {lane: {"receipt": p if r is not None else None,
+             "lanes": {lane: {"receipt": rel(p) if r is not None else None,
                               "verdict": (r.get("summary") or {}).get("verdict") if r else None} for lane, (p, r) in crux.items()}},
-    "certification": {"path": cert or None, "sha256": cert_sha},
+    "certification": {"path": rel(cert) or None, "sha256": cert_sha},
     "green": not why, "why": why}, indent=2))
 PY
 mv -f "$DIR/verdict.json.tmp" "$DIR/verdict.json" || die "cannot place $DIR/verdict.json"

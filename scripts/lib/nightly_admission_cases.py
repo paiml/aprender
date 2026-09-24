@@ -75,6 +75,38 @@ def run(mod):
     gone = dict(good, crux={"lanes": dict(lanes, cpu={"receipt": os.path.join(d, "missing.json")})})
     bad = mod.assemble({"lambda": gone}, os.path.join(d, "out2"))
     res["assemble-refuses-vanished"] = (bool(bad) and "receipts are gone" in bad[0], bad)
+    # #4117: a night recorded with RELATIVE paths, then MOVED under another root (the two-host release gate judges
+    # on one host, so the other host's night is copied in): admitted, and linked from where it now lives.
+    import shutil as _sh
+    src = os.path.join(d, "hostA-root", "a" * 40, "lambda")
+    os.makedirs(os.path.join(src, "ladder")); os.makedirs(os.path.join(src, "crux"))
+    _j.dump({"apr_sha": "a" * 40, "executed": 3, "red": 0}, open(os.path.join(src, "ladder", "lambda.json"), "w"))
+    for lane in ("gpu", "cpu"):
+        _j.dump(PASS, open(os.path.join(src, "crux", "lambda-%s.json" % lane), "w"))
+    open(os.path.join(src, "prompt-certification.json"), "w").write("{}")
+    rel = dict(v("lambda", "a", 3), ladder={"receipt": "ladder/lambda.json"},
+               crux={"lanes": {k: {"receipt": "crux/lambda-%s.json" % k} for k in ("gpu", "cpu")}},
+               certification={"path": "prompt-certification.json"})
+    _j.dump(dict(rel, _path=None), open(os.path.join(src, "verdict.json"), "w"))
+    moved = os.path.join(d, "hostB-root", "a" * 40, "lambda")
+    _sh.copytree(src, moved); _sh.rmtree(os.path.join(d, "hostA-root"))
+    loaded = [x for x in mod.load_verdicts(os.path.join(d, "hostB-root"))]
+    ok_load = len(loaded) == 1 and loaded[0]["_incoherent"] is None
+    bad = mod.assemble({"lambda": loaded[0]}, os.path.join(d, "out3")) if loaded else ["not loaded"]
+    res["moved-root-admitted-by-relative-paths"] = (
+        ok_load and not bad and os.path.realpath(os.path.join(d, "out3", "crux", "lambda-cpu.json"))
+        == os.path.join(moved, "crux", "lambda-cpu.json"), (loaded[:1], bad))
+    # ...and a relative path that climbs OUT of the verdict's directory is refused, never followed -- even when a
+    # valid GREEN receipt sits at the place it points to (so only the escape rule can refuse it)
+    _j.dump(PASS, open(os.path.join(d, "outside-cpu.json"), "w"))
+    _j.dump({"apr_sha": "a" * 40, "executed": 3, "red": 0}, open(os.path.join(d, "outside-ladder.json"), "w"))
+    esc = dict(rel, _path=os.path.join(moved, "verdict.json"),
+               crux={"lanes": dict(rel["crux"]["lanes"], cpu={"receipt": "../../../outside-cpu.json"})})
+    why = mod.coherent(esc)
+    res["relative-path-escaping-refused"] = (why is not None and "escapes the verdict's directory" in why, why)
+    esc_l = dict(rel, _path=os.path.join(moved, "verdict.json"), ladder={"receipt": "../../../outside-ladder.json"})
+    why_l = mod.coherent(esc_l)
+    res["relative-ladder-escaping-refused"] = (why_l is not None and "escapes" in why_l, why_l)
     return res
 
 
@@ -92,6 +124,11 @@ MUTANTS = [
     ("lanes-gpu-only", 'REQUIRED_LANES = ("gpu", "cpu")', 'REQUIRED_LANES = ("gpu",)', "coherent-sees-red-lane"),
     ("crux-sha-unread", '        if got != v.get("sha"):', "        if False:", "coherent-sees-crux-sha"),
     ("ladder-sha-unread", '    if lad.get("apr_sha") != v.get("sha"):', "    if False:", "coherent-sees-ladder-sha"),
+    ("relative-from-cwd", '    base = os.path.dirname(os.path.abspath(v.get("_path") or ""))', '    base = os.getcwd()',
+     "moved-root-admitted-by-relative-paths"),
+    ("escape-followed", "    if not q.startswith(base + os.sep):", "    if False:", "relative-path-escaping-refused"),
+    ("escape-followed-ladder", '    if why and "escapes" in why:\n        return "its ladder receipt: %s" % why',
+     '    if False:\n        return "its ladder receipt: %s" % why', "relative-ladder-escaping-refused"),
 ]
 
 

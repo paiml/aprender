@@ -156,3 +156,38 @@ def _smoke(entry, crux_dir, cert_p, cut, out):
                 else:
                     out(f"ok    {h} certified model {sha[:12]} thinking={mode}: {len(got)} CRUX cell(s) GREEN, control GREEN")
     return failed
+
+
+def release_gate_applies(L, version):
+    """#4117: does the NORMAL release gate (`ladder.release_gate`, #4045) judge `version`? -> (bool, why).
+    ONE rule for every caller -- autopilot's models step, R7, prepare_bump --ship, the candidate watch -- so they
+    cannot disagree about which release has retired Phase 2. No `release_gate`, or a version before its `from`:
+    False, and the full ladder still applies. A `from` or version that is not X.Y.Z raises: the caller must refuse,
+    never guess which gate applies."""
+    g = L.get("release_gate")
+    if not isinstance(g, dict):
+        return False, "the ladder contract records no release_gate -- the full ladder applies"
+    frm, cur = _semver(g.get("from")), _semver(version)
+    if frm is None or cur is None:
+        raise ValueError(f"release_gate.from {g.get('from')!r} or version {version!r} is not X.Y.Z")
+    if cur < frm:
+        return False, f"the normal release gate applies from {g['from']}; {version} is before it -- the full ladder applies"
+    return True, f"the normal release gate applies to {version} (ladder.release_gate.from {g['from']})"
+
+
+if __name__ == "__main__":
+    # python3 scripts/lib/crux_smoke_scope.py applies <ladder contract> <version>
+    #   -> exit 0 the release gate applies, 1 it does not (the full ladder), 2 the question cannot be answered.
+    #   The reason is printed either way, so a caller can say which gate it chose and why.
+    import sys
+    import yaml
+    if len(sys.argv) != 4 or sys.argv[1] != "applies":
+        print("usage: crux_smoke_scope.py applies <ladder contract> <version>", file=sys.stderr)
+        sys.exit(2)
+    try:
+        applies, why = release_gate_applies(yaml.safe_load(open(sys.argv[2]))["ladder"], sys.argv[3])
+    except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as exc:
+        print(f"the release gate cannot be decided for {sys.argv[3]} from {sys.argv[2]}: {exc}")
+        sys.exit(2)
+    print(why)
+    sys.exit(0 if applies else 1)

@@ -56,9 +56,22 @@ gates = [{"gate": a.split("=")[0], "result": a.split("=")[1], "note": "fixture"}
 json.dump({"crate": "aprender", "commit": c, "gates": gates, "verdict": "GO"}, open(f, "w"))
 PY
 }
+# #4117 the release gate's producer and re-judge stubs: the producer measures a smoke into <dir>/crux (both hosts +
+# the certification) and counts its calls; FX_MODELS_RC / FX_REJUDGE_RC pick the verdict
+cat > "$T/models-stub.sh" <<'STUB'
+#!/bin/bash
+echo produced >> "$FX_CALLS"; mkdir -p "$3/crux" && for h in lambda gx10; do echo '{}' > "$3/crux/$h-gpu.json"; done
+echo '{}' > "$3/crux/prompt-certification.json"; echo "MODELS fixture smoke for $1 at $2"; exit "${FX_MODELS_RC:-0}"
+STUB
+cat > "$T/rejudge-stub.sh" <<'STUB'
+#!/bin/bash
+echo rejudged >> "$FX_CALLS"; [ -f "$1/crux/lambda-gpu.json" ] || { echo "no cached smoke"; exit 1; }; exit "${FX_REJUDGE_RC:-0}"
+STUB
+chmod +x "$T/models-stub.sh" "$T/rejudge-stub.sh"
 watch() { # watch <script> <state> <receipt file> [extra watch args...] -> sets WRC, WJ (the watch json)
   local s=$1 st=$2 rf=$3; shift 3
   env WATCH_DOGFOOD_CMD="echo $rf" WATCH_PREFLIGHT_CMD="${PF:-true}" WATCH_BUMP_CMD=true WATCH_HOME="${WH:-$T/home}" APR_ONT_INFRA="${OI-$ONTI}" \
+    WATCH_MODELS_CMD="$T/models-stub.sh" WATCH_RELEASE_JUDGE_CMD="$T/rejudge-stub.sh" FX_CALLS="${FXC:-$T/calls.log}" \
     bash "$s" 0.70.0 --state "$st" "$@" > "$T/w.out" 2>&1; WRC=$?
   WJ=$(ls -t "$st"/0.70.0/watch-*.json 2> /dev/null | head -1)
 }
@@ -106,6 +119,18 @@ wtable() { # wtable <script> -> ok/FAIL lines
   st=$(mktemp -d -p "$T"); PF=false watch "$s" "$st" "$T/r1.json"
   if [ "$WRC" = 1 ] && jq_has '"preflight:R5" in d["real_red"]'; then echo "ok    watch-preflight-red-andons"
   else echo "FAIL  watch-preflight-red-andons rc $WRC"; fi
+  # #4117 the release gate (0.70.0 >= release_gate.from): a REAL row; RED andons, GREEN does not; the smoke is
+  # measured ONCE per candidate sha and re-judged on every later run
+  st=$(mktemp -d -p "$T"); : > "$T/c1"; FXC="$T/c1" FX_MODELS_RC=1 watch "$s" "$st" "$T/r1.json"
+  if [ "$WRC" = 1 ] && jq_has '"models:release-scope" in d["real_red"] and any(r["gate"] == "models:release-scope" and r["class"] == "real" for r in d["rows"])'; then
+    echo "ok    watch-release-gate-red-andons"; else echo "FAIL  watch-release-gate-red-andons rc $WRC"; fi
+  st=$(mktemp -d -p "$T"); : > "$T/c2"; FXC="$T/c2" watch "$s" "$st" "$T/r1.json"
+  if [ "$WRC" = 0 ] && jq_has 'any(r["gate"] == "models:release-scope" and r["verdict"] == "PASS" for r in d["rows"])'; then
+    echo "ok    watch-release-gate-green"; else echo "FAIL  watch-release-gate-green rc $WRC"; fi
+  FXC="$T/c2" watch "$s" "$st" "$T/r1.json"; FXC="$T/c2" FX_REJUDGE_RC=1 watch "$s" "$st" "$T/r1.json"
+  if [ "$(tr '\n' ' ' < "$T/c2")" = "produced rejudged rejudged " ] && [ "$WRC" = 1 ] && jq_has '"models:release-scope" in d["real_red"]'; then
+    echo "ok    watch-release-smoke-once-per-sha-then-rejudged"
+  else echo "FAIL  watch-release-smoke-once-per-sha-then-rejudged calls=[$(tr '\n' ' ' < "$T/c2")] rc $WRC"; fi
 }
 out=$(wtable scripts/release/candidate_watch.sh); printf '%s\n' "$out"; grep -q '^FAIL' <<< "$out" && bad=1
 wmut() { # wmut <label> <row> <python old> <python new>
@@ -123,6 +148,10 @@ wmut stale-receipt-ok   watch-stale-receipt-is-red 'if r.get("commit") and not s
 wmut autofix-skipped    watch-autofix-runs-the-fixer-of-a-bookkeeping-red 'if [ "$AUTOFIX" = 1 ]; then' 'if false; then'
 wmut g-ont-skipped      watch-g-ont-unconfigured-is-red 'printf '"'"'g-ont:complete\tFAIL' ': printf '"'"'g-ont:complete\tFAIL'
 wmut shadow-skipped     watch-shadow-refuses 'if ! bash scripts/check_no_shadowed_repo_skill.sh' 'if false && bash scripts/check_no_shadowed_repo_skill.sh'
+# the gate treated as not applying at 0.70.0 (the silent skip): the row vanishes and the red smoke never andons
+wmut release-gate-skipped watch-release-gate-red-andons '> "$D/release-gate-$TS.log" 2>&1; rg=$?' '> "$D/release-gate-$TS.log" 2>&1; rg=1'
+wmut release-smoke-uncached watch-release-smoke-once-per-sha-then-rejudged '  if [ "$smoked" = 1 ]; then' '  if false; then'
+
 
 echo "check_release_shift_left: $([ "$bad" = 0 ] && echo PASS || echo FAIL)"
 exit "$bad"
