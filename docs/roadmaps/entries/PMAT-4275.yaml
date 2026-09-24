@@ -1,6 +1,7 @@
 - id: PMAT-4275
   github_issue: 4275
   item_type: task
+  kind: code
   title: 'binary-release smoke: strip -rc.N and bind the asset to its commit'
   status: planned
   priority: medium

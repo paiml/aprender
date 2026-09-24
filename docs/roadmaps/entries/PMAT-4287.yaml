@@ -1,6 +1,7 @@
 - id: PMAT-4287
   github_issue: 4287
   item_type: task
+  kind: code
   title: 'rc gate: run the publish preflight + cargo package cascade at rc cut'
   status: planned
   priority: medium

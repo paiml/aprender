@@ -20613,6 +20613,7 @@ roadmap:
 - id: PMAT-4275
   github_issue: 4275
   item_type: task
+  kind: code
   title: 'binary-release smoke: strip -rc.N and bind the asset to its commit'
   status: planned
   priority: medium
@@ -20629,6 +20630,7 @@ roadmap:
 - id: PMAT-4285
   github_issue: 4285
   item_type: task
+  kind: code
   title: 'rc cut: tag vX.Y.Z-rc.N on every green merge to release/X.Y.Z'
   status: planned
   priority: medium
@@ -20645,6 +20647,7 @@ roadmap:
 - id: PMAT-4286
   github_issue: 4286
   item_type: task
+  kind: code
   title: promote rc to final with no rebuild
   status: planned
   priority: medium
@@ -20661,6 +20664,7 @@ roadmap:
 - id: PMAT-4287
   github_issue: 4287
   item_type: task
+  kind: code
   title: 'rc gate: run the publish preflight + cargo package cascade at rc cut'
   status: planned
   priority: medium
