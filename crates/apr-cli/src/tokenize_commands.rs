@@ -125,13 +125,13 @@ pub enum TokenizeCommands {
     Encode {
         /// GGUF model file whose tokenizer to run
         #[arg(value_name = "MODEL")]
-        model: PathBuf,
+        model: ModelPath,
         /// Text to encode
         #[arg(short = 'p', long, value_name = "TEXT", conflicts_with = "file")]
-        prompt: Option<String>,
+        prompt: Option<EncodeText>,
         /// File whose contents to encode (read as UTF-8, verbatim)
         #[arg(short = 'f', long, value_name = "FILE")]
-        file: Option<PathBuf>,
+        file: Option<InputFile>,
     },
     /// Encode a JSONL corpus into `.bin` shards per contracts/pretokenize-bin-v1.yaml.
     ///

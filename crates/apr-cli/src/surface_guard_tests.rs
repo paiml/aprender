@@ -206,6 +206,8 @@ fn the_generators_are_declared() {
         &["embed"],
         &["rerank"],
         &["eval"],
+        // Tokenizes its --prompt and never runs the weights (#3749 rebase).
+        &["tokenize", "encode"],
     ] {
         assert!(!generates(path), "{path:?} does not generate");
     }
