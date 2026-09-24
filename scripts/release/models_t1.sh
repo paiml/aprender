@@ -111,8 +111,12 @@ if [ -z "\$free_kib" ] || [ \$(( free_kib + have_kib )) -lt $NEED_KIB ]; then
   echo "MODELS-LEG $REMOTE_HOST ENV: \$(( (free_kib + have_kib) / 1048576 )) GiB usable under \$base, a fresh cuda release target needs \$(( $NEED_KIB / 1048576 )) GiB -- refused before building"
   exit 4
 fi
-git -C "\$repo" fetch -q origin main && git -C "\$repo" cat-file -e "$sha^{commit}" \
-  || { echo "MODELS-LEG $REMOTE_HOST FETCH-FAILED: $sha9 is not reachable from origin/main there"; exit 3; }
+# #4145: the candidate is NOT always on main -- the candidate watch measures a release/* branch's HEAD. origin/main
+# first (the usual T-1 case, the bump's merge commit), then the EXACT sha by id (GitHub serves any reachable commit);
+# a sha the origin does not have is refused by name.
+{ git -C "\$repo" fetch -q origin main && git -C "\$repo" cat-file -e "$sha^{commit}"; } 2> /dev/null \
+  || { git -C "\$repo" fetch -q origin "$sha" && git -C "\$repo" cat-file -e "$sha^{commit}"; } \
+  || { echo "MODELS-LEG $REMOTE_HOST FETCH-FAILED: $sha9 is on neither origin/main nor fetchable by id from origin"; exit 3; }
 git -C "\$repo" worktree remove --force "\$dir/wt" > /dev/null 2>&1
 git -C "\$repo" worktree prune
 git -C "\$repo" worktree add -q --detach "\$dir/wt" "$sha" || { echo "MODELS-LEG $REMOTE_HOST WORKTREE-FAILED"; exit 3; }

@@ -1,0 +1,17 @@
+- id: GH-4145
+  github_issue: 4145
+  item_type: task
+  title: 'models_t1.sh: the gx10 leg fetches only origin/main -- a release/* candidate (the candidate watch) fails FETCH-FAILED'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T05:39:57.158176190+00:00
+  updated: 2026-09-24T05:39:57.158176190+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  notes: null

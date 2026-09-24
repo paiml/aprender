@@ -263,12 +263,20 @@ STUB
         && git -C "$r" add -A && git -C "$r" commit -q -m parent \
         && sed -i 's/^version = "9.9.8"$/version = "9.9.9"/' "$r/Cargo.toml" \
         && git -C "$r" commit -q -am 'release: 9.9.9' \
-        && git -C "$r" remote add origin "$d/origin.git" && git -C "$r" push -q origin main \
-        && git -C "$r" fetch -q origin || return 2
+        && git -C "$r" remote add origin "$d/origin.git" || return 2
+    case "${FX_CANDIDATE:-main}" in
+        main) git -C "$r" push -q origin main && git -C "$r" fetch -q origin || return 2 ;;
+        *)    git -C "$r" push -q origin HEAD^:refs/heads/main && git -C "$r" fetch -q origin || return 2 ;;
+    esac
     git -C "$r" rev-parse HEAD > "$d/mc"
     # the fake gx10: its checkout sits at the PARENT, with a stale release dir beside it
     mkdir -p "$d/gx10/src" "$d/gx10/.cache/aprender-release/rel-9.9.7/target" || return 2
-    git clone -q "$d/origin.git" "$d/gx10/src/aprender" && git -C "$d/gx10/src/aprender" checkout -q --detach HEAD^ || return 2
+    case "${FX_CANDIDATE:-main}" in
+        main) git clone -q "$d/origin.git" "$d/gx10/src/aprender" && git -C "$d/gx10/src/aprender" checkout -q --detach HEAD^ || return 2 ;;
+        # #4145: gx10's clone is OLDER than the candidate branch -- it has main (the parent) and nothing else
+        *)    git clone -q "$d/origin.git" "$d/gx10/src/aprender" && git -C "$d/gx10/src/aprender" checkout -q --detach HEAD || return 2
+              [ "$FX_CANDIDATE" = nowhere ] || git -C "$r" push -q origin HEAD:refs/heads/release/9.9.9 || return 2 ;;
+    esac
     if [ "${4:-}" = release ]; then
         local par h nd
         par=$(git -C "$r" rev-parse HEAD^)
@@ -380,6 +388,36 @@ release_green() {
     return 0
 }
 # FX_NO_NIGHTLY_HOST shapes the FIXTURE (built before stops' ENV args are exported), so it rides on the call itself
+# #4145: a candidate that is NOT on main -- the candidate watch measures a release/* HEAD and calls models_t1.sh
+# DIRECTLY (autopilot never does: its commit is the bump's merge on main, and it refuses anything else first) -- is
+# fetched on gx10 by its sha and measured; a candidate the origin does not have at all is refused by name.
+# models_direct NAME MODELS_T1 [ENV=VAL ...] -> runs models_t1.sh 9.9.9 <candidate> <out> in the fixture repo
+models_direct() {
+    local n=$1 d="$TMP/$1" m=$2; shift 2
+    fixture "$n" "$AUTOPILOT" "$m" "${FX_TREE:-}" || return 2
+    : > "$d/wrap.log"; mkdir -p "$d/out"
+    ( export CARGO_HOME="$TMP/cargo-home" PATH="$TMP/bin:$PATH" FX_GX10_HOME="$d/gx10" MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log"
+      for kv in "$@"; do export "${kv?}"; done
+      cd "$d/repo" && bash scripts/release/models_t1.sh 9.9.9 "$(cat "$d/mc")" "$d/out" ) > "$d/direct.log" 2>&1
+    printf '%s\n' "$?" > "$d/rc"
+}
+candidate_branch() {
+    local n="cbranch-$1" d; d="$TMP/cbranch-$1"
+    FX_CANDIDATE=branch models_direct "$n" "$3" || return 2
+    [ "$(cat "$d/rc")" = 0 ] || { printf 'models_t1.sh exited %s: %s\n' "$(cat "$d/rc")" "$(grep '^MODELS' "$d/direct.log" | tail -n 2 | tr '\n' ' ')"; return 1; }
+    grep -qF "apr 9.9.9 ($(cut -c1-9 "$d/mc"))" "$d/out/gx10.json" 2>/dev/null \
+        || { printf 'gx10 did not measure the release-branch candidate: %s\n' "$(cat "$d/out/gx10.json" 2>/dev/null)"; return 1; }
+    return 0
+}
+candidate_nowhere() {
+    local n="cnowhere-$1" d; d="$TMP/cnowhere-$1"
+    FX_CANDIDATE=nowhere models_direct "$n" "$3" || return 2
+    [ "$(cat "$d/rc")" != 0 ] || { printf 'models_t1.sh exited 0 on a candidate the origin does not have\n'; return 1; }
+    grep -qF 'MODELS gx10 NO-GO: no receipt -- FETCH-FAILED' "$d/direct.log" \
+        || { printf 'the refusal never said FETCH-FAILED: %s\n' "$(grep '^MODELS' "$d/direct.log" | tail -n 2 | tr '\n' ' ')"; return 1; }
+    ! grep -q '^build host=gx10' "$d/wrap.log" || { printf 'gx10 built before the fetch refusal\n'; return 1; }
+    return 0
+}
 release_no_nightly() { FX_NO_NIGHTLY_HOST=gx10 FX_TREE=release stops "rnonight-$1" "$2" "$3" "NIGHTLY gx10: no nightly at all"; }
 release_red_smoke()  { FX_TREE=release stops "rredsmoke-$1" "$2" "$3" "gx10 CRUX smoke RED" FX_SMOKE_RED_HOST=gx10; }
 release_stale()      { FX_TREE=release stops "rstale-$1" "$2" "$3" "MODELS gx10 NO-GO: no receipt -- NOT-THE-RELEASE" FX_STALE_HOST=gx10; }
@@ -389,7 +427,8 @@ for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails 
             "missing-receipt missing" "red-cell red_cell" "judge-decline decline" \
             "stale-binary stale" "disk-refusal disk" "oom-victim oom_victim" \
             "release-green release_green" "release-no-nightly release_no_nightly" \
-            "release-red-smoke release_red_smoke" "release-stale-binary release_stale"; do
+            "release-red-smoke release_red_smoke" "release-stale-binary release_stale" \
+            "candidate-on-release-branch candidate_branch" "candidate-nowhere candidate_nowhere"; do
     set -- $spec
     msg=$($2 real "$AUTOPILOT" "$MODELS"); row "$1" "$?" "$msg"
 done
@@ -491,7 +530,11 @@ msg=$(FX_GATHER="$TMP/m-gather-wholedir.sh" release_green m-gather-wholedir "$AU
 [ "$mrc" = 2 ] && env_die "gather-wholedir mutant could not build its fixture"
 [ "$mrc" != 0 ]; row "mutant gather-wholedir is killed by release_green (${msg:-survived})" "$?" "the mutant PASSED -- the row does not discriminate"
 
+# #4145: the gx10 leg back to a main-only fetch -> a release/* candidate is FETCH-FAILED
+M_BYID='  || { git -C "\$repo" fetch -q origin "$sha" && git -C "\$repo" cat-file -e "$sha^{commit}"; } \'
+mutant fetch-main-only "$MODELS" "$M_BYID" '  || false \' candidate_branch
+
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
-[ "$rows" -ge 39 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 39 declared\n' "$rows" >&2; exit 1; }
+[ "$rows" -ge 42 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 42 declared\n' "$rows" >&2; exit 1; }
 [ "$fails" -eq 0 ] || { printf 'RED   %s of %s row(s) failed\n' "$fails" "$rows" >&2; exit 1; }
 printf 'PASS  %s row(s): the model matrix runs at T-1 on both hosts, every failure to prove the release STOPs before the tag, and R7 refuses the same failures at T-4 (#3717)\n' "$rows"
