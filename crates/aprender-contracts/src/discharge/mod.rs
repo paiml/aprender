@@ -577,6 +577,10 @@ pub struct Report {
     pub lines: Vec<String>,
     pub reject: bool,
     pub decline: Option<String>,
+    /// Raw exit of `lake env lean Axioms.lean` (a signal is 128+n); `None` when it never ran.
+    pub lake_exit: Option<i32>,
+    /// Raw exit of the `--leanchecker` recheck (124/137 on a timeout); `None` when it never ran.
+    pub leanchecker_exit: Option<i32>,
 }
 
 impl Report {

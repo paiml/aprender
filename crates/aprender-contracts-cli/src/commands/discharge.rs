@@ -112,7 +112,26 @@ pub struct Leanchecker {
 }
 
 /// The Lean steps run only on a tree nothing else has already failed or declined: a 60-minute re-check of a tree
-/// that is already RED would only delay the verdict.
+/// that is already RED would only delay the verdict. They record their raw exits in `r.lake_exit` and
+/// `r.leanchecker_exit` (`None` = never ran) for `discharge-summary.json` (EV-8a).
+pub(crate) fn lean_steps(
+    lake: &str,
+    r: &mut Report,
+    lean_dir: &Path,
+    no_lake: bool,
+    lc: Option<Leanchecker>,
+) {
+    let open = |r: &Report| !r.reject && r.decline.is_none();
+    if open(r) && !no_lake {
+        elaborate(lake, lean_dir, r);
+    }
+    if let Some(lc) = lc {
+        if open(r) {
+            recheck(lake, lean_dir, lc, r);
+        }
+    }
+}
+
 fn finish_with(
     lake: &str,
     mut r: Report,
@@ -120,15 +139,7 @@ fn finish_with(
     no_lake: bool,
     lc: Option<Leanchecker>,
 ) -> Res {
-    let open = |r: &Report| !r.reject && r.decline.is_none();
-    if open(&r) && !no_lake {
-        elaborate(lake, lean_dir, &mut r);
-    }
-    if let Some(lc) = lc {
-        if open(&r) {
-            recheck(lake, lean_dir, lc, &mut r);
-        }
-    }
+    lean_steps(lake, &mut r, lean_dir, no_lake, lc);
     for l in &r.lines {
         println!("{l}");
     }
@@ -158,8 +169,12 @@ fn elaborate(lake: &str, lean_dir: &Path, r: &mut Report) {
                 "lake could not be run ({e}): Axioms.lean was not elaborated"
             ))
         }
-        Ok(o) if o.status.success() => r.lines.push(format!("ok    lake env lean {AXIOMS_FILE}")),
+        Ok(o) if o.status.success() => {
+            r.lake_exit = Some(raw_exit(o.status));
+            r.lines.push(format!("ok    lake env lean {AXIOMS_FILE}"));
+        }
         Ok(o) => {
+            r.lake_exit = Some(raw_exit(o.status));
             let text = format!(
                 "{}{}",
                 String::from_utf8_lossy(&o.stdout),
@@ -178,6 +193,12 @@ fn elaborate(lake: &str, lean_dir: &Path, r: &mut Report) {
             r.reject = true;
         }
     }
+}
+
+/// The process's exit code, or 128+signal when a signal ended it (the shell's convention).
+fn raw_exit(s: std::process::ExitStatus) -> i32 {
+    use std::os::unix::process::ExitStatusExt;
+    s.code().unwrap_or_else(|| 128 + s.signal().unwrap_or(0))
 }
 
 /// The toolchain `lake env` puts on PATH for this tree: `lake env printenv LEAN_SYSROOT`. `Err` is the decline.
@@ -239,14 +260,19 @@ fn recheck(lake: &str, lean_dir: &Path, lc: Leanchecker, r: &mut Report) {
                 "sh could not be run ({e}): leanchecker did not run"
             ))
         }
-        Ok(o) if o.status.success() => r.lines.push(format!("ok    {what}")),
+        Ok(o) if o.status.success() => {
+            r.leanchecker_exit = Some(0);
+            r.lines.push(format!("ok    {what}"));
+        }
         Ok(o) => match o.status.code() {
+            // timeout/ulimit/lake could not start leanchecker: it never ran, so no exit is recorded.
             Some(c @ 125..=127) => {
                 r.decline = Some(format!(
                     "{what} could not be started (rc {c}: timeout/ulimit/lake): not a verdict"
                 ));
             }
             code => {
+                r.leanchecker_exit = Some(raw_exit(o.status));
                 let why = if matches!(code, Some(124 | 137)) {
                     "timed out".to_string()
                 } else {
@@ -563,5 +589,42 @@ mod tests {
             "{:?}",
             r.lines
         );
+    }
+
+    /// EV-8a reads the raw exits: `Some(n)` for a step that ran (124 on a timeout), `None` for one that never ran.
+    #[test]
+    fn the_lean_steps_record_their_raw_exits_and_none_when_they_did_not_run() {
+        let (d, lean, _) = tree();
+        let exits = |lake: &str, no_lake: bool, lc: Option<Leanchecker>| {
+            let mut r = Report::default();
+            lean_steps(lake, &mut r, &lean, no_lake, lc);
+            (r.lake_exit, r.leanchecker_exit)
+        };
+        let pass = checker_lake(d.path(), true, 0, "ok");
+        assert_eq!(exits(&pass, false, LC), (Some(0), Some(0)));
+        assert_eq!(
+            exits(&pass, false, None),
+            (Some(0), None),
+            "no --leanchecker"
+        );
+        assert_eq!(exits(&pass, true, None), (None, None), "--no-lake");
+        let fail = checker_lake(d.path(), true, 3, "kernel error");
+        assert_eq!(exits(&fail, true, LC), (None, Some(3)));
+        let absent = checker_lake(d.path(), false, 0, "never reached");
+        assert_eq!(
+            exits(&absent, true, LC),
+            (None, None),
+            "absent checker never ran"
+        );
+        let slow = checker_lake(d.path(), true, 0, "x");
+        let body = std::fs::read_to_string(&slow)
+            .expect("r")
+            .replace("echo 'x'; exit 0", "sleep 30");
+        std::fs::write(&slow, body).expect("w");
+        let t1 = Some(Leanchecker {
+            timeout_s: 1,
+            ulimit_v_kib: None,
+        });
+        assert_eq!(exits(&slow, true, t1), (None, Some(124)), "timeout");
     }
 }
