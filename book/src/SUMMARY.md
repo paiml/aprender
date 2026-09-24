@@ -447,6 +447,7 @@
 - [aprender::qa](./lib/qa.md)
 - [aprender::recommend](./lib/recommend.md)
 - [aprender::regularization](./lib/regularization.md)
+- [aprender::release_section](./lib/release_section.md)
 - [aprender::scoring](./lib/scoring.md)
 - [aprender::serialization](./lib/serialization.md)
 - [aprender::setfit](./lib/setfit.md)

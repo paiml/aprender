@@ -29,6 +29,15 @@ const ARCHES: &[(&str, Arch)] = &[
     ("qwen3_moe", Arch::NotYet("#4263 MoE (aprender-cb)")),
 ];
 
+/// `ArchForward` impls that are not an architecture of their own but another
+/// row's forward over a borrowed model: (impl type, the `Session` row it runs).
+/// The scan counts each as its row, so an adapter must still be declared here.
+const ADAPTERS: &[(&str, &str)] = &[
+    // #4280: the CUDA batch scheduler's single-request path, the dense CUDA
+    // forward borrowing the scheduler's model for one turn.
+    ("BorrowedCudaForward", "DenseForward"),
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Arch {
     /// Served by the engine through this `ArchForward` impl.
@@ -262,6 +271,20 @@ fn apr_run_on_a_dense_gguf_enters_the_one_engine() {
     }
 }
 
+/// The implementing type's name when `line` opens an `impl ArchForward for X`.
+fn arch_forward_impl_type(line: &str) -> Option<String> {
+    let line = line.trim_start();
+    let rest = line
+        .strip_prefix("impl crate::session::ArchForward for ")
+        .or_else(|| line.strip_prefix("impl ArchForward for "))?;
+    let ty: String = rest
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    let row = ADAPTERS.iter().find(|(adapter, _)| *adapter == ty);
+    Some(row.map_or(ty, |(_, row)| (*row).to_string()))
+}
+
 /// Every `impl ArchForward for X` in production source is exactly the set of
 /// `Arch::Session` rows — a port cannot land without the table (and so the
 /// verb rows) knowing.
@@ -278,19 +301,7 @@ fn every_arch_forward_is_a_session_row() {
                 stack.push(path);
             } else if name.ends_with(".rs") && !name.contains("test") {
                 let text = std::fs::read_to_string(&path).expect("read source");
-                for line in text.lines() {
-                    let line = line.trim_start();
-                    let rest = line
-                        .strip_prefix("impl crate::session::ArchForward for ")
-                        .or_else(|| line.strip_prefix("impl ArchForward for "));
-                    if let Some(rest) = rest {
-                        let ty: String = rest
-                            .chars()
-                            .take_while(|c| c.is_alphanumeric() || *c == '_')
-                            .collect();
-                        found.insert(ty);
-                    }
-                }
+                found.extend(text.lines().filter_map(arch_forward_impl_type));
             }
         }
     }

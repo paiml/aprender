@@ -140,18 +140,7 @@ fn generate_single_request_inner(cuda_model: &mut OwnedQuantizedModelCuda, req: 
             tokens.push(tid);
             true
         });
-        match result {
-            Ok(_) => {
-                for t in tokens {
-                    if req.token_tx.try_send(Ok(t)).is_err() {
-                        break;
-                    }
-                }
-            },
-            Err(e) => {
-                let _ = req.token_tx.try_send(Err(e.to_string()));
-            },
-        }
+        send_buffered_turn(result.map(|_| tokens), &req.token_tx);
     } else {
         let result = session.generate(&req.prompt_ids, &req.config, &mut |tid| {
             !stop_tokens.contains(&tid) && req.token_tx.try_send(Ok(tid)).is_ok()
@@ -159,6 +148,27 @@ fn generate_single_request_inner(cuda_model: &mut OwnedQuantizedModelCuda, req: 
         if let Err(e) = result {
             let _ = req.token_tx.try_send(Err(e.to_string()));
         }
+    }
+}
+
+/// The non-streaming turn's delivery: its tokens in order once the turn is
+/// done (stopping at the first closed-channel send), or its error.
+#[cfg(feature = "cuda")]
+fn send_buffered_turn<E: std::fmt::Display>(
+    result: std::result::Result<Vec<u32>, E>,
+    token_tx: &tokio::sync::mpsc::Sender<Result<u32, String>>,
+) {
+    match result {
+        Ok(tokens) => {
+            for t in tokens {
+                if token_tx.try_send(Ok(t)).is_err() {
+                    break;
+                }
+            }
+        },
+        Err(e) => {
+            let _ = token_tx.try_send(Err(e.to_string()));
+        },
     }
 }
 
