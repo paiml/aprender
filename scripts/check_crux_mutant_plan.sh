@@ -20,7 +20,7 @@
 #  13. CRUX_MUTANTS_PLAN_ONLY is never a verdict: it says 0 ran and exits 3
 #  14. a self-referential CRUX_MUTANT_DIFF_BASE is an unreadable diff, never 'untouched'
 #  15. no runner setting makes a zero-mutant run pass: floor 0, CRUX_NO_MUTANTS, CRUX_MUTANTS=none,
-#      CRUX_MIN_TABLE_ROWS=0
+#      CRUX_JUDGE_OVERRIDE (+ CRUX_NO_MUTANTS), CRUX_MIN_TABLE_ROWS=0
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
@@ -171,12 +171,13 @@ s14b=$( . "$ROOT/scripts/lib/crux_mutant_plan.sh"; CRUX_MUTANT_DIFF_BASE=HEAD~1 
 r0=$(pl "$PLAN" --event pull_request --changed "$TMP/none.txt" --head "$HEAD_A" --sample 0 --floor 0)
 ( cd "$P1" && CRUX_NO_MUTANTS=1 timeout 600 bash scripts/check_crux_inference_judge.sh > "$TMP/r15a.log" 2>&1 ); ra=$?
 ( cd "$P1" && CRUX_MUTANTS=none timeout 600 bash scripts/check_crux_inference_judge.sh > "$TMP/r15b.log" 2>&1 ); rb=$?
-fl=$(grep -c 'CRUX_MIN_TABLE_ROWS\|MIN_ROWS=120' "$ROOT/scripts/check_crux_inference_judge.sh")
-if [ "$r0" = "REFUSED 2" ] && [ "$ra" = 3 ] && grep -q 'outside a mutant.s own recursion: no mutant ran, exit 3' "$TMP/r15a.log" \
-   && [ "$rb" = 3 ] && grep -q 'the plan selected no mutant (CRUX_MUTANTS=none): no mutant ran, exit 3' "$TMP/r15b.log"; then
-  ok "no runner setting makes a zero-mutant run pass: floor 0 refused; CRUX_NO_MUTANTS and CRUX_MUTANTS=none exit 3 naming why"
+( cd "$P1" && CRUX_JUDGE_OVERRIDE="$P1/scripts/lib/crux_inference_judge.py" CRUX_NO_MUTANTS=1 timeout 600 bash scripts/check_crux_inference_judge.sh > "$TMP/r15c.log" 2>&1 ); rc_=$?
+if [ "$r0" = "REFUSED 2" ] && [ "$ra" = 3 ] && grep -q 'CRUX_NO_MUTANTS is set: no mutant ran, exit 3' "$TMP/r15a.log" \
+   && [ "$rb" = 3 ] && grep -q 'the plan selected no mutant (CRUX_MUTANTS=none): no mutant ran, exit 3' "$TMP/r15b.log" \
+   && [ "$rc_" = 3 ] && grep -q 'CRUX_JUDGE_OVERRIDE is set' "$TMP/r15c.log"; then
+  ok "no runner setting makes a zero-mutant run pass: floor 0 refused; CRUX_NO_MUTANTS, CRUX_MUTANTS=none and CRUX_JUDGE_OVERRIDE+CRUX_NO_MUTANTS exit 3 naming why"
 else
-  broke "zero-mutant escapes: floor0 '$r0', CRUX_NO_MUTANTS rc $ra, none rc $rb"
+  broke "zero-mutant escapes: floor0 '$r0', CRUX_NO_MUTANTS rc $ra, none rc $rb, override+no-mutants rc $rc_"
 fi
 out=$( cd "$P1" && CRUX_MUTANTS_PLAN_ONLY=1 CRUX_MIN_TABLE_ROWS=0 timeout 600 bash scripts/check_crux_inference_judge.sh 2>&1 | grep -c 'under the floor' )
 out2=$( cd "$P1" && CRUX_MUTANTS_PLAN_ONLY=1 CRUX_MIN_TABLE_ROWS=100000 timeout 600 bash scripts/check_crux_inference_judge.sh 2>&1 | grep -c 'under the floor of 100000' )

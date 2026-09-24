@@ -1078,18 +1078,20 @@ expect "B2: a rendering floored to a char boundary (199 bytes) is NOT read as wh
 # scripts/lib/crux_mutant_plan.py: every mutant locally, on schedule/dispatch and in guards-nightly.yml
 # (CRUX_MUTANTS=all); on a PR, merge group or push, every mutant when the diff touches a file they test, else a
 # rotating slice keyed by the head sha. A table that judged too few rows is refused first, sampled or not.
-# A run that runs ZERO mutants on purpose is never a verdict: it says why and exits 3 after its summary. The only
-# legitimate CRUX_NO_MUTANTS is a mutant's own recursion, which always sets CRUX_JUDGE_OVERRIDE (quorum round 4,
-# lane 2 measured a top-level CRUX_NO_MUTANTS=1, CRUX_MUTANTS=none and a floor of 0 each exiting 0 with no mutant).
+# A run that runs ZERO mutants, or judges anything but the real judge, is never a verdict: it says why and exits 3
+# after its summary (a broken row still exits 1 first). This holds for the mutant loop's own recursion too — the loop
+# grades each mutant by its BROKE lines and never reads the child's exit code, so nothing is lost, and there is no
+# "am I the recursion?" test to spoof (quorum round 4, lane 2: CRUX_NO_MUTANTS / CRUX_MUTANTS=none / a floor of 0
+# each exited 0 with no mutant; round 5, lane 2: CRUX_JUDGE_OVERRIDE, the proxy used for "recursion", was settable
+# by anyone and made the same run pass silently).
 NOT_A_VERDICT=""
-if [ -z "${CRUX_JUDGE_OVERRIDE:-}" ]; then
-  # the row floor applies to every top-level run; the env var may RAISE it, never lower it
-  MIN_ROWS=120
-  [ "${CRUX_MIN_TABLE_ROWS:-0}" -gt "$MIN_ROWS" ] 2>/dev/null && MIN_ROWS=$CRUX_MIN_TABLE_ROWS
-  if [ "$PASS" -lt "$MIN_ROWS" ]; then
-    broke "the table judged only $PASS row(s) ok before the mutants, under the floor of $MIN_ROWS: a thin table proves nothing"
-  fi
-  [ -n "${CRUX_NO_MUTANTS:-}" ] && NOT_A_VERDICT="CRUX_NO_MUTANTS is set outside a mutant's own recursion"
+[ -n "${CRUX_JUDGE_OVERRIDE:-}" ] && NOT_A_VERDICT="CRUX_JUDGE_OVERRIDE is set: the judge under test is $JUDGE, not the real one"
+[ -n "${CRUX_NO_MUTANTS:-}" ] && NOT_A_VERDICT="${NOT_A_VERDICT:+$NOT_A_VERDICT; }CRUX_NO_MUTANTS is set"
+# the row floor applies to every run; the env var may RAISE it, never lower it
+MIN_ROWS=120
+[ "${CRUX_MIN_TABLE_ROWS:-0}" -gt "$MIN_ROWS" ] 2>/dev/null && MIN_ROWS=$CRUX_MIN_TABLE_ROWS
+if [ "$PASS" -lt "$MIN_ROWS" ]; then
+  broke "the table judged only $PASS row(s) ok before the mutants, under the floor of $MIN_ROWS: a thin table proves nothing"
 fi
 if [ -z "${CRUX_NO_MUTANTS:-}" ]; then
   mutant_list() {
