@@ -666,9 +666,11 @@ bindings:
   status: implemented
   notes: >-
     S8, the four jidoka parameters. guard_mutation_score is REPRODUCIBLE:
-    scripts/mutate-guard.sh is committed and its DERIVED set is 233/233 over
-    scripts/check_pr_review_receipt.sh. THE SET SIZE IS DERIVED AND CERTAIN; THE KILL
-    COUNT ON THIS MERGED TREE IS PENDING, and is the `pr-review-receipt` job's Arm 3.
+    scripts/mutate-guard.sh is committed and its DERIVED set is 237/237 over
+    scripts/check_pr_review_receipt.sh, MEASURED 2026-09-24 (#3646): the full sweep
+    killed 236; the survivor, reject-78-drop (the driver-name jq itself failing, which
+    no receipt can reach because the SARIF schema check runs first), is killed by the
+    fault-injection row e3 in tests/pr-review.bats. Arm 3 re-measures it.
     215/215 was measured on PRREV-015's tree and 185/185 on PRREV-013's, and neither
     transfers: PRREV-019 and PRREV-020 each added one `reject B<n>` site (two mutants
     each), and PRREV-020 gave every row-* fixture an output_check block, so the corpus

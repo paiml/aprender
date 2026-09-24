@@ -2082,3 +2082,20 @@ guard_under_every_jq() {
   printf '\n' > "$d/findings.sarif"
   guard_under_every_jq "$d" "findings.sarif holds 0 JSON document/s"
 }
+
+# The driver-name check's own jq failing is unreachable from a receipt: the SARIF schema
+# refuses every shape that would make that filter error, and it runs first. So the
+# fail-closed branch is exercised by fault injection -- a jq that fails on that one filter
+# (keyed on its `"<absent>"` default) and is the real jq for every other call.
+@test "row e3 the driver-name jq itself fails: a check that could not run   RED  B1" {
+  local d="$WORK/e3" bin="$WORK/jqshim" real
+  mkdir -p "$d" "$bin"; cp -r "$FIX/row-07-honest-docs-only-pmat-consulted/." "$d/"
+  real=$(type -P jq)
+  printf '#!/usr/bin/env bash\ncase "$*" in *"<absent>"*) exit 5 ;; esac\nexec %q "$@"\n' "$real" > "$bin/jq"
+  chmod +x "$bin/jq"
+  run "$GUARD" "$d"
+  [ "$status" -eq 0 ] || { echo "control: unshimmed row-07 must be GREEN, got $status:"; echo "$output"; return 1; }
+  PATH="$bin:$PATH" run "$GUARD" "$d"
+  [ "$status" -eq 1 ] && [[ "$output" == *"[B1]"* && "$output" == *"could not be read for tool.driver.name (jq exited 5)"* ]] || {
+    echo "wanted RED [B1] naming the driver-name jq failure, got $status:"; echo "$output"; return 1; }
+}
