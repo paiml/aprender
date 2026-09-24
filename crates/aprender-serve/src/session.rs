@@ -79,6 +79,33 @@ pub trait ArchForward: Send {
         Ok(())
     }
 
+    /// Where to keep a copy of the state while prefilling `prompt` (#4214):
+    /// the state after `prompt[..k]` is what a later prompt most likely
+    /// repeats — a chat's history before its generation header. `None` (the
+    /// default): this forward keeps no copies, and a prompt that does not
+    /// extend what the state holds is prefilled from 0.
+    fn checkpoint_at(&self, _prompt: &[u32]) -> Option<usize> {
+        None
+    }
+
+    /// Keep a copy of the state as it holds now, replacing any earlier copy.
+    ///
+    /// # Errors
+    /// The copy could not be made; the session then keeps none.
+    fn save_checkpoint(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    /// Return the state to the copy [`ArchForward::save_checkpoint`] kept.
+    /// `false` when there is none to return to (never saved, or dropped by a
+    /// reallocation or a fallback): the state is then unchanged.
+    ///
+    /// # Errors
+    /// The copy could not be put back; what the state holds is then unknown.
+    fn restore_checkpoint(&mut self) -> Result<bool> {
+        Ok(false)
+    }
+
     /// The state holds `tokens[..start]` (`start == 0`: reset it). Advance it
     /// to hold all of `tokens` and return the logits after the last one.
     ///
