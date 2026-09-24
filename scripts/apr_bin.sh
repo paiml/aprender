@@ -568,7 +568,8 @@ elif { [ -n "${APR_BIN_REQUIRE:-}" ] && [ "${APR_BIN_REQUIRE}" != "head" ]; } \
 else
     APR_NP_RC=1
 fi
-if [ "$APR_NP_RC" -ne 0 ] && [ "$APR_NP_RC" -ne 1 ]; then  # 2 = unknown mode; anything else is a broken rule
+if [ "$APR_NP_RC" -ne 0 ] && [ "$APR_NP_RC" -ne 1 ]; then  # 2 = unknown mode (already said why); anything else is a broken rule
+    [ "$APR_NP_RC" -eq 2 ] || printf 'NIGHTLY PIN REFUSED: nightly_pin_mode returned %s (expected 0/1/2): the rule is broken, not bypassed\n' "$APR_NP_RC" >&2
     return 1 2>/dev/null || exit 1
 fi
 if [ "$APR_NP_RC" -eq 0 ]; then
