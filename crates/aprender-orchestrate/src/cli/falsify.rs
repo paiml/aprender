@@ -90,9 +90,18 @@ fn check_grade_threshold(result: &ChecklistResult, threshold: TpsGrade) -> anyho
 
 /// Resolve a path to its project root directory.
 ///
-/// If `path` is a file, walks up the directory tree looking for project markers
-/// (Cargo.toml, .git, pyproject.toml). If `path` is already a directory, returns it.
+/// Walks up from `path` (or from its parent, if `path` is a file) looking for
+/// project markers (Cargo.toml, .git, pyproject.toml). With no marker found,
+/// returns the starting directory.
 fn resolve_project_root(path: &Path) -> PathBuf {
+    resolve_project_root_within(path, None)
+}
+
+/// [`resolve_project_root`] with an optional `ceiling`: the walk checks the
+/// ceiling itself and never looks above it. Tests set the ceiling to their own
+/// tempdir, so a marker the host happens to have above it (a stray
+/// `/tmp/Cargo.toml`, #4191) cannot decide the result.
+fn resolve_project_root_within(path: &Path, ceiling: Option<&Path>) -> PathBuf {
     let start = if path.is_file() { path.parent().unwrap_or(path) } else { path };
 
     let markers = ["Cargo.toml", ".git", "pyproject.toml"];
@@ -102,6 +111,9 @@ fn resolve_project_root(path: &Path) -> PathBuf {
             if current.join(marker).exists() {
                 return current.to_path_buf();
             }
+        }
+        if ceiling == Some(current) {
+            break;
         }
         match current.parent() {
             Some(parent) if parent != current => current = parent,
@@ -399,11 +411,44 @@ mod tests {
 
     #[test]
     fn test_resolve_project_root_nonexistent_falls_back() {
-        let tmp = std::env::temp_dir().join("batuta_test_no_project_root");
-        let _ = fs::create_dir_all(&tmp);
-        let result = resolve_project_root(&tmp);
-        assert_eq!(result, tmp);
-        let _ = fs::remove_dir(&tmp);
+        // The ceiling is the tempdir, so whatever sits above it on this host
+        // (a stray /tmp/Cargo.toml, #4191) is never consulted.
+        let base = tempfile::tempdir().expect("tempdir");
+        let start = base.path().join("a/b");
+        fs::create_dir_all(&start).expect("mkdir");
+        assert_eq!(resolve_project_root_within(&start, Some(base.path())), start);
+    }
+
+    #[test]
+    fn test_resolve_project_root_within_finds_marker_below_ceiling() {
+        let base = tempfile::tempdir().expect("tempdir");
+        let proj = base.path().join("proj");
+        let start = proj.join("src/cli");
+        fs::create_dir_all(&start).expect("mkdir");
+        fs::write(proj.join("Cargo.toml"), "").expect("write marker");
+        assert_eq!(resolve_project_root_within(&start, Some(base.path())), proj);
+    }
+
+    #[test]
+    fn test_resolve_project_root_within_checks_the_ceiling_itself() {
+        let base = tempfile::tempdir().expect("tempdir");
+        let start = base.path().join("a");
+        fs::create_dir_all(&start).expect("mkdir");
+        fs::write(base.path().join("pyproject.toml"), "").expect("write marker");
+        assert_eq!(resolve_project_root_within(&start, Some(base.path())), base.path());
+    }
+
+    #[test]
+    fn test_resolve_project_root_within_never_looks_above_ceiling() {
+        // Positive control for the ceiling: a marker ABOVE it is ignored.
+        // Without the ceiling the same walk returns the marker's dir.
+        let base = tempfile::tempdir().expect("tempdir");
+        let ceiling = base.path().join("c");
+        let start = ceiling.join("d");
+        fs::create_dir_all(&start).expect("mkdir");
+        fs::write(base.path().join("Cargo.toml"), "").expect("write marker");
+        assert_eq!(resolve_project_root_within(&start, Some(&ceiling)), start);
+        assert_eq!(resolve_project_root_within(&start, None), base.path());
     }
 
     #[test]
