@@ -138,7 +138,8 @@ for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
         continue
     span = next((s for s in m.get("spans", []) if s.get("is_primary")), {})
     where = f'{span.get("file_name", "?")}:{span.get("line_start", "?")}'
-    print(f"      {code} at {where}: {m.get('message', '')[:160]}")
+    text = m.get("message", "")
+    print(f"      {code} at {where}: " + (text if len(text) <= 160 else f"{text[:160]} ... and {len(text) - 160} more chars"))
     n += 1
     if n >= 10:
         print("      (first 10 shown)")
@@ -225,7 +226,7 @@ self_test() {
     row 0 "a note-level message is not a finding" "$t/note.json"
     # the version-only package-id form must name the crate, not the version
     printf '{"reason":"compiler-message","package_id":"path+file:///x/crates/aprender-core#0.69.0","target":{"kind":["lib"]},"message":{"level":"warning","code":{"code":"clippy::x"}}}\n{"reason":"build-finished","success":true}\n' > "$t/verid.json"
-    if census "$t/verid.json" | grep -q '^aprender-core|lib|clippy::x'; then printf '  ok    a version-only package id names the crate\n'
+    if grep -q '^aprender-core|lib|clippy::x' <<< "$(census "$t/verid.json")"; then printf '  ok    a version-only package id names the crate\n'
     else printf '  BROKE a version-only package id was not named by its directory\n'; fails=$((fails + 1)); fi
     # vacuity is a SET check: an excluded member seen as a dependency must not stand in for a
     # wanted member clippy never checked (a count test passes this: 2 got, 2 wanted)

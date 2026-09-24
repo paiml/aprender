@@ -135,9 +135,33 @@ dogfood_declared_missing() {
 }
 
 # Guards named by no workflow, one per line, sorted.
+# explicit_cmd_wired ROOT -- guards run by an EXPLICIT TEST COMMAND fragment.
+#
+# #4152: a cargo-using guard can be wired as ci/explicit-test-commands.d/NNN-*.cmd,
+# which ci.yml's workspace-test shards execute via
+#     bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d
+# The workflow never names the guard, so the per-guard scan below reports it dark
+# although CI runs it on every PR. Same rule as everywhere here -- EXECUTION, not
+# mention -- applied twice: a workflow must INVOKE the runner with --run on the
+# directory, and the fragment's line must INVOKE the guard (a `#` comment in a .cmd
+# wires nothing).
+explicit_cmd_wired() {
+    local root="$1" lines dir f
+    lines=$(grep -rh --include='*.yml' --include='*.yaml' -- 'ci_run_explicit_test_commands.sh' \
+                "$root"/.github/workflows/ 2>/dev/null | sed 's/#.*$//' | _not_a_name_line) || lines=''
+    for dir in $(sed -nE 's/.*ci_run_explicit_test_commands\.sh[[:space:]]+--run[[:space:]]+([^[:space:]"'"'"']+).*/\1/p' <<< "$lines" | LC_ALL=C sort -u); do
+        for f in "$root/$dir"/*.cmd; do
+            [ -f "$f" ] || continue
+            sed 's/#.*$//' "$f" \
+                | grep -oE "(^|[[:space:];&|(])((ba)?sh[[:space:]]+|\\./)?[^[:space:]]*scripts/[A-Za-z0-9_.-]+\\.sh([[:space:]]|$)" \
+                | grep -oE '[A-Za-z0-9_.-]+\.sh' || true
+        done
+    done | LC_ALL=C sort -u
+}
+
 unwired_in() {
     local root="$1" g base seen="" dispatched declared
-    dispatched=" $(dispatcher_wired "$root" | tr '\n' ' ') "
+    dispatched=" $(dispatcher_wired "$root" | tr '\n' ' ') $(explicit_cmd_wired "$root" | tr '\n' ' ') "
     declared=" $(dogfood_declared "$root" | sed 's|.*/||' | tr '\n' ' ') "
     # THE UNIVERSE WAS BUILT FROM THE FILENAME, AND A GUARD HID BEHIND ITS OWN.
     #
@@ -375,8 +399,34 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'FAIL  row 13 got [%s], expected [check_dark.sh check_release_gate.sh ]\n' "$got13"; fails=1
     fi
 
+    # ── Rows 14-16: WIRED BY AN EXPLICIT TEST COMMAND FRAGMENT (#4152) ──────
+    # Row 14: a .cmd fragment invokes the guard and a workflow runs the fragment
+    #         directory with --run -> wired.
+    # Row 15: the control -- drop the workflow's --run line and it is dark again.
+    # Row 16: a fragment that only NAMES the guard in a comment wires nothing.
+    mkdir -p "$TD3/ci/cmds"
+    printf '# the fragment\nbash scripts/check_dark.sh\n' > "$TD3/ci/cmds/010-dark.cmd"
+    printf '# bash scripts/check_release_gate.sh\n' > "$TD3/ci/cmds/020-comment.cmd"
+    printf 'jobs:\n  t:\n    steps:\n      - run: |\n          bash scripts/ci_run_explicit_test_commands.sh --run ci/cmds --shard "1/3"\n' \
+        > "$TD3/.github/workflows/tests.yml"
+    got14=$(unwired_in "$TD3" | tr '\n' ' ')
+    if [ "$got14" = "check_release_gate.sh " ]; then
+        printf 'ok    row 14 a guard run by an explicit-test-command fragment counts as wired\n'
+        printf 'ok    row 16 a fragment that names a guard only in a comment wires nothing\n'
+    else
+        printf 'FAIL  rows 14/16 got [%s], expected [check_release_gate.sh ]\n' "$got14"; fails=1
+    fi
+    printf 'jobs:\n  t:\n    steps:\n      - run: bash scripts/ci_run_explicit_test_commands.sh --list ci/cmds\n' \
+        > "$TD3/.github/workflows/tests.yml"
+    got15=$(unwired_in "$TD3" | tr '\n' ' ')
+    if [ "$got15" = "check_dark.sh check_release_gate.sh " ]; then
+        printf 'ok    row 15 a workflow that only --lists the fragments wires nothing (the control for row 14)\n'
+    else
+        printf 'FAIL  row 15 got [%s], expected [check_dark.sh check_release_gate.sh ]\n' "$got15"; fails=1
+    fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (13/13)\n'
+    printf '\nSELF-TEST PASSED (16/16)\n'
     exit 0
 fi
 
