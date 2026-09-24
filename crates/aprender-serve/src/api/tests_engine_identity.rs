@@ -354,10 +354,23 @@ fn strip_impl_generics_case_table() {
     }
 }
 
-#[test]
-fn every_arch_forward_is_a_session_row() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut found = std::collections::BTreeSet::new();
+/// The type named by an `impl ArchForward for <Type>` line, if `line` is one.
+fn arch_forward_impl_type(line: &str) -> Option<String> {
+    let line = strip_impl_generics(line.trim_start());
+    let rest = line
+        .as_ref()
+        .strip_prefix("impl crate::session::ArchForward for ")
+        .or_else(|| line.as_ref().strip_prefix("impl ArchForward for "))?;
+    Some(
+        rest.chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect(),
+    )
+}
+
+/// Every non-test `.rs` file under `root`, recursively.
+fn non_test_sources(root: std::path::PathBuf) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
     let mut stack = vec![root];
     while let Some(dir) = stack.pop() {
         for entry in std::fs::read_dir(&dir).expect("read src") {
@@ -366,24 +379,25 @@ fn every_arch_forward_is_a_session_row() {
             if path.is_dir() {
                 stack.push(path);
             } else if name.ends_with(".rs") && !name.contains("test") {
-                let text = std::fs::read_to_string(&path).expect("read source");
-                for line in text.lines() {
-                    let line = strip_impl_generics(line.trim_start());
-                    let rest = line
-                        .as_ref()
-                        .strip_prefix("impl crate::session::ArchForward for ")
-                        .or_else(|| line.as_ref().strip_prefix("impl ArchForward for "));
-                    if let Some(rest) = rest {
-                        let ty: String = rest
-                            .chars()
-                            .take_while(|c| c.is_alphanumeric() || *c == '_')
-                            .collect();
-                        found.insert(ty);
-                    }
-                }
+                files.push(path);
             }
         }
     }
+    files
+}
+
+#[test]
+fn every_arch_forward_is_a_session_row() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let found: std::collections::BTreeSet<String> = non_test_sources(root)
+        .iter()
+        .flat_map(|path| {
+            let text = std::fs::read_to_string(path).expect("read source");
+            text.lines()
+                .filter_map(arch_forward_impl_type)
+                .collect::<Vec<_>>()
+        })
+        .collect();
     let rows: std::collections::BTreeSet<String> = ARCHES
         .iter()
         .filter_map(|(_, a)| match a {

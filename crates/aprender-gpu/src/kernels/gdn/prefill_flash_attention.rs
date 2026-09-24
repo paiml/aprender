@@ -391,7 +391,8 @@ impl Kernel for PrefillFlashAttention256Kernel {
                     for e in 0..4usize {
                         let colbase = ctx.add_u32(t2, nt as u32 * 8 + (e as u32 & 1));
                         let key = ctx.add_u32_reg(j0, colbase);
-                        let p_abs = if e < 2 { row_lo_abs } else { row_hi_abs };
+                        // Fragment elements 0,1 sit on row g, elements 2,3 on row g + 8.
+                        let p_abs = [row_lo_abs, row_hi_abs][e / 2];
                         let visible = ctx.setp_le_u32(key, p_abs);
                         tile[e] = ctx.selp_f32(visible, tile[e], neg_inf);
                     }

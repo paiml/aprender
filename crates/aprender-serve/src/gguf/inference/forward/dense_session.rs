@@ -143,23 +143,23 @@ impl DenseForward {
     fn ensure_capacity(&mut self) -> std::result::Result<(), Step> {
         let positions = self.turn_positions.min(self.context_length).max(1);
         let context_length = self.context_length;
-        match &mut self.backend {
+        let capacity = self.capacity;
+        let (target, built) = match &mut self.backend {
             Backend::Cpu { model, cache } => {
-                if positions <= self.capacity && cache.is_some() {
+                if positions <= capacity && cache.is_some() {
                     return Ok(());
                 }
-                let capacity = positions
-                    .max(self.capacity.saturating_mul(2))
+                let target = positions
+                    .max(capacity.saturating_mul(2))
                     .min(context_length)
                     .max(positions);
-                if let Some(cache) = cache {
-                    // Grown in place: what it holds stays held.
-                    cache.grow_to(capacity);
-                    self.capacity = capacity;
-                    return Ok(());
-                }
-                *cache = Some(OwnedQuantizedKVCache::from_config(&model.config, capacity));
-                self.capacity = capacity;
+                let config = &model.config;
+                (
+                    target,
+                    grow_or_build(cache, target, |n| {
+                        OwnedQuantizedKVCache::from_config(config, n)
+                    }),
+                )
             },
             #[cfg(feature = "cuda")]
             Backend::Cuda { model, cache } => {
@@ -169,27 +169,26 @@ impl DenseForward {
                         "the turn needs {positions} positions and the device KV cache holds {device_max}"
                     )));
                 }
-                if positions <= self.capacity && cache.is_some() {
+                if positions <= capacity && cache.is_some() {
                     return Ok(());
                 }
-                if let Some(cache) = cache {
-                    // The device cache is sized once, at build; only the host
-                    // side grows, in place.
-                    cache.grow_to(positions);
-                    self.capacity = positions;
-                    return Ok(());
-                }
-                *cache = Some(OwnedQuantizedKVCache::from_config(
-                    &model.model().config,
+                // The device cache is sized once, at build; only the host side grows.
+                let config = &model.model().config;
+                (
                     positions,
-                ));
-                self.capacity = positions;
+                    grow_or_build(cache, positions, |n| {
+                        OwnedQuantizedKVCache::from_config(config, n)
+                    }),
+                )
             },
             Backend::Moving => {
                 unreachable!("a dense forward is only Moving inside fall_back_to_cpu")
             },
+        };
+        self.capacity = target;
+        if built {
+            self.held = 0;
         }
-        self.held = 0;
         Ok(())
     }
 
@@ -535,6 +534,21 @@ pub fn dense_stream<F: crate::session::ArchForward>(
         tokens.pop();
     }
     Ok((tokens, turn.used_gpu))
+}
+
+/// Grow `cache` in place to `target` (what it holds stays held), or build a new one
+/// at `target`. Returns `true` when a new cache was built, so it holds nothing yet.
+fn grow_or_build(
+    cache: &mut Option<OwnedQuantizedKVCache>,
+    target: usize,
+    build: impl FnOnce(usize) -> OwnedQuantizedKVCache,
+) -> bool {
+    if let Some(cache) = cache {
+        cache.grow_to(target);
+        return false;
+    }
+    *cache = Some(build(target));
+    true
 }
 
 #[cfg(test)]
