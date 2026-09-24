@@ -637,13 +637,11 @@ fn help_subcommands(path: &[&str]) -> Vec<String> {
 }
 
 /// `(parent, [children])` for every parent the CONTRACT declares as having a
-/// `subcommands:` list.
-fn contract_subcommands() -> Vec<(String, Vec<String>)> {
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../contracts/apr-cli-commands-v1.yaml"
-    );
-    let text = std::fs::read_to_string(path).expect("read the command contract");
+/// `subcommands:` list. The contract is a workspace file: `None` (a named SKIP) out of tree,
+/// a FAIL in tree when it is missing (#4149).
+fn contract_subcommands(test: &str) -> Option<Vec<(String, Vec<String>)>> {
+    let text =
+        provable_contracts::workspace_file_or_skip!(test, "contracts/apr-cli-commands-v1.yaml")?;
 
     let mut out = Vec::new();
     let mut current: Option<String> = None;
@@ -662,12 +660,15 @@ fn contract_subcommands() -> Vec<(String, Vec<String>)> {
             }
         }
     }
-    out
+    Some(out)
 }
 
 #[test]
 fn every_declared_subcommand_exists_in_the_binary() {
-    let declared = contract_subcommands();
+    let Some(declared) = contract_subcommands("every_declared_subcommand_exists_in_the_binary")
+    else {
+        return;
+    };
 
     // Vacuity: a parse that found nothing would make the loop below pass
     // trivially -- which is exactly how a depth-2 gate reports green while
@@ -702,8 +703,10 @@ fn every_declared_subcommand_exists_in_the_binary() {
 
 #[test]
 fn every_subcommand_in_the_binary_is_declared() {
-    let declared: std::collections::HashMap<String, Vec<String>> =
-        contract_subcommands().into_iter().collect();
+    let Some(declared) = contract_subcommands("every_subcommand_in_the_binary_is_declared") else {
+        return;
+    };
+    let declared: std::collections::HashMap<String, Vec<String>> = declared.into_iter().collect();
 
     let mut undeclared: Vec<String> = Vec::new();
     let mut seen = 0usize;
