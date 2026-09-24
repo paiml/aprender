@@ -173,12 +173,12 @@ fn golden_v2_skip_none_is_golden_v2_minus_nulls() {
     // CRCs that follow from a shorter metadata block move. Any other difference
     // (a changed value, a dropped provenance key, different tensor bytes) is a
     // writer regression, and this test fails.
+    const PROVENANCE: [&str; 3] = ["license", "data_source", "data_license"];
     let old = std::fs::read(fixtures().join("golden_v2.apr")).expect("read v2");
     let new = std::fs::read(fixtures().join("golden_v2_skip_none.apr")).expect("read v2");
     let (old_meta, old_index, old_data) = v2_sections(&old);
     let (new_meta, new_index, new_data) = v2_sections(&new);
 
-    const PROVENANCE: [&str; 3] = ["license", "data_source", "data_license"];
     let mut expected = old_meta.as_object().expect("metadata object").clone();
     expected.retain(|k, v| !v.is_null() || PROVENANCE.contains(&k.as_str()));
     assert_eq!(
