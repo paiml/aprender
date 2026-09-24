@@ -20649,6 +20649,23 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4016
+  github_issue: 4016
+  item_type: task
+  title: '#4016: llama.cpp fit is the placement gate for every model certification/test'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T00:44:37Z
+  updated: 2026-09-24T00:44:37Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4023
   github_issue: 4023
   item_type: task

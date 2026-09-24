@@ -1,0 +1,96 @@
+{
+ "schema": "apr-model-ladder-receipt/v2",
+ "host": "lambda",
+ "version": "1.2.3",
+ "sha": "abc1234",
+ "gpu": "x",
+ "cc": "9.0",
+ "executed": 3,
+ "red": 0,
+ "rungs": [
+  {
+   "id": "ctrl-q4km",
+   "present": true,
+   "sha_ok": true,
+   "required": true,
+   "capability_match": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "golden_output": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "backends": {
+    "cpu": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0
+    },
+    "cuda": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0
+    }
+   },
+   "green": true,
+   "file": "c.gguf"
+  },
+  {
+   "id": "q3-q4km",
+   "present": true,
+   "sha_ok": true,
+   "required": true,
+   "capability_match": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "golden_output": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "backends": {
+    "cpu": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0
+    },
+    "cuda": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0
+    }
+   },
+   "green": true,
+   "file": "q.gguf",
+   "fit": {
+    "tool": "llama-fit-params",
+    "pin": "d1d3c3396",
+    "llama_cpp": "d1d3c3396",
+    "free_mib": 23332,
+    "ctx": 32768,
+    "ngl": -1,
+    "rc": 0,
+    "raw": "-c 32768 -ngl -1",
+    "verdict": "fits",
+    "reason": "full GPU at ctx 32768"
+   }
+  }
+ ],
+ "inventory": [
+  {
+   "file": "c.gguf",
+   "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+   "bytes": 1
+  },
+  {
+   "file": "q.gguf",
+   "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+   "bytes": 1
+  }
+ ]
+}
