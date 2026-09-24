@@ -33,11 +33,22 @@ use trueno_gpu::driver::GpuBuffer;
 /// rows and the normed rows (`[rows][hidden_dim]`, the latter shared by the FFN
 /// input and the output norm), the FFN's gate / up / activation
 /// (`[rows][intermediate_dim]`) and down projection (`[rows][hidden_dim]`), and
-/// the logits (`[rows][vocab_size]`). A step of `B <= rows` uses the first `B`
-/// rows of each.
+/// the logits (`[rows][vocab_size]`), and the DeltaNet mixer's projections: qkv
+/// (`[rows][conv_dim]`), gate and the gated-norm output (`[rows][v_dim]`), alpha
+/// and beta (`[rows][num_v_heads]`), and the attention mixer's `[q | gate]`
+/// (`[rows][2 * q_dim]`), raw k (`[rows][kv_dim]`) and gated attention output
+/// (`[rows][q_dim]`). A step of `B <= rows` uses the first `B` rows of each.
 pub(super) struct BatchIo {
     hidden: GpuBuffer<f32>,
     normed: GpuBuffer<f32>,
+    dn_qkv: GpuBuffer<f32>,
+    dn_gate: GpuBuffer<f32>,
+    dn_alpha: GpuBuffer<f32>,
+    dn_beta: GpuBuffer<f32>,
+    dn_core: GpuBuffer<f32>,
+    at_q_full: GpuBuffer<f32>,
+    at_k_raw: GpuBuffer<f32>,
+    at_out_in: GpuBuffer<f32>,
     ffn_gate: GpuBuffer<f32>,
     ffn_up: GpuBuffer<f32>,
     ffn_act: GpuBuffer<f32>,
@@ -118,9 +129,21 @@ impl Qwen35CudaModel<'_> {
         };
         let hidden = batch * self.dims.hidden_dim as usize;
         let inter = batch * self.dims.intermediate_dim as usize;
+        let v = batch * self.dims.v_dim as usize;
+        let nv = batch * self.dims.num_v_heads as usize;
+        let d = self.dims;
+        let q_dim = batch * (d.num_heads * d.attn_head_dim) as usize;
         Ok(BatchIo {
             hidden: alloc(hidden)?,
             normed: alloc(hidden)?,
+            dn_qkv: alloc(batch * self.dims.conv_dim as usize)?,
+            dn_gate: alloc(v)?,
+            dn_alpha: alloc(nv)?,
+            dn_beta: alloc(nv)?,
+            dn_core: alloc(v)?,
+            at_q_full: alloc(2 * q_dim)?,
+            at_k_raw: alloc(batch * (d.num_kv_heads * d.attn_head_dim) as usize)?,
+            at_out_in: alloc(q_dim)?,
             ffn_gate: alloc(inter)?,
             ffn_up: alloc(inter)?,
             ffn_act: alloc(inter)?,
@@ -194,13 +217,12 @@ impl Qwen35CudaModel<'_> {
 
         let result = (|| {
             for il in 0..self.layers.len() {
-                for ((state, row), &position) in states.iter_mut().zip(&rows).zip(positions) {
-                    match self.layers[il] {
-                        CudaLayer::DeltaNet(_) => self.deltanet_layer(state, il, row, false)?,
-                        CudaLayer::Attention(_) => {
-                            self.attention_layer(state, il, row, position, false)?;
-                        },
-                    }
+                if matches!(self.layers[il], CudaLayer::DeltaNet(_)) {
+                    self.deltanet_batched(io, &rows, &normed, states, il)
+                        .map_err(|e| gpu_err("qwen35_cuda_deltanet", &e))?;
+                } else {
+                    self.attention_batched(io, &rows, &normed, states, positions, il)
+                        .map_err(|e| gpu_err("qwen35_cuda_attention", &e))?;
                 }
                 self.ffn_batched(io, &rows, &normed, il)
                     .map_err(|e| gpu_err("qwen35_cuda_ffn", &e))?;
@@ -225,6 +247,257 @@ impl Qwen35CudaModel<'_> {
         // The views borrow `hidden` / `normed`; they must not free that memory.
         rows.into_iter().chain(normed).for_each(std::mem::forget);
         result
+    }
+
+    /// DeltaNet layer `il`'s mixer — the first half of `deltanet_layer_inner` — over
+    /// every row of the step. The norm runs per row; the qkv, alpha, beta, gate and
+    /// ssm_out projections are one batched GEMV each; the causal conv, the gates,
+    /// the per-head L2 norms, the delta rule and the gated norm run per sequence,
+    /// because they read or update that sequence's conv window and recurrent state.
+    /// Each runs on its sequence's rows exactly as `deltanet_layer_inner` runs it,
+    /// with the model's single-sequence scratch for the per-sequence intermediates.
+    /// The first residual is elementwise, so it is one launch over the packed rows.
+    fn deltanet_batched(
+        &mut self,
+        io: &BatchIo,
+        rows: &[GpuBuffer<f32>],
+        normed: &[GpuBuffer<f32>],
+        states: &mut [&mut Qwen35CudaState],
+        il: usize,
+    ) -> std::result::Result<(), trueno_gpu::GpuError> {
+        let d = self.dims;
+        let m = rows.len() as u32;
+        let CudaLayer::DeltaNet(w) = &self.layers[il] else {
+            unreachable!("the caller matched a DeltaNet layer")
+        };
+        let proj = |w: &super::CudaQuantWeight| (w.qtype, w.ptr, w.n, w.k);
+        let (qkv, alpha, beta, gate, out) = (
+            proj(&w.attn_qkv),
+            proj(&w.ssm_alpha),
+            proj(&w.ssm_beta),
+            proj(&w.attn_gate),
+            proj(&w.ssm_out),
+        );
+        for (row, out) in rows.iter().zip(normed) {
+            self.executor
+                .rmsnorm_into(row, &w.attn_norm, out, d.hidden_dim, d.eps)?;
+        }
+        self.gemv_batched(qkv.0, qkv.1, &io.normed, &io.dn_qkv, m, qkv.2, qkv.3)?;
+        self.gemv_batched(
+            alpha.0,
+            alpha.1,
+            &io.normed,
+            &io.dn_alpha,
+            m,
+            alpha.2,
+            alpha.3,
+        )?;
+        self.gemv_batched(beta.0, beta.1, &io.normed, &io.dn_beta, m, beta.2, beta.3)?;
+        self.gemv_batched(gate.0, gate.1, &io.normed, &io.dn_gate, m, gate.2, gate.3)?;
+
+        let CudaLayer::DeltaNet(w) = &self.layers[il] else {
+            unreachable!("the caller matched a DeltaNet layer")
+        };
+        let s = &self.scratch;
+        let ex = &mut self.executor;
+        for (b, state) in (0u32..).zip(states.iter()) {
+            let qkv_row = Self::view(&io.dn_qkv, b * d.conv_dim, d.conv_dim);
+            let alpha_row = Self::view(&io.dn_alpha, b * d.num_v_heads, d.num_v_heads);
+            let beta_row = Self::view(&io.dn_beta, b * d.num_v_heads, d.num_v_heads);
+            let gate_row = Self::view(&io.dn_gate, b * d.v_dim, d.v_dim);
+            let core_row = Self::view(&io.dn_core, b * d.v_dim, d.v_dim);
+            let q_view = Self::view(&s.conv_out, 0, d.k_dim);
+            let k_view = Self::view(&s.conv_out, d.k_dim, d.k_dim);
+            let v_view = Self::view(&s.conv_out, d.k_dim * 2, d.v_dim);
+            let run = (|| {
+                ex.gdn_causal_conv1d_silu_into(
+                    &qkv_row,
+                    &state.conv[il],
+                    &w.conv1d_weight,
+                    &s.conv_out,
+                    d.conv_dim,
+                    d.conv_kernel,
+                )?;
+                ex.gdn_per_head_l2_norm_into(&q_view, d.head_k_dim, d.num_k_heads, d.eps)?;
+                ex.gdn_per_head_l2_norm_into(&k_view, d.head_k_dim, d.num_k_heads, d.eps)?;
+                ex.gdn_gates_into(
+                    &alpha_row,
+                    &w.ssm_dt_bias,
+                    &w.ssm_a,
+                    &beta_row,
+                    &s.dt,
+                    &s.beta,
+                    d.num_v_heads,
+                )?;
+                ex.gdn_delta_rule_into(
+                    &q_view,
+                    &k_view,
+                    &v_view,
+                    &s.beta,
+                    &s.dt,
+                    &state.ssm[il],
+                    &s.out_h,
+                    d.num_k_heads,
+                    d.head_k_dim,
+                    d.num_v_heads,
+                    d.head_v_dim,
+                )?;
+                ex.gdn_gated_rmsnorm_into(
+                    &s.out_h,
+                    &gate_row,
+                    &w.ssm_norm_weight,
+                    &core_row,
+                    d.head_v_dim,
+                    d.num_v_heads,
+                    d.eps,
+                )
+            })();
+            // The views borrow the step's and the scratch buffers; they must not
+            // free that memory.
+            [
+                qkv_row, alpha_row, beta_row, gate_row, core_row, q_view, k_view, v_view,
+            ]
+            .into_iter()
+            .for_each(std::mem::forget);
+            run?;
+        }
+
+        self.gemv_batched(out.0, out.1, &io.dn_core, &io.ffn_down, m, out.2, out.3)?;
+        self.executor
+            .residual_add_into(&io.hidden, &io.ffn_down, &io.hidden, m * d.hidden_dim)
+    }
+
+    /// Attention layer `il`'s mixer — the first half of `attention_layer_inner` —
+    /// over every row of the step. The norm runs per row; the q and k projections
+    /// and the output projection are one batched GEMV each. The v projection stays
+    /// per sequence: it writes straight into that sequence's KV cache row, as
+    /// `attention_layer_inner` does. The split, the q/k norms, RoPE, the decode
+    /// attention and the output gate run per sequence, on its rows, exactly as the
+    /// single-sequence body runs them. The first residual is one launch over the
+    /// packed rows.
+    fn attention_batched(
+        &mut self,
+        io: &BatchIo,
+        rows: &[GpuBuffer<f32>],
+        normed: &[GpuBuffer<f32>],
+        states: &mut [&mut Qwen35CudaState],
+        positions: &[usize],
+        il: usize,
+    ) -> std::result::Result<(), trueno_gpu::GpuError> {
+        let d = self.dims;
+        let m = rows.len() as u32;
+        let q_dim = d.num_heads * d.attn_head_dim;
+        let kv_dim = d.num_kv_heads * d.attn_head_dim;
+        let CudaLayer::Attention(w) = &self.layers[il] else {
+            unreachable!("the caller matched an attention layer")
+        };
+        let proj = |w: &super::CudaQuantWeight| (w.qtype, w.ptr, w.n, w.k);
+        let (q, k, out) = (proj(&w.attn_q), proj(&w.attn_k), proj(&w.attn_output));
+        for (row, out) in rows.iter().zip(normed) {
+            self.executor
+                .rmsnorm_into(row, &w.attn_norm, out, d.hidden_dim, d.eps)?;
+        }
+        self.gemv_batched(q.0, q.1, &io.normed, &io.at_q_full, m, q.2, q.3)?;
+        self.gemv_batched(k.0, k.1, &io.normed, &io.at_k_raw, m, k.2, k.3)?;
+
+        let CudaLayer::Attention(w) = &self.layers[il] else {
+            unreachable!("the caller matched an attention layer")
+        };
+        let a = &self.attn_scratch;
+        let ex = &mut self.executor;
+        for (((b, state), normed_row), &position) in
+            (0u32..).zip(states.iter_mut()).zip(normed).zip(positions)
+        {
+            let (k_cache, v_cache) = state.kv[il]
+                .as_ref()
+                .expect("an attention layer owns a KV cache");
+            let pos32 = u32::try_from(position).unwrap_or(u32::MAX);
+            let k_row = Self::view(
+                k_cache,
+                u32::try_from(position).unwrap_or(0) * kv_dim,
+                kv_dim,
+            );
+            let v_row = Self::view(
+                v_cache,
+                u32::try_from(position).unwrap_or(0) * kv_dim,
+                kv_dim,
+            );
+            let q_full_row = Self::view(&io.at_q_full, b * 2 * q_dim, 2 * q_dim);
+            let k_raw_row = Self::view(&io.at_k_raw, b * kv_dim, kv_dim);
+            let out_in_row = Self::view(&io.at_out_in, b * q_dim, q_dim);
+            let run = (|| {
+                ex.gemv_dispatch(
+                    w.attn_v.qtype,
+                    w.attn_v.ptr,
+                    normed_row,
+                    &v_row,
+                    w.attn_v.n,
+                    w.attn_v.k,
+                )?;
+                ex.gdn_split_interleaved_into(
+                    &q_full_row,
+                    &a.q,
+                    &a.gate,
+                    d.num_heads,
+                    d.attn_head_dim,
+                )?;
+                ex.per_head_rmsnorm_into(
+                    &a.q,
+                    &w.attn_q_norm,
+                    &a.q_normed,
+                    d.attn_head_dim,
+                    d.num_heads,
+                    d.eps,
+                )?;
+                ex.per_head_rmsnorm_into(
+                    &k_raw_row,
+                    &w.attn_k_norm,
+                    &k_row,
+                    d.attn_head_dim,
+                    d.num_kv_heads,
+                    d.eps,
+                )?;
+                ex.gdn_partial_neox_rope_into(
+                    &a.q_normed,
+                    d.num_heads,
+                    d.attn_head_dim,
+                    d.n_rot,
+                    pos32,
+                    d.theta_scale,
+                )?;
+                ex.gdn_partial_neox_rope_into(
+                    &k_row,
+                    d.num_kv_heads,
+                    d.attn_head_dim,
+                    d.n_rot,
+                    pos32,
+                    d.theta_scale,
+                )?;
+                ex.gdn_decode_attention_into(
+                    &a.q_normed,
+                    k_cache,
+                    v_cache,
+                    &out_in_row,
+                    d.num_heads,
+                    d.num_kv_heads,
+                    d.attn_head_dim,
+                    pos32 + 1,
+                )?;
+                ex.gdn_sigmoid_gate_into(&out_in_row, &a.gate, q_dim)
+            })();
+            // The views borrow the cache, the step's and the scratch buffers; they
+            // must not free that memory.
+            [k_row, v_row, q_full_row, k_raw_row, out_in_row]
+                .into_iter()
+                .for_each(std::mem::forget);
+            run?;
+            // The same host-side bookkeeping as `attention_layer_inner`.
+            state.kv_len = state.kv_len.max(position + 1);
+        }
+
+        self.gemv_batched(out.0, out.1, &io.at_out_in, &io.ffn_down, m, out.2, out.3)?;
+        self.executor
+            .residual_add_into(&io.hidden, &io.ffn_down, &io.hidden, m * d.hidden_dim)
     }
 
     /// Layer `il`'s FFN tail — `post_attention_norm`, SwiGLU, the second residual —
