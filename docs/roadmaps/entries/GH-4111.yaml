@@ -1,0 +1,19 @@
+- id: GH-4111
+  github_issue: 4111
+  item_type: task
+  title: 'provable-contracts facades stuck at 0.4.0 (-> aprender-contracts ^0.64): tier-14 publishes nothing'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T00:00:03.464803026+00:00
+  updated: 2026-09-24T00:00:03.464803026+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the facade own version advances whenever bump-version.sh moves the upstream pin (pin minor -> facade minor, pin patch -> facade patch, no change -> no-op), and never equals the aprender version (#2546)'
+  - 'check_publish_preflight.sh R8 goes RED when a facade version in the tree is already on crates.io with a different upstream requirement (the 0.4.0 / ^0.64.0 shape), and when the index cannot be read'
+  - 'the facades are bumped (0.4.0 -> 0.5.0) so the next cascade tier 14 actually uploads them'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Cop row (aprender-cf, 2026-09-23): bump the facade versions and make them publish in the cascade, plus a preflight row RED when a facade crates.io version pins an older aprender-contracts than the release, so the dry-run cannot pass vacuously. Found in the 0.69.1 post-publish check: cargo publish --dry-run over crates/facades rc=0 with only "already exists" warnings; provable-contracts 0.4.0 on crates.io requires aprender-contracts ^0.64.0. R8 against the real index on main (0.4.0, pin 0.69.0) is RED; on this branch (0.5.0) it is OK, not yet published.'
