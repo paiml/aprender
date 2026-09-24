@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # build.sh -- PVL-001 EV-5a (#4122): the Lean build of ProvableContracts as a GATE, scoped to our own tree.
 #
-#   lake exe cache get   Mathlib's prebuilt oleans (the manifest pins the Mathlib SHA)
+#   lake exe cache get + unpack   Mathlib's prebuilt oleans (the manifest pins the Mathlib SHA)
 #   lake build           the default targets; its log is judged, its exit code read directly (never through a pipe)
 # The gate over the log:
 #   rc 1  a `warning:` in ProvableContracts.lean or under ProvableContracts/ (our proofs), or the build failed --
@@ -105,5 +105,9 @@ fi
 cd "$HERE" || exit 2
 LOG="${BUILD_LOG:-$HERE/.lake/build.log}"; mkdir -p "$(dirname "$LOG")"
 lake exe cache get > "$LOG.cache" 2>&1 || { echo "decline: lake exe cache get failed -- $(tail -1 "$LOG.cache")"; exit 2; }
+# `get` decompresses only what it just DOWNLOADED: with every .ltar already in ~/.cache/mathlib it prints "No files to
+# download" and unpacks nothing, so a fresh checkout elaborated all of Mathlib (measured 2026-09-24: 0 oleans after
+# get, 7743 after unpack). unpack skips what is already decompressed, so on a warm tree it is a no-op.
+lake exe cache unpack >> "$LOG.cache" 2>&1 || { echo "decline: lake exe cache unpack failed -- $(tail -1 "$LOG.cache")"; exit 2; }
 lake build > "$LOG" 2>&1; brc=$?
 gate "$LOG" "$brc"
