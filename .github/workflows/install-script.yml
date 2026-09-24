@@ -21,6 +21,7 @@ on:
     paths:
       - "scripts/install.sh"
       - "scripts/tests/install_test.sh"
+      - "scripts/tests/install_e2e_container.sh"
       - ".github/workflows/install-script.yml"
       - ".github/workflows/binary-release.yml"
       - ".github/workflows/nightly.yml"
@@ -28,6 +29,7 @@ on:
     paths:
       - "scripts/install.sh"
       - "scripts/tests/install_test.sh"
+      - "scripts/tests/install_e2e_container.sh"
       - ".github/workflows/install-script.yml"
       - ".github/workflows/binary-release.yml"
       - ".github/workflows/nightly.yml"
@@ -54,8 +56,13 @@ jobs:
 
       - name: "bashrs SEC/DET/IDEM (scripts/install.sh, scripts/tests/install_test.sh)"
         run: |
-          bashrs lint --level error scripts/install.sh
           bashrs lint --level error scripts/tests/install_test.sh
+          # #3546: install.sh and the container e2e are held to 0 errors AND 0 warnings, not just 0 errors.
+          for f in scripts/install.sh scripts/tests/install_e2e_container.sh; do
+            out="$(bashrs lint "$f" 2>&1 | sed 's/\x1b\[[0-9;]*m//g')" || true  # bashrs colours even a pipe
+            printf '%s\n' "$out" | grep -E 'Summary:'
+            printf '%s\n' "$out" | grep -qE 'Summary: 0 error\(s\), 0 warning\(s\)' || { printf '%s\n' "$out"; exit 1; }
+          done
 
       # Proves install_test.sh's own mutual-exclusivity row discriminates
       # before trusting the full run below — same discipline as
@@ -68,3 +75,24 @@ jobs:
       # it is the same contract a user's `curl | sh` exercises.
       - name: install_test.sh
         run: bash scripts/tests/install_test.sh
+
+  # #3546: the README one-liner end to end, per channel, nightly and on every install.sh change. See the script
+  # header for the five checks. RED today on `apr --version` for any release built without APR_GIT_SHA_OVERRIDE
+  # (it prints `+no-git`), which is the point: two rcs of one version must be told apart.
+  e2e-container:
+    name: curl | bash in a clean container (${{ matrix.channel }})
+    runs-on: [self-hosted, Linux, X64, clean-room, docker]
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [stable, rc]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Preflight - docker
+        run: bash scripts/ci_self_hosted_preflight.sh --need docker
+      - name: version comparator case table
+        run: bash scripts/tests/install_e2e_container.sh --self-test
+      - name: curl | bash --channel ${{ matrix.channel }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/tests/install_e2e_container.sh ${{ matrix.channel }}
