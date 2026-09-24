@@ -441,11 +441,44 @@ impl Qwen35Forward {
                 return Ok(logits);
             }
         }
+        if tokens.len().saturating_sub(start) > 1 {
+            if let Some(logits) = self.try_cpu_prefill(&tokens[start..], start)? {
+                return Ok(logits);
+            }
+        }
         let mut logits = Vec::new();
         for (pos, &token) in tokens.iter().enumerate().skip(start) {
             logits = self.forward_one(token, pos)?;
         }
         Ok(logits)
+    }
+
+    /// #4228: prefill `new` at positions `pos0..` layer by layer on the CPU and
+    /// return the last position's logits — bitwise the per-token path's. `None`
+    /// when the session is not on the CPU, was told to prefill per token, or the
+    /// state cannot take all of `new` at once (the caller then goes per token).
+    fn try_cpu_prefill(
+        &mut self,
+        new: &[u32],
+        pos0: usize,
+    ) -> std::result::Result<Option<Vec<f32>>, Step> {
+        let qwen = self.qwen;
+        let Backend::Cpu(Some(state)) = &mut self.backend else {
+            return Ok(None);
+        };
+        if self.per_token_prefill || !qwen.prefill_fits(state, pos0, new.len()) {
+            return Ok(None);
+        }
+        let t0 = std::time::Instant::now();
+        let logits = qwen.forward_prefill_qwen35(new, state, pos0)?;
+        let ms = t0.elapsed().as_secs_f64() * 1000.0;
+        eprintln!(
+            "[qwen35] cpu batched prefill: {} tokens in {ms:.0} ms ({:.1} tok/s, from position {pos0})",
+            new.len(),
+            new.len() as f64 * 1000.0 / ms.max(1e-9),
+        );
+        self.batched_prefills += 1;
+        Ok(Some(logits))
     }
 
     /// Prefill `new` at positions `pos0..` in one batched call on the GPU and return

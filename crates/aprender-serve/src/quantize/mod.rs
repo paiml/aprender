@@ -94,6 +94,7 @@ pub mod iq_dispatch;
 #[path = "iq_gguf_py_parity_tests.rs"]
 mod iq_gguf_py_parity_tests;
 pub mod iq_grids;
+pub mod multi_row;
 
 #[cfg(test)]
 #[path = "ptx_codebook_tests_3931.rs"]

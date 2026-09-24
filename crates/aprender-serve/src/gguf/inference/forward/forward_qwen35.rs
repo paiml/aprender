@@ -1922,3 +1922,6 @@ mod qhf_contract_tests;
 #[cfg(test)]
 #[path = "forward_qwen35_gqa_tests.rs"]
 mod qwen35_gqa_tests;
+
+// #4228: the layer-major CPU prefill.
+include!("forward_qwen35_prefill.rs");

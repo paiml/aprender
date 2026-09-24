@@ -451,3 +451,133 @@ fn successful_batched_prefill_returns_its_logits_unchanged() {
         Err(Step::Fatal(e)) => panic!("an Ok prefill became a fatal error: {e}"),
     }
 }
+
+/// Bitwise equality of two f32 slices, with the first differing index.
+fn bitwise(a: &[f32], b: &[f32]) -> std::result::Result<(), String> {
+    if a.len() != b.len() {
+        return Err(format!("length {} vs {}", a.len(), b.len()));
+    }
+    match a
+        .iter()
+        .zip(b)
+        .position(|(x, y)| x.to_bits() != y.to_bits())
+    {
+        None => Ok(()),
+        Some(i) => Err(format!("index {i}: {} vs {}", a[i], b[i])),
+    }
+}
+
+/// #4228: the layer-major CPU prefill leaves exactly the per-token path's
+/// logits, conv states, recurrent states and KV rows — from position 0 and
+/// from a nonzero start that reads the first call's state.
+#[test]
+fn cpu_layer_major_prefill_is_bitwise_the_per_token_path() {
+    let mapped = mapped_or_skip!();
+    let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("layers");
+    let p1 = encode(
+        &mapped,
+        &user_turn("Name the capital of Peru, then explain why in two sentences."),
+    );
+    let p2 = encode(&mapped, &user_turn("And of Chile?"));
+    assert!(
+        p1.len() > 16 && p2.len() > 8,
+        "prompts span several token tiles"
+    );
+    let cap = p1.len() + p2.len() + 4;
+
+    let mut per_token = qwen.new_state(cap);
+    let mut layered = qwen.new_state(cap);
+    for (start, prompt) in [(0, &p1), (p1.len(), &p2)] {
+        let mut want = Vec::new();
+        for (i, &tok) in prompt.iter().enumerate() {
+            want = qwen
+                .forward_single_qwen35(tok, &mut per_token, start + i)
+                .expect("per-token");
+        }
+        assert!(qwen.prefill_fits(&layered, start, prompt.len()));
+        let got = qwen
+            .forward_prefill_qwen35(prompt, &mut layered, start)
+            .expect("layer-major");
+        bitwise(&want, &got).unwrap_or_else(|e| panic!("logits from {start}: {e}"));
+        assert_eq!(
+            per_token.kv_cache.len(),
+            layered.kv_cache.len(),
+            "positions"
+        );
+        for il in 0..qwen.layers.len() {
+            let pairs = [
+                ("conv", &per_token.conv_states[il], &layered.conv_states[il]),
+                ("ssm", &per_token.ssm_states[il], &layered.ssm_states[il]),
+            ];
+            for (name, a, b) in pairs {
+                bitwise(a, b).unwrap_or_else(|e| panic!("{name} layer {il} from {start}: {e}"));
+            }
+            bitwise(per_token.kv_cache.get_k(il), layered.kv_cache.get_k(il))
+                .unwrap_or_else(|e| panic!("K layer {il} from {start}: {e}"));
+            bitwise(per_token.kv_cache.get_v(il), layered.kv_cache.get_v(il))
+                .unwrap_or_else(|e| panic!("V layer {il} from {start}: {e}"));
+        }
+    }
+    assert!(
+        qwen.layers.iter().any(|l| matches!(
+            l,
+            crate::gguf::forward_qwen35::Qwen35OwnedLayer::Attention(_)
+        )) && qwen.layers.iter().any(|l| matches!(
+            l,
+            crate::gguf::forward_qwen35::Qwen35OwnedLayer::DeltaNet(_)
+        )),
+        "both layer kinds were compared"
+    );
+}
+
+/// #4228: `apr serve --no-gpu` prefills a prompt and a turn's suffix through the
+/// layer-major prefill (read off the counter), token for token what the
+/// per-token prefill decodes.
+#[test]
+fn cpu_serve_prefill_is_batched_and_token_identical_to_the_one_token_path() {
+    let mapped = mapped_or_skip!();
+    let mut batched = Qwen35Session::load(&mapped, true).expect("load");
+    let mut one_token = Qwen35Session::load(&mapped, true).expect("load");
+    one_token.engine_mut().per_token_prefill = true;
+    let config = greedy(8);
+
+    let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
+    let b1 = batched
+        .generate(&p1, &config, &mut |_| true)
+        .expect("turn 1");
+    let o1 = one_token
+        .generate(&p1, &config, &mut |_| true)
+        .expect("turn 1");
+    assert_eq!(
+        batched.batched_prefills(),
+        1,
+        "turn 1 took the layer-major prefill"
+    );
+    assert_eq!(
+        one_token.batched_prefills(),
+        0,
+        "the control prefilled per token"
+    );
+    assert_eq!(b1.tokens, o1.tokens, "turn 1: batched == one-token");
+
+    let mut p2 = b1.tokens.clone();
+    p2.extend(encode(
+        &mapped,
+        &format!("<|im_end|>\n{}", user_turn("And of Chile?")),
+    ));
+    let b2 = batched
+        .generate(&p2, &config, &mut |_| true)
+        .expect("turn 2");
+    let o2 = one_token
+        .generate(&p2, &config, &mut |_| true)
+        .expect("turn 2");
+    assert_eq!(b2.reused, b1.tokens.len() - 1, "turn 2 extended the state");
+    assert_eq!(
+        batched.batched_prefills(),
+        2,
+        "turn 2's suffix took it from a nonzero position"
+    );
+    assert_eq!(b2.tokens, o2.tokens, "turn 2: batched == one-token");
+}
