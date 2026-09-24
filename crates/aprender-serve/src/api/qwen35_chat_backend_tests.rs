@@ -836,3 +836,46 @@ async fn a_streamed_completion_arrives_token_by_token_and_ends_with_usage() {
     let usage = usage.expect("the terminal chunk carries usage (#4272)");
     assert_eq!(usage, plain["usage"], "the stream's usage is the body's");
 }
+
+/// #4234: the slot pool holds one request per slot, makes a request past the
+/// last slot WAIT (not fail, not share a session), and hands a lone client the
+/// slot it had — the one holding its conversation.
+#[test]
+fn qwen35_slots_hold_one_request_each_and_the_next_waits_for_a_release() {
+    if !std::path::Path::new(MODEL_PATH).exists() {
+        eprintln!("SKIP: {MODEL_PATH} is absent");
+        return;
+    }
+    let mapped = MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
+    let slots = Qwen35Slots::new(Qwen35Session::load(&mapped, true).expect("load"), 2);
+    assert_eq!(slots.len(), 2);
+
+    let first = slots.lock().expect("slot");
+    let second = slots.lock().expect("slot");
+    let (first_id, second_id) = (first.id(), second.id());
+    assert_ne!(first_id, second_id, "two requests must not share a session");
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            let third = slots.lock().expect("slot");
+            tx.send(third.id()).expect("send");
+        });
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_millis(200)).is_err(),
+            "a third request got a session while both were held"
+        );
+        drop(second);
+        let third_id = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the third request is served once a slot is released");
+        assert_eq!(third_id, second_id, "it takes the released session");
+    });
+
+    drop(first);
+    assert_eq!(
+        slots.lock().expect("slot").id(),
+        first_id,
+        "a lone client gets back the most recently released session"
+    );
+}
