@@ -20,8 +20,8 @@ description: |
   temperature/top_k/top_p but does NOT apply repetition penalty.
   `QuantizedGenerateConfig` has `repeat_penalty` (f32) and
   `repeat_last_n` (usize) fields that are silently ignored on the MoE
-  path. The dense path's `sample_advanced` (in
-  `gguf/inference/fails.rs:100`) DOES apply repetition penalty,
+  path. The dense `sample_advanced` (in the never-compiled
+  `gguf/inference/fails.rs`, deleted in #4266) DID apply repetition penalty,
   matching Candle's `apply_repeat_penalty` (PMAT-383/384).
 
   This contract codifies that the qwen3_moe sampling pipeline MUST
@@ -202,8 +202,8 @@ status_history:
       `run_qwen3_moe_generate`). Decode loop passes `&tokens` slice.
       Repetition penalty applied as Step 1 BEFORE temperature scaling,
       mirroring Candle's `apply_repeat_penalty` semantics (PMAT-383/
-      384, dense path's `sample_advanced` in
-      `gguf/inference/fails.rs:100`).
+      384, the dense `sample_advanced` that
+      lived in `gguf/inference/fails.rs`, deleted in #4266).
 
       Test results: 12/12 tests pass in
       `cargo test -p aprender-serve --lib sample_from_logits_tests`
