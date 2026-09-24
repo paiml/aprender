@@ -773,14 +773,14 @@ git -C "$ufix" -c commit.gpgsign=false commit -q -m ufixture
 rm -f "$ufix/scripts/check_u_gone.sh"
 u_out="$(cd "$ufix" && bash scripts/guard_tree.sh --no-cargo 2>&1)"
 u_rc=$?
-if [ "$u_rc" -ne 0 ] && grep -q 'missing from disk: scripts/check_u_gone.sh' <<<"$u_out"; then
+if [ "$u_rc" -ne 0 ] && grep -q 'missing from disk or unreadable: scripts/check_u_gone.sh' <<<"$u_out"; then
     pass_row "34: a tracked guard missing from disk fails the run by name (rc=$u_rc), never dropped unseen"
 else
     fail_row "34: a tracked guard missing from disk" "rc=$u_rc; tail: $(tail -3 <<<"$u_out" | tr '\n' '|')"
 fi
 ud_out="$(cd "$ufix" && bash scripts/guard_tree.sh --dry-run --no-cargo 2>&1)"
 ud_rc=$?
-if [ "$ud_rc" -ne 0 ] && grep -q 'missing from disk: scripts/check_u_gone.sh' <<<"$ud_out"; then
+if [ "$ud_rc" -ne 0 ] && grep -q 'missing from disk or unreadable: scripts/check_u_gone.sh' <<<"$ud_out"; then
     pass_row "34b: --dry-run refuses a tracked guard missing from disk too (rc=$ud_rc) -- the wiring meta-guard reads it"
 else
     fail_row "34b: --dry-run refuses a tracked guard missing from disk" "rc=$ud_rc; tail: $(tail -2 <<<"$ud_out" | tr '\n' '|')"
@@ -803,6 +803,51 @@ else
     else
         fail_row "35: mutant without the universe check" "expected a silent exit 0; rc=$um_rc"
     fi
+fi
+
+# 36 (ph5 lane 1): an UNREADABLE tracked guard is refused like a missing one (grep -L
+# skips both). Skipped when running as root, where mode 000 is still readable.
+cp "$GUARD_TREE" "$ufix/scripts/guard_tree.sh"   # row 35 left its mutant here
+if [ "$(id -u)" -ne 0 ]; then
+    printf '#!/usr/bin/env bash\nexit 1\n' >"$ufix/scripts/check_u_gone.sh"
+    chmod 000 "$ufix/scripts/check_u_gone.sh"
+    r_out="$(cd "$ufix" && bash scripts/guard_tree.sh --no-cargo 2>&1)"
+    r_rc=$?
+    chmod 644 "$ufix/scripts/check_u_gone.sh"
+    if [ "$r_rc" -ne 0 ] && grep -q 'unreadable: scripts/check_u_gone.sh' <<<"$r_out"; then
+        pass_row "36: an unreadable tracked guard is refused by name (rc=$r_rc), never dropped unseen"
+    else
+        fail_row "36: an unreadable tracked guard" "rc=$r_rc; tail: $(tail -2 <<<"$r_out" | tr '\n' '|')"
+    fi
+fi
+# 37 (ph5 lane 1): --dry-run fails when it reads back fewer plan rows than it planned. A
+# guard's --help cannot run in a dry-run, so the plan is cut by a fake `sed` that eats it:
+# the plan is written by printf, read back by the while loop -- truncate it via PATH shim.
+dfix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $dfix"
+mkdir -p "$dfix/.empty-git-template" "$dfix/scripts" "$dfix/shim"
+git -C "$dfix" init -q --template="$dfix/.empty-git-template"
+git -C "$dfix" config user.email test@example.invalid
+git -C "$dfix" config user.name guard_tree_test
+printf '#!/usr/bin/env bash\nexit 0\n' >"$dfix/scripts/check_d_a.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$dfix/scripts/check_d_b.sh"
+python3 - "$GUARD_TREE" "$dfix/scripts/guard_tree.sh" <<'PY3'
+import sys
+s = open(sys.argv[1]).read()
+anchor = "TAB=\"$(printf '\\t')\"\n"
+assert s.count(anchor) == 1, "anchor"
+# test hook, applied to the FIXTURE copy only: empty the plan between write and read-back
+s = s.replace(anchor, anchor + ': > "$PLAN"\n')
+open(sys.argv[2], "w").write(s)
+PY3
+git -C "$dfix" add -A
+git -C "$dfix" -c commit.gpgsign=false commit -q -m dfixture
+d_out="$(cd "$dfix" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+d_rc=$?
+if [ "$d_rc" -ne 0 ] && grep -q 'the plan held 2 guard(s) and the dry-run recovered 0' <<<"$d_out"; then
+    pass_row "37: --dry-run refuses a plan it cannot recover whole (rc=$d_rc), never '0 to run, 0 skipped' exit 0"
+else
+    fail_row "37: --dry-run refuses a plan it cannot recover whole" "rc=$d_rc; out: $(tr '\n' '|' <<<"$d_out" | cut -c1-200)"
 fi
 
 printf '%d checks, %d failed\n' "$total" "$failed"

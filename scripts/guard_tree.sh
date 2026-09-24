@@ -503,11 +503,13 @@ if ! tracked="$(git ls-files 'scripts/check_*.sh')"; then
 fi
 missing=""
 while IFS= read -r g; do
-    [ -n "$g" ] && [ ! -f "$g" ] && missing="${missing}${g} "
+    # present AND readable: grep -L/-l skips an unreadable file exactly as it skips a
+    # missing one (ph5 lane 1), so both are refused here, before any subset is computed
+    [ -n "$g" ] && { [ ! -f "$g" ] || [ ! -r "$g" ]; } && missing="${missing}${g} "
 done <<<"$tracked"
 if [ -n "$missing" ]; then
     printf 'FAIL  guard_tree [universe]\n'
-    printf '      | guard_tree: tracked guard(s) missing from disk: %s-- they would be dropped from every universe unseen.\n' "$missing"
+    printf '      | guard_tree: tracked guard(s) missing from disk or unreadable: %s-- they would be dropped from every universe unseen.\n' "$missing"
     printf '0 checks, 1 failed\n'
     exit 1
 fi
@@ -558,6 +560,13 @@ if [ "$dry_run" -eq 1 ]; then
         esac
     done < "$PLAN"
     printf '%d to run, %d skipped\n' "$to_run" "$skipped"
+    # #4108 (ph5 lane 1): the dry-run answers for the whole plan or not at all -- a plan
+    # file lost before it was read back prints fewer rows, and the wiring meta-guard
+    # reads exactly these rows.
+    if [ $((to_run + skipped)) -ne "$planned" ]; then
+        printf 'FAIL  guard_tree [plan] -- the plan held %d guard(s) and the dry-run recovered %d\n' "$planned" "$((to_run + skipped))" >&2
+        exit 1
+    fi
     exit 0
 fi
 
