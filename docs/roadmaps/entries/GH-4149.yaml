@@ -1,0 +1,18 @@
+- id: GH-4149
+  github_issue: 4149
+  item_type: task
+  kind: code
+  title: 'apr-cli tests reading workspace files fail out of tree (packaged tarball) — skip by name out of tree, FAIL in tree'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:00:00+00:00
+  updated: 2026-09-24T12:00:00+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  notes: null

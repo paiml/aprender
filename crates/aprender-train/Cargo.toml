@@ -148,7 +148,7 @@ parquet = { version = "59", default-features = false }  # For ALB-007 Parquet wr
 insta = { version = "1.42", features = ["json", "yaml"] }  # Snapshot testing for PMAT QA
 dirs = "5.0"  # Cache directory detection for examples
 jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib" }  # TUI snapshot testing (ENT-140); PMAT-955: path-only dev-dep
-provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }  # PMAT-955: path-only dev-dep (no version)
+provable-contracts = { workspace = true }  # versioned (#4175): tests call its in-tree helper, so it must survive `cargo package`; no cycle - aprender-contracts depends only on -macros
 
 [[bench]]
 name = "monitor_bench"
