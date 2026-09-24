@@ -115,38 +115,13 @@ pub fn judge_rows(rows: &[Row], r: &mut Report) -> Closure {
             ));
             continue;
         }
-        let (Some(c), sol) = (&row.challenge_type_hash, &row.solution_type_hash) else {
-            r.fail(format!("MALFORMED {ch} -- no challenge_type_hash"));
-            continue;
-        };
-        let Some(s) = sol else {
-            r.fail(format!(
-                "MISSING-ROOT {n} -- {ch} pins a theorem that does not exist"
-            ));
-            continue;
-        };
-        let Some(axioms) = &row.axioms else {
-            r.fail(format!(
-                "MALFORMED {ch} -- a solution with no axioms list: its sorry-freedom was never measured"
-            ));
-            continue;
-        };
-        if c != s && row.defeq_instances != Some(true) {
-            r.fail(format!(
-                "MISMATCH {n} -- it proves a different statement than {ch} pins (challenge {c}, solution {s})"
-            ));
-            continue;
-        }
-        if axioms.iter().any(|a| a == SORRY_AXIOM) {
-            r.fail(format!(
-                "SORRY {n} -- the solution rests on {SORRY_AXIOM}: it closes nothing"
-            ));
-            continue;
-        }
-        if c != s {
-            r.lines.push(format!(
-                "MATCH(instances) {n} -- defeq to {ch} at .instances transparency (challenge {c}, solution {s})"
-            ));
+        match judge_row(row, &ch) {
+            Err(fail) => {
+                r.fail(fail);
+                continue;
+            }
+            Ok(Some(line)) => r.lines.push(line),
+            Ok(None) => {}
         }
         closed += 1;
     }
@@ -162,6 +137,39 @@ pub fn judge_rows(rows: &[Row], r: &mut Report) -> Closure {
         r.decline = Some("comparator: 0 challenge rows -- nothing was compared".to_string());
     }
     c
+}
+
+/// One row's verdict: `Err(FAIL line)`, or `Ok` with the `MATCH(instances)` line a defeq-only close adds.
+fn judge_row(row: &Row, ch: &str) -> Result<Option<String>, String> {
+    let n = &row.name;
+    let (Some(c), sol) = (&row.challenge_type_hash, &row.solution_type_hash) else {
+        return Err(format!("MALFORMED {ch} -- no challenge_type_hash"));
+    };
+    let Some(s) = sol else {
+        return Err(format!(
+            "MISSING-ROOT {n} -- {ch} pins a theorem that does not exist"
+        ));
+    };
+    let Some(axioms) = &row.axioms else {
+        return Err(format!(
+            "MALFORMED {ch} -- a solution with no axioms list: its sorry-freedom was never measured"
+        ));
+    };
+    if c != s && row.defeq_instances != Some(true) {
+        return Err(format!(
+            "MISMATCH {n} -- it proves a different statement than {ch} pins (challenge {c}, solution {s})"
+        ));
+    }
+    if axioms.iter().any(|a| a == SORRY_AXIOM) {
+        return Err(format!(
+            "SORRY {n} -- the solution rests on {SORRY_AXIOM}: it closes nothing"
+        ));
+    }
+    Ok((c != s).then(|| {
+        format!(
+            "MATCH(instances) {n} -- defeq to {ch} at .instances transparency (challenge {c}, solution {s})"
+        )
+    }))
 }
 
 #[cfg(test)]
