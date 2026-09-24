@@ -1341,7 +1341,7 @@ of a JSON file is a disagreement that gets resolved in the primary's favour by d
 
 ## §13 Autonomous merge on quorum
 
-**Status: SHADOW MODE (§13.11 rung 1). STILL NOT ARMED.** Operator instruction, 2026-08-31: PRs auto-merge once the review quorum passes. Nothing below is enabled by writing it down, and nothing is enabled by the code landing either. `scripts/pr_review_quorum_arm.sh` exists, its fixture table is 89 rows and its derived mutation set kills 134/134. **As of 2026-09-01 it is reachable from one workflow — `pr-review-shadow` in `ci.yml` — which invokes it with `--explain` on every pull request and records the verdict. That job holds a read-only token and is in no `needs:` list, so the capability to merge is absent as well as unused.** §13.11 is the arming ladder and every rung carries a falsifier that must be RED-verified before it is climbed.
+**Status: SHADOW MODE (§13.11 rung 1). STILL NOT ARMED.** Operator instruction, 2026-08-31: PRs auto-merge once the review quorum passes. Nothing below is enabled by writing it down, and nothing is enabled by the code landing either. `scripts/pr_review_quorum_arm.sh` exists, its fixture table is 90 rows and its derived mutation set kills 134/134. **As of 2026-09-01 it is reachable from one workflow — `pr-review-shadow` in `ci.yml` — which invokes it with `--explain` on every pull request and records the verdict. That job holds a read-only token and is in no `needs:` list, so the capability to merge is absent as well as unused.** §13.11 is the arming ladder and every rung carries a falsifier that must be RED-verified before it is climbed.
 
 ### §13.0 What this changes, and the one rule that has no precedent
 
@@ -1576,7 +1576,7 @@ Each rung has a falsifier that must be **RED-verified** before the rung is climb
 
 | rung | state | what it does | falsifier that must be RED first |
 |---|---|---|---|
-| **0** | climbed 2026-09-01 | the mechanism exists, reachable from no merging workflow | the 89-row table and the derived mutation set are green; `PRREV-017` owes the delta-sweep cost |
+| **0** | climbed 2026-09-01 | the mechanism exists, reachable from no merging workflow | the 90-row table and the derived mutation set are green; `PRREV-017` owes the delta-sweep cost |
 | **1** | **HERE** (2026-09-01) | **shadow mode**: CI runs `--explain` on every PR and records `PERMIT`/`REFUSE [Qn]`. Merges nothing. | delete any one `refuse Q<n>` site and the corresponding q-row must turn RED — RED-verified by `scripts/mutate_quorum_arm.sh`, 134/134, already green as Arm 6 |
 | **2** | after 30 shadow samples | publish `autonomy_refusal_rate` and `degraded_share`; no threshold is set from fewer (§8) | a `--explain` run on a PR whose receipt is DEGRADED must record `Q6` and not `PERMIT` |
 | **3** | after rung 2 | arm on a **narrow class**: docs-only diffs, `MECHANISM_PATHS ∩ diff = ∅`, quorum unanimous | a docs-only PR carrying a hand-edited receipt must refuse; the kill switch must stop rung 3 with one commit |
