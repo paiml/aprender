@@ -282,8 +282,10 @@ set -e; d=\$(mktemp -d); cd "\$d"
 u=https://github.com/$REPO/releases/download/$T
 curl -sSfLO "\$u/$a.tar.gz"; curl -sSfLO "\$u/$a.tar.gz.sha256"
 sha256sum -c "$a.tar.gz.sha256"; tar xzf "$a.tar.gz"
-echo "version: \$("./$a/apr" --version | head -1)"
-echo "devices:"; "./$a/apr" devices --json || echo "(apr devices --json failed)"
+# a promoted final (#4286) keeps its rc's top directory: take the one apr-v* dir
+set -- ./apr-v*/apr; [ \$# -eq 1 ] && [ -f "\$1" ] || { echo "expected one apr in the archive, found: \$*"; exit 1; }; b=\$1
+echo "version: \$("\$b" --version | head -1)"
+echo "devices:"; "\$b" devices --json || echo "(apr devices --json failed)"
 cd /; rm -rf -- "\$d"
 HOST
     rc=$?; say "HOST $h rc=$rc: $(grep -m1 '^version:' "$AP/receipts/$h.txt")"

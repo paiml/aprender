@@ -79,6 +79,34 @@ concurrency:
 
 
 jobs:
+  # A release that already carries every asset is NOT rebuilt (#4286). A promoted final
+  # is its rc's exact bytes (scripts/release/promote_rc.sh); publishing it with a
+  # personal token fires `release: published` here, and the upload steps below delete
+  # and replace same-named assets, so an ungated rebuild would silently swap the bytes
+  # that were dogfooded for new ones. With all sixteen present the build jobs skip and
+  # verify + smoke still run, on the promoted bytes. A partial release (a lane died)
+  # still rebuilds. An unreadable release (exit 2) fails this job, so the builds skip:
+  # when in doubt, never overwrite.
+  assets:
+    name: Does the release already carry every asset?
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 5
+    outputs:
+      present: ${{ steps.check.outputs.present }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          bash scripts/check_release_assets.sh "$TAG"; rc=$?
+          case "$rc" in
+            0) echo "present=true" >> "$GITHUB_OUTPUT"; echo "$TAG already carries every asset: nothing is rebuilt" >> "$GITHUB_STEP_SUMMARY" ;;
+            1) echo "present=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::could not read release $TAG (rc=$rc); refusing to build over assets that may exist"; exit 1 ;;
+          esac
+
   # The pv lane on the fleet (#3073; operator rule 2026-09-10: no GitHub-hosted runners). It ran on
   # ubuntu-latest, with cross for aarch64. Each target now builds natively on the box of its architecture
   # (x86_64 on yoga, aarch64 on gx10) in a sibling container, the pattern of build-apr-cpu: gnu targets
@@ -86,6 +114,8 @@ jobs:
   # well, so no floor rises), musl targets inside rust:1.93.0-bookworm (static). Asset names unchanged.
   build:
     name: pv ${{ matrix.target }} on ${{ matrix.host }}
+    needs: assets
+    if: needs.assets.outputs.present == 'false'
     runs-on: ${{ fromJSON(matrix.labels) }}
     strategy:
       fail-fast: false
@@ -233,6 +263,8 @@ jobs:
 
   build-apr-cuda:
     name: apr (cuda) ${{ matrix.target }} on ${{ matrix.host }}
+    needs: assets
+    if: needs.assets.outputs.present == 'false'
     runs-on: ${{ fromJSON(matrix.labels) }}
     strategy:
       fail-fast: false
@@ -380,6 +412,8 @@ jobs:
   # same step, so the merge moves both or neither.
   build-apr-cpu:
     name: apr (cpu) ${{ matrix.target }} on ${{ matrix.host }}
+    needs: assets
+    if: needs.assets.outputs.present == 'false'
     runs-on: ${{ fromJSON(matrix.labels) }}
     strategy:
       fail-fast: false
@@ -573,6 +607,8 @@ jobs:
   smoke-cuda:
     name: smoke apr (cuda) on ${{ matrix.host }}
     needs: verify-apr-assets
+    # verify runs under always(); a skipped build two levels up must not skip this
+    if: ${{ !cancelled() && needs.verify-apr-assets.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -614,7 +650,11 @@ jobs:
           done
           sha256sum -c "apr-${TAG}-${T}-cuda.tar.gz.sha256"
           tar xzf "apr-${TAG}-${T}-cuda.tar.gz"
-          BIN="$D/apr-${TAG}-${T}-cuda/apr"
+          # A promoted final (#4286) is its rc's exact bytes, so the archive's top directory
+          # may carry the rc label (apr-vX.Y.Z-rc.N-...). Take the one apr directory it holds.
+          set -- "$D"/apr-v*-"${T}"-cuda/apr
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then echo "::error::expected exactly one apr binary in the archive, found: $*"; exit 1; fi
+          BIN=$1
           v=$("$BIN" --version | head -1); echo "$v"
           # #4275: X.Y.Z whole (an rc tag's -rc.N stripped) AND the asset's sha is the tag's commit
           COMMIT=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/commits/$TAG" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')
@@ -637,6 +677,8 @@ jobs:
   smoke-cpu:
     name: smoke apr (cpu) on ${{ matrix.host }}
     needs: verify-apr-assets
+    # verify runs under always(); a skipped build two levels up must not skip this
+    if: ${{ !cancelled() && needs.verify-apr-assets.result == 'success' }}
     env:
       # The CPU assets build inside rust:1.93.0-bullseye (glibc 2.31) like the cuda lane, so the floor is
       # declared and GATED: an asset whose bytes import a newer GLIBC_* symbol fails here. 0.66.0 shipped a
@@ -683,7 +725,11 @@ jobs:
           done
           sha256sum -c "apr-${TAG}-${T}-cpu.tar.gz.sha256"
           tar xzf "apr-${TAG}-${T}-cpu.tar.gz"
-          BIN="$D/apr-${TAG}-${T}-cpu/apr"
+          # A promoted final (#4286) is its rc's exact bytes, so the archive's top directory
+          # may carry the rc label (apr-vX.Y.Z-rc.N-...). Take the one apr directory it holds.
+          set -- "$D"/apr-v*-"${T}"-cpu/apr
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then echo "::error::expected exactly one apr binary in the archive, found: $*"; exit 1; fi
+          BIN=$1
           v=$("$BIN" --version | head -1); echo "$v"
           # #4275: X.Y.Z whole (an rc tag's -rc.N stripped) AND the asset's sha is the tag's commit
           COMMIT=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/commits/$TAG" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')
