@@ -1069,6 +1069,9 @@ struct AprServerState {
     /// always leaves this `None`; only `build_demo_apr_cpu_router_for_test` sets
     /// it, so the streaming falsifier can observe real multi-chunk NDJSON.
     demo_scripted_tokens: Option<Vec<String>>,
+    /// #4295: the stop set, derived once from the tokenizers at load
+    /// ([`derive_apr_cpu_stop_tokens`]), never rescanned per request.
+    stop_tokens: Arc<[u32]>,
 }
 
 /// Output from a successful APR inference run
@@ -1170,13 +1173,23 @@ fn run_apr_cpu_inference(
 const APR_CPU_TURN_END_TOKENS: &[&str] =
     &["<|im_end|>", "<|endoftext|>", "<|eot_id|>", "<end_of_turn>"];
 
-/// #4265: the token ids that end an APR CPU generation: every EOS the loaded
-/// tokenizer declares plus the chat-turn terminators it has an id for. The
-/// generation loop already stops at id 0 on its own (`is_eos_token`).
+/// #4265: the token ids that end an APR CPU generation, as derived at load.
 #[cfg(feature = "inference")]
 fn apr_cpu_stop_tokens(state: &AprServerState) -> Vec<u32> {
+    state.stop_tokens.to_vec()
+}
+
+/// #4265: every EOS the loaded tokenizers declare plus the chat-turn
+/// terminators they have an id for. The generation loop already stops at id 0
+/// on its own (`is_eos_token`). It walks the whole tokenizer.json vocab, so it
+/// runs once, when the state is built (#4295).
+#[cfg(feature = "inference")]
+fn derive_apr_cpu_stop_tokens(
+    embedded_tokenizer: Option<&realizar::apr::BpeTokenizer>,
+    tokenizer: Option<&SafeTensorsTokenizerInfo>,
+) -> Arc<[u32]> {
     let mut stop = Vec::new();
-    if let Some(tok) = &state.embedded_tokenizer {
+    if let Some(tok) = embedded_tokenizer {
         stop.extend(tok.eos_id);
         stop.extend(
             APR_CPU_TURN_END_TOKENS
@@ -1184,12 +1197,12 @@ fn apr_cpu_stop_tokens(state: &AprServerState) -> Vec<u32> {
                 .filter_map(|t| tok.special_tokens.get(*t).copied()),
         );
     }
-    if let Some(tok) = &state.tokenizer {
+    if let Some(tok) = tokenizer {
         stop.extend(tokenizer_info_stop_tokens(tok));
     }
     stop.sort_unstable();
     stop.dedup();
-    stop
+    stop.into()
 }
 
 /// #4334: the stop ids a tokenizer.json-backed tokenizer declares: its EOS plus
@@ -1379,6 +1392,8 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
         .unwrap_or("apr")
         .to_string();
 
+    let stop_tokens =
+        derive_apr_cpu_stop_tokens(embedded_tokenizer.as_ref(), bpe_tokenizer.as_ref());
     Ok(AprServerState {
         transformer,
         model_type,
@@ -1388,6 +1403,7 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
         embedded_tokenizer,
         model_name,
         demo_scripted_tokens: None,
+        stop_tokens,
     })
 }
 
@@ -1707,6 +1723,7 @@ pub fn build_demo_apr_cpu_router_for_test() -> axum::Router {
         embedded_tokenizer: None,
         model_name: "apr".to_string(),
         demo_scripted_tokens: None,
+        stop_tokens: Arc::from([]),
     };
     build_apr_cpu_router(state, super::auth::AuthGate::disabled())
 }
@@ -1738,6 +1755,7 @@ pub fn build_demo_streaming_apr_cpu_router_for_test() -> axum::Router {
             "world".to_string(),
             "!".to_string(),
         ]),
+        stop_tokens: Arc::from([]),
     };
     build_apr_cpu_router(state, super::auth::AuthGate::disabled())
 }
