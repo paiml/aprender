@@ -257,6 +257,13 @@ pub struct Qwen35CudaModel<'a> {
     out_normed: GpuBuffer<f32>,
     /// `[vocab_size]`, the logits — the ONE buffer a token's forward downloads.
     logits_buf: GpuBuffer<f32>,
+    /// `[hidden_dim]`, the residual stream a token runs through every layer
+    /// (#4316). Allocated ONCE here and refilled per token by an in-stream
+    /// async copy of the embedding row, so its device pointer never changes:
+    /// a per-token `GpuBuffer::from_host` was a cuMemAlloc + blocking HtoD +
+    /// cuMemFree every token and a moving pointer no captured graph can
+    /// replay. `None` only while [`Self::forward_single`] has lent it out.
+    residual: Option<GpuBuffer<f32>>,
     dims: Qwen35CudaDims,
     /// Positions the device KV caches hold.
     max_seq_len: usize,
@@ -589,6 +596,7 @@ impl<'a> Qwen35CudaModel<'a> {
         let attn_scratch = Self::build_attn_scratch(&executor, dims)?;
         let out_normed = Self::zeros(&executor, dims.hidden_dim as usize)?;
         let logits_buf = Self::zeros(&executor, dims.vocab_size as usize)?;
+        let residual = Self::zeros(&executor, dims.hidden_dim as usize)?;
         let state = Self::build_state(&executor, &layers, dims, max_seq_len)?;
         Ok(Self {
             model,
@@ -601,6 +609,7 @@ impl<'a> Qwen35CudaModel<'a> {
             lm_head,
             out_normed,
             logits_buf,
+            residual: Some(residual),
             dims,
             max_seq_len,
         })
@@ -1408,15 +1417,47 @@ impl<'a> Qwen35CudaModel<'a> {
             });
         }
 
-        let dev = GpuBuffer::from_host(
-            self.executor.context(),
-            &embedding[start..start + hidden_dim],
-        )
-        .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
+        // Lend the persistent residual out for the token and put it back on
+        // EVERY path, so a failed token cannot cost the next one its buffer.
+        let mut dev = self
+            .residual
+            .take()
+            .ok_or_else(|| RealizarError::InvalidShape {
+                reason: "qwen35_cuda: the residual buffer is already lent out".to_string(),
+            })?;
+        let row = &embedding[start..start + hidden_dim];
+        // SAFETY: `copy_from_host_async` requires the host slice to outlive the
+        // copy. `row` is the model's embedding table, borrowed immutably for
+        // `'a`, which outlives `self`. Every path out of the token either syncs
+        // this stream (below) or leaves the copy pending on a stream that
+        // `CudaExecutor`'s Drop synchronizes (context-wide) before `self`, and
+        // so the `'a` borrow, can end.
+        let copied = unsafe { dev.copy_from_host_async(row, self.executor.execution_stream()) }
+            .map_err(|e| gpu_err("qwen35_cuda_forward", &e));
+        let out = copied.and_then(|()| self.forward_from_residual(state, &dev, position));
+        self.residual = Some(dev);
+        out
+    }
+
+    /// The device pointer of the persistent residual buffer — the address a
+    /// captured graph would bake in (#4316). `None` only mid-token.
+    #[must_use]
+    pub fn residual_device_ptr(&self) -> Option<u64> {
+        self.residual.as_ref().map(|b| b.as_ptr() as u64)
+    }
+
+    /// Everything [`Self::forward_single`] does after the embedding row is in
+    /// `dev`: the layers, the output norm, the `lm_head`, the one sync.
+    fn forward_from_residual(
+        &mut self,
+        state: &mut Qwen35CudaState,
+        dev: &GpuBuffer<f32>,
+        position: usize,
+    ) -> Result<Vec<f32>> {
         for il in 0..self.layers.len() {
             match self.layers[il] {
-                CudaLayer::DeltaNet(_) => self.deltanet_layer(state, il, &dev)?,
-                CudaLayer::Attention(_) => self.attention_layer(state, il, &dev, position)?,
+                CudaLayer::DeltaNet(_) => self.deltanet_layer(state, il, dev)?,
+                CudaLayer::Attention(_) => self.attention_layer(state, il, dev, position)?,
             }
         }
         // The tail stays on the device (#3090 review). `hidden_to_logits` would
@@ -1429,7 +1470,7 @@ impl<'a> Qwen35CudaModel<'a> {
         let d = self.dims;
         self.executor
             .rmsnorm_into(
-                &dev,
+                dev,
                 &self.output_norm,
                 &self.out_normed,
                 d.hidden_dim,

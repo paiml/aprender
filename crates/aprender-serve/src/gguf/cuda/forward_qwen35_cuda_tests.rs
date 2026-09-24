@@ -1711,3 +1711,67 @@ fn qwen35_cuda_refuses_only_value_heads_that_do_not_group() {
     Qwen35CudaModel::check_head_grouping(dims(0, 16, 128, 128))
         .expect_err("zero key heads must be refused, not divided by");
 }
+
+/// #4316: the residual stream is ONE device allocation for the model's life.
+/// Its pointer is the same before the first token, after every token, and
+/// after a refused token (out-of-vocabulary id, and a position past the KV
+/// cache) — the property a captured CUDA graph needs, and the one a
+/// per-token `GpuBuffer::from_host` broke. The next token after the refusals
+/// must still produce the CPU's argmax.
+#[test]
+#[serial_test::serial]
+fn qwen35_cuda_residual_pointer_is_stable_across_tokens_and_refusals() {
+    let executor = qwen35_cuda_fixture_or_skip!();
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
+    let base = load_cpu_model(&mapped);
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+
+    let mut gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the CUDA model");
+    gpu.pin_reference_gemv();
+    let mut gpu_state = gpu.new_state().expect("device state");
+    let mut cpu_state = qwen.new_state(LONG_PROMPT.len() + 1);
+
+    let p0 = gpu
+        .residual_device_ptr()
+        .expect("residual allocated at construction");
+    assert_ne!(p0, 0, "a null residual pointer is not an allocation");
+
+    for (pos, &token) in LONG_PROMPT.iter().take(3).enumerate() {
+        let want = qwen
+            .forward_single_qwen35(token, &mut cpu_state, pos)
+            .expect("cpu forward");
+        let got = gpu
+            .forward_single(token, &mut gpu_state, pos)
+            .expect("gpu forward");
+        assert_eq!(
+            crate::gguf::ops::argmax(&got),
+            crate::gguf::ops::argmax(&want),
+            "pos {pos}: argmax"
+        );
+        assert_eq!(
+            gpu.residual_device_ptr(),
+            Some(p0),
+            "pos {pos}: pointer moved"
+        );
+        // One past the last row of the embedding table (= the logits width).
+        let bad_token = u32::try_from(got.len()).expect("vocab fits u32");
+
+        // A refused token, both kinds, between every real one.
+        assert!(gpu
+            .forward_single(bad_token, &mut gpu_state, pos + 1)
+            .is_err());
+        assert_eq!(
+            gpu.residual_device_ptr(),
+            Some(p0),
+            "pos {pos}: an out-of-vocabulary refusal lost or moved the residual"
+        );
+        let past = gpu_state.max_seq_len();
+        assert!(gpu.forward_single(token, &mut gpu_state, past).is_err());
+        assert_eq!(
+            gpu.residual_device_ptr(),
+            Some(p0),
+            "pos {pos}: a past-the-cache refusal lost or moved the residual"
+        );
+    }
+}

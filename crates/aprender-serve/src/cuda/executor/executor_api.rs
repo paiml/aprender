@@ -482,6 +482,14 @@ impl CudaExecutor {
         &self.context
     }
 
+    /// The EXECUTION stream: the one every `*_into` kernel launcher and
+    /// [`Self::sync_stream`] use. A host-to-device copy enqueued here is ordered
+    /// in front of the next kernel with no host sync (#4316).
+    #[must_use]
+    pub fn execution_stream(&self) -> &CudaStream {
+        &self.stream
+    }
+
     /// Get reference to compute stream (WAPR-PERF-014: reuse stream for KV scatter/attention)
     #[must_use]
     pub fn compute_stream(&self) -> &CudaStream {
