@@ -1,0 +1,107 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-docs-corpus-v1 — the docs corpus as ontology focus nodes
+# (aprender#3560 "docs, examples and cookbook pv-SHACL validated for Qwen3.5"; row R1)
+#
+# R1 (this file's first row): extract:example — every cargo example target of a
+#   workspace member (examples/*.rs, examples/*/main.rs) is an ont:Example with
+#   its file, crate, target name, and the model families its text names.
+# LATER ROWS (not claimed here): R2 book pages (after ONT-4c's readme reader),
+#   R3 apr-cookbook (its own repo), R4 the model-currency shape (an example that
+#   names a model family must name the current one, or say why not), R5 every
+#   example builds and runs.
+#
+# ARMING: `examples-well-formed` is REPORTED, not armed. It holds on this tree
+#   (every example has one file, one crate, one name); arming it is R4's call,
+#   together with the currency shape, so the gate changes once.
+# ─────────────────────────────────────────────────────────────────────────────
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: PAIML Engineering
+  description: >
+    extract:example — the cargo example targets of the workspace members, found by the same [workspace]
+    members/exclude reading extract:code uses, each an ont:Example carrying example:file, example:crate,
+    example:name, one example:namesModel per model family a token scan finds, and example:namesQwen35.
+    Zero examples read at a [workspace] root is an extractor error (PV-ONT-012), never a green.
+  references:
+    - 'paiml/aprender#3560 (docs, examples and cookbook pv-SHACL validated for Qwen3.5)'
+    - 'paiml/infra docs/specifications/paiml-ontology.md §3.7 (extractors), R-3, R-15'
+    - 'crates/aprender-contracts/src/ontology/extract/example.rs, example_tests.rs'
+    - 'crates/aprender-contracts/src/ontology/extract/code.rs — workspace_membership, manifest_names (reused)'
+
+relations:
+  depends_on: [ont-shapes-v1, ont-sigma-v1]
+
+equations:
+  extract_example:
+    formula: "examples(root) = { e | m ∈ members(root), e ∈ m/examples/*.rs ∪ m/examples/*/main.rs } ; namesModel(e) = families(tokens(lower(text(e))))"
+    domain: "the repo root the contract dir sits in; members by [workspace] members/exclude, or every manifest when the root has no [workspace]"
+    codomain: "one ont:Example node per target, plus ExampleStats {packages, examples, non_member_examples, naming_a_model, naming_qwen35, by_family, errors}"
+    invariants:
+      - "a target under a manifest the workspace excludes is counted in non_member_examples and not extracted"
+      - "a helper module below examples/<x>/ other than main.rs is not a target"
+      - "the family scan is by token: `graphics` is not phi, `llama.cpp` is a runtime, `qwen3.5` is tried before `qwen3`"
+    preconditions:
+      - "the root's Cargo.toml, when it is a [workspace], lists its members"
+    postconditions:
+      - "at a [workspace] root, examples = 0 ⇒ one extractor error"
+      - "two extractions of the same tree are byte-identical (R-15)"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: DOCS-INV-001
+    property: deterministic, no blank nodes
+    formal: '∀ tree: extract(tree) = extract(tree) ∧ ∀ t ∈ extract(tree): subject(t) ∈ IRI'
+    prose: false
+  - id: DOCS-INV-002
+    property: an empty corpus at a workspace root is RED, never green
+    formal: 'workspace(root) ∧ |examples(root)| = 0 ⇒ PV-ONT-012 ∈ findings'
+    prose: false
+  - id: DOCS-INV-003
+    property: only targets cargo builds are extracted
+    formal: '∀ e ∈ examples(root): admits(membership(root), dir(e)) ∧ (ext(e) = rs ∧ depth(e) = 1 ∨ e = examples/*/main.rs)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-DOCS-001
+    rule: the walk extracts exactly the member targets
+    prediction: a planted workspace yields its two example forms and not the helper module, the excluded crate, a README or target/
+    test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::a_planted_workspace_yields_exactly_its_member_targets
+    if_fails: an example cargo never builds is graded, or a real one is missed
+  - id: FALSIFY-DOCS-002
+    rule: vacuity is RED
+    prediction: a [workspace] root with a member and no examples reports one extractor error; a bare dir with no workspace reports none
+    test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::a_workspace_root_with_no_examples_is_an_error_not_a_green
+    if_fails: a walk that read nothing reports a clean corpus
+  - id: FALSIFY-DOCS-003
+    rule: the family scan tells models from look-alikes
+    prediction: 13 cases — Qwen3.5/3/2.5/2, TinyLlama vs Llama, phi vs graphics and phishing, llama.cpp named as no model — each give the stated family set
+    test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::the_family_scan_separates_models_from_look_alikes
+    if_fails: a Qwen3 example counts as Qwen3.5, or llama.cpp counts as a Llama example
+  - id: FALSIFY-DOCS-004
+    rule: the repo's own examples
+    prediction: the workspace yields more than 500 examples across more than 20 packages, with no extractor error
+    test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::the_repo_examples_are_extracted
+    if_fails: the membership reading or the walk lost the corpus
+  - id: FALSIFY-DOCS-005
+    rule: the extractor is registered and its control fires
+    prediction: Σ lists example as an implemented entity type, the shapes gate counts it in by_entity_type and its pc_extract control fires
+    test: cargo test -p aprender-contracts --lib lint::shapes_gate
+    if_fails: the extractor runs and no gate knows, or its control is silent
+
+qa_gate:
+  required_checks:
+    - "cargo test -p aprender-contracts --lib ontology::extract::example"
+    - "cargo test -p aprender-contracts --lib lint::shapes_gate"
+
+shapes:
+  # REPORTED, not armed (see the header).
+  - id: examples-well-formed
+    targetClass: ont:Example
+    properties:
+      - {path: example:file, minCount: 1, maxCount: 1}
+      - {path: example:crate, minCount: 1, maxCount: 1}
+      - {path: example:name, minCount: 1, maxCount: 1}
+      - {path: example:namesQwen35, minCount: 1, maxCount: 1, in: [true, false]}

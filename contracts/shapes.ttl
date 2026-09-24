@@ -217,6 +217,31 @@
     ] ;
 .
 
+<https://ont.paiml.dev/v1alpha1/shape/examples-well-formed> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/Example> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/example/file> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/example/crate> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/example/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/example/namesQwen35> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/ladder-measured> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/model/Model> ;
     sh:property [

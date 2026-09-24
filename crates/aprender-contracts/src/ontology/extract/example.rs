@@ -1,0 +1,261 @@
+//! aprender#3560 R1 — `extract:example`: every cargo example target in the workspace becomes an `ont:Example`.
+//!
+//! The focus objects are `<member>/examples/*.rs` and `<member>/examples/*/main.rs` — cargo's two auto-discovered
+//! example forms — of every workspace MEMBER, found by the same `[workspace] members`/`exclude` reading
+//! [`super::code`] uses. An `examples/` dir under a manifest the workspace excludes is counted
+//! (`non_member_examples`) and not extracted: cargo will not build it, so it is not an example of this workspace.
+//! Helper modules below `examples/<x>/` other than `main.rs` are not targets.
+//!
+//! Each example carries `example:file`, `example:crate` (the `[package] name`), `example:name`, one
+//! `example:namesModel` per model family its text names (the [`FAMILIES`] table: a token scan, so `graphics` is not
+//! `phi` and `llama.cpp` is a runtime, not a model), and `example:namesQwen35`.
+//!
+//! Vacuity (the issue's acceptance 1): at a `[workspace]` root, reading ZERO examples is an extractor error — the
+//! shapes gate counts it as a violation (PV-ONT-012), never a green over an empty corpus. A fixture corpus with no
+//! workspace manifest is not measured and is not an error.
+//!
+//! IRI: `https://ont.paiml.dev/v1alpha1/example/<repo-relative file>`. No blank nodes; byte-ordered walk (R-15).
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
+
+use super::code::{manifest_names, workspace_membership};
+use super::gguf::ExtractError;
+use crate::ontology::rdf::{iri_path, ont, Graph, Term, PROV_ENTITY, RDF_TYPE};
+
+/// An `example:*` vocabulary term.
+#[must_use]
+pub fn ex(name: &str) -> String {
+    ont(&format!("example/{name}"))
+}
+
+/// The model families a token scan recognises, each with the token prefixes that name it. Order matters: the first
+/// family whose prefix starts a token wins, so `qwen3.5` is tried before `qwen3` and `tinyllama` before `llama`.
+pub const FAMILIES: &[(&str, &[&str])] = &[
+    ("qwen3.5", &["qwen3.5", "qwen3_5", "qwen3-5", "qwen35"]),
+    ("qwen3", &["qwen3"]),
+    ("qwen2.5", &["qwen2.5", "qwen2_5", "qwen2-5", "qwen25"]),
+    ("qwen2", &["qwen2"]),
+    ("tinyllama", &["tinyllama"]),
+    ("llama", &["llama"]),
+    ("mistral", &["mistral"]),
+    ("phi", &["phi-", "phi_", "phi2", "phi3", "phi4"]),
+    ("gemma", &["gemma"]),
+    ("smollm", &["smollm"]),
+    ("gpt2", &["gpt2", "gpt-2"]),
+    ("deepseek", &["deepseek"]),
+];
+
+/// Tokens that start like a family and are not one: the llama.cpp runtime.
+const NOT_A_MODEL: &[&str] = &["llama.cpp", "llama_cpp", "llama-cpp", "llamacpp"];
+
+/// The model families `text` names, sorted.
+#[must_use]
+pub fn families_in(text: &str) -> BTreeSet<&'static str> {
+    let lower = text.to_lowercase();
+    lower
+        .split(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')))
+        .filter(|t| !NOT_A_MODEL.iter().any(|n| t.starts_with(n)))
+        .filter_map(|t| {
+            if t == "phi" {
+                return Some("phi");
+            }
+            FAMILIES
+                .iter()
+                .find(|(_, prefixes)| prefixes.iter().any(|p| t.starts_with(p)))
+                .map(|(f, _)| *f)
+        })
+        .collect()
+}
+
+/// One example target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Example {
+    /// Repo-relative file.
+    pub file: String,
+    pub krate: String,
+    pub name: String,
+    pub families: BTreeSet<&'static str>,
+}
+
+/// Counts reported beside the graph.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExampleStats {
+    /// The repo root carries a `[workspace]` manifest — the only case in which zero examples is an error.
+    pub at_workspace_root: bool,
+    /// Member packages with at least one example target.
+    pub packages: usize,
+    pub examples: usize,
+    /// Example targets under a manifest the workspace does not admit (not extracted).
+    pub non_member_examples: usize,
+    pub naming_a_model: usize,
+    pub naming_qwen35: usize,
+    /// `family -> examples naming it`.
+    pub by_family: BTreeMap<String, usize>,
+    pub errors: Vec<ExtractError>,
+}
+
+/// The example target files of the package in `dir`, byte-ordered: `examples/*.rs` and `examples/*/main.rs`.
+#[must_use]
+pub fn targets_of(dir: &Path) -> Vec<PathBuf> {
+    let Ok(rd) = std::fs::read_dir(dir.join("examples")) else {
+        return Vec::new();
+    };
+    let mut out: Vec<PathBuf> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter_map(|p| {
+            if p.is_dir() {
+                Some(p.join("main.rs")).filter(|m| m.is_file())
+            } else {
+                Some(p).filter(|p| p.extension().is_some_and(|e| e == "rs"))
+            }
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// Every `Cargo.toml` under `root`, skipping build and vcs dirs, byte-ordered.
+fn manifests(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for p in rd.flatten().map(|e| e.path()) {
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            if p.is_dir() {
+                if !matches!(name, "target" | ".git" | ".lake" | "node_modules") {
+                    stack.push(p);
+                }
+            } else if name == "Cargo.toml" {
+                out.push(p);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+fn rel(root: &Path, p: &Path) -> String {
+    p.strip_prefix(root)
+        .unwrap_or(p)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+/// The name cargo gives the target: the file stem, or the directory for `examples/<name>/main.rs`.
+fn target_name(file: &Path) -> String {
+    let stem = file.file_stem().unwrap_or_default();
+    let name = if stem == "main" {
+        file.parent().and_then(Path::file_name).unwrap_or(stem)
+    } else {
+        stem
+    };
+    name.to_string_lossy().to_string()
+}
+
+/// Walk the workspace under `root`: the member examples, and the counts.
+#[must_use]
+pub fn walk(root: &Path) -> (Vec<Example>, ExampleStats) {
+    let membership = std::fs::read_to_string(root.join("Cargo.toml"))
+        .ok()
+        .and_then(|t| workspace_membership(&t));
+    let mut stats = ExampleStats {
+        at_workspace_root: membership.is_some(),
+        ..ExampleStats::default()
+    };
+    let mut out = Vec::new();
+    for manifest in manifests(root) {
+        let dir = manifest.parent().unwrap_or(root);
+        let targets = targets_of(dir);
+        if targets.is_empty() {
+            continue;
+        }
+        let package = std::fs::read_to_string(&manifest)
+            .ok()
+            .and_then(|t| manifest_names(&t).package);
+        let admitted = membership.as_ref().is_none_or(|m| m.admits(root, dir));
+        let Some(krate) = package.filter(|_| admitted) else {
+            stats.non_member_examples += targets.len();
+            continue;
+        };
+        stats.packages += 1;
+        for file in targets {
+            let Ok(text) = std::fs::read_to_string(&file) else {
+                stats.errors.push(ExtractError {
+                    file: rel(root, &file),
+                    what: "example target is not readable UTF-8".into(),
+                });
+                continue;
+            };
+            out.push(Example {
+                file: rel(root, &file),
+                krate: krate.clone(),
+                name: target_name(&file),
+                families: families_in(&text),
+            });
+        }
+    }
+    stats.examples = out.len();
+    for e in &out {
+        stats.naming_a_model += usize::from(!e.families.is_empty());
+        stats.naming_qwen35 += usize::from(e.families.contains("qwen3.5"));
+        for f in &e.families {
+            *stats.by_family.entry((*f).to_string()).or_default() += 1;
+        }
+    }
+    if stats.at_workspace_root && stats.examples == 0 {
+        stats.errors.push(ExtractError {
+            file: "Cargo.toml".into(),
+            what: "a [workspace] root with zero example targets read — the walk measured nothing"
+                .into(),
+        });
+    }
+    (out, stats)
+}
+
+/// One example into `g`.
+pub fn emit(g: &mut Graph, e: &Example) {
+    let n = iri_path("example", &e.file.split('/').collect::<Vec<_>>());
+    g.insert(n.clone(), RDF_TYPE, Term::iri(ont("Example")));
+    g.insert(n.clone(), RDF_TYPE, Term::iri(PROV_ENTITY));
+    g.insert(n.clone(), ex("file"), Term::string(&e.file));
+    g.insert(n.clone(), ex("crate"), Term::string(&e.krate));
+    g.insert(n.clone(), ex("name"), Term::string(&e.name));
+    for f in &e.families {
+        g.insert(n.clone(), ex("namesModel"), Term::string(*f));
+    }
+    g.insert(
+        n.clone(),
+        ex("namesQwen35"),
+        Term::boolean(e.families.contains("qwen3.5")),
+    );
+}
+
+/// The examples of the workspace under `contract_dir`'s parent, into `g`.
+pub fn extract(contract_dir: &Path, g: &mut Graph) -> ExampleStats {
+    let root = super::repo_root(contract_dir);
+    let (examples, stats) = walk(&root);
+    for e in &examples {
+        emit(g, e);
+    }
+    stats
+}
+
+/// The scan tells a model from its look-alikes, this run: a Qwen3.5 size and a phi are named; the llama.cpp
+/// runtime and the word `graphics` are not.
+#[must_use]
+pub fn positive_control() -> bool {
+    let named = families_in("load Qwen3.5-4B, compare to phi-3 on graphics via llama.cpp");
+    let expected: BTreeSet<&str> = ["qwen3.5", "phi"].into_iter().collect();
+    named == expected
+        && families_in("Qwen3-8B").contains("qwen3")
+        && !families_in("Qwen3-8B").contains("qwen3.5")
+}
+
+#[cfg(test)]
+#[path = "example_tests.rs"]
+mod tests;

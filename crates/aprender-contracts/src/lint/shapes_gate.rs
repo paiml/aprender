@@ -25,7 +25,7 @@
 //! violate at least one armed shape. `pc_extract` — one planted defect per extractor Σ marks implemented (R-3):
 //! `pv-contract`, a contract stripped of `metadata` carries no `ont:kind`; `json`, a nested key the vocabulary does
 //! not map is refused naming it; `gguf`, a corrupt magic is refused; `apr-model`, a header whose tensor count
-//! disagrees with its index is refused; `code` and `lean`, as their modules state; `parity-receipt`, a record
+//! disagrees with its index is refused; `code`, `lean` and `example`, as their modules state; `parity-receipt`, a record
 //! stripped of `comparator` loses its comparator edge. All of them every run, in memory.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -35,8 +35,8 @@ use std::time::Instant;
 use crate::ontology::arming::ArmedShapes;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, code, gguf, json, lean, parity_receipt, pv_contract, release_evidence,
-    ExtractFailure,
+    self, apr_model, code, example, gguf, json, lean, parity_receipt, pv_contract,
+    release_evidence, ExtractFailure,
 };
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
 use crate::ontology::receipts;
@@ -289,6 +289,7 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
         &extraction.gguf,
         &extraction.apr_model,
         &extraction.github,
+        &extraction.example.errors,
     );
     let (inherited_shapes_applied, inherited_by_shape) =
         subsumption_of(contract_dir, graph, &shapes, &mut counted);
@@ -442,6 +443,7 @@ fn by_entity_type(extraction: &extract::Extraction) -> BTreeMap<String, usize> {
         ("parity-receipt", extraction.parity.records),
         ("code", extraction.code.symbols),
         ("lean", extraction.lean.statements),
+        ("example", extraction.example.examples),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
@@ -496,6 +498,7 @@ fn extract_controls() -> BTreeMap<String, String> {
         ("apr-model", apr_model::positive_control(&apr_sample)),
         ("code", code::positive_control()),
         ("lean", lean::positive_control()),
+        ("example", example::positive_control()),
         (
             "parity-receipt",
             parity_receipt::positive_control(&parity_receipt::control_sample()),
@@ -539,6 +542,7 @@ fn findings_of(
     gguf_stats: &gguf::GgufStats,
     apr_stats: &apr_model::AprStats,
     github: &json::github::GithubStats,
+    example_errors: &[gguf::ExtractError],
 ) -> Counted {
     let mut c = Counted {
         findings: Vec::new(),
@@ -586,7 +590,12 @@ fn findings_of(
         f.contract_stem = Some(r.shape.clone());
         c.findings.push(f);
     }
-    for e in gguf_stats.errors.iter().chain(apr_stats.errors.iter()) {
+    for e in gguf_stats
+        .errors
+        .iter()
+        .chain(apr_stats.errors.iter())
+        .chain(example_errors)
+    {
         c.violations += 1;
         let mut f = LintFinding::new(
             "PV-ONT-012",
