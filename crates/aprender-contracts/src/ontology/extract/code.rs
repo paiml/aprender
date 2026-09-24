@@ -224,7 +224,11 @@ struct Membership {
 impl Membership {
     /// Is the crate in `dir` a member? Paths compare relative to the root, `.` for the root itself.
     fn admits(&self, root: &Path, dir: &Path) -> bool {
-        let rel = dir.strip_prefix(root).unwrap_or(dir).to_string_lossy().replace('\\', "/");
+        let rel = dir
+            .strip_prefix(root)
+            .unwrap_or(dir)
+            .to_string_lossy()
+            .replace('\\', "/");
         if rel.is_empty() {
             return self.root_package || self.members.iter().any(|m| m == ".");
         }
@@ -259,7 +263,11 @@ fn workspace_membership(text: &str) -> Option<Membership> {
             },
             None => continue,
         };
-        let list = if open == Some(true) { &mut out.members } else { &mut out.exclude };
+        let list = if open == Some(true) {
+            &mut out.members
+        } else {
+            &mut out.exclude
+        };
         list.extend(quoted(body));
         if body.contains(']') {
             open = None;
@@ -289,7 +297,9 @@ fn glob_match(pattern: &str, rel: &str) -> bool {
     p.len() == r.len()
         && p.iter().zip(&r).all(|(p, r)| match p.split_once('*') {
             None => p == r,
-            Some((pre, suf)) => r.len() >= pre.len() + suf.len() && r.starts_with(pre) && r.ends_with(suf),
+            Some((pre, suf)) => {
+                r.len() >= pre.len() + suf.len() && r.starts_with(pre) && r.ends_with(suf)
+            }
         })
 }
 
@@ -501,6 +511,11 @@ impl<'a> Resolver<'a> {
             match self.step(&module, seg)? {
                 Step::Module(next) => module = next,
                 Step::ReExport(target) => {
+                    // `use crate::a::T;` then `impl T { fn f() }` in THIS module: the binding names this
+                    // module, so its own impls are searched before following the `use` to T's definition.
+                    if let Ok(r) = self.type_member(&module, seg, rest, function) {
+                        return Ok(r);
+                    }
                     return self.resolve_depth(&join_path(&target, rest), function, depth + 1);
                 }
                 Step::Globs(targets) => {
@@ -568,8 +583,8 @@ impl<'a> Resolver<'a> {
     }
 
     /// `Type::function` (or `Type::<Arg>::function`): a method of an `impl` whose self type is `ty` in this
-    /// module, or a method of `trait ty`. Only the module that defines the type is searched — an `impl` in
-    /// another module is not found, and says so.
+    /// module, or a method of `trait ty`. Searched: the module that defines the type, and a module the binding
+    /// names that imports the type (`use`) and implements it there. An `impl` anywhere else is not found.
     fn type_member(
         &self,
         module: &Module,
@@ -743,11 +758,9 @@ fn impl_is_for(im: &syn::ItemImpl, ty: &str, generic: Option<&str>) -> bool {
 /// The `fn name` of a trait (declared or defaulted).
 fn find_trait_fn(items: &[syn::TraitItem], name: &str) -> Option<Resolved> {
     items.iter().find_map(|ti| match ti {
-        syn::TraitItem::Fn(f) if f.sig.ident == name => Some(found(
-            "trait-method",
-            &syn::Visibility::Inherited,
-            &f.attrs,
-        )),
+        syn::TraitItem::Fn(f) if f.sig.ident == name => {
+            Some(found("trait-method", &syn::Visibility::Inherited, &f.attrs))
+        }
         _ => None,
     })
 }
@@ -835,9 +848,10 @@ fn find_indexed(items: &[syn::Item], name: &str) -> Option<(usize, Resolved)> {
 }
 
 fn item_named(item: &syn::Item, name: &str) -> Option<Resolved> {
-    let named = |ident: &syn::Ident, kind: &str, vis: &syn::Visibility, attrs: &[syn::Attribute]| {
-        (ident == name).then(|| found(kind, vis, attrs))
-    };
+    let named =
+        |ident: &syn::Ident, kind: &str, vis: &syn::Visibility, attrs: &[syn::Attribute]| {
+            (ident == name).then(|| found(kind, vis, attrs))
+        };
     match item {
         syn::Item::Fn(f) => named(&f.sig.ident, "fn", &f.vis, &f.attrs),
         syn::Item::Impl(im) => find_method(&im.items, name),
@@ -1205,6 +1219,37 @@ mod tests {
         assert_eq!(
             symbol_iri(softmax),
             "https://ont.paiml.dev/v1alpha1/symbol/kern::nn::functional::softmax"
+        );
+    }
+
+    /// `use crate::a::T;` then `impl T<P> { fn f() }` in another module: the binding naming that module resolves
+    /// to the impl there (aprender-contrastive-data's `attestation::PreparedDataset::<Canonical>::…`), and a
+    /// method no impl has is still refused.
+    #[test]
+    fn a_method_implemented_in_the_module_that_imports_the_type_resolves() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = tmp.path();
+        std::fs::write(w.join("Cargo.toml"), "[workspace]\nmembers = [\"k\"]\n").unwrap();
+        std::fs::create_dir_all(w.join("k/src")).unwrap();
+        std::fs::write(w.join("k/Cargo.toml"), "[package]\nname = \"k\"\n").unwrap();
+        std::fs::write(w.join("k/src/lib.rs"), "pub mod a;\npub mod b;\n").unwrap();
+        std::fs::write(w.join("k/src/a.rs"), "pub struct T<P>(P);\npub struct C;\n").unwrap();
+        std::fs::write(
+            w.join("k/src/b.rs"),
+            "use crate::a::{C, T};\nimpl T<C> { pub fn f() {} }\n",
+        )
+        .unwrap();
+        let ws = Workspace::scan(w);
+        let mut r = Resolver::new(&ws);
+        let f = r
+            .resolve("k::b::T::<C>", "f")
+            .expect("impl in the importing module");
+        assert_eq!(f.file, "k/src/b.rs");
+        assert_eq!(f.kind, "method");
+        assert!(r.resolve("k::b::T::<C>", "g").is_err(), "a ghost method");
+        assert!(
+            r.resolve("k::a::T::<C>", "f").is_err(),
+            "a does not implement f"
         );
     }
 

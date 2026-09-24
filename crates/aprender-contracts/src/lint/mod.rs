@@ -17,6 +17,7 @@ pub mod duplicate_stems;
 pub mod finding;
 mod gates;
 pub use gates::collect_yaml_files;
+pub mod bindings_gate;
 mod gates_extended;
 pub mod ratchet_gates;
 pub mod refines_gate;
@@ -362,6 +363,9 @@ pub enum GateExtra {
     /// ONT-4e (R-20): every `A refines B` is Liskov, by a witness pv-sat wrote and this run re-checked.
     #[serde(rename = "refines")]
     Refines(Box<refines_gate::RefinesCounters>),
+    /// ONT-3a: every implemented/partial binding resolves to workspace code, or the allowlist names it.
+    #[serde(rename = "bindings")]
+    Bindings(Box<bindings_gate::BindingsCounters>),
 }
 
 /// Counters a `shapes` run reports, flattened into [`GateExtra::Shapes`]'s JSON.
@@ -720,6 +724,16 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     gates.push(refines_gate_result);
     all_findings.append(&mut refines_findings);
 
+    // Gate 20: bindings (ONT-3a). Same R-8 shape: computed in every run, armed per repo.
+    let (bindings_gate_result, mut bindings_findings) = ratchet_result(
+        config.contract_dir,
+        validation_passed,
+        bindings_gate::GATE,
+        bindings_gate::run_bindings_gate,
+    );
+    gates.push(bindings_gate_result);
+    all_findings.append(&mut bindings_findings);
+
     // Gate 9: strict test-binding (Issue #1510, opt-in via --strict-test-binding)
     if config.strict_test_binding {
         push_gate(
@@ -846,6 +860,9 @@ pub fn run_named_gate_with(
         refines_gate::GATE => {
             NamedGateOutcome::Refines(refines_gate::run_refines_gate(contract_dir))
         }
+        bindings_gate::GATE => {
+            NamedGateOutcome::Ratchet(bindings_gate::run_bindings_gate(contract_dir))
+        }
         "tbox" => NamedGateOutcome::Tbox(tbox_gate::run_tbox_gate(contract_dir)),
         "valid-under" => {
             NamedGateOutcome::ValidUnder(valid_under_gate::run_valid_under_gate(contract_dir))
@@ -872,7 +889,8 @@ pub fn run_named_gate_with(
 }
 
 /// The gate names `--gate` computes alone, for the refusal message.
-pub const NAMED_GATES: [&str; 11] = [
+pub const NAMED_GATES: [&str; 12] = [
+    bindings_gate::GATE,
     "depends-on-present",
     consistency_gate::GATE,
     "proved-is-derived",

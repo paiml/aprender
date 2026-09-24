@@ -27,7 +27,7 @@
     "release-evidence": 1
   },
   "by_concept": {
-    "Code": 168,
+    "Code": 160,
     "Contract": 1770,
     "Dataset": 0,
     "Doc": 0,
@@ -36,7 +36,7 @@
     "Model": 0,
     "Proof": 0,
     "Statement": 408,
-    "Symbol": 168,
+    "Symbol": 160,
     "Test": 0
   },
   "by_anchoring": {
