@@ -63,8 +63,9 @@ alive() {
 }
 
 # The one place a signal leaves this script (the case table swaps it for a logging no-op).
+KILL_SEAM="${CRUX_TEARDOWN_KILL:-}"
 sig() {
-  if [ -n "${CRUX_TEARDOWN_KILL:-}" ]; then "$CRUX_TEARDOWN_KILL" "$@"; else kill "$@"; fi
+  if [ -n "$KILL_SEAM" ]; then "$KILL_SEAM" "$@"; else kill "$@"; fi
 }
 
 left=""
