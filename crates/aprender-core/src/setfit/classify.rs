@@ -1430,9 +1430,7 @@ mod envelope {
 /// `ExecutionBackend::identity` — and because the plan fixes
 /// `setfit::classify::backend` as this task's filter. No case here needs
 /// encoder-private state.
-// #4130: every test here pins the code to the repo-root contracts/ (CONTRACT/BINDING below), which the
-// published .crate does not carry.
-#[cfg(all(test, aprender_monorepo))]
+#[cfg(test)]
 mod backend {
     use super::*;
     use crate::setfit::encoder::ExecutionBackend;
@@ -1440,7 +1438,16 @@ mod backend {
     /// Item 12 of the contract, read from the contract rather than from a copy
     /// of it. `include_str!` and not a runtime read: a missing contract is a
     /// COMPILE error here, where a runtime read would be a silent skip.
-    const CONTRACT: &str = include_str!("../../../../contracts/setfit-apr-v1.yaml");
+    ///
+    /// #4130: now read at RUN time, because the published .crate carries no repo-root `contracts/` and the
+    /// include made this crate's tests uncompilable from its tarball. The objection above still holds and is
+    /// kept: IN TREE a missing file PANICS (`workspace_contract_or_skip`). Only a build with no `contracts/`
+    /// at all, i.e. the tarball, skips, and it prints `SKIP <test>` by name, so nothing shrinks silently.
+    fn contract_or_skip(test: &str) -> Option<&'static str> {
+        static CONTRACT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        let text = crate::test_support::workspace_contract_or_skip(test, "setfit-apr-v1.yaml")?;
+        Some(CONTRACT.get_or_init(|| text).as_str())
+    }
 
     /// Item 12's row in the BINDING REGISTRY — the artifact a human or a gate
     /// reads to decide whether a contracted equation is implemented.
@@ -1452,7 +1459,16 @@ mod backend {
     /// row named `aprender::setfit::classify::backend_identity`, a path that
     /// exists at no point on this branch, and `pv audit` could not tell,
     /// because it reads the `status` field and does not resolve symbols.
-    const BINDING: &str = include_str!("../../../../contracts/aprender/binding.yaml");
+    ///
+    /// #4130: now read at RUN time, because the published .crate carries no repo-root `contracts/` and the
+    /// include made this crate's tests uncompilable from its tarball. The objection above still holds and is
+    /// kept: IN TREE a missing file PANICS (`workspace_contract_or_skip`). Only a build with no `contracts/`
+    /// at all, i.e. the tarball, skips, and it prints `SKIP <test>` by name, so nothing shrinks silently.
+    fn binding_or_skip(test: &str) -> Option<&'static str> {
+        static BINDING: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        let text = crate::test_support::workspace_contract_or_skip(test, "aprender/binding.yaml")?;
+        Some(BINDING.get_or_init(|| text).as_str())
+    }
 
     /// The signature the registry records for the bound symbol.
     ///
@@ -1500,13 +1516,13 @@ mod backend {
     /// parser that silently matched nothing would make every pin below
     /// vacuously true — the zero-match class, one tier up from the code it
     /// guards.
-    fn binding_row(equation: &str) -> Option<&'static str> {
+    fn binding_row(binding: &'static str, equation: &str) -> Option<&'static str> {
         let key = format!("\n  equation: {equation}\n");
-        let at = BINDING.find(&key)?;
+        let at = binding.find(&key)?;
         // Walk back to the `- contract:` line that opens this row, then forward
         // to the one that opens the next.
-        let start = BINDING[..at].rfind("\n- contract:")? + 1;
-        let tail = &BINDING[start..];
+        let start = binding[..at].rfind("\n- contract:")? + 1;
+        let tail = &binding[start..];
         let end = tail[1..]
             .find("\n- contract:")
             .map_or(tail.len(), |o| o + 1);
@@ -1538,7 +1554,12 @@ mod backend {
     /// TEST 2 — the registry pin, MUST-MATCH arm.
     #[test]
     fn the_registry_row_names_the_shipped_symbol_and_is_implemented() {
-        let row = binding_row("backend_identity")
+        let Some(binding) =
+            binding_or_skip("the_registry_row_names_the_shipped_symbol_and_is_implemented")
+        else {
+            return;
+        };
+        let row = binding_row(binding, "backend_identity")
             .expect("the backend_identity row exists (test 4 is the dedicated non-vacuity arm)");
         for needle in [
             "\n  module_path: aprender::setfit::encoder\n",
@@ -1561,6 +1582,10 @@ mod backend {
     /// test 2 and still ship an unresolvable claim.
     #[test]
     fn the_ghost_path_appears_nowhere_in_the_registry() {
+        let Some(binding) = binding_or_skip("the_ghost_path_appears_nowhere_in_the_registry")
+        else {
+            return;
+        };
         // Assembled from `concat!` fragments so this guard's OWN source text
         // does not carry the strings it forbids: `classify.rs` is inside the
         // directory `setfit_sources()` walks, the F-05 self-scan hazard the
@@ -1571,11 +1596,11 @@ mod backend {
         let bare_column = concat!("\n  function: ", "backend_identity\n");
 
         assert!(
-            !BINDING.contains(ghost_path),
+            !binding.contains(ghost_path),
             "the registry still names {ghost_path:?}, which exists at no point on this branch"
         );
         assert!(
-            !BINDING.contains(bare_column),
+            !binding.contains(bare_column),
             "the registry still carries a bare {bare_column:?} column; an inherent method needs \
              its type to resolve"
         );
@@ -1593,8 +1618,13 @@ mod backend {
     /// parser they share finds a row at all.
     #[test]
     fn the_registry_row_parser_finds_the_row_it_claims_to_pin() {
+        let Some(binding) =
+            binding_or_skip("the_registry_row_parser_finds_the_row_it_claims_to_pin")
+        else {
+            return;
+        };
         // MUST-MATCH arm of the parser's own case table.
-        let row = binding_row("backend_identity");
+        let row = binding_row(binding, "backend_identity");
         assert!(
             row.is_some(),
             "no `equation: backend_identity` row was found in contracts/aprender/binding.yaml. A \
@@ -1610,7 +1640,7 @@ mod backend {
         // MUST-NOT-MATCH arm: an equation that does not exist must yield None
         // rather than drifting onto a neighbouring row.
         assert!(
-            binding_row("backend_identity_x").is_none(),
+            binding_row(binding, "backend_identity_x").is_none(),
             "the parser returned a row for an equation that does not exist, so a renamed key \
              would go unnoticed"
         );
@@ -1623,6 +1653,11 @@ mod backend {
     /// equation rather than merely something that compiles.
     #[test]
     fn the_bound_symbol_produces_the_identity_the_contract_describes() {
+        let Some(contract) =
+            contract_or_skip("the_bound_symbol_produces_the_identity_the_contract_describes")
+        else {
+            return;
+        };
         // Obtained from the live encode path, never constructed: ExecutionBackend
         // has no public constructor and the sibling guard above exists to keep it
         // that way, so a value here is one an invocation RETURNED.
@@ -1642,7 +1677,7 @@ mod backend {
             "the middle segment names THIS implementation: {identity:?}"
         );
         assert!(
-            CONTRACT.contains("backend = \"<device>:<implementation>:<kernel>\""),
+            contract.contains("backend = \"<device>:<implementation>:<kernel>\""),
             "item 12's grammar line moved, so the segment assertions above are pinned to a \
              formula that is no longer the contract's"
         );
@@ -1659,8 +1694,14 @@ mod backend {
     /// THERE. That is the strongest tie available without a proc-macro.
     #[test]
     fn the_module_path_segment_names_the_file_the_symbol_lives_in() {
+        let Some(binding) =
+            binding_or_skip("the_module_path_segment_names_the_file_the_symbol_lives_in")
+        else {
+            return;
+        };
         let src = include_str!("encoder.rs");
-        let row = binding_row("backend_identity").expect("the backend_identity row exists");
+        let row =
+            binding_row(binding, "backend_identity").expect("the backend_identity row exists");
         assert!(
             row.contains("\n  module_path: aprender::setfit::encoder\n"),
             "the row's module_path must end in the `encoder` segment this test reads"
@@ -1683,18 +1724,23 @@ mod backend {
 
     #[test]
     fn encode_texts_traced_returns_the_identity_the_contract_pins() {
+        let Some(contract) =
+            contract_or_skip("encode_texts_traced_returns_the_identity_the_contract_pins")
+        else {
+            return;
+        };
         let model = fixture_encoder_model();
         let (_, backend) = model
             .encode_texts_traced(&["hello world"])
             .expect("the fixture encodes");
         let identity = backend.identity();
-        // Pinned against the CONTRACT's own text, not against a literal copied
+        // Pinned against the contract's own text, not against a literal copied
         // into this file: a copy can drift from the contract silently, and the
         // D-12 gate additionally requires the kernel literal to appear nowhere
         // in this module.
         let pin = format!("v1 = \"{identity}\"");
         assert!(
-            CONTRACT.contains(&pin),
+            contract.contains(&pin),
             "the observed identity {identity:?} is not the value item 12 pins ({pin:?})"
         );
     }
@@ -1861,12 +1907,18 @@ mod classify_path {
         TRUNCATION_PROBE_UNIT.repeat(TRUNCATION_PROBE_REPEATS)
     }
 
-    #[cfg(aprender_monorepo)] // #4130: reads the repo-root contracts/, absent from the published .crate
     #[test]
     fn the_truncation_probe_matches_the_contract_construction_rule() {
         // The probe is only evidence about truncation if it is the contract's
         // probe. Pinned against the contract text rather than against a comment.
-        let contract = include_str!("../../../../contracts/setfit-apr-v1.yaml");
+        // #4130: read at RUN time — the published .crate carries no repo-root contracts/.
+        let Some(contract_owned) = crate::test_support::workspace_contract_or_skip(
+            "the_truncation_probe_matches_the_contract_construction_rule",
+            "setfit-apr-v1.yaml",
+        ) else {
+            return;
+        };
+        let contract: &str = &contract_owned;
         assert!(
             contract.contains(&format!("repeat_unit: '{TRUNCATION_PROBE_UNIT}'")),
             "the repeat unit drifted from contract item probe_truncation_boundary"
