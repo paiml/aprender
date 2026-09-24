@@ -425,9 +425,13 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     let resolved_layers = config.resolve_layers(total_layers)?;
     println!(
         "gpu-layers: requested={} resolved={resolved_layers} total={total_layers} (backend={})",
-        config
-            .gpu_layers
-            .map_or_else(|| "none".to_string(), |r| r.to_string()),
+        // #4089: a flagless start now takes `apr run`'s default; say so rather than print
+        // `none` while the accelerator engages.
+        match (config.gpu_layers, config.effective_gpu_layers()) {
+            (Some(r), _) => r.to_string(),
+            (None, Some(r)) => format!("{r}(default)"),
+            (None, None) => "none".to_string(),
+        },
         // NOTE: a BUILD label, not a residency claim. What actually loaded is
         // reported by `/v1/effective-config`'s `backend_loaded`, which is
         // derived from the AppState and can say `cpu` on this very build.

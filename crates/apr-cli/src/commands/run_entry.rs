@@ -98,7 +98,9 @@ pub(crate) fn run(
         max_tokens,
         output_format: output_format.to_string(),
         force: false,
-        no_gpu,
+        // #4089: every run path (APR, GGUF, Qwen3.5) reads this one field; with no backend
+        // named it is the shared default rule's answer, the one `apr serve` uses too.
+        no_gpu: crate::accel::run_no_gpu(no_gpu, accel_forced),
         accel_forced,
         offline,
         benchmark,
