@@ -35,7 +35,7 @@ use std::time::Instant;
 use crate::ontology::arming::ArmedShapes;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, code, gguf, json, lean, parity_receipt, pv_contract, release_evidence,
+    self, apr_model, code, gguf, json, kernel, lean, parity_receipt, pv_contract, release_evidence,
     ExtractFailure,
 };
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
@@ -435,6 +435,8 @@ fn by_entity_type(extraction: &extract::Extraction) -> BTreeMap<String, usize> {
         ("parity-receipt", extraction.parity.records),
         ("code", extraction.code.symbols),
         ("lean", extraction.lean.statements),
+        // ONT-4c4: the bound `#[kernel]` symbols typed `ont:Kernel`
+        ("kernel", extraction.kernel.kernels),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
@@ -486,6 +488,7 @@ fn extract_controls() -> BTreeMap<String, String> {
         ("apr-model", apr_model::positive_control(&apr_sample)),
         ("code", code::positive_control()),
         ("lean", lean::positive_control()),
+        ("kernel", kernel::positive_control()),
         (
             "parity-receipt",
             parity_receipt::positive_control(&parity_receipt::control_sample()),

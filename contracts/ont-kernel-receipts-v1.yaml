@@ -1,0 +1,172 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-kernel-receipts-v1 — kernel receipts as focus nodes (ONT-001 §5 ONT-4c4, §3.7; issue #4069, PMAT-4069)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::ontology::extract::kernel — extract:kernel over extract:code: a bound #[kernel] symbol
+#                                                   (cuda-oxide, pure Rust → PTX) gains rdf:type ont:Kernel on the
+#                                                   SAME IRI (ont:Kernel ⊂ ont:Symbol), a kernel:reference to its
+#                                                   f64 CPU sibling, and its kernel receipts
+#                                                   (evidence/kernels/<kernel>/<host>.json, apr-kernel-receipt/v1).
+#   provable_contracts::ontology::extract::code   — sym:unsafeFree / sym:boundsChecked, read off the kernel's body.
+#
+# THE THREE SHAPES, all targetClass ont:Kernel, all REPORTED and NOT ARMED at this row (absent from armed_shapes in
+# lint-baseline.json): `kernel-parity` (every required CUDA host at cos ≥ 0.9999 ∧ max|Δ| < 1e-3 on a witness row of
+# the receipt's own build sha; a reference that resolves), `kernel-timing` (oxide_us / ptx_us ≤ 1.2 per required host,
+# or a tracked exemption receipt), `kernel-safety` (no unsafe, no get_unchecked, a register budget measured). The tree
+# holds no #[kernel] fn and no evidence/kernels/ yet — the OXIDE pilot (#3522) lands the first; arming follows its
+# first tracked receipt, and the ratchet keeps it armed.
+#
+# THE PLANT. pc_extract.kernel, drawn every run: a #[kernel] whose reference does not resolve must be named
+# kernel:referenceMissing, one whose reference does must not be, and the ladder schema under evidence/kernels/ must
+# be refused by name.
+#
+# KIND: pattern. Vocabulary, extractor and shapes over a graph; the proof is the extractor's own case table.
+# ─────────────────────────────────────────────────────────────────────────────
+name: ont-kernel-receipts
+version: "1.0.0"
+scope: >
+  How a bound #[kernel] symbol becomes an ont:Kernel focus node, how the tracked kernel receipts are joined to it by
+  kernel name and build sha, and the three shapes over the join. Out of scope: the kernel-kind contracts (the other
+  sense of Kernel in Σ), the release kernel diffs (apr-kernel-diff-receipt/v1, aprender#3715), hand-PTX strings
+  (nothing binds them, so nothing extracts them).
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: PAIML Engineering
+  description: >
+    Bound #[kernel] symbols are ont:Kernel focus nodes; apr-kernel-receipt/v1 rows witness them when kernel name and
+    build sha match; kernel-parity, kernel-timing and kernel-safety are reported until the OXIDE pilot's first
+    tracked receipt arms them.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md §3.7, §5 ONT-4c4'
+    - 'aprender#4069 (this row), aprender#3522 (the OXIDE pilot: the first #[kernel] and its receipt)'
+    - 'crates/aprender-contracts/src/ontology/extract/{kernel.rs, code.rs}, lint/shapes_gate.rs'
+
+entity:
+  type: kernel
+
+relations:
+  depends_on: [ont-shapes-v1, ont-relations-v1, ont-sigma-v1, ont-code-symbols-v1]
+
+shapes:
+  - id: kernel-parity
+    targetClass: ont:Kernel
+    properties:
+      - {path: kernel:reference, minCount: 1, nodeKind: IRI}
+      - {path: kernel:referenceMissing, maxCount: 0}
+      - {path: kernel:parityReceipt, minCount: 1, nodeKind: IRI, class: kernel:Receipt, resolves: kernel-receipt}
+      - {path: kernel:missingParityHost, maxCount: 0}
+      - {path: kernel:receiptShaMismatch, maxCount: 0}
+  - id: kernel-timing
+    targetClass: ont:Kernel
+    properties:
+      - {path: kernel:missingTimingHost, maxCount: 0}
+  - id: kernel-safety
+    targetClass: ont:Kernel
+    properties:
+      - {path: kernel:safety, minCount: 1, maxCount: 1, in: ["true"]}
+      - {path: kernel:registerBudget, minCount: 1}
+
+equations:
+  witness:
+    formula: "witness(k, f, row) ⇔ row.kernel ∈ {name(k), module(k)::name(k)} ∧ row.sha = f.sha ∧ f.sha ≠ ⊥"
+    domain: "every ont:Kernel and every row of every apr-kernel-receipt/v1 file under evidence/kernels/"
+    codomain: "a kernel:parityReceipt edge to a kernel:Receipt node, or a kernel:receiptShaMismatch literal naming the file"
+    invariants:
+      - "a row whose sha is not its receipt's build sha is a mismatch, never a witness"
+      - "a row naming no bound kernel is counted (orphan_rows), never graded"
+    preconditions:
+      - "every *.json under evidence/kernels/ carries schema apr-kernel-receipt/v1; any other schema is exit 3 naming the file"
+    postconditions:
+      - "two extractions are byte-identical (R-15)"
+    lean_theorem: none — L4 not declared
+  parity:
+    formula: "parityOn(k, h) ⇔ ∃ witness row on h: cos ≥ 0.9999 ∧ |maxdiff| < 1e-3"
+    domain: "every ont:Kernel × every required host (evidence/kernels/REQUIRED_HOSTS; absent → the hosts that measured)"
+    codomain: "a kernel:parityOn literal per host at parity; a kernel:missingParityHost literal per required host that is not"
+    invariants:
+      - "a host below parity is named, never averaged against a host above it"
+    preconditions:
+      - "the kernel has a kernel:reference: the contract binds a non-#[kernel] symbol to the same equation"
+    postconditions:
+      - "kernel-parity fires iff a required host is missing, the reference is missing, or a sha mismatches"
+    lean_theorem: none — L4 not declared
+  timing:
+    formula: "timingOn(k, h) ⇔ (∃ witness row on h: oxide_us / ptx_us ≤ 1.2) ∨ exemption(k)"
+    domain: "every ont:Kernel × every required host"
+    codomain: "a kernel:timingOn literal, or a kernel:missingTimingHost literal"
+    invariants:
+      - "an exemption is a tracked receipt (evidence/kernels/<kernel>/EXEMPTION), cited as kernel:exemptionReceipt"
+    preconditions:
+      - "ptx_us > 0"
+    postconditions:
+      - "kernel-timing fires iff a required host is over budget with no exemption"
+    lean_theorem: none — L4 not declared
+  safety:
+    formula: "safety(k) ⇔ unsafeFree(k) ∧ boundsChecked(k) ∧ ∃ registerBudget(k)"
+    domain: "every ont:Kernel"
+    codomain: "kernel:safety \"true\" | \"false\""
+    invariants:
+      - "an unsafe fn, an unsafe block, or a get_unchecked call in the body is not safe"
+    preconditions:
+      - "the body was resolved by the syn walk"
+    postconditions:
+      - "kernel-safety fires iff safety is false"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: KRC-INV-001
+    property: a kernel with no reference fails kernel-parity
+    formal: '|referenceMissing(k)| ≥ 1 ⇒ Fail(kernel-parity, k)'
+    prose: false
+  - id: KRC-INV-002
+    property: a required host without parity fails kernel-parity naming the host
+    formal: 'h ∈ required ∧ ¬parityOn(k, h) ⇒ Fail(kernel-parity, k)'
+    prose: false
+  - id: KRC-INV-003
+    property: a foreign schema under the kernel root is a declaration fault
+    formal: 'schema(f) ≠ apr-kernel-receipt/v1 ⇒ exit = 3'
+    prose: false
+  - id: KRC-INV-004
+    property: an unarmed shape never feeds the meet
+    formal: 'shape ∉ armed_shapes ⇒ verdict(gate) independent of results(shape)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-KRC-001
+    rule: witnesses and parity per host
+    prediction: a two-host all-green fixture has two witnesses and no missing host; one host at cos 0.9990 is named missingParityHost; a wrong-sha row is no witness and is named receiptShaMismatch
+    test: cargo test -p aprender-contracts --lib ontology::extract::kernel
+    if_fails: a kernel is called at parity on a build nobody measured, or a red host is averaged away
+  - id: FALSIFY-KRC-002
+    rule: timing and its exemption
+    prediction: oxide_us / ptx_us = 1.3 is missingTimingHost without an exemption and timingOn with one, which is cited
+    test: cargo test -p aprender-contracts --lib ontology::extract::kernel
+    if_fails: a slow kernel passes silently, or an exemption is honoured without being cited
+  - id: FALSIFY-KRC-003
+    rule: safety read off the body
+    prediction: an unsafe block or get_unchecked in a #[kernel] body sets sym:unsafeFree / sym:boundsChecked false and kernel:safety "false"
+    test: cargo test -p aprender-contracts --lib ontology::extract
+    if_fails: an unchecked kernel is graded safe
+  - id: FALSIFY-KRC-004
+    rule: the extractor's positive control
+    prediction: pc_extract.kernel fires every run — a kernel with no reference is named, one with a reference is typed clean, the ladder schema is refused
+    test: cargo test -p aprender-contracts --lib lint::shapes_gate::tests
+    if_fails: a resolver that typed every kernel clean would make every kernel-parity a Pass
+
+qa_gate:
+  id: F-KRC-001
+  name: kernel-receipts
+  description: 'Bound #[kernel] symbols are focus nodes, the tracked kernel receipts are their witnesses (ONT-4c4)'
+  checks:
+    - witnesses_by_kernel_and_build_sha
+    - parity_per_required_host
+    - timing_or_cited_exemption
+    - safety_from_the_body
+    - extractor_control_fires
+  pass_criteria: All 4 falsification tests pass; `pv lint contracts/ --gate shapes` reports by_entity_type.kernel, pc_extract.kernel fired, and by_shape naming kernel-parity, kernel-timing and kernel-safety
+  falsification: 'set cos to 0.999 in a tracked kernel receipt row → kernel-parity names the host; change its sha → zero witnesses; add an unsafe block to the #[kernel] body → kernel-safety fires'

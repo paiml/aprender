@@ -18,7 +18,7 @@ schema: ont-sigma-v1
 concepts:
   Entity: {doc: "anything the ontology can name"}
   Contract: {doc: "a pv contract file under contracts/"}
-  Kernel: {doc: "a contract whose kind is kernel: it carries equations and proof obligations"}
+  Kernel: {doc: "two senses, one name: a contract whose kind is kernel (equations + proof obligations), and — ONT-4c4 — a bound #[kernel] Rust symbol (cuda-oxide, pure Rust to PTX), typed ont:Kernel beside ont:Symbol on the same IRI and graded by its apr-kernel-receipt/v1 receipts"}
   Code: {doc: "a Rust item — a function, type or module — in this workspace"}
   Test: {doc: "a test function a contract cites as its falsifier"}
   Proof: {doc: "a Kani harness or Lean theorem discharging an obligation"}
@@ -147,6 +147,9 @@ entity_types:
   # aprender#3715: a release's receipts (per-host inventory + cells, kernel diffs, context rungs, the dogfood
   # receipt R5 judged), extracted ONLY when a release subject is given — an ordinary PR has no release.
   - {name: release-evidence, extractor: release_evidence, implemented: true}
+  # ONT-4c4 (aprender#4069): the bound #[kernel] symbols over extract:code, joined to evidence/kernels/<k>/<host>.json
+  # (apr-kernel-receipt/v1 — the ladder schema there, or this one under the ladder root, is refused by name).
+  - {name: kernel, extractor: kernel, implemented: true}
 
 extractors:
   - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
@@ -160,6 +163,7 @@ extractors:
   - {name: csv, reader: ontology/extract/csv.rs, implemented: false}
   - {name: parity_receipt, reader: ontology/extract/parity_receipt.rs, implemented: true}
   - {name: release_evidence, reader: ontology/extract/release_evidence.rs, implemented: true}
+  - {name: kernel, reader: ontology/extract/kernel.rs, implemented: true}
 
 # What this ontology does NOT express, said out loud so nobody encodes it by accident. Each names the reader that
 # would have to change first.
