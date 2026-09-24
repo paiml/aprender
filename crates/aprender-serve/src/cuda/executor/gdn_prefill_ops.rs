@@ -101,6 +101,19 @@ impl CudaExecutor {
             return Ok(w_ptr);
         }
         let out = self.qp_dequant_scratch(n as usize * k as usize)?;
+        self.qwen35_dequant_into(qtype, w_ptr, out, n, k)?;
+        Ok(out)
+    }
+
+    /// Dequantize the `[n × k]` weight at `w_ptr` into `out` (`n × k` floats).
+    fn qwen35_dequant_into(
+        &mut self,
+        qtype: WeightQuantType,
+        w_ptr: u64,
+        out: u64,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
         let (key, name, grid) = match qtype {
             WeightQuantType::Q4K => {
                 let kern = Q4KDequantKernel::new(k, n);
@@ -134,8 +147,89 @@ impl CudaExecutor {
         };
         let config = LaunchConfig::grid_2d(grid.0, grid.1, 32, 1);
         let mut args = [out, w_ptr, u64::from(k), u64::from(n)];
-        self.qp_launch(&key, name, config, &mut args, 2)?;
-        Ok(out)
+        self.qp_launch(&key, name, config, &mut args, 2)
+    }
+
+    /// #4260: whether a cached weight copy of `bytes` still leaves the model's reserve free.
+    fn qwen35_cache_fits(&self, bytes: usize) -> bool {
+        self.context.memory_info().is_ok_and(|(free, _)| {
+            free >= bytes.saturating_add(self.qwen35_weight_cache_reserve)
+        })
+    }
+
+    /// #4260: the weight's dequantized f32 copy, made once and kept across chunks and
+    /// requests. `None` when the copy does not fit beside the reserve; the caller then
+    /// dequantizes into the shared scratch as before.
+    fn qwen35_weight_f32_cached(
+        &mut self,
+        qtype: WeightQuantType,
+        w_ptr: u64,
+        n: u32,
+        k: u32,
+    ) -> Result<Option<u64>, GpuError> {
+        if qtype == WeightQuantType::F32 {
+            return Ok(Some(w_ptr));
+        }
+        if let Some(buf) = self.qwen35_f32_weight_cache.get(&w_ptr) {
+            return Ok(Some(buf.as_ptr()));
+        }
+        let elems = n as usize * k as usize;
+        if !self.qwen35_cache_fits(4 * elems) {
+            return Ok(None);
+        }
+        let Ok(buf) = GpuBuffer::<f32>::new(&self.context, elems) else {
+            return Ok(None);
+        };
+        self.qwen35_dequant_into(qtype, w_ptr, buf.as_ptr(), n, k)?;
+        let ptr = buf.as_ptr();
+        self.qwen35_f32_weight_cache.insert(w_ptr, buf);
+        Ok(Some(ptr))
+    }
+
+    /// #4260: the weight's fp16 copy (dequantized to f32, then rounded), made once and
+    /// kept; `None` when it does not fit beside the reserve.
+    fn qwen35_weight_f16_cached(
+        &mut self,
+        qtype: WeightQuantType,
+        w_ptr: u64,
+        n: u32,
+        k: u32,
+    ) -> Result<Option<u64>, GpuError> {
+        if let Some(buf) = self.fp16_weight_cache.get(&w_ptr) {
+            return Ok(Some(buf.as_ptr()));
+        }
+        let elems = n as usize * k as usize;
+        if !self.qwen35_cache_fits(2 * elems) {
+            return Ok(None);
+        }
+        let Ok(buf) = GpuBuffer::<u16>::new(&self.context, elems) else {
+            return Ok(None);
+        };
+        let w_f32 = self.qwen35_dequant_f32(qtype, w_ptr, n, k)?;
+        self.convert_f32_to_f16(w_f32, buf.as_ptr(), elems as u32)?;
+        let ptr = buf.as_ptr();
+        self.fp16_weight_cache.insert(w_ptr, buf);
+        Ok(Some(ptr))
+    }
+
+    /// Set how [`Self::qwen35_project_rows`] runs its GEMM (the default is
+    /// [`Qwen35PrefillGemm::from_env`]).
+    pub(crate) fn set_qwen35_prefill_gemm(&mut self, mode: Qwen35PrefillGemm) {
+        self.qwen35_prefill_gemm = mode;
+    }
+
+    /// Device bytes a cached weight copy must leave free: the prefill workspace, the
+    /// decode state and the capacity plan's overhead, which are allocated per request
+    /// AFTER the cache has grown (#4260).
+    pub(crate) fn set_qwen35_weight_cache_reserve(&mut self, bytes: usize) {
+        self.qwen35_weight_cache_reserve = bytes;
+    }
+
+    /// Bytes held by the Qwen3.5 prefill's cached weight copies (f32 and fp16).
+    #[must_use]
+    pub(crate) fn qwen35_weight_cache_bytes(&self) -> usize {
+        4 * self.qwen35_f32_weight_cache.values().map(GpuBuffer::len).sum::<usize>()
+            + 2 * self.fp16_weight_cache.values().map(GpuBuffer::len).sum::<usize>()
     }
 
     /// `Y[rows × n] = X[rows × k] · Wᵀ` for the quantized `[n × k]` weight `W`, all
@@ -158,7 +252,20 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         validate_device_ptr(x_ptr, "qwen35_project_rows x")?;
         validate_device_ptr(y_ptr, "qwen35_project_rows y")?;
-        let w_f32 = self.qwen35_dequant_f32(qtype, w_ptr, n, k)?;
+        let cached = match self.qwen35_prefill_gemm {
+            Qwen35PrefillGemm::F32 => None,
+            Qwen35PrefillGemm::F32Cached => self.qwen35_weight_f32_cached(qtype, w_ptr, n, k)?,
+            Qwen35PrefillGemm::F16 => {
+                if let Some(w16) = self.qwen35_weight_f16_cached(qtype, w_ptr, n, k)? {
+                    return self.qwen35_hgemm_rows(w16, x_ptr, y_ptr, rows, n, k, ldc);
+                }
+                None
+            },
+        };
+        let w_f32 = match cached {
+            Some(ptr) => ptr,
+            None => self.qwen35_dequant_f32(qtype, w_ptr, n, k)?,
+        };
         self.ensure_cublas()?;
         let handle = self.cublas_handle.as_ref().expect("cublas initialized");
         // Column-major view: Yᵀ (n × rows, ld ldc) = W (k × n col-major, op T) · Xᵀ (k × rows).
@@ -172,6 +279,46 @@ impl CudaExecutor {
             w_f32,
             k as i32,
             x_ptr,
+            k as i32,
+            0.0,
+            y_ptr,
+            ldc as i32,
+        )
+    }
+
+    /// #4260: [`Self::qwen35_project_rows`] on tensor cores — fp16 `W` × fp16 `X` → f32
+    /// `Y`, f32 accumulation.
+    #[allow(clippy::too_many_arguments)]
+    fn qwen35_hgemm_rows(
+        &mut self,
+        w16: u64,
+        x_ptr: u64,
+        y_ptr: u64,
+        rows: u32,
+        n: u32,
+        k: u32,
+        ldc: u32,
+    ) -> Result<(), GpuError> {
+        let count = rows as usize * k as usize;
+        self.ensure_fp16_activation_scratch(count)?;
+        let x16 = self
+            .fp16_activation_scratch
+            .as_ref()
+            .expect("fp16 activation scratch just ensured")
+            .as_ptr();
+        self.convert_f32_to_f16(x_ptr, x16, count as u32)?;
+        self.ensure_cublas()?;
+        let handle = self.cublas_handle.as_ref().expect("cublas initialized");
+        handle.gemm_f16_to_f32(
+            trueno_gpu::driver::GemmOp::Trans,
+            trueno_gpu::driver::GemmOp::NoTrans,
+            n as i32,
+            rows as i32,
+            k as i32,
+            1.0,
+            w16,
+            k as i32,
+            x16,
             k as i32,
             0.0,
             y_ptr,
@@ -568,5 +715,49 @@ impl CudaExecutor {
             )?;
         }
         Ok(())
+    }
+}
+
+/// #4260: how [`CudaExecutor::qwen35_project_rows`] runs its GEMM.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Qwen35PrefillGemm {
+    /// Dequantize into the shared scratch on every call, then f32 SGEMM (the #3596 path).
+    F32,
+    /// f32 SGEMM on a dequantized copy kept across chunks and requests: bitwise-equal to
+    /// [`Self::F32`] without re-dequantizing. A weight whose copy does not fit beside the
+    /// reserve takes the `F32` path.
+    F32Cached,
+    /// fp16 `W` × fp16 `X` → f32 on tensor cores, `W` cached. NOT bitwise-equal to `F32`:
+    /// the activations are rounded to fp16 before a recurrence that compounds the error.
+    F16,
+}
+
+impl Qwen35PrefillGemm {
+    /// The environment variable that picks the mode: `f32`, `f32-cached` or `f16`.
+    pub const ENV: &'static str = "APR_QWEN35_PREFILL_GEMM";
+
+    /// Unset is [`Self::F32Cached`]; an unrecognised value is an error naming it.
+    ///
+    /// # Errors
+    /// A value that is not `f32`, `f32-cached` or `f16`.
+    pub fn parse(value: Option<&str>) -> Result<Self, String> {
+        match value {
+            None | Some("f32-cached") => Ok(Self::F32Cached),
+            Some("f32") => Ok(Self::F32),
+            Some("f16") => Ok(Self::F16),
+            Some(other) => Err(format!(
+                "{}={other} is not one of f32, f32-cached, f16",
+                Self::ENV
+            )),
+        }
+    }
+
+    /// The mode [`Self::ENV`] names; an unrecognised value is printed and the default used.
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self::parse(std::env::var(Self::ENV).ok().as_deref()).unwrap_or_else(|e| {
+            eprintln!("[qwen35] {e}; using f32-cached");
+            Self::F32Cached
+        })
     }
 }

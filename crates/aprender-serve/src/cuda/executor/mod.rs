@@ -271,6 +271,7 @@ mod gdn_ops;
 /// PMAT-3596 (#3596): the Qwen3.5 hybrid's batched-prefill wrappers (GEMM projections,
 /// row-batched Gated `DeltaNet` kernels, causal attention over the resident cache).
 mod gdn_prefill_ops;
+pub use gdn_prefill_ops::Qwen35PrefillGemm;
 mod gemm;
 /// PMAT-291: Transformer layer graph builder for Qwen2.5 architecture
 mod graph_builder;
@@ -590,6 +591,13 @@ pub struct CudaExecutor {
     // Key: quantized weight GPU pointer → persistent FP16 buffer [N×K]
     // Populated lazily on first prefill, eliminates per-request dequant
     fp16_weight_cache: HashMap<u64, GpuBuffer<u16>>,
+    // #4260: Qwen3.5 batched prefill's dequantized f32 weights, kept across chunks and
+    // requests while they fit (key: quantized weight GPU pointer → persistent [N×K] f32).
+    qwen35_f32_weight_cache: HashMap<u64, GpuBuffer<f32>>,
+    // #4260: how the Qwen3.5 prefill projections run (env `APR_QWEN35_PREFILL_GEMM`).
+    qwen35_prefill_gemm: gdn_prefill_ops::Qwen35PrefillGemm,
+    // #4260: device bytes a cached prefill weight copy must leave free (set by the model).
+    qwen35_weight_cache_reserve: usize,
     // PMAT-031: FP16 activation scratch for HGEMM input conversion
     fp16_activation_scratch: Option<GpuBuffer<u16>>,
     fp16_activation_scratch_size: usize,
