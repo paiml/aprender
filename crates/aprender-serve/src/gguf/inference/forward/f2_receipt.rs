@@ -48,7 +48,8 @@ pub struct F2ReceiptKey {
     /// prefix or a size+mtime fingerprint would let a planted receipt with the
     /// wrong hash pass, which is the first falsifier.
     pub model_sha256: String,
-    /// The version of the crate that ran the guard.
+    /// The build that ran the guard: its version AND its executable's hash (#4290), see
+    /// [`apr_version`]. The field keeps its name so older receipts parse and then mismatch.
     pub apr_version: String,
     /// The device the GPU half ran on, as the driver names it.
     pub device: String,
@@ -304,10 +305,33 @@ pub fn model_sha256(bytes: &[u8]) -> String {
     s
 }
 
-/// The version of this crate — the one that ran the guard.
+/// The BUILD that ran the guard: `<CARGO_PKG_VERSION> exe:<16 hex of the running executable's
+/// sha256>`.
+///
+/// #4290: keyed on the version alone, v0.69.3-rc.1, rc.2, the final tag and every dev build of
+/// release/0.69.3 shared receipts, so a build that rewrote the forward path (RC2's one-engine
+/// loop, #4263) skipped F2 on a receipt an older build wrote. The executable's own bytes are
+/// the identity: every rebuild changes them, including a dirty one with no new commit, which a
+/// git sha would not see. The version stays in front so the log line still reads as a version.
 #[must_use]
 pub fn apr_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
+    let exe = std::env::current_exe().and_then(std::fs::read).ok();
+    build_identity(env!("CARGO_PKG_VERSION"), exe.as_deref())
+}
+
+/// Pure half of [`apr_version`]. An executable that cannot be read gets a key no receipt can
+/// hold (pid + clock), so that run validates: an unknown build is never a known one.
+#[must_use]
+pub fn build_identity(version: &str, exe: Option<&[u8]>) -> String {
+    match exe {
+        Some(bytes) => format!("{version} exe:{}", &model_sha256(bytes)[..16]),
+        None => {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos());
+            format!("{version} exe:unreadable-{}-{nanos}", std::process::id())
+        },
+    }
 }
 
 /// Now, in unix seconds; 0 if the clock is before the epoch.

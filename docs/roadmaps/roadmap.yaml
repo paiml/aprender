@@ -18191,6 +18191,26 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-4110
+  github_issue: 4110
+  item_type: task
+  title: 'apr --version prints +no-git on BOTH published surfaces (crates.io install, release binaries)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T23:59:54.621480081+00:00
+  updated: 2026-09-23T23:59:54.621480081+00:00
+  spec: null
+  acceptance_criteria:
+  - 'a packaged apr-cli (.cargo_vcs_info.json, no .git) emits APR_GIT_SHA = the 9-hex vcs sha, never +no-git (must-RED: the vcs rung removed)'
+  - 'an unpacked crate inside an UNRELATED repository still names its own vcs sha, not that repo HEAD (must-RED: vcs rung behind git rev-parse)'
+  - 'a checkout owned by another user (the root build container of binary-release.yml) still yields git rev-parse HEAD (must-RED: the safe.directory retry removed)'
+  - 'dev checkouts, the override, the malformed-sha and no-vcs fallbacks are unchanged'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Cop rows (aprender-cf, 2026-09-23/24): (1) build.rs reads the sha1 from .cargo_vcs_info.json with a must-RED fixture; scope widened after aprender-70 found the release binaries print +no-git too: cover both surfaces, each with its own must-RED, and keep any binary-release.yml edit a separate commit. ROOT CAUSE (b), measured: git inside rust:1.93.0-bookworm running as root refuses the runner-owned checkout (fatal: detected dubious ownership); main build.rs printed v0.69.1+no-git there, this one prints the HEAD. The retry marks ONLY the enclosing checkout safe.directory through a private GIT_CONFIG_GLOBAL under OUT_DIR (-c safe.directory is ignored before git 2.39, measured on 2.34.1), so NO workflow edit is needed. Tests: crates/apr-cli/src/build_rs_vcs_sha_tests.rs (8 rows, 3 plants), run by workspace-test. Also Cargo.lock chacha20 0.10.0 (yanked) -> 0.10.2, lock-only.'
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
@@ -19754,6 +19774,23 @@ roadmap:
     The cop ruled both decisions YES on 2026-09-21. It also added a guard, verbatim: "When the glyph for a byte is ALSO absent, encode must refuse with an error naming the byte. It must never drop the input or emit nothing. Put a row for it in the case table (a vocab without that glyph and without unk → error). Absent means absent at encode time too." How it is met: `encode` returns an infallible Vec<u32> and has dozens of callers, so the refusal happens at CONSTRUCTION. With no unknown token, `BPETokenizer::new` refuses, naming the first byte that has neither a `<0xNN>` token nor a byte-level glyph token. `with_merges` also requires every glyph, because the merge path maps bytes to glyphs only. `encode` therefore cannot meet an unencodable byte, and the no-drop guarantee holds on every path. Case row: `no_unknown_token_and_a_byte_with_no_token_is_refused_by_name` (a 256-glyph vocabulary minus byte 0xA9''s glyph → error naming 0xA9). With the unknown token present, encode is unchanged: `<0xNN>`, then the unknown token. The glyph fallback applies only when there is no unknown token. Follow-up filed before the PR: #3675 (thread the DECLARED unknown token through every loader; by-name `vocabulary_unk_token` is the interim, and `apr serve`''s chat path already uses tokenizer.json''s declared `model.unk_token`). Found while testing, filed separately because it is independent of the unknown token: #3677 (the greedy path matches Latin-1 characters such as `é` as byte-level glyph tokens, so `é` decodes to U+FFFD). The Qwen round-trip rows therefore use ASCII, CJK and newline, not `é`. Same class but outside the query''s hits, so not in this PR: `apr showcase`''s pipeline substitutes token ids [1,2,3,4,5] when a model has no vocabulary (commands/showcase/pipeline.rs:165).
 
     Repo-layout facts a reviewer needs, each checked at the PR head (round 2 lane 1 misread all three, and every one is refuted by `cargo check -p apr-cli` rc=0 and `cargo test -p apr-cli --lib` 7283 passed at e5b2e7541). (1) `realizar` IS aprender-serve: crates/aprender-serve/Cargo.toml:42-43 is `[lib] name = "realizar"`, so `realizar::tokenizer::BPETokenizer` in apr-cli and `crate::tokenizer::BPETokenizer` in aprender-serve are the SAME type, and `realizar::tokenizer::vocabulary_unk_token` (the book, api-server.md) is the function this PR adds. (2) `no_vocabulary` in apr-cli is defined ONCE, at crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:482, and is visible to every serve site because these files are one module: handlers.rs:1618 is `include!("handler_apr_cpu_completion.rs")`, handlers.rs:1619 is `include!("handler_gpu_completion.rs")`, and handler_apr_cpu_completion.rs:869 is `include!("handlers_include_01.rs")`. (3) aprender-serve''s cli has its own `no_vocabulary` (cli/mod_server_commands.rs:13, returning RealizarError), inside the same `mod server_commands` as its six call sites.'
+- id: PMAT-3611
+  github_issue: 3611
+  item_type: task
+  kind: code
+  title: 'pv: implement sh:lessThan / sh:lessThanOrEquals (SHACL Core property pairs)'
+  status: inprogress
+  priority: medium
+  assigned_to: pvl-b
+  created: 2026-09-24T18:24:24Z
+  updated: 2026-09-24T18:24:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-3618
   github_issue: 3618
   item_type: task
@@ -20771,6 +20808,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-4110
+  github_issue: 4110
+  item_type: task
+  title: apr version names rc tag and commit
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-ea
+  created: 2026-09-24T17:50:47Z
+  updated: 2026-09-24T17:50:47Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-4233
   github_issue: 4233
   item_type: task
@@ -20798,6 +20851,128 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   assigned_to: aprender-ea
   created: 2026-09-24T16:52:28Z
   updated: 2026-09-24T16:52:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4252
+  github_issue: 4252
+  item_type: task
+  title: 'Mandatory apr dogfood: apr serve Qwen3.5-4B as an advisory 4th quorum lane (gx10 CUDA primary, yields to lambda CPU on any need for the box) (#4252)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-6c
+  created: 2026-09-24T11:30:00Z
+  updated: 2026-09-24T18:50:00Z
+  spec: null
+  acceptance_criteria:
+  - 'gx10 serve runs --backend cuda --gpu-layers all; an answer is labelled gx10-cuda only with used_gpu true and the server pid holding GPU memory (#4089)'
+  - 'Any need for the box (gpu lock, queue, foreign GPU app, claim file, disk/mem alarm) stops the gx10 server by recorded pid; asks pass to lambda CPU'
+  - 'Mutation proof: planted hold -> watcher YIELD -> lambda answers -> watcher resumes'
+  - 'The lane never hangs a quorum: one hard budget per ask, verdict unavailable on expiry; advisory, counts=false'
+  - 'Every serve failure is filed under #4252'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: "Landed on batch/0.70.0 by aprender-60 without scripts/bench_serve_4252.py (PERF-009); #4282 closed."
+- id: PMAT-4256
+  github_issue: 4256
+  item_type: task
+  title: release assets carry git sha
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-ea
+  created: 2026-09-24T17:50:48Z
+  updated: 2026-09-24T17:50:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4275
+  github_issue: 4275
+  item_type: task
+  kind: code
+  title: 'binary-release smoke: strip -rc.N and bind the asset to its commit'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T14:17:31Z
+  updated: 2026-09-24T14:17:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4285
+  github_issue: 4285
+  item_type: task
+  kind: code
+  title: 'rc cut: tag vX.Y.Z-rc.N on every green merge to release/X.Y.Z'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T14:01:18Z
+  updated: 2026-09-24T14:01:18Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4286
+  github_issue: 4286
+  item_type: task
+  kind: code
+  title: promote rc to final with no rebuild
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T14:17:31Z
+  updated: 2026-09-24T14:17:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4287
+  github_issue: 4287
+  item_type: task
+  kind: code
+  title: 'rc gate: run the publish preflight + cargo package cascade at rc cut'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T14:33:50Z
+  updated: 2026-09-24T14:33:50Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4327
+  github_issue: 4327
+  item_type: task
+  title: rc staged on every fleet host before publish, darwin-arm64 asset
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-ea
+  created: 2026-09-24T18:11:17Z
+  updated: 2026-09-24T18:11:17Z
   spec: null
   acceptance_criteria: []
   phases: []

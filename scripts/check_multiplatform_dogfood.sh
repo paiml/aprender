@@ -233,12 +233,18 @@ for h in $HOSTS; do
                 # Required lanes are derived from the host's OWN declared
                 # accelerator, not from a list maintained beside it. A host that
                 # gains a GPU gains a required lane without anyone remembering.
+                # The accel lane is waived only when the block's accel_absent
+                # says the ARTIFACT resolved no accelerator (#3805). The rule
+                # lives in the shared validator, where its case rows run
+                # (scripts/check_parity_block_refusals.sh).
                 accel=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('accelerator',''))" "$f")
-                want="cpu"
-                case "$accel" in
-                    *sm_*|*NVIDIA*|*CUDA*) want="cpu cuda" ;;
-                    *Metal*|*M1*|*M2*|*M3*|*M4*) want="cpu metal" ;;
-                esac
+                lanes_out=$(python3 "$REPO_BENCH_VALIDATOR" --parity-required-lanes "$f") || lanes_out=""
+                want=$(printf '%s\n' "$lanes_out" | head -n 1)
+                # FAIL CLOSED: an unreadable decision is not "nothing required".
+                case "$want" in *cpu*) ;; *) want="cpu cuda metal <required-lanes-unreadable>" ;; esac
+                printf '%s\n' "$lanes_out" | sed -n '2,$p' | while read -r line; do
+                    printf '%s %-6s %s\n' "${line%% *}" "$h" "${line#* }"
+                done
                 have=$(python3 "$REPO_BENCH_VALIDATOR" --parity-ratio "$f" 2>/dev/null | awk '{print $1}' | tr '\n' ' ')
                 missing=""
                 for w in $want; do
