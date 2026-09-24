@@ -41,6 +41,14 @@ fn snapshots_dir() -> PathBuf {
         .join("snapshots")
 }
 
+/// The golden snapshots are `exclude`d from the published package (`Cargo.toml`), so out of
+/// tree (the unpacked `.crate`) there is nothing to compare against: the test skips by name. In
+/// tree the directory must exist — a missing one FAILS (#4149).
+fn snapshots_present(test: &str) -> bool {
+    provable_contracts::workspace_path_or_skip!(test, "crates/apr-cli/playbooks/snapshots")
+        .is_some()
+}
+
 fn test_apr_file() -> PathBuf {
     let path = snapshots_dir().join("test.apr");
     // Ensure the test file exists and is v2 format
@@ -226,6 +234,9 @@ fn create_diff(expected: &str, actual: &str) -> String {
 
 #[test]
 fn test_pixel_hex_dump() {
+    if !snapshots_present("test_pixel_hex_dump") {
+        return;
+    }
     let output = apr()
         .args([
             "hex",
@@ -248,6 +259,9 @@ fn test_pixel_hex_dump() {
 
 #[test]
 fn test_pixel_tree_ascii() {
+    if !snapshots_present("test_pixel_tree_ascii") {
+        return;
+    }
     let output = apr()
         .args(["tree", test_apr_file().to_str().unwrap(), "--sizes"])
         .output()
@@ -259,6 +273,9 @@ fn test_pixel_tree_ascii() {
 
 #[test]
 fn test_pixel_tree_mermaid() {
+    if !snapshots_present("test_pixel_tree_mermaid") {
+        return;
+    }
     let output = apr()
         .args([
             "tree",
@@ -279,6 +296,9 @@ fn test_pixel_tree_mermaid() {
 
 #[test]
 fn test_pixel_flow_cross_attn() {
+    if !snapshots_present("test_pixel_flow_cross_attn") {
+        return;
+    }
     let output = apr()
         .args([
             "flow",
@@ -295,6 +315,9 @@ fn test_pixel_flow_cross_attn() {
 
 #[test]
 fn test_pixel_flow_full() {
+    if !snapshots_present("test_pixel_flow_full") {
+        return;
+    }
     let output = apr()
         .args(["flow", test_apr_file().to_str().unwrap()])
         .output()

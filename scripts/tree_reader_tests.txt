@@ -60,6 +60,7 @@ aprender-contracts	--lib	query::persist
 aprender-contracts	--lib	readme_gen
 aprender-contracts	--lib	schema::kind
 aprender-contracts	--lib	scoring::drift
+aprender-contracts	--lib	tree
 aprender-contracts	--test	apr_serve_api_key_auth_contract
 aprender-contracts	--test	kani_harness_generation
 aprender-contracts	--test	probar_test_generation
