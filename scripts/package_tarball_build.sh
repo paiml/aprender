@@ -228,6 +228,10 @@ if [ "$brc" -eq 0 ] && [ "$erc" -eq 0 ]; then
   if [ -n "${TARBALL_RUN_MEM_MAX:-}" ]; then
     command -v systemd-run > /dev/null || { echo "  cannot check: TARBALL_RUN_MEM_MAX is set and systemd-run is not on PATH" >&2; exit 2; }
     cap=(systemd-run --user --scope --quiet -p "MemoryMax=$TARBALL_RUN_MEM_MAX" -p MemorySwapMax=0 --)
+    # A scope that cannot start (no user bus: a runner without lingering) would exit 1 and read as a
+    # named test failure. Probe it first, so a host that cannot cap is "cannot check", never RED.
+    "${cap[@]}" true > /dev/null 2>&1 \
+      || { echo "  cannot check: TARBALL_RUN_MEM_MAX is set and a systemd user scope cannot start here (no user bus?)" >&2; exit 2; }
     echo "run memory cap: MemoryMax=$TARBALL_RUN_MEM_MAX (systemd user scope)"
   else
     echo "run memory cap: none beyond jobs x test-threads (TARBALL_RUN_MEM_MAX unset)"

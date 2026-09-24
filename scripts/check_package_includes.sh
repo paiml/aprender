@@ -415,6 +415,13 @@ if [ "${1:-}" = "--self-test" ]; then
   else
     printf 'FAIL  row 22 --run planted failure: rc=%s (want 1)\n%s\n' "$tr_rc" "$tr_out"; fails=1
   fi
+  # a memory cap that cannot be applied (no user bus) is "could not check" (2), never a named RED (1)
+  tr_out="$(cd "$TD" && DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent XDG_RUNTIME_DIR=/nonexistent TARBALL_RUN_MEM_MAX=1G TARBALL_BUILD_MIN_FREE_GB=1 TARBALL_BUILD_TARGET_DIR="$TD/tr-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$TD/tr-clean" --run 2>&1)"; tr_rc=$?
+  if [ "$tr_rc" = 2 ] && grep -q 'cannot check: TARBALL_RUN_MEM_MAX' <<< "$tr_out"; then
+    printf 'ok    row 23 --run: a memory cap whose systemd scope cannot start is could-not-check (2), not RED\n'
+  else
+    printf 'FAIL  row 23 --run unstartable cap: rc=%s (want 2)\n%s\n' "$tr_rc" "$tr_out"; fails=1
+  fi
   [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
   printf '\nSELF-TEST PASSED\n'
   exit 0
