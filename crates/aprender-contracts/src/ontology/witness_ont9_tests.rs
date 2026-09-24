@@ -151,7 +151,7 @@ fn a_planted_model_with_a_unit_flipped_false_is_refused() {
 }
 
 /// The bounded universe of `KANI-ONT-9-1`: three variables, 3 units, 6 implications, 3 conflicts — all 4096 clause
-/// sets. For each, every core of at most three steps drawn from its clauses, against every conflict it holds, and
+/// sets. For each, every core of one to three steps the universe can spell, against every conflict of the universe, and
 /// every one of the 8 models. `check` accepts a core only when the set is unsatisfiable (sound), accepts SOME core
 /// whenever it is (complete at the bound: a Horn derivation over 3 variables takes at most 3 steps), and accepts a
 /// model exactly when brute force says the model satisfies the set.
@@ -166,6 +166,26 @@ fn checker_is_sound_and_complete_at_three_variables() {
         .iter()
         .map(|&(a, b)| (v[a].clone(), v[b].clone()))
         .collect();
+    // Every step the universe can spell — present in the set or not, so a step naming a clause the set lacks is
+    // tried too — and every sequence of one to three of them.
+    let alphabet: Vec<Step> = v
+        .iter()
+        .map(|u| Step::Unit(u.clone()))
+        .chain(imp.iter().map(|(a, b)| Step::Implies(a.clone(), b.clone())))
+        .collect();
+    let mut cores: Vec<Vec<Step>> = Vec::new();
+    let mut frontier: Vec<Vec<Step>> = vec![vec![]];
+    for _ in 0..3 {
+        frontier = frontier
+            .iter()
+            .flat_map(|s| {
+                alphabet
+                    .iter()
+                    .map(move |x| [s.clone(), vec![x.clone()]].concat())
+            })
+            .collect();
+        cores.extend(frontier.iter().cloned());
+    }
     let (mut sets, mut cores_checked) = (0, 0usize);
     for bits in 0u32..1 << 12 {
         let cs = ClauseSet {
@@ -191,44 +211,23 @@ fn checker_is_sound_and_complete_at_three_variables() {
                     .collect(),
             )
         });
-        let alphabet: Vec<Step> = cs
-            .units
-            .iter()
-            .map(|u| Step::Unit(u.clone()))
-            .chain(
-                cs.implies
-                    .iter()
-                    .map(|(a, b)| Step::Implies(a.clone(), b.clone())),
-            )
-            .collect();
-        let mut seqs: Vec<Vec<Step>> = vec![vec![]];
         let mut accepted_any = false;
-        for _ in 0..3 {
-            seqs = seqs
-                .iter()
-                .flat_map(|s| {
-                    alphabet
-                        .iter()
-                        .map(move |x| [s.clone(), vec![x.clone()]].concat())
-                })
-                .collect();
-            for steps in &seqs {
-                for conflict in &cs.conflicts {
-                    cores_checked += 1;
-                    let core = WitnessResult::UnsatCore(Core {
-                        steps: steps.clone(),
-                        conflict: conflict.clone(),
-                    });
-                    if check(&cs, &core).is_ok() {
-                        assert!(
-                            !sat,
-                            "sound: a core was accepted for a satisfiable set {cs:?}: {core:?}"
-                        );
-                        accepted_any = true;
-                    }
+        for steps in &cores {
+            for conflict in &con {
+                let core = WitnessResult::UnsatCore(Core {
+                    steps: steps.clone(),
+                    conflict: conflict.clone(),
+                });
+                if check(&cs, &core).is_ok() {
+                    assert!(
+                        !sat,
+                        "sound: a core was accepted for a satisfiable set {cs:?}: {core:?}"
+                    );
+                    accepted_any = true;
                 }
             }
         }
+        cores_checked += cores.len() * con.len();
         assert_eq!(accepted_any, !sat, "complete at the bound: {cs:?}");
         for m in 0u8..8 {
             let t: BTreeSet<&str> = (0..3)
@@ -250,6 +249,10 @@ fn checker_is_sound_and_complete_at_three_variables() {
         sets += 1;
     }
     assert_eq!(sets, 4096);
-    // Σ over the 4096 sets of |conflicts| · (s + s² + s³), s = |units| + |implies| — the whole universe, exactly.
-    assert_eq!(cores_checked, 912_384, "the universe was not enumerated");
+    // 4096 sets × 3 conflicts × (9 + 9² + 9³) step sequences — the whole universe, exactly.
+    assert_eq!(
+        cores_checked,
+        4096 * 3 * 819,
+        "the universe was not enumerated"
+    );
 }
