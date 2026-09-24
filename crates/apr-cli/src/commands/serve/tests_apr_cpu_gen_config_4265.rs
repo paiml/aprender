@@ -36,7 +36,10 @@ fn embedded(eos: Option<u32>, specials: &[(&str, u32)]) -> realizar::apr::BpeTok
         merge_rules: vec![],
         bos_id: None,
         eos_id: eos,
-        special_tokens: specials.iter().map(|(s, i)| ((*s).to_string(), *i)).collect(),
+        special_tokens: specials
+            .iter()
+            .map(|(s, i)| ((*s).to_string(), *i))
+            .collect(),
     }
 }
 
@@ -44,12 +47,19 @@ fn embedded(eos: Option<u32>, specials: &[(&str, u32)]) -> realizar::apr::BpeTok
 fn stop_set_holds_embedded_eos_and_chat_turn_end() {
     // A Qwen-shaped GGUF import: EOS <|endoftext|> = 151643, turn end <|im_end|> = 151645.
     let s = state_with(
-        Some(embedded(Some(151_643), &[("<|im_end|>", 151_645), ("<|im_start|>", 151_644)])),
+        Some(embedded(
+            Some(151_643),
+            &[("<|im_end|>", 151_645), ("<|im_start|>", 151_644)],
+        )),
         None,
     );
     let mut stop = apr_cpu_stop_tokens(&s);
     stop.sort_unstable();
-    assert_eq!(stop, vec![151_643, 151_645], "<|im_start|> is not a stop token");
+    assert_eq!(
+        stop,
+        vec![151_643, 151_645],
+        "<|im_start|> is not a stop token"
+    );
 }
 
 #[test]
@@ -67,12 +77,20 @@ fn no_tokenizer_means_no_invented_stop_ids() {
 fn config_carries_the_stop_set_and_the_requests_top_p() {
     let c = apr_cpu_generate_config(16, 0.7, Some(0.5), vec![151_645]);
     assert_eq!(c.stop_tokens, vec![151_645]);
-    assert!((c.top_p - 0.5).abs() < f32::EPSILON, "request top_p ignored: {}", c.top_p);
+    assert!(
+        (c.top_p - 0.5).abs() < f32::EPSILON,
+        "request top_p ignored: {}",
+        c.top_p
+    );
 }
 
 #[test]
 fn absent_top_p_takes_the_other_backends_default() {
     let want = realizar::gguf::QuantizedGenerateConfig::default().top_p;
     let c = apr_cpu_generate_config(16, 0.7, None, vec![]);
-    assert!((c.top_p - want).abs() < f32::EPSILON, "top_p {} != default {want}", c.top_p);
+    assert!(
+        (c.top_p - want).abs() < f32::EPSILON,
+        "top_p {} != default {want}",
+        c.top_p
+    );
 }

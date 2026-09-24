@@ -1085,6 +1085,7 @@ fn run_apr_cpu_inference(
     prompt: &str,
     max_tokens: usize,
     temperature: f32,
+    top_p: Option<f32>,
 ) -> std::result::Result<AprInferenceOutput, String> {
     let transformer = state
         .transformer
@@ -1101,7 +1102,8 @@ fn run_apr_cpu_inference(
     };
     let input_token_count = input_tokens.len();
 
-    let gen_config = apr_cpu_generate_config(max_tokens, temperature, None, apr_cpu_stop_tokens(state));
+    let gen_config =
+        apr_cpu_generate_config(max_tokens, temperature, top_p, apr_cpu_stop_tokens(state));
 
     let gen_start = Instant::now();
     let output_tokens = {
@@ -1119,13 +1121,19 @@ fn run_apr_cpu_inference(
     // as the reply, and counted it as `completion_tokens` (#3718).
     let new_tokens = output_tokens.get(input_tokens.len()..).unwrap_or(&[]);
 
+    // #4265: the loop pushes the stop id it ended on; it is not reply text.
+    let reply_tokens = match new_tokens.split_last() {
+        Some((last, head)) if gen_config.stop_tokens.contains(last) => head,
+        _ => new_tokens,
+    };
+
     // Decode: embedded APR tokenizer → sibling tokenizer.json → character-level fallback
     let text = if let Some(ref tok) = state.embedded_tokenizer {
-        tok.decode(new_tokens)
+        tok.decode(reply_tokens)
     } else if let Some(ref tok) = state.tokenizer {
-        tok.tokenizer.decode(new_tokens).unwrap_or_default()
+        tok.tokenizer.decode(reply_tokens).unwrap_or_default()
     } else {
-        new_tokens
+        reply_tokens
             .iter()
             .filter_map(|&t| char::from_u32(t))
             .collect()
@@ -1133,10 +1141,12 @@ fn run_apr_cpu_inference(
 
     // #3718: the chat handler hardcoded "stop", so a reply cut at `max_tokens`
     // (which the handler caps at 4096) read as finished. The loop's stop set is
-    // `gen_config.stop_tokens` (empty here) plus token 0, which it pushes before
-    // breaking (`is_eos_token`, apr_transformer/generation.rs).
+    // `gen_config.stop_tokens` plus token 0, which it pushes before breaking
+    // (`is_eos_token`, apr_transformer/generation.rs).
+    let mut stop_ids = gen_config.stop_tokens.clone();
+    stop_ids.push(0);
     let finish_reason =
-        realizar::infer::run_report::FinishReason::from_decode(new_tokens, &[0], max_tokens);
+        realizar::infer::run_report::FinishReason::from_decode(new_tokens, &stop_ids, max_tokens);
 
     Ok(AprInferenceOutput {
         text,
@@ -1147,10 +1157,38 @@ fn run_apr_cpu_inference(
     })
 }
 
-/// #4265: the token ids that end an APR CPU generation.
+/// #4265: chat-turn terminators. The APR CPU chat handlers format ChatML
+/// (`format_chatml`), so `<|im_end|>` is the one that ends a reply there; the
+/// others end a turn in the templates GGUF imports carry.
 #[cfg(feature = "inference")]
-fn apr_cpu_stop_tokens(_state: &AprServerState) -> Vec<u32> {
-    Vec::new()
+const APR_CPU_TURN_END_TOKENS: &[&str] =
+    &["<|im_end|>", "<|endoftext|>", "<|eot_id|>", "<end_of_turn>"];
+
+/// #4265: the token ids that end an APR CPU generation: every EOS the loaded
+/// tokenizer declares plus the chat-turn terminators it has an id for. The
+/// generation loop already stops at id 0 on its own (`is_eos_token`).
+#[cfg(feature = "inference")]
+fn apr_cpu_stop_tokens(state: &AprServerState) -> Vec<u32> {
+    let mut stop = Vec::new();
+    if let Some(tok) = &state.embedded_tokenizer {
+        stop.extend(tok.eos_id);
+        stop.extend(
+            APR_CPU_TURN_END_TOKENS
+                .iter()
+                .filter_map(|t| tok.special_tokens.get(*t).copied()),
+        );
+    }
+    if let Some(tok) = &state.tokenizer {
+        stop.extend(tok.eos_token_id);
+        stop.extend(tok.vocab.iter().enumerate().filter_map(|(id, t)| {
+            APR_CPU_TURN_END_TOKENS
+                .contains(&t.as_str())
+                .then_some(id as u32)
+        }));
+    }
+    stop.sort_unstable();
+    stop.dedup();
+    stop
 }
 
 /// #4265: the one `GenerateConfig` every APR CPU path (blocking, SSE, NDJSON) builds.
@@ -1158,13 +1196,14 @@ fn apr_cpu_stop_tokens(_state: &AprServerState) -> Vec<u32> {
 fn apr_cpu_generate_config(
     max_tokens: usize,
     temperature: f32,
-    _top_p: Option<f32>,
+    top_p: Option<f32>,
     stop_tokens: Vec<u32>,
 ) -> realizar::apr_transformer::GenerateConfig {
     realizar::apr_transformer::GenerateConfig {
         max_tokens,
         temperature,
-        top_p: 0.9,
+        // The same default every other serve backend applies when the request is silent.
+        top_p: top_p.unwrap_or(realizar::gguf::QuantizedGenerateConfig::default().top_p),
         top_k: 0,
         // #3760: the sampler draws now; no seed is plumbed from this caller.
         seed: realizar::apr_transformer::DEFAULT_SEED,
@@ -1321,6 +1360,9 @@ struct AprCompletionRequest {
     max_tokens: usize,
     #[serde(default)]
     temperature: Option<f32>,
+    /// #4265: honoured on the APR CPU path; absent means the shared serve default.
+    #[serde(default)]
+    top_p: Option<f32>,
 }
 
 #[cfg(feature = "inference")]
