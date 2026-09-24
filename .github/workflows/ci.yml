@@ -12,7 +12,13 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    # #4112 (operator-approved option B, 2026-09-24): batching folds each author branch into a
+    # release/** branch by a direct PUSH, and no PR is opened, so guard-tree and guard-cargo first
+    # ran on the release->main integration PR: drift was caught at release time, not at the fold
+    # that caused it. A push to release/** now runs THOSE TWO jobs and nothing else. Every other job
+    # carries `if: !(push && refs/heads/release/*)`, and the rest were already pull_request-only.
+    # A push runs the ci.yml in the pushed tree, so this covers release branches cut after it lands.
+    branches: [main, master, 'release/**']
     # #3676: sovereign-ci's `coverage_on: tag` (below) runs coverage only on a push of a
     # v* tag, and its gate REQUIRES it to succeed there. A push filtered to branches never
     # fires for a tag, so this is the reusable's second required edit.
@@ -67,6 +73,8 @@ jobs:
     # 23916c00d adds an OPTIONAL `runs_on` input whose default is the label set
     # this repo already gets, and 70e51ec04 swaps the digest on every job. No
     # input this repo passes changes meaning.
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     uses: paiml/.github/.github/workflows/sovereign-ci.yml@f713290c86fcd70d6f26a0faab14e67e6713586f
     with:
       repo: ${{ github.event.repository.name }}
@@ -173,6 +181,8 @@ jobs:
     # The four aarch64-only reds that pin found are fixed in the same PR (an x86
     # example, a shared-B GEMM defect, a wall-clock ratio moved to bench-gates, a
     # lane-count tolerance). pr-review-receipt keeps X64 until #3132.
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     runs-on: [self-hosted, Linux, clean-room]
     # 100, not 85. The step below sets `timeout-minutes: 75`, but "Set up runner"
     # (image pull) has measured at 20 minutes, so 20 + 75 = 95 > 85 and the JOB
@@ -935,7 +945,8 @@ jobs:
   # nothing). Every non-success matrix result is named.
   workspace-test:
     needs: [workspace-test-shard]
-    if: always()
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ always() && !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
     steps:
@@ -960,6 +971,8 @@ jobs:
   # the runner's own persistent target dir is used and nothing is bind-mounted.
   # Not in `gate`'s needs yet: first-green proof on a real PR before it may block.
   mac-check:
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
     timeout-minutes: 60
     env:
@@ -1076,6 +1089,13 @@ jobs:
           # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
           # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
           if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+          # #4112: a fold push to release/** is NOT on origin/main, and a depth-1 checkout cannot name the
+          # merge-base, so scripts/lib/resolve_base.sh refuses a single-parent fold outright. The full
+          # history is ~11 s / 159 MB (measured 2026-09-24), so fetch it and let the ratchets judge the
+          # fold against merge-base(origin/main, HEAD), as the integration PR would.
+          case "${GITHUB_EVENT_NAME:-}:${GITHUB_REF:-}" in
+            push:refs/heads/release/*) git fetch --no-tags --unshallow origin +refs/heads/main:refs/remotes/origin/main ;;
+          esac
       # aprender#2822. Case table FIRST, per the convention above: the probe
       # below is only worth its 0.15s if the classifier it feeds can still turn
       # RED. Seven rows over a throwaway tree - no cargo, no network, no host.
@@ -1613,6 +1633,13 @@ jobs:
           # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
           # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
           if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+          # #4112: a fold push to release/** is NOT on origin/main, and a depth-1 checkout cannot name the
+          # merge-base, so scripts/lib/resolve_base.sh refuses a single-parent fold outright. The full
+          # history is ~11 s / 159 MB (measured 2026-09-24), so fetch it and let the ratchets judge the
+          # fold against merge-base(origin/main, HEAD), as the integration PR would.
+          case "${GITHUB_EVENT_NAME:-}:${GITHUB_REF:-}" in
+            push:refs/heads/release/*) git fetch --no-tags --unshallow origin +refs/heads/main:refs/remotes/origin/main ;;
+          esac
       # DOCKER CREATES A MISSING BIND SOURCE AS root:root, AND `--user` ALONE
       # THEN EACCESs ON IT. The per-RUN target path is fresh every run, so a
       # container that mounts it and drops to the runner's uid cannot write
@@ -2459,6 +2486,8 @@ jobs:
   # Both are non-zero: an unmeasured gate is not a passing gate. The distinct
   # code is so a broken box is never read as a broken tree.
   vendored-schemas:
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 15
     steps:
@@ -3093,6 +3122,8 @@ jobs:
       fail-fast: false   # if one arch fails we still want the other's receipt to compare against
       matrix:
         arch: [X64, ARM64]
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     runs-on: [self-hosted, Linux, clean-room, "${{ matrix.arch }}"]
     # 45: NO history — this job is new, so the BSE-05 formula has nothing to fit. basis=[U].
     # The cold build pulls resvg + skrifa, which no other job in this workflow builds; 45 is the
@@ -3171,6 +3202,8 @@ jobs:
   # from one side would be asserting the thing under test.
   determinism-compare:
     name: determinism (compare)
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     needs: [determinism]
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 15   # downloads two small files and runs jq. basis=[U], floor of BSE-05.
@@ -3235,7 +3268,8 @@ jobs:
     # slow runner is never the thing that fails a required check.
     timeout-minutes: 22
     needs: [ci, workspace-test, mutants, guard-tree, guard-cargo, determinism-compare]
-    if: always()
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ always() && !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     steps:
       - name: Check required jobs
         run: |
