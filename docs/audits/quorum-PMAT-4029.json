@@ -126,12 +126,22 @@
     "cases": "52/52",
     "log_sha256": "8aa228bc49f875d9f5eb6f8dc01e7afea583909b5b95979e7e4aedf8698954d0"
   },
-  "not_run": [
-    "a real thinking-ON vllm serve rerun at the certified ON budget on GPU (ticket acceptance 2) \u2014 no GPU on lambda/gx10 until the cop pings '0.69.1 published'"
-  ],
+  "not_run": [],
   "auto_merge": {
     "checked": true,
     "was_armed": false,
     "note": "stop at the receipt; never arm (cop rule)"
+  },
+  "gpu_rerun": {
+    "by": "aprender-83",
+    "host": "lambda",
+    "harness": "c460c63a7",
+    "engine_py_sha256_prefix": "06f12d5e2c79d237",
+    "apr": "apr 0.69.1 (d8a6df53a)",
+    "shard": "Qwen3.5-4B-Q4_K_M ON, ctl-2plus2+ctl-code-add, max_tokens 4096, context 4096",
+    "before": "3 of 7 vLLM ON rows HTTP 400 (serve run, serve stream, code)",
+    "after": "7/7 rc 0, max_model_len 8192 on every row; server logs max_model_len 8192; judge 19/19 GREEN",
+    "verified_by_orchestrator": true,
+    "artifacts": "lambda:/mnt/nvme-raid0/tmp/a83-4029/"
   }
 }

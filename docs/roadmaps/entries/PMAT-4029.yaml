@@ -10,7 +10,7 @@
   spec: null
   acceptance_criteria:
   - 'scripts/crux_vllm/test_engine.py carries a run_batch case (context 4096, budgets 5/4096/300) that asserts the engine loads with max_model_len 8192 and every row records 8192, and goes RED against model_len() = a.context'
-  - 'a thinking-ON vllm serve row at the certified ON budget answers on a real rerun (GPU; after 0.69.1 is published)'
+  - 'a thinking-ON vllm serve row at the certified ON budget answers on a real rerun (GPU) -- MET 2026-09-24: lambda, c460c63a7, 7/7 vLLM ON rows answered with max_model_len 8192, where the pre-fix driver gave HTTP 400 on 3'
   phases: []
   subtasks: []
   estimated_effort: null
