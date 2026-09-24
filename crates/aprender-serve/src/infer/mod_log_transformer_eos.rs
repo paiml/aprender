@@ -17,23 +17,16 @@ fn log_transformer_cpu_info(
 }
 
 /// GH-330: Check EOS using config-provided stop tokens (Design by Contract).
+/// Token 0 (pad) also ends this loop.
 fn is_eos_token(token: u32, stop_tokens: &[u32]) -> bool {
-    token == 0 || stop_tokens.contains(&token)
-}
-
-fn greedy_argmax(logits: &[f32]) -> u32 {
-    logits
-        .iter()
-        .enumerate()
-        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-        .map_or(0, |(i, _)| i as u32)
+    token == 0 || crate::sampling::is_stop(token, stop_tokens)
 }
 
 /// The SafeTensors CPU decode loop `apr run` takes.
 ///
 /// #3760: this was `greedy_decode_with_transformer`. It never read `temperature`,
 /// `top_k`, `top_p` or `seed`, so every sampling flag on a `.safetensors` model did
-/// nothing. A greedy config still takes `greedy_argmax`, so greedy output is
+/// nothing. A greedy config still takes `sampling::argmax`, so greedy output is
 /// byte-identical; a sampled one draws through the shared `crate::sampling`.
 fn decode_with_transformer(
     transformer: &crate::safetensors::ValidatedAprTransformer,
@@ -56,7 +49,7 @@ fn decode_with_transformer(
     let mut rng = rand::rngs::StdRng::seed_from_u64(config.seed);
     for _ in 0..config.max_tokens {
         let next_token = if greedy {
-            greedy_argmax(&logits)
+            crate::sampling::argmax(&logits)
         } else {
             crate::sampling::draw_seeded(&logits, config.temperature, config.top_k, top_p, &mut rng)
         };

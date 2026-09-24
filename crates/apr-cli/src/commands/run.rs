@@ -16,23 +16,9 @@
 //!
 //! All inference now delegates to `realizar::run_inference()` via `execute_with_realizar()`.
 //!
-//! ## Deprecated Legacy Code (kept for reference)
-//!
-//! The following functions are deprecated and no longer called in the main path:
-//! - `execute_apr_inference()` - Superseded by realizar
-//! - `execute_safetensors_inference()` - Superseded by realizar
-//! - `execute_gguf_inference()` - Superseded by realizar
-//! - `run_safetensors_generation()` - Superseded by realizar
-//! - `run_gguf_generate()` - Superseded by realizar
-//!
-//! These remain in the codebase for:
-//! 1. Historical reference (how inference was done pre-realizar)
-//! 2. Potential fallback if realizar has regressions (compile with different features)
-//!
-//! See PMAT-SHOWCASE-BRICK-001 for cleanup tracking.
+//! The pre-realizar `execute_{apr,safetensors,gguf}_inference` paths were
+//! deleted (#4266); `run` has exactly one generation path.
 
-// Allow dead code during development - legacy functions pending removal
-#![allow(dead_code)]
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 #![allow(clippy::needless_return)]
@@ -658,8 +644,6 @@ fn download_optional_companion(base_url: &str, cache_dir: &Path, filename: &str)
 }
 
 include!("inference_output.rs");
-include!("run_resolve_tokenizer.rs");
-include!("safetensors.rs");
-include!("gguf_generate_result.rs");
+include!("run_trace_print.rs");
 include!("run_entry.rs");
 include!("run_07.rs");

@@ -122,6 +122,40 @@ pub(crate) fn wgpu_fallback_allowed(
 ///
 /// #3757 made this path opt-in (`accel_forced`), so a user no longer pays for
 /// it unasked — that bounds the cost, it does not make the path correct.
+/// The wgpu greedy loop over a KV-cached forward (#4264).
+///
+/// `forward(token, position)` runs one token through every layer at `position`,
+/// writing that position's K/V, and returns its final hidden state; `pick` maps a
+/// hidden state to the next token. Every prompt token before the last is
+/// prefilled at its own position first. Before #4264 only the LAST prompt token
+/// was fed, so decode attended over an empty cache and ignored the prompt.
+#[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+fn wgpu_greedy_decode<E>(
+    prompt: &[u32],
+    max_tokens: usize,
+    stop_tokens: &[u32],
+    mut forward: impl FnMut(u32, usize) -> std::result::Result<Vec<f32>, E>,
+    mut pick: impl FnMut(&[f32]) -> u32,
+) -> std::result::Result<Vec<u32>, E> {
+    let mut output_tokens = prompt.to_vec();
+    let Some((_, head)) = prompt.split_last().filter(|_| max_tokens > 0) else {
+        return Ok(output_tokens);
+    };
+    for (position, &token) in head.iter().enumerate() {
+        forward(token, position)?;
+    }
+    for _ in 0..max_tokens {
+        let position = output_tokens.len() - 1;
+        let hidden = forward(output_tokens[position], position)?;
+        let next = pick(&hidden);
+        output_tokens.push(next);
+        if crate::sampling::is_stop(next, stop_tokens) {
+            break;
+        }
+    }
+    Ok(output_tokens)
+}
+
 #[cfg(feature = "gpu")]
 fn try_wgpu_generate(
     model: &crate::gguf::OwnedQuantizedModel,
@@ -289,50 +323,40 @@ fn try_wgpu_generate(
         }
     }
 
-    // Autoregressive generation
-    let mut output_tokens = input_tokens.to_vec();
-    let stop_tokens = &gen_config.stop_tokens;
-
-    for step in 0..gen_config.max_tokens {
-        let token_id = *output_tokens.last().unwrap();
-        let position = output_tokens.len() - 1;
-        let seq_len_before = if step == 0 { 0 } else { position };
-
-        // Forward pass through all layers
-        let mut hidden = model.embed(&[token_id]);
-        for layer_idx in 0..num_layers {
-            let prefix = format!("layer.{layer_idx}");
-            let (ref mut kv_k, ref mut kv_v) = kv_caches[layer_idx];
-            fwd.forward_layer(
-                &mut hidden, &prefix, position, kv_k, kv_v,
-            ).map_err(|e| RealizarError::InferenceError(format!("wgpu layer {layer_idx}: {e}")))?;
-        }
-
-        // Output norm + LM head (CPU — small cost)
-        let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
-        let rms = (sq_sum / hidden.len() as f32 + eps).sqrt();
-        let normed: Vec<f32> = hidden.iter().zip(output_norm.iter())
-            .map(|(x, g)| (x / rms) * g)
-            .collect();
-
-        // Argmax (greedy)
-        let mut best_idx = 0u32;
-        let mut best_val = f32::NEG_INFINITY;
-        for i in 0..vocab_size {
-            let row = &lm_head_f32[i * hidden_dim..(i + 1) * hidden_dim];
-            let logit: f32 = row.iter().zip(normed.iter()).map(|(w, x)| w * x).sum();
-            if logit > best_val {
-                best_val = logit;
-                best_idx = i as u32;
+    // Prefill, then autoregressive generation (#4264).
+    let output_tokens = wgpu_greedy_decode::<RealizarError>(
+        input_tokens,
+        gen_config.max_tokens,
+        &gen_config.stop_tokens,
+        |token_id, position| {
+            let mut hidden = model.embed(&[token_id]);
+            for (layer_idx, (kv_k, kv_v)) in kv_caches.iter_mut().enumerate() {
+                let prefix = format!("layer.{layer_idx}");
+                fwd.forward_layer(&mut hidden, &prefix, position, kv_k, kv_v)
+                    .map_err(|e| RealizarError::InferenceError(format!("wgpu layer {layer_idx}: {e}")))?;
             }
-        }
-
-        output_tokens.push(best_idx);
-
-        if stop_tokens.contains(&best_idx) {
-            break;
-        }
-    }
+            Ok(hidden)
+        },
+        |hidden| {
+            // Output norm + LM head (CPU — small cost), greedy: the FIRST maximum wins.
+            let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
+            let rms = (sq_sum / hidden.len() as f32 + eps).sqrt();
+            let normed: Vec<f32> = hidden.iter().zip(output_norm.iter())
+                .map(|(x, g)| (x / rms) * g)
+                .collect();
+            let mut best_idx = 0u32;
+            let mut best_val = f32::NEG_INFINITY;
+            for i in 0..vocab_size {
+                let row = &lm_head_f32[i * hidden_dim..(i + 1) * hidden_dim];
+                let logit: f32 = row.iter().zip(normed.iter()).map(|(w, x)| w * x).sum();
+                if logit > best_val {
+                    best_val = logit;
+                    best_idx = i as u32;
+                }
+            }
+            best_idx
+        },
+    )?;
 
     Ok((output_tokens, true)) // true = used GPU (wgpu)
 }
@@ -760,44 +784,45 @@ fn try_apr_wgpu_inference(
 
     // Autoregressive generation
     let infer_start = Instant::now();
-    let mut output_tokens = input_tokens.to_vec();
-    let stop_tokens = &gen_config.stop_tokens;
-
-    for step in 0..gen_config.max_tokens {
-        let token_id = *output_tokens.last().unwrap();
-        let position = output_tokens.len() - 1;
-
-        let mut hidden = model.embed(&[token_id]);
-        for layer_idx in 0..num_layers {
-            let prefix = format!("layer.{layer_idx}");
-            let (ref mut kv_k, ref mut kv_v) = kv_caches[layer_idx];
-            if let Err(e) = fwd.forward_layer(&mut hidden, &prefix, position, kv_k, kv_v) {
-                return Some(Err(RealizarError::InferenceError(format!("wgpu layer {layer_idx}: {e}"))));
+    // Prefill, then autoregressive generation (#4264).
+    let decoded = wgpu_greedy_decode::<RealizarError>(
+        input_tokens,
+        gen_config.max_tokens,
+        &gen_config.stop_tokens,
+        |token_id, position| {
+            let mut hidden = model.embed(&[token_id]);
+            for (layer_idx, (kv_k, kv_v)) in kv_caches.iter_mut().enumerate() {
+                let prefix = format!("layer.{layer_idx}");
+                fwd.forward_layer(&mut hidden, &prefix, position, kv_k, kv_v)
+                    .map_err(|e| RealizarError::InferenceError(format!("wgpu layer {layer_idx}: {e}")))?;
             }
-        }
-
-        // Output norm (apply RMSNorm with output_norm gamma)
-        let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
-        let rms = (sq_sum / hidden.len() as f32 + eps).sqrt();
-        let normed: Vec<f32> = hidden.iter().zip(output_norm.iter())
-            .map(|(x, g)| (x / rms) * g)
-            .collect();
-
-        // LM head argmax (CPU matmul)
-        let mut best_idx = 0u32;
-        let mut best_val = f32::NEG_INFINITY;
-        for i in 0..vocab_size {
-            let row = &lm_head_f32[i * hidden_dim..(i + 1) * hidden_dim];
-            let logit: f32 = row.iter().zip(normed.iter()).map(|(w, x)| w * x).sum();
-            if logit > best_val {
-                best_val = logit;
-                best_idx = i as u32;
+            Ok(hidden)
+        },
+        |hidden| {
+            // Output norm (RMSNorm with output_norm gamma), then the LM head
+            // argmax on CPU; the FIRST maximum wins.
+            let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
+            let rms = (sq_sum / hidden.len() as f32 + eps).sqrt();
+            let normed: Vec<f32> = hidden.iter().zip(output_norm.iter())
+                .map(|(x, g)| (x / rms) * g)
+                .collect();
+            let mut best_idx = 0u32;
+            let mut best_val = f32::NEG_INFINITY;
+            for i in 0..vocab_size {
+                let row = &lm_head_f32[i * hidden_dim..(i + 1) * hidden_dim];
+                let logit: f32 = row.iter().zip(normed.iter()).map(|(w, x)| w * x).sum();
+                if logit > best_val {
+                    best_val = logit;
+                    best_idx = i as u32;
+                }
             }
-        }
-
-        output_tokens.push(best_idx);
-        if stop_tokens.contains(&best_idx) { break; }
-    }
+            best_idx
+        },
+    );
+    let output_tokens = match decoded {
+        Ok(t) => t,
+        Err(e) => return Some(Err(e)),
+    };
 
     let inference_ms = infer_start.elapsed().as_millis() as f64;
     let tokens_generated = output_tokens.len() - input_token_count;
@@ -1309,7 +1334,47 @@ fn try_safetensors_cuda_inference(
 
 #[cfg(test)]
 mod tests {
-    use super::{CUDA_FALLBACK_LOG_PREFIX, WGPU_FALLBACK_LOG_PREFIX};
+    use super::{wgpu_greedy_decode, CUDA_FALLBACK_LOG_PREFIX, WGPU_FALLBACK_LOG_PREFIX};
+
+    /// #4264: a fake KV-cached forward that records every (token, position) it
+    /// is fed and returns the position as the "hidden state".
+    fn decode_trace(prompt: &[u32], max_tokens: usize, stop: &[u32]) -> (Vec<u32>, Vec<(u32, usize)>) {
+        let mut fed = Vec::new();
+        let out = wgpu_greedy_decode::<()>(
+            prompt,
+            max_tokens,
+            stop,
+            |t, p| {
+                fed.push((t, p));
+                Ok(vec![p as f32])
+            },
+            |h| 100 + h[0] as u32,
+        )
+        .expect("the fake forward never fails");
+        (out, fed)
+    }
+
+    #[test]
+    fn wgpu_decode_prefills_every_prompt_position_before_decoding() {
+        let (out, fed) = decode_trace(&[7, 8, 9], 2, &[]);
+        assert_eq!(
+            fed,
+            [(7, 0), (8, 1), (9, 2), (102, 3)],
+            "each prompt token enters the cache at its own position, then decode continues"
+        );
+        assert_eq!(out, [7, 8, 9, 102, 103]);
+    }
+
+    #[test]
+    fn wgpu_decode_stops_and_handles_edges() {
+        let (out, fed) = decode_trace(&[5], 4, &[101]);
+        assert_eq!(out, [5, 100, 101], "the stop token is kept, then decode ends");
+        assert_eq!(fed, [(5, 0), (100, 1)]);
+        assert_eq!(decode_trace(&[], 4, &[]).0, Vec::<u32>::new(), "empty prompt");
+        assert!(decode_trace(&[1, 2], 0, &[]).1.is_empty(), "max_tokens 0 runs no forward");
+        let err = wgpu_greedy_decode(&[1, 2], 1, &[], |_, p| if p == 0 { Err("boom") } else { Ok(vec![]) }, |_| 0);
+        assert_eq!(err, Err("boom"), "a prefill failure is returned, not skipped");
+    }
 
     /// A message the user can act on names the backend and says something went
     /// wrong. A contract filename does neither.

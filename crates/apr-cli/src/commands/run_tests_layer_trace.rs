@@ -1,6 +1,6 @@
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // Layer trace honesty (gguf_generate_result.rs::render_layer_trace)
+    // Layer trace honesty (run_trace_print.rs::render_layer_trace)
     //
     // `apr run --trace --trace-level layer` printed a table headed `Time` whose
     // per-step values were `wall_ms / tokens * <fixed share>` — the same

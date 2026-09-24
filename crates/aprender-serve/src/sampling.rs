@@ -7,9 +7,10 @@
 //! `--temperature`, `--top-k`, `--top-p` and `--seed` did nothing on those formats.
 //! Every sampled path now draws through [`draw`], so the formats cannot drift again.
 //!
-//! Greedy stays each loop's own argmax: the loops break ties differently, and
-//! greedy output must stay byte-identical. [`is_greedy`] is the shared predicate
-//! that picks between the two.
+//! A greedy step takes [`argmax`] and every loop ends on [`is_stop`] (#4266); both
+//! replaced private copies. The decode loops that fuse the argmax into their
+//! LM-head matmul (and keep the FIRST maximum) stay inline, so greedy output
+//! stays byte-identical. [`is_greedy`] picks between greedy and [`draw`].
 
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -25,6 +26,28 @@ pub const DEFAULT_SEED: u64 = 42;
 #[must_use]
 pub fn is_greedy(temperature: f32, top_k: usize) -> bool {
     temperature == 0.0 || top_k == 1
+}
+
+/// The greedy token: the index of the largest logit, 0 when `logits` is empty.
+///
+/// On an exact tie the LAST maximum wins (`Iterator::max_by`), the convention of
+/// every copy this replaced. A NaN compares equal to everything.
+#[must_use]
+pub fn argmax(logits: &[f32]) -> u32 {
+    logits
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map_or(0, |(i, _)| i as u32)
+}
+
+/// Whether `token` ends a generation: it is one of the caller's stop tokens.
+///
+/// The list comes from the model (tokenizer EOS, config); a loop never
+/// hardcodes an id.
+#[must_use]
+pub fn is_stop(token: u32, stop_tokens: &[u32]) -> bool {
+    stop_tokens.contains(&token)
 }
 
 /// One draw from the seeded RNG: the draw every sampled decode step makes.
@@ -121,6 +144,22 @@ pub fn draw(logits: &[f32], temperature: f32, top_k: usize, top_p: f32, r: f32) 
 mod tests {
     use super::*;
     use rand::SeedableRng;
+
+    #[test]
+    fn argmax_case_table() {
+        assert_eq!(argmax(&[]), 0, "empty");
+        assert_eq!(argmax(&[0.5]), 0);
+        assert_eq!(argmax(&[1.0, 3.0, 2.0]), 1);
+        assert_eq!(argmax(&[-3.0, -1.0, -2.0]), 1, "all negative");
+        assert_eq!(argmax(&[2.0, 1.0, 2.0]), 2, "a tie keeps the LAST maximum");
+    }
+
+    #[test]
+    fn is_stop_case_table() {
+        assert!(is_stop(151_645, &[151_643, 151_645]));
+        assert!(!is_stop(7, &[151_643, 151_645]));
+        assert!(!is_stop(0, &[]), "no stop list, nothing stops");
+    }
 
     #[test]
     fn is_greedy_case_table() {
