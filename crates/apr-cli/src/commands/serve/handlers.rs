@@ -1121,11 +1121,15 @@ fn run_apr_cpu_inference(
     // as the reply, and counted it as `completion_tokens` (#3718).
     let new_tokens = output_tokens.get(input_tokens.len()..).unwrap_or(&[]);
 
+    // #3718: the chat handler hardcoded "stop", so a reply cut at `max_tokens`
+    // (which the handler caps at 4096) read as finished. The loop's stop set is
+    // `gen_config.stop_tokens` plus token 0, which it pushes before breaking
+    // (`is_eos_token`, apr_transformer/generation.rs).
+    let mut stop_ids = gen_config.stop_tokens.clone();
+    stop_ids.push(0);
+
     // #4265: the loop pushes the stop id it ended on; it is not reply text.
-    let reply_tokens = match new_tokens.split_last() {
-        Some((last, head)) if gen_config.stop_tokens.contains(last) => head,
-        _ => new_tokens,
-    };
+    let reply_tokens = apr_cpu_reply_tokens(new_tokens, &stop_ids);
 
     // Decode: embedded APR tokenizer → sibling tokenizer.json → character-level fallback
     let text = if let Some(ref tok) = state.embedded_tokenizer {
@@ -1139,12 +1143,6 @@ fn run_apr_cpu_inference(
             .collect()
     };
 
-    // #3718: the chat handler hardcoded "stop", so a reply cut at `max_tokens`
-    // (which the handler caps at 4096) read as finished. The loop's stop set is
-    // `gen_config.stop_tokens` plus token 0, which it pushes before breaking
-    // (`is_eos_token`, apr_transformer/generation.rs).
-    let mut stop_ids = gen_config.stop_tokens.clone();
-    stop_ids.push(0);
     let finish_reason =
         realizar::infer::run_report::FinishReason::from_decode(new_tokens, &stop_ids, max_tokens);
 
@@ -1189,6 +1187,16 @@ fn apr_cpu_stop_tokens(state: &AprServerState) -> Vec<u32> {
     stop.sort_unstable();
     stop.dedup();
     stop
+}
+
+/// The reply text's tokens: `new_tokens` without the stop id the loop ended on.
+/// `stop_ids` must be the loop's whole stop set, token 0 included — the loop
+/// ends on 0 even when it is not in `stop_tokens` (#4265).
+fn apr_cpu_reply_tokens<'a>(new_tokens: &'a [u32], stop_ids: &[u32]) -> &'a [u32] {
+    match new_tokens.split_last() {
+        Some((last, head)) if stop_ids.contains(last) => head,
+        _ => new_tokens,
+    }
 }
 
 /// #4265: the one `GenerateConfig` every APR CPU path (blocking, SSE, NDJSON) builds.

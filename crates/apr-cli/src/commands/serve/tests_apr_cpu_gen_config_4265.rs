@@ -94,3 +94,19 @@ fn absent_top_p_takes_the_other_backends_default() {
         c.top_p
     );
 }
+
+#[test]
+fn reply_drops_the_stop_id_the_loop_ended_on() {
+    let stop = [151_645, 0];
+    assert_eq!(apr_cpu_reply_tokens(&[9, 8, 151_645], &stop), &[9, 8]);
+    // Token 0 ends the loop even when no tokenizer named it (is_eos_token).
+    assert_eq!(apr_cpu_reply_tokens(&[9, 8, 0], &stop), &[9, 8]);
+}
+
+#[test]
+fn reply_keeps_a_budget_cut_and_an_inner_stop_id() {
+    let stop = [151_645, 0];
+    assert_eq!(apr_cpu_reply_tokens(&[9, 8, 7], &stop), &[9, 8, 7]);
+    assert_eq!(apr_cpu_reply_tokens(&[151_645, 8], &stop), &[151_645, 8]);
+    assert!(apr_cpu_reply_tokens(&[], &stop).is_empty());
+}
