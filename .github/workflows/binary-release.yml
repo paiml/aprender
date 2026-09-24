@@ -622,7 +622,12 @@ jobs:
     name: apr (cpu) aarch64-apple-darwin on mini
     needs: assets
     if: needs.assets.outputs.present == 'false'
-    runs-on: [self-hosted, macOS, ARM64, mini]
+    # mini-builder (#4292, infra#1042): the mini's dedicated repo-level release runner, used
+    # only through this label so it never joins the general pool.
+    runs-on: [self-hosted, macOS, ARM64, mini-builder]
+    env:
+      # The macOS floor, recorded in the Mach-O load command and read back below (#4292).
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
     steps:
       - name: Resolve release tag
         id: tag
@@ -658,6 +663,20 @@ jobs:
         run: |
           line=$(target/aarch64-apple-darwin/release/apr --version)
           bash "$RUNNER_TEMP/asset_version_check.sh" "${{ steps.tag.outputs.tag }}" "$(git rev-parse HEAD)" "$line"
+
+      # The same discriminator as the linux cpu lane, plus the arch and the minimum
+      # macOS actually recorded in the binary (#4292).
+      - name: Prove the asset is an arm64 CPU build
+        run: |
+          BIN=target/aarch64-apple-darwin/release/apr
+          n=$(grep -ac 'libcuda.so' "$BIN" || true)
+          if [ "$n" -ne 0 ]; then
+            echo "::error::$BIN carries $n libcuda.so loader string(s) — this is a CUDA build wearing a -cpu name"
+            exit 1
+          fi
+          file "$BIN" | grep -q 'arm64' || { echo "::error::$BIN is not arm64: $(file "$BIN")"; exit 1; }
+          MINOS=$(otool -l "$BIN" | awk '/LC_BUILD_VERSION/{f=1} f&&$1=="minos"{print $2; exit}')
+          echo "- minimum macOS (LC_BUILD_VERSION minos): ${MINOS:-unknown}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Package archive
         id: package
