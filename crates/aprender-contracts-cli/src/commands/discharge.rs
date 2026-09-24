@@ -1,5 +1,5 @@
-//! `pv discharge gen-axioms | check` (PVL-001 EV-6a, #4139; `--leanchecker` EV-6b, #4199; `--comparator` EV-7b,
-//! #4201). The judging lives in
+//! `pv discharge gen-axioms | check | run` (PVL-001 EV-6a, #4139; `--leanchecker` EV-6b, #4199; `--comparator`
+//! EV-7b, #4201; `run` EV-8a, #4202). The judging lives in
 //! [`provable_contracts::discharge`]; this module prints the report and runs Lean.
 //!
 //! Exit: 0 accept · 1 reject (`reject:`) · 2 decline (`decline:` — no root file, zero roots, no `lake`, no
@@ -13,7 +13,8 @@ use std::path::Path;
 use std::process::Command;
 
 use provable_contracts::discharge::comparator::{self, CHALLENGE_DIR, COMPARATOR};
-use provable_contracts::discharge::{self, CheckOpts, Report, AXIOMS_FILE};
+use provable_contracts::discharge::summary::{self, LOG_FILE};
+use provable_contracts::discharge::{self, CheckOpts, Report, Tree, AXIOMS_FILE};
 
 use crate::cli::DischargeAction;
 
@@ -67,6 +68,21 @@ pub fn run(action: DischargeAction) -> Res {
             });
             finish_with("lake", r, &lean_dir, no_lake, comparator, lc)
         }
+        DischargeAction::Run {
+            lean_dir,
+            contracts,
+            leanchecker_timeout,
+            leanchecker_ulimit_v,
+        } => run_all(
+            "lake",
+            "build.sh",
+            &lean_dir,
+            &contracts,
+            Leanchecker {
+                timeout_s: leanchecker_timeout,
+                ulimit_v_kib: leanchecker_ulimit_v,
+            },
+        ),
         DischargeAction::LabelRatchet {
             lean_dir,
             contracts,
@@ -150,6 +166,11 @@ fn finish_with(
     lc: Option<Leanchecker>,
 ) -> Res {
     lean_steps(lake, &mut r, lean_dir, no_lake, cmp, lc);
+    verdict(r, lean_dir)
+}
+
+/// Print the report and turn it into the exit: reject (1) before decline (2) before accept (0).
+fn verdict(r: Report, lean_dir: &Path) -> Res {
     for l in &r.lines {
         println!("{l}");
     }
@@ -164,6 +185,109 @@ fn finish_with(
     }
     println!("ok    discharge {}", lean_dir.display());
     Ok(())
+}
+
+/// `pv discharge run` (PVL-001 EV-8a, #4202): `build` (run by bash in `<lean-dir>`), then `check --strict` and
+/// every Lean arm, then the two files -- written whatever the verdict, so a RED run leaves a RED summary, never
+/// none. `build.sh` rc 2 is its cache-miss decline and stays a decline; any other non-zero rejects; either way the
+/// Lean steps do not run on a tree that did not build. A summary that cannot be written rejects: it is the output.
+pub(crate) fn run_all(
+    lake: &str,
+    build: &str,
+    lean_dir: &Path,
+    contracts: &Path,
+    lc: Leanchecker,
+) -> Res {
+    let (build_exit, build_out) = match Command::new("bash")
+        .arg(build)
+        .current_dir(lean_dir)
+        .output()
+    {
+        Ok(o) => (
+            Some(raw_exit(o.status)),
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&o.stdout),
+                String::from_utf8_lossy(&o.stderr)
+            ),
+        ),
+        Err(e) => (None, e.to_string()),
+    };
+    let mut r = discharge::check(lean_dir, contracts, CheckOpts { strict: true });
+    match build_exit {
+        Some(0) => {
+            r.lines.insert(0, format!("ok    {build}"));
+            lean_steps(lake, &mut r, lean_dir, false, true, Some(lc));
+        }
+        Some(2) => {
+            r.lines.push(format!("{build} declined (rc 2):"));
+            r.lines.extend(tail(&build_out));
+            r.decline.get_or_insert_with(|| {
+                format!("{build} declined: the Lean steps did not run -- not a verdict")
+            });
+        }
+        Some(rc) => {
+            r.lines.push(format!("FAIL  {build} exited {rc}"));
+            r.lines.extend(tail(&build_out));
+            r.reject = true;
+        }
+        None => {
+            r.decline
+                .get_or_insert_with(|| format!("{build} could not be run ({build_out})"));
+        }
+    }
+    let tree = Tree::load(lean_dir).ok();
+    let s = summary::summarize(&r, tree.as_ref(), lean_dir, tree_sha(lean_dir), build_exit);
+    let spath = summary::summary_path(lean_dir);
+    let log = RunLog {
+        verdict: if r.reject {
+            "reject"
+        } else if r.decline.is_some() {
+            "decline"
+        } else {
+            "accept"
+        },
+        decline: r.decline.as_deref(),
+        lines: &r.lines,
+        summary: &s,
+    };
+    let lpath = lean_dir.join(LOG_FILE);
+    let log_text = serde_json::to_string_pretty(&log).map(|t| t + "\n");
+    for (p, text) in [
+        (&spath, Ok(s.render())),
+        (&lpath, log_text.map_err(|e| e.to_string())),
+    ] {
+        match text.and_then(|t| std::fs::write(p, t).map_err(|e| e.to_string())) {
+            Ok(()) => r.lines.push(format!("wrote {}", p.display())),
+            Err(e) => {
+                r.lines
+                    .push(format!("FAIL  cannot write {}: {e}", p.display()));
+                r.reject = true;
+            }
+        }
+    }
+    verdict(r, lean_dir)
+}
+
+/// `<lean-dir>/discharge.json`, the untracked full log of one `run`: the verdict, every line, and the summary.
+#[derive(serde::Serialize)]
+struct RunLog<'a> {
+    verdict: &'a str,
+    decline: Option<&'a str>,
+    lines: &'a [String],
+    summary: &'a summary::Summary,
+}
+
+/// `git rev-parse HEAD:<lean-dir>`, content-addressed: the tree the summary describes. `None` outside a git
+/// checkout, or when the dir is not in HEAD.
+fn tree_sha(lean_dir: &Path) -> Option<String> {
+    let o = Command::new("git")
+        .args(["rev-parse", "HEAD:./"])
+        .current_dir(lean_dir)
+        .output()
+        .ok()?;
+    let sha = String::from_utf8_lossy(&o.stdout).trim().to_string();
+    (o.status.success() && !sha.is_empty()).then_some(sha)
 }
 
 /// `lake env lean Axioms.lean`: the subset and capstone pins, elaborated against the BUILT tree (run `build.sh`
@@ -928,5 +1052,138 @@ mod tests {
         let mut r = Report::default();
         lean_steps(&lake, &mut r, &lean, false, false, None);
         assert!(!r.reject && r.challenges.is_none(), "{:?}", r.lines);
+    }
+
+    /// PVL-001 EV-8a: a `lake` for `run` — every `env lean` passes, `--run` prints one closing comparator row,
+    /// `printenv` names a sysroot with a leanchecker, and `env leanchecker` exits `lc_rc`.
+    fn run_lake(dir: &Path, lean: &Path, lc_rc: i32) -> String {
+        std::fs::create_dir_all(lean.join(CHALLENGE_DIR)).expect("mkdir");
+        std::fs::write(lean.join(CHALLENGE_DIR).join("gelu-v1.lean"), "").expect("w");
+        std::fs::create_dir_all(lean.join("scripts")).expect("mkdir");
+        std::fs::write(lean.join(COMPARATOR), "").expect("w");
+        let root = dir.join("run-sysroot");
+        std::fs::create_dir_all(root.join("bin")).expect("mkdir");
+        std::fs::write(root.join("bin").join("leanchecker"), "").expect("w");
+        let h = "ab".repeat(32);
+        let rows = dir.join("run-rows");
+        std::fs::write(
+            &rows,
+            cmp_row(
+                "ProvableContracts.Gelu.gelu_bound",
+                &h,
+                &format!("\"{h}\""),
+                "[]",
+            ),
+        )
+        .expect("w");
+        let p = dir.join(format!("run-lake-{lc_rc}"));
+        let script = format!(
+            "#!/bin/sh\ncase \"$2 $3\" in\n  'lean --run') cat '{}' ;;\n  printenv*) echo '{}' ;;\n  leanchecker*) exit {lc_rc} ;;\nesac\nexit 0\n",
+            rows.display(),
+            root.display()
+        );
+        std::fs::write(&p, script).expect("w");
+        let mut perm = std::fs::metadata(&p).expect("meta").permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
+        std::fs::set_permissions(&p, perm).expect("chmod");
+        p.to_string_lossy().into_owned()
+    }
+
+    fn build_sh(dir: &Path, rc: i32) -> String {
+        let p = dir.join(format!("build-{rc}.sh"));
+        std::fs::write(&p, format!("echo building\nexit {rc}\n")).expect("w");
+        p.to_string_lossy().into_owned()
+    }
+
+    fn summary_of(lean: &Path) -> summary::Summary {
+        summary::load(&summary::summary_path(lean)).expect("a summary was written")
+    }
+
+    fn lc() -> Leanchecker {
+        LC.expect("LC")
+    }
+
+    /// The accept: every step green → a green summary deriving the tree's theorem, and the untracked log beside it.
+    #[test]
+    fn a_green_run_writes_a_green_summary_and_the_log() {
+        let (d, lean, contracts) = tree();
+        gen(&lean, &contracts, false).expect("gen-axioms");
+        let lake = run_lake(d.path(), &lean, 0);
+        let r = run_all(&lake, &build_sh(d.path(), 0), &lean, &contracts, lc());
+        let s = summary_of(&lean);
+        assert!(r.is_ok(), "{r:?} {s:?}");
+        assert!(s.is_green(), "{s:?}");
+        assert_eq!(s.challenges_closed.as_deref(), Some("1/1"));
+        assert!(s.derived().contains("ProvableContracts.Gelu.gelu_bound"));
+        assert!(s.tree_sha.is_none(), "a tempdir is no git checkout");
+        let log: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(lean.join(LOG_FILE)).expect("log"))
+                .expect("json");
+        assert_eq!(log["verdict"], "accept");
+        assert_eq!(log["summary"]["leanchecker_exit"], 0);
+    }
+
+    /// The spec's mutation: a summary hand-edited toward pass differs from its regeneration, byte for byte.
+    #[test]
+    fn a_regeneration_reproduces_the_summary_and_catches_a_hand_edit() {
+        let (d, lean, contracts) = tree();
+        gen(&lean, &contracts, false).expect("gen-axioms");
+        let lake = run_lake(d.path(), &lean, 1);
+        let build = build_sh(d.path(), 0);
+        assert!(is_reject(&run_all(&lake, &build, &lean, &contracts, lc())));
+        let spath = summary::summary_path(&lean);
+        let first = std::fs::read_to_string(&spath).expect("r");
+        assert!(first.contains("\"leanchecker_exit\": 1"), "{first}");
+        let edited = first.replace("\"leanchecker_exit\": 1", "\"leanchecker_exit\": 0");
+        std::fs::write(&spath, &edited).expect("w");
+        assert!(summary_of(&lean).is_green(), "the edit alone would derive");
+        assert!(is_reject(&run_all(&lake, &build, &lean, &contracts, lc())));
+        let again = std::fs::read_to_string(&spath).expect("r");
+        assert_eq!(
+            again, first,
+            "the regeneration is byte-identical to the honest run"
+        );
+        assert_ne!(
+            again, edited,
+            "and so differs from the edit: git diff --exit-code fails"
+        );
+    }
+
+    /// A tree that did not build runs no Lean step, and still leaves a summary saying so.
+    #[test]
+    fn a_failed_build_rejects_a_cache_miss_declines_and_both_leave_a_red_summary() {
+        let (d, lean, contracts) = tree();
+        gen(&lean, &contracts, false).expect("gen-axioms");
+        let lake = run_lake(d.path(), &lean, 0);
+        for (rc, want_reject) in [(1, true), (2, false)] {
+            let r = run_all(&lake, &build_sh(d.path(), rc), &lean, &contracts, lc());
+            assert_eq!(is_reject(&r), want_reject, "build rc {rc}: {r:?}");
+            assert_eq!(is_decline(&r), !want_reject, "build rc {rc}: {r:?}");
+            let s = summary_of(&lean);
+            assert_eq!(s.build_exit, Some(rc));
+            assert_eq!(
+                (s.lake_exit, s.leanchecker_exit),
+                (None, None),
+                "no Lean step ran"
+            );
+            assert!(!s.is_green() && s.derived().is_empty());
+            assert!(lean.join(LOG_FILE).is_file());
+        }
+    }
+
+    /// A summary that cannot be written is the run's output missing: reject.
+    #[test]
+    fn an_unwritable_summary_rejects() {
+        let (d, lean, contracts) = tree();
+        gen(&lean, &contracts, false).expect("gen-axioms");
+        std::fs::create_dir_all(summary::summary_path(&lean)).expect("a dir where the file goes");
+        let lake = run_lake(d.path(), &lean, 0);
+        assert!(is_reject(&run_all(
+            &lake,
+            &build_sh(d.path(), 0),
+            &lean,
+            &contracts,
+            lc()
+        )));
     }
 }

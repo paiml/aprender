@@ -17,6 +17,7 @@
 pub mod challenge;
 pub mod comparator;
 pub mod lex;
+pub mod summary;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -597,6 +598,10 @@ pub struct Report {
     pub leanchecker_exit: Option<i32>,
     /// What `--comparator` closed (EV-7b); `None` when it never judged a row set.
     pub challenges: Option<comparator::Closure>,
+    /// The escape scan added no failure (EV-8a's `escapes_ok`); `None` when `check` never scanned.
+    pub escapes_ok: Option<bool>,
+    /// `Axioms.lean` is its regeneration (half of EV-8a's `axioms_ok`); `None` when `check` never compared it.
+    pub axioms_fresh: Option<bool>,
 }
 
 impl Report {
@@ -704,10 +709,15 @@ pub fn check(lean_dir: &Path, contract_dir: &Path, opts: CheckOpts) -> Report {
             return r;
         }
     };
+    let fails = |r: &Report| r.lines.iter().filter(|l| l.starts_with("FAIL")).count();
+    let before = fails(&r);
     judge_escapes(&escapes(&g.tree), &g.allow, opts.strict, &mut r);
+    r.escapes_ok = Some(fails(&r) == before);
     judge_roots(&g, &mut r);
     judge_ratchet(lean_dir, &g.binding, &mut r);
+    let before = fails(&r);
     judge_axioms_file(lean_dir, &g.text, &mut r);
+    r.axioms_fresh = Some(fails(&r) == before);
     let cone = g.tree.cone();
     let roots = &g.binding.roots;
     let pinned = roots.iter().filter(|x| cone.contains(&x.module)).count();

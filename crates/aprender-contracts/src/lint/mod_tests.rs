@@ -15,7 +15,7 @@ fn lint_passes_on_real_contracts() {
     // valid-under (ONT-7), theorem-pairing and depends-on-present (PVL-001 EV-11), and
     // challenge-fresh (PVL-001 EV-7a; MEASURED here, not skipped: the repo's Lean base and its committed Challenge/
     // files are real, so `report.passed` requires them fresh).
-    assert_eq!(report.gates.len(), 16);
+    assert_eq!(report.gates.len(), 17);
 }
 
 #[test]
@@ -171,7 +171,7 @@ fn lint_validation_failure_skips_audit_and_score() {
     let report = run_lint(&config);
     assert!(!report.passed);
     // validate should fail, all subsequent gates should be skipped
-    assert_eq!(report.gates.len(), 16);
+    assert_eq!(report.gates.len(), 17);
     assert!(!report.gates[0].passed); // validate failed
     assert!(report.gates[1].skipped); // audit skipped
     assert!(report.gates[2].skipped); // score skipped
@@ -383,6 +383,8 @@ fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus() {
             // PVL-001 EV-11: computed in every run (R-8), armed per repo.
             "theorem-pairing".to_string(),
             "depends-on-present".to_string(),
+            // PVL-001 EV-8a: born armed in the repo's own baseline, not in the default set.
+            "proved-is-derived".to_string(),
             "challenge-fresh".to_string(),
         ],
         "challenge-fresh is reported, never armed by default: it moves only via `make ont-ratchet`"

@@ -254,6 +254,28 @@ pub enum GateExtra {
         /// Findings.
         violations: usize,
     },
+    /// PVL-001 EV-8a (#4202): `status: proved` claims no green `discharge-summary.json` derives — the ratchet.
+    #[serde(rename = "proved_is_derived")]
+    ProvedIsDerived {
+        /// The summary read (beside the Lean base); `None` = no Lean base.
+        summary: Option<String>,
+        /// Why it derived nothing when it could not be read; `None` = it was read.
+        summary_error: Option<String>,
+        /// Every Lean step ran and passed. Only a green summary derives a claim.
+        summary_green: bool,
+        /// Contract files parsed.
+        contracts_checked: usize,
+        /// `proof_obligations[].lean.status: proved` claims.
+        proved_claims: usize,
+        /// Of those, not derived — the debt, shrink-only against the baseline, and it must reach 0.
+        underived_proved_claims: usize,
+        /// The top-level `underived_proved_claims` in `lint-baseline.json`; `None` = not recorded (reported only).
+        baseline: Option<usize>,
+        /// The underived claims, as `contract: theorem`, in contract order.
+        underived: Vec<String>,
+        /// Findings.
+        violations: usize,
+    },
     /// PVL-001 EV-7a (#4200): `<lean>/Challenge/` against its regeneration (`pv challenge check`).
     #[serde(rename = "challenge_fresh")]
     ChallengeFresh {
@@ -630,8 +652,8 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     gates.push(valid_under_gate_result);
     all_findings.append(&mut valid_under_findings);
 
-    // Gates 14, 15: theorem-pairing, depends-on-present (PVL-001 EV-11). Same R-8 shape: computed in every run,
-    // armed per repo.
+    // Gates 14, 15, 16: theorem-pairing, depends-on-present (PVL-001 EV-11), proved-is-derived (EV-8a). Same R-8
+    // shape: computed in every run, armed per repo.
     for (name, run) in RATCHET_GATES {
         let (result, mut findings) =
             ratchet_result(config.contract_dir, validation_passed, name, run);
@@ -639,7 +661,7 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
         all_findings.append(&mut findings);
     }
 
-    // Gate 16: challenge-fresh (PVL-001 EV-7a). Same R-8 shape: computed wherever a Lean theorem base exists,
+    // Gate 17: challenge-fresh (PVL-001 EV-7a). Same R-8 shape: computed wherever a Lean theorem base exists,
     // armed per repo (only through `make ont-ratchet`).
     gates.push(challenge_result(config.contract_dir));
 
@@ -766,6 +788,9 @@ pub fn run_named_gate_with(
         "depends-on-present" => {
             NamedGateOutcome::Ratchet(ratchet_gates::run_depends_on_present_gate(contract_dir))
         }
+        "proved-is-derived" => {
+            NamedGateOutcome::Ratchet(ratchet_gates::run_proved_is_derived_gate(contract_dir))
+        }
         "validate" => {
             let (contracts, parse_errors) = load_contracts(contract_dir);
             let (result, findings) = run_validate_gate(&contracts, &parse_errors);
@@ -779,8 +804,9 @@ pub fn run_named_gate_with(
 }
 
 /// The gate names `--gate` computes alone, for the refusal message.
-pub const NAMED_GATES: [&str; 7] = [
+pub const NAMED_GATES: [&str; 8] = [
     "depends-on-present",
+    "proved-is-derived",
     "relations",
     "shapes",
     "sigma",
@@ -791,11 +817,15 @@ pub const NAMED_GATES: [&str; 7] = [
 
 /// The EV-11 ratchet gates, by name, in the order the full run computes them.
 type RatchetRun = fn(&Path) -> ratchet_gates::RatchetOutcome;
-const RATCHET_GATES: [(&str, RatchetRun); 2] = [
+const RATCHET_GATES: [(&str, RatchetRun); 3] = [
     ("theorem-pairing", ratchet_gates::run_theorem_pairing_gate),
     (
         "depends-on-present",
         ratchet_gates::run_depends_on_present_gate,
+    ),
+    (
+        "proved-is-derived",
+        ratchet_gates::run_proved_is_derived_gate,
     ),
 ];
 

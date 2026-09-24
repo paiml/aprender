@@ -485,6 +485,7 @@ name = "aprender-contracts"
 version = "0.69.0"
 dependencies = [
  "aprender-contracts-macros",
+ "blake3",
  "criterion 0.5.1",
  "half",
  "proptest",

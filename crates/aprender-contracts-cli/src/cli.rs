@@ -529,6 +529,20 @@ pub enum DischargeAction {
         #[arg(long, conflicts_with = "no_lake")]
         comparator: bool,
     },
+    /// `build.sh`, then `check` with every arm (`--strict`, the comparator, `--leanchecker`), then write the
+    /// untracked full log `<lean-dir>/discharge.json` and the TRACKED `<lean-dir>/../discharge-summary.json` --
+    /// on failure too. The Lean steps run only after `build.sh` exits 0 (PVL-001 EV-8a, #4202)
+    Run {
+        lean_dir: PathBuf,
+        #[arg(long, default_value = "contracts")]
+        contracts: PathBuf,
+        /// The leanchecker arm's wall-clock limit, seconds
+        #[arg(long, default_value_t = 3600)]
+        leanchecker_timeout: u64,
+        /// The leanchecker arm under `ulimit -v <KIB>` (virtual memory, KiB); unset = no limit
+        #[arg(long)]
+        leanchecker_ulimit_v: Option<u64>,
+    },
     /// `make label-ratchet`: rewrite <lean-dir>/unresolved-labels.json DOWNWARD (it never gains a label; a missing
     /// file is seeded). `check` never writes it.
     LabelRatchet {
