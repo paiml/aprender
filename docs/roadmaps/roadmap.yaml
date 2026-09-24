@@ -21514,3 +21514,20 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4269
+  github_issue: 4269
+  item_type: task
+  title: 'one-engine workstream M: port qwen3_moe run, ST CUDA run, APR CPU serve, APR Q4K scheduler, ST serve and ST chat onto realizar::session::Session (child of #4263)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-cb
+  created: 2026-09-24T11:30:00Z
+  updated: 2026-09-24T11:30:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Roadmap id authorized by the 0.69.3 captain (aprender-36). Targets release/0.69.3 via the #4263 one-engine branch; #4265 (APR CPU stop/top_p) closed from this workstream.'
