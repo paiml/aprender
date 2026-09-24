@@ -829,7 +829,8 @@ fn print_benchmark_results(
 ///   (`usage.generation_ms` is `Some`), so it is prefill + decode, with weight
 ///   upload and the F2 check excluded.
 /// - `"inference_incl_setup"`: the path did not mark it (the wgpu path, for
-///   one), so the figure still includes weight upload and the F2 check.
+///   one), so the figure still includes that path's setup (weight upload,
+///   and the F2 check where the path runs one).
 /// - `"wall"`: the engine reported no figure; the whole run, load included.
 fn benchmark_throughput(result: &RunResult, tokens_generated: usize) -> (f64, &'static str) {
     match result.tok_per_sec {
@@ -851,7 +852,7 @@ fn benchmark_throughput(result: &RunResult, tokens_generated: usize) -> (f64, &'
 fn benchmark_basis_label(basis: &str) -> &'static str {
     match basis {
         "generation" => "generation: prefill + decode, setup excluded",
-        "inference_incl_setup" => "inference incl. weight upload + F2 check",
+        "inference_incl_setup" => "inference incl. setup: generation start not marked",
         _ => "wall clock, load included",
     }
 }

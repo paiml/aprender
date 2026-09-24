@@ -224,7 +224,20 @@ impl Executor {
     }
 
     /// Parse tokens per second from apr output
+    ///
+    /// #4211: `apr run --benchmark --json` puts exactly one JSON document on
+    /// stdout (`{"tok_s": …, "tok_s_basis": …}`) and the human block on
+    /// stderr, so a JSON `tok_s` is read first; the human `tok/s: X.X` line
+    /// is the fallback for non-JSON output.
     fn parse_tps_from_output(output: &str) -> Option<f64> {
+        if let Some(tps) = output.lines().find_map(|line| {
+            serde_json::from_str::<serde_json::Value>(line.trim())
+                .ok()?
+                .get("tok_s")?
+                .as_f64()
+        }) {
+            return Some(tps);
+        }
         // Try to find "tok/s: X.X" pattern
         output.find("tok/s:").and_then(|pos| {
             let rest = &output[pos + 6..];
