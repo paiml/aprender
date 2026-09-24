@@ -309,6 +309,7 @@ sovereign-stack = [
 ]
 
 [build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 
