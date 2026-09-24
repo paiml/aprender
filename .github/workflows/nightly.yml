@@ -127,6 +127,8 @@ jobs:
             rust:1.93.0-bullseye \
             sh -c 'set -e; ldd --version | head -1; cargo build --locked --release -p apr-cli -p aprender-contracts-cli --bin apr --bin pv --target "$T"'
           mkdir -p "target/$T/release" dist
+          # The --bin list above and NIGHTLY_BINS must agree; a bin named only in
+          # NIGHTLY_BINS fails this cp, and record() marks it missing-artifact.
           for b in ${NIGHTLY_BINS//,/ }; do
             cp "$CACHE/target/$T/release/$b" "target/$T/release/$b"
             A="$b-$T"
@@ -146,9 +148,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
+          # Every bin's --version must print the workspace crate version. The SHA
+          # is bound by bin_sha256 in the manifest; only apr prints it today.
+          V=$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p&&/^version *=/{gsub(/"/,"",$3);print $3;exit}' Cargo.toml)
+          if [ -z "$V" ]; then echo "::error::no [workspace.package] version in Cargo.toml"; exit 1; fi
           python3 scripts/nightly_manifest.py record --target "${{ matrix.target }}" --sha "$GITHUB_SHA" \
             --bins "$NIGHTLY_BINS" --bin-dir "target/${{ matrix.target }}/release" --dist dist \
-            --build-outcome "${{ steps.build.outcome }}" > "dist/fragment-${{ matrix.target }}.json"
+            --build-outcome "${{ steps.build.outcome }}" --version "$V" > "dist/fragment-${{ matrix.target }}.json"
           cat "dist/fragment-${{ matrix.target }}.json"
 
       - name: Upload artifact

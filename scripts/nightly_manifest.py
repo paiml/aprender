@@ -165,10 +165,13 @@ def probe_version(exe):
     return p.returncode, (out[0] if out else "")
 
 
-def record(target, sha, bins, bin_dir, dist, build_outcome="success", probe=probe_version):
+def record(target, sha, bins, bin_dir, dist, build_outcome="success", probe=probe_version, version=None):
     if build_outcome != "success":
+        # A cancelled build proved nothing about the code, so it is not a build
+        # verdict: the gate retries the SHA instead of calling it handled.
+        reason = "build-failed" if build_outcome == "failure" else "build-cancelled"
         return {"target": target, "sha": sha, "status": "red", "tools": {},
-                "red": {"sha": sha, "reason": "build-failed", "detail": f"build step: {build_outcome}"}}
+                "red": {"sha": sha, "reason": reason, "detail": f"build step: {build_outcome}"}}
     tools, red = {}, None
     for b in bins:
         exe, tar = os.path.join(bin_dir, b), os.path.join(dist, f"{b}-{target}.tar.gz")
@@ -178,8 +181,11 @@ def record(target, sha, bins, bin_dir, dist, build_outcome="success", probe=prob
         rc, line = probe(exe)
         m = VERSION_SHA.search(line + " ")
         vsha = m.group(1) if m else None
-        if rc != 0:
-            red = red or {"sha": sha, "reason": "version-failed", "detail": f"{b}: rc={rc} {line}"}
+        # Only apr prints the commit, so a bin is bound to its SHA by bin_sha256,
+        # not by --version: a MISSING sha is fine, a DIFFERENT one is not.
+        if rc != 0 or (version and not re.search(rf"(?<![\d.]){re.escape(version)}(?![\d])", line)):
+            red = red or {"sha": sha, "reason": "version-failed",
+                          "detail": f"{b}: rc={rc}, wanted {version or 'any version'}: {line}"}
         elif vsha and not sha.startswith(vsha):
             red = red or {"sha": sha, "reason": "version-mismatch",
                           "detail": f"{b} prints {vsha}, built at {sha[:9]}"}
@@ -273,17 +279,19 @@ def publish(manifest_path, dist, sha, repo, token):
     for n, i in existing.items():  # a staged upload an earlier run died holding
         if n.startswith(STAGED):
             api("DELETE", f"{A}/releases/assets/{i}", token)
+    # Phase 1 stages EVERY upload; a failure here leaves the release untouched.
+    # Phase 2 only deletes and renames, in plan order, manifest last.
+    staged = {}
     for n in plan:
-        # Upload under a staged name FIRST, and only then retire the old asset
-        # and rename: a failed upload leaves the published asset in place.
         src = manifest_path if n == MANIFEST_ASSET else os.path.join(dist, n)
         with open(src, "rb") as f:
-            new = api("POST", f"https://uploads.github.com/repos/{repo}/releases/{rel['id']}/assets?name={STAGED}{n}",
-                      token, f.read(), "application/octet-stream")
+            staged[n] = api("POST", f"https://uploads.github.com/repos/{repo}/releases/{rel['id']}/assets"
+                            f"?name={STAGED}{n}", token, f.read(), "application/octet-stream")["id"]
+    for n in plan:
         if n in existing:
             api("DELETE", f"{A}/releases/assets/{existing[n]}", token)
-        api("PATCH", f"{A}/releases/assets/{new['id']}", token, json.dumps({"name": n}).encode())
-        print(f"uploaded {n}")
+        api("PATCH", f"{A}/releases/assets/{staged[n]}", token, json.dumps({"name": n}).encode())
+        print(f"published {n}")
     rows = "\n".join(
         f"| `{t}` | {e['status']} | `{(e['green_sha'] or '-')[:9]}` | {', '.join(sorted(e['tools'])) or '-'} | "
         f"{(e.get('red') or {}).get('reason', '')} |" for t, e in sorted(man["targets"].items()))
@@ -362,6 +370,17 @@ def self_test():
         check("--version failing -> version-failed", (vf["status"], vf["red"]["reason"]), ("red", "version-failed"))
         bf = record(T[0], S, ["apr", "pv"], d, d, build_outcome="failure", probe=fake(good))
         check("the build step failed -> build-failed, no tools", (bf["red"]["reason"], bf["tools"]), ("build-failed", {}))
+        bc = record(T[0], S, ["apr", "pv"], d, d, build_outcome="cancelled", probe=fake(good))
+        check("a cancelled build -> build-cancelled, and the gate retries it",
+              (bc["red"]["reason"], gate(S, man({T[0]: gt(S), T[1]: {"green_sha": OLD, "red": bc["red"]}}), T, green)[0]),
+              ("build-cancelled", "build"))
+        vv = record(T[0], S, ["apr", "pv"], d, d, probe=fake(good), version="0.69.0")
+        check("every bin prints the crate version -> green (only apr prints a SHA)", vv["status"], "green")
+        vw = record(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, pv=(0, "pv 0.68.0"))), version="0.69.0")
+        check("a bin printing another crate version -> version-failed", (vw["status"], (vw.get("red") or {}).get("reason")),
+              ("red", "version-failed"))
+        vp = record(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, pv=(0, "pv 10.69.0"))), version="0.69.0")
+        check("the version must match whole, not as a substring (10.69.0 != 0.69.0)", vp["status"], "red")
         os.remove(os.path.join(d, f"pv-{T[0]}.tar.gz"))
         ma = record(T[0], S, ["apr", "pv"], d, d, probe=fake(good))
         check("a missing tarball -> missing-artifact", (ma["status"], ma["red"]["reason"]), ("red", "missing-artifact"))
@@ -455,6 +474,7 @@ def main(argv):
     for a in ("--target", "--sha", "--bins", "--bin-dir", "--dist"):
         r.add_argument(a, required=True)
     r.add_argument("--build-outcome", default="success")
+    r.add_argument("--version", help="the crate version every bin's --version must print")
     m = sub.add_parser("merge")
     m.add_argument("--prev")
     m.add_argument("--fragments", required=True)
@@ -482,7 +502,8 @@ def main(argv):
         print(f"gate {a.sha[:9]}: {decision} -- {why}", file=sys.stderr)
         return 0
     if a.cmd == "record":
-        print(json.dumps(record(a.target, a.sha, a.bins.split(","), a.bin_dir, a.dist, a.build_outcome), indent=1))
+        print(json.dumps(record(a.target, a.sha, a.bins.split(","), a.bin_dir, a.dist, a.build_outcome,
+                                version=a.version), indent=1))
         return 0
     if a.cmd == "merge":
         frags = {}
