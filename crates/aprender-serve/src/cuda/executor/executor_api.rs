@@ -493,6 +493,27 @@ impl CudaExecutor {
         self.stream.synchronize()
     }
 
+    /// Overwrite a resident device buffer from the host, queued on the
+    /// execution stream: no allocation and no host wait. The copy lands after
+    /// every kernel already queued and before every kernel queued later, so a
+    /// buffer reused token after token is never overwritten while a previous
+    /// token's kernels still read it (#4316).
+    ///
+    /// # Safety
+    /// `src` must stay valid until the execution stream is synchronized.
+    ///
+    /// # Errors
+    /// `src` and `dst` differ in length, or the transfer fails.
+    pub unsafe fn upload_into_async(
+        &self,
+        dst: &mut GpuBuffer<f32>,
+        src: &[f32],
+    ) -> Result<(), GpuError> {
+        // SAFETY: the caller guarantees `src` outlives the next sync of
+        // `self.stream`, which is the stream the copy is queued on.
+        unsafe { dst.copy_from_host_async(src, &self.stream) }
+    }
+
     /// Get memory pool statistics (IMP-900d)
     #[must_use]
     pub fn pool_stats(&self) -> PoolStats {

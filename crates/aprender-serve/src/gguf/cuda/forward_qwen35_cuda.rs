@@ -257,6 +257,11 @@ pub struct Qwen35CudaModel<'a> {
     out_normed: GpuBuffer<f32>,
     /// `[vocab_size]`, the logits — the ONE buffer a token's forward downloads.
     logits_buf: GpuBuffer<f32>,
+    /// `[hidden_dim]`, the residual stream: each token's embedding row is
+    /// uploaded into it in stream order and every layer updates it in place.
+    /// Allocated once, so its device pointer is the same on every token (#4316);
+    /// `None` only while `forward_single` holds it.
+    residual: Option<GpuBuffer<f32>>,
     dims: Qwen35CudaDims,
     /// Positions the device KV caches hold.
     max_seq_len: usize,
@@ -589,6 +594,7 @@ impl<'a> Qwen35CudaModel<'a> {
         let attn_scratch = Self::build_attn_scratch(&executor, dims)?;
         let out_normed = Self::zeros(&executor, dims.hidden_dim as usize)?;
         let logits_buf = Self::zeros(&executor, dims.vocab_size as usize)?;
+        let residual = Some(Self::zeros(&executor, dims.hidden_dim as usize)?);
         let state = Self::build_state(&executor, &layers, dims, max_seq_len)?;
         Ok(Self {
             model,
@@ -601,6 +607,7 @@ impl<'a> Qwen35CudaModel<'a> {
             lm_head,
             out_normed,
             logits_buf,
+            residual,
             dims,
             max_seq_len,
         })
@@ -1408,15 +1415,50 @@ impl<'a> Qwen35CudaModel<'a> {
             });
         }
 
-        let dev = GpuBuffer::from_host(
-            self.executor.context(),
+        // The resident residual leaves `self` for the length of the token, so
+        // the `&mut self` layer calls can borrow it, and goes back on every
+        // path — a refused token must not cost the next one its buffer. It is
+        // only missing if an earlier token panicked mid-forward; re-allocate
+        // then rather than fail every later token.
+        let mut dev = match self.residual.take() {
+            Some(buf) => buf,
+            None => Self::zeros(&self.executor, hidden_dim)?,
+        };
+        let out = self.forward_resident(
             &embedding[start..start + hidden_dim],
-        )
-        .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
+            &mut dev,
+            state,
+            position,
+        );
+        self.residual = Some(dev);
+        out
+    }
+
+    /// The resident residual's device pointer — `None` while a token holds it.
+    #[cfg(test)]
+    pub(crate) fn residual_ptr(&self) -> Option<u64> {
+        self.residual.as_ref().map(|b| b.as_ptr() as u64)
+    }
+
+    /// `forward_single` past its checks, on the resident residual `dev`.
+    fn forward_resident(
+        &mut self,
+        row: &[f32],
+        dev: &mut GpuBuffer<f32>,
+        state: &mut Qwen35CudaState,
+        position: usize,
+    ) -> Result<Vec<f32>> {
+        // SAFETY: `row` borrows the embedding table behind `self.model`
+        // (`&'a`), which outlives `self` and therefore the executor's stream:
+        // whenever the queued copy runs, and whether or not this token reaches
+        // the `sync_stream` below, its source memory is still alive.
+        unsafe { self.executor.upload_into_async(dev, row) }
+            .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
+        let dev = &*dev;
         for il in 0..self.layers.len() {
             match self.layers[il] {
-                CudaLayer::DeltaNet(_) => self.deltanet_layer(state, il, &dev)?,
-                CudaLayer::Attention(_) => self.attention_layer(state, il, &dev, position)?,
+                CudaLayer::DeltaNet(_) => self.deltanet_layer(state, il, dev)?,
+                CudaLayer::Attention(_) => self.attention_layer(state, il, dev, position)?,
             }
         }
         // The tail stays on the device (#3090 review). `hidden_to_logits` would
@@ -1429,7 +1471,7 @@ impl<'a> Qwen35CudaModel<'a> {
         let d = self.dims;
         self.executor
             .rmsnorm_into(
-                &dev,
+                dev,
                 &self.output_norm,
                 &self.out_normed,
                 d.hidden_dim,

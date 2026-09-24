@@ -1093,6 +1093,52 @@ fn qwen35_cuda_state_is_sized_from_the_config() {
     );
 }
 
+/// The residual stream is ONE device buffer for the model's life (#4316): the
+/// same device pointer before the first token, after every token and after a
+/// refused one. A per-token `GpuBuffer::from_host` — what `forward_single` did
+/// before — hands out a new pointer, which no captured CUDA graph can replay
+/// (#4215). That the upload into it really happens every token is
+/// [`qwen35_cuda_forward_single_matches_cpu_logits_end_to_end`]'s job: a stale
+/// residual is the previous token's hidden state, not this token's embedding.
+#[test]
+#[serial_test::serial]
+fn qwen35_cuda_the_residual_is_one_buffer_across_tokens() {
+    let executor = qwen35_cuda_fixture_or_skip!();
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
+    let base = load_cpu_model(&mapped);
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+
+    let mut gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the CUDA model");
+    let mut state = gpu.new_state().expect("device state");
+    let at_build = gpu
+        .residual_ptr()
+        .expect("the residual is allocated at construction");
+
+    for (pos, &token) in LONG_PROMPT.iter().enumerate() {
+        gpu.forward_single(token, &mut state, pos)
+            .expect("gpu forward");
+        assert_eq!(
+            gpu.residual_ptr(),
+            Some(at_build),
+            "pos {pos}: the residual moved — a token allocated its own"
+        );
+    }
+
+    let vocab = u32::try_from(qwen.base.token_embedding().len() / qwen.base.config.hidden_dim)
+        .expect("vocab fits u32");
+    let pos = LONG_PROMPT.len();
+    assert!(gpu.forward_single(vocab, &mut state, pos).is_err());
+    assert_eq!(
+        gpu.residual_ptr(),
+        Some(at_build),
+        "a refused token must hand the residual back"
+    );
+    gpu.forward_single(LONG_PROMPT[0], &mut state, pos)
+        .expect("the token after a refusal runs on the same buffer");
+    assert_eq!(gpu.residual_ptr(), Some(at_build));
+}
+
 /// `forward_hidden_deltanet_only` refuses a hidden state of the wrong width
 /// instead of reading past the buffer.
 #[test]
