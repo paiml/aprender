@@ -24,6 +24,8 @@
 #   load-decline    loadavg above the core count DECLINES a cpu serve by name (rc 2); the same load does
 #                   not decline a cuda serve
 #   load-unmeasurable  an unreadable loadavg DECLINES a cpu serve by name: the check fails CLOSED
+#   load-nan        a `nan` loadavg (parses as float, compares false) declines as unmeasurable
+#   contract-bool   a YAML bool route timeout (`cpu: yes`) is not a declared bound
 #   override-validated  LADDER_ROUTE_MAX_TIME=0 (curl's "unlimited") DECLINES by name, never runs unbounded
 #   contract-timeout  with no test override the bound comes from the contract (cpu 300, cuda 60); a
 #                   contract without serve_health.route_timeout_s DECLINES by name
@@ -171,6 +173,14 @@ PY
   pkill -f "$T/fake_serve.py" 2> /dev/null || :
   if [ "$prc" = 2 ] && grep -q "^decline: ENV host load unmeasurable (loadavg 'unknown', cores '4') before the cpu serve of r1" <<< "$out"; then ok load-unmeasurable
   else bad load-unmeasurable "rc=$prc: $(head -c 200 <<< "$out") (want rc 2 and the unmeasurable decline)"; fi
+  # load-nan: float("nan") parses and compares false both ways -- it must still decline as unmeasurable
+  echo "nan 0.00 0.00 1/999 1" > "$T/loadavg.nan"
+  out=$(LADDER_LOADAVG_FILE="$T/loadavg.nan" LADDER_NPROC=4 GPU_LOCK="$T/lock" LOCK_WAIT=10 LOCK_BUSY=75 APR="$T/apr" \
+        WORK="$T/work" SERVE_STALL_S=10 SERVE_CEILING_S=30 LADDER_ROUTE_MAX_TIME=2 \
+        timeout 60 bash -c "$body"$'\n''ladder_serve_probe /fake.gguf "" r1 cpu' 2>&1); prc=$?
+  pkill -f "$T/fake_serve.py" 2> /dev/null || :
+  if [ "$prc" = 2 ] && grep -q "^decline: ENV host load unmeasurable (loadavg 'nan', cores '4')" <<< "$out"; then ok load-nan
+  else bad load-nan "rc=$prc: $(head -c 200 <<< "$out") (want rc 2 and the unmeasurable decline)"; fi
 
   # contract-timeout: no override -> the contract's per-backend bound; no declaration -> a named decline
   local tb="$body"$'\n'
@@ -181,6 +191,11 @@ PY
   if [ "$out" = "300 60" ] && ! grep -q 'route_timeout_s' "$T/ladder-no-rto.yaml" && [ "$prc" = 2 ] \
      && grep -q '^decline: ENV the ladder declares no serve_health.route_timeout_s for backend cuda' <<< "$dout"; then ok contract-timeout
   else bad contract-timeout "resolved '$out' (want '300 60'); undeclared rc=$prc: $(head -c 160 <<< "$dout")"; fi
+  # contract-bool: a YAML bool (`cpu: yes`) is an int subclass in Python; it must read as UNDECLARED
+  sed 's/^      cpu: 300$/      cpu: yes/' contracts/model-capability-ladder-v1.yaml > "$T/ladder-bool.yaml"
+  out=$(LADDER="$T/ladder-bool.yaml" bash -c "$tb"'ladder_route_timeout cpu; echo " rc=$?"' 2>&1)
+  if grep -q '^      cpu: yes$' "$T/ladder-bool.yaml" && [ "$out" = " rc=1" ]; then ok contract-bool
+  else bad contract-bool "ladder_route_timeout cpu on a bool contract printed '$out' (want nothing, rc=1)"; fi
   # override-validated: a 0 override would be curl's UNLIMITED; it must decline, never run unbounded
   dout=$(LADDER_ROUTE_MAX_TIME=0 LADDER_LOADAVG_FILE="$T/loadavg.low" LADDER_NPROC=4 GPU_LOCK="$T/lock" WORK="$T/work" \
         timeout 20 bash -c "$body"$'\n''ladder_serve_probe /fake.gguf "" r1 cuda' 2>&1); prc=$?
@@ -223,6 +238,18 @@ if [ "$SELF_TEST" = 1 ]; then
   o=$(run_cases "$m" 2>&1) || true
   grep -q 'FAIL  override-validated' <<< "$o" || { printf '%s\n' "$o"; echo "SELF-TEST FAIL: an unvalidated override left override-validated green"; exit 1; }
   echo "  ok    mutant unvalidated-override killed by override-validated"
+  m="$T/m-nan.sh"
+  sed 's/^if not (math.isfinite(l) and math.isfinite(n)) or l < 0:   # nan/if False:   # nan/' "$SCRIPT" > "$m"
+  cmp -s "$SCRIPT" "$m" && { echo "  FAIL  mutant nan-open did not apply"; exit 1; }
+  o=$(run_cases "$m" 2>&1) || true
+  grep -q 'FAIL  load-nan' <<< "$o" || { printf '%s\n' "$o"; echo "SELF-TEST FAIL: a nan-blind load check left load-nan green"; exit 1; }
+  echo "  ok    mutant nan-open killed by load-nan"
+  m="$T/m-bool.sh"
+  sed 's/^if type(t) is not int or t <= 0:/if not isinstance(t, int) or t <= 0:/' "$SCRIPT" > "$m"
+  cmp -s "$SCRIPT" "$m" && { echo "  FAIL  mutant bool-int did not apply"; exit 1; }
+  o=$(run_cases "$m" 2>&1) || true
+  grep -q 'FAIL  contract-bool' <<< "$o" || { printf '%s\n' "$o"; echo "SELF-TEST FAIL: isinstance(int) left contract-bool green"; exit 1; }
+  echo "  ok    mutant bool-int killed by contract-bool"
   echo "SELF-TEST OK"; exit 0
 fi
 echo "ladder serve probe: a route with no response keeps the record parseable and the other routes' evidence ($SCRIPT)"
