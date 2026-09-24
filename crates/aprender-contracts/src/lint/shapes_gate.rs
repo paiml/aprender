@@ -257,20 +257,10 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
         Err(answer) => return answer,
     };
 
-    // ONE walk (R-18): every extractor, the json documents, the ladder receipts joined to the rungs — the same
-    // graph `pv extract` writes — plus, when a release subject is given, the release evidence (#3715).
-    let extraction = match extract::all_with(contract_dir, opts.release.as_ref()) {
+    let extraction = match extract_gradeable(contract_dir, opts, shapes.len()) {
         Ok(x) => x,
-        Err(e) => return ShapesOutcome::ExtractFailed(e),
+        Err(answer) => return answer,
     };
-    // PMAT-3577: the count is pinned before anything is graded. A miss here is not a corpus verdict.
-    if let Some(refusal) = parity_refusal(&extraction.parity, shapes.len()) {
-        return refusal;
-    }
-    // #3739 / cop: a broken CRUX harness is not a verdict about the release — decline, naming the model
-    if let Some(broken) = harness_broken(&extraction) {
-        return broken;
-    }
     // ONT-4c5: the validator's half runs on the gate's own copy — `pv extract` keeps writing what was found
     let mut owned = extraction.graph.clone();
     let cells = match cells_corpus(&mut owned, &shapes, &extraction) {
@@ -326,9 +316,11 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
     // PV-ONT-013 NAMES the NotRun cells; it deliberately does not add to `counted.violations`. The verdict comes
     // from the armed shape's own `maxCount 0` violation on the same edges, and `cells_controls` declines when the
     // two disagree (wiring_holds), so the named list and the verdict cannot drift apart silently.
-    if let Some(cc) = &cells {
-        counted.findings.extend(cells_gate::findings(cc, &arming));
-    }
+    counted.findings.extend(
+        cells
+            .iter()
+            .flat_map(|cc| cells_gate::findings(cc, &arming)),
+    );
     let passed = counted.violations == 0;
     let verdict = verdict_of(&counted, armed_vacuity);
     let by_shape = by_shape(&focus_of);
@@ -403,6 +395,27 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
     ShapesOutcome::Ran {
         result: Box::new(result),
         findings: counted.findings,
+    }
+}
+
+/// The ONE walk (R-18) and the refusals that must answer before anything is graded: every extractor, the json
+/// documents, the ladder receipts joined to the rungs — the same graph `pv extract` writes — plus, when a release
+/// subject is given, the release evidence (#3715).
+fn extract_gradeable(
+    contract_dir: &Path,
+    opts: &ShapesOptions,
+    shapes_n: usize,
+) -> Result<extract::Extraction, ShapesOutcome> {
+    let extraction = extract::all_with(contract_dir, opts.release.as_ref())
+        .map_err(ShapesOutcome::ExtractFailed)?;
+    // PMAT-3577: the count is pinned before anything is graded. A miss here is not a corpus verdict.
+    if let Some(refusal) = parity_refusal(&extraction.parity, shapes_n) {
+        return Err(refusal);
+    }
+    // #3739 / cop: a broken CRUX harness is not a verdict about the release — decline, naming the model
+    match harness_broken(&extraction) {
+        Some(broken) => Err(broken),
+        None => Ok(extraction),
     }
 }
 
