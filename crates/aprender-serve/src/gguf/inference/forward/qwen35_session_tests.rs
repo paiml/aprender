@@ -1,10 +1,11 @@
 //! #3595: a resident session must produce exactly what a one-shot generate of
 //! the same prompt produces — on the state it reused, on a state it reset in
-//! place, on either backend. Every assertion here compares against the path
-//! `apr run` takes; a session that drifts from it is serving a different model.
+//! place, on either backend. On the CPU the one-shot is the per-token
+//! reference loop (an independent oracle, #4263); on the GPU it is a fresh
+//! `apr run` load, so reuse is compared with no reuse.
 
 use super::*;
-use crate::gguf::forward_qwen35::run_qwen35_generate;
+use crate::gguf::forward_qwen35::qwen35_reference_generate;
 use crate::gguf::QuantizedGenerateConfig;
 use crate::session::turn_budget;
 
@@ -43,14 +44,14 @@ fn user_turn(text: &str) -> String {
     format!("<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n")
 }
 
-/// The one-shot CPU path `apr run --no-gpu` takes.
+/// The per-token CPU reference (test-only since #4263).
 fn one_shot_cpu(
     mapped: &MappedGGUFModel,
     prompt: &[u32],
     config: &QuantizedGenerateConfig,
 ) -> Vec<u32> {
     let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
-    run_qwen35_generate(mapped, &base, prompt, config).expect("one-shot generate")
+    qwen35_reference_generate(mapped, &base, prompt, config).expect("one-shot generate")
 }
 
 #[test]
@@ -181,19 +182,21 @@ fn on_token_returning_false_ends_the_turn_after_that_token() {
 #[cfg(feature = "cuda")]
 mod gpu {
     use super::*;
-    use crate::gguf::forward_qwen35::run_qwen35_generate_dispatch;
 
-    /// The one-shot GPU path `apr run --gpu` takes.
+    /// The one-shot GPU path `apr run --gpu` takes: a fresh load sized to the
+    /// one call, one turn.
     fn one_shot_gpu(
         mapped: &MappedGGUFModel,
         prompt: &[u32],
         config: &QuantizedGenerateConfig,
     ) -> Vec<u32> {
-        let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
-        let (tokens, used_gpu) =
-            run_qwen35_generate_dispatch(mapped, &base, prompt, config, false).expect("one-shot");
-        assert!(used_gpu, "the one-shot reference must itself be a GPU run");
-        tokens
+        let qwen = Qwen35Forward::cached_host(std::path::Path::new(MODEL_PATH), mapped)
+            .expect("host");
+        let positions = prompt.len() + config.max_tokens;
+        let mut one = Qwen35Session::load_for_run(qwen, mapped, false, positions).expect("load");
+        let turn = one.generate(prompt, config, &mut |_| true).expect("one-shot");
+        assert!(turn.used_gpu, "the one-shot reference must itself be a GPU run");
+        turn.tokens
     }
 
     fn gpu_session_or_skip(mapped: &MappedGGUFModel) -> Option<Qwen35Session> {

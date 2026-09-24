@@ -54,13 +54,24 @@ fn one_shot_answer(mapped: &MappedGGUFModel, max_tokens: usize, no_gpu: bool) ->
         stop_tokens: eos.clone(),
         ..Default::default()
     };
-    let base =
-        crate::gguf::forward_qwen35::Qwen35Model::create_base_model(&mapped.model, mapped.data())
-            .expect("base");
-    let (tokens, used_gpu) = crate::gguf::forward_qwen35::run_qwen35_generate_dispatch(
-        mapped, &base, &prompt, &config, no_gpu,
+    // #4263: `apr run`'s load — the host once per file, a device state sized
+    // to the one call.
+    let qwen = crate::gguf::qwen35_session::Qwen35Forward::cached_host(
+        std::path::Path::new(MODEL_PATH),
+        mapped,
     )
-    .expect("one-shot generate");
+    .expect("host");
+    let mut one = crate::gguf::qwen35_session::Qwen35Session::load_for_run(
+        qwen,
+        mapped,
+        no_gpu,
+        prompt.len() + max_tokens,
+    )
+    .expect("load");
+    let turn = one
+        .generate(&prompt, &config, &mut |_| true)
+        .expect("one-shot generate");
+    let (tokens, used_gpu) = (turn.tokens, turn.used_gpu);
     assert_eq!(
         used_gpu, !no_gpu,
         "the reference ran on the route asked for"
