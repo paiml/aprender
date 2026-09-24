@@ -134,6 +134,15 @@ def main():
         rec["server_cmd"] = cmd
         try:
             complete(args, "Hello", 8, 300)  # warm-up, not recorded
+            # GPU proof: the server's own pid must hold device memory (llama-server at the
+            # default verbosity prints no offload line). Any other process voids the row.
+            apps = foreign_gpu_apps()
+            rec["gpu_apps_after_load"] = apps
+            rec["server_pid"] = proc.pid
+            if not any(a.split(",")[0].strip() == str(proc.pid) for a in apps):
+                raise SystemExit(f"server pid {proc.pid} holds no GPU memory: {apps}")
+            if len(apps) != 1:
+                rec["void"] = f"another GPU process during the run: {apps}"
             prompts = {s: open(os.path.join(PROMPTS, f"p{s}.txt")).read()
                        for s in args.sizes.split(",")}
             for size, prompt in prompts.items():
