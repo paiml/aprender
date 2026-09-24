@@ -775,5 +775,6 @@ include!("golden_output.rs");
 include!("speedup.rs");
 include!("forward_error.rs");
 include!("gpu_isolation_result.rs");
+include!("qa_dense_session.rs");
 include!("qa_08.rs");
 include!("qa_json_never_empty.rs");
