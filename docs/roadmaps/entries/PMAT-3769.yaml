@@ -1,0 +1,17 @@
+- id: PMAT-3769
+  github_issue: 3769
+  item_type: task
+  title: 'cookbook-recipe-v1: SHACL shape for apr-cookbook recipes + receipts (aprender#3769 done_when 1, cookbook #440)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T00:01:08Z
+  updated: 2026-09-24T00:01:08Z
+  spec: null
+  acceptance_criteria:
+  - 'The post-release HARD REQ requires SHACL-validated cookbook recipes. Build the cookbook-recipe-v1 shape (pv shapes gate) over apr-cookbook''s recipes/apr/**.yaml via a derived JSONL evidence file: argv0 is apr, every {model:slot} resolves, models pinned by sha256, expect has an output check, a PASS receipt from the CURRENT release on every declared host. Must-RED fixtures per violation; zero recipes refused.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

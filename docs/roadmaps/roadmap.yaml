@@ -20557,6 +20557,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'SCOPE: scripts/llama_bin.sh (one line: the commit-token extraction), evidence/parity/pin-bump-d1d3c3396/RESOLVE-{intel,mini}.txt, and this fragment. STACKED on #3563(A) (branch PMAT-3563-llama-pin-resolves-both-hosts @ 8fe36c080, receipt committed), whose canonical-location resolver it uses; fold #3563(A) first. HOST PROVISIONING (the cop''s fleet row; the operator: "you are traffic cop and have ssh, you fix anything you need"; done before the 0.69.1 train starts, not inside it): intel: `cmake --build ~/src/llama.cpp-d1d3c3396/build --target llama-bench llama-server llama-tokenize llama-cli -j 8` under nice 19 / ionice idle (incremental; the existing cache already matched build_flags_intel, GGML_NATIVE=ON, GGML_CUDA=OFF), BUILD_EXIT=0. mini: `git clone https://github.com/ggml-org/llama.cpp ~/src/llama.cpp-d1d3c3396 && git checkout d1d3c3396aa13a5f239109a822666c4870490ad5 && cmake -B build -DGGML_METAL=ON` (build_flags_mini verbatim), then the same four targets, BUILD_EXIT=0. DEFECT FOUND BY THE PROOF (fixed here): on mini, #3563(A)''s resolver refused the correct build as wrong_build. Its commit extraction `sed -nE ''s/…/p;t;s/…/p''` is one expression, and BSD sed (macOS /usr/bin/sed) reads everything after `t` as a LABEL, so it failed with "undefined label" and extracted nothing. Measured pre-fix on mini, rc 1: `sed: 2: "s/.*commit ([0-9a-f]{7, ...": undefined label '';s/.*\(([0-9a-f]{7,40})\).*/\1/p''` then `FAIL llama.cpp named but NOT the declared build (wrong_build)`. FIX: the same three commands as separate -e arguments. PROBE: 4 inputs (commit d1d3c3396, paren abcdef1, a 6-digit commit, no commit) give byte-identical output under GNU sed 4.8 (lambda) and BSD sed (mini): d1d3c3396 / abcdef1 / empty / empty. MEASURED AFTER: `bash scripts/check_llama_pin.sh` rc 0, 43 ok rows, both mutants still killed; live `env -u LLAMA_BENCH_PATH LLAMA_PIN_HOST=<host> bash scripts/llama_bin.sh` rc 0 on intel (`version: 0.4.1-dev (build 2744, commit d1d3c3396)`) and on mini (`version: 0.4.1-dev (build 10987, commit d1d3c3396)`), in the committed RESOLVE files. REMAINDER: the llama.cpp builds live in user-space trees under ~/src on each host; declaring them in forjar (so a re-provisioned host rebuilds them) is not in this PR.'
+- id: PMAT-3769
+  github_issue: 3769
+  item_type: task
+  title: 'cookbook-recipe-v1: SHACL shape for apr-cookbook recipes + receipts (aprender#3769 done_when 1, cookbook #440)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T00:01:08Z
+  updated: 2026-09-24T00:01:08Z
+  spec: null
+  acceptance_criteria:
+  - 'The post-release HARD REQ requires SHACL-validated cookbook recipes. Build the cookbook-recipe-v1 shape (pv shapes gate) over apr-cookbook''s recipes/apr/**.yaml via a derived JSONL evidence file: argv0 is apr, every {model:slot} resolves, models pinned by sha256, expect has an output check, a PASS receipt from the CURRENT release on every declared host. Must-RED fixtures per violation; zero recipes refused.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-3770
   github_issue: 3770
   item_type: task
