@@ -714,9 +714,33 @@ jobs:
           fi
           echo "smoke ok on ${{ matrix.host }}: $v runs with no driver dependency"
 
+  # #3546: the release is installed the way the README tells a user to, `curl | bash` of install.sh, in a clean
+  # debian container as a fresh non-root user, and judged against facts resolved independently of install.sh.
+  # It checks that the channel resolves to THIS tag (rc for an -rc.N tag, stable otherwise), that the published
+  # .sha256 matches the asset, that install.sh reported verifying that digest, that the apr on PATH is
+  # byte-identical to the asset's, and that `apr --version` names the tag's version and a prefix of its commit
+  # sha. A `+no-git` build fails the last check.
+  install-e2e:
+    name: install.sh curl | bash in a clean container
+    needs: verify-apr-assets
+    runs-on: [self-hosted, Linux, X64, clean-room, docker]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Preflight - docker
+        run: bash scripts/ci_self_hosted_preflight.sh --need docker
+      - name: version comparator case table
+        run: bash scripts/tests/install_e2e_container.sh --self-test
+      - name: curl | bash the release under test
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          case "$TAG" in *-rc.*) CH=rc ;; *) CH=stable ;; esac
+          bash scripts/tests/install_e2e_container.sh "$CH" --expect-tag "$TAG"
+
   summary:
     name: Summary
-    needs: [build, build-apr-cuda, build-apr-cpu, verify-apr-assets, smoke-cuda, smoke-cpu]
+    needs: [build, build-apr-cuda, build-apr-cpu, verify-apr-assets, smoke-cuda, smoke-cpu, install-e2e]
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
