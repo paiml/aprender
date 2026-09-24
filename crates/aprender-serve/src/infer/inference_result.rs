@@ -273,7 +273,9 @@ fn run_gguf_inference(
     // parity` and `apr qa` ask the same function, so no tool can route this
     // architecture differently from `apr run`.
     let is_moe = crate::gguf::moe_forward_handles(&model.config.architecture);
-    let (tokens, used_gpu) = if is_moe {
+    // #3714: `setup_ms` is time inside the dispatch that is not generation (the
+    // MoE CUDA build + F2 guard); `inference_ms` is generation only.
+    let (tokens, used_gpu, setup_ms) = if is_moe {
         // #3714: the CUDA forward serves unless --no-gpu; a GPU that cannot
         // serve prints its reason before the CPU chain runs. This site used to
         // hard-code `(tokens, false)` and never try CUDA at all.
@@ -289,17 +291,19 @@ fn run_gguf_inference(
         // routes to it and reports CUDA; the CPU forward (#3091) serves
         // `--no-gpu`, a build without cuda, and any GPU failure — the last of
         // which is printed, never silent.
-        crate::gguf::forward_qwen35::run_qwen35_generate_dispatch(
+        let (tokens, used_gpu) = crate::gguf::forward_qwen35::run_qwen35_generate_dispatch(
             &mapped,
             &model,
             &input_tokens,
             &gen_config,
             config.no_gpu,
-        )?
+        )?;
+        (tokens, used_gpu, 0.0)
     } else {
-        run_gguf_generate(model, &input_tokens, &gen_config, config)?
+        let (tokens, used_gpu) = run_gguf_generate(model, &input_tokens, &gen_config, config)?;
+        (tokens, used_gpu, 0.0)
     };
-    let inference_ms = infer_start.elapsed().as_secs_f64() * 1000.0;
+    let inference_ms = (infer_start.elapsed().as_secs_f64() * 1000.0 - setup_ms).max(0.0);
 
     let generated_tokens = &tokens[input_token_count..];
     let raw_text = mapped.model.decode(generated_tokens);

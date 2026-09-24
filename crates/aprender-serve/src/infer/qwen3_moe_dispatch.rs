@@ -16,8 +16,13 @@ use crate::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig}
 /// The line a GPU fallback starts with.
 pub const QWEN3MOE_GPU_FALLBACK_PREFIX: &str = "qwen3moe: the CUDA forward did not serve this run";
 
-/// Generate for a `qwen3_moe` file on the backend that serves it; the `bool`
-/// is whether that was the GPU.
+/// Generate for a `qwen3_moe` file on the backend that serves it: the tokens,
+/// whether the GPU served, and the SETUP milliseconds spent before generation
+/// began — the CUDA model build (weights resident), the F2 guard, and a GPU
+/// attempt that fell back. `InferenceResult::inference_ms` is "generation only,
+/// excludes model load"; without this the qa throughput gate divided 128 tokens
+/// by build + guard + decode and failed a file decoding at ~80 tok/s (#3714,
+/// measured 8.6 tok/s on Qwen3-30B-A3B-Instruct-2507).
 ///
 /// # Errors
 /// Only the CPU forward's own failure: a GPU failure is a printed fallback.
@@ -27,11 +32,12 @@ pub fn run_qwen3_moe_generate_dispatch(
     input_tokens: &[u32],
     gen_config: &QuantizedGenerateConfig,
     no_gpu: bool,
-) -> Result<(Vec<u32>, bool)> {
+) -> Result<(Vec<u32>, bool, f64)> {
+    let dispatch_start = std::time::Instant::now();
     #[cfg(feature = "cuda")]
     if !no_gpu {
         match gpu::run_qwen3_moe_generate_gpu(mapped, model, input_tokens, gen_config) {
-            Ok(tokens) => return Ok((tokens, true)),
+            Ok((tokens, setup_ms)) => return Ok((tokens, true, setup_ms)),
             Err(reason) => {
                 eprintln!("{QWEN3MOE_GPU_FALLBACK_PREFIX}, falling back to CPU: {reason}");
             },
@@ -39,8 +45,9 @@ pub fn run_qwen3_moe_generate_dispatch(
     }
     #[cfg(not(feature = "cuda"))]
     let _ = no_gpu;
+    let setup_ms = dispatch_start.elapsed().as_secs_f64() * 1000.0;
     let tokens = run_qwen3_moe_generate(mapped, model, input_tokens, gen_config)?;
-    Ok((tokens, false))
+    Ok((tokens, false, setup_ms))
 }
 
 /// The MoE shape the GGUF metadata declares, or the key that is missing.
@@ -102,7 +109,8 @@ pub(crate) mod gpu {
         model: &OwnedQuantizedModel,
         input_tokens: &[u32],
         gen_config: &QuantizedGenerateConfig,
-    ) -> std::result::Result<Vec<u32>, String> {
+    ) -> std::result::Result<(Vec<u32>, f64), String> {
+        let setup_start = std::time::Instant::now();
         if input_tokens.is_empty() {
             return Err("the prompt is empty".to_string());
         }
@@ -139,6 +147,7 @@ pub(crate) mod gpu {
             mapped.data(),
             input_tokens,
         )?;
+        let setup_ms = setup_start.elapsed().as_secs_f64() * 1000.0;
         let decode_start = std::time::Instant::now();
         let tokens = decode(&mut gpu, input_tokens, gen_config)?;
         let generated = tokens.len().saturating_sub(input_tokens.len());
@@ -150,7 +159,7 @@ pub(crate) mod gpu {
             decode_s * 1000.0,
             (input_tokens.len() + generated) as f64 / decode_s.max(1e-9)
         );
-        Ok(tokens)
+        Ok((tokens, setup_ms))
     }
 
     /// Prefill + decode on the GPU with the CPU path's sampler and stop rule.
