@@ -1,0 +1,48 @@
+{
+  "ticket": "PMAT-3714",
+  "refs": [
+    "#3714"
+  ],
+  "branch": "PMAT-3714-moe-on-070",
+  "base": "origin/batch/0.70.0",
+  "judged_head": "12583a3921f6cd262742d58781e02ea39cb70f56",
+  "diff_sha256_raw": "4a802369c684f918150964fee78749c1b369b531ac259dac293bccec12fcd6a7",
+  "agreed": true,
+  "date": "2026-09-24",
+  "executor": "agy lane + claude-code-agent-lanes (read-only command whitelist)",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "measured_at_head": "6d8d5b155 (last code commit; 12583a392 docs-only). evidence/3714/r3-port-at-head-lambda.txt",
+  "lanes": [
+    {
+      "lane": 1,
+      "model": "claude-sonnet-5",
+      "family": "claude",
+      "role": "refute: done_when + provenance + setup_ms bound",
+      "verdict": "PASS",
+      "rounds": "FAIL r1 (receipts not at head), PASS r2",
+      "findings": []
+    },
+    {
+      "lane": 2,
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "refute (agy)",
+      "verdict": "PASS",
+      "rounds": "PASS r1, PASS r2"
+    },
+    {
+      "lane": 3,
+      "model": "claude-haiku-4-5",
+      "family": "claude",
+      "role": "refute: evidence vs receipt",
+      "verdict": "PASS",
+      "rounds": "PASS r1, PASS r2",
+      "findings": []
+    }
+  ]
+}
