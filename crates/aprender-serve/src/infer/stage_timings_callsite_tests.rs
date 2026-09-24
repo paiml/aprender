@@ -13,7 +13,9 @@
 //!   land NOWHERE: no field moves and the wall clock does not grow by the plant. Runs in CI on
 //!   a generated fixture.
 //! - CUDA dense: load, h2d, validate, prefill, decode. `#[ignore]`d. Runs on a GPU runner with
-//!   `APR_STAGE_CUDA_GGUF=<dense gguf>`.
+//!   `APR_STAGE_CUDA_GGUF=<dense gguf>`. Run the GPU legs from a `--release` build: in debug, the
+//!   guard's CPU reference forward takes tens of seconds and varies run to run by far more than
+//!   [`TOL_MS`], so a debug run can fail on noise that has nothing to do with attribution.
 //! - CUDA qwen35: the dense set plus validate_ref/validate_probe, which are INSIDE validate (so
 //!   their plant moves validate too). `#[ignore]`d. Needs `APR_STAGE_CUDA_QWEN35_GGUF`, and forces
 //!   a fresh F2 guard into a private receipt dir, so a cached receipt cannot skip the guard.
@@ -335,6 +337,13 @@ fn cuda_leg(env_var: &str, want_backend: &str, stages: &[&str]) {
 #[test]
 #[ignore = "GPU runner: set APR_STAGE_CUDA_GGUF to a dense GGUF (e.g. qwen2.5-coder-0.5b q4_k_m)"]
 fn cuda_dense_each_plant_moves_its_own_stage() {
+    // This leg measures ATTRIBUTION, so the run must stay on CUDA. On sm_89 the dense path's FP8
+    // prefill fails the F2 guard on small Qwen2.5 models (#3602's 2x2, #3483) and the run falls back
+    // to CPU, where h2d/prefill/decode have no site. FP16 prefill is the same stage wiring. A caller
+    // who sets FP8_PREFILL keeps their value.
+    if std::env::var_os("FP8_PREFILL").is_none() {
+        std::env::set_var("FP8_PREFILL", "0");
+    }
     cuda_leg(
         "APR_STAGE_CUDA_GGUF",
         "cuda",
