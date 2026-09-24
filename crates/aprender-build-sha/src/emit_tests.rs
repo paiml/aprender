@@ -1,20 +1,26 @@
-//! #4110 — a crates.io install of apr names its commit, never `+no-git`.
+//! #4110 — a crates.io install of apr names its commit, never `+no-git`. Since #4219 every
+//! workspace [[bin]] stamps its SHA through this crate, so the table runs against it.
 //!
 //! The 0.69.1 post-publish install printed `apr 0.69.1 (v0.69.1+no-git)` (0.68.1 did too) although
 //! the published tarball carried the commit: `cargo package` writes `.cargo_vcs_info.json` into
-//! every crate. These tests compile the SHIPPED `build.rs` with rustc and run it the way cargo runs a
+//! every crate. These tests compile the SHIPPED `lib.rs` plus a `fn main() { emit() }` with rustc and run it the way cargo runs a
 //! build script (CARGO_MANIFEST_DIR, CARGO_PKG_VERSION, cwd = the package dir) in a temp package
 //! dir with no `.git` of ours above it. The vcs file is byte-exact from the real apr-cli-0.69.1 crate.
 //! The release binaries printed `+no-git` too: binary-release.yml builds as root in a container over
 //! the runner-owned checkout, and git refuses it ("dubious ownership"); row `foreign-owner`.
-//! `planted_regressions_turn_red` re-runs the table on three planted copies of `build.rs` — the vcs
+//! `planted_regressions_turn_red` re-runs the table on three planted copies of `lib.rs` — the vcs
 //! rung removed (the pre-#4110 script), the vcs rung behind `git rev-parse`, and the safe.directory
 //! retry removed — and requires each to fail, so the table cannot pass vacuously.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const BUILD_RS: &str = include_str!("../build.rs");
+const LIB_RS: &str = include_str!("lib.rs");
+
+/// What a package's `build.rs` compiles to: this crate's code, entered through [`super::emit`].
+fn shipped() -> String {
+    format!("{LIB_RS}\nfn main() {{\n    emit();\n}}\n")
+}
 const VCS_CALL: &str = "    if let Some(sha) = vcs_info_sha() {";
 
 /// Byte-exact `.cargo_vcs_info.json` of apr-cli-0.69.1 as downloaded from crates.io.
@@ -26,7 +32,7 @@ const VCS_BAD: &str =
 fn compile(source: &str, dir: &Path, name: &str) -> PathBuf {
     let src = dir.join(format!("{name}.rs"));
     let bin = dir.join(name);
-    std::fs::write(&src, source).expect("write build.rs copy");
+    std::fs::write(&src, source).expect("write build script copy");
     let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string());
     let out = Command::new(rustc)
         .args([
@@ -39,7 +45,7 @@ fn compile(source: &str, dir: &Path, name: &str) -> PathBuf {
         .arg(&bin)
         .arg(&src)
         .output()
-        .expect("rustc must be runnable: this test compiles the shipped build.rs");
+        .expect("rustc must be runnable: this test compiles the shipped build-sha source");
     assert!(
         out.status.success(),
         "rustc rejected {name}: {}",
@@ -174,22 +180,23 @@ fn table(build_rs: &str, label: &str) -> Vec<String> {
 
 #[test]
 fn packaged_build_rs_names_its_commit() {
-    let wrong = table(BUILD_RS, "shipped");
+    let wrong = table(&shipped(), "shipped");
     assert!(
         wrong.is_empty(),
-        "shipped build.rs rows landed wrong: {wrong:#?}"
+        "shipped build-sha rows landed wrong: {wrong:#?}"
     );
 }
 
 #[test]
 fn planted_regressions_turn_red() {
+    let shipped = shipped();
     assert_eq!(
-        BUILD_RS.matches(VCS_CALL).count(),
+        shipped.matches(VCS_CALL).count(),
         1,
         "the vcs rung call site moved; re-anchor the plants"
     );
-    let no_rung = BUILD_RS.replace(VCS_CALL, "    if let Some(sha) = None::<String> {");
-    let git_first = BUILD_RS.replace(
+    let no_rung = shipped.replace(VCS_CALL, "    if let Some(sha) = None::<String> {");
+    let git_first = shipped.replace(
         VCS_CALL,
         "    if let Some(sha) = run_git(&[\"rev-parse\", \"--short\", \"HEAD\"]).or_else(vcs_info_sha) {",
     );
@@ -200,11 +207,11 @@ fn planted_regressions_turn_red() {
     );
     let retry = "run_git(&head).or_else(|| trusted_git_retry(&head))";
     assert_eq!(
-        BUILD_RS.matches(retry).count(),
+        shipped.matches(retry).count(),
         1,
         "the git retry call site moved; re-anchor the plant"
     );
-    let w3 = table(&BUILD_RS.replace(retry, "run_git(&head)"), "plant_no_retry");
+    let w3 = table(&shipped.replace(retry, "run_git(&head)"), "plant_no_retry");
     assert!(
         w3.iter().any(|r| r.starts_with("foreign-owner:")),
         "no-retry plant survived: {w3:#?}"
