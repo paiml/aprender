@@ -21444,3 +21444,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4113
+  github_issue: 4113
+  item_type: task
+  title: 'GH-4085/4113: prune 11 stale claim-literal baseline entries; stale count matches exact path:LINE'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T23:52:00Z
+  updated: 2026-09-23T23:52:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Refs #4085 (prune) and #4113 (substring stale-match fix)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
