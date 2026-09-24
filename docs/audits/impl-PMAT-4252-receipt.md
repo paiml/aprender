@@ -37,3 +37,25 @@ The quorum-round-1 finding (sonnet) said the budget was only shown on `--force-l
 
 ## Server identity (round-1 finding)
 `pid_alive` now requires `serve` and the lane's own port (`18253`) as whole argv tokens, not the substring `serve`, so a recycled pid is not taken for the server.
+
+## Round-2 fixes (sonnet lane B) and a live re-proof on the current code (2026-09-24)
+- **Yield during model load**: start_server re-checks need signals each second while /health is pending.
+- **Bounded probes**: `sh()` probes time out (15 s) as rc 124, which counts as a yield reason, so a hung nvidia-smi no longer freezes the watcher.
+- **gx10-side state dir**: the ssh remote uses `$HOME/.local/state/…`.
+- **Startup timeout**: a server with no /health after 300 s is stopped and the reason recorded.
+- `scripts/test_apr_dogfood_lane_4252_watch.py` drives the real need_signals / start_server / stop_server / cmd_watch against a fake apr (loopback /health). **7/7 PASS:**
+  - free → START
+  - real flock → YIELD, pid gone
+  - released → START
+  - claim raised mid-load → `YIELD (during start)` in 3.0 s
+  - hung nvidia-smi → `rc=124` reason in 2.0 s
+  - foreign GPU pid → reason
+  - all free → none
+- MUTANTS (scratch copies):
+  - need check in the start loop removed → `need during load` row FAIL (7.0 s, no yield)
+  - probe timeout removed → `hung nvidia-smi` row FAIL (30 s, no reason)
+- **Live, on v0.69.3-rc.1** (asset sha256 a4b3e456…8197, verified against the release's .sha256), watcher on script 62eee9cda:
+  1. `ask` → **served_by gx10-cuda**, serve pid 1431039. cuBLAS trace for that request: `[qwen35] batched prefill: 51 tokens in 305 ms (167 tok/s, chunk 51 rows, attention cuBLAS f32, from position 0)`. utilization.gpu `0 … 10 11 94 94 96 96 96 0`. used_gpu probe true.
+  2. PLANT on gx10: `flock /tmp/apr-gpu.lock sleep 100` → `11:53:23Z YIELD ['gpu lock held …']`. Pid 1431039 gone; compute-apps empty.
+  3. `ask` during the hold (default 120 s budget) → gx10 `CURL_RC=7` → **served_by lambda-cpu**, rc 0, wall 22 s.
+  4. Hold expired → `11:55:03Z START`; serve pid 1653471 serving.

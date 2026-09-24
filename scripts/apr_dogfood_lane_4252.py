@@ -237,7 +237,7 @@ def gx10_ask(messages, max_tokens, timeout):
               f"python3 -c 'import json,sys; print(json.load(sys.stdin).get(\"used_gpu\"))'); "
               f"nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader; "
               f"echo TRACE_BEGIN; grep -iE 'gpu.layers|offload' $S/serve.log | tail -2; "
-              f"tail -n +$((L+1)) $S/serve.log | grep -iE 'cuda|gpu|kernel' | head -5")
+              f"tail -n +$((L+1)) $S/serve.log | grep -iE 'cublas|prefill|cuda|gpu|kernel' | head -5")
     t0 = time.monotonic()
     r = subprocess.run(["ssh", "-o", "ConnectTimeout=5", "gx10", remote], input=payload,
                        capture_output=True, text=True, timeout=timeout + 30)
