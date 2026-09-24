@@ -31,31 +31,45 @@ fn literal_or_comment_len(c: &[char], i: usize, prev: Option<char>) -> usize {
     }
 }
 
+// Both scanners below are `for` loops over a bounded range, never `while` + a hand-stepped index, for the reason
+// `blank` gives: a mutated step (`k += 1` -> `k *= 1`) hung the old `while` forms, and a hung mutant is a survivor.
 fn block_comment_len(c: &[char], i: usize) -> usize {
-    let (mut depth, mut k) = (0usize, i);
-    while k + 1 < c.len() {
-        if c[k] == '/' && c[k + 1] == '-' {
-            depth += 1;
-            k += 2;
-        } else if c[k] == '-' && c[k + 1] == '/' {
-            depth -= 1;
-            k += 2;
-            if depth == 0 {
-                return k - i;
+    let (mut depth, mut skip) = (0usize, false);
+    for k in i..c.len() {
+        if skip {
+            skip = false;
+            continue;
+        }
+        match (c[k], c.get(k + 1)) {
+            ('/', Some('-')) => {
+                depth += 1;
+                skip = true;
             }
-        } else {
-            k += 1;
+            ('-', Some('/')) => {
+                depth -= 1;
+                skip = true;
+                if depth == 0 {
+                    return k + 2 - i;
+                }
+            }
+            _ => {}
         }
     }
     c.len() - i
 }
 
 fn string_len(c: &[char], i: usize) -> usize {
-    let mut k = i + 1;
-    while k < c.len() && c[k] != '"' {
-        k += if c[k] == '\\' { 2 } else { 1 };
+    let mut escaped = false;
+    for (k, &ch) in c.iter().enumerate().skip(i + 1) {
+        if escaped {
+            escaped = false;
+        } else if ch == '\\' {
+            escaped = true;
+        } else if ch == '"' {
+            return k + 1 - i;
+        }
     }
-    (k + 1).min(c.len()) - i
+    c.len() - i
 }
 
 /// `'a'`, `'\n'`, `'\''` — only when the quote closes within the literal's width; otherwise the `'` is not a literal.
@@ -263,6 +277,29 @@ mod tests {
     }
 
     #[test]
+    fn scanners_return_exactly_the_literal_or_comment_length() {
+        let cs = |s: &str| s.chars().collect::<Vec<char>>();
+        assert_eq!(block_comment_len(&cs("x /- a -/ y"), 2), 7);
+        assert_eq!(block_comment_len(&cs("x /- a"), 2), 4);
+        assert_eq!(string_len(&cs("x \"a\" y"), 2), 3);
+        assert_eq!(string_len(&cs("xy \"ab"), 3), 3); // 6 - 3, not 6 / 3
+    }
+
+    #[test]
+    fn a_block_comment_pairs_each_dash_once() {
+        // `/-/` opens and does not close; `-/-` closes and does not reopen; a trailing `-` is read without panicking
+        assert_eq!(blank("/-/ x -/ y"), "         y");
+        assert_eq!(blank("/- /- -/- x -/ y"), "               y");
+        assert_eq!(blank("a /- b-"), "a      ");
+    }
+
+    #[test]
+    fn an_escaped_char_literal_is_blanked_whole() {
+        assert_eq!(blank("f '\\n' z"), "f      z");
+        assert_eq!(blank("'\\n' z"), "     z");
+    }
+
+    #[test]
     fn a_line_comment_ends_at_its_own_newline_wherever_it_starts() {
         assert_eq!(blank("ab -- c\nd e\n"), "ab     \nd e\n");
     }
@@ -284,6 +321,31 @@ mod tests {
     fn imports_skip_doc_comments() {
         let b = blank("/-!\nimport X.C\n-/\nimport X.A X.B\npublic import X.D\n");
         assert_eq!(imports(&b), vec!["X.A", "X.B", "X.D"]);
+    }
+
+    #[test]
+    fn a_section_end_keeps_the_namespace_and_unnamed_decls_carry_privacy() {
+        let src = "namespace N\nsection S\nend S\ntheorem t : True := trivial\n\
+                   private instance : Inhabited Nat := x\nexample : True := trivial\nend N\n";
+        let d = decls(&tokens(&blank(src)));
+        let f: Vec<(&str, &str, bool)> = d
+            .iter()
+            .map(|d| (d.keyword.as_str(), d.fqn.as_str(), d.private))
+            .collect();
+        assert_eq!(
+            f,
+            vec![
+                ("theorem", "N.t", false),
+                ("instance", "<instance>", true),
+                ("example", "<example>", false)
+            ]
+        );
+        // a decl at token 0 has no predecessor to read
+        let first = decls(&tokens(&blank("instance : Foo := x\n")));
+        assert_eq!(
+            (first[0].fqn.as_str(), first[0].private),
+            ("<instance>", false)
+        );
     }
 
     #[test]
