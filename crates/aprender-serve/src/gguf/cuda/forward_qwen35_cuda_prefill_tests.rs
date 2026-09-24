@@ -550,3 +550,50 @@ fn qwen35_f16_prefill_keeps_the_greedy_tokens_of_the_f32_prefill_0_8b() {
     assert_eq!(argmax(&got), argmax(&want));
     assert_eq!(got_tokens, want_tokens, "32 greedy tokens");
 }
+
+/// #4260 A/B, printed: prefill wall time per [`crate::cuda::Qwen35PrefillGemm`] mode on
+/// `APR_4260_MODEL` (default the 0.8B) at `APR_4260_N` positions (default 2048). The
+/// second call of each cached mode is the one a later request pays. Opt-in: `--ignored`.
+#[test]
+#[ignore = "timing; run through gpu-q with --ignored --nocapture"]
+#[serial_test::serial]
+fn qwen35_prefill_gemm_modes_timing() {
+    use crate::cuda::Qwen35PrefillGemm;
+    let path = std::env::var("APR_4260_MODEL").unwrap_or_else(|_| MODEL_0_8B.to_string());
+    let n: usize = std::env::var("APR_4260_N")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2048);
+    if !std::path::Path::new(&path).exists() {
+        eprintln!("SKIP: {path} is absent");
+        return;
+    }
+    let executor = crate::cuda_executor_or_skip!(0);
+    let mapped = crate::gguf::MappedGGUFModel::from_path(&path).expect("map the GGUF");
+    let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+    let mut gpu = Qwen35CudaModel::with_max_seq_len(&qwen, executor, n + 2).expect("gpu model");
+    gpu.set_prefill_attention(super::PrefillAttention::CublasF32);
+    gpu.set_weight_cache_reserve(gpu.prefill_workspace_bytes(n) as u64 + (1 << 30));
+    let prompt = tokens(n, base.config.vocab_size, 0x4263);
+    let mut want_tokens = None;
+    for mode in [
+        Qwen35PrefillGemm::F32,
+        Qwen35PrefillGemm::F32Cached,
+        Qwen35PrefillGemm::F16,
+    ] {
+        gpu.release_weight_cache();
+        for call in ["cold", "warm"] {
+            let t = std::time::Instant::now();
+            let (_, toks) = prefill_then_greedy(&mut gpu, mode, &prompt, 1);
+            let ms = t.elapsed().as_secs_f64() * 1e3;
+            let same = *want_tokens.get_or_insert(toks.clone()) == toks;
+            eprintln!(
+                "#4260 {path} n={n} {mode:?} {call}: {ms:.1} ms ({:.0} tok/s), cache {} MiB, argmax same {same}",
+                n as f64 / ms * 1e3,
+                gpu.weight_cache_bytes() >> 20
+            );
+        }
+    }
+}
