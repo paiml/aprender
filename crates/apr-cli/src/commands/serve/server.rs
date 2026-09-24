@@ -157,9 +157,7 @@ fn build_qwen35_state(
     );
     println!(
         "gpu-layers: requested={} resolved={resolved_layers} total={total_layers} (backend={})",
-        config
-            .gpu_layers
-            .map_or_else(|| "none".to_string(), |r| r.to_string()),
+        config.requested_gpu_layers_label(),
         if on_gpu { "cuda" } else { "cpu" }
     );
     let offload = super::offload_report(config, resolved_layers, total_layers);

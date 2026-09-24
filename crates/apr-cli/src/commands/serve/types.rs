@@ -195,6 +195,17 @@ impl ServerConfig {
             crate::accel::default_wants_accelerator(self.no_gpu).then_some(GpuLayerRequest::Auto)
         })
     }
+
+    /// #4089: the `requested=` field of the startup `gpu-layers:` line, on every serve route.
+    /// A flagless start now takes `apr run`'s default, so it says `auto(default)` rather than
+    /// `none` while the accelerator engages.
+    pub(crate) fn requested_gpu_layers_label(&self) -> String {
+        match (self.gpu_layers, self.effective_gpu_layers()) {
+            (Some(r), _) => r.to_string(),
+            (None, Some(r)) => format!("{r}(default)"),
+            (None, None) => "none".to_string(),
+        }
+    }
     /// Translate the operator-facing hardening flags into realizar's
     /// [`RouterConfig`](realizar::api::RouterConfig).
     ///
