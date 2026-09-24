@@ -348,7 +348,11 @@ fn try_gguf_gpu_generate(
 ) -> std::result::Result<Result<(Vec<u32>, bool)>, Box<crate::gguf::OwnedQuantizedModel>> {
     use crate::gguf::OwnedQuantizedModelCuda;
 
-    let mut cuda_model = match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
+    // #4268: the device KV holds the whole turn. It was a flat 2048, and the
+    // engine refuses to run past it on the device, so a longer turn would
+    // leave the GPU for the CPU instead of being served.
+    let kv_len = device_kv_len(&model, input_tokens.len(), gen_config.max_tokens);
+    let mut cuda_model = match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, kv_len) {
         Ok(m) => m,
         Err(e) => {
             if verbose {
@@ -384,11 +388,39 @@ fn try_gguf_gpu_generate(
     // Reuse existing CUDA model — generate_gpu_resident() creates fresh KV cache
     // and resets GPU KV positions internally, so validation doesn't "consume" it.
     mark_generation_start(); // #3981: setup (upload + F2) ends here
-    let result = cuda_model
-        .generate_gpu_resident(input_tokens, gen_config)
-        .map(|tokens| (tokens, true))
-        .map_err(|e| RealizarError::InferenceError(format!("GPU generation failed: {}", e)));
-    Ok(result)
+    if gen_config.trace {
+        // #4268: `--trace` keeps the instrumented loop; the engine has no brick profiler.
+        let result = cuda_model
+            .generate_gpu_resident(input_tokens, gen_config)
+            .map(|tokens| (tokens, true))
+            .map_err(|e| RealizarError::InferenceError(format!("GPU generation failed: {}", e)));
+        return Ok(result);
+    }
+    // #4268: the one engine. A forward failure no longer ends the run: the
+    // session says so on stderr, moves to the CPU and replays the turn there,
+    // and `used_gpu` comes back false.
+    let mut session = crate::gguf::dense_session::DenseSession::new(
+        crate::gguf::dense_session::DenseForward::cuda(cuda_model),
+    );
+    Ok(crate::gguf::dense_session::dense_turn(
+        &mut session,
+        input_tokens,
+        gen_config,
+    ))
+}
+
+/// #4268: the device KV length for a turn: the prompt plus its budget, held to
+/// the model's context, and never below the 2048 every CUDA build used before.
+#[cfg(feature = "cuda")]
+fn device_kv_len(
+    model: &crate::gguf::OwnedQuantizedModel,
+    prompt_len: usize,
+    max_tokens: usize,
+) -> usize {
+    prompt_len
+        .saturating_add(max_tokens)
+        .min(model.config.context_length)
+        .max(2048)
 }
 
 /// Run GGUF generation with GPU or CPU
@@ -490,9 +522,17 @@ fn run_gguf_generate(
 
     log_cpu_backend(config.verbose, has_legacy_quant);
     mark_generation_start(); // #3981
-    let tokens = model
-        .generate_with_cache(input_tokens, gen_config)
-        .map_err(|e| RealizarError::InferenceError(format!("CPU generation failed: {}", e)))?;
+    let tokens = if gen_config.trace {
+        // #4268: `--trace` keeps the instrumented loop; the engine has no brick profiler.
+        model.generate_with_cache(input_tokens, gen_config)
+    } else {
+        let mut session = crate::gguf::dense_session::DenseSession::new(
+            crate::gguf::dense_session::DenseForward::cpu(std::sync::Arc::new(model)),
+        );
+        crate::gguf::dense_session::dense_turn(&mut session, input_tokens, gen_config)
+            .map(|(tokens, _)| tokens)
+    }
+    .map_err(|e| RealizarError::InferenceError(format!("CPU generation failed: {}", e)))?;
     // #3826: the CPU answered. `gpu_attempted` distinguishes "CPU because
     // nothing else was tried" from "CPU because the accelerator's result was
     // refused" — the second is the fallback a consumer needs to see.
