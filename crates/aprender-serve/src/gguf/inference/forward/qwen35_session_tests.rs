@@ -190,12 +190,17 @@ mod gpu {
         prompt: &[u32],
         config: &QuantizedGenerateConfig,
     ) -> Vec<u32> {
-        let qwen = Qwen35Forward::cached_host(std::path::Path::new(MODEL_PATH), mapped)
-            .expect("host");
+        let qwen =
+            Qwen35Forward::cached_host(std::path::Path::new(MODEL_PATH), mapped).expect("host");
         let positions = prompt.len() + config.max_tokens;
         let mut one = Qwen35Session::load_for_run(qwen, mapped, false, positions).expect("load");
-        let turn = one.generate(prompt, config, &mut |_| true).expect("one-shot");
-        assert!(turn.used_gpu, "the one-shot reference must itself be a GPU run");
+        let turn = one
+            .generate(prompt, config, &mut |_| true)
+            .expect("one-shot");
+        assert!(
+            turn.used_gpu,
+            "the one-shot reference must itself be a GPU run"
+        );
         turn.tokens
     }
 
