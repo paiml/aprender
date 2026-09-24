@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  actions: read # the newest successful run's head is the diff base
 
 concurrency:
   group: mutants-nightly
@@ -37,17 +38,30 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: The last 24 hours of main, as a diff
+      - name: Everything merged since the last nightly that JUDGED main, as a diff
         id: day
+        # Not a rolling "24 hours ago" window: that has no memory, so one missed or failed run would drop a day of
+        # merges for good (degraded quorum, Sonnet, #4142). The base is the head of the newest SUCCESSFUL run of
+        # this workflow, if it is an ancestor of HEAD; otherwise (first run, or a rewritten main) it is the last
+        # 24 hours, and the log says which base was used and why.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          SINCE=$(git rev-list -n1 --before='24 hours ago' HEAD)
+          LAST=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow mutants-nightly.yml --branch main --status success \
+                   --limit 1 --json headSha -q '.[0].headSha' 2>/dev/null || true)
+          if [ -n "$LAST" ] && git merge-base --is-ancestor "$LAST" HEAD 2>/dev/null; then
+            SINCE=$LAST; WHY="the newest successful mutants-nightly run judged ${LAST:0:9}"
+          else
+            SINCE=$(git rev-list -n1 --before='24 hours ago' HEAD)
+            WHY="no successful prior run whose head is an ancestor of HEAD (got '${LAST:0:9}'): falling back to 24 hours"
+          fi
           if [ -z "$SINCE" ]; then
-            echo "::error::no commit on main older than 24 hours -- the nightly cannot scope its diff"
+            echo "::error::no base commit for the nightly diff ($WHY) -- refusing rather than judging nothing"
             exit 1
           fi
           git diff "$SINCE" HEAD > day.diff
-          echo "day.diff: ${SINCE:0:9}..$(git rev-parse --short=9 HEAD), $(wc -l < day.diff) lines"
+          echo "day.diff: ${SINCE:0:9}..$(git rev-parse --short=9 HEAD) -- $WHY; $(wc -l < day.diff) lines"
       - name: Pull sovereign-ci image (with retry + local-cache fallback)
         run: |
           if docker image inspect "$IMAGE" > /dev/null 2>&1; then
@@ -82,7 +96,7 @@ jobs:
               fi
               cargo mutants --version || { echo "::error::cargo-mutants not runnable after install"; exit 1; }
               # the crates ci.yml workspace-test --excludes, derived from its nextest line (see ci.yml mutants)
-              EXCL=$(grep -m1 -E "cargo nextest run --profile ci --workspace --lib" .github/workflows/ci.yml \
+              EXCL=$(grep -m1 -E "^[[:space:]]+cargo nextest run --profile ci --workspace --lib" .github/workflows/ci.yml \
                 | grep -oE -- "--exclude [a-z0-9_-]+" | sed "s/^--exclude /--exclude-crate /" | tr "\n" " ")
               [ -n "$EXCL" ] || { echo "::error::no --exclude list found on the workspace-test nextest line"; exit 1; }
               # shellcheck disable=SC2086

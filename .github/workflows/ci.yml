@@ -3437,7 +3437,7 @@ jobs:
               # that differs from the listed one.
               # The crates workspace-test --excludes (hardware; aprender-compute segfaults at harness exit on a
               # clean pass) are DERIVED from its nextest line, never restated, and kept out of mutation too.
-              EXCL=$(grep -m1 -E "cargo nextest run --profile ci --workspace --lib" .github/workflows/ci.yml \
+              EXCL=$(grep -m1 -E "^[[:space:]]+cargo nextest run --profile ci --workspace --lib" .github/workflows/ci.yml \
                 | grep -oE -- "--exclude [a-z0-9_-]+" | sed "s/^--exclude /--exclude-crate /" | tr "\n" " ")
               [ -n "$EXCL" ] || { echo "::error::no --exclude list found on the workspace-test nextest line"; exit 1; }
               # shellcheck disable=SC2086
