@@ -1,0 +1,7 @@
+apr 0.69.0 (b4007590f)
+== apr parity --assert Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+rc=0 wall=17s
+tokens 92 | passed 92 | failed 0 | parity True | positions 92 | min cosine 1.0 | argmax mismatches 0
+== apr parity --assert Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf
+rc=0 wall=17s
+tokens 92 | passed 92 | failed 0 | parity True | positions 92 | min cosine 1.0 | argmax mismatches 0

@@ -269,31 +269,41 @@ fn run_gguf_inference(
     // run_gguf_generate as before. This replaces M32c.2.1's
     // gguf_gpu_generate.rs short-circuit with an actual forward pass.
     let infer_start = Instant::now();
-    let canonical_arch = crate::tensor_names::normalize_architecture(&model.config.architecture);
-    let (tokens, used_gpu) = if canonical_arch == "qwen3_moe" {
-        let tokens = crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
-            &mapped,
-            &model,
-            &input_tokens,
-            &gen_config,
-        )?;
-        (tokens, false) // CPU-only path; GPU MoE wiring is M32d follow-up
-    } else if is_qwen35 {
-        // #3477: the hybrid now has a GPU forward (#3090), so `apr run --gpu`
-        // routes to it and reports CUDA; the CPU forward (#3091) serves
-        // `--no-gpu`, a build without cuda, and any GPU failure — the last of
-        // which is printed, never silent.
-        crate::gguf::forward_qwen35::run_qwen35_generate_dispatch(
+    // #3714 R2: `moe_forward_handles` is the one dispatch predicate — `apr
+    // parity` and `apr qa` ask the same function, so no tool can route this
+    // architecture differently from `apr run`.
+    let is_moe = crate::gguf::moe_forward_handles(&model.config.architecture);
+    // #3714: `setup_ms` is time inside the dispatch that is not generation (the
+    // MoE CUDA build + F2 guard); `inference_ms` is generation only.
+    let (tokens, used_gpu, setup_ms) = if is_moe {
+        // #3714: the CUDA forward serves unless --no-gpu; a GPU that cannot
+        // serve prints its reason before the CPU chain runs. This site used to
+        // hard-code `(tokens, false)` and never try CUDA at all.
+        crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
             &mapped,
             &model,
             &input_tokens,
             &gen_config,
             config.no_gpu,
         )?
+    } else if is_qwen35 {
+        // #3477: the hybrid now has a GPU forward (#3090), so `apr run --gpu`
+        // routes to it and reports CUDA; the CPU forward (#3091) serves
+        // `--no-gpu`, a build without cuda, and any GPU failure — the last of
+        // which is printed, never silent.
+        let (tokens, used_gpu) = crate::gguf::forward_qwen35::run_qwen35_generate_dispatch(
+            &mapped,
+            &model,
+            &input_tokens,
+            &gen_config,
+            config.no_gpu,
+        )?;
+        (tokens, used_gpu, 0.0)
     } else {
-        run_gguf_generate(model, &input_tokens, &gen_config, config)?
+        let (tokens, used_gpu) = run_gguf_generate(model, &input_tokens, &gen_config, config)?;
+        (tokens, used_gpu, 0.0)
     };
-    let inference_ms = infer_start.elapsed().as_secs_f64() * 1000.0;
+    let inference_ms = (infer_start.elapsed().as_secs_f64() * 1000.0 - setup_ms).max(0.0);
 
     let generated_tokens = &tokens[input_token_count..];
     let raw_text = mapped.model.decode(generated_tokens);
@@ -330,7 +340,7 @@ fn run_gguf_inference(
 
     // #3718: only the dense CPU loop (`generate_with_cache`) shrinks the budget to
     // the context room; the hybrid, MoE, CUDA and wgpu loops run `max_tokens`.
-    let clamps_to_context = !is_qwen35 && canonical_arch != "qwen3_moe" && !used_gpu;
+    let clamps_to_context = !is_qwen35 && !is_moe && !used_gpu;
     let budget = run_report::decode_budget(
         gen_config.max_tokens,
         input_token_count,

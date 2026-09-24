@@ -388,6 +388,16 @@ jobs:
           }
           parent="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}"
           reg="/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}"
+          # infra#1059: admit this target unit against gx10's disk budget BEFORE creating it
+          # (free >= 50G + 25G x (live+1), live < 2; waits <=20m, then exit 1). The admit
+          # record is what the runner's JOB_COMPLETED hook reaps, and nothing else. Hosts
+          # without the gate skip; gx10 exports CI_TARGET_ADMIT_REQUIRED=1, so a missing
+          # gate there is red, never a silent skip.
+          if command -v ci-target-admit >/dev/null 2>&1; then
+            ci-target-admit "${parent}/run-${GITHUB_RUN_ID}" || exit 1
+          elif [ "${CI_TARGET_ADMIT_REQUIRED:-0}" = 1 ]; then
+            echo "::error::infra#1059: ci-target-admit is required on ${RUNNER_NAME:-this runner} and is missing"; exit 1
+          fi
           heal_path /mnt/nvme-raid0/targets/aprender-ci "${parent}/run-${GITHUB_RUN_ID}"
           heal_path /mnt/nvme-raid0/cargo-ci/registry "$reg"
           ls -ld "$parent" "${parent}/run-${GITHUB_RUN_ID}" "$reg"
@@ -891,11 +901,17 @@ jobs:
           # workspace. Runner (noah:1000) can't git-clean them on next run
           # → checkout fails → CI breaks. This runs inside the container
           # (as root) restoring host ownership for subsequent bare-metal jobs.
+          # infra#1059: mount the target unit only if it exists. When the disk
+          # admit gate refused it, a bind mount here would make docker create the
+          # refused unit as root, unrecorded, so the reap hook would never free it.
+          unit="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}"
+          target_mount=()
+          if [ -d "$unit" ]; then target_mount=(-v "${unit}:/workspace/target"); fi
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            "${target_mount[@]}" \
             "$IMAGE" \
             bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
 
@@ -1746,6 +1762,16 @@ jobs:
             done
             mkdir -p "$path"
           }
+          # infra#1059: admit this target unit against gx10's disk budget BEFORE creating it
+          # (free >= 50G + 25G x (live+1), live < 2; waits <=20m, then exit 1). The admit
+          # record is what the runner's JOB_COMPLETED hook reaps, and nothing else. Hosts
+          # without the gate skip; gx10 exports CI_TARGET_ADMIT_REQUIRED=1, so a missing
+          # gate there is red, never a silent skip.
+          if command -v ci-target-admit >/dev/null 2>&1; then
+            CI_TARGET_ADMIT_WAIT_S=300 ci-target-admit "$GUARD_TARGET_DIR" || exit 1   # 5 min, not 20: the 30 min job budget is rule E and is never widened; gx10 guard-cargo max 23 min (46 runs, 2026-09-24)
+          elif [ "${CI_TARGET_ADMIT_REQUIRED:-0}" = 1 ]; then
+            echo "::error::infra#1059: ci-target-admit is required on ${RUNNER_NAME:-this runner} and is missing"; exit 1
+          fi
           heal_path /mnt/nvme-raid0/targets/aprender-ci "$GUARD_TARGET_DIR"
           heal_path /mnt/nvme-raid0/cargo-ci/home "$GUARD_CARGO_HOME/registry"
           printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
@@ -2882,6 +2908,7 @@ jobs:
     outputs:
       gpu_touched: ${{ steps.decide.outputs.gpu_touched }}
       gpu_crates: ${{ steps.decide.outputs.gpu_crates }}
+      cuda_lint: ${{ steps.decide.outputs.cuda_lint }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -2912,7 +2939,7 @@ jobs:
           bash scripts/ci_gpu_touched.sh --diff-from "$RUNNER_TEMP/touched.txt" \
             > "$RUNNER_TEMP/gpu.txt"
           cat "$RUNNER_TEMP/gpu.txt"
-          grep -E '^(gpu_touched|gpu_crates|reason)=' "$RUNNER_TEMP/gpu.txt" >> "$GITHUB_OUTPUT"
+          grep -E '^(gpu_touched|gpu_crates|cuda_lint|reason)=' "$RUNNER_TEMP/gpu.txt" >> "$GITHUB_OUTPUT"
 
   # ROW 67-C1 — `gpu-quick` on gx10 (GB10, sm_121, aarch64).
   # Promotion to required: row 68-C3, after 5 consecutive green gx10 nightlies.
@@ -3008,7 +3035,10 @@ jobs:
   # (the yoga nightly axis is #3060 / YOGA-NIGHTLY-001).
   cuda-unit:
     needs: [gpu-touched]
-    if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
+    # gpu_touched=1 runs every step. cuda_lint=1 alone (an apr-cli-only diff,
+    # #4336) runs ONLY the clippy step: the test steps carry their own
+    # gpu_touched `if:`, so yoga is held for a check build, not the test builds.
+    if: github.event_name == 'pull_request' && (needs.gpu-touched.outputs.gpu_touched == '1' || needs.gpu-touched.outputs.cuda_lint == '1')
     runs-on: [self-hosted, Linux, X64, cuda, yoga, ephemeral, docker]
     # 15 -> 35 (#3810): the derived cuda-only set needs a second, default-feature
     # test build of aprender-serve to list against. MEASURED on this PR's own run
@@ -3036,6 +3066,7 @@ jobs:
       # (operator, 2026-09-09), not a training host. Nothing to yield to. The
       # `perf-yoga` concurrency group above is what keeps two runs off it.
       - name: aprender-gpu cuda unit tests (--features cuda --lib --release)
+        if: needs.gpu-touched.outputs.gpu_touched == '1'
         run: |
           nice -n 19 cargo test -p aprender-gpu --features cuda --lib --release
       # THE SERVE CUDA SET IS DERIVED, NOT FILTERED (#3810). The step used to filter
@@ -3071,6 +3102,7 @@ jobs:
       # counts as a pass. The grep is UNANCHORED, because under --nocapture the
       # message lands on the `test X ... ` line.
       - name: "aprender-serve cuda unit tests (the derived cuda-only set, by name)"
+        if: needs.gpu-touched.outputs.gpu_touched == '1'
         run: |
           set -euo pipefail
           export LC_ALL=C
@@ -3125,8 +3157,9 @@ jobs:
       # This is the only job with nvcc, so the lint lives here. The script runs its
       # own planted-mutant self-test first: an unused import under
       # #[cfg(feature = "cuda")] must turn it RED, or the gate is refused as vacuous.
-      # KNOWN GAP (#4336): this job is gated on gpu_touched, and apr-cli is not in the
-      # GPU set, so an apr-cli-only diff skips this lint.
+      # No step `if:`: this step runs whenever the job does, including on an
+      # apr-cli-only diff (cuda_lint=1, gpu_touched=0) — apr-cli has 30 files of
+      # #[cfg(feature = "cuda")] code that only this lint builds (#4336).
       - name: "clippy --features cuda is clean (#3636)"
         run: |
           set -euo pipefail
@@ -3285,6 +3318,123 @@ jobs:
           name: raster-receipt
           path: target/aprender-viz/raster-receipt.json
           if-no-files-found: error
+
+  # ── PVL-001 EV-9 (#4083): the provable ladder, ADVISORY ────────────────────
+  #
+  # `pv discharge run` over the Lean tree: build.sh (Mathlib cache get, and a cache
+  # MISS declines instead of silently building Mathlib), then `check` with every arm
+  # (--strict, the comparator, --leanchecker), then the tracked discharge-summary.json.
+  # The committed summary must be what the run writes (summary-fresh: the tree carries
+  # the summary and CI regenerates it and diffs it; a gate never rewrites its own
+  # baseline, PVL-001 §5.3).
+  #
+  # ADVISORY: NOT in `gate`'s `needs:` (cop ruling, 2026-09-24). Measured at 4a870daf5 on
+  # lambda (4m21s, 1.4 GB RSS), the ladder is RED: 7 escape-allowlist.yaml entries are still
+  # `confirmed_by: pending`, and only a person may confirm them (§5.3). Flip to required --
+  # add it to `gate.needs` and read its result there -- only when that is clear.
+  #
+  # The clean-room X64 pool is intel-clean-room-* plus yoga-build, yoga-build2 and yoga-build3,
+  # and infra-8d verified elan and a writable /mnt/nvme-raid0/lean-cache on every one of them
+  # (2026-09-25). A host added to the pool without them DECLINES here, never builds cold.
+  # X64 is mandatory: `ci / lint` once landed on aarch64 gx10 and failed on x86-only code.
+  # 90 min: under the merge queue's 180 min.
+  # build.sh is ~6 min on a warm cache, and the leanchecker arm's own cap is 3600 s.
+  provable-ladder:
+    runs-on: [self-hosted, Linux, clean-room, X64]
+    timeout-minutes: 90
+    env:
+      LEAN: crates/aprender-contracts-staging/lean
+      SUMMARY: crates/aprender-contracts-staging/discharge-summary.json
+      ELAN_HOME: /home/noah/.elan
+      LEAN_CACHE_ROOT: /mnt/nvme-raid0/lean-cache
+      CARGO_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/provable-ladder
+      PV: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/provable-ladder/debug/pv
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Preconditions -- elan, the lean cache, and the files the ladder judges
+        id: pre
+        # A missing precondition DECLINES (rc 2); it is never a silent cold build. The toolchain
+        # is read from lean-toolchain, so this workflow never names a Lean version. The .lake dir
+        # lives in the cache, keyed on lean-toolchain + lake-manifest.json.
+        shell: bash
+        run: |
+          set -euo pipefail
+          decline() { echo "decline: $1" | tee -a "$GITHUB_STEP_SUMMARY"; exit 2; }
+          export PATH="$ELAN_HOME/bin:$PATH"
+          command -v elan >/dev/null || decline "no elan in $ELAN_HOME on $(hostname) (proof-toolchain, infra)"
+          [ -d "$LEAN_CACHE_ROOT" ] || decline "no $LEAN_CACHE_ROOT on $(hostname) (proof-toolchain, infra)"
+          for f in "$LEAN/lean-toolchain" "$LEAN/lake-manifest.json" "$LEAN/build.sh"; do
+            [ -f "$f" ] || decline "$f is not in this tree"
+          done
+          # summary-fresh diffs a TRACKED file: `git diff` exits 0 on an untracked path.
+          git ls-files --error-unmatch -- "$SUMMARY" >/dev/null 2>&1 || decline "$SUMMARY is not tracked"
+          key=$(cat "$LEAN/lean-toolchain" "$LEAN/lake-manifest.json" | sha256sum | cut -c1-16)
+          cache=$LEAN_CACHE_ROOT/$key
+          mkdir -p "$cache"
+          flock "$cache.lock" elan toolchain install "$(cat "$LEAN/lean-toolchain")"
+          # A real .lake dir would make `ln` write the link INSIDE it instead of replacing it.
+          [ ! -e "$LEAN/.lake" ] || [ -L "$LEAN/.lake" ] || decline "$LEAN/.lake is a real directory, not the cache link"
+          ln -sfn "$cache" "$LEAN/.lake"
+          echo "$ELAN_HOME/bin" >> "$GITHUB_PATH"
+          echo "cache=$cache" >> "$GITHUB_OUTPUT"
+
+      - name: Build the in-tree pv
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked -p aprender-contracts-cli --bin pv
+          test -x "$PV"
+
+      - name: pv discharge run (build.sh, then check --strict + comparator + leanchecker)
+        id: discharge
+        shell: bash
+        # One run at a time per cache: two runs unpacking into the same .lake would race.
+        # set +e: Actions runs `bash -e`, which would abort at a failing run before its rc and
+        # its log tail are recorded.
+        run: |
+          set +e
+          flock "${{ steps.pre.outputs.cache }}.lock" "$PV" discharge run "$LEAN" > "$RUNNER_TEMP/discharge-run.log" 2>&1
+          rc=$?
+          tail -n 40 "$RUNNER_TEMP/discharge-run.log"
+          echo "pv discharge run: rc=$rc" >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+      - name: summary-fresh -- the committed discharge-summary.json is what the run wrote
+        # Only when the run RAN (it writes the summary on failure too). Skipped means nothing
+        # was regenerated, and a diff of an unregenerated file would pass vacuously.
+        if: ${{ !cancelled() && (steps.discharge.outcome == 'success' || steps.discharge.outcome == 'failure') }}
+        shell: bash
+        run: git diff --exit-code -- "$SUMMARY"
+
+      - name: pv lint contracts/
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: '"$PV" lint contracts/'
+
+      - name: Upload the discharge logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: provable-ladder
+          path: |
+            ${{ runner.temp }}/discharge-run.log
+            crates/aprender-contracts-staging/lean/discharge.json
+            crates/aprender-contracts-staging/discharge-summary.json
+          if-no-files-found: warn
+
+      - name: Advisory verdict
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### provable-ladder (PVL-001 EV-9, #4083): ADVISORY, not in gate.needs"
+            echo "Job status: ${{ job.status }}. It becomes required only when this blocker is clear:"
+            echo "1. escape-allowlist.yaml: 7 entries are \`confirmed_by: pending\`, and a person must confirm them or delete the axioms (PVL-001 §5.3)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   gate:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)

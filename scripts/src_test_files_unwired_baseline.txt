@@ -7,10 +7,16 @@
 # stale assertions against code that moved on; that is follow-up work under #3809,
 # not something to fold into the guard PR. Wire or delete; never add.
 # tool_version=none (measured by scripts/check_src_test_files_wired.sh: grep/sed over tracked src .rs files for mod/#[path]/include! declarations; not a versioned analyser)
+# The 5 files whose NAME matched an unrelated #[path]/include! elsewhere in the crate
+# (found once targets were resolved per declaring file) are among these. One,
+# layers/tests/tests_10.rs, is disabled on purpose: its mod.rs line reads
+# "// mod tests_10; // Disabled: compilation errors".
+crates/aprender-core/src/models/qwen2/tests.rs
 crates/aprender-gpu/src/testing/integration_tests/mod.rs
 crates/aprender-present-terminal/src/widgets/battery_panel.rs
 crates/aprender-present-terminal/src/widgets/disk_panel.rs
 crates/aprender-serve/src/apr/tests_matmul_scaling.rs
+crates/aprender-serve/src/bench/tests_04.rs
 crates/aprender-serve/src/bench_viz_tests_benchmark_runner.rs
 crates/aprender-serve/src/cli/benchmarks_2.rs
 crates/aprender-serve/src/cli/benchmarks_3.rs
@@ -27,6 +33,7 @@ crates/aprender-serve/src/cuda/executor/reference.rs
 crates/aprender-serve/src/delayed_eos_model.rs
 crates/aprender-serve/src/generate/make.rs
 crates/aprender-serve/src/generate/mock_model.rs
+crates/aprender-serve/src/gguf/loader_tests.rs
 crates/aprender-serve/src/gguf/tests/loader_tests_02.rs
 crates/aprender-serve/src/gguf/tests/tests_12b.rs
 crates/aprender-serve/src/gpu/diagnostics_tests.rs
@@ -37,9 +44,11 @@ crates/aprender-serve/src/gpu/scheduler/kv_tests.rs
 crates/aprender-serve/src/gpu/scheduler/model_tests.rs
 crates/aprender-serve/src/gpu/tests/tests_09.rs
 crates/aprender-serve/src/infer/tests_12.rs
+crates/aprender-serve/src/layers/tests/tests_10.rs
 crates/aprender-serve/src/mock_model.rs
 crates/aprender-serve/src/qa_phase.rs
 crates/aprender-serve/src/quantize/tests/tests_22.rs
+crates/aprender-serve/src/safetensors/transform.rs
 crates/aprender-serve/src/testing/config.rs
 crates/aprender-test-cli/src/commands_tests.rs
 crates/aprender-test-cli/src/main_tests.rs

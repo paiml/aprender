@@ -388,25 +388,8 @@ fn parse_property(
         shape: shape.to_string(),
         what,
     };
-    for key in pm.keys() {
-        let k = key.as_str().unwrap_or("?");
-        if !PROPERTY_KEYS.contains(&k) {
-            return Err(ShapeError::Unsupported {
-                shape: shape.to_string(),
-                component: k.to_string(),
-            });
-        }
-    }
-    let path = pm
-        .get("path")
-        .and_then(serde_yaml::Value::as_str)
-        .ok_or_else(|| malformed("a property has no `path`".into()))?;
-    if path.contains(['/', '|', '^', '*', '+']) && !path.starts_with("http") {
-        return Err(ShapeError::Unsupported {
-            shape: shape.to_string(),
-            component: format!("path `{path}` (only a single predicate is a path here)"),
-        });
-    }
+    check_property_keys(shape, pm)?;
+    let path = parse_path(shape, pm)?;
     let count = |k: &str| -> Result<Option<usize>, ShapeError> {
         match pm.get(k) {
             None => Ok(None),
@@ -428,65 +411,9 @@ fn parse_property(
     // `in: ["true"]` accepted `"true"^^xsd:boolean` — which the pinned oracle refuses, and which `make oracle`
     // caught on this row's own shapes (490 results of difference on the real corpus). An entry that expands to
     // an IRI still matches an IRI value, because a `sh:in` over `nodeKind: IRI` is a list of IRIs.
-    let r#in = match pm.get("in") {
-        None => None,
-        Some(v) => Some(
-            v.as_sequence()
-                .ok_or_else(|| malformed("`in` is not a list".into()))?
-                .iter()
-                .map(|x| match x {
-                    serde_yaml::Value::String(s) => InEntry {
-                        lexical: s.clone(),
-                        datatype: XSD_STRING_IRI.to_string(),
-                    },
-                    serde_yaml::Value::Number(n) => InEntry {
-                        lexical: n.to_string(),
-                        datatype: if n.is_f64() {
-                            format!("{XSD_NS}double")
-                        } else {
-                            format!("{XSD_NS}integer")
-                        },
-                    },
-                    serde_yaml::Value::Bool(b) => InEntry {
-                        lexical: b.to_string(),
-                        datatype: format!("{XSD_NS}boolean"),
-                    },
-                    _ => InEntry {
-                        lexical: String::new(),
-                        datatype: XSD_STRING_IRI.to_string(),
-                    },
-                })
-                .collect(),
-        ),
-    };
-    let pattern = match pm.get("pattern").and_then(serde_yaml::Value::as_str) {
-        None => None,
-        Some(p) => Some((
-            p.to_string(),
-            regex::Regex::new(p)
-                .map_err(|e| malformed(format!("`pattern` does not compile: {e}")))?,
-        )),
-    };
-    let node = match pm.get("node") {
-        None => None,
-        Some(_) if depth >= 1 => {
-            return Err(ShapeError::Unsupported {
-                shape: shape.to_string(),
-                component: "node (nested more than one level)".into(),
-            })
-        }
-        Some(v) => {
-            let nm = v
-                .as_mapping()
-                .ok_or_else(|| malformed("`node` is not a mapping".into()))?;
-            Some(Box::new(parse_node_shape(
-                &format!("{shape}/node"),
-                nm,
-                None,
-                depth + 1,
-            )?))
-        }
-    };
+    let r#in = parse_in(shape, pm)?;
+    let pattern = parse_pattern(shape, pm)?;
+    let node = parse_nested_node(shape, pm, depth)?;
     let severity = parse_severity(
         shape,
         pm.get("severity").and_then(serde_yaml::Value::as_str),
@@ -511,6 +438,121 @@ fn parse_property(
             .map(String::from),
         severity,
     })
+}
+
+fn malformed_in(shape: &str, what: String) -> ShapeError {
+    ShapeError::Malformed {
+        shape: shape.to_string(),
+        what,
+    }
+}
+
+/// A property mapping may carry only the keys of the supported subset.
+fn check_property_keys(shape: &str, pm: &serde_yaml::Mapping) -> Result<(), ShapeError> {
+    for key in pm.keys() {
+        let k = key.as_str().unwrap_or("?");
+        if !PROPERTY_KEYS.contains(&k) {
+            return Err(ShapeError::Unsupported {
+                shape: shape.to_string(),
+                component: k.to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// `path`: a single predicate; a SHACL property path expression is outside the subset.
+fn parse_path<'a>(shape: &str, pm: &'a serde_yaml::Mapping) -> Result<&'a str, ShapeError> {
+    let path = pm
+        .get("path")
+        .and_then(serde_yaml::Value::as_str)
+        .ok_or_else(|| malformed_in(shape, "a property has no `path`".into()))?;
+    if path.contains(['/', '|', '^', '*', '+']) && !path.starts_with("http") {
+        return Err(ShapeError::Unsupported {
+            shape: shape.to_string(),
+            component: format!("path `{path}` (only a single predicate is a path here)"),
+        });
+    }
+    Ok(path)
+}
+
+// `sh:in` is TERM equality (SHACL §4.5.1), and a term carries its datatype. The YAML scalar's own type is
+// what gives it one: `in: [true]` is `"true"^^xsd:boolean`, `in: [1]` is `xsd:integer`, `in: [a, b]` is
+// `xsd:string`. This used to collapse every entry to its lexical form and compare strings, so a shape
+// `in: ["true"]` accepted `"true"^^xsd:boolean` — which the pinned oracle refuses, and which `make oracle`
+// caught on this row's own shapes (490 results of difference on the real corpus). An entry that expands to
+// an IRI still matches an IRI value, because a `sh:in` over `nodeKind: IRI` is a list of IRIs.
+fn parse_in(shape: &str, pm: &serde_yaml::Mapping) -> Result<Option<Vec<InEntry>>, ShapeError> {
+    let Some(v) = pm.get("in") else {
+        return Ok(None);
+    };
+    let seq = v
+        .as_sequence()
+        .ok_or_else(|| malformed_in(shape, "`in` is not a list".into()))?;
+    Ok(Some(seq.iter().map(in_entry).collect()))
+}
+
+fn in_entry(x: &serde_yaml::Value) -> InEntry {
+    match x {
+        serde_yaml::Value::String(s) => InEntry {
+            lexical: s.clone(),
+            datatype: XSD_STRING_IRI.to_string(),
+        },
+        serde_yaml::Value::Number(n) => InEntry {
+            lexical: n.to_string(),
+            datatype: if n.is_f64() {
+                format!("{XSD_NS}double")
+            } else {
+                format!("{XSD_NS}integer")
+            },
+        },
+        serde_yaml::Value::Bool(b) => InEntry {
+            lexical: b.to_string(),
+            datatype: format!("{XSD_NS}boolean"),
+        },
+        _ => InEntry {
+            lexical: String::new(),
+            datatype: XSD_STRING_IRI.to_string(),
+        },
+    }
+}
+
+fn parse_pattern(
+    shape: &str,
+    pm: &serde_yaml::Mapping,
+) -> Result<Option<(String, regex::Regex)>, ShapeError> {
+    let Some(p) = pm.get("pattern").and_then(serde_yaml::Value::as_str) else {
+        return Ok(None);
+    };
+    let re = regex::Regex::new(p)
+        .map_err(|e| malformed_in(shape, format!("`pattern` does not compile: {e}")))?;
+    Ok(Some((p.to_string(), re)))
+}
+
+/// `node`: one level of nesting is in the subset, deeper is not.
+fn parse_nested_node(
+    shape: &str,
+    pm: &serde_yaml::Mapping,
+    depth: usize,
+) -> Result<Option<Box<NodeShape>>, ShapeError> {
+    match pm.get("node") {
+        None => Ok(None),
+        Some(_) if depth >= 1 => Err(ShapeError::Unsupported {
+            shape: shape.to_string(),
+            component: "node (nested more than one level)".into(),
+        }),
+        Some(v) => {
+            let nm = v
+                .as_mapping()
+                .ok_or_else(|| malformed_in(shape, "`node` is not a mapping".into()))?;
+            Ok(Some(Box::new(parse_node_shape(
+                &format!("{shape}/node"),
+                nm,
+                None,
+                depth + 1,
+            )?)))
+        }
+    }
 }
 
 /// `nodeKind`: `IRI` or `Literal` (with or without the `sh:` prefix); anything else is outside the subset.
@@ -893,42 +935,57 @@ pub fn well_formed(value: &str, datatype: &str) -> bool {
     let Some(local) = datatype.strip_prefix(XSD_NS) else {
         return true;
     };
-    let int_in = |lo: i128, hi: i128| value.parse::<i128>().is_ok_and(|n| n >= lo && n <= hi);
+    if let Some((lo, hi)) = integer_range(local) {
+        return value.parse::<i128>().is_ok_and(|n| n >= lo && n <= hi);
+    }
     match local {
-        "string" | "anyURI" => true,
         "boolean" => matches!(value, "true" | "false" | "1" | "0"),
-        "integer" => value.parse::<i128>().is_ok(),
-        "long" => int_in(i128::from(i64::MIN), i128::from(i64::MAX)),
-        "int" => int_in(i128::from(i32::MIN), i128::from(i32::MAX)),
-        "short" => int_in(i128::from(i16::MIN), i128::from(i16::MAX)),
-        "byte" => int_in(i128::from(i8::MIN), i128::from(i8::MAX)),
-        "nonNegativeInteger" => int_in(0, i128::MAX),
-        "positiveInteger" => int_in(1, i128::MAX),
-        "nonPositiveInteger" => int_in(i128::MIN, 0),
-        "negativeInteger" => int_in(i128::MIN, -1),
-        "unsignedLong" => int_in(0, i128::from(u64::MAX)),
-        "unsignedInt" => int_in(0, i128::from(u32::MAX)),
-        "unsignedShort" => int_in(0, i128::from(u16::MAX)),
-        "unsignedByte" => int_in(0, i128::from(u8::MAX)),
-        "decimal" => {
-            !value.is_empty()
-                && value
-                    .strip_prefix(['+', '-'])
-                    .unwrap_or(value)
-                    .chars()
-                    .all(|c| c.is_ascii_digit() || c == '.')
-                && value.chars().filter(|c| *c == '.').count() <= 1
-                && value.chars().any(|c| c.is_ascii_digit())
-        }
+        "decimal" => is_decimal(value),
         "double" | "float" => {
             matches!(value, "INF" | "-INF" | "NaN") || value.parse::<f64>().is_ok()
         }
         "date" => is_date(value),
-        "dateTime" => value
-            .split_once('T')
-            .is_some_and(|(d, t)| is_date(d) && t.len() >= 8 && t.as_bytes()[2] == b':'),
+        "dateTime" => is_date_time(value),
+        // "string", "anyURI", and every datatype outside the checked set.
         _ => true,
     }
+}
+
+/// The value range of each XSD integer type (`integer` itself is unbounded, so i128's).
+fn integer_range(local: &str) -> Option<(i128, i128)> {
+    Some(match local {
+        "integer" => (i128::MIN, i128::MAX),
+        "long" => (i128::from(i64::MIN), i128::from(i64::MAX)),
+        "int" => (i128::from(i32::MIN), i128::from(i32::MAX)),
+        "short" => (i128::from(i16::MIN), i128::from(i16::MAX)),
+        "byte" => (i128::from(i8::MIN), i128::from(i8::MAX)),
+        "nonNegativeInteger" => (0, i128::MAX),
+        "positiveInteger" => (1, i128::MAX),
+        "nonPositiveInteger" => (i128::MIN, 0),
+        "negativeInteger" => (i128::MIN, -1),
+        "unsignedLong" => (0, i128::from(u64::MAX)),
+        "unsignedInt" => (0, i128::from(u32::MAX)),
+        "unsignedShort" => (0, i128::from(u16::MAX)),
+        "unsignedByte" => (0, i128::from(u8::MAX)),
+        _ => return None,
+    })
+}
+
+fn is_decimal(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .strip_prefix(['+', '-'])
+            .unwrap_or(value)
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '.')
+        && value.chars().filter(|c| *c == '.').count() <= 1
+        && value.chars().any(|c| c.is_ascii_digit())
+}
+
+fn is_date_time(value: &str) -> bool {
+    value
+        .split_once('T')
+        .is_some_and(|(d, t)| is_date(d) && t.len() >= 8 && t.as_bytes()[2] == b':')
 }
 
 /// `YYYY-MM-DD` with an optional timezone suffix.

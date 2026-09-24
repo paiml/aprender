@@ -10,8 +10,9 @@
 # trueno/cuda, and cargo clippy lints every workspace member it builds, so
 # one invocation covers compute, gpu, serve and train.
 #
-# SCOPE: CI runs this in `cuda-unit`, gated on scripts/ci_gpu_touched.sh. apr-cli
-# is not in that set, so an apr-cli-only diff does not run it (#4336).
+# SCOPE: CI runs this in `cuda-unit` whenever scripts/ci_gpu_touched.sh answers
+# cuda_lint=1: a GPU-set diff, or an apr-cli diff (apr-cli is cuda-gated but not
+# in the GPU set, so it gets this step without the cuda test steps; #4336).
 #
 #   bash scripts/check_clippy_cuda.sh              # the gate
 #   bash scripts/check_clippy_cuda.sh --self-test  # planted unused import -> RED

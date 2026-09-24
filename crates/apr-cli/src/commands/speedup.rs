@@ -46,16 +46,16 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
         #[cfg(not(feature = "cuda"))]
         let cuda_available = false;
 
-        let model_bytes = std::fs::read(path)
+        // #3750: the format from the 8-byte magic, never the whole model
+        let magic = super::model_header::read_prefix(path, 8)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
 
-        let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
+        let format = detect_format(&magic)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
 
         let prompt = "Write a hello world program in Python:";
         let Some((tps, _measurement_duration)) = throughput_for_format(
             path,
-            &model_bytes,
             format,
             prompt,
             config,
@@ -119,7 +119,7 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
 /// The threshold is untouched (10 tok/s for unasserted GGUF); what changes is
 /// that the number the gate compares is decode throughput.
 #[cfg(feature = "inference")]
-fn throughput_runtime(path: &Path, config: &QaConfig) -> Result<f64> {
+fn throughput_runtime(path: &Path, config: &QaConfig) -> Result<(f64, &'static str)> {
     use realizar::{run_inference, InferenceConfig};
 
     let infer_config = InferenceConfig::new(path)
@@ -139,17 +139,34 @@ fn throughput_runtime(path: &Path, config: &QaConfig) -> Result<f64> {
 
     let mut generated = 0usize;
     let mut seconds = 0.0_f64;
+    let (mut gpu_runs, mut runs) = (0usize, 0usize);
     for _ in 0..config.iterations.max(1) {
         let result = run()?;
         generated += result.generated_token_count;
         seconds += result.inference_ms / 1000.0;
+        runs += 1;
+        gpu_runs += usize::from(result.used_gpu);
     }
 
-    Ok(if seconds > 0.0 {
+    let tps = if seconds > 0.0 {
         generated as f64 / seconds
     } else {
         0.0
-    })
+    };
+    Ok((tps, runtime_backend_label(gpu_runs, runs)))
+}
+
+/// #3714: the backend the timed runs REPORTED (`used_gpu`), never the build's
+/// features — a cuda build whose device could not serve ran on the CPU, and the
+/// gate used to print "GPU" for it (and "hybrid" for a MoE file).
+#[cfg(feature = "inference")]
+fn runtime_backend_label(gpu_runs: usize, runs: usize) -> &'static str {
+    match (gpu_runs, runs) {
+        (_, 0) => "runtime entry point, no timed run",
+        (g, r) if g == r => "runtime entry point, GPU on every timed run",
+        (0, _) => "runtime entry point, CPU on every timed run",
+        _ => "runtime entry point, MIXED GPU/CPU timed runs",
+    }
 }
 
 /// Gate 2 for an architecture the dense loader refuses: the same falsifiable
@@ -168,14 +185,9 @@ fn run_throughput_gate_runtime(path: &Path, config: &QaConfig) -> Result<GateRes
 
     #[cfg(feature = "inference")]
     {
-        let tps = throughput_runtime(path, config)?;
+        let (tps, backend) = throughput_runtime(path, config)?;
         let threshold = throughput_threshold(config.min_tps, realizar::format::ModelFormat::Gguf);
         let duration = start.elapsed();
-        let backend = if cfg!(feature = "cuda") {
-            "hybrid forward, GPU #3090"
-        } else {
-            "hybrid forward, CPU #3091"
-        };
         let message = format!(
             "{tps:.1} tok/s {} {threshold:.0} tok/s threshold ({backend})",
             if tps >= threshold { ">=" } else { "<" }
@@ -245,10 +257,10 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
         GGUFModel, MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig,
     };
 
-    let model_bytes = std::fs::read(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-    let gguf = GGUFModel::from_bytes(&model_bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+    // #3750: one map; the tokenizer comes from its header, not from a whole-file read
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let gguf = &mapped.model;
 
     let prompt = "Write a function to check if a number is prime:";
     let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
@@ -270,8 +282,6 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
     #[cfg(not(feature = "cuda"))]
     let cuda_available = false;
 
-    let mapped = MappedGGUFModel::from_path(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
 
@@ -416,10 +426,10 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> R
         QuantizedGenerateConfig,
     };
 
-    let model_bytes = std::fs::read(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-    let gguf = GGUFModel::from_bytes(&model_bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+    // #3750: one map; the tokenizer comes from its header, not from a whole-file read
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let gguf = &mapped.model;
 
     let prompt = "Write a function to calculate factorial:";
     let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
@@ -433,8 +443,6 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> R
     let budget_us = config.max_tokens as u64 * config.iterations as u64 * 100_000;
 
     // CPU throughput
-    let mapped = MappedGGUFModel::from_path(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
     let (cpu_tps, _) = measure_generate_throughput(
@@ -501,9 +509,10 @@ fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             ));
         }
 
-        let model_bytes = std::fs::read(path)
+        // #3750: the format from the 8-byte magic, never the whole model
+        let magic = super::model_header::read_prefix(path, 8)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-        let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
+        let format = detect_format(&magic)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
         if format != ModelFormat::Gguf {
             return Ok(GateResult::skipped(

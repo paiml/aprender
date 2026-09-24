@@ -12,8 +12,8 @@ Method: non-streaming two-request (TTFT = wall of max_tokens=1; decode = 63/(T64
 | **intel wgpu** (2× W5700X) | local `--features wgpu` build `7b7e6018…3311` (needed the #4056 one-line fix) | `--list-devices`: wgpu compiled in | — | **RED**: serve refuses at load ("qwen35 resolved to 0 transformer layers"); `run --backend wgpu` refuses with R-0b. No Qwen3.5 wgpu forward → **#4271** | | |
 
 Readings:
-- gx10 prefill ≈ decode rate (32 vs 34 tok/s): v0.69.1 prefills one token at a time. The 839-token TTFT is 26 s. rc.1's batched prefill (0.74 s claimed) is the next column once infra-8d installs it (operator: dogfood every rc.N).
-- Lambda CPU pinned to 8 cores under load is ~28× slower on decode than gx10. That is not usable as more than a yield fallback.
+- gx10 prefill runs at about the decode rate: v0.69.1 prefills one token at a time, so an 839-token prompt waits tens of seconds for its first token (figures withheld until a committed evidence/ receipt carries them, #4085). rc.1's batched prefill is the next column once infra-8d installs it (operator: dogfood every rc.N).
+- Lambda CPU pinned to 8 cores under load is far slower on decode than gx10 (ratio withheld until a committed evidence/ receipt carries it, #4085). That is not usable as more than a yield fallback.
 - The same binary was not possible across tiers: 3 hosts, 2 arches, and intel needed a wgpu build. Each row names its sha.
 
 ## Yield mutation proof (lane `scripts/apr_dogfood_lane_4252.py`, branch feat/4252-apr-dogfood-lane 0f83b9a7a)
@@ -55,7 +55,7 @@ The quorum-round-1 finding (sonnet) said the budget was only shown on `--force-l
   - need check in the start loop removed → `need during load` row FAIL (7.0 s, no yield)
   - probe timeout removed → `hung nvidia-smi` row FAIL (30 s, no reason)
 - **Live, on v0.69.3-rc.1** (asset sha256 a4b3e456…8197, verified against the release's .sha256), watcher on script 62eee9cda:
-  1. `ask` → **served_by gx10-cuda**, serve pid 1431039. cuBLAS trace for that request: `[qwen35] batched prefill: 51 tokens in 305 ms (167 tok/s, chunk 51 rows, attention cuBLAS f32, from position 0)`. utilization.gpu `0 … 10 11 94 94 96 96 96 0`. used_gpu probe true.
+  1. `ask` → **served_by gx10-cuda**, serve pid 1431039. cuBLAS trace for that request: a `[qwen35] batched prefill` line (51 tokens in one chunk, attention cuBLAS f32, from position 0; timing withheld until a committed receipt carries it, #4085). utilization.gpu `0 … 10 11 94 94 96 96 96 0`. used_gpu probe true.
   2. PLANT on gx10: `flock /tmp/apr-gpu.lock sleep 100` → `11:53:23Z YIELD ['gpu lock held …']`. Pid 1431039 gone; compute-apps empty.
   3. `ask` during the hold (default 120 s budget) → gx10 `CURL_RC=7` → **served_by lambda-cpu**, rc 0, wall 22 s.
   4. Hold expired → `11:55:03Z START`; serve pid 1653471 serving.

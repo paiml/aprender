@@ -123,6 +123,16 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
             printf 'none\tledger of steps moved to guards-nightly.yml; exact-match against that workflow, a name that is not a step FAILS there\n' ;;
         duplicate_bin_names_allowlist.txt)
             printf 'none\tintent model, exact-match against the observed set (stale entries FAIL)\n' ;;
+        # #4023. coverage-solo.txt EXCLUDES NOTHING: its tests still run and are still
+        # measured, each in its own process, so growth cannot hide a line of coverage.
+        coverage-solo.txt)
+            printf 'none\tprocess-isolation list for make coverage; every entry still runs and is measured\n' ;;
+        # coverage-skips.txt DOES remove tests from coverage. Its own header requires a
+        # MEASURED reason written next to each entry, and entries are exact test paths, so
+        # each line is a reviewed claim. A shrink-only ratchet would be stricter; it can
+        # only be armed once the file exists on origin/main (#4023 adds it there).
+        coverage-skips.txt)
+            printf 'none\tintent model: exact test paths, each with a measured reason in the file (reviewed per entry)\n' ;;
         *) return 1 ;;
     esac
 }

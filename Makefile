@@ -456,9 +456,18 @@ tier4: tier3
 # ============================================================================
 # COVERAGE TARGETS (Two-Phase Pattern from bashrs)
 # ============================================================================
-# Pattern: bashrs/Makefile - Two-phase coverage with mold linker workaround
-# CRITICAL: mold linker breaks LLVM coverage instrumentation
-# Solution: Temporarily move ~/.cargo/config.toml during coverage runs
+# #3839: these targets used to `mv ~/.cargo/config.toml` aside for the whole run
+# (the bashrs "mold breaks LLVM coverage" workaround). That renames a file every
+# other cargo process of this user reads, so on a shared host it silently changes
+# other agents' builds mid-run. No fleet host has a global config (checked
+# 2026-09-23: lambda, intel, yoga, gx10), so the move was a no-op there. Instead,
+# COV_REFUSE_GLOBAL_MOLD refuses to measure where a global config enables mold,
+# and never edits it.
+COV_REFUSE_GLOBAL_MOLD = @if [ -f "$${CARGO_HOME:-$$HOME/.cargo}/config.toml" ] && grep -q mold "$${CARGO_HOME:-$$HOME/.cargo}/config.toml"; then \
+	echo "❌ $${CARGO_HOME:-$$HOME/.cargo}/config.toml enables mold, which breaks LLVM coverage instrumentation."; \
+	echo "   Refusing rather than moving a file every other cargo process on this host reads (issue 3839)."; \
+	echo "   Run with CARGO_HOME pointing at a copy without mold, or remove mold from that file."; \
+	exit 1; fi
 
 # Exclusion patterns for coverage reports
 # ONLY excludes truly external/feature-gated code - all apr subcommands INCLUDED
@@ -476,10 +485,14 @@ tier4: tier3
 #   Test infrastructure:
 #     - test_factory      : Test code, not production
 #     - demo/             : Demo/example code
-# NOTE: Coverage tracks the main aprender library only.
-# Subcrate tests still RUN (--workspace), exercising main lib code paths,
-# but subcrate source files are excluded from the coverage REPORT.
-# External deps (trueno, realizar, .cargo) also excluded.
+# NOTE (#3839): coverage measures the MONOREPO. #4023 scopes every report by a derived
+# `-p` list, so aprender-serve/-train/-compute (formerly realizar/entrenar/trueno) are
+# measured. The pre-monorepo `trueno|realizar/|entrenar/` alternatives were removed: in-tree
+# `entrenar/` matched 0 files, `realizar/` 7 unrelated aprender-train files, and `trueno`
+# 54/56 of aprender-zram while missing aprender-compute entirely.
+#   aprender-compute/src/backends/gpu/ : no coverage runner executes it (no GPU lane), so it
+#   is kept out of the denominator until one exists - excluded AND unrun, never "measured 0%".
+# Named subcrates below (apr-cli, aprender-shell, ...) and .cargo stay excluded.
 # Subcrate code, external deps, and modules requiring external model files for coverage.
 # models/ = dead code per UCBD §9.1 (scheduled for deletion).
 # serialization/ = SafeTensors IO (needs actual .safetensors files).
@@ -489,7 +502,7 @@ tier4: tier3
 # format/rosetta = cross-format parity (needs model files).
 # transfer/ = transfer learning (needs pretrained models).
 # bench/ = benchmark visualization (non-core).
-COVERAGE_EXCLUDE_REGEX := \.cargo/|trueno|realizar/|entrenar/|fuzz/|golden_traces/|hf_hub/|demo/|test_factory|pacha/|showcase/|apr-cli/|aprender-shell/|aprender-tsp/|aprender-monte-carlo/|chaos\.rs|audio/|format/quantize\.rs|format/signing\.rs|voice/|playback\.rs|rustlib/src/rust|models/|serialization/|speech/|format/onnx|format/converter|format/rosetta|transfer/|bench_viz/
+COVERAGE_EXCLUDE_REGEX := \.cargo/|aprender-compute/src/backends/gpu/|fuzz/|golden_traces/|hf_hub/|demo/|test_factory|pacha/|showcase/|apr-cli/|aprender-shell/|aprender-tsp/|aprender-monte-carlo/|chaos\.rs|audio/|format/quantize\.rs|format/signing\.rs|voice/|playback\.rs|rustlib/src/rust|models/|serialization/|speech/|format/onnx|format/converter|format/rosetta|transfer/|bench_viz/
 
 # Coverage threshold (enforced: fail if below)
 COV_THRESHOLD := 95
@@ -505,7 +518,13 @@ COV_THRESHOLD := 95
 # So the enforced condition is "do not regress below what we actually have".
 # Raise this number whenever a run comes in higher; never lower it to make red
 # go away. Integer truncation gives ~0.78pt of headroom before 88 becomes 87.
-COV_FLOOR := 88
+# 2026-09-23, #4023: 88 -> 89. The first COMPLETE measurement (every aprender-serve process
+# exited normally; coverage-nightly run 35908686532) was 849871/941605 = 90.26%. 89 is a
+# ratchet with margin, since 90 would leave no room for noise; it goes to 90 once two
+# consecutive nightlies measure >= 90.5% (release-cop ruling).
+COV_FLOOR := 89
+# #4023: libtest threads for aprender-serve's `gpu` coverage shard (25.9 GB at 22 on yoga).
+COV_GPU_SHARD_THREADS ?= 4
 
 # NVMe target dir (mirrors cargo() shell function that sets CARGO_TARGET_DIR)
 # Without this, Make's subshell bypasses the function and uses ./target/ instead
@@ -535,8 +554,11 @@ COV_CARGO_ENV := $(if $(COV_TARGET_DIR),CARGO_TARGET_DIR=$(COV_TARGET_DIR))
 #   two-phase, unscoped report  -> LH=0   LF=0    (empty)
 #   report --summary-only -p A -p B -> LH=686 LF=737  (93.08%)
 #   single-phase --lcov --output-path -> LH=686 LF=737  (93.08%)
-# Single-phase is chosen over an explicit -p list because the invocation that selects the
-# scope is the one that writes the report, so the two cannot drift apart again. profraw
+# #4023 brings two-phase BACK, deliberately: aprender-serve's lib tests cannot run in one
+# process on a 28 GB runner (#4028), so they run as several --no-report processes and one
+# report merges them. It is safe because every report is now scoped by an explicit `-p` list
+# DERIVED from `cargo metadata` (scripts/coverage_report_scope.py), the verified alternative
+# above, and scripts/check_coverage_report_scoped.sh refuses any unscoped `llvm-cov report`. profraw
 # survive it (31 present afterwards), so coverage-html still has data to work from.
 .PHONY: coverage-check contracts census
 
@@ -620,38 +642,121 @@ contracts:
 	@echo "== contract engine tests =="
 	@cargo test -p aprender-contracts --lib 2>&1 | grep -E "test result" | tail -1
 
+# #3839: skips are EXACT full test paths from scripts/coverage-skips.txt, one reason
+# per entry. They used to be 19 --skip substrings that removed 2,713 tests (2,702 of
+# which pass without a GPU), so the number measured a subset over the whole denominator.
 coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@echo "📊 Running coverage ($(COV_THRESHOLD)%+ threshold)..."
+	@# #4023: refuse before any test runs if a `llvm-cov report` anywhere would cover only the facade.
+	@scripts/check_coverage_report_scoped.sh
 	@which cargo-llvm-cov > /dev/null 2>&1 || { cargo install cargo-llvm-cov --locked || exit 1; }
-	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.bak || true
+	$(COV_REFUSE_GLOBAL_MOLD)
 	@# Pre-clean: remove stale profraw files to avoid LLVM version mismatch
 	@COVDIR=$$($(COV_CARGO_ENV) cargo llvm-cov show-env 2>/dev/null | grep CARGO_LLVM_COV_TARGET_DIR | sed "s/.*=//"); \
 	if [ -n "$$COVDIR" ]; then find "$$COVDIR" -name '*.profraw' -delete 2>/dev/null || true; fi
 	@mkdir -p target/coverage
+	@rm -f target/coverage/lcov.info target/coverage/test.log target/coverage/failed-tests.txt
 	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
-	@echo "🧪 Tests with instrumentation + report in ONE invocation (CB-127-A: cargo llvm-cov test, not nextest)..."
+	@# #4023: aprender-serve's lib tests run as SEVERAL processes. In one process they build up
+	@# memory across tests (#4028: 30 GB single-threaded, 45 GB at 22 threads on gx10) and earlyoom
+	@# SIGTERMed them on yoga's 28 GB box (run 35868368976); one module group per process peaks
+	@# <= 7.8 GB. EVERY run is --no-report and ONE `cargo llvm-cov report` merges them: a run WITH a
+	@# report cleans the earlier profiles (measured: the first run's coverage fell to 0).
+	@echo "🧪 Workspace lib tests except aprender-serve (instrumented, --no-report)..."
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
-		$(COV_CARGO_ENV) cargo llvm-cov test \
-		--workspace --exclude aprender-gpu --lib \
-		--lcov --output-path target/coverage/lcov.info \
-		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
-		-- --skip prop_gbm_expected_value --skip slow --skip heavy --skip h12_ --skip j2_ \
-		   --skip falsification --skip chaos --skip disconnect --skip benchmark_parity \
-		   --skip qwen2_generation --skip qwen2_golden --skip qwen2_weight --skip load_test \
-		   --skip spec_checklist_w --skip spec_checklist_u --skip verify_audio --skip g9_roofline \
-		   --skip cuda --skip gpu_ \
-		|| { test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml; exit 1; }
+		$(COV_CARGO_ENV) cargo llvm-cov test --no-report \
+		--workspace --exclude aprender-gpu --exclude aprender-serve --lib --ignore-run-fail \
+		-- --exact $$(sed -e '/^#/d' -e '/^[[:space:]]*$$/d' -e 's/^/--skip /' scripts/coverage-skips.txt) \
+		2>&1 | tee target/coverage/test.log; \
+	rc=$${PIPESTATUS[0]}; \
+	if [ "$$rc" -ne 0 ]; then \
+		echo "❌ coverage DID NOT MEASURE: cargo llvm-cov exited $$rc on the workspace run (build failure;"; \
+		echo "   with --ignore-run-fail a failing test alone does not stop it). No coverage verdict."; \
+		exit 1; \
+	fi
+	@echo "🧪 aprender-serve lib tests, one process per module group (instrumented, --no-report)..."
+	@rm -rf target/coverage/serve-shards
+	@$(COV_CARGO_ENV) cargo llvm-cov test --no-report -p aprender-serve --lib -- --list \
+		> target/coverage/serve-list.txt 2>> target/coverage/test.log || \
+		{ echo "❌ coverage DID NOT MEASURE: could not list aprender-serve's lib tests. No coverage verdict."; exit 1; }
+	@python3 scripts/coverage_serve_shards.py target/coverage/serve-list.txt scripts/coverage-skips.txt \
+		target/coverage/serve-shards scripts/coverage-solo.txt
+	@# scripts/coverage-solo.txt: run FIRST, each in its OWN process, and print its test binary's peak RSS
+	@# (RUSAGE_CHILDREN.ru_maxrss), so a later skip carries a measured per-test reason.
+	@: > target/coverage/failed-runs.txt; \
+	for solo in target/coverage/serve-shards/solo-*.txt; do \
+		[ -e "$$solo" ] || continue; \
+		t=$$(cat $$solo); \
+		PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
+			$(COV_CARGO_ENV) python3 -c 'import resource, subprocess, sys; rc = subprocess.call(sys.argv[2:]); print("coverage-solo-maxrss", resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss, "KB", sys.argv[1], "rc=%d" % rc, flush=True); sys.exit(rc)' \
+			"$$t" cargo llvm-cov test --no-report -p aprender-serve --lib --ignore-run-fail -- --exact "$$t" \
+			2>&1 | tee -a target/coverage/test.log; \
+		rc=$${PIPESTATUS[0]}; \
+		[ "$$rc" -eq 0 ] || echo "solo $$t rc=$$rc" >> target/coverage/failed-runs.txt; \
+	done
+	@# The `gpu` module builds up memory in one process on yoga (25.9 GB at 22 threads, 26.5 GB at 4;
+	@# runs 35881004821, 35885731831), so the partitioner chunks it into <= 200-test processes, which
+	@# also run at COV_GPU_SHARD_THREADS. EVERY shard runs even if one fails, so a dispatch yields the
+	@# whole picture; any failure then means no verdict, naming each failed shard.
+	@for shard in target/coverage/serve-shards/shard-*.txt; do \
+		threads=""; case "$$shard" in *-gpu.*.txt) threads="--test-threads=$(COV_GPU_SHARD_THREADS)" ;; esac; \
+		echo "   $$shard ($$(wc -l < $$shard) tests) $$threads"; \
+		PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
+			$(COV_CARGO_ENV) cargo llvm-cov test --no-report -p aprender-serve --lib --ignore-run-fail \
+			-- --exact $$threads $$(cat $$shard) 2>&1 | tee -a target/coverage/test.log; \
+		rc=$${PIPESTATUS[0]}; \
+		echo "   coverage-shard-rc $$rc $$shard"; \
+		[ "$$rc" -eq 0 ] || echo "shard $$shard rc=$$rc" >> target/coverage/failed-runs.txt; \
+	done
+	@if [ -s target/coverage/failed-runs.txt ]; then \
+		echo "❌ coverage DID NOT MEASURE: these aprender-serve runs failed (every one was still run):"; \
+		sed 's/^/     /' target/coverage/failed-runs.txt; \
+		echo "   No coverage verdict."; \
+		exit 1; \
+	fi
+	@echo "📊 Merging every run's profiles into one report..."
+	@# `--workspace --exclude aprender-gpu` is REQUIRED: the root Cargo.toml is also a package (the
+	@# `apr` facade), and an unqualified `report` covers ONLY the root package. Proof run
+	@# 35892421393 printed "Finished report saved" and then found no (non-empty) lcov. Measured with
+	@# cargo-llvm-cov 0.9.0 (CI's version) on a root-package workspace: without --workspace the
+	@# lcov held only src/lib.rs; with it, every member.
+	@# SCOPE IS EXPLICIT: an unscoped `report` covers only the root facade (empty lcov, run
+	@# 35892421393 and the single-phase note above); `report --exclude` is rejected by 0.9.0 (run
+	@# 35901458111) and `report --workspace` by older versions. A derived `-p` list works on both.
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py --exclude aprender-gpu) \
+		--lcov --output-path $(CURDIR)/target/coverage/lcov.info \
+		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" 2>&1 | tee -a target/coverage/test.log; \
+	rc=$${PIPESTATUS[0]}; \
+	echo "   lcov: $$(ls -la $(CURDIR)/target/coverage/lcov.info 2>&1)"; \
+	echo "   lcov files under the workspace: $$(find $(CURDIR) -name lcov.info -newer target/coverage/.exclude-re 2>/dev/null | tr '\n' ' ')"; \
+	echo "   profraw files: $$(find $${CARGO_TARGET_DIR:-$(CURDIR)/target} -name '*.profraw' 2>/dev/null | wc -l)"; \
+	if [ "$$rc" -ne 0 ]; then echo "❌ coverage DID NOT MEASURE: the merged report step exited $$rc. No coverage verdict."; exit 1; fi
+	@# #3839: --ignore-run-fail keeps one failing test from blanking the number (the 2026-09-23
+	@# nightly wrote no lcov because of one timing test). Failures are LISTED, not hidden, and
+	@# every test run here is also run by CI's workspace-test, which fails on them.
+	@grep -E '^test .* \.\.\. FAILED$$' target/coverage/test.log | sed -e 's/^test //' -e 's/ \.\.\. FAILED$$//' | sort -u > target/coverage/failed-tests.txt || true
+	@# A test BINARY killed by a signal (earlyoom SIGTERMed aprender-serve at 25.7 GB on yoga, run
+	@# 35868368976) is swallowed by --ignore-run-fail, and its crate's profile is missing from the
+	@# lcov: that run printed "76% ... REGRESSION" with the largest crate absent. No verdict then.
+	@scripts/check_coverage_log_complete.sh target/coverage/test.log
 	@echo "📊 Parsing LCOV for the threshold check..."
 	@# Parse LCOV for line coverage (LH=lines hit, LF=lines found)
-	@LH=$$(awk -F: '/^LH:/{s+=$$2} END{print s+0}' target/coverage/lcov.info); \
+	@if [ ! -s target/coverage/lcov.info ]; then echo "❌ coverage DID NOT MEASURE: no lcov.info was written. No coverage verdict."; exit 1; fi; \
+	LH=$$(awk -F: '/^LH:/{s+=$$2} END{print s+0}' target/coverage/lcov.info); \
 	LF=$$(awk -F: '/^LF:/{s+=$$2} END{print s+0}' target/coverage/lcov.info); \
-	if [ "$$LF" -gt 0 ]; then COV_PCT=$$((LH * 100 / LF)); else COV_PCT=0; fi; \
+	if [ "$$LF" -eq 0 ]; then echo "❌ coverage DID NOT MEASURE: lcov.info has 0 instrumented lines. No coverage verdict."; exit 1; fi; \
+	COV_PCT=$$((LH * 100 / LF)); \
+	NFAIL=$$(wc -l < target/coverage/failed-tests.txt); \
 	echo "TOTAL: $$LH/$$LF lines covered ($${COV_PCT}%)"; \
-	echo "TOTAL $$LH $$LF $${COV_PCT}%" > target/coverage/summary.txt; \
+	echo "TOTAL $$LH $$LF $${COV_PCT}% failed_tests=$$NFAIL" > target/coverage/summary.txt; \
+	if [ "$$NFAIL" -gt 0 ]; then \
+		echo "⚠  $$NFAIL test(s) FAILED in the instrumented run (measured anyway; CI workspace-test gates them):"; \
+		sed 's/^/     /' target/coverage/failed-tests.txt; \
+		sed 's/^/FAILED /' target/coverage/failed-tests.txt >> target/coverage/summary.txt; \
+	fi; \
 	mkdir -p .pmat-metrics || exit 1; \
 	printf '{"coverage_pct":%s}' "$$COV_PCT" > .pmat-metrics/coverage.result; \
 	echo "   wrote .pmat-metrics/coverage.result ($${COV_PCT}%) for pmat score"; \
-	test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml || true; \
 	if [ "$$COV_PCT" -lt "$(COV_FLOOR)" ]; then \
 		echo "❌ REGRESSION: coverage $${COV_PCT}% fell below the enforced floor $(COV_FLOOR)%"; \
 		echo "   The floor is the last measured value, so this means coverage went DOWN."; \
@@ -677,12 +782,11 @@ coverage-fast: coverage
 # gate anything - unlike `coverage`, whose 0% fed the >=95% threshold check.
 coverage-html: ## Generate HTML + LCOV reports from last coverage run
 	@echo "📊 Generating HTML + LCOV reports..."
-	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.bak || true
+	$(COV_REFUSE_GLOBAL_MOLD)
 	@mkdir -p target/coverage
 	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
-	@$(COV_CARGO_ENV) cargo llvm-cov report --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
-	@$(COV_CARGO_ENV) cargo llvm-cov report --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
-	@test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml || true
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py --exclude aprender-gpu) --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py --exclude aprender-gpu) --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 	@echo "📍 HTML: target/coverage/html/index.html"
 
 # Full coverage: All features (for CI, slower)
@@ -690,18 +794,17 @@ coverage-html: ## Generate HTML + LCOV reports from last coverage run
 coverage-full: ## Full coverage report (all features, CI only)
 	@echo "📊 Running full coverage analysis (all features)..."
 	@which cargo-llvm-cov > /dev/null 2>&1 || { cargo install cargo-llvm-cov --locked || exit 1; }
-	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.bak || true
+	$(COV_REFUSE_GLOBAL_MOLD)
 	@mkdir -p target/coverage
 	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 CARGO_BUILD_JOBS=4 \
 		$(COV_CARGO_ENV) cargo llvm-cov test --no-report --workspace --lib --all-features \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
 		-- --skip prop_gbm_expected_value --skip slow --skip heavy --skip benchmark --skip h12_ --skip j2_
-	@$(COV_CARGO_ENV) cargo llvm-cov report --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
-	@$(COV_CARGO_ENV) cargo llvm-cov report --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py) --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py) --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 	@echo ""
-	@$(COV_CARGO_ENV) cargo llvm-cov report --summary-only --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
-	@test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml || true
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py) --summary-only --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 
 # Open coverage report in browser
 coverage-open: ## Open HTML coverage report in browser
