@@ -200,21 +200,37 @@ fn check(
         Some(serde_json::Value::String(s)) => parse_ref(t, s)?,
         _ => return Err("no string `ref` — a snapshot names the moment it records".into()),
     };
+    check_version(t, &map, &r)?;
+    check_identity(&map, &r, file)?;
+    check_fields(t, &map)?;
+    Ok((r, map))
+}
+
+/// The ref's `@<version>` agrees with the snapshot's own version field.
+fn check_version(
+    t: &SnapshotType,
+    map: &serde_json::Map<String, serde_json::Value>,
+    r: &Ref,
+) -> Result<(), String> {
     match text_of(map.get(&t.version)) {
-        None => {
-            return Err(format!(
-                "no `{}` field — the ref's `@{}` has nothing to agree with",
-                t.version, r.version
-            ))
-        }
-        Some(recorded) if recorded != r.version => {
-            return Err(format!(
-                "ref version `{}` disagrees with the snapshot's own `{}` `{recorded}`",
-                r.version, t.version
-            ))
-        }
-        Some(_) => {}
+        None => Err(format!(
+            "no `{}` field — the ref's `@{}` has nothing to agree with",
+            t.version, r.version
+        )),
+        Some(recorded) if recorded != r.version => Err(format!(
+            "ref version `{}` disagrees with the snapshot's own `{}` `{recorded}`",
+            r.version, t.version
+        )),
+        Some(_) => Ok(()),
     }
+}
+
+/// The ref's owner/repo and number agree with the snapshot's own fields, and the file is named by its slug.
+fn check_identity(
+    map: &serde_json::Map<String, serde_json::Value>,
+    r: &Ref,
+    file: &str,
+) -> Result<(), String> {
     let owner_repo = format!("{}/{}", r.owner, r.repo);
     for key in ["nameWithOwner", "repo"] {
         if let Some(v) = text_of(map.get(key)).filter(|v| *v != owner_repo) {
@@ -240,6 +256,14 @@ fn check(
             r.slug()
         ));
     }
+    Ok(())
+}
+
+/// A merge carries its time, and every reference key names its target by string.
+fn check_fields(
+    t: &SnapshotType,
+    map: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), String> {
     let merged = text_of(map.get("state")).is_some_and(|s| s.eq_ignore_ascii_case("merged"));
     let merged_at = text_of(map.get("mergedAt")).is_some_and(|s| !s.trim().is_empty());
     if merged && !merged_at {
@@ -249,18 +273,19 @@ fn check(
         );
     }
     for (ty, key, _) in RESOLVES {
-        if ty == t.name {
-            match map.get(key) {
-                None | Some(serde_json::Value::Null | serde_json::Value::String(_)) => {}
-                Some(other) => {
-                    return Err(format!(
-                        "`{key}` must name a snapshot by string, found `{other}`"
-                    ))
-                }
+        if ty != t.name {
+            continue;
+        }
+        match map.get(key) {
+            None | Some(serde_json::Value::Null | serde_json::Value::String(_)) => {}
+            Some(other) => {
+                return Err(format!(
+                    "`{key}` must name a snapshot by string, found `{other}`"
+                ))
             }
         }
     }
-    Ok((r, map))
+    Ok(())
 }
 
 /// One accepted snapshot, waiting for the resolve pass.
@@ -332,6 +357,20 @@ fn extract_files(
         by_type: types.iter().map(|t| (t.name.clone(), 0)).collect(),
         ..GithubStats::default()
     };
+    let accepted = accept(files, types, &mut stats);
+    let tracked = tracked_refs(&accepted, types);
+    for a in accepted {
+        emit(a, types, &tracked, g, &mut stats);
+    }
+    stats
+}
+
+/// The per-snapshot checks and the one-identity-one-moment rule; every refusal lands on `stats.errors`.
+fn accept(
+    files: &[(String, String, Result<String, String>)],
+    types: &[SnapshotType],
+    stats: &mut GithubStats,
+) -> Vec<Accepted> {
     let mut accepted: Vec<Accepted> = Vec::new();
     let mut seen: BTreeSet<(usize, String)> = BTreeSet::new();
     for (ty_name, file, text) in files {
@@ -349,97 +388,129 @@ fn extract_files(
             .as_ref()
             .map_err(Clone::clone)
             .and_then(|text| check(&types[ty], file, text));
-        match checked {
-            Err(what) => stats.errors.push(refuse(what)),
-            Ok((r, map)) => {
-                if !seen.insert((ty, r.identity())) {
-                    stats.errors.push(refuse(format!(
-                        "a second snapshot of `{}` — one identity, one tracked moment",
-                        r.identity()
-                    )));
-                    continue;
-                }
-                accepted.push(Accepted {
-                    ty,
-                    file: file.clone(),
-                    r,
-                    map,
-                });
+        let (r, map) = match checked {
+            Err(what) => {
+                stats.errors.push(refuse(what));
+                continue;
             }
+            Ok(ok) => ok,
+        };
+        if !seen.insert((ty, r.identity())) {
+            stats.errors.push(refuse(format!(
+                "a second snapshot of `{}` — one identity, one tracked moment",
+                r.identity()
+            )));
+            continue;
         }
+        accepted.push(Accepted {
+            ty,
+            file: file.clone(),
+            r,
+            map,
+        });
     }
-    // identity → full ref, per type: what a reference may resolve to
+    accepted
+}
+
+/// identity → full ref, per type: what a reference may resolve to.
+fn tracked_refs<'t>(
+    accepted: &[Accepted],
+    types: &'t [SnapshotType],
+) -> BTreeMap<&'t str, BTreeMap<String, String>> {
     let mut tracked: BTreeMap<&str, BTreeMap<String, String>> = BTreeMap::new();
-    for a in &accepted {
+    for a in accepted {
         let full = format!("{}@{}", a.r.identity(), a.r.version);
         let per = tracked.entry(types[a.ty].name.as_str()).or_default();
         per.insert(a.r.identity(), full.clone());
         per.insert(full.clone(), full);
     }
-    for a in accepted {
-        let t = &types[a.ty];
-        let mut map = a.map;
-        let mut edges: Vec<(String, String, Option<String>)> = Vec::new();
-        for (ty, key, target) in RESOLVES {
-            if ty != t.name {
-                continue;
-            }
-            if let Some(serde_json::Value::String(v)) = map.remove(key) {
-                let hit = tracked.get(target).and_then(|m| m.get(&v)).cloned();
-                edges.push((key.to_string(), v, hit));
-            } else {
-                map.remove(key);
-            }
-        }
-        let vocab = Vocabulary {
-            prefix: t.prefix.clone(),
-            root_class: t.root_class.clone(),
-            nested: Vec::new(),
-        };
-        let id = format!("{}@{}", a.r.identity(), a.r.version);
-        let mut staged = Graph::new();
-        if let Err(e) = node(
-            &mut staged,
-            &a.file,
-            &id,
-            &t.root_class,
-            true,
-            &serde_json::Value::Object(map),
-            &vocab,
-        ) {
-            stats.errors.push(Refusal {
-                file: a.file,
-                what: e.to_string(),
-            });
+    tracked
+}
+
+/// One accepted snapshot as a typed node plus its reference edges, staged so a refused node leaves no triple.
+fn emit(
+    a: Accepted,
+    types: &[SnapshotType],
+    tracked: &BTreeMap<&str, BTreeMap<String, String>>,
+    g: &mut Graph,
+    stats: &mut GithubStats,
+) {
+    let t = &types[a.ty];
+    let mut map = a.map;
+    let mut edges: Vec<(String, String, Option<String>)> = Vec::new();
+    for (ty, key, target) in RESOLVES {
+        if ty != t.name {
             continue;
         }
-        let s = iri(&t.prefix, &id);
-        for (key, value, hit) in edges {
-            let target_ty = RESOLVES
-                .iter()
-                .find(|(ty, k, _)| *ty == t.name && *k == key)
-                .map(|(_, _, target)| *target)
-                .unwrap_or_default();
-            match (hit, types.iter().find(|x| x.name == target_ty)) {
-                (Some(full), Some(tt)) => staged.insert(
-                    s.clone(),
-                    expand(&format!("{}:{key}", t.prefix)),
-                    Term::iri(iri(&tt.prefix, &full)),
-                ),
-                _ => {
-                    stats.unresolved += 1;
-                    staged.insert(
-                        s.clone(),
-                        expand(&format!("{}:{key}{UNRESOLVED_SUFFIX}", t.prefix)),
-                        Term::string(value),
-                    );
-                }
-            }
+        if let Some(serde_json::Value::String(v)) = map.remove(key) {
+            let hit = tracked.get(target).and_then(|m| m.get(&v)).cloned();
+            edges.push((key.to_string(), v, hit));
+        } else {
+            map.remove(key);
         }
-        g.extend(&staged);
-        *stats.by_type.entry(t.name.clone()).or_default() += 1;
     }
-    stats
+    let vocab = Vocabulary {
+        prefix: t.prefix.clone(),
+        root_class: t.root_class.clone(),
+        nested: Vec::new(),
+    };
+    let id = format!("{}@{}", a.r.identity(), a.r.version);
+    let mut staged = Graph::new();
+    if let Err(e) = node(
+        &mut staged,
+        &a.file,
+        &id,
+        &t.root_class,
+        true,
+        &serde_json::Value::Object(map),
+        &vocab,
+    ) {
+        stats.errors.push(Refusal {
+            file: a.file,
+            what: e.to_string(),
+        });
+        return;
+    }
+    let s = iri(&t.prefix, &id);
+    for (key, value, hit) in edges {
+        insert_edge(&mut staged, types, t, &s, &key, value, hit, stats);
+    }
+    g.extend(&staged);
+    *stats.by_type.entry(t.name.clone()).or_default() += 1;
+}
+
+/// A resolved reference is an IRI edge to the target's node; an unresolved one is `<key>Unresolved`, counted.
+#[allow(clippy::too_many_arguments)]
+fn insert_edge(
+    staged: &mut Graph,
+    types: &[SnapshotType],
+    t: &SnapshotType,
+    s: &str,
+    key: &str,
+    value: String,
+    hit: Option<String>,
+    stats: &mut GithubStats,
+) {
+    let target_ty = RESOLVES
+        .iter()
+        .find(|(ty, k, _)| *ty == t.name && *k == key)
+        .map(|(_, _, target)| *target)
+        .unwrap_or_default();
+    match (hit, types.iter().find(|x| x.name == target_ty)) {
+        (Some(full), Some(tt)) => staged.insert(
+            s.to_string(),
+            expand(&format!("{}:{key}", t.prefix)),
+            Term::iri(iri(&tt.prefix, &full)),
+        ),
+        _ => {
+            stats.unresolved += 1;
+            staged.insert(
+                s.to_string(),
+                expand(&format!("{}:{key}{UNRESOLVED_SUFFIX}", t.prefix)),
+                Term::string(value),
+            );
+        }
+    }
 }
 
 /// The types as Σ declares them — the controls' fixture, so they run without reading `contracts/`.

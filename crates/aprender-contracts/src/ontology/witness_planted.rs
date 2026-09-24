@@ -189,65 +189,82 @@ pub fn satisfiable(cs: &ClauseSet, n: usize) -> bool {
 /// Cores aimed at a consistent graph. None of them may check.
 pub fn adversarial_cores(rng: &mut Rng, cs: &ClauseSet, n: usize) -> Vec<WitnessResult> {
     let mut out = Vec::new();
+    // Draw order per round is fixed: derivation, then its closing conflict, then the random sequence.
     for _ in 0..12 {
-        // A derivation that is valid step by step: units, then implications whose premise is derived.
-        let mut steps = Vec::new();
-        let mut derived: Vec<String> = Vec::new();
-        for u in &cs.units {
-            if rng.coin() || derived.is_empty() {
-                steps.push(Step::Unit(u.clone()));
-                derived.push(u.clone());
-            }
-        }
-        for _ in 0..n {
-            let from: Vec<&(String, String)> = cs
-                .implies
-                .iter()
-                .filter(|(a, b)| derived.contains(a) && !derived.contains(b))
-                .collect();
-            if from.is_empty() {
-                break;
-            }
-            let (a, b) = from[rng.below(from.len())].clone();
-            steps.push(Step::Implies(a, b.clone()));
-            derived.push(b);
-        }
-        // Close it on: two derived ids (conflict or not), a real conflict clause, or any two ids at all.
-        let pick = |rng: &mut Rng, d: &[String]| d[rng.below(d.len())].clone();
-        let conflict = match rng.below(3) {
-            0 => {
-                let x = pick(rng, &derived);
-                (x, pick(rng, &derived))
-            }
-            1 if !cs.conflicts.is_empty() => {
-                let all: Vec<&(String, String)> = cs.conflicts.iter().collect();
-                all[rng.below(all.len())].clone()
-            }
-            _ => {
-                let x = var(rng.below(n));
-                (x, var(rng.below(n)))
-            }
-        };
+        let (steps, derived) = valid_derivation(rng, cs, n);
+        let conflict = closing_conflict(rng, cs, &derived, n);
         out.push(WitnessResult::UnsatCore(Core { steps, conflict }));
-        // And a sequence drawn at random, in and out of the graph.
-        let random: Vec<Step> = (0..=rng.below(n))
-            .map(|_| {
-                if rng.coin() {
-                    Step::Unit(var(rng.below(n)))
-                } else {
-                    Step::Implies(var(rng.below(n)), var(rng.below(n)))
-                }
-            })
-            .collect();
-        out.push(WitnessResult::UnsatCore(Core {
-            steps: random,
-            conflict: {
-                let x = var(rng.below(n));
-                (x, var(rng.below(n)))
-            },
-        }));
+        out.push(WitnessResult::UnsatCore(random_core(rng, n)));
     }
     out
+}
+
+/// A derivation that is valid step by step: units, then implications whose premise is derived.
+fn valid_derivation(rng: &mut Rng, cs: &ClauseSet, n: usize) -> (Vec<Step>, Vec<String>) {
+    let mut steps = Vec::new();
+    let mut derived: Vec<String> = Vec::new();
+    for u in &cs.units {
+        if rng.coin() || derived.is_empty() {
+            steps.push(Step::Unit(u.clone()));
+            derived.push(u.clone());
+        }
+    }
+    for _ in 0..n {
+        let from: Vec<&(String, String)> = cs
+            .implies
+            .iter()
+            .filter(|(a, b)| derived.contains(a) && !derived.contains(b))
+            .collect();
+        if from.is_empty() {
+            break;
+        }
+        let (a, b) = from[rng.below(from.len())].clone();
+        steps.push(Step::Implies(a, b.clone()));
+        derived.push(b);
+    }
+    (steps, derived)
+}
+
+/// Close it on: two derived ids (conflict or not), a real conflict clause, or any two ids at all.
+fn closing_conflict(
+    rng: &mut Rng,
+    cs: &ClauseSet,
+    derived: &[String],
+    n: usize,
+) -> (String, String) {
+    let pick = |rng: &mut Rng, d: &[String]| d[rng.below(d.len())].clone();
+    match rng.below(3) {
+        0 => {
+            let x = pick(rng, derived);
+            (x, pick(rng, derived))
+        }
+        1 if !cs.conflicts.is_empty() => {
+            let all: Vec<&(String, String)> = cs.conflicts.iter().collect();
+            all[rng.below(all.len())].clone()
+        }
+        _ => {
+            let x = var(rng.below(n));
+            (x, var(rng.below(n)))
+        }
+    }
+}
+
+/// A sequence drawn at random, in and out of the graph.
+fn random_core(rng: &mut Rng, n: usize) -> Core {
+    let steps: Vec<Step> = (0..=rng.below(n))
+        .map(|_| {
+            if rng.coin() {
+                Step::Unit(var(rng.below(n)))
+            } else {
+                Step::Implies(var(rng.below(n)), var(rng.below(n)))
+            }
+        })
+        .collect();
+    let x = var(rng.below(n));
+    Core {
+        steps,
+        conflict: (x, var(rng.below(n))),
+    }
 }
 
 /// Models aimed at a contradicted graph: every one of the 2ⁿ when n is small, and random ones otherwise.
