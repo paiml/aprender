@@ -369,3 +369,75 @@ mod gpu {
         assert_eq!(t2.tokens, one_shot_gpu(&mapped, &p2, &config));
     }
 }
+
+// #4255: the two #4247 branches no GPU test reaches — the prefill that does not
+// fit, and the prefill that fails. Pure, so they run in CPU `workspace-test`.
+
+const MIB: u64 = 1 << 20;
+
+fn plan(
+    free: u64,
+    need: impl FnMut(&'static str, usize) -> u64,
+) -> std::result::Result<(&'static str, usize), String> {
+    choose_prefill_plan(free, &["cublas", "flash"], &[512, 128], need, |a| a)
+}
+
+#[test]
+fn prefill_plan_that_fits_nowhere_is_refused_naming_every_candidate() {
+    let why = plan(100 * MIB, |_, rows| rows as u64 * MIB).expect_err("512 and 128 MiB > 100 MiB");
+    assert_eq!(
+        why,
+        "cublas at 512 rows needs 512 MiB, cublas at 128 rows needs 128 MiB, \
+         flash at 512 rows needs 512 MiB, flash at 128 rows needs 128 MiB; 100 MiB free"
+    );
+}
+
+#[test]
+fn prefill_plan_takes_the_first_fit_attention_major() {
+    // Every candidate fits: the first one is apr run's choice.
+    assert_eq!(plan(u64::MAX, |_, _| MIB), Ok(("cublas", 512)));
+    // Only the smaller chunk fits under cuBLAS: fewer rows beat a different attention.
+    assert_eq!(
+        plan(200 * MIB, |_, rows| rows as u64 * MIB),
+        Ok(("cublas", 128))
+    );
+    // cuBLAS fits nowhere; flash at the big chunk does.
+    let need = |a: &str, rows: usize| if a == "flash" { rows as u64 } else { u64::MAX };
+    assert_eq!(plan(1024, need), Ok(("flash", 512)));
+}
+
+#[test]
+fn prefill_plan_boundary_need_equal_to_free_fits() {
+    assert_eq!(plan(512 * MIB, |_, _| 512 * MIB), Ok(("cublas", 512)));
+    assert!(plan(512 * MIB - 1, |_, _| 512 * MIB).is_err());
+}
+
+#[test]
+fn prefill_plan_with_no_candidates_is_refused() {
+    let why = choose_prefill_plan::<&str>(u64::MAX, &[], &[512], |_, _| 0, |a| a)
+        .expect_err("no attention to try");
+    assert!(why.ends_with("MiB free"), "{why}");
+}
+
+#[test]
+fn failed_batched_prefill_is_a_gpu_step_so_the_session_moves_to_the_cpu() {
+    match batched_prefill_outcome::<&str>(Err("CUDA_ERROR_OUT_OF_MEMORY"), 851, 17) {
+        Err(Step::Gpu(why)) => assert_eq!(
+            why,
+            "the GPU batched prefill of 851 tokens at position 17 failed: CUDA_ERROR_OUT_OF_MEMORY"
+        ),
+        Err(Step::Fatal(e)) => {
+            panic!("a prefill failure must fall back to the CPU, not end the turn: {e}")
+        },
+        Ok(logits) => panic!("a failed prefill returned {} logits", logits.len()),
+    }
+}
+
+#[test]
+fn successful_batched_prefill_returns_its_logits_unchanged() {
+    match batched_prefill_outcome::<&str>(Ok(vec![0.5, -1.0, 2.0]), 3, 0) {
+        Ok(logits) => assert_eq!(logits, [0.5, -1.0, 2.0]),
+        Err(Step::Gpu(why)) => panic!("an Ok prefill became a GPU failure: {why}"),
+        Err(Step::Fatal(e)) => panic!("an Ok prefill became a fatal error: {e}"),
+    }
+}
