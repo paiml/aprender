@@ -111,9 +111,9 @@ fn the_guard_halves_are_inside_validate_and_never_double_counted() {
 fn a_planted_delay_lands_in_its_own_stage_and_in_no_other() {
     // THE falsifier of this row. Plant 200 ms in h2d; h2d must move and the others must not.
     let plant = 200.0;
-    let (_, h2d) = with_delay(Some("h2d:200"), || timed("h2d", || {}));
-    let (_, load) = with_delay(Some("h2d:200"), || timed("load", || {}));
-    let (_, prefill) = with_delay(Some("h2d:200"), || timed("prefill", || {}));
+    let ((), h2d) = with_delay(Some("h2d:200"), || timed("h2d", || {}));
+    let ((), load) = with_delay(Some("h2d:200"), || timed("load", || {}));
+    let ((), prefill) = with_delay(Some("h2d:200"), || timed("prefill", || {}));
 
     assert!(
         h2d >= plant,
@@ -130,7 +130,7 @@ fn a_planted_delay_lands_in_its_own_stage_and_in_no_other() {
 #[test]
 fn no_plant_means_no_delay_the_control_for_the_control() {
     // Without this, a `timed` that always slept would pass the case above.
-    let (_, h2d) = with_delay(None, || timed("h2d", || {}));
+    let ((), h2d) = with_delay(None, || timed("h2d", || {}));
     assert!(h2d < 100.0, "unplanted stage slept anyway: {h2d} ms");
 }
 

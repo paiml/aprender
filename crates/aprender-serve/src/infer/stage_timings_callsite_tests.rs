@@ -119,7 +119,7 @@ fn plant_lands_in_its_stage(
                 why.push(format!("{f} moved {:.1} ms (tolerance {TOL_MS} ms)", p - b));
             },
             (None, Some(p)) => {
-                why.push(format!("{f} appeared ({p:.1} ms) only in the planted run"))
+                why.push(format!("{f} appeared ({p:.1} ms) only in the planted run"));
             },
             (Some(_), None) => why.push(format!("{f} vanished in the planted run")),
             _ => {},
@@ -143,7 +143,7 @@ fn plant_lands_nowhere(
     for f in FIELDS {
         match (field(base, f), field(planted, f)) {
             (Some(b), Some(p)) if (p - b).abs() > TOL_MS => {
-                why.push(format!("{f} moved {:.1} ms", p - b))
+                why.push(format!("{f} moved {:.1} ms", p - b));
             },
             (None, Some(_)) => why.push(format!("{f} appeared")),
             (Some(_), None) => why.push(format!("{f} vanished")),
