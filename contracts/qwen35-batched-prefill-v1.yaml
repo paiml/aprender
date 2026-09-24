@@ -49,45 +49,45 @@ proof_obligations:
   - id: PO-QBP-001
     kind: equivalence
     statement: "The chunk scan is bitwise-equal to T per-token launches for the 0.8B, 9B and 27B head shapes."
-    discharged_by: FALSIFY-QBP-SCAN-BITWISE
+    discharged_by: FALSIFY-QBP-001
   - id: PO-QBP-002
     kind: equivalence
     statement: "The conv1d/L2/gates/RoPE row kernels are bitwise-equal to their per-token twins."
-    discharged_by: FALSIFY-QBP-ROWS-BITWISE
+    discharged_by: FALSIFY-QBP-002
   - id: PO-QBP-003
     kind: equivalence
     statement: "Batched prefill agrees with the per-token path on logits and every state buffer, in one call and split, and decode continues identically."
-    discharged_by: FALSIFY-QBP-PREFILL-EQ
+    discharged_by: FALSIFY-QBP-003
   - id: PO-QBP-005
     kind: equivalence
     statement: "The flash kernel matches exact attention over f16 inputs for the 0.8B, 9B and 27B head shapes, with a cached prefix, a partial block and dozens of key tiles; the flash prefill matches the per-token path within its budget."
-    discharged_by: FALSIFY-QBP-FLASH
+    discharged_by: FALSIFY-QBP-005
   - id: PO-QBP-004
     kind: safety
     statement: "A request that cannot fit is refused with its budget before any upload; a co-tenant-caused refusal is distinguishable from a device limit."
-    discharged_by: FALSIFY-QBP-CAPACITY-TABLE
+    discharged_by: FALSIFY-QBP-004
 falsification_tests:
-  - id: FALSIFY-QBP-SCAN-BITWISE
+  - id: FALSIFY-QBP-001
     rule: "Chunk scan is the per-token recurrence"
     prediction: "Every output and the final state of one scan launch over T tokens are bitwise-equal to T per-token launches"
     test: "cargo test -p aprender-gpu --features cuda --lib gdn_chunk_scan"
     if_fails: "The scan reordered an accumulation, contracted differently, or mis-addressed a token row or head"
-  - id: FALSIFY-QBP-ROWS-BITWISE
+  - id: FALSIFY-QBP-002
     rule: "Row twins are their per-token kernels"
     prediction: "conv1d over a chunk, L2 rows, gates rows and RoPE rows equal row-by-row per-token launches bitwise"
     test: "cargo test -p aprender-gpu --features cuda --lib -- gdn_conv1d_seq gdn_rows"
     if_fails: "A row stride, a per-row position or a per-head index is wrong"
-  - id: FALSIFY-QBP-PREFILL-EQ
+  - id: FALSIFY-QBP-003
     rule: "Batched prefill is the per-token path"
     prediction: "Identical argmax, cosine >= 0.99999, logits and every state buffer within 1e-4 relative: one call, split, and after a decode step"
     test: "cargo test -p aprender-serve --features cuda --lib qwen35_prefill"
     if_fails: "A layer op, a KV row write, the attention base offset or the chunking is wrong"
-  - id: FALSIFY-QBP-CAPACITY-TABLE
+  - id: FALSIFY-QBP-004
     rule: "Capacity refuses before loading, classified"
     prediction: "Each case-table row yields its stated f32 / f16 / co_tenant / f16_decode_unavailable / exceeds_device verdict; the 262k-beside-a-co-tenant row takes flash only because f32 does not fit, the 20k row takes f32"
     test: "cargo test -p aprender-serve --lib capacity:: && cargo test -p aprender-serve --features cuda --lib qwen35_prefill_attention_prefers"
     if_fails: "The budget arithmetic or the refusal classification is wrong"
-  - id: FALSIFY-QBP-FLASH
+  - id: FALSIFY-QBP-005
     rule: "Flash attention is causal attention"
     prediction: "The kernel is within 2e-3 of an f64 reference over f16-rounded inputs, and the flash prefill within the flash budget of the per-token path"
     test: "cargo test -p aprender-gpu --features cuda --lib gdn_flash_prefill && cargo test -p aprender-serve --features cuda --lib qwen35_flash_prefill"
@@ -103,4 +103,4 @@ qa_gate:
     - capacity_table
     - flash_attention
   pass_criteria: "All 5 falsification tests pass on every architecture the path ships on (sm_89, sm_121)"
-  falsification: "Scale the scan's output immediate by 1.0001: FALSIFY-QBP-SCAN-BITWISE must go RED (measured 2026-09-21: RED at flat index 0)"
+  falsification: "Scale the scan's output immediate by 1.0001: FALSIFY-QBP-001 must go RED (measured 2026-09-21: RED at flat index 0)"
