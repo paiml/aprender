@@ -21,6 +21,7 @@
 #  14. a self-referential CRUX_MUTANT_DIFF_BASE is an unreadable diff, never 'untouched'
 #  15. no runner setting makes a zero-mutant run pass: floor 0, CRUX_NO_MUTANTS, CRUX_MUTANTS=none,
 #      CRUX_JUDGE_OVERRIDE (+ CRUX_NO_MUTANTS), CRUX_MIN_TABLE_ROWS=0
+#  16. every floor 1-5 refused, 6 accepted; a MUTANT off-by-one bound (floor < 1) is seen
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
@@ -183,6 +184,23 @@ out=$( cd "$P1" && CRUX_MUTANTS_PLAN_ONLY=1 CRUX_MIN_TABLE_ROWS=0 timeout 600 ba
 out2=$( cd "$P1" && CRUX_MUTANTS_PLAN_ONLY=1 CRUX_MIN_TABLE_ROWS=100000 timeout 600 bash scripts/check_crux_inference_judge.sh 2>&1 | grep -c 'under the floor of 100000' )
 [ "$out:$out2" = "0:1" ] && ok "CRUX_MIN_TABLE_ROWS raises the row floor but 0 cannot lower it below 120 (the table stays above it)" \
   || broke "row floor env: lowering '$out' (want 0 BROKE since the table is above 120), raising '$out2' (want 1)"
+
+# Row 16b: EVERY floor under the minimum is refused, not only 0 — 0 is also caught by the empty-selection path, so a
+# regression of the bound to `floor < 1` stayed green while a real run executed 1 of 24 (round 6, lane 2, measured).
+# And a MUTANT of exactly that off-by-one must be seen.
+bad=""
+for f in 1 2 3 4 5; do
+  r=$(pl "$PLAN" --event pull_request --changed "$TMP/none.txt" --head "$HEAD_A" --sample "$f" --floor "$f")
+  [ "$r" = "REFUSED 2" ] || bad="$bad $f"
+done
+ok6=$(pl "$PLAN" --event pull_request --changed "$TMP/none.txt" --head "$HEAD_A" --sample 6 --floor 6)
+sed 's/^    if floor < MIN_FLOOR:$/    if floor < 1:/' "$PLAN" > "$TMP/mutant-floor.py"
+if cmp -s "$PLAN" "$TMP/mutant-floor.py"; then mf="ANCHOR MOVED"; else
+  mf=$(pl "$TMP/mutant-floor.py" --event pull_request --changed "$TMP/none.txt" --head "$HEAD_A" --sample 1 --floor 1); fi
+case "$bad|$ok6|$mf" in
+  "|sample 6 "*"|sample 1 "*) ok "floors 1-5 are each refused, 6 is accepted; a MUTANT bound (floor < 1) is seen accepting a 1-mutant sample" ;;
+  *) broke "floor bound: refused-missing for [$bad ], floor 6 '$ok6', mutant '$mf'" ;;
+esac
 
 # Row 12: the sourced lib leaves its caller's globals alone (it once set PROG and REPO_ROOT in the caller's shell).
 g=$( PROG=caller-prog; REPO_ROOT=caller-root; . "$ROOT/scripts/lib/crux_mutant_plan.sh" \
