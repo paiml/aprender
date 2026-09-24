@@ -174,13 +174,19 @@ fn falsify_ship_009_apr_metadata_applies_to_model_1_teacher() {
 /// `apr stamp` fixture-swap on the canonical lambda-labs staging
 /// artifact). Falsifier: if the contract is edited to drop AC-SHIP1-009
 /// binding or downgrade the discharge marker, this test fails.
-#[cfg(aprender_monorepo)] // #4130: reads the repo-root contracts/, absent from the published .crate
 #[test]
 fn falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker() {
-    const CONTRACT_YAML: &str = include_str!("../../../../../contracts/apr-provenance-v1.yaml");
+    // #4130: read at RUN time — the published .crate carries no repo-root contracts/.
+    let Some(contract_yaml_owned) = crate::test_support::workspace_contract_or_skip(
+        "falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker",
+        "apr-provenance-v1.yaml",
+    ) else {
+        return;
+    };
+    let contract_yaml: &str = &contract_yaml_owned;
 
     let doc: serde_yaml::Value =
-        serde_yaml::from_str(CONTRACT_YAML).expect("apr-provenance-v1.yaml must parse as YAML");
+        serde_yaml::from_str(contract_yaml).expect("apr-provenance-v1.yaml must parse as YAML");
 
     let gates = doc["gates"]
         .as_sequence()

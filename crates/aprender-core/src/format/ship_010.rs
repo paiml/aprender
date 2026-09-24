@@ -435,12 +435,18 @@ mod ship_010_tests {
     /// Falsifier: if the contract is edited to drop the live-evidence
     /// block or downgrade the discharge marker, this test fails before
     /// any network I/O is launched.
-    #[cfg(aprender_monorepo)] // #4130: reads the repo-root contracts/, absent from the published .crate
     #[test]
     fn falsify_ship_010_yaml_binding_pins_discharged_status() {
-        const CONTRACT_YAML: &str = include_str!("../../../../contracts/publish-manifest-v1.yaml");
+        // #4130: read at RUN time — the published .crate carries no repo-root contracts/.
+        let Some(contract_yaml_owned) = crate::test_support::workspace_contract_or_skip(
+            "falsify_ship_010_yaml_binding_pins_discharged_status",
+            "publish-manifest-v1.yaml",
+        ) else {
+            return;
+        };
+        let contract_yaml: &str = &contract_yaml_owned;
 
-        let doc: serde_yaml::Value = serde_yaml::from_str(CONTRACT_YAML)
+        let doc: serde_yaml::Value = serde_yaml::from_str(contract_yaml)
             .expect("publish-manifest-v1.yaml must parse as YAML");
 
         let falsifications = doc["falsification_tests"]
