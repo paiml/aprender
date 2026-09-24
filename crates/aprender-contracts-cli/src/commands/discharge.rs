@@ -239,6 +239,8 @@ pub(crate) fn run_all(
     let tree = Tree::load(lean_dir).ok();
     let s = summary::summarize(&r, tree.as_ref(), lean_dir, tree_sha(lean_dir), build_exit);
     let spath = summary::summary_path(lean_dir);
+    // The summary first: the log is built after it, so a summary that cannot be written is in the log's verdict.
+    write_or_reject(&mut r, &spath, Ok(s.render()));
     let log = RunLog {
         verdict: if r.reject {
             "reject"
@@ -251,22 +253,23 @@ pub(crate) fn run_all(
         lines: &r.lines,
         summary: &s,
     };
-    let lpath = lean_dir.join(LOG_FILE);
-    let log_text = serde_json::to_string_pretty(&log).map(|t| t + "\n");
-    for (p, text) in [
-        (&spath, Ok(s.render())),
-        (&lpath, log_text.map_err(|e| e.to_string())),
-    ] {
-        match text.and_then(|t| std::fs::write(p, t).map_err(|e| e.to_string())) {
-            Ok(()) => r.lines.push(format!("wrote {}", p.display())),
-            Err(e) => {
-                r.lines
-                    .push(format!("FAIL  cannot write {}: {e}", p.display()));
-                r.reject = true;
-            }
+    let log_text = serde_json::to_string_pretty(&log)
+        .map(|t| t + "\n")
+        .map_err(|e| e.to_string());
+    write_or_reject(&mut r, &lean_dir.join(LOG_FILE), log_text);
+    verdict(r, lean_dir)
+}
+
+/// Write `text` to `p`, or record the failure and reject the run.
+fn write_or_reject(r: &mut Report, p: &Path, text: Result<String, String>) {
+    match text.and_then(|t| std::fs::write(p, t).map_err(|e| e.to_string())) {
+        Ok(()) => r.lines.push(format!("wrote {}", p.display())),
+        Err(e) => {
+            r.lines
+                .push(format!("FAIL  cannot write {}: {e}", p.display()));
+            r.reject = true;
         }
     }
-    verdict(r, lean_dir)
 }
 
 /// `<lean-dir>/discharge.json`, the untracked full log of one `run`: the verdict, every line, and the summary.
@@ -1185,5 +1188,9 @@ mod tests {
             &contracts,
             lc()
         )));
+        // The log is written after the summary, so it carries the failed write and the reject (EV-8a quorum).
+        let log = std::fs::read_to_string(lean.join(LOG_FILE)).expect("the log is still written");
+        assert!(log.contains("\"verdict\": \"reject\""), "{log}");
+        assert!(log.contains("cannot write"), "{log}");
     }
 }
