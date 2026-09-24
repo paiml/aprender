@@ -388,6 +388,34 @@ mod tests {
                 Some("v0.69.1"),
             ),
             (
+                "R13 a Hand-smoke: FAIL line is not installable",
+                vec![
+                    rel(
+                        "v0.69.3-rc.1",
+                        true,
+                        false,
+                        "Hand-smoke: FAIL apr-v0.69.3-rc.1-x86_64-unknown-linux-gnu-cuda.tar.gz used_gpu=false",
+                        true,
+                    ),
+                    r0691.clone(),
+                ],
+                Some("v0.69.1"),
+            ),
+            (
+                "R14 the line the release driver writes (aprender-36's format)",
+                vec![
+                    rel(
+                        "v0.69.3-rc.1",
+                        true,
+                        false,
+                        "Pre-release.\nHand-smoke: PASS apr-v0.69.3-rc.1-x86_64-unknown-linux-gnu-cuda.tar.gz sha256=ab12 version=apr 0.69.3-rc.1 commit=7ff50ec2a==tag used_gpu=true\n",
+                        true,
+                    ),
+                    r0691.clone(),
+                ],
+                Some("v0.69.3-rc.1"),
+            ),
+            (
                 "R12 nothing eligible",
                 vec![nightly, rel("v0.69.3-rc.1", true, false, unsmoked, true)],
                 None,
