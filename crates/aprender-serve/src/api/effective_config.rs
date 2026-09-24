@@ -512,7 +512,8 @@ pub struct EffectiveConfigResponse {
     pub server: ServerReport,
     /// The dispatch path this process will take, from residency (PP-2).
     pub compute_class: &'static str,
-    /// `realizar`'s own `cfg!` feature list.
+    /// `realizar`'s own `cfg!` feature list, less any GPU backend the launching CLI
+    /// cannot dispatch to (#4254) — so it agrees with `apr serve run --list-devices`.
     pub build_features: Vec<&'static str>,
     /// The launching CLI's `cfg!` feature list, when it supplied one (§9 #8).
     pub build_features_cli: Option<Vec<String>>,
@@ -556,6 +557,30 @@ pub fn build_features() -> Vec<&'static str> {
     features
 }
 
+/// #4254: `realizar` compiles wgpu by default (`gpu`), but `apr serve` routes to it only
+/// when the CLI was built with its own `wgpu` feature. The v0.69.1 `-cpu` asset reported
+/// `gpu` here while `--list-devices` said "NO accelerator compiled in" and
+/// `--backend wgpu` refused. A backend the launcher cannot dispatch to is not reported.
+/// With no CLI list (a library embedder), the library's own list stands.
+#[must_use]
+pub fn dispatchable_build_features(
+    library: Vec<&'static str>,
+    cli: Option<&[String]>,
+) -> Vec<&'static str> {
+    let Some(cli) = cli else {
+        return library;
+    };
+    let has = |f: &str| cli.iter().any(|c| c == f);
+    library
+        .into_iter()
+        .filter(|f| match *f {
+            "gpu" => has("wgpu"),
+            "cuda" => has("cuda"),
+            _ => true,
+        })
+        .collect()
+}
+
 /// Backends resident in this `AppState`, in dispatch order.
 ///
 /// Derived from what is actually loaded. `has_cuda_model()` and friends are the
@@ -564,11 +589,22 @@ pub fn build_features() -> Vec<&'static str> {
 #[must_use]
 pub fn backend_loaded(state: &AppState) -> Vec<&'static str> {
     let mut loaded: Vec<&'static str> = Vec::new();
+    // #4254: the #3571 hybrid (Qwen3.5) session is resident on its own — neither the
+    // quantized model nor a CUDA executor slot is set — so it reported `[]`/`unknown`
+    // on both the CPU and the CUDA build while `/health` (which reads the session)
+    // said `cpu`/`gpu`. Its only GPU path is CUDA (#4271: no wgpu path).
+    let qwen35_on_gpu = state
+        .qwen35_session()
+        .map(|s| s.on_gpu.load(std::sync::atomic::Ordering::Relaxed));
+    if qwen35_on_gpu == Some(true) {
+        loaded.push("cuda");
+    }
     #[cfg(feature = "cuda")]
     {
-        if state.has_cuda_model()
+        if (state.has_cuda_model()
             || state.safetensors_cuda_model().is_some()
-            || state.apr_q4k_tx().is_some()
+            || state.apr_q4k_tx().is_some())
+            && !loaded.contains(&"cuda")
         {
             loaded.push("cuda");
         }
@@ -577,7 +613,10 @@ pub fn backend_loaded(state: &AppState) -> Vec<&'static str> {
     if state.has_gpu_model() || state.has_cached_model() {
         loaded.push("wgpu");
     }
-    if state.quantized_model().is_some() || state.apr_transformer().is_some() {
+    if state.quantized_model().is_some()
+        || state.apr_transformer().is_some()
+        || qwen35_on_gpu == Some(false)
+    {
         loaded.push("cpu");
     }
     loaded
@@ -671,7 +710,13 @@ pub fn effective_config(state: &AppState) -> EffectiveConfigResponse {
             server
         },
         compute_class: compute_class_from_residency(state),
-        build_features: build_features(),
+        build_features: dispatchable_build_features(
+            build_features(),
+            effective
+                .offload
+                .as_ref()
+                .map(|o| o.build_features.as_slice()),
+        ),
         build_features_cli: effective.offload.as_ref().map(|o| o.build_features.clone()),
         backend_loaded: backend_loaded(state),
         model: ModelReport::from_state(state),
@@ -803,6 +848,38 @@ impl Default for EffectiveConfigState {
 #[cfg(test)]
 mod effective_config_tests {
     use super::*;
+
+    fn cli(features: &[&str]) -> Vec<String> {
+        features.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    /// #4254: the v0.69.1 CPU asset advertised `build_features: [..., "gpu"]`
+    /// because aprender-serve's `gpu` feature is on by default, while the
+    /// binary had no wgpu dispatch. The CLI's own list decides what dispatches.
+    #[test]
+    fn dispatchable_build_features_drops_what_the_cli_cannot_dispatch_4254() {
+        let lib = vec!["cpu", "gpu", "cuda"];
+        // The CPU asset: the CLI was built with neither `wgpu` nor `cuda`.
+        assert_eq!(
+            dispatchable_build_features(lib.clone(), Some(&cli(&["inference"]))),
+            vec!["cpu"]
+        );
+        assert_eq!(
+            dispatchable_build_features(lib.clone(), Some(&cli(&["inference", "cuda"]))),
+            vec!["cpu", "cuda"]
+        );
+        assert_eq!(
+            dispatchable_build_features(lib.clone(), Some(&cli(&["wgpu"]))),
+            vec!["cpu", "gpu"]
+        );
+        // No CLI list (a library embedder): the library's list stands.
+        assert_eq!(dispatchable_build_features(lib.clone(), None), lib);
+        // The filter only removes, never invents a feature the library lacks.
+        assert_eq!(
+            dispatchable_build_features(vec!["cpu"], Some(&cli(&["cuda", "wgpu"]))),
+            vec!["cpu"]
+        );
+    }
 
     fn report(autofit: &[&str], explicit: &[&str]) -> OffloadReport {
         OffloadReport {
