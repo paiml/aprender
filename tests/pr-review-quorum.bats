@@ -775,8 +775,10 @@ path_without_jq() {
   local nojq; nojq=$(path_without_jq)
   run env PATH="$nojq" bash -c 'command -v jq'
   [ "$status" -ne 0 ] || { echo "control: the shim still resolves jq at $output"; return 1; }
-  run env PATH="$nojq" bash "$ARM" --pr 1 --receipt-dir "$FIX/q-05-receipt-unparseable"
+  run env PATH="$nojq" bash "$ARM" --pr 1 --receipt "$FIX/q-05-receipt-unparseable"
   echo "rc=$status"; echo "$output"
   [ "$status" -eq 2 ]
   [[ "$output" =~ "ENV - cannot run:".*" jq"( |\.|$) ]]
+  # stopped at the tool check, not at argument parsing or the receipt read
+  [[ ! "$output" =~ (unknown argument|receipt) ]]
 }
