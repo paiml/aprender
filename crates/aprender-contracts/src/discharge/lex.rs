@@ -256,6 +256,13 @@ mod tests {
     }
 
     #[test]
+    fn a_string_ends_at_its_closing_quote_past_escaped_quotes() {
+        // exactly the literal is blanked: `\"` does not close it, the closing `"` does, and `b` after it survives
+        assert_eq!(blank("a \"x\\\"y\" b"), "a        b");
+        assert_eq!(blank("a \"x"), "a   ");
+    }
+
+    #[test]
     fn a_line_comment_ends_at_its_own_newline_wherever_it_starts() {
         assert_eq!(blank("ab -- c\nd e\n"), "ab     \nd e\n");
     }
