@@ -20610,3 +20610,51 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4275
+  github_issue: 4275
+  item_type: task
+  title: 'binary-release smoke: strip -rc.N and bind the asset to its commit'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T14:17:31Z
+  updated: 2026-09-24T14:17:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4285
+  github_issue: 4285
+  item_type: task
+  title: 'rc cut: tag vX.Y.Z-rc.N on every green merge to release/X.Y.Z'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T14:01:18Z
+  updated: 2026-09-24T14:01:18Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4286
+  github_issue: 4286
+  item_type: task
+  title: promote rc to final with no rebuild
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T14:17:31Z
+  updated: 2026-09-24T14:17:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
