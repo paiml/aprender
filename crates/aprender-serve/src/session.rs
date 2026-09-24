@@ -329,6 +329,12 @@ impl<F: ArchForward> Session<F> {
             if config.cancel.is_cancelled() {
                 break;
             }
+            // The first token is the prefill's; every later one costs a decode
+            // forward, run only once the poll has passed, so a cancelled turn
+            // never computes a token it throws away (#4325).
+            if generated > 1 {
+                next = self.advance_and_choose(&tokens, config, &mut rng)?.0;
+            }
             tokens.push(next);
             let keep_going = on_token(next);
             if !keep_going || config.stop_tokens.contains(&next) {
@@ -338,7 +344,6 @@ impl<F: ArchForward> Session<F> {
                 context_capped = context_limited;
                 break;
             }
-            next = self.advance_and_choose(&tokens, config, &mut rng)?.0;
         }
         Ok(Turn {
             tokens,
