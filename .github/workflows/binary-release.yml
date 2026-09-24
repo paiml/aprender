@@ -296,6 +296,7 @@ jobs:
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
             -e CARGO_INCREMENTAL=0 \
+            -e APR_GIT_SHA_OVERRIDE="$(git rev-parse --short=9 HEAD)" \
             rust:1.93.0-bullseye \
             sh -c 'set -e; ldd --version | head -1 > /workspace/target/BUILDER_GLIBC; rustc --version > /workspace/target/BUILDER_RUSTC; cargo build --release -p apr-cli --bin apr --target ${{ matrix.target }} --features cuda --locked; strip target/${{ matrix.target }}/release/apr'
           # the mounted target dir is the host cache; expose the binary where the next steps expect it
@@ -441,6 +442,7 @@ jobs:
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
             -e CARGO_INCREMENTAL=0 \
+            -e APR_GIT_SHA_OVERRIDE="$(git rev-parse --short=9 HEAD)" \
             rust:1.93.0-bullseye \
             sh -c 'set -e; ldd --version | head -1 > /workspace/target/BUILDER_GLIBC; rustc --version > /workspace/target/BUILDER_RUSTC; cargo build --release -p apr-cli --bin apr --target ${{ matrix.target }} --locked; strip target/${{ matrix.target }}/release/apr'
           # the mounted target dir is the host cache; expose the binary where the next steps expect it
@@ -710,8 +712,10 @@ jobs:
           sha256sum -c "apr-${TAG}-${T}-cuda.tar.gz.sha256"
           tar xzf "apr-${TAG}-${T}-cuda.tar.gz"
           BIN="$D/apr-${TAG}-${T}-cuda/apr"
-          v=$("$BIN" --version); echo "$v"
-          case "$v" in *"${TAG#v}"*) ;; *) echo "::error::asset reports '$v', not ${TAG#v}"; exit 1 ;; esac
+          v=$("$BIN" --version | head -1); echo "$v"
+          # #4275: X.Y.Z whole (an rc tag's -rc.N stripped) AND the asset's sha is the tag's commit
+          COMMIT=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/commits/$TAG" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')
+          bash "$GITHUB_WORKSPACE/scripts/release/asset_version_check.sh" "$TAG" "$COMMIT" "$v" || { echo "::error::asset reports '$v', which does not belong to $TAG ($COMMIT)"; exit 1; }
           [ "$(grep -ac 'libcuda.so' "$BIN")" -ge 1 ] || { echo "::error::downloaded asset is not a CUDA build"; exit 1; }
           floor=$(objdump -T "$BIN" 2>/dev/null | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1)
           echo "highest GLIBC symbol version required: $floor"
@@ -777,8 +781,10 @@ jobs:
           sha256sum -c "apr-${TAG}-${T}-cpu.tar.gz.sha256"
           tar xzf "apr-${TAG}-${T}-cpu.tar.gz"
           BIN="$D/apr-${TAG}-${T}-cpu/apr"
-          v=$("$BIN" --version); echo "$v"
-          case "$v" in *"${TAG#v}"*) ;; *) echo "::error::asset reports '$v', not ${TAG#v}"; exit 1 ;; esac
+          v=$("$BIN" --version | head -1); echo "$v"
+          # #4275: X.Y.Z whole (an rc tag's -rc.N stripped) AND the asset's sha is the tag's commit
+          COMMIT=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/commits/$TAG" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')
+          bash "$GITHUB_WORKSPACE/scripts/release/asset_version_check.sh" "$TAG" "$COMMIT" "$v" || { echo "::error::asset reports '$v', which does not belong to $TAG ($COMMIT)"; exit 1; }
           n=$(grep -ac 'libcuda.so' "$BIN" || true)
           [ "$n" -eq 0 ] || { echo "::error::the downloaded -cpu asset carries $n libcuda.so string(s) — it is a CUDA build"; exit 1; }
           # The floor is READ on every row and ASSERTED only where the build was
