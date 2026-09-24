@@ -59,8 +59,14 @@ def start_server(args, log):
         cmd = [args.bin, "serve", "run", args.model, "--gpu", "--port", str(args.port),
                "--context-length", ctx, "--trace"]
     else:
-        cmd = [args.bin, "-m", args.model, "--port", str(args.port), "-ngl", "999",
-               "-c", ctx, "--temp", "0", "--parallel", "1", "--no-warmup"]
+        # The pinned comparator's knobs (scripts/llama_bin.sh llama_comparator_server_flags
+        # 999 1), with ONE override: `-c`. Band mode derives -c = c * n_ctx_slot = 1024 at
+        # c=1, which cannot hold the 32k row, so the context is this run's --ctx.
+        flags = args.llama_flags.split()
+        if "-c" not in flags:
+            raise SystemExit("--llama-flags carries no -c; pass the pin's flags verbatim")
+        flags[flags.index("-c") + 1] = ctx
+        cmd = [args.bin, "-m", args.model, "--port", str(args.port), "--temp", "0"] + flags
     proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     deadline = time.monotonic() + 600
     while time.monotonic() < deadline:
@@ -105,6 +111,10 @@ def main():
                     help="repetitions at 32k (apr's 1-token prefill makes n=3 cost ~20 min/model)")
     ap.add_argument("--timeout", type=int, default=1500)
     ap.add_argument("--label", default="")
+    ap.add_argument("--llama-flags", default="",
+                    help="llama engine: the output of llama_comparator_server_flags 999 1")
+    ap.add_argument("--llama-build", default="",
+                    help="llama engine: $LLAMA_BUILD from llama_bin_resolve (the pin proof)")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -123,6 +133,16 @@ def main():
            "foreign_gpu_apps_at_start": foreign, "rows": [], "gen": []}
     ver = subprocess.run([args.bin, "--version"], capture_output=True, text=True)
     rec["version"] = (ver.stdout + ver.stderr).strip().splitlines()[-2:]
+    if args.engine == "llama":
+        # G3 rule: the comparator is llama.cpp d1d3c3396 via scripts/llama_bin.sh, and the
+        # row records the server's own --version. A mismatch is refused, not labelled.
+        if not args.llama_flags or not args.llama_build:
+            raise SystemExit("llama engine needs --llama-flags and --llama-build from llama_bin.sh")
+        rec["llama_bin_resolve_build"] = args.llama_build
+        rec["llama_flags_from_pin"] = args.llama_flags
+        rec["llama_ctx_override"] = args.ctx
+        if not any("d1d3c3396" in line for line in rec["version"]):
+            raise SystemExit(f"llama-server is not the d1d3c3396 pin: {rec['version']}")
     if foreign:
         rec["void"] = "foreign GPU process present at start; not measured"
         json.dump(rec, open(res_path, "w"), indent=1)
