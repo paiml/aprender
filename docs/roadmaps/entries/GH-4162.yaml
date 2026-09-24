@@ -1,0 +1,17 @@
+- id: GH-4162
+  github_issue: 4162
+  item_type: task
+  title: 'P0: measured token usage for the fleet -- Claude Code + agy, by project / model / lane / hour, with the top levers'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T06:55:50.906231018+00:00
+  updated: 2026-09-24T06:55:50.906231018+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  notes: null
