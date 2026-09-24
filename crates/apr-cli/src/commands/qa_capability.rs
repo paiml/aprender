@@ -17,6 +17,66 @@ use std::path::Path;
 use std::time::Duration;
 use std::time::Instant;
 
+/// The GGUF's architecture and (tensor name, GGML type) pairs, or the gate's
+/// verdict when there is nothing to check: an unreadable or tiny file fails, and
+/// a non-GGUF file or a GGUF without architecture metadata passes as not applicable.
+#[allow(clippy::result_large_err)]
+fn gguf_arch_and_tensors_or_verdict(
+    path: &Path,
+    start: Instant,
+) -> std::result::Result<(String, Vec<(String, u32)>), GateResult> {
+    // #3750: the magic here and the header below, never the whole model (17.3 GiB on the 30B)
+    let magic = match super::model_header::read_prefix(path, 4) {
+        Ok(d) => d,
+        Err(e) => {
+            let duration = start.elapsed();
+            return Err(GateResult::failed(
+                "capability_match",
+                &format!("Failed to read model file: {e}"),
+                None,
+                None,
+                duration,
+            ));
+        }
+    };
+
+    if magic.len() < 4 {
+        let duration = start.elapsed();
+        return Err(GateResult::failed(
+            "capability_match",
+            "Model file too small to detect format",
+            None,
+            None,
+            duration,
+        ));
+    }
+
+    // Only check GGUF files — APR/SafeTensors don't carry arch constraints yet
+    if magic.as_slice() != b"GGUF" {
+        let duration = start.elapsed();
+        return Err(GateResult::passed(
+            "capability_match",
+            "Non-GGUF format — capability check not applicable",
+            None,
+            None,
+            duration,
+        ));
+    }
+
+    // Parse GGUF to get architecture string and tensor (name, GGML type) pairs
+    let Some(found) = super::model_header::gguf_arch_and_tensors(path) else {
+        let duration = start.elapsed();
+        return Err(GateResult::passed(
+            "capability_match",
+            "GGUF missing architecture metadata — skipping capability check",
+            None,
+            None,
+            duration,
+        ));
+    };
+    Ok(found)
+}
+
 /// Run the capability match gate.
 ///
 /// Reads the model's architecture string from GGUF metadata, derives the
@@ -42,54 +102,9 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
         );
     }
 
-    // #3750: the magic here and the header below, never the whole model (17.3 GiB on the 30B)
-    let magic = match super::model_header::read_prefix(path, 4) {
-        Ok(d) => d,
-        Err(e) => {
-            let duration = start.elapsed();
-            return Ok(GateResult::failed(
-                "capability_match",
-                &format!("Failed to read model file: {e}"),
-                None,
-                None,
-                duration,
-            ));
-        }
-    };
-
-    if magic.len() < 4 {
-        let duration = start.elapsed();
-        return Ok(GateResult::failed(
-            "capability_match",
-            "Model file too small to detect format",
-            None,
-            None,
-            duration,
-        ));
-    }
-
-    // Only check GGUF files — APR/SafeTensors don't carry arch constraints yet
-    if magic.as_slice() != b"GGUF" {
-        let duration = start.elapsed();
-        return Ok(GateResult::passed(
-            "capability_match",
-            "Non-GGUF format — capability check not applicable",
-            None,
-            None,
-            duration,
-        ));
-    }
-
-    // Parse GGUF to get architecture string and tensor (name, GGML type) pairs
-    let Some((arch, tensors)) = super::model_header::gguf_arch_and_tensors(path) else {
-        let duration = start.elapsed();
-        return Ok(GateResult::passed(
-            "capability_match",
-            "GGUF missing architecture metadata — skipping capability check",
-            None,
-            None,
-            duration,
-        ));
+    let (arch, tensors) = match gguf_arch_and_tensors_or_verdict(path, start) {
+        Ok(found) => found,
+        Err(verdict) => return Ok(verdict),
     };
 
     // PMAT-1098: Check for globally unsupported architectures (like SSM/Gated Delta Net).

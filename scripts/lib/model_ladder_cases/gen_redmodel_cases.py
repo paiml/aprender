@@ -220,11 +220,14 @@ def row(rec, f):
     return next(x for x in lam(rec)["rungs"] if x.get("file") == f)
 
 
-def main():
+def _clear_generated():
     for n in os.listdir(HERE):
         if n.startswith(PREFIXES) and os.path.isdir(os.path.join(HERE, n)):
             shutil.rmtree(os.path.join(HERE, n))
-    # ---------------------------------------------------------------- F9 RED-MODEL
+
+
+def _f9_red_model_cases():
+    # F9 RED-MODEL
     L, rec, crux = build_f9()
     write("green-red-model-proven", L, rec, crux, 0, r"RED-MODEL lambda +Qwen3.5-0.8B-IQ4_XS.gguf +think_never_closed",
           r"FAIL|every required rung green")
@@ -349,7 +352,9 @@ def main():
     L["ladder"]["inventory"]["red_model"][D]["prompts"] = ["think-2plus2", "arith-17x23"]
     write("red-model-named-prompt-unmeasured", L, rec, crux, 1, r"claims the defect on prompt\(s\) \['arith-17x23'\]")
 
-    # ---------------------------------------------------------------- F9 wrong_answer (cop rulings 2026-09-23)
+
+def _f9_wrong_answer_cases():
+    # F9 wrong_answer (cop rulings 2026-09-23)
     L, rec, crux = build_wa()
     write("green-red-model-wrong-answer-identical", L, rec, crux, 0,
           r"RED-MODEL lambda +Qwen3.5-0.8B-UD-IQ2_XXS.gguf +wrong_answer .*apr identical to the llama.cpp CPU reference", r"FAIL")
@@ -405,7 +410,9 @@ def main():
     del L["ladder"]["inventory"]["red_model"][W]["expect"]
     write("red-model-wrong-answer-no-expect", L, rec, crux, 1, r"is a wrong_answer key with no `expect`")
 
-    # ---------------------------------------------------------------- F10 RED-UNSUPPORTED
+
+def _f10_unsupported_cases():
+    # F10 RED-UNSUPPORTED
     L, rec, crux = build_f10()
     write("green-red-unsupported-proven", L, rec, crux, 0,
           r"RED-UNSUPPORTED lambda +Qwen3.5-35B-A3B-UD-IQ4_XS.gguf +qwen35moe", r"FAIL|every required rung green")
@@ -442,6 +449,13 @@ def main():
     L, rec, crux = build_f10()   # a key matching no held file
     L["ladder"]["inventory"]["red_unsupported"]["Qwen4-*-A9B*.gguf"] = {"architecture": "qwen4moe", "ticket": "#3977"}
     write("red-unsupported-key-no-file", L, rec, crux, 1, r"red_unsupported\['Qwen4-\*-A9B\*.gguf'\] matches NO held file")
+
+
+def main():
+    _clear_generated()
+    _f9_red_model_cases()
+    _f9_wrong_answer_cases()
+    _f10_unsupported_cases()
 
 
 if __name__ == "__main__":

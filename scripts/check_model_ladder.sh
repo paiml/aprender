@@ -720,7 +720,7 @@ if [ "$SELF_TEST" = 1 ]; then
       if MODEL_LADDER_CELLS_LIB="$md" bash "$SELF" --self-test --case "$2" > /dev/null 2>&1; then echo "FAIL  cells mutant $1 SURVIVED: case $2 stays ok with the rule deleted"; bad=$((bad+1))
       else printf 'ok    cells mutant %-17s killed by case %s\n' "$1" "$2"; fi
     }
-    cmutant missing-cell    red-cells-missing-cell          's/fails.append(f"{label} MISSING"); failed_somewhere.add(key); continue/continue/'
+    cmutant missing-cell    red-cells-missing-cell          's/return "fail", f"{label} MISSING"/return "refused", None/'
     cmutant cotenant        red-cells-cotenant-refusal      's/if fit and need is not None:/if False:/'
     cmutant passes-nowhere  red-cells-declared-passes-nowhere 's/if not ok and key not in failed_somewhere:/if False:/'
     cmutant think-closed    red-cells-thinking-never-closed 's/if mode == "on" and c.get("think_closed") is not True:/if False:/'
@@ -728,9 +728,9 @@ if [ "$SELF_TEST" = 1 ]; then
     cmutant prompt-short    red-cells-prompt-under-rung     's/if int(c.get("prompt_tokens") or 0) < tok:/if False:/'
     cmutant modes-evidence  red-cells-thinking-modes-disagree-with-template 's/elif want is not None and modes != want:/elif False:/'
     cmutant no-representative red-cells-arch-without-representative 's/        if not r:/        if False:/'
-    cmutant pass-beyond-fit red-cells-pass-beyond-its-arithmetic 's/                            if not fit:/                            if False:/'
+    cmutant pass-beyond-fit red-cells-pass-beyond-its-arithmetic 's/^    if not fit:/    if False:/'
     cmutant family-long     red-cells-missing-cell          's/    if arch in (long_for.get("families") or \[\]):/    if False:/'
-    cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/            if gone:/            if False:/'
+    cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/^        if gone:/        if False:/'
     # #3957 F4/F8: the CRUX join (scripts/lib/model_ladder_crux.py), each rule deleted in a copy
     # imported through MODEL_LADDER_CRUX_LIB; the case that names the rule must go RED.
     xmutant() { # xmutant <label> <case that must kill it> <sed expression deleting the rule>
@@ -805,7 +805,7 @@ if [ "$SELF_TEST" = 1 ]; then
     xmutant greedy-only-skip  green-red-model-wrong-answer-greedy-only-cpu 's/^        if R.get("greedy_only") is True:$/        if False:/'
     xmutant greedy-only-cells red-crux-greedy-only-with-cells 's/^            if R.get("cells"):$/            if False:/'
     xmutant red-model-off-owed red-model-thinking-off-missing 's/^    if red_model and not got:/    if False:/'
-    xmutant unsup-cell-named  green-red-unsupported-proven  's/^                    if named == "RED-UNSUPPORTED" and b in ("cuda", "gpu"):/                    if False:/'
+    xmutant unsup-cell-named  green-red-unsupported-proven  's/^    if named == "RED-UNSUPPORTED" and b in ("cuda", "gpu"):/    if False:/'
     # #3710 ruling 3 / #4022: the scoped-hotfix receipt binding (scripts/lib/ladder_equiv.py), a pure
     # classifier driven by a case table: in scope binds; one stray path, a dependency change in
     # Cargo.lock, or a receipt not at the pinned receipts_at does NOT.
@@ -968,10 +968,10 @@ SM
       else printf 'ok    smoke mutant %-18s killed by the table\n' "$1"; fi
     }
     smutant host-optional     's/^        if h not in seen_hosts:$/        if False:/'
-    smutant model-optional    's/^                if not got:$/                if False:/'
-    smutant red-cells-ok      's/^                if red:$/                if False:/'
-    smutant control-optional  's/^                elif not ctl or any(v != "GREEN" for v in ctl):$/                elif False:/'
-    smutant any-sha           's/^        if asha != cut:$/        if False:/'
+    smutant model-optional    's/^    if not got:$/    if False:/'
+    smutant red-cells-ok      's/^    if red:$/    if False:/'
+    smutant control-optional  's/^    elif not ctl or any(v != "GREEN" for v in ctl):$/    elif False:/'
+    smutant any-sha           's/^    if asha != cut:$/    if False:/'
     smutant any-release       's/^    if str(version) != str(entry\["release"\]):$/    if False:/'
     smutant zero-modes-ok     's/^        if not m:$/        if False:/'
     smutant all-modes-counted 's/^            for mode in matrix\[sha\]:$/            for mode in ("off", "on"):/'
@@ -988,11 +988,11 @@ SM
     vmutant dirty-accepted      's/(\[0-9a-f\]{7,40})\\)\$/([0-9a-f]{7,40})/'
     vmutant mixed-cells-ok      's/^        if v is not None and (not isinstance(v, str) or v.strip() != line.strip()):$/        if False:/'
     # #3710 ruling 1: CRUX coverage scoped to the certified models (model_ladder_crux.py).
-    xmutant uncertified-owes-crux green-uncertified-no-crux 's/^                    elif certified is not None and sha not in certified:$/                    elif False:/'
+    xmutant uncertified-owes-crux green-uncertified-no-crux 's/^    elif certified is not None and sha not in certified:$/    elif False:/'
     xmutant no-cert-relaxes   red-certification-missing 's/^        return None, True$/        return set(), False/'
     xmutant certified-unheld  red-certified-not-held    's/^        if s_ not in held:$/        if False:/'
     xmutant cert-read-as-receipt green-cert-beside-crux-receipts 's/                   if not os.path.basename(f).startswith("prompt-certification")) if crux_dir else \[\]/                   ) if crux_dir else []/'
-    xmutant certified-as-none red-certified-missing-crux 's/^    need = certified is None or bool(held \& certified)$/    need = False; certified = set()/'
+    xmutant certified-as-none red-certified-missing-crux 's/^    index, failed = _crux_index(certified, held, crux_dir, cut, equiv, failed, out)$/    certified = set(); index, failed = _crux_index(certified, held, crux_dir, cut, equiv, failed, out)/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
   fi
   echo "self-test: $n case(s), $bad bad"

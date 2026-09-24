@@ -158,29 +158,51 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     let mut gates = Vec::new();
 
     if !config.json {
-        output::header("APR Quality Assurance");
-        let config_pairs = vec![
-            ("Model", path.display().to_string()),
-            // Report the threshold the gate will actually apply. The banner
-            // used to print the raw `--assert-tps` value while the gate ran
-            // against a tenth of it, so the header contradicted the gate
-            // directly beneath it ("Min TPS 100 tok/s" over
-            // "FAIL Throughput 4.5 tok/s < 10 tok/s threshold").
-            (
-                "Min TPS",
-                match config.min_tps {
-                    Some(asserted) => format!("{asserted:.0} tok/s (--assert-tps)"),
-                    None => "10 tok/s (GGUF default)".to_string(),
-                },
-            ),
-            ("Min Speedup", format!("{:.1}x Ollama", config.min_speedup)),
-        ];
-        println!("{}", output::kv_table(&config_pairs));
+        print_qa_banner(path, config);
     }
 
+    let capability_match_failed = run_structural_gates(&mut gates, path, config)?;
+    run_runtime_gates(&mut gates, path, config, capability_match_failed)?;
+
+    // Gate 9: Performance regression detection (auto-discovers previous report)
+    dispatch_regression_gate(path, &mut gates, config)?;
+
+    let report = finalize_qa_report(path, &start, gates, config)?;
+
+    // P0-QA-001: Save report to cache for future regression comparison
+    save_qa_report_to_cache(path, &report);
+
+    Ok(report)
+}
+
+/// The banner: the model and the thresholds the gates will actually apply.
+fn print_qa_banner(path: &Path, config: &QaConfig) {
+    output::header("APR Quality Assurance");
+    let config_pairs = vec![
+        ("Model", path.display().to_string()),
+        // Report the threshold the gate will actually apply. The banner
+        // used to print the raw `--assert-tps` value while the gate ran
+        // against a tenth of it, so the header contradicted the gate
+        // directly beneath it ("Min TPS 100 tok/s" over
+        // "FAIL Throughput 4.5 tok/s < 10 tok/s threshold").
+        (
+            "Min TPS",
+            match config.min_tps {
+                Some(asserted) => format!("{asserted:.0} tok/s (--assert-tps)"),
+                None => "10 tok/s (GGUF default)".to_string(),
+            },
+        ),
+        ("Min Speedup", format!("{:.1}x Ollama", config.min_speedup)),
+    ];
+    println!("{}", output::kv_table(&config_pairs));
+}
+
+/// Gates 0-3: capability match, tensor contract, metadata plausibility and the
+/// opt-in classifier head. Returns whether the capability match FAILED.
+fn run_structural_gates(gates: &mut Vec<GateResult>, path: &Path, config: &QaConfig) -> Result<bool> {
     // GH-280: Gate 0 — Capability match (earliest gate)
     dispatch_gate(
-        &mut gates,
+        gates,
         config.json,
         config.skip_capability,
         "capability_match",
@@ -188,7 +210,7 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         || super::qa_capability::run_capability_gate(path, config),
     )?;
     dispatch_gate(
-        &mut gates,
+        gates,
         config.json,
         config.skip_contract,
         "tensor_contract",
@@ -196,7 +218,7 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         || run_tensor_contract_gate(path, config),
     )?;
     dispatch_gate(
-        &mut gates,
+        gates,
         config.json,
         config.skip_metadata,
         "metadata_plausibility",
@@ -205,19 +227,28 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     )?;
     // F-CLASS-004: Classifier head shape gate (opt-in via --assert-classifier-head)
     dispatch_gate(
-        &mut gates,
+        gates,
         config.json,
         !config.assert_classifier_head,
         "classifier_head",
         "Not requested (use --assert-classifier-head)",
         || run_classifier_head_gate(path, config),
     )?;
-    let capability_match_failed = gates
+    Ok(gates
         .iter()
         .find(|g| g.name == "capability_match")
         // #3965: a skipped gate is not a FAILED one, now that skips are passed:false.
-        .map_or(false, |g| !g.passed && !g.skipped);
+        .map_or(false, |g| !g.passed && !g.skipped))
+}
 
+/// The runtime gates (golden output through GPU state isolation), each skipped
+/// with its own reason where the architecture or the capability match rules it out.
+fn run_runtime_gates(
+    gates: &mut Vec<GateResult>,
+    path: &Path,
+    config: &QaConfig,
+    capability_match_failed: bool,
+) -> Result<()> {
     // #3477: an architecture the GPU declines (#3090) but the CPU forward runs
     // (qwen35, #3091) certifies on the CPU rung — the CPU gates run for real and
     // only the GPU/dense-loader gates skip, each with its own reason.
@@ -241,12 +272,12 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     // The CPU gates run for real on a CPU-only architecture — through the same
     // entry point `apr run` uses, because the dense loader refuses the model.
     let (s, r) = get_skip(config.skip_golden, "Skipped by --skip-golden");
-    dispatch_gate(&mut gates, config.json, s, "golden_output", r, || {
+    dispatch_gate(gates, config.json, s, "golden_output", r, || {
         golden_gate_for(cpu_only, hybrid || moe, path, config)
     })?;
 
     let (s, r) = get_skip(config.skip_throughput, "Skipped by --skip-throughput");
-    dispatch_gate(&mut gates, config.json, s, "throughput", r, || {
+    dispatch_gate(gates, config.json, s, "throughput", r, || {
         throughput_gate_for(cpu_only, hybrid || moe, path, config)
     })?;
 
@@ -260,7 +291,7 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     let (s, r) = get_skip(orig_skip_ollama, orig_reason_ollama);
     let (s, r) = dense_gate_skip(cpu_only || hybrid, s, r);
     let (s, r) = moe_gate_skip(moe, s, r);
-    dispatch_gate(&mut gates, config.json, s, "ollama_parity", r, || {
+    dispatch_gate(gates, config.json, s, "ollama_parity", r, || {
         run_ollama_parity_gate(path, config)
     })?;
 
@@ -268,7 +299,7 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     let (s, r) = gpu_gate_skip(cpu_only, s, r);
     let (s, r) = hybrid_gpu_gate_skip(hybrid, s, r);
     let (s, r) = moe_gate_skip(moe, s, r);
-    dispatch_gate(&mut gates, config.json, s, "gpu_speedup", r, || {
+    dispatch_gate(gates, config.json, s, "gpu_speedup", r, || {
         run_gpu_speedup_gate(path, config)
     })?;
 
@@ -279,7 +310,7 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     } else {
         format_parity_skip(capability_match_failed, cpu_only || hybrid, config)
     };
-    dispatch_gate(&mut gates, config.json, s, "format_parity", r, || {
+    dispatch_gate(gates, config.json, s, "format_parity", r, || {
         run_format_parity_gate(path, config)
     })?;
 
@@ -287,7 +318,7 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     // runs it for real (#3477).
     let (s, r) = get_skip(config.skip_ptx_parity, "Skipped by --skip-ptx-parity");
     let (s, r) = gpu_gate_skip(cpu_only, s, r);
-    dispatch_gate(&mut gates, config.json, s, "ptx_parity", r, || {
+    dispatch_gate(gates, config.json, s, "ptx_parity", r, || {
         run_ptx_parity_gate(path, config)
     })?;
 
@@ -295,19 +326,10 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     let (s, r) = gpu_gate_skip(cpu_only, s, r);
     let (s, r) = hybrid_gpu_gate_skip(hybrid, s, r);
     let (s, r) = moe_gate_skip(moe, s, r);
-    dispatch_gate(&mut gates, config.json, s, "gpu_state_isolation", r, || {
+    dispatch_gate(gates, config.json, s, "gpu_state_isolation", r, || {
         run_gpu_state_isolation_gate(path, config)
     })?;
-
-    // Gate 9: Performance regression detection (auto-discovers previous report)
-    dispatch_regression_gate(path, &mut gates, config)?;
-
-    let report = finalize_qa_report(path, &start, gates, config)?;
-
-    // P0-QA-001: Save report to cache for future regression comparison
-    save_qa_report_to_cache(path, &report);
-
-    Ok(report)
+    Ok(())
 }
 
 /// Determine skip status for format parity gate.

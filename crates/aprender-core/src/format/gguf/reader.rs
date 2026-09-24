@@ -80,23 +80,58 @@ pub(crate) fn read_string(data: &[u8], offset: usize) -> Result<(String, usize)>
     Ok((s, 8 + len))
 }
 
+/// Smallest on-disk size of one element of a GGUF array of `elem_type`
+/// (a string element is at least its 8-byte length).
+fn min_array_elem_size(elem_type: u32) -> usize {
+    match elem_type {
+        0..=1 | 7 => 1,
+        2..=3 => 2,
+        8 | 10..=12 => 8,
+        _ => 4,
+    }
+}
+
+/// Read `count` fixed-size elements with `read` starting at `start`; returns the
+/// values and the bytes consumed.
+fn read_fixed_array<T>(
+    data: &[u8],
+    start: usize,
+    count: usize,
+    size: usize,
+    read: fn(&[u8], usize) -> Result<T>,
+) -> Result<(Vec<T>, usize)> {
+    let mut values = Vec::with_capacity(count);
+    for i in 0..count {
+        values.push(read(data, start + i * size)?);
+    }
+    Ok((values, count * size))
+}
+
+/// Read `count` length-prefixed strings starting at `start`; returns the strings
+/// and the bytes consumed.
+fn read_string_array(data: &[u8], start: usize, count: usize) -> Result<(Vec<String>, usize)> {
+    let mut strings = Vec::with_capacity(count);
+    let mut consumed = 0;
+    for _ in 0..count {
+        let (s, len) = read_string(data, start + consumed)?;
+        strings.push(s);
+        consumed += len;
+    }
+    Ok((strings, consumed))
+}
+
 /// Read a GGUF array value (type 9) and return (value, bytes_consumed).
 fn read_metadata_array(data: &[u8], offset: usize) -> Result<(GgufValue, usize)> {
     let elem_type = read_u32(data, offset)?;
     let count = read_u64(data, offset + 4)? as usize;
-    let mut consumed = 12; // type (4) + count (8)
+    let header = 12; // type (4) + count (8)
 
     // #3733: every header key is now parsed (keys outside the allowlist used to
     // be skipped by length arithmetic alone), so a count taken from the file must
     // not size an allocation or index past the end. The span is checked first;
     // a string needs at least its 8-byte length, which bounds that count too.
-    let available = data.len().saturating_sub(offset + consumed);
-    let min_elem = match elem_type {
-        0..=1 | 7 => 1,
-        2..=3 => 2,
-        8 | 10..=12 => 8,
-        _ => 4,
-    };
+    let available = data.len().saturating_sub(offset + header);
+    let min_elem = min_array_elem_size(elem_type);
     if count
         .checked_mul(min_elem)
         .is_none_or(|need| need > available)
@@ -108,45 +143,18 @@ fn read_metadata_array(data: &[u8], offset: usize) -> Result<(GgufValue, usize)>
         });
     }
 
-    match elem_type {
-        8 => {
-            let mut strings = Vec::with_capacity(count);
-            for _ in 0..count {
-                let (s, len) = read_string(data, offset + consumed)?;
-                strings.push(s);
-                consumed += len;
-            }
-            Ok((GgufValue::ArrayString(strings), consumed))
-        }
-        4 => {
-            let mut values = Vec::with_capacity(count);
-            for _ in 0..count {
-                values.push(read_u32(data, offset + consumed)?);
-                consumed += 4;
-            }
-            Ok((GgufValue::ArrayUint32(values), consumed))
-        }
-        5 => {
-            let mut values = Vec::with_capacity(count);
-            for _ in 0..count {
-                values.push(read_i32_le(data, offset + consumed)?);
-                consumed += 4;
-            }
-            Ok((GgufValue::ArrayInt32(values), consumed))
-        }
-        6 => {
-            let mut values = Vec::with_capacity(count);
-            for _ in 0..count {
-                values.push(read_f32_le(data, offset + consumed)?);
-                consumed += 4;
-            }
-            Ok((GgufValue::ArrayFloat32(values), consumed))
-        }
-        _ => {
-            consumed += count * min_elem;
-            Ok((GgufValue::ArrayUint32(vec![]), consumed))
-        }
-    }
+    let start = offset + header;
+    let (value, body) = match elem_type {
+        8 => read_string_array(data, start, count).map(|(v, n)| (GgufValue::ArrayString(v), n))?,
+        4 => read_fixed_array(data, start, count, 4, read_u32)
+            .map(|(v, n)| (GgufValue::ArrayUint32(v), n))?,
+        5 => read_fixed_array(data, start, count, 4, read_i32_le)
+            .map(|(v, n)| (GgufValue::ArrayInt32(v), n))?,
+        6 => read_fixed_array(data, start, count, 4, read_f32_le)
+            .map(|(v, n)| (GgufValue::ArrayFloat32(v), n))?,
+        _ => (GgufValue::ArrayUint32(vec![]), count * min_elem),
+    };
+    Ok((value, header + body))
 }
 
 /// Read a metadata value and return (value, bytes_consumed)

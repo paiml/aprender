@@ -66,46 +66,9 @@ impl CudaExecutor {
         n: u32,
         k: u32,
     ) -> Result<(), GpuError> {
-        // Validate sizes (B has k*n elements in either layout)
-        let expected_a = (m * k) as usize;
-        let expected_b = (k * n) as usize;
+        check_f32_gemm_sizes(a.len(), b.len(), c.len(), m, n, k)?;
         let expected_c = (m * n) as usize;
-
-        if a.len() != expected_a || b.len() != expected_b || c.len() != expected_c {
-            return Err(GpuError::InvalidLaunchConfig(format!(
-                "GEMM size mismatch: A[{}] expected {}, B[{}] expected {}, C[{}] expected {}",
-                a.len(),
-                expected_a,
-                b.len(),
-                expected_b,
-                c.len(),
-                expected_c
-            )));
-        }
-
-        const BT_TILE: u32 = 16;
-        let (kernel_type, cache_key) = match path {
-            // PARITY-003: warp-reduce Gemv for M=1; it reads W as [n, k].
-            F32GemmPath::GemvNk => (KernelType::Gemv { k, n }, format!("gemv_{}_{}", k, n)),
-            F32GemmPath::TiledKn => (
-                KernelType::GemmTiled {
-                    m,
-                    n,
-                    k,
-                    tile_size: 32,
-                },
-                format!("gemm_{}_{}_{}_{}", m, n, k, 32),
-            ),
-            F32GemmPath::TiledNk => (
-                KernelType::GemmBtTiled {
-                    m,
-                    n,
-                    k,
-                    tile_size: BT_TILE,
-                },
-                format!("gemm_bt_{}_{}_{}_{}", m, n, k, BT_TILE),
-            ),
-        };
+        let (kernel_type, cache_key) = f32_gemm_kernel(path, m, n, k);
         let kernel_name = self.kernels.kernel_name(&kernel_type);
 
         // Load module if not cached
@@ -447,4 +410,47 @@ enum F32GemmPath {
     TiledKn,
     /// `GemmBtTiled`: m > 1, B is `[n, k]`.
     TiledNk,
+}
+
+/// Tile edge of the `GemmBtTiled` kernel (its launch grid is sized from the same number).
+const BT_TILE: u32 = 16;
+
+/// A, B and C must hold exactly m*k, k*n and m*n elements (B has k*n in either layout).
+fn check_f32_gemm_sizes(a: usize, b: usize, c: usize, m: u32, n: u32, k: u32) -> Result<(), GpuError> {
+    let expected_a = (m * k) as usize;
+    let expected_b = (k * n) as usize;
+    let expected_c = (m * n) as usize;
+    if a != expected_a || b != expected_b || c != expected_c {
+        return Err(GpuError::InvalidLaunchConfig(format!(
+            "GEMM size mismatch: A[{}] expected {}, B[{}] expected {}, C[{}] expected {}",
+            a, expected_a, b, expected_b, c, expected_c
+        )));
+    }
+    Ok(())
+}
+
+/// The kernel an f32 GEMM path launches, and the module-cache key it is compiled under.
+fn f32_gemm_kernel(path: F32GemmPath, m: u32, n: u32, k: u32) -> (KernelType, String) {
+    match path {
+        // PARITY-003: warp-reduce Gemv for M=1; it reads W as [n, k].
+        F32GemmPath::GemvNk => (KernelType::Gemv { k, n }, format!("gemv_{}_{}", k, n)),
+        F32GemmPath::TiledKn => (
+            KernelType::GemmTiled {
+                m,
+                n,
+                k,
+                tile_size: 32,
+            },
+            format!("gemm_{}_{}_{}_{}", m, n, k, 32),
+        ),
+        F32GemmPath::TiledNk => (
+            KernelType::GemmBtTiled {
+                m,
+                n,
+                k,
+                tile_size: BT_TILE,
+            },
+            format!("gemm_bt_{}_{}_{}_{}", m, n, k, BT_TILE),
+        ),
+    }
 }

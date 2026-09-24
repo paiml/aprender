@@ -105,41 +105,15 @@ async fn try_qwen35_backend(
         Err(r) => return Some(r),
     };
 
-    let architecture = state.model_architecture();
-    // #3723: the request's thinking mode, rendered by the model's own template.
-    let prompt_text = match crate::api::realize_handlers::format_chat_messages_official_thinking(
-        Some(&mapped.model),
-        &request.messages,
-        architecture.as_deref(),
-        request.thinking(),
-    ) {
-        Ok(p) => p,
-        Err(e) => return Some(fail_response(state, StatusCode::BAD_REQUEST, e.to_string())),
+    let input_ids = match qwen35_prompt_ids(state, request, &mapped) {
+        Ok(ids) => ids,
+        Err(r) => return Some(r),
     };
-    let input_ids = mapped.model.encode(&prompt_text).unwrap_or_default();
-    if input_ids.is_empty() {
-        return Some(fail_response(
-            state,
-            StatusCode::BAD_REQUEST,
-            "Messages cannot be empty",
-        ));
-    }
     let prompt_token_count = input_ids.len();
-
-    let context_length = session.context_length;
-    if prompt_token_count >= context_length {
-        return Some(fail_response(
-            state,
-            StatusCode::BAD_REQUEST,
-            format!(
-                "the prompt is {prompt_token_count} tokens and this model declares a context of \
-                 {context_length}: it was refused whole rather than truncated (#3571)"
-            ),
-        ));
-    }
-    let max_tokens = request.max_tokens.unwrap_or(256);
-    // What the context leaves — the budget the session will actually decode.
-    let budget = max_tokens.min(context_length - prompt_token_count);
+    let budget = match context_budget(state, request, prompt_token_count, session.context_length) {
+        Ok(b) => b,
+        Err(r) => return Some(r),
+    };
 
     let stop_tokens = stop_tokens_unless_ignore_eos(request, state.model_eos_token_id());
     // The context-bounded budget, not the request's number: what is decoded and what
@@ -171,33 +145,9 @@ async fn try_qwen35_backend(
     }
 
     let decode_mapped = mapped.clone();
-    let turn = tokio::task::spawn_blocking(move || match session.session.lock() {
-        Ok(mut s) => {
-            let r = s.generate(&input_ids, &gen_config, &mut |_| true);
-            session.on_gpu.store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
-            r.map_err(|e| e.to_string())
-        },
-        Err(_) => Err(POISONED.to_string()),
-    })
-    .await;
-    let turn = match turn {
-        Ok(Ok(turn)) => turn,
-        Ok(Err(e)) => {
-            state.metrics.record_failure();
-            return Some(fail_response(
-                state,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Qwen3.5 generation failed: {e}"),
-            ));
-        },
-        Err(e) => {
-            state.metrics.record_failure();
-            return Some(fail_response(
-                state,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Qwen3.5 generation task failed: {e}"),
-            ));
-        },
+    let turn = match blocking_turn(state, session, input_ids, gen_config).await {
+        Ok(turn) => turn,
+        Err(r) => return Some(r),
     };
 
     let mut generated_ids = turn.tokens[prompt_token_count..].to_vec();
@@ -224,6 +174,81 @@ async fn try_qwen35_backend(
         None,
         None,
     ))
+}
+
+/// The prompt token ids for the request: the MODEL's own chat template (#3723: in
+/// the request's thinking mode), encoded with the GGUF's tokenizer. An empty or
+/// unrenderable prompt is the client's error (400).
+fn qwen35_prompt_ids(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    mapped: &crate::gguf::MappedGGUFModel,
+) -> Result<Vec<u32>, Response> {
+    let architecture = state.model_architecture();
+    let prompt_text = crate::api::realize_handlers::format_chat_messages_official_thinking(
+        Some(&mapped.model),
+        &request.messages,
+        architecture.as_deref(),
+        request.thinking(),
+    )
+    .map_err(|e| fail_response(state, StatusCode::BAD_REQUEST, e.to_string()))?;
+    let input_ids = mapped.model.encode(&prompt_text).unwrap_or_default();
+    if input_ids.is_empty() {
+        return Err(fail_response(
+            state,
+            StatusCode::BAD_REQUEST,
+            "Messages cannot be empty",
+        ));
+    }
+    Ok(input_ids)
+}
+
+/// What the context leaves for the reply — the budget the session will actually
+/// decode. A prompt the declared context cannot hold is refused whole (400).
+fn context_budget(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    prompt_token_count: usize,
+    context_length: usize,
+) -> Result<usize, Response> {
+    if prompt_token_count >= context_length {
+        return Err(fail_response(
+            state,
+            StatusCode::BAD_REQUEST,
+            format!(
+                "the prompt is {prompt_token_count} tokens and this model declares a context of \
+                 {context_length}: it was refused whole rather than truncated (#3571)"
+            ),
+        ));
+    }
+    let max_tokens = request.max_tokens.unwrap_or(256);
+    Ok(max_tokens.min(context_length - prompt_token_count))
+}
+
+/// One non-streaming turn on the resident session, off the async runtime. A
+/// failed generate or a failed task is a 500, and counted as a failure.
+async fn blocking_turn(
+    state: &AppState,
+    session: Arc<crate::api::Qwen35Served>,
+    input_ids: Vec<u32>,
+    gen_config: crate::gguf::QuantizedGenerateConfig,
+) -> Result<crate::gguf::qwen35_session::Qwen35Turn, Response> {
+    let turn = tokio::task::spawn_blocking(move || match session.session.lock() {
+        Ok(mut s) => {
+            let r = s.generate(&input_ids, &gen_config, &mut |_| true);
+            session.on_gpu.store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
+            r.map_err(|e| e.to_string())
+        },
+        Err(_) => Err(POISONED.to_string()),
+    })
+    .await;
+    let why = match turn {
+        Ok(Ok(turn)) => return Ok(turn),
+        Ok(Err(e)) => format!("Qwen3.5 generation failed: {e}"),
+        Err(e) => format!("Qwen3.5 generation task failed: {e}"),
+    };
+    state.metrics.record_failure();
+    Err(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, why))
 }
 
 const POISONED: &str =

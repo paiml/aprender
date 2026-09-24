@@ -8,7 +8,7 @@
 //! so `apr-cli` can call `batuta::agent::code::cmd_code()` directly.
 
 use std::io::IsTerminal;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::agent::capability::Capability;
@@ -477,6 +477,116 @@ fn read_single_prompt_text(prompt: &[String], input_format: &str) -> anyhow::Res
     Ok(prompt_text)
 }
 
+/// `--project`: change working directory for project instructions.
+/// A path that is not a directory used to be skipped silently, so
+/// `--project /typo` ran the agent against the CURRENT directory while the
+/// operator believed it was scoped to another tree. Fail closed instead.
+fn enter_project_dir(project: &Path) -> anyhow::Result<()> {
+    if project.as_os_str() == "." {
+        return Ok(());
+    }
+    if !project.is_dir() {
+        anyhow::bail!(CodeOutcome::refused(
+            "invalid_input",
+            format!("--project: not a directory: {}", project.display()),
+            exit_code::AGENT_ERROR,
+        ));
+    }
+    std::env::set_current_dir(project)?;
+    Ok(())
+}
+
+/// `--resume <id>`: resolve the session BEFORE any model is launched.
+/// An unknown id used to be discarded without a word: `-p` mode returned
+/// from the non-interactive branch without ever reading `resume`,
+/// and the REPL only printed a warning — so a typo'd id left the user
+/// believing a conversation was being continued that the model had no
+/// history of. Fail closed, and name the id.
+fn resolve_resumed_store(
+    resume: Option<&Option<String>>,
+) -> anyhow::Result<Option<crate::agent::session::SessionStore>> {
+    match resume {
+        Some(Some(id)) => Ok(Some(
+            crate::agent::session::SessionStore::resume(id)
+                .map_err(|e| anyhow::anyhow!("--resume: no such session {id:?} ({e})"))?,
+        )),
+        _ => Ok(None),
+    }
+}
+
+/// Load the manifest or build the default, then apply `--model` and size the
+/// system prompt to the model.
+///
+/// When `--manifest` is set it short-circuits the settings ladder (the
+/// manifest is treated as a complete agent specification); otherwise we fold in
+/// `~/.config/apr/settings.json` (user-global) and
+/// `<project_root>/.apr/settings.json` (project-local) as Claude-Code
+/// parity defaults (PMAT-CODE-CONFIG-LADDER-001). CLI flags always win.
+fn prepare_code_manifest(
+    manifest_path: Option<&PathBuf>,
+    model: Option<PathBuf>,
+) -> anyhow::Result<AgentManifest> {
+    let mut manifest = load_code_manifest(manifest_path)?;
+
+    // --model flag overrides manifest model_path (and therefore overrides
+    // any settings.json `model` field — CLI always wins, per the parity
+    // ladder contract).
+    if let Some(model_path) = model {
+        manifest.model.model_path = Some(model_path);
+    }
+
+    // PMAT-150: discover model with Jidoka validation (broken APR → GGUF fallback)
+    discover_and_set_model(&mut manifest);
+
+    // PMAT-198: Scale system prompt based on model size.
+    // Small models (<2B) degrade with the full tool table + project context.
+    if let Some(ref path) = manifest.model.model_path {
+        let params_b = estimate_model_params_from_name(path);
+        if params_b < 2.0 {
+            manifest.model.system_prompt = scale_prompt_for_model(params_b);
+        }
+    }
+    Ok(manifest)
+}
+
+/// PMAT-CODE-MCP-JSON-LOADER-001: merge `<project>/.mcp.json` (Claude-Code-
+/// shape) servers into manifest.mcp_servers BEFORE tool registration. The
+/// manifest's TOML-declared servers always win on name collision (operator-
+/// declared > project-default), matching the settings-ladder semantics.
+/// Missing .mcp.json is a non-error; malformed JSON is a hard error.
+#[cfg(feature = "agents-mcp")]
+fn merge_project_mcp_json(manifest: &mut AgentManifest) -> anyhow::Result<()> {
+    let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    match crate::agent::mcp_json::load_and_merge(manifest, &project_root) {
+        Ok(0) => {}
+        Ok(n) => {
+            eprintln!("✓ Loaded {n} MCP server(s) from .mcp.json");
+        }
+        Err(e) => {
+            anyhow::bail!("invalid .mcp.json: {e}");
+        }
+    }
+    Ok(())
+}
+
+/// The session the REPL continues.
+/// PMAT-165: auto-resume prompt when a recent session exists (spec §6.3).
+fn repl_resume_session_id(resume: Option<Option<String>>) -> Option<String> {
+    match resume {
+        // Already proven to exist by `resolve_resumed_store`; a bad id never
+        // reaches here.
+        Some(Some(id)) => Some(id), // --resume=<session-id>
+        Some(None) => {
+            // --resume (no ID): find most recent for cwd
+            crate::agent::session::SessionStore::find_recent_for_cwd().map(|m| m.id)
+        }
+        None => {
+            // No --resume flag: check for recent session and prompt
+            crate::agent::session::offer_auto_resume()
+        }
+    }
+}
+
 /// [`cmd_code`] with explicit `apr serve` controls (#3978).
 #[allow(clippy::too_many_arguments)]
 pub fn cmd_code_with(
@@ -505,20 +615,7 @@ pub fn cmd_code_with(
         resume.as_ref(),
     )?;
 
-    // --project: change working directory for project instructions.
-    // A path that is not a directory used to be skipped silently, so
-    // `--project /typo` ran the agent against the CURRENT directory while the
-    // operator believed it was scoped to another tree. Fail closed instead.
-    if project.as_os_str() != "." {
-        if !project.is_dir() {
-            anyhow::bail!(CodeOutcome::refused(
-                "invalid_input",
-                format!("--project: not a directory: {}", project.display()),
-                exit_code::AGENT_ERROR,
-            ));
-        }
-        std::env::set_current_dir(&project)?;
-    }
+    enter_project_dir(&project)?;
 
     // --max-turns: settled BEFORE any model is launched, so a run that is not
     // allowed to do anything costs no `apr serve` subprocess and no weights
@@ -528,46 +625,9 @@ pub fn cmd_code_with(
     let single_prompt_permit = permit_single_prompt(&mut turn_budget, print || !prompt.is_empty())
         .map_err(max_turns_refusal)?;
 
-    // --resume <id>: resolve the session BEFORE any model is launched.
-    // An unknown id used to be discarded without a word: `-p` mode returned
-    // from the non-interactive branch below without ever reading `resume`,
-    // and the REPL only printed a warning — so a typo'd id left the user
-    // believing a conversation was being continued that the model had no
-    // history of. Fail closed, and name the id.
-    let resumed_store = match resume {
-        Some(Some(ref id)) => Some(
-            crate::agent::session::SessionStore::resume(id)
-                .map_err(|e| anyhow::anyhow!("--resume: no such session {id:?} ({e})"))?,
-        ),
-        _ => None,
-    };
+    let resumed_store = resolve_resumed_store(resume.as_ref())?;
 
-    // Load manifest or build default. When `--manifest` is set it short-
-    // circuits the settings ladder (the manifest is treated as a complete
-    // agent specification); otherwise we fold in
-    // `~/.config/apr/settings.json` (user-global) and
-    // `<project_root>/.apr/settings.json` (project-local) as Claude-Code
-    // parity defaults (PMAT-CODE-CONFIG-LADDER-001). CLI flags always win.
-    let mut manifest = load_code_manifest(manifest_path.as_ref())?;
-
-    // --model flag overrides manifest model_path (and therefore overrides
-    // any settings.json `model` field — CLI always wins, per the parity
-    // ladder contract).
-    if let Some(ref model_path) = model {
-        manifest.model.model_path = Some(model_path.clone());
-    }
-
-    // PMAT-150: discover model with Jidoka validation (broken APR → GGUF fallback)
-    discover_and_set_model(&mut manifest);
-
-    // PMAT-198: Scale system prompt based on model size.
-    // Small models (<2B) degrade with the full tool table + project context.
-    if let Some(ref path) = manifest.model.model_path {
-        let params_b = estimate_model_params_from_name(path);
-        if params_b < 2.0 {
-            manifest.model.system_prompt = scale_prompt_for_model(params_b);
-        }
-    }
+    let mut manifest = prepare_code_manifest(manifest_path.as_ref(), model)?;
 
     // Contract: no_model_error — never silently use MockDriver
     if manifest.model.resolve_model_path().is_none() && manifest_path.is_none() {
@@ -580,24 +640,9 @@ pub fn cmd_code_with(
     // share it with the AgentPool for sub-agent execution.
     let driver: Arc<dyn LlmDriver> = launch_code_driver(&manifest, serve_opts)?;
 
-    // PMAT-CODE-MCP-JSON-LOADER-001: merge `<project>/.mcp.json` (Claude-Code-
-    // shape) servers into manifest.mcp_servers BEFORE tool registration. The
-    // manifest's TOML-declared servers always win on name collision (operator-
-    // declared > project-default), matching the settings-ladder semantics.
-    // Missing .mcp.json is a non-error; malformed JSON is a hard error.
+    // PMAT-CODE-MCP-JSON-LOADER-001: `.mcp.json` servers join BEFORE tool registration.
     #[cfg(feature = "agents-mcp")]
-    {
-        let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        match crate::agent::mcp_json::load_and_merge(&mut manifest, &project_root) {
-            Ok(0) => {}
-            Ok(n) => {
-                eprintln!("✓ Loaded {n} MCP server(s) from .mcp.json");
-            }
-            Err(e) => {
-                anyhow::bail!("invalid .mcp.json: {e}");
-            }
-        }
-    }
+    merge_project_mcp_json(&mut manifest)?;
 
     // Build tool registry with coding tools
     let mut tools = build_code_tools(&manifest);
@@ -656,21 +701,7 @@ pub fn cmd_code_with(
         std::process::exit(code);
     }
 
-    // --resume: load previous session
-    // PMAT-165: auto-resume prompt when recent session exists (spec §6.3)
-    let resume_session_id = match resume {
-        // Already proven to exist above (`resumed_store`); a bad id never
-        // reaches here.
-        Some(Some(id)) => Some(id), // --resume=<session-id>
-        Some(None) => {
-            // --resume (no ID): find most recent for cwd
-            crate::agent::session::SessionStore::find_recent_for_cwd().map(|m| m.id)
-        }
-        None => {
-            // No --resume flag: check for recent session and prompt
-            crate::agent::session::offer_auto_resume()
-        }
-    };
+    let resume_session_id = repl_resume_session_id(resume);
 
     // Interactive REPL (local inference is free — budget unlimited)
     crate::agent::repl::run_repl(

@@ -28,29 +28,29 @@ import model_ladder_crux
 HEX40 = re.compile(r"[0-9a-f]{40}")
 
 
-def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
-    """-> True when the emergency scope is NOT satisfied (RED)."""
-    failed = False
+def _scope_entry(L, version, cut, scope_name, out):
+    """The recorded scope entry when it applies to this cut, else None (the reason is printed)."""
     entry = next((e for e in (L.get("emergency_scopes") or [])
                   if isinstance(e, dict) and e.get("name") == scope_name), None)
     if entry is None:
         out(f"FAIL  no emergency scope named {scope_name!r} in the ladder contract -- a scope is recorded, never improvised")
-        return True
+        return None
     missing = [k for k in ("release", "date", "quote", "hosts", "thinking") if not entry.get(k)]
     if missing:
         out(f"FAIL  emergency scope {scope_name} is missing {missing} -- it must carry the release, date and verbatim ruling")
-        return True
+        return None
     out(f"OPERATOR EMERGENCY SCOPE: CRUX smoke only -- release {entry['release']}, {entry['date']}, operator: {entry['quote']}")
     if str(version) != str(entry["release"]):
         out(f"FAIL  emergency scope {scope_name} is recorded for release {entry['release']} ONLY, and this cut is {version} "
             f"-- the full gate applies")
-        return True
+        return None
     if not HEX40.fullmatch(cut or ""):
         out(f"FAIL  the cut {cut!r} is not a full 40-hex sha -- smoke receipts are bound to the release binary's commit")
-        return True
-    certified, cfail = model_ladder_crux.load_certified(cert_p, out)
-    if cfail or not certified:
-        return True
+        return None
+    return entry
+
+
+def _admitted_by_mode(cert_p, out):
     try:
         with open(cert_p, encoding="utf-8") as fh:
             by_mode = json.load(fh).get("admitted_by_sha_thinking")
@@ -58,8 +58,13 @@ def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
         by_mode = None
     if not isinstance(by_mode, dict):
         out("FAIL  the certification carries no admitted_by_sha_thinking -- the smoke matrix (model x admitted mode) is unknown")
-        return True
-    hosts = list(entry["hosts"])
+        return None
+    return by_mode
+
+
+def _smoke_matrix(certified, by_mode, entry, out):
+    """(certified sha -> admitted thinking modes, failed)."""
+    failed = False
     matrix = {}
     for sha in sorted(certified):
         m = by_mode.get(sha) if isinstance(by_mode.get(sha), dict) else {}
@@ -69,8 +74,25 @@ def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
     for sha, m in matrix.items():
         if not m:
             out(f"FAIL  certified model {sha[:12]} has NO admitted thinking mode -- nothing about it can be smoke-proven"); failed = True
-    cells = {}          # (host, sha, thinking) -> [(verdict, positive_control)]
-    seen_hosts = set()
+    return matrix, failed
+
+
+def _receipt_problem(R, name, cut):
+    """Why a CRUX receipt cannot count for the release binary, or None."""
+    if not isinstance(R, dict) or R.get("schema") != "crux-inference-receipt/v1":
+        return f"{name} is not a crux-inference-receipt/v1"
+    asha = model_ladder_crux.apr_sha_of(R)
+    if asha != cut:
+        return (f"CRUX receipt {name} is from apr sha {asha!r}, not the release binary {cut[:12]} "
+                f"-- the emergency scope accepts only receipts from the binary being released")
+    if (R.get("summary") or {}).get("verdict") == "DECLINE":
+        return f"CRUX receipt {name} DECLINED ({(R.get('summary') or {}).get('declined_because')})"
+    return None
+
+
+def _read_receipts(crux_dir, cut, out):
+    """(cells, seen hosts, failed): cells is (host, sha, thinking) -> [(verdict, positive_control)]."""
+    cells, seen_hosts, failed = {}, set(), False
     files = sorted(f for f in glob.glob(os.path.join(crux_dir or "", "*.json"))
                    if not os.path.basename(f).startswith("prompt-certification"))
     for f in files:
@@ -80,16 +102,9 @@ def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
         except (OSError, ValueError) as exc:
             out(f"FAIL  CRUX receipt {os.path.basename(f)} unreadable: {exc}"); failed = True
             continue
-        if not isinstance(R, dict) or R.get("schema") != "crux-inference-receipt/v1":
-            out(f"FAIL  {os.path.basename(f)} is not a crux-inference-receipt/v1"); failed = True
-            continue
-        asha = model_ladder_crux.apr_sha_of(R)
-        if asha != cut:
-            out(f"FAIL  CRUX receipt {os.path.basename(f)} is from apr sha {asha!r}, not the release binary {cut[:12]} "
-                f"-- the emergency scope accepts only receipts from the binary being released"); failed = True
-            continue
-        if (R.get("summary") or {}).get("verdict") == "DECLINE":
-            out(f"FAIL  CRUX receipt {os.path.basename(f)} DECLINED ({(R.get('summary') or {}).get('declined_because')})"); failed = True
+        why = _receipt_problem(R, os.path.basename(f), cut)
+        if why:
+            out(f"FAIL  {why}"); failed = True
             continue
         host = R.get("host")
         seen_hosts.add(host)
@@ -97,23 +112,46 @@ def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
             k = c.get("key") or {}
             cells.setdefault((k.get("host") or host, k.get("model_sha256"), k.get("thinking")), []).append(
                 (c.get("verdict"), bool(c.get("positive_control"))))
-    for h in hosts:
+    return cells, seen_hosts, failed
+
+
+def _judge_mode(h, sha, mode, got, out):
+    """-> True when this host x model x mode is not smoke-proven."""
+    if not got:
+        out(f"FAIL  {h} certified model {sha[:12]} thinking={mode}: no CRUX cell -- not smoke-tested")
+        return True
+    red = [v for v, _ in got if v != "GREEN"]
+    ctl = [v for v, pc in got if pc]
+    if red:
+        out(f"FAIL  {h} certified model {sha[:12]} thinking={mode}: {len(red)} of {len(got)} cell(s) not GREEN")
+        return True
+    elif not ctl or any(v != "GREEN" for v in ctl):
+        out(f"FAIL  {h} certified model {sha[:12]} thinking={mode}: the positive control is missing or not GREEN "
+            f"-- a lane that cannot answer its control proves nothing")
+        return True
+    out(f"ok    {h} certified model {sha[:12]} thinking={mode}: {len(got)} CRUX cell(s) GREEN, control GREEN")
+    return False
+
+
+def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
+    """-> True when the emergency scope is NOT satisfied (RED)."""
+    entry = _scope_entry(L, version, cut, scope_name, out)
+    if entry is None:
+        return True
+    certified, cfail = model_ladder_crux.load_certified(cert_p, out)
+    if cfail or not certified:
+        return True
+    by_mode = _admitted_by_mode(cert_p, out)
+    if by_mode is None:
+        return True
+    matrix, failed = _smoke_matrix(certified, by_mode, entry, out)
+    cells, seen_hosts, rfail = _read_receipts(crux_dir, cut, out)
+    failed = failed or rfail
+    for h in list(entry["hosts"]):
         if h not in seen_hosts:
             out(f"FAIL  host {h} has no CRUX receipt from the release binary -- the smoke gate needs every named host"); failed = True
             continue
         for sha in sorted(certified):
             for mode in matrix[sha]:
-                got = cells.get((h, sha, mode)) or []
-                if not got:
-                    out(f"FAIL  {h} certified model {sha[:12]} thinking={mode}: no CRUX cell -- not smoke-tested"); failed = True
-                    continue
-                red = [v for v, _ in got if v != "GREEN"]
-                ctl = [v for v, pc in got if pc]
-                if red:
-                    out(f"FAIL  {h} certified model {sha[:12]} thinking={mode}: {len(red)} of {len(got)} cell(s) not GREEN"); failed = True
-                elif not ctl or any(v != "GREEN" for v in ctl):
-                    out(f"FAIL  {h} certified model {sha[:12]} thinking={mode}: the positive control is missing or not GREEN "
-                        f"-- a lane that cannot answer its control proves nothing"); failed = True
-                else:
-                    out(f"ok    {h} certified model {sha[:12]} thinking={mode}: {len(got)} CRUX cell(s) GREEN, control GREEN")
+                failed = _judge_mode(h, sha, mode, cells.get((h, sha, mode)) or [], out) or failed
     return failed

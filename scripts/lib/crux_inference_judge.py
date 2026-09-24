@@ -479,6 +479,125 @@ def oracle_eval(prompt, entry):
             "extracted": crux_oracles.extract(prompt, judged)}
 
 
+def _parse_serve(stdout, engine, e):
+    # serve (#3739 slice 4): every server, apr's included, is read through the ONE
+    # OpenAI client's contract JSON (scripts/lib/crux_openai_client.py). #3962 B4: the
+    # sweep writes stream cells as verb `serve stream`; read as run output, a comparator's
+    # JSON fell to the llama-cli echo parser ("the echoed prompt was not found").
+    p = parse_engine_json(stdout)
+    if engine == "apr":
+        # apr serve's responses report no backend: recorded, not scored as verified.
+        e["backend_verified"] = False
+    elif engine not in COMPARATORS:
+        return None
+    return p
+
+
+def _parse_chat(stdout, engine, e):
+    # chat (#3739 slice 3): apr's own transcript; every other engine writes the
+    # row-contract JSON (the pty helper for llama.cpp/ollama, the plugin drivers).
+    if engine == "apr":
+        p = parse_apr_chat(stdout)
+        # apr chat reports no backend (#3794): recorded, not scored as verified.
+        e["backend_verified"] = False
+    elif engine in COMPARATORS:
+        p = parse_engine_json(stdout)
+    else:
+        return None
+    e["turns"] = p.get("turns") or []
+    return p
+
+
+def _parse_run(row, stdout, stderr, content, e):
+    engine = row["engine"]
+    if engine == "apr":
+        p = parse_apr(stdout, stderr)
+        for f in ("backend", "prompt_ids", "prompt_token_count", "rendered_prompt"):
+            e[f] = p[f]
+        return p
+    if engine == "llama.cpp":
+        return parse_llamacpp_cli(stdout, content)
+    if engine == "ollama":
+        return parse_ollama(stdout, stderr)
+    if engine in PLUGIN_ENGINES:
+        if row.get("source"):
+            e["source"] = row["source"]
+        return parse_engine_json(stdout)
+    return None
+
+
+def _parse_row(row, prompt, e):
+    """The parsed engine output for this row, or None for an engine this judge does not know."""
+    stdout, stderr = read_text(row.get("stdout")), read_text(row.get("stderr"))
+    engine, verb = row["engine"], row.get("verb")
+    if verb in ("serve run", "serve stream"):
+        return _parse_serve(stdout, engine, e)
+    if verb == "chat":
+        return _parse_chat(stdout, engine, e)
+    if verb == "code" and engine in COMPARATORS:
+        # #3962 (aprender-83, freeze sweep): the code cell drives llama-server / ollama through
+        # crux_serve_routes.py `drive`, whose output is the serve contract JSON. Read as llama-cli
+        # output it fell to the echo parser ("the echoed prompt was not found in stdout"), so a
+        # right llama answer left every code cell RED "no ggml-family engine answered".
+        return parse_engine_json(stdout)
+    return _parse_run(row, stdout, stderr, prompt["messages"][-1]["content"], e)
+
+
+def _think_opener_unknown(row, p, e, prompt_opened):
+    """Re-attach a prefilled think opener; True when the cell must be RED because nothing shows one.
+
+    #3962 B2: thinking ON with the official template prefills `<think>\\n` in the PROMPT (#3990), so apr's
+    reply starts INSIDE the block with no opener, and the reasoning was judged AS the answer ("apr is
+    wrong: answer_not_int" on every ON cell of the smoke, apr c08437cdd). Re-attach the opener and let
+    crux_oracles.strip_think decide, as the Rust golden ON leg does (on_leg_judged_text): a closed block
+    is stripped, an unclosed one is RED "unclosed think". When nothing shows whether the prompt opened
+    the block and the reply carries no think tag, the cell is RED by name -- never judged on reasoning.
+    run and chat only: `apr serve` has no thinking toggle (it always renders thinking OFF, #3990), so a
+    serve reply is never inside a prefilled block and must not be given an opener.
+    """
+    if not (row["engine"] == "apr" and row.get("thinking") == "on" and row.get("verb") in ("run", "chat")
+            and isinstance(p.get("answer"), str)):
+        return False
+    opened = rendered_opens_think(p.get("rendered_prompt"))
+    if opened is None:
+        opened = prompt_opened
+    e["prompt_opened_think"] = opened
+    if opened is True and not p["answer"].lstrip().lower().startswith("<think>"):
+        p["answer"] = "<think>\n" + p["answer"]
+        return False
+    return opened is None and not re.search(r"</?think>", p["answer"], re.I)
+
+
+def _plugin_lane_problem(row, p):
+    # A plugin engine is held to the lane as apr is. The integration run's
+    # cpu lane got `!` x64 from an HF load that went to CUDA anyway (and
+    # outside the GPU lock). The device must be REPORTED: an unverifiable
+    # lane cannot vouch for or against apr.
+    dev = str((p.get("reported") or {}).get("device") or "")
+    lane = row.get("backend")
+    if not dev:
+        return "no reported.device: the %s lane cannot be verified" % lane
+    if (lane == "cpu") != dev.lower().startswith("cpu"):
+        return "device %r is not the %s lane" % (dev, lane)
+    return None
+
+
+def _answer_problem(row, p):
+    """(refused, why): whether this answer cannot count, and the reason (which may itself be None)."""
+    engine = row["engine"]
+    if row.get("rc") != 0:
+        return True, "exit %s" % row.get("rc")
+    if p["answer"] is None:
+        return True, p["why"]
+    if degenerate(p["answer"]):
+        return True, "degenerate output (one character is >=90%% of it): %r" % p["answer"][:24]
+    be = p.get("backend") if engine == "apr" else None
+    if be and (be.get("fell_back") or (row.get("backend") and be.get("ran") != row.get("backend"))):
+        return True, "backend: asked %s, ran %s (fell_back=%s)" % (row.get("backend"), be.get("ran"), be.get("fell_back"))
+    why = _plugin_lane_problem(row, p) if engine in PLUGIN_ENGINES else None
+    return why is not None, why
+
+
 def engine_entry(row, prompt, prompt_opened=None):
     """One engine's answer to one cell, from its manifest row. `prompt_opened` is the model's own
     template's answer to "does thinking ON open the block in the prompt?" (prompt_opens_think)."""
@@ -490,108 +609,23 @@ def engine_entry(row, prompt, prompt_opened=None):
     if row.get("refused"):
         e["why"] = "refused: " + row["refused"]
         return e
-    stdout, stderr = read_text(row.get("stdout")), read_text(row.get("stderr"))
-    content = prompt["messages"][-1]["content"]
-    engine = row["engine"]
-    if row.get("verb") in ("serve run", "serve stream"):
-        # serve (#3739 slice 4): every server, apr's included, is read through the ONE
-        # OpenAI client's contract JSON (scripts/lib/crux_openai_client.py). #3962 B4: the
-        # sweep writes stream cells as verb `serve stream`; read as run output, a comparator's
-        # JSON fell to the llama-cli echo parser ("the echoed prompt was not found").
-        p = parse_engine_json(stdout)
-        if engine == "apr":
-            # apr serve's responses report no backend: recorded, not scored as verified.
-            e["backend_verified"] = False
-        elif engine not in COMPARATORS:
-            e["why"] = "unknown engine %r" % engine
-            return e
-    elif row.get("verb") == "chat":
-        # chat (#3739 slice 3): apr's own transcript; every other engine writes the
-        # row-contract JSON (the pty helper for llama.cpp/ollama, the plugin drivers).
-        if engine == "apr":
-            p = parse_apr_chat(stdout)
-            # apr chat reports no backend (#3794): recorded, not scored as verified.
-            e["backend_verified"] = False
-        elif engine in COMPARATORS:
-            p = parse_engine_json(stdout)
-        else:
-            e["why"] = "unknown engine %r" % engine
-            return e
-        e["turns"] = p.get("turns") or []
-    elif row.get("verb") == "code" and engine in COMPARATORS:
-        # #3962 (aprender-83, freeze sweep): the code cell drives llama-server / ollama through
-        # crux_serve_routes.py `drive`, whose output is the serve contract JSON. Read as llama-cli
-        # output it fell to the echo parser ("the echoed prompt was not found in stdout"), so a
-        # right llama answer left every code cell RED "no ggml-family engine answered".
-        p = parse_engine_json(stdout)
-    elif engine == "apr":
-        p = parse_apr(stdout, stderr)
-        e["backend"] = p["backend"]
-        e["prompt_ids"] = p["prompt_ids"]
-        e["prompt_token_count"] = p["prompt_token_count"]
-        e["rendered_prompt"] = p["rendered_prompt"]
-    elif engine == "llama.cpp":
-        p = parse_llamacpp_cli(stdout, content)
-    elif engine == "ollama":
-        p = parse_ollama(stdout, stderr)
-    elif engine in PLUGIN_ENGINES:
-        p = parse_engine_json(stdout)
-        if row.get("source"):
-            e["source"] = row["source"]
-    else:
-        e["why"] = "unknown engine %r" % engine
+    p = _parse_row(row, prompt, e)
+    if p is None:
+        e["why"] = "unknown engine %r" % row["engine"]
         return e
-    # #3962 B2: thinking ON with the official template prefills `<think>\n` in the PROMPT (#3990), so apr's
-    # reply starts INSIDE the block with no opener, and the reasoning was judged AS the answer ("apr is
-    # wrong: answer_not_int" on every ON cell of the smoke, apr c08437cdd). Re-attach the opener and let
-    # crux_oracles.strip_think decide, as the Rust golden ON leg does (on_leg_judged_text): a closed block
-    # is stripped, an unclosed one is RED "unclosed think". When nothing shows whether the prompt opened
-    # the block and the reply carries no think tag, the cell is RED by name -- never judged on reasoning.
-    # run and chat only: `apr serve` has no thinking toggle (it always renders thinking OFF, #3990), so a
-    # serve reply is never inside a prefilled block and must not be given an opener.
-    if engine == "apr" and row.get("thinking") == "on" and row.get("verb") in ("run", "chat") \
-            and isinstance(p.get("answer"), str):
-        opened = rendered_opens_think(p.get("rendered_prompt"))
-        if opened is None:
-            opened = prompt_opened
-        e["prompt_opened_think"] = opened
-        if opened is True and not p["answer"].lstrip().lower().startswith("<think>"):
-            p["answer"] = "<think>\n" + p["answer"]
-        elif opened is None and not re.search(r"</?think>", p["answer"], re.I):
-            e["reported"] = p["reported"]
-            e["answer"] = p["answer"]
-            e["why"] = ("thinking ON, and nothing shows whether the prompt opened a think block (apr's rendering is "
-                        "not visible and no reference tmpl row covers it), while the reply carries no think tag -- "
-                        "the reasoning cannot be told from the answer (#3962 B2)")
-            return e
+    if _think_opener_unknown(row, p, e, prompt_opened):
+        e["reported"] = p["reported"]
+        e["answer"] = p["answer"]
+        e["why"] = ("thinking ON, and nothing shows whether the prompt opened a think block (apr's rendering is "
+                    "not visible and no reference tmpl row covers it), while the reply carries no think tag -- "
+                    "the reasoning cannot be told from the answer (#3962 B2)")
+        return e
     e["reported"] = p["reported"]
     e["answer"] = p["answer"]
-    if row.get("rc") != 0:
-        e["why"] = "exit %s" % row.get("rc")
+    refused, why = _answer_problem(row, p)
+    if refused:
+        e["why"] = why
         return e
-    if p["answer"] is None:
-        e["why"] = p["why"]
-        return e
-    if degenerate(p["answer"]):
-        e["why"] = "degenerate output (one character is >=90%% of it): %r" % p["answer"][:24]
-        return e
-    be = p.get("backend") if engine == "apr" else None
-    if be and (be.get("fell_back") or (row.get("backend") and be.get("ran") != row.get("backend"))):
-        e["why"] = "backend: asked %s, ran %s (fell_back=%s)" % (row.get("backend"), be.get("ran"), be.get("fell_back"))
-        return e
-    if engine in PLUGIN_ENGINES:
-        # A plugin engine is held to the lane as apr is. The integration run's
-        # cpu lane got `!` x64 from an HF load that went to CUDA anyway (and
-        # outside the GPU lock). The device must be REPORTED: an unverifiable
-        # lane cannot vouch for or against apr.
-        dev = str((p.get("reported") or {}).get("device") or "")
-        lane = row.get("backend")
-        if not dev:
-            e["why"] = "no reported.device: the %s lane cannot be verified" % lane
-            return e
-        if (lane == "cpu") != dev.lower().startswith("cpu"):
-            e["why"] = "device %r is not the %s lane" % (dev, lane)
-            return e
     e["answered"] = True
     return e
 
@@ -888,10 +922,9 @@ def certification_ok(prompts_path, receipt_path):
     return True if rc == 0 else (buf.getvalue().strip() or "refused (rc %s)" % rc)
 
 
-def collect(args):
+def _load_inputs(args):
     with open(args.prompts, encoding="utf-8") as fh:
         pdoc = json.load(fh)
-    prompts = {p["id"]: p for p in pdoc["prompts"]}
     with open(args.meta, encoding="utf-8") as fh:
         meta = json.load(fh)
     rows = []
@@ -899,7 +932,10 @@ def collect(args):
         for line in fh:
             if line.strip():
                 rows.append(json.loads(line))
-    gens = [r for r in rows if r.get("kind") == "gen"]
+    return pdoc, meta, rows
+
+
+def _opened_by(rows, gens):
     # #3962 B2: whether each (model, prompt)'s thinking-ON prompt opens the think block. The reference
     # tmpl rows (the model's own template) first; else apr's own `run` rendering of that prompt in this
     # sweep, when it was printed whole. `apr chat` prints no rendering, and uses the same template.
@@ -910,23 +946,10 @@ def collect(args):
             o = rendered_opens_think(m.group(1) if m else None)
             if o is not None:
                 opened_by.setdefault((r.get("model_sha256"), r.get("prompt_id")), o)
-    # llama.cpp's template-level ids feed the REPORTED token_parity field; raw-text
-    # `tok` rows (they carry `input`) are the byte-equal deterministic rows below.
-    toks = {(r["model_sha256"], r["prompt_id"]): r for r in rows
-            if r.get("kind") == "tok" and r.get("engine") == "llama.cpp" and "input" not in r}
-    det = judge_deterministic(rows, "tok") + judge_deterministic(rows, "tmpl")
-    greedy = report_greedy(rows)
-    requested = meta.get("engines", list(ENGINES))
-    # #3832: resolved once, stamped on every cell.
-    versions = engine_versions(meta)
-    # model sha256 -> development note, for models the operator has declared are
-    # under active development. Keyed by sha so a rename cannot silently drop it.
-    subject_dev = {m.get("sha256"): m.get("under_development")
-                   for m in (meta.get("models") or []) if m.get("under_development")}
-    # #3957 Q2: the FORMAT picks the same-representation oracle. From the row, else the model's name.
-    fmt_of_model = {m.get("sha256"): (m.get("format") or model_format(m.get("name")))
-                    for m in (meta.get("models") or [])}
+    return opened_by
 
+
+def _group_cells(gens, prompts):
     keys = []
     by_key = {}
     for r in gens:
@@ -941,7 +964,22 @@ def collect(args):
             keys.append(k)
             by_key[k] = {}
         by_key[k][r["engine"]] = r
+    return keys, by_key
 
+
+def _borrow_into(k, orc, by_key, lent):
+    sources = [k[:7] + (orc,), k[:7] + ("",), k[:6] + ("", "")]
+    for eng in COMPARATORS:
+        if eng in by_key[k]:
+            continue
+        for src in sources:
+            if src != k and eng in by_key.get(src, {}):
+                by_key[k][eng] = dict(by_key[src][eng], borrowed_from_route=src[7] or "(route-less plugin row)")
+                lent.add((src, eng))
+                break
+
+
+def _borrow_oracle_rows(keys, by_key):
     # #3962 B4: apr serve mounts ~11 generation routes; llama-server answers two of them and the
     # plugins answer on no named route at all. An apr route cell with no comparator row ON ITS OWN
     # ROUTE borrows one, per engine, from (1) the oracle route that asks its question in the same
@@ -957,150 +995,181 @@ def collect(args):
             continue
         orc = crux_serve_routes.oracle_route(k[7])
         oracle_of[k] = orc
-        if orc is None:
-            continue
-        sources = [k[:7] + (orc,), k[:7] + ("",), k[:6] + ("", "")]
-        for eng in COMPARATORS:
-            if eng in by_key[k]:
-                continue
-            for src in sources:
-                if src != k and eng in by_key.get(src, {}):
-                    by_key[k][eng] = dict(by_key[src][eng], borrowed_from_route=src[7] or "(route-less plugin row)")
-                    lent.add((src, eng))
-                    break
+        if orc is not None:
+            _borrow_into(k, orc, by_key, lent)
     keys = [k for k in keys if "apr" in by_key[k] or not by_key[k]
             or not all((k, e) in lent for e in by_key[k])]
+    return keys, oracle_of
 
+
+def _load_admission(pdoc, args):
     # #3962 J2 (per cell): the certification admits prompts PER MODEL (quant sha). A prompt it did not
     # admit for this model is RED on that cell, however right the answer -- it was never shown answerable.
     # dd 292645efb: admission PER THINKING MODE when the receipt carries it. The strict key admits a
     # prompt only if it certified in EVERY mode, so a model whose ON cells loop admitted nothing and its
     # right OFF cells went RED "not certified". The cell's OWN mode decides; the strict key is used only
     # when the receipt has no per-mode map.
+    if pdoc.get("schema") != "crux-inference-prompts/v2" or not getattr(args, "certification", None):
+        return None, None
     admitted, admitted_mode = None, None
-    if pdoc.get("schema") == "crux-inference-prompts/v2" and getattr(args, "certification", None):
-        try:
-            with open(args.certification, encoding="utf-8") as fh:
-                cdoc = json.load(fh)
-            admitted, admitted_mode = cdoc.get("admitted_by_sha"), cdoc.get("admitted_by_sha_thinking")
-        except (OSError, ValueError):
-            admitted = None
-        if not isinstance(admitted, dict):
-            admitted = {}   # a receipt with no per-model admission admits nothing
-        if not isinstance(admitted_mode, dict):
-            admitted_mode = None
-    cells = []
-    for k in keys:
-        prompt = prompts[k[5]]
-        entries = {}
-        unpinned = []
-        for eng in ENGINES:
-            row = by_key[k].get(eng)
-            if row is None:
-                entries[eng] = {"answered": False, "missing": True,
-                                "why": "missing: no row for this engine" if eng in requested else "not requested"}
-            else:
-                entries[eng] = engine_entry(row, prompt, opened_by.get((row.get("model_sha256"), row.get("prompt_id"))))
-                if row.get("borrowed_from_route"):
-                    entries[eng]["borrowed_from_route"] = row["borrowed_from_route"]
-                # #3952: a comparator the receipt cannot name a version for cannot vouch — for apr or against
-                # it. Its answer is kept on the record; it is not an oracle.
-                if eng in COMPARATORS and entries[eng].get("answered") and not versions.get(eng):
-                    entries[eng]["answered"] = False
-                    entries[eng]["why"] = ("unpinned: the run's meta records no version for %s, so a verdict it "
-                                           "vouched for could not name what produced it" % eng)
-                    unpinned.append(eng)
-        fmt = next((by_key[k][e].get("format") for e in by_key[k] if by_key[k][e].get("format")), None) \
-            or fmt_of_model.get(k[0])
-        verdict, ok, reasons, extracted = judge_cell(entries, prompt, fmt)
-        if k in oracle_of and oracle_of[k] is None:
-            verdict = "RED"
-            reasons = reasons + ["no oracle route mapped for %s: no comparator route asks its question in the same "
-                                 "representation, so nothing can vouch for it -- map its kind in "
-                                 "crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)" % k[7]]
-        if admitted_mode is not None:
-            by_mode = admitted_mode.get(k[0]) if isinstance(admitted_mode.get(k[0]), dict) else {}
-            if k[5] not in (by_mode.get(k[3]) or ()):
-                reasons = reasons + ["prompt %s is not admitted for this model with thinking %s by the certification "
-                                     "(admitted_by_sha_thinking) -- never shown answerable here (#3962 J2)" % (k[5], k[3])]
-                verdict = "RED"
-        elif admitted is not None and k[5] not in admitted.get(k[0], ()):
-            reasons = reasons + ["prompt %s is not admitted for this model by the certification (admitted_by_sha) -- "
-                                 "never shown answerable here (#3962 J2)" % k[5]]
-            verdict = "RED"
-        if unpinned:
-            # No third state (operator doctrine, 2026-09-23; cop ruling on #3952): a cell whose oracle cannot be
-            # named is NOT PROVEN, and not-proven is RED. The reason says which kind of RED this is — it is not
-            # a finding that apr answered wrongly.
-            verdict = "RED"
-            reasons.append("oracle unpinned: %s answered with no recorded version, so this cell is not proven "
-                           "(this is not a finding that apr was wrong)" % ", ".join(unpinned))
-        for eng in ENGINES:
-            entries[eng]["correct"] = ok[eng]
-            # #3832: one indivisible record per engine — WHICH engine, at WHICH
-            # version, and if it did not run, WHY, in a classified form. Split
-            # across fields a reader can see a count without provenance.
-            entries[eng]["version"] = versions.get(eng)
-            if not entries[eng].get("answered"):
-                entries[eng]["not_ran_reason"] = classify_not_ran(entries[eng].get("why"))
-        said = {e: norm(v["answer"]) for e, v in entries.items() if v.get("answered")}
-        cells.append({
-            "key": dict(zip(("model_sha256", "host", "verb", "thinking", "rung", "prompt_id"), k[:6]),
-                        **({"mode": k[6]} if k[6] else {}), **({"route": k[7]} if k[7] else {})),
-            "verdict": verdict,
-            # #3962 B4: the comparator route this apr route was judged against (None: unmapped).
-            **({"oracle_route": oracle_of[k]} if k in oracle_of else {}),
-            # #3957: why a cell is RED, every reason, and what each engine's answer extracted to.
-            "reasons": reasons,
-            "format": fmt,
-            "extracted": extracted,
-            "all_wrong": verdict == "RED" and not any(ok.get(e) for e in ENGINES)
-                         and any(v.get("answered") for v in entries.values()),
-            # #3832: the cell states its own coverage, so a reader never has to
-            # infer how many engines produced the verdict they are reading.
-            "quorum": cell_quorum(entries),
-            # #3832: the SUBJECT of the comparison, stamped like the comparators.
-            # Without it `engines[]` documents the comparators rigorously and
-            # leaves what is being compared unqualified — the same asymmetry as a
-            # parity column carrying prompt_ids for only one side. `under_development`
-            # is not licence to ignore a red; it is what stops a red being read as
-            # a REGRESSION when it is development state (operator 2026-09-22:
-            # "qwen3.5 on our box is dicey as we are developing and testing").
-            "subject": {
-                "model_sha256": k[0],
-                "apr_version": versions.get("apr"),
-                "under_development": bool(subject_dev.get(k[0])),
-                "development_note": subject_dev.get(k[0]) or None,
-            },
-            # additive (aprender-97, #3715): pv reads the control by this flag, never by a prompt name
-            "positive_control": bool(prompt.get("control")),
-            "oracle": prompt.get("oracle"),
-            **({"expect_any": prompt["expect_any"]} if "expect_any" in prompt else {}),
-            "engines": entries,
-            "agreement": {
-                "answered": sorted(said),
-                "all_identical": len(said) >= 2 and len(set(said.values())) == 1,
-                "apr_matches": sorted(e for e in said if e != "apr" and "apr" in said and said[e] == said["apr"]),
-            },
-            "token_parity": (token_parity(entries["apr"], toks.get((k[0], k[5]))) if k[2] == "run"
-                             else {"measured": False, "why": "not measured for the %s verb" % k[2]}),
-        })
+    try:
+        with open(args.certification, encoding="utf-8") as fh:
+            cdoc = json.load(fh)
+        admitted, admitted_mode = cdoc.get("admitted_by_sha"), cdoc.get("admitted_by_sha_thinking")
+    except (OSError, ValueError):
+        admitted = None
+    if not isinstance(admitted, dict):
+        admitted = {}   # a receipt with no per-model admission admits nothing
+    if not isinstance(admitted_mode, dict):
+        admitted_mode = None
+    return admitted, admitted_mode
 
-    counts = {v: sum(1 for c in cells if c["verdict"] == v) for v in ("RED", "GREEN")}
-    counts["ALL_WRONG"] = sum(1 for c in cells if c.get("all_wrong"))   # a SUBSET of RED (#3957 F6), never its own state
-    judged = counts["RED"] + counts["GREEN"]
-    all_wrong_by_model = {}
-    for c in cells:
-        if c.get("all_wrong"):
-            k = c["key"]["model_sha256"]
-            all_wrong_by_model[k] = all_wrong_by_model.get(k, 0) + 1
-    controls = [pid for pid, p in prompts.items() if p.get("control")]
+
+def _engine_cell_entry(eng, row, prompt, opened_by, versions, requested):
+    """One engine's entry in a cell; the bool says it answered but could not be pinned to a version."""
+    if row is None:
+        return {"answered": False, "missing": True,
+                "why": "missing: no row for this engine" if eng in requested else "not requested"}, False
+    entry = engine_entry(row, prompt, opened_by.get((row.get("model_sha256"), row.get("prompt_id"))))
+    if row.get("borrowed_from_route"):
+        entry["borrowed_from_route"] = row["borrowed_from_route"]
+    # #3952: a comparator the receipt cannot name a version for cannot vouch — for apr or against
+    # it. Its answer is kept on the record; it is not an oracle.
+    if eng in COMPARATORS and entry.get("answered") and not versions.get(eng):
+        entry["answered"] = False
+        entry["why"] = ("unpinned: the run's meta records no version for %s, so a verdict it "
+                        "vouched for could not name what produced it" % eng)
+        return entry, True
+    return entry, False
+
+
+def _cell_entries(cell_rows, prompt, opened_by, versions, requested):
+    entries, unpinned = {}, []
+    for eng in ENGINES:
+        entries[eng], was_unpinned = _engine_cell_entry(eng, cell_rows.get(eng), prompt, opened_by, versions, requested)
+        if was_unpinned:
+            unpinned.append(eng)
+    return entries, unpinned
+
+
+def _admission_reason(k, admitted, admitted_mode):
+    if admitted_mode is not None:
+        by_mode = admitted_mode.get(k[0]) if isinstance(admitted_mode.get(k[0]), dict) else {}
+        if k[5] not in (by_mode.get(k[3]) or ()):
+            return ("prompt %s is not admitted for this model with thinking %s by the certification "
+                    "(admitted_by_sha_thinking) -- never shown answerable here (#3962 J2)" % (k[5], k[3]))
+    elif admitted is not None and k[5] not in admitted.get(k[0], ()):
+        return ("prompt %s is not admitted for this model by the certification (admitted_by_sha) -- "
+                "never shown answerable here (#3962 J2)" % k[5])
+    return None
+
+
+def _cell_gates(k, verdict, reasons, oracle_of, admitted, admitted_mode, unpinned):
+    if k in oracle_of and oracle_of[k] is None:
+        verdict = "RED"
+        reasons = reasons + ["no oracle route mapped for %s: no comparator route asks its question in the same "
+                             "representation, so nothing can vouch for it -- map its kind in "
+                             "crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)" % k[7]]
+    why = _admission_reason(k, admitted, admitted_mode)
+    if why:
+        reasons = reasons + [why]
+        verdict = "RED"
+    if unpinned:
+        # No third state (operator doctrine, 2026-09-23; cop ruling on #3952): a cell whose oracle cannot be
+        # named is NOT PROVEN, and not-proven is RED. The reason says which kind of RED this is — it is not
+        # a finding that apr answered wrongly.
+        verdict = "RED"
+        reasons.append("oracle unpinned: %s answered with no recorded version, so this cell is not proven "
+                       "(this is not a finding that apr was wrong)" % ", ".join(unpinned))
+    return verdict, reasons
+
+
+def _stamp_engines(entries, ok, versions):
+    for eng in ENGINES:
+        entries[eng]["correct"] = ok[eng]
+        # #3832: one indivisible record per engine — WHICH engine, at WHICH
+        # version, and if it did not run, WHY, in a classified form. Split
+        # across fields a reader can see a count without provenance.
+        entries[eng]["version"] = versions.get(eng)
+        if not entries[eng].get("answered"):
+            entries[eng]["not_ran_reason"] = classify_not_ran(entries[eng].get("why"))
+
+
+def _cell_key(k):
+    return dict(zip(("model_sha256", "host", "verb", "thinking", "rung", "prompt_id"), k[:6]),
+                **({"mode": k[6]} if k[6] else {}), **({"route": k[7]} if k[7] else {}))
+
+
+def _agreement(entries):
+    said = {e: norm(v["answer"]) for e, v in entries.items() if v.get("answered")}
+    return {
+        "answered": sorted(said),
+        "all_identical": len(said) >= 2 and len(set(said.values())) == 1,
+        "apr_matches": sorted(e for e in said if e != "apr" and "apr" in said and said[e] == said["apr"]),
+    }
+
+
+def _cell_record(k, verdict, reasons, fmt, extracted, ok, entries, prompt, ctx):
+    return {
+        "key": _cell_key(k),
+        "verdict": verdict,
+        # #3962 B4: the comparator route this apr route was judged against (None: unmapped).
+        **({"oracle_route": ctx["oracle_of"][k]} if k in ctx["oracle_of"] else {}),
+        # #3957: why a cell is RED, every reason, and what each engine's answer extracted to.
+        "reasons": reasons,
+        "format": fmt,
+        "extracted": extracted,
+        "all_wrong": verdict == "RED" and not any(ok.get(e) for e in ENGINES)
+                     and any(v.get("answered") for v in entries.values()),
+        # #3832: the cell states its own coverage, so a reader never has to
+        # infer how many engines produced the verdict they are reading.
+        "quorum": cell_quorum(entries),
+        # #3832: the SUBJECT of the comparison, stamped like the comparators.
+        # Without it `engines[]` documents the comparators rigorously and
+        # leaves what is being compared unqualified — the same asymmetry as a
+        # parity column carrying prompt_ids for only one side. `under_development`
+        # is not licence to ignore a red; it is what stops a red being read as
+        # a REGRESSION when it is development state (operator 2026-09-22:
+        # "qwen3.5 on our box is dicey as we are developing and testing").
+        "subject": {
+            "model_sha256": k[0],
+            "apr_version": ctx["versions"].get("apr"),
+            "under_development": bool(ctx["subject_dev"].get(k[0])),
+            "development_note": ctx["subject_dev"].get(k[0]) or None,
+        },
+        # additive (aprender-97, #3715): pv reads the control by this flag, never by a prompt name
+        "positive_control": bool(prompt.get("control")),
+        "oracle": prompt.get("oracle"),
+        **({"expect_any": prompt["expect_any"]} if "expect_any" in prompt else {}),
+        "engines": entries,
+        "agreement": _agreement(entries),
+        "token_parity": (token_parity(entries["apr"], ctx["toks"].get((k[0], k[5]))) if k[2] == "run"
+                         else {"measured": False, "why": "not measured for the %s verb" % k[2]}),
+    }
+
+
+def _judge_one_cell(k, cell_rows, prompt, ctx):
+    entries, unpinned = _cell_entries(cell_rows, prompt, ctx["opened_by"], ctx["versions"], ctx["requested"])
+    fmt = next((cell_rows[e].get("format") for e in cell_rows if cell_rows[e].get("format")), None) \
+        or ctx["fmt_of_model"].get(k[0])
+    verdict, ok, reasons, extracted = judge_cell(entries, prompt, fmt)
+    verdict, reasons = _cell_gates(k, verdict, reasons, ctx["oracle_of"], ctx["admitted"],
+                                   ctx["admitted_mode"], unpinned)
+    _stamp_engines(entries, ok, ctx["versions"])
+    return _cell_record(k, verdict, reasons, fmt, extracted, ok, entries, prompt, ctx)
+
+
+def _uncontrolled_lanes(cells):
     # #3957 F6: ONE positive control per (model, host, verb, thinking) -- a control measured on
     # `run` says nothing about whether the `chat` lane can see a right answer.
-    lanes = sorted({(c["key"]["model_sha256"], c["key"]["host"], c["key"]["verb"], c["key"]["thinking"]) for c in cells})
-    uncontrolled = ["%s/%s/%s/%s" % (m[:12], h, v, t) for (m, h, v, t) in lanes
-                    if not any((c["key"]["model_sha256"], c["key"]["host"], c["key"]["verb"], c["key"]["thinking"])
-                               == (m, h, v, t) and c["positive_control"] for c in cells)]
+    def lane(c):
+        return (c["key"]["model_sha256"], c["key"]["host"], c["key"]["verb"], c["key"]["thinking"])
+    controlled = {lane(c) for c in cells if c["positive_control"]}
+    return ["%s/%s/%s/%s" % (m[:12], h, v, t) for (m, h, v, t) in sorted({lane(c) for c in cells})
+            if (m, h, v, t) not in controlled]
+
+
+def _negative_controls(cells, prompts):
     # #3957 F6 / J3: a NEGATIVE control per verb. The judge plants a wrong apr answer into a GREEN
     # control cell of that verb and must see RED; a lane that cannot see a wrong answer vouches
     # for nothing. The planted text is the prompt's own `negative` (#3962), else a fixed non-answer.
@@ -1115,23 +1184,45 @@ def collect(args):
                            turns=(ents["apr"].get("turns") or [])[:-1] + [planted] if ents["apr"].get("turns") else None)
         nv = judge_cell(ents, prompts[ctl["key"]["prompt_id"]], ctl["format"])[0]
         negative[verb] = {"prompt_id": ctl["key"]["prompt_id"], "planted": planted, "verdict": nv}
+    return negative
+
+
+def _declined_because(controls, cells, uncontrolled, blind, certified):
+    if not controls:
+        return "the prompt set declares no positive control (\"control\": true)"
+    if not cells:
+        return "no cell was measured"
+    if uncontrolled:
+        return "no positive-control cell for (model/host/verb/thinking) " + ", ".join(uncontrolled)
+    if blind:
+        return ("negative control: a planted wrong apr answer was NOT judged RED for verb(s) %s -- "
+                "the lane cannot see a wrong answer" % ", ".join(blind))
+    if certified is not None and certified is not True:
+        return "the v2 prompt set is not certified: %s (#3962 J2)" % certified
+    return None
+
+
+def _all_wrong_by_model(cells):
+    out = {}
+    for c in cells:
+        if c.get("all_wrong"):
+            k = c["key"]["model_sha256"]
+            out[k] = out.get(k, 0) + 1
+    return out
+
+
+def _summarize(cells, det, prompts, pdoc, args):
+    counts = {v: sum(1 for c in cells if c["verdict"] == v) for v in ("RED", "GREEN")}
+    counts["ALL_WRONG"] = sum(1 for c in cells if c.get("all_wrong"))   # a SUBSET of RED (#3957 F6), never its own state
+    judged = counts["RED"] + counts["GREEN"]
+    controls = [pid for pid, p in prompts.items() if p.get("control")]
+    negative = _negative_controls(cells, prompts)
     blind = sorted(v for v, r in negative.items() if r["verdict"] != "RED")
     # #3962 J2: a v2 prompt set is used only under the certification receipt that covers its bytes.
     certified = None
     if pdoc.get("schema") == "crux-inference-prompts/v2":
         certified = certification_ok(args.prompts, getattr(args, "certification", None))
-    declined_because = None
-    if not controls:
-        declined_because = "the prompt set declares no positive control (\"control\": true)"
-    elif not cells:
-        declined_because = "no cell was measured"
-    elif uncontrolled:
-        declined_because = "no positive-control cell for (model/host/verb/thinking) " + ", ".join(uncontrolled)
-    elif blind:
-        declined_because = ("negative control: a planted wrong apr answer was NOT judged RED for verb(s) %s -- "
-                            "the lane cannot see a wrong answer" % ", ".join(blind))
-    elif certified is not None and certified is not True:
-        declined_because = "the v2 prompt set is not certified: %s (#3962 J2)" % certified
+    declined_because = _declined_because(controls, cells, _uncontrolled_lanes(cells), blind, certified)
     det_counts = {v: sum(1 for d in det if d["verdict"] == v) for v in ("RED", "GREEN")}
     if counts["RED"] or det_counts["RED"]:
         verdict, rc = "RED", 1
@@ -1139,6 +1230,14 @@ def collect(args):
         verdict, rc = "DECLINE", 2
     else:
         verdict, rc = "PASS", 0
+    summary = dict(counts, cells=len(cells), judged=judged, verdict=verdict, deterministic=det_counts,
+                   all_wrong_by_model=_all_wrong_by_model(cells), controls=controls, negative_controls=negative,
+                   certified=certified,
+                   declined_because=declined_because if verdict == "DECLINE" else None)
+    return summary, rc
+
+
+def _write_receipt(args, meta, cells, det, greedy, summary):
     receipt = dict(meta)
     receipt.update({
         "schema": "crux-inference-receipt/v1",
@@ -1146,10 +1245,7 @@ def collect(args):
         "cells": cells,
         "deterministic": det,
         "greedy": greedy,
-        "summary": dict(counts, cells=len(cells), judged=judged, verdict=verdict, deterministic=det_counts,
-                        all_wrong_by_model=all_wrong_by_model, controls=controls, negative_controls=negative,
-                        certified=certified,
-                        declined_because=declined_because if verdict == "DECLINE" else None),
+        "summary": summary,
     })
     with open(args.out_json, "w", encoding="utf-8") as fh:
         json.dump(receipt, fh, indent=2, ensure_ascii=False)
@@ -1158,6 +1254,38 @@ def collect(args):
     with open(args.out_md, "w", encoding="utf-8") as fh:
         fh.write(md)
     sys.stdout.write(md)
+
+
+def collect(args):
+    pdoc, meta, rows = _load_inputs(args)
+    prompts = {p["id"]: p for p in pdoc["prompts"]}
+    gens = [r for r in rows if r.get("kind") == "gen"]
+    # llama.cpp's template-level ids feed the REPORTED token_parity field; raw-text
+    # `tok` rows (they carry `input`) are the byte-equal deterministic rows below.
+    toks = {(r["model_sha256"], r["prompt_id"]): r for r in rows
+            if r.get("kind") == "tok" and r.get("engine") == "llama.cpp" and "input" not in r}
+    det = judge_deterministic(rows, "tok") + judge_deterministic(rows, "tmpl")
+    greedy = report_greedy(rows)
+    keys, by_key = _group_cells(gens, prompts)
+    keys, oracle_of = _borrow_oracle_rows(keys, by_key)
+    admitted, admitted_mode = _load_admission(pdoc, args)
+    ctx = {
+        "opened_by": _opened_by(rows, gens),
+        "requested": meta.get("engines", list(ENGINES)),
+        # #3832: resolved once, stamped on every cell.
+        "versions": engine_versions(meta),
+        # model sha256 -> development note, for models the operator has declared are
+        # under active development. Keyed by sha so a rename cannot silently drop it.
+        "subject_dev": {m.get("sha256"): m.get("under_development")
+                        for m in (meta.get("models") or []) if m.get("under_development")},
+        # #3957 Q2: the FORMAT picks the same-representation oracle. From the row, else the model's name.
+        "fmt_of_model": {m.get("sha256"): (m.get("format") or model_format(m.get("name")))
+                         for m in (meta.get("models") or [])},
+        "toks": toks, "oracle_of": oracle_of, "admitted": admitted, "admitted_mode": admitted_mode,
+    }
+    cells = [_judge_one_cell(k, by_key[k], prompts[k[5]], ctx) for k in keys]
+    summary, rc = _summarize(cells, det, prompts, pdoc, args)
+    _write_receipt(args, meta, cells, det, greedy, summary)
     return rc
 
 

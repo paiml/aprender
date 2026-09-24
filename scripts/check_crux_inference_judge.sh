@@ -1090,24 +1090,24 @@ no-control-ok|is no control: RED|s/^    if not ctl:$/    if False:/
 split-ignored|is a SPLIT|s/^        elif len(set(vals.values())) > 1 or None in vals.values():$/        elif False:/
 apr-differs-ignored|ANSWERED but WRONG does not corroborate|s/^        elif a.get("answered") and ext.get("apr") != next(iter(vals.values())):$/        elif False:/
 token-loop-off|named DEGENERATE|s/^    return top >= 0.9 \* len(chars) or token_loop(text) is not None$/    return top >= 0.9 * len(chars)/
-b2-no-opener|a prefilled block that NEVER closes is RED|s/^            p\["answer"\] = "<think>\\n" + p\["answer"\]$/            pass/
+b2-no-opener|a prefilled block that NEVER closes is RED|s/^        p\["answer"\] = "<think>\\n" + p\["answer"\]$/        pass/
 b2-no-llama-map|llama-cli \[Start thinking\] with no \[End thinking\]|s/^        ans = ans.replace(marker, tag)$/        pass/
 b2-chars-not-bytes|a CJK rendering cut at 200 bytes|s/^    return False if len(raw.encode("utf-8")) < FORMATTED_PROMPT_WHOLE_BELOW else None$/    return False if len(rendered) < 180 else None/
 b2-floor-margin|floored to a char boundary|s/^FORMATTED_PROMPT_WHOLE_BELOW = FORMATTED_PROMPT_LOG_BYTES - 3$/FORMATTED_PROMPT_WHOLE_BELOW = FORMATTED_PROMPT_LOG_BYTES/
-b2-unknown-judged|nothing shows whether the prompt opened a block|s/^        elif opened is None and not re.search(r"<\/?think>", p\["answer"\], re.I):$/        elif False:/
+b2-unknown-judged|nothing shows whether the prompt opened a block|s/^    return opened is None and not re.search(r"<\/?think>", p\["answer"\], re.I)$/    return False/
 negative-control-off|the lane is blind|s/^    blind = sorted(v for v, r in negative.items() if r\["verdict"\] != "RED")$/    blind = []/
-per-verb-control-off|does not control the serve lane|s/^    uncontrolled = \["%s/    uncontrolled = [] and ["%s/
+per-verb-control-off|does not control the serve lane|s/^    return \["%s\/%s\/%s\/%s" %/    return [] and ["%s\/%s\/%s\/%s" %/
 reasoning-not-rebuilt|read as UNCLOSED|s/^    if isinstance(doc, dict) and isinstance(doc.get("reasoning"), str) and doc.get("reasoning"):$/    if False:/
 route-not-keyed|J\/R1 route key|s/, mode, r.get("route") or "")$/, mode, "")/
-b4-borrow-off|J\/B4 oracle pairing|s/^                    by_key\[k\]\[eng\] = dict(by_key\[src\]\[eng\], borrowed_from_route=src\[7\] or "(route-less plugin row)")$/                    pass/
-b4-native-overwritten|J\/B4 native wins|s/^            if eng in by_key\[k\]:$/            if False:/
-b4-modeless-off|J\/B4 plugin stream|s/^        sources = \[k\[:7\] + (orc,), k\[:7\] + ("",), k\[:6\] + ("", "")\]$/        sources = [k[:7] + (orc,), k[:7] + ("",)]/
+b4-borrow-off|J\/B4 oracle pairing|s/^                by_key\[k\]\[eng\] = dict(by_key\[src\]\[eng\], borrowed_from_route=src\[7\] or "(route-less plugin row)")$/                pass/
+b4-native-overwritten|J\/B4 native wins|s/^        if eng in by_key\[k\]:$/        if False:/
+b4-modeless-off|J\/B4 plugin stream|s/^    sources = \[k\[:7\] + (orc,), k\[:7\] + ("",), k\[:6\] + ("", "")\]$/    sources = [k[:7] + (orc,), k[:7] + ("",)]/
 b4-lent-kept|J\/B4 plugin stream|s/^            or not all((k, e) in lent for e in by_key\[k\])\]$/            or True]/
-b4-stream-not-serve|J\/B4 plugin stream|s/^    if row.get("verb") in ("serve run", "serve stream"):$/    if row.get("verb") == "serve run":/
-code-comparator-cli|J\/code comparator json|s/^    elif row.get("verb") == "code" and engine in COMPARATORS:$/    elif False:/
+b4-stream-not-serve|J\/B4 plugin stream|s/^    if verb in ("serve run", "serve stream"):$/    if verb == "serve run":/
+code-comparator-cli|J\/code comparator json|s/^    if verb == "code" and engine in COMPARATORS:$/    if False:/
 b4-unmapped-borrows|J\/B4 unmapped route|s/^        orc = crux_serve_routes.oracle_route(k\[7\])$/        orc = crux_serve_routes.oracle_route(k[7]) or "POST \/v1\/chat\/completions"/
-admission-mode-off|admitted only for thinking ON|s/^        if admitted_mode is not None:$/        if False:/
-admission-off|NOT admitted for this model is RED|s/^        elif admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        elif False:/
+admission-mode-off|admitted only for thinking ON|s/^    if admitted_mode is not None:$/    if False:/
+admission-off|NOT admitted for this model is RED|s/^    elif admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/    elif False:/
 certification-off|no certification receipt declines|s/^        certified = certification_ok(args.prompts, getattr(args, "certification", None))$/        certified = True/
 MUT
 fi

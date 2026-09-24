@@ -235,35 +235,18 @@ def load_certified(cert_p, out):
     return keys, False
 
 
-def judge(L, good, crux_dir, cut, equiv, out, red=None, cert_p=None):
-    """Print one line per cell and a per-format summary. -> True when any cell is not proven.
-
-    `red` (#3957 F9/F10): {(host, file): "RED-MODEL:<axis>" | "RED-UNSUPPORTED"}, holding ONLY the verdicts
-    model_ladder_redmodel re-proved on this sweep. A RED-UNSUPPORTED file's cuda cells print
-    RED-UNSUPPORTED and do not block; a RED-MODEL file's cells are proven on thinking OFF alone."""
-    red = red or {}
-    verbs = list((L.get("cells") or {}).get("verbs") or ["run", "chat", "serve", "code"])
-    inv_backends = list((L.get("inventory") or {}).get("backends") or [])
-    rung_by_file = {r.get("gguf"): r for r in L.get("rungs") or []}
-    certified, failed = (load_certified(cert_p, out) if cert_p else (None, False))
+def _held_shas(good, rung_by_file):
     held = set()
     for R in good.values():
         inv = {i.get("file"): i.get("sha256") for i in R.get("inventory") or [] if isinstance(i, dict)}
         for x in R.get("rungs") or []:
             if x.get("present"):
                 held.add(x.get("sha256") or inv.get(x.get("file")) or (rung_by_file.get(x.get("file")) or {}).get("sha256"))
-    need = certified is None or bool(held & certified)
-    if need or (crux_dir and glob.glob(os.path.join(crux_dir, "*.json"))):
-        index, lfail = load_crux(crux_dir, cut, equiv, out)
-        failed = failed or (lfail and need)
-    else:
-        index = {}
-        out("note  no CRUX receipt needed: no held model is CRUX-certified; every model is proven by the ladder (#3710 ruling 1)")
-    for s_ in sorted(certified or ()):
-        if s_ not in held:
-            failed = True
-            out(f"FAIL  certified model {s_[:12]} is held by no required host -- CRUX must prove every certified model (#3710 ruling 1)")
-    tally = {}
+    return held
+
+
+def _owed_rungs(good, rung_by_file, inv_backends):
+    """Yield (host, file, sha, backends) for every present rung a required host owes, in report order."""
     for host in sorted(good):
         R = good[host]
         inv_sha = {i.get("file"): i.get("sha256") for i in R.get("inventory") or [] if isinstance(i, dict)}
@@ -275,53 +258,101 @@ def judge(L, good, crux_dir, cut, equiv, out, red=None, cert_p=None):
             if r is not None and r.get("hosts") and host not in r["hosts"]:
                 continue
             backends = list(r.get("backends") or []) if r is not None else inv_backends
-            sha = x.get("sha256") or inv_sha.get(f) or (r or {}).get("sha256")
-            fmt, q = fmt_of(f), quant_of(f)
-            src_sha, chain_why = (apr_chain(x, backends) if fmt == "apr" else (None, []))
-            for b in backends:
-                for v in verbs:
-                    label = f"{f} fmt={fmt} quant={q} host={host} backend={b} verb={v}"
-                    t = tally.setdefault(fmt, [0, 0, 0, 0])
-                    t[0] += 1
-                    named = red.get((host, f))
-                    if named == "RED-UNSUPPORTED" and b in ("cuda", "gpu"):
-                        t[2] += 1
-                        out(f"RED-UNSUPPORTED cell {label} -- apr refused this architecture by name on this sweep; counted RED, never green (#3957 F10)")
-                        continue
-                    if not (isinstance(sha, str) and HEX64.fullmatch(sha)):
-                        ok, why = False, "the row has no 64-hex sha256, so no oracle can be joined to it"
-                    elif fmt == "apr":
-                        per_b = [w for w in chain_why if not w.startswith(tuple(f"{o}:" for o in backends if o != b))]
-                        if src_sha is None:
-                            ok, why = False, per_b[0]
-                        elif certified is not None and src_sha not in certified:
-                            # ruling 1: the chain's tensor + runtime links still hold; the source itself is
-                            # proven by the ladder, not by CRUX, since it is not certified
-                            ok, why = (not per_b), ("; ".join(per_b) if per_b else
-                                       f"chain to source {src_sha[:12]} (source not CRUX-certified; proven by the ladder, #3710 ruling 1)")
-                        else:
-                            s_ok, s_why = crux_cell(index, src_sha, host, b, v)
-                            reasons = per_b + ([] if s_ok else [f"source {src_sha[:12]} is not proven: {s_why} (#3957 F8)"])
-                            ok, why = (not reasons), ("; ".join(reasons) if reasons else f"chain to source {src_sha[:12]}: {s_why}")
-                    elif certified is not None and sha not in certified:
-                        # #3710 ruling 1: CRUX GREEN is required only for the certified models; this one is
-                        # proven by the ladder's golden oracle (why_of above), which still refuses any red row.
-                        t[3] += 1
-                        out(f"note  cell {label} -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)")
-                        continue
-                    else:
-                        axis = named.split(":", 1)[1].split(",") if named and named.startswith("RED-MODEL") else None
-                        ok, why = crux_cell(index, sha, host, b, v, red_model=axis)
-                    if ok and named and named.startswith("RED-MODEL"):
-                        # proven on thinking OFF, RED on thinking ON: a RED cell, never counted proven (#3957 F9)
-                        t[2] += 1
-                        out(f"RED-MODEL cell {label} -- {why}")
-                    elif ok:
-                        t[1] += 1
-                        out(f"ok    cell {label} -- {why}")
-                    else:
-                        failed = True
-                        out(f"FAIL  cell {label} -- {why}")
+            yield host, x, f, x.get("sha256") or inv_sha.get(f) or (r or {}).get("sha256"), backends
+
+
+def _apr_cell(C, src_sha, chain_why, backends, host, b, v):
+    per_b = [w for w in chain_why if not w.startswith(tuple(f"{o}:" for o in backends if o != b))]
+    if src_sha is None:
+        return False, per_b[0]
+    if C["certified"] is not None and src_sha not in C["certified"]:
+        # ruling 1: the chain's tensor + runtime links still hold; the source itself is
+        # proven by the ladder, not by CRUX, since it is not certified
+        return (not per_b), ("; ".join(per_b) if per_b else
+                             f"chain to source {src_sha[:12]} (source not CRUX-certified; proven by the ladder, #3710 ruling 1)")
+    index = C["index"]
+    s_ok, s_why = crux_cell(index, src_sha, host, b, v)
+    reasons = per_b + ([] if s_ok else [f"source {src_sha[:12]} is not proven: {s_why} (#3957 F8)"])
+    return (not reasons), ("; ".join(reasons) if reasons else f"chain to source {src_sha[:12]}: {s_why}")
+
+
+def _cell_state(C, host, f, sha, fmt, chain, backends, b, v):
+    """(state, why): state is 'unsupported', 'ladder-only', 'red-model', 'ok' or 'fail'."""
+    certified = C["certified"]
+    named = C["red"].get((host, f))
+    if named == "RED-UNSUPPORTED" and b in ("cuda", "gpu"):
+        return "unsupported", None
+    if not (isinstance(sha, str) and HEX64.fullmatch(sha)):
+        ok, why = False, "the row has no 64-hex sha256, so no oracle can be joined to it"
+    elif fmt == "apr":
+        ok, why = _apr_cell(C, chain[0], chain[1], backends, host, b, v)
+    elif certified is not None and sha not in certified:
+        # #3710 ruling 1: CRUX GREEN is required only for the certified models; this one is
+        # proven by the ladder's golden oracle (why_of above), which still refuses any red row.
+        return "ladder-only", None
+    else:
+        axis = named.split(":", 1)[1].split(",") if named and named.startswith("RED-MODEL") else None
+        ok, why = crux_cell(C["index"], sha, host, b, v, red_model=axis)
+    if ok and named and named.startswith("RED-MODEL"):
+        # proven on thinking OFF, RED on thinking ON: a RED cell, never counted proven (#3957 F9)
+        return "red-model", why
+    return ("ok" if ok else "fail"), why
+
+
+# state -> (tally slot, the line printed for it); slot 1 proven, 2 named RED, 3 ladder-only, None failed.
+_CELL_LINE = {
+    "unsupported": (2, "RED-UNSUPPORTED cell {label} -- apr refused this architecture by name on this sweep; "
+                       "counted RED, never green (#3957 F10)"),
+    "ladder-only": (3, "note  cell {label} -- not CRUX-certified: proven by the ladder's golden oracle, "
+                       "not by CRUX (#3710 ruling 1)"),
+    "red-model": (2, "RED-MODEL cell {label} -- {why}"),
+    "ok": (1, "ok    cell {label} -- {why}"),
+    "fail": (None, "FAIL  cell {label} -- {why}"),
+}
+
+
+def _crux_index(certified, held, crux_dir, cut, equiv, failed, out):
+    need = certified is None or bool(held & certified)
+    if need or (crux_dir and glob.glob(os.path.join(crux_dir, "*.json"))):
+        index, lfail = load_crux(crux_dir, cut, equiv, out)
+        return index, failed or (lfail and need)
+    out("note  no CRUX receipt needed: no held model is CRUX-certified; every model is proven by the ladder (#3710 ruling 1)")
+    return {}, failed
+
+
+def judge(L, good, crux_dir, cut, equiv, out, red=None, cert_p=None):
+    """Print one line per cell and a per-format summary. -> True when any cell is not proven.
+
+    `red` (#3957 F9/F10): {(host, file): "RED-MODEL:<axis>" | "RED-UNSUPPORTED"}, holding ONLY the verdicts
+    model_ladder_redmodel re-proved on this sweep. A RED-UNSUPPORTED file's cuda cells print
+    RED-UNSUPPORTED and do not block; a RED-MODEL file's cells are proven on thinking OFF alone."""
+    verbs = list((L.get("cells") or {}).get("verbs") or ["run", "chat", "serve", "code"])
+    inv_backends = list((L.get("inventory") or {}).get("backends") or [])
+    rung_by_file = {r.get("gguf"): r for r in L.get("rungs") or []}
+    certified, failed = (load_certified(cert_p, out) if cert_p else (None, False))
+    held = _held_shas(good, rung_by_file)
+    index, failed = _crux_index(certified, held, crux_dir, cut, equiv, failed, out)
+    for s_ in sorted(certified or ()):
+        if s_ not in held:
+            failed = True
+            out(f"FAIL  certified model {s_[:12]} is held by no required host -- CRUX must prove every certified model (#3710 ruling 1)")
+    C = {"certified": certified, "index": index, "red": red or {}}
+    tally = {}
+    for host, x, f, sha, backends in _owed_rungs(good, rung_by_file, inv_backends):
+        fmt, q = fmt_of(f), quant_of(f)
+        chain = (apr_chain(x, backends) if fmt == "apr" else (None, []))
+        for b in backends:
+            for v in verbs:
+                label = f"{f} fmt={fmt} quant={q} host={host} backend={b} verb={v}"
+                t = tally.setdefault(fmt, [0, 0, 0, 0])
+                t[0] += 1
+                state, why = _cell_state(C, host, f, sha, fmt, chain, backends, b, v)
+                slot, line = _CELL_LINE[state]
+                if slot is None:
+                    failed = True
+                else:
+                    t[slot] += 1
+                out(line.format(label=label, why=why))
     out("cells by format: " + ", ".join(f"{k} {v[1]}/{v[0]} proven" + (f", {v[2]} named RED (F9/F10)" if v[2] else "")
                                         + (f", {v[3]} ladder-only (not CRUX-certified)" if v[3] else "")
                                         for k, v in sorted(tally.items()))
