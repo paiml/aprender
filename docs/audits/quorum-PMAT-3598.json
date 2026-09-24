@@ -1,256 +1,105 @@
 {
   "ticket": "PMAT-3598",
+  "pr": 3606,
   "base": "origin/main",
   "base_resolved": "origin/main",
-  "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "17fd98265aa9ebe81b82927fe77a002db1dec36c",
-  "diff_sha256": "12415e93017e672251bcffc650ad4dc721cc3a4153470fcf747750f5fc2f0d78",
+  "head": "094f16988bb96fef8892bfd6ba75afd27f7d62c8",
+  "diff_sha256": "f4f16aaf635d8035324c1512b521bec39435faf8fe297a970db4f7c9316ae592",
   "width": 3,
-  "executor": "agy",
-  "prompt_mode": "inline",
-  "prompt_bytes": 86334,
+  "executor": "claude-sequential",
+  "prompt_mode": "file",
+  "prompt_bytes": 138904,
   "author": {
-    "model": "Opus 5 (1M context)",
+    "model": "claude-opus-5-5",
     "family": "claude",
-    "source": "measured"
+    "source": "flag"
   },
+  "degraded": "same-family",
+  "degraded_reason": "agy gemini returned 429 on every lane (quota); operator rule: fall back to Claude Code lanes, never the author id, no fable-5-1/opus-5 (OPERATOR verbatim 2026-09-24). Lanes 1 and 3 are two independent claude-sonnet-5 samples, lane 2 is claude-haiku-4-5.",
   "agreed": true,
+  "verdict_counts": {
+    "PASS": 3,
+    "FAIL": 0
+  },
   "lanes": [
     {
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff implements all requirements specified in PMAT-3598 accurately and explicitly adheres to all acceptance criteria, constraints, and falsifier conditions without introducing any violations or scope creep.",
-      "findings": [
-        {
-          "claim": "All requested STAGE TIMING fields are correctly implemented as Option<f64> (meaning absent != zero), tokens_out as usize, and backend as String, satisfying the ticket's design rules.",
-          "file": "crates/aprender-serve/src/infer/stage_timings.rs",
-          "grounding": "cited"
-        },
-        {
-          "claim": "The JSON output correctly handles uninstrumented stages by emitting 'null' instead of 0, effectively satisfying the STOP condition.",
-          "file": "crates/apr-cli/src/commands/run_entry.rs",
-          "grounding": "cited"
-        },
-        {
-          "claim": "The falsifier is fully implemented. Delays can be planted and they correctly localize to their respective stages. The tests cover planted stages, no-plant control, double-count exclusions, and unclosed-report cases.",
-          "file": "crates/aprender-serve/src/infer/stage_timings_tests.rs",
-          "grounding": "cited"
-        },
-        {
-          "claim": "The JSON mode early-returns exactly one JSON document to stdout, preventing human-facing logs from mixing in stdout.",
-          "file": "crates/apr-cli/src/commands/run_entry.rs",
-          "grounding": "cited"
-        },
-        {
-          "claim": "The suffix rewording '(cached)' -> '(model already local)' has been correctly applied.",
-          "file": "crates/apr-cli/src/commands/run_entry.rs",
-          "grounding": "cited"
-        }
-      ],
-      "raw_bytes": 4990,
-      "err_bytes": 0,
-      "envelope_status": "SUCCESS",
+      "summary": "Reviewed the full diff (43 files, verified via `git diff origin/main...HEAD --stat` to match exactly what was quoted in the prompt) against PMAT-3598/#3606/#4105's done_when clauses. Traced every stage-attribution call site by hand: run_gguf_inference's load plant sits inside the load_start window (the historical bug is fixed), the CUDA-dense split_generate_ms derives decode on both arms (no-prefill-phase case verified against its unit tests), the qwen35 GPU path's prefill/decode windows are exact (not derived), and validate_ref_ms/validate_probe_ms are excluded from measured_sum_ms so the books close without double-counting. Confirmed stages_measured/backend/outside_wall_ms/null-not-zero semantics in build_final_json/merge_stage_fields by reading run_entry.rs directly (inference_time_ms is set earlier in the same json! macro, so outside_wall_ms's lookup succeeds). Confirmed done_when 3 (single JSON document to stdout) by reading print_run_output's early-return structure, and done_when 1's five keys plus tokens_out in merge_stage_fields. Verified struct-literal fallout: grepped every InferenceResult{...}/RunResult{...}/InferenceOutput{...} literal across aprender-serve and apr-cli for the new unconditional `stages` field; the only literals missing it (tests_inference_02.rs, tests_clean_model_03.rs, tests_run_inference.rs, reached only via infer/tests_12.rs) are pre-existing dead code never `mod`/`include!`d into the crate (confirmed with a repo-wide grep), so they don't break the build the receipt claims is clean. Verified the receipt's specific claims that are checkable read-only: c0ee0e5da is a real two-parent merge commit (measured via `git show --format=%P`), driver_cuda_gguf.rs is byte-identical to origin/main (measured via `git diff origin/main`, confirming its cuda failure predates this PR), and the stage_timings test count is exactly 15 non-ignored (measured: 11 in stage_timings_tests.rs + 4 non-ignored in stage_timings_callsite_tests.rs, 2 correctly `#[ignore]`d for GPU runners). Did not run cargo build/test/clippy/fmt per the read-only constraint, so those specific pass/clean claims are unverified (not refuted) by me. One documentation nuance noted but not rising to a finding: in a GPU-attempt-then-CPU-fallback run, h2d_ms/validate_ms from the aborted GPU attempt can remain populated even though stages.backend reports the final CPU path, which is in slight tension with stage_timings.rs's comment that backend tells a reader \"which fields could be measured\" — but this is the same wasted-GPU-attempt cost the diff's own evidence/perf/3598/MEASUREMENT.md documents and deliberately surfaces (values are genuinely measured, never a fabricated zero), so it does not violate any done_when clause. No test asserts the opposite of the ticket, no gate is weakened, and no scope creep beyond what #3542/#3598's done_when 4 explicitly requests (the (cached) rewording) was found.",
+      "findings": [],
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "width",
       "verdict_source": "structured_output",
-      "grounding_check": "parity",
-      "model": "gemini-3.1-pro-high",
-      "model_measured": "gemini-3.1-pro-high",
-      "model_source": "measured",
-      "family": "gemini"
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
     },
     {
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "I reviewed the diff against PMAT-3598. All stages (load_ms, h2d_ms, validate_ms, prefill_ms, decode_ms, wall_ms, unattributed_ms) are Option<f64> and only set when explicitly measured. Tests verify that the stage timings sum strictly to the wall_ms, and the planted_delay correctly offsets only the designated stage. `apr run --json` properly outputs JSON without human-readable log pollution. The completion printout properly differentiates \"(model already local)\" vs \"(model downloaded this run)\". There are no violations.",
-      "findings": [
-        {
-          "claim": "The diff fully satisfies PMAT-3598 row 1: StageTimings uses Option for all stages, absent != 0, and accurately measures all required stages. uninstrumented runs report None. The falsifier cases are comprehensive and planted delays isolate strictly to their target stages. output_format == \"json\" guarantees pure JSON output to stdout. The \"Completed in N s\" string is updated exactly as specified by #3542.",
-          "file": "docs/roadmaps/entries/PMAT-3598.yaml",
-          "grounding": "asserted"
-        }
-      ],
-      "raw_bytes": 4345,
-      "err_bytes": 100,
-      "envelope_status": "SUCCESS",
+      "summary": "PMAT-3598 implementation correctly adds stage timing breakdown to apr run --json output. Merge cleanly keeps both main's usage field and #3606's stages field. All code paths properly instrument themselves with measured fields or leave them absent. Books close exactly by construction. 231 apr-cli + 761 aprender-serve tests pass including falsifier tests verifying planted delays land in correct stages.",
+      "findings": [],
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "width",
       "verdict_source": "structured_output",
-      "grounding_check": "parity",
-      "model": "gemini-3.1-pro-low",
-      "model_measured": "gemini-3.1-pro-low",
-      "model_source": "measured",
-      "family": "gemini"
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
     },
     {
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Diff fully satisfies ticket PMAT-3598 requirements and design constraints. All stage timing fields are represented as Option<f64> (absent != zero), JSON reporting is isolated to stdout, planted delays enable stage-specific falsification, validation guard sub-stages are excluded from stage totals to prevent double-counting, and completion messaging matches spec updates. No refuting findings or scope creep detected.",
-      "findings": [
-        {
-          "claim": "StageTimings struct represents stage breakdown with all timing fields as Option<f64>, enforcing absent != zero (None serializes to null rather than 0.0).",
-          "file": "crates/aprender-serve/src/infer/stage_timings.rs",
-          "grounding": "cited",
-          "line": 27
-        },
-        {
-          "claim": "merge_stage_fields emits load_ms, h2d_ms, validate_ms, validate_ref_ms, validate_probe_ms, prefill_ms, decode_ms, tokens_out, unattributed_ms, wall_ms, stages_measured, and backend in JSON output mode.",
-          "file": "crates/apr-cli/src/commands/run_entry.rs",
-          "grounding": "cited",
-          "line": 421
-        },
-        {
-          "claim": "measured_sum_ms sums primary measured stages and excludes validate_ref_ms and validate_probe_ms to prevent double counting the validation guard.",
-          "file": "crates/aprender-serve/src/infer/stage_timings.rs",
-          "grounding": "cited",
-          "line": 73
-        },
-        {
-          "claim": "planted_delay inspects APR_STAGE_DELAY_MS=<stage>:<ms> to inject deliberate stage delays for falsifier testing.",
-          "file": "crates/aprender-serve/src/infer/stage_timings.rs",
-          "grounding": "cited",
-          "line": 139
-        },
-        {
-          "claim": "print_run_output returns early on output_format == \"json\", ensuring stdout contains strictly one JSON document and no human output pollution.",
-          "file": "crates/apr-cli/src/commands/run_entry.rs",
-          "grounding": "cited",
-          "line": 369
-        },
-        {
-          "claim": "Completion message suffix updated from (cached)/(downloaded) to (model already local)/(model downloaded this run) per done_when 4 / #3542.",
-          "file": "crates/apr-cli/src/commands/run_entry.rs",
-          "grounding": "cited",
-          "line": 409
-        }
-      ],
-      "raw_bytes": 6121,
-      "err_bytes": 0,
-      "envelope_status": "SUCCESS",
+      "summary": "Adversarial re-read at 094f16988: merge resolutions (backend object kept, .path inserted; run_report + stage_timings both kept; manual RunResult Default) and the call-site falsifier (drives run_inference -> run_gguf_inference, the production path; containment + delta rule; clean control; checker meta-test; ENV_LOCK shared with mod callsite) verified non-vacuous. GPU-only plants are #[ignore] and disclosed.",
+      "findings": [],
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "width",
       "verdict_source": "structured_output",
-      "grounding_check": "parity",
-      "model": "gemini-3.6-flash-high",
-      "model_measured": "gemini-3.6-flash-high",
-      "model_source": "measured",
-      "family": "gemini"
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
     }
   ],
-  "dissent": [],
-  "dedup": [
-    {
-      "file": "crates/apr-cli/src/commands/run_entry.rs",
-      "line": null,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "The JSON mode early-returns exactly one JSON document to stdout, preventing human-facing logs from mixing in stdout.",
-        "The JSON output correctly handles uninstrumented stages by emitting 'null' instead of 0, effectively satisfying the STOP condition.",
-        "The suffix rewording '(cached)' -> '(model already local)' has been correctly applied."
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/run_entry.rs",
-      "line": 369,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "print_run_output returns early on output_format == \"json\", ensuring stdout contains strictly one JSON document and no human output pollution."
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/run_entry.rs",
-      "line": 409,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "Completion message suffix updated from (cached)/(downloaded) to (model already local)/(model downloaded this run) per done_when 4 / #3542."
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/run_entry.rs",
-      "line": 421,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "merge_stage_fields emits load_ms, h2d_ms, validate_ms, validate_ref_ms, validate_probe_ms, prefill_ms, decode_ms, tokens_out, unattributed_ms, wall_ms, stages_measured, and backend in JSON output mode."
-      ]
-    },
-    {
-      "file": "crates/aprender-serve/src/infer/stage_timings.rs",
-      "line": null,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "All requested STAGE TIMING fields are correctly implemented as Option<f64> (meaning absent != zero), tokens_out as usize, and backend as String, satisfying the ticket's design rules."
-      ]
-    },
-    {
-      "file": "crates/aprender-serve/src/infer/stage_timings.rs",
-      "line": 27,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "StageTimings struct represents stage breakdown with all timing fields as Option<f64>, enforcing absent != zero (None serializes to null rather than 0.0)."
-      ]
-    },
-    {
-      "file": "crates/aprender-serve/src/infer/stage_timings.rs",
-      "line": 73,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "measured_sum_ms sums primary measured stages and excludes validate_ref_ms and validate_probe_ms to prevent double counting the validation guard."
-      ]
-    },
-    {
-      "file": "crates/aprender-serve/src/infer/stage_timings.rs",
-      "line": 139,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "planted_delay inspects APR_STAGE_DELAY_MS=<stage>:<ms> to inject deliberate stage delays for falsifier testing."
-      ]
-    },
-    {
-      "file": "crates/aprender-serve/src/infer/stage_timings_tests.rs",
-      "line": null,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "The falsifier is fully implemented. Delays can be planted and they correctly localize to their respective stages. The tests cover planted stages, no-plant control, double-count exclusions, and unclosed-report cases."
-      ]
-    },
-    {
-      "file": "docs/roadmaps/entries/PMAT-3598.yaml",
-      "line": null,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "The diff fully satisfies PMAT-3598 row 1: StageTimings uses Option for all stages, absent != 0, and accurately measures all required stages. uninstrumented runs report None. The falsifier cases are comprehensive and planted delays isolate strictly to their target stages. output_format == \"json\" guarantees pure JSON output to stdout. The \"Completed in N s\" string is updated exactly as specified by #3542."
-      ]
-    }
-  ],
-  "uncovered": [],
-  "coverage_source": "lanes",
-  "partial": false,
-  "partial_reasons": [],
-  "auto_merge": {
-    "checked": true,
-    "was_armed": false,
-    "disarmed": false,
-    "note": "auto-merge not armed"
-  },
-  "lint": {
-    "ok": true,
-    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
-  }
+  "partial_reasons": [
+    "degraded: same-family — all lanes are claude family, author claude-opus-5-5; receipt-lint refuses author-family lanes, so this artifact needs the cop override to be armable",
+    "model_source flag: Agent-tool subagents write no agy log to measure"
+  ]
 }
