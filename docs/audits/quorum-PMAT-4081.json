@@ -1,0 +1,292 @@
+{
+  "ticket": "PMAT-4081",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "17f73066aa221c809496fbbdd5457a295d1e339e",
+  "diff_sha256": "25b8c2cb9cdce9c37efcdb8d5ffdd74b9735e9999795172148536c9d1a35bef6",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 55864,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "VERDICT=PASS | The diff implements PMAT-4081 correctly. ProofLevel::method is correctly centralized and matches the updated specifications. The README table and all three ladder doc copies now derive from the enum, and non-vacuous tests are added to ensure they stay in sync. No existing tests or gates are weakened. All changes correspond directly to ticket requirements.",
+      "findings": [],
+      "raw_bytes": 2108,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "VERDICT=PASS | Lane 2 independent review of PMAT-4081 / PR #4092. The diff cleanly centralizes proof level definitions under `ProofLevel::method` in `levels.rs`. The README verification ladder table and all three documentation copies of `verification-ladder.md` derive from or are asserted byte-for-byte against the enum via `levels::readme_and_ladder_docs_match_enum`. `pv explain` labels were aligned with `ProofLevel` (L3 for Kani, L4 for Lean), and non-vacuity tests for L4 and L5 were added. All suites (`cargo test -p aprender-contracts`, `cargo clippy -p aprender-contracts -- -D warnings`, `pv validate`, `pv lint`, `scripts/check_readme_claims.sh`) pass. No gates weakened, no tests inverted, and no unrequested changes found.",
+      "findings": [
+        {
+          "claim": "`ProofLevel::method` acts as the authoritative single source of truth for proof level definitions across the README table and all three verification ladder doc copies, resolving previous discrepancies (Kani is L3, Lean alone is L4, L5 requires all bindings implemented).",
+          "file": "crates/aprender-contracts/src/levels.rs",
+          "fix": "None required.",
+          "grounding": "measured",
+          "line": 36
+        },
+        {
+          "claim": "`levels::readme_and_ladder_docs_match_enum` asserts that the README ladder table and all three ladder document copies match `ladder_block()` byte-for-byte and have no stale level pairings outside the generated block.",
+          "file": "crates/aprender-contracts/src/levels.rs",
+          "fix": "None required.",
+          "grounding": "measured",
+          "line": 170
+        },
+        {
+          "claim": "`pv explain` ladder labels derive directly from `ProofLevel` (L3 for Kani, L4 for Lean), ensuring cross-tool consistency.",
+          "file": "crates/aprender-contracts/src/explain_render.rs",
+          "fix": "None required.",
+          "grounding": "cited",
+          "line": 103
+        },
+        {
+          "claim": "`pv validate` and `pv lint` pass with 0 errors, and `scripts/check_readme_claims.sh` passes all checks (FALSIFY-README-001 through 005) against the updated contract count (1830).",
+          "file": "contracts/work/PMAT-4081.yaml",
+          "fix": "None required.",
+          "grounding": "measured",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 5435,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "VERDICT=PASS | Lane 3 independent review of PMAT-4081 / PR #4092 (commit 17f73066a, base origin/main 49fe19c28). The diff unifies proof level definitions under ProofLevel::method in levels.rs (L1: Contract YAML with equations; L2: Falsification tests cover every obligation; L3: L2 + at least one Kani BMC harness; L4: Every obligation sorry-free Lean 4 theorem or N/A, >=1 proved; L5: L4 + >=1 binding, all bindings implemented). README verification table and all three copies of verification-ladder.md derive from or are strictly asserted against ProofLevel. Unit test suite passes with 1711 tests (including levels:: tests) and 33 integration tests. No gates weakened, no tests inverted, no extraneous changes.",
+      "findings": [
+        {
+          "claim": "The roadmap entry PMAT-4081.yaml lists status as planned, consistent with repository convention for PR-staged entries prior to branch merge.",
+          "file": "docs/roadmaps/entries/PMAT-4081.yaml",
+          "fix": "None required.",
+          "grounding": "cited",
+          "line": 5
+        },
+        {
+          "claim": "stale_level_pairings correctly inspects lines outside the generated markers for invalid level-tool pairings (e.g. Kani at L4/L5 or Lean at L5 without binding) in both forward and reverse directions.",
+          "file": "crates/aprender-contracts/src/levels.rs",
+          "fix": "None required.",
+          "grounding": "cited",
+          "line": 81
+        },
+        {
+          "claim": "ProofLevel::method acts as the single source of truth for proof level definitions across the README table and all three verification ladder doc copies, with levels::readme_and_ladder_docs_match_enum verifying byte-for-byte synchronization.",
+          "file": "crates/aprender-contracts/src/levels.rs",
+          "fix": "None required.",
+          "grounding": "measured",
+          "line": 36
+        }
+      ],
+      "raw_bytes": 4623,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/work/PMAT-4081.yaml",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "`pv validate` and `pv lint` pass with 0 errors, and `scripts/check_readme_claims.sh` passes all checks (FALSIFY-README-001 through 005) against the updated contract count (1830)."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/explain_render.rs",
+      "line": 103,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "`pv explain` ladder labels derive directly from `ProofLevel` (L3 for Kani, L4 for Lean), ensuring cross-tool consistency."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/levels.rs",
+      "line": 36,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "ProofLevel::method acts as the single source of truth for proof level definitions across the README table and all three verification ladder doc copies, with levels::readme_and_ladder_docs_match_enum verifying byte-for-byte synchronization.",
+        "`ProofLevel::method` acts as the authoritative single source of truth for proof level definitions across the README table and all three verification ladder doc copies, resolving previous discrepancies (Kani is L3, Lean alone is L4, L5 requires all bindings implemented)."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/levels.rs",
+      "line": 81,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "stale_level_pairings correctly inspects lines outside the generated markers for invalid level-tool pairings (e.g. Kani at L4/L5 or Lean at L5 without binding) in both forward and reverse directions."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/levels.rs",
+      "line": 170,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "`levels::readme_and_ladder_docs_match_enum` asserts that the README ladder table and all three ladder document copies match `ladder_block()` byte-for-byte and have no stale level pairings outside the generated block."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-4081.yaml",
+      "line": 5,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The roadmap entry PMAT-4081.yaml lists status as planned, consistent with repository convention for PR-staged entries prior to branch merge."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}

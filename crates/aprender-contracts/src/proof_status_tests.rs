@@ -1131,3 +1131,32 @@ fn na_obligations_grant_no_lean_credit() {
     let one = contract_with_na_obligations(1, 3, 4, 4);
     assert!(!is_lean_proved_with_grounding(&one, 1));
 }
+
+/// PVL-001 EV-3 (quorum round 4, measured): "every obligation is proved or not
+/// applicable" must not be satisfied VACUOUSLY. All obligations not applicable and none
+/// grounded is not L4 (ONT-2a: `grounded > 0`); with Kani and full falsification
+/// coverage it is L3. ProofLevel::L4's method says "with at least one proved".
+#[test]
+fn level_all_not_applicable_is_not_l4() {
+    let c = contract_with_lean_na(5, 0, 5);
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, None, 0),
+        ProofLevel::L3
+    );
+}
+
+/// PVL-001 EV-3 (quorum round 4, measured): L5 needs at least one binding. A fully
+/// grounded contract with ZERO bindings is L4, not L5 (`is_fully_bound` requires a
+/// non-zero total). ProofLevel::L5's method says "at least one binding".
+#[test]
+fn level_l5_needs_at_least_one_binding() {
+    let c = contract_with_lean(3, 3);
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, Some((0, 0)), 3),
+        ProofLevel::L4
+    );
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, Some((1, 1)), 3),
+        ProofLevel::L5
+    );
+}

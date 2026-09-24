@@ -5,7 +5,7 @@
 use std::fmt::Write;
 
 use crate::binding::BindingRegistry;
-use crate::proof_status::compute_proof_level;
+use crate::proof_status::{compute_proof_level, ProofLevel};
 use crate::schema::Contract;
 
 use super::obligation_pattern;
@@ -99,14 +99,15 @@ pub(super) fn write_obligations(out: &mut String, contract: &Contract) {
                 parts.push(format!("L2 ({ft})"));
             }
             for kh in &matching_kh {
-                parts.push(format!("L4 ({kh})"));
+                // PVL-001 EV-3: labels come from ProofLevel (Kani is L3, Lean alone is L4).
+                parts.push(format!("{} ({kh})", ProofLevel::L3));
             }
             if ob
                 .lean
                 .as_ref()
                 .is_some_and(|l| l.status.to_string() == "proved")
             {
-                parts.push("L5 (Lean)".to_string());
+                parts.push(format!("{} (Lean)", ProofLevel::L4));
             }
             if !parts.is_empty() {
                 let _ = writeln!(out, "     Verified at: {}", parts.join(", "));
@@ -138,7 +139,11 @@ pub(super) fn write_verification_ladder(
     let _ = writeln!(out, "Verification ladder");
     if lean_proved > 0 {
         let pct = lean_proved * 100 / total;
-        let _ = writeln!(out, "  L5 (Lean):  {lean_proved}/{total} proved ({pct}%)");
+        let _ = writeln!(
+            out,
+            "  {} (Lean):  {lean_proved}/{total} proved ({pct}%)",
+            ProofLevel::L4
+        );
     }
     if kani_count > 0 {
         // Summarize strategies
@@ -156,7 +161,8 @@ pub(super) fn write_verification_ladder(
             .collect();
         let _ = writeln!(
             out,
-            "  L4 (Kani):  {kani_count} harnesses ({})",
+            "  {} (Kani):  {kani_count} harnesses ({})",
+            ProofLevel::L3,
             strat_summary.join(", ")
         );
     }

@@ -53,6 +53,7 @@ pub mod kani_gen;
 pub mod kernels;
 pub mod latex;
 pub mod lean_gen;
+pub mod levels;
 pub mod lint;
 pub mod mirai_gen;
 pub mod obligation_matrix;
