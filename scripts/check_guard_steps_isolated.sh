@@ -19,8 +19,9 @@
 #
 # Usage: check_guard_steps_isolated.sh [--self-test] [workflow.yml ...]
 #   default workflows: every .github/workflows/*.y{a,}ml and .github/actions/*/action.y{a,}ml
-#   (every workflow runs on a self-hosted Linux
-#   runner; review of #4133 measured the runs-on of all 13 that call a guard)
+#   (every job that calls a guard runs on a self-hosted Linux runner -- review of #4133
+#   measured the runs-on of all 13 such workflows; ci.yml's mac-check job is self-hosted
+#   macOS and calls no guard)
 # Exit: 0 every invocation isolated · 1 an unisolated invocation (named) · 2 usage/ENV.
 set -uo pipefail
 
@@ -34,6 +35,10 @@ scan() {
         # the BARE form -- a command that starts with the guard path (`run: scripts/check_x.sh`,
         # or a block line that is just the path) -- can never be wrapped, so it is refused as is
         /^[[:space:]]*(-[[:space:]]+)?(run:[[:space:]]*)?scripts\/check_[A-Za-z0-9_]+\.sh/ { printf "%s:%d: %s\n", f, NR, $0; next }
+        # a BARE guard path in command position MID-line -- after a chain operator, `(`/`$(`,
+        # or a shell keyword -- is refused the same way (#4133 ph6, sonnet lane: `setsid --wait
+        # bash scripts/check_a.sh && scripts/check_b.sh` scanned clean)
+        /([;&|(]|(^|[[:space:]])(then|do|else|if|while|until|!))[[:space:]]*scripts\/check_[A-Za-z0-9_]+\.sh/ { printf "%s:%d: %s\n", f, NR, $0; next }
         {
             line = $0
             while (match(line, /(^|[^a-z_.\/-])(bash scripts|sh scripts|\.\/scripts)\/check_[A-Za-z0-9_]+\.sh/)) {
@@ -91,6 +96,13 @@ self_test() {
     row "bare run: form is refused"         1 $'        run: scripts/check_a.sh --x\n'
     row "bare block line is refused"        1 $'        run: |\n          scripts/check_a.sh\n'
     row "list item bare form is refused"    1 $'      - run: scripts/check_a.sh\n'
+    row "bare after &&, first wrapped"      1 $'          setsid --wait bash scripts/check_a.sh && scripts/check_b.sh\n'
+    row "bare after ;"                      1 $'          echo go; scripts/check_a.sh\n'
+    row "bare after ||"                     1 $'          true || scripts/check_a.sh\n'
+    row "bare in command substitution"      1 $'          x="$(scripts/check_a.sh --list)"\n'
+    row "bare after if"                     1 $'          if scripts/check_a.sh; then echo ok; fi\n'
+    row "bare after then"                   1 $'          if true; then scripts/check_a.sh; fi\n'
+    row "a path argument is not an invocation" 0 $'          cat scripts/check_a.sh && echo scripts/check_b.sh\n'
     # the MUTANT the ticket names: the real ci.yml with ONE wrapper removed must go RED
     if [ -f .github/workflows/ci.yml ]; then
         sed '0,/setsid --wait bash scripts\/check_/s//bash scripts\/check_/' .github/workflows/ci.yml > "$t/ci.yml"
@@ -108,7 +120,7 @@ self_test() {
 
 case "${1:-}" in
     --self-test) self_test; exit $? ;;
-    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
 esac
 
 if [ "$#" -gt 0 ]; then files=("$@")
