@@ -148,6 +148,13 @@ default_jobs() {
 GUARD_TREE_JOBS="${GUARD_TREE_JOBS:-$(default_jobs)}"
 case "$GUARD_TREE_JOBS" in ''|*[!0-9]*|0) GUARD_TREE_JOBS=1 ;; esac
 
+# #4120: can this host run a guard in its own session? Decided ONCE, here, and
+# exported, so every worker (a re-exec of this script under xargs) inherits it.
+if [ -z "${GUARD_TREE_ISOLATE:-}" ]; then
+    if setsid --wait true > /dev/null 2>&1; then GUARD_TREE_ISOLATE=1; else GUARD_TREE_ISOLATE=0; fi
+fi
+export GUARD_TREE_ISOLATE
+
 # A bare `cargo ` token: not preceded by a lowercase letter, underscore or
 # hyphen (so `sccache`, `rustc-sccache`, `cargo-ci` in a path do not count),
 # and followed by a space (so `cargo` alone, e.g. a comment fragment, does
@@ -212,9 +219,22 @@ fi
 # check_contract_test_binding.sh's `case "${1:-}" in ... *) die "usage: $0
 # [--self-test | --update-baseline]" ;; esac`). Either way this call's
 # output is captured and never executed a second time for detection alone.
+# #4120 -- every guard runs in its OWN session and process group. A guard is a
+# descendant of whatever launched guard_tree; on a CI runner that is the job's
+# process group, with no group of its own, so a guard that signals its group
+# (`kill 0`, `kill -- -$pgid`) would reach the runner. setsid confines it: a group
+# kill from inside a guard now ends that guard, never the dispatcher or the runner.
+# EVERY execution of a guard goes through it -- the `--help` probe below too: row 40
+# of guard_tree_test.sh caught the probe running a guard outside its session.
+# (It cannot stop a kill addressed to a PID -- #4120's pid-1 sender is fixed at its
+# source in crux_cell_teardown.sh -- but it closes the whole group-kill class.)
+isolate() {
+    if [ "${GUARD_TREE_ISOLATE:-0}" = 1 ]; then setsid --wait "$@"; else "$@"; fi
+}
+
 advertises_self_test() {
     g="$1"
-    help_out="$(bash "$g" --help 2>&1)"
+    help_out="$(isolate bash "$g" --help 2>&1)"
     n="$(grep -c -- 'self-test' <<<"$help_out")"
     [ "${n:-0}" -gt 0 ]
 }
@@ -288,10 +308,10 @@ worker_run_one() {
     }
 
     if advertises_self_test "$w_guard"; then
-        worker_row "$w_guard [self-test]" bash "$w_guard" --self-test
-        worker_row "$w_guard [run]" bash "$w_guard"
+        worker_row "$w_guard [self-test]" isolate bash "$w_guard" --self-test
+        worker_row "$w_guard [run]" isolate bash "$w_guard"
     else
-        worker_row "$w_guard [run]" bash "$w_guard"
+        worker_row "$w_guard [run]" isolate bash "$w_guard"
     fi
     rm -f "$w_cap"
     printf 'total=%d\nfailed=%d\n' "$w_total" "$w_failed" > "$w_meta.tmp"
@@ -613,6 +633,20 @@ while IFS="$TAB" read -r kind g reason; do
     fi
 done < "$PLAN"
 
+# #4120 -- isolation is a precondition of a CI run, not a nicety: without it a guard's
+# group kill reaches the runner. Off CI (a macOS box with no util-linux setsid) it is
+# reported, and the run goes on.
+if [ "$GUARD_TREE_ISOLATE" != 1 ]; then
+    if [ "${GITHUB_ACTIONS:-}" = true ]; then
+        failed=$((failed + 1))
+        printf 'FAIL  guard_tree [isolation]\n'
+        printf '      | guard_tree: setsid --wait is unavailable, so guards would share the runner'"'"'s process group (#4120).\n'
+        fail_rows="${fail_rows}guard_tree [isolation]
+"
+    else
+        printf 'warning: guards ran WITHOUT their own session (no setsid --wait); a group kill in a guard reaches this shell\n'
+    fi
+fi
 printf 'dispatch: up to %d guard(s) at a time (GUARD_TREE_JOBS)\n' "$GUARD_TREE_JOBS"
 printf '%d guard(s) skipped\n' "$skipped"
 printf '%d checks, %d failed\n' "$total" "$failed"

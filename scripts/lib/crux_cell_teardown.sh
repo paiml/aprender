@@ -40,7 +40,12 @@ for f in "$@"; do
     # Only a real pid. `0` would signal this whole PROCESS GROUP, the calling cell
     # and whatever runs it, and a leading zero is not a pid either. `1` is init, or in
     # a container the runner itself (#4120): refused by name, and the cell FAILS.
-    case "$p" in ''|*[!0-9]*|0*) continue ;; esac
+    # An empty line is no pid. Anything else that is not a plain pid (`0`, a leading
+    # zero, `1\r`, `12 34`, `+1`) is a pid file this script cannot trust: skipping it
+    # silently reported `clean` over a live server (review lane A, #4120), so it FAILS
+    # the cell like pid 1 does.
+    case "$p" in '') continue ;; esac
+    case "$p" in *[!0-9]*|0*) refused="$refused$f "; continue ;; esac
     case "$p" in 1) refused="$refused$f "; continue ;; esac
     pids+=("$p")
   done < "$f"
@@ -62,7 +67,8 @@ alive() {
   printf '%s ' "${out[@]}"
 }
 
-# The one place a signal leaves this script (the case table swaps it for a logging no-op).
+# The one place a TERM or KILL leaves this script (the case table swaps it for a logging
+# no-op). alive() below probes with signal 0, which delivers nothing.
 KILL_SEAM="${CRUX_TEARDOWN_KILL:-}"
 sig() {
   if [ -n "$KILL_SEAM" ]; then "$KILL_SEAM" "$@"; else kill "$@"; fi
@@ -87,7 +93,7 @@ if [ "${#pids[@]}" -gt 0 ]; then
   fi
 fi
 if [ -n "$refused" ]; then
-  printf 'FAILED: pid file(s) %sname pid 1 (init; in a CI container, the runner) -- refused, never signalled\n' "$refused" > "$state"
+  printf 'FAILED: pid file(s) %sname pid 1 (init; in a CI container, the runner) or a malformed pid -- refused, never signalled\n' "$refused" > "$state"
   exit 1
 fi
 if [ -n "${left// /}" ]; then

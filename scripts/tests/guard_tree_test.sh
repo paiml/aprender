@@ -641,6 +641,74 @@ else
 fi
 cp "$GUARD_TREE" "$sfix/scripts/guard_tree.sh"
 
+# ---------------------------------------------------------------------------
+# 40-41 (#4120). A guard's GROUP kill must not reach whatever launched
+#     guard_tree. On a CI runner guard_tree has no process group of its own, so
+#     a guard doing `kill 0` would signal the runner. The fixture runs
+#     guard_tree inside a fresh session beside a VICTIM in the same group (the
+#     runner's stand-in); a guard does `kill -TERM 0`. With isolation the
+#     victim survives and guard_tree still reports; the mutant without setsid
+#     kills the victim (and guard_tree with it), so row 40 can fail. The victim
+#     is judged from OUT here, because the mutant takes the harness shell too.
+# ---------------------------------------------------------------------------
+if ! setsid --wait true >/dev/null 2>&1; then
+    fail_row "40: guard isolation" "setsid --wait is unavailable on this host -- the row cannot be judged here"
+else
+    gfix="$(mktemp -d)" || exit 1
+    cleanup_dirs="$cleanup_dirs $gfix"
+    mkdir -p "$gfix/.empty-git-template" "$gfix/scripts"
+    git -C "$gfix" init -q --template="$gfix/.empty-git-template"
+    git -C "$gfix" config user.email test@example.invalid
+    git -C "$gfix" config user.name guard_tree_test
+    cp "$GUARD_TREE" "$gfix/scripts/guard_tree.sh"
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$gfix/scripts/check_g_good.sh"
+    cat >"$gfix/scripts/check_g_groupkill.sh" <<'SH'
+#!/usr/bin/env bash
+kill -TERM 0
+sleep 2
+exit 0
+SH
+    git -C "$gfix" add -A
+    git -C "$gfix" -c commit.gpgsign=false commit -q -m gfixture
+
+    # group_kill_run -> run in the fixture dir; leaves victim.pid and gt.out there; prints ALIVE or KILLED
+    group_kill_run() {
+        rm -f victim.pid gt.out
+        GUARD_TREE_ISOLATE='' setsid --wait bash -c '
+            sleep 60 & echo $! > victim.pid
+            bash scripts/guard_tree.sh > gt.out 2>&1
+        ' 2>/dev/null
+        v="$(cat victim.pid 2>/dev/null)"
+        if [ -n "$v" ] && kill -0 "$v" 2>/dev/null; then
+            kill "$v" 2>/dev/null
+            printf 'ALIVE'
+        else
+            printf 'KILLED'
+        fi
+    }
+    g_state="$(cd "$gfix" && group_kill_run)"
+    if [ "$g_state" = ALIVE ] && grep -q '^FAIL  scripts/check_g_groupkill\.sh \[run\]$' "$gfix/gt.out" \
+        && grep -q 'checks, ' "$gfix/gt.out"; then
+        pass_row "40: a guard's kill 0 ends only that guard -- the same-group victim survives and guard_tree reports it FAIL"
+    else
+        fail_row "40: a guard's kill 0 ends only that guard" "victim=$g_state; tail: $(tail -3 "$gfix/gt.out" 2>/dev/null | tr '\n' '|')"
+    fi
+
+    sed 's/if \[ "${GUARD_TREE_ISOLATE:-0}" = 1 \]; then setsid --wait "\$@"; else "\$@"; fi/"$@"/' \
+        "$GUARD_TREE" >"$gfix/scripts/guard_tree.sh"
+    if cmp -s "$GUARD_TREE" "$gfix/scripts/guard_tree.sh"; then
+        fail_row "41: mutant without setsid" "the sed did not apply -- the mutant is the original"
+    else
+        gm_state="$(cd "$gfix" && group_kill_run)"
+        if [ "$gm_state" = KILLED ]; then
+            pass_row "41: mutant without setsid lets the guard's kill 0 take the victim -- row 40 can fail"
+        else
+            fail_row "41: mutant without setsid" "the victim survived the mutant; row 40 proves nothing"
+        fi
+    fi
+    cp "$GUARD_TREE" "$gfix/scripts/guard_tree.sh"
+fi
+
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then
     exit 1
