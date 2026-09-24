@@ -21129,6 +21129,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Refs #3739 (slice 3; not a closing keyword for the parent). Closes #3795 when this merges. STACKED on crux-3774-verb-correspondence (#3789), so the diff to judge is `origin/crux-3774-verb-correspondence...HEAD`. SCOPE: scripts/crux_inference_dogfood.sh (the chat verb), scripts/lib/crux_pty_chat.py (new), scripts/lib/crux_inference_judge.py (chat parsing), scripts/check_crux_inference_judge.sh (chat rows), scripts/crux_inference_prompts.json (the chat prompt; the golden drift check covers only the golden rung), and this fragment. FOUND while building it: #3794, where `apr chat --no-gpu` still uploads the GGUF to CUDA (VRAM held outside the GPU lock; generation honours force_cpu, the load path does not) and apr chat reports no machine-readable backend. The pty helper starts only the argv it is given and reads no clock for a metric (its per-turn timeout is a bound), so the competing-harness count stays 0.'
+- id: PMAT-3809
+  github_issue: 3809
+  item_type: task
+  title: 'test(serve): wire the dark FALSIFY-SRV/HTTP suite + guard that every src test file is declared'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-tarball
+  created: 2026-09-24T19:05:00Z
+  updated: 2026-09-24T19:05:00Z
+  spec: null
+  acceptance_criteria:
+  - cargo test -p apr-cli --lib -- commands::serve::tests_contract_enforcement runs 25 tests, all pass
+  - scripts/check_src_test_files_wired.sh (guard_tree) exits 1 on a new undeclared src test file and on a stale baseline entry; --self-test case table passes
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-3810
   github_issue: 3810
   item_type: task
@@ -21162,6 +21181,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   estimated_effort: null
   labels:
   - kind:code
+  notes: null
+- id: PMAT-4101
+  github_issue: 4101
+  item_type: task
+  title: CB-200 back under its baseline, measured on every PR (#4101)
+  status: in_progress
+  priority: high
+  assigned_to: pvl-b
+  created: 2026-09-24T00:58:10Z
+  updated: 2026-09-24T00:58:10Z
+  spec: null
+  acceptance_criteria:
+  - 'paiml/aprender#4101: refactor the 0.69.1-cycle below-B definitions (CB-200 603 -> 598 on batch/0.70.0) and gate CB-200 per PR through a guard guard_tree.sh already runs'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - cb-200
+  - ratchet
   notes: null
 - id: PMAT-4110
   github_issue: 4110
