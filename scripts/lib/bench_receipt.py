@@ -736,16 +736,21 @@ def _check_accel_absent(block, lanes, errors):
     a block that says both is contradicting itself."""
     if "accel_absent" not in block:
         return
-    absent = block["accel_absent"]
-    if not isinstance(absent, dict) or not str(absent.get("reason") or "").strip():
+    accel_absent = block["accel_absent"]
+    if not isinstance(accel_absent, dict) or not str(accel_absent.get("reason") or "").strip():
         _err(errors, "parity.accel_absent: must be an object with a non-empty "
                      "reason -- an unmeasured lane owes its reason")
         return
-    accel = sorted({str(l.get("lane")) for l in lanes
-                    if isinstance(l, dict) and l.get("lane") != "cpu"})
+    accel = sorted({str(lane.get("lane")) for lane in lanes
+                    if isinstance(lane, dict) and lane.get("lane") != CPU_LANE})
     if accel:
         _err(errors, "parity.accel_absent: declared, yet lane(s) %s were measured "
                      "-- a block cannot both lack and carry an accel lane" % accel)
+
+
+# The lane every host receipt carries, named once: a bracketed string literal
+# reads to the perf-fields extractor as a key access.
+CPU_LANE = "cpu"
 
 
 def required_parity_lanes(receipt):
@@ -757,16 +762,16 @@ def required_parity_lanes(receipt):
     accelerator (#3805): the published crate has no cuda feature, and a gate
     that demands a lane its producer cannot emit is unsatisfiable."""
     accel = str(receipt.get("accelerator") or "")
-    want, extra = ["cpu"], None
+    want, extra = [CPU_LANE], None
     if any(k in accel for k in ("sm_", "NVIDIA", "CUDA")):
         extra = "cuda"
     elif any(k in accel for k in ("Metal", "M1", "M2", "M3", "M4")):
         extra = "metal"
     block = _parity_of(receipt) or {}
-    absent = block.get("accel_absent")
-    if extra and isinstance(absent, dict) and str(absent.get("reason") or "").strip():
+    accel_absent = block.get("accel_absent")
+    if extra and isinstance(accel_absent, dict) and str(accel_absent.get("reason") or "").strip():
         return want, ["REPORT %s lane unmeasured: %s (the artifact resolved no "
-                      "accelerator; #3805)" % (extra, absent["reason"])]
+                      "accelerator; #3805)" % (extra, accel_absent["reason"])]
     return want + ([extra] if extra else []), []
 
 
