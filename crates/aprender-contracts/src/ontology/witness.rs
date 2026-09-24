@@ -168,65 +168,66 @@ pub struct Witness {
     pub cpu_ms: u64,
 }
 
-/// The reasoner's answer.
+/// The reasoner's answer. Generic over the variable id so `KANI-ONT-9-1` can run the SAME checker over `u8` ids
+/// in bounded `Vec`s; production and the witness file are `String` (the default).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
-pub enum WitnessResult {
-    UnsatCore(Core),
-    Model(Model),
+pub enum WitnessResult<I = String> {
+    UnsatCore(Core<I>),
+    Model(Model<I>),
 }
 
 /// An ordered derivation of a conflict.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Core {
-    pub steps: Vec<Step>,
+pub struct Core<I = String> {
+    pub steps: Vec<Step<I>>,
     /// The `contradicts` clause both of whose sides the steps derived.
-    pub conflict: (String, String),
+    pub conflict: (I, I),
 }
 
 /// One derivation step.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Step {
+pub enum Step<I = String> {
     /// A unit clause.
-    Unit(String),
+    Unit(I),
     /// `¬A ∨ B`, with `A` derived by an earlier step.
-    Implies(String, String),
+    Implies(I, I),
 }
 
 /// A satisfying assignment, as the variables it makes false (the rest are true).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Model {
+pub struct Model<I = String> {
     #[serde(rename = "false")]
-    pub false_vars: Vec<String>,
+    pub false_vars: Vec<I>,
 }
 
 /// What a certificate that checks proves.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Checked {
+pub enum Checked<S = BTreeSet<String>> {
     /// The clause set has a model.
     Sat,
     /// The clause set is unsatisfiable; these contracts are the core.
-    Unsat { core: BTreeSet<String> },
+    Unsat { core: S },
 }
 
 /// Why a certificate does not check.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CheckError {
+pub enum CheckError<I = String> {
     EmptyCore,
-    NotAUnit(String),
-    NoSuchImplication(String, String),
-    PremiseNotDerived { premise: String, step: usize },
-    NoSuchConflict(String, String),
-    ConflictSideNotDerived(String),
-    ModelFalsifiesUnit(String),
-    ModelFalsifiesImplication(String, String),
-    ModelFalsifiesConflict(String, String),
+    NotAUnit(I),
+    NoSuchImplication(I, I),
+    PremiseNotDerived { premise: I, step: usize },
+    NoSuchConflict(I, I),
+    ConflictSideNotDerived(I),
+    ModelFalsifiesUnit(I),
+    ModelFalsifiesImplication(I, I),
+    ModelFalsifiesConflict(I, I),
 }
 
-impl fmt::Display for CheckError {
+impl<I: fmt::Display> fmt::Display for CheckError<I> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyCore => write!(f, "the core derives nothing"),
@@ -272,7 +273,78 @@ impl fmt::Display for CheckError {
     }
 }
 
-impl std::error::Error for CheckError {}
+impl<I: fmt::Debug + fmt::Display> std::error::Error for CheckError<I> {}
+
+/// The set the checker accumulates variables in. Production uses `BTreeSet`. `KANI-ONT-9-1` uses a fixed-array
+/// `witness_small::Bounded` with no heap, because CBMC cannot handle B-tree code or `Vec` pointer checks over
+/// symbolic keys in useful time (both measured 2026-09-24).
+pub trait IdSet<I>: Default {
+    /// Is `x` in the set?
+    fn has(&self, x: &I) -> bool;
+    /// Add `x` (no-op when present).
+    fn put(&mut self, x: I);
+}
+
+impl<I: Ord> IdSet<I> for BTreeSet<I> {
+    fn has(&self, x: &I) -> bool {
+        self.contains(x)
+    }
+    fn put(&mut self, x: I) {
+        self.insert(x);
+    }
+}
+
+/// What the checker asks of a clause set: membership, and the clauses to test a model against.
+pub trait ClauseView<I> {
+    /// Is `v` a unit?
+    fn has_unit(&self, v: &I) -> bool;
+    /// Is `¬a ∨ b` a clause?
+    fn has_implies(&self, a: &I, b: &I) -> bool;
+    /// Is `¬a ∨ ¬b` a clause (unordered)?
+    fn has_conflict(&self, a: &I, b: &I) -> bool;
+    /// Every unit.
+    fn units<'s>(&'s self) -> impl Iterator<Item = &'s I>
+    where
+        I: 's;
+    /// Every `(A, B)` read as `¬A ∨ B`.
+    fn implications<'s>(&'s self) -> impl Iterator<Item = (&'s I, &'s I)>
+    where
+        I: 's;
+    /// Every `(A, B)` read as `¬A ∨ ¬B`.
+    fn conflict_pairs<'s>(&'s self) -> impl Iterator<Item = (&'s I, &'s I)>
+    where
+        I: 's;
+}
+
+impl ClauseView<String> for ClauseSet {
+    fn has_unit(&self, v: &String) -> bool {
+        self.units.contains(v)
+    }
+    fn has_implies(&self, a: &String, b: &String) -> bool {
+        self.implies.contains(&(a.clone(), b.clone()))
+    }
+    fn has_conflict(&self, a: &String, b: &String) -> bool {
+        self.conflicts.contains(&ordered(a, b))
+    }
+    fn units<'s>(&'s self) -> impl Iterator<Item = &'s String>
+    where
+        String: 's,
+    {
+        self.units.iter()
+    }
+    fn implications<'s>(&'s self) -> impl Iterator<Item = (&'s String, &'s String)>
+    where
+        String: 's,
+    {
+        self.implies.iter().map(|(a, b)| (a, b))
+    }
+    fn conflict_pairs<'s>(&'s self) -> impl Iterator<Item = (&'s String, &'s String)>
+    where
+        String: 's,
+    {
+        self.conflicts.iter().map(|(a, b)| (a, b))
+    }
+}
 
 /// Check a certificate against the clause set it claims to answer.
 ///
@@ -280,72 +352,94 @@ impl std::error::Error for CheckError {}
 ///
 /// The first clause or step the certificate gets wrong.
 pub fn check(cs: &ClauseSet, result: &WitnessResult) -> Result<Checked, CheckError> {
+    check_with(cs, result)
+}
+
+/// [`check`] over any id type, clause view and set: the one implementation both production (`String`,
+/// `BTreeSet`) and `KANI-ONT-9-1` (`u8`, `Vec`) run.
+///
+/// # Errors
+///
+/// The first clause or step the certificate gets wrong.
+pub fn check_with<I, S, C>(cs: &C, result: &WitnessResult<I>) -> Result<Checked<S>, CheckError<I>>
+where
+    I: Ord + Clone,
+    S: IdSet<I>,
+    C: ClauseView<I>,
+{
     match result {
         WitnessResult::UnsatCore(core) => check_core(cs, core),
-        WitnessResult::Model(model) => check_model(cs, model).map(|()| Checked::Sat),
+        WitnessResult::Model(model) => check_model::<I, S, C>(cs, model).map(|()| Checked::Sat),
     }
 }
 
-fn check_core(cs: &ClauseSet, core: &Core) -> Result<Checked, CheckError> {
+fn check_core<I, S, C>(cs: &C, core: &Core<I>) -> Result<Checked<S>, CheckError<I>>
+where
+    I: Ord + Clone,
+    S: IdSet<I>,
+    C: ClauseView<I>,
+{
     if core.steps.is_empty() {
         return Err(CheckError::EmptyCore);
     }
-    let mut derived: BTreeSet<&str> = BTreeSet::new();
+    let mut derived = S::default();
     for (i, step) in core.steps.iter().enumerate() {
-        derived.insert(check_step(cs, &derived, i, step)?);
+        let v = check_step(cs, &derived, i, step)?.clone();
+        derived.put(v);
     }
     let (a, b) = &core.conflict;
-    if !cs.conflicts.contains(&ordered(a, b)) {
+    if !cs.has_conflict(a, b) {
         return Err(CheckError::NoSuchConflict(a.clone(), b.clone()));
     }
-    if let Some(side) = [a, b].into_iter().find(|s| !derived.contains(s.as_str())) {
+    if let Some(side) = [a, b].into_iter().find(|s| !derived.has(s)) {
         return Err(CheckError::ConflictSideNotDerived(side.clone()));
     }
-    Ok(Checked::Unsat {
-        core: derived.into_iter().map(str::to_string).collect(),
-    })
+    Ok(Checked::Unsat { core: derived })
 }
 
 /// One derivation step against the graph and what is derived so far; the variable it derives.
-fn check_step<'a>(
-    cs: &ClauseSet,
-    derived: &BTreeSet<&str>,
+fn check_step<'a, I, S, C>(
+    cs: &C,
+    derived: &S,
     i: usize,
-    step: &'a Step,
-) -> Result<&'a str, CheckError> {
+    step: &'a Step<I>,
+) -> Result<&'a I, CheckError<I>>
+where
+    I: Ord + Clone,
+    S: IdSet<I>,
+    C: ClauseView<I>,
+{
     match step {
-        Step::Unit(v) if cs.units.contains(v) => Ok(v),
+        Step::Unit(v) if cs.has_unit(v) => Ok(v),
         Step::Unit(v) => Err(CheckError::NotAUnit(v.clone())),
-        Step::Implies(a, b) if !cs.implies.contains(&(a.clone(), b.clone())) => {
+        Step::Implies(a, b) if !cs.has_implies(a, b) => {
             Err(CheckError::NoSuchImplication(a.clone(), b.clone()))
         }
-        Step::Implies(a, _) if !derived.contains(a.as_str()) => {
-            Err(CheckError::PremiseNotDerived {
-                premise: a.clone(),
-                step: i,
-            })
-        }
+        Step::Implies(a, _) if !derived.has(a) => Err(CheckError::PremiseNotDerived {
+            premise: a.clone(),
+            step: i,
+        }),
         Step::Implies(_, b) => Ok(b),
     }
 }
 
-fn check_model(cs: &ClauseSet, model: &Model) -> Result<(), CheckError> {
-    let f: BTreeSet<&str> = model.false_vars.iter().map(String::as_str).collect();
-    if let Some(u) = cs.units.iter().find(|u| f.contains(u.as_str())) {
+fn check_model<I, S, C>(cs: &C, model: &Model<I>) -> Result<(), CheckError<I>>
+where
+    I: Ord + Clone,
+    S: IdSet<I>,
+    C: ClauseView<I>,
+{
+    let mut f = S::default();
+    for v in &model.false_vars {
+        f.put(v.clone());
+    }
+    if let Some(u) = cs.units().find(|u| f.has(u)) {
         return Err(CheckError::ModelFalsifiesUnit(u.clone()));
     }
-    if let Some((a, b)) = cs
-        .implies
-        .iter()
-        .find(|(a, b)| !f.contains(a.as_str()) && f.contains(b.as_str()))
-    {
+    if let Some((a, b)) = cs.implications().find(|(a, b)| !f.has(a) && f.has(b)) {
         return Err(CheckError::ModelFalsifiesImplication(a.clone(), b.clone()));
     }
-    if let Some((a, b)) = cs
-        .conflicts
-        .iter()
-        .find(|(a, b)| !f.contains(a.as_str()) && !f.contains(b.as_str()))
-    {
+    if let Some((a, b)) = cs.conflict_pairs().find(|(a, b)| !f.has(a) && !f.has(b)) {
         return Err(CheckError::ModelFalsifiesConflict(a.clone(), b.clone()));
     }
     Ok(())
@@ -447,29 +541,26 @@ mod planted {
 
 /// ONT-001 §5 ONT-9 — **KANI-ONT-9-1**: a certificate the checker accepts is true under relation semantics. Over
 /// every graph on three variables (every unit, implication and conflict clause present or absent), every core of
-/// one to [`CORE_BOUND`](super::witness_small::CORE_BOUND) steps and every model: `check` returning
+/// one to [`CORE_BOUND`](super::witness_small::CORE_BOUND) steps and every model: `check_with` returning
 /// `Unsat` ⇒ no assignment satisfies the graph; `Sat` ⇒ one does. The oracle reads the clause flags, not the
-/// checker's `BTreeSet`s (`witness_small.rs`). L3 status: DECLARED — not yet executed by `cargo kani`; the L2
-/// twin `witness_small::tests::kani_ont_9_1_twin` runs the same body on 2048 sampled inputs every `cargo test`.
+/// checker's collections (`witness_small.rs`). The harness runs [`check_with`] — the one implementation production
+/// runs — instantiated at `u8` ids in fixed-capacity arrays. Two runs on 2026-09-24 hit their time caps without a verdict:
+/// the `String`/`BTreeSet` instantiation at 2400 s, and a `u8`/`Vec` one at 1800 s (18 046 checks). The L2 twin
+/// `witness_small::tests::kani_ont_9_1_twin` asserts both instantiations give identical verdicts.
 #[cfg(kani)]
 mod kani_proofs {
     use super::super::witness_small::{
-        accepted_verdict_is_semantic, core, model, SmallGraph, CORE_BOUND, STEP_CODES,
+        accepted_verdict_is_semantic_u8, core_as, id_u8, model_as, SmallGraph, CORE_BOUND,
+        STEP_CODES,
     };
 
-    /// KANI-ONT-9-1: a core the checker accepts is contradictory under relation semantics (and a model it
-    /// accepts satisfies), bounded at the measured max core length.
-    #[kani::proof]
-    #[kani::unwind(12)]
-    fn kani_ont_9_1() {
-        let g = SmallGraph {
-            units: kani::any(),
-            implies: kani::any(),
-            conflicts: kani::any(),
-        };
-        let len: usize = kani::any();
-        kani::assume(len >= 1 && len <= CORE_BOUND);
-        let mut codes = [0u8; CORE_BOUND];
+    /// KANI-ONT-9-1 (cores of exactly `LEN` steps): a core the checker accepts is contradictory under relation
+    /// semantics and names only known variables, for every graph, every `LEN`-step core and every conflict pair.
+    /// `LEN` is concrete per harness so the certificate's `Vec` has a concrete size. A symbolic length over all three
+    /// was cut off at 1800 s (25 298 checks, measured 2026-09-24).
+    fn cores_of_len<const LEN: usize>() {
+        let g = any_graph();
+        let mut codes = [0u8; LEN];
         for c in &mut codes {
             let k: u8 = kani::any();
             kani::assume(k < STEP_CODES);
@@ -477,12 +568,57 @@ mod kani_proofs {
         }
         let conflict: usize = kani::any();
         kani::assume(conflict < 3);
-        assert!(accepted_verdict_is_semantic(
+        assert!(accepted_verdict_is_semantic_u8(
             &g,
-            &core(&codes[..len], conflict)
+            &core_as(&codes, conflict, id_u8)
         ));
+    }
+
+    /// KANI-ONT-9-1, cores of CORE_BOUND = 3 steps (the full bound). Unwind 9: the longest loop is the oracle's 8
+    /// assignments (+1 exit); clause lists are ≤ 6, cores ≤ 3.
+    #[kani::proof]
+    #[kani::unwind(9)]
+    #[kani::solver(cadical)]
+    fn kani_ont_9_1() {
+        cores_of_len::<CORE_BOUND>();
+    }
+
+    /// KANI-ONT-9-1, cores of 1 step.
+    #[kani::proof]
+    #[kani::unwind(9)]
+    #[kani::solver(cadical)]
+    fn kani_ont_9_1_len1() {
+        cores_of_len::<1>();
+    }
+
+    /// KANI-ONT-9-1, cores of 2 steps.
+    #[kani::proof]
+    #[kani::unwind(9)]
+    #[kani::solver(cadical)]
+    fn kani_ont_9_1_len2() {
+        cores_of_len::<2>();
+    }
+
+    /// KANI-ONT-9-1 (models): a model the checker accepts satisfies the graph, for every graph and every
+    /// assignment. A separate harness from the cores so each symex stays small.
+    #[kani::proof]
+    #[kani::unwind(9)]
+    #[kani::solver(cadical)]
+    fn kani_ont_9_1_model() {
+        let g = any_graph();
         let false_bits: u8 = kani::any();
         kani::assume(false_bits < 8);
-        assert!(accepted_verdict_is_semantic(&g, &model(false_bits)));
+        assert!(accepted_verdict_is_semantic_u8(
+            &g,
+            &model_as(false_bits, id_u8)
+        ));
+    }
+
+    fn any_graph() -> SmallGraph {
+        SmallGraph {
+            units: kani::any(),
+            implies: kani::any(),
+            conflicts: kani::any(),
+        }
     }
 }
