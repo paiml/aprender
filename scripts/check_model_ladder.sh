@@ -239,6 +239,27 @@ for n, line in enumerate(open(sys.argv[1]), 1):
 sys.exit(bad)
 LOCKPY
 }
+# exclusive_audit <producer> -> the GPU run leg goes through gpu_exclusive_run and a CONTENDED
+# refusal declines (#3964). Static: the helper's behaviour is its own 12-row self-test
+# (scripts/lib/gpu_exclusive_run_selftest.sh); this proves the ladder is wired to it.
+exclusive_audit() {
+  python3 - "$1" <<'EXCLPY'
+import re, sys
+src = open(sys.argv[1]).read()
+code = "\n".join(re.sub(r"(^|\s)#.*$", "", l) for l in src.splitlines())
+bad = 0
+body = re.search(r"apr_exclusive\(\) \{(.*?)\n\}", code, re.S)
+if not body or 'bash scripts/lib/gpu_exclusive_run.sh "$APR" "$@"' not in body.group(1):
+    print("FAIL  apr_exclusive does not run apr through scripts/lib/gpu_exclusive_run.sh"); bad = 1
+elif "GPU_OWNED_PREFIX=" not in body.group(1) or 'GPU_LOCK="$GPU_LOCK"' not in body.group(1):
+    print("FAIL  apr_exclusive does not pass GPU_OWNED_PREFIX and the ladder's GPU_LOCK"); bad = 1
+if not re.search(r'if \[ "\$flag" = --gpu \].*\n\s*run_out=\$\(apr_exclusive run "\$path"', code):
+    print("FAIL  the --gpu run leg does not go through apr_exclusive -- a foreign GPU process goes unseen"); bad = 1
+if not re.search(r"gpu_exclusive_run: CONTENDED' <<< \"\$run_out\"; then\n[^\n]*decline: ENV the GPU was not exclusive[^\n]*\n\s*exit 2", code):
+    print("FAIL  a CONTENDED GPU leg does not decline (exit 2) -- a shared-card result would be judged"); bad = 1
+sys.exit(bad)
+EXCLPY
+}
 # lock_probe <producer> <work dir> -> prints ok/FAIL lines, exit 1 on any failure
 lock_probe() {
   local prod=$1 w=$2 out rc hp bad=0
@@ -308,6 +329,18 @@ if [ "$SELF_TEST" = 1 ]; then
     pmutant no-lock      's/^apr_locked() { flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" choom/apr_locked() { choom/'
     pmutant no-choom     's/ choom -n 1000 -- "\$APR" "\$@"/ "$APR" "$@"/'
     pmutant unbounded    's/ -w "\$LOCK_WAIT"//'
+    if exclusive_audit "$prod" > "$mdir/excl.out"; then echo "ok    exclusive: $prod runs its GPU leg through gpu_exclusive_run and declines CONTENDED (#3964)"
+    else cat "$mdir/excl.out"; bad=$((bad+1)); fi
+    emutant() { # emutant <label> <sed expression breaking the exclusive GPU leg in a copy of the producer>
+      local m="$mdir/e-$1.sh"
+      sed "$2" "$prod" > "$m"
+      if cmp -s "$prod" "$m"; then echo "FAIL  exclusive mutant $1 did not apply -- the check proves nothing"; bad=$((bad+1)); return; fi
+      if exclusive_audit "$m" > /dev/null; then echo "FAIL  exclusive mutant $1 SURVIVED the exclusive check"; bad=$((bad+1))
+      else printf 'ok    exclusive mutant %-16s killed\n' "$1"; fi
+    }
+    emutant gpu-leg-locked    's/run_out=$(apr_exclusive run "$path"/run_out=$(apr_locked run "$path"/'
+    emutant helper-bypassed   's/bash scripts\/lib\/gpu_exclusive_run.sh "$APR" "$@"/"$APR" "$@"/'
+    emutant contended-judged  '/decline: ENV the GPU was not exclusive/{n;s/exit 2/:/}'
     # The cells module (scripts/lib/model_ladder_cells.py): each rule deleted in a copy, imported through
     # MODEL_LADDER_CELLS_LIB, and the case that names the rule must go RED under the copy.
     cmutant() { # cmutant <label> <case that must kill it> <sed expression deleting the rule>

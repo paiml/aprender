@@ -16,6 +16,12 @@
 # (`vX.Y.Z+no-git`, what every container build reported before binary-release.yml passed
 # APR_GIT_SHA_OVERRIDE, is refused).
 #
+# A PROMOTED final (#4286, scripts/release/promote_rc.sh) ships the rc's bytes unchanged,
+# so on a final tag vX.Y.Z the asset prints `apr X.Y.Z-rc.N (<sha>)`: the rc it was promoted
+# from. That is accepted, and ONLY that: the same X.Y.Z, a well-formed -rc.N, and the sha
+# must still be the final tag's commit. An rc built from another commit, or an rc of
+# another version, is refused as before.
+#
 # The smoke this replaces tested `case "$v" in *"${TAG#v}"*)`: a substring match. It
 # refused every rc (0.69.3 does not contain 0.69.3-rc.1) and accepted 0.69.30 for
 # v0.69.3. The version here is compared whole.
@@ -27,6 +33,7 @@ PROG=asset_version_check
 # Pure. Prints `ok <version> at <sha>` or `bad <reason>`.
 avc_decide() {
     local tag=$1 commit=$2 line=$3 want got sha
+    local promoted=""
     if [[ $tag =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-rc\.[0-9]+)?$ ]]; then
         want=${tag#v}
     else
@@ -41,7 +48,13 @@ avc_decide() {
         echo "bad version line '$line' is not 'apr X.Y.Z[-rc.N] (<sha>)'"; return
     fi
     if [ "$got" != "$want" ]; then
-        echo "bad asset reports $got; tag $tag wants $want"; return
+        # a final tag carrying its own rc's bytes (#4286): X.Y.Z-rc.N on vX.Y.Z, nothing looser.
+        # On an rc tag want is X.Y.Z-rc.N, so the X.Y.Z equality below already refuses there.
+        if [[ $got =~ ^([0-9]+\.[0-9]+\.[0-9]+)-rc\.[0-9]+$ && ${BASH_REMATCH[1]} == "$want" ]]; then
+            promoted=" (promoted from v$got)"
+        else
+            echo "bad asset reports $got; tag $tag wants $want"; return
+        fi
     fi
     if [[ ! $sha =~ ^[0-9a-f]{7,40}$ ]]; then
         echo "bad asset carries no commit ('$sha'), so nothing binds it to $tag"; return
@@ -49,7 +62,7 @@ avc_decide() {
     if [ "${commit#"$sha"}" = "$commit" ]; then
         echo "bad asset was built from $sha; tag $tag is $commit"; return
     fi
-    echo "ok $got at $sha"
+    echo "ok $got at $sha$promoted"
 }
 
 self_test() {
@@ -66,7 +79,12 @@ ok	v0.69.3-rc.12	$c	apr 0.69.3-rc.12 (7ff50ec)	a two-digit rc and a 7-hex short 
 bad	v0.69.3-rc.1	$c	apr 0.69.3 (7ff50ec2a)	an rc asset printing bare X.Y.Z is refused (never bare 0.69.3 on an rc)
 bad	v0.69.3-rc.2	$c	apr 0.69.3-rc.1 (7ff50ec2a)	rc.1's version on the rc.2 tag
 bad	v0.69.3-rc.1	$c	apr 0.69.3-rc.12 (7ff50ec2a)	rc.12 is not rc.1 (compared whole)
-bad	v0.69.3	$c	apr 0.69.3-rc.2 (7ff50ec2a)	an rc version on the final tag
+ok	v0.69.3	$c	apr 0.69.3-rc.2 (7ff50ec2a)	a promoted final prints the rc it was promoted from (#4286)
+bad	v0.69.3	$c	apr 0.69.3-rc.2 (0badc0de1)	a promoted final's rc must be built from the final tag's commit
+bad	v0.69.3	$c	apr 0.69.4-rc.1 (7ff50ec2a)	an rc of another version on the final tag
+bad	v0.69.3	$c	apr 0.69.3-rc (7ff50ec2a)	an rc suffix without its number
+bad	v0.69.3	$c	apr 0.69.3-rc.2x (7ff50ec2a)	an rc suffix with trailing junk
+bad	v0.69.3	$c	apr 0.69.3-beta.1 (7ff50ec2a)	a pre-release that is not an rc on the final tag
 bad	v0.69.3-rc.2	$c	apr 0.69.3 (v0.69.3+no-git)	the measured v0.69.3-rc.2 asset (2026-09-24): no rc, no sha
 ok	v0.69.3	$c	apr 0.69.3 ($c)	a full-length sha
 bad	v0.69.3-rc.1	$c	apr 0.69.2 (7ff50ec2a)	an rc tag does not match the previous version
