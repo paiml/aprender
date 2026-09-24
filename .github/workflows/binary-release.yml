@@ -756,7 +756,7 @@ jobs:
 
   summary:
     name: Summary
-    needs: [build, build-apr-cuda, build-apr-cpu, verify-apr-assets, smoke-cuda, smoke-cpu]
+    needs: [assets, build, build-apr-cuda, build-apr-cpu, verify-apr-assets, smoke-cuda, smoke-cpu]
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
@@ -776,6 +776,8 @@ jobs:
             echo ""
             if [ "$STATUS" = "success" ]; then
               echo "- Build matrix: **4/4 targets succeeded**"
+            elif [ "$STATUS" = "skipped" ] && [ "${{ needs.assets.outputs.present }}" = "true" ]; then
+              echo "- Build matrix: **not rebuilt** — every asset was already on the release (a promoted rc, #4286)"
             else
               echo "- Build matrix: **partial** (status=$STATUS)"
             fi
