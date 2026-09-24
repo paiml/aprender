@@ -71,14 +71,11 @@ led = entries(ledger)
 tracked = subprocess.run(["git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], capture_output=True).stdout.decode(errors="replace").split("\0")
 tracked = sorted({t for t in tracked if t})
 if len(tracked) < 1: print("FAIL  the tracked universe is empty"); sys.exit(1)
-# TICKET RECORDS quote their issue verbatim, and the issues name the old pins; they are records OF a ticket,
-# never a comparator claim. Exempt by exact FILE SHAPE, not by directory: any other file under docs/roadmaps/
-# or docs/audits/ (a planted receipt, a quorum-*.md note) is scanned like every other file (#3741 quorum r1).
-quoted_record = re.compile(r"^(docs/roadmaps/roadmap\.yaml|docs/roadmaps/entries/PMAT-[0-9]+[A-Za-z0-9._-]*\.yaml|docs/audits/quorum-PMAT-[0-9]+[A-Za-z0-9._-]*\.json)$")
 citing = {}
 for rel in tracked:
-    if rel in (os.path.relpath(ledger, root), pin_rel) or quoted_record.match(rel):
-        continue  # the ledger and the pin file declare the old pins; ticket records quote issues, which name them
+    if rel in (os.path.relpath(ledger, root), pin_rel):
+        continue  # the ledger and the pin file declare the old pins. NOTHING else is exempt by path or shape: a roadmap
+                  # fragment or quorum record that quotes an old pin is ledgered like any file (#3741 quorum r1+r2)
     p = os.path.join(root, rel)
     try:
         with open(p, "rb") as h:
@@ -168,11 +165,9 @@ if [ "${1:-}" = "--self-test" ]; then
     expect 'C9 a malformed ledger line -> RED, never a pass' "$TMP/c9" 1 'is not <path>TAB<historical|fixture>TAB<why>'
     fixture c10 && printf 'cites %s only, the pin of record\n' "$CUR" > "$TMP/c10/evidence/parity/current.md" && git -C "$TMP/c10" add -A
     expect 'C10 a citation of the CURRENT pin needs no ledger -> green' "$TMP/c10" 0 'every one ledgered'
-    fixture c11 && mkdir -p "$TMP/c11/docs/roadmaps/entries" "$TMP/c11/docs/audits" \
-        && printf 'notes: quotes the issue, comparator %s\n' "$OLD" > "$TMP/c11/docs/roadmaps/entries/PMAT-1.yaml" \
-        && printf 'x: %s\n' "$OLD" > "$TMP/c11/docs/roadmaps/roadmap.yaml" \
-        && printf '{"brief": "%s"}\n' "$OLD" > "$TMP/c11/docs/audits/quorum-PMAT-1.json" && git -C "$TMP/c11" add -A
-    expect 'C11 ticket records (a PMAT fragment, the aggregate, a quorum json) quote issues -> green' "$TMP/c11" 0 'every one ledgered'
+    fixture c11 && mkdir -p "$TMP/c11/docs/roadmaps/entries" \
+        && printf 'notes: measured just now against llama.cpp %s, CURRENT\n' "$OLD" > "$TMP/c11/docs/roadmaps/entries/PMAT-9.yaml" && git -C "$TMP/c11" add -A
+    expect 'C11 a PMAT-shaped roadmap fragment gets no free pass either -> R1' "$TMP/c11" 1 'R1 docs/roadmaps/entries/PMAT-9.yaml:1'
     fixture c12 && mkdir -p "$TMP/c12/docs/roadmaps/entries" && printf 'comparator: %s\n' "$OLD" > "$TMP/c12/docs/roadmaps/entries/PLANTED.yaml" && git -C "$TMP/c12" add -A
     expect 'C12 a non-PMAT file under docs/roadmaps/ is NOT a ticket record -> R1' "$TMP/c12" 1 'R1 docs/roadmaps/entries/PLANTED.yaml:1'
     fixture c13 && mkdir -p "$TMP/c13/docs/audits" && printf 'comparator %s\n' "$OLD" > "$TMP/c13/docs/audits/quorum-planted.md" && git -C "$TMP/c13" add -A
@@ -203,7 +198,8 @@ PY
         print(f"FAIL  R2' 1 'R2 stale ledger entry' "$TMP/c4"
     mutant drop-r3 '        if not (date_re.search(text) or date_re.search(rel) or date_re.search(why)):' '        if False:' 1 'R3 evidence/parity/old-ratio.md' "$TMP/c5"
     mutant drop-r4 '    if mled is not None and len(led) > len(mled):' '    if False:' 1 'R4 the ledger GREW' "$TMP/c6" "$TMP/c6/main-ledger.txt"
-    mutant prefix-exempt 'quoted_record.match(rel):' 'rel.startswith(("docs/roadmaps/", "docs/audits/quorum-")):' 1 'R1 docs/roadmaps/entries/PLANTED.yaml:1' "$TMP/c12"
+    mutant shape-exempt 'pin_rel):' 'pin_rel) or rel.startswith("docs/roadmaps/entries/PMAT-"):' 1 'R1 docs/roadmaps/entries/PMAT-9.yaml:1' "$TMP/c11"
+    mutant prefix-exempt 'pin_rel):' 'pin_rel) or rel.startswith(("docs/roadmaps/", "docs/audits/quorum-")):' 1 'R1 docs/roadmaps/entries/PLANTED.yaml:1' "$TMP/c12"
     mutant full-sha-only 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s[:7]) + r"[0-9a-f]*") for s in sup]' 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s) + r"(?![0-9a-f])") for s in sup]' 1 'R1 evidence/parity/abbrev.md:1' "$TMP/c3"
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED (%s of %s)\n' "$fails" "$rows"; exit 1; }
