@@ -40,6 +40,16 @@ ROOT = Path(__file__).resolve().parent.parent
 CLIENT = ROOT / "scripts" / "lib" / "crux_openai_client.py"
 
 
+def clip_head(s, n):
+    """`s` cut to its first `n` chars, SAYING how many were cut (#4046: a silent cut reads as the whole text)."""
+    return s if len(s) <= n else f"{s[:n]} … and {len(s) - n} more chars"
+
+
+def clip_tail(s, n):
+    """`s` cut to its last `n` chars, SAYING how many were dropped (#4046)."""
+    return s if len(s) <= n else f"[{len(s) - n} earlier chars dropped] {s[-n:]}"
+
+
 def die(msg: str) -> None:
     print(f"crux_prompt_certify_run: {msg}", file=sys.stderr)
     sys.exit(2)
@@ -115,7 +125,7 @@ def ggml_leg(a, prompts, thinking_modes, manifest: Path, work: Path) -> None:
                                     "--temperature", "0", "--seed", "0", "--extra", extra, "--out", str(tout)],
                                    capture_output=True, text=True)
                 if r.returncode != 0:
-                    why = f"client exit {r.returncode}: {(r.stderr or r.stdout).strip()[-300:]}"
+                    why = f"client exit {r.returncode}: {clip_tail((r.stderr or r.stdout).strip(), 300)}"
                     break
                 text = json.loads(tout.read_text(encoding="utf-8"))["text"]
                 turns.append(text)
@@ -181,7 +191,7 @@ def driver_leg(a, prompts, thinking_modes, manifest: Path, work: Path) -> None:
                 os.killpg(proc.pid, signal.SIGKILL)
         with contextlib.suppress(ProcessLookupError):
             os.killpg(proc.pid, signal.SIGKILL)  # anything the driver left in its group
-    print(f"{engine}: {len(items)} items, driver exit {proc.returncode}" + (f" {err.strip()[-300:]}" if proc.returncode else ""),
+    print(f"{engine}: {len(items)} items, driver exit {proc.returncode}" + (f" {clip_tail(err.strip(), 300)}" if proc.returncode else ""),
           flush=True)
 
 

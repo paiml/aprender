@@ -19,6 +19,16 @@ from __future__ import annotations
 import json
 
 
+def clip_head(s, n):
+    """`s` cut to its first `n` chars, SAYING how many were cut (#4046: a silent cut reads as the whole text)."""
+    return s if len(s) <= n else f"{s[:n]} … and {len(s) - n} more chars"
+
+
+def clip_tail(s, n):
+    """`s` cut to its last `n` chars, SAYING how many were dropped (#4046)."""
+    return s if len(s) <= n else f"[{len(s) - n} earlier chars dropped] {s[-n:]}"
+
+
 class TruncatedStream(RuntimeError):
     pass
 
@@ -39,7 +49,7 @@ def parse_sse(text: str, terminal: str = "done") -> tuple[str, dict, int]:
         try:
             doc = json.loads(payload)
         except ValueError as e:
-            raise RuntimeError(f"stream chunk is not JSON: {e}: {payload[:120]!r}") from e
+            raise RuntimeError(f"stream chunk is not JSON: {e}: {clip_head(repr(payload), 120)}") from e
         if isinstance(doc.get("usage"), dict):
             usage = doc["usage"]
         for ch in doc.get("choices") or []:

@@ -42,6 +42,16 @@ import sys
 import tempfile
 
 
+def clip_head(s, n):
+    """`s` cut to its first `n` chars, SAYING how many were cut (#4046: a silent cut reads as the whole text)."""
+    return s if len(s) <= n else f"{s[:n]} … and {len(s) - n} more chars"
+
+
+def clip_tail(s, n):
+    """`s` cut to its last `n` chars, SAYING how many were dropped (#4046)."""
+    return s if len(s) <= n else f"[{len(s) - n} earlier chars dropped] {s[-n:]}"
+
+
 def has_controls(apr):
     """Does this apr's `code` take the #3978 flags? Read from its own --help, never assumed."""
     try:
@@ -105,12 +115,12 @@ def main(argv):
                                capture_output=True, text=True, timeout=a.timeout, stdin=subprocess.DEVNULL)
         except subprocess.TimeoutExpired as exc:
             out["protocol_fault"] = "timeout: apr code did not finish in %ss" % a.timeout
-            out["reported"]["stderr_tail"] = (exc.stderr or b"")[-600:].decode("utf-8", "replace") \
-                if isinstance(exc.stderr, bytes) else (exc.stderr or "")[-600:]
+            err = exc.stderr or b""
+            out["reported"]["stderr_tail"] = clip_tail(err.decode("utf-8", "replace") if isinstance(err, bytes) else err, 600)
             return finish(3)
     finally:
         shutil.rmtree(project, ignore_errors=True)
-    out["reported"]["stderr_tail"] = p.stderr[-600:]
+    out["reported"]["stderr_tail"] = clip_tail(p.stderr, 600)
     # apr code's own `apr serve` child is invisible to the cell otherwise. It dies with
     # its parent (PR_SET_PDEATHSIG), but the cell's teardown PROVES that, off the GPU
     # too, before the lock drops.
@@ -127,7 +137,7 @@ def main(argv):
     except ValueError:
         env = None
     if not isinstance(env, dict):
-        out["protocol_fault"] = "not_json: stdout is not the --output-format json envelope: %r" % p.stdout[:160]
+        out["protocol_fault"] = "not_json: stdout is not the --output-format json envelope: %s" % clip_head(repr(p.stdout), 160)
         return finish(3)
     out["reported"]["envelope"] = {k: env.get(k) for k in ("type", "subtype", "status", "is_error", "num_turns",
                                                             "tokens_in", "tokens_out", "session_id")}
