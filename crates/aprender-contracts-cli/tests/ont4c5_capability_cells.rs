@@ -224,6 +224,17 @@ fn probe(r: &Run) -> Result<(), String> {
     }
 }
 
+/// The receipt of `host` at the current release V*, as the gate itself reports V* on this repository — never a
+/// pinned version, so the mutations follow the tree to whichever release it has receipts for (the branch was
+/// parked for a week because these paths named 0.69.1 and its base had only 0.68.2).
+fn current_receipt(host: &str) -> String {
+    let v = json(&lint_root(&repo_root()));
+    let v_star = v["capability_cells"]["v_star"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no v_star on this repository: {v}"));
+    format!("evidence/dogfood/models/{v_star}/{host}.json")
+}
+
 /// A scratch copy of the repository in which `rel` (and only it) is a real, writable file.
 fn scratch_with(rel: &str) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("scratch");
@@ -320,7 +331,7 @@ fn flipping_a_required_rung_to_optional_leaves_b_outside_the_domain() {
 #[test]
 fn a_not_run_label_on_a_current_release_row_rejects_naming_the_cell() {
     for label in ["DEFER", "MANUAL", "NO-VERDICT"] {
-        let (dir, f) = scratch_with("evidence/dogfood/models/0.69.1/lambda.json");
+        let (dir, f) = scratch_with(&current_receipt("lambda"));
         edit_json(&f, |v| {
             rung_row(v, "qwen35-4b-q4km")["verdict"] = label.into()
         });
@@ -337,7 +348,7 @@ fn a_not_run_label_on_a_current_release_row_rejects_naming_the_cell() {
 
 #[test]
 fn a_deleted_current_release_row_rejects_naming_the_cell() {
-    let (dir, f) = scratch_with("evidence/dogfood/models/0.69.1/gx10.json");
+    let (dir, f) = scratch_with(&current_receipt("gx10"));
     edit_json(&f, |v| {
         let rows = v["rungs"].as_array_mut().expect("rungs");
         let n = rows.len();

@@ -20912,6 +20912,23 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-3972
+  github_issue: 3972
+  item_type: task
+  title: 'ONT-4c5: capability cells — a required ladder cell is oracle-proven or RED; Unknown{NotRun} on a required cell never arms (#3972, #4047)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T18:17:18Z
+  updated: 2026-09-23T18:17:18Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4110
   github_issue: 4110
   item_type: task
