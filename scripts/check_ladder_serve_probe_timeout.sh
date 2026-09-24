@@ -23,6 +23,7 @@
 #                   record carries host_load and route_timeout_s (cop ruling on #4126)
 #   load-decline    loadavg above the core count DECLINES a cpu serve by name (rc 2); the same load does
 #                   not decline a cuda serve
+#   load-unmeasurable  an unreadable loadavg DECLINES a cpu serve by name: the check fails CLOSED
 #   contract-timeout  with no test override the bound comes from the contract (cpu 300, cuda 60); a
 #                   contract without serve_health.route_timeout_s DECLINES by name
 # --self-test plants the old bare `"http":$code` (parses RED), a deleted load check (load-decline RED)
@@ -162,6 +163,14 @@ PY
      && [ "$prc" != 2 ] && grep -q '"probed":true' <<< "$out"; then ok load-decline
   else bad load-decline "cpu rc=$cprc ($(head -c 160 <<< "$cout")), cuda rc=$prc (want cpu 2 + the named decline, cuda probed)"; fi
 
+  # load-unmeasurable: a missing loadavg file must decline, never proceed unchecked
+  out=$(LADDER_LOADAVG_FILE="$T/no-such-loadavg" LADDER_NPROC=4 GPU_LOCK="$T/lock" LOCK_WAIT=10 LOCK_BUSY=75 APR="$T/apr" \
+        WORK="$T/work" SERVE_STALL_S=10 SERVE_CEILING_S=30 LADDER_ROUTE_MAX_TIME=2 \
+        timeout 60 bash -c "$body"$'\n''ladder_serve_probe /fake.gguf "" r1 cpu' 2>&1); prc=$?
+  pkill -f "$T/fake_serve.py" 2> /dev/null || :
+  if [ "$prc" = 2 ] && grep -q "^decline: ENV host load unmeasurable (loadavg 'unknown', cores '4') before the cpu serve of r1" <<< "$out"; then ok load-unmeasurable
+  else bad load-unmeasurable "rc=$prc: $(head -c 200 <<< "$out") (want rc 2 and the unmeasurable decline)"; fi
+
   # contract-timeout: no override -> the contract's per-backend bound; no declaration -> a named decline
   local tb="$body"$'\n'
   out=$(LADDER=contracts/model-capability-ladder-v1.yaml bash -c "$tb"'printf "%s %s" "$(ladder_route_timeout cpu)" "$(ladder_route_timeout cuda)"' 2>&1)
@@ -183,7 +192,7 @@ if [ "$SELF_TEST" = 1 ]; then
   grep -q 'FAIL  parses' <<< "$o" || { printf '%s\n' "$o"; echo "SELF-TEST FAIL: the bare \"http\":\$code plant left parses green"; exit 1; }
   echo "  ok    mutant bare-code killed by parses"
   m="$T/m-no-load.sh"
-  sed 's/    if \[ "\$bname" = cpu \] && python3 -c .import sys; sys.exit(0 if float/    if false \&\& python3 -c '"'"'import sys; sys.exit(0 if float/' "$SCRIPT" > "$m"
+  sed "s/^sys.exit(0 if n <= 0 or l > n else 1)' /sys.exit(1)' /" "$SCRIPT" > "$m"
   cmp -s "$SCRIPT" "$m" && { echo "  FAIL  mutant no-load-check did not apply"; exit 1; }
   o=$(run_cases "$m" 2>&1) || true
   grep -q 'FAIL  load-decline' <<< "$o" || { printf '%s\n' "$o"; echo "SELF-TEST FAIL: a deleted load check left load-decline green"; exit 1; }
@@ -194,6 +203,13 @@ if [ "$SELF_TEST" = 1 ]; then
   o=$(run_cases "$m" 2>&1) || true
   grep -q 'FAIL  contract-timeout' <<< "$o" || { printf '%s\n' "$o"; echo "SELF-TEST FAIL: a hard-coded 60 s bound left contract-timeout green"; exit 1; }
   echo "  ok    mutant fixed-60 killed by contract-timeout"
+  m="$T/m-fail-open.sh"
+  sed 's/^    sys.exit(2)$/    sys.exit(1)/' "$SCRIPT" > "$m"
+  cmp -s "$SCRIPT" "$m" && { echo "  FAIL  mutant fail-open did not apply"; exit 1; }
+  bash -n "$m" || { echo "  FAIL  mutant fail-open does not parse"; exit 1; }
+  o=$(run_cases "$m" 2>&1) || true
+  grep -q 'FAIL  load-unmeasurable' <<< "$o" || { printf '%s\n' "$o"; echo "SELF-TEST FAIL: a fail-open load check left load-unmeasurable green"; exit 1; }
+  echo "  ok    mutant fail-open killed by load-unmeasurable"
   echo "SELF-TEST OK"; exit 0
 fi
 echo "ladder serve probe: a route with no response keeps the record parseable and the other routes' evidence ($SCRIPT)"

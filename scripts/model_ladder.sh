@@ -777,9 +777,23 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
         return 2
     fi
     read -r load1 cores <<< "$(ladder_host_load)"
-    if [ "$bname" = cpu ] && python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) > float(sys.argv[2]) else 1)' "$load1" "$cores" 2>/dev/null; then
-        echo "decline: ENV host load $load1 exceeds $cores cores before the cpu serve of $rid -- a CPU serve measured now measures the neighbours, not apr (#4126)" >&2
-        return 2
+    if [ "$bname" = cpu ]; then
+        # 0 = over the core count, 1 = under it, 2 = UNMEASURABLE. An unreadable load never reads as
+        # "fine": the check fails CLOSED (#4126 quorum lane 2).
+        python3 -c '
+import sys
+try:
+    l, n = float(sys.argv[1]), float(sys.argv[2])
+except ValueError:
+    sys.exit(2)
+sys.exit(0 if n <= 0 or l > n else 1)' "$load1" "$cores" 2>/dev/null
+        case $? in
+            0) echo "decline: ENV host load $load1 exceeds $cores cores before the cpu serve of $rid -- a CPU serve measured now measures the neighbours, not apr (#4126)" >&2
+               return 2 ;;
+            1) ;;
+            *) echo "decline: ENV host load unmeasurable (loadavg '$load1', cores '$cores') before the cpu serve of $rid -- an unmeasured host is not a clean one (#4126)" >&2
+               return 2 ;;
+        esac
     fi
 
     if [ ! -f "$router" ]; then

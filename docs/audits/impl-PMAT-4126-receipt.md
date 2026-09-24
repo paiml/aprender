@@ -74,3 +74,10 @@ stall-named RED with exactly that contradiction.
   the two new functions. pv validate / pv lint on the contract: valid / PASS.
 - check_model_ladder.sh --self-test 302/0, and the sibling guards all rc 0. check_bashrs_gate.sh:
   the base's 8, none added.
+- Quorum lane 2 (claude-sonnet-5, filling a Gemini seat that hit its quota) FAILED 96ec637dd,
+  measured: the load check failed OPEN. An unreadable /proc/loadavg or nproc gave "unknown";
+  python's float() raised, and the exception's exit 1 read as "under the core count", so the cpu
+  serve proceeded unchecked. Fixed: the comparison returns 0 (over), 1 (under), or 2
+  (unmeasurable), and 2 declines by name ("host load unmeasurable"). New case load-unmeasurable
+  (a missing loadavg file declines). Self-test plants: no-load-check -> load-decline, fail-open
+  (unmeasurable read as fine) -> load-unmeasurable; 4 plants, all killed.
