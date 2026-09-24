@@ -104,10 +104,18 @@ foreign_ont_keys() { # foreign_ont_keys FILE -> `    "k": v,` lines, in file ord
 # and enforced by `lint/valid_under_gate.rs` (PV-ONT-016, shrink-only). This script does not measure it, so by
 # the rule above it rides through `--write` verbatim; without this, `make ont-ratchet` would delete it and
 # disarm the ratchet. Prints nothing when the key is absent, so measure() can omit it.
-foreign_top_keys() { # foreign_top_keys FILE -> `  "k": v,` lines
+# PVL-001 EV-11 (PMAT-4166): the same holds for `command` and the two `pv lint` ratchets
+# (`unpaired_theorem_modules`, `contracts_without_depends_on`), owned by `lint/ratchet_gates.rs` and moved only by
+# `make lint-ratchet`. A top-level key is one at EXACTLY two spaces of indent (the layout this script and
+# lint_ratchet.sh write); a nested key of the same name sits deeper and is never carried.
+FOREIGN_TOP_KEYS="contracts_without_valid_under command unpaired_theorem_modules contracts_without_depends_on"
+foreign_top_keys() { # foreign_top_keys FILE -> `  "k": v,` lines, in FOREIGN_TOP_KEYS order
     [ -f "$1" ] || return 0
-    { grep -E '"contracts_without_valid_under"[[:space:]]*:' "$1" || true; } | head -1 \
-        | sed 's/^[[:space:]]*/  /; s/,\{0,1\}[[:space:]]*$/,/'
+    local key
+    for key in $FOREIGN_TOP_KEYS; do
+        { grep -E "^  \"$key\"[[:space:]]*:" "$1" || true; } | head -1 \
+            | sed 's/^[[:space:]]*/  /; s/,\{0,1\}[[:space:]]*$/,/'
+    done
 }
 
 # ONT R-5, verbatim: "Only contracts that *should* be anchored (kernel-kind with
@@ -321,6 +329,15 @@ self_test() {
     set -e
     row "--write keeps contracts_without_valid_under in place" "$(grep -c '"contracts_without_valid_under": 386' "$t/vu.json")" 1
     row "--write does not invent contracts_without_valid_under" "$(grep -c '"contracts_without_valid_under"' "$t/fw.json")" 0
+    # EV-11 (PMAT-4166): `make lint-ratchet`'s three keys ride through --write too; a NESTED key of the same name does not.
+    printf '{\n  "armed_gates": ["validate"],\n  "contracts_without_valid_under": 386,\n  "command": "make lint-ratchet",\n  "unpaired_theorem_modules": 130,\n  "contracts_without_depends_on": 278,\n  "ont": {\n    "formal_prose": 1\n  }\n}\n' > "$t/lr.json"
+    set +e
+    BASELINE="$t/lr.json" main --write >/dev/null 2>&1
+    set -e
+    row "--write keeps command + both lint ratchets in place" "$(grep -cE '^  "(command": "make lint-ratchet"|unpaired_theorem_modules": 130|contracts_without_depends_on": 278),$' "$t/lr.json")" 3
+    printf '{\n  "armed_gates": ["validate"],\n  "ont": {\n    "command": "nested",\n    "formal_prose": 1\n  }\n}\n' > "$t/nest.json"
+    row "a nested \"command\" is not carried to the top level" "$(foreign_top_keys "$t/nest.json" | grep -c '"command"')" 0
+    row "a top-level \"command\" beside a nested one is carried once" "$(printf '{\n  "command": "x",\n  "ont": {\n    "command": "y"\n  }\n}\n' > "$t/both.json"; foreign_top_keys "$t/both.json" | tr '\n' '|')" '  "command": "x",|'
     if command -v python3 >/dev/null 2>&1; then
         python3 -c "import json;json.load(open('$t/vum.json'))" >/dev/null 2>&1 \
             && row "measure() with the valid-under key is valid JSON" ok ok || row "measure() with the valid-under key is valid JSON" bad ok

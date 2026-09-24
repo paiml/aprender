@@ -3,6 +3,9 @@
   "armed_gates": ["validate", "audit", "score", "verify", "enforce", "enforcement-level", "duplicate-stems", "composition", "sigma", "relations", "shapes"],
   "armed_shapes": ["ont-shapes-v1", "ladder-measured", "ladder-green"],
   "contracts_without_valid_under": 386,
+  "command": "make lint-ratchet",
+  "unpaired_theorem_modules": 130,
+  "contracts_without_depends_on": 278,
   "ont": {
     "consumer_present": true,
     "contracts_total": 1883,

@@ -265,6 +265,9 @@ fn json_report_carries_the_lattice() {
             serde_json::Value::String("shapes".into()),
             // ONT-7's gate: same R-8 shape.
             serde_json::Value::String("valid-under".into()),
+            // PVL-001 EV-11's two ratchets: same R-8 shape.
+            serde_json::Value::String("theorem-pairing".into()),
+            serde_json::Value::String("depends-on-present".into()),
         ]),
         "{}",
         show(&r)

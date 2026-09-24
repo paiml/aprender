@@ -1362,6 +1362,16 @@ ont-ratchet:
 ont-ratchet-check:
 	@bash scripts/check_ont_ratchet.sh --check
 
+# PVL-001 EV-11 (PMAT-4166): the two `pv lint` ratchets (theorem-pairing, depends-on-present) move ONLY
+# through this target, and only DOWN. The gates read contracts/lint-baseline.json and never write it.
+# NEVER in CI: a CI job that could rewrite the baseline is a ratchet that turns both ways.
+.PHONY: lint-ratchet lint-ratchet-self-test
+lint-ratchet:
+	@bash scripts/lint_ratchet.sh
+
+lint-ratchet-self-test:
+	@bash scripts/lint_ratchet.sh --self-test
+
 # ONT-001 §5 ONT-4b2 / R-13 — the out-of-gate SHACL differential oracle.
 #
 # NOT a PR check, by the rule that puts it here: `shacl` is 316 crates and pinned at ONE version (ONT-0's

@@ -17,6 +17,7 @@ pub mod finding;
 mod gates;
 pub use gates::collect_yaml_files;
 mod gates_extended;
+pub mod ratchet_gates;
 pub mod relations_gate;
 pub mod rules;
 pub mod sarif;
@@ -216,6 +217,40 @@ pub enum GateExtra {
         baseline: Option<usize>,
         /// `world=count` over the contracts whose `valid_under` passed every rule.
         by_world: Vec<String>,
+        /// Findings.
+        violations: usize,
+    },
+    /// PVL-001 EV-11: Lean theorem modules named by a book page — the `unpaired_theorem_modules` ratchet.
+    #[serde(rename = "theorem_pairing")]
+    TheoremPairing {
+        /// The Lean base the modules were read under.
+        lean_base: String,
+        /// `.md` pages read under the book roots.
+        book_pages: usize,
+        /// `.lean` files under `<base>/ProvableContracts/Theorems/`.
+        theorem_modules: usize,
+        /// Of those, named in full by at least one book page.
+        paired: usize,
+        /// The debt, shrink-only against the baseline.
+        unpaired_theorem_modules: usize,
+        /// The top-level `unpaired_theorem_modules` in `lint-baseline.json`; `None` = not recorded (reported only).
+        baseline: Option<usize>,
+        /// The unpaired modules, dotted, in byte order.
+        unpaired: Vec<String>,
+        /// Findings.
+        violations: usize,
+    },
+    /// PVL-001 EV-11: kernel-kind contracts with an empty `metadata.depends_on` — the ratchet.
+    #[serde(rename = "depends_on_present")]
+    DependsOnPresent {
+        /// Contract files parsed.
+        contracts_checked: usize,
+        /// Of those, kernel-kind and not a registry.
+        kernel_contracts: usize,
+        /// Kernel-kind contracts whose `metadata.depends_on` is empty — the debt, shrink-only.
+        contracts_without_depends_on: usize,
+        /// The top-level `contracts_without_depends_on` in `lint-baseline.json`; `None` = not recorded (reported only).
+        baseline: Option<usize>,
         /// Findings.
         violations: usize,
     },
@@ -583,6 +618,15 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     gates.push(valid_under_gate_result);
     all_findings.append(&mut valid_under_findings);
 
+    // Gates 14, 15: theorem-pairing, depends-on-present (PVL-001 EV-11). Same R-8 shape: computed in every run,
+    // armed per repo.
+    for (name, run) in RATCHET_GATES {
+        let (result, mut findings) =
+            ratchet_result(config.contract_dir, validation_passed, name, run);
+        gates.push(result);
+        all_findings.append(&mut findings);
+    }
+
     // Gate 9: strict test-binding (Issue #1510, opt-in via --strict-test-binding)
     if config.strict_test_binding {
         push_gate(
@@ -664,6 +708,8 @@ pub enum NamedGateOutcome {
     Shapes(shapes_gate::ShapesOutcome),
     /// The `valid-under` gate (ONT-7), with three non-verdict answers (no Σ, malformed Σ, no kernel contract).
     ValidUnder(valid_under_gate::ValidUnderOutcome),
+    /// A PVL-001 EV-11 ratchet (`theorem-pairing`, `depends-on-present`), whose one non-verdict answer is a decline.
+    Ratchet(ratchet_gates::RatchetOutcome),
     /// A gate that ran and judged the corpus.
     Ran {
         result: Box<GateResult>,
@@ -698,6 +744,12 @@ pub fn run_named_gate_with(
         "valid-under" => {
             NamedGateOutcome::ValidUnder(valid_under_gate::run_valid_under_gate(contract_dir))
         }
+        "theorem-pairing" => {
+            NamedGateOutcome::Ratchet(ratchet_gates::run_theorem_pairing_gate(contract_dir))
+        }
+        "depends-on-present" => {
+            NamedGateOutcome::Ratchet(ratchet_gates::run_depends_on_present_gate(contract_dir))
+        }
         "validate" => {
             let (contracts, parse_errors) = load_contracts(contract_dir);
             let (result, findings) = run_validate_gate(&contracts, &parse_errors);
@@ -711,7 +763,42 @@ pub fn run_named_gate_with(
 }
 
 /// The gate names `--gate` computes alone, for the refusal message.
-pub const NAMED_GATES: [&str; 5] = ["relations", "shapes", "sigma", "valid-under", "validate"];
+pub const NAMED_GATES: [&str; 7] = [
+    "depends-on-present",
+    "relations",
+    "shapes",
+    "sigma",
+    "theorem-pairing",
+    "valid-under",
+    "validate",
+];
+
+/// The EV-11 ratchet gates, by name, in the order the full run computes them.
+type RatchetRun = fn(&Path) -> ratchet_gates::RatchetOutcome;
+const RATCHET_GATES: [(&str, RatchetRun); 2] = [
+    ("theorem-pairing", ratchet_gates::run_theorem_pairing_gate),
+    (
+        "depends-on-present",
+        ratchet_gates::run_depends_on_present_gate,
+    ),
+];
+
+/// An EV-11 ratchet as `run_lint` reports it. Its decline becomes a SKIPPED gate here, as sigma's non-verdict
+/// answers do — under `--gate <name>` it is an exit of its own (2).
+fn ratchet_result(
+    contract_dir: &Path,
+    validation_passed: bool,
+    name: &str,
+    run: RatchetRun,
+) -> (GateResult, Vec<LintFinding>) {
+    if !validation_passed {
+        return (skipped_gate(name, "validation failed"), Vec::new());
+    }
+    match run(contract_dir) {
+        ratchet_gates::RatchetOutcome::Ran { result, findings } => (*result, findings),
+        ratchet_gates::RatchetOutcome::Declined(why) => (skipped_gate(name, &why), Vec::new()),
+    }
+}
 
 /// The `sigma` gate as `run_lint` reports it. Σ's two non-verdict answers become SKIPPED gates here — under
 /// `--gate sigma` they are an exit of their own (decline / error), but inside a full run "skipped" is how the
