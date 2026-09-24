@@ -342,6 +342,30 @@ if [ "${1:-}" = "--self-test" ]; then
   else
     printf 'FAIL  row 16 an empty workspace returned rc=%s\n%s\n' "$tb_rc" "$tb_out"; fails=1
   fi
+  # Row 17 (#4114): a failing BUILD HOST is never a crate verdict. Measured on gx10 at ENOSPC: every
+  # crate became "could not compile" and the first draft reported RED. The attribution helper must
+  # say 4 (host), and it must still say 1 for a real crate error in an otherwise healthy log.
+  printf 'error: failed to write `/t/debug/.fingerprint/x/invoked.timestamp`\nCaused by:\n  No space left on device (os error 28)\nerror: could not compile `pti-fixture` (lib test)\n' > "$TD/host.log"
+  printf 'pkgs/pti-fixture-0.1.0/src/lib.rs:3:22: error: couldn'"'"'t read `x`: No such file or directory (os error 2)\nerror: could not compile `pti-fixture` (lib test) due to 1 previous error\n' > "$TD/crate.log"
+  h_rc=0; python3 "$REPO_ROOT/scripts/lib/tarball_build_errors.py" "$TD/host.log" > /dev/null || h_rc=$?
+  c_rc=0; python3 "$REPO_ROOT/scripts/lib/tarball_build_errors.py" "$TD/crate.log" > /dev/null || c_rc=$?
+  if [ "$h_rc" = 4 ] && [ "$c_rc" = 1 ]; then
+    printf 'ok    row 17 a disk-full host is 4 (could not check), a crate error is 1 (RED)\n'
+  else
+    printf 'FAIL  row 17 host log rc=%s (want 4), crate log rc=%s (want 1)\n' "$h_rc" "$c_rc"; fails=1
+  fi
+  # Row 18 (#4114 quorum lane 1): --crate-file keys on the MANIFEST name, so a prerelease version
+  # with a '-' (0.1.0-rc.1) substitutes the right crate instead of "matching 0".
+  tb_fixture "$TD/tb-rc" 'pub fn f() {}\n'
+  sed -i 's/^version = "0.1.0"$/version = "0.1.0-rc.1"/' "$TD/tb-rc/Cargo.toml"
+  ( cd "$TD/tb-rc" && CARGO_TARGET_DIR="$TD/tb-rc-pkg" cargo package --no-verify --allow-dirty > /dev/null 2>&1 )
+  rc_crate="$TD/tb-rc-pkg/package/pti-fixture-0.1.0-rc.1.crate"
+  tb_out="$(TARBALL_BUILD_TARGET_DIR="$TD/tb-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$TD/tb-rc" --crate-file "$rc_crate" 2>&1)"; tb_rc=$?
+  if [ -f "$rc_crate" ] && [ "$tb_rc" = 0 ] && grep -q '^SUBSTITUTED pti-fixture (pti-fixture-0.1.0-rc.1)' <<< "$tb_out"; then
+    printf 'ok    row 18 a prerelease --crate-file substitutes by manifest name\n'
+  else
+    printf 'FAIL  row 18 prerelease substitution: rc=%s\n%s\n' "$tb_rc" "$tb_out"; fails=1
+  fi
   [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
   printf '\nSELF-TEST PASSED\n'
   exit 0

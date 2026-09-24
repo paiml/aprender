@@ -13,7 +13,20 @@ import sys
 import tomllib
 
 
+def package_name(d):
+    return tomllib.loads((pathlib.Path(d) / "Cargo.toml").read_text())["package"]["name"]
+
+
 def main(argv):
+    # --name DIR: the [package] name of one unpacked crate (a --crate-file substitution keys on the
+    # manifest, never on a split of the directory name: a version may hold '-', e.g. 0.70.0-rc.1)
+    if len(argv) == 3 and argv[1] == "--name":
+        try:
+            print(package_name(argv[2]))
+            return 0
+        except (OSError, KeyError, tomllib.TOMLDecodeError) as e:
+            print("tarball_workspace: no package name in %s: %s" % (argv[2], e), file=sys.stderr)
+            return 2
     if len(argv) != 2:
         print("usage: tarball_workspace.py DIR", file=sys.stderr)
         return 2
