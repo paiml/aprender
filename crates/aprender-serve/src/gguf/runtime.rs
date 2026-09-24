@@ -249,6 +249,12 @@ impl OwnedQuantizedKVCache {
         self.seq_len = (self.seq_len + n).min(self.max_seq_len);
     }
 
+    /// Keep only the first `new_len` positions, by the row width the cache was
+    /// built with (#4214: a session resuming from a checkpoint).
+    pub fn truncate(&mut self, new_len: usize) {
+        self.rollback_to(new_len, self._hidden_dim);
+    }
+
     /// PAR-098: Rollback cache to a previous position (for speculative decode rejection)
     ///
     /// When draft tokens are rejected, we need to remove their K/V entries.
