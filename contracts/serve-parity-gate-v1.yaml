@@ -67,6 +67,7 @@ gate:
   disk_path: /mnt/nvme-raid0  # a symlink on gx10 (the root disk); resolved, never trusted
   correctness:
     tau: 0.25                 # a teacher-forced disagreement is excused only when the oracle's own gap < tau
+    max_rank: 2               # ...and only when the oracle's token is apr's rank <= 2 (qwen35_parity.rs's own pass rule)
     min_teacher_forced_steps: 16
     template: official        # the prompt comes from the model's own chat template, never from apr's output
   baseline_file: evidence/serve-parity/gx10/baseline.json
@@ -112,7 +113,7 @@ proof_obligations:
       OBLIG-SPG-CORRECTNESS-PRECONDITION: verdict(run) = PASS implies that, for every
       model and every prompt, the prompt ids equal the oracle's ids on the official
       template, teacher_forced_steps >= min_teacher_forced_steps, and every
-      disagreement has gap < tau. The gate recomputes this from the disagreements.
+      disagreement has gap < tau and rank <= max_rank. The gate recomputes this from the disagreements.
       A record's own `pass` field is never read.
   - id: SPG-INV-003
     type: invariant

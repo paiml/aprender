@@ -40,8 +40,11 @@ def load_gate(path=CONTRACT):
     with open(path) as fh:
         gate = (yaml.safe_load(fh) or {}).get("gate")
     need = ("host_class", "band_concurrency", "tolerance", "parity_target",
-            "disk_floor_gb", "correctness", "baseline_file", "receipt_dir", "models")
+            "disk_floor_gb", "disk_path", "correctness", "baseline_file", "receipt_dir", "models")
     missing = [k for k in need if not isinstance(gate, dict) or k not in gate]
+    corr = gate.get("correctness") if isinstance(gate, dict) else None
+    missing += ["correctness." + k for k in ("tau", "max_rank", "min_teacher_forced_steps", "template")
+                if isinstance(corr, dict) and k not in corr]
     if missing:
         raise SystemExit("serve_parity_gate: %s gate: is missing %s -- no defaults "
                          "are assumed" % (path, ", ".join(missing)))
@@ -68,6 +71,12 @@ def preflight_reasons(run, gate):
         out.append("foreign process(es) on the GPU: %s" % (apps,))
     disk = pre.get("disk") or {}
     free = disk.get("free_gb")
+    if disk.get("path") != gate["disk_path"]:
+        out.append("free disk was measured at %r, not the gate's %s"
+                   % (disk.get("path"), gate["disk_path"]))
+    if not isinstance(disk.get("resolved"), str) or not disk.get("resolved"):
+        out.append("disk path %s was not resolved (readlink -f), so the filesystem "
+                   "measured is unknown" % (gate["disk_path"],))
     if not isinstance(free, (int, float)):
         out.append("free disk at %s was not recorded" % (gate.get("disk_path"),))
     elif free < gate["disk_floor_gb"]:
@@ -100,6 +109,10 @@ def correctness_reasons(model, gate):
             continue
         for d in dis:
             gap = d.get("gap")
+            rank = d.get("rank")
+            if not isinstance(rank, int) or rank > c["max_rank"]:
+                out.append("%s prompt %d step %s: the oracle's token is apr's rank %r > %d"
+                           % (size, i, d.get("step"), rank, c["max_rank"]))
             if not isinstance(gap, (int, float)) or gap >= c["tau"]:
                 out.append("%s prompt %d step %s: apr disagrees with the oracle at gap "
                            "%r >= tau %s" % (size, i, d.get("step"), gap, c["tau"]))
@@ -187,16 +200,18 @@ def evaluate(run, gate, pin_commit, baseline):
         row["reasons"] = mr
         rows.append(row)
         reasons.extend(mr)
-    reasons.extend(control_reasons(run, gate, base, rows))
+    reasons.extend(control_reasons(run, gate, base, rows, pin_commit))
     return (RED if reasons else PASS), reasons, rows
 
 
-def control_reasons(run, gate, base, rows):
+def control_reasons(run, gate, base, rows, pin_commit):
     """A harness that cannot see a slowdown is blind: its PASS proves nothing.
 
     The control is judged by the SAME ratchet as the real run. Its reference
     is the committed baseline when one exists, and otherwise this run's own
-    real point, which is what a promotion would commit.
+    real point, which is what a promotion would commit. A control model is
+    bound to the size it claims by the pinned GGUF sha and to the pinned
+    comparator, or a lenient size's floor could judge another model's control.
     """
     ctl = run.get("control") or {}
     if not ctl.get("models"):
@@ -205,9 +220,18 @@ def control_reasons(run, gate, base, rows):
         return ["positive control ran on harness %r, the run on %r"
                 % (ctl.get("harness_sha"), run.get("harness_sha"))]
     real = {r["size"]: r.get("point") for r in rows}
+    pins = {p["size"]: p["sha256"] for p in gate["models"]}
     out = []
     for m in ctl["models"]:
         size = m.get("size")
+        if m.get("gguf_sha256") != pins.get(size):
+            out.append("control %s: GGUF sha %r is not the one pinned for that size"
+                       % (size, m.get("gguf_sha256")))
+            continue
+        comp = (((m.get("receipt") or {}).get("provenance") or {}).get("comparator") or {}).get("commit")
+        if comp != pin_commit:
+            out.append("control %s: comparator commit %r is not the pinned %s" % (size, comp, pin_commit))
+            continue
         point, _, why = band_ratio(m.get("receipt"), gate)
         ref = (base.get(size) or {}).get("point") or real.get(size)
         if why or not isinstance(ref, (int, float)):
@@ -359,7 +383,7 @@ def _fx_run(gate, pin, point=0.9, ctl_point=0.4):
                        "comparator_rss_kb": 2_000_000},
             "correctness": {"template": gate["correctness"]["template"], "prompts": [
                 {"prompt_ids_match": True, "teacher_forced_steps": 32,
-                 "disagreements": [{"step": 3, "gap": 0.01}]}]}})
+                 "disagreements": [{"step": 3, "gap": 0.01, "rank": 2}]}]}})
     return {
         "schema": RUN_SCHEMA, "host_class": gate["host_class"], "target": "aarch64-unknown-linux-gnu",
         "green_sha": "a" * 40, "harness_sha": "b" * 40, "run_url": "https://example.invalid/run/1",
@@ -370,6 +394,7 @@ def _fx_run(gate, pin, point=0.9, ctl_point=0.4):
         "models": models,
         "control": {"harness_sha": "b" * 40, "delay_ms": 20,
                     "models": [{"size": gate["models"][0]["size"],
+                                "gguf_sha256": gate["models"][0]["sha256"],
                                 "receipt": _fx_receipt(ctl_point, pin)}]},
     }
 
@@ -398,17 +423,26 @@ def verdict_rows(gate, pin):
         ("scrambled output is RED even when pass=true",
          _set(["models", 0, "correctness", "prompts", 0],
               {"pass": True, "prompt_ids_match": True, "teacher_forced_steps": 32,
-               "disagreements": [{"step": 0, "gap": 3.0}]}), 0.9, RED),
+               "disagreements": [{"step": 0, "gap": 3.0, "rank": 1}]}), 0.9, RED),
+        ("oracle token deep in apr's ranking is RED",
+         _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0, "rank"], 3), 0.9, RED),
         ("prompt ids differ is RED", _set(["models", 2, "correctness", "prompts", 0, "prompt_ids_match"], False), 0.9, RED),
         ("apr-derived template is RED", _set(["models", 0, "correctness", "template"], "apr"), 0.9, RED),
         ("blind control is RED", _set(["control", "models", 0, "receipt"], _fx_receipt(0.9, pin)), 0.9, RED),
         ("absent control is RED", _set(["control"], {}), 0.9, RED),
         ("control with no models is RED", _set(["control", "models"], []), 0.9, RED),
+        ("control mislabeled to another size is RED",
+         _set(["control", "models", 0, "size"], gate["models"][4]["size"]), 0.9, RED),
+        ("control on an unpinned comparator is RED",
+         _set(["control", "models", 0, "receipt"], _fx_receipt(0.4, "0" * 9)), 0.9, RED),
         ("control on another harness is RED", _set(["control", "harness_sha"], "d" * 40), 0.9, RED),
         ("busy GPU lock is NO-GO", _set(["preflight", "gpu_lock"], "busy"), 0.9, NO_GO),
         ("foreign GPU process is NO-GO", _set(["preflight", "foreign_compute_apps"], [{"pid": 7, "name": "llama-server"}]), 0.9, NO_GO),
         ("unrecorded GPU apps is NO-GO", _set(["preflight", "foreign_compute_apps"], None), 0.9, NO_GO),
         ("low disk is NO-GO", _set(["preflight", "disk", "free_gb"], 5.0), 0.9, NO_GO),
+        ("unrecorded free disk is NO-GO", _set(["preflight", "disk", "free_gb"], None), 0.9, NO_GO),
+        ("disk measured elsewhere is NO-GO", _set(["preflight", "disk", "path"], "/tmp"), 0.9, NO_GO),
+        ("unresolved disk path is NO-GO", _set(["preflight", "disk", "resolved"], ""), 0.9, NO_GO),
         ("wrong GGUF is RED", _set(["models", 3, "gguf_sha256"], "e" * 64), 0.9, RED),
         ("unpinned comparator is RED", _set(["binding", "comparator", "version_output"], "version: 1 (39173bcac)"), 0.9, RED),
         ("band not MEASURED is RED", _set(["models", 4, "receipt"], _fx_receipt(0.9, pin, "COMPARATOR_STALE")), 0.9, RED),
@@ -457,6 +491,18 @@ MUTANTS = [
      []),  # an equivalent edit: it must NOT flip anything (proves the harness is not trigger-happy)
     ("control presence skipped", "if not ctl.get(\"models\"):", "if not ctl.get(\"models\") and False:",
      ["control with no models is RED"]),
+    ("control identity not bound", "if m.get(\"gguf_sha256\") != pins.get(size):", "if False:",
+     ["control mislabeled to another size is RED"]),
+    ("control comparator not bound", "        if comp != pin_commit:\n            out.append(\"control", "        if False:\n            out.append(\"control",
+     ["control on an unpinned comparator is RED"]),
+    ("rank check dropped", "rank > c[\"max_rank\"]", "False",
+     ["oracle token deep in apr's ranking is RED"]),
+    ("unrecorded disk read as fine", "out.append(\"free disk at %s was not recorded\"", "pass  # (\"free disk at %s was not recorded\"",
+     ["unrecorded free disk is NO-GO"]),
+    ("disk path not bound", "if disk.get(\"path\") != gate[\"disk_path\"]:", "if False:",
+     ["disk measured elsewhere is NO-GO"]),
+    ("disk resolution not read", "if not isinstance(disk.get(\"resolved\"), str) or not disk.get(\"resolved\"):", "if False:",
+     ["unresolved disk path is NO-GO"]),
     ("lock not read", "if pre.get(\"gpu_lock\") != \"free\":", "if False:",
      ["busy GPU lock is NO-GO"]),
     ("foreign apps not read", "elif apps:", "elif False:",
