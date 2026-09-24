@@ -20610,3 +20610,24 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4059
+  github_issue: 4059
+  item_type: task
+  title: 'binary-debt #2: the KEPT binaries'' CLI tests are dark in CI; wire them capped, and refuse a spawning test target no lane runs (#4059)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-36
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: scripts/check_bin_cli_tests_wired.sh
+  acceptance_criteria:
+  - 'every test target that SPAWNS a workspace binary (CARGO_BIN_EXE_<bin>, cargo_bin(, cargo_bin_cmd!) is derived from the tree (tests/<n>.rs, tests/<n>/main.rs, [[test]], autotests=false) and is either on a --test line with its own -p package, or ledgered in scripts/bin_cli_unwired_baseline.txt; drift either way is RED'
+  - 'the ledger is a shrink-only set baseline (check_baseline_ratchets.sh)'
+  - 'the KEPT binaries'' dark targets (apr-cli, the aprender facade, aprender-profile, aprender-orchestrate) are wired as capped per-crate fragments, each wall time measured on lambda first; the one huge target (the MoE live falsifier, 157 s with a model) is ledgered to #4179 for a nightly model-host lane'
+  - 'check_bin_cli_tests_wired.sh --self-test kills planted mutants: no cargo_bin_cmd!, name-only wiring, no dir targets, no word boundary, no \-continuation join'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'pv (aprender-contracts-cli): all 17 CLI test files were already wired on main@aa7c6ef03; the issue body is stale on that point.'

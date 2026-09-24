@@ -65,4 +65,9 @@ The ledger is registered as a `set` baseline in `scripts/check_baseline_ratchets
 - `check_guards_are_wired.sh` passes (ratcheted).
 - `check_explicit_test_commands.sh` passes.
 - `ci_run_explicit_test_commands.sh --list` is ok.
-- All five `check_roadmap_*.sh` return rc 0.
+- All five `check_roadmap_*.sh` return rc 0, measured at the committed head. `check_roadmap_fragment_required.sh` reads HEAD, so a run before the commit said nothing about it.
+
+## Quorum round 1 (head 739d80fc4)
+
+- **sonnet-5: FAIL, correct.** This receipt claimed all five `check_roadmap_*.sh` returned rc 0. Measured at 739d80fc4, `check_roadmap_fragment_required.sh` was rc 1: the new PMAT-4059 fragment was committed without `make roadmap-aggregate`. My rc 0 came from a run before the fragment was committed, and that guard reads HEAD. The next commit regenerates `docs/roadmaps/roadmap.yaml` and re-measures at the new head.
+- **haiku-4-5: PASS.** It said the roadmap checks pass, and at 739d80fc4 that was wrong, so its PASS is recorded here, not counted as evidence. Round 2 re-runs every lane on the new head.
