@@ -47,7 +47,7 @@ if [ "${1:-}" = "--self-test" ]; then
   bad=0
   for d in "$HERE"/fixtures/build/*/; do
     [ -f "$d/want" ] || continue
-    out=$(gate "$d/build.log" "$(cat "$d/build-rc" 2> /dev/null || echo 0)" 2>&1); rc=$?
+    out=$(gate "$d/lake.out" "$(cat "$d/build-rc" 2> /dev/null || echo 0)" 2>&1); rc=$?
     ok=1; [ "$rc" = "$(cat "$d/want")" ] || ok=0
     while IFS= read -r needle; do [ -n "$needle" ] && ! grep -qF -- "$needle" <<< "$out" && ok=0; done < "$d/want-msg"
     if [ "$ok" = 1 ]; then echo "ok    $(basename "$d")"; else echo "FAIL  $(basename "$d") -- rc $rc: $(tr '\n' ' ' <<< "$out" | cut -c1-200)"; bad=1; fi
