@@ -147,6 +147,13 @@ impl Qwen35Slots {
             slots.push(std::sync::Mutex::new(first.sibling()));
         }
         slots.insert(0, std::sync::Mutex::new(first));
+        if slots.len() > 1 {
+            eprintln!(
+                "[qwen35] serving up to {} requests at once ({QWEN35_SERVE_SLOTS_ENV}); \
+                 their decode steps batch",
+                slots.len()
+            );
+        }
         // Slot 0 on top: a lone client always gets the same session.
         let free = (0..slots.len()).rev().collect();
         Self {
@@ -226,6 +233,20 @@ impl std::ops::DerefMut for Qwen35Slot<'_> {
 
 impl Drop for Qwen35Slot<'_> {
     fn drop(&mut self) {
+        // With more than one slot, say what the shared decode batcher has done
+        // so far — the evidence that concurrent requests' steps ran together.
+        #[cfg(feature = "cuda")]
+        if self.pool.len() > 1 {
+            if let Some(stats) = self.guard.as_ref().and_then(|s| s.decode_batch_stats()) {
+                #[allow(clippy::cast_precision_loss)]
+                let mean = stats.sequences as f64 / stats.steps.max(1) as f64;
+                eprintln!(
+                    "[qwen35] decode batching so far: {} steps carried {} tokens \
+                     (mean {mean:.1}, widest {})",
+                    stats.steps, stats.sequences, stats.widest
+                );
+            }
+        }
         // The session first, then the index: a waiter woken by the index must
         // find the session free.
         drop(self.guard.take());
