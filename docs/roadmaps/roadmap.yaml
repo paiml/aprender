@@ -21491,3 +21491,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-4336
+  github_issue: 4336
+  item_type: task
+  title: 'ci(cuda-unit): the clippy --features cuda step runs on apr-cli-only diffs (cuda_lint output)'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-x4233
+  created: 2026-09-25T00:00:00Z
+  updated: 2026-09-25T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - scripts/ci_gpu_touched.sh --self-test answers gpu_touched=0 cuda_lint=1 on an apr-cli-only diff, with a planted mutant that deletes apr-cli from CUDA_LINT_CRATES
+  - cuda-unit starts on cuda_lint=1; its cargo test steps carry a gpu_touched step if; the clippy step has none (scripts/tests/ci_gpu_touched_test.sh)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
