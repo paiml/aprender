@@ -124,6 +124,14 @@ RED_ONLY_ON_CHAT='{"capability_match":{"passed":true,"skipped":false,"message":"
      "serve":{"probed":true,"teardown":"clean","routes":{
        "/v1/completions|stream=false":{"http":200}}}}}}}'
 
+# #4126: green everywhere except ONE route whose body was cut short after a 200 status line.
+RED_ONLY_ON_CUT='{"capability_match":{"passed":true,"skipped":false,"message":"ok"},
+ "golden_output":{"passed":true,"skipped":false,"message":"ok"},
+ "backends":{"cuda":{"ran":true,"fallback":false,"escaped_special":false,"rc":0,
+   "verbs":{'"$_verbs_ok"'"serve":{"probed":true,"teardown":"clean","routes":{
+     "/v1/completions|stream=false":{"http":200,"curl_error":"transfer failed after HTTP 200 (curl exit 18)"},
+     "/api/chat|stream=false":{"http":200}}}}}}}'
+
 why_of() { # why_of <src> -> the reason line that row would print
   # The builder already reads its row from STDIN, so it just gets piped. (The first
   # version of this helper rebuilt it through `exec` and string-splitting, which is
@@ -143,6 +151,13 @@ check_reason() { # check_reason <src> -> 0 explained, 1 not
     *'verb `chat` did not run'*) printf '  ok    %-16s %s\n' "reason:chat" "$chat" ;;
     *) printf '  FAIL  %-16s chat-only red says: %s\n' "reason:chat" "${chat:-empty}"; return 1 ;;
   esac
+  # #4126: a route cut short after a 200 must say HOW, not read as a clean 200 or as `unknown`.
+  cut=$(why_of "$src" "$RED_ONLY_ON_CUT") || return 2
+  case "$cut" in
+    *'without a complete response: /v1/completions|stream=false (transfer failed after HTTP 200 (curl exit 18))'*)
+      printf '  ok    %-16s %s\n' "reason:cut" "$cut" ;;
+    *) printf '  FAIL  %-16s a cut-short route says: %s\n' "reason:cut" "${cut:-empty}"; return 1 ;;
+  esac
   got=$(why_of "$src") || return 2
   case "$got" in
     *"serve routes non-200"*)
@@ -161,7 +176,9 @@ route-500|true|clean|500|0|false
 not-probed|false|clean|200|0|false
 teardown-failed|true|failed|200|0|false
 teardown-undetermined|true|undetermined|200|0|false
-chat-rc3|true|clean|200|3|false'
+chat-rc3|true|clean|200|3|false
+route-timeout|true|clean|null,"curl_error":"timeout: no response within 60s"|0|false
+route-200-cut|true|clean|200,"curl_error":"transfer failed after HTTP 200 (curl exit 18)"|0|false'
 
 # #3965: a SKIPPED golden gate in the OLD encoding (passed:true, skipped:true, which is
 # what apr wrote before #3965 and what existing receipts still carry) must not make a

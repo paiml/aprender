@@ -30,3 +30,21 @@ The same text is on the 27B cpu serve of the fc942f6be lambda sweep. Mechanism, 
   serve_backend_record, output_judged, serve_teardown, write_errors, apr_bin_pinned and
   guards_are_wired: all rc 0. check_bashrs_gate.sh: the base's 8 findings over 413 files, none
   in this diff.
+
+## Round-1 quorum finding (lane 1, claude-sonnet-5, PASS with a measured non-blocking gap), fixed
+- On curl exit 18 (a 200 status line and then a body cut short), curl still reports the code. The
+  first version nulled it as "no HTTP response". Now the real code is KEPT and curl_error says
+  `transfer failed after HTTP <code> (curl exit <n>)`. The route is not ok (code forced to 000).
+- Keeping a 200 required the row builder to stop calling it green: serve_ok now also requires no
+  curl_error. The RED reason lists those routes separately ("serve routes without a complete
+  response: <route> (<curl_error>)"), and the non-200 list excludes them.
+- check_ladder_serve_verdict.sh: +route-timeout and +route-200-cut table rows (both red), and
+  +reason:cut. Ad-hoc mutation: deleting `and not r.get("curl_error")` turns route-200-cut RED
+  (green=true, expected false).
+- check_ladder_serve_probe_timeout.sh: +cut-kept. The fake /v1/completions sends a 200 and cuts its
+  body; the record keeps http 200, curl_error names curl exit 18, and ok is false.
+
+## Trigger measured (see #4126 comment 5805617522)
+The unbounded /api/chat is NOT the cause: it generated eval_count 7, then EOS. What pushes it past
+60 s is per-request CPU latency under host load (100-125 s at load 155/48). The timeout policy is
+left to the cop.

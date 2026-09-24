@@ -811,14 +811,18 @@ print(json.dumps({"probed": False,
             code=$(curl -sS -o "$bodyf" -w '%{http_code}' --max-time "${LADDER_ROUTE_MAX_TIME:-60}" \
                 -H 'Content-Type: application/json' -d "$body" \
                 "http://127.0.0.1:$port$r" 2>/dev/null); crc=$?
-            if [ "$crc" = 0 ] && [[ "$code" =~ ^[1-5][0-9][0-9]$ ]]; then
-                http_json=$code; cerr_json=null
+            # A status line that DID arrive is kept even when the transfer then failed (curl exit
+            # 18, a body cut short, is measured to still report the code); curl_error then says
+            # so, and `code` is forced to 000 so the route is not ok. serve_ok reads curl_error too.
+            if [[ "$code" =~ ^[1-5][0-9][0-9]$ ]]; then http_json=$code; else http_json=null; fi
+            if [ "$crc" = 0 ] && [ "$http_json" != null ]; then
+                cerr_json=null
+            elif [ "$crc" = 28 ]; then
+                cerr_json="\"timeout: no response within ${LADDER_ROUTE_MAX_TIME:-60}s\""; code=000
+            elif [ "$http_json" != null ]; then
+                cerr_json="\"transfer failed after HTTP $http_json (curl exit $crc)\""; code=000
             else
-                http_json=null; code=000
-                case "$crc" in
-                    28) cerr_json="\"timeout: no response within ${LADDER_ROUTE_MAX_TIME:-60}s\"" ;;
-                    *)  cerr_json="\"no HTTP response (curl exit $crc)\"" ;;
-                esac
+                cerr_json="\"no HTTP response (curl exit $crc)\""; code=000
             fi
             [ "$code" = 200 ] || rc=1
             # THREE states, and `null` is the honest one: the field is absent from a
@@ -1163,7 +1167,7 @@ def serve_ok(v):
         return False
     # #3921: a 200 carrying gibberish is not a working route.
     return all(
-        r.get("http") == 200 and not r.get("output_bad")
+        r.get("http") == 200 and not r.get("output_bad") and not r.get("curl_error")
         for r in (sv.get("routes") or {}).values()
     )
 
@@ -1312,9 +1316,14 @@ for b,v in r["backends"].items():
         w.append(b+": serve teardown UNDETERMINED (the process tree could not be resolved, so nothing proves the server died) (#3943)")
     else:
         routes=sv.get("routes") or {}
-        bad=sorted(k for k,x in routes.items() if (x or {}).get("http")!=200)
+        bad=sorted(k for k,x in routes.items() if (x or {}).get("http")!=200 and not (x or {}).get("curl_error"))
         if bad:
-            w.append(b+": serve routes non-200: "+", ".join("%s=%s"%(k,(routes[k] or {}).get("http") or (routes[k] or {}).get("curl_error")) for k in bad))
+            w.append(b+": serve routes non-200: "+", ".join("%s=%s"%(k,(routes[k] or {}).get("http")) for k in bad))
+        # #4126: a route whose transfer failed (a timeout, or a body cut short after its status line)
+        # says HOW, whatever status it got.
+        cut=sorted(k for k,x in routes.items() if (x or {}).get("curl_error"))
+        if cut:
+            w.append(b+": serve routes without a complete response: "+", ".join("%s (%s)"%(k,routes[k]["curl_error"]) for k in cut))
         # #3921: separate from the status, for the same reason as the verbs.
         garbled=sorted(k for k,x in routes.items() if (x or {}).get("http")==200 and (x or {}).get("output_bad"))
         if garbled:

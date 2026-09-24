@@ -14,6 +14,8 @@
 # which hangs past the route timeout (LADDER_ROUTE_MAX_TIME=2).
 #   parses          the probe prints ONE parseable JSON object and returns 1 (a route failed)
 #   timeout-named   both /api/chat routes carry http:null and a curl_error naming the timeout
+#   cut-kept        /v1/completions sends a 200 then cuts its body: http 200 is KEPT, curl_error names the
+#                   failed transfer (curl exit 18), and the route is not ok
 #   others-kept     every other route is present with http 200. The evidence survives
 # --self-test plants the old bare `"http":$code` and requires `parses` to turn RED.
 #
@@ -52,6 +54,10 @@ class H(http.server.BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0); self.rfile.read(n)
         if self.path == "/api/chat":
             time.sleep(30)                      # never answers within the route timeout
+        if self.path == "/v1/completions":      # a 200 status line, then the body is cut short
+            self.send_response(200); self.send_header("Content-Length", "1000"); self.end_headers()
+            self.wfile.write(b'{"choices":[{"text":"4"'); self.wfile.flush()
+            self.close_connection = True; return
         body = json.dumps({"choices": [{"text": "4", "message": {"role": "assistant", "content": "4"}}],
                            "message": {"role": "assistant", "content": "4"}, "response": "4", "used_gpu": False})
         self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers()
@@ -99,6 +105,9 @@ except Exception as e:
     print("unparseable: %s" % e); sys.exit(0)
 r = d.get("routes") or {}
 chat = [k for k in r if k.startswith("/api/chat|")]
+cut = [k for k in r if k.startswith("/v1/completions|")]
+cb = [k for k in cut if not (r[k].get("http") == 200 and "curl exit 18" in str(r[k].get("curl_error") or "") and r[k].get("ok") is False)]
+print("CUT:%d:%s" % (len(cut), "; ".join("%s=%s" % (k, r[k]) for k in cb)))
 bad = []
 if len(chat) != 2:
     bad.append("want both /api/chat routes recorded, got %s" % chat)
@@ -107,12 +116,13 @@ for k in chat:
     if x.get("http") is not None or "timeout" not in str(x.get("curl_error") or ""):
         bad.append("%s: want http null + a timeout curl_error, got %s" % (k, x))
 print("TIMEOUT:" + "; ".join(bad))
-others = [k for k in r if not k.startswith("/api/chat|")]
+others = [k for k in r if not k.startswith("/api/chat|") and not k.startswith("/v1/completions|")]
 ob = [k for k in others if r[k].get("http") != 200]
 print("OTHERS:%d:%s" % (len(others), ",".join(ob)))
 PY
 )
   if grep -q '^TIMEOUT:$' <<< "$out"; then ok timeout-named; else bad timeout-named "$(grep -m1 -E '^(TIMEOUT|unparseable)' <<< "$out")"; fi
+  if grep -qE '^CUT:[1-9][0-9]*:$' <<< "$out"; then ok cut-kept; else bad cut-kept "$(grep -m1 -E '^(CUT|unparseable)' <<< "$out")"; fi
   if grep -qE '^OTHERS:[1-9][0-9]*:$' <<< "$out"; then ok "others-kept ($(grep -oE '^OTHERS:[0-9]+' <<< "$out" | cut -d: -f2) routes with http 200)"
   else bad others-kept "$(grep -m1 -E '^(OTHERS|unparseable)' <<< "$out")"; fi
   pkill -f "$T/fake_serve.py" 2> /dev/null || :
