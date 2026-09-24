@@ -1,0 +1,165 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-refines-v1 — `A refines B` obeys the Liskov rule, and the witness that
+# says so checks (ONT-001 §3.5, R-20, §5 row ONT-4e; issue #4075; ticket
+# PMAT-4075)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::schema::Clause — `requires[]` and `ensures[]` as
+#   first-class `{id, statement, formal, formal_status}` lists.
+#   provable_contracts::ontology::liskov — the three obligations, Pair,
+#   liskov_sha256, LiskovWitness, check, pc_checker.
+#   provable_contracts::lint::refines_gate — the `refines` gate: PV-ONT-024
+#   (Liskov violation, clause named), PV-ONT-025 (witness does not check),
+#   PV-ONT-026 (malformed clause), PV-ONT-027 (liskov_prose above the baseline);
+#   declines NoCheckable / WitnessStale / PositiveControlFailed, exit 3 on a
+#   malformed Σ.
+#   `pv-sat` liskov.rs — the UNTRUSTED reasoner, with its own direction table and
+#   its pc_liskov_reasoner plant.
+#
+# THE OBLIGATIONS (atoms are opaque: `formal`, whitespace collapsed)
+#   pre  — every clause of A.requires is implied by B.requires  (else strengthened)
+#   post — every clause of B.ensures is implied by A.ensures    (else weakened)
+#   inv  — every clause of B.invariants is implied by A.invariants (else dropped)
+#   An invariant is a clause only when it carries `formal_status`; a legacy
+#   invariants list or mapping is not one, and a pair with no clauses on either
+#   side is `legacy` — Pass, with liskov_pairs_checked saying nothing was checked.
+#
+# PROOF LADDER, STATED HONESTLY
+#   * L2 — unit tests over the obligations, the checker and the digest; the
+#          gate's tests; pv-sat's reasoner test; the CLI test runs the §5 probe
+#          verbatim on this repo's corpus.
+#   * L3 — not declared. There are no Kani harnesses for this checker.
+#   * L4 — not declared. There is no Lean theorem.
+#   The gate is COMPUTED and NOT ARMED: it is absent from `armed_gates`, so its
+#   verdict does not reach the armed meet until an arming PR adds it.
+# ─────────────────────────────────────────────────────────────────────────────
+metadata:
+  version: 1.0.0
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: PAIML Engineering
+  kind: pattern
+  description: >
+    ONT-001 Liskov rule — requires/ensures as first-class clauses; every refines pair's pre, post and invariant
+    obligations decided offline by the untrusted pv-sat and re-verified in the gate by a witness checker with two
+    positive controls
+  references:
+  - 'paiml/infra docs/specifications/paiml-ontology.md §3.5, §5 ONT-4e, R-20 (Liskov on refines), R-1 (the reasoner is untrusted), R-3 (positive controls)'
+  - 'Liskov & Wing (1994) A behavioral notion of subtyping'
+  - 'crates/aprender-contracts/src/ontology/liskov.rs — the obligations, the digest, check, pc_checker'
+  - 'crates/aprender-contracts/src/lint/refines_gate.rs — the refines gate'
+  - 'crates/aprender-contracts-cli/src/bin/pv-sat/liskov.rs — the reasoner and its plant'
+equations:
+  obligations:
+    formula: 'A refines B ⇒ (∀c ∈ A.requires: implies(B.requires, c)) ∧ (∀c ∈ B.ensures: implies(A.ensures, c)) ∧ (∀c ∈ B.invariants: implies(A.invariants, c))'
+    domain: a refines edge of the relations gate's typed graph, both endpoints in the census
+    codomain: three obligations, each a chain or a counter-model
+    invariants:
+    - implies(P, c) holds exactly when some premise in P has the same atom as c
+    - a prose clause is never decided; it is reported by name
+    preconditions:
+    - every clause is well formed; otherwise PV-ONT-026 names its file and id
+    postconditions:
+    - a violation names the pair, the obligation and the clause id
+    lean_theorem: none — L4 not declared
+  check:
+    formula: 'check(W, P) = Ok(V) ⇔ W.liskov_sha256 = liskov_sha256(P) ∧ ∀ obligation o: (o = chain ∧ every step pairs a conclusion clause with a same-atom premise clause) ∨ (o = counter_model ∧ violated = exactly the conclusion clauses with no same-atom premise)'
+    domain: W a Liskov witness, P the checkable pairs of the current corpus
+    codomain: '{Ok(violations), Err(reason)}'
+    invariants:
+    - a counter-model that hides or invents a violation is refused
+    - a witness for other pairs or with a missing obligation is refused
+    preconditions:
+    - W names the current pairs; otherwise the gate declines WitnessStale before checking
+    postconditions:
+    - Ok(V) ⇒ V is exactly the Liskov violations of P
+    lean_theorem: none — L4 not declared
+  gate:
+    formula: 'verdict = Unknown(NoCheckable) if no Σ; Unknown(WitnessStale) if checkable pairs and no witness for them; Unknown(PositiveControlFailed) unless pc_checker and pc_reasoner fired; Fail on any finding; Unknown(Prose) if a prose clause; Pass otherwise'
+    domain: a contracts/ directory with Σ, lint-baseline.json and a witness directory
+    codomain: V (the ONT-6 lattice)
+    invariants:
+    - no verdict over checkable pairs without both positive controls fired (R-3)
+    - liskov_prose never rises above the committed baseline
+    preconditions:
+    - Σ parses; otherwise exit 3
+    postconditions:
+    - verdict == Pass ⇒ every checkable refines pair keeps the Liskov rule by a checked witness
+    lean_theorem: none — L4 not declared
+proof_obligations:
+- id: ONT4E-INV-001
+  type: invariant
+  property: each obligation runs in its own direction
+  formal: 'premise(pre) = B.requires ∧ conclusion(pre) = A.requires ∧ premise(post) = A.ensures ∧ conclusion(post) = B.ensures ∧ premise(inv) = A.invariants ∧ conclusion(inv) = B.invariants'
+  applies_to: all
+- id: ONT4E-INV-002
+  type: invariant
+  property: the checker refuses a chain step whose premise atom differs from its clause
+  formal: 'step = (c, p) ∧ atom(p) ≠ atom(c) ⇒ check(W, P) = Err'
+  applies_to: all
+- id: ONT4E-INV-003
+  type: invariant
+  property: the checker refuses a counter-model that hides or invents a violation
+  formal: 'violated(o) ≠ {c ∈ conclusion(o) : ¬ ∃ p ∈ premise(o): atom(p) = atom(c)} ⇒ check(W, P) = Err'
+  applies_to: all
+- id: ONT4E-INV-004
+  type: invariant
+  property: the witness name is order-free and sensitive to every clause
+  formal: 'liskov_sha256(permute(P)) = liskov_sha256(P) ∧ ∀c: liskov_sha256(P with c changed) ≠ liskov_sha256(P)'
+  applies_to: all
+- id: ONT4E-POST-005
+  type: postcondition
+  property: the gate's exit is the lattice element, and a stale, absent or uncontrolled witness never passes
+  formal: 'violation ⇒ exit 1 naming the clause; prose ⇒ Unknown(Prose) naming the clause; stale ∨ absent ⇒ exit 2 naming make contracts; ¬pc_checker ∨ ¬pc_reasoner ⇒ exit 2; legacy pair ⇒ Pass with liskov_pairs_checked = 0'
+  applies_to: all
+verification_summary:
+  total_obligations: 5
+  l2_property_tested: 5
+  l3_kani_proved: 0
+  l4_lean_proved: 0
+  l4_sorry_count: 0
+  l4_not_applicable: 5
+falsification_tests:
+- id: FALSIFY-ONT4E-001
+  rule: the precondition direction
+  prediction: a strengthened precondition is named; a weakened one is Liskov
+  test: cargo test -p aprender-contracts --lib ontology::liskov::tests::a_strengthened_precondition_is_named
+  if_fails: refinement runs backwards for requires (measured 2026-09-24 — swapping the Pre sides turns 2 lib tests and 2 pv-sat tests red)
+- id: FALSIFY-ONT4E-002
+  rule: the postcondition and invariant directions
+  prediction: a weakened postcondition and a dropped invariant are named; a strengthened postcondition is Liskov
+  test: cargo test -p aprender-contracts --lib ontology::liskov::tests::a_dropped_invariant_is_named
+  if_fails: a refinement that breaks a promise passes
+- id: FALSIFY-ONT4E-003
+  rule: pc_checker
+  prediction: the checker refuses fixtures/liskov-corrupt.json on every run
+  test: cargo test -p aprender-contracts --lib ontology::liskov::tests::pc_checker_fires_on_the_shipped_fixture
+  if_fails: a checker that accepts any implication goes unnoticed (measured 2026-09-24 — skipping the atom check turns 10 lib tests and the pv-sat reasoner test red)
+- id: FALSIFY-ONT4E-004
+  rule: the gate's lattice
+  prediction: 'honest witness → Pass; control not fired → PositiveControlFailed; no witness → WitnessStale naming make contracts; legacy → Pass with nothing checked; prose → Unknown(Prose) naming the clause; prose above the baseline → PV-ONT-027; malformed clause → PV-ONT-026; no Σ → NoCheckable'
+  test: cargo test -p aprender-contracts --lib lint::refines_gate::tests
+  if_fails: the gate reports a verdict about pairs nobody reasoned over
+- id: FALSIFY-ONT4E-005
+  rule: the reasoner is untrusted but honest here
+  prediction: pv-sat decides each direction so that the library checker proves it, and its self-test fires pc_liskov_reasoner and pc_liskov_checker
+  test: cargo test -p aprender-contracts-cli --bin pv-sat
+  if_fails: pv-sat writes Liskov witnesses the gate refuses
+- id: FALSIFY-ONT4E-006
+  rule: the §5 probe end to end
+  prediction: 'pv lint contracts/ --gate refines on this repo: liskov_pairs_checked > 0, pc_checker fired, verdict Pass; each fixture exits with the verdict its name states, on witnesses the real pv-sat wrote'
+  test: cargo test -p aprender-contracts-cli --test ont4e_refines_gate
+  if_fails: the probe the ledger binds is not the behaviour shipped
+qa_gate:
+  id: F-ONT4E-001
+  name: ONT-001 Liskov rule on refines
+  description: requires/ensures as first-class clauses, three directed obligations, a witness checker with two positive controls, the refines gate (ONT-4e)
+  checks:
+  - precondition_direction
+  - postcondition_and_invariant_directions
+  - pc_checker
+  - gate_lattice
+  - reasoner_answers_check
+  - spec_probe
+  pass_criteria: All 6 falsification tests pass
+  falsification: 'a checker that accepts any implication, or a swapped precondition direction — each turns named tests RED (measured 2026-09-24)'

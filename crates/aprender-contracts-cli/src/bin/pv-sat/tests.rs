@@ -156,3 +156,65 @@ fn nothing_to_reason_over_is_exit_2_and_a_broken_sigma_exit_3() {
     std::fs::write(dir.path().join("ontology.yaml"), "roles: [unclosed\n").expect("write");
     assert_eq!(exit(write_witness(dir.path())), exit(ExitCode::from(3)));
 }
+
+/// ONT-4e: the Liskov plant is found, and the reasoner's directions are the ones the checker proves — a strengthened
+/// precondition, a weakened postcondition and a dropped invariant each name their clause, and a weakened
+/// precondition / strengthened postcondition are Liskov.
+#[test]
+fn the_liskov_reasoner_decides_each_direction_the_checker_proves() {
+    use provable_contracts::ontology::liskov::{check, Clauses, Pair};
+    use provable_contracts::schema::{Clause, FormalStatus};
+
+    assert_eq!(liskov::pc_reasoner(), Ok(FIRED));
+    assert_eq!(
+        provable_contracts::ontology::liskov::pc_checker(),
+        Ok(FIRED)
+    );
+
+    let c = |id: &str, f: &str| Clause {
+        id: s(id),
+        statement: s(id),
+        formal: Some(s(f)),
+        formal_status: FormalStatus::Parsed,
+    };
+    let verdict = |a: Clauses, b: Clauses| -> Vec<String> {
+        let pairs = [Pair {
+            a: s("a"),
+            b: s("b"),
+            a_clauses: a,
+            b_clauses: b,
+        }];
+        let w = liskov::witness(&pairs, FIRED, None);
+        check(&pairs, &w)
+            .expect("the reasoner's witness checks")
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    };
+    let req = |v: Vec<Clause>| Clauses {
+        requires: v,
+        ..Clauses::default()
+    };
+    let ens = |v: Vec<Clause>| Clauses {
+        ensures: v,
+        ..Clauses::default()
+    };
+    let inv = |v: Vec<Clause>| Clauses {
+        invariants: v,
+        ..Clauses::default()
+    };
+    assert_eq!(
+        verdict(req(vec![c("PRE-1", "p")]), Clauses::default()),
+        ["a refines b: precondition strengthened (PRE-1)"]
+    );
+    assert!(verdict(Clauses::default(), req(vec![c("PRE-1", "p")])).is_empty());
+    assert_eq!(
+        verdict(Clauses::default(), ens(vec![c("POST-1", "q")])),
+        ["a refines b: postcondition weakened (POST-1)"]
+    );
+    assert!(verdict(ens(vec![c("POST-1", "q")]), Clauses::default()).is_empty());
+    assert_eq!(
+        verdict(Clauses::default(), inv(vec![c("INV-1", "r")])),
+        ["a refines b: invariant dropped (INV-1)"]
+    );
+}

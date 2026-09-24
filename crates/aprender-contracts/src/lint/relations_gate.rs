@@ -198,6 +198,19 @@ pub fn typed_graph(contract_dir: &Path) -> TypedGraph {
 
 type Doc = (String, std::path::PathBuf, serde_yaml::Value);
 
+/// Every contract document the corpus parses, by stem, with its file (ONT-4e reads `requires`/`ensures`/`invariants`
+/// from them). `ontology.yaml` is not a contract and is left out; a file that does not parse is the `validate` gate's
+/// business and is left out too. A stem claimed by several files keeps the last in walk order, as `typed_graph` does.
+#[must_use]
+pub fn corpus_documents(
+    contract_dir: &Path,
+) -> BTreeMap<String, (std::path::PathBuf, serde_yaml::Value)> {
+    let (docs, _) = read_corpus(contract_dir, &contract_dir.join("ontology.yaml"));
+    docs.into_iter()
+        .map(|(stem, file, doc)| (stem, (file, doc)))
+        .collect()
+}
+
 /// Pass 1: every raw document the corpus parses, and every stem — so a target can be resolved against the set.
 fn read_corpus(contract_dir: &Path, sigma_path: &Path) -> (Vec<Doc>, BTreeSet<String>) {
     let mut files = Vec::new();

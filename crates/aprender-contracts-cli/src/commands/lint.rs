@@ -237,6 +237,19 @@ fn run_single_gate(
     };
     println!("{}", serde_json::to_string_pretty(&report)?);
 
+    // ONT-4e: `refines` says WHICH clause broke Liskov on the reject line, and which prose clause left it Unknown.
+    if result.name == provable_contracts::lint::refines_gate::GATE {
+        let lines = provable_contracts::lint::refines_gate::explain(&result, &findings);
+        if result.verdict == provable_contracts::ontology::verdict::Verdict::Fail
+            && !lines.is_empty()
+        {
+            return Err(crate::contract_walk::GateRejected(lines.join("; ")).into());
+        }
+        for line in &lines {
+            eprintln!("{line}");
+        }
+    }
+
     // The exit is the gate's VERDICT, not its `passed` bit: a gate that ran and answered `Unknown{Warn}` (ONT-4b, warnings
     // and no violation) is a decline, exit 2 — `passed` alone would print 0 for a corpus nobody judged clean.
     match result.verdict {
@@ -293,6 +306,7 @@ fn decide_named_gate(
         }
         NamedGateOutcome::Shapes(outcome) => decide_shapes_gate(outcome),
         NamedGateOutcome::Consistency(outcome) => decide_consistency_gate(outcome),
+        NamedGateOutcome::Refines(outcome) => decide_refines_gate(outcome),
         NamedGateOutcome::Tbox(outcome) => decide_tbox_gate(outcome),
         NamedGateOutcome::Sigma(SigmaOutcome::Ran { result, findings })
         | NamedGateOutcome::Relations(RelationsOutcome::Ran { result, findings })
@@ -314,6 +328,27 @@ fn decide_consistency_gate(
         }
         other => {
             eprintln!("ont-consistency: {}", why(&other));
+            let reason = decline_reason(&other)
+                .unwrap_or(provable_contracts::ontology::verdict::Reason::NoCheckable);
+            Err(LintDeclined { reason }.into())
+        }
+    }
+}
+
+/// The `refines` gate's answers (ONT-4e). Only `Ran` is a verdict; every decline prints WHY first — a stale Liskov
+/// witness names `make contracts`.
+fn decide_refines_gate(
+    outcome: provable_contracts::lint::refines_gate::RefinesOutcome,
+) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
+    use provable_contracts::lint::refines_gate::{decline_reason, why, RefinesOutcome, GATE};
+
+    match outcome {
+        RefinesOutcome::Ran { result, findings } => Ok((result, findings)),
+        RefinesOutcome::Malformed(e) => {
+            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
+        other => {
+            eprintln!("{GATE}: {}", why(&other));
             let reason = decline_reason(&other)
                 .unwrap_or(provable_contracts::ontology::verdict::Reason::NoCheckable);
             Err(LintDeclined { reason }.into())
