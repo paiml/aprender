@@ -1,0 +1,146 @@
+{
+  "ticket": "PMAT-4316",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref (fetch failed: origin/origin/main may itself be stale)",
+  "head": "bba6b092429ac361bd47db645b9ac2b7635c9bbf",
+  "diff_sha256": "2b6d7a02371945e66299d84ef4db04bf25322d8159fae5505c61c51f4c25574d",
+  "width": 1,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 16294,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements the resident residual buffer and in-stream embedding upload as claimed in the receipt for PMAT-4316. The `GpuBuffer::from_host` is replaced with an `upload_into_async` call, eliminating per-token allocations. The buffer is safely checked out and returned even on error paths. The new test qwen35_cuda_the_residual_is_one_buffer_across_tokens verifies this. No refutations found.",
+      "findings": [
+        {
+          "claim": "puts the buffer back on every return path, error paths included",
+          "file": "crates/aprender-serve/src/gguf/cuda/forward_qwen35_cuda.rs",
+          "fix": "none",
+          "grounding": "cited",
+          "line": 1415
+        },
+        {
+          "claim": "upload_into_async is an unsafe fn that queues copy_from_host_async on the execution stream",
+          "file": "crates/aprender-serve/src/cuda/executor/executor_api.rs",
+          "fix": "none",
+          "grounding": "cited",
+          "line": 493
+        }
+      ],
+      "raw_bytes": 3036,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-serve/src/cuda/executor/executor_api.rs",
+      "line": 493,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "upload_into_async is an unsafe fn that queues copy_from_host_async on the execution stream"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/cuda/forward_qwen35_cuda.rs",
+      "line": 1415,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "puts the buffer back on every return path, error paths included"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=1 author=claude-opus-5-5/claude"
+  }
+}
