@@ -38,6 +38,16 @@ from crux_hf_verify import verified_source  # noqa: E402
 from crux_sse import parse_sse  # noqa: E402
 
 
+def clip_head(s, n):
+    """`s` cut to its first `n` chars, SAYING how many were cut (#4046: a silent cut reads as the whole text)."""
+    return s if len(s) <= n else f"{s[:n]} … and {len(s) - n} more chars"
+
+
+def clip_tail(s, n):
+    """`s` cut to its last `n` chars, SAYING how many were dropped (#4046)."""
+    return s if len(s) <= n else f"[{len(s) - n} earlier chars dropped] {s[-n:]}"
+
+
 def die(msg: str, code: int = 2) -> None:
     print(f"crux_engine_hf: {msg}", file=sys.stderr)
     sys.exit(code)
@@ -100,7 +110,7 @@ def append_row(manifest: Path, row: dict) -> None:
 
 
 def refusal(e: BaseException) -> str:
-    return f"{type(e).__name__}: {e}"[:4000]
+    return clip_head(f"{type(e).__name__}: {e}", 4000)
 
 
 def check_sha(sha: str) -> None:

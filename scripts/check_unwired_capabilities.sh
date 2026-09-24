@@ -85,6 +85,9 @@
 # this reason -- a suppression you can see is one you can retire.
 # Bare: judge the tree.  --self-test: the case table.  --update: restamp rule 1.
 set -uo pipefail
+# guard_tree.sh probes `--help` to decide whether to run a self-test. Answer it before any work:
+# a probe that fell through to the body ran this whole guard a second time, serially (#4046).
+case "${1:-}" in -h|--help) printf 'usage: bash scripts/check_unwired_capabilities.sh [--update]  (bare: judge the tree)\n'; exit 0 ;; esac
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 SELF="scripts/check_unwired_capabilities.sh"

@@ -617,7 +617,7 @@ PY
   modes="off"
   [ "$THINKING_CAPABLE" = true ] && modes="${THINK_MODES//,/ }"
   apr_think_flag=0
-  "$APR" run --help 2>/dev/null | grep -q -- '--thinking' && apr_think_flag=1
+  grep -q -- '--thinking' <<< "$("$APR" run --help 2>/dev/null)" && apr_think_flag=1
   ol_help=""
   [ "$HAVE_OLLAMA" = 1 ] && ol_help=$("$OLLAMA" run --help 2>&1)
   SHA12_MODEL=$SHA12

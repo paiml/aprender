@@ -58,6 +58,16 @@ THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 UNCLOSED = "unclosed think (budget exhausted)"
 
 
+def clip_head(s, n):
+    """`s` cut to its first `n` chars, SAYING how many were cut (#4046: a silent cut reads as the whole text)."""
+    return s if len(s) <= n else f"{s[:n]} … and {len(s) - n} more chars"
+
+
+def clip_tail(s, n):
+    """`s` cut to its last `n` chars, SAYING how many were dropped (#4046)."""
+    return s if len(s) <= n else f"[{len(s) - n} earlier chars dropped] {s[-n:]}"
+
+
 def verdict(correct: bool, why, extracted=None) -> dict:
     return {"correct": correct, "extracted": extracted, "why": None if correct else why}
 
@@ -143,7 +153,7 @@ def judge_code(text: str, oracle: dict) -> dict:
     # The sentinel prints after the last assert; rc 0 alone would accept a reply that calls sys.exit(0).
     passed = p.returncode == 0 and p.stdout.rstrip().endswith("CRUX_TESTS_PASSED")
     tail = (p.stderr.strip().splitlines() or [f"rc={p.returncode}"])[-1]
-    return verdict(passed, "tests_passed" if passed else f"tests_failed: {tail}"[:200], code)
+    return verdict(passed, "tests_passed" if passed else clip_head(f"tests_failed: {tail}", 200), code)
 
 
 def judge_structure(text: str, oracle: dict) -> dict:

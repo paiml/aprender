@@ -8,6 +8,9 @@
 # Exit 0 if all OK, exit 1 if any include!() files are untracked/missing.
 
 set -uo pipefail
+# guard_tree.sh probes `--help` to decide whether to run a self-test. Answer it before any work:
+# a probe that fell through to the body ran this whole guard a second time, serially (#4046).
+case "${1:-}" in -h|--help) printf 'usage: bash scripts/check_include_files.sh (no arguments: scans every include!() target)\n'; exit 0 ;; esac
 
 errors=0
 checked=0

@@ -15,6 +15,16 @@ import engine  # noqa: E402
 GENERIC = RuntimeError("Engine core initialization failed. See root cause above. Failed core proc(s): {}")
 
 
+def clip_head(s, n):
+    """`s` cut to its first `n` chars, SAYING how many were cut (#4046: a silent cut reads as the whole text)."""
+    return s if len(s) <= n else f"{s[:n]} … and {len(s) - n} more chars"
+
+
+def clip_tail(s, n):
+    """`s` cut to its last `n` chars, SAYING how many were dropped (#4046)."""
+    return s if len(s) <= n else f"[{len(s) - n} earlier chars dropped] {s[-n:]}"
+
+
 def log(text: str) -> Path:
     f = tempfile.NamedTemporaryFile("w", suffix=".log", delete=False, encoding="utf-8")
     f.write(text)
@@ -98,7 +108,7 @@ VERIFY = [
 for name, snap, must in VERIFY:
     got = verify(snap)
     ok = must in got if must != "PASS" else got == "PASS"
-    print(f"{'ok  ' if ok else 'FAIL'} {name}" + ("" if ok else f"\n     got: {got[:300]}"))
+    print(f"{'ok  ' if ok else 'FAIL'} {name}" + ("" if ok else f"\n     got: {clip_head(got, 300)}"))
     failed += not ok
 
 # A verified blob is stamped and not re-hashed; a rewrite changes size, so it IS re-hashed and refused.
@@ -108,7 +118,7 @@ first, second = engine.crux_hf_verify.verify_snapshot_dir(snap), engine.crux_hf_
 after = verify(snap)
 ok = first == 2 and second == 0 and "not the file its name promises" in after
 print(f"{'ok  ' if ok else 'FAIL'} a stamp skips re-hashing, and a later rewrite is still caught"
-      + ("" if ok else f"\n     got: {first} {second} {after[:200]}"))
+      + ("" if ok else f"\n     got: {first} {second} {clip_head(after, 200)}"))
 failed += not ok
 CASES_TOTAL = len(CASES) + len(VERIFY) + 1
 
@@ -142,7 +152,7 @@ for name, logs, must, must_not in CASES:
     got = engine.refusal(GENERIC, *logs)
     ok = got.startswith(f"RuntimeError: {GENERIC}") and (must is None or must in got) and (
         must_not is None or must_not not in got)
-    print(f"{'ok  ' if ok else 'FAIL'} {name}" + ("" if ok else f"\n     got: {got[:300]}"))
+    print(f"{'ok  ' if ok else 'FAIL'} {name}" + ("" if ok else f"\n     got: {clip_head(got, 300)}"))
     failed += not ok
 print(f"{CASES_TOTAL - failed - bc.ENV_CASES}/{CASES_TOTAL} cases" + (f", {bc.ENV_CASES} not measurable here (ENV)" if bc.ENV_CASES else ""))
 sys.exit(1 if failed else (2 if bc.ENV_CASES else 0))

@@ -19,6 +19,9 @@
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
+# guard_tree.sh probes `--help` to decide whether to run a self-test. Answer it before any work:
+# a probe that fell through to the body ran this whole guard a second time, serially (#4046).
+case "${1:-}" in -h|--help) printf 'usage: bash scripts/check_crux_greedy_rows.sh (no arguments: runs its rows)\n'; exit 0 ;; esac
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
 PROG=check_crux_greedy_rows
@@ -156,7 +159,7 @@ import json, sys
 for l in open(sys.argv[1]):
     r = json.loads(l)
     if r["refused"]:
-        print("row %s %s %s REFUSED %s" % (r["engine"], r["thinking"], r["prompt_source"], r["refused"][:60]))
+        print("row %s %s %s REFUSED %s" % (r["engine"], r["thinking"], r["prompt_source"], (r["refused"] if len(r["refused"]) <= 60 else "%s … and %d more chars" % (r["refused"][:60], len(r["refused"]) - 60))))
     else:
         d = json.load(open(r["tokens"]))
         print("row %s %s %s ids=%s text=%r max=%s special=%s" % (r["engine"], r["thinking"], r["prompt_source"], d["generated_ids"],
