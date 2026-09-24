@@ -170,9 +170,10 @@ mod tests {
             .expect("t1");
         let mut p2 = t1.tokens.clone();
         p2.push(4282);
-        let t2 = session
-            .generate(&p2, &config, &mut |_| true)
-            .expect("t2");
-        assert_eq!(t2.reused, 2, "t1 held [4280, 4281] without forwarding its own token");
+        let t2 = session.generate(&p2, &config, &mut |_| true).expect("t2");
+        assert_eq!(
+            t2.reused, 2,
+            "t1 held [4280, 4281] without forwarding its own token"
+        );
     }
 }
