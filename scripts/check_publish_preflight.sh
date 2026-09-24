@@ -37,6 +37,15 @@
 #       scripts/check_model_ladder.sh -- the same judge autopilot's T-1 `models` step runs on its
 #       fresh measurement. Red, a missing receipt, a missing judge or a judge DECLINE (exit 2)
 #       refuses: a decline is not a pass.
+#       FROM ladder.release_gate.from (0.70.0, #4117) R7 IS the normal release gate instead:
+#       `check_model_ladder.sh --scope release --nightly <N> --crux <C> --cut-commit <cut>` over the
+#       outputs of autopilot's T-1 `models` step, handed over in the environment (the smoke on the
+#       binary built from the merged release commit cannot be committed into that commit):
+#         PUBLISH_PREFLIGHT_NIGHTLY_ROOT  the both-host nightly root the models step gathered
+#         PUBLISH_PREFLIGHT_CRUX_DIR      the CRUX smoke receipts on the release binary
+#         PUBLISH_PREFLIGHT_CUT_COMMIT    the release commit that binary was built from
+#       Any one unset is RED by name, and R7 never falls back to the full ladder there. Which gate
+#       applies is ONE rule (scripts/lib/crux_smoke_scope.py `applies`), shared with every caller.
 #
 # EXIT  0 every rule holds · 1 a rule refused · 2 the box cannot answer
 #       (no git/cargo/python3, not a repository). 2 is not a pass.
@@ -182,6 +191,22 @@ rule_r7() {
         rule_r7_scope "$root" "$version" "$judge"
         return $?
     fi
+    # #4117: from ladder.release_gate.from on, R7 IS the normal release gate (smoke on the release binary + the
+    # admitted nightly), decided by the ONE rule every caller uses (crux_smoke_scope.release_gate_applies). It never
+    # falls back to the full ladder: that fallback is the mutant this row exists to kill.
+    local contract="$root/contracts/model-capability-ladder-v1.yaml" lib="$root/scripts/lib/crux_smoke_scope.py" gw grc
+    if [ -f "$contract" ]; then
+        if [ ! -f "$lib" ]; then
+            echo "FAIL  R7 the ladder contract is here but $lib is not: which gate judges $version cannot be decided"
+            return 1
+        fi
+        gw="$(cd "$root" && python3 -B "$lib" applies "$contract" "$version" 2>&1)"; grc=$?
+        case "$grc" in
+            0) rule_r7_release "$root" "$version" "$judge" "$gw"; return $? ;;
+            1) ;;
+            *) echo "FAIL  R7 which gate judges $version cannot be decided: $gw"; return 1 ;;
+        esac
+    fi
     out="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; rc=$?
     case "$rc" in
         0) echo "ok    R7 model matrix green for $version (committed receipts, $(basename "$judge"))"; return 0 ;;
@@ -199,6 +224,42 @@ rule_r7() {
 # the source the smoked binary was built from. Scripts, contracts and evidence may differ: the scope's
 # own contract entry and reader arrive after the cut.
 # rule_r7_scope root version judge -> prints its rows; 0 accepted, 1 refused
+# rule_r7_release root version judge why -- #4117: the NORMAL release gate (#4045 §14.1), from release_gate.from.
+# Its inputs are what autopilot's `models` step PRODUCED at T-1 -- the smoke on the binary built from the merged
+# release commit cannot be committed INTO that commit, so R7 reads them from the handoff, never from the tree:
+#   PUBLISH_PREFLIGHT_NIGHTLY_ROOT  the combined nightly root the models step gathered (both hosts' nights)
+#   PUBLISH_PREFLIGHT_CRUX_DIR      the smoke receipts on the release binary, every host
+#   PUBLISH_PREFLIGHT_CUT_COMMIT    the release commit the binary was built from (full sha)
+# Any one unset is RED by name. The published source must be the smoked binary's (the scope rule, reused).
+rule_r7_release() {
+    local root="$1" version="$2" judge="$3" why="$4" nightly="${PUBLISH_PREFLIGHT_NIGHTLY_ROOT:-}" crux="${PUBLISH_PREFLIGHT_CRUX_DIR:-}" cut head out rc
+    echo "        $why"
+    if [ -z "$nightly" ] || [ -z "$crux" ] || [ -z "${PUBLISH_PREFLIGHT_CUT_COMMIT:-}" ]; then
+        echo "FAIL  R7 RELEASE GATE for $version is not wired: PUBLISH_PREFLIGHT_NIGHTLY_ROOT, PUBLISH_PREFLIGHT_CRUX_DIR and PUBLISH_PREFLIGHT_CUT_COMMIT (autopilot's models-step output) must all be set -- R7 never falls back to the full ladder from release_gate.from on"
+        return 1
+    fi
+    cut="$(git -C "$root" rev-parse --verify --quiet "${PUBLISH_PREFLIGHT_CUT_COMMIT}^{commit}" 2>/dev/null)"
+    if [ -z "$cut" ]; then
+        echo "FAIL  R7 RELEASE GATE: the cut $PUBLISH_PREFLIGHT_CUT_COMMIT does not resolve in this tree"
+        return 1
+    fi
+    head="$(git -C "$root" rev-parse HEAD 2>/dev/null)"
+    if [ "$cut" != "$head" ] && ! git -C "$root" diff --quiet "$cut" "$head" -- crates src Cargo.toml Cargo.lock 2>/dev/null; then
+        printf 'FAIL  R7 RELEASE GATE: HEAD %s differs from the cut %s in PUBLISHED paths -- the published source is not the smoked binary'"'"'s:\n%s\n' \
+            "${head:0:12}" "${cut:0:12}" \
+            "$(git -C "$root" diff --name-only "$cut" "$head" -- crates src Cargo.toml Cargo.lock | head -n 10 | sed 's/^/        /')"
+        return 1
+    fi
+    out="$(cd "$root" && bash "$judge" --version "$version" --scope release --nightly "$nightly" --crux "$crux" --cut-commit "$cut" 2>&1)"; rc=$?
+    case "$rc" in
+        0) echo "ok    R7 RELEASE GATE: CRUX smoke on the release binary + an admitted nightly, at the cut ${cut:0:12} ($(basename "$judge") --scope release)"; return 0 ;;
+        2) echo "FAIL  R7 RELEASE GATE: the judge DECLINED (rc 2), and a decline is not a pass: $(tail -n 1 <<< "$out")" ;;
+        *) printf 'FAIL  R7 RELEASE GATE NOT satisfied for %s (rc %s):\n%s\n' "$version" "$rc" \
+               "$(grep -E '^(FAIL|RED)' <<< "$out" | head -n 10 | sed 's/^/        /')" ;;
+    esac
+    return 1
+}
+
 rule_r7_scope() {
     local root="$1" version="$2" judge="$3" cut head out rc ev evrc
     head="$(git -C "$root" rev-parse HEAD 2>/dev/null)"
@@ -434,6 +495,20 @@ selftest() {
         mkdir -p "$1/scripts"
         cat > "$1/scripts/check_model_ladder.sh" <<'FXJUDGE'
 #!/usr/bin/env bash
+if [ "${3:-} ${4:-}" = "--scope release" ]; then
+    # #4117: `--version 1.2.3 --scope release --nightly <N> --crux <C> --cut-commit <sha>`, and N/C must be the
+    # handoff the preflight was given -- a preflight that asks about some other dir goes red.
+    [ "${1:-} ${2:-} ${5:-} ${7:-} ${9:-}" = "--version 1.2.3 --nightly --crux --cut-commit" ] || { echo "FAIL  judge release call: $*"; exit 1; }
+    [ "${6:-}" = "${FX_EXPECT_NIGHTLY:-}" ] && [ "${8:-}" = "${FX_EXPECT_CRUX:-}" ] || { echo "FAIL  judge asked about nightly ${6:-} crux ${8:-}"; exit 1; }
+    [ "${10:-}" = "$(git rev-parse "${FX_EXPECT_CUT:-HEAD}")" ] || { echo "FAIL  judge asked about cut ${10:-}"; exit 1; }
+    echo "RELEASE GATE (normal, #4045): fixture"
+    case "${FX_RELEASE_RC:-0}" in
+        1) echo "FAIL  NIGHTLY lambda: no nightly at all (#4040)"; echo "RED   no admissible nightly" ;;
+        3) echo "FAIL  host gx10 has no CRUX receipt from the release binary"; echo "RED   RELEASE GATE: the release binary's CRUX smoke is RED"; exit 1 ;;
+        2) echo "decline: fixture decline" ;;
+    esac
+    exit "${FX_RELEASE_RC:-0}"
+fi
 if [ "${3:-}" = "--scope" ]; then
     [ "${1:-} ${2:-} ${4:-} ${5:-}" = "--version 1.2.3 crux-smoke --cut-commit" ] || { echo "FAIL  judge scope call: $*"; exit 1; }
     [ "${6:-}" = "$(git rev-parse "${FX_EXPECT_CUT:-HEAD}")" ] || { echo "FAIL  judge asked about cut ${6:-}"; exit 1; }
@@ -474,6 +549,16 @@ FXJUDGE
         git -C "$d" tag v1.2.3
         mkdir -p "$d/.dogfood"
         write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    }
+    # #4117: a fixture whose ladder contract records `release_gate.from` <from> (1.2.0 = the gate judges 1.2.3),
+    # carrying the REAL decision rule (scripts/lib/crux_smoke_scope.py + the module it imports).
+    build_release_repo() { # dir from
+        build_repo "$1"
+        mkdir -p "$1/contracts" "$1/scripts/lib"
+        printf 'ladder:\n  release_gate:\n    from: "%s"\n    ruling: fixture\n' "$2" > "$1/contracts/model-capability-ladder-v1.yaml"
+        cp -- "${PREFLIGHT_FX_LIB:-$SCRIPT_DIR/lib}/crux_smoke_scope.py" "${PREFLIGHT_FX_LIB:-$SCRIPT_DIR/lib}/model_ladder_crux.py" "$1/scripts/lib/"
+        git -C "$1" add -A; git -C "$1" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'release gate' >/dev/null
+        git -C "$1" tag -f v1.2.3 >/dev/null; write_receipt "$1" GO "$(git -C "$1" rev-parse HEAD)" 1.2.3
     }
     row() { # name, expect(0|1), needle, dir [, gate|receipt_gate]
         local name="$1" expect="$2" needle="$3" d="$4" mode="${5:-gate}" out rc=0
@@ -651,6 +736,38 @@ FXJUDGE
     d="$tmp/sc-badcut"; build_repo "$d"
     SCOPE=crux-smoke CUT_COMMIT=0123456789abcdef0123456789abcdef01234567 row scope_unresolvable_cut_refuses 1 "does not resolve" "$d"
 
+    # R7 as the NORMAL release gate (#4117): from release_gate.from it asks `--scope release` with the models step's
+    # handoff, takes that verdict, and NEVER falls back to the full ladder (a green matrix is planted under every
+    # red row, so only the release judge can make them red).
+    d="$tmp/rg"; build_release_repo "$d" 1.2.0; rg_cut="$(git -C "$d" rev-parse HEAD)"
+    rg() { PUBLISH_PREFLIGHT_NIGHTLY_ROOT=/fx/nightly PUBLISH_PREFLIGHT_CRUX_DIR=/fx/crux PUBLISH_PREFLIGHT_CUT_COMMIT="$rg_cut" \
+           FX_EXPECT_NIGHTLY=/fx/nightly FX_EXPECT_CRUX=/fx/crux "$@"; }
+    rg row r7_release_gate_green                 0 "ok    R7 RELEASE GATE: CRUX smoke on the release binary + an admitted nightly" "$d"
+    FX_LADDER_RC=1 rg row r7_release_gate_is_not_the_matrix 0 "ok    R7 RELEASE GATE" "$d"
+    FX_RELEASE_RC=1 rg row r7_release_no_admissible_nightly_refuses 1 "no admissible nightly" "$d"
+    FX_RELEASE_RC=3 rg row r7_release_red_smoke_refuses   1 "the release binary's CRUX smoke is RED" "$d"
+    FX_RELEASE_RC=2 rg row r7_release_decline_refuses     1 "FAIL  R7 RELEASE GATE: the judge DECLINED" "$d"
+    row r7_release_unwired_never_falls_back 1 "R7 never falls back to the full ladder" "$d"
+    PUBLISH_PREFLIGHT_NIGHTLY_ROOT=/fx/nightly PUBLISH_PREFLIGHT_CUT_COMMIT="$rg_cut" \
+        row r7_release_without_smoke_refuses 1 "is not wired" "$d"
+    PUBLISH_PREFLIGHT_CUT_COMMIT=0123456789abcdef0123456789abcdef01234567 PUBLISH_PREFLIGHT_NIGHTLY_ROOT=/fx/nightly PUBLISH_PREFLIGHT_CRUX_DIR=/fx/crux \
+        row r7_release_unresolvable_cut_refuses 1 "does not resolve" "$d"
+    printf 'pub fn g() {}\n' >> "$d/src/lib.rs"
+    git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'src after cut' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    FX_EXPECT_CUT="$rg_cut" rg row r7_release_source_after_cut_refuses 1 "differs from the cut ${rg_cut:0:12} in PUBLISHED paths" "$d"
+    # before `from`: the full ladder still judges, and a red matrix is still red
+    d="$tmp/rg-before"; build_release_repo "$d" 9.0.0
+    FX_LADDER_RC=1 rg row r7_before_from_matrix_still_gates 1 "FAIL  R7 model matrix NOT green" "$d"
+    rg row r7_before_from_matrix_green        0 "ok    R7 model matrix green" "$d"
+    d="$tmp/rg-nolib"; build_release_repo "$d" 1.2.0; git -C "$d" rm -q scripts/lib/crux_smoke_scope.py
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'no reader' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    rg row r7_release_reader_missing_refuses 1 "cannot be decided" "$d"
+    # a contract whose gate cannot be decided (a `from` that is not X.Y.Z) refuses; it is not the full ladder
+    d="$tmp/rg-undecidable"; build_release_repo "$d" not-a-version
+    rg row r7_release_undecidable_refuses 1 "which gate judges 1.2.3 cannot be decided" "$d"
+
     # --receipt-only (#3708): the T-1 end of R5. An UNTAGGED tree with a GO
     # receipt passes it (the full gate refuses the same tree on R3 -- the row
     # above -- which is why T-1 cannot run the full gate), and every receipt
@@ -671,6 +788,24 @@ FXJUDGE
     row receipt_only_unexpected_deferral_refuses 1 "FAIL  R5" "$d" receipt_gate
 
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
+    # #4117 mutants: each edits a COPY of this script; its self-test must then go RED (the nested run skips mutants).
+    if [ -z "${PREFLIGHT_NO_MUTANTS:-}" ]; then
+        local m mname msed
+        while IFS='|' read -r mname msed; do
+            [ -n "$mname" ] || continue
+            m="$tmp/mut-$mname.sh"; sed "$msed" "$SCRIPT_DIR/$PROG" > "$m"
+            if cmp -s "$SCRIPT_DIR/$PROG" "$m"; then printf '  BROKE mutant %-28s did not apply\n' "$mname"; fail=$((fail + 1)); continue; fi
+            # run from the scratch dir, never written into the tree; told where the real reader lives
+            if PREFLIGHT_NO_MUTANTS=1 PREFLIGHT_FX_LIB="$SCRIPT_DIR/lib" bash "$m" --selftest > "$tmp/mut-$mname.out" 2>&1; then
+                printf '  BROKE mutant %-28s SURVIVED the table\n' "$mname"; fail=$((fail + 1))
+            else printf '  ok    mutant %-28s killed (%s)\n' "$mname" "$(grep -m1 -oE 'BROKE [a-z0-9_]+' "$tmp/mut-$mname.out")"; pass=$((pass + 1)); fi
+        done <<'MUT'
+falls-back-to-ladder|s/^            0) rule_r7_release "\$root" "\$version" "\$judge" "\$gw"; return \$? ;;$/            0) ;;/
+unwired-ok|s/^    if \[ -z "\$nightly" \] || \[ -z "\$crux" \] || \[ -z "\${PUBLISH_PREFLIGHT_CUT_COMMIT:-}" \]; then$/    if false; then/
+undecidable-is-ladder|s/^            \*) echo "FAIL  R7 which gate judges \$version cannot be decided: \$gw"; return 1 ;;$/            *) ;;/
+MUT
+        printf -- '--- with mutants: %s/%s ---\n' "$pass" "$((pass + fail))"
+    fi
     [ "$fail" -eq 0 ]
 }
 

@@ -20,7 +20,7 @@ MC=$(printf 'a%.0s' $(seq 1 40))
 run() { # run <autopilot copy> <case> -> transcript (SAY/DIE/PREFLIGHT-RAN lines)
   local ap=$1 c=$2 w="$T/case-$2" fn
   mkdir -p "$w/state/0.70.0" "$w/scripts" "$w/ap"
-  printf '#!/bin/bash\necho PREFLIGHT-RAN\nexit 0\n' > "$w/scripts/check_publish_preflight.sh"
+  printf '#!/bin/bash\necho PREFLIGHT-RAN\necho "HANDOFF nightly=${PUBLISH_PREFLIGHT_NIGHTLY_ROOT:-} crux=${PUBLISH_PREFLIGHT_CRUX_DIR:-} cut=${PUBLISH_PREFLIGHT_CUT_COMMIT:-}"\nexit 0\n' > "$w/scripts/check_publish_preflight.sh"
   fn=$(awk '/^watch_gate\(\) \{/,/^\}/' "$ap"; awk '/^run_preflight\(\) \{/,/^\}/' "$ap")
   [ -n "$fn" ] || { echo "MISSING-FUNCTIONS"; return 2; }
   # a repo per case: C = the candidate the watch measured; S = the SQUASH merge of it (same tree, another sha, as a
@@ -63,6 +63,7 @@ if case == "stale":
     os.utime(p, (t, t))
 # stale-fresh-mtime: the verdict is 7 h old by its own `at`, its FILE was just copied (fresh mtime)
 PY
+  echo "CASE-MC $mc"
   ( cd "$w" && V=0.70.0 MC="$mc" AP="$w/ap" LOG="$w/log" STATUS="$w/status" CANDIDATE_WATCH_STATE="$w/state" bash -c '
       say() { echo "SAY $*"; }
       die() { echo "DIE $*"; exit 1; }
@@ -74,6 +75,11 @@ table() { # table <autopilot> -> ok/FAIL <row> lines
   out=$(run "$ap" fresh)
   if grep -q '^SAY WATCH GREEN ' <<< "$out" && grep -q '^PREFLIGHT-RAN' <<< "$out"; then echo "ok    fresh-green-publishes"
   else echo "FAIL  fresh-green-publishes -- $(tr '\n' ' ' <<< "$out" | cut -c1-160)"; fi
+  # #4117: R7 is judged on the T-1 models step's OUTPUTS and the release commit, handed to the preflight here
+  local mcx; mcx=$(sed -n 's/^CASE-MC //p' <<< "$out")
+  if [ -n "$mcx" ] && grep -qxF "HANDOFF nightly=$T/case-fresh/ap/models-t1/nightly crux=$T/case-fresh/ap/models-t1/crux cut=$mcx" <<< "$out"; then
+    echo "ok    fresh-hands-r7-the-models-outputs"
+  else echo "FAIL  fresh-hands-r7-the-models-outputs -- $(grep '^HANDOFF' <<< "$out")"; fi
   out=$(run "$ap" squash-same-tree)
   if grep -q '^SAY WATCH GREEN ' <<< "$out" && grep -q '^PREFLIGHT-RAN' <<< "$out"; then echo "ok    squash-same-tree-admitted"
   else echo "FAIL  squash-same-tree-admitted -- $(tr '\n' ' ' <<< "$out" | cut -c1-160)"; fi
@@ -106,5 +112,7 @@ mutant corrupt-skipped corrupt-newest-refused '        print("the watch verdict 
 mutant newest-by-mtime older-green-newer-andon-refused 'w = max(ws, key=at_of)' 'w = json.load(open(max(glob.glob(os.path.join(state, v, "watch-*.json")), key=os.path.getmtime)))'
 mutant age-from-mtime stale-fresh-mtime-refused 'age = (time.time() - at_of(w)) / 3600.0' 'age = (time.time() - max(os.path.getmtime(f) for f in glob.glob(os.path.join(state, v, "watch-*.json")))) / 3600.0'
 mutant andon-unchecked andon-refused 'if w.get("andon") or w.get("real_red"):' 'if False:'
+mutant r7-handoff-dropped fresh-hands-r7-the-models-outputs '    PUBLISH_PREFLIGHT_NIGHTLY_ROOT="$AP/models-t1/nightly" PUBLISH_PREFLIGHT_CRUX_DIR="$AP/models-t1/crux" PUBLISH_PREFLIGHT_CUT_COMMIT="$MC" \' '    \'
+
 echo "check_publish_reads_watch: $([ "$bad" = 0 ] && echo PASS || echo FAIL)"
 exit "$bad"
