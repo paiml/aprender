@@ -10,6 +10,9 @@
 # trueno/cuda, and cargo clippy lints every workspace member it builds, so
 # one invocation covers compute, gpu, serve and train.
 #
+# SCOPE: CI runs this in `cuda-unit`, gated on scripts/ci_gpu_touched.sh. apr-cli
+# is not in that set, so an apr-cli-only diff does not run it (#4336).
+#
 #   bash scripts/check_clippy_cuda.sh              # the gate
 #   bash scripts/check_clippy_cuda.sh --self-test  # planted unused import -> RED
 #
@@ -53,7 +56,9 @@ self_test() {
     log="$(mktemp)"
     cp "$target" "$backup"
     # shellcheck disable=SC2064  # expand now: absolute paths, restore survives any cd
-    trap "cp '$backup' '$target'; rm -f '$backup'" EXIT
+    # The backup is deleted ONLY after a successful restore; a failed cp keeps it
+    # and names it, so the original is never lost with the tree left mutated.
+    trap "if cp '$backup' '$target'; then rm -f '$backup'; else echo \"check_clippy_cuda: RESTORE FAILED — original kept at $backup\" >&2; exit 3; fi" EXIT
     printf '\n#[cfg(feature = "cuda")]\nuse std::collections::BinaryHeap; // check_clippy_cuda planted\n' >>"$target"
     if run_gate "$log"; then
         echo "SELF-TEST FAILED: the planted cuda-only unused import passed the gate" >&2

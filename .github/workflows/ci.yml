@@ -3117,6 +3117,8 @@ jobs:
       # This is the only job with nvcc, so the lint lives here. The script runs its
       # own planted-mutant self-test first: an unused import under
       # #[cfg(feature = "cuda")] must turn it RED, or the gate is refused as vacuous.
+      # KNOWN GAP (#4336): this job is gated on gpu_touched, and apr-cli is not in the
+      # GPU set, so an apr-cli-only diff skips this lint.
       - name: "clippy --features cuda is clean (#3636)"
         run: |
           set -euo pipefail
