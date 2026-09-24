@@ -29,12 +29,19 @@ use super::{gpu_err, CudaLayer, Qwen35CudaModel, Qwen35CudaState};
 use crate::cuda::types::WeightQuantType;
 use trueno_gpu::driver::GpuBuffer;
 
-/// `forward_batch`'s device input (`[rows][hidden_dim]`), normed output
-/// (`[rows][hidden_dim]`) and logits (`[rows][vocab_size]`), reused across steps.
-/// A step of `B <= rows` uses the first `B` rows of each.
+/// `forward_batch`'s packed per-step buffers, reused across steps: the hidden
+/// rows and the normed rows (`[rows][hidden_dim]`, the latter shared by the FFN
+/// input and the output norm), the FFN's gate / up / activation
+/// (`[rows][intermediate_dim]`) and down projection (`[rows][hidden_dim]`), and
+/// the logits (`[rows][vocab_size]`). A step of `B <= rows` uses the first `B`
+/// rows of each.
 pub(super) struct BatchIo {
     hidden: GpuBuffer<f32>,
     normed: GpuBuffer<f32>,
+    ffn_gate: GpuBuffer<f32>,
+    ffn_up: GpuBuffer<f32>,
+    ffn_act: GpuBuffer<f32>,
+    ffn_down: GpuBuffer<f32>,
     logits: GpuBuffer<f32>,
     rows: usize,
 }
@@ -109,9 +116,15 @@ impl Qwen35CudaModel<'_> {
         let alloc = |len: usize| {
             GpuBuffer::<f32>::new(ctx, len).map_err(|e| gpu_err("qwen35_cuda_forward_batch", &e))
         };
+        let hidden = batch * self.dims.hidden_dim as usize;
+        let inter = batch * self.dims.intermediate_dim as usize;
         Ok(BatchIo {
-            hidden: alloc(batch * self.dims.hidden_dim as usize)?,
-            normed: alloc(batch * self.dims.hidden_dim as usize)?,
+            hidden: alloc(hidden)?,
+            normed: alloc(hidden)?,
+            ffn_gate: alloc(inter)?,
+            ffn_up: alloc(inter)?,
+            ffn_act: alloc(inter)?,
+            ffn_down: alloc(hidden)?,
             logits: alloc(batch * self.dims.vocab_size as usize)?,
             rows: batch,
         })
@@ -159,9 +172,11 @@ impl Qwen35CudaModel<'_> {
         Ok(())
     }
 
-    /// Enqueue the whole step — every layer layer-major, then every sequence's
-    /// output norm into its `normed` row and ONE batched `lm_head` over all of them.
-    /// Nothing here syncs.
+    /// Enqueue the whole step, layer-major. In each layer every sequence runs its
+    /// own token mixer (conv + recurrence, or attention over its own KV cache),
+    /// then the SwiGLU FFN runs ONCE over all of the packed rows ([`Self::ffn_batched`]).
+    /// Then every sequence's output norm goes into its `normed` row and ONE
+    /// batched `lm_head` runs over all of them. Nothing here syncs.
     fn forward_batch_enqueued(
         &mut self,
         io: &BatchIo,
@@ -181,12 +196,14 @@ impl Qwen35CudaModel<'_> {
             for il in 0..self.layers.len() {
                 for ((state, row), &position) in states.iter_mut().zip(&rows).zip(positions) {
                     match self.layers[il] {
-                        CudaLayer::DeltaNet(_) => self.deltanet_layer(state, il, row)?,
+                        CudaLayer::DeltaNet(_) => self.deltanet_layer(state, il, row, false)?,
                         CudaLayer::Attention(_) => {
-                            self.attention_layer(state, il, row, position)?;
+                            self.attention_layer(state, il, row, position, false)?;
                         },
                     }
                 }
+                self.ffn_batched(io, &rows, &normed, il)
+                    .map_err(|e| gpu_err("qwen35_cuda_ffn", &e))?;
             }
             // The tail of `forward_single`: the same norm per sequence, then the
             // lm_head over the packed `[B][hidden_dim]` rows in one dispatch.
@@ -208,6 +225,45 @@ impl Qwen35CudaModel<'_> {
         // The views borrow `hidden` / `normed`; they must not free that memory.
         rows.into_iter().chain(normed).for_each(std::mem::forget);
         result
+    }
+
+    /// Layer `il`'s FFN tail — `post_attention_norm`, SwiGLU, the second residual —
+    /// over every row of the step. The norm runs per row (it reduces over one
+    /// row); gate, up and down are one batched GEMV each; SwiGLU and the residual
+    /// are elementwise, so one launch over the packed rows computes each element
+    /// exactly as the per-row launch does.
+    fn ffn_batched(
+        &mut self,
+        io: &BatchIo,
+        rows: &[GpuBuffer<f32>],
+        normed: &[GpuBuffer<f32>],
+        il: usize,
+    ) -> std::result::Result<(), trueno_gpu::GpuError> {
+        let d = self.dims;
+        let (norm, gate, up, down) = match &self.layers[il] {
+            CudaLayer::DeltaNet(w) => (&w.post_attention_norm, &w.ffn_gate, &w.ffn_up, &w.ffn_down),
+            CudaLayer::Attention(w) => {
+                (&w.post_attention_norm, &w.ffn_gate, &w.ffn_up, &w.ffn_down)
+            },
+        };
+        let proj = |w: &super::CudaQuantWeight| (w.qtype, w.ptr, w.n, w.k);
+        let (gate, up, down) = (proj(gate), proj(up), proj(down));
+        for (row, out) in rows.iter().zip(normed) {
+            self.executor
+                .rmsnorm_into(row, norm, out, d.hidden_dim, d.eps)?;
+        }
+        let m = rows.len() as u32;
+        self.gemv_batched(gate.0, gate.1, &io.normed, &io.ffn_gate, m, gate.2, gate.3)?;
+        self.gemv_batched(up.0, up.1, &io.normed, &io.ffn_up, m, up.2, up.3)?;
+        self.executor.fused_swiglu_into(
+            &io.ffn_gate,
+            &io.ffn_up,
+            &io.ffn_act,
+            m * d.intermediate_dim,
+        )?;
+        self.gemv_batched(down.0, down.1, &io.ffn_act, &io.ffn_down, m, down.2, down.3)?;
+        self.executor
+            .residual_add_into(&io.hidden, &io.ffn_down, &io.hidden, m * d.hidden_dim)
     }
 
     /// `gemv_dispatch` for `m` packed input rows — `input` `[m][k]` into `output`
