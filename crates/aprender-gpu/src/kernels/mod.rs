@@ -85,8 +85,8 @@ pub use elementwise::{
 pub use fused::{FusedGateUpKernel, FusedGemmBiasGeluKernel, FusedQKVKernel};
 pub use gdn::{
     CausalConv1dSiluKernel, DecodeAttention256Kernel, DeltaRuleRecurrenceKernel,
-    GatedRmsNormKernel, GdnGatesKernel, PartialNeoxRopeKernel, PerHeadL2NormKernel,
-    SigmoidGateKernel, SplitInterleavedKernel, DEFAULT_MAX_POSITIONS_PER_PASS,
+    GatedRmsNormKernel, GdnGatesKernel, KvRowScatterIndirectKernel, PartialNeoxRopeKernel,
+    PerHeadL2NormKernel, SigmoidGateKernel, SplitInterleavedKernel, DEFAULT_MAX_POSITIONS_PER_PASS,
 };
 pub use gemm::basic::tensor_core::cta64_wmma::build_cta64x128_mma_pipeline_fp16;
 pub use gemm::{
