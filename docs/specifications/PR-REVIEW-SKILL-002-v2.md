@@ -279,14 +279,21 @@ fleet contention. Putting it in `gate` would make every pull request wait on a 2
 sweep. `pr-review-present` is Arm 4 and nothing else: text, minisign, one `git
 merge-base`.
 
-**The cutoff is a ratchet, not a retroactive gate.** `PR_REVIEW_CUTOFF` (2840)
-grandfathers pull requests below it: reported, counted, not failed. The receipt rate on
+**The cutoff is a ratchet, not a retroactive gate.** `PR_REVIEW_CUTOFF` (4337;
+2840 until 2026-09-25) grandfathers pull requests below it: reported, counted, not failed. The receipt rate on
 the day this landed was **1 across 24 open pull requests**, and arming that
 retroactively is not a ratchet, it is an outage — this repository has already had a day
 where one armed gate blocked all nine open PRs. The cutoff is a **number and not a
 date**, for the reason `MECHANISM_PATHS` is a list and not a pattern: PR numbers only
 increase, the comparison is total, and there is no timezone in it. Both polarities are
 rows of `--self-test`, and the off-by-one (`-le` for `-lt`) is mutation-killed.
+
+**The advance to 4337 is a recorded loss of coverage (#3818, option B).** Receipt production
+stopped after #3491 (2026-09-20). From then until the advance, `present` was RED on every live
+PR and required by nothing, which carries as little information as a check that never fires.
+Moving the cutoff to the first PR number after the newest one on 2026-09-25 grandfathers #2840–#4336.
+Those reviews are owed and unrecorded; the §13.11 shadow lane still reports them. It does not
+make them reviewed. Coverage returns only when receipts land again, one per batch PR (option A).
 
 ### §3.B NVIDIA CUDA documentation (triggered)
 

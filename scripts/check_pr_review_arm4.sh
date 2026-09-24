@@ -342,9 +342,9 @@ self_test() {
     # here would be satisfied by a cutoff that grandfathers everything - which is the
     # shape of every gate in this repository that turned out to be unable to fail.
     row cutoff-grandfathers-below 0 "a PR BELOW the cutoff is reported, not failed" \
-        "$repo"  1000 "$tip"  PR_REVIEW_CUTOFF=2840
+        "$repo"  4336 "$tip"  PR_REVIEW_CUTOFF=4337
     row cutoff-enforces-at-and-above 1 "a PR AT the cutoff with no receipt is RED" \
-        "$repo"  2840 "$tip"  PR_REVIEW_CUTOFF=2840
+        "$repo"  4337 "$tip"  PR_REVIEW_CUTOFF=4337
 
     row public-key-absent         1 "no .github/pr-review.pub — the branch that used to exit 0 forever" \
         "$nokey"  999 "$tip"
@@ -388,7 +388,16 @@ ROOT=${PR_REVIEW_EVIDENCE_ROOT:-$REPO_ROOT/evidence/pr-review}
 # not a pattern: PR numbers only increase, the comparison is total, and there is no
 # timezone in it. Raising it is a diff a reviewer can read; lowering it below an open
 # PR is the visible act of exempting that PR.
-PR_REVIEW_CUTOFF=${PR_REVIEW_CUTOFF:-2840}
+#
+# ADVANCED 2840 -> 4337 on 2026-09-25 (#3818 option B, cop assignment). This is an
+# ACCEPTED LOSS OF COVERAGE, not a fix. No receipt landed above #3491, so from then until
+# this line moved `present` was RED on every PR and required by nothing: a red nobody
+# reads. PRs #2840-#4336 (every open PR today, #4311-#4332 among them) now read
+# GRANDFATHERED. Their review is still owed and still unrecorded. 4337 is the first PR
+# number after the newest one (#4336) on the day of the change. Receipts resume with the
+# batch PRs (#3818 option A, owned by the batch captains). The two cutoff rows of
+# --self-test were re-run at 4336/4337.
+PR_REVIEW_CUTOFF=${PR_REVIEW_CUTOFF:-4337}
 
 if [ "$PR_NUMBER" -lt "$PR_REVIEW_CUTOFF" ] 2>/dev/null; then
     echo "$PROG: GRANDFATHERED - PR $PR_NUMBER predates the receipt cutoff ($PR_REVIEW_CUTOFF)."
