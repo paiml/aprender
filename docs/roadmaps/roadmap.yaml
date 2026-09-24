@@ -20644,6 +20644,23 @@ roadmap:
   labels:
   - kind:docs
   notes: null
+- id: PMAT-3999
+  github_issue: 3999
+  item_type: task
+  title: EPIC 0.73 llama.cpp Parity plan (#3999)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T11:00:41Z
+  updated: 2026-09-23T11:00:41Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
 - id: PMAT-4000
   github_issue: 4000
   item_type: task
