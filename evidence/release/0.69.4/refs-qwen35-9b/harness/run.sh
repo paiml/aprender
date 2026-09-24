@@ -10,7 +10,7 @@ declare -A BIN=([rc]=$B/apr-0.69.3-rc-7ff50ec2a [base]=$B/apr-0.69.1-base-eed4a9
 one() {
   local k="$1-9b-$2"
   [ -s "out/$k.json" ] && return 0
-  local t0; t0=$(date +%s)
+  local t0; t0=$(date +%s)  # bashrs disable-line=DET002 (wall-clock timing IS the measurement)
   gpu-q --prio 1 -- bash -c "nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader > out/$k.smi-inlock 2>&1; exec timeout 2400 ${BIN[$1]} run $M -i $2.txt --chat --temperature 0 -n 64 --json --backend cuda" > "out/$k.json" 2> "out/$k.err"
   echo "$k rc=$? wall=$(( $(date +%s) - t0 ))" >> out/runs.log
 }
