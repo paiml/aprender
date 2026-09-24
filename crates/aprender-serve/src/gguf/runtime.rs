@@ -209,6 +209,21 @@ impl OwnedQuantizedKVCache {
         }
     }
 
+    /// Raise the positions the cache may hold to `max_seq_len`, keeping every
+    /// position it holds (#4268: a session's next turn grows the cache without
+    /// prefilling the conversation again). Never shrinks.
+    #[allow(clippy::used_underscore_binding)] // `_hidden_dim` holds the kv_dim
+    pub fn grow_to(&mut self, max_seq_len: usize) {
+        if max_seq_len <= self.max_seq_len {
+            return;
+        }
+        let extra = (max_seq_len - self.max_seq_len) * self._hidden_dim;
+        for layer in self.k_cache.iter_mut().chain(self.v_cache.iter_mut()) {
+            layer.reserve(extra);
+        }
+        self.max_seq_len = max_seq_len;
+    }
+
     /// Advance the sequence position after processing a token
     pub fn advance(&mut self) {
         if self.seq_len < self.max_seq_len {
