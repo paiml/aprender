@@ -389,6 +389,91 @@ if [ "${1:-}" = "--self-test" ]; then
   else
     printf 'FAIL  row 20 floor: rc=%s left=%s\n%s\n' "$fl_rc" "$left" "$fl_out"; fails=1
   fi
+  # Rows 21-22 (#4175): --run executes what the tarball compiled, with the environment `cargo test`
+  # gives it. The fixture's integration test reads CARGO_BIN_EXE_<bin>, CARGO_MANIFEST_DIR, the cwd and
+  # RUSTUP_TOOLCHAIN at RUN time, so a bare exe (the 0.69.1 false REDs B1/B3) fails it. It runs from
+  # $TD, never the manifest dir, so the cwd check is not satisfied by accident.
+  run_fixture() { # dir, extra test file body ('' for none)
+    mkdir -p "$1/src/bin" "$1/tests"
+    printf '[package]\nname = "ptr-fixture"\nversion = "0.1.0"\nedition = "2021"\nlicense = "MIT"\ndescription = "x"\n' > "$1/Cargo.toml"
+    printf 'pub fn two() -> u32 { 2 }\n' > "$1/src/lib.rs"
+    printf 'fn main() {}\n' > "$1/src/bin/ptr-tool.rs"
+    printf '#[test] fn env_as_cargo_test_gives_it() {\n  let exe = std::env::var("CARGO_BIN_EXE_ptr-tool").expect("CARGO_BIN_EXE at run time");\n  assert!(std::path::Path::new(&exe).exists());\n  let md = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");\n  assert_eq!(std::env::current_dir().unwrap(), std::path::PathBuf::from(&md));\n  assert!(std::env::var("RUSTUP_TOOLCHAIN").is_ok());\n  assert_eq!(ptr_fixture::two(), 2);\n}\n' > "$1/tests/env.rs"
+    [ -z "$2" ] || printf '%b' "$2" > "$1/tests/bad.rs"
+  }
+  run_fixture "$TD/tr-clean" ''
+  tr_out="$(cd "$TD" && TARBALL_BUILD_MIN_FREE_GB=1 TARBALL_BUILD_TARGET_DIR="$TD/tr-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$TD/tr-clean" --run 2>&1)"; tr_rc=$?
+  if [ "$tr_rc" = 0 ] && grep -q 'compile AND run' <<< "$tr_out"; then
+    printf 'ok    row 21 --run: a tarball test that needs the cargo-test environment passes when run\n'
+  else
+    printf 'FAIL  row 21 --run clean: rc=%s\n%s\n' "$tr_rc" "$tr_out"; fails=1
+  fi
+  run_fixture "$TD/tr-bad" '#[test] fn fails_on_purpose() { assert_eq!(ptr_fixture::two(), 3); }\n'
+  tr_out="$(cd "$TD" && TARBALL_BUILD_MIN_FREE_GB=1 TARBALL_BUILD_TARGET_DIR="$TD/tr-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$TD/tr-bad" --run 2>&1)"; tr_rc=$?
+  if [ "$tr_rc" = 1 ] && grep -q 'RUN FAIL  ptr-fixture-0.1.0 test bad .*fails_on_purpose' <<< "$tr_out" && ! grep -q 'test env ' <<< "$tr_out"; then
+    printf 'ok    row 22 --run: a failing tarball test is RED (1), named by binary and test; the passing one is not\n'
+  else
+    printf 'FAIL  row 22 --run planted failure: rc=%s (want 1)\n%s\n' "$tr_rc" "$tr_out"; fails=1
+  fi
+  # a memory cap that cannot be applied (no user bus) is "could not check" (2), never a named RED (1)
+  tr_out="$(cd "$TD" && DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent XDG_RUNTIME_DIR=/nonexistent TARBALL_RUN_MEM_MAX=1G TARBALL_BUILD_MIN_FREE_GB=1 TARBALL_BUILD_TARGET_DIR="$TD/tr-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$TD/tr-clean" --run 2>&1)"; tr_rc=$?
+  if [ "$tr_rc" = 2 ] && grep -q 'cannot check: TARBALL_RUN_MEM_MAX' <<< "$tr_out"; then
+    printf 'ok    row 23 --run: a memory cap whose systemd scope cannot start is could-not-check (2), not RED\n'
+  else
+    printf 'FAIL  row 23 --run unstartable cap: rc=%s (want 2)\n%s\n' "$tr_rc" "$tr_out"; fails=1
+  fi
+  # a test binary that cannot even start (stale exe, EACCES, fork failure) is could-not-check (2), not RED:
+  # 1 is reserved for a binary that RAN and failed. Hermetic: a hand-written stream, no cargo.
+  printf '{"reason":"compiler-artifact","manifest_path":"%s","target":{"kind":["test"],"name":"gone"},"profile":{"test":true},"executable":"%s"}\n' \
+    "$TD/tr-clean/Cargo.toml" "$TD/no-such-test-exe" > "$TD/tr-gone.json"
+  python3 "$REPO_ROOT/scripts/lib/tarball_test_run.py" "$TD/tr-gone.json" "$TD/tr-gone.run" --cargo /bin/true --toolchain x \
+    --sysroot "$TD" --target-dir "$TD" > "$TD/tr-gone.out" 2>&1; tr_rc=$?
+  if [ "$tr_rc" = 2 ] && grep -q 'did not start' "$TD/tr-gone.out"; then
+    printf 'ok    row 24 --run: a test binary that cannot start is could-not-check (2), never a named RED\n'
+  else
+    printf 'FAIL  row 24 --run unstartable binary: rc=%s (want 2)\n%s\n' "$tr_rc" "$(cat "$TD/tr-gone.out")"; fails=1
+  fi
+  # rows 25-28, hermetic: shell scripts stand in for test binaries. A binary the HOST killed (SIGKILL: OOM
+  # or the scope's cap; our --timeout) proves nothing: 2. One that RAN and failed (exit 1, SIGABRT) is 1, and
+  # 1 outranks every could-not-check binary in the same run, so a regression is never hidden behind one.
+  for k in exit1 abort sigkill slow; do
+    case "$k" in
+      exit1) body='exit 1' ;; abort) body='kill -ABRT $$' ;; sigkill) body='kill -KILL $$' ;; slow) body='sleep 30' ;;
+    esac
+    printf '#!/bin/bash\n%s\n' "$body" > "$TD/tr-$k.sh"; chmod +x "$TD/tr-$k.sh"
+  done
+  tr_stream() {  # tr_stream OUT NAME... : one test artifact per NAME (tr-NAME.sh; "gone" = no such exe)
+    local out=$1 n; shift; : > "$out"
+    for n in "$@"; do
+      printf '{"reason":"compiler-artifact","manifest_path":"%s","target":{"kind":["test"],"name":"%s"},"profile":{"test":true},"executable":"%s"}\n' \
+        "$TD/tr-clean/Cargo.toml" "$n" "$TD/tr-$n.sh" >> "$out"
+    done
+  }
+  tr_py() {  # tr_py CASE NAME... -> tr_rc, $TD/tr-CASE.out
+    tr_stream "$TD/tr-$1.json" "${@:2}"
+    python3 "$REPO_ROOT/scripts/lib/tarball_test_run.py" "$TD/tr-$1.json" "$TD/tr-$1.run" --timeout 2 --cargo /bin/true \
+      --toolchain x --sysroot "$TD" --target-dir "$TD" > "$TD/tr-$1.out" 2>&1; tr_rc=$?
+  }
+  tr_py killed sigkill slow
+  if [ "$tr_rc" = 2 ] && grep -q 'RUN KILLED .* sigkill by SIGKILL' "$TD/tr-killed.out" \
+     && grep -q 'RUN KILLED .* slow by the --timeout' "$TD/tr-killed.out" && ! grep -q 'RUN FAIL' "$TD/tr-killed.out"; then
+    printf 'ok    row 25 --run: a binary SIGKILLed or timed out is could-not-check (2), named, never a RED\n'
+  else
+    printf 'FAIL  row 25 --run host-killed: rc=%s (want 2)\n%s\n' "$tr_rc" "$(cat "$TD/tr-killed.out")"; fails=1
+  fi
+  tr_py abrt abort
+  if [ "$tr_rc" = 1 ] && grep -q 'RUN FAIL .* abort rc=-6' "$TD/tr-abrt.out"; then
+    printf 'ok    row 26 --run: a binary that aborts (SIGABRT) is a named RED (1): it ran and failed\n'
+  else
+    printf 'FAIL  row 26 --run SIGABRT: rc=%s (want 1)\n%s\n' "$tr_rc" "$(cat "$TD/tr-abrt.out")"; fails=1
+  fi
+  tr_py mixed gone sigkill exit1
+  if [ "$tr_rc" = 1 ] && grep -q 'RUN FAIL .* exit1 rc=1' "$TD/tr-mixed.out" && grep -q 'RUN NOT STARTED .* gone' "$TD/tr-mixed.out" \
+     && grep -q 'RUN KILLED .* sigkill' "$TD/tr-mixed.out"; then
+    printf 'ok    row 27 --run: a real failure is RED (1) even beside an unstarted and a killed binary, which are listed\n'
+  else
+    printf 'FAIL  row 27 --run mixed: rc=%s (want 1)\n%s\n' "$tr_rc" "$(cat "$TD/tr-mixed.out")"; fails=1
+  fi
   [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
   printf '\nSELF-TEST PASSED\n'
   exit 0
