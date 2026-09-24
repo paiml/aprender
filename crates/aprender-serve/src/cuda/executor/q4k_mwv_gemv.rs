@@ -46,6 +46,24 @@ impl CudaExecutor {
         self.batched_mwv_gemv_into(BatchedMwv::Q6K, weight_ptr, input, output, m, n, k)
     }
 
+    /// [`Self::q5k_gemv_into`] for `m` packed vectors: `input` `[m][k]` into
+    /// `output` `[m][n]`, each output row bitwise what `q5k_gemv_into` computes for
+    /// its input row alone (the weights are read once per launch, not per row).
+    ///
+    /// # Errors
+    /// As [`Self::batched_mwv_q4k_gemv_into`].
+    pub fn batched_q5k_gemv_into(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        m: u32,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        self.batched_mwv_gemv_into(BatchedMwv::Q5K, weight_ptr, input, output, m, n, k)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn batched_mwv_gemv_into(
         &mut self,
@@ -75,9 +93,14 @@ impl CudaExecutor {
                 "{who}: not recorded into a CUDA graph"
             )));
         }
-        let num_warps = self.gpu_profile.mwv_warps;
+        // Q5_K's single-vector kernel is one warp per row, not the multi-warp one.
+        let num_warps = match quant {
+            BatchedMwv::Q5K => 1,
+            BatchedMwv::Q4K | BatchedMwv::Q6K => self.gpu_profile.mwv_warps,
+        };
         let max_m = match quant {
             BatchedMwv::Q4K => trueno_gpu::kernels::BatchedMwvQ4KGemvKernel::MAX_M,
+            BatchedMwv::Q5K => trueno_gpu::kernels::BatchedQ5KGemvKernel::MAX_M,
             BatchedMwv::Q6K => trueno_gpu::kernels::BatchedMwvQ6KGemvKernel::MAX_M,
         };
         let mut done = 0u32;
@@ -90,6 +113,7 @@ impl CudaExecutor {
                     num_warps,
                     m: tile,
                 },
+                BatchedMwv::Q5K => KernelType::BatchedQ5KGemv { k, n, m: tile },
                 BatchedMwv::Q6K => KernelType::BatchedMwvQ6KGemv {
                     k,
                     n,
@@ -1194,10 +1218,12 @@ impl CudaExecutor {
     }
 }
 
-/// The quantizations with a batched multi-warp GEMV (#4234).
+/// The quantizations with a batched GEMV twin of their pinned single-vector
+/// kernel (#4234): multi-warp for Q4_K / Q6_K, the one-warp kernel for Q5_K.
 #[derive(Clone, Copy)]
 enum BatchedMwv {
     Q4K,
+    Q5K,
     Q6K,
 }
 
@@ -1205,6 +1231,7 @@ impl BatchedMwv {
     fn kernel(self) -> &'static str {
         match self {
             Self::Q4K => "batched_mwv_q4k_gemv",
+            Self::Q5K => "batched_q5k_gemv",
             Self::Q6K => "batched_mwv_q6k_gemv",
         }
     }
@@ -1212,6 +1239,7 @@ impl BatchedMwv {
     fn who(self) -> &'static str {
         match self {
             Self::Q4K => "batched_mwv_q4k_gemv_into",
+            Self::Q5K => "batched_q5k_gemv_into",
             Self::Q6K => "batched_mwv_q6k_gemv_into",
         }
     }

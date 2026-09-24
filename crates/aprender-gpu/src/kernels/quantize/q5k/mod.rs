@@ -17,11 +17,14 @@
 //!
 //! - [`Q5KKernel`]: Q5_K GEMM kernel (PARITY-116)
 //! - [`Q5KGemvKernel`]: Q5_K GEMV kernel for M=1 decode throughput (PAR-003)
+//! - [`BatchedQ5KGemvKernel`]: the same for `m` activation vectors per launch (#4234)
 
+mod batched;
 mod dequant;
 mod gemm;
 mod gemv;
 
+pub use batched::BatchedQ5KGemvKernel;
 pub use dequant::Q5KDequantKernel;
 pub use gemm::Q5KKernel;
 pub use gemv::Q5KGemvKernel;
