@@ -534,6 +534,23 @@ fn fit_prefill_plan(
     model: &mut crate::gguf::cuda::Qwen35CudaModel<'static>,
     end: usize,
 ) -> std::result::Result<(), String> {
+    match fit_prefill_plan_once(qwen, model, end) {
+        // #4260: the prefill's cached weights are reclaimable — a prompt that does not
+        // fit beside them gets their memory back before it is refused.
+        Err(_) if model.weight_cache_bytes() > 0 => {
+            model.release_weight_cache();
+            fit_prefill_plan_once(qwen, model, end)
+        },
+        fit => fit,
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn fit_prefill_plan_once(
+    qwen: &Qwen35Model<'_>,
+    model: &mut crate::gguf::cuda::Qwen35CudaModel<'static>,
+    end: usize,
+) -> std::result::Result<(), String> {
     let memory = crate::capacity::measure_device_memory(model.executor_mut())?;
     let (free, _) = memory.plan_free_total();
     let rows_to_try: &[usize] = match memory {
@@ -556,6 +573,9 @@ fn fit_prefill_plan(
             model.set_prefill_chunk_rows(rows);
             let need = model.prefill_workspace_bytes(end) as u64 + crate::capacity::OVERHEAD_BYTES;
             if need <= free {
+                // #4260: the decode state is already allocated; the cache leaves the
+                // prefill its workspace and the overhead.
+                model.set_weight_cache_reserve(need);
                 return Ok(());
             }
             refused.push(format!(

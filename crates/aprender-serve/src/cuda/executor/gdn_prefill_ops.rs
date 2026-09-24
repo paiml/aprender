@@ -152,9 +152,9 @@ impl CudaExecutor {
 
     /// #4260: whether a cached weight copy of `bytes` still leaves the model's reserve free.
     fn qwen35_cache_fits(&self, bytes: usize) -> bool {
-        self.context.memory_info().is_ok_and(|(free, _)| {
-            free >= bytes.saturating_add(self.qwen35_weight_cache_reserve)
-        })
+        self.context
+            .memory_info()
+            .is_ok_and(|(free, _)| free >= bytes.saturating_add(self.qwen35_weight_cache_reserve))
     }
 
     /// #4260: the weight's dequantized f32 copy, made once and kept across chunks and
@@ -225,16 +225,35 @@ impl CudaExecutor {
         self.qwen35_weight_cache_reserve = bytes;
     }
 
+    /// Drop the Qwen3.5 prefill's cached weight copies (f32 and fp16).
+    pub(crate) fn release_qwen35_weight_cache(&mut self) {
+        self.qwen35_f32_weight_cache.clear();
+        self.fp16_weight_cache.clear();
+    }
+
     /// Bytes held by the Qwen3.5 prefill's cached weight copies (f32 and fp16).
     #[must_use]
     pub(crate) fn qwen35_weight_cache_bytes(&self) -> usize {
-        4 * self.qwen35_f32_weight_cache.values().map(GpuBuffer::len).sum::<usize>()
-            + 2 * self.fp16_weight_cache.values().map(GpuBuffer::len).sum::<usize>()
+        4 * self
+            .qwen35_f32_weight_cache
+            .values()
+            .map(GpuBuffer::len)
+            .sum::<usize>()
+            + 2 * self
+                .fp16_weight_cache
+                .values()
+                .map(GpuBuffer::len)
+                .sum::<usize>()
     }
 
     /// `Y[rows × n] = X[rows × k] · Wᵀ` for the quantized `[n × k]` weight `W`, all
     /// row-major; `Y`'s rows are `ldc` floats apart (`ldc >= n`), so the result can land
     /// in a strided destination such as the KV cache.
+    ///
+    /// The GEMM follows [`Qwen35PrefillGemm`] (#4260): by default the weight is
+    /// dequantized ONCE into a kept f32 copy — the same kernel, the same SGEMM, so
+    /// bitwise the per-chunk dequant it replaces — and a weight whose copy does not fit
+    /// beside the reserve is dequantized per call as before.
     ///
     /// # Errors
     /// See [`Self::qwen35_dequant_f32`]; also a cuBLAS failure.

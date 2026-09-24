@@ -399,3 +399,154 @@ fn qwen35_prefill_attention_prefers_f32_then_flash_and_the_environment_pins_one(
         );
     }
 }
+
+/// #4260: one prompt through [`Qwen35CudaModel::prefill`] in `mode`, then `steps`
+/// greedy (temp 0) decode tokens. Returns the prefill's last logits and the tokens.
+fn prefill_then_greedy(
+    gpu: &mut Qwen35CudaModel<'_>,
+    mode: crate::cuda::Qwen35PrefillGemm,
+    prompt: &[u32],
+    steps: usize,
+) -> (Vec<f32>, Vec<u32>) {
+    gpu.executor_mut().set_qwen35_prefill_gemm(mode);
+    let mut state = gpu.new_state().expect("state");
+    let logits = gpu.prefill(prompt, &mut state, 0).expect("prefill");
+    let mut next = argmax(&logits) as u32;
+    let mut out = vec![next];
+    for pos in prompt.len()..prompt.len() + steps - 1 {
+        next = argmax(&gpu.forward_single(next, &mut state, pos).expect("decode")) as u32;
+        out.push(next);
+    }
+    (logits, out)
+}
+
+/// #4260 (0.8B, several chunks so one prefill both fills and hits the cache): the
+/// weight copies kept across chunks and requests change NOTHING — the prefill's logits
+/// are bitwise the per-chunk-dequant path's, on the filling call and on a later call
+/// that only hits, and so are 32 greedy tokens. The cache must actually hold the
+/// weights (a mode that never cached would pass the equality and fail here), and a
+/// release returns every byte.
+#[test]
+#[serial_test::serial]
+fn qwen35_cached_prefill_weights_are_bitwise_the_per_chunk_dequant_0_8b() {
+    use crate::cuda::Qwen35PrefillGemm;
+    if !std::path::Path::new(MODEL_0_8B).exists() {
+        eprintln!("SKIP: {MODEL_0_8B} is absent");
+        return;
+    }
+    let executor = crate::cuda_executor_or_skip!(0);
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_0_8B).expect("map the GGUF");
+    let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+    let n = 300;
+    let mut gpu = Qwen35CudaModel::with_max_seq_len(&qwen, executor, n + 40).expect("gpu model");
+    gpu.set_prefill_attention(super::PrefillAttention::CublasF32);
+    gpu.set_prefill_chunk_rows(128);
+    gpu.set_weight_cache_reserve(0);
+    let prompt = tokens(n, base.config.vocab_size, 0x4260);
+
+    let (want, want_tokens) = prefill_then_greedy(&mut gpu, Qwen35PrefillGemm::F32, &prompt, 32);
+    assert_eq!(gpu.weight_cache_bytes(), 0, "the F32 mode keeps no copy");
+
+    let (fill, fill_tokens) =
+        prefill_then_greedy(&mut gpu, Qwen35PrefillGemm::F32Cached, &prompt, 32);
+    let held = gpu.weight_cache_bytes();
+    assert!(held > 0, "F32Cached must keep the dequantized weights");
+    assert!(
+        fill.iter()
+            .zip(&want)
+            .all(|(a, b)| a.to_bits() == b.to_bits()),
+        "the filling prefill must be bitwise the per-chunk dequant (rel L∞ {})",
+        rel_linf(&fill, &want, "fill")
+    );
+    assert_eq!(fill_tokens, want_tokens, "32 greedy tokens, filling call");
+
+    let (hit, hit_tokens) =
+        prefill_then_greedy(&mut gpu, Qwen35PrefillGemm::F32Cached, &prompt, 32);
+    assert_eq!(gpu.weight_cache_bytes(), held, "a second request only hits");
+    assert!(
+        hit.iter()
+            .zip(&want)
+            .all(|(a, b)| a.to_bits() == b.to_bits()),
+        "the hitting prefill must be bitwise the per-chunk dequant"
+    );
+    assert_eq!(hit_tokens, want_tokens, "32 greedy tokens, hitting call");
+    eprintln!(
+        "#4260 f32-cached: {} MiB of weight copies, bitwise over {n} positions + 32 tokens",
+        held >> 20
+    );
+
+    gpu.release_weight_cache();
+    assert_eq!(gpu.weight_cache_bytes(), 0, "a release returns every byte");
+}
+
+/// #4260: with a reserve larger than the device, no copy is made and the prefill
+/// still runs (the per-chunk dequant), bitwise.
+#[test]
+#[serial_test::serial]
+fn qwen35_a_weight_copy_that_would_cut_into_the_reserve_is_not_made_0_8b() {
+    use crate::cuda::Qwen35PrefillGemm;
+    if !std::path::Path::new(MODEL_0_8B).exists() {
+        eprintln!("SKIP: {MODEL_0_8B} is absent");
+        return;
+    }
+    let executor = crate::cuda_executor_or_skip!(0);
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_0_8B).expect("map the GGUF");
+    let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+    let mut gpu = Qwen35CudaModel::with_max_seq_len(&qwen, executor, 80).expect("gpu model");
+    gpu.set_prefill_attention(super::PrefillAttention::CublasF32);
+    let prompt = tokens(64, base.config.vocab_size, 0x4261);
+    let (want, _) = prefill_then_greedy(&mut gpu, Qwen35PrefillGemm::F32, &prompt, 1);
+    gpu.set_weight_cache_reserve(u64::MAX);
+    let (got, _) = prefill_then_greedy(&mut gpu, Qwen35PrefillGemm::F32Cached, &prompt, 1);
+    assert_eq!(
+        gpu.weight_cache_bytes(),
+        0,
+        "nothing fits beside the reserve"
+    );
+    assert!(got
+        .iter()
+        .zip(&want)
+        .all(|(a, b)| a.to_bits() == b.to_bits()));
+}
+
+/// #4260: the fp16 tensor-core prefill against the f32 one — a MEASUREMENT for the
+/// promotion decision, printed; asserted only to keep argmax and 32 greedy tokens.
+/// f16 is opt-in (`APR_QWEN35_PREFILL_GEMM=f16`) until this holds on every model the
+/// G3 gate measures.
+#[test]
+#[serial_test::serial]
+fn qwen35_f16_prefill_keeps_the_greedy_tokens_of_the_f32_prefill_0_8b() {
+    use crate::cuda::Qwen35PrefillGemm;
+    if !std::path::Path::new(MODEL_0_8B).exists() {
+        eprintln!("SKIP: {MODEL_0_8B} is absent");
+        return;
+    }
+    let executor = crate::cuda_executor_or_skip!(0);
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_0_8B).expect("map the GGUF");
+    let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+    let n = 300;
+    let mut gpu = Qwen35CudaModel::with_max_seq_len(&qwen, executor, n + 40).expect("gpu model");
+    gpu.set_prefill_attention(super::PrefillAttention::CublasF32);
+    gpu.set_weight_cache_reserve(0);
+    let prompt = tokens(n, base.config.vocab_size, 0x4262);
+    let (want, want_tokens) = prefill_then_greedy(&mut gpu, Qwen35PrefillGemm::F32, &prompt, 32);
+    let (got, got_tokens) = prefill_then_greedy(&mut gpu, Qwen35PrefillGemm::F16, &prompt, 32);
+    eprintln!(
+        "#4260 f16 vs f32 prefill: cosine {:.7}, rel L∞ {:.3e}, tokens equal {}",
+        cosine(&got, &want),
+        rel_linf(&got, &want, "f16"),
+        got_tokens == want_tokens
+    );
+    assert!(
+        gpu.weight_cache_bytes() > 0,
+        "F16 must keep the fp16 weights"
+    );
+    assert_eq!(argmax(&got), argmax(&want));
+    assert_eq!(got_tokens, want_tokens, "32 greedy tokens");
+}

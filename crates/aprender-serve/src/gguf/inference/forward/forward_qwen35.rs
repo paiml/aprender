@@ -1628,6 +1628,20 @@ fn run_qwen35_generate_gpu(
             .map_err(|e| format!("the CUDA model would not build: {e}"))?;
     gpu.set_prefill_chunk_rows(chunk_rows);
     gpu.set_prefill_attention(attention);
+    // #4260: cached prefill weights never take what this request still allocates.
+    let rest = crate::gguf::cuda::Qwen35CudaModel::capacity_inputs(
+        &qwen,
+        max_seq_len,
+        gpu_free,
+        gpu_total,
+        attention,
+        chunk_rows,
+    );
+    gpu.set_weight_cache_reserve(
+        rest.kv_bytes_per_token_f32 * max_seq_len as u64
+            + rest.workspace_bytes
+            + rest.overhead_bytes,
+    );
 
     // Unconditional, like every other backend-selection line on this path: the
     // user must be able to tell a GPU run from a CPU one without --verbose.

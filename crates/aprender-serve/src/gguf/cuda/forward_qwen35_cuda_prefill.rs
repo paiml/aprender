@@ -291,6 +291,26 @@ impl Qwen35CudaModel<'_> {
         self.prefill_attention = attention;
     }
 
+    /// #4260: device bytes the prefill's cached weight copies must leave free — what
+    /// the rest of the request still allocates (its decode state, the prefill workspace,
+    /// the plan's overhead). A copy that would cut into it is not made; the weight is
+    /// dequantized per chunk instead, as before the cache.
+    pub fn set_weight_cache_reserve(&mut self, bytes: u64) {
+        self.executor
+            .set_qwen35_weight_cache_reserve(usize::try_from(bytes).unwrap_or(usize::MAX));
+    }
+
+    /// #4260: drop the prefill's cached weight copies, returning their device memory.
+    pub fn release_weight_cache(&mut self) {
+        self.executor.release_qwen35_weight_cache();
+    }
+
+    /// #4260: device bytes held by the prefill's cached weight copies.
+    #[must_use]
+    pub fn weight_cache_bytes(&self) -> usize {
+        self.executor.qwen35_weight_cache_bytes()
+    }
+
     /// Device bytes a [`Self::prefill`] of a prompt ending at `total_positions`
     /// allocates on top of the weights and the state.
     #[must_use]

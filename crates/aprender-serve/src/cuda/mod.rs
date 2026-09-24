@@ -71,5 +71,5 @@ pub use types::{
 // - executor/kv_cache.rs: KV cache management
 mod executor;
 pub mod gpu_profile;
-pub use executor::CudaExecutor;
+pub use executor::{CudaExecutor, Qwen35PrefillGemm};
 pub use gpu_profile::GpuProfile;

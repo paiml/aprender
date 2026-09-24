@@ -1,0 +1,20 @@
+- id: PMAT-4260
+  github_issue: 4260
+  item_type: task
+  title: Qwen3.5 batched prefill re-dequantizes every weight per chunk; keep the dequantized copies (f32, bitwise) and add an opt-in fp16 tensor-core GEMM (#4260)
+  status: inprogress
+  priority: high
+  assigned_to: aprender-dd
+  created: 2026-09-24T12:00:00Z
+  updated: 2026-09-24T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - f32-cached prefill logits bitwise equal to the per-chunk dequant, filling and hitting calls, plus 32 greedy tokens
+  - a copy that would cut into the reserve is not made; a prefill that does not fit beside the cache releases it first
+  - fp16 path opt-in (APR_QWEN35_PREFILL_GEMM=f16) until temp-0 token identity holds on the G3 models
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
