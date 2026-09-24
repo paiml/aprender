@@ -340,7 +340,7 @@ mutant "M10 T1 vs no KILL escalation" "$TD" '    kill -KILL $left 2> /dev/null' 
 m_t3() { sleep 30 > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP/srv3.pid"; cp "$TMP/srv3.pid" "$TMP/smi-pids"; td_case x 1 "FAILED: pid" "$1" "$TMP/srv3.pid"; }
 mutant "M11 T3 vs no nvidia-smi check" "$TD" 'if [ "${#pids[@]}" -gt 0 ] && command -v "$SMI" > /dev/null 2>&1; then' 'if false; then' m_t3
 m_t4() { : > "$TMP/tdrows/manifest.jsonl"; python3 "$1" rows --out-dir "$TMP/ok" --prompt-list "$TMP/list.jsonl" --manifest "$TMP/tdrows/manifest.jsonl" --engine apr --sha abc --host h --backend gpu --cell-fault "cell teardown FAILED: x" > /dev/null 2>&1; python3 -c 'import json,sys; g=[json.loads(l) for l in open(sys.argv[1]) if l.strip()]; g=[r for r in g if r["kind"]=="gen"]; assert g and all(r["refused"] for r in g)' "$TMP/tdrows/manifest.jsonl" 2> /dev/null; }
-mutant "M12 T4 vs a teardown fault that does not reach the rows" "$ROUTES_PY" '        if a.cell_fault:' '        if False:' m_t4
+mutant "M12 T4 vs a teardown fault that does not reach the rows" "$ROUTES_PY" '    if a.cell_fault:' '    if False:' m_t4
 
 m_o3() { oracle_assert "$1" "$O3"; }
 mutant "M15 O3 vs an unmapped kind silently judged as chat" "$ROUTES_PY" 'return ORACLE_ROUTE_BY_KIND.get(spec["kind"]) if spec else None' 'return ORACLE_ROUTE_BY_KIND.get(spec["kind"], "POST /v1/chat/completions") if spec else None' m_o3

@@ -175,6 +175,61 @@ def closure(cells: list) -> dict:
     return out
 
 
+def _certify_all(doc, inventory, rows):
+    """(admitted, rejected, cells, by_thinking) over every model quant x prompt."""
+    admitted, rejected, cells, by_thinking = {}, {}, [], {}
+    for model in inventory:
+        for quant, qsha in sorted(model["quants"].items()):
+            key = f"{model['model']}/{quant}"
+            admitted[key], rejected[key] = [], {}
+            by_thinking[qsha] = {t: [] for t in model.get("thinking") or ["off"]}
+            for p in doc["prompts"]:
+                ok, why, cs, modes = certify_one(p, model, quant, qsha, rows)
+                by_thinking[qsha] = _add_admitted_modes(by_thinking[qsha], modes, p["id"])
+                cells += [dict(c, prompt_id=p["id"], model=key) for c in cs]
+                if ok:
+                    admitted[key].append(p["id"])
+                else:
+                    rejected[key][p["id"]] = why
+    return admitted, rejected, cells, by_thinking
+
+
+def _add_admitted_modes(per_mode, modes, prompt_id):
+    for t, m_ok in modes.items():
+        if m_ok:
+            per_mode[t].append(prompt_id)
+    return per_mode
+
+
+def _uncontrolled_detail(doc, inventory, by_thinking):
+    """Every (model, thinking) lane with a verb no certified positive control serves.
+
+    A lane needs ONE certified positive control serving its verb, per thinking mode (#3957, the cop's
+    "positive control per (host, verb, thinking)"). A second control that fails (e.g. the multi-turn
+    recall control looping at greedy on a quant) does not un-control a lane another control covers."""
+    verbs = sorted({v for p in doc["prompts"] for v in p["verb"]})
+    detail = []
+    for model in inventory:
+        for quant, qsha in sorted(model["quants"].items()):
+            for t, ids in by_thinking[qsha].items():
+                bare = [v for v in verbs if not any(p.get("control") and p["id"] in ids and v in p["verb"]
+                                                    for p in doc["prompts"])]
+                if bare:
+                    detail.append({"model": f"{model['model']}/{quant}", "sha256": qsha,
+                                   "thinking": t, "verbs": bare})
+    return detail
+
+
+def _print_summary(inventory, by_thinking, admitted, uncontrolled_detail):
+    for model in inventory:
+        for quant, qsha in sorted(model["quants"].items()):
+            k = f"{model['model']}/{quant}"
+            modes = ", ".join(f"{t} {len(v)}" for t, v in by_thinking[qsha].items())
+            gaps = [f"{u['thinking']}:{'/'.join(u['verbs'])}" for u in uncontrolled_detail if u["model"] == k]
+            print(f"{k}: admitted {modes} (all modes {len(admitted[k])})"
+                  + (f"  [no certified control: {'; '.join(gaps)}]" if gaps else ""))
+
+
 def certify(a) -> int:
     prompts_path = Path(a.prompts)
     doc = json.loads(prompts_path.read_text(encoding="utf-8"))
@@ -184,35 +239,8 @@ def certify(a) -> int:
         return 2
     inventory = json.loads(Path(a.inventory).read_text(encoding="utf-8"))
     rows = read_rows(a.manifests)
-    admitted, rejected, cells, by_thinking = {}, {}, [], {}
-    for model in inventory:
-        for quant, qsha in sorted(model["quants"].items()):
-            key = f"{model['model']}/{quant}"
-            admitted[key], rejected[key] = [], {}
-            by_thinking[qsha] = {t: [] for t in model.get("thinking") or ["off"]}
-            for p in doc["prompts"]:
-                ok, why, cs, modes = certify_one(p, model, quant, qsha, rows)
-                for t, m_ok in modes.items():
-                    if m_ok:
-                        by_thinking[qsha][t].append(p["id"])
-                cells += [dict(c, prompt_id=p["id"], model=key) for c in cs]
-                if ok:
-                    admitted[key].append(p["id"])
-                else:
-                    rejected[key][p["id"]] = why
-    # A lane needs ONE certified positive control serving its verb, per thinking mode (#3957, the cop's
-    # "positive control per (host, verb, thinking)"). A second control that fails (e.g. the multi-turn
-    # recall control looping at greedy on a quant) does not un-control a lane another control covers.
-    verbs = sorted({v for p in doc["prompts"] for v in p["verb"]})
-    uncontrolled_detail = []
-    for model in inventory:
-        for quant, qsha in sorted(model["quants"].items()):
-            for t, ids in by_thinking[qsha].items():
-                bare = [v for v in verbs if not any(p.get("control") and p["id"] in ids and v in p["verb"]
-                                                    for p in doc["prompts"])]
-                if bare:
-                    uncontrolled_detail.append({"model": f"{model['model']}/{quant}", "sha256": qsha,
-                                                "thinking": t, "verbs": bare})
+    admitted, rejected, cells, by_thinking = _certify_all(doc, inventory, rows)
+    uncontrolled_detail = _uncontrolled_detail(doc, inventory, by_thinking)
     uncontrolled = sorted({u["model"] for u in uncontrolled_detail})
     receipt = {
         "schema": SCHEMA,
@@ -242,13 +270,7 @@ def certify(a) -> int:
         "cells": cells,
     }
     Path(a.out).write_text(json.dumps(receipt, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-    for model in inventory:
-        for quant, qsha in sorted(model["quants"].items()):
-            k = f"{model['model']}/{quant}"
-            modes = ", ".join(f"{t} {len(v)}" for t, v in by_thinking[qsha].items())
-            gaps = [f"{u['thinking']}:{'/'.join(u['verbs'])}" for u in uncontrolled_detail if u["model"] == k]
-            print(f"{k}: admitted {modes} (all modes {len(admitted[k])})"
-                  + (f"  [no certified control: {'; '.join(gaps)}]" if gaps else ""))
+    _print_summary(inventory, by_thinking, admitted, uncontrolled_detail)
     return 0
 
 

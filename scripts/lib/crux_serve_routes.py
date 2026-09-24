@@ -523,6 +523,63 @@ def sweep(a):
     return 0
 
 
+def _emit_row(a, base, emitted, pid, verb, mode, route, rc, stdout, refused):
+    if a.cell_fault:
+        # A cell whose servers outlived it held the GPU after the lock dropped.
+        # Nothing it measured is admitted: every row is RED, naming why.
+        rc, refused = None, a.cell_fault
+    emitted.append({**base, "prompt_id": pid, "verb": verb, "mode": mode, "route": route,
+                    "rc": rc, "stdout": stdout, "stderr": None, "refused": refused})
+
+
+def _fault_file(a, route, mode, pid, why):
+    f = "%s/%s-%s-%s.fault.json" % (a.out_dir, slug(route), mode, pid)
+    json.dump({"text": None, "refused": None, "protocol_fault": why,
+               "reported": {"route": route, "mode": mode}}, open(f, "w"))
+    return f
+
+
+def _serve_verbs(prompts):
+    """(prompt id, mode, verb) for every serve verb a prompt asks for."""
+    for pid, verbs in prompts:
+        for mode, verb in MODE_VERB.items():
+            if verb in verbs:
+                yield pid, mode, verb
+
+
+def _surface_fault_rows(a, emit, prompts, p):
+    """A router with no index, or a mounted route no table knows: a protocol-fault row per prompt x verb."""
+    for pid, mode, verb in _serve_verbs(prompts):
+        if p.get("no_route_index"):
+            emit(pid, verb, mode, "GET /", 3,
+                 _fault_file(a, "GET /", mode, pid, "no_route_index: " + p["no_route_index"]), None)
+        for r in p.get("unclassified") or []:
+            emit(pid, verb, mode, r, 3, _fault_file(a, r, mode, pid,
+                 "unclassified_route: %s is mounted (GET / lists it) and no CRUX table knows its wire; "
+                 "classify it in scripts/lib/crux_serve_routes.py" % r), None)
+
+
+def _cell_refusal(c):
+    if c["rc"] != 4:
+        return None
+    try:
+        return json.load(open(c["out"])).get("refused") or "refused"
+    except (OSError, ValueError):
+        return "refused"
+
+
+def _write_rows(a, emitted, p):
+    with open(a.manifest, "a") as fh:
+        for r in emitted:
+            fh.write(json.dumps(r) + "\n")
+        if p is not None and a.engine == "apr":
+            fh.write(json.dumps({"kind": "serve_routes", "engine": a.engine, "model_sha256": a.sha, "host": a.host,
+                                 "backend": a.backend, "index": p.get("index"),
+                                 "no_route_index": p.get("no_route_index"),
+                                 "generation": p.get("generation"), "not_generation": p.get("not_generation"),
+                                 "unclassified": p.get("unclassified")}) + "\n")
+
+
 def rows(a):
     """Manifest rows (row contract v1 + `route`, `mode`) from one sweep's plan.json.
 
@@ -539,58 +596,22 @@ def rows(a):
     emitted = []
 
     def emit(pid, verb, mode, route, rc, stdout, refused):
-        if a.cell_fault:
-            # A cell whose servers outlived it held the GPU after the lock dropped.
-            # Nothing it measured is admitted: every row is RED, naming why.
-            rc, refused = None, a.cell_fault
-        emitted.append({**base, "prompt_id": pid, "verb": verb, "mode": mode, "route": route,
-                        "rc": rc, "stdout": stdout, "stderr": None, "refused": refused})
-
-    def fault_file(route, mode, pid, why):
-        f = "%s/%s-%s-%s.fault.json" % (a.out_dir, slug(route), mode, pid)
-        json.dump({"text": None, "refused": None, "protocol_fault": why,
-                   "reported": {"route": route, "mode": mode}}, open(f, "w"))
-        return f
+        _emit_row(a, base, emitted, pid, verb, mode, route, rc, stdout, refused)
 
     try:
         p = json.load(open("%s/plan.json" % a.out_dir))
     except (OSError, ValueError):
         why = a.cell_why or "the serve sweep wrote no plan.json (it did not run, or died before the end)"
-        for pid, verbs in prompts:
-            for mode, verb in MODE_VERB.items():
-                if verb in verbs:
-                    emit(pid, verb, mode, None, None, None, why)
+        for pid, mode, verb in _serve_verbs(prompts):
+            emit(pid, verb, mode, None, None, None, why)
         p = None
     if p is not None:
-        for pid, verbs in prompts:
-            for mode, verb in MODE_VERB.items():
-                if verb not in verbs:
-                    continue
-                if p.get("no_route_index"):
-                    emit(pid, verb, mode, "GET /", 3,
-                         fault_file("GET /", mode, pid, "no_route_index: " + p["no_route_index"]), None)
-                for r in p.get("unclassified") or []:
-                    emit(pid, verb, mode, r, 3, fault_file(r, mode, pid,
-                         "unclassified_route: %s is mounted (GET / lists it) and no CRUX table knows its wire; "
-                         "classify it in scripts/lib/crux_serve_routes.py" % r), None)
+        _surface_fault_rows(a, emit, prompts, p)
         for c in p.get("cells") or []:
-            refused = None
-            if c["rc"] == 4:
-                try:
-                    refused = json.load(open(c["out"])).get("refused") or "refused"
-                except (OSError, ValueError):
-                    refused = "refused"
+            refused = _cell_refusal(c)
             emit(c["prompt_id"], MODE_VERB[c["mode"]], c["mode"], c["route"],
                  None if refused else c["rc"], None if refused else c["out"], refused)
-    with open(a.manifest, "a") as fh:
-        for r in emitted:
-            fh.write(json.dumps(r) + "\n")
-        if p is not None and a.engine == "apr":
-            fh.write(json.dumps({"kind": "serve_routes", "engine": a.engine, "model_sha256": a.sha, "host": a.host,
-                                 "backend": a.backend, "index": p.get("index"),
-                                 "no_route_index": p.get("no_route_index"),
-                                 "generation": p.get("generation"), "not_generation": p.get("not_generation"),
-                                 "unclassified": p.get("unclassified")}) + "\n")
+    _write_rows(a, emitted, p)
     return 0
 
 
