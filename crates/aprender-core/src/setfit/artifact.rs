@@ -4447,10 +4447,16 @@ mod ladder {
     /// F-05's defect — a source assertion scanning its own needle — and cutting at
     /// the first test banner removes it structurally rather than by being careful
     /// about wording. Every symbol asserted below lives above that cut.
-    #[cfg(aprender_monorepo)] // #4130: reads the repo-root contracts/, absent from the published .crate
     #[test]
     fn the_rung_numbering_matches_the_contracts_eight_rung_ladder() {
-        const CONTRACT: &str = include_str!("../../../../contracts/setfit-apr-v1.yaml");
+        // #4130: read at RUN time — the published .crate carries no repo-root contracts/.
+        let Some(contract_owned) = crate::test_support::workspace_contract_or_skip(
+            "the_rung_numbering_matches_the_contracts_eight_rung_ladder",
+            "setfit-apr-v1.yaml",
+        ) else {
+            return;
+        };
+        let contract: &str = &contract_owned;
         const WHOLE_FILE: &str = include_str!("artifact.rs");
 
         // The banner above `mod fixture`, which is the first test item in the
@@ -4462,7 +4468,7 @@ mod ladder {
         let src = &WHOLE_FILE[..cut];
 
         // The contract's `rungs:` block, read as the list of numbers it declares.
-        let block = CONTRACT
+        let block = contract
             .split_once("\n    rungs:\n")
             .expect("load_validation_ladder declares a rungs block")
             .1;
