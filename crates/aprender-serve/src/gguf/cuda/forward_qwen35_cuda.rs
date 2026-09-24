@@ -557,21 +557,16 @@ impl<'a> Qwen35CudaModel<'a> {
 
         // PRODUCTION DEFAULT, not a test affordance (PMAT-3477 / #3090): this
         // architecture runs the FLOAT Q4_K/Q6_K GEMV kernels, never the DP4A
-        // ones `GpuProfile::detect` picks for a dense decode. The DP4A kernels
-        // quantize the ACTIVATION to int8, and Qwen3.5 feeds its projections
-        // straight into a recurrence, which compounds that error instead of
-        // absorbing it. Measured on the real 0.8B file: with the float variants
-        // pinned, a whole DeltaNet layer's output is 0.000 relative from a
-        // second float run and inside the layer budget against the CPU; with
-        // `HwDp4a` the DeltaNet-only path lands **1.656 relative** away, and the
-        // end-to-end argmax is garbage — a wrong token at position 0, not a
-        // rounding difference. The falsifier lives in the tests file
-        // (`qwen35_cuda_dp4a_gemv_is_catastrophic_through_the_recurrence`).
+        // ones `GpuProfile::detect` picks for a dense decode.
         //
-        // Recovering the DP4A throughput for this architecture (a higher-
-        // precision activation quantization, or DP4A only on the layers that do
-        // not feed the recurrence) is the DP4A-through-recurrence ticket,
-        // 0.69.0. Until it lands, correctness is not optional here.
+        // The pin's original reason, "DP4A is catastrophic through the
+        // recurrence" (1.656 relative, a wrong argmax at position 0), was
+        // #4258: no qwen35 writer kernel cleared `q8_activation_valid`, so
+        // every DP4A GEMV reused the first Q8_1 activation. With that fixed,
+        // DP4A holds the parity contract on 0.8B
+        // (`qwen35_cuda_dp4a_gemv_holds_parity_through_the_recurrence`). The pin
+        // stays until DP4A is re-measured on 2B/4B (#4030). Lifting it is a
+        // perf decision to make on that evidence, not a side effect of this fix.
         Self::pin_float_gemv(&mut executor.gpu_profile);
 
         let mut layers = Vec::with_capacity(model.layers.len());
