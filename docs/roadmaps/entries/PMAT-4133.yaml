@@ -1,0 +1,17 @@
+- id: PMAT-4133
+  github_issue: 4133
+  item_type: task
+  title: 'CI: direct guard steps run under setsid --wait (#4133)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T01:27:53Z
+  updated: 2026-09-24T01:27:53Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
