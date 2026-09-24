@@ -136,7 +136,7 @@ async-stream = "0.3"
 provable-contracts-macros = { workspace = true }
 
 # Shared formatting and system utilities (Batuta stack)
-batuta-common = { workspace = true }
+batuta-common = { workspace = true, features = ["cli-roles"] }
 
 # Sovereign coding assistant (apr code → batuta agent engine) — PMAT-182.
 # Non-optional since claude-code-parity-apr M150 (outcome-parity Phase 3
