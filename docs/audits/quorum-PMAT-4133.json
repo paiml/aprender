@@ -1,33 +1,37 @@
 {
   "ticket": "PMAT-4133",
   "issue": 4133,
+  "pr": 4167,
   "kind": "diff-review",
-  "head_reviewed": "517edff93",
+  "round": "ph8",
+  "head_reviewed": "5c6fa5ac89dc944d0422d56385cdb12c1e6f2447",
+  "base": "49fe19c28f1a3ef53f6b51096bafddc6609dc6c7",
+  "brief_sha256": "fba1120ffbadcd7dbc41d1f63d7c507e64d31432219751db67be6565fed8ed4a",
+  "diff_sha256": "138e716414485ca13716aec662408b2f4bea30fae712c37edd73e06d8fd067dc",
   "author": {
     "model": "opus-5-5",
     "family": "claude"
   },
-  "shape": "2 agy non-Claude + 1 Claude Code haiku-4-5 (OPERATOR verbatim 2026-09-24: \"one must always be a CHEAP claude code...perhaps haiku\")",
+  "shape": "sonnet-5 + 1 agy gemini-3.1-pro-high + haiku-4-5; agy seat 429 + exit 3 -> fallback second sonnet-5 (cop ruling 2026-09-24: an exit-3 void counts as a 429)",
+  "degraded": "same-family",
   "lanes": [
     {
       "lane": 1,
-      "executor": "agy",
-      "model": "gemini-3.8-flash-high",
-      "family": "google",
+      "executor": "claude-code Agent (read-only)",
+      "model": "claude-sonnet-5",
+      "family": "claude",
       "verdict": "PASS",
-      "findings": 0,
-      "conversation_id": "7bdeecd9-0102-4b0a-8417-97b64248ba65",
-      "counted": false,
-      "void_reason": "cop ruling 2026-09-24: the deleted refs/remotes/origin/feat/4131-sha-identity-cache is attributed by inference only; not cleared"
+      "counted": true,
+      "findings": "none (brief prose says \"30 more\" invocations; actual 29, receipt total 130 correct)"
     },
     {
       "lane": 2,
       "executor": "agy",
-      "model": "gemini-3.7-flash-high",
+      "model": "gemini-3.1-pro-high",
       "family": "google",
-      "verdict": "PASS",
-      "findings": 0,
-      "conversation_id": "ec2cf061-b3b5-4e3c-bb3d-4a5053d62ec7"
+      "verdict": null,
+      "counted": false,
+      "void_reason": "RESOURCE_EXHAUSTED 429 (individual quota) and agy-lane exit 3 (shared .git moved)"
     },
     {
       "lane": 3,
@@ -35,18 +39,66 @@
       "model": "claude-haiku-4-5",
       "family": "claude",
       "verdict": "PASS",
-      "findings": 0,
-      "note": "ran check_guard_steps_isolated.sh --self-test and the full scan; judged PIPESTATUS, $(...), if-forms, continuations, cancellation, parser guards, runner/secret changes"
+      "counted": true,
+      "findings": "none"
+    },
+    {
+      "lane": 4,
+      "executor": "claude-code Agent (read-only)",
+      "model": "claude-sonnet-5",
+      "family": "claude",
+      "verdict": "PASS",
+      "counted": true,
+      "fallback_for": "lane 2",
+      "findings": "none; measured: stripping \"setsid --wait \" from the 13 new workflows reproduces the 49fe19c28 files byte-for-byte; a standalone re-implementation of the scan flags 0 of 21 real workflows and classifies 34 synthetic edge cases as expected"
     }
   ],
-  "agreed": false,
-  "verdict": "2/3 counted — NOT armable; superseded by a fresh full round (no composed receipts)",
-  "receipt_lint_note": "single haiku seat recorded by hand; cop overrides receipt-lint's refusal until tooling lands",
+  "agreed": true,
+  "verdict": "3/3 counted PASS at 5c6fa5ac8 (degraded: same-family)",
+  "measured_this_round": "sovereign-ci:stable (70f2cdc9e537) on intel carries /usr/bin/setsid, util-linux 2.38.1; setsid --wait propagates exit 7 inside it",
   "prior_rounds": {
     "ph1": "3x NO-VERDICT (archived, not a review)",
     "ph2": "gemini-3.1-pro FAIL: (1) orphan on cancel -> measured: setsid from a non-interactive shell execs without forking (pid==pgid==sid), the guard itself receives SIGTERM; (2) .yaml + composite actions unscanned -> fixed 517edff93; (3) bare `run: scripts/check_x.sh` form missed -> fixed 517edff93 with 3 rows. 3.8/3.7 PASS",
     "ph3": "3x NO-VERDICT (archived)",
     "ph6": "head c5cf8d555, brief_sha256 314e5bfb, diff_sha256 8809ca38, shape sonnet-5 + 1 agy gemini-3.1-pro-high + haiku-4-5. sonnet-5 PASS with 1 major, measured: a bare guard chained after a wrapped one on the same line scanned clean; plus a minor on the runs-on note (mac-check). haiku-4-5 PASS. gemini-3.1-pro-high (conv 093614f1) VOID: agy-lane exit 3 (shared refs/config moved by other sessions; attribution is not clearance). 2/3 counted, not armable. The major was fixed in aa0f70283; the round is superseded and a fresh full round will run at the new head.",
-    "ph7": "head 943cced9e, brief_sha256 aa2ee4d1, diff_sha256 319c6bf8, shape sonnet-5 + 1 agy gemini-3.1-pro-high + haiku-4-5. sonnet-5 PASS with 1 major (setsid inside the sovereign-ci docker steps, ci.yml:872/886/2376/2386: setsid's presence in that image not established). haiku-4-5 PASS. gemini-3.1-pro-high VOID: agy-lane exit 3 (shared refs/config moved by other sessions) and it wrote test_*.yml into its clone; its one claim (orphan on cancel) repeats ph2's, already refuted by measurement. Fallback seat 3 sonnet-5 (degraded: same-family) FAIL, measured: `elif scripts/check_a.sh` and a one-line case arm `x) scripts/check_a.sh ;;` scanned clean. Fixed in the next commit (3 rows; the pre-fix scan exits 0 on both unwrapped rows, measured). Round superseded; a fresh full round runs at the new head."
+    "ph7": "head 943cced9e, brief_sha256 aa2ee4d1, diff_sha256 319c6bf8, shape sonnet-5 + 1 agy gemini-3.1-pro-high + haiku-4-5. sonnet-5 PASS with 1 major (setsid inside the sovereign-ci docker steps, ci.yml:872/886/2376/2386: setsid's presence in that image not established). haiku-4-5 PASS. gemini-3.1-pro-high VOID: agy-lane exit 3 (shared refs/config moved by other sessions) and it wrote test_*.yml into its clone; its one claim (orphan on cancel) repeats ph2's, already refuted by measurement. Fallback seat 3 sonnet-5 (degraded: same-family) FAIL, measured: `elif scripts/check_a.sh` and a one-line case arm `x) scripts/check_a.sh ;;` scanned clean. Fixed in the next commit (3 rows; the pre-fix scan exits 0 on both unwrapped rows, measured). Round superseded; a fresh full round runs at the new head.",
+    "round_top_before_ph8": {
+      "head_reviewed": "517edff93",
+      "shape": "2 agy non-Claude + 1 Claude Code haiku-4-5 (OPERATOR verbatim 2026-09-24: \"one must always be a CHEAP claude code...perhaps haiku\")",
+      "lanes": [
+        {
+          "lane": 1,
+          "executor": "agy",
+          "model": "gemini-3.8-flash-high",
+          "family": "google",
+          "verdict": "PASS",
+          "findings": 0,
+          "conversation_id": "7bdeecd9-0102-4b0a-8417-97b64248ba65",
+          "counted": false,
+          "void_reason": "cop ruling 2026-09-24: the deleted refs/remotes/origin/feat/4131-sha-identity-cache is attributed by inference only; not cleared"
+        },
+        {
+          "lane": 2,
+          "executor": "agy",
+          "model": "gemini-3.7-flash-high",
+          "family": "google",
+          "verdict": "PASS",
+          "findings": 0,
+          "conversation_id": "ec2cf061-b3b5-4e3c-bb3d-4a5053d62ec7"
+        },
+        {
+          "lane": 3,
+          "executor": "claude-code Agent (read-only)",
+          "model": "claude-haiku-4-5",
+          "family": "claude",
+          "verdict": "PASS",
+          "findings": 0,
+          "note": "ran check_guard_steps_isolated.sh --self-test and the full scan; judged PIPESTATUS, $(...), if-forms, continuations, cancellation, parser guards, runner/secret changes"
+        }
+      ],
+      "agreed": false,
+      "verdict": "2/3 counted — NOT armable; superseded by a fresh full round (no composed receipts)",
+      "receipt_lint_note": "single haiku seat recorded by hand; cop overrides receipt-lint's refusal until tooling lands"
+    }
   }
 }
