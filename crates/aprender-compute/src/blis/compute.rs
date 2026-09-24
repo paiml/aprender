@@ -114,6 +114,9 @@ fn dispatch_microkernel(
             return;
         }
     }
+    // The full-tile block sizes select the AVX2 asm kernel, which exists only on x86_64 (#4134).
+    #[cfg(not(target_arch = "x86_64"))]
+    let _ = (mr_block, nr_block);
     microkernel_scalar(kc, a_panel, b_panel, c_micro, MR);
 }
 

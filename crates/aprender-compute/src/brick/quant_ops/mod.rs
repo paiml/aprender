@@ -237,6 +237,9 @@ impl ComputeOp for DotQ5KOp {
                 return Ok(sum);
             }
         }
+        // `backend` selects the AVX2 path, which exists only on x86_64 (#4134).
+        #[cfg(not(target_arch = "x86_64"))]
+        let _ = backend;
 
         // Scalar fallback
         let mut dequant = [0.0f32; BlockQ5K::BLOCK_SIZE];
@@ -336,6 +339,9 @@ impl ComputeOp for DotQ6KOp {
                 return Ok(sum);
             }
         }
+        // `backend` selects the AVX2 path, which exists only on x86_64 (#4134).
+        #[cfg(not(target_arch = "x86_64"))]
+        let _ = backend;
 
         // Scalar fallback
         let mut dequant = [0.0f32; BlockQ6K::BLOCK_SIZE];
