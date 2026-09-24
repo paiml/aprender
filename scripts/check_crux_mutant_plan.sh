@@ -19,6 +19,8 @@
 #  12. the sourced diff lib leaves its caller's PROG and REPO_ROOT alone
 #  13. CRUX_MUTANTS_PLAN_ONLY is never a verdict: it says 0 ran and exits 3
 #  14. a self-referential CRUX_MUTANT_DIFF_BASE is an unreadable diff, never 'untouched'
+#  15. no runner setting makes a zero-mutant run pass: floor 0, CRUX_NO_MUTANTS, CRUX_MUTANTS=none,
+#      CRUX_MIN_TABLE_ROWS=0
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
@@ -162,6 +164,24 @@ s14=$( . "$ROOT/scripts/lib/crux_mutant_plan.sh"; CRUX_MUTANT_DIFF_BASE=HEAD cru
 s14b=$( . "$ROOT/scripts/lib/crux_mutant_plan.sh"; CRUX_MUTANT_DIFF_BASE=HEAD~1 crux_mutant_changed "$P1" "$TMP/s14b.txt"; echo "$?:$(grep -c crux_inference_judge "$TMP/s14b.txt")" )
 [ "$s14|$s14b" = "1|0:1" ] && ok "CRUX_MUTANT_DIFF_BASE=HEAD is refused (unreadable); HEAD~1 reads the judge change" \
   || broke "diff-base override: HEAD rc $s14 (want 1), HEAD~1 $s14b (want 0:1)"
+
+# Row 15: nothing a runner can set turns a zero-mutant run into a pass (quorum round 4, lane 2, each measured at
+# exit 0): a floor of 0 is refused by the planner; a top-level CRUX_NO_MUTANTS=1 and CRUX_MUTANTS=none each exit 3
+# naming why; CRUX_MIN_TABLE_ROWS=0 cannot lower the row floor.
+r0=$(pl "$PLAN" --event pull_request --changed "$TMP/none.txt" --head "$HEAD_A" --sample 0 --floor 0)
+( cd "$P1" && CRUX_NO_MUTANTS=1 timeout 600 bash scripts/check_crux_inference_judge.sh > "$TMP/r15a.log" 2>&1 ); ra=$?
+( cd "$P1" && CRUX_MUTANTS=none timeout 600 bash scripts/check_crux_inference_judge.sh > "$TMP/r15b.log" 2>&1 ); rb=$?
+fl=$(grep -c 'CRUX_MIN_TABLE_ROWS\|MIN_ROWS=120' "$ROOT/scripts/check_crux_inference_judge.sh")
+if [ "$r0" = "REFUSED 2" ] && [ "$ra" = 3 ] && grep -q 'outside a mutant.s own recursion: no mutant ran, exit 3' "$TMP/r15a.log" \
+   && [ "$rb" = 3 ] && grep -q 'the plan selected no mutant (CRUX_MUTANTS=none): no mutant ran, exit 3' "$TMP/r15b.log"; then
+  ok "no runner setting makes a zero-mutant run pass: floor 0 refused; CRUX_NO_MUTANTS and CRUX_MUTANTS=none exit 3 naming why"
+else
+  broke "zero-mutant escapes: floor0 '$r0', CRUX_NO_MUTANTS rc $ra, none rc $rb"
+fi
+out=$( cd "$P1" && CRUX_MUTANTS_PLAN_ONLY=1 CRUX_MIN_TABLE_ROWS=0 timeout 600 bash scripts/check_crux_inference_judge.sh 2>&1 | grep -c 'under the floor' )
+out2=$( cd "$P1" && CRUX_MUTANTS_PLAN_ONLY=1 CRUX_MIN_TABLE_ROWS=100000 timeout 600 bash scripts/check_crux_inference_judge.sh 2>&1 | grep -c 'under the floor of 100000' )
+[ "$out:$out2" = "0:1" ] && ok "CRUX_MIN_TABLE_ROWS raises the row floor but 0 cannot lower it below 120 (the table stays above it)" \
+  || broke "row floor env: lowering '$out' (want 0 BROKE since the table is above 120), raising '$out2' (want 1)"
 
 # Row 12: the sourced lib leaves its caller's globals alone (it once set PROG and REPO_ROOT in the caller's shell).
 g=$( PROG=caller-prog; REPO_ROOT=caller-root; . "$ROOT/scripts/lib/crux_mutant_plan.sh" \

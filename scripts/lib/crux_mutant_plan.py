@@ -36,6 +36,7 @@ WATCHED = (
     "scripts/lib/resolve_base.sh",
 )
 FULL_EVENTS = ("schedule", "workflow_dispatch")
+MIN_FLOOR = 6  # the floor may be RAISED by --floor, never lowered: 0 made a 0-of-24 sample a pass (round 4, lane 2)
 SAMPLED_EVENTS = ("pull_request", "merge_group", "push")
 
 
@@ -56,6 +57,9 @@ def plan(labels, event, mode, changed, head, sample, floor):
         return {"mode": "none", "reason": why, "selected": [], "total": total}
     if mode == "all":
         return {"mode": "all", "reason": why, "selected": list(labels), "total": total}
+    if floor < MIN_FLOOR:
+        raise SystemExit("crux_mutant_plan: a floor of %d is under the minimum of %d: the floor can be raised, never "
+                         "lowered" % (floor, MIN_FLOOR))
     if sample < floor:
         raise SystemExit("crux_mutant_plan: a sample of %d is under the floor of %d: a smaller sample would pass "
                          "vacuously" % (sample, floor))

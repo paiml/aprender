@@ -1078,11 +1078,20 @@ expect "B2: a rendering floored to a char boundary (199 bytes) is NOT read as wh
 # scripts/lib/crux_mutant_plan.py: every mutant locally, on schedule/dispatch and in guards-nightly.yml
 # (CRUX_MUTANTS=all); on a PR, merge group or push, every mutant when the diff touches a file they test, else a
 # rotating slice keyed by the head sha. A table that judged too few rows is refused first, sampled or not.
-if [ -z "${CRUX_NO_MUTANTS:-}" ]; then
-  MIN_ROWS="${CRUX_MIN_TABLE_ROWS:-120}"
+# A run that runs ZERO mutants on purpose is never a verdict: it says why and exits 3 after its summary. The only
+# legitimate CRUX_NO_MUTANTS is a mutant's own recursion, which always sets CRUX_JUDGE_OVERRIDE (quorum round 4,
+# lane 2 measured a top-level CRUX_NO_MUTANTS=1, CRUX_MUTANTS=none and a floor of 0 each exiting 0 with no mutant).
+NOT_A_VERDICT=""
+if [ -z "${CRUX_JUDGE_OVERRIDE:-}" ]; then
+  # the row floor applies to every top-level run; the env var may RAISE it, never lower it
+  MIN_ROWS=120
+  [ "${CRUX_MIN_TABLE_ROWS:-0}" -gt "$MIN_ROWS" ] 2>/dev/null && MIN_ROWS=$CRUX_MIN_TABLE_ROWS
   if [ "$PASS" -lt "$MIN_ROWS" ]; then
     broke "the table judged only $PASS row(s) ok before the mutants, under the floor of $MIN_ROWS: a thin table proves nothing"
   fi
+  [ -n "${CRUX_NO_MUTANTS:-}" ] && NOT_A_VERDICT="CRUX_NO_MUTANTS is set outside a mutant's own recursion"
+fi
+if [ -z "${CRUX_NO_MUTANTS:-}" ]; then
   mutant_list() {
     cat <<'MUT'
 bad-control-ignored|the only control a token loop|s/^        if bad:$/        if False:/
@@ -1134,7 +1143,9 @@ MUT
   if [ -n "${CRUX_MUTANTS_PLAN_ONLY:-}" ]; then
     printf '  F6 mutants: PLAN ONLY -- 0 run; this is not a verdict\n'
     selected=""
+    NOT_A_VERDICT="CRUX_MUTANTS_PLAN_ONLY is set"
   fi
+  [ -n "$plan" ] && [ -z "$selected" ] && [ -z "$NOT_A_VERDICT" ] && NOT_A_VERDICT="the plan selected no mutant (${CRUX_MUTANTS:+CRUX_MUTANTS=$CRUX_MUTANTS})"
   # label|the row that MUST break (#3887: a kill for the wrong reason is no kill)|sed deleting the rule
   while IFS='|' read -r label must expr; do
     [ -n "$label" ] || continue
@@ -1149,5 +1160,7 @@ MUT
 fi
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"
-[ -z "${CRUX_MUTANTS_PLAN_ONLY:-}" ] || { printf '%s: CRUX_MUTANTS_PLAN_ONLY is set: no mutant ran, exit 3 (never a pass)\n' "$PROG"; exit 3; }
-[ "$FAIL" -eq 0 ]
+# a broken row is a FAIL whatever else is true; only a run with nothing broken can be "not a verdict"
+[ "$FAIL" -eq 0 ] || exit 1
+[ -z "$NOT_A_VERDICT" ] || { printf '%s: %s: no mutant ran, exit 3 (never a pass)\n' "$PROG" "$NOT_A_VERDICT"; exit 3; }
+exit 0
