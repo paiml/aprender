@@ -41,19 +41,22 @@ fn used_gpu_of(json: &serde_json::Value) -> Option<bool> {
         .or_else(|| json.pointer("/result/used_gpu").and_then(serde_json::Value::as_bool))
 }
 
-fn run_used_gpu(bin: &str, model: &str) -> bool {
+/// `apr run --json` provenance: (`used_gpu`, `backend.fell_back`).
+fn run_provenance(bin: &str, model: &str) -> (bool, Option<bool>) {
     let out = Command::new(bin)
         .args(["run", model, "--prompt", "Hi", "--max-tokens", "4", "--json"])
         .output()
         .expect("spawn apr run");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let json_line = stdout
-        .lines()
-        .rev()
-        .find(|l| l.trim_start().starts_with('{'))
+    // The object is pretty-printed over many lines: take it from its first `{`.
+    let json = stdout
+        .find('{')
+        .map(|i| &stdout[i..])
         .unwrap_or_else(|| panic!("apr run --json printed no JSON (rc {:?}):\n{stdout}", out.status.code()));
-    let v: serde_json::Value = serde_json::from_str(json_line).expect("apr run --json parses");
-    used_gpu_of(&v).unwrap_or_else(|| panic!("apr run --json carries no used_gpu: {v}"))
+    let v: serde_json::Value = serde_json::from_str(json.trim_end())
+        .unwrap_or_else(|e| panic!("apr run --json does not parse ({e}):\n{stdout}"));
+    let used = used_gpu_of(&v).unwrap_or_else(|| panic!("apr run --json carries no used_gpu: {v}"));
+    (used, v.pointer("/backend/fell_back").and_then(serde_json::Value::as_bool))
 }
 
 fn http_post(port: u16, path: &str, body: &str) -> Option<String> {
@@ -105,9 +108,12 @@ fn falsify_4089_serve_and_run_take_the_same_default_backend() {
         eprintln!("SKIP FALSIFY-4089: set APR_BIN and APR_FALSIFY_MODEL to run it; this check did NOT run");
         return;
     };
-    let run = run_used_gpu(&bin, &model);
+    let (run, run_fell_back) = run_provenance(&bin, &model);
     let serve = serve_used_gpu(&bin, &model);
-    println!("FALSIFY-4089: apr run used_gpu={run}  apr serve used_gpu={serve}  (no backend flag, {model})");
+    println!(
+        "FALSIFY-4089: apr run used_gpu={run} fell_back={run_fell_back:?}  apr serve used_gpu={serve}  \
+         (no backend flag, {model})"
+    );
     assert_eq!(
         run, serve,
         "#4089: with no backend flag, `apr run` used_gpu={run} but `apr serve` used_gpu={serve} \
@@ -115,5 +121,6 @@ fn falsify_4089_serve_and_run_take_the_same_default_backend() {
     );
     if std::env::var("APR_EXPECT_GPU").as_deref() == Ok("1") {
         assert!(run && serve, "APR_EXPECT_GPU=1: a CUDA host must put BOTH verbs on the GPU by default");
+        assert_eq!(run_fell_back, Some(false), "APR_EXPECT_GPU=1: `apr run` must not have fallen back");
     }
 }
