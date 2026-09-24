@@ -200,7 +200,11 @@ promote() {
     command -v python3 > /dev/null && command -v sha256sum > /dev/null || env_die "needs python3 and sha256sum"
 
     # 1. the rc
-    rel=$(api GET "releases/tags/$rc") || env_die "cannot read release $rc"
+    # by listing: an rc is a DRAFT until rc_fleet_stage.sh has it on every fleet host (#4327),
+    # and releases/tags/ never returns a draft -- a still-draft rc must be refused by name
+    rel=$(api GET "releases?per_page=100" | json 'print(json.dumps(next(r for r in d if r["tag_name"] == sys.argv[1])))' "$rc") \
+        || env_die "cannot read release $rc (not among the newest 100 releases)"
+    [ "$(printf '%s' "$rel" | json 'print(d["draft"])')" = False ] || die "refuse: $rc is still a DRAFT -- it is not on every fleet host yet (scripts/release/rc_fleet_stage.sh $rc --publish, #4327)"
     [ "$(printf '%s' "$rel" | json 'print(d["prerelease"])')" = True ] || die "refuse: $rc is not a prerelease"
     if api GET "releases/tags/$final" > /dev/null 2>&1; then die "refuse: release $final already exists (a draft from a failed run is deleted by hand, after reading it)"; fi
     drafts=$(api GET "releases?per_page=100" | json 'print(" ".join(map(lambda r: str(r["id"]), filter(lambda r: r["draft"] and r["tag_name"] == sys.argv[1], d))))' "$final") \
