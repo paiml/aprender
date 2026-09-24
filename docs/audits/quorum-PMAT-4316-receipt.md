@@ -14,4 +14,4 @@ Every lane got the same brief: 16294 B, sha256 217e98df…76b121de. The agy arti
 Earlier attempts did not count. The first agy round (head 635bd6761) was aborted when a concurrent `--brief-only` run shared its lanes dir. The Claude lanes were refused by kind-gate until `kind:code` was added, in bba6b0924.
 
 ## GPU evidence
-Pending. See `impl-PMAT-4316-receipt.md` §Gates. The `qwen35_cuda*` run is queued in gpu-q behind the rc.2 acceptance run.
+GREEN: `qwen35_cuda*` passed 17/17 on RTX 4090. See `impl-PMAT-4316-receipt.md` §Gates.

@@ -33,5 +33,7 @@ a device pointer that changed each time. No captured CUDA graph can replay that 
 - `cargo clippy -p aprender-serve --lib --features cuda -- -D warnings`: rc=0.
   (`--tests` clippy has 1284 pre-existing errors, all in `quantize/iq*` test tables and none in these files.)
 - `cargo fmt --all -- --check`: rc=0. Roadmap guards (sorted, ids unique): PASS.
-- GPU run of `qwen35_cuda*` (0.8B + 4B files present) on RTX 4090 through gpu-q: QUEUED behind the
-  rc.2 acceptance run, result PENDING. It will be appended here, and the round re-run if it is red.
+- GPU run of `qwen35_cuda*` on RTX 4090 through gpu-q, with compute-apps empty at start (the test binary built from
+  this code, commit 02729ec9a; the later commits are docs only): **17 passed, 0 failed, 0 skipped**, in 24.6 s.
+  e2e logits worst cosine 0.998348 / rel L-inf 6.721e-2 over 6 positions. 4B argmax end-to-end passes.
+  `qwen35_cuda_the_residual_is_one_buffer_across_tokens` ok. Log: /mnt/nvme-raid0/tmp/embed-gpu/test-bba6b0924.log
