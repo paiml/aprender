@@ -1213,6 +1213,14 @@ jobs:
       # see scripts/check_no_timing_in_required.sh).
       - name: "guard_tree.sh's parallel dispatcher case table (PMAT-1098)"
         run: bash scripts/tests/guard_tree_parallel_test.sh
+      # PVL-001 EV-4 (aprender#4168): `make contracts` propagates pv's exit.
+      # Under .ONESHELL a recipe's status is its LAST line's, so a failing
+      # `pv lint | tail -5` exited 0. The table runs the recipes EXTRACTED from
+      # the Makefile against a fake pv (one planted failure per row), then
+      # removes each mechanism of the fix and asserts its row goes RED.
+      # Cargo-free: pv, cargo and the sibling scripts are stubs.
+      - name: "make contracts propagates pv's exit (PVL-001 EV-4, aprender#4168)"
+        run: bash scripts/tests/make_contracts_propagates.sh
       # Fleet hygiene case tables (docs/specifications/ci-fleet-hygiene.md §6): the queue
       # steward, the packing/history ledgers, the tier ledger and the roadmap resolve-dirty
       # runner each ship a hermetic --selftest; check_guards_are_wired.sh refuses a script
