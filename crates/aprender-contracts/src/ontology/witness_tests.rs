@@ -224,7 +224,7 @@ fn the_witness_serializes_in_the_spec_shape() {
     assert_eq!(v["result"]["payload"]["conflict"][1], "C");
     let back: Witness = serde_json::from_value(v).expect("round-trips");
     assert_eq!(back, w);
-    let m = serde_json::to_value(WitnessResult::Model(Model { false_vars: vec![] }))
+    let m = serde_json::to_value(WitnessResult::Model(Model::<String> { false_vars: vec![] }))
         .expect("serializes");
     assert_eq!(
         m,
