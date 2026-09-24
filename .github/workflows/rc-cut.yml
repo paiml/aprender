@@ -1,0 +1,63 @@
+name: RC Cut
+
+# Cut vX.Y.Z-rc.N as a GitHub PRERELEASE when CI goes green on the tip of
+# release/X.Y.Z (#4285, RC-DOGFOOD-001 §4.1). The decision and every write live in
+# scripts/release/rc_cut.sh; this file only wires the trigger and the token.
+#
+# TRIGGER. ci.yml does not run on a push to release/**. A release branch is gated by
+# CI on its release PR (release/X.Y.Z -> main), which re-runs on every push with
+# head_sha = the branch tip. `workflow_run` fires when any CI run completes. The
+# `branches` filter matches the run's HEAD branch, so a release PR's runs arrive
+# here and a feature PR's do not. rc_cut.sh then requires, on that run:
+# `ci / gate` and `workspace-test` success, head repository = this repository
+# (fork PRs can name a branch release/X.Y.Z), head_sha still the tip, and no rc
+# tag already on that commit. Anything else is a logged skip, not a failure.
+#
+# `workflow_run` always runs this file as it is on the DEFAULT branch, with this
+# repository's token, so a release branch cannot change what the cut does.
+#
+# ASSETS. A release created with GITHUB_TOKEN does not fire `release: published`
+# in binary-release.yml (GitHub suppresses recursive triggers), so rc_cut.sh
+# dispatches binary-release.yml with inputs.tag. That needs `actions: write`.
+#
+# CI cuts the tag and the prerelease. Publishing a crate stays out of CI (RP-001).
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: ['release/**']
+
+permissions:
+  contents: write   # create the tag ref and the prerelease
+  actions: write    # dispatch binary-release.yml for the assets
+
+# One cut at a time per release branch, never cancelled: N is read then written,
+# and two green runs racing would both read the same N. The tag ref is also the
+# lock (a duplicate gets HTTP 422 and writes nothing else).
+concurrency:
+  group: rc-cut-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  cut:
+    # Operator rule (2026-09-10): self-hosted fleet only. The job needs bash, curl
+    # and python3, which clean-room carries (binary-release.yml's verify job).
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 10
+    # Cheap pre-filter only; rc_cut.sh re-judges every condition itself.
+    if: github.event.workflow_run.conclusion != 'cancelled'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # the default branch's script, never the release branch's
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+      - name: Case table (the decision must still be able to refuse)
+        run: bash scripts/release/rc_cut.sh --self-test
+      - name: Cut the rc
+        id: cut
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: bash scripts/release/rc_cut.sh --run-id "$RUN_ID"
