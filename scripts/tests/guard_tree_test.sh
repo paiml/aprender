@@ -641,6 +641,50 @@ else
 fi
 cp "$GUARD_TREE" "$sfix/scripts/guard_tree.sh"
 
+# ---------------------------------------------------------------------------
+# 50-52 (#4046): the --help probe is BOUNDED. A guard that ignores --help used
+# to run its whole body inside the probe; the CRUX judge's worker doubled to
+# ~22 min and guard-tree hit its 30-min job timeout. Fixture: a guard that
+# ignores every argument and sleeps. 50: it is reported by name as PROBE-TIMEOUT.
+# 51: the run stays bounded (probe cut at 1 s, plus one real run). 52: the
+# mutant with the timeout removed loses 50 (the assertion can fail).
+# ---------------------------------------------------------------------------
+pfix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $pfix"
+mkdir -p "$pfix/.empty-git-template" "$pfix/scripts"
+git -C "$pfix" init -q --template="$pfix/.empty-git-template"
+git -C "$pfix" config user.email test@example.invalid
+git -C "$pfix" config user.name "guard_tree_test"
+cp "$GUARD_TREE" "$pfix/scripts/guard_tree.sh"
+printf '#!/usr/bin/env bash\n# ignores every argument, --help included\nsleep 4\nexit 0\n' >"$pfix/scripts/check_p_deaf.sh"
+git -C "$pfix" add -A && git -C "$pfix" commit -q -m fixture
+p_start=$(date +%s)
+p_out="$(cd "$pfix" && GUARD_TREE_HELP_TIMEOUT=1 bash scripts/guard_tree.sh 2>&1)"
+p_secs=$(( $(date +%s) - p_start ))
+if grep -q '^PROBE-TIMEOUT scripts/check_p_deaf.sh' <<<"$p_out"; then
+    pass_row "50: a guard that ignores --help is named as PROBE-TIMEOUT"
+else
+    fail_row "50: a guard that ignores --help is named as PROBE-TIMEOUT" "$(tail -n 5 <<<"$p_out" | tr '\n' '|')"
+fi
+if [ "$p_secs" -lt 8 ]; then
+    pass_row "51: the probe is cut at the timeout (${p_secs}s < 8s; an unbounded probe costs 4s + 4s)"
+else
+    fail_row "51: the probe is cut at the timeout" "took ${p_secs}s"
+fi
+sed 's/help_out="$(timeout "${GUARD_TREE_HELP_TIMEOUT:-10}" bash "$g" --help 2>&1)"/help_out="$(bash "$g" --help 2>\&1)"/' \
+    "$GUARD_TREE" >"$pfix/scripts/guard_tree.sh"
+if cmp -s "$GUARD_TREE" "$pfix/scripts/guard_tree.sh"; then
+    fail_row "52: mutant with the probe timeout removed" "the sed did not apply -- the mutant is the original"
+else
+    p_out="$(cd "$pfix" && GUARD_TREE_HELP_TIMEOUT=1 bash scripts/guard_tree.sh 2>&1)"
+    if grep -q '^PROBE-TIMEOUT' <<<"$p_out"; then
+        fail_row "52: mutant with the probe timeout removed" "row 50's assertion still holds under the mutant"
+    else
+        pass_row "52: mutant with the probe timeout removed loses row 50 (the assertion can fail)"
+    fi
+fi
+cp "$GUARD_TREE" "$pfix/scripts/guard_tree.sh"
+
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then
     exit 1
