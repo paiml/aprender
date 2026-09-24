@@ -309,7 +309,7 @@ if [ "${1:-}" = "--self-test" ]; then
   # stderr captured, never piped into `grep -q`: under pipefail an early-exiting grep
   # SIGPIPEs the writer and a TRUE match reads as a failure (it did, on row 17).
   e="$(escerr "$TD/o")"
-  if [ -z "$(esc "$TD/o")" ] && printf '%s' "$e" | grep -q 'SKIPPED (cfg(test)-only module.*src/guard.rs'; then
+  if [ -z "$(esc "$TD/o")" ] && grep -q 'SKIPPED (cfg(test)-only module.*src/guard.rs' <<< "$e"; then
     printf 'ok    row 14 a #[cfg(test)] mod file'"'"'s escaping include is skipped, by name\n'
   else
     printf 'FAIL  row 14 cfg(test)-only module file: out=[%s] err=[%s]\n' "$(esc "$TD/o")" "$(escerr "$TD/o")"; fails=1
@@ -333,7 +333,7 @@ if [ "${1:-}" = "--self-test" ]; then
   mkdir -p "$TD/r/src/guard"; printf '#[cfg(all(test, feature = "z"))]\nmod guard;\n' > "$TD/r/src/lib.rs"
   printf 'mod deep;\n' > "$TD/r/src/guard/mod.rs"; printf '%b' "$guard" > "$TD/r/src/guard/deep.rs"
   e="$(escerr "$TD/r")"
-  if [ -z "$(esc "$TD/r")" ] && printf '%s' "$e" | grep -q 'src/guard/deep.rs'; then
+  if [ -z "$(esc "$TD/r")" ] && grep -q 'src/guard/deep.rs' <<< "$e"; then
     printf 'ok    row 17 a submodule of a test-only module is skipped too\n'
   else
     printf 'FAIL  row 17 transitive test-only module: out=[%s]\n' "$(esc "$TD/r")"; fails=1

@@ -217,7 +217,7 @@ printf '%s: every ollama model load runs inside the GPU lock (#3964)\n' "$PROG"
 
 # Row 1: the real dogfood through gpu-q (the production path on lambda and gx10).
 GPUQ_REAL="${GPUQ_BIN_UNDER_TEST:-$HOME/.local/bin/gpu-q}"
-if [ -x "$GPUQ_REAL" ] && "$GPUQ_REAL" --caps 2>/dev/null | grep -q wait; then
+if [ -x "$GPUQ_REAL" ] && grep -q wait <<< "$("$GPUQ_REAL" --caps 2>/dev/null)"; then
   run_row gpuq "$ROOT" "$GPUQ_REAL"
   expect_held gpuq "gpu-q path"
 else

@@ -227,7 +227,7 @@ crow "C6 a multi-turn prompt is REFUSED for the code verb" "$CODE_PY" ok p2 4 -
 crow "C7 MUST-RED the cpu lane is REFUSED when apr code has no backend flag" "$CODE_PY" ok p1 4 - --backend cpu
 export FAKE_APR_FLAGS=1 FAKE_ARGV="$TMP/argv.txt"
 crow "C8 with #3978's flags the cpu lane runs" "$CODE_PY" ok p1 0 - --backend cpu
-if tr '\n' ' ' < "$TMP/argv.txt" | grep -q -- '--no-gpu --max-tokens 64 --thinking off --' \
+if grep -q -- '--no-gpu --max-tokens 64 --thinking off --' <<< "$(tr '\n' ' ' < "$TMP/argv.txt")" \
   && [ "$(field "$TMP/code.json" 'd["reported"]["backend_control"]')" = "passed: --no-gpu" ]
 then ok "C8b the lane's backend, max_tokens and thinking are PASSED and recorded as controlled"
 else bad "C8b controls passed (argv: $(tr '\n' ' ' < "$TMP/argv.txt"))"; fi
