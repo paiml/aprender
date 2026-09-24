@@ -143,10 +143,10 @@ mkdir -p "$WORK/empty-template" || die "cannot create the empty git template dir
 # global hooks/templates cannot reach into the fixture.
 git_fx() { GIT_TERMINAL_PROMPT=0 git -C "$1" -c commit.gpgsign=false -c user.email=t@example.com -c user.name=t "${@:2}"; }
 
-# The fixture carries the artifact the guard READS. Since ONT-001 ONT-1,
-# measured_contract_count is contracts/census.json's `.n_files` — the set
-# `pv lint` walks — so a fixture without a census measures nothing and every row
-# would go red for a reason that is not the property under test. The number is
+# Since #3569 measured_contract_count walks the tree itself (contracts/census.json
+# is a release-train snapshot that lags every PR). The fixture still carries a
+# census so a regression back to reading it would measure the wrong number here
+# rather than nothing. The number is
 # COUNTED from the fixture's own tree, never pinned here: a fixture that states
 # a count its tree does not carry is the defect this suite exists to catch.
 fixture_census() { # fixture_census <dir>
