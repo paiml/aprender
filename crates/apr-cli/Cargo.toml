@@ -106,7 +106,10 @@ cuda = ["inference", "realizar/cuda", "entrenar/cuda", "trueno/cuda", "aprender-
 # the binary was built with it (§2.1 INVALID-BUILD reads that entry).
 cuda-batch = ["cuda"]
 # PMAT-335: WGPU backend for AMD/Intel/Apple GPU inference via Vulkan/Metal/WebGPU
-wgpu = ["inference"]
+# #4056: the finetune wgpu path (commands/finetune.rs) uses entrenar items gated
+# behind entrenar's own `gpu` feature. Weak dep: enabled only when `training`
+# brings entrenar in, which is exactly when that path compiles.
+wgpu = ["inference", "entrenar?/gpu"]
 visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
 training = ["dep:entrenar", "dep:entrenar-lora", "dep:aprender-train-distill", "dep:aprender-train-common", "aprender-train-distill?/shard-batch-source"]

@@ -161,7 +161,7 @@ impl InstructPipeline {
         let num_layers = _model_config.num_hidden_layers;
         let num_heads = _model_config.num_attention_heads as u32;
         let num_kv_heads = _model_config.num_kv_heads as u32;
-        let head_dim = (hidden / num_heads);
+        let head_dim = hidden / num_heads;
         let inter = _model_config.intermediate_size as u32;
 
         // Create WgslForwardPass with persistent weight buffers + tiled GEMM
