@@ -1,0 +1,21 @@
+- id: PMAT-4102
+  github_issue: 4102
+  item_type: task
+  title: 'ci: a job''s per-run target dir is deleted when its last job ends (last-one-out, flock-guarded); size lever chosen from the measured by-kind split'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-75
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'a CI job on gx10 leaves no run-<id> target behind, pass or fail: du before/after one job AND a planted failing job (always() is the claim)'
+  - 'never a live sibling: a job that ends while another job of the run still holds the tree keeps it (cop ruling (A), 2026-09-24)'
+  - 'must-RED: two jobs finishing together delete exactly once, never zero, never twice, under one flock on the host-local fs (scripts/ci_run_target_release.sh --self-test)'
+  - 'the 64G is split by kind before a size lever is chosen; the lever''s before/after is measured on the same shard'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

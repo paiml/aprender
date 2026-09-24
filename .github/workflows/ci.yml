@@ -276,6 +276,9 @@ jobs:
         # row 2a requires a genuinely orphaned dir to still be reclaimed. A
         # blanket skip passes row 1 and fails row 2.
         run: bash scripts/ci_reclaim_target_dirs.sh --self-test
+      - name: Target-dir release must still turn RED (case table, #4102)
+        # Includes the must-RED race: two jobs finishing together delete exactly once, never zero, never twice.
+        run: bash scripts/ci_run_target_release.sh --self-test
       - name: Reclaim orphaned per-RUN target dirs (never a live sibling)
         # WHAT THIS REPLACED, and why (#2825).
         #
@@ -391,6 +394,15 @@ jobs:
           heal_path /mnt/nvme-raid0/targets/aprender-ci "${parent}/run-${GITHUB_RUN_ID}"
           heal_path /mnt/nvme-raid0/cargo-ci/registry "$reg"
           ls -ld "$parent" "${parent}/run-${GITHUB_RUN_ID}" "$reg"
+      - name: Register this job on the run's target dir (last-one-out, #4102)
+        # A marker under <run dir>/.live/, taken under a flock on the host-local sibling <run dir>.lock. The
+        # always() step at the end of this job releases it, and deletes the tree only if no other job's marker
+        # remains. FATAL on purpose: a job with no marker is invisible to a sibling's release, which would then
+        # delete this job's tree while it builds. A job that cannot register must not build on a shared tree.
+        run: |
+          bash scripts/ci_run_target_release.sh register \
+            "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}" \
+            "${GITHUB_JOB}-s${SHARD}-a${GITHUB_RUN_ATTEMPT}"
       - name: Pre-build chown — fix per-RUN root ownership
         # Root cause (five-whys):
         #   1. Why do fresh runs sometimes fail with "failed to create
@@ -898,6 +910,22 @@ jobs:
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             "$IMAGE" \
             bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
+      - name: Release this run's target dir — the last job out deletes it (#4102)
+        # #4102: one #4046 shard left 64G here on gx10. Pass, fail or cancel, this job drops its marker; the tree is
+        # deleted only when no other job of this run still holds one (scripts/ci_run_target_release.sh). A job
+        # killed before this step keeps the tree, and the next run's start-of-job reclaim is the backstop. The
+        # delete runs in the build image because the tree holds root-owned files. A cleanup never fails the build.
+        if: always()
+        run: |
+          set -uo pipefail
+          dir="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}"
+          before=$(du -sh "$dir" 2> /dev/null | cut -f1)
+          bash scripts/ci_run_target_release.sh release "$dir" "${GITHUB_JOB}-s${SHARD}-a${GITHUB_RUN_ATTEMPT}" -- \
+            bash -c 'docker run --rm -v "$(dirname "$0"):/p" "$IMAGE" rm -rf -- "/p/$(basename "$0")"' 
+          rc=$?
+          echo "target dir ${dir}: before ${before:-absent}, after $(du -sh "$dir" 2> /dev/null | cut -f1 || true)"
+          [ "$rc" -eq 0 ] || echo "::warning::target-dir release exited ${rc}; the start-of-job reclaim is the backstop"
+          exit 0
 
   # PACK-001: the check-run named `workspace-test`. Branch protection requires
   # this context, `gate` needs it, and the BSE-17 reuse lookup reads it by
@@ -1622,6 +1650,9 @@ jobs:
           }
           heal_path /mnt/nvme-raid0/targets/aprender-ci "$GUARD_TARGET_DIR"
           heal_path /mnt/nvme-raid0/cargo-ci/home "$GUARD_CARGO_HOME/registry"
+          # #4102: last-one-out marker; the always() step at the end of this job releases it. FATAL on purpose:
+          # without a marker a sibling's release could delete this job's live tree.
+          bash scripts/ci_run_target_release.sh register "$GUARD_TARGET_DIR" "${GITHUB_JOB}-a${GITHUB_RUN_ATTEMPT}"
           printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
           printf 'cargo home: %s (registry/ .package-cache .package-cache-mutate travel together)\n' "$GUARD_CARGO_HOME"
       # Poka-yoke: a beat that no workflow executes reads as enforcement, is
@@ -2384,6 +2415,17 @@ jobs:
             -e CARGO_NET_OFFLINE=1 \
             "$IMAGE" \
             bash scripts/check_nextest_config_keys.sh --self-test
+      - name: Release this run's guard target dir — the last job out deletes it (#4102)
+        if: always()
+        run: |
+          set -uo pipefail
+          before=$(du -sh "$GUARD_TARGET_DIR" 2> /dev/null | cut -f1)
+          bash scripts/ci_run_target_release.sh release "$GUARD_TARGET_DIR" "${GITHUB_JOB}-a${GITHUB_RUN_ATTEMPT}" -- \
+            bash -c 'docker run --rm -v "$(dirname "$0"):/p" "$IMAGE" rm -rf -- "/p/$(basename "$0")"' 
+          rc=$?
+          echo "guard target dir ${GUARD_TARGET_DIR}: before ${before:-absent}, after $(du -sh "$GUARD_TARGET_DIR" 2> /dev/null | cut -f1 || true)"
+          [ "$rc" -eq 0 ] || echo "::warning::target-dir release exited ${rc}; the start-of-job reclaim is the backstop"
+          exit 0
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
