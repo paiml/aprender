@@ -60,7 +60,8 @@ paiml/paiml-mcp-agent-toolkit pmat
 paiml/copia copia
 paiml/forjar forjar
 paiml/pzsh pzsh
-paiml/rmedia rmedia'
+paiml/rmedia rmedia
+paiml/ruchy ruchy'
 
 usage() {
     sed -n '2,/^set -uo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
