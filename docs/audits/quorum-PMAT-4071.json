@@ -221,5 +221,23 @@
     "checked": true,
     "was_armed": false,
     "note": "stop at the receipt; never arm"
+  },
+  "ruling": {
+    "by": "cop aprender-cf",
+    "date": "2026-09-24",
+    "text": "the round counts: ONE round, 3/3 gemini PASS at 9fad260dc; the partial reason (exit 3 on isolation) is shown benign by measurement, every moved ref foreign and the lane clones byte-identical; not a composed receipt",
+    "ref_attribution": {
+      "window": "03:34:16-03:38 CEST 2026-09-24",
+      "refs": {
+        "PMAT-4076-ont7-valid-under": "commit 03:35:19, worktree scratchpad/wt/ont7 (session 5eb27f84)",
+        "ci/4133-guard-steps-setsid": "commit 03:35:12, push 03:35:15, /home/noah/src/aprender-4133",
+        "fix/4114-tarball-build-gate": "commit 03:35:59, push 03:36:02, /mnt/nvme-raid0/agent-wt/aprender-f5-4114",
+        "chore/0.69.1-merge-back": "commit 03:36:23 + cherry-pick 03:36:25, /mnt/nvme-raid0/tmp/aprfc/wt-mergeback",
+        "fix/4126-probe-timeout-keeps-evidence": "commit 03:37:37, push 03:37:40, /mnt/nvme-raid0/tmp/apr36-4126",
+        "fix/4130-shipped-tests-path-dev-deps": "commit 03:37:55, /home/noah/src/aprender-4130"
+      },
+      "git_config": "sibling-branch upstream stanzas consistent with a sibling's push -u (inferred)",
+      "lane_clones": "sandboxed, own .git, all 3 removed byte-identical"
+    }
   }
 }
