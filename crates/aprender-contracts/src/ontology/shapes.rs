@@ -133,6 +133,11 @@ pub struct NodeShape {
     pub closed: bool,
     pub ignored_properties: Vec<String>,
     pub properties: Vec<PropertyShape>,
+    /// `allowEmpty: "<why>"` (#3610): this shape's target class is empty BY DESIGN in the good state — a
+    /// `release:RefusalCell` exists only when a cell does not fit. Zero focus nodes then does not refuse the
+    /// verdict, but the shape is still named in the gate's `declines[]`. Not SHACL; pv's own key, and it
+    /// must carry its reason: an exemption with no reason is a silent one.
+    pub allow_empty: Option<String>,
 }
 
 /// One `sh:ValidationResult`.
@@ -190,7 +195,13 @@ pub fn expand(name: &str) -> String {
     }
 }
 
-const NODE_KEYS: &[&str] = &["targetClass", "closed", "ignoredProperties", "properties"];
+const NODE_KEYS: &[&str] = &[
+    "targetClass",
+    "closed",
+    "ignoredProperties",
+    "properties",
+    "allowEmpty",
+];
 const PROPERTY_KEYS: &[&str] = &[
     "path",
     "minCount",
@@ -342,7 +353,30 @@ fn parse_node_shape(
         closed,
         ignored_properties,
         properties,
+        allow_empty: allow_empty_of(id, map, depth)?,
     })
+}
+
+/// `allowEmpty` is a reason string on a TOP-LEVEL shape; a nested `node` shape has no focus set of its own.
+fn allow_empty_of(
+    id: &str,
+    map: &serde_yaml::Mapping,
+    depth: usize,
+) -> Result<Option<String>, ShapeError> {
+    let Some(v) = map.get("allowEmpty") else {
+        return Ok(None);
+    };
+    let malformed = |what: &str| ShapeError::Malformed {
+        shape: id.to_string(),
+        what: what.into(),
+    };
+    if depth > 0 {
+        return Err(malformed("`allowEmpty` on a nested node shape"));
+    }
+    match v.as_str().map(str::trim) {
+        Some(reason) if !reason.is_empty() => Ok(Some(reason.to_string())),
+        _ => Err(malformed("`allowEmpty` must be a non-empty reason string")),
+    }
 }
 
 fn parse_property(
@@ -604,104 +638,134 @@ fn validate_focus(graph: &Graph, shape: &NodeShape, focus: &str, out: &mut Vec<V
         };
     for p in &shape.properties {
         let values = graph.objects(focus, &p.path);
-        if let Some(min) = p.min_count {
-            if values.len() < min {
-                push(
-                    p.severity,
-                    Some(&p.path),
-                    "minCount",
-                    format!(
-                        "has {} value(s) of {}, minCount is {min}",
-                        values.len(),
-                        short(&p.path)
-                    ),
-                );
-            }
-        }
-        if let Some(max) = p.max_count {
-            if values.len() > max {
-                // name the values (up to five): a `maxCount 0` on a materialized edge — `missingGreenHost`,
-                // `receiptHexMismatch` (ONT-4c1) — is only actionable when the message says WHICH host, WHICH file
-                let named: Vec<String> = values
-                    .iter()
-                    .take(5)
-                    .map(|v| match v {
-                        Term::Iri(i) => short(i),
-                        Term::Literal { value, .. } => value.clone(),
-                    })
-                    .collect();
-                push(
-                    p.severity,
-                    Some(&p.path),
-                    "maxCount",
-                    format!(
-                        "has {} value(s) of {}, maxCount is {max}: {}",
-                        values.len(),
-                        short(&p.path),
-                        named.join(", ")
-                    ),
-                );
-            }
-        }
+        check_counts(p, &values, &mut push);
         for v in &values {
             check_value(graph, p, v, &mut push);
         }
-        for (other, strict, component) in [
-            (p.less_than.as_deref(), true, "lessThan"),
-            (p.less_than_or_equals.as_deref(), false, "lessThanOrEquals"),
-        ] {
-            let Some(other) = other else { continue };
-            // SHACL §4.5.3/§4.5.4: one result per (value, other value) PAIR that is not ordered — the W3C case
-            // lessThan-002 expects four results from two values against two, so the pair is named in the message
-            // (which also keeps the pairs distinct through `validate`'s dedup). A pair that SPARQL `<` cannot
-            // compare (an IRI, a string against a number) is NOT ordered, so it is a result, never a skip.
-            let others = graph.objects(focus, other);
-            for v in &values {
-                for w in &others {
-                    let ordered = match compare_terms(v, w) {
-                        Some(std::cmp::Ordering::Less) => true,
-                        Some(std::cmp::Ordering::Equal) => !strict,
-                        _ => false,
-                    };
-                    if !ordered {
-                        push(
-                            p.severity,
-                            Some(&p.path),
-                            component,
-                            format!(
-                                "{}: {} is not {} {} of {}",
-                                short(&p.path),
-                                term_short(v),
-                                if strict { "<" } else { "<=" },
-                                term_short(w),
-                                short(other)
-                            ),
-                        );
-                    }
+        check_pairs(graph, focus, p, &values, &mut push);
+    }
+    if shape.closed {
+        check_closed(graph, shape, focus, &mut push);
+    }
+}
+
+/// `sh:minCount` / `sh:maxCount` on one property of one focus node.
+fn check_counts(
+    p: &PropertyShape,
+    values: &[&Term],
+    push: &mut impl FnMut(Severity, Option<&str>, &'static str, String),
+) {
+    if let Some(min) = p.min_count {
+        if values.len() < min {
+            push(
+                p.severity,
+                Some(&p.path),
+                "minCount",
+                format!(
+                    "has {} value(s) of {}, minCount is {min}",
+                    values.len(),
+                    short(&p.path)
+                ),
+            );
+        }
+    }
+    if let Some(max) = p.max_count {
+        if values.len() > max {
+            // name the values (up to five): a `maxCount 0` on a materialized edge — `missingGreenHost`,
+            // `receiptHexMismatch` (ONT-4c1) — is only actionable when the message says WHICH host, WHICH file
+            let named: Vec<String> = values
+                .iter()
+                .take(5)
+                .map(|v| match v {
+                    Term::Iri(i) => short(i),
+                    Term::Literal { value, .. } => value.clone(),
+                })
+                .collect();
+            push(
+                p.severity,
+                Some(&p.path),
+                "maxCount",
+                format!(
+                    "has {} value(s) of {}, maxCount is {max}: {}",
+                    values.len(),
+                    short(&p.path),
+                    named.join(", ")
+                ),
+            );
+        }
+    }
+}
+
+/// `sh:lessThan` / `sh:lessThanOrEquals` (SHACL §4.5.3/§4.5.4) on one property of one focus node.
+fn check_pairs(
+    graph: &Graph,
+    focus: &str,
+    p: &PropertyShape,
+    values: &[&Term],
+    push: &mut impl FnMut(Severity, Option<&str>, &'static str, String),
+) {
+    for (other, strict, component) in [
+        (p.less_than.as_deref(), true, "lessThan"),
+        (p.less_than_or_equals.as_deref(), false, "lessThanOrEquals"),
+    ] {
+        let Some(other) = other else { continue };
+        // SHACL §4.5.3/§4.5.4: one result per (value, other value) PAIR that is not ordered — the W3C case
+        // lessThan-002 expects four results from two values against two, so the pair is named in the message
+        // (which also keeps the pairs distinct through `validate`'s dedup). A pair that SPARQL `<` cannot
+        // compare (an IRI, a string against a number) is NOT ordered, so it is a result, never a skip.
+        let others = graph.objects(focus, other);
+        for v in values {
+            for w in &others {
+                let ordered = match compare_terms(v, w) {
+                    Some(std::cmp::Ordering::Less) => true,
+                    Some(std::cmp::Ordering::Equal) => !strict,
+                    _ => false,
+                };
+                if !ordered {
+                    push(
+                        p.severity,
+                        Some(&p.path),
+                        component,
+                        format!(
+                            "{}: {} is not {} {} of {}",
+                            short(&p.path),
+                            term_short(v),
+                            if strict { "<" } else { "<=" },
+                            term_short(w),
+                            short(other)
+                        ),
+                    );
                 }
             }
         }
     }
-    if shape.closed {
-        let allowed: BTreeSet<&str> = shape
-            .properties
-            .iter()
-            .map(|p| p.path.as_str())
-            .chain(shape.ignored_properties.iter().map(String::as_str))
-            .chain(std::iter::once(RDF_TYPE))
-            .collect();
-        for pred in graph.predicates_of(focus) {
-            if !allowed.contains(pred) {
-                push(
-                    Severity::Violation,
-                    Some(pred),
-                    "closed",
-                    format!(
-                        "carries {}, which the closed shape does not declare",
-                        short(pred)
-                    ),
-                );
-            }
+}
+
+/// `sh:closed`: every predicate the focus carries is declared, ignored, or `rdf:type`.
+fn check_closed(
+    graph: &Graph,
+    shape: &NodeShape,
+    focus: &str,
+    push: &mut impl FnMut(Severity, Option<&str>, &'static str, String),
+) {
+    let allowed: BTreeSet<&str> = shape
+        .properties
+        .iter()
+        .map(|p| p.path.as_str())
+        .chain(shape.ignored_properties.iter().map(String::as_str))
+        .chain(std::iter::once(RDF_TYPE))
+        .collect();
+    for pred in graph.predicates_of(focus) {
+        if !allowed.contains(pred) {
+            push(
+                Severity::Violation,
+                Some(pred),
+                "closed",
+                format!(
+                    "carries {}, which the closed shape does not declare",
+                    short(pred)
+                ),
+            );
         }
     }
 }
@@ -1171,6 +1235,31 @@ mod tests {
     }
 
     const BASE: &str = "entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: ont:id, minCount: 1, maxCount: 1, pattern: '^[a-z0-9-]+$'}\n    - {path: ont:kind, maxCount: 1, in: [kernel, pattern]}\n";
+
+    #[test]
+    fn allow_empty_carries_its_reason_and_refuses_a_blank_or_nested_one() {
+        let with = |v: &str| {
+            format!("entity: {{type: pv-contract}}\nshape:\n  allowEmpty: {v}\n  properties: []\n")
+        };
+        assert_eq!(
+            shape(&with("\"none fit\"")).allow_empty.as_deref(),
+            Some("none fit")
+        );
+        assert_eq!(shape(BASE).allow_empty, None);
+        for bad in ["\"  \"", "true", "[a]"] {
+            let doc: serde_yaml::Value = serde_yaml::from_str(&with(bad)).unwrap();
+            assert!(
+                matches!(parse_shape("t", &doc), Err(ShapeError::Malformed { .. })),
+                "allowEmpty: {bad} must be refused"
+            );
+        }
+        let nested = "entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: ont:id, node: {allowEmpty: x, properties: []}}\n";
+        let doc: serde_yaml::Value = serde_yaml::from_str(nested).unwrap();
+        assert!(matches!(
+            parse_shape("t", &doc),
+            Err(ShapeError::Malformed { .. })
+        ));
+    }
 
     #[test]
     fn a_conforming_focus_node_yields_no_result() {

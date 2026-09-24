@@ -41,6 +41,7 @@ pub(crate) fn use_backward_graph() -> bool {
 ///
 /// `Some(BackwardGraphState)` on successful capture, `None` on failure.
 #[cfg(feature = "cuda")]
+#[allow(dead_code)] // PMAT-488 backward-graph capture; nothing enables it yet
 pub(crate) fn try_capture_backward<F>(
     stream: &CudaStream,
     seq_len: usize,

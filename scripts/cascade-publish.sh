@@ -597,7 +597,7 @@ clean_room_gate() {
 
 # THE GATE (F-9, PMAT-745). Every mode that uploads passes through
 # scripts/check_publish_preflight.sh first: clean tree, version from cargo
-# metadata, tag at HEAD, HEAD on origin/main, dogfood receipt GO for this commit
+# metadata, tag at HEAD, HEAD on origin/release/<version> (#4286), dogfood receipt GO for this commit
 # and version. --check and --order-check upload nothing and are not gated. The
 # drain re-runs this script per pass, so the gate is re-asked before every pass.
 #

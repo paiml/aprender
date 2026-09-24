@@ -189,12 +189,29 @@ FAILED=0
 strip_ansi() { sed -e 's/\x1b\[[0-9;]*[A-Za-z]//g' -e 's/\x1b([A-Z]//g'; }
 gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
   local name="$1"; shift
-  local out rc
+  local out rc log
+  # KEEP THE OUTPUT (#3841). This used to discard `out` into a shell variable, so
+  # `gate` was the ONLY row family writing nothing into $WORKLOG -- fmt, clippy, test
+  # and bashrs. d8's keep-the-worklog-on-NO-GO fix could not reach them because they
+  # never put anything there to keep. A red `test` row's real output was simply gone.
+  log="${WORKLOG:-${TMPDIR:-/tmp}}/$name.log"
   out=$("$@" 2>&1); rc=$?          # command substitution, NOT a pipeline: rc is cmd's
   out=$(printf '%s' "$out" | strip_ansi)
+  printf '%s\n' "$out" > "$log" 2>/dev/null || :
   local note
-  note=$(printf '%s' "$out" | grep -iE 'error|fail|warning:|denied|✗|regression' | head -1)
+  # ANCHORED picker (#3841). The old pattern was an unanchored case-insensitive
+  # 'error|fail|...' and it matched SUBSTRINGS INSIDE DEPENDENCY NAMES, so on a red
+  # row the entire visible explanation could be a `Compiling` line emitted minutes
+  # before the real diagnostic. Three instances measured on ONE yoga run:
+  #   clippy      -> "Compiling thiserror v1.0.69"            ("error" in thiserror)
+  #   test        -> "Compiling proc-macro-error-attr2 v2.0.0"
+  #   dogfood-use -> "2 pass / 0 fail / 2 skip"               ("fail" inside "0 fail")
+  # The last is the clearest: a FAILING row explained by a line saying zero failures.
+  note=$(printf '%s' "$out" | grep -nE '^(error|error\[|warning:)|^test result: FAILED|panicked at|^FAIL[: ]|^\s*✗|REGRESSION|^Error:' | head -1 | cut -d: -f2-)
+  # Fall back to the LAST line, never to an unanchored match: a trailing summary is
+  # a worse note than a real diagnostic but it cannot be a dependency's name.
   [ -z "$note" ] && note=$(printf '%s' "$out" | tail -1)
+  [ "$rc" -ne 0 ] && note="$note  [log: $log]"
   NAMES+=("$name")
   if [ $rc -eq 0 ]; then RESULTS+=("PASS"); else RESULTS+=("FAIL"); FAILED=1; fi
   NOTES+=("${note:0:120}")
@@ -1194,7 +1211,7 @@ if [ "$DOGFOOD_PHASE" = post-publish ]; then
     RA_RC=$RUN_RC
     RA_MISS=$(grep -c '^MISSING ' "$WORKLOG/release-assets.log" 2>/dev/null || true)
     if [ "$RA_RC" -eq 0 ]; then
-      mark release-assets PASS "v$VERSION carries all 16 assets (4 apr {cuda,cpu}x{x86_64,aarch64} + 4 sha256 + 8 pv)"
+      mark release-assets PASS "v$VERSION carries all 18 assets (4 apr {cuda,cpu}x{x86_64,aarch64} + darwin cpu, each + sha256, + 8 pv)"
     elif [ "$RA_RC" -eq 2 ]; then
       # ENV is a FAIL here on purpose: "the release could not be read" is not
       # evidence that the release is complete.

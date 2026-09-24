@@ -27,10 +27,12 @@ apr-cli	--test	cli_commands
 apr-cli	--test	pixel_regression
 apr-cli	--test	registry_failure_catalogue
 apr-format	--lib	falsifiers
+aprender-build-sha	--lib	<root>
 aprender-cgp	--lib	analysis::contracts
 aprender-compute-xtask	--bins
 aprender-contracts	--lib	binding
 aprender-contracts	--lib	build_helper
+aprender-contracts	--lib	lint::capability_cells_gate
 aprender-contracts	--lib	lint::diff
 aprender-contracts	--lib	lint::duplicate_stems
 aprender-contracts	--lib	lint::finding
@@ -69,6 +71,7 @@ aprender-contracts-cli	--test	ont4b2_code_lean_w3c
 aprender-contracts-cli	--test	ont4b_shapes_gate
 aprender-contracts-cli	--test	ont4c1_model_receipts
 aprender-contracts-cli	--test	ont4c3_parity_receipts
+aprender-contracts-cli	--test	ont4c5_capability_cells
 aprender-contracts-cli	--test	ont6_lint_verdict
 aprender-contracts-cli	--test	ont6b_kind_default
 aprender-contracts-cli	--test	ont_entity_properties
@@ -77,6 +80,7 @@ aprender-contracts-cli	--test	ont_refusal_receipt
 aprender-contracts-cli	--test	ont_release_readiness
 aprender-contracts-cli	--test	pv_surface_gate
 aprender-contracts-cli	--test	pvl_zero_contracts
+aprender-contracts-cli	--test	shapes_vacuity
 aprender-core	--lib	format::metadata_bounds_contract_falsify
 aprender-core	--lib	format::model_family_loader
 aprender-core	--lib	format::ship_001

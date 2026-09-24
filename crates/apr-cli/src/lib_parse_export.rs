@@ -22,10 +22,10 @@
                 quantize,
                 ..
             } => {
-                assert_eq!(file, Some(PathBuf::from("model.apr")));
+                assert_eq!(file, Some(PathBuf::from("model.apr")).map(Into::into));
                 assert_eq!(format, "gguf");
-                assert_eq!(output, Some(PathBuf::from("model.gguf")));
-                assert_eq!(quantize, Some("int4".to_string()));
+                assert_eq!(output, Some(PathBuf::from("model.gguf")).map(Into::into));
+                assert_eq!(quantize, Some("int4".to_string()).map(Into::into));
             }
             _ => panic!("Expected Export command"),
         }
@@ -72,8 +72,8 @@
                 force,
             } => {
                 assert_eq!(file, PathBuf::from("model.apr"));
-                assert_eq!(quantize, Some("q4k".to_string()));
-                assert_eq!(compress, Some("zstd".to_string()));
+                assert_eq!(quantize, Some("q4k".to_string()).map(Into::into));
+                assert_eq!(compress, Some("zstd".to_string()).map(Into::into));
                 assert_eq!(output, PathBuf::from("model-q4k.apr"));
                 assert!(force);
             }
@@ -130,7 +130,7 @@
                 family,
                 size,
             })) => {
-                assert_eq!(source, Some("model.gguf".to_string()));
+                assert_eq!(source, Some("model.gguf".to_string()).map(Into::into));
                 assert!(compliance);
                 assert!(tensors);
                 assert!(stats);
@@ -158,8 +158,8 @@
                 ..
             })) => {
                 assert!(source.is_none());
-                assert_eq!(family, Some("qwen2".to_string()));
-                assert_eq!(size, Some("7b".to_string()));
+                assert_eq!(family, Some("qwen2".to_string()).map(Into::into));
+                assert_eq!(size, Some("7b".to_string()).map(Into::into));
             }
             _ => panic!("Expected Oracle command"),
         }
@@ -172,7 +172,7 @@
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
             Commands::Extended(ExtendedCommands::Tools(ToolCommands::Oracle { source, .. })) => {
-                assert_eq!(source, Some("hf://Qwen/Qwen2.5-Coder-1.5B".to_string()));
+                assert_eq!(source, Some("hf://Qwen/Qwen2.5-Coder-1.5B".to_string()).map(Into::into));
             }
             _ => panic!("Expected Oracle command"),
         }
@@ -259,7 +259,7 @@
             }) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(hf, "openai/whisper-tiny");
-                assert_eq!(tensor, Some("encoder.0".to_string()));
+                assert_eq!(tensor, Some("encoder.0".to_string()).map(Into::into));
                 assert!((threshold - 1e-3).abs() < f64::EPSILON);
                 assert!(json);
             }
@@ -403,14 +403,14 @@
                 json,
                 ..
             }) => {
-                assert_eq!(file, Some(PathBuf::from("model.apr")));
+                assert_eq!(file, Some(PathBuf::from("model.apr")).map(Into::into));
                 assert_eq!(method, "lora");
                 assert_eq!(rank, Some(16));
                 assert!((vram - 24.0).abs() < f64::EPSILON);
                 assert!(plan);
-                assert_eq!(model, Some("7B".to_string()));
+                assert_eq!(model, Some("7B".to_string()).map(Into::into));
                 assert!(freeze_base);
-                assert_eq!(train_data, Some(PathBuf::from("data.jsonl")));
+                assert_eq!(train_data, Some(PathBuf::from("data.jsonl")).map(Into::into));
                 assert!(json);
             }
             _ => panic!("Expected Tune command"),

@@ -263,9 +263,10 @@ def unmeasured_from_ledger(path=LEDGER):
     guard checks. A hand-copied list is a second definition, and a second
     definition is how the two band schemas happened.
     """
-    import yaml
-    with open(path, encoding="utf-8") as handle:
-        doc = yaml.safe_load(handle)
+    # yaml_twin: PyYAML where the host has it, the kit's JSON twin where it does not (#3731)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import yaml_twin
+    doc = yaml_twin.load(path)
     out = {}
     for name, spec in (doc.get("fields") or {}).items():
         if spec.get("class") != "UNMEASURED":

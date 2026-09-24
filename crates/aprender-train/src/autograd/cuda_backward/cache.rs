@@ -82,12 +82,14 @@ impl KernelCache {
     }
 
     /// JIT compiles seen since construction or the last reset (R-3).
+    #[allow(dead_code)] // R-3 backward counterpart; no backward JIT invariant is asserted yet
     pub(super) fn jit_compiles(&self) -> usize {
         self.jit_compiles
     }
 
     /// Zero the JIT counter. Call AFTER the backward pre-warm; see the forward
     /// cache for why the reset boundary IS the assertion.
+    #[allow(dead_code)] // R-3 backward counterpart; no backward JIT invariant is asserted yet
     pub(super) fn reset_jit_counter(&mut self) {
         self.jit_compiles = 0;
     }

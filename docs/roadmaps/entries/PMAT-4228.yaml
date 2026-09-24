@@ -1,0 +1,21 @@
+- id: PMAT-4228
+  github_issue: 4228
+  item_type: task
+  title: 'perf(cpu): multi-row K-quant GEMM + batched Qwen3.5 prefill (CRUX #4223 T1)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-88
+  created: 2026-09-24T17:44:32Z
+  updated: 2026-09-24T21:58:00Z
+  spec: null
+  acceptance_criteria:
+  - 'FALSIFY-4228-001..003: multi-row Q4_K x Q8_K GEMM bit-identical to the per-token matvec; token-major; bad shapes rejected'
+  - 'FALSIFY-4228-004/005: batched prefill bit-identical (logits, recurrent state, KV) to per-token on Qwen3.5 0.8B and 4B'
+  - 'FALSIFY-4228-006: Q5_K/Q6_K multi-row GEMMs bit-identical to the per-row matvec (NaN payload canonicalized); FMA mutant goes RED'
+  - 'CPU prefill tok/s at 850 and 4k, n>=3 with spread, same GGUF as the #4223 row, load1 < cores'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

@@ -349,6 +349,25 @@ fn decide_shapes_gate(
             }
             .into())
         }
+        ShapesOutcome::HarnessBroken { causes } => {
+            for c in &causes {
+                eprintln!("shapes: CRUX harness broken — {c}");
+            }
+            Err(LintDeclined {
+                reason: Reason::NoCheckable,
+            }
+            .into())
+        }
+        ShapesOutcome::EmptyDomain { shapes_n } => {
+            // ONT-4c5 / R-2: |D| = 0 answers nothing about a required cell — a decline, never Pass, never RED
+            eprintln!(
+                "shapes: capability-cells domain D is empty ({shapes_n} shape(s)) — no required rung has a host to be measured on"
+            );
+            Err(LintDeclined {
+                reason: Reason::NoCheckable,
+            }
+            .into())
+        }
         ShapesOutcome::PositiveControlFailed { which, .. } => {
             eprintln!("shapes: positive control {which} did not fire");
             Err(LintDeclined {
