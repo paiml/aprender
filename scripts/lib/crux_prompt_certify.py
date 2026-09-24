@@ -257,9 +257,10 @@ def check(a) -> int:
     if receipt.get("schema") != SCHEMA:
         print(f"refused: receipt schema {receipt.get('schema')!r}, want {SCHEMA!r}")
         return 1
-    have = sha256_path(Path(a.prompts))
-    if receipt.get("prompts_sha256") != have:
-        print(f"refused: {a.prompts} is sha256 {have[:12]}, the certification covers {str(receipt.get('prompts_sha256'))[:12]}"
+    have_sha = sha256_path(Path(a.prompts))
+    receipt_sha = str(receipt.get("prompts_sha256"))
+    if receipt.get("prompts_sha256") != have_sha:
+        print(f"refused: {a.prompts} is sha256 {have_sha[:12]}, the certification covers {receipt_sha[:12]}"
               " - an edited prompt set is uncertified until it is certified again")
         return 1
     for u in receipt.get("uncontrolled_detail") or []:

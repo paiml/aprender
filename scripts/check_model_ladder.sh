@@ -65,6 +65,7 @@ judge() {
   python3 - "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" "${7:-}" "${8:-}" "${9:-}" "${10:-}" <<'PY'
 import fnmatch, json, os, sys, yaml
 ladder_p, main_p, rdir, version, rungs_p, rungs_main_p, cut, equiv_p, crux_dir, cert_p = sys.argv[1:11]
+cut_sha = cut  # the cut IS a 40-hex commit sha; named so, a [:12] of it is an identifier prefix (#4046)
 # A mutant copy of a module, in --self-test: each directory is searched first when set.
 sys.path.insert(0, "scripts/lib")
 for _lib in (os.environ.get("MODEL_LADDER_CRUX_LIB"), os.environ.get("MODEL_LADDER_CELLS_LIB"),
@@ -382,9 +383,9 @@ for h in hosts:
     if not (isinstance(asha, str) and re.fullmatch(r"[0-9a-f]{40}", asha)):
         print(f"FAIL  {h['id']:7} receipt carries no 40-hex apr_sha ({asha!r}) — it names a version, and a version is not a build (#3957 F2)"); rc = 1; continue
     if asha != cut and asha not in equiv:
-        print(f"FAIL  {h['id']:7} receipt measured at apr_sha {asha[:12]}, cut is {cut[:12]}, and the trees differ outside evidence/ — STALE BY SHA: re-measure at the cut (#3957 F2)"); rc = 1; continue
+        print(f"FAIL  {h['id']:7} receipt measured at apr_sha {asha[:12]}, cut is {cut_sha[:12]}, and the trees differ outside evidence/ — STALE BY SHA: re-measure at the cut (#3957 F2)"); rc = 1; continue
     if asha != cut and asha in equiv_proof:
-        print(f"ok    {h['id']:7} receipt apr_sha {asha[:12]} binds cut {cut[:12]}: {equiv_proof[asha]}")
+        print(f"ok    {h['id']:7} receipt apr_sha {asha[:12]} binds cut {cut_sha[:12]}: {equiv_proof[asha]}")
     if int(R.get("executed", 0)) < 1:
         print(f"FAIL  {h['id']:7} receipt executed=0 — a receipt that measured nothing is not evidence"); rc = 1; continue
     inv = R.get("inventory")
@@ -743,7 +744,7 @@ if [ "$SELF_TEST" = 1 ]; then
     xmutant no-receipts       red-crux-missing        's/^    if not files:/    if False:/'
     xmutant cell-red-ignored  red-crux-cell-red       's/^    if bad:/    if False:/'
     xmutant cell-absent-ok    red-crux-verb-absent    's/^    if not got:/    if False and not got:/'
-    xmutant unbound-receipt   red-crux-unbound        's/^        if not (asha and HEX40.fullmatch(asha)) or (asha != cut and asha not in equiv):/        if False:/'
+    xmutant unbound-receipt   red-crux-unbound        's/^        if not (asha and HEX40.fullmatch(asha)) or (asha != cut_sha and asha not in equiv):/        if False:/'
     xmutant declined-receipt  red-crux-declined       's/^        if summ.get("verdict") == "DECLINE":/        if False:/'
     xmutant apr-no-source     red-apr-no-source       's/^    if not isinstance(src, dict) or not src.get("file") or not HEX64.fullmatch(str(src.get("sha256") or "")):/    if False:/'
     xmutant apr-tensor-diff   red-apr-tensor-perturbed 's/^    elif td.get("tensors_differing") != 0:/    elif False:/'
@@ -971,7 +972,7 @@ SM
     smutant model-optional    's/^                if not got:$/                if False:/'
     smutant red-cells-ok      's/^                if red:$/                if False:/'
     smutant control-optional  's/^                elif not ctl or any(v != "GREEN" for v in ctl):$/                elif False:/'
-    smutant any-sha           's/^        if asha != cut:$/        if False:/'
+    smutant any-sha           's/^        if asha != cut_sha:$/        if False:/'
     smutant any-release       's/^    if str(version) != str(entry\["release"\]):$/    if False:/'
     smutant zero-modes-ok     's/^        if not m:$/        if False:/'
     smutant all-modes-counted 's/^            for mode in matrix\[sha\]:$/            for mode in ("off", "on"):/'
@@ -990,7 +991,7 @@ SM
     # #3710 ruling 1: CRUX coverage scoped to the certified models (model_ladder_crux.py).
     xmutant uncertified-owes-crux green-uncertified-no-crux 's/^                    elif certified is not None and sha not in certified:$/                    elif False:/'
     xmutant no-cert-relaxes   red-certification-missing 's/^        return None, True$/        return set(), False/'
-    xmutant certified-unheld  red-certified-not-held    's/^        if s_ not in held:$/        if False:/'
+    xmutant certified-unheld  red-certified-not-held    's/^        if model_sha not in held:$/        if False:/'
     xmutant cert-read-as-receipt green-cert-beside-crux-receipts 's/                   if not os.path.basename(f).startswith("prompt-certification")) if crux_dir else \[\]/                   ) if crux_dir else []/'
     xmutant certified-as-none red-certified-missing-crux 's/^    need = certified is None or bool(held \& certified)$/    need = False; certified = set()/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
