@@ -18191,6 +18191,25 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-4197
+  github_issue: 4197
+  item_type: task
+  title: 'PVL-001 EV-6c pt1: kani_assume.rs per-file kani::assume token count (use-import refused, fails closed) + rises + Baseline check; 14 tests; proc-macro2 dep; DELETE dead tests_12b.rs. NO CLI flag, baseline, Makefile, workflow'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T08:24:32.273397348+00:00
+  updated: 2026-09-24T08:24:32.273397348+00:00
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p aprender-contracts --lib kani_assume: 14 passed. Mutations, each planted alone, restored sha-identical: group markers dropped reds a_group_boundary_breaks_the_sequence; rise as >= reds a_fall_or_a_removed_file_is_not_a_rise; import refusal off reds a_use_import_of_assume_is_refused_in_every_shape; consistency off reds an_inconsistent_baseline_is_refused; string literals counted reds comments_and_strings_never_count; target/ not skipped reds count_tree_keys_relative_paths_and_skips_target_and_hidden.'
+  - 'count_tree(crates/) on this tree: 177 in 26 files, fails closed on nothing. grep -c gives 187 in 28; the 10 extra are string literals in kani_gen/strategies.rs (9) and invariant_gen.rs (1), code generators whose output is counted.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ont-0.70
+  notes: 'Part 1 of PVL-001 EV-6c (Refs #4197, not Closes). The row probe runs pv discharge check --kani, a subcommand that exists only on EV-6a''s unmerged branch (#4139); part 2 adds the flag, contracts/kani-assume-baseline.json and make kani-ratchet after it lands. The spec''s baseline 254 [C v2] is stale; the measured count is 177. tests_12b.rs was deleted because fail-closed must hold on the real tree: it is not compiled (no mod/#[path]/include! names it) and has an unbalanced } at :35.'
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
