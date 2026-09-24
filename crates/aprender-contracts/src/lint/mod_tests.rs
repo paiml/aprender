@@ -406,3 +406,42 @@ fn a_gate_a_flag_ran_is_reported_but_not_armed() {
         .any(|g| g.name == "strict-test-binding"));
     assert_eq!(report.armed_gates.len(), 8);
 }
+
+/// ONT-7, R-8: gate 13 is COMPUTED when validation passes and SKIPPED, naming why, when it fails. Both halves
+/// at the lib level, because the CI mutation lane runs `--lib` only (#4076 round-2 review): a mutant that
+/// inverts `validation_passed` in `valid_under_result` must fail here, not only in the CLI integration test.
+#[test]
+fn valid_under_is_computed_when_validation_passes_and_skipped_when_it_fails() {
+    let report = run_lint(&LintConfig::new(&contracts_dir(), None, 0.0));
+    let g = report
+        .gates
+        .iter()
+        .find(|g| g.name == "valid-under")
+        .expect("gate 13 is in every run");
+    assert!(
+        !g.skipped && g.passed,
+        "computed and Pass on the repo corpus: {g:?}"
+    );
+
+    // Σ and a kernel contract are present, so the ONLY reason to skip is the failed validation.
+    let tmp = tempfile::tempdir().unwrap();
+    let fixture = contracts_dir().join("../tests/fixtures/ont/valid-under-ok");
+    for f in ["ontology.yaml", "fixture-vu-v1.yaml"] {
+        std::fs::copy(fixture.join(f), tmp.path().join(f)).unwrap();
+    }
+    std::fs::write(tmp.path().join("bad.yaml"), "not: valid: yaml: {{{{").unwrap();
+    let report = run_lint(&LintConfig::new(tmp.path(), None, 0.0));
+    let g = report
+        .gates
+        .iter()
+        .find(|g| g.name == "valid-under")
+        .expect("gate 13 is in every run");
+    assert!(
+        g.skipped,
+        "validation failed, so the gate is skipped: {g:?}"
+    );
+    assert!(
+        matches!(&g.detail, GateDetail::Skipped { reason } if reason == "validation failed"),
+        "{g:?}"
+    );
+}

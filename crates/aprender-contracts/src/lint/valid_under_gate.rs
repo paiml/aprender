@@ -238,7 +238,7 @@ fn check_valid_under(
     let Some(map) = v.as_mapping() else {
         out.push(finding(
             "PV-ONT-013",
-            "`metadata.valid_under` must be a mapping with a `world:` key".to_string(),
+            "`metadata.valid_under` must be a mapping — `world:` (omitted = committed) and/or the qualifiers toolchain, host_class, backend, features".to_string(),
             stem,
             file,
         ));
