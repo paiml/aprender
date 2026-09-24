@@ -35,6 +35,10 @@ concepts:
   PullRequest: {doc: "a GitHub pull request at one updatedAt, snapshotted under evidence/github/pull-request/ (pr:ref = <owner>/<repo>#<n>@<updatedAt>)"}
   Milestone: {doc: "a GitHub milestone at one updatedAt, snapshotted under evidence/github/milestone/ (milestone:ref = <owner>/<repo>#<n>@<updatedAt>)"}
   Example: {doc: "a cargo example target — examples/*.rs or examples/*/main.rs of a workspace member; the focus node of extract:example (#3560 R1: example:file, example:crate, example:name, example:namesModel, example:namesQwen35)"}
+  AprModel: {doc: "an aprender .apr v2 container, the focus node of extract:apr-model, typed alongside model:Model (v4.16 D-T2; AprModel ⊑ Model is ONT-4d's, not built here)"}
+  LadderRung: {doc: "a model-capability-ladder rung, typed on extract:gguf's rung path only, disjoint from AprModel (v4.16 D-T2)"}
+  Readme: {doc: "a README.md under contract, the focus node of extract:readme (ONT-4c)"}
+  LlmContext: {doc: "an LLM context file (CLAUDE.md) under contract, the focus node of extract:llm-context (ONT-4c)"}
 
 roles:
   binds:
@@ -144,11 +148,11 @@ entity_types:
   - {name: code, extractor: code, implemented: true}
   - {name: lean, extractor: lean, implemented: true}
   - {name: example, extractor: example, implemented: true}
-  - {name: readme, extractor: readme, implemented: false}
-  - {name: llm-context, extractor: llm_context, implemented: false}
+  - {name: readme, extractor: readme, implemented: true}
+  - {name: llm-context, extractor: llm_context, implemented: true}
   - {name: apr-model, extractor: apr_model, implemented: true}
   - {name: gguf, extractor: gguf, implemented: true}
-  - {name: csv, extractor: csv, implemented: false}
+  - {name: csv, extractor: csv, implemented: true}
   # ONT-4c3 (aprender#3577): the logit-parity receipts under evidence/parity/**. Subclasses `json` for now;
   # it moves under a shared `Receipt` class once quorum and dispatch receipts join, so the three families
   # inherit common shapes. NOT the throughput parity receipts — a different family with a different validator.
@@ -170,13 +174,37 @@ extractors:
   - {name: code, reader: ontology/extract/code.rs, implemented: true}
   - {name: lean, reader: ontology/extract/lean.rs, implemented: true}
   - {name: example, reader: ontology/extract/example.rs, implemented: true}
-  - {name: readme, reader: ontology/extract/readme.rs, implemented: false}
-  - {name: llm_context, reader: ontology/extract/llm_context.rs, implemented: false}
+  - {name: readme, reader: ontology/extract/readme.rs, implemented: true}
+  - {name: llm_context, reader: ontology/extract/llm_context.rs, implemented: true}
   - {name: apr_model, reader: ontology/extract/apr_model.rs, implemented: true}
   - {name: gguf, reader: ontology/extract/gguf.rs, implemented: true}
-  - {name: csv, reader: ontology/extract/csv.rs, implemented: false}
+  - {name: csv, reader: ontology/extract/csv.rs, implemented: true}
   - {name: parity_receipt, reader: ontology/extract/parity_receipt.rs, implemented: true}
   - {name: release_evidence, reader: ontology/extract/release_evidence.rs, implemented: true}
+
+# v4.16 D-T1 (qd4c4): the class a shape with no `targetClass` targets, by `entity.type` (shapes.rs::default_target).
+# A type absent here has no default: its shape is malformed, exit 3, named.
+entity_type_target_class:
+  pv-contract: ont:Contract
+  readme: readme:Readme
+  llm-context: llm:LlmContext
+  csv: csv:Dataset
+  apr-model: model:AprModel
+  gguf: model:Model
+
+# v4.16 D5b (qd4c3): which `## ` headings of an llm-context file satisfy each role. extract:llm-context emits
+# llm:purposeSection / rulesSection / commandsSection / layoutSection per match; an unlisted heading is no error.
+llm_context_role_synonyms:
+  Purpose: ["Project Overview"]
+  Rules: ["Git Workflow (Branch Protection)", "Autonomous Operation Mode (DEFAULT)",
+          "LAYOUT-001/002: Tensor Layout Safety", "Publishing Safety (CB-510 Lesson)",
+          "Shell Scripts: Use bashrs (NOT shellcheck)",
+          "Verification Discipline (MANDATORY — read before reporting any result)",
+          "Linting", "Contract Validation: DOGFOOD `pv`, NEVER bash",
+          "CRITICAL: Code Search Policy", "CRITICAL: Realizar-First Architecture"]
+  Commands: ["Build Commands", "Debugging: Use apr Tools First (MANDATORY)",
+             "APR CLI (`cargo install aprender`)"]
+  Layout: ["Architecture", "Modules", "Key Files", "CI/CD (`.github/workflows/`)"]
 
 # What this ontology does NOT express, said out loud so nobody encodes it by accident. Each names the reader that
 # would have to change first.
@@ -216,3 +244,5 @@ readers:
   entity_types: lint/sigma_gate.rs, ontology/extract/json/github.rs
   extractors: ontology/sigma.rs
   not_expressible: ontology/sigma.rs
+  entity_type_target_class: ontology/shapes.rs
+  llm_context_role_synonyms: ontology/extract/llm_context.rs
