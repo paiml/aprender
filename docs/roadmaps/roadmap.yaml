@@ -20857,6 +20857,24 @@ roadmap:
   - orch:fable
   - orch-basis:state
   notes: 'ONT-001 R-22: kind:code,orch:fable,orch-basis:state admits Fable or Opus. No Rust EL reasoner exists (infra ont-oracle-ledger [V 2026-09-14]); ELK 0.4.3 pinned (zip 965ad946…, jar de1fffaf…, Apache-2.0), sent to infra-83 for the ledger. The OWL oracle is its own detached crate tests/oracle/owl/: oxigraph (via shacl) enables oxrdf Triple and breaks horned-owl''s horned-pretty-rdf under feature unification (E0004, measured).'
+- id: PMAT-4072
+  github_issue: 4072
+  item_type: task
+  title: 'ONT-3a: extract:code — bindings resolve fail-closed across the workspace, via syn'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-ont3a
+  created: 2026-09-24T14:05:08Z
+  updated: 2026-09-24T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - paiml/infra docs/specifications/paiml-ontology.md row ONT-3a. `pv lint --gate bindings` fail-closed on the repo corpus (PV-ONT-028/029/030), ghosts allowlisted with a ticket (#4319), enforced by a lib test.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4074
   github_issue: 4074
   item_type: task

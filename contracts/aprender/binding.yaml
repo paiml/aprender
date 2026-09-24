@@ -186,7 +186,7 @@ bindings:
   notes: Weighted Gini impurity for binary split
 - contract: decision-tree-v1.yaml
   equation: mse_split
-  module_path: aprender::tree::regression_helpers
+  module_path: aprender::tree::helpers
   function: compute_mse
   signature: 'fn compute_mse(y_left: &[f32], y_right: &[f32]) -> f32'
   status: implemented
@@ -253,7 +253,7 @@ bindings:
   notes: Header validation with model type check before loading
 - contract: model-format-conversion-v1.yaml
   equation: format_conversion_roundtrip
-  module_path: aprender::convert
+  module_path: apr_cli::commands::convert
   function: run
   status: implemented
   notes: Tensor count/names/shapes preserved across format conversion
@@ -265,31 +265,31 @@ bindings:
   notes: Error bounded by dtype-specific tolerance
 - contract: model-format-conversion-v1.yaml
   equation: import_integrity
-  module_path: aprender::import
+  module_path: apr_cli::commands::import
   function: run
   status: implemented
   notes: Content-based format detection, not extension-based
 - contract: model-format-conversion-v1.yaml
   equation: export_fidelity
-  module_path: aprender::export
+  module_path: apr_cli::commands::export
   function: run
   status: implemented
   notes: Atomic write via temp file + rename
 - contract: model-format-conversion-v1.yaml
   equation: apr_tokenizer_embedding
-  module_path: aprender::convert
+  module_path: aprender::format::converter
   function: save_model_tensors_with_gguf_config_and_tokenizer
   status: implemented
   notes: "P0 invariant \u2014 every APR file embeds tokenizer (PMAT-154 fix, Q4K passthrough/fallback paths)"
 - contract: apr-cli-operations-v1.yaml
   equation: side_effect_classification
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_core_command
   status: implemented
   notes: All 48 commands classified as ReadOnly/Mutating/LongRunning
 - contract: apr-cli-operations-v1.yaml
   equation: resource_cleanup
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_core_command
   status: implemented
   notes: GPU/tmp/thread cleanup on all exit paths via RAII
@@ -307,13 +307,13 @@ bindings:
   notes: BPE encode/decode roundtrip for valid UTF-8
 - contract: apr-cli-operations-v1.yaml
   equation: concurrent_model_access
-  module_path: aprender::serve
+  module_path: apr_cli::commands::serve
   function: run
   status: implemented
   notes: Per-request KV cache, immutable model weights
 - contract: apr-cli-v1.yaml
   equation: contract_gate_enforcement
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: execute_command
   status: implemented
   notes: "PMAT-237 contract gate \u2014 extract_model_paths + validate_model_contract before dispatch"
@@ -469,14 +469,14 @@ bindings:
   notes: Init->WaitInput->Generating->WaitInput->Exit state machine
 - contract: apr-chat-session-v1.yaml
   equation: session_persistence
-  module_path: apr_cli::commands::chat_session
+  module_path: apr_cli::commands::chat
   function: run
   status: implemented
   notes: JSON serialization, KV-cache not persisted (rebuilt from history)
 # --- cli-dispatch-v1 bindings (PMAT-495) ---
 - contract: cli-dispatch-v1.yaml
   equation: dispatch_completeness
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_core_command
   signature: 'fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>>'
   status: implemented
@@ -490,21 +490,21 @@ bindings:
   notes: Distinct error classes map to distinct non-zero exit codes (0-11)
 - contract: cli-dispatch-v1.yaml
   equation: output_format_fidelity
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_core_command
   signature: 'fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>>'
   status: implemented
   notes: --json/--yaml/--csv produce parseable output per respective RFC
 - contract: cli-dispatch-v1.yaml
   equation: feature_gated_dispatch
-  module_path: apr_cli::dispatch_analysis
+  module_path: apr_cli
   function: dispatch_extended_command
   signature: 'fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError>'
   status: implemented
   notes: Code variant dispatches to batuta::agent::code::cmd_code (PMAT-182)
 - contract: cli-dispatch-v1.yaml
   equation: idempotent_inspection
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_inspection_commands
   signature: 'fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>>'
   status: implemented
@@ -685,7 +685,7 @@ bindings:
 # --- tokenizer-loading-v1 bindings (PMAT-495) ---
 - contract: tokenizer-loading-v1.yaml
   equation: identity
-  module_path: aprender::format::converter::tokenizer_loader
+  module_path: aprender::format::converter::import
   function: load_tokenizer_from_explicit_path
   signature: 'fn load_tokenizer_from_explicit_path(path: &Path) -> Result<Tokenizer>'
   status: implemented
@@ -699,7 +699,7 @@ bindings:
   notes: decode(encode(text)) == text for valid UTF-8
 - contract: tokenizer-loading-v1.yaml
   equation: byte_encoder_coverage
-  module_path: apr_cli::commands::chat_load_tokenizers
+  module_path: apr_cli::commands::chat::realizar_chat
   function: load_tokenizers
   signature: 'fn load_tokenizers(...) -> Result<TokenizerSet>'
   status: implemented
@@ -721,22 +721,22 @@ bindings:
   notes: KV projection shape [hidden_size, kv_heads * head_dim]
 - contract: qwen2-weight-loading-v1.yaml
   equation: swiglu_expansion
-  module_path: aprender::models::qwen2::constructors
-  function: new
+  module_path: aprender::models::qwen2
+  function: Qwen2Model::new
   signature: 'pub fn new(config: &Qwen2Config) -> Self'
   status: implemented
   notes: FFN intermediate = 2/3 * 4 * hidden_size (SwiGLU)
 - contract: qwen2-weight-loading-v1.yaml
   equation: total_parameters
-  module_path: aprender::models::qwen2::constructors
-  function: weight_names
+  module_path: aprender::models::qwen2
+  function: Qwen2Model::weight_names
   signature: 'fn weight_names() -> Vec<String>'
   status: implemented
   notes: Total params matches HuggingFace config.json num_parameters
 # --- apr-cli-mutating-v1 bindings (GH-689) ---
 - contract: apr-cli-mutating-v1.yaml
   equation: output_path_validation
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_model_commands
   signature: 'fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>>'
   status: implemented
@@ -757,7 +757,7 @@ bindings:
   notes: Temp file + rename pattern for atomic writes
 - contract: apr-cli-mutating-v1.yaml
   equation: rm_confirmation_gate
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_model_commands
   signature: 'fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>>'
   status: implemented
@@ -765,14 +765,14 @@ bindings:
 # --- apr-cli-readonly-v1 bindings (GH-688) ---
 - contract: apr-cli-readonly-v1.yaml
   equation: no_side_effects
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_inspection_commands
   signature: 'fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>>'
   status: implemented
   notes: 28 readonly commands never modify filesystem or model state
 - contract: apr-cli-readonly-v1.yaml
   equation: idempotent_output
-  module_path: apr_cli::dispatch
+  module_path: apr_cli
   function: dispatch_inspection_commands
   signature: 'fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>>'
   status: implemented
