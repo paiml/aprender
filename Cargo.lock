@@ -275,6 +275,7 @@ dependencies = [
  "aprender-train-common",
  "aprender-train-distill",
  "aprender-train-lora",
+ "aprender-update",
  "aprender-viz",
  "aprender-zram-cli",
  "aprender-zram-core",
@@ -503,6 +504,7 @@ name = "aprender-contracts-cli"
 version = "0.69.0"
 dependencies = [
  "aprender-contracts",
+ "aprender-update",
  "clap",
  "serde",
  "serde_json",
@@ -1768,6 +1770,20 @@ dependencies = [
  "proptest",
  "rand 0.9.4",
  "tempfile",
+]
+
+[[package]]
+name = "aprender-update"
+version = "0.69.0"
+dependencies = [
+ "flate2",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tar",
+ "tempfile",
+ "ureq 2.12.1",
 ]
 
 [[package]]
