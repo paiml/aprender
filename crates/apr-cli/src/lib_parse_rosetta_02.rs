@@ -27,9 +27,9 @@
                     json,
                 } => {
                     assert_eq!(model, PathBuf::from("model.gguf"));
-                    assert_eq!(model_b, Some(PathBuf::from("model2.apr")));
-                    assert_eq!(output, Some(PathBuf::from("fingerprints.json")));
-                    assert_eq!(filter, Some("encoder".to_string()));
+                    assert_eq!(model_b, Some(PathBuf::from("model2.apr")).map(Into::into));
+                    assert_eq!(output, Some(PathBuf::from("fingerprints.json")).map(Into::into));
+                    assert_eq!(filter, Some("encoder".to_string()).map(Into::into));
                     assert!(verbose);
                     assert!(json);
                 }
@@ -68,8 +68,8 @@
                     json,
                 } => {
                     assert_eq!(model, PathBuf::from("model.apr"));
-                    assert_eq!(reference, Some(PathBuf::from("ref.gguf")));
-                    assert_eq!(fingerprints, Some(PathBuf::from("fp.json")));
+                    assert_eq!(reference, Some(PathBuf::from("ref.gguf")).map(Into::into));
+                    assert_eq!(fingerprints, Some(PathBuf::from("fp.json")).map(Into::into));
                     assert!((threshold - 5.0).abs() < f32::EPSILON);
                     assert!(strict);
                     assert!(json);
@@ -141,9 +141,9 @@
     #[test]
     fn test_extract_paths_export() {
         let cmd = Commands::Export {
-            file: Some(PathBuf::from("model.apr")),
-            format: "gguf".to_string(),
-            output: Some(PathBuf::from("out.gguf")),
+            file: Some(PathBuf::from("model.apr").into()),
+            format: "gguf".to_string().into(),
+            output: Some(PathBuf::from("out.gguf").into()),
             quantize: None,
             list_formats: false,
             batch: None,
@@ -159,10 +159,10 @@
     #[test]
     fn test_extract_paths_convert() {
         let cmd = Commands::Convert {
-            file: PathBuf::from("model.apr"),
-            quantize: Some("q4k".to_string()),
+            file: PathBuf::from("model.apr").into(),
+            quantize: Some("q4k".to_string().into()),
             compress: None,
-            output: PathBuf::from("out.apr"),
+            output: PathBuf::from("out.apr").into(),
             force: false,
         };
         let paths = extract_model_paths(&cmd);
@@ -173,7 +173,7 @@
     #[test]
     fn test_extract_paths_check() {
         let cmd = Commands::Check {
-            file: PathBuf::from("model.gguf"),
+            file: PathBuf::from("model.gguf").into(),
             no_gpu: false,
             json: false,
         };
@@ -185,7 +185,7 @@
     #[test]
     fn test_extract_paths_trace() {
         let cmd = Commands::Trace {
-            file: PathBuf::from("model.apr"),
+            file: PathBuf::from("model.apr").into(),
             layer: None,
             reference: None,
             json: false,
@@ -195,7 +195,7 @@
             interactive: false,
             save_tensor: None,
             save_tensor_dir: None,
-            save_tensor_layers: "0..1".to_string(),
+            save_tensor_layers: "0..1".to_string().into(),
         };
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
@@ -207,9 +207,9 @@
         use TestSubcommand;
         let cmd = Commands::Extended(ExtendedCommands::Test {
             command: TestSubcommand::Tensor {
-                file: PathBuf::from("model.apr"),
-                output: PathBuf::from("./probar-export"),
-                format: "both".to_string(),
+                file: PathBuf::from("model.apr").into(),
+                output: PathBuf::from("./probar-export").into(),
+                format: "both".to_string().into(),
                 golden: None,
                 layer: None,
                 assert: false,
@@ -224,8 +224,8 @@
     #[test]
     fn test_extract_paths_compare_hf() {
         let cmd = Commands::Extended(ExtendedCommands::CompareHf {
-            file: PathBuf::from("model.apr"),
-            hf: "openai/whisper-tiny".to_string(),
+            file: PathBuf::from("model.apr").into(),
+            hf: "openai/whisper-tiny".to_string().into(),
             tensor: None,
             threshold: 1e-5,
             json: false,
@@ -238,7 +238,7 @@
     #[test]
     fn test_extract_paths_chat() {
         let cmd = Commands::Extended(ExtendedCommands::Chat {
-            file: PathBuf::from("model.gguf"),
+            file: PathBuf::from("model.gguf").into(),
             temperature: 0.7,
             top_p: 0.9,
             max_tokens: 512,
@@ -262,8 +262,8 @@
     #[test]
     fn test_extract_paths_eval() {
         let cmd = Commands::Extended(ExtendedCommands::Eval {
-            file: PathBuf::from("model.gguf"),
-            dataset: "wikitext-2".to_string(),
+            file: PathBuf::from("model.gguf").into(),
+            dataset: "wikitext-2".to_string().into(),
             text: None,
             max_tokens: 512,
             threshold: 20.0,
@@ -284,9 +284,9 @@
     #[test]
     fn test_extract_paths_profile() {
         let cmd = Commands::Extended(ExtendedCommands::Profile {
-            file: PathBuf::from("model.apr"),
+            file: PathBuf::from("model.apr").into(),
             granular: false,
-            format: "human".to_string(),
+            format: "human".to_string().into(),
             focus: None,
             detect_naive: false,
             threshold: 10.0,
@@ -315,9 +315,9 @@
     #[test]
     fn test_extract_paths_import_hf_url() {
         let cmd = Commands::Import {
-            source: "hf://openai/whisper-tiny".to_string(),
-            output: Some(PathBuf::from("whisper.apr")),
-            arch: "auto".to_string(),
+            source: "hf://openai/whisper-tiny".to_string().into(),
+            output: Some(PathBuf::from("whisper.apr").into()),
+            arch: "auto".to_string().into(),
             quantize: None,
             strict: false,
             preserve_q4k: false,
@@ -336,9 +336,9 @@
     #[test]
     fn test_extract_paths_import_nonexistent_local() {
         let cmd = Commands::Import {
-            source: "/tmp/nonexistent_model_abc123.gguf".to_string(),
+            source: "/tmp/nonexistent_model_abc123.gguf".to_string().into(),
             output: None,
-            arch: "auto".to_string(),
+            arch: "auto".to_string().into(),
             quantize: None,
             strict: false,
             preserve_q4k: false,
@@ -357,7 +357,7 @@
     #[test]
     fn test_extract_paths_tui_with_file() {
         let cmd = Commands::Tui {
-            file: Some(PathBuf::from("model.apr")),
+            file: Some(PathBuf::from("model.apr").into()),
         };
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
@@ -377,7 +377,7 @@
         let cmd = Commands::Extended(ExtendedCommands::Cbtop {
             model: None,
             attach: None,
-            model_path: Some(PathBuf::from("model.gguf")),
+            model_path: Some(PathBuf::from("model.gguf").into()),
             headless: false,
             json: false,
             output: None,
@@ -400,7 +400,7 @@
     #[test]
     fn test_extract_paths_cbtop_no_model_path() {
         let cmd = Commands::Extended(ExtendedCommands::Cbtop {
-            model: Some("qwen2.5-coder".to_string()),
+            model: Some("qwen2.5-coder".to_string().into()),
             attach: None,
             model_path: None,
             headless: false,
@@ -425,8 +425,8 @@
     #[test]
     fn test_extract_paths_diff_exempt() {
         let cmd = Commands::Diff {
-            file1: PathBuf::from("a.apr"),
-            file2: PathBuf::from("b.apr"),
+            file1: PathBuf::from("a.apr").into(),
+            file2: PathBuf::from("b.apr").into(),
             weights: false,
             values: false,
             filter: None,
@@ -445,7 +445,7 @@
     #[test]
     fn test_extract_paths_hex_exempt() {
         let cmd = Commands::Extended(ExtendedCommands::Hex {
-            file: PathBuf::from("model.apr"),
+            file: PathBuf::from("model.apr").into(),
             tensor: None,
             limit: 64,
             stats: false,
@@ -457,7 +457,7 @@
             contract: false,
             entropy: false,
             raw: false,
-            offset: "0".to_string(),
+            offset: "0".to_string().into(),
             width: 16,
             slice: None,
         });

@@ -35,8 +35,8 @@ use std::time::Instant;
 use crate::ontology::arming::ArmedShapes;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, code, gguf, json, lean, parity_receipt, pv_contract, release_evidence,
-    ExtractFailure,
+    self, apr_model, cli_surface, code, gguf, json, lean, parity_receipt, pv_contract,
+    release_evidence, ExtractFailure,
 };
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
 use crate::ontology::receipts;
@@ -91,6 +91,9 @@ pub enum ShapesOutcome {
         n: usize,
         failed: Vec<String>,
     },
+    /// #3739: the CRUX harness measured itself, not apr — a model's positive-control prompt came back ALL_WRONG,
+    /// or a model owing CRUX cells has no measured control. Declined (exit 2), each model and cause named.
+    HarnessBroken { causes: Vec<String> },
     /// Shapes ran over the corpus, and the controls fired.
     Ran {
         result: Box<GateResult>,
@@ -258,6 +261,10 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
     // PMAT-3577: the count is pinned before anything is graded. A miss here is not a corpus verdict.
     if let Some(refusal) = parity_refusal(&extraction.parity, shapes.len()) {
         return refusal;
+    }
+    // #3739 / cop: a broken CRUX harness is not a verdict about the release — decline, naming the model
+    if let Some(broken) = harness_broken(&extraction) {
+        return broken;
     }
     let graph = &extraction.graph;
 
@@ -555,6 +562,17 @@ fn by_entity_type(
         .collect()
 }
 
+fn harness_broken(extraction: &extract::Extraction) -> Option<ShapesOutcome> {
+    let causes = extraction
+        .release
+        .as_ref()?
+        .crux
+        .as_ref()?
+        .harness_broken
+        .clone();
+    (!causes.is_empty()).then_some(ShapesOutcome::HarnessBroken { causes })
+}
+
 /// The answers that are not corpus verdicts, in the order they are asked: no focus node, receipts needed and
 /// none tracked, the plant silent, an extractor control silent. `None` when the corpus gets a verdict.
 ///
@@ -610,6 +628,8 @@ fn extract_controls() -> BTreeMap<String, String> {
         ),
         // aprender#3715: drawn every run, subject or not — a cell owed without a receipt stays a node
         ("release-evidence", release_evidence::positive_control()),
+        // aprender#3745 S2: a model arg read from its ROLE, never its name — drawn every run
+        ("cli-surface", cli_surface::positive_control()),
     ]
     .into_iter()
     .map(|(k, fired)| {

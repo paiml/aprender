@@ -109,6 +109,10 @@ pub enum Commands {
         /// the tracked contracts.nt / shapes.ttl untouched (aprender#3715)
         #[arg(long)]
         out: Option<PathBuf>,
+        /// With `--release-*` and `--surface`: write every DERIVED release cell (the producer's work list, keyed
+        /// by `cell_id`) to this JSON file (aprender#3745 S2)
+        #[arg(long)]
+        cells_out: Option<PathBuf>,
         #[command(flatten)]
         release: Box<ReleaseArgs>,
     },
@@ -442,8 +446,9 @@ pub enum Commands {
         contract_dir: PathBuf,
         #[arg(long)]
         config: Option<PathBuf>,
+        /// #3745 S1: typed `ModelPath`, which is how `apr surface` knows this is a model.
         #[arg(long)]
-        model: Option<PathBuf>,
+        model: Option<batuta_common::cli_roles::ModelPath>,
     },
     /// Verify compositional shape flow across contract dependency graph
     #[command(name = "verify-pipeline")]
@@ -508,6 +513,12 @@ pub struct ReleaseArgs {
     /// The tokenizer-parity receipts, apr vs the pinned llama.cpp (default: evidence/dogfood/tokenizer/<version>/)
     #[arg(long)]
     pub tokenizer_receipts: Option<PathBuf>,
+    /// The release candidate's `apr surface --json` (#3745): the release cells are DERIVED from it
+    #[arg(long)]
+    pub surface: Option<PathBuf>,
+    /// The CRUX receipts, apr vs its comparators (default: evidence/crux/<version>/)
+    #[arg(long)]
+    pub crux_receipts: Option<PathBuf>,
 }
 
 impl ReleaseArgs {
@@ -521,6 +532,8 @@ impl ReleaseArgs {
             || self.kernel_receipts.is_some()
             || self.dogfood_receipt.is_some()
             || self.tokenizer_receipts.is_some()
+            || self.surface.is_some()
+            || self.crux_receipts.is_some()
     }
 
     /// The subject, or `None` when no flag was passed. A partial set is refused, never completed by a default.
@@ -548,6 +561,8 @@ impl ReleaseArgs {
         s.dogfood_receipt.clone_from(&self.dogfood_receipt);
         s.tokenizer_receipts_dir
             .clone_from(&self.tokenizer_receipts);
+        s.surface.clone_from(&self.surface);
+        s.crux_receipts_dir.clone_from(&self.crux_receipts);
         Ok(Some(s))
     }
 }

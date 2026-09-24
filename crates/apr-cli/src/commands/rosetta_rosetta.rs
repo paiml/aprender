@@ -7,7 +7,7 @@
     fn test_rosetta_commands_inspect_default() {
         // Test that the Inspect variant can be created
         let cmd = RosettaCommands::Inspect {
-            file: PathBuf::from("model.gguf"),
+            file: PathBuf::from("model.gguf").into(),
             hexdump: false,
             json: false,
         };
@@ -28,8 +28,8 @@
     #[test]
     fn test_rosetta_commands_convert() {
         let cmd = RosettaCommands::Convert {
-            source: PathBuf::from("model.gguf"),
-            target: PathBuf::from("model.apr"),
+            source: PathBuf::from("model.gguf").into(),
+            target: PathBuf::from("model.apr").into(),
             quantize: None,
             verify: false,
             json: false,
@@ -53,9 +53,9 @@
     #[test]
     fn test_rosetta_commands_chain() {
         let cmd = RosettaCommands::Chain {
-            source: PathBuf::from("model.gguf"),
-            formats: vec!["safetensors".to_string(), "apr".to_string()],
-            work_dir: PathBuf::from("./work"),
+            source: PathBuf::from("model.gguf").into(),
+            formats: vec!["safetensors".to_string().into(), "apr".to_string().into()],
+            work_dir: PathBuf::from("./work").into(),
             json: false,
         };
         match cmd {
@@ -71,8 +71,8 @@
     #[test]
     fn test_rosetta_commands_verify() {
         let cmd = RosettaCommands::Verify {
-            source: PathBuf::from("model.gguf"),
-            intermediate: "safetensors".to_string(),
+            source: PathBuf::from("model.gguf").into(),
+            intermediate: "safetensors".to_string().into(),
             tolerance: 1e-5,
             json: false,
         };

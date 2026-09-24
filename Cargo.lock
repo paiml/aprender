@@ -423,6 +423,7 @@ dependencies = [
 name = "aprender-common"
 version = "0.69.0"
 dependencies = [
+ "clap",
  "lz4_flex 0.11.6",
  "zstd",
 ]
@@ -514,6 +515,7 @@ name = "aprender-contracts-cli"
 version = "0.69.0"
 dependencies = [
  "aprender-build-sha",
+ "aprender-common",
  "aprender-contracts",
  "clap",
  "serde",
@@ -1277,6 +1279,7 @@ version = "0.69.0"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
+ "aprender-common",
  "aprender-rag",
  "assert_cmd",
  "blake3",

@@ -136,7 +136,7 @@
         // Diagnostic commands should return no paths (exempt from validation)
         let diagnostic_commands = vec![
             Commands::Inspect {
-                file: PathBuf::from("m.apr"),
+                file: PathBuf::from("m.apr").into(),
                 vocab: false,
                 filters: false,
                 weights: false,
@@ -144,7 +144,7 @@
                 quality: false,
             },
             Commands::Debug {
-                file: Some(PathBuf::from("m.apr")),
+                file: Some(PathBuf::from("m.apr").into()),
                 action: None,
                 drama: false,
                 hex: false,
@@ -152,24 +152,24 @@
                 limit: 256,
             },
             Commands::Validate {
-                file: PathBuf::from("m.apr"),
+                file: PathBuf::from("m.apr").into(),
                 quality: false,
                 strict: false,
                 min_score: None,
             },
             Commands::Tensors {
-                file: PathBuf::from("m.apr"),
+                file: PathBuf::from("m.apr").into(),
                 stats: false,
                 filter: None,
                 limit: 0,
                 json: false,
             },
             Commands::Lint {
-                file: PathBuf::from("m.apr"),
+                file: PathBuf::from("m.apr").into(),
                 strict: false,
             },
             Commands::Extended(ExtendedCommands::Qa {
-                file: PathBuf::from("m.apr"),
+                file: PathBuf::from("m.apr").into(),
                 assert_tps: None,
                 assert_speedup: None,
                 assert_gpu_speedup: None,
@@ -195,7 +195,7 @@
                 assert_classifier_head: false,
             }),
             Commands::Extended(ExtendedCommands::Hex {
-                file: PathBuf::from("m.apr"),
+                file: PathBuf::from("m.apr").into(),
                 tensor: None,
                 limit: 64,
                 stats: false,
@@ -207,21 +207,21 @@
                 contract: false,
                 entropy: false,
                 raw: false,
-                offset: "0".to_string(),
+                offset: "0".to_string().into(),
                 width: 16,
                 slice: None,
             }),
             Commands::Extended(ExtendedCommands::Tree {
-                file: PathBuf::from("m.apr"),
+                file: PathBuf::from("m.apr").into(),
                 filter: None,
                 format: crate::commands::tree::TreeFormat::Ascii,
                 sizes: false,
                 depth: None,
             }),
             Commands::Extended(ExtendedCommands::Flow {
-                file: PathBuf::from("m.apr"),
+                file: PathBuf::from("m.apr").into(),
                 layer: None,
-                component: "full".to_string(),
+                component: "full".to_string().into(),
                 verbose: false,
                 json: false,
             }),
@@ -250,9 +250,9 @@
     fn test_extract_paths_action_commands() {
         let serve_cmd = Commands::Serve {
             command: ServeCommands::Run {
-                file: Some(PathBuf::from("model.gguf")),
+                file: Some(PathBuf::from("model.gguf").into()),
                 port: 8080,
-                host: "127.0.0.1".to_string(),
+                host: "127.0.0.1".to_string().into(),
                 no_cors: false,
                 no_metrics: false,
                 no_gpu: false,
@@ -261,7 +261,7 @@
             list_devices: false,
                 batch: false,
                 trace: false,
-                trace_level: "basic".to_string(),
+                trace_level: "basic".to_string().into(),
                 profile: false,
                 backend: BackendArg::default(),
                 otlp_endpoint: None,
@@ -275,7 +275,7 @@
         assert_eq!(paths, Vec::<PathBuf>::new());
 
         let bench_cmd = Commands::Extended(ExtendedCommands::Bench {
-            file: PathBuf::from("model.apr"),
+            file: PathBuf::from("model.apr").into(),
             warmup: 3,
             iterations: 5,
             max_tokens: 32,
@@ -292,7 +292,7 @@
     #[test]
     fn test_extract_paths_run_hf_url() {
         let cmd = Commands::Run {
-            source: "hf://org/repo".to_string(),
+            source: "hf://org/repo".to_string().into(),
             positional_prompt: None,
             input: None,
             prompt: None,
@@ -337,12 +337,12 @@
     fn test_extract_paths_merge_multiple() {
         let cmd = Commands::Merge {
             files: vec![
-                PathBuf::from("a.apr"),
-                PathBuf::from("b.apr"),
-                PathBuf::from("c.apr"),
+                PathBuf::from("a.apr").into(),
+                PathBuf::from("b.apr").into(),
+                PathBuf::from("c.apr").into(),
             ],
-            strategy: "average".to_string(),
-            output: Some(PathBuf::from("merged.apr")),
+            strategy: "average".to_string().into(),
+            output: Some(PathBuf::from("merged.apr").into()),
             weights: None,
             base_model: None,
             drop_rate: 0.9,
@@ -412,19 +412,19 @@
             })) => {
                 assert_eq!(directory, PathBuf::from("/tmp/models"));
                 assert_eq!(repo_id, "paiml/whisper-apr-tiny");
-                assert_eq!(model_name, Some("Whisper Tiny".to_string()));
+                assert_eq!(model_name, Some("Whisper Tiny".to_string()).map(Into::into));
                 assert_eq!(license, "apache-2.0");
                 assert_eq!(pipeline_tag, "automatic-speech-recognition");
-                assert_eq!(library_name, Some("whisper-apr".to_string()));
+                assert_eq!(library_name, Some("whisper-apr".to_string()).map(Into::into));
                 assert_eq!(
                     tags,
                     Some(vec![
                         "whisper".to_string(),
                         "tiny".to_string(),
                         "asr".to_string()
-                    ])
+                    ]).map(|v| v.into_iter().map(Into::into).collect())
                 );
-                assert_eq!(message, Some("Initial release".to_string()));
+                assert_eq!(message, Some("Initial release".to_string()).map(Into::into));
                 assert!(dry_run);
             }
             _ => panic!("Expected Publish command"),
