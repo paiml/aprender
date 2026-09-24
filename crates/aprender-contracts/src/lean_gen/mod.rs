@@ -494,6 +494,7 @@ falsification_tests: []
                 .into_iter()
                 .collect(),
             withheld: None,
+            ..Default::default()
         };
         let r = lean_status_with(&contract, &d);
         assert_eq!((r.proved, r.discharged), (2, 1));

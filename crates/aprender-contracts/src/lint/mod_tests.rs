@@ -14,8 +14,9 @@ fn lint_passes_on_real_contracts() {
     // duplicate-stems (PV-DUP-001), composition, sigma (ONT-2b), relations (ONT-4), shapes (ONT-4b),
     // valid-under (ONT-7), theorem-pairing and depends-on-present (PVL-001 EV-11), and
     // challenge-fresh (PVL-001 EV-7a; MEASURED here, not skipped: the repo's Lean base and its committed Challenge/
-    // files are real, so `report.passed` requires them fresh), ont-consistency (ONT-5), refines (ONT-4e), bindings (ONT-3a).
-    assert_eq!(report.gates.len(), 20);
+    // files are real, so `report.passed` requires them fresh), ont-consistency (ONT-5), refines (ONT-4e), bindings (ONT-3a),
+    // refinement (ONT-3b).
+    assert_eq!(report.gates.len(), 21);
 }
 
 #[test]
@@ -178,7 +179,7 @@ fn lint_validation_failure_skips_audit_and_score() {
     let report = run_lint(&config);
     assert!(!report.passed);
     // validate should fail, all subsequent gates should be skipped
-    assert_eq!(report.gates.len(), 20);
+    assert_eq!(report.gates.len(), 21);
     assert!(!report.gates[0].passed); // validate failed
     assert!(report.gates[1].skipped); // audit skipped
     assert!(report.gates[2].skipped); // score skipped
@@ -399,6 +400,8 @@ fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus() {
             "refines".to_string(),
             // ONT-3a (gate 20) likewise.
             "bindings".to_string(),
+            // ONT-3b (gate 21) likewise.
+            "refinement".to_string(),
         ],
         "challenge-fresh is reported, never armed by default: it moves only via `make ont-ratchet`"
     );

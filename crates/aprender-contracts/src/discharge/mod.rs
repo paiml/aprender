@@ -18,6 +18,7 @@ pub mod challenge;
 pub mod comparator;
 pub mod formalization;
 pub mod lex;
+pub mod refinement;
 pub mod summary;
 
 use std::collections::{BTreeMap, BTreeSet};

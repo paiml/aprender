@@ -1167,6 +1167,7 @@ fn discharged_of(theorems: &[&str]) -> crate::discharge::summary::Discharged {
     crate::discharge::summary::Discharged {
         theorems: theorems.iter().map(|t| (*t).to_string()).collect(),
         withheld: None,
+        ..Default::default()
     }
 }
 
@@ -1206,6 +1207,42 @@ fn ev8b_a_withheld_summary_grants_nothing() {
     let d = crate::discharge::summary::Discharged {
         theorems: std::collections::BTreeSet::new(),
         withheld: Some("stale discharge".into()),
+        ..Default::default()
     };
     assert_eq!(count_discharged_for_contract(&c, &d), 0);
+}
+
+// ── ONT-3b (#4073): the refinement filter on the discharge grant ──
+
+#[test]
+fn refine_without_a_formalization_record_grants_nothing_l4() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut d = discharged_of(&["ProvableContracts.Softmax.sum_one"]);
+    d.module_of.insert(
+        "ProvableContracts.Softmax.sum_one".into(),
+        "ProvableContracts/Softmax.lean".into(),
+    );
+    super::refine(dir.path(), &mut d);
+    assert!(d.theorems.is_empty(), "no model covers the module: not L4");
+    assert!(d.unrefined.contains("ProvableContracts.Softmax.sum_one"));
+}
+
+#[test]
+fn refine_leaves_an_empty_grant_untouched() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut d = discharged_of(&[]);
+    super::refine(dir.path(), &mut d);
+    assert!(d.theorems.is_empty() && d.unrefined.is_empty());
+}
+
+#[test]
+fn workspace_root_is_the_nearest_workspace_manifest() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ws = dir.path().join("ws");
+    let inner = ws.join("crates/c/lean");
+    std::fs::create_dir_all(&inner).expect("mkdir");
+    std::fs::write(ws.join("Cargo.toml"), "[workspace]\nmembers = []\n").expect("write");
+    std::fs::write(ws.join("crates/c/Cargo.toml"), "[package]\nname = \"c\"\n").expect("write");
+    let got = super::workspace_root(&inner);
+    assert_eq!(got, std::fs::canonicalize(&ws).expect("canon"));
 }
