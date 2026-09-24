@@ -5,7 +5,7 @@ export TMPDIR=/mnt/nvme-raid0/tmp/g1-9b/tmp
 mkdir -p "$TMPDIR"
 cd /mnt/nvme-raid0/tmp/g1-9b || exit 2
 B=/mnt/nvme-raid0/agent-wt/f5-bins
-M=/home/noah/models/Qwen3.5-9B-Q4_K_M.gguf
+M=${APR_MODELS:-$HOME/models}/Qwen3.5-9B-Q4_K_M.gguf
 declare -A BIN=([rc]=$B/apr-0.69.3-rc-7ff50ec2a [base]=$B/apr-0.69.1-base-eed4a959a)
 one() {
   local k="$1-9b-$2"
