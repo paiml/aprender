@@ -1,0 +1,17 @@
+- id: PMAT-3810
+  github_issue: 3810
+  item_type: task
+  title: 'CI cuda-unit runs every cuda-gated aprender-serve lib test (cuda:: filter, single-threaded, SKIP fails) (#3810)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T16:13:45Z
+  updated: 2026-09-23T16:13:45Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
