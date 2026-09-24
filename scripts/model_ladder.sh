@@ -817,10 +817,16 @@ print(json.dumps({"probed": False,
             if [[ "$code" =~ ^[1-5][0-9][0-9]$ ]]; then http_json=$code; else http_json=null; fi
             if [ "$crc" = 0 ] && [ "$http_json" != null ]; then
                 cerr_json=null
+            elif [ "$http_json" != null ]; then
+                # a status line DID arrive; a timeout after it is named as such, never as "no response"
+                if [ "$crc" = 28 ]; then
+                    cerr_json="\"timeout after HTTP $http_json: body incomplete within ${LADDER_ROUTE_MAX_TIME:-60}s\""
+                else
+                    cerr_json="\"transfer failed after HTTP $http_json (curl exit $crc)\""
+                fi
+                code=000
             elif [ "$crc" = 28 ]; then
                 cerr_json="\"timeout: no response within ${LADDER_ROUTE_MAX_TIME:-60}s\""; code=000
-            elif [ "$http_json" != null ]; then
-                cerr_json="\"transfer failed after HTTP $http_json (curl exit $crc)\""; code=000
             else
                 cerr_json="\"no HTTP response (curl exit $crc)\""; code=000
             fi

@@ -16,6 +16,8 @@
 #   timeout-named   both /api/chat routes carry http:null and a curl_error naming the timeout
 #   cut-kept        /v1/completions sends a 200 then cuts its body: http 200 is KEPT, curl_error names the
 #                   failed transfer (curl exit 18), and the route is not ok
+#   stall-named     /v1/chat/completions stream sends a 200 then STALLS past the timeout: http 200 kept,
+#                   curl_error says "timeout after HTTP 200", never "no response"
 #   others-kept     every other route is present with http 200. The evidence survives
 # --self-test plants the old bare `"http":$code` and requires `parses` to turn RED.
 #
@@ -51,9 +53,12 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
     def do_POST(self):
-        n = int(self.headers.get("Content-Length") or 0); self.rfile.read(n)
+        n = int(self.headers.get("Content-Length") or 0); body_in = self.rfile.read(n)
         if self.path == "/api/chat":
             time.sleep(30)                      # never answers within the route timeout
+        if self.path == "/v1/chat/completions" and b'"stream":true' in body_in:   # a 200, then the body STALLS
+            self.send_response(200); self.send_header("Content-Length", "1000"); self.end_headers()
+            self.wfile.write(b'data: {"x"'); self.wfile.flush(); time.sleep(30); return
         if self.path == "/v1/completions":      # a 200 status line, then the body is cut short
             self.send_response(200); self.send_header("Content-Length", "1000"); self.end_headers()
             self.wfile.write(b'{"choices":[{"text":"4"'); self.wfile.flush()
@@ -116,12 +121,15 @@ for k in chat:
     if x.get("http") is not None or "timeout" not in str(x.get("curl_error") or ""):
         bad.append("%s: want http null + a timeout curl_error, got %s" % (k, x))
 print("TIMEOUT:" + "; ".join(bad))
-others = [k for k in r if not k.startswith("/api/chat|") and not k.startswith("/v1/completions|")]
+st = r.get("/v1/chat/completions|stream=true") or {}
+print("STALL:" + ("" if (st.get("http") == 200 and "timeout after HTTP 200" in str(st.get("curl_error") or "") and st.get("ok") is False) else str(st)))
+others = [k for k in r if not k.startswith("/api/chat|") and not k.startswith("/v1/completions|") and k != "/v1/chat/completions|stream=true"]
 ob = [k for k in others if r[k].get("http") != 200]
 print("OTHERS:%d:%s" % (len(others), ",".join(ob)))
 PY
 )
   if grep -q '^TIMEOUT:$' <<< "$out"; then ok timeout-named; else bad timeout-named "$(grep -m1 -E '^(TIMEOUT|unparseable)' <<< "$out")"; fi
+  if grep -q '^STALL:$' <<< "$out"; then ok stall-named; else bad stall-named "$(grep -m1 -E '^(STALL|unparseable)' <<< "$out")"; fi
   if grep -qE '^CUT:[1-9][0-9]*:$' <<< "$out"; then ok cut-kept; else bad cut-kept "$(grep -m1 -E '^(CUT|unparseable)' <<< "$out")"; fi
   if grep -qE '^OTHERS:[1-9][0-9]*:$' <<< "$out"; then ok "others-kept ($(grep -oE '^OTHERS:[0-9]+' <<< "$out" | cut -d: -f2) routes with http 200)"
   else bad others-kept "$(grep -m1 -E '^(OTHERS|unparseable)' <<< "$out")"; fi

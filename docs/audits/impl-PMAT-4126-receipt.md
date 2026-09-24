@@ -48,3 +48,10 @@ The same text is on the 27B cpu serve of the fc942f6be lambda sweep. Mechanism, 
 The unbounded /api/chat is NOT the cause: it generated eval_count 7, then EOS. What pushes it past
 60 s is per-request CPU latency under host load (100-125 s at load 155/48). The timeout policy is
 left to the cop.
+
+## Round-2 quorum finding (lane 2, claude-sonnet-5, PASS, measured), fixed
+A 200 whose body stalled past --max-time (curl exit 28 AFTER a status line) was labelled
+"timeout: no response", contradicting its own `http:200`. A received status now wins, and the error
+reads `timeout after HTTP <code>: body incomplete within <N>s`. New case stall-named: the fake
+/v1/chat/completions stream sends a 200 and stalls. A mutant restoring the old branch order turns
+stall-named RED with exactly that contradiction.
