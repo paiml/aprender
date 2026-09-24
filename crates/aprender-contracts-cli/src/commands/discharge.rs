@@ -49,18 +49,18 @@ pub fn run(action: DischargeAction) -> Res {
             contracts,
             no_lake,
             strict,
-            update_baseline,
         } => {
-            let r = discharge::check(
-                &lean_dir,
-                &contracts,
-                CheckOpts {
-                    strict,
-                    update_baseline,
-                },
-            );
+            let r = discharge::check(&lean_dir, &contracts, CheckOpts { strict });
             finish(r, &lean_dir, no_lake)
         }
+        DischargeAction::LabelRatchet {
+            lean_dir,
+            contracts,
+        } => finish(
+            discharge::ratchet_labels(&lean_dir, &contracts),
+            &lean_dir,
+            true,
+        ),
     }
 }
 
@@ -106,7 +106,7 @@ fn finish(mut r: Report, lean_dir: &Path, no_lake: bool) -> Res {
     if let Some(why) = r.decline {
         return Err(DischargeDeclined(why).into());
     }
-    println!("ok    discharge check {}", lean_dir.display());
+    println!("ok    discharge {}", lean_dir.display());
     Ok(())
 }
 

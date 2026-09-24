@@ -139,7 +139,7 @@ fn a_clean_tree_is_accepted_and_pins_the_bound_theorem_by_its_qualified_name() {
         "{axioms}"
     );
     let r = fx.check(&[]);
-    assert_rc(&r, 0, "ok    discharge check");
+    assert_rc(&r, 0, "ok    discharge lean");
     assert!(
         r.stdout.contains("ROOTS 1 pinned, 0 ORPHANED-ROOT"),
         "{}",
@@ -260,48 +260,85 @@ fn a_new_unresolved_label_fails_by_name() {
 }
 
 #[test]
-fn the_label_baseline_only_shrinks() {
+fn check_never_writes_the_label_set_and_label_ratchet_only_shrinks_it() {
     let fx = Fx::new();
-    let base = fx.path("lean/unresolved-label-baseline.txt");
+    let set = fx.path("lean/unresolved-labels.json");
     fx.append(CONTRACT, "  f:\n    lean_theorem: Theorems.NoSuchThing\n");
     fx.gen();
-    // no baseline yet: --update-baseline seeds it from what is measured
     assert_rc(
-        &fx.check(&["--update-baseline"]),
-        0,
-        "UNRESOLVED-LABEL 1 (baseline 1)",
+        &fx.check(&[]),
+        1,
+        "NEW-UNRESOLVED-LABEL gelu-v1: Theorems.NoSuchThing",
     );
-    assert!(std::fs::read_to_string(&base)
-        .expect("seeded")
-        .contains("gelu-v1\tTheorems.NoSuchThing"));
-    // the label is fixed: the listed line is now STALE until the baseline shrinks
+    assert!(!set.exists(), "the gate wrote the label set");
+    // no set yet: label-ratchet seeds it from what is measured, and check is then green
+    assert_rc(
+        &fx.pv(&["discharge", "label-ratchet", "lean"]),
+        0,
+        "(1 label(s))",
+    );
+    let seeded = std::fs::read_to_string(&set).expect("seeded");
+    assert!(
+        seeded.contains("\"label\": \"Theorems.NoSuchThing\""),
+        "{seeded}"
+    );
+    assert!(
+        seeded.contains("\"command\": \"make label-ratchet\""),
+        "{seeded}"
+    );
+    assert_rc(&fx.check(&[]), 0, "UNRESOLVED-LABEL (1) (listed 1)");
+    assert_eq!(
+        std::fs::read_to_string(&set).expect("set"),
+        seeded,
+        "check rewrote the label set"
+    );
+    // the label is fixed: still listed is reported, not red; label-ratchet removes it
     fx.write(
         CONTRACT,
         "equations:\n  e:\n    lean_theorem: Theorems.Gelu\n",
     );
+    assert_rc(&fx.check(&[]), 0, "RESOLVED-LABEL (1) still listed");
     assert_rc(
-        &fx.check(&[]),
-        1,
-        "gelu-v1: Theorems.NoSuchThing -- it resolves now",
-    );
-    assert_rc(
-        &fx.check(&["--update-baseline"]),
+        &fx.pv(&["discharge", "label-ratchet", "lean"]),
         0,
-        "UNRESOLVED-LABEL 0 (baseline 0)",
+        "(0 label(s))",
     );
-    assert!(!std::fs::read_to_string(&base)
-        .expect("baseline")
-        .contains("NoSuchThing"));
-    // a label that comes back is NOT re-admitted by --update-baseline: the ratchet never rises
+    // a label that comes back is NOT re-admitted: the ratchet never rises
     fx.append(CONTRACT, "  f:\n    lean_theorem: Theorems.NoSuchThing\n");
     assert_rc(
-        &fx.check(&["--update-baseline"]),
+        &fx.pv(&["discharge", "label-ratchet", "lean"]),
         1,
         "NEW-UNRESOLVED-LABEL gelu-v1: Theorems.NoSuchThing",
     );
-    assert!(!std::fs::read_to_string(&base)
-        .expect("baseline")
+    assert!(!std::fs::read_to_string(&set)
+        .expect("set")
         .contains("NoSuchThing"));
+}
+
+#[test]
+fn a_capstone_naming_no_theorem_is_missing_root() {
+    let fx = Fx::new();
+    fx.write(
+        "lean/formalization.yaml",
+        "capstones:\n  - ProvableContracts.Gelu.no_such\n",
+    );
+    fx.gen();
+    assert_rc(
+        &fx.check(&[]),
+        1,
+        "MISSING-ROOT capstone ProvableContracts.Gelu.no_such",
+    );
+    fx.write(
+        "lean/formalization.yaml",
+        "capstones:\n  - ProvableContracts.Gelu.gelu_bound\n",
+    );
+    fx.gen();
+    let axioms = std::fs::read_to_string(fx.path("lean/Axioms.lean")).expect("Axioms.lean");
+    assert!(
+        axioms.contains("#guard_msgs in #print axioms ProvableContracts.Gelu.gelu_bound"),
+        "{axioms}"
+    );
+    assert_rc(&fx.check(&[]), 0, "ok    discharge");
 }
 
 #[test]
@@ -331,7 +368,7 @@ fn zero_roots_declines_but_a_failure_outranks_the_decline() {
         "equations:\n  e:\n    lean_theorem: Theorems.NoSuchThing\n",
     );
     fx.gen();
-    fx.check(&["--update-baseline"]);
+    fx.pv(&["discharge", "label-ratchet", "lean"]);
     let r = fx.check(&[]);
     assert_rc(
         &r,

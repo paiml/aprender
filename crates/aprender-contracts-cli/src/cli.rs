@@ -504,9 +504,13 @@ pub enum DischargeAction {
         /// Allowlist entries still `confirmed_by: pending` are RED
         #[arg(long)]
         strict: bool,
-        /// Rewrite unresolved-label-baseline.txt DOWNWARD (it never gains a line; a missing one is seeded)
-        #[arg(long)]
-        update_baseline: bool,
+    },
+    /// `make label-ratchet`: rewrite <lean-dir>/unresolved-labels.json DOWNWARD (it never gains a label; a missing
+    /// file is seeded). `check` never writes it.
+    LabelRatchet {
+        lean_dir: PathBuf,
+        #[arg(long, default_value = "contracts")]
+        contracts: PathBuf,
     },
 }
 

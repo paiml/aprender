@@ -7,8 +7,8 @@
 //! - **Roots.** A theorem is contract-bound when a contract's `lean_theorem:` names it: an EXACT name
 //!   (`ProvableContracts.<…>.<decl>`) must name a declaration or it is MISSING-ROOT; a LABEL is matched the way
 //!   ONT-4b2 matches it ([`crate::ontology::extract::lean`]), and an unresolved label is held by a non-increasing
-//!   ratchet (`unresolved-label-baseline.txt`): a NEW one fails by name, one that now resolves must leave the
-//!   baseline (cop ruling on #4139, 2026-09-24).
+//!   ratchet keyed on the SET in `unresolved-labels.json`: only a label NOT in it fails (by name). The gate never
+//!   writes that file; `make label-ratchet` only shrinks it (PVL-001 infra#992; cop ruling on #4139).
 //! - **Axioms.lean**, generated: every bound theorem in the root's import cone gets a SUBSET pin over
 //!   `Lean.collectAxioms` (a proof needing fewer axioms stays green); `capstones:` in `formalization.yaml` get an
 //!   exact `#guard_msgs in #print axioms`. Bound theorems outside the cone are ORPHANED-ROOT: `lake env lean`
@@ -35,7 +35,7 @@ pub const ESCAPE_KINDS: &[&str] = &[
 /// `status.axioms` when `formalization.yaml` does not say otherwise, in the order `#print axioms` prints them.
 pub const DEFAULT_AXIOMS: &[&str] = &["propext", "Classical.choice", "Quot.sound"];
 pub const ALLOWLIST: &str = "escape-allowlist.yaml";
-pub const LABEL_BASELINE: &str = "unresolved-label-baseline.txt";
+pub const LABELS: &str = "unresolved-labels.json";
 pub const AXIOMS_FILE: &str = "Axioms.lean";
 const ROOT_MODULE: &str = "ProvableContracts";
 
@@ -318,6 +318,18 @@ fn statements(tree: &Tree) -> Vec<(Statement, Root)> {
     out
 }
 
+fn theorem_fqns(tree: &Tree) -> BTreeSet<&str> {
+    tree.files
+        .iter()
+        .flat_map(|f| {
+            f.decls
+                .iter()
+                .filter(|d| is_theorem(d))
+                .map(|d| d.fqn.as_str())
+        })
+        .collect()
+}
+
 fn is_theorem(d: &lex::Decl) -> bool {
     matches!(d.keyword.as_str(), "theorem" | "lemma") && !d.private
 }
@@ -379,33 +391,48 @@ fn bind_one(
     b.roots.extend(hits.into_iter().cloned());
 }
 
-/// `unresolved-label-baseline.txt`: `<contract stem>\t<reference>` per line; `#` comments. `None` when absent.
-pub fn load_label_baseline(dir: &Path) -> Result<Option<BTreeSet<(String, String)>>, String> {
-    let p = dir.join(LABEL_BASELINE);
+/// `unresolved-labels.json` `{command, labels: [{contract, label}]}`: the SET the label ratchet is keyed on.
+/// `None` when absent (every unresolved label is then new). The gate never writes it (PVL-001 infra#992).
+pub fn load_labels(dir: &Path) -> Result<Option<BTreeSet<(String, String)>>, String> {
+    let p = dir.join(LABELS);
     if !p.exists() {
         return Ok(None);
     }
-    let text = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
-    Ok(Some(
-        text.lines()
-            .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
-            .filter_map(|l| l.split_once('\t'))
-            .map(|(s, r)| (s.to_string(), r.to_string()))
-            .collect(),
-    ))
+    let bad = |e: &dyn std::fmt::Display| format!("{}: {e}", p.display());
+    let text = std::fs::read_to_string(&p).map_err(|e| bad(&e))?;
+    let doc: serde_json::Value = serde_json::from_str(&text).map_err(|e| bad(&e))?;
+    let labels = doc
+        .get("labels")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| bad(&"no `labels` array"))?;
+    labels
+        .iter()
+        .map(|l| {
+            let f = |k: &str| {
+                l.get(k)
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string)
+            };
+            f("contract")
+                .zip(f("label"))
+                .ok_or_else(|| bad(&format!("entry without contract/label: {l}")))
+        })
+        .collect::<Result<BTreeSet<_>, _>>()
+        .map(Some)
 }
 
+/// The bytes `make label-ratchet` writes.
 #[must_use]
-pub fn render_label_baseline(set: &BTreeSet<(String, String)>) -> String {
-    let mut out = String::from(
-        "# PVL-001 EV-6a (#4139): contract `lean_theorem:` LABELS that name no theorem, file or domain in the tree.\n\
-         # A non-increasing ratchet: `pv discharge check` fails a label that is not listed here, and one listed here\n\
-         # that now resolves. `pv discharge check <lean-dir> --update-baseline` only ever removes lines.\n",
-    );
-    for (s, r) in set {
-        out.push_str(&format!("{s}\t{r}\n"));
-    }
-    out
+pub fn render_labels(set: &BTreeSet<(String, String)>) -> String {
+    let labels: Vec<serde_json::Value> = set
+        .iter()
+        .map(|(c, l)| serde_json::json!({"contract": c, "label": l}))
+        .collect();
+    let doc = serde_json::json!({"command": "make label-ratchet", "labels": labels});
+    format!(
+        "{}\n",
+        serde_json::to_string_pretty(&doc).unwrap_or_default()
+    )
 }
 
 /// A Lean name literal: `` `A.b ``, with `«»` around any component that is not a plain identifier.
@@ -525,7 +552,6 @@ impl Report {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CheckOpts {
     pub strict: bool,
-    pub update_baseline: bool,
 }
 
 /// Escapes against the allowlist: unlisted, malformed and stale are RED; pending is RED only under `strict`.
@@ -582,7 +608,8 @@ pub fn judge_escapes(found: &[Escape], allow: &[Allowed], strict: bool, r: &mut 
     }
 }
 
-/// The label ratchet: a new unresolved label fails BY NAME; a baseline line that now resolves fails until removed.
+/// The label ratchet: an unresolved label NOT in the set fails BY NAME; a listed one that resolves now is reported
+/// (`make label-ratchet` removes it) and is not a failure.
 pub fn judge_labels(
     current: &BTreeSet<(String, String)>,
     base: Option<&BTreeSet<(String, String)>>,
@@ -595,11 +622,14 @@ pub fn judge_labels(
             "NEW-UNRESOLVED-LABEL {s}: {l} -- names no theorem, file or domain in the tree"
         ));
     }
-    for (s, l) in base.difference(current) {
-        r.fail(format!("STALE {LABEL_BASELINE} line {s}: {l} -- it resolves now: `--update-baseline` removes it"));
+    let resolved = base.difference(current).count();
+    if resolved > 0 {
+        r.lines.push(format!(
+            "RESOLVED-LABEL ({resolved}) still listed in {LABELS} -- `make label-ratchet` removes them"
+        ));
     }
     r.lines.push(format!(
-        "UNRESOLVED-LABEL {} (baseline {})",
+        "UNRESOLVED-LABEL ({}) (listed {})",
         current.len(),
         base.len()
     ));
@@ -632,7 +662,21 @@ pub fn check(lean_dir: &Path, contract_dir: &Path, opts: CheckOpts) -> Report {
         );
         r.fail(format!("MISSING-ROOT contract {s}: {x} -- {what}"));
     }
-    judge_ratchet(lean_dir, &b, opts.update_baseline, &mut r);
+    match load_formalization(lean_dir) {
+        Ok(form) => {
+            for c in form
+                .capstones
+                .iter()
+                .filter(|c| !theorem_fqns(&tree).contains(c.as_str()))
+            {
+                r.fail(format!(
+                    "MISSING-ROOT capstone {c} -- no such theorem in the tree"
+                ));
+            }
+        }
+        Err(e) => r.fail(format!("formalization.yaml unreadable: {e}")),
+    }
+    judge_ratchet(lean_dir, &b, &mut r);
     judge_axioms_file(lean_dir, &text, &mut r);
     let cone = tree.cone();
     let pinned = b.roots.iter().filter(|x| cone.contains(&x.module)).count();
@@ -649,44 +693,44 @@ pub fn check(lean_dir: &Path, contract_dir: &Path, opts: CheckOpts) -> Report {
     r
 }
 
-fn judge_ratchet(lean_dir: &Path, b: &Binding, update: bool, r: &mut Report) {
-    let base = match load_label_baseline(lean_dir) {
-        Ok(x) => x,
-        Err(e) => return r.fail(format!("{LABEL_BASELINE} unreadable: {e}")),
-    };
-    let base = if update {
-        Some(shrink_baseline(
-            lean_dir,
-            &b.unresolved_labels,
-            base.as_ref(),
-            r,
-        ))
-    } else {
-        base
-    };
-    judge_labels(&b.unresolved_labels, base.as_ref(), r);
+fn judge_ratchet(lean_dir: &Path, b: &Binding, r: &mut Report) {
+    match load_labels(lean_dir) {
+        Ok(base) => judge_labels(&b.unresolved_labels, base.as_ref(), r),
+        Err(e) => r.fail(format!("{LABELS} unreadable: {e}")),
+    }
 }
 
-/// `--update-baseline`: an existing baseline keeps only the lines still unresolved (it never gains one); a missing
-/// baseline is seeded from what is measured.
-fn shrink_baseline(
-    lean_dir: &Path,
-    current: &BTreeSet<(String, String)>,
-    base: Option<&BTreeSet<(String, String)>>,
-    r: &mut Report,
-) -> BTreeSet<(String, String)> {
-    let next: BTreeSet<_> = match base {
-        Some(b) => b.intersection(current).cloned().collect(),
-        None => current.clone(),
+/// `make label-ratchet` (`pv discharge label-ratchet`): the set keeps only labels still unresolved; it never gains
+/// one (a new label is reported and left OUT). A missing file is seeded from what is measured.
+pub fn ratchet_labels(lean_dir: &Path, contract_dir: &Path) -> Report {
+    let mut r = Report::default();
+    let tree = match Tree::load(lean_dir) {
+        Ok(t) => t,
+        Err(e) => {
+            r.decline = Some(e);
+            return r;
+        }
     };
-    let p = lean_dir.join(LABEL_BASELINE);
-    match std::fs::write(&p, render_label_baseline(&next)) {
+    let current = bind(&tree, contract_dir).unresolved_labels;
+    let next: BTreeSet<_> = match load_labels(lean_dir) {
+        Ok(Some(base)) => {
+            judge_labels(&current, Some(&base), &mut r);
+            base.intersection(&current).cloned().collect()
+        }
+        Ok(None) => current,
+        Err(e) => {
+            r.fail(format!("{LABELS} unreadable: {e}"));
+            return r;
+        }
+    };
+    let p = lean_dir.join(LABELS);
+    match std::fs::write(&p, render_labels(&next)) {
         Ok(()) => r
             .lines
-            .push(format!("wrote {} ({} line(s))", p.display(), next.len())),
+            .push(format!("wrote {} ({} label(s))", p.display(), next.len())),
         Err(e) => r.fail(format!("cannot write {}: {e}", p.display())),
     }
-    next
+    r
 }
 
 fn judge_axioms_file(lean_dir: &Path, text: &str, r: &mut Report) {

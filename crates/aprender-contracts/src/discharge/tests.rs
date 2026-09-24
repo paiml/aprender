@@ -94,7 +94,7 @@ fn a_stale_entry_is_red() {
 }
 
 #[test]
-fn a_new_label_fails_by_name_and_a_resolved_one_must_leave_the_baseline() {
+fn only_a_label_not_in_the_set_fails_and_by_name() {
     let pair = |s: &str, l: &str| (s.to_string(), l.to_string());
     let base: BTreeSet<_> = [pair("c", "Theorems.Old"), pair("c", "Theorems.Fixed")].into();
     let now: BTreeSet<_> = [pair("c", "Theorems.Old"), pair("d", "Theorems.Bogus")].into();
@@ -106,7 +106,12 @@ fn a_new_label_fails_by_name_and_a_resolved_one_must_leave_the_baseline() {
             .any(|l| l.contains("NEW-UNRESOLVED-LABEL d: Theorems.Bogus")),
         "{f:?}"
     );
-    assert!(f.iter().any(|l| l.contains("c: Theorems.Fixed")), "{f:?}");
+    assert_eq!(
+        f.len(),
+        1,
+        "a listed label that resolves now is NOT a failure (infra#992): {f:?}"
+    );
+    assert!(r.lines.contains(&"RESOLVED-LABEL (1) still listed in unresolved-labels.json -- `make label-ratchet` removes them".to_string()), "{:?}", r.lines);
     let mut ok = Report::default();
     judge_labels(&now, Some(&now), &mut ok);
     assert!(!ok.reject);
