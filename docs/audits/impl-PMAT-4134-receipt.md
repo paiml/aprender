@@ -43,6 +43,15 @@ they reach cargo as separate words.
 - actionlint OK; `check_guards_are_wired.sh` PASS (ratchet did not grow); `check_workflow_cargo_packages.sh` OK;
   `check_runner_labels.sh` OK.
 
+## Known blind spot (measured by aprender-75, 2026-09-24)
+`crates/apr-cli/src/lib.rs` carries a crate-wide `#![allow(clippy::all, clippy::pedantic,
+clippy::disallowed_methods)]` plus `allow(unused_variables, unused_imports, dead_code, …)`.
+- So `cargo clippy -p apr-cli --lib` sees only COMPILE errors in apr-cli's OWN code, on either architecture.
+- The dependency crates it pulls in (aprender-compute, aprender-core, …) are linted normally. That is where #4134's
+  four findings were and where the self-test plants, which is why the plant goes red.
+- An arm-only unused binding inside apr-cli itself would NOT turn this gate red. Lifting that allow is its own
+  ticket (the APR-MONO transition debt), not this one.
+
 ## Not done
 - The cuda axis: #3837 / PR #4091.
 - A PR-time arm clippy. This is nightly, so a finding reaches main and is caught within 24 h: rule E's 20-minute
