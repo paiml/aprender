@@ -364,6 +364,9 @@ fn compare(lake: Lake<'_>, lean_dir: &Path, r: &mut Report) {
         ));
         return;
     }
+    if !self_test(lake, lean_dir, r) {
+        return;
+    }
     let what = format!("lake env lean --run {COMPARATOR} ({} file(s))", files.len());
     let mut args: Vec<&OsStr> = ["env", "lean", "--run", COMPARATOR]
         .map(OsStr::new)
@@ -403,6 +406,54 @@ fn compare(lake: Lake<'_>, lean_dir: &Path, r: &mut Report) {
             r.reject = true;
         }
     }
+}
+
+/// The FIPS 180-4 vectors `Comparator.lean --self-test` checks: "", "abc" and the two-block 448-bit message.
+const FIPS_VECTORS: usize = 3;
+
+/// `lake env lean --run scripts/Comparator.lean --self-test` (#4238), before any row is trusted: the pure-Lean
+/// sha256 against the FIPS vectors, then the defeq controls. A regressed sha256 still hashes consistently, so the
+/// rows alone cannot catch it. rc != 0, a timeout, or fewer than [`FIPS_VECTORS`] `ok … sha256` lines rejects --
+/// a self-test that checked nothing is not a pass.
+fn self_test(lake: Lake<'_>, lean_dir: &Path, r: &mut Report) -> bool {
+    let what = format!("lake env lean --run {COMPARATOR} --self-test");
+    let o = match lake.run(
+        &["env", "lean", "--run", COMPARATOR, "--self-test"],
+        lean_dir,
+    ) {
+        Ok(Bounded::Done(o)) => o,
+        Ok(Bounded::TimedOut(pgid)) => {
+            r.lines.push(lake.timed_out(&what, pgid));
+            r.reject = true;
+            return false;
+        }
+        Err(e) => {
+            r.decline = Some(format!(
+                "lake could not be run ({e}): the comparator did not run (nor its self-test)"
+            ));
+            return false;
+        }
+    };
+    let stdout = String::from_utf8_lossy(&o.stdout);
+    let vectors = stdout
+        .lines()
+        .filter(|l| l.starts_with("ok") && l.contains(" sha256 "))
+        .count();
+    if o.status.success() && vectors >= FIPS_VECTORS {
+        r.lines
+            .push(format!("ok    {what} ({vectors} FIPS vectors)"));
+        return true;
+    }
+    r.lines.push(format!(
+        "FAIL  {what} exited {} with {vectors}/{FIPS_VECTORS} FIPS vectors ok -- the statement hash is not trusted",
+        raw_exit(o.status)
+    ));
+    r.lines.extend(tail(&format!(
+        "{stdout}{}",
+        String::from_utf8_lossy(&o.stderr)
+    )));
+    r.reject = true;
+    false
 }
 
 /// The last 20 lines of `text`, indented.
@@ -1022,6 +1073,9 @@ mod tests {
         assert_eq!(exits(&slow, true, t1), (None, Some(124)), "timeout");
     }
 
+    /// A passing `Comparator.lean --self-test`: the three FIPS vector lines, rc 0 (#4238).
+    const SELF_TEST_OK: &str = "if [ \"$5\" = --self-test ]; then printf 'ok    sha256 \"\" = e3\\nok    sha256 \"abc\" = ba\\nok    sha256 \"abcdbcde\" = 24\\n'; exit 0; fi";
+
     /// A `lake` for `--comparator`: `env lean --run …` writes `rows` to stdout, `stderr` to stderr, and exits
     /// `rc`; every other `env lean` passes. The tree gets `Challenge/gelu-v1.lean` and the comparator script.
     fn comparator_lake(dir: &Path, lean: &Path, rc: i32, rows: &str, stderr: &str) -> String {
@@ -1032,7 +1086,7 @@ mod tests {
         std::fs::write(dir.join(format!("rows-{rc}")), rows).expect("w");
         let p = dir.join(format!("cmp-lake-{rc}"));
         let script = format!(
-            "#!/bin/sh\nif [ \"$3\" = --run ]; then\n  [ \"$4 $5\" = \"{COMPARATOR} {CHALLENGE_DIR}/gelu-v1.lean\" ] || {{ echo \"bad args: $*\" >&2; exit 98; }}\n  cat '{}'; echo '{stderr}' >&2; exit {rc}\nfi\nexit 0\n",
+            "#!/bin/sh\n{SELF_TEST_OK}\nif [ \"$3\" = --run ]; then\n  [ \"$4 $5\" = \"{COMPARATOR} {CHALLENGE_DIR}/gelu-v1.lean\" ] || {{ echo \"bad args: $*\" >&2; exit 98; }}\n  cat '{}'; echo '{stderr}' >&2; exit {rc}\nfi\nexit 0\n",
             dir.join(format!("rows-{rc}")).display()
         );
         std::fs::write(&p, script).expect("w");
@@ -1238,7 +1292,7 @@ mod tests {
         .expect("w");
         let p = dir.join(format!("run-lake-{lc_rc}"));
         let script = format!(
-            "#!/bin/sh\ncase \"$2 $3\" in\n  'lean --run') cat '{}' ;;\n  printenv*) echo '{}' ;;\n  leanchecker*) exit {lc_rc} ;;\nesac\nexit 0\n",
+            "#!/bin/sh\n{SELF_TEST_OK}\ncase \"$2 $3\" in\n  'lean --run') cat '{}' ;;\n  printenv*) echo '{}' ;;\n  leanchecker*) exit {lc_rc} ;;\nesac\nexit 0\n",
             rows.display(),
             root.display()
         );
@@ -1465,13 +1519,17 @@ mod tests {
             r
         };
         // `env lean --run …`: $2 is `lean` for elaboration too, so hang only on `--run`.
-        let (cmp, _) = hang_lake(d.path(), "lean", "[ \"$3\" = --run ] && sleep 60");
+        let (cmp, _) = hang_lake(
+            d.path(),
+            "lean",
+            &format!("{SELF_TEST_OK}; [ \"$3\" = --run ] && sleep 60"),
+        );
         let r = bounded(&cmp, true, None);
         assert!(r.reject && r.decline.is_none(), "{:?}", r.lines);
         assert!(
             r.lines
                 .iter()
-                .any(|l| l.contains("--run") && l.contains("timed out after 1s")),
+                .any(|l| l.contains("file(s)) timed out after 1s")),
             "{:?}",
             r.lines
         );
@@ -1496,5 +1554,77 @@ mod tests {
             "pipe holder {} outlived the kill",
             pid.trim()
         );
+    }
+
+    /// #4238: the comparator's sha256 is checked against the FIPS vectors before any row is judged. A failing
+    /// self-test, a hung one, or one that exits 0 having checked fewer than three vectors rejects, and the rows
+    /// never run; a passing one is recorded first.
+    #[test]
+    fn the_comparator_self_test_gates_the_rows() {
+        let (d, lean, _) = tree();
+        let h = "ab".repeat(32);
+        let lake = comparator_lake(
+            d.path(),
+            &lean,
+            0,
+            &cmp_row(
+                "ProvableContracts.Gelu.gelu_bound",
+                &h,
+                &format!("\"{h}\""),
+                "[]",
+            ),
+            "",
+        );
+        let r = compared(&lake, &lean);
+        let st = r
+            .lines
+            .iter()
+            .position(|l| l.contains("--self-test (3 FIPS vectors)"));
+        let rows = r.lines.iter().position(|l| l.contains("file(s))"));
+        assert!(st.is_some() && st < rows, "self-test first: {:?}", r.lines);
+        let body = std::fs::read_to_string(&lake).expect("r");
+        for (name, stub) in [
+            ("fails", "printf 'FAIL  sha256 \\\"abc\\\" = 00\\n'; exit 1"),
+            (
+                "two-vectors",
+                "printf 'ok    sha256 a\\nok    sha256 b\\n'; exit 0",
+            ),
+            ("silent", "exit 0"),
+            ("hangs", "sleep 60"),
+        ] {
+            let p = d.path().join(format!("self-test-{name}"));
+            std::fs::write(
+                &p,
+                body.replace(
+                    SELF_TEST_OK,
+                    &format!("if [ \"$5\" = --self-test ]; then {stub}; fi"),
+                ),
+            )
+            .expect("w");
+            let mut perm = std::fs::metadata(&p).expect("meta").permissions();
+            std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
+            std::fs::set_permissions(&p, perm).expect("chmod");
+            let mut r = Report::default();
+            lean_steps(
+                Lake {
+                    bin: &p.to_string_lossy(),
+                    timeout_s: 2,
+                },
+                &mut r,
+                &lean,
+                false,
+                true,
+                None,
+            );
+            assert!(r.reject && r.decline.is_none(), "{name}: {:?}", r.lines);
+            assert!(r.challenges.is_none(), "{name}: rows judged: {:?}", r.lines);
+            assert!(
+                r.lines
+                    .iter()
+                    .any(|l| l.starts_with("FAIL") && l.contains("--self-test")),
+                "{name}: {:?}",
+                r.lines
+            );
+        }
     }
 }
