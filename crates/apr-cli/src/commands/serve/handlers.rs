@@ -1048,7 +1048,12 @@ fn start_safetensors_server_with_fallback(model_path: &Path, config: &ServerConf
 #[cfg(feature = "inference")]
 #[derive(Clone)]
 struct AprServerState {
-    transformer: Option<Arc<std::sync::Mutex<realizar::apr_transformer::AprTransformer>>>,
+    /// PMAT-4269: the APR CPU decode loop, driven through
+    /// `realizar::session::Session` (the one engine, #4263) — never
+    /// `AprTransformer::generate_with_cache*` directly.
+    transformer: Option<
+        Arc<std::sync::Mutex<realizar::session::Session<realizar::apr_transformer::AprCpuForward>>>,
+    >,
     model_type: String,
     architecture: String,
     is_transformer: bool,
@@ -1086,7 +1091,7 @@ fn run_apr_cpu_inference(
     max_tokens: usize,
     temperature: f32,
 ) -> std::result::Result<AprInferenceOutput, String> {
-    let transformer = state
+    let session = state
         .transformer
         .as_ref()
         .ok_or("Transformer not loaded, inference not supported")?;
@@ -1101,25 +1106,29 @@ fn run_apr_cpu_inference(
     };
     let input_token_count = input_tokens.len();
 
-    let gen_config = realizar::apr_transformer::GenerateConfig {
+    // PMAT-4269: through `Session::generate`, not `AprTransformer::generate_with_cache`
+    // directly — the one engine (#4263). `stop_tokens: vec![0]` keeps the old
+    // `is_eos_token` contract (token 0 is always EOS); `Session` has no implicit
+    // token-0 rule of its own.
+    let gen_config = realizar::gguf::QuantizedGenerateConfig {
         max_tokens,
         temperature,
         top_p: 0.9,
         top_k: 0,
         // #3760: the sampler draws now; no seed is plumbed from this caller.
         seed: realizar::apr_transformer::DEFAULT_SEED,
-        repetition_penalty: 1.0,
-        trace: false,
-        stop_tokens: vec![],
+        stop_tokens: vec![0],
         cancel: realizar::generate::CancelToken::never(),
+        ..Default::default()
     };
 
     let gen_start = Instant::now();
     let output_tokens = {
-        let t = transformer.lock().map_err(|_| {
+        let mut s = session.lock().map_err(|_| {
             "Transformer state corrupted (lock poisoned). Please restart the server.".to_string()
         })?;
-        t.generate_with_cache(&input_tokens, &gen_config)
+        s.generate(&input_tokens, &gen_config, &mut |_| true)
+            .map(|turn| turn.tokens)
             .map_err(|e| format!("Generate failed: {e}"))?
     };
     let gen_duration = gen_start.elapsed();
@@ -1249,7 +1258,9 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
                     )
                     .cyan()
                 );
-                Some(Arc::new(std::sync::Mutex::new(t)))
+                let forward = realizar::apr_transformer::AprCpuForward::new(t);
+                let session = realizar::session::Session::new(forward);
+                Some(Arc::new(std::sync::Mutex::new(session)))
             }
             Err(e) => {
                 println!(

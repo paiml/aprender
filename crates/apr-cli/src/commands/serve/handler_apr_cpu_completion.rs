@@ -129,20 +129,21 @@ fn spawn_cpu_streaming_task(
             None => prompt.chars().map(|c| c as u32).collect(),
         };
 
-        let gen_config = realizar::apr_transformer::GenerateConfig {
+        // PMAT-4269: through `Session::generate`'s `on_token` callback, not
+        // `AprTransformer::generate_with_cache_streaming` directly.
+        let gen_config = realizar::gguf::QuantizedGenerateConfig {
             max_tokens,
             temperature,
             top_p: 0.9,
             top_k: 0,
             // #3760: the sampler draws now; no seed is plumbed from this caller.
             seed: realizar::apr_transformer::DEFAULT_SEED,
-            repetition_penalty: 1.0,
-            trace: false,
-            stop_tokens: vec![],
+            stop_tokens: vec![0],
             cancel: realizar::generate::CancelToken::never(),
+            ..Default::default()
         };
 
-        let Ok(t) = transformer.lock() else {
+        let Ok(mut s) = transformer.lock() else {
             if tx.blocking_send(Err("Lock poisoned".to_string())).is_err() {
                 eprintln!("Warning: failed to send error to client (channel closed)");
             }
@@ -150,7 +151,7 @@ fn spawn_cpu_streaming_task(
         };
 
         // GH-326: Log generation errors instead of silently discarding
-        if let Err(e) = t.generate_with_cache_streaming(&input_tokens, &gen_config, |token_id| {
+        if let Err(e) = s.generate(&input_tokens, &gen_config, &mut |token_id| {
             tx.blocking_send(Ok(token_id)).is_ok()
         }) {
             eprintln!("Warning: streaming generation failed: {e}");
@@ -205,27 +206,28 @@ fn spawn_cpu_token_text_stream(
             None => prompt.chars().map(|c| c as u32).collect(),
         };
 
-        let gen_config = realizar::apr_transformer::GenerateConfig {
+        // PMAT-4269: through `Session::generate`'s `on_token` callback, not
+        // `AprTransformer::generate_with_cache_streaming` directly.
+        let gen_config = realizar::gguf::QuantizedGenerateConfig {
             max_tokens,
             temperature,
             top_p: 0.9,
             top_k: 0,
             // #3760: the sampler draws now; no seed is plumbed from this caller.
             seed: realizar::apr_transformer::DEFAULT_SEED,
-            repetition_penalty: 1.0,
-            trace: false,
-            stop_tokens: vec![],
+            stop_tokens: vec![0],
             cancel: realizar::generate::CancelToken::never(),
+            ..Default::default()
         };
 
-        let Ok(t) = transformer.lock() else {
+        let Ok(mut s) = transformer.lock() else {
             if tx.blocking_send(Err("Lock poisoned".to_string())).is_err() {
                 eprintln!("Warning: failed to send error to client (channel closed)");
             }
             return;
         };
 
-        if let Err(e) = t.generate_with_cache_streaming(&input_tokens, &gen_config, |token_id| {
+        if let Err(e) = s.generate(&input_tokens, &gen_config, &mut |token_id| {
             let text = decode_single_token(tokenizer.as_ref(), token_id);
             tx.blocking_send(Ok(text)).is_ok()
         }) {
