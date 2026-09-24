@@ -165,6 +165,9 @@ jobs:
           # build SHA (aprender-build-sha, #4219); a bin printing none is red.
           V=$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p&&/^version *=/{gsub(/"/,"",$3);print $3;exit}' Cargo.toml)
           if [ -z "$V" ]; then echo "::error::no [workspace.package] version in Cargo.toml"; exit 1; fi
+          # NIGHTLY_BINS is unset only when the build step died before deriving
+          # it; build.outcome is then failure and record returns build-failed
+          # without reading --bins, so "none" is never probed as a bin.
           python3 scripts/nightly_manifest.py record --target "${{ matrix.target }}" --sha "$GITHUB_SHA" \
             --bins "${NIGHTLY_BINS:-none}" --bin-dir "target/${{ matrix.target }}/release" --dist dist \
             --build-outcome "${{ steps.build.outcome }}" --version "$V" > "dist/fragment-${{ matrix.target }}.json"

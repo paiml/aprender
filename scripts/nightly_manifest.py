@@ -472,7 +472,7 @@ def self_test():
               (bc["red"]["reason"], gate(S, man({T[0]: gt(S), T[1]: {"green_sha": OLD, "red": bc["red"]}}), T, green)[0]),
               ("build-cancelled", "build"))
         vv = record(T[0], S, ["apr", "pv"], d, d, probe=fake(good), version="0.69.0")
-        check("every bin prints the crate version -> green (only apr prints a SHA)", vv["status"], "green")
+        check("every bin prints the crate version -> green and its build SHA", vv["status"], "green")
         vw = record(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, pv=(0, "pv 0.68.0"))), version="0.69.0")
         check("a bin printing another crate version -> version-failed", (vw["status"], (vw.get("red") or {}).get("reason")),
               ("red", "version-failed"))
