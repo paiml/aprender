@@ -117,7 +117,10 @@ impl DenseForward {
             model.device_name(),
             model.vram_mb()
         );
-        let mut forward = Self::with_backend(Backend::Cuda { model: Box::new(model), cache: None });
+        let mut forward = Self::with_backend(Backend::Cuda {
+            model: Box::new(model),
+            cache: None,
+        });
         forward.notices.push(line);
         forward
     }
@@ -129,7 +132,9 @@ impl DenseForward {
             Backend::Cpu { model, .. } => model,
             #[cfg(feature = "cuda")]
             Backend::Cuda { model, .. } => model.model(),
-            Backend::Moving => unreachable!("a dense forward is only Moving inside fall_back_to_cpu"),
+            Backend::Moving => {
+                unreachable!("a dense forward is only Moving inside fall_back_to_cpu")
+            },
         }
     }
 
@@ -140,10 +145,19 @@ impl DenseForward {
         let context_length = self.context_length;
         match &mut self.backend {
             Backend::Cpu { model, cache } => {
-                if cache.is_some() && positions <= self.capacity {
+                if positions <= self.capacity && cache.is_some() {
                     return Ok(());
                 }
-                let capacity = positions.max(self.capacity.saturating_mul(2)).min(context_length).max(positions);
+                let capacity = positions
+                    .max(self.capacity.saturating_mul(2))
+                    .min(context_length)
+                    .max(positions);
+                if let Some(cache) = cache {
+                    // Grown in place: what it holds stays held.
+                    cache.grow_to(capacity);
+                    self.capacity = capacity;
+                    return Ok(());
+                }
                 *cache = Some(OwnedQuantizedKVCache::from_config(&model.config, capacity));
                 self.capacity = capacity;
             },
@@ -155,13 +169,25 @@ impl DenseForward {
                         "the turn needs {positions} positions and the device KV cache holds {device_max}"
                     )));
                 }
-                if cache.is_some() && positions <= self.capacity {
+                if positions <= self.capacity && cache.is_some() {
                     return Ok(());
                 }
-                *cache = Some(OwnedQuantizedKVCache::from_config(&model.model().config, positions));
+                if let Some(cache) = cache {
+                    // The device cache is sized once, at build; only the host
+                    // side grows, in place.
+                    cache.grow_to(positions);
+                    self.capacity = positions;
+                    return Ok(());
+                }
+                *cache = Some(OwnedQuantizedKVCache::from_config(
+                    &model.model().config,
+                    positions,
+                ));
                 self.capacity = positions;
             },
-            Backend::Moving => unreachable!("a dense forward is only Moving inside fall_back_to_cpu"),
+            Backend::Moving => {
+                unreachable!("a dense forward is only Moving inside fall_back_to_cpu")
+            },
         }
         self.held = 0;
         Ok(())
@@ -174,7 +200,10 @@ impl DenseForward {
         eprintln!("{line}");
         self.notices.push(line);
         if let Backend::Cuda { model, .. } = std::mem::replace(&mut self.backend, Backend::Moving) {
-            self.backend = Backend::Cpu { model: Arc::new(model.into_model()), cache: None };
+            self.backend = Backend::Cpu {
+                model: Arc::new(model.into_model()),
+                cache: None,
+            };
         }
         self.capacity = 0;
         self.held = 0;
@@ -226,11 +255,12 @@ impl DenseForward {
             #[cfg(feature = "cuda")]
             Backend::Cuda { model, cache } => {
                 if let Some(cache) = cache {
-                    cache.reset();
+                    cuda_reset(model, cache);
                 }
-                model.executor_mut().reset_kv_cache_gpu();
             },
-            Backend::Moving => unreachable!("a dense forward is only Moving inside fall_back_to_cpu"),
+            Backend::Moving => {
+                unreachable!("a dense forward is only Moving inside fall_back_to_cpu")
+            },
         }
         self.held = 0;
         Ok(())
@@ -252,36 +282,27 @@ impl DenseForward {
             #[cfg(feature = "cuda")]
             Backend::Cuda { model, cache } => {
                 let cache = cache.as_mut().ok_or_else(|| never_reserved("CUDA"))?;
-                let last = tokens.len() - 1;
-                let mut from = start;
-                // A whole prompt: every position but the last in one batched
-                // prefill (it cannot start mid-sequence), then the last one for
-                // its logits — the path `generate_gpu_resident` takes on a
-                // sampled request.
-                if start == 0 && last > 1 {
-                    model
-                        .run_prefill(tokens, cache, last, false, false)
-                        .map_err(|e| gpu_failed("batched prefill", tokens.len(), e))?;
-                    self.batched_prefills += 1;
-                    from = last;
-                }
-                let mut logits = Vec::new();
-                for (pos, &token) in tokens.iter().enumerate().skip(from) {
-                    logits = model
-                        .forward_gpu_resident(token, cache, pos)
-                        .map_err(|e| gpu_failed("forward", pos, e))?;
-                }
-                logits
+                cuda_forward(model, cache, tokens, start, &mut self.batched_prefills)
+                    .map_err(Step::Gpu)?
             },
-            Backend::Moving => unreachable!("a dense forward is only Moving inside fall_back_to_cpu"),
+            Backend::Moving => {
+                unreachable!("a dense forward is only Moving inside fall_back_to_cpu")
+            },
         };
         self.held = tokens.len();
         Ok(logits)
     }
 
     /// The CUDA argmax path; `None` on the CPU, having done nothing.
-    #[cfg_attr(not(feature = "cuda"), allow(clippy::unnecessary_wraps, clippy::unused_self))]
-    fn try_forward_greedy(&mut self, tokens: &[u32], start: usize) -> std::result::Result<Option<u32>, Step> {
+    #[cfg_attr(
+        not(feature = "cuda"),
+        allow(clippy::unnecessary_wraps, clippy::unused_self)
+    )]
+    fn try_forward_greedy(
+        &mut self,
+        tokens: &[u32],
+        start: usize,
+    ) -> std::result::Result<Option<u32>, Step> {
         #[cfg(feature = "cuda")]
         if matches!(self.backend, Backend::Cuda { .. }) {
             let start = self.resume_at(start)?;
@@ -289,29 +310,11 @@ impl DenseForward {
                 unreachable!("matched above");
             };
             let cache = cache.as_mut().ok_or_else(|| never_reserved("CUDA"))?;
-            let last = tokens.len() - 1;
-            let next = if start == 0 && last > 0 {
-                // The whole prompt in one batched prefill, the first token
-                // chosen on the device from its last position (PMAT-083).
-                let first = model
-                    .run_prefill(tokens, cache, tokens.len(), false, true)
-                    .map_err(|e| gpu_failed("batched prefill", tokens.len(), e))?;
-                self.batched_prefills += 1;
-                match first {
-                    Some(t) => t,
-                    // The prefill ran but chose nothing: take the last position's
-                    // logits the way a sampled turn does.
-                    None => return Ok(None),
-                }
-            } else {
-                for (pos, &token) in tokens.iter().enumerate().take(last).skip(start) {
-                    model
-                        .forward_gpu_resident(token, cache, pos)
-                        .map_err(|e| gpu_failed("forward", pos, e))?;
-                }
-                model
-                    .forward_gpu_resident_to_token_id(tokens[last], cache, last)
-                    .map_err(|e| gpu_failed("forward", last, e))?
+            let Some(next) =
+                cuda_forward_greedy(model, cache, tokens, start, &mut self.batched_prefills)
+                    .map_err(Step::Gpu)?
+            else {
+                return Ok(None);
             };
             self.held = tokens.len();
             return Ok(Some(next));
@@ -328,8 +331,88 @@ fn never_reserved(backend: &str) -> Step {
 }
 
 #[cfg(feature = "cuda")]
-fn gpu_failed(what: &str, at: usize, e: RealizarError) -> Step {
-    Step::Gpu(format!("the GPU {what} failed at {at}: {e}"))
+fn gpu_failed(what: &str, at: usize, e: RealizarError) -> String {
+    format!("the GPU {what} failed at {at}: {e}")
+}
+
+/// Return a dense CUDA model's KV state (device and host) to position 0.
+#[cfg(feature = "cuda")]
+pub(crate) fn cuda_reset(
+    model: &mut crate::gguf::OwnedQuantizedModelCuda,
+    cache: &mut OwnedQuantizedKVCache,
+) {
+    cache.reset();
+    model.executor_mut().reset_kv_cache_gpu();
+}
+
+/// The dense CUDA forward: the KV state holds `tokens[..start]` (`start == 0`:
+/// the caller has reset it with [`cuda_reset`]); advance it over the rest and
+/// return the logits after the last token. A whole prompt prefills every
+/// position but the last in one batched call (it cannot start mid-sequence),
+/// counted in `batched_prefills`, then the last one for its logits — the path
+/// `generate_gpu_resident` takes on a sampled request.
+///
+/// # Errors
+/// The reason the GPU failed. What the state holds after an error is unknown.
+#[cfg(feature = "cuda")]
+pub(crate) fn cuda_forward(
+    model: &mut crate::gguf::OwnedQuantizedModelCuda,
+    cache: &mut OwnedQuantizedKVCache,
+    tokens: &[u32],
+    start: usize,
+    batched_prefills: &mut usize,
+) -> std::result::Result<Vec<f32>, String> {
+    let last = tokens.len() - 1;
+    let mut from = start;
+    if start == 0 && last > 1 {
+        model
+            .run_prefill(tokens, cache, last, false, false)
+            .map_err(|e| gpu_failed("batched prefill", tokens.len(), e))?;
+        *batched_prefills += 1;
+        from = last;
+    }
+    let mut logits = Vec::new();
+    for (pos, &token) in tokens.iter().enumerate().skip(from) {
+        logits = model
+            .forward_gpu_resident(token, cache, pos)
+            .map_err(|e| gpu_failed("forward", pos, e))?;
+    }
+    Ok(logits)
+}
+
+/// [`cuda_forward`] for a greedy step: the argmax is chosen on the device, so
+/// no logits cross to the host. A whole prompt goes through one batched
+/// prefill that extracts the first token (PMAT-083). `None`: the prefill ran
+/// but chose nothing, and the caller must [`cuda_reset`] and take the logits
+/// path.
+///
+/// # Errors
+/// As [`cuda_forward`].
+#[cfg(feature = "cuda")]
+pub(crate) fn cuda_forward_greedy(
+    model: &mut crate::gguf::OwnedQuantizedModelCuda,
+    cache: &mut OwnedQuantizedKVCache,
+    tokens: &[u32],
+    start: usize,
+    batched_prefills: &mut usize,
+) -> std::result::Result<Option<u32>, String> {
+    let last = tokens.len() - 1;
+    if start == 0 && last > 0 {
+        let first = model
+            .run_prefill(tokens, cache, tokens.len(), false, true)
+            .map_err(|e| gpu_failed("batched prefill", tokens.len(), e))?;
+        *batched_prefills += 1;
+        return Ok(first);
+    }
+    for (pos, &token) in tokens.iter().enumerate().take(last).skip(start) {
+        model
+            .forward_gpu_resident(token, cache, pos)
+            .map_err(|e| gpu_failed("forward", pos, e))?;
+    }
+    model
+        .forward_gpu_resident_to_token_id(tokens[last], cache, last)
+        .map(Some)
+        .map_err(|e| gpu_failed("forward", last, e))
 }
 
 impl crate::session::ArchForward for DenseForward {
@@ -363,7 +446,9 @@ impl crate::session::ArchForward for DenseForward {
         #[cfg(feature = "cuda")]
         if let Backend::Cuda { model, .. } = &self.backend {
             if let Err(e) = model.executor().make_current() {
-                self.fall_back_to_cpu(&format!("the CUDA context would not bind to this thread: {e}"))?;
+                self.fall_back_to_cpu(&format!(
+                    "the CUDA context would not bind to this thread: {e}"
+                ))?;
             }
         }
         if let Err(step) = self.ensure_capacity() {

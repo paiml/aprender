@@ -42,9 +42,16 @@ fn gen(max_tokens: usize) -> QuantizedGenerateConfig {
     }
 }
 
-fn session_tokens(model: &Arc<OwnedQuantizedModel>, prompt: &[u32], cfg: &QuantizedGenerateConfig) -> Vec<u32> {
+fn session_tokens(
+    model: &Arc<OwnedQuantizedModel>,
+    prompt: &[u32],
+    cfg: &QuantizedGenerateConfig,
+) -> Vec<u32> {
     let mut session = DenseSession::new(DenseForward::cpu(Arc::clone(model)));
-    session.generate(prompt, cfg, &mut |_| true).expect("dense session generates").tokens
+    session
+        .generate(prompt, cfg, &mut |_| true)
+        .expect("dense session generates")
+        .tokens
 }
 
 #[test]
@@ -52,7 +59,9 @@ fn greedy_turn_matches_generate_with_cache() {
     let model = model();
     let prompt = [1, 7, 13, 21];
     let cfg = gen(12);
-    let want = model.generate_with_cache(&prompt, &cfg).expect("reference loop");
+    let want = model
+        .generate_with_cache(&prompt, &cfg)
+        .expect("reference loop");
     assert_eq!(session_tokens(&model, &prompt, &cfg), want);
 }
 
@@ -68,31 +77,58 @@ fn sampled_turn_matches_generate_with_cache() {
         seed: 42,
         ..Default::default()
     };
-    let want = model.generate_with_cache(&prompt, &cfg).expect("reference loop");
+    let want = model
+        .generate_with_cache(&prompt, &cfg)
+        .expect("reference loop");
     assert_eq!(session_tokens(&model, &prompt, &cfg), want);
+}
+
+/// Logits that favour token 0, then token 1: argmax picks 0 every time unless
+/// the repetition penalty pushes 0 below 1 once it is in the context.
+struct Favours0Then1;
+
+impl ArchForward for Favours0Then1 {
+    fn arch(&self) -> &'static str {
+        "favours"
+    }
+    fn on_gpu(&self) -> bool {
+        false
+    }
+    fn context_length(&self) -> usize {
+        64
+    }
+    fn batched_prefills(&self) -> usize {
+        0
+    }
+    fn notices(&self) -> &[String] {
+        &[]
+    }
+    fn reserve(&mut self, _positions: usize) -> crate::error::Result<bool> {
+        Ok(false)
+    }
+    fn forward(&mut self, _tokens: &[u32], _start: usize) -> crate::error::Result<Vec<f32>> {
+        Ok(vec![1.0, 0.9, 0.0, 0.0])
+    }
 }
 
 /// The dense loops applied the repetition penalty before every choice; the
 /// engine must too, or a `--repeat-penalty` run changes answer on the move.
 #[test]
-fn repeat_penalty_turn_matches_generate_with_cache() {
-    let model = model();
-    let prompt = [2, 4, 6];
-    let plain = gen(16);
+fn engine_applies_the_repeat_penalty() {
+    let mut session = crate::session::Session::new(Favours0Then1);
+    let plain = session
+        .generate(&[3], &gen(2), &mut |_| true)
+        .expect("plain turn");
+    assert_eq!(plain.tokens, [3, 0, 0]);
     let penalised = QuantizedGenerateConfig {
-        repeat_penalty: 5.0,
+        repeat_penalty: 2.0,
         repeat_last_n: 64,
-        ..gen(16)
+        ..gen(2)
     };
-    let want = model.generate_with_cache(&prompt, &penalised).expect("reference loop");
-    // The fixture must be one where the penalty changes the answer, or this
-    // test cannot see the penalty go missing.
-    assert_ne!(
-        want,
-        model.generate_with_cache(&prompt, &plain).expect("reference loop"),
-        "fixture: the penalty changes nothing on this model"
-    );
-    assert_eq!(session_tokens(&model, &prompt, &penalised), want);
+    let turn = session
+        .generate(&[3], &penalised, &mut |_| true)
+        .expect("penalised turn");
+    assert_eq!(turn.tokens, [3, 0, 1], "the penalty was not applied");
 }
 
 /// A second turn that extends the first prefills only its new suffix and
@@ -102,11 +138,18 @@ fn extending_turn_reuses_the_cache() {
     let model = model();
     let cfg = gen(6);
     let mut session = DenseSession::new(DenseForward::cpu(Arc::clone(&model)));
-    let first = session.generate(&[1, 2, 3], &cfg, &mut |_| true).expect("turn 1");
+    let first = session
+        .generate(&[1, 2, 3], &cfg, &mut |_| true)
+        .expect("turn 1");
     let mut prompt = first.tokens.clone();
     prompt.extend([9, 10]);
-    let second = session.generate(&prompt, &cfg, &mut |_| true).expect("turn 2");
-    assert!(second.reused > 0, "turn 2 re-prefilled the whole conversation");
+    let second = session
+        .generate(&prompt, &cfg, &mut |_| true)
+        .expect("turn 2");
+    assert!(
+        second.reused > 0,
+        "turn 2 re-prefilled the whole conversation"
+    );
     assert_eq!(second.tokens, session_tokens(&model, &prompt, &cfg));
 }
 

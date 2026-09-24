@@ -129,6 +129,11 @@ mod quantized_tests;
 #[cfg(test)]
 mod tests;
 
+/// The dense (llama/qwen2/qwen3/...) forward behind the one engine (#4268):
+/// `apr run`, `run --batch`, `chat` and `serve` drive a dense GGUF through
+/// [`crate::session::Session`] on the CPU or the CUDA backend.
+#[path = "inference/forward/dense_session.rs"]
+pub mod dense_session;
 /// #3604: the F2 hybrid guard's receipt. CUDA-free on purpose, so its decision
 /// table is tested on every build.
 #[path = "inference/forward/f2_receipt.rs"]
@@ -140,8 +145,3 @@ pub mod forward_qwen35;
 /// decode state that outlives the turn (#3595 `apr chat`, #3571 `apr serve`).
 #[path = "inference/forward/qwen35_session.rs"]
 pub mod qwen35_session;
-/// The dense (llama/qwen2/qwen3/...) forward behind the one engine (#4268):
-/// `apr run`, `run --batch`, `chat` and `serve` drive a dense GGUF through
-/// [`crate::session::Session`] on the CPU or the CUDA backend.
-#[path = "inference/forward/dense_session.rs"]
-pub mod dense_session;
