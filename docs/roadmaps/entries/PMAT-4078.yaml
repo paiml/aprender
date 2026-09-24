@@ -1,0 +1,20 @@
+- id: PMAT-4078
+  github_issue: 4078
+  item_type: task
+  title: 'ONT-9: ont-self-v1 — planted-solution graphs, KANI-ONT-9-1, INV-1 measured (#4078)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-ont
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: paiml/infra docs/specifications/paiml-ontology.md §5 ONT-9
+  acceptance_criteria:
+  - contracts/ont-self-v1.yaml tracked and pv validate exit 0
+  - ont_planted verdict == construction (F-12)
+  - KANI-ONT-9-1 present in witness.rs
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

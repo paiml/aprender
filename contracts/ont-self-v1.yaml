@@ -1,0 +1,185 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-self-v1 — the ontology's contract on itself
+# (ONT-001 §5 row ONT-9, Appendix B.16; issue #4078; ticket PMAT-4078)
+#
+# WHAT IT GOVERNS
+#   The corpus the ontology reasons over, and the checker the consistency gate
+#   trusts to re-verify pv-sat:
+#   provable_contracts::ontology::witness — check, ont_planted, kani_proofs.
+#   provable_contracts::lint::relations_gate — typed_graph, colliding_ids.
+#   provable_contracts::lint::consistency_gate — the witness digests.
+#
+# PROOF LADDER, STATED HONESTLY
+#   * L2 — the planted corpus (400 instances, 1–10 variables, both answers)
+#          is judged by a brute-force oracle that shares no code with the
+#          checker; the three-variable universe is ENUMERATED (4096 clause
+#          sets × 3 conflicts × 819 step sequences × 8 models) as the twin of
+#          KANI-ONT-9-1. Nine checker mutants: eight turn a named test RED; the
+#          ninth (dropping the EmptyCore arm) is equivalent — an empty core
+#          cannot derive a conflict side, so ConflictSideNotDerived refuses it.
+#   * L3 — KANI-ONT-9-1 is a REAL #[kani::proof] in witness.rs. See
+#          kani_harnesses_note for what running it has and has not shown.
+#   * L4 — not declared. There is no Lean theorem for the checker.
+#
+# INV-1 IS NOT TRUE OF THE CORPUS TODAY, AND SAYS SO
+#   55 contract ids are claimed by more than one parsed file (per-repo copies
+#   kept by the monorepo merge). The census keys by stem, so every file but one
+#   is invisible to the relations and the witness. The count is pinned
+#   shrink-only, and no colliding id may be an endpoint of a typed edge — the
+#   part of INV-1 the witness's soundness depends on.
+# ─────────────────────────────────────────────────────────────────────────────
+metadata:
+  version: 1.0.0
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: PAIML Engineering
+  kind: kernel
+  valid_under:
+    world: committed
+  depends_on:
+  - ont-consistency-v1
+  - ont-relations-v1
+  description: >
+    ONT-001 ont-self — the contract corpus is a well-formed graph (ids, acyclic
+    typed roles, a witness named by the census it reasoned over) and the
+    consistency checker is sound: verdict == construction on planted instances,
+    and sound and complete over the bounded three-variable universe
+  references:
+  - 'paiml/infra docs/specifications/paiml-ontology.md §3.5 (the consistency procedure), §5 ONT-9, F-12, Appendix B.16'
+  - 'crates/aprender-contracts/src/ontology/witness.rs — check, ont_planted, kani_proofs::kani_ont_9_1'
+  - 'crates/aprender-contracts/src/ontology/witness_ont9_tests.rs — the planted corpus and the enumerated universe'
+  - 'crates/aprender-contracts/src/lint/relations_gate.rs — typed_graph, colliding_ids, COLLIDING_IDS_PINNED'
+
+entity:
+  type: pv-contract
+  ref: contracts/
+
+relations:
+  depends_on: [ont-consistency-v1, ont-relations-v1]
+
+equations:
+  check_sound:
+    formula: 'check(cs, c) = Ok(Unsat) ⇒ ¬∃σ. σ ⊨ cs  ∧  check(cs, Model(F)) = Ok(Sat) ⇔ (V∖F) ⊨ cs'
+    domain: cs a Horn clause set (units, implications, binary conflicts); c a certificate
+    codomain: Result<Checked, CheckError>
+    invariants:
+    - an accepted core means no assignment satisfies cs (sound)
+    - an accepted model satisfies every clause of cs
+    - over three variables, every unsatisfiable cs has an accepted core of at most three steps (complete at the bound)
+    preconditions:
+    - cs is finite
+    postconditions:
+    - Ok(Unsat) ⇒ brute force finds no model
+    - Ok(Sat) ⇒ the certificate's assignment satisfies cs
+    lean_theorem: none — L4 not declared
+  planted:
+    formula: 'ont_planted(seed, n, s) = (cs, c, s) with sat(cs) = s ∧ check(cs, c) = (s ? Sat : Unsat)'
+    domain: seed ∈ u64, n ≥ 1 (≥ 2 when s is false), s ∈ bool
+    codomain: Planted
+    invariants:
+    - a satisfiable plant admits only clauses its planted assignment satisfies
+    - an unsatisfiable plant's derivation stays a core under every clause added after it
+    - every step of a planted core is load-bearing
+    preconditions:
+    - none — every (seed, n, s) is a valid input
+    postconditions:
+    - the checker's verdict on the certificate equals s
+    - the same (seed, n, s) yields the same instance
+    lean_theorem: none — L4 not declared
+
+proof_obligations:
+- id: ONT9-INV-001
+  type: invariant
+  property: contract ids are unique (INV-1) — measured, pinned shrink-only, and never ambiguous on a typed edge
+  formal: '|colliding_ids(contracts/)| = COLLIDING_IDS_PINNED ∧ ∀ e ∈ typed_graph.edges: e.from, e.to ∉ colliding_ids'
+  applies_to: all
+- id: ONT9-INV-002
+  type: invariant
+  property: supersedes, refines and depends_on are acyclic (INV-2)
+  formal: 'a cycle through a role Σ marks acyclic ⇒ PV-ONT-009 naming the closing path'
+  applies_to: all
+- id: ONT9-INV-003
+  type: invariant
+  property: the witness is named by the census it reasoned over (INV-3)
+  formal: 'witness.census_id_set_sha256 ≠ census ∨ witness.relations_sha256 ≠ relations ⇒ Unknown(WitnessStale)'
+  applies_to: all
+- id: ONT9-INV-004
+  type: invariant
+  property: the checker is sound, and complete at three variables
+  formal: '∀ cs ⊆ U3, ∀ core ≤ 3 steps: check(cs, core) = Ok ⇒ unsat(cs); unsat(cs) ⇒ ∃ core accepted; check(cs, Model) = Ok ↔ satisfies(model, cs)'
+  applies_to: all
+- id: ONT9-POST-005
+  type: postcondition
+  property: the checker's verdict on a planted instance equals its construction (F-12)
+  formal: '∀ (seed, n, s): brute_sat(ont_planted(seed, n, s).cs) = s ∧ check(cs, c) = (s ? Sat : Unsat)'
+  applies_to: all
+
+verification_summary:
+  total_obligations: 5
+  l2_property_tested: 5
+  l3_kani_proved: 0
+  l4_lean_proved: 0
+  l4_sorry_count: 0
+  l4_not_applicable: 5
+
+falsification_tests:
+- id: FALSIFY-ONT9-001
+  rule: INV-1 measured
+  prediction: the repo corpus has exactly COLLIDING_IDS_PINNED colliding ids and none is an endpoint of a typed edge
+  test: cargo test -p aprender-contracts --lib lint::relations_gate::tests::the_repo_colliding_ids_are_pinned_and_none_is_in_the_typed_graph
+  if_fails: a new duplicate id was added, one was removed without lowering the pin, or a typed relation now names an id whose file the census picks by walk order
+- id: FALSIFY-ONT9-002
+  rule: INV-2 acyclic roles
+  prediction: a cycle a -> b -> c -> a through depends_on is rejected naming the path
+  test: cargo test -p aprender-contracts --lib lint::relations_gate::tests::a_cycle_through_an_acyclic_role_is_rejected_naming_the_path
+  if_fails: the witness reasons over a graph whose supersedes/depends_on order is circular
+- id: FALSIFY-ONT9-003
+  rule: INV-3 witness freshness
+  prediction: a witness for another census or relation set is Unknown(WitnessStale), never a verdict
+  test: cargo test -p aprender-contracts --lib lint::consistency_gate::tests::a_missing_or_foreign_witness_is_stale_not_a_pass
+  if_fails: the gate reports a verdict about a graph nobody reasoned over
+- id: FALSIFY-ONT9-004
+  rule: checker soundness, enumerated (the L2 twin of KANI-ONT-9-1)
+  prediction: over all 4096 three-variable clause sets, an accepted core implies unsat, every unsat set has an accepted core, and a model is accepted exactly when it satisfies
+  test: cargo test -p aprender-contracts --lib ontology::witness::ont9_tests::checker_is_sound_and_complete_at_three_variables
+  if_fails: the checker accepts a core it should refuse — measured RED for dropping the premise, conflict-side, no-such-implication, no-such-conflict and not-a-unit checks, and each model check
+- id: FALSIFY-ONT9-005
+  rule: F-12 verdict == construction
+  prediction: for 400 planted instances the brute-force oracle and the checker both agree with the construction
+  test: cargo test -p aprender-contracts --lib ontology::witness::ont9_tests::planted_verdict_equals_construction
+  if_fails: the generator or the checker is wrong, and the brute-force oracle says which
+- id: FALSIFY-ONT9-006
+  rule: a weakened certificate is refused
+  prediction: a planted core missing any one step, any assignment offered for a planted unsat set, and a planted model with a unit flipped false are all refused
+  test: cargo test -p aprender-contracts --lib ontology::witness::ont9_tests
+  if_fails: the checker accepts a certificate the construction says is broken
+
+kani_harnesses_note: >
+  kani_ont_9_1 compiles under cargo kani 0.67.0 (lambda-labs, 2026-09-24). It has
+  not been run to a VERIFICATION verdict: CBMC spends its time unwinding the
+  BTreeSet<String> internals of ClauseSet, and the run was still going after 10
+  minutes. l3_kani_proved is therefore 0. The same bounded property is ENUMERATED,
+  not sampled, by FALSIFY-ONT9-004 on every CI --lib run. No aprender CI lane runs
+  cargo kani.
+kani_harnesses:
+- id: KANI-ONT-9-1
+  obligation: ONT9-INV-004
+  property: over three variables, an accepted core means no assignment satisfies the clause set, and a model is accepted exactly when it satisfies
+  bound: 10
+  strategy: bounded_int
+  solver: cadical
+  harness: kani_ont_9_1
+
+qa_gate:
+  id: F-ONT9-001
+  name: ONT-001 ont-self
+  description: The ontology's contract on itself — corpus well-formed, checker sound (ONT-9)
+  checks:
+  - ids_unique_pinned
+  - roles_acyclic
+  - witness_fresh
+  - checker_sound_enumerated
+  - planted_verdict_equals_construction
+  - weakened_certificate_refused
+  pass_criteria: All 6 falsification tests pass
+  falsification: 'weaken any of eight checker branches — each turns FALSIFY-ONT9-004 RED (measured 2026-09-24)'

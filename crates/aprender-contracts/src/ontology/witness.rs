@@ -473,7 +473,7 @@ fn plant_sat(rng: &mut Mix, vars: &[String]) -> Planted {
     if vars.len() > 1 {
         for _ in 0..2 * vars.len() {
             let (a, b) = pair(rng, vars);
-            if !(truth[a.as_str()] && !truth[b.as_str()]) {
+            if !truth[a.as_str()] || truth[b.as_str()] {
                 cs.implies.insert((a.clone(), b.clone()));
             }
         }
