@@ -6,7 +6,6 @@
 
 #![allow(unused_imports)]
 #![allow(unused_variables)]
-#![allow(dead_code)]
 
 #[cfg(feature = "wgpu")]
 use axum::response::IntoResponse;
@@ -115,22 +114,9 @@ fn wgpu_detokenize_one(id: u32, vocab: &[String]) -> String {
     String::from_utf8_lossy(&gpt2_token_bytes(token)).into_owned()
 }
 
-/// PMAT-355: Qwen2 stop conditions for the WGPU greedy decode loop.
+/// PMAT-355: Qwen2 stop tokens for the WGPU greedy decode loop (`<|im_end|>`, pad).
 #[cfg(feature = "wgpu")]
-fn wgpu_is_stop_token(token: u32) -> bool {
-    token == 151645 || token == 0
-}
-
-/// PMAT-355: Greedy argmax over a logits vector (0 when empty).
-#[cfg(feature = "wgpu")]
-fn wgpu_argmax(logits: &[f32]) -> u32 {
-    logits
-        .iter()
-        .enumerate()
-        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-        .map(|(i, _)| i as u32)
-        .unwrap_or(0)
-}
+const WGPU_STOP_TOKENS: [u32; 2] = [151645, 0];
 
 /// PMAT-355: Tokens per second, guarding the zero-elapsed case.
 #[cfg(feature = "wgpu")]
@@ -265,8 +251,8 @@ fn wgpu_stream_generate(
 
     let mut completion_tokens = 0u32;
     for step in 0..max_tokens {
-        let next_token = wgpu_argmax(&last_logits);
-        if wgpu_is_stop_token(next_token) {
+        let next_token = realizar::sampling::argmax(&last_logits);
+        if realizar::sampling::is_stop(next_token, &WGPU_STOP_TOKENS) {
             break;
         }
         let text = wgpu_detokenize_one(next_token, vocab);
@@ -328,8 +314,8 @@ fn wgpu_chat_completion_blocking(
     };
 
     for step in 0..max_tokens {
-        let next_token = wgpu_argmax(&last_logits);
-        if wgpu_is_stop_token(next_token) {
+        let next_token = realizar::sampling::argmax(&last_logits);
+        if realizar::sampling::is_stop(next_token, &WGPU_STOP_TOKENS) {
             break;
         }
         output_ids.push(next_token);
