@@ -18191,6 +18191,25 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-4140
+  github_issue: 4140
+  item_type: task
+  kind: code
+  title: '#4129 on the 0.69.1 lineage: apr-cli and aprender-orchestrate tests include #3990 fixtures / thinking-budgets source from outside their crate'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T04:53:51.420416768+00:00
+  updated: 2026-09-24T04:53:51.420416768+00:00
+  spec: null
+  acceptance_criteria:
+  - 'apr-cli and aprender-orchestrate are absent from the #4114 tarball gate RED rows on this lineage'
+  - 'in tree each converted test RUNS (no out-of-tree SKIP) and a moved fixture FAILS it; out of tree it SKIPs by name'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Cop row (aprender-cf, 2026-09-24): the 0.69.1-lineage instances of #4129, branched off chore/0.69.1-merge-back @ f1b09d4d6, NOT part of #4046 single push; folds in the 0.70 batch after #4046. Same pattern as #4048/#4129/#4130.'
 - id: GH-4149
   github_issue: 4149
   item_type: task
@@ -21348,6 +21367,26 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3837
+  github_issue: 3837
+  item_type: task
+  title: 'The --features cuda lint surface has never been gated: clippy -p apr-cli --lib --features cuda is RED'
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-dd
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo clippy -p apr-cli --lib --features cuda -- -D warnings exits 0'
+  - 'a gate that runs in a workflow lints the cuda axis, with flags passed literally and a planted RED proving it'
+  - 'other feature axes enumerated; any excluded one is named with a ticket'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-3839
   github_issue: 3839
   item_type: task
@@ -21452,15 +21491,6 @@ roadmap:
   assigned_to: null
   created: 2026-09-23T07:00:57Z
   updated: 2026-09-23T07:00:57Z
-- id: PMAT-4152
-  github_issue: 4152
-  item_type: task
-  title: '#4152: clippy over every workspace member — shrink-only ratchet; aprender-serve clippy-clean'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-24T06:55:27Z
-  updated: 2026-09-24T06:55:27Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -21487,18 +21517,6 @@ roadmap:
     raw {generated_ids, generated_text with special tokens, greedy, special, max_tokens, prompt_ids, template_prompt_ids}
     — for Qwen3.5-0.8B-IQ4_XS, 0.8B-Q4_K_M, 2B-Q4_K_M and the 4B control; the judge (aprender-36) reads the model defect off
     the official rows only'
-- id: PMAT-4193
-  github_issue: 4193
-  item_type: task
-  title: 'aprender-serve published tarball: tokenizer_tests_unk_3609 include_bytes! tests/fixtures, which Cargo.toml excludes (/tests/)'
-  status: in_progress
-  priority: high
-  assigned_to: aprender-6c
-  created: 2026-09-24T00:00:00Z
-  updated: 2026-09-24T00:00:00Z
-  spec: null
-  acceptance_criteria:
-  - 'Issue #4193 done_when, verbatim: "`cargo build -p aprender-serve --lib --tests` from the unpacked tarball has no error at tokenizer_tests_unk_3609.rs, and the #3609 rows still pass in tree."'
   phases: []
   subtasks: []
   estimated_effort: null
@@ -21511,12 +21529,6 @@ roadmap:
   title: 'CRUX producer: per-verb prompt sets (incl. hard prompts) + code verb + hf/vllm quorum rows — prompt-certification half (aprender-dd)'
   status: in_progress
   priority: critical
-- id: PMAT-3837
-  github_issue: 3837
-  item_type: task
-  title: 'The --features cuda lint surface has never been gated: clippy -p apr-cli --lib --features cuda is RED'
-  status: in_progress
-  priority: medium
   assigned_to: aprender-dd
   created: 2026-09-23T00:00:00Z
   updated: 2026-09-23T00:00:00Z
@@ -21545,112 +21557,6 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: PMAT-4120
-  github_issue: 4120
-  item_type: task
-  title: check_crux_serve_code T2 + crux_cell_teardown signal pid 1 (the runner Listener in CI); guard_tree must isolate guards (#4120)
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-24T00:32:40Z
-  updated: 2026-09-24T00:32:40Z
-  spec: null
-  acceptance_criteria: []
-  acceptance_criteria:
-  - 'cargo clippy -p apr-cli --lib --features cuda -- -D warnings exits 0'
-  - 'a gate that runs in a workflow lints the cuda axis, with flags passed literally and a planted RED proving it'
-  - 'other feature axes enumerated; any excluded one is named with a ticket'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-- id: PMAT-4250
-  github_issue: 4250
-  item_type: task
-  title: '0.69.4 G0: serve-level test fails unless apr serve prefills Qwen3.5 batched (#4250)'
-  status: planned
-  priority: medium
-  assigned_to: aprender-ac
-  created: 2026-09-24T10:04:37Z
-  updated: 2026-09-24T10:04:37Z
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-- id: PMAT-4263
-  github_issue: 4263
-  item_type: task
-  title: "one engine (0.69.3): every Qwen3.5 verb through realizar::session::Session"
-  status: inprogress
-  priority: critical
-  assigned_to: aprender-ac
-  labels:
-  - kind:code
-- id: GH-4140
-  github_issue: 4140
-  item_type: task
-  kind: code
-  title: '#4129 on the 0.69.1 lineage: apr-cli and aprender-orchestrate tests include #3990 fixtures / thinking-budgets source from outside their crate'
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-09-24T04:53:51.420416768+00:00
-  updated: 2026-09-24T04:53:51.420416768+00:00
-  spec: null
-  acceptance_criteria:
-  - 'apr-cli and aprender-orchestrate are absent from the #4114 tarball gate RED rows on this lineage'
-  - 'in tree each converted test RUNS (no out-of-tree SKIP) and a moved fixture FAILS it; out of tree it SKIPs by name'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: 'Cop row (aprender-cf, 2026-09-24): the 0.69.1-lineage instances of #4129, branched off chore/0.69.1-merge-back @ f1b09d4d6, NOT part of #4046 single push; folds in the 0.70 batch after #4046. Same pattern as #4048/#4129/#4130.'
-- id: PMAT-4268
-  github_issue: 4268
-  item_type: task
-  title: 'Workstream D (#4263): dense GGUF (llama, qwen2, qwen3, mistral, ...) CUDA and CPU forwards behind the one engine (realizar::session); apr run, run --batch, chat and serve dense route through it'
-  status: in_progress
-  priority: critical
-  assigned_to: aprender-49
-  created: 2026-09-24 14:00:00+00:00
-  updated: '2026-09-24T16:30:00Z'
-  spec: null
-  acceptance_criteria: []
-- id: PMAT-4259
-  github_issue: 4259
-  item_type: task
-  title: 'GPU argmax kernel keeps the later index on an exact tie; CPU argmax keeps the first — breaks greedy token identity once #4215(b) moves argmax to GPU'
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-09-24T12:01:41Z
-  updated: 2026-09-24T12:01:41Z
-  spec: null
-  acceptance_criteria:
-  - 'The GPU argmax returns the FIRST index of an exact maximum, as the CPU argmax does; a red-first tie-break falsifier covers ties within a thread, across threads, and across blocks.'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: 'D1 (this PR): DenseForward (CPU + CUDA) implements ArchForward in gguf/inference/forward/dense_session.rs; apr run (run_gguf_generate) and apr run --batch (BatchModel) drive DenseSession through dense_turn, which answers token-for-token what generate_with_cache answered (greedy, seeded sampled, stop token dropped, ContextLimitExceeded kept). Witness guards in infer/tests_dense_session_4268.rs turn RED when either route goes back to its own loop (mutation measured). --trace keeps the instrumented loops (the engine has no brick profiler). The wgpu fallback keeps its own greedy loop (out of scope). The CUDA arms are free fns (cuda_reset/cuda_forward/cuda_forward_greedy) for aprender-98''s serve cuda_batch_scheduler (#4280). D2 (next PR): dense chat and serve CPU/CUDA backends. CUDA path is not yet run on a GPU in this PR.'
-- id: PMAT-4269
-  github_issue: 4269
-  item_type: task
-  title: 'one-engine workstream M: port qwen3_moe run, ST CUDA run, APR CPU serve, APR Q4K scheduler, ST serve and ST chat onto realizar::session::Session (child of #4263)'
-  status: in_progress
-  priority: high
-  assigned_to: aprender-cb
-  created: 2026-09-24T11:30:00Z
-  updated: 2026-09-24T11:30:00Z
-  spec: null
-  acceptance_criteria: []
 - id: PMAT-4041
   github_issue: 4041
   item_type: task
@@ -21670,7 +21576,153 @@ roadmap:
   estimated_effort: null
   labels:
   - kind:code
+  notes: null
+- id: PMAT-4120
+  github_issue: 4120
+  item_type: task
+  title: check_crux_serve_code T2 + crux_cell_teardown signal pid 1 (the runner Listener in CI); guard_tree must isolate guards (#4120)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T00:32:40Z
+  updated: 2026-09-24T00:32:40Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4152
+  github_issue: 4152
+  item_type: task
+  title: '#4152: clippy over every workspace member — shrink-only ratchet; aprender-serve clippy-clean'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T06:55:27Z
+  updated: 2026-09-24T06:55:27Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4193
+  github_issue: 4193
+  item_type: task
+  title: 'aprender-serve published tarball: tokenizer_tests_unk_3609 include_bytes! tests/fixtures, which Cargo.toml excludes (/tests/)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-6c
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #4193 done_when, verbatim: "`cargo build -p aprender-serve --lib --tests` from the unpacked tarball has no error at tokenizer_tests_unk_3609.rs, and the #3609 rows still pass in tree."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Option (a) from the ticket: the two header slices, MANIFEST.json and generate.py move from tests/fixtures/gguf-header-slices/ to src/fixtures/gguf-header-slices/ (the src/fixtures/chat_template_3990/ pattern), so they ship and the test runs for crates.io users. MEASURED: in tree, cargo test -p aprender-serve --lib tokenizer_tests_unk_3609 gives 9/9 pass. Tarball: the commit cherry-picked onto v0.69.1, packaged, and swapped into aprender-3a''s #4114 tarball workspace; cargo test -p aprender-serve --lib --no-run has 0 errors at tokenizer_tests_unk_3609.rs (it was 2). The one remaining error in that target is contracts/kernel-fusion-v1.yaml in fusion_call_site_guard_3985.rs, which is #4048 and out of scope. .crate is 8,224,489 bytes (under the 10 MB crates.io limit).'
+- id: PMAT-4250
+  github_issue: 4250
+  item_type: task
+  title: '0.69.4 G0: serve-level test fails unless apr serve prefills Qwen3.5 batched (#4250)'
+  status: planned
+  priority: medium
+  assigned_to: aprender-ac
+  created: 2026-09-24T10:04:37Z
+  updated: 2026-09-24T10:04:37Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4259
+  github_issue: 4259
+  item_type: task
+  title: 'GPU argmax kernel keeps the later index on an exact tie; CPU argmax keeps the first — breaks greedy token identity once #4215(b) moves argmax to GPU'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:01:41Z
+  updated: 2026-09-24T12:01:41Z
+  spec: null
+  acceptance_criteria:
+  - 'The GPU argmax returns the FIRST index of an exact maximum, as the CPU argmax does; a red-first tie-break falsifier covers ties within a thread, across threads, and across blocks.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Ported from c8ce988c3 (perf/4215, based on 0.69.3) onto main; prerequisite for #4215(b), greedy GPU argmax.'
+- id: PMAT-4263
+  github_issue: 4263
+  item_type: task
+  title: "one engine (0.69.3): every Qwen3.5 verb through realizar::session::Session"
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-ac
+  labels:
+  - kind:code
+- id: PMAT-4268
+  github_issue: 4268
+  item_type: task
+  title: 'Workstream D (#4263): dense GGUF (llama, qwen2, qwen3, mistral, ...) CUDA and CPU forwards behind the one engine (realizar::session); apr run, run --batch, chat and serve dense route through it'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-49
+  created: 2026-09-24 14:00:00+00:00
+  updated: '2026-09-24T16:30:00Z'
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'D1 (this PR): DenseForward (CPU + CUDA) implements ArchForward in gguf/inference/forward/dense_session.rs; apr run (run_gguf_generate) and apr run --batch (BatchModel) drive DenseSession through dense_turn, which answers token-for-token what generate_with_cache answered (greedy, seeded sampled, stop token dropped, ContextLimitExceeded kept). Witness guards in infer/tests_dense_session_4268.rs turn RED when either route goes back to its own loop (mutation measured). --trace keeps the instrumented loops (the engine has no brick profiler). The wgpu fallback keeps its own greedy loop (out of scope). The CUDA arms are free fns (cuda_reset/cuda_forward/cuda_forward_greedy) for aprender-98''s serve cuda_batch_scheduler (#4280). D2 (next PR): dense chat and serve CPU/CUDA backends. CUDA path is not yet run on a GPU in this PR.'
+- id: PMAT-4269
+  github_issue: 4269
+  item_type: task
+  title: 'one-engine workstream M: port qwen3_moe run, ST CUDA run, APR CPU serve, APR Q4K scheduler, ST serve and ST chat onto realizar::session::Session (child of #4263)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-cb
+  created: 2026-09-24T11:30:00Z
+  updated: 2026-09-24T11:30:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
   notes: 'Roadmap id authorized by the 0.69.3 captain (aprender-36). Targets release/0.69.3 via the #4263 one-engine branch; #4265 (APR CPU stop/top_p) closed from this workstream.'
+- id: PMAT-4273
+  github_issue: 4273
+  item_type: task
+  title: 'qwen35 decode attention: split over sequence + f16 KV (decode collapses 70->7.8 tok/s at 32k)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T10:58:23Z
+  updated: 2026-09-24T10:58:28.746720556+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-4280
   github_issue: 4280
   item_type: task
@@ -21688,6 +21740,3 @@ roadmap:
   labels:
   - kind:code
   notes: 'cuda_batch_scheduler generate_single_request (the m==1 fast path, shared with the iteration scheduler) runs one Session::generate over BorrowedCudaForward, a dense CUDA ArchForward over the scheduler''s borrowed model built on aprender-49''s cuda_reset/cuda_forward/cuda_forward_greedy. Stop tokens are filtered in the callback so none is sent (pre-port semantics). The m>1 batched path (batched_setup_and_prefill/batched_decode_step) is multi-slot and stays as is. Known delta: the per-request prefix cache (establish_prompt_kv/populate_prefix_cache) is not used on the ported path.'
-  notes: 'Option (a) from the ticket: the two header slices, MANIFEST.json and generate.py move from tests/fixtures/gguf-header-slices/ to src/fixtures/gguf-header-slices/ (the src/fixtures/chat_template_3990/ pattern), so they ship and the test runs for crates.io users. MEASURED: in tree, cargo test -p aprender-serve --lib tokenizer_tests_unk_3609 gives 9/9 pass. Tarball: the commit cherry-picked onto v0.69.1, packaged, and swapped into aprender-3a''s #4114 tarball workspace; cargo test -p aprender-serve --lib --no-run has 0 errors at tokenizer_tests_unk_3609.rs (it was 2). The one remaining error in that target is contracts/kernel-fusion-v1.yaml in fusion_call_site_guard_3985.rs, which is #4048 and out of scope. .crate is 8,224,489 bytes (under the 10 MB crates.io limit).'
-  notes: 'Ported from c8ce988c3 (perf/4215, based on 0.69.3) onto main; prerequisite for #4215(b), greedy GPU argmax.'
-  notes: null
