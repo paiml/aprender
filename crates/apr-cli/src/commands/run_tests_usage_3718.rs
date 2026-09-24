@@ -27,7 +27,7 @@ fn json_carries_the_engine_counts_and_the_finish() {
         generation_ms: None,
         setup_ms: None,
     };
-    let v = build_final_json(&result_with(usage), "m.gguf", 32, false);
+    let v = build_final_json(&result_with(usage), "m.gguf", 32, false, None);
     assert_eq!(v["prompt_tokens"], 79);
     assert_eq!(v["completion_tokens"], 32);
     assert_eq!(v["finish_reason"], "length");
@@ -38,7 +38,7 @@ fn json_carries_the_engine_counts_and_the_finish() {
 /// a default "stop" is the silent cut this row removes.
 #[test]
 fn unreported_fields_are_null_not_zero() {
-    let v = build_final_json(&result_with(RunUsage::default()), "m.apr", 32, false);
+    let v = build_final_json(&result_with(RunUsage::default()), "m.apr", 32, false, None);
     for key in ["prompt_tokens", "completion_tokens", "finish_reason", "context_length"] {
         assert!(v.get(key).is_some(), "{key} must be present so consumers can key on it");
         assert!(v[key].is_null(), "{key} must be null when unreported, got {}", v[key]);
@@ -59,7 +59,7 @@ fn stream_final_event_carries_them_too() {
         setup_ms: None,
     };
     let mut buf: Vec<u8> = Vec::new();
-    write_stream_output(&mut buf, &result_with(usage), "m.gguf", 8, false).expect("write");
+    write_stream_output(&mut buf, &result_with(usage), "m.gguf", 8, false, None).expect("write");
     let text = String::from_utf8(buf).expect("utf-8");
     let last = text.lines().last().expect("final line");
     let v: serde_json::Value = serde_json::from_str(last).expect("json");
@@ -73,10 +73,10 @@ fn stream_final_event_carries_them_too() {
 #[test]
 fn json_carries_generation_and_setup_ms() {
     let usage = RunUsage { generation_ms: Some(1_000), setup_ms: Some(5_000), ..RunUsage::default() };
-    let v = build_final_json(&result_with(usage), "m.gguf", 32, false);
+    let v = build_final_json(&result_with(usage), "m.gguf", 32, false, None);
     assert_eq!(v["generation_ms"], 1_000);
     assert_eq!(v["setup_ms"], 5_000);
-    let v = build_final_json(&result_with(RunUsage::default()), "m.gguf", 32, false);
+    let v = build_final_json(&result_with(RunUsage::default()), "m.gguf", 32, false, None);
     assert!(v.get("generation_ms").is_some() && v["generation_ms"].is_null(), "present, null when unmeasured");
     assert!(v.get("setup_ms").is_some() && v["setup_ms"].is_null(), "present, null when unmeasured");
 }

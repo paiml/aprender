@@ -92,6 +92,13 @@ pub(crate) fn run(
     // asked for instead of inventing `trace-<epoch>.json` in the CWD.
     let requested_trace_output = trace_output.clone();
 
+    // #4089: a flagless run on a cuda build with no device goes to CPU, loudly: stderr here,
+    // and `backend.fell_back` + `backend.reason` in the machine envelope.
+    let default_unavailable = crate::accel::default_accelerator_unavailable_reason(no_gpu, accel_forced);
+    if let Some(reason) = default_unavailable {
+        eprintln!("{} {reason}", "Backend: CPU —".yellow());
+    }
+
     let options = RunOptions {
         input: input.map(Path::to_path_buf),
         prompt: prompt.map(String::from),
@@ -162,6 +169,7 @@ pub(crate) fn run(
         benchmark,
         stream,
         accel_forced,
+        default_unavailable,
     )?;
 
     Ok(())
@@ -190,6 +198,7 @@ fn reconcile_and_emit(
     benchmark: bool,
     stream: bool,
     accel_forced: bool,
+    default_unavailable: Option<&'static str>,
 ) -> Result<()> {
     let reconciled = reconcile_accelerator(accel_forced, result);
     if reconciled.is_ok() || emits_machine_output(stream, output_format, benchmark) {
@@ -201,6 +210,7 @@ fn reconcile_and_emit(
             benchmark,
             stream,
             accel_forced,
+            default_unavailable,
         )?;
     }
     reconciled
@@ -555,17 +565,18 @@ fn print_run_output(
     benchmark: bool,
     stream: bool,
     accel_forced: bool,
+    default_unavailable: Option<&'static str>,
 ) -> Result<()> {
     // --stream takes precedence — emit JSONL stream. This implies json-style
     // structured output regardless of --format. (--stream --json is the same
     // as --stream alone.)
     if stream && !benchmark {
-        return print_stream_output(result, source, max_tokens, accel_forced);
+        return print_stream_output(result, source, max_tokens, accel_forced, default_unavailable);
     }
 
     // GH-240/GH-250: JSON output mode with accurate token counts
     if output_format == "json" && !benchmark {
-        let json = build_final_json(result, source, max_tokens, accel_forced);
+        let json = build_final_json(result, source, max_tokens, accel_forced, default_unavailable);
         println!(
             "{}",
             serde_json::to_string_pretty(&json).unwrap_or_default()
@@ -602,6 +613,7 @@ fn build_final_json(
     source: &str,
     max_tokens: usize,
     accel_forced: bool,
+    default_unavailable: Option<&'static str>,
 ) -> serde_json::Value {
     let tokens_generated = result.tokens_generated.unwrap_or(0);
     let tok_per_sec = result.tok_per_sec.unwrap_or_else(|| {
@@ -675,11 +687,19 @@ fn build_final_json(
         // never Fail, so a backend that did not report has not reported a
         // fallback. That is `reconcile_accelerator`'s own rule, and the JSON
         // must not contradict the check that runs beside it.
+        //
+        // #4089: the third term. A flagless run on a cuda build with NO device never enters a GPU
+        // backend (the shared default rule sends it to CPU first), so neither term above fires;
+        // yet the build's default accelerator did not run. That is a fallback, and it carries
+        // its reason. It is keyed on the rule's own answer, never on `used_gpu`, so an unreported
+        // `used_gpu` cannot hide it.
         "backend": {
             "requested": if accel_forced { "gpu" } else { "default" },
             "ran": if result.used_gpu == Some(true) { "gpu" } else { "cpu" },
-            "fell_back": result.used_gpu == Some(false)
-                && (accel_forced || result.gpu_attempted == Some(true)),
+            "fell_back": default_unavailable.is_some()
+                || (result.used_gpu == Some(false)
+                    && (accel_forced || result.gpu_attempted == Some(true))),
+            "reason": default_unavailable,
         },
     })
 }
@@ -704,11 +724,12 @@ fn print_stream_output(
     source: &str,
     max_tokens: usize,
     accel_forced: bool,
+    default_unavailable: Option<&'static str>,
 ) -> Result<()> {
     use std::io::Write;
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-    write_stream_output(&mut out, result, source, max_tokens, accel_forced)?;
+    write_stream_output(&mut out, result, source, max_tokens, accel_forced, default_unavailable)?;
     out.flush()?;
     Ok(())
 }
@@ -721,6 +742,7 @@ pub(crate) fn write_stream_output<W: std::io::Write>(
     source: &str,
     max_tokens: usize,
     accel_forced: bool,
+    default_unavailable: Option<&'static str>,
 ) -> std::io::Result<()> {
     if let Some(tokens) = result.generated_tokens.as_deref() {
         let texts = result.token_texts.as_deref().unwrap_or(&[]);
@@ -735,7 +757,8 @@ pub(crate) fn write_stream_output<W: std::io::Write>(
         }
     }
 
-    let mut final_blob = build_final_json(result, source, max_tokens, accel_forced);
+    let mut final_blob =
+        build_final_json(result, source, max_tokens, accel_forced, default_unavailable);
     if let Some(obj) = final_blob.as_object_mut() {
         obj.insert(
             "event".to_string(),
