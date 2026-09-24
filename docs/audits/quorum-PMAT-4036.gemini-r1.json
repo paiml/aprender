@@ -1,0 +1,193 @@
+{
+  "ticket": "PMAT-4036",
+  "base": "origin/chore/0.69.1-merge-back",
+  "base_resolved": "origin/chore/0.69.1-merge-back",
+  "base_note": "no origin/origin/chore/0.69.1-merge-back exists; judged against the local ref",
+  "head": "33ebdff1ae22b71d6117959c9421c2a69422c5b0",
+  "diff_sha256": "23587b83ea839ac71f9d775bd64511b5505492e5e72f614ddeecb17d6e7ecd01",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 1392801,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The implementation strictly follows the ticket requirements without weakening any gates. The cache is correctly keyed without the host, llama.cpp is refused, stale caches are properly rejected (enforced via MUST-RED checks), and batching loads source-weight engines once per mode. The time savings are measured and receipt equivalence is proven.",
+      "findings": [],
+      "raw_bytes": 4153,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-4036 audit complete. The diff fulfills all ticket acceptance criteria without refutation:\n\n1. Reference Cache Implementation (`scripts/lib/crux_ref_cache.py`, `scripts/crux_inference_dogfood.sh`, `scripts/crux_sweep_shards.sh`):\n   - Pure comparators (`hf`, `vllm`, `llamafile`) are cached under a key bound to model sha256, thinking mode, backend, engine, verb, prompt sha256, sampling (temperature, seed, context, max_tokens), oracle package versions, HF source, and producing harness file digests.\n   - The host is explicitly excluded from the cache key.\n   - `llama.cpp` is refused by name (`NOT_CACHEABLE`) because `llama-server` serves as apr's reference renderer on raw-prompt serve routes.\n   - Exit contract strictly enforced: 0 (hit), 10 (miss), 11 (stale); keying refusals exit 1 and crashes exit 2, both causing dogfood to decline rather than silently recomputing.\n   - Stale detection verified against content digest mismatch, moved artifact sha256, traversal pointers, unreferenced files, bare-string artifact shapes, and unsealed edits.\n\n2. Source-Weight Engine Batching (`scripts/crux_inference_dogfood.sh`, `scripts/lib/crux_cells_serve_code.sh`):\n   - Batches in-process (run, chat) and server (serve run, serve stream, code) calls into a single engine load per interface per mode via `plugin_batch_cells`.\n   - `CRUX_NO_BATCH=1` preserved as fallback/baseline.\n   - Guards for missing items and duplicate items properly emit named refusals ensuring RED cell verdicts.\n\n3. Hermetic Case Tables Verified:\n   - `scripts/check_crux_ref_cache.sh` measured at 17/17 passing rows (including MUST-RED falsifiers for tampered artifacts, traversal pointers, removed fields, unreferenced files, origin edits, and duplicate rows).\n   - `scripts/check_crux_plugin_batch.sh` measured at 6/6 passing rows (including MUST-RED falsifiers for dropped and duplicated items).\n\n4. Real-Engine Measurements Verified:\n   - Evidence files in `evidence/crux/4036-measure/` verified cell-for-cell across all 6 legs (cold, batched, final-cold, final-warm, head-cold, head-warm), each achieving 32/32 GREEN matching keys and verdicts.\n   - Reference texts in `reference-texts.json` verified identical across all 20 rows between unbatched and batched runs.\n   - Wall time reduction confirmed from 1037 s (17.3 min) to 130–158 s (2.2–2.6 min) on warm runs.\n\nVerdict: PASS.",
+      "findings": [],
+      "raw_bytes": 6087,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "NO-VERDICT",
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": [],
+      "raw_bytes": 2488,
+      "err_bytes": 121,
+      "envelope_status": "SUCCESS",
+      "transport_status": "SUCCESS",
+      "transport_error": "",
+      "salvageable": "/home/noah/.gemini/antigravity-cli/brain/c13822d2-29ca-4def-86c8-8fb701144ce7 (4984042 bytes)",
+      "carried_verdict": "",
+      "blind_reason": "",
+      "agy_exit": "",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 3,
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": []
+    }
+  ],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 3: non-empty .err (121 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 3: no verdict object found in lane file (status=SUCCESS) salvageable=/home/noah/.gemini/antigravity-cli/brain/c13822d2-29ca-4def-86c8-8fb701144ce7 (4984042 bytes) [UNREVIEWED CLAIM MATERIAL — never a PASS]"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}
