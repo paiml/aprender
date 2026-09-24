@@ -15,11 +15,27 @@
     "refused": []
   },
   "consistent": true,
-  "classes": 12,
+  "classes": 17,
   "entailed_subsumptions": [
+    [
+      "Issue",
+      "Json"
+    ],
     [
       "Kernel",
       "Contract"
+    ],
+    [
+      "Milestone",
+      "Json"
+    ],
+    [
+      "PullRequest",
+      "Json"
+    ],
+    [
+      "Repo",
+      "Json"
     ],
     [
       "Symbol",
