@@ -9,14 +9,15 @@
 //! device.
 
 use super::{
-    apr_version, decide, model_sha256, read_receipt, receipt_path, write_receipt, F2Decision,
-    F2Receipt, F2ReceiptKey, F2ValidateReason, F2_RECEIPT_SCHEMA,
+    apr_version, build_id, decide, file_sha256, model_sha256, read_receipt, receipt_path,
+    write_receipt, F2Decision, F2Receipt, F2ReceiptKey, F2ValidateReason, F2_RECEIPT_SCHEMA,
 };
 
 fn key() -> F2ReceiptKey {
     F2ReceiptKey {
         model_sha256: "a".repeat(64),
         apr_version: "0.68.2".to_string(),
+        build_id: format!("exe-sha256:{}", "c".repeat(64)),
         device: "NVIDIA GeForce RTX 4090".to_string(),
     }
 }
@@ -199,6 +200,7 @@ fn the_receipt_file_carries_all_three_keys_flat_so_a_human_can_read_them() {
     for needle in [
         "\"model_sha256\"",
         "\"apr_version\"",
+        "\"build_id\"",
         "\"device\"",
         "\"schema\"",
         "\"positions_judged\"",
@@ -256,5 +258,102 @@ fn two_writers_on_one_model_each_rename_a_whole_file() {
             "the survivor is neither writer's whole receipt: {survivor:?}"
         );
     }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---------------------------------------------------------------- #4290
+// The build key. Case table: same version + different build -> Validate;
+// a +no-git build (no sha to tell them apart) with a different exe hash ->
+// Validate; the identical build -> Skip. Reverting `decide` to the
+// version-only key turns the first two green-to-Skip; that mutant was run.
+
+#[test]
+fn falsifier_same_version_different_build_revalidates_rc1_receipt_on_rc2() {
+    let k = key();
+    let mut planted = receipt_for(&k);
+    // rc.1 wrote it: same model, same device, same "0.68.2" version string.
+    planted.key.build_id = format!("exe-sha256:{}", "d".repeat(64));
+    match decide(Ok(Some(planted)), &k, false) {
+        F2Decision::Validate(F2ValidateReason::BuildIdMismatch { found, expected }) => {
+            assert_eq!(found, format!("exe-sha256:{}", "d".repeat(64)));
+            assert_eq!(expected, k.build_id);
+        },
+        other => {
+            panic!("a same-version receipt from another build must re-validate, got {other:?}")
+        },
+    }
+}
+
+#[test]
+fn falsifier_two_no_git_builds_of_one_version_do_not_share_a_receipt() {
+    // Release assets report `v0.69.3+no-git`: the version string and the
+    // commit string are identical across rc.1/rc.2/final. Only the bytes differ.
+    let mut k = key();
+    k.apr_version = "0.69.3".to_string();
+    let mut planted = receipt_for(&k);
+    planted.key.build_id = format!("exe-sha256:{}", "e".repeat(64));
+    assert!(matches!(
+        decide(Ok(Some(planted)), &k, false),
+        F2Decision::Validate(F2ValidateReason::BuildIdMismatch { .. })
+    ));
+}
+
+#[test]
+fn the_identical_build_skips() {
+    let k = key();
+    let r = receipt_for(&k);
+    assert!(matches!(
+        decide(Ok(Some(r)), &k, false),
+        F2Decision::Skip { .. }
+    ));
+}
+
+#[test]
+fn an_unhashable_executable_never_skips_even_on_a_matching_receipt() {
+    let mut k = key();
+    k.build_id = String::new();
+    let r = receipt_for(&k); // a receipt that "matches" the empty id
+    assert_eq!(
+        decide(Ok(Some(r)), &k, false),
+        F2Decision::Validate(F2ValidateReason::BuildUnidentified)
+    );
+}
+
+#[test]
+fn a_schema_1_receipt_without_build_id_parses_and_revalidates_as_schema() {
+    let json = format!(
+        r#"{{"schema":1,"model_sha256":"{}","apr_version":"0.68.2","device":"NVIDIA GeForce RTX 4090","validated_at":1,"positions_judged":64}}"#,
+        "a".repeat(64)
+    );
+    let old: F2Receipt = serde_json::from_str(&json).expect("schema-1 receipt parses");
+    assert_eq!(
+        decide(Ok(Some(old)), &key(), false),
+        F2Decision::Validate(F2ValidateReason::SchemaMismatch {
+            found: 1,
+            expected: F2_RECEIPT_SCHEMA
+        })
+    );
+}
+
+#[test]
+fn build_id_is_the_sha256_of_the_running_executable() {
+    let id = build_id();
+    let exe = std::env::current_exe().expect("current_exe");
+    let want = format!("exe-sha256:{}", file_sha256(&exe).expect("hash exe"));
+    assert_eq!(id, want);
+    assert_eq!(id.len(), "exe-sha256:".len() + 64);
+    // Not the version string, in any form.
+    assert!(!id.contains(env!("CARGO_PKG_VERSION")));
+}
+
+#[test]
+fn file_sha256_streams_to_the_same_answer_as_the_in_memory_hash() {
+    let dir = std::env::temp_dir().join(format!("f2-4290-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let p = dir.join("blob");
+    // Larger than the 1 MiB read buffer, so the loop runs more than once.
+    let bytes: Vec<u8> = (0..(3 << 20) + 17).map(|i| (i % 251) as u8).collect();
+    std::fs::write(&p, &bytes).expect("write");
+    assert_eq!(file_sha256(&p).expect("hash"), model_sha256(&bytes));
     let _ = std::fs::remove_dir_all(&dir);
 }

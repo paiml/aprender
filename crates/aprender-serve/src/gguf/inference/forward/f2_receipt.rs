@@ -1,4 +1,4 @@
-//! The F2 hybrid guard's receipt: validate once per (model, apr version,
+//! The F2 hybrid guard's receipt: validate once per (model, build,
 //! device), and let later runs read the answer instead of re-deriving it.
 //!
 //! # Why (#3604, operator ruling 2026-09-20)
@@ -48,8 +48,19 @@ pub struct F2ReceiptKey {
     /// prefix or a size+mtime fingerprint would let a planted receipt with the
     /// wrong hash pass, which is the first falsifier.
     pub model_sha256: String,
-    /// The version of the crate that ran the guard.
+    /// The version of the crate that ran the guard. Informational: every
+    /// build that shares a version string shares it (rc.1, rc.2, the final
+    /// tag, every dev build), so it cannot be the build key (#4290).
     pub apr_version: String,
+    /// sha256 of the EXECUTABLE that ran the guard, `exe-sha256:<hex>`. This
+    /// is the build key (#4290): a git sha misses dirty dev builds and the
+    /// release assets carry `+no-git`, but two builds whose binaries differ
+    /// by a byte cannot share this. Empty means the executable could not be
+    /// hashed, and an empty build id never skips and is never written.
+    /// `default` so a schema-1 file (which has no such field) still parses
+    /// and re-validates as a SCHEMA mismatch instead of as unreadable.
+    #[serde(default)]
+    pub build_id: String,
     /// The device the GPU half ran on, as the driver names it.
     pub device: String,
 }
@@ -70,7 +81,10 @@ pub struct F2Receipt {
 }
 
 /// The current receipt schema. Bump it and every old receipt re-validates.
-pub const F2_RECEIPT_SCHEMA: u32 = 1;
+///
+/// 2 (#4290): the key gained `build_id`; every schema-1 receipt was keyed on
+/// the version string alone and re-validates.
+pub const F2_RECEIPT_SCHEMA: u32 = 2;
 
 /// Why a run is validating instead of reading the receipt.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,6 +112,17 @@ pub enum F2ValidateReason {
         /// The version in the file.
         found: String,
         /// This crate's version.
+        expected: String,
+    },
+    /// This run's executable could not be hashed, so no receipt can vouch
+    /// for it.
+    BuildUnidentified,
+    /// The receipt was written by a different build (the executable's
+    /// sha256 differs), even if the version string is the same.
+    BuildIdMismatch {
+        /// The build id in the file.
+        found: String,
+        /// This executable's build id.
         expected: String,
     },
     /// The receipt was written for a different device.
@@ -128,6 +153,18 @@ impl std::fmt::Display for F2ValidateReason {
             Self::AprVersionMismatch { found, expected } => {
                 write!(f, "receipt written by apr {found}, this is {expected}")
             },
+            Self::BuildUnidentified => {
+                write!(
+                    f,
+                    "this executable could not be hashed, so no receipt applies"
+                )
+            },
+            Self::BuildIdMismatch { found, expected } => write!(
+                f,
+                "receipt written by build {}…, this build is {}…",
+                &found[..found.len().min(23)],
+                &expected[..expected.len().min(23)]
+            ),
             Self::DeviceMismatch { found, expected } => {
                 write!(f, "receipt written for {found}, this device is {expected}")
             },
@@ -164,6 +201,11 @@ pub fn decide(
     if revalidate {
         return F2Decision::Validate(F2ValidateReason::Revalidate);
     }
+    // No build identity, no skip: a receipt cannot vouch for a binary whose
+    // bytes nobody could read (#4290).
+    if expected.build_id.is_empty() {
+        return F2Decision::Validate(F2ValidateReason::BuildUnidentified);
+    }
     let receipt = match found {
         Err(e) => return F2Decision::Validate(F2ValidateReason::Unreadable(e)),
         Ok(None) => return F2Decision::Validate(F2ValidateReason::NoReceipt),
@@ -187,6 +229,12 @@ pub fn decide(
         return F2Decision::Validate(F2ValidateReason::AprVersionMismatch {
             found: receipt.key.apr_version,
             expected: expected.apr_version.clone(),
+        });
+    }
+    if receipt.key.build_id != expected.build_id {
+        return F2Decision::Validate(F2ValidateReason::BuildIdMismatch {
+            found: receipt.key.build_id,
+            expected: expected.build_id.clone(),
         });
     }
     if receipt.key.device != expected.device {
@@ -308,6 +356,51 @@ pub fn model_sha256(bytes: &[u8]) -> String {
 #[must_use]
 pub fn apr_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// The build key: sha256 of the running executable, `exe-sha256:<hex>`, or
+/// an empty string when it cannot be read (#4290). Hashed once per process.
+///
+/// Not the version string (rc.1, rc.2, the final tag and every dev build share
+/// it) and not the git sha (a dirty dev build shares its HEAD's sha, and the
+/// release assets report `+no-git`). The binary's own bytes are the only
+/// identity no two differing builds can share.
+#[must_use]
+pub fn build_id() -> String {
+    static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ID.get_or_init(|| {
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| file_sha256(&p).ok())
+            .map_or_else(String::new, |h| format!("exe-sha256:{h}"))
+    })
+    .clone()
+}
+
+/// sha256 of a file's bytes, lower-case hex, streamed so a large binary is
+/// never held in memory whole.
+///
+/// # Errors
+/// The file could not be opened or read.
+pub fn file_sha256(path: &Path) -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read as _;
+    let mut f = std::fs::File::open(path)?;
+    let mut h = Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        h.update(&buf[..n]);
+    }
+    let mut s = String::with_capacity(64);
+    for b in h.finalize() {
+        use std::fmt::Write as _;
+        let _ = write!(s, "{b:02x}");
+    }
+    Ok(s)
 }
 
 /// Now, in unix seconds; 0 if the clock is before the epoch.

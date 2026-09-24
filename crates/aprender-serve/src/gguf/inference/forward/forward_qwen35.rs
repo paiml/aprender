@@ -1615,7 +1615,7 @@ fn f2_validate_qwen35_receipted(
     device_name: &str,
 ) -> F2Outcome {
     use crate::gguf::f2_receipt::{
-        apr_version, decide, model_sha256, read_receipt, receipt_dir, receipt_path,
+        apr_version, build_id, decide, model_sha256, read_receipt, receipt_dir, receipt_path,
         revalidate_requested, unix_now, write_receipt, F2Decision, F2Receipt, F2ReceiptKey,
         F2_RECEIPT_SCHEMA,
     };
@@ -1624,6 +1624,7 @@ fn f2_validate_qwen35_receipted(
     let key = F2ReceiptKey {
         model_sha256: model_sha256(model_bytes),
         apr_version: apr_version(),
+        build_id: build_id(),
         device: device_name.to_string(),
     };
     let sha256_ms = hash_start.elapsed().as_secs_f64() * 1000.0;
@@ -1638,9 +1639,10 @@ fn f2_validate_qwen35_receipted(
         F2Decision::Skip { receipt } => {
             let age_s = unix_now().saturating_sub(receipt.validated_at);
             eprintln!(
-                "F2 guard: receipt matches (model sha256 {}…, apr {}, {}) — validated {}s ago on {} positions; CPU reference forward skipped [source=receipt, sha256 {:.0} ms]. `apr run --revalidate` forces a fresh run.",
+                "F2 guard: receipt matches (model sha256 {}…, apr {} build {}, {}) — validated {}s ago on {} positions; CPU reference forward skipped [source=receipt, sha256 {:.0} ms]. `apr run --revalidate` forces a fresh run.",
                 &key.model_sha256[..12],
                 key.apr_version,
+                &key.build_id[..key.build_id.len().min(23)],
                 key.device,
                 age_s,
                 receipt.positions_judged,
@@ -1665,7 +1667,7 @@ fn f2_validate_qwen35_receipted(
 
     let source = match verdict {
         F2Verdict::Accepted { positions_judged } => {
-            match path.as_deref() {
+            match path.as_deref().filter(|_| !key.build_id.is_empty()) {
                 Some(p) => {
                     let receipt = F2Receipt {
                         schema: F2_RECEIPT_SCHEMA,
@@ -1683,6 +1685,9 @@ fn f2_validate_qwen35_receipted(
                         ),
                     }
                 }
+                None if key.build_id.is_empty() => eprintln!(
+                    "F2 guard: passed in {validate_ms:.0} ms; this executable could not be hashed, so no receipt — every run validates."
+                ),
                 None => eprintln!(
                     "F2 guard: passed in {validate_ms:.0} ms; no cache directory (no HOME, XDG_CACHE_HOME or APR_F2_RECEIPT_DIR), so no receipt — every run validates."
                 ),
