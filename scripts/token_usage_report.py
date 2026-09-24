@@ -39,13 +39,61 @@ LANE_ROOTS = [("/mnt/nvme-raid0/agent-wt", 4, 4), (os.path.join(HOME, "src"), 3,
 NAMED = ("apex", "infra", "rmedia", "paiml-implement", "forjar", "bashrs", "pmat", "batuta")
 
 
+SRC = os.path.join(HOME, "src")
+_PROJECT_CACHE = {}
+
+
+def repo_of(cwd):
+    """The repository a directory belongs to, read from git's own metadata, or None. A linked worktree's `.git` is a
+    file naming `<repo>/.git/worktrees/<name>`, so a worktree anywhere on disk counts for its main repository; this is
+    what the name heuristics below guess at (#4162: 122 sessions under /mnt/nvme-raid0 were reported as project
+    "mnt", and ~/src/forjar-615 as a project of its own)."""
+    d = cwd
+    while d and d != "/":
+        g = os.path.join(d, ".git")
+        if os.path.isdir(g):
+            return os.path.basename(d)
+        if os.path.isfile(g):
+            try:
+                with open(g) as f:
+                    m = re.match(r"gitdir:\s*(\S+)", f.read())
+            except OSError:
+                return None
+            if m:
+                parts = m.group(1).split(os.sep)
+                return parts[parts.index(".git") - 1] if ".git" in parts[1:] else None
+            return None
+        d = os.path.dirname(d)
+    return None
+
+
+def src_repo_prefix(name):
+    """`forjar-615` -> `forjar` when ~/src/forjar is a repository: the longest `-`-prefix naming one, or None. For a
+    worktree dir that no longer exists, so git cannot be asked."""
+    bits = name.split("-")
+    for i in range(len(bits), 0, -1):
+        cand = "-".join(bits[:i])
+        if os.path.exists(os.path.join(SRC, cand, ".git")):
+            return cand
+    return None
+
+
 def project_of(cwd):
-    """A cwd -> the project it belongs to. Worktrees count for the repo they are a worktree of."""
+    """A cwd -> the project it belongs to. Worktrees count for the repo they are a worktree of. Git's metadata first;
+    then the naming conventions; a cwd neither can place is `unattributed:<dir>`, never a path fragment like `mnt`."""
     if not cwd:
         return "?"
+    if cwd not in _PROJECT_CACHE:
+        _PROJECT_CACHE[cwd] = repo_of(cwd) or _project_by_name(cwd)
+    return _PROJECT_CACHE[cwd]
+
+
+def _project_by_name(cwd):
     m = re.match(r"/home/noah/src/([^/]+)", cwd)
     if m:
-        return "aprender" if m.group(1).startswith("aprender-wt") else m.group(1)
+        if m.group(1).startswith("aprender-wt"):
+            return "aprender"
+        return src_repo_prefix(m.group(1)) or m.group(1)
     if cwd.startswith("/mnt/nvme-raid0/agent-wt/"):
         wt = cwd.split("/")[4] if len(cwd.split("/")) > 4 else ""
         for p in NAMED:
@@ -55,7 +103,12 @@ def project_of(cwd):
     m = re.match(r"/tmp/claude-1000/-home-noah-src-([a-zA-Z0-9_]+)", cwd)
     if m:
         return m.group(1).split("-")[0]
-    return cwd.split("/")[1] if cwd.startswith("/") and len(cwd) > 1 else "?"
+    for root in ("/mnt/nvme-raid0/", "/tmp/", HOME + "/"):
+        if cwd.startswith(root):
+            rest = cwd[len(root):].split("/")
+            leaf = "/".join(rest[:2]) if rest[0] in ("scratch", "tmp", "worktrees", "wt") else rest[0]
+            return "unattributed:" + (leaf or root.strip("/"))
+    return "unattributed:" + cwd
 
 
 def ts_of(s):
@@ -257,11 +310,52 @@ def pct(a, b):
     return "%.1f%%" % (100.0 * a / max(1, b))
 
 
+def self_test():
+    """Case table for project_of, on real git fixtures in a temp dir. Exit 0 = every row holds."""
+    import tempfile
+    global SRC
+    saved, fails = SRC, 0
+    with tempfile.TemporaryDirectory() as tmp:
+        SRC = os.path.join(tmp, "src")
+        os.makedirs(os.path.join(SRC, "forjar", ".git", "worktrees", "forjar-verdrift"))
+        os.makedirs(os.path.join(SRC, "paiml-implement", ".git"))
+        scratch = os.path.join(tmp, "scratch")
+        for d in ("forjar-verdrift/sub", "ont-37f7875c"):
+            os.makedirs(os.path.join(scratch, d))
+        with open(os.path.join(scratch, "forjar-verdrift", ".git"), "w") as f:
+            f.write("gitdir: %s\n" % os.path.join(SRC, "forjar", ".git", "worktrees", "forjar-verdrift"))
+        rows = [
+            # (cwd, want, why)
+            (os.path.join(scratch, "forjar-verdrift"), "forjar", "linked worktree outside ~/src: its .git file"),
+            (os.path.join(scratch, "forjar-verdrift", "sub"), "forjar", "a subdir of that worktree walks up"),
+            (os.path.join(SRC, "paiml-implement"), "paiml-implement", "a main checkout: the repo dir name"),
+            ("/home/noah/src/forjar-615", "forjar", "a deleted worktree dir: the longest prefix that is a repo"),
+            ("/home/noah/src/paiml-implement-x", "paiml-implement", "hyphenated repo name keeps its hyphen"),
+            ("/home/noah/src/aprender-wt-17", "aprender", "the aprender-wt convention"),
+            ("/mnt/nvme-raid0/scratch/ont-37f7875c", "unattributed:scratch/ont-37f7875c", "no git, no name: said so"),
+            ("/mnt/nvme-raid0/budget", "unattributed:budget", "never the path fragment 'mnt'"),
+            (None, "?", "no cwd recorded"),
+        ]
+        _PROJECT_CACHE.clear()
+        for cwd, want, why in rows:
+            got = project_of(cwd)
+            ok = got == want
+            fails += not ok
+            print("%s  %-55s -> %-36s %s" % ("PASS" if ok else "FAIL", cwd, got, "" if ok else "want %s (%s)" % (want, why)))
+    SRC = saved
+    _PROJECT_CACHE.clear()
+    print("self-test: %d/%d rows" % (len(rows) - fails, len(rows)))
+    return 1 if fails else 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--hours", type=float, default=24.0)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--self-test", action="store_true", help="run the project-attribution case table and exit")
     a = ap.parse_args()
+    if a.self_test:
+        sys.exit(self_test())
     now = dt.datetime.now(dt.timezone.utc)
     since = now - dt.timedelta(hours=a.hours)
     cr = claude(since)
