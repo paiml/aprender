@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check_clippy_aarch64.sh — strict clippy ON AN aarch64 HOST, over the default and cuda feature axes (#4134).
+# check_clippy_aarch64.sh — strict clippy ON AN aarch64 HOST (#4134). Axis: default; cuda excluded by ticket, below.
 #
 # WHY. Every clippy gate we own ran on x86_64 (make tier1/2/3, sovereign-ci lint, toolchain-ceiling), so code
 # that is compiled only on arm, or bindings used only on the x86 side of a cfg, was never linted where it builds.
