@@ -197,3 +197,11 @@ impl Qwen35CudaModel<'_> {
         self.lm_head_tail(&io.hidden)
     }
 }
+
+impl Qwen35CudaModel<'_> {
+    /// How many times the captured decode graph has been replayed since its
+    /// last capture — the evidence that decode actually ran through it.
+    pub fn decode_graph_replays(&self) -> u64 {
+        self.decode_graph.as_ref().map_or(0, |g| g.replays)
+    }
+}

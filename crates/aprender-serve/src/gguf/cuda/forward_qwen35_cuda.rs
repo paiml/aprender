@@ -263,6 +263,9 @@ pub struct Qwen35CudaModel<'a> {
     /// #4233: the captured decode step, built lazily when
     /// `QWEN35_CUDA_GRAPH=1`; `None` on the eager path.
     decode_graph: Option<graph::Qwen35DecodeGraph>,
+    /// #4233: route [`Self::forward_single`] through the captured graph.
+    /// Starts from `QWEN35_CUDA_GRAPH=1`; [`Self::set_decode_graph`] overrides.
+    use_decode_graph: bool,
 }
 
 /// Map a GPU error into the crate error type with the operation that raised it.
@@ -607,6 +610,7 @@ impl<'a> Qwen35CudaModel<'a> {
             dims,
             max_seq_len,
             decode_graph: None,
+            use_decode_graph: graph::graph_enabled(),
         })
     }
 
@@ -1416,6 +1420,15 @@ impl<'a> Qwen35CudaModel<'a> {
         Ok(())
     }
 
+    /// #4233: turn the captured-graph decode step on or off. Turning it off
+    /// drops the captured graph and its IO buffers.
+    pub fn set_decode_graph(&mut self, on: bool) {
+        self.use_decode_graph = on;
+        if !on {
+            self.decode_graph = None;
+        }
+    }
+
     /// Run one token at `position` through every layer of both kinds, the
     /// output norm and the `lm_head`, and return the logits — the GPU twin of
     /// `Qwen35Model::forward_single_qwen35`.
@@ -1433,7 +1446,7 @@ impl<'a> Qwen35CudaModel<'a> {
         state: &mut Qwen35CudaState,
         position: usize,
     ) -> Result<Vec<f32>> {
-        if graph::graph_enabled() {
+        if self.use_decode_graph {
             return self.forward_single_graphed(token, state, position);
         }
         let row = self.embedding_row(token, state, position)?;
