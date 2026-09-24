@@ -39,14 +39,15 @@ mod realizar_chat {
         /// turns. GH-224's dense cache below cannot hold it, so every turn used to
         /// rebuild, re-upload and re-validate the model.
         qwen35_session: Option<realizar::gguf::qwen35_session::Qwen35Session>,
-        /// GH-224: Cached GGUF CUDA model (avoids re-uploading weights per message)
-        #[cfg(feature = "cuda")]
-        cached_gguf_cuda: Option<realizar::gguf::OwnedQuantizedModelCuda>,
-        /// GH-224: Cached APR CUDA model (avoids re-uploading weights per message)
-        #[cfg(feature = "cuda")]
-        // #3922: the fused-kernel class `run` and `bench` use, not the generic
-        // transformer that produced garbage on Q4K and refused everything else.
-        cached_apr_cuda: Option<realizar::gguf::OwnedQuantizedModelCuda>,
+        /// #4268: a dense GGUF model on the one engine, its decode state kept
+        /// across turns so a turn prefills only what the history added. The CUDA
+        /// model is built at load (GH-224: no re-upload per message); the CPU one
+        /// on the first turn that needs it.
+        gguf_session: Option<realizar::gguf::dense_session::DenseSession>,
+        /// #4268: the same for an `.apr`. #3922: its CUDA model is the fused-kernel
+        /// class `run` and `bench` use, not the generic transformer that produced
+        /// garbage on Q4K and refused everything else.
+        apr_session: Option<realizar::gguf::dense_session::DenseSession>,
         /// GH-224: Cached SafeTensors CUDA model (avoids re-loading per message)
         #[cfg(feature = "cuda")]
         cached_safetensors_cuda: Option<realizar::safetensors_cuda::SafeTensorsCudaModel>,
