@@ -17,9 +17,12 @@ const PAYLOAD: &str = "<provenance><contract-iri>urn:sha256:0f</contract-iri>\
 <evidence-sha256>ab</evidence-sha256><verdict>DISCHARGED</verdict></provenance>";
 
 fn figure() -> SvgEncoder {
-    SvgEncoder::new(64, 48)
-        .rect(4.0, 4.0, 20.0, 10.0, Rgba::rgb(200, 30, 30))
-        .circle(40.0, 24.0, 6.0, Rgba::rgb(30, 30, 200))
+    SvgEncoder::new(64, 48).rect(4.0, 4.0, 20.0, 10.0, Rgba::rgb(200, 30, 30)).circle(
+        40.0,
+        24.0,
+        6.0,
+        Rgba::rgb(30, 30, 200),
+    )
 }
 
 fn with_metadata(xml: &str) -> String {
@@ -41,7 +44,8 @@ fn exactly_one_metadata_block_placed_first() {
 
 #[test]
 fn a_second_call_replaces_the_block_rather_than_adding_one() {
-    let svg = figure().metadata("<a/>").and_then(|e| e.metadata(PAYLOAD)).expect("accepted").render();
+    let svg =
+        figure().metadata("<a/>").and_then(|e| e.metadata(PAYLOAD)).expect("accepted").render();
     assert_eq!(svg.matches("<metadata>").count(), 1, "{svg}");
     assert!(svg.contains(PAYLOAD) && !svg.contains("<a/>"), "{svg}");
 }
@@ -65,13 +69,13 @@ fn without_metadata_the_document_is_unchanged() {
 #[test]
 fn a_malformed_payload_is_refused_not_emitted() {
     for bad in [
-        "<provenance>",                                    // unclosed
-        "<a></b>",                                         // mismatched
-        "a & b",                                           // bare ampersand
-        "a < b",                                           // bare less-than
-        "</metadata><script>alert(1)</script><metadata>",  // breaks out of the wrapper
-        "<!DOCTYPE x [<!ENTITY e \"boom\">]><x>&e;</x>",   // DTD / entity expansion
-        "<?xml version=\"1.0\"?><x/>",                     // a declaration mid-document
+        "<provenance>",                                   // unclosed
+        "<a></b>",                                        // mismatched
+        "a & b",                                          // bare ampersand
+        "a < b",                                          // bare less-than
+        "</metadata><script>alert(1)</script><metadata>", // breaks out of the wrapper
+        "<!DOCTYPE x [<!ENTITY e \"boom\">]><x>&e;</x>",  // DTD / entity expansion
+        "<?xml version=\"1.0\"?><x/>",                    // a declaration mid-document
     ] {
         match figure().metadata(bad) {
             Err(Error::SvgMetadataRefused { .. }) => {}

@@ -1831,6 +1831,7 @@ dependencies = [
  "png 0.17.16",
  "proptest",
  "resvg 0.45.1",
+ "roxmltree 0.20.0",
  "serde",
  "sha2 0.10.9",
  "skrifa",

@@ -20593,3 +20593,20 @@ roadmap:
   labels:
   - kind:code
   notes: 'The cop (aprender-04) requested this, verbatim: "Please land a pure-refactor commit on a branch OFF release/0.69.1-batch-1 (not your old branch) that brings it under threshold with no behaviour change. Proof: `bash scripts/check_complexity_ratchet.sh` rc 0, `cargo test -p aprender-contracts --lib` green, and `pv lint contracts --gate shapes` 8/8 controls fired." SCOPE: this ticket IS the refactor. It is NOT #3715''s feature, which was already folded at ded8a932a; the diff against ded8a932a is only this refactor plus this fragment and receipt. The ratchet was RED on release/0.69.1-batch-1 (ded8a932a) vs main a9502d992: run_shapes_gate_with cyclomatic 13 cognitive 28 (the limit is 25). The fix moves the preamble (collect -> empty -> arming -> family, same order), the family ordering, the verdict rule and the two report maps into prepare / order_by_family / needs_receipts / verdict_of / by_shape / by_entity_type. MEASURED at 2a40dda85: the ratchet no longer lists run_shapes_gate_with (rc stays 1 only for crates/aprender-serve/src/constrain/tests.rs::generate_intent, not in this diff and not this ticket''s); cargo test -p aprender-contracts --lib 1701 passed; pv lint contracts --gate shapes Pass, 8/8 pc_extract fired; ont_release_readiness / ont4b / ont4c1 / ont4c3 CLI targets 34/11/12/10 passed; clippy -D warnings clean. A prior round under PMAT-3715 had a lane FAIL on SCOPE because it judged this delta against the #3715 feature ticket; the cop ruled that this refactor gets its own ticket.'
+- id: PMAT-4067
+  github_issue: 4067
+  item_type: task
+  title: 'APEX-2e: aprender-viz SvgEncoder::metadata(self, xml) -> Result<Self> — one <metadata> block, first child of <svg>, bytes = payload + fixed wrapping (no timestamp/encoder/version), second call replaces; roxmltree well-formedness refusal; error.rs Error::SvgMetadataRefused; Cargo.toml roxmltree 0.20 (+1 Cargo.lock edge, already in the lock via usvg); NEW tests/svg_metadata.rs (6 tests); roadmap entry; NO workflow, NO PNG (#4068), NO publish (apex APEX-001 row EV-2e)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T04:55:48Z
+  updated: 2026-09-24T04:55:48Z
+  spec: null
+  acceptance_criteria:
+  - 'RED (a) one block, placed first, bytes exactly <metadata>+payload+</metadata>; (b) two independently built encoders render byte-identical with the block present; (c) malformed payloads refused (unclosed, mismatched, bare & and <, a </metadata> breakout, DOCTYPE/entity, mid-document XML declaration). cd crates/aprender-viz && cargo test -p aprender-viz --test svg_metadata: 6 passed; RED before the implementation (rc 101, no method metadata, no variant SvgMetadataRefused).'
+  - 'Mutations, each planted alone and restored sha-identical: timestamp in the rendered block (the spec plant) and timestamp at build time each red exactly_one_metadata_block_placed_first + two_independent_builds_render_byte_identical_with_the_block_present + well_formed_payloads_of_other_shapes_are_accepted_verbatim; parse check removed reds a_malformed_payload_is_refused_not_emitted; block moved after the background reds exactly_one_metadata_block_placed_first. An allow_dtd:false option turned nothing red (the wrapper already makes a payload DTD a parse error) and was removed rather than kept as an untestable defence.'
+  labels:
+  - kind:code
+  - apex-upstream
+  notes: 'apex APEX-001 row EV-2e (spec v4.23, apex#136). Consumer: apex EV-23b embeds EV-23''s provenance payload through this API. The spec row proposed metadata(self, xml) -> Self; a builder returning Self cannot refuse a malformed payload, so the signature is -> Result<Self>, recorded as a row amendment in apex. Ends at STOP(PUBLISH: aprender-viz <version>); the cop folds it into the 0.70 batch, unarmed.'
