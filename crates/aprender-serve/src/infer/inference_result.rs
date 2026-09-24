@@ -274,7 +274,7 @@ fn run_gguf_inference(
     // architecture differently from `apr run`.
     let is_moe = crate::gguf::moe_forward_handles(&model.config.architecture);
     // #3714: `setup_ms` is time inside the dispatch that is not generation (the
-    // MoE CUDA build + F2 guard); `inference_ms` is generation only.
+    // MoE or qwen35 CUDA build + F2 guard); `inference_ms` is generation only.
     let (tokens, used_gpu, setup_ms) = if is_moe {
         // #3714: the CUDA forward serves unless --no-gpu; a GPU that cannot
         // serve prints its reason before the CPU chain runs. This site used to
@@ -291,14 +291,15 @@ fn run_gguf_inference(
         // routes to it and reports CUDA; the CPU forward (#3091) serves
         // `--no-gpu`, a build without cuda, and any GPU failure — the last of
         // which is printed, never silent.
-        let (tokens, used_gpu) = crate::gguf::forward_qwen35::run_qwen35_generate_dispatch(
+        // The hybrid's CUDA build + F2 guard are setup, not generation, exactly
+        // like the MoE path above: `setup_ms` keeps them out of `inference_ms`.
+        crate::gguf::forward_qwen35::run_qwen35_generate_dispatch_timed(
             &mapped,
             &model,
             &input_tokens,
             &gen_config,
             config.no_gpu,
-        )?;
-        (tokens, used_gpu, 0.0)
+        )?
     } else {
         let (tokens, used_gpu) = run_gguf_generate(model, &input_tokens, &gen_config, config)?;
         (tokens, used_gpu, 0.0)
