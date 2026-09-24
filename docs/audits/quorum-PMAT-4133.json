@@ -1,0 +1,51 @@
+{
+ "ticket": "PMAT-4133",
+ "issue": 4133,
+ "kind": "diff-review",
+ "head_reviewed": "517edff93",
+ "author": {
+  "model": "opus-5-5",
+  "family": "claude"
+ },
+ "shape": "2 agy non-Claude + 1 Claude Code haiku-4-5 (OPERATOR verbatim 2026-09-24: \"one must always be a CHEAP claude code...perhaps haiku\")",
+ "lanes": [
+  {
+   "lane": 1,
+   "executor": "agy",
+   "model": "gemini-3.8-flash-high",
+   "family": "google",
+   "verdict": "PASS",
+   "findings": 0,
+   "conversation_id": "7bdeecd9-0102-4b0a-8417-97b64248ba65"
+  },
+  {
+   "lane": 2,
+   "executor": "agy",
+   "model": "gemini-3.7-flash-high",
+   "family": "google",
+   "verdict": "PASS",
+   "findings": 0,
+   "conversation_id": "ec2cf061-b3b5-4e3c-bb3d-4a5053d62ec7"
+  },
+  {
+   "lane": 3,
+   "executor": "claude-code Agent (read-only)",
+   "model": "claude-haiku-4-5",
+   "family": "claude",
+   "verdict": "PASS",
+   "findings": 0,
+   "note": "ran check_guard_steps_isolated.sh --self-test and the full scan; judged PIPESTATUS, $(...), if-forms, continuations, cancellation, parser guards, runner/secret changes"
+  }
+ ],
+ "agreed": true,
+ "verdict": "PASS 3/3",
+ "receipt_lint_note": "single haiku seat recorded by hand; cop overrides receipt-lint's refusal until tooling lands",
+ "prior_rounds": {
+  "ph1": "3x NO-VERDICT (archived, not a review)",
+  "ph2": "gemini-3.1-pro FAIL: (1) orphan on cancel -> measured: setsid from a non-interactive shell execs without forking (pid==pgid==sid), the guard itself receives SIGTERM; (2) .yaml + composite actions unscanned -> fixed 517edff93; (3) bare `run: scripts/check_x.sh` form missed -> fixed 517edff93 with 3 rows. 3.8/3.7 PASS",
+  "ph3": "3x NO-VERDICT (archived)"
+ },
+ "open_for_cop": [
+  "agy lane 1 (ph4) exited 3: moved refs include a DELETED refs/remotes/origin/feat/4131-sha-identity-cache, attributed by inference only (a foreign fetch --prune); the others are named foreign branches"
+ ]
+}
