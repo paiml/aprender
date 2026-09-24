@@ -125,6 +125,9 @@ impl CudaKernels {
             KernelType::BatchedMwvQ6KGemv { k, n, num_warps, m } => {
                 BatchedMwvQ6KGemvKernel::new(*k, *n, *num_warps, *m).emit_ptx_for_target(target)
             },
+            KernelType::BatchedQ5KGemv { k, n, m } => {
+                BatchedQ5KGemvKernel::new(*k, *n, *m).emit_ptx_for_target(target)
+            },
             KernelType::MwvDp4aQ4KGemv { k, n, num_warps } => {
                 let mut kernel = MwvDp4aQ4KGemvKernel::new(*k, *n);
                 kernel.num_warps = *num_warps;
