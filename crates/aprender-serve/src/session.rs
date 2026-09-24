@@ -85,6 +85,20 @@ pub trait ArchForward: Send {
     /// # Errors
     /// A forward failure no fallback can recover from.
     fn forward(&mut self, tokens: &[u32], start: usize) -> Result<Vec<f32>>;
+
+    /// [`ArchForward::forward`] for a greedy turn, where only the argmax is
+    /// wanted: advance the state the same way and return the argmax token,
+    /// chosen on the device, so the logits never cross to the host (#4268: the
+    /// dense CUDA decode reads back one id per token, not a vocabulary of
+    /// logits). `None` means the backend has no such path and did NOTHING —
+    /// the state is as it was, and the session calls
+    /// [`ArchForward::forward`] instead. The default has no such path.
+    ///
+    /// # Errors
+    /// As [`ArchForward::forward`].
+    fn forward_greedy(&mut self, _tokens: &[u32], _start: usize) -> Result<Option<u32>> {
+        Ok(None)
+    }
 }
 
 /// What one [`Session::generate`] call did.
@@ -198,6 +212,45 @@ impl<F: ArchForward> Session<F> {
         }
     }
 
+    /// Make the state hold exactly `tokens` and choose the token after them;
+    /// return it and how many leading tokens were already held. A greedy
+    /// choice with no repetition penalty goes through
+    /// [`ArchForward::forward_greedy`] when the backend has it.
+    fn advance_and_choose(
+        &mut self,
+        tokens: &[u32],
+        config: &QuantizedGenerateConfig,
+        rng: &mut rand::rngs::StdRng,
+    ) -> Result<(u32, usize)> {
+        if is_greedy(config) && !penalty_active(config) {
+            let start = if self.extends(tokens) {
+                self.processed.len()
+            } else {
+                0
+            };
+            match self.forward.forward_greedy(tokens, start) {
+                Ok(Some(next)) => {
+                    self.processed.truncate(start);
+                    self.processed.extend_from_slice(&tokens[start..]);
+                    return Ok((next, start));
+                },
+                Ok(None) => {},
+                Err(e) => {
+                    self.processed.clear();
+                    return Err(e);
+                },
+            }
+        }
+        let (mut logits, reused) = self.advance_to(tokens)?;
+        OwnedQuantizedModel::apply_repeat_penalty(
+            &mut logits,
+            tokens,
+            config.repeat_penalty,
+            config.repeat_last_n,
+        );
+        Ok((choose_token(&logits, config, rng), reused))
+    }
+
     fn reserve(&mut self, positions: usize) -> Result<()> {
         if self.forward.reserve(positions)? {
             self.processed.clear();
@@ -254,15 +307,14 @@ impl<F: ArchForward> Session<F> {
             turn_budget(prompt.len(), config.max_tokens, context_length);
         self.reserve(prompt.len() + budget)?;
 
-        let (mut logits, reused) = self.advance_to(prompt)?;
-        let mut tokens = prompt.to_vec();
         let mut rng = rand::rngs::StdRng::seed_from_u64(config.seed);
+        let (mut next, reused) = self.advance_and_choose(prompt, config, &mut rng)?;
+        let mut tokens = prompt.to_vec();
         let mut context_capped = false;
         for generated in 1..=budget {
             if config.cancel.is_cancelled() {
                 break;
             }
-            let next = choose_token(&logits, config, &mut rng);
             tokens.push(next);
             let keep_going = on_token(next);
             if !keep_going || config.stop_tokens.contains(&next) {
@@ -272,7 +324,7 @@ impl<F: ArchForward> Session<F> {
                 context_capped = context_limited;
                 break;
             }
-            logits = self.advance_to(&tokens)?.0;
+            next = self.advance_and_choose(&tokens, config, &mut rng)?.0;
         }
         Ok(Turn {
             tokens,
@@ -337,6 +389,17 @@ pub(crate) fn turn_budget(
     (max_tokens.min(room), room < max_tokens)
 }
 
+/// Whether `config` asks for the argmax: temperature 0 or `top_k` 1.
+pub(crate) fn is_greedy(config: &QuantizedGenerateConfig) -> bool {
+    config.temperature == 0.0 || config.top_k == 1
+}
+
+/// Whether `config`'s repetition penalty changes any logit (#4268: the dense
+/// loops applied it before every choice, so the engine does too).
+pub(crate) fn penalty_active(config: &QuantizedGenerateConfig) -> bool {
+    config.repeat_penalty != 1.0 && config.repeat_last_n > 0
+}
+
 /// The engine's token choice: argmax at temperature 0 or `top_k` 1, else
 /// seeded top-k/top-p.
 pub(crate) fn choose_token(
@@ -344,7 +407,7 @@ pub(crate) fn choose_token(
     config: &QuantizedGenerateConfig,
     rng: &mut rand::rngs::StdRng,
 ) -> u32 {
-    if config.temperature == 0.0 || config.top_k == 1 {
+    if is_greedy(config) {
         crate::gguf::ops::argmax(logits)
     } else {
         OwnedQuantizedModel::sample_topk_seeded(
