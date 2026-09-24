@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/check_coverage_report_scoped.sh -- every `cargo llvm-cov report` must be SCOPED (#4023).
+# scripts/check_coverage_report_scoped.sh -- every `llvm-cov report` must be SCOPED (#4023).
 #
 # This repo's root Cargo.toml is also a package (the `apr` facade). An unscoped `llvm-cov report`
 # covers only that facade and writes an EMPTY lcov: it blanked coverage once before (the
@@ -54,14 +54,14 @@ self_test() {
   dir=$(mktemp -d)
   trap 'rm -rf "${dir:?}"' RETURN
   # must_flag: the two shapes that blanked coverage
-  printf '\t@cargo llvm-cov report --lcov --output-path x.info\n' > "$dir/unscoped.mk"
-  printf '\t@cargo llvm-cov report --workspace --lcov --output-path x.info\n' > "$dir/workspace.mk"
+  printf '\t@cargo-llvm-cov llvm-cov report --lcov --output-path x.info\n' > "$dir/unscoped.mk"
+  printf '\t@cargo-llvm-cov llvm-cov report --workspace --lcov --output-path x.info\n' > "$dir/workspace.mk"
   # must_pass: derived scope, explicit -p, --package=, a comment, and a non-report llvm-cov call
-  printf '\t@cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py) --lcov\n' > "$dir/derived.mk"
-  printf '\t@cargo llvm-cov report -p a -p b --summary-only\n' > "$dir/explicit.mk"
-  printf '\t@cargo llvm-cov report --package=a --lcov\n' > "$dir/package.mk"
-  printf '\t@# an unscoped `cargo llvm-cov report` is the defect\n' > "$dir/comment.mk"
-  printf '\t@cargo llvm-cov test --no-report --workspace --lib\n' > "$dir/test.mk"
+  printf '\t@cargo-llvm-cov llvm-cov report $$(python3 scripts/coverage_report_scope.py) --lcov\n' > "$dir/derived.mk"
+  printf '\t@cargo-llvm-cov llvm-cov report -p a -p b --summary-only\n' > "$dir/explicit.mk"
+  printf '\t@cargo-llvm-cov llvm-cov report --package=a --lcov\n' > "$dir/package.mk"
+  printf '\t@# an unscoped `llvm-cov report` is the defect\n' > "$dir/comment.mk"
+  printf '\t@cargo-llvm-cov llvm-cov test --no-report --workspace --lib\n' > "$dir/test.mk"
   for c in unscoped workspace; do
     rc=0; scan "$dir/$c.mk" > /dev/null || rc=$?
     [ "$rc" -eq 1 ] || { echo "SELF-TEST FAIL: $c must be flagged (rc=$rc)"; fails=$((fails + 1)); }
@@ -77,6 +77,7 @@ self_test() {
 }
 
 case "${1:-}" in
+  --help|-h) echo "usage: $0 [file ...] | --self-test   (no args: scan Makefile scripts/*.sh .github/workflows/*.yml)" ;;
   --self-test) self_test ;;
   "")
     shopt -s nullglob

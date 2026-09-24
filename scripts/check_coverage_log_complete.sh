@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/check_coverage_log_complete.sh -- refuse a coverage verdict when a test binary was KILLED.
 #
-# `make coverage` runs `cargo llvm-cov test --ignore-run-fail` so one failing TEST cannot
+# `make coverage` runs the llvm-cov test phase with --ignore-run-fail so one failing TEST cannot
 # blank the number (#3839). But --ignore-run-fail also swallows a test BINARY that died by
 # signal, and llvm-cov writes a binary's profile only when it exits: a killed binary's crate
 # is then (mostly) absent from lcov.info, and the recipe used to print that partial total as a
@@ -14,7 +14,7 @@
 # A sourced-library-free, option-setting script: it is executed, never sourced.
 set -euo pipefail
 
-# cargo prints this for a test binary that did not exit normally; `(signal: N, ...)` is the
+# The build tool prints this for a test binary that did not exit normally; `(signal: N, ...)` is the
 # killed case. A plain failing test exits with a status (`exit status: 101`), not a signal.
 KILLED_RE="process didn't exit successfully: .*\(signal: [0-9]+"
 
@@ -58,7 +58,10 @@ self_test() {
 }
 
 case "${1:-}" in
+  --help|-h) echo "usage: $0 <cargo-llvm-cov test log> | --self-test   (no args: run the self-test case table)" ;;
   --self-test) self_test ;;
-  "") echo "usage: $0 <log> | --self-test" >&2; exit 2 ;;
+  # No log to judge (guard_tree.sh dispatches every check_*.sh with no argument): the
+  # honest check is the case table, not a vacuous pass. make coverage passes the log.
+  "") self_test ;;
   *) check "$1" ;;
 esac
