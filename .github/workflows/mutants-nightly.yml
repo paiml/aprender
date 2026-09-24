@@ -1,9 +1,10 @@
 name: Mutants Nightly
 
 # #4142 (operator ruling via the cop, 2026-09-24): the PR `mutants` job caps a diff at MUTANTS_CAP mutants and is
-# RED "too many to judge" above it. This run is the other half: every night it mutates the last 24 hours of main
-# across the WORKSPACE with no cap, through the same scripts/mutants_diff_gate.sh, so nothing that merged is
-# left unjudged. A survivor turns this run red and names itself.
+# RED "too many to judge" above it. This run is the other half: every night it mutates everything merged to main
+# since the newest SUCCESSFUL nightly (the last 24 hours on a first run) across the WORKSPACE with no cap, through
+# the same scripts/mutants_diff_gate.sh, so nothing that merged is left unjudged. A survivor turns this run red and
+# names itself.
 
 on:
   schedule:
@@ -44,12 +45,20 @@ jobs:
         # merges for good (degraded quorum, Sonnet, #4142). The base is the head of the newest SUCCESSFUL run of
         # this workflow, if it is an ancestor of HEAD; otherwise (first run, or a rewritten main) it is the last
         # 24 hours, and the log says which base was used and why.
+        # REST with curl + python3, never `gh`: the fleet boxes carry no gh (scripts/ci_self_hosted_preflight.sh,
+        # #3074), and a missing gh swallowed by `|| true` would read as "no prior run" every night (Sonnet, #4142).
+        # A listing that FAILS is red; only a listing that SUCCEEDS with zero runs means "first run".
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          LAST=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow mutants-nightly.yml --branch main --status success \
-                   --limit 1 --json headSha -q '.[0].headSha' 2>/dev/null || true)
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          if ! LAST=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+                   "$API/actions/workflows/mutants-nightly.yml/runs?branch=main&status=success&per_page=1" \
+                 | python3 -c 'import json,sys; r=json.load(sys.stdin)["workflow_runs"]; print(r[0]["head_sha"] if r else "")'); then
+            echo "::error::could not list successful mutants-nightly runs -- refusing to guess a base"
+            exit 1
+          fi
           if [ -n "$LAST" ] && git merge-base --is-ancestor "$LAST" HEAD 2>/dev/null; then
             SINCE=$LAST; WHY="the newest successful mutants-nightly run judged ${LAST:0:9}"
           else
