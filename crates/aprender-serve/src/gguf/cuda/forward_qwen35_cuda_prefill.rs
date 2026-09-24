@@ -524,7 +524,9 @@ impl Qwen35CudaModel<'_> {
     /// return from their last call, with `state` advanced to the same place.
     ///
     /// # Errors
-    /// An empty prompt, a position past the state's `max_seq_len`, a token outside the
+    /// An empty prompt, a `pos0` other than the state's `kv_len` (the prefill would
+    /// read KV rows that were never written, or overwrite ones that were), a position
+    /// past the state's `max_seq_len`, a token outside the
     /// vocabulary, a projection whose quantization has no dequant kernel, or any
     /// device failure. Nothing is half-applied that a caller could mistake for a
     /// finished prefill: on `Err` the state must be discarded.
@@ -598,6 +600,15 @@ impl Qwen35CudaModel<'_> {
         if tokens.is_empty() {
             return Err(RealizarError::InvalidShape {
                 reason: "qwen35_cuda prefill: the prompt is empty".to_string(),
+            });
+        }
+        if pos0 != state.kv_len {
+            return Err(RealizarError::InvalidShape {
+                reason: format!(
+                    "qwen35_cuda prefill: pos0 {pos0} is not where the state stands ({} KV rows \
+                     written) — a prefill continues the state, it cannot skip or rewind it",
+                    state.kv_len
+                ),
             });
         }
         let end = pos0 + tokens.len();

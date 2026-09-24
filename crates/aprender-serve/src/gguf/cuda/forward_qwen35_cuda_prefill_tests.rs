@@ -352,6 +352,23 @@ fn qwen35_prefill_refuses_an_empty_prompt_and_positions_past_the_cache() {
         .prefill_logits_at(&[1000, 1001, 1002, 1003], &mut fresh, 0, &[0, 3])
         .expect("two requested rows");
     assert_eq!(got.len(), 2, "one logits vector per requested position");
+    // pos0 must be where the state stands (0.69.3, `apr serve` extends a state it
+    // keeps across turns): `fresh` holds 4 rows now.
+    assert!(
+        gpu.prefill(&[1000], &mut fresh, 0).is_err(),
+        "rewinding to pos0 0 over 4 written rows must be refused"
+    );
+    assert!(
+        gpu.prefill(&[1000], &mut fresh, 5).is_err(),
+        "skipping to pos0 5 past 4 written rows must be refused"
+    );
+    let mut unused = gpu.new_state().expect("state");
+    assert!(
+        gpu.prefill(&[1000], &mut unused, 1).is_err(),
+        "a fresh state starts at 0"
+    );
+    gpu.prefill(&[1000], &mut fresh, 4)
+        .expect("pos0 == kv_len continues the state");
 }
 
 /// The cop's 2026-09-21 ruling on the default: cuBLAS f32 first (exact, and faster

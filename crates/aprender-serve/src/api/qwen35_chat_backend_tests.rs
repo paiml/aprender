@@ -374,6 +374,95 @@ async fn gpu_a_chat_request_answers_from_the_gpu_session() {
     );
 }
 
+/// #4250 (the #3596 countermeasure, 0.69.3 G0): every serve route that takes a
+/// prompt prefills it through the BATCHED prefill, not one token at a time.
+///
+/// 0.69.3 shipped the batched prefill on `apr run` only; serve kept looping
+/// `forward_single` over the prompt (~77 tok/s at 0.69.1, the decode rate), and
+/// every gate stayed green because none of them sent a prompt through the
+/// router. The counter is `Qwen35Session::batched_prefills`, which moves only
+/// when `Qwen35CudaModel::prefill` returned logits — the F2 probe, the
+/// per-token fallback and decode steps never move it. Each request below
+/// starts a prompt the session does not hold, so each must add exactly one.
+///
+/// RED under `APR_QWEN35_SESSION_PREFILL=per-token` (the session's own
+/// switch back to the one-token loop), and with the batched branch deleted
+/// from `try_advance_to`.
+#[cfg(feature = "cuda")]
+#[tokio::test(flavor = "multi_thread")]
+async fn gpu_every_serve_route_prefills_through_the_batched_prefill() {
+    if !crate::cuda::CudaExecutor::is_available() {
+        eprintln!("SKIP: no CUDA device");
+        return;
+    }
+    let Some((state, mapped)) = state_or_skip(false) else {
+        return;
+    };
+    let served = state.qwen35_session().expect("session");
+    let prefills = || served.session.lock().expect("lock").batched_prefills();
+    assert!(
+        served.session.lock().expect("lock").on_gpu(),
+        "a CUDA host serves from the GPU"
+    );
+    assert_eq!(prefills(), 0, "no prompt has been served yet");
+    let want = one_shot_answer(&mapped, 16, false);
+
+    // 1. /v1/chat/completions, not streamed — and the batched answer is right.
+    let (status, body) = post(
+        create_router(state.clone()),
+        "/v1/chat/completions",
+        chat_body(false, 16),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("JSON");
+    assert_eq!(
+        json["choices"][0]["message"]["content"].as_str(),
+        Some(want.as_str()),
+        "the batched serve prefill answers what apr run --gpu answers: {body}"
+    );
+    assert_eq!(
+        prefills(),
+        1,
+        "/v1/chat/completions prefilled its prompt one token at a time (#3596)"
+    );
+
+    // 2. /v1/chat/completions, streamed — the SSE path spawns its own generate.
+    // The session holds prompt + reply, so the same prompt again does not
+    // extend it: a fresh prefill from position 0.
+    let (status, body) = post(
+        create_router(state.clone()),
+        "/v1/chat/completions",
+        chat_body(true, 8),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        prefills(),
+        2,
+        "streamed /v1/chat/completions prefilled one token at a time (#3596)"
+    );
+
+    // 3. /v1/completions — a raw prompt of several tokens.
+    let (status, body) = post(
+        create_router(state.clone()),
+        "/v1/completions",
+        serde_json::json!({"model": "x", "prompt": "The capital of Peru is", "max_tokens": 8}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        prefills(),
+        3,
+        "/v1/completions prefilled its prompt one token at a time (#3596)"
+    );
+
+    assert!(
+        served.session.lock().expect("lock").on_gpu(),
+        "no fallback to the CPU during the requests — a CPU prefill is never batched"
+    );
+}
+
 // ── #3715: the OLLAMA wire reaches the hybrid too ──────────────────────────
 //
 // Alfredo reported `/api/chat` 500ing on a Qwen3.5 hybrid, on the grounds that
