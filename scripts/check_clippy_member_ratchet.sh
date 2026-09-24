@@ -85,7 +85,10 @@ for k in sorted(counts):
 PY
 }
 
-# checked_members <json-file> -> how many distinct WORKSPACE packages clippy produced an artifact for.
+# checked_members <json-file> -> the distinct WORKSPACE package names clippy produced an artifact for,
+# one per line, sorted. An excluded member built as a DEPENDENCY also appears here, so this is a
+# set to compare against the wanted names, never a count (#4170 quorum lane 1: the trio inflated
+# a count of 76 wanted members to 79, and a `-lt` test could not see it).
 checked_members() {
     python3 - "$1" <<'PY'
 import json, sys
@@ -107,8 +110,14 @@ for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
     pkg = o.get("package_id", "")
     if pkg.startswith("path+file://"):
         names.add(pkg_name(pkg))
-print(len(names))
+for n in sorted(names):
+    print(n)
 PY
+}
+
+# missing_members <want-file> <got-file> -> every wanted member clippy never checked, one per line.
+missing_members() {
+    LC_ALL=C comm -23 <(LC_ALL=C sort -u "$1") <(LC_ALL=C sort -u "$2")
 }
 
 # errors_of <json-file> -> one line per ERROR-level diagnostic: what stopped the build, and where.
@@ -218,7 +227,21 @@ self_test() {
     printf '{"reason":"compiler-message","package_id":"path+file:///x/crates/aprender-core#0.69.0","target":{"kind":["lib"]},"message":{"level":"warning","code":{"code":"clippy::x"}}}\n{"reason":"build-finished","success":true}\n' > "$t/verid.json"
     if census "$t/verid.json" | grep -q '^aprender-core|lib|clippy::x'; then printf '  ok    a version-only package id names the crate\n'
     else printf '  BROKE a version-only package id was not named by its directory\n'; fails=$((fails + 1)); fi
-    if [ "$fails" -eq 0 ]; then echo "SELF-TEST OK: 9 rows"; return 0; fi
+    # vacuity is a SET check: an excluded member seen as a dependency must not stand in for a
+    # wanted member clippy never checked (a count test passes this: 2 got, 2 wanted)
+    printf 'aprender-core\naprender-serve\n' > "$t/want.txt"
+    { msg aprender-core lib warning clippy::x; fin true; } > "$t/partial.json"
+    printf '{"reason":"compiler-artifact","package_id":"path+file:///x/crates/aprender-core#0.69.0"}\n{"reason":"compiler-artifact","package_id":"path+file:///x/crates/aprender-compute#trueno@0.69.0"}\n' >> "$t/partial.json"
+    checked_members "$t/partial.json" > "$t/got.txt"
+    if [ "$(missing_members "$t/want.txt" "$t/got.txt")" = "aprender-serve" ]; then
+        printf '  ok    an excluded dependency does not stand in for an unchecked member\n'
+    else printf '  BROKE an excluded dependency hid an unchecked member\n'; fails=$((fails + 1)); fi
+    printf '{"reason":"compiler-artifact","package_id":"path+file:///x/crates/aprender-serve#0.69.0"}\n' >> "$t/partial.json"
+    checked_members "$t/partial.json" > "$t/got.txt"
+    if [ -z "$(missing_members "$t/want.txt" "$t/got.txt")" ]; then
+        printf '  ok    every wanted member checked leaves nothing missing\n'
+    else printf '  BROKE every wanted member was checked and one was still reported missing\n'; fails=$((fails + 1)); fi
+    if [ "$fails" -eq 0 ]; then echo "SELF-TEST OK: 11 rows"; return 0; fi
     echo "SELF-TEST FAIL: $fails row(s) broke"; return 1
 }
 
@@ -290,14 +313,23 @@ if ! census "$json" > "$tmp/census.txt"; then
 fi
 # VACUITY: an empty census is legitimate the day every finding is fixed, so emptiness proves
 # nothing either way. What proves clippy LOOKED is that it checked every member it was asked to.
-want_members=$( cd "$ROOT" && cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c '
+( cd "$ROOT" && cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c '
 import json, sys
 ex = {"aprender-gpu", "aprender-cuda-edge", "aprender-compute"}
-print(len([p for p in json.load(sys.stdin)["packages"] if p["name"] not in ex]))' ) || want_members=""
-got_members=$(checked_members "$json")
-if [ -z "$want_members" ] || [ "$got_members" -lt "$want_members" ]; then
-    echo "FAIL (vacuity)  clippy checked $got_members workspace member(s), expected ${want_members:-<cargo metadata failed>}: a census of a partial workspace is not a census"
+for p in json.load(sys.stdin)["packages"]:
+    if p["name"] not in ex:
+        print(p["name"])' ) > "$tmp/want.txt" || : > "$tmp/want.txt"
+checked_members "$json" > "$tmp/got.txt"
+want_n=$(grep -c . "$tmp/want.txt" || true)
+if [ "$want_n" -eq 0 ]; then
+    echo "FAIL (vacuity)  cargo metadata named no workspace member, so there is nothing to compare the census against"
     exit 1
 fi
-echo "ok    clippy checked all $got_members workspace members (GPU trio excluded, as CI does)"
+missing_members "$tmp/want.txt" "$tmp/got.txt" > "$tmp/missing.txt"
+if [ -s "$tmp/missing.txt" ]; then
+    echo "FAIL (vacuity)  clippy never checked $(grep -c . "$tmp/missing.txt") of $want_n workspace member(s): a census of a partial workspace is not a census"
+    sed 's/^/        /' "$tmp/missing.txt"
+    exit 1
+fi
+echo "ok    clippy checked all $want_n workspace members (the GPU trio excluded, as CI does; an excluded member built as a dependency is not counted)"
 judge "$BASELINE" "$tmp/census.txt"

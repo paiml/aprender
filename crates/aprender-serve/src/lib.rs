@@ -68,12 +68,6 @@
     unused_assignments,
     unused_doc_comments
 )]
-// #4152: MIRRORS the workspace's `excessive_precision = "allow"` (root Cargo.toml, "ML test data
-// needs precise values"). It has to be HERE: `#![deny(clippy::all)]` above re-enables the lint
-// at source level, which overrides any Cargo `[lints]` table. The crate cannot inherit
-// `[workspace.lints]` either (`unsafe_code = "deny"`, `pedantic`). Without it, the IQ grid
-// tables (quantize/iq*.rs) are 1280 errors under `-D warnings`.
-#![allow(clippy::excessive_precision)]
 #![allow(clippy::wildcard_imports)]
 #![allow(clippy::enum_glob_use)]
 #![allow(clippy::explicit_iter_loop)]

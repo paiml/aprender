@@ -177,8 +177,10 @@ mod x86 {
         if has_avx_vnni() {
             // Warmup
             for _ in 0..1000 {
-                // SAFETY: AVX2 and FMA were detected at the top of `main`, the whole
-                // `#[target_feature]` contract; the slices are live borrows for the call.
+                // SAFETY: AVX2 and FMA were detected at the top of `main` (the declared
+                // `#[target_feature]`), and the enclosing `if has_avx_vnni()` confirmed AVX-VNNI
+                // (CPUID 7.1 EAX bit 4), which the raw VPDPBUSD `asm!` needs; the slices are live
+                // borrows for the call.
                 unsafe {
                     let _ = dot_avx_vnni(&q4_data, &q8_scales, &q8_quants);
                 }
@@ -187,8 +189,10 @@ mod x86 {
             let start = Instant::now();
             let mut r = 0.0f32;
             for _ in 0..ITERATIONS {
-                // SAFETY: AVX2 and FMA were detected at the top of `main`, the whole
-                // `#[target_feature]` contract; the slices are live borrows for the call.
+                // SAFETY: AVX2 and FMA were detected at the top of `main` (the declared
+                // `#[target_feature]`), and the enclosing `if has_avx_vnni()` confirmed AVX-VNNI
+                // (CPUID 7.1 EAX bit 4), which the raw VPDPBUSD `asm!` needs; the slices are live
+                // borrows for the call.
                 unsafe {
                     r = dot_avx_vnni(&q4_data, &q8_scales, &q8_quants);
                 }
