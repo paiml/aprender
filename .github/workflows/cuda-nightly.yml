@@ -327,6 +327,41 @@ jobs:
           nice -n 19 cargo test -p aprender-serve --lib --release cb008_checker_controls
           APR_FALSIFY_MODEL="$model" nice -n 19 cargo test -p aprender-serve --features cuda \
             --release --test falsify_cb008_no_frozen_slots_2753 -- --nocapture
+
+      # aprender#4251: #4250's serve batched-prefill test. ci.yml's cuda-only step selects it, but
+      # there a missing Qwen3.5 file is a legitimate skip, and the runners do not carry one. So it
+      # passed without running. Here the model is resolved first, and a `SKIP:` line or a
+      # run that is not exactly `1 passed` is RED. `!cancelled()` so an earlier red falsifier
+      # cannot hide this one.
+      - name: aprender#4251 - every serve route prefills through the batched prefill (Qwen3.5)
+        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        env:
+          APR_QWEN35_MODEL: ${{ vars.APR_QWEN35_MODEL || '/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf' }}
+        run: |
+          set -euo pipefail
+          if [ ! -f "$APR_QWEN35_MODEL" ]; then
+            echo "::error::#4251 UNMEASURABLE on ${{ matrix.name }} (provisioning, not a code defect): $APR_QWEN35_MODEL is absent"
+            exit 1
+          fi
+          echo "#4251 model: $APR_QWEN35_MODEL"
+          log="$RUNNER_TEMP/serve-batched-prefill.log"
+          rc=0
+          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release \
+            gpu_every_serve_route_prefills_through_the_batched_prefill -- --exact --nocapture \
+            >"$log" 2>&1 || rc=$?
+          cat "$log"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::#4251 serve batched-prefill test FAILED (exit $rc)"
+            exit "$rc"
+          fi
+          if grep -q '^SKIP:' "$log"; then
+            echo "::error::#4251 the test SKIPPED on a CUDA runner with the model named: $(grep -m1 '^SKIP:' "$log")"
+            exit 1
+          fi
+          if ! grep -q 'test result: ok\. 1 passed' "$log"; then
+            echo "::error::#4251 the filter did not run exactly one test"
+            exit 1
+          fi
       # PP-26 / L0 CORRECTNESS: the batch-invariance witness (FALSIFY-CB-006,
       # #2753, §9 #1a on Blackwell). PP-LLAMA-001 §7.0 puts correctness at layer
       # L0 and says perf041 runs "nightly + release, missing marker = RED"; the
