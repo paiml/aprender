@@ -60,8 +60,13 @@ def repo_of(cwd):
             except OSError:
                 return None
             if m:
-                parts = m.group(1).split(os.sep)
-                return parts[parts.index(".git") - 1] if ".git" in parts[1:] else None
+                # A relative gitdir (submodules write one) is relative to this directory. The repo is the
+                # directory above the LAST ".git" (<repo>/.git/worktrees/<wt>, <repo>/.git/modules/<sub>).
+                parts = os.path.normpath(os.path.join(d, m.group(1))).split(os.sep)
+                if ".git" not in parts:
+                    return None
+                i = len(parts) - 1 - parts[::-1].index(".git")
+                return parts[i - 1] or None
             return None
         d = os.path.dirname(d)
     return None
@@ -100,9 +105,9 @@ def _project_by_name(cwd):
             if wt.startswith(p) or ("-" + p) in wt:
                 return p
         return "aprender"     # the agent-wt worktrees are aprender's unless named otherwise
-    m = re.match(r"/tmp/claude-1000/-home-noah-src-([a-zA-Z0-9_]+)", cwd)
+    m = re.match(r"/tmp/claude-1000/-home-noah-src-([^/]+)", cwd)
     if m:
-        return m.group(1).split("-")[0]
+        return src_repo_prefix(m.group(1)) or m.group(1).split("-")[0]
     for root in ("/mnt/nvme-raid0/", "/tmp/", HOME + "/"):
         if cwd.startswith(root):
             rest = cwd[len(root):].split("/")
@@ -310,41 +315,94 @@ def pct(a, b):
     return "%.1f%%" % (100.0 * a / max(1, b))
 
 
+def replay_cap(sessions, cap_, B, S):
+    """F2: replay each session's measured per-turn context under a cap.
+
+    Returns (compactions forced, their cost, real context read, simulated context read). A real
+    compaction (the context drops) happens in both worlds, so the sim follows it down. Without that,
+    the sim keeps every growth delta and never shrinks, and a cap that never fires reads as a loss
+    (GH-4162 quorum r3, sonnet lane)."""
+    n_comp = comp_cost = read_real = read_sim = 0
+    for rs in sessions:
+        sim = prev = None
+        for r in sorted(rs, key=lambda r: r["t"]):
+            read_real += r["ctx"]
+            if prev is None:
+                sim = min(r["ctx"], cap_)
+            else:
+                delta = r["ctx"] - prev
+                if delta < 0:            # a real compaction: the sim compacts too, to no more than the real context
+                    sim = min(sim, r["ctx"])
+                else:
+                    sim += delta
+                if sim > cap_:          # the cap compacts: the summarizer reads the whole context once and writes S;
+                    n_comp += 1         # the next turn's B is counted ONCE, by read_sim below (GH-4162 quorum r1)
+                    comp_cost += sim + S
+                    sim = B
+            prev = r["ctx"]
+            read_sim += sim
+    return n_comp, comp_cost, read_real, read_sim
+
+
 def self_test():
-    """Case table for project_of, on real git fixtures in a temp dir. Exit 0 = every row holds."""
+    """Case tables for project_of (on real git fixtures in a temp dir) and replay_cap. Exit 0 = every row holds."""
     import tempfile
     global SRC
-    saved, fails = SRC, 0
-    with tempfile.TemporaryDirectory() as tmp:
-        SRC = os.path.join(tmp, "src")
-        os.makedirs(os.path.join(SRC, "forjar", ".git", "worktrees", "forjar-verdrift"))
-        os.makedirs(os.path.join(SRC, "paiml-implement", ".git"))
-        scratch = os.path.join(tmp, "scratch")
-        for d in ("forjar-verdrift/sub", "ont-37f7875c"):
-            os.makedirs(os.path.join(scratch, d))
-        with open(os.path.join(scratch, "forjar-verdrift", ".git"), "w") as f:
-            f.write("gitdir: %s\n" % os.path.join(SRC, "forjar", ".git", "worktrees", "forjar-verdrift"))
-        rows = [
-            # (cwd, want, why)
-            (os.path.join(scratch, "forjar-verdrift"), "forjar", "linked worktree outside ~/src: its .git file"),
-            (os.path.join(scratch, "forjar-verdrift", "sub"), "forjar", "a subdir of that worktree walks up"),
-            (os.path.join(SRC, "paiml-implement"), "paiml-implement", "a main checkout: the repo dir name"),
-            ("/home/noah/src/forjar-615", "forjar", "a deleted worktree dir: the longest prefix that is a repo"),
-            ("/home/noah/src/paiml-implement-x", "paiml-implement", "hyphenated repo name keeps its hyphen"),
-            ("/home/noah/src/aprender-wt-17", "aprender", "the aprender-wt convention"),
-            ("/mnt/nvme-raid0/scratch/ont-37f7875c", "unattributed:scratch/ont-37f7875c", "no git, no name: said so"),
-            ("/mnt/nvme-raid0/budget", "unattributed:budget", "never the path fragment 'mnt'"),
-            (None, "?", "no cwd recorded"),
-        ]
+    saved, fails, n = SRC, 0, 0
+
+    def check(label, got, want, why):
+        nonlocal fails, n
+        n += 1
+        ok = got == want
+        fails += not ok
+        print("%s  %-55s -> %-36s %s" % ("PASS" if ok else "FAIL", label, got, "" if ok else "want %s (%s)" % (want, why)))
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            SRC = os.path.join(tmp, "src")
+            os.makedirs(os.path.join(SRC, "forjar", ".git", "worktrees", "forjar-verdrift"))
+            os.makedirs(os.path.join(SRC, "forjar", ".git", "modules", "vendored"))
+            os.makedirs(os.path.join(SRC, "forjar", "vendored"))
+            os.makedirs(os.path.join(SRC, "paiml-implement", ".git"))
+            scratch = os.path.join(tmp, "scratch")
+            for d in ("forjar-verdrift/sub", "ont-37f7875c", "odd"):
+                os.makedirs(os.path.join(scratch, d))
+            for where, gitdir in ((os.path.join(scratch, "forjar-verdrift"),
+                                   os.path.join(SRC, "forjar", ".git", "worktrees", "forjar-verdrift")),
+                                  (os.path.join(SRC, "forjar", "vendored"), "../.git/modules/vendored"),
+                                  (os.path.join(scratch, "odd"), ".git/x/.git/worktrees/odd")):
+                with open(os.path.join(where, ".git"), "w") as f:
+                    f.write("gitdir: %s\n" % gitdir)
+            _PROJECT_CACHE.clear()
+            for cwd, want, why in [
+                (os.path.join(scratch, "forjar-verdrift"), "forjar", "linked worktree outside ~/src: its .git file"),
+                (os.path.join(scratch, "forjar-verdrift", "sub"), "forjar", "a subdir of that worktree walks up"),
+                (os.path.join(SRC, "forjar", "vendored"), "forjar", "a submodule's RELATIVE gitdir resolves from its dir"),
+                (os.path.join(scratch, "odd"), "x", "the repo sits above the LAST .git, not the first"),
+                (os.path.join(SRC, "paiml-implement"), "paiml-implement", "a main checkout: the repo dir name"),
+                ("/home/noah/src/forjar-615", "forjar", "a deleted worktree dir: the longest prefix that is a repo"),
+                ("/home/noah/src/paiml-implement-x", "paiml-implement", "hyphenated repo name keeps its hyphen"),
+                ("/home/noah/src/aprender-wt-17", "aprender", "the aprender-wt convention"),
+                ("/tmp/claude-1000/-home-noah-src-paiml-implement/s/scratchpad", "paiml-implement",
+                 "a scratchpad of a hyphenated repo keeps its hyphen"),
+                ("/mnt/nvme-raid0/scratch/ont-37f7875c", "unattributed:scratch/ont-37f7875c", "no git, no name: said so"),
+                ("/mnt/nvme-raid0/budget", "unattributed:budget", "never the path fragment 'mnt'"),
+                (None, "?", "no cwd recorded"),
+            ]:
+                check(str(cwd), project_of(cwd), want, why)
+    finally:
+        SRC = saved
         _PROJECT_CACHE.clear()
-        for cwd, want, why in rows:
-            got = project_of(cwd)
-            ok = got == want
-            fails += not ok
-            print("%s  %-55s -> %-36s %s" % ("PASS" if ok else "FAIL", cwd, got, "" if ok else "want %s (%s)" % (want, why)))
-    SRC = saved
-    _PROJECT_CACHE.clear()
-    print("self-test: %d/%d rows" % (len(rows) - fails, len(rows)))
+    # replay_cap: a cap above every context changes nothing, even across a real compaction.
+    turns = [{"t": i, "ctx": c} for i, c in enumerate((100000, 150000, 30000, 60000))]
+    nc, cost, real, sim = replay_cap([turns], 10 ** 9, 50000, 13000)
+    check("replay_cap cap above every context", (nc, cost, real - sim), (0, 0, 0),
+          "a cap that never fires must save and cost nothing; the sim follows real compactions")
+    nc, cost, real, sim = replay_cap([turns], 120000, 50000, 13000)
+    # real 100+150+30+60 = 340k; sim 100 | 150 > cap -> 50 | min(50, 30) = 30 | +30 = 60 = 240k
+    check("replay_cap cap 120k", (nc, cost, real - sim), (1, 150000 + 13000, 100000),
+          "one forced compaction at 150k; the real drop to 30k then applies to both worlds")
+    print("self-test: %d/%d rows" % (n - fails, n))
     return 1 if fails else 0
 
 
@@ -532,25 +590,7 @@ def main():
                  fmt(med([c["pre"] for c in COMPACTS])), fmt(S), fmt(B)]])
     body = []
     for cap_ in (200000, 300000, 400000, 600000):
-        n_comp = 0; read_sim = 0; comp_cost = 0; read_real = 0
-        for rs in per.values():
-            rs = sorted(rs, key=lambda r: r["t"])
-            sim = None; prev = None
-            for r in rs:
-                read_real += r["ctx"]
-                if prev is None:
-                    sim = min(r["ctx"], cap_)
-                else:
-                    delta = r["ctx"] - prev
-                    if delta < 0:            # a real compaction happened here: follow it (the sim keeps its own size)
-                        delta = 0
-                    sim += delta
-                    if sim > cap_:          # the cap compacts: the summarizer reads the whole context once and writes S;
-                        n_comp += 1         # the next turn's B is counted ONCE, by read_sim below (GH-4162 quorum r1)
-                        comp_cost += sim + S
-                        sim = B
-                prev = r["ctx"]
-                read_sim += sim
+        n_comp, comp_cost, read_real, read_sim = replay_cap(per.values(), cap_, B, S)
         net = read_real - read_sim - comp_cost
         body.append([fmt(cap_), fmt(n_comp), fmt(comp_cost), fmt(read_real - read_sim), fmt(net), pct(net, read_real)])
     L += table("F2. A context cap, replayed on the measured turns (ESTIMATE): compactions it forces, what they cost, and the NET saving",
