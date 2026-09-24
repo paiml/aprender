@@ -117,6 +117,16 @@ fn preload_gguf(
     })
 }
 
+/// #4268: a preloaded dense CUDA model as a session of the one engine.
+#[cfg(feature = "cuda")]
+fn dense_cuda_session(
+    model: realizar::gguf::OwnedQuantizedModelCuda,
+) -> realizar::gguf::dense_session::DenseSession {
+    realizar::gguf::dense_session::DenseSession::new(
+        realizar::gguf::dense_session::DenseForward::cuda(model),
+    )
+}
+
 /// #3987: a plain Qwen3 MoE GGUF, served through `run_qwen3_moe_generate_dispatch`.
 ///
 /// ONE predicate for both the preload and the turn generator, so they cannot disagree.
@@ -185,8 +195,8 @@ impl ChatSession {
 
             let mut cached_gguf_mapped = None;
             let mut qwen35_session = None;
-            #[cfg(feature = "cuda")]
-            let mut cached_gguf_cuda = None;
+            #[allow(unused_mut)]
+            let mut gguf_session = None;
             #[cfg(feature = "cuda")]
             let mut cuda_init_failed = false;
 
@@ -197,7 +207,7 @@ impl ChatSession {
                         qwen35_session = pre.qwen35;
                         #[cfg(feature = "cuda")]
                         {
-                            cached_gguf_cuda = pre.cuda;
+                            gguf_session = pre.cuda.map(dense_cuda_session);
                             if pre.cuda_failed {
                                 cuda_init_failed = true;
                             }
@@ -218,12 +228,12 @@ impl ChatSession {
                     .is_some_and(|m| m.model.metadata.contains_key("tokenizer.chat_template")),
             );
 
-            #[cfg(feature = "cuda")]
-            let mut cached_apr_cuda = None;
+            #[allow(unused_mut)]
+            let mut apr_session = None;
             #[cfg(feature = "cuda")]
             if super::cuda_preload_allowed(force_cpu, format) && format == ModelFormat::Apr {
                 let (cuda, failed) = try_init_apr_cuda(&model_bytes, path);
-                cached_apr_cuda = cuda;
+                apr_session = cuda.map(dense_cuda_session);
                 if failed { cuda_init_failed = true; }
             }
 
@@ -247,10 +257,8 @@ impl ChatSession {
                 qwen_tokenizer,
                 cached_gguf_mapped,
                 qwen35_session,
-                #[cfg(feature = "cuda")]
-                cached_gguf_cuda,
-                #[cfg(feature = "cuda")]
-                cached_apr_cuda,
+                gguf_session,
+                apr_session,
                 #[cfg(feature = "cuda")]
                 cached_safetensors_cuda,
                 #[cfg(feature = "cuda")]
