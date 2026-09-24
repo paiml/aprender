@@ -199,3 +199,66 @@ fn summarize_reads_the_report_and_the_pins() {
     assert!(!summarize(&r, None, &lean, None, Some(0)).escapes_ok);
     assert!(summarize(&r, None, &lean, None, Some(0)).modules.is_empty());
 }
+
+// ── EV-8b (#4082): L4 credit from the summary ─────────────────────
+
+#[test]
+fn a_green_fresh_closed_summary_grants_its_theorems_by_either_name() {
+    let d = discharged(&green(), Some("t"));
+    assert_eq!(d.withheld, None);
+    assert!(d.grants("ProvableContracts.Gelu.gelu_bound"));
+    assert!(
+        d.grants("Gelu.gelu_bound"),
+        "the YAML may drop the root namespace"
+    );
+    assert!(
+        !d.grants("Gelu.absent"),
+        "a theorem the summary does not list earns nothing"
+    );
+}
+
+/// (mutation of a green summary, the current tree sha, the withheld reason it must produce)
+type WithholdCase = (fn(&mut Summary), Option<&'static str>, &'static str);
+
+#[test]
+fn a_stale_red_or_unclosed_summary_grants_nothing_and_says_why() {
+    let cases: [WithholdCase; 7] = [
+        (|_| {}, Some("other"), "stale discharge"),
+        (|_| {}, None, "stale discharge"),
+        (|s| s.tree_sha = None, Some("t"), "stale discharge"),
+        (|s| s.lake_exit = Some(1), Some("t"), "red discharge"),
+        (
+            |s| s.leanchecker_exit = Some(124),
+            Some("t"),
+            "red discharge",
+        ),
+        (
+            |s| s.challenges_closed = Some("2/3".into()),
+            Some("t"),
+            "challenges not closed",
+        ),
+        (
+            |s| s.challenges_closed = None,
+            Some("t"),
+            "challenges not closed",
+        ),
+    ];
+    for (i, (mutate, current, why)) in cases.iter().enumerate() {
+        let mut s = green();
+        mutate(&mut s);
+        let d = discharged(&s, *current);
+        assert!(d.theorems.is_empty(), "case {i} granted {:?}", d.theorems);
+        assert!(
+            d.withheld.as_deref().is_some_and(|w| w.starts_with(why)),
+            "case {i}: {:?}",
+            d.withheld
+        );
+    }
+}
+
+#[test]
+fn zero_challenges_is_not_all_closed() {
+    assert!(!all_challenges_closed(Some("0/0")));
+    assert!(!all_challenges_closed(Some("x/1")));
+    assert!(all_challenges_closed(Some("3/3")));
+}

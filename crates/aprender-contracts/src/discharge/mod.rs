@@ -16,6 +16,7 @@
 
 pub mod challenge;
 pub mod comparator;
+pub mod formalization;
 pub mod lex;
 pub mod summary;
 
@@ -240,7 +241,8 @@ pub fn load_allowlist(dir: &Path) -> Result<Vec<Allowed>, String> {
         .collect())
 }
 
-/// `formalization.yaml`'s `status.axioms` and `capstones`, or the defaults when it is absent (EV-8b lands it).
+/// `formalization.yaml`'s `status.axioms` and `capstones`, or the defaults when it is absent. `--validate-formalization`
+/// ([`formalization`], EV-8b) is the arm that requires it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Formalization {
     pub axioms: Vec<String>,
@@ -615,6 +617,8 @@ impl Report {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CheckOpts {
     pub strict: bool,
+    /// Also judge `formalization.yaml` against the summary and the tree (EV-8b, [`formalization`]).
+    pub validate_formalization: bool,
 }
 
 /// Escapes against the allowlist: unlisted, malformed and stale are RED; pending is RED only under `strict`.
@@ -718,6 +722,9 @@ pub fn check(lean_dir: &Path, contract_dir: &Path, opts: CheckOpts) -> Report {
     let before = fails(&r);
     judge_axioms_file(lean_dir, &g.text, &mut r);
     r.axioms_fresh = Some(fails(&r) == before);
+    if opts.validate_formalization {
+        formalization::judge(lean_dir, &g.tree, &mut r);
+    }
     let cone = g.tree.cone();
     let roots = &g.binding.roots;
     let pinned = roots.iter().filter(|x| cone.contains(&x.module)).count();

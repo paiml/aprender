@@ -1160,3 +1160,52 @@ fn level_l5_needs_at_least_one_binding() {
         ProofLevel::L5
     );
 }
+
+// ── EV-8b (#4082): L4 credit from the discharge summary, not the YAML ──
+
+fn discharged_of(theorems: &[&str]) -> crate::discharge::summary::Discharged {
+    crate::discharge::summary::Discharged {
+        theorems: theorems.iter().map(|t| (*t).to_string()).collect(),
+        withheld: None,
+    }
+}
+
+fn contract_naming_theorems(total: u32) -> Contract {
+    let mut c = contract_with_lean(total, total);
+    for (i, eq) in c.equations.values_mut().enumerate() {
+        eq.lean_theorem = Some(format!("Gelu.t{i}"));
+    }
+    c
+}
+
+#[test]
+fn ev8b_a_yaml_claim_the_summary_does_not_list_is_not_l4() {
+    let c = contract_naming_theorems(1);
+    let none = count_discharged_for_contract(&c, &discharged_of(&[]));
+    assert_eq!(none, 0);
+    assert!(!is_lean_proved_with_grounding(&c, none));
+    assert!(is_l4_self_declared_with_grounding(&c, none));
+}
+
+#[test]
+fn ev8b_a_summary_listing_every_named_theorem_grounds_l4() {
+    let c = contract_naming_theorems(1);
+    let names: Vec<String> = (0..c.equations.len())
+        .map(|i| format!("ProvableContracts.Gelu.t{i}"))
+        .collect();
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    let n = count_discharged_for_contract(&c, &discharged_of(&refs));
+    assert_eq!(n as usize, c.equations.len());
+    assert!(is_lean_proved_with_grounding(&c, n));
+    assert!(!is_l4_self_declared_with_grounding(&c, n));
+}
+
+#[test]
+fn ev8b_a_withheld_summary_grants_nothing() {
+    let c = contract_naming_theorems(1);
+    let d = crate::discharge::summary::Discharged {
+        theorems: std::collections::BTreeSet::new(),
+        withheld: Some("stale discharge".into()),
+    };
+    assert_eq!(count_discharged_for_contract(&c, &d), 0);
+}
