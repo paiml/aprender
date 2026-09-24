@@ -18,4 +18,4 @@
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'cargo-mutants 27 refuses `workspace = true` in .cargo/mutants.toml ("unknown field"), so the fix is the --workspace flag, which is a ci.yml edit approved by the operator through the cop. Measured on gx10 with the real tool: the #4139 diff lists 270 mutants and the gate prints RED "too many to judge: 270 mutants in the diff > cap 60"; a README-only diff prints "0 mutants in the diff". Cost: ~85 s per aprender-contracts mutant, serially.'
+  notes: 'cargo-mutants 27 refuses `workspace = true` in .cargo/mutants.toml ("unknown field"), so the fix is the --workspace flag, which is a ci.yml edit approved by the operator through the cop. Measured on gx10 with the real tool: the #4139 diff at 820e8523 lists 270 mutants (269 at 9f5fbcc7b, the #4142 issue table) and the gate prints RED "too many to judge: 270 mutants in the diff > cap 60"; a README-only diff prints "0 mutants in the diff". Cost: ~85 s per aprender-contracts mutant, serially.'

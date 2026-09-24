@@ -81,7 +81,12 @@ jobs:
                 }
               fi
               cargo mutants --version || { echo "::error::cargo-mutants not runnable after install"; exit 1; }
-              bash scripts/mutants_diff_gate.sh day.diff --cap 0 --jobs "$MUTANTS_JOBS" --max-missed 0 --out mutants-gate
+              # the crates ci.yml workspace-test --excludes, derived from its nextest line (see ci.yml mutants)
+              EXCL=$(grep -m1 -E "cargo nextest run --profile ci --workspace --lib" .github/workflows/ci.yml \
+                | grep -oE -- "--exclude [a-z0-9_-]+" | sed "s/^--exclude /--exclude-crate /" | tr "\n" " ")
+              [ -n "$EXCL" ] || { echo "::error::no --exclude list found on the workspace-test nextest line"; exit 1; }
+              # shellcheck disable=SC2086
+              bash scripts/mutants_diff_gate.sh day.diff --cap 0 --jobs "$MUTANTS_JOBS" --max-missed 0 --out mutants-gate $EXCL
             '
       - name: Upload mutation results
         if: always()

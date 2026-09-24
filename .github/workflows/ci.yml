@@ -3435,8 +3435,14 @@ jobs:
               # diff listed 0 mutants and passed), goes RED over MUTANTS_CAP ("too many to judge"), runs
               # -j MUTANTS_JOBS in copies, and refuses a dead run, an unparseable result, or a tested count
               # that differs from the listed one.
+              # The crates workspace-test --excludes (hardware; aprender-compute segfaults at harness exit on a
+              # clean pass) are DERIVED from its nextest line, never restated, and kept out of mutation too.
+              EXCL=$(grep -m1 -E "cargo nextest run --profile ci --workspace --lib" .github/workflows/ci.yml \
+                | grep -oE -- "--exclude [a-z0-9_-]+" | sed "s/^--exclude /--exclude-crate /" | tr "\n" " ")
+              [ -n "$EXCL" ] || { echo "::error::no --exclude list found on the workspace-test nextest line"; exit 1; }
+              # shellcheck disable=SC2086
               bash scripts/mutants_diff_gate.sh pr.diff --cap "$MUTANTS_CAP" --jobs "$MUTANTS_JOBS" \
-                --max-missed "$MUTANTS_MAX_MISSED" --out mutants-gate
+                --max-missed "$MUTANTS_MAX_MISSED" --out mutants-gate $EXCL
             '
       - name: Upload mutation results
         if: always() && steps.prdiff.outputs.has_rs == 'true'
