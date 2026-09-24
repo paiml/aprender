@@ -16,6 +16,7 @@ never read, and every conclusion is recomputed here.
 """
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -36,6 +37,16 @@ PASS, RED, NO_GO = "PASS", "RED", "NO-GO"
 EXIT = {PASS: 0, RED: 1, NO_GO: 3}
 
 
+def _finite(x):
+    """A real, finite number. NaN compares False both ways, so it would pass
+    every one-sided bound; a bool is an int in python and is never a measurement."""
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+
+
+def _count(x):
+    return isinstance(x, int) and not isinstance(x, bool)
+
+
 def load_gate(path=CONTRACT):
     with open(path) as fh:
         gate = (yaml.safe_load(fh) or {}).get("gate")
@@ -45,6 +56,11 @@ def load_gate(path=CONTRACT):
     corr = gate.get("correctness") if isinstance(gate, dict) else None
     missing += ["correctness." + k for k in ("tau", "max_rank", "min_teacher_forced_steps", "template")
                 if isinstance(corr, dict) and k not in corr]
+    if not missing:
+        nums = [gate[k] for k in ("tolerance", "parity_target", "disk_floor_gb")]
+        nums += [corr.get(k) for k in ("tau", "max_rank", "min_teacher_forced_steps")]
+        if not all(_finite(x) for x in nums) or not 0 <= gate["tolerance"] < 1:
+            missing = ["a finite number for every threshold (tolerance in [0, 1))"]
     if missing:
         raise SystemExit("serve_parity_gate: %s gate: is missing %s -- no defaults "
                          "are assumed" % (path, ", ".join(missing)))
@@ -77,7 +93,7 @@ def preflight_reasons(run, gate):
     if not isinstance(disk.get("resolved"), str) or not disk.get("resolved"):
         out.append("disk path %s was not resolved (readlink -f), so the filesystem "
                    "measured is unknown" % (gate["disk_path"],))
-    if not isinstance(free, (int, float)):
+    if not _finite(free):
         out.append("free disk at %s was not recorded" % (gate.get("disk_path"),))
     elif free < gate["disk_floor_gb"]:
         out.append("free disk %.1f GB at %s (resolved %s) is under the %s GB floor"
@@ -100,7 +116,7 @@ def correctness_reasons(model, gate):
         if p.get("prompt_ids_match") is not True:
             out.append("%s prompt %d: apr's prompt ids differ from the oracle's" % (size, i))
         steps = p.get("teacher_forced_steps")
-        if not isinstance(steps, int) or steps < c["min_teacher_forced_steps"]:
+        if not _count(steps) or steps < c["min_teacher_forced_steps"]:
             out.append("%s prompt %d: %r teacher-forced steps < %d"
                        % (size, i, steps, c["min_teacher_forced_steps"]))
         dis = p.get("disagreements")
@@ -110,10 +126,10 @@ def correctness_reasons(model, gate):
         for d in dis:
             gap = d.get("gap")
             rank = d.get("rank")
-            if not isinstance(rank, int) or rank > c["max_rank"]:
+            if not _count(rank) or rank > c["max_rank"]:
                 out.append("%s prompt %d step %s: the oracle's token is apr's rank %r > %d"
                            % (size, i, d.get("step"), rank, c["max_rank"]))
-            if not isinstance(gap, (int, float)) or gap >= c["tau"]:
+            if not _finite(gap) or gap >= c["tau"]:
                 out.append("%s prompt %d step %s: apr disagrees with the oracle at gap "
                            "%r >= tau %s" % (size, i, d.get("step"), gap, c["tau"]))
     return out
@@ -130,7 +146,7 @@ def band_ratio(receipt, gate):
             gate["band_concurrency"], band.get("status"), band.get("status_reasons"))
     dec = (band.get("ratios") or {}).get("dec") or {}
     point, lcb = dec.get("point"), dec.get("lcb95")
-    if not isinstance(point, (int, float)) or not isinstance(lcb, (int, float)) or point <= 0:
+    if not _finite(point) or not _finite(lcb) or point <= 0:
         return None, None, "c=%d band has no decode ratio point/lcb95" % gate["band_concurrency"]
     return float(point), float(lcb), None
 
@@ -140,7 +156,8 @@ def ratchet_floor(baseline_point, gate):
 
 
 def below_ratchet(point, baseline_point, gate):
-    return point < ratchet_floor(baseline_point, gate)
+    """Fail closed: anything not provably at or above the floor is below it."""
+    return not point >= ratchet_floor(baseline_point, gate)
 
 
 def model_reasons(model, pinned, gate, pin_commit):
@@ -154,7 +171,7 @@ def model_reasons(model, pinned, gate, pin_commit):
         out.append("%s: comparator commit %r is not the pinned %s" % (size, comp, pin_commit))
     mem = model.get("memory") or {}
     for key in ("mem_available_kb", "apr_rss_kb", "comparator_rss_kb"):
-        if not isinstance(mem.get(key), int) or mem.get(key) <= 0:
+        if not _count(mem.get(key)) or mem.get(key) <= 0:
             out.append("%s: memory.%s not recorded (unified memory: the ratio is "
                        "uninterpretable without it)" % (size, key))
     return out + correctness_reasons(model, gate)
@@ -175,6 +192,11 @@ def evaluate(run, gate, pin_commit, baseline):
         reasons.append("llama-server --version output %r does not name the pinned %s"
                        % (ver, pin_commit))
     base = (baseline or {}).get("models") or {}
+    sizes = [m.get("size") for m in run.get("models") or []]
+    dup = sorted({str(x) for x in sizes if sizes.count(x) > 1})
+    if dup:
+        reasons.append("model size(s) %s recorded more than once: which one was "
+                       "measured is ambiguous" % ", ".join(dup))
     by_size = {m.get("size"): m for m in run.get("models") or []}
     for pinned in gate["models"]:
         size = pinned["size"]
@@ -188,7 +210,7 @@ def evaluate(run, gate, pin_commit, baseline):
             mr.append("%s: %s" % (size, why))
         row = {"size": size, "point": point, "lcb95": lcb}
         b = (base.get(size) or {}).get("point")
-        if not isinstance(b, (int, float)):
+        if not _finite(b) or b <= 0:
             mr.append("%s: no committed baseline for host class %s" % (size, gate["host_class"]))
         elif point is not None:
             row.update(baseline_point=b, floor=ratchet_floor(b, gate))
@@ -224,7 +246,7 @@ def control_reasons(run, gate, base, rows, pin_commit):
     out = []
     for m in ctl["models"]:
         size = m.get("size")
-        if m.get("gguf_sha256") != pins.get(size):
+        if size not in pins or m.get("gguf_sha256") != pins[size]:
             out.append("control %s: GGUF sha %r is not the one pinned for that size"
                        % (size, m.get("gguf_sha256")))
             continue
@@ -234,7 +256,7 @@ def control_reasons(run, gate, base, rows, pin_commit):
             continue
         point, _, why = band_ratio(m.get("receipt"), gate)
         ref = (base.get(size) or {}).get("point") or real.get(size)
-        if why or not isinstance(ref, (int, float)):
+        if why or not _finite(ref):
             out.append("control %s: unmeasurable (%s)" % (size, why or "no reference point"))
         elif not below_ratchet(point, ref, gate):
             out.append("control %s: the slowed fixture (%s ms/token) measured %.4f, not "
@@ -414,7 +436,7 @@ def _set(path, value):
 
 
 def verdict_rows(gate, pin):
-    """(name, run-edit, baseline-point-or-None, expected verdict)."""
+    """(name, run-edit, baseline point | None | baseline-edit, expected verdict)."""
     return [
         ("good run PASSes", None, 0.9, PASS),
         ("slowed run is RED (ratchet)", _set(["models", 1, "receipt"], _fx_receipt(0.7, pin)), 0.9, RED),
@@ -424,6 +446,19 @@ def verdict_rows(gate, pin):
          _set(["models", 0, "correctness", "prompts", 0],
               {"pass": True, "prompt_ids_match": True, "teacher_forced_steps": 32,
                "disagreements": [{"step": 0, "gap": 3.0, "rank": 1}]}), 0.9, RED),
+        ("NaN gap is RED", _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0, "gap"], float("nan")), 0.9, RED),
+        ("bool rank is RED", _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0, "rank"], True), 0.9, RED),
+        ("too few teacher-forced steps is RED", _set(["models", 2, "correctness", "prompts", 0, "teacher_forced_steps"], 8), 0.9, RED),
+        ("NaN decode ratio is RED", _set(["models", 2, "receipt", "bands", 0, "ratios", "dec", "point"], float("nan")), 0.9, RED),
+        ("NaN decode lcb95 is RED", _set(["models", 2, "receipt", "bands", 0, "ratios", "dec", "lcb95"], float("nan")), 0.9, RED),
+        ("NaN baseline is RED", None, float("nan"), RED),
+        ("duplicate model size is RED",
+         lambda r: (r["models"].insert(0, dict(r["models"][1], gguf_sha256="e" * 64)), r)[1], 0.9, RED),
+        ("model on an unpinned comparator is RED",
+         _set(["models", 3, "receipt", "provenance", "comparator", "commit"], "0" * 9), 0.9, RED),
+        ("control of an ungated size is RED",
+         _set(["control", "models", 0], {"size": "70B", "receipt": _fx_receipt(0.4, pin)}),
+         lambda b: (b["models"].update({"70B": {"point": 0.9}}), b)[1], RED),  # a stale baseline key
         ("oracle token deep in apr's ranking is RED",
          _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0, "rank"], 3), 0.9, RED),
         ("prompt ids differ is RED", _set(["models", 2, "correctness", "prompts", 0, "prompt_ids_match"], False), 0.9, RED),
@@ -440,6 +475,7 @@ def verdict_rows(gate, pin):
         ("foreign GPU process is NO-GO", _set(["preflight", "foreign_compute_apps"], [{"pid": 7, "name": "llama-server"}]), 0.9, NO_GO),
         ("unrecorded GPU apps is NO-GO", _set(["preflight", "foreign_compute_apps"], None), 0.9, NO_GO),
         ("low disk is NO-GO", _set(["preflight", "disk", "free_gb"], 5.0), 0.9, NO_GO),
+        ("NaN free disk is NO-GO", _set(["preflight", "disk", "free_gb"], float("nan")), 0.9, NO_GO),
         ("unrecorded free disk is NO-GO", _set(["preflight", "disk", "free_gb"], None), 0.9, NO_GO),
         ("disk measured elsewhere is NO-GO", _set(["preflight", "disk", "path"], "/tmp"), 0.9, NO_GO),
         ("unresolved disk path is NO-GO", _set(["preflight", "disk", "resolved"], ""), 0.9, NO_GO),
@@ -475,7 +511,7 @@ MUTANTS = [
     # The control is judged by the same function, so disabling it blinds the
     # control too: the good run must then turn RED, because its control no
     # longer goes RED.
-    ("ratchet function disabled", "return point < ratchet_floor(baseline_point, gate)", "return False",
+    ("ratchet function disabled", "return not point >= ratchet_floor(baseline_point, gate)", "return False",
      ["good run PASSes"]),
     ("tolerance ignored", "return baseline_point * (1.0 - gate[\"tolerance\"])", "return baseline_point",
      ["within tolerance PASSes"]),
@@ -491,7 +527,7 @@ MUTANTS = [
      []),  # an equivalent edit: it must NOT flip anything (proves the harness is not trigger-happy)
     ("control presence skipped", "if not ctl.get(\"models\"):", "if not ctl.get(\"models\") and False:",
      ["control with no models is RED"]),
-    ("control identity not bound", "if m.get(\"gguf_sha256\") != pins.get(size):", "if False:",
+    ("control identity not bound", "if size not in pins or m.get(\"gguf_sha256\") != pins[size]:", "if False:",
      ["control mislabeled to another size is RED"]),
     ("control comparator not bound", "        if comp != pin_commit:\n            out.append(\"control", "        if False:\n            out.append(\"control",
      ["control on an unpinned comparator is RED"]),
@@ -503,6 +539,27 @@ MUTANTS = [
      ["disk measured elsewhere is NO-GO"]),
     ("disk resolution not read", "if not isinstance(disk.get(\"resolved\"), str) or not disk.get(\"resolved\"):", "if False:",
      ["unresolved disk path is NO-GO"]),
+    ("gap NaN-blind", "if not _finite(gap) or gap", "if not isinstance(gap, (int, float)) or gap",
+     ["NaN gap is RED"]),
+    ("rank admits bool", "if not _count(rank) or rank", "if not isinstance(rank, int) or rank",
+     ["bool rank is RED"]),
+    ("steps floor dropped", "steps < c[\"min_teacher_forced_steps\"]", "False",
+     ["too few teacher-forced steps is RED"]),
+    # Equivalent today: band_ratio and the baseline check already refuse a
+    # non-finite point, so the fail-closed ratchet is defence in depth. It must
+    # flip nothing; if it ever does, an upstream guard was lost.
+    ("ratchet NaN-blind", "return not point >= ratchet_floor(baseline_point, gate)", "return point < ratchet_floor(baseline_point, gate)",
+     []),
+    ("point NaN-blind", "if not _finite(point) or not _finite(lcb)", "if not isinstance(point, (int, float)) or not isinstance(lcb, (int, float))",
+     ["NaN decode lcb95 is RED"]),
+    ("free disk NaN-blind", "if not _finite(free):", "if not isinstance(free, (int, float)):",
+     ["NaN free disk is NO-GO"]),
+    ("duplicates not refused", "    if dup:\n", "    if False:\n",
+     ["duplicate model size is RED"]),
+    ("model comparator not bound", "    if comp != pin_commit:\n        out.append(\"%s: comparator", "    if False:\n        out.append(\"%s: comparator",
+     ["model on an unpinned comparator is RED"]),
+    ("control size not required gated", "if size not in pins or ", "if size in pins and ",
+     ["control of an ungated size is RED"]),
     ("lock not read", "if pre.get(\"gpu_lock\") != \"free\":", "if False:",
      ["busy GPU lock is NO-GO"]),
     ("foreign apps not read", "elif apps:", "elif False:",
@@ -531,7 +588,10 @@ def run_tables(mod, gate, pin):
         run = mod._fx_run(gate, pin)
         if edit:
             run = edit(run)
-        base = mod._fx_base(gate, bpoint) if bpoint is not None else None
+        if callable(bpoint):
+            base = bpoint(mod._fx_base(gate, 0.9))
+        else:
+            base = mod._fx_base(gate, bpoint) if bpoint is not None else None
         try:
             out[name] = mod.evaluate(run, gate, pin, base)[0]
         except Exception as exc:  # a crash is an outcome, and a different one
