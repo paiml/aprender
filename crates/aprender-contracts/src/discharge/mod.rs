@@ -14,6 +14,7 @@
 //!   exact `#guard_msgs in #print axioms`. Bound theorems outside the cone are ORPHANED-ROOT: `lake env lean`
 //!   cannot see a module `lake build` never built (EV-5a's orphans; EV-5c drains them).
 
+pub mod comparator;
 pub mod lex;
 
 use std::collections::{BTreeMap, BTreeSet};
