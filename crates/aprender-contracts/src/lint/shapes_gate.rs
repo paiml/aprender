@@ -296,7 +296,10 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
         .iter()
         .map(|s| s.id.clone())
         .partition(|id| arming.is_armed(id));
-    let by_entity_type = by_entity_type(&extraction);
+    let by_entity_type = match by_entity_type(&extraction, &sigma_implemented(contract_dir)) {
+        Ok(m) => m,
+        Err(e) => return ShapesOutcome::Unsupported(e),
+    };
     let duration = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
     let result = GateResult {
         name: "shapes".into(),
@@ -413,32 +416,83 @@ fn by_shape(graph: &Graph, shapes: &[NodeShape]) -> Vec<String> {
     out
 }
 
-/// Focus nodes each extractor produced.
-fn by_entity_type(extraction: &extract::Extraction) -> BTreeMap<String, usize> {
-    [
-        (
-            "pv-contract",
-            extraction
-                .graph
-                .instances_of(&crate::ontology::rdf::ont("Contract"))
-                .len(),
-        ),
-        (
-            "gguf",
-            extraction.gguf.rungs.len() + extraction.gguf.files_read,
-        ),
-        ("apr-model", extraction.apr_model.files_read),
-        // ONT-4c3: registered in Σ and implemented, so it is counted here like every other entity
-        // type. Without this key a probe asking `by_entity_type["parity-receipt"]` reads ABSENT —
-        // and an absent key is not zero, so a consumer that treats it as one measures nothing and
-        // calls it a pass. The same shape as #3610, one map over.
-        ("parity-receipt", extraction.parity.records),
-        ("code", extraction.code.symbols),
-        ("lean", extraction.lean.statements),
-    ]
-    .into_iter()
-    .map(|(k, v)| (k.to_string(), v))
-    .collect()
+/// The entity types this build counts. Every name here has an arm in [`entity_count`]
+/// ([`tests::every_counted_entity_type_has_a_counting_arm`]); every name Σ marks `implemented: true` must too, or
+/// the gate refuses ([`by_entity_type`]).
+const COUNTED_ENTITY_TYPES: &[&str] = &[
+    "pv-contract",
+    "json",
+    "gguf",
+    "apr-model",
+    "parity-receipt",
+    "code",
+    "lean",
+    "release-evidence",
+];
+
+/// Focus nodes each extractor produced, for one Σ entity type. `None` is "this build has no counting arm for the
+/// name" — never zero (#3624: an absent key is not zero).
+fn entity_count(name: &str, extraction: &extract::Extraction) -> Option<usize> {
+    Some(match name {
+        "pv-contract" => extraction
+            .graph
+            .instances_of(&crate::ontology::rdf::ont("Contract"))
+            .len(),
+        // One per `entity: {type: json}` contract extracted.
+        "json" => extraction.entities_extracted.len(),
+        "gguf" => extraction.gguf.rungs.len() + extraction.gguf.files_read,
+        "apr-model" => extraction.apr_model.files_read,
+        // ONT-4c3: without this key a probe asking `by_entity_type["parity-receipt"]` reads ABSENT — and an
+        // absent key is not zero, so a consumer that treats it as one measures nothing and calls it a pass.
+        "parity-receipt" => extraction.parity.records,
+        "code" => extraction.code.symbols,
+        "lean" => extraction.lean.statements,
+        // By rule 0 when no release subject was given (an ordinary PR has none): the extractor did not run.
+        "release-evidence" => extraction.release.as_ref().map_or(0, |r| r.cells),
+        _ => return None,
+    })
+}
+
+/// The entity types `<contract_dir>/ontology.yaml` (Σ) marks `implemented: true`. Empty when the tree has no Σ or
+/// Σ does not parse — Σ's well-formedness is the `sigma` gate's verdict, not this one's.
+fn sigma_implemented(contract_dir: &Path) -> BTreeSet<String> {
+    std::fs::read_to_string(contract_dir.join("ontology.yaml"))
+        .ok()
+        .and_then(|text| crate::ontology::sigma::Sigma::from_yaml(&text).ok())
+        .map(|sigma| {
+            sigma
+                .entity_types
+                .into_iter()
+                .filter(|e| e.implemented)
+                .map(|e| e.name)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Focus nodes each extractor produced, keyed by entity type: every type this build counts, and every type Σ
+/// implements. #3624 — the keys were a hand-written array beside Σ, so `json` and `release-evidence` shipped
+/// implemented and uncounted, and every `by_entity_type["<name>"]` probe on them read ABSENT. A Σ-implemented type
+/// with no counting arm is now the gate's refusal, named, never a missing key. `implemented: false` types are
+/// omitted by rule unless this build counts them.
+fn by_entity_type(
+    extraction: &extract::Extraction,
+    implemented: &BTreeSet<String>,
+) -> Result<BTreeMap<String, usize>, ShapeError> {
+    COUNTED_ENTITY_TYPES
+        .iter()
+        .map(|s| (*s).to_string())
+        .chain(implemented.iter().cloned())
+        .map(|name| match entity_count(&name, extraction) {
+            Some(n) => Ok((name, n)),
+            None => Err(ShapeError::Malformed {
+                shape: "by_entity_type".into(),
+                what: format!(
+                    "entity type {name} is registered in Σ as implemented and is not counted in by_entity_type"
+                ),
+            }),
+        })
+        .collect()
 }
 
 /// The answers that are not corpus verdicts, in the order they are asked: no focus node, receipts needed and
@@ -935,6 +989,55 @@ mod tests {
         );
         for (k, v) in &controls {
             assert_eq!(v, "fired", "pc_extract.{k}");
+        }
+    }
+
+    #[test]
+    fn every_counted_entity_type_has_a_counting_arm() {
+        let x = extract::Extraction::default();
+        for name in COUNTED_ENTITY_TYPES {
+            assert!(
+                entity_count(name, &x).is_some(),
+                "{name} is listed as counted and has no arm"
+            );
+        }
+    }
+
+    #[test]
+    fn every_implemented_entity_type_in_sigma_is_a_by_entity_type_key() {
+        // aprender#3624 — `json` and `release-evidence` were implemented in Σ and absent from the map, so a
+        // `jq -e '.by_entity_type["json"] == N'` probe read null. Read the REAL Σ the way the gate does.
+        let contracts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
+        let implemented = sigma_implemented(&contracts);
+        assert!(
+            implemented.contains("json") && implemented.contains("release-evidence"),
+            "Σ no longer implements the two #3624 types — the test would be vacuous: {implemented:?}"
+        );
+        let map = by_entity_type(&extract::Extraction::default(), &implemented)
+            .expect("every implemented type has an arm");
+        for name in &implemented {
+            assert!(
+                map.contains_key(name),
+                "by_entity_type lacks Σ-implemented {name}"
+            );
+        }
+        assert_eq!(
+            map.get("release-evidence"),
+            Some(&0),
+            "no subject: 0 by rule"
+        );
+    }
+
+    #[test]
+    fn an_implemented_type_without_a_counting_arm_is_refused_by_name() {
+        // The discrimination #3624 asks for: flip a type to implemented with no arm, and the gate names it.
+        let flipped: BTreeSet<String> = ["gguf", "readme"].iter().map(|s| s.to_string()).collect();
+        match by_entity_type(&extract::Extraction::default(), &flipped) {
+            Err(ShapeError::Malformed { what, .. }) => assert!(
+                what.contains("entity type readme is registered in Σ as implemented"),
+                "{what}"
+            ),
+            other => panic!("expected a named refusal, got {other:?}"),
         }
     }
 }
