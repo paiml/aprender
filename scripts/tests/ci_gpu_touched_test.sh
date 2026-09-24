@@ -103,7 +103,7 @@ row 0 "the clippy --features cuda step has NO step if: — it runs whenever the 
 for j in gpu-quick cuda-unit; do
     row 0 "$j runs ONLY on pull_request — never merge_group, never push (the queue stays under 20 min)" \
         "^True$" jobq "$j" "\"github.event_name == 'pull_request'\" in job.get('if','')"
-    row 0 "$j fires only when the decision job said gpu_touched=1 (skipped, not queued, otherwise)" \
+    row 0 "$j is gated on the decision job's gpu_touched (cuda-unit ALSO on cuda_lint, #4336; skipped, not queued, otherwise)" \
         "^True$" jobq "$j" "\"gpu_touched\" in job.get('if','') and 'gpu-touched' in job.get('needs',[])"
     row 0 "$j is NOT continue-on-error — an honest red on the PR is the point" \
         "^False$" jobq "$j" "bool(job.get('continue-on-error', False))"
