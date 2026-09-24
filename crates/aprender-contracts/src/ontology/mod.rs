@@ -20,3 +20,9 @@ pub mod sigma;
 pub mod verdict;
 pub mod w3c;
 pub mod witness;
+// ONT-9: the bounded universe KANI-ONT-9-1 quantifies over, and its relation-semantics oracle (test + kani only).
+#[cfg(any(test, kani))]
+pub mod witness_small;
+// ONT-9: planted-solution generation for `ont_planted` (F-12).
+#[cfg(test)]
+mod witness_planted;
