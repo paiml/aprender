@@ -326,8 +326,18 @@ impl CudaExecutor {
             .expect("fp16 activation scratch just ensured")
             .as_ptr();
         self.convert_f32_to_f16(x_ptr, x16, count as u32)?;
-        self.ensure_cublas()?;
-        let handle = self.cublas_handle.as_ref().expect("cublas initialized");
+        // The shared `cublas_handle` is CUBLAS_PEDANTIC_MATH, which disables every
+        // tensor-core path — an f16 GemmEx on it runs SIMT. This GEMM gets its own
+        // tensor-core handle on the same stream (found by aprender-f5).
+        if self.qwen35_f16_cublas_handle.is_none() {
+            let handle = trueno_gpu::driver::CublasHandle::new_with_tensor_cores(&self.context)?;
+            handle.set_stream(&self.stream)?;
+            self.qwen35_f16_cublas_handle = Some(handle);
+        }
+        let handle = self
+            .qwen35_f16_cublas_handle
+            .as_ref()
+            .expect("f16 cublas handle just initialized");
         handle.gemm_f16_to_f32(
             trueno_gpu::driver::GemmOp::Trans,
             trueno_gpu::driver::GemmOp::NoTrans,

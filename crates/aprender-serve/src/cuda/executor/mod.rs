@@ -598,6 +598,8 @@ pub struct CudaExecutor {
     qwen35_prefill_gemm: gdn_prefill_ops::Qwen35PrefillGemm,
     // #4260: device bytes a cached prefill weight copy must leave free (set by the model).
     qwen35_weight_cache_reserve: usize,
+    // #4260: tensor-core cuBLAS handle for the f16 prefill GEMM; `cublas_handle` stays PEDANTIC.
+    qwen35_f16_cublas_handle: Option<trueno_gpu::driver::CublasHandle>,
     // PMAT-031: FP16 activation scratch for HGEMM input conversion
     fp16_activation_scratch: Option<GpuBuffer<u16>>,
     fp16_activation_scratch_size: usize,

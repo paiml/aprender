@@ -163,6 +163,7 @@ impl CudaExecutor {
             qwen35_prefill_gemm: super::gdn_prefill_ops::Qwen35PrefillGemm::from_env(),
             // Until the model sets it: 2 GiB, so no cache is built with nothing to spare.
             qwen35_weight_cache_reserve: 2 << 30,
+            qwen35_f16_cublas_handle: None,
             fp16_activation_scratch: None,
             fp16_activation_scratch_size: 0,
             fp16_dequant_temp: None, // PMAT-065: lazy init on first L2-cached HGEMM
