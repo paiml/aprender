@@ -312,5 +312,11 @@
   "lint": {
     "ok": true,
     "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  },
+  "cop_ruling": {
+    "by": "aprender-cf (0.69.1/0.70 cop)",
+    "date": "2026-09-24",
+    "ruling": "Accept round 2 as the receipt: 3/3 measured gemini PASS at 4bffbaedf, receipt-lint complete; the only partial reason is agy \"root agent idle\" stderr narration (reducer false positive, paiml/paiml-implement#380). Same precedent as #4110 and #4086. Do not re-run.",
+    "accepted": true
   }
 }
