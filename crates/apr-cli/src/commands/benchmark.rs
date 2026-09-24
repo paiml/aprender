@@ -175,6 +175,28 @@ fn run_gguf_benchmark(
         .encode(&config.prompt)
         .unwrap_or_else(|| vec![bos, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]);
 
+    // #4270: a Qwen3.5 hybrid is timed through the one engine. The dense and MoE
+    // paths below build their own models, which have no Gated DeltaNet layers.
+    if realizar::gguf::hybrid_forward_handles(gguf.architecture().unwrap_or_default()) {
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(path)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to mmap model: {e}")))?;
+        let gen_config = QuantizedGenerateConfig {
+            max_tokens: config.max_tokens.min(128),
+            temperature: 0.0,
+            top_k: 1,
+            ..Default::default()
+        };
+        return run_qwen35_session_benchmark(
+            &mapped,
+            &prompt_tokens,
+            &gen_config,
+            config,
+            use_cuda,
+            start,
+            tracer,
+        );
+    }
+
     // #1749: MoE dispatch — Qwen3-Coder-30B-A3B + other MoE GGUFs have
     // 3D `*_exps` tensors and no 2D dense FFN tensors. The dense
     // `forward_single_with_cache` path used by `generate_with_cache`
