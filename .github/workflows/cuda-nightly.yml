@@ -347,7 +347,8 @@ jobs:
           log="$RUNNER_TEMP/serve-batched-prefill.log"
           rc=0
           nice -n 19 cargo test -p aprender-serve --features cuda --lib --release \
-            gpu_every_serve_route_prefills_through_the_batched_prefill -- --exact --nocapture \
+            api::openai_handlers::qwen35_serve_tests::gpu_every_serve_route_prefills_through_the_batched_prefill \
+            -- --exact --nocapture \
             >"$log" 2>&1 || rc=$?
           cat "$log"
           if [ "$rc" -ne 0 ]; then
