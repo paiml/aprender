@@ -190,6 +190,130 @@ pub(super) struct PassShape {
     pub cap: u32,
     /// Bytes between consecutive positions of the cache.
     pub row_stride_bytes: u32,
+    /// Score with a warp per position (coalesced, not bit-identical to the CPU)
+    /// instead of a thread per position. Needs `head_dim % 128 == 0`.
+    pub warp_dot: bool,
+}
+
+/// Registers the scoring phase reads.
+struct ScoreRegs {
+    tid: VirtualReg,
+    lane: VirtualReg,
+    warp: VirtualReg,
+    q_base: VirtualReg,
+    k_head: VirtualReg,
+    chunk: VirtualReg,
+    n_c: VirtualReg,
+    sqrt_hd: VirtualReg,
+    head_dim_r: VirtualReg,
+    four: VirtualReg,
+}
+
+/// Scores with one thread per position, summed in ascending element order: the
+/// CPU's float sequence, bit for bit.
+fn emit_scores_thread(ctx: &mut KernelBuilder<'_>, s: PassShape, r: &ScoreRegs) -> VirtualReg {
+    let local_max = ctx.mov_f32_imm(f32::NEG_INFINITY);
+    let pp = ctx.add_u32(r.tid, 0);
+    ctx.label("gdn_attn_score_loop");
+    let score_go = ctx.setp_lt_u32(pp, r.n_c);
+    ctx.branch_if_not(score_go, "gdn_attn_score_end");
+    let p = ctx.add_u32_reg(r.chunk, pp);
+    let row_off = ctx.mul_wide_u32(p, s.row_stride_bytes);
+    let k_row = ctx.add_u64(r.k_head, row_off);
+
+    let dot = ctx.mov_f32_imm(0.0);
+    let i = ctx.mov_u32_imm(0);
+    ctx.label("gdn_attn_dot_loop");
+    let dot_go = ctx.setp_lt_u32(i, r.head_dim_r);
+    ctx.branch_if_not(dot_go, "gdn_attn_dot_end");
+    let elem_off = ctx.mul_wide_u32_reg(i, r.four);
+    let q_addr = ctx.add_u64(r.q_base, elem_off);
+    let k_addr = ctx.add_u64(k_row, elem_off);
+    // Four elements per 16-byte load, still summed one at a time in ascending
+    // `i` — the same float sequence as scalar loads.
+    let q4 = ctx.ld_global_f32_v4(q_addr);
+    let k4 = ctx.ld_global_f32_v4(k_addr);
+    for (q_val, k_val) in q4.into_iter().zip(k4) {
+        // mul then add, like the CPU's `dot += q_h[i] * k_p[i]` — Rust does
+        // not contract into an fma, so neither do we.
+        let prod = ctx.mul_f32(q_val, k_val);
+        ctx.add_f32_inplace(dot, prod);
+    }
+    ctx.add_u32_inplace(i, 4);
+    ctx.branch("gdn_attn_dot_loop");
+    ctx.label("gdn_attn_dot_end");
+
+    let score = ctx.div_f32(dot, r.sqrt_hd);
+    let score_slot = ctx.mul_u32(pp, 4);
+    let score_addr = ctx.cvt_u64_u32(score_slot);
+    ctx.st_shared_f32(score_addr, score);
+    ctx.max_f32_inplace(local_max, score);
+    ctx.add_u32_inplace(pp, BLOCK);
+    ctx.branch("gdn_attn_score_loop");
+    ctx.label("gdn_attn_score_end");
+    local_max
+}
+
+/// Scores with one warp per position: each lane reads 16-byte pieces of the K
+/// row, so a warp's load is one contiguous 512-byte run, and a shuffle tree sums
+/// the lanes. A different summation order from the CPU's, so not bit-identical
+/// (aprender#4273: a thread walking its own row read the cache at 36–42% of
+/// copy bandwidth).
+fn emit_scores_warp(ctx: &mut KernelBuilder<'_>, s: PassShape, r: &ScoreRegs) -> VirtualReg {
+    let loads = s.head_dim / 128;
+    let lane_off = ctx.mul_wide_u32(r.lane, 16);
+    let q_lane = ctx.add_u64(r.q_base, lane_off);
+    let stride = ctx.mov_u64_imm(512);
+    let mut q_addrs = vec![q_lane];
+    for _ in 1..loads {
+        let prev = *q_addrs.last().expect("one load");
+        q_addrs.push(ctx.add_u64(prev, stride));
+    }
+    let q: Vec<[VirtualReg; 4]> = q_addrs
+        .into_iter()
+        .map(|a| ctx.ld_global_f32_v4(a))
+        .collect();
+    let one = ctx.mov_u32_imm(1);
+
+    let local_max = ctx.mov_f32_imm(f32::NEG_INFINITY);
+    let pp = ctx.add_u32(r.warp, 0);
+    ctx.label("gdn_attn_wscore_loop");
+    let score_go = ctx.setp_lt_u32(pp, r.n_c);
+    ctx.branch_if_not(score_go, "gdn_attn_wscore_end");
+    let p = ctx.add_u32_reg(r.chunk, pp);
+    let row_off = ctx.mul_wide_u32(p, s.row_stride_bytes);
+    let k_row = ctx.add_u64(r.k_head, row_off);
+    let mut k_addr = ctx.add_u64(k_row, lane_off);
+    let mut k = Vec::with_capacity(loads as usize);
+    for j in 0..loads {
+        if j > 0 {
+            k_addr = ctx.add_u64(k_addr, stride);
+        }
+        k.push(ctx.ld_global_f32_v4(k_addr));
+    }
+    let dot = ctx.mov_f32_imm(0.0);
+    for (q4, k4) in q.iter().zip(&k) {
+        for (&q_val, &k_val) in q4.iter().zip(k4) {
+            let prod = ctx.mul_f32(q_val, k_val);
+            ctx.add_f32_inplace(dot, prod);
+        }
+    }
+    for offset in [16, 8, 4, 2, 1] {
+        let other = ctx.shfl_down_f32(dot, offset, 0xFFFF_FFFF);
+        ctx.add_f32_inplace(dot, other);
+    }
+    let lead = ctx.setp_lt_u32(r.lane, one);
+    ctx.branch_if_not(lead, "gdn_attn_wscore_next");
+    let score = ctx.div_f32(dot, r.sqrt_hd);
+    let score_slot = ctx.mul_u32(pp, 4);
+    let score_addr = ctx.cvt_u64_u32(score_slot);
+    ctx.st_shared_f32(score_addr, score);
+    ctx.max_f32_inplace(local_max, score);
+    ctx.label("gdn_attn_wscore_next");
+    ctx.add_u32_inplace(pp, WARPS);
+    ctx.branch("gdn_attn_wscore_loop");
+    ctx.label("gdn_attn_wscore_end");
+    local_max
 }
 
 /// Registers the pass loop reads from its caller.
@@ -223,7 +347,16 @@ pub(super) struct PassState {
 /// max/sum rescaling of flash decoding. The unsplit kernel runs it over
 /// `0..seq_len`; each block of the split kernel over its own slice (aprender#4273).
 pub(super) fn emit_passes(ctx: &mut KernelBuilder<'_>, s: PassShape, r: PassRegs) -> PassState {
-    let PassRegs { tid, lane, warp, q_base, k_head, v_head, begin, end } = r;
+    let PassRegs {
+        tid,
+        lane,
+        warp,
+        q_base,
+        k_head,
+        v_head,
+        begin,
+        end,
+    } = r;
     // The CPU divides by sqrt(head_dim); the same division, not a reciprocal.
     let sqrt_head_dim = (s.head_dim as f32).sqrt();
     let scratch_max = s.cap * 4;
@@ -249,52 +382,36 @@ pub(super) fn emit_passes(ctx: &mut KernelBuilder<'_>, s: PassShape, r: PassRegs
     let remaining = ctx.sub_u32_reg(end, chunk);
     let n_c = ctx.min_u32(remaining, cap_r);
 
-    // ---- Phase 1: scores for this pass, one thread per few positions.
-    let local_max = ctx.mov_f32_imm(f32::NEG_INFINITY);
-    let pp = ctx.add_u32(tid, 0);
-    ctx.label("gdn_attn_score_loop");
-    let score_go = ctx.setp_lt_u32(pp, n_c);
-    ctx.branch_if_not(score_go, "gdn_attn_score_end");
-    let p = ctx.add_u32_reg(chunk, pp);
-    let row_off = ctx.mul_wide_u32(p, row_stride_bytes);
-    let k_row = ctx.add_u64(k_head, row_off);
-
-    let dot = ctx.mov_f32_imm(0.0);
-    let i = ctx.mov_u32_imm(0);
-    ctx.label("gdn_attn_dot_loop");
-    let dot_go = ctx.setp_lt_u32(i, head_dim_r);
-    ctx.branch_if_not(dot_go, "gdn_attn_dot_end");
-    let elem_off = ctx.mul_wide_u32_reg(i, four);
-    let q_addr = ctx.add_u64(q_base, elem_off);
-    let k_addr = ctx.add_u64(k_row, elem_off);
-    // Four elements per 16-byte load (aprender#4273: scalar loads of a row per
-    // thread left the split kernel at 36% of copy bandwidth), still summed one
-    // at a time in ascending `i` — the same float sequence as scalar loads.
-    let q4 = ctx.ld_global_f32_v4(q_addr);
-    let k4 = ctx.ld_global_f32_v4(k_addr);
-    for (q_val, k_val) in q4.into_iter().zip(k4) {
-        // mul then add, like the CPU's `dot += q_h[i] * k_p[i]` — Rust does
-        // not contract into an fma, so neither do we.
-        let prod = ctx.mul_f32(q_val, k_val);
-        ctx.add_f32_inplace(dot, prod);
-    }
-    ctx.add_u32_inplace(i, 4);
-    ctx.branch("gdn_attn_dot_loop");
-    ctx.label("gdn_attn_dot_end");
-
-    let score = ctx.div_f32(dot, sqrt_hd);
-    let score_slot = ctx.mul_u32(pp, 4);
-    let score_addr = ctx.cvt_u64_u32(score_slot);
-    ctx.st_shared_f32(score_addr, score);
-    ctx.max_f32_inplace(local_max, score);
-    ctx.add_u32_inplace(pp, BLOCK);
-    ctx.branch("gdn_attn_score_loop");
-    ctx.label("gdn_attn_score_end");
+    // ---- Phase 1: scores for this pass.
+    let score_regs = ScoreRegs {
+        tid,
+        lane,
+        warp,
+        q_base,
+        k_head,
+        chunk,
+        n_c,
+        sqrt_hd,
+        head_dim_r,
+        four,
+    };
+    let local_max = if s.warp_dot {
+        emit_scores_warp(ctx, s, &score_regs)
+    } else {
+        emit_scores_thread(ctx, s, &score_regs)
+    };
     ctx.bar_sync(0);
 
     // ---- Phase 2: softmax over the pass, folded into the running state.
-    let chunk_max =
-        emit_block_reduce(ctx, local_max, lane, warp, scratch_max, ReduceOp::Max, "gdn_attn_max");
+    let chunk_max = emit_block_reduce(
+        ctx,
+        local_max,
+        lane,
+        warp,
+        scratch_max,
+        ReduceOp::Max,
+        "gdn_attn_max",
+    );
     let new_max = ctx.max_f32(running_max, chunk_max);
     // correction = exp(old_max - new_max); on the first pass old_max is
     // -inf, so this is 0 and the (still zero) accumulators are unaffected.
@@ -319,8 +436,15 @@ pub(super) fn emit_passes(ctx: &mut KernelBuilder<'_>, s: PassShape, r: PassRegs
     ctx.label("gdn_attn_weight_end");
     ctx.bar_sync(0);
 
-    let chunk_sum =
-        emit_block_reduce(ctx, local_sum, lane, warp, scratch_sum, ReduceOp::Sum, "gdn_attn_sum");
+    let chunk_sum = emit_block_reduce(
+        ctx,
+        local_sum,
+        lane,
+        warp,
+        scratch_sum,
+        ReduceOp::Sum,
+        "gdn_attn_sum",
+    );
     ctx.mul_f32_inplace(running_sum, correction);
     ctx.add_f32_inplace(running_sum, chunk_sum);
     ctx.mul_f32_inplace(acc, correction);
@@ -389,7 +513,13 @@ pub(super) fn emit_passes(ctx: &mut KernelBuilder<'_>, s: PassShape, r: PassRegs
     ctx.branch("gdn_attn_chunk_loop");
     ctx.label("gdn_attn_chunk_end");
 
-    PassState { running_max, running_sum, acc, out_elem_off, head_dim_r }
+    PassState {
+        running_max,
+        running_sum,
+        acc,
+        out_elem_off,
+        head_dim_r,
+    }
 }
 
 impl Kernel for DecodeAttention256Kernel {
@@ -404,6 +534,7 @@ impl Kernel for DecodeAttention256Kernel {
             head_dim,
             cap: self.max_positions_per_pass,
             row_stride_bytes: self.num_kv_heads * head_dim * 4,
+            warp_dot: false,
         };
 
         PtxKernel::new(self.name())
