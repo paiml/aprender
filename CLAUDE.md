@@ -404,7 +404,7 @@ ran (#2361). When a fix seems to have no effect, ask what else claims that name
 
 ## Testing
 
-Target: 60% unit, 30% property, 10% integration. Coverage: **90.84% line** (849706/935347, measured 2026-09-24 by a manual `workflow_dispatch` of coverage-nightly (run 36065904363) on branch `PMAT-3839-cov-regex-scope` @ 237f10f8b, folded into batch/0.70.0 and NOT on `main` until that batch merges; `main`'s own nightly (49fe19c28, 2026-09-24) still measured 87% under the old regex; target ≥95%, enforced floor 89% via COV_FLOOR). Before #3839 the exclude regex still described the pre-monorepo tree, so the 88.78% of 2026-07-29 measured a different set of files. The long-quoted "96.35%" predates the measurement ever working - the pipeline reported 0/0 until #2333.
+Target: 60% unit, 30% property, 10% integration. Coverage: **90.84% line** (849706/935347, measured 2026-09-24 by a manual `workflow_dispatch` of coverage-nightly (run 36065904363) on branch `PMAT-3839-cov-regex-scope` @ 237f10f8b, folded into batch/0.70.0 and NOT on `main` until that batch merges; `main`'s own nightly (49fe19c28, 2026-09-24) still measured 826969/941649 = 87.82% under the old regex (run 35937679357); target ≥95%, enforced floor 89% via COV_FLOOR). Before #3839 the exclude regex still described the pre-monorepo tree, so the 88.78% of 2026-07-29 measured a different set of files. The long-quoted "96.35%" predates the measurement ever working - the pipeline reported 0/0 until #2333.
 
 ```bash
 cargo test -p <crate> --lib             # Unit tests for one crate (what you run while working)
@@ -508,7 +508,7 @@ still carries a header comment claiming it was "Updated for PMAT v2.215.0".
 
 | Score | Value | Provenance |
 |-------|-------|------------|
-| Line coverage | **90.84%** (849706/935347) | coverage-nightly `workflow_dispatch` run 36065904363, 2026-09-24, on branch commit `237f10f8b` (monorepo scope, #3839; in batch/0.70.0, not yet `main`, whose nightly still reads 87%). The previous 88.78% (2026-07-29, `95145584f`) used the pre-monorepo exclude regex. The long-quoted "96.35%"/"96.94%" predates the pipeline ever working — it reported 0/0 until #2333 |
+| Line coverage | **90.84%** (849706/935347) | coverage-nightly `workflow_dispatch` run 36065904363, 2026-09-24, on branch commit `237f10f8b` (monorepo scope, #3839; in batch/0.70.0, not yet `main`, whose scheduled nightly 35937679357 read 87.82%). The previous 88.78% (2026-07-29, `95145584f`) used the pre-monorepo exclude regex. The long-quoted "96.35%"/"96.94%" predates the pipeline ever working — it reported 0/0 until #2333 |
 | Project score / TDG / mutation % | **re-derive** — `pmat rust-project-score`, `pmat tdg . --include-components`, `cargo mutants` | The previously published "124/134", "TDG 95.2/100" and "Mutation 85.3%" carried no date or commit and could not be reproduced from the tree |
 
 **Thresholds — read from the config, which does not say what this file used to say:**
