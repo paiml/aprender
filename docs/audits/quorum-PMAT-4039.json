@@ -1,0 +1,101 @@
+{
+  "ticket": "PMAT-4039",
+  "executor": "agy",
+  "width": 3,
+  "head": "266c7a194aba079677e5edc8bbc3deca0e02c040",
+  "diff_sha256": "7922546306635f97bcfdf8c852a411bfcdcd5145b0989a23947ac657efca0649",
+  "base": "origin/chore/0.69.1-merge-back",
+  "base_note": "main lacks the ladder code this changes until #4046 (0.69.1 merge-back) lands; retarget after",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "lanes": [
+    {
+      "lane": 1,
+      "model": "gemini-3.1-pro-high",
+      "family": "gemini",
+      "verdict": "PASS",
+      "note": "wrote then deleted diff.txt in its own sandboxed clone against the no-write contract; clone byte-identical; counted, disclosed"
+    },
+    {
+      "lane": 2,
+      "model": "gemini-3.8-flash-high",
+      "family": "gemini",
+      "verdict": "PASS"
+    },
+    {
+      "lane": 3,
+      "model": "gemini-3.7-flash-high",
+      "family": "gemini",
+      "verdict": "PASS"
+    }
+  ],
+  "agreed": true,
+  "verdict": "PASS",
+  "partial": false,
+  "dissent": [],
+  "conversations": [
+    "d87c93bd-bf5f-4631-af72-6a3ce35185a1",
+    "ef410304-8606-4d41-93cf-8e0afeabc9b8",
+    "19db79cb-e10d-4459-ac1b-69f73f496e54"
+  ],
+  "gate": {
+    "cmd": "bash scripts/check_ladder_order_verdicts.sh",
+    "exit": 0,
+    "log_sha256": "fc31c51e669bd00a815ac1d53b00d803ff1c1cda0c35a4cc1f69c13dc774eb8a"
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "lanes": "claude-sonnet-5 x3 (degraded: same-family)",
+      "votes": "2 PASS / 1 FAIL",
+      "acted_on": "a malformed line and a non-permutation were refused only in the helpers, not through the CLI; no inventory model in the fixture; set() for Counter; HEX64.search"
+    },
+    {
+      "round": 2,
+      "lanes": "claude-sonnet-5 x3",
+      "votes": "2 PASS / 1 FAIL",
+      "acted_on": "isha/ibytes swap invisible to A==B; default certification untested; --dry-run never run end to end; stat -L; id tiebreak; non-numeric size"
+    },
+    {
+      "round": 3,
+      "lanes": "claude-sonnet-5 x3",
+      "votes": "2 PASS / 1 FAIL",
+      "acted_on": "rung-duplicate skip untested; --only inventory record untested (#3936); planner-failure decline untested"
+    },
+    {
+      "round": 4,
+      "lanes": "claude-sonnet-5 x3",
+      "votes": "2 PASS / 1 FAIL",
+      "acted_on": "fallback case orthogonal to its property; hosts N/A, ABSENT and mismatch RED unpinned; --certification with no value"
+    },
+    {
+      "round": 5,
+      "lanes": "claude-sonnet-5 x3",
+      "votes": "2 PASS / 1 FAIL",
+      "acted_on": "substring rung-duplicate skip; corrupt certification crashes; 9-field line; extra argument"
+    },
+    {
+      "round": 6,
+      "lanes": "claude-sonnet-5 x3 cut off by the usage limit (no verdict), then agy gemini x3",
+      "votes": "2 PASS / 1 FAIL, all exit 3 on foreign ref churn",
+      "acted_on": "case label claimed 'measured once' over a record-only assertion"
+    },
+    {
+      "round": 7,
+      "lanes": "agy gemini x3",
+      "votes": "3 PASS",
+      "acted_on": "none"
+    }
+  ],
+  "not_measured": [
+    "The saving in minutes. Total sweep time on one sequential card is unchanged by construction (0.0 min). The gain is time-to-certified-verdict, and it needs t_start/t_end in receipts (#4051). 'CRUX can start early' holds only across hosts, because the ladder and CRUX never share one card."
+  ],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "note": "stop at the receipt; never arm (cop rule)"
+  }
+}
