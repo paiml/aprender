@@ -26,13 +26,15 @@
 
 use super::super::{RealizarError, Result};
 use super::{gpu_err, CudaLayer, Qwen35CudaModel, Qwen35CudaState};
+use crate::cuda::types::WeightQuantType;
 use trueno_gpu::driver::GpuBuffer;
 
-/// `forward_batch`'s device input (`[rows][hidden_dim]`) and logits
-/// (`[rows][vocab_size]`), reused across steps. A step of `B <= rows` uses the
-/// first `B` rows of each.
+/// `forward_batch`'s device input (`[rows][hidden_dim]`), normed output
+/// (`[rows][hidden_dim]`) and logits (`[rows][vocab_size]`), reused across steps.
+/// A step of `B <= rows` uses the first `B` rows of each.
 pub(super) struct BatchIo {
     hidden: GpuBuffer<f32>,
+    normed: GpuBuffer<f32>,
     logits: GpuBuffer<f32>,
     rows: usize,
 }
@@ -76,7 +78,7 @@ impl Qwen35CudaModel<'_> {
             .hidden
             .copy_from_host_at(&rows, 0)
             .map_err(|e| gpu_err("qwen35_cuda_forward_batch", &e))
-            .and_then(|()| self.forward_batch_enqueued(&io.hidden, &io.logits, states, positions));
+            .and_then(|()| self.forward_batch_enqueued(&io, batch, states, positions));
         let mut host = vec![0.0f32; batch * vocab];
         let downloaded = outcome.and_then(|()| {
             // The ONE sync of the whole step, in front of the ONE download — of
@@ -109,6 +111,7 @@ impl Qwen35CudaModel<'_> {
         };
         Ok(BatchIo {
             hidden: alloc(batch * self.dims.hidden_dim as usize)?,
+            normed: alloc(batch * self.dims.hidden_dim as usize)?,
             logits: alloc(batch * self.dims.vocab_size as usize)?,
             rows: batch,
         })
@@ -156,21 +159,22 @@ impl Qwen35CudaModel<'_> {
         Ok(())
     }
 
-    /// Enqueue the whole step — every layer layer-major, then each sequence's output
-    /// norm and `lm_head` into its logits row. Nothing here syncs.
+    /// Enqueue the whole step — every layer layer-major, then every sequence's
+    /// output norm into its `normed` row and ONE batched `lm_head` over all of them.
+    /// Nothing here syncs.
     fn forward_batch_enqueued(
         &mut self,
-        hidden: &GpuBuffer<f32>,
-        logits: &GpuBuffer<f32>,
+        io: &BatchIo,
+        batch: usize,
         states: &mut [&mut Qwen35CudaState],
         positions: &[usize],
     ) -> Result<()> {
         let d = self.dims;
-        let rows: Vec<GpuBuffer<f32>> = (0..states.len())
-            .map(|b| Self::view(hidden, b as u32 * d.hidden_dim, d.hidden_dim))
+        let rows: Vec<GpuBuffer<f32>> = (0..batch)
+            .map(|b| Self::view(&io.hidden, b as u32 * d.hidden_dim, d.hidden_dim))
             .collect();
-        let outs: Vec<GpuBuffer<f32>> = (0..states.len())
-            .map(|b| Self::view(logits, b as u32 * d.vocab_size, d.vocab_size))
+        let normed: Vec<GpuBuffer<f32>> = (0..batch)
+            .map(|b| Self::view(&io.normed, b as u32 * d.hidden_dim, d.hidden_dim))
             .collect();
 
         let result = (|| {
@@ -184,35 +188,71 @@ impl Qwen35CudaModel<'_> {
                     }
                 }
             }
-            // The tail of `forward_single`, per sequence; `out_normed` is reused in
-            // stream order.
-            for (row, out) in rows.iter().zip(&outs) {
+            // The tail of `forward_single`: the same norm per sequence, then the
+            // lm_head over the packed `[B][hidden_dim]` rows in one dispatch.
+            for (row, out) in rows.iter().zip(&normed) {
                 self.executor
-                    .rmsnorm_into(
-                        row,
-                        &self.output_norm,
-                        &self.out_normed,
-                        d.hidden_dim,
-                        d.eps,
-                    )
-                    .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e))?;
-                self.executor
-                    .gemv_dispatch(
-                        self.lm_head.qtype,
-                        self.lm_head.ptr,
-                        &self.out_normed,
-                        out,
-                        self.lm_head.n,
-                        self.lm_head.k,
-                    )
+                    .rmsnorm_into(row, &self.output_norm, out, d.hidden_dim, d.eps)
                     .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e))?;
             }
-            Ok(())
+            let (qtype, ptr, n, k) = (
+                self.lm_head.qtype,
+                self.lm_head.ptr,
+                self.lm_head.n,
+                self.lm_head.k,
+            );
+            self.gemv_batched(qtype, ptr, &io.normed, &io.logits, batch as u32, n, k)
+                .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e))
         })();
 
-        // The views borrow `hidden` / `logits`; they must not free that memory.
-        rows.into_iter().chain(outs).for_each(std::mem::forget);
+        // The views borrow `hidden` / `normed`; they must not free that memory.
+        rows.into_iter().chain(normed).for_each(std::mem::forget);
         result
+    }
+
+    /// `gemv_dispatch` for `m` packed input rows — `input` `[m][k]` into `output`
+    /// `[m][n]` — with each output row bitwise what `gemv_dispatch` computes for its
+    /// input row alone.
+    ///
+    /// A Q4_K matrix, or a Q6_K one with `k % 256 == 0`, whose single-vector
+    /// dispatch takes the float multi-warp (`Mwv`) kernel — what this model pins —
+    /// takes its batched twin: the weights are read once per launch, not once per
+    /// row. Every other case runs `gemv_dispatch` row by row.
+    #[allow(clippy::too_many_arguments)]
+    fn gemv_batched(
+        &mut self,
+        qtype: WeightQuantType,
+        ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        m: u32,
+        n: u32,
+        k: u32,
+    ) -> std::result::Result<(), trueno_gpu::GpuError> {
+        use crate::cuda::gpu_profile::{Q4kVariant, Q6kVariant};
+        let profile = &self.executor.gpu_profile;
+        match qtype {
+            WeightQuantType::Q4K if profile.q4k == Q4kVariant::Mwv => {
+                return self
+                    .executor
+                    .batched_mwv_q4k_gemv_into(ptr, input, output, m, n, k);
+            },
+            WeightQuantType::Q6K if profile.q6k == Q6kVariant::Mwv && k.is_multiple_of(256) => {
+                return self
+                    .executor
+                    .batched_mwv_q6k_gemv_into(ptr, input, output, m, n, k);
+            },
+            _ => {},
+        }
+        for r in 0..m {
+            let x = Self::view(input, r * k, k);
+            let y = Self::view(output, r * n, n);
+            let run = self.executor.gemv_dispatch(qtype, ptr, &x, &y, n, k);
+            std::mem::forget(x);
+            std::mem::forget(y);
+            run?;
+        }
+        Ok(())
     }
 }
 

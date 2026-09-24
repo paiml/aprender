@@ -19,12 +19,51 @@ impl CudaExecutor {
         n: u32,
         k: u32,
     ) -> Result<(), GpuError> {
-        validate_device_ptr(weight_ptr, "batched_mwv_q4k_gemv_into")?;
+        self.batched_mwv_gemv_into(BatchedMwv::Q4K, weight_ptr, input, output, m, n, k)
+    }
+
+    /// #4234: [`Self::mwv_q6k_gemv_into`] for `m` activation vectors, as
+    /// [`Self::batched_mwv_q4k_gemv_into`] is for Q4_K: bitwise the single-vector
+    /// kernel per input row.
+    ///
+    /// # Errors
+    /// As [`Self::batched_mwv_q4k_gemv_into`], and `k` not a multiple of 256 (the
+    /// single-vector dispatch takes another kernel there, so parity would not hold).
+    pub fn batched_mwv_q6k_gemv_into(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        m: u32,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        if !k.is_multiple_of(256) {
+            return Err(GpuError::InvalidParameter(format!(
+                "batched_mwv_q6k_gemv_into: k={k} is not a multiple of 256"
+            )));
+        }
+        self.batched_mwv_gemv_into(BatchedMwv::Q6K, weight_ptr, input, output, m, n, k)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn batched_mwv_gemv_into(
+        &mut self,
+        quant: BatchedMwv,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        m: u32,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        let who = quant.who();
+        validate_device_ptr(weight_ptr, who)?;
         let (mu, nu, ku) = (m as usize, n as usize, k as usize);
         if m == 0 || input.len() < mu * ku || output.len() < mu * nu {
             return Err(GpuError::InvalidParameter(format!(
-                "batched_mwv_q4k_gemv_into: m={m}, n={n}, k={k} needs input >= {} and output \
-                 >= {} elements, got {} and {}",
+                "{who}: m={m}, n={n}, k={k} needs input >= {} and output >= {} elements, \
+                 got {} and {}",
                 mu * ku,
                 mu * nu,
                 input.len(),
@@ -32,23 +71,34 @@ impl CudaExecutor {
             )));
         }
         if self.graph_recording {
-            return Err(GpuError::NotSupported(
-                "batched_mwv_q4k_gemv_into: not recorded into a CUDA graph".to_string(),
-            ));
+            return Err(GpuError::NotSupported(format!(
+                "{who}: not recorded into a CUDA graph"
+            )));
         }
         let num_warps = self.gpu_profile.mwv_warps;
-        let max_m = trueno_gpu::kernels::BatchedMwvQ4KGemvKernel::MAX_M;
+        let max_m = match quant {
+            BatchedMwv::Q4K => trueno_gpu::kernels::BatchedMwvQ4KGemvKernel::MAX_M,
+            BatchedMwv::Q6K => trueno_gpu::kernels::BatchedMwvQ6KGemvKernel::MAX_M,
+        };
         let mut done = 0u32;
         while done < m {
             let tile = (m - done).min(max_m);
-            let kernel_type = KernelType::BatchedMwvQ4KGemv {
-                k,
-                n,
-                num_warps,
-                m: tile,
+            let kernel_type = match quant {
+                BatchedMwv::Q4K => KernelType::BatchedMwvQ4KGemv {
+                    k,
+                    n,
+                    num_warps,
+                    m: tile,
+                },
+                BatchedMwv::Q6K => KernelType::BatchedMwvQ6KGemv {
+                    k,
+                    n,
+                    num_warps,
+                    m: tile,
+                },
             };
             let kernel_name = self.kernels.kernel_name(&kernel_type);
-            let cache_key = format!("batched_mwv_q4k_gemv_{k}_{n}_{num_warps}_{tile}");
+            let cache_key = format!("{}_{k}_{n}_{num_warps}_{tile}", quant.kernel());
             self.ensure_kernel_module(&cache_key, &kernel_type)?;
             let module = self
                 .modules
@@ -63,7 +113,7 @@ impl CudaExecutor {
             // SAFETY: `output` holds `m*n` and `input` `m*k` f32s (checked above), so
             // the tile's `tile*n` outputs from `ptr_output` and `tile*k` inputs from
             // `ptr_input` are in bounds; the weights are the executor's resident
-            // Q4_K matrix of `n` rows of `k`. k_val / n_val are stack scalars.
+            // quantized matrix of `n` rows of `k`. k_val / n_val are stack scalars.
             unsafe {
                 self.stream.launch_kernel(
                     module,
@@ -1141,5 +1191,28 @@ impl CudaExecutor {
         }
 
         Ok(())
+    }
+}
+
+/// The quantizations with a batched multi-warp GEMV (#4234).
+#[derive(Clone, Copy)]
+enum BatchedMwv {
+    Q4K,
+    Q6K,
+}
+
+impl BatchedMwv {
+    fn kernel(self) -> &'static str {
+        match self {
+            Self::Q4K => "batched_mwv_q4k_gemv",
+            Self::Q6K => "batched_mwv_q6k_gemv",
+        }
+    }
+
+    fn who(self) -> &'static str {
+        match self {
+            Self::Q4K => "batched_mwv_q4k_gemv_into",
+            Self::Q6K => "batched_mwv_q6k_gemv_into",
+        }
     }
 }
