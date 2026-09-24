@@ -89,6 +89,19 @@ pub const CASES: &[(&str, &str)] = &[
         "targets/targetClass-001",
         include_str!("../../w3c/targets-targetClass-001.yaml"),
     ),
+    // #3611: the property-pair components, added after ONT-0's table of 32
+    (
+        "property/lessThan-001",
+        include_str!("../../w3c/property-lessThan-001.yaml"),
+    ),
+    (
+        "property/lessThan-002",
+        include_str!("../../w3c/property-lessThan-002.yaml"),
+    ),
+    (
+        "property/lessThanOrEquals-001",
+        include_str!("../../w3c/property-lessThanOrEquals-001.yaml"),
+    ),
 ];
 
 /// The cases of ONT-0's table that the subset cannot run, each with the reason — measured at this row, not
@@ -468,10 +481,11 @@ mod tests {
 
     #[test]
     fn the_table_of_ont_0_is_accounted_for_case_by_case() {
+        // ONT-0 enumerated 32 cases over the subset's components; #3611 added the three property-pair cases
         assert_eq!(
             CASES.len() + NOT_VENDORED.len(),
-            32,
-            "ONT-0 enumerated 32 cases over the subset's components"
+            35,
+            "ONT-0's 32 cases plus #3611's lessThan-001/-002 and lessThanOrEquals-001"
         );
         let mut ids: Vec<&str> = CASES
             .iter()
@@ -480,7 +494,7 @@ mod tests {
             .collect();
         ids.sort_unstable();
         ids.dedup();
-        assert_eq!(ids.len(), 32, "no case is both vendored and excused");
+        assert_eq!(ids.len(), 35, "no case is both vendored and excused");
     }
 
     #[test]

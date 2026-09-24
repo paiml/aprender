@@ -125,8 +125,67 @@ assert_contains "$n" "band 8 comparator: no samples is not a measurement" \
 assert_not_contains "$n" "Traceback" \
     "an empty comparator band must never crash"
 
+# --- accel_absent (#3805) ---------------------------------------------------
+# The producer writes accel-absent.txt when the installed apr resolved no GPU
+# layers. The block must carry it, and the release gate's required-lane rule
+# (bench_receipt.py --parity-required-lanes) must waive the accel lane ONLY
+# on that evidence.
+AA="$TD/accel-absent"; mkdir -p "$AA"
+pbs_make_fixture "$AA" none clean
+printf 'no-accelerator-resolved\n' > "$AA/accel-absent.txt"
+BR="$ROOT/scripts/lib/bench_receipt.py"
+
+# receipt <out> <accelerator> <block.json> [python-edit-of-block]
+receipt() {
+    python3 - "$@" <<'PY2'
+import json, sys
+out, accel, src = sys.argv[1], sys.argv[2], sys.argv[3]
+block = json.load(open(src))["parity"]
+if len(sys.argv) > 4:
+    exec(sys.argv[4])
+json.dump({"host": "fixture", "accelerator": accel, "parity": block}, open(out, "w"))
+PY2
+}
+# required_is <receipt> <want>: rc 0 iff the gate's required lanes are exactly <want>
+required_is() {
+    local got; got=$(python3 "$BR" --parity-required-lanes "$1" | head -n 1)
+    printf 'required: %s\n' "$got"; python3 "$BR" --parity-required-lanes "$1" | sed -n '2,$p'
+    [ "$got" = "$2" ]
+}
+
+row 0 "accel-absent.txt in the work dir -> the block is emitted" \
+    pbs_run "$AA" "$TD/aa.json"
+row 0 "the emitted block carries accel_absent with the producer's reason" \
+    grep -q '"accel_absent"' "$TD/aa.json"
+
+receipt "$TD/r-sm-absent.json"  "NVIDIA GeForce RTX 4090 (sm_89)" "$TD/aa.json"
+receipt "$TD/r-sm-plain.json"   "NVIDIA GeForce RTX 4090 (sm_89)" "$TD/control.json"
+receipt "$TD/r-cpu-host.json"   "none" "$TD/control.json"
+receipt "$TD/r-contradict.json" "NVIDIA GeForce RTX 4090 (sm_89)" "$TD/aa.json" \
+    'l = dict(block["lanes"][0]); l["lane"] = "cuda"; block["lanes"].append(l)'
+receipt "$TD/r-noreason.json"   "NVIDIA GeForce RTX 4090 (sm_89)" "$TD/aa.json" \
+    'block["accel_absent"] = {"reason": " "}'
+
+row 0 "sm_* host whose block says accel_absent -> the cpu lane alone is required" \
+    required_is "$TD/r-sm-absent.json" "cpu"
+assert_contains "$n" "REPORT cuda lane unmeasured: no-accelerator-resolved" \
+    "the waived lane is reported with its reason, not dropped silently"
+row 0 "sm_* host whose block omits the accel lane WITHOUT accel_absent -> cuda still required" \
+    required_is "$TD/r-sm-plain.json" "cpu cuda"
+row 0 "a host with no accelerator -> cpu only, nothing to report" \
+    required_is "$TD/r-cpu-host.json" "cpu"
+assert_not_contains "$n" "REPORT" "no accelerator, nothing waived"
+row 1 "accel_absent beside a measured cuda lane -> the block is INVALID" \
+    python3 "$BR" --parity "$TD/r-contradict.json"
+assert_contains "$n" "a block cannot both lack and carry an accel lane" "contradiction is named"
+row 1 "accel_absent with a blank reason -> the block is INVALID" \
+    python3 "$BR" --parity "$TD/r-noreason.json"
+assert_contains "$n" "an unmeasured lane owes its reason" "the reason is mandatory"
+row 0 "a blank-reason accel_absent waives nothing -> cuda still required" \
+    required_is "$TD/r-noreason.json" "cpu cuda"
+
 if [ "$red" = 0 ]; then
-    printf 'PASS  %s: every fixture (control, zero comparator, zero subject, empty comparator) verdicts as a named result, never a traceback\n' "$PROG"
+    printf 'PASS  %s: every fixture (control, zero comparator, zero subject, empty comparator) verdicts as a named result, never a traceback; accel_absent waives the accel lane only on the producer'"'"'s evidence (#3805)\n' "$PROG"
     exit 0
 fi
 printf 'FAIL  %s: see rows above\n' "$PROG" >&2
