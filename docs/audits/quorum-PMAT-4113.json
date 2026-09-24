@@ -1,0 +1,246 @@
+{
+  "ticket": "PMAT-4113",
+  "base": "origin/chore/0.69.1-merge-back",
+  "base_resolved": "origin/chore/0.69.1-merge-back",
+  "base_note": "no origin/origin/chore/0.69.1-merge-back exists; judged against the local ref",
+  "head": "0891dfcc39dfece1889ffaa488e9a17ac0e6dfcc",
+  "diff_sha256": "0cd637fc29da748c958acffb91c44f27e333d78cb04165a374cb499e84c9dd63",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 8436,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff cleanly prunes exactly 11 stale claim-literal baseline entries, matching the request in PMAT-4113. It updates `check_no_claim_literals.sh` to fix the substring stale-match bug by performing exact `path:LINE` string matches (resolving the issue where `x.md:1` falsely matches `x.md:12`). Adequate self-test coverage is provided for the fix, including handling potential SIGPIPE scenarios with large inputs. No gates are weakened and all changes are strictly within the scope of the ticket.",
+      "findings": [],
+      "raw_bytes": 3364,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "DESIGN_VERDICT=PASS | The diff for PMAT-4113 satisfies all acceptance criteria and refutes none:\n1. Prunes exactly 11 stale entries from `scripts/claim_literal_baseline.txt` across `apr-cli` and `aprender-serve` (verified: 0 new claim literals introduced, baseline shrunk as intended).\n2. Fixes stale count detection in `scripts/check_no_claim_literals.sh` by introducing `count_stale()` with exact whole-line matching (`grep -qxF \"$loc\" <<< \"$locs\"` on `path:LINE` keys extracted via `awk -F: '{print $1\":\"$2}'`), replacing the vulnerable substring match (`case \" $all \" in *\"$loc\"*`).\n3. Uses a here-string rather than a piped stream (`<<< \"$locs\"`), safely avoiding SIGPIPE (141) under `pipefail` on large hit sets.\n4. Adds deterministic self-tests covering prefix/substring edge cases and large payload SIGPIPE resilience (all 18 self-tests pass).\n5. Roadmap entry fragment and aggregate are properly synchronized (`make roadmap-aggregate-check` passes).\nNo gates were weakened and no unrequested changes were introduced.",
+      "findings": [],
+      "raw_bytes": 3459,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements PMAT-4113 completely and correctly: (1) it replaces buggy substring matching in check_no_claim_literals.sh with exact path:LINE matching using count_stale(), (2) includes robust selftests covering exact matches, substring exclusions, and SIGPIPE prevention under pipefail, (3) removes exactly 11 stale entries from scripts/claim_literal_baseline.txt, and (4) updates the roadmap entry and aggregate cleanly. No gates are weakened and all checks pass.",
+      "findings": [
+        {
+          "claim": "count_stale() replaces substring pattern matching with exact path:LINE matching via grep -qxF and awk extraction, preventing stale entries from hiding when a nearby line matches.",
+          "file": "scripts/check_no_claim_literals.sh",
+          "grounding": "cited",
+          "line": 540
+        },
+        {
+          "claim": "check_no_claim_literals.sh --selftest executes successfully with 0 failures, validating exact-match, substring exclusion, and SIGPIPE handling under pipefail.",
+          "file": "scripts/check_no_claim_literals.sh",
+          "grounding": "measured",
+          "line": 1025
+        },
+        {
+          "claim": "Exactly 11 stale baseline entries were pruned from scripts/claim_literal_baseline.txt, matching ticket PMAT-4113 and acceptance criteria.",
+          "file": "scripts/claim_literal_baseline.txt",
+          "grounding": "cited",
+          "line": 184
+        },
+        {
+          "claim": "Full claim literal verification runs cleanly with zero new violations and confirms ratchet shrink (11 pruned entries).",
+          "file": "scripts/check_no_claim_literals.sh",
+          "grounding": "measured",
+          "line": 1262
+        }
+      ],
+      "raw_bytes": 4552,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "scripts/check_no_claim_literals.sh",
+      "line": 540,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "count_stale() replaces substring pattern matching with exact path:LINE matching via grep -qxF and awk extraction, preventing stale entries from hiding when a nearby line matches."
+      ]
+    },
+    {
+      "file": "scripts/check_no_claim_literals.sh",
+      "line": 1025,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "check_no_claim_literals.sh --selftest executes successfully with 0 failures, validating exact-match, substring exclusion, and SIGPIPE handling under pipefail."
+      ]
+    },
+    {
+      "file": "scripts/check_no_claim_literals.sh",
+      "line": 1262,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Full claim literal verification runs cleanly with zero new violations and confirms ratchet shrink (11 pruned entries)."
+      ]
+    },
+    {
+      "file": "scripts/claim_literal_baseline.txt",
+      "line": 184,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Exactly 11 stale baseline entries were pruned from scripts/claim_literal_baseline.txt, matching ticket PMAT-4113 and acceptance criteria."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}
