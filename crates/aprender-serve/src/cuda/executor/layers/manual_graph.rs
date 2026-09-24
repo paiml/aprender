@@ -121,4 +121,30 @@ impl CudaExecutor {
             });
         }
     }
+
+    /// aprender#4233: hand the graph [`Self::end_graph_recording`] just built to
+    /// a caller that owns its own replay (the Qwen3.5 decode step), instead of
+    /// leaving it in the dense path's `decode_graph` slot.
+    pub(crate) fn take_decode_graph(&mut self) -> Option<CudaGraphExec> {
+        self.decode_graph.take()
+    }
+
+    /// aprender#4233: upload `host` into `buf` on THIS executor's stream, so the
+    /// copy is ordered before the next launch or graph replay on it.
+    pub(crate) fn upload_on_stream<T: Copy>(
+        &self,
+        buf: &mut GpuBuffer<T>,
+        host: &[T],
+    ) -> Result<(), GpuError> {
+        // SAFETY: `host` is a pageable slice; cuMemcpyHtoDAsync stages pageable
+        // memory before it returns. The callers also sync the stream before
+        // `host` goes out of scope (the ONE sync in front of the logits read).
+        unsafe { buf.copy_from_host_async(host, &self.stream) }
+    }
+
+    /// aprender#4233: replay a graph on this executor's stream. The inputs the
+    /// graph reads must already be uploaded with [`Self::upload_on_stream`].
+    pub(crate) fn launch_graph_exec(&self, exec: &CudaGraphExec) -> Result<(), GpuError> {
+        self.stream.launch_graph(exec)
+    }
 }

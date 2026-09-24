@@ -29,6 +29,9 @@ impl CudaKernels {
             KernelType::GdnSplitInterleaved { .. } => "gdn_split_interleaved_q_gate",
             KernelType::GdnPartialNeoxRope { .. } => "gdn_partial_neox_rope",
             KernelType::GdnDecodeAttention { .. } => "gdn_decode_attention",
+            KernelType::GdnPartialNeoxRopeIndirect { .. } => "gdn_partial_neox_rope_indirect",
+            KernelType::GdnDecodeAttentionIndirect { .. } => "gdn_decode_attention_indirect",
+            KernelType::GdnKvRowScatterIndirect { .. } => "gdn_kv_row_scatter_indirect",
             _ => return None,
         };
         Some(name)
