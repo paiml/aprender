@@ -8,6 +8,7 @@ TARBALL and never from the repository's sources. Prints "<name>\t<version>\t<dir
 Exits 2 when DIR/pkgs holds nothing or a manifest cannot be read, because an empty workspace
 would build green and prove nothing.
 """
+import json
 import pathlib
 import sys
 import tomllib
@@ -20,6 +21,15 @@ def package_name(d):
 def main(argv):
     # --name DIR: the [package] name of one unpacked crate (a --crate-file substitution keys on the
     # manifest, never on a split of the directory name: a version may hold '-', e.g. 0.70.0-rc.1)
+    # --target-dir: `cargo metadata` JSON on stdin -> its target_directory (the gate's default build
+    # target: honours CARGO_TARGET_DIR and .cargo/config.toml, never a guess)
+    if len(argv) == 2 and argv[1] == "--target-dir":
+        try:
+            print(json.load(sys.stdin)["target_directory"])
+            return 0
+        except (ValueError, KeyError) as e:
+            print("tarball_workspace: no target_directory in cargo metadata: %s" % e, file=sys.stderr)
+            return 2
     if len(argv) == 3 and argv[1] == "--name":
         try:
             print(package_name(argv[2]))

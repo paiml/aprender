@@ -42,7 +42,9 @@
 #                         with --root at a v0.69.1 tree, and require RED naming the 3 includes above.
 #                         Exit 0 = the gate SEES the defect; 1 = it went green on a known-broken crate.
 #                         Needs the network and --root at a 0.69.1 checkout.
-#   TARBALL_BUILD_TARGET_DIR  the build's target dir (default: ${CARGO_TARGET_DIR:-<root>/target}/tarball-build)
+#   TARBALL_BUILD_TARGET_DIR  the build's target dir (default: cargo's target_directory for <root>, /tarball-build).
+#                             The work dir is created BESIDE it, never in /tmp.
+#   TARBALL_BUILD_MIN_FREE_GB refuse (2) below this many GB free on the target's filesystem (default 200).
 #
 # COST. One workspace test build (dependencies are shared across all crates, and a warm target dir is
 # reused), plus about 1 min of packaging. Release-time only: [package.metadata.dogfood].gates runs it
@@ -78,15 +80,39 @@ case "$ROOT" in /?*) ;; *) echo "  cannot check: --root resolved to '$ROOT'" >&2
 case "$ROOT" in *..*) echo "  cannot check: --root holds '..': $ROOT" >&2; exit 2 ;; esac
 [ -f "$ROOT/Cargo.toml" ] || { echo "  cannot check: no Cargo.toml at $ROOT" >&2; exit 2; }
 
-T=$(mktemp -d) || { echo "  cannot check: mktemp failed" >&2; exit 2; }
-case "$T" in /tmp/?*) ;; *) echo "  cannot check: expected a temp dir under /tmp, got '$T'" >&2; exit 2 ;; esac
+# The build target: TARBALL_BUILD_TARGET_DIR, else cargo's OWN target_directory for ROOT. That honours
+# CARGO_TARGET_DIR and .cargo/config.toml, which point this repo at the RAID. It is never guessed
+# from $ROOT/target, and never /tmp: a full build measured ~151G, and a gate that fills the ROOT
+# disk is its own outage (cop, 2026-09-24).
+if [ -n "${TARBALL_BUILD_TARGET_DIR:-}" ]; then
+  BUILD_TARGET="$TARBALL_BUILD_TARGET_DIR"
+else
+  BUILD_TARGET="$( (cd "$ROOT" && cargo metadata --no-deps --format-version 1 2>/dev/null) \
+                   | python3 "$SCRIPT_DIR/lib/tarball_workspace.py" --target-dir)" \
+    || { echo "  cannot check: cargo metadata names no target_directory for $ROOT" >&2; exit 2; }
+  BUILD_TARGET="$BUILD_TARGET/tarball-build"
+fi
+case "$BUILD_TARGET" in /?*) ;; *) echo "  cannot check: build target '$BUILD_TARGET' is not absolute" >&2; exit 2 ;; esac
+case "$BUILD_TARGET" in *..*) echo "  cannot check: build target holds '..': $BUILD_TARGET" >&2; exit 2 ;; esac
+mkdir -p "$BUILD_TARGET" || { echo "  cannot check: cannot create $BUILD_TARGET" >&2; exit 2; }
+# A floor, not a hope: refuse BEFORE writing anything when the target's filesystem is short.
+MIN_FREE_GB="${TARBALL_BUILD_MIN_FREE_GB:-200}"
+free_gb=$(df -Pk "$BUILD_TARGET" 2>/dev/null | awk 'NR == 2 { print int($4 / 1048576) }')
+case "$free_gb" in ''|*[!0-9]*) echo "  cannot check: df cannot read the free space of $BUILD_TARGET" >&2; exit 2 ;; esac
+if [ "$free_gb" -lt "$MIN_FREE_GB" ]; then
+  echo "  cannot check: $BUILD_TARGET has ${free_gb}G free, below the ${MIN_FREE_GB}G floor (TARBALL_BUILD_MIN_FREE_GB); a full tarball build measured ~151G and must not fill its disk" >&2
+  exit 2
+fi
+# The work dir (packages, unpacked sources) lives BESIDE the target, on the same filesystem, never /tmp.
+T=$(mktemp -d "$BUILD_TARGET.work.XXXXXX") || { echo "  cannot check: mktemp beside $BUILD_TARGET failed" >&2; exit 2; }
+case "$T" in "$BUILD_TARGET".work.?*) ;; *) echo "  cannot check: unexpected work dir '$T'" >&2; exit 2 ;; esac
 cleanup() {
   case "${T:-}" in
-    /tmp/?*) [ -d "$T" ] && rm -rf -- "$T" ;;
+    "$BUILD_TARGET".work.?*) [ -d "$T" ] && rm -rf -- "$T" ;;
   esac
 }
 trap cleanup EXIT
-BUILD_TARGET="${TARBALL_BUILD_TARGET_DIR:-${CARGO_TARGET_DIR:-$ROOT/target}/tarball-build}"
+echo "work dir: $T (beside the build target; ${free_gb}G free, floor ${MIN_FREE_GB}G)"
 
 if [ "$NEG" = 1 ]; then
   command -v curl > /dev/null || { echo "  cannot check: curl is not on PATH" >&2; exit 2; }
