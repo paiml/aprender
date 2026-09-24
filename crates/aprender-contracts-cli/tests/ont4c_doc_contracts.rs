@@ -386,3 +386,77 @@ fn f34_a_work_tree_with_no_comparand_ref_is_red_not_unchecked() {
         show(&r)
     );
 }
+
+// ── Σ `entity_type_target_class` is cross-checked, not hand-kept (v4.16 D-T1) ──────────────────────────────────
+
+fn sigma_at(repo: &Path) -> Run {
+    pv_in(
+        repo,
+        &["lint", "contracts", "--gate", "sigma", "--format", "json"],
+    )
+}
+
+const SIGMA: &str = "contracts/ontology.yaml";
+
+#[test]
+fn sigma_passes_the_green_fixture_whose_map_covers_every_implemented_type() {
+    let t = copy();
+    let r = sigma_at(t.path());
+    assert_eq!(r.code, 0, "{}", show(&r));
+}
+
+#[test]
+fn sigma_refuses_a_target_class_key_that_no_entity_type_declares() {
+    let t = copy();
+    replace(
+        &t.path().join(SIGMA),
+        "  gguf: model:Model\n",
+        "  gguf: model:Model\n  ghost-type: ghost:Thing\n",
+    );
+    let r = sigma_at(t.path());
+    assert_eq!(r.code, 3, "{}", show(&r));
+    assert!(r.stderr.starts_with("error: "), "{}", show(&r));
+    assert!(
+        r.stderr
+            .contains("entity_type_target_class key `ghost-type`"),
+        "{}",
+        show(&r)
+    );
+}
+
+#[test]
+fn sigma_refuses_an_implemented_type_with_neither_a_mapping_nor_an_explicit_unmapped_entry() {
+    let t = copy();
+    replace(&t.path().join(SIGMA), "  json: ~\n", "");
+    let r = sigma_at(t.path());
+    assert_eq!(r.code, 3, "{}", show(&r));
+    assert!(
+        r.stderr.contains("implemented entity_type `json`")
+            && r.stderr.contains("neither a class nor an explicit `~`"),
+        "{}",
+        show(&r)
+    );
+}
+
+/// v4.16 §5 ONT-4c Mutation, verbatim: "remove an `entity.type` from Σ `entity_type_target_class` → the shape
+/// naming that type exits 3 malformed, named". Both readers see it: the shapes gate names the SHAPE, and the Σ
+/// gate names the TYPE (the map no longer covers an implemented one).
+#[test]
+fn removing_an_entity_type_from_the_target_class_map_exits_3_naming_the_shape_and_the_type() {
+    let t = copy();
+    replace(&t.path().join(SIGMA), "  readme: readme:Readme\n", "");
+    let r = gate_at(t.path(), &[]);
+    assert_eq!(r.code, 3, "{}", show(&r));
+    assert!(
+        r.stderr.contains("readme-doc") && r.stderr.contains("no targetClass"),
+        "{}",
+        show(&r)
+    );
+    let s = sigma_at(t.path());
+    assert_eq!(s.code, 3, "{}", show(&s));
+    assert!(
+        s.stderr.contains("implemented entity_type `readme`"),
+        "{}",
+        show(&s)
+    );
+}

@@ -5,12 +5,15 @@
 //! `entity_types` and the `extractors` that read them, and the keys the ontology deliberately cannot express
 //! (`not_expressible`).
 //!
-//! **Four ways Σ itself is malformed, all exit 3** (`error:`, never `reject:` — the corpus is not at fault):
+//! **Six ways Σ itself is malformed, all exit 3** (`error:`, never `reject:` — the corpus is not at fault):
 //!
 //! 1. an `entity_types` entry naming no extractor, or naming one `extractors[]` does not declare;
 //! 2. a Σ key no declared reader claims — an anchor nothing reads is decoration, the defect ONT-1 refused;
 //! 3. a `not_expressible` entry without a `reader`;
 //! 4. an `extractors[]` entry without a `reader`.
+//! 5. an `entity_type_target_class` key that no `entity_types` entry declares;
+//! 6. an `implemented: true` entity type with neither a class nor an explicit `~` in `entity_type_target_class`
+//!    (v4.16 D-T1: the map is cross-checked against `entity_types`, never a hand-kept list nothing reads back).
 //!
 //! A `reader` is a DECLARED NAME carried beside `implemented: true|false`, not a path that must resolve today
 //! (plan v2 ruling 3): §4.1 gives `entity_types[{name, extractor, implemented}]` and ONT-4c marks four of them
@@ -44,8 +47,9 @@ pub struct Sigma {
     pub not_expressible: Vec<NotExpressible>,
     /// v4.16 D-T1 (qd4c4): `entity.type` → the class a shape with no `targetClass` targets
     /// (`shapes.rs::default_target`). An `entity.type` absent here gives such a shape no target: malformed, exit 3.
+    /// A `~` value is an EXPLICIT no-default: the type is covered, and every shape on it names its own class.
     #[serde(default)]
-    pub entity_type_target_class: BTreeMap<String, String>,
+    pub entity_type_target_class: BTreeMap<String, Option<String>>,
     /// v4.16 D5b (qd4c3): the `##` headings of an `llm-context` file that satisfy each role
     /// (`Purpose`, `Rules`, `Commands`, `Layout`) — `extract:llm-context` emits `llm:<role>Section` per match.
     #[serde(default)]
@@ -157,6 +161,10 @@ pub enum SigmaError {
     NotExpressibleWithoutReader { key: String },
     /// An `extractors[]` entry without a `reader`.
     ExtractorWithoutReader { extractor: String },
+    /// An `entity_type_target_class` key that no `entity_types` entry declares.
+    TargetClassForUndeclaredType { entity_type: String },
+    /// An `implemented: true` entity type with neither a class nor an explicit `~` in `entity_type_target_class`.
+    ImplementedTypeWithoutTargetClass { entity_type: String },
 }
 
 impl fmt::Display for SigmaError {
@@ -188,6 +196,14 @@ impl fmt::Display for SigmaError {
             Self::ExtractorWithoutReader { extractor } => {
                 write!(f, "extractor `{extractor}` has no reader")
             }
+            Self::TargetClassForUndeclaredType { entity_type } => write!(
+                f,
+                "entity_type_target_class key `{entity_type}` names no declared entity_type"
+            ),
+            Self::ImplementedTypeWithoutTargetClass { entity_type } => write!(
+                f,
+                "implemented entity_type `{entity_type}` has neither a class nor an explicit `~` in entity_type_target_class"
+            ),
         }
     }
 }
@@ -217,7 +233,7 @@ impl Sigma {
         serde_yaml::from_str(yaml).map_err(|e| SigmaError::Parse(e.to_string()))
     }
 
-    /// The four malformed-Σ classes of §5 ONT-2b, in the order the row lists them.
+    /// The malformed-Σ classes: ONT-2b's four in the order the row lists them, then the target-class map (v4.16 D-T1).
     ///
     /// # Errors
     /// [`SigmaError`] — every variant is exit 3, because a malformed declaration is not the corpus's fault.
@@ -225,7 +241,8 @@ impl Sigma {
         self.check_entity_types()?;
         self.check_readers()?;
         self.check_not_expressible()?;
-        self.check_extractors()
+        self.check_extractors()?;
+        self.check_target_classes()
     }
 
     /// Class 1: every `entity_types` entry names an extractor `extractors[]` declares.
@@ -282,6 +299,30 @@ impl Sigma {
             None => Ok(()),
             Some(ex) => Err(SigmaError::ExtractorWithoutReader {
                 extractor: ex.name.clone(),
+            }),
+        }
+    }
+
+    /// Classes 5 and 6: `entity_type_target_class` against `entity_types`, both ways. A key no type declares is a
+    /// target nothing can reach; an implemented type the map does not mention is a shape default nobody decided.
+    fn check_target_classes(&self) -> Result<(), SigmaError> {
+        if let Some(key) = self
+            .entity_type_target_class
+            .keys()
+            .find(|k| !self.declares_entity_type(k))
+        {
+            return Err(SigmaError::TargetClassForUndeclaredType {
+                entity_type: key.clone(),
+            });
+        }
+        match self
+            .entity_types
+            .iter()
+            .find(|et| et.implemented && !self.entity_type_target_class.contains_key(&et.name))
+        {
+            None => Ok(()),
+            Some(et) => Err(SigmaError::ImplementedTypeWithoutTargetClass {
+                entity_type: et.name.clone(),
             }),
         }
     }
@@ -377,6 +418,65 @@ readers:
   extractors: ontology/sigma.rs
   not_expressible: ontology/sigma.rs
 "#
+    }
+
+    /// `good()` with `pv-contract` implemented and the map claimed, so each test is one edit to the map.
+    fn with_map(map: &str) -> Result<(), SigmaError> {
+        let y = good()
+            .replace(
+                "  - {name: pv-contract, extractor: pv_contract, implemented: false}",
+                "  - {name: pv-contract, extractor: pv_contract, implemented: true}",
+            )
+            .replace(
+                "readers:\n",
+                &format!("{map}readers:\n  entity_type_target_class: ontology/shapes.rs\n"),
+            );
+        Sigma::from_yaml(&y).expect("parses").check_integrity()
+    }
+
+    #[test]
+    fn an_implemented_type_is_covered_by_a_class_or_an_explicit_tilde() {
+        assert_eq!(
+            with_map("entity_type_target_class:\n  pv-contract: ont:Contract\n"),
+            Ok(())
+        );
+        assert_eq!(
+            with_map("entity_type_target_class:\n  pv-contract: ~\n"),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn an_implemented_type_the_map_does_not_mention_is_malformed_named() {
+        let e = with_map("").unwrap_err();
+        assert_eq!(
+            e,
+            SigmaError::ImplementedTypeWithoutTargetClass {
+                entity_type: "pv-contract".into()
+            }
+        );
+        assert!(e.to_string().contains("`pv-contract`"), "{e}");
+    }
+
+    #[test]
+    fn a_map_key_no_entity_type_declares_is_malformed_named() {
+        let e = with_map("entity_type_target_class:\n  pv-contract: ont:Contract\n  ghost: g:G\n")
+            .unwrap_err();
+        assert_eq!(
+            e,
+            SigmaError::TargetClassForUndeclaredType {
+                entity_type: "ghost".into()
+            }
+        );
+    }
+
+    /// The repo's own Σ is held to it: every implemented type is covered, and every key is a declared type.
+    #[test]
+    fn the_repo_sigma_map_covers_every_implemented_type_and_names_no_ghost() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../contracts/ontology.yaml");
+        let s =
+            Sigma::from_yaml(&std::fs::read_to_string(path).expect("read Σ")).expect("Σ parses");
+        assert_eq!(s.check_integrity(), Ok(()));
     }
 
     #[test]

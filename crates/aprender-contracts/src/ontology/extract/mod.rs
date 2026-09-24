@@ -50,13 +50,13 @@ pub struct Extraction {
     pub lean: lean::LeanStats,
     /// ONT-4c3: the logit-parity receipts under `evidence/parity/**`, and the files this extractor refused.
     pub parity: parity_receipt::ParityStats,
-    /// aprender#3715: the release evidence — `None` unless a release subject was given (an ordinary PR has none).
     /// ONT-4c: `README.md` — files read, the claim commands CI runs (the MEASURED set), refusals.
     pub readme: claims::DocStats,
     /// ONT-4c: `CLAUDE.md` (`llm-context`) — the same.
     pub llm_context: claims::DocStats,
     /// ONT-4c: CSV datasets read, and the files refused.
     pub csv: claims::DocStats,
+    /// aprender#3715: the release evidence — `None` unless a release subject was given (an ordinary PR has none).
     pub release: Option<release_evidence::ReleaseStats>,
 }
 
