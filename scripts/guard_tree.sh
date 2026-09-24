@@ -515,6 +515,24 @@ if [ -n "$missing" ]; then
 fi
 
 guards="$(universe_for_subset)"
+# #4108 (ph9 review, gemini lane) -- the subset's own listing can come back SHORT with nothing
+# to say so: `grep -L`/`grep -l` report a file they failed to read on stderr and their exit
+# status tracks the match, not the listing (why `|| exit 1` was declined), and the
+# planned/accounted check below cannot see a guard that was never listed. The two cargo
+# subsets PARTITION the tracked universe, so their sizes must sum to it: a guard lost by
+# either listing is a count short, whichever subset this run asked for.
+if [ "$subset" != all ]; then
+    n_tracked=$(grep -c . <<<"$tracked")
+    n_free=$(cargo_free_universe | grep -c .)
+    n_only=$(cargo_only_universe | grep -c .)
+    if [ $((n_free + n_only)) -ne "$n_tracked" ]; then
+        printf 'FAIL  guard_tree [universe]\n'
+        printf '      | guard_tree: %d tracked guard(s), but the cargo-free (%d) and cargo-only (%d) listings cover %d -- a guard was lost from a subset, so no run is a verdict.\n' \
+            "$n_tracked" "$n_free" "$n_only" "$((n_free + n_only))"
+        printf '0 checks, 1 failed\n'
+        exit 1
+    fi
+fi
 
 RUN_DIR="$(mktemp -d)" || exit 1
 trap 'rm -rf "${RUN_DIR:?}"' EXIT
@@ -565,6 +583,12 @@ if [ "$dry_run" -eq 1 ]; then
     # reads exactly these rows.
     if [ $((to_run + skipped)) -ne "$planned" ]; then
         printf 'FAIL  guard_tree [plan] -- the plan held %d guard(s) and the dry-run recovered %d\n' "$planned" "$((to_run + skipped))" >&2
+        exit 1
+    fi
+    # #4108 (ph9 review, sonnet lane): the dry-run's own vacuity check -- the run path fails
+    # "0 checks executed" below, and a dry-run that planned nothing answers nothing either.
+    if [ "$planned" -eq 0 ]; then
+        printf 'FAIL  guard_tree [vacuous] -- the dry-run planned 0 guard(s); an empty plan is not a dispatch list\n' >&2
         exit 1
     fi
     exit 0

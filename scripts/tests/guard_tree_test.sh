@@ -850,6 +850,100 @@ else
     fail_row "37: --dry-run refuses a plan it cannot recover whole" "rc=$d_rc; out: $(tr '\n' '|' <<<"$d_out" | cut -c1-200)"
 fi
 
+# 37m: row 37's mutant -- the fixture hook kept, the dry-run's plan-recovery check deleted.
+python3 - "$dfix/scripts/guard_tree.sh" <<'PY4'
+import sys
+p = sys.argv[1]; s = open(p).read()
+a = s.index('    # #4108 (ph5 lane 1): the dry-run answers for the whole plan')
+b = s.index('    # #4108 (ph9 review, sonnet lane)')
+open(p, "w").write(s[:a] + s[b:])
+PY4
+dm_out="$(cd "$dfix" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+dm_rc=$?
+if [ "$dm_rc" -eq 0 ] && grep -q '^0 to run, 0 skipped$' <<<"$dm_out"; then
+    pass_row "37m: mutant without the plan-recovery check prints '0 to run, 0 skipped' exit 0 -- row 37 can fail"
+else
+    fail_row "37m: mutant without the plan-recovery check" "expected a silent exit 0; rc=$dm_rc"
+fi
+
+# 38 (#4108 ph9, sonnet lane): --dry-run over an EMPTY universe is vacuous and fails, as the
+# run path's "0 checks executed" does. 38m: the mutant without that check exits 0 on nothing.
+efix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $efix"
+mkdir -p "$efix/.empty-git-template" "$efix/scripts"
+git -C "$efix" init -q --template="$efix/.empty-git-template"
+git -C "$efix" config user.email test@example.invalid
+git -C "$efix" config user.name guard_tree_test
+cp "$GUARD_TREE" "$efix/scripts/guard_tree.sh"
+git -C "$efix" add -A
+git -C "$efix" -c commit.gpgsign=false commit -q -m efixture
+e_out="$(cd "$efix" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+e_rc=$?
+if [ "$e_rc" -ne 0 ] && grep -q 'guard_tree \[vacuous\] -- the dry-run planned 0' <<<"$e_out"; then
+    pass_row "38: --dry-run over an empty universe fails as vacuous (rc=$e_rc)"
+else
+    fail_row "38: --dry-run over an empty universe" "rc=$e_rc; out: $(tr '\n' '|' <<<"$e_out" | cut -c1-200)"
+fi
+python3 - "$GUARD_TREE" "$efix/scripts/guard_tree.sh" <<'PY5'
+import sys
+s = open(sys.argv[1]).read()
+a = s.index('    # #4108 (ph9 review, sonnet lane)')
+b = s.index('        exit 1\n    fi\n    exit 0\nfi\n', a) + len('        exit 1\n    fi\n')
+open(sys.argv[2], "w").write(s[:a] + s[b:])
+PY5
+em_out="$(cd "$efix" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+em_rc=$?
+if [ "$em_rc" -eq 0 ] && grep -q '^0 to run, 0 skipped$' <<<"$em_out"; then
+    pass_row "38m: mutant without the dry-run vacuity check exits 0 on an empty universe -- row 38 can fail"
+else
+    fail_row "38m: mutant without the dry-run vacuity check" "expected a silent exit 0; rc=$em_rc"
+fi
+
+# 39 (#4108 ph9, gemini lane): a subset listing that comes back SHORT fails the run. The
+# fixture's cargo-only listing is cut by one (a hook on the FIXTURE copy only: grep losing a
+# file it could not read); --cargo-only must refuse by the partition count. 39m: the mutant
+# without the partition check runs the short list and exits 0 with a cargo guard never run.
+pfix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $pfix"
+mkdir -p "$pfix/.empty-git-template" "$pfix/scripts"
+git -C "$pfix" init -q --template="$pfix/.empty-git-template"
+git -C "$pfix" config user.email test@example.invalid
+git -C "$pfix" config user.name guard_tree_test
+printf '#!/usr/bin/env bash\n# runs cargo test in CI\nexit 0\n' >"$pfix/scripts/check_p_a.sh"
+printf '#!/usr/bin/env bash\n# runs cargo test in CI\nexit 0\n' >"$pfix/scripts/check_p_b.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$pfix/scripts/check_p_free.sh"
+python3 - "$GUARD_TREE" "$pfix/scripts/guard_tree.sh" <<'PY6'
+import sys
+s = open(sys.argv[1]).read()
+a = 'guard_universe | xargs -r grep -lE "$CARGO_RE"\n'
+assert s.count(a) == 1, "anchor"
+s = s.replace(a, 'guard_universe | xargs -r grep -lE "$CARGO_RE" | head -n -1\n')
+open(sys.argv[2], "w").write(s)
+PY6
+git -C "$pfix" add -A
+git -C "$pfix" -c commit.gpgsign=false commit -q -m pfixture
+p_out="$(cd "$pfix" && bash scripts/guard_tree.sh --cargo-only 2>&1)"
+p_rc=$?
+if [ "$p_rc" -ne 0 ] && grep -q '3 tracked guard(s), but the cargo-free (1) and cargo-only (1) listings cover 2' <<<"$p_out"; then
+    pass_row "39: a subset listing one guard short fails the run by the partition count (rc=$p_rc)"
+else
+    fail_row "39: a subset listing one guard short" "rc=$p_rc; out: $(tr '\n' '|' <<<"$p_out" | cut -c1-240)"
+fi
+python3 - "$pfix/scripts/guard_tree.sh" <<'PY7'
+import sys
+p = sys.argv[1]; s = open(p).read()
+a = s.index('# #4108 (ph9 review, gemini lane)')
+b = s.index('RUN_DIR="$(mktemp -d)"')
+open(p, "w").write(s[:a] + s[b:])
+PY7
+pm_out="$(cd "$pfix" && bash scripts/guard_tree.sh --cargo-only 2>&1)"
+pm_rc=$?
+if [ "$pm_rc" -eq 0 ] && grep -q '^1 checks, 0 failed$' <<<"$pm_out"; then
+    pass_row "39m: mutant without the partition check runs 1 of 2 cargo guards and exits 0 -- row 39 can fail"
+else
+    fail_row "39m: mutant without the partition check" "expected a silent exit 0 on 1 check; rc=$pm_rc; tail: $(tail -2 <<<"$pm_out" | tr '\n' '|')"
+fi
+
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then
     exit 1
