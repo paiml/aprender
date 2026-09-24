@@ -481,7 +481,7 @@ def judge_cell(entries, expect_any):
     return "ALL_WRONG", ok
 
 
-def collect(args):
+def _load_inputs(args):
     with open(args.prompts, encoding="utf-8") as fh:
         prompts = {p["id"]: p for p in json.load(fh)["prompts"]}
     with open(args.meta, encoding="utf-8") as fh:
@@ -491,6 +491,95 @@ def collect(args):
         for line in fh:
             if line.strip():
                 rows.append(json.loads(line))
+    return prompts, meta, rows
+
+
+def _group_gens(gens, prompts):
+    keys = []
+    by_key = {}
+    for r in gens:
+        k = (r["model_sha256"], r["host"], r["verb"], r["thinking"], prompts[r["prompt_id"]]["rung"], r["prompt_id"])
+        if k not in by_key:
+            keys.append(k)
+            by_key[k] = {}
+        by_key[k][r["engine"]] = r
+    return keys, by_key
+
+
+def _build_cell(k, engine_rows, prompt, requested, toks):
+    entries = {}
+    for eng in ENGINES:
+        row = engine_rows.get(eng)
+        if row is None:
+            entries[eng] = {"answered": False, "missing": True,
+                            "why": "missing: no row for this engine" if eng in requested else "not requested"}
+        else:
+            entries[eng] = engine_entry(row, prompt)
+    verdict, ok = judge_cell(entries, prompt["expect_any"])
+    for eng in ENGINES:
+        entries[eng]["correct"] = ok[eng]
+    said = {e: norm(v["answer"]) for e, v in entries.items() if v.get("answered")}
+    return {
+        "key": dict(zip(("model_sha256", "host", "verb", "thinking", "rung", "prompt_id"), k)),
+        "verdict": verdict,
+        # additive (aprender-97, #3715): pv reads the control by this flag, never by a prompt name
+        "positive_control": bool(prompt.get("control")),
+        "expect_any": prompt["expect_any"],
+        "engines": entries,
+        "agreement": {
+            "answered": sorted(said),
+            "all_identical": len(said) >= 2 and len(set(said.values())) == 1,
+            "apr_matches": sorted(e for e in said if e != "apr" and "apr" in said and said[e] == said["apr"]),
+        },
+        "token_parity": (token_parity(entries["apr"], toks.get((k[0], k[5]))) if k[2] == "run"
+                         else {"measured": False, "why": "not measured for the %s verb" % k[2]}),
+    }
+
+
+def _decline_reason(controls, cells):
+    broken = sorted({"%s/%s" % (c["key"]["model_sha256"][:12], c["key"]["prompt_id"])
+                     for c in cells if c["key"]["prompt_id"] in controls and c["verdict"] == "ALL_WRONG"})
+    models = sorted({c["key"]["model_sha256"] for c in cells})
+    uncontrolled = [m[:12] for m in models
+                    if not any(c["key"]["model_sha256"] == m and c["key"]["prompt_id"] in controls for c in cells)]
+    if not controls:
+        return "the prompt set declares no positive control (\"control\": true)"
+    if not cells:
+        return "no cell was measured"
+    if uncontrolled:
+        return "no positive-control cell was measured for model(s) " + ", ".join(uncontrolled)
+    if broken:
+        return "positive control came back ALL_WRONG (a broken harness, not a model limit): " + ", ".join(broken)
+    return None
+
+
+def _overall_verdict(counts, det_counts, declined_because):
+    if counts["RED"] or det_counts["RED"]:
+        return "RED", 1
+    if declined_because:
+        return "DECLINE", 2
+    if counts["UNJUDGED"] or det_counts["UNJUDGED"]:
+        # An UNJUDGED cell was never compared to anything: under the amended
+        # scope (#3739, 17:19Z) "a missing cell is a NO-GO", and an unmeasured
+        # cell is a missing one. (A run with no GREEN cannot reach PASS: every
+        # model has a control cell, and a control that is not RED, UNJUDGED or
+        # ALL_WRONG is GREEN.)
+        return "DECLINE", 2
+    return "PASS", 0
+
+
+def _write_receipt(args, receipt):
+    with open(args.out_json, "w", encoding="utf-8") as fh:
+        json.dump(receipt, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+    md = render_md(receipt)
+    with open(args.out_md, "w", encoding="utf-8") as fh:
+        fh.write(md)
+    sys.stdout.write(md)
+
+
+def collect(args):
+    prompts, meta, rows = _load_inputs(args)
     gens = [r for r in rows if r.get("kind") == "gen"]
     # llama.cpp's template-level ids feed the REPORTED token_parity field; raw-text
     # `tok` rows (they carry `input`) are the byte-equal deterministic rows below.
@@ -500,45 +589,8 @@ def collect(args):
     greedy = report_greedy(rows)
     requested = meta.get("engines", list(ENGINES))
 
-    keys = []
-    by_key = {}
-    for r in gens:
-        k = (r["model_sha256"], r["host"], r["verb"], r["thinking"], prompts[r["prompt_id"]]["rung"], r["prompt_id"])
-        if k not in by_key:
-            keys.append(k)
-            by_key[k] = {}
-        by_key[k][r["engine"]] = r
-
-    cells = []
-    for k in keys:
-        prompt = prompts[k[5]]
-        entries = {}
-        for eng in ENGINES:
-            row = by_key[k].get(eng)
-            if row is None:
-                entries[eng] = {"answered": False, "missing": True,
-                                "why": "missing: no row for this engine" if eng in requested else "not requested"}
-            else:
-                entries[eng] = engine_entry(row, prompt)
-        verdict, ok = judge_cell(entries, prompt["expect_any"])
-        for eng in ENGINES:
-            entries[eng]["correct"] = ok[eng]
-        said = {e: norm(v["answer"]) for e, v in entries.items() if v.get("answered")}
-        cells.append({
-            "key": dict(zip(("model_sha256", "host", "verb", "thinking", "rung", "prompt_id"), k)),
-            "verdict": verdict,
-            # additive (aprender-97, #3715): pv reads the control by this flag, never by a prompt name
-            "positive_control": bool(prompt.get("control")),
-            "expect_any": prompt["expect_any"],
-            "engines": entries,
-            "agreement": {
-                "answered": sorted(said),
-                "all_identical": len(said) >= 2 and len(set(said.values())) == 1,
-                "apr_matches": sorted(e for e in said if e != "apr" and "apr" in said and said[e] == said["apr"]),
-            },
-            "token_parity": (token_parity(entries["apr"], toks.get((k[0], k[5]))) if k[2] == "run"
-                             else {"measured": False, "why": "not measured for the %s verb" % k[2]}),
-        })
+    keys, by_key = _group_gens(gens, prompts)
+    cells = [_build_cell(k, by_key[k], prompts[k[5]], requested, toks) for k in keys]
 
     counts = {v: sum(1 for c in cells if c["verdict"] == v) for v in ("RED", "GREEN", "UNJUDGED", "ALL_WRONG")}
     judged = counts["RED"] + counts["GREEN"] + counts["ALL_WRONG"]
@@ -548,34 +600,9 @@ def collect(args):
             k = c["key"]["model_sha256"]
             all_wrong_by_model[k] = all_wrong_by_model.get(k, 0) + 1
     controls = [pid for pid, p in prompts.items() if p.get("control")]
-    broken = sorted({"%s/%s" % (c["key"]["model_sha256"][:12], c["key"]["prompt_id"])
-                     for c in cells if c["key"]["prompt_id"] in controls and c["verdict"] == "ALL_WRONG"})
-    models = sorted({c["key"]["model_sha256"] for c in cells})
-    uncontrolled = [m[:12] for m in models
-                    if not any(c["key"]["model_sha256"] == m and c["key"]["prompt_id"] in controls for c in cells)]
-    declined_because = None
-    if not controls:
-        declined_because = "the prompt set declares no positive control (\"control\": true)"
-    elif not cells:
-        declined_because = "no cell was measured"
-    elif uncontrolled:
-        declined_because = "no positive-control cell was measured for model(s) " + ", ".join(uncontrolled)
-    elif broken:
-        declined_because = "positive control came back ALL_WRONG (a broken harness, not a model limit): " + ", ".join(broken)
+    declined_because = _decline_reason(controls, cells)
     det_counts = {v: sum(1 for d in det if d["verdict"] == v) for v in ("RED", "GREEN", "UNJUDGED")}
-    if counts["RED"] or det_counts["RED"]:
-        verdict, rc = "RED", 1
-    elif declined_because:
-        verdict, rc = "DECLINE", 2
-    elif counts["UNJUDGED"] or det_counts["UNJUDGED"]:
-        # An UNJUDGED cell was never compared to anything: under the amended
-        # scope (#3739, 17:19Z) "a missing cell is a NO-GO", and an unmeasured
-        # cell is a missing one. (A run with no GREEN cannot reach PASS: every
-        # model has a control cell, and a control that is not RED, UNJUDGED or
-        # ALL_WRONG is GREEN.)
-        verdict, rc = "DECLINE", 2
-    else:
-        verdict, rc = "PASS", 0
+    verdict, rc = _overall_verdict(counts, det_counts, declined_because)
     receipt = dict(meta)
     receipt.update({
         "schema": "crux-inference-receipt/v1",
@@ -587,13 +614,7 @@ def collect(args):
                         all_wrong_by_model=all_wrong_by_model, controls=controls,
                         declined_because=declined_because if verdict == "DECLINE" else None),
     })
-    with open(args.out_json, "w", encoding="utf-8") as fh:
-        json.dump(receipt, fh, indent=2, ensure_ascii=False)
-        fh.write("\n")
-    md = render_md(receipt)
-    with open(args.out_md, "w", encoding="utf-8") as fh:
-        fh.write(md)
-    sys.stdout.write(md)
+    _write_receipt(args, receipt)
     return rc
 
 

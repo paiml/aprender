@@ -21225,6 +21225,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-4101
+  github_issue: 4101
+  item_type: task
+  title: CB-200 back under its baseline, measured on every PR (#4101)
+  status: in_progress
+  priority: high
+  assigned_to: pvl-b
+  created: 2026-09-24T00:58:10Z
+  updated: 2026-09-24T00:58:10Z
+  spec: null
+  acceptance_criteria:
+  - 'paiml/aprender#4101: refactor the 0.69.1-cycle below-B definitions (CB-200 603 -> 598 on batch/0.70.0) and gate CB-200 per PR through a guard guard_tree.sh already runs'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - cb-200
+  - ratchet
+  notes: null
 - id: PMAT-4110
   github_issue: 4110
   item_type: task
@@ -21465,6 +21485,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   acceptance_criteria:
   - scripts/check_sovereign_release_assets.sh --live exits 10 when any manifest repo's latest release lacks linux-x86_64 (musl or gnu.2.NN<=35), linux-aarch64 or darwin-arm64 for a binary, or an archive lacks its .sha256
   - bare run is an offline 17-case table (guard_tree), each removed platform / missing .sha256 / plain-gnu x86_64 RED; 5 checker mutants killed
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4336
+  github_issue: 4336
+  item_type: task
+  title: 'ci(cuda-unit): the clippy --features cuda step runs on apr-cli-only diffs (cuda_lint output)'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-x4233
+  created: 2026-09-25T00:00:00Z
+  updated: 2026-09-25T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - scripts/ci_gpu_touched.sh --self-test answers gpu_touched=0 cuda_lint=1 on an apr-cli-only diff, with a planted mutant that deletes apr-cli from CUDA_LINT_CRATES
+  - cuda-unit starts on cuda_lint=1; its cargo test steps carry a gpu_touched step if; the clippy step has none (scripts/tests/ci_gpu_touched_test.sh)
   phases: []
   subtasks: []
   estimated_effort: null

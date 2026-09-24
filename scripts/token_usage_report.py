@@ -406,37 +406,13 @@ def self_test():
     return 1 if fails else 0
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--hours", type=float, default=24.0)
-    ap.add_argument("--json", action="store_true")
-    ap.add_argument("--self-test", action="store_true", help="run the project-attribution case table and exit")
-    a = ap.parse_args()
-    if a.self_test:
-        sys.exit(self_test())
-    now = dt.datetime.now(dt.timezone.utc)
-    since = now - dt.timedelta(hours=a.hours)
-    cr = claude(since)
-    lanes, rounds, convs, q429_log = agy(since)
-    real = [x for x in lanes if x["kind"] != "probe"]
+def ctot(rs):
+    return sum(r["input"] + r["cache_write"] + r["cache_read"] + r["output"] for r in rs)
 
-    def ctot(rs):
-        return sum(r["input"] + r["cache_write"] + r["cache_read"] + r["output"] for r in rs)
 
-    if a.json:
-        json.dump({"since": since.isoformat(), "claude_messages": len(cr), "claude_tokens": tot(cr, FIELDS),
-                   "agy_envelopes": len(lanes), "agy_lanes": len(real), "agy_rounds": len(rounds), "agy_conversations": len(convs),
-                   "agy_429_log_lines": q429_log, "agy_tokens": tot(lanes, AGY_FIELDS)}, sys.stdout, indent=1)
-        return 0
-    all_c = ctot(cr)
-    L = ["## Token usage, MEASURED -- %s to %s UTC (%g h), host %s" % (since.strftime("%m-%d %H:%M"), now.strftime("%m-%d %H:%M"),
-                                                                    a.hours, os.uname().nodename),
-         "", "`python3 scripts/token_usage_report.py --hours %g` (read-only). Raw token counts as each tool recorded them; no "
-         "price weighting, no estimates. Claude: %s assistant messages (de-duplicated by message id). agy: %s lane/probe "
-         "envelopes in %s quorum rounds found on disk, %s agy conversations, %s 429 lines in agy's logs."
-         % (a.hours, fmt(len(cr)), fmt(len(lanes)), len(rounds), fmt(len(convs)), q429_log)]
+def _section_claude(cr, all_c, t):
+    L = []
     # --- A. Claude
-    t = tot(cr, FIELDS)
     L += table("A1. Claude totals", ["input", "cache write", "cache read", "output", "all"],
                [[fmt(t["input"]), fmt(t["cache_write"]), fmt(t["cache_read"]), fmt(t["output"]), fmt(all_c)]])
     by = collections.defaultdict(list)
@@ -475,6 +451,11 @@ def main():
         byh[r["t"].strftime("%m-%d %H:00")].append(r)
     L += table("A6. Claude per hour (UTC)", ["hour", "sessions", "messages", "all tokens"],
                [[h, len({r["session"] for r in rs}), fmt(len(rs)), fmt(ctot(rs))] for h, rs in sorted(byh.items())])
+    return L, bys
+
+
+def _section_agy(lanes, real, rounds, convs):
+    L = []
     # --- B. agy
     at = tot(lanes, AGY_FIELDS)
     L += table("B1. agy totals (quorum lane + probe envelopes on disk)",
@@ -502,6 +483,11 @@ def main():
     L += table("B3. agy per hour (UTC)", ["hour", "agy conversations (every use)", "quorum lanes", "lane tokens", "429 envelopes"],
                [[h, ch.get(h, 0), sum(1 for x in byh.get(h, []) if x["kind"] != "probe"), fmt(sum(x["total"] for x in byh.get(h, []))),
                  sum(1 for x in byh.get(h, []) if x["q429"])] for h in sorted(set(byh) | set(ch))])
+    return L
+
+
+def _section_levers(since, real, lanes, convs, bys, t, all_c, at):
+    L = []
     # --- C. levers, from the same records
     per_ticket, tick_tokens = collections.defaultdict(set), collections.defaultdict(int)
     for x in real:
@@ -535,6 +521,11 @@ def main():
                                               fmt(int(sum(x["cache_read"] for x in real) / max(1, len(real)))))]
     L += ["- **Concurrency**: at peak %d quorum lanes ran at once on this host (from each lane's end time and duration). %s agy "
           "conversations started in the window; %d were quorum lanes or probes found on disk." % (peak, fmt(len(convs)), len(lanes))]
+    return L
+
+
+def _section_drivers(cr):
+    L = []
     # --- D. what DRIVES cache reads: context size per main turn (input + cache write + cache read = the prompt re-read)
     main_rows = [r for r in cr if r["lane"] == "main" and r["model"] != "<synthetic>"]
     for r in main_rows:
@@ -558,6 +549,11 @@ def main():
     img = sorted(IMAGES.items(), key=lambda kv: -kv[1][0])
     L += table("D2. Sessions that read images", ["session", "images", "image bytes (base64)", "main turns after the first image"],
                [[s_[:8], fmt(v[1]), fmt(v[0]), fmt(sum(1 for r in per.get(s_, []) if v[2] and r["t"] > v[2]))] for s_, v in img[:10]])
+    return L, main_rows, per, med
+
+
+def _section_estimates(main_rows, per):
+    L = []
     # --- E. levers with ESTIMATED savings (estimates, computed only from the measured per-turn records above)
     cap = 200000
     over = sum(max(0, r["ctx"] - cap) for r in main_rows)
@@ -576,6 +572,11 @@ def main():
           "documented upper bound of ~1,600 tokens per image, that is up to %s re-read tokens (%s of main-turn cache reads; an "
           "upper-bound estimate -- an image's real cost depends on its pixel size, which the transcript does not record)."
           % (fmt(sum(v[1] for v in IMAGES.values())), len(IMAGES), fmt(img_tok), pct(img_tok, all_main_cr))]
+    return L
+
+
+def _section_cap_replay(per, med):
+    L = []
     # --- F. what a context cap would COST, not only save: replay each session's measured per-turn growth under a cap
     after = []
     for c in COMPACTS:
@@ -599,9 +600,46 @@ def main():
           "MEASURED cost (the summarizer reads the whole context once, writes the median summary %s, the next turn starts from the "
           "median post-compaction context %s). What it cannot see: work redone after a compaction (files re-read, lost state) -- so "
           "the NET is an upper bound on the saving, and the compaction count is exact for this replay." % (fmt(S), fmt(B))]
+    return L
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--hours", type=float, default=24.0)
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--self-test", action="store_true", help="run the project-attribution case table and exit")
+    a = ap.parse_args()
+    if a.self_test:
+        sys.exit(self_test())
+    now = dt.datetime.now(dt.timezone.utc)
+    since = now - dt.timedelta(hours=a.hours)
+    cr = claude(since)
+    lanes, rounds, convs, q429_log = agy(since)
+    real = [x for x in lanes if x["kind"] != "probe"]
+
+    if a.json:
+        json.dump({"since": since.isoformat(), "claude_messages": len(cr), "claude_tokens": tot(cr, FIELDS),
+                   "agy_envelopes": len(lanes), "agy_lanes": len(real), "agy_rounds": len(rounds), "agy_conversations": len(convs),
+                   "agy_429_log_lines": q429_log, "agy_tokens": tot(lanes, AGY_FIELDS)}, sys.stdout, indent=1)
+        return 0
+    all_c = ctot(cr)
+    L = ["## Token usage, MEASURED -- %s to %s UTC (%g h), host %s" % (since.strftime("%m-%d %H:%M"), now.strftime("%m-%d %H:%M"),
+                                                                    a.hours, os.uname().nodename),
+         "", "`python3 scripts/token_usage_report.py --hours %g` (read-only). Raw token counts as each tool recorded them; no "
+         "price weighting, no estimates. Claude: %s assistant messages (de-duplicated by message id). agy: %s lane/probe "
+         "envelopes in %s quorum rounds found on disk, %s agy conversations, %s 429 lines in agy's logs."
+         % (a.hours, fmt(len(cr)), fmt(len(lanes)), len(rounds), fmt(len(convs)), q429_log)]
+    t = tot(cr, FIELDS)
+    sec, bys = _section_claude(cr, all_c, t)
+    L += sec
+    L += _section_agy(lanes, real, rounds, convs)
+    L += _section_levers(since, real, lanes, convs, bys, t, all_c, tot(lanes, AGY_FIELDS))
+    sec, main_rows, per, med = _section_drivers(cr)
+    L += sec
+    L += _section_estimates(main_rows, per)
+    L += _section_cap_replay(per, med)
     print("\n".join(L))
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
