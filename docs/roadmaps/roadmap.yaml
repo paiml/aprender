@@ -21444,6 +21444,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4089
+  github_issue: 4089
+  item_type: task
+  title: 'GH-4089: apr serve and apr run take the same default backend through one rule; forced --gpu never lowered (I-17)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T05:46:35Z
+  updated: 2026-09-24T05:46:35Z
+  spec: null
+  acceptance_criteria:
+  - 'Refs #4089. Flagless serve on a cuda build resolves the accelerator exactly as run does (accel::default_wants_accelerator); a forced accelerator is never lowered (accel::run_no_gpu). Falsifier: crates/apr-cli/tests/falsify_serve_run_default_backend_4089.rs. Dense GGUF serve provenance gap filed as #4146.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-4120
   github_issue: 4120
   item_type: task
