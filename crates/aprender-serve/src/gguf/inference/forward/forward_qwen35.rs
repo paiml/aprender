@@ -1264,14 +1264,20 @@ impl<'a> Qwen35Model<'a> {
     }
 }
 
-/// Prefill `input_tokens` through the Qwen3.5 CPU forward, then decode up to
-/// `gen_config.max_tokens` more with the dense path's token choice (argmax at temperature 0 or
-/// `top_k` 1, else seeded top-k/top-p). Returns the prompt followed by the new tokens. `apr run`
-/// and `apr chat` dispatch `qwen35` GGUFs here (#3091).
+/// The per-token CPU REFERENCE the one engine is tested against: prefill
+/// `input_tokens` one position at a time through the Qwen3.5 CPU forward, then
+/// decode up to `gen_config.max_tokens` more with the dense path's token choice.
+/// Returns the prompt followed by the new tokens.
+///
+/// Test-only since #4263: every production verb generates through
+/// `realizar::session`, and this loop is kept as the independent oracle it is
+/// compared with — it shares no loop, no state sizing and no batched prefill
+/// with the engine.
 ///
 /// # Errors
 /// An empty prompt, a layer the Qwen3.5 loader cannot read, or a forward-pass failure.
-pub fn run_qwen35_generate(
+#[cfg(test)]
+pub(crate) fn qwen35_reference_generate(
     mapped: &crate::gguf::MappedGGUFModel,
     base: &OwnedQuantizedModel,
     input_tokens: &[u32],
@@ -1280,7 +1286,7 @@ pub fn run_qwen35_generate(
     use rand::SeedableRng;
     if input_tokens.is_empty() {
         return Err(crate::error::RealizarError::InvalidShape {
-            reason: "run_qwen35_generate: prompt cannot be empty".to_string(),
+            reason: "qwen35_reference_generate: prompt cannot be empty".to_string(),
         });
     }
     qwen35_check_context(input_tokens.len(), base.config.context_length)?;
@@ -1390,336 +1396,10 @@ pub fn qwen35_route_notice(route: Qwen35Route) -> Option<&'static str> {
 /// The prefix of the loud, never-silent CPU fallback for the hybrid GPU path.
 pub const QWEN35_GPU_FALLBACK_PREFIX: &str = "warning: GPU (CUDA) qwen35 path rejected";
 
-/// Generate with the Qwen3.5 hybrid on the backend the caller asked for,
-/// returning `(tokens, used_gpu)` (#3090/#3091).
-///
-/// The GPU is attempted whenever it was requested and this build has a CUDA
-/// backend; a failure to build the model, a failure inside the forward, or a
-/// rejection by the F2 CPU-parity guard falls back to the CPU forward **with the
-/// reason printed** — an unannounced backend downgrade is the defect class
-/// `QWEN35_GPU_FALLBACK_PREFIX` exists to make impossible.
-///
-/// # Errors
-/// Only a CPU-forward failure: the GPU path never propagates its error, it falls
-/// back.
-pub fn run_qwen35_generate_dispatch(
-    mapped: &crate::gguf::MappedGGUFModel,
-    base: &OwnedQuantizedModel,
-    input_tokens: &[u32],
-    gen_config: &crate::gguf::QuantizedGenerateConfig,
-    no_gpu: bool,
-) -> Result<(Vec<u32>, bool)> {
-    let outcome =
-        run_qwen35_generate_dispatch_timed(mapped, base, input_tokens, gen_config, no_gpu)?;
-    Ok((outcome.tokens, outcome.used_gpu))
-}
-
-/// The prefill/decode wall-clock split of one Qwen3.5 generation (#3596, #3718).
-///
-/// `prefill_ms` is the forward over the post-template prompt up to the logits of the
-/// first generated token, and nothing else: model load, host-to-device upload, the F2
-/// guard (`validate_ms`) and tokenization are all outside it — the definition agreed
-/// for `apr run --json` with #3718 and #3606's `StageTimings`. Each field is `None`,
-/// never `0.0`, on a path that does not split the two (the CPU forward).
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct Qwen35PhaseTimings {
-    /// Prompt forward, to the first generated token's logits.
-    pub prefill_ms: Option<f64>,
-    /// Every generated token after the first's logits.
-    pub decode_ms: Option<f64>,
-    /// Which attention the prefill ran (#3596 ruling: printed, never silent) —
-    /// `PrefillAttention::as_str`.
-    pub prefill_attention: Option<&'static str>,
-}
-
-/// What one Qwen3.5 generation produced: the tokens, the backend that produced them,
-/// and the phase split when that backend measures one.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Qwen35GenerateOutcome {
-    /// Prompt followed by the generated tokens.
-    pub tokens: Vec<u32>,
-    /// Did the CUDA forward produce them?
-    pub used_gpu: bool,
-    /// The prefill/decode split, `None` fields where not measured.
-    pub timings: Qwen35PhaseTimings,
-    /// The device-memory plan the GPU path ran under — including the KV dtype it
-    /// chose, which #3596's amendment 3 requires `--json` to print. `None` on the CPU.
-    pub capacity: Option<crate::capacity::CapacityBudget>,
-}
-
-/// [`run_qwen35_generate_dispatch`] with the phase split (#3596): the same routing,
-/// the same printed fallback, plus [`Qwen35PhaseTimings`] from the GPU path.
-///
-/// # Errors
-/// Only a CPU-forward failure, as [`run_qwen35_generate_dispatch`].
-pub fn run_qwen35_generate_dispatch_timed(
-    mapped: &crate::gguf::MappedGGUFModel,
-    base: &OwnedQuantizedModel,
-    input_tokens: &[u32],
-    gen_config: &crate::gguf::QuantizedGenerateConfig,
-    no_gpu: bool,
-) -> Result<Qwen35GenerateOutcome> {
-    qwen35_check_context(input_tokens.len(), base.config.context_length)?;
-    let route = qwen35_route(no_gpu, cfg!(feature = "cuda"));
-    if let Some(notice) = qwen35_route_notice(route) {
-        eprintln!("{notice}");
-    }
-    #[cfg(feature = "cuda")]
-    if route == Qwen35Route::Gpu {
-        match run_qwen35_generate_gpu(mapped, base, input_tokens, gen_config) {
-            Ok((tokens, timings, capacity)) => {
-                return Ok(Qwen35GenerateOutcome {
-                    tokens,
-                    used_gpu: true,
-                    timings,
-                    capacity: Some(capacity),
-                })
-            },
-            // #3596: a context the GPU cannot hold is refused, not served on the CPU —
-            // at the lengths that trip this, the CPU forward takes hours (a 5.7k-token
-            // brief timed out after 3600 s), which is a stall, not a fallback.
-            Err(Qwen35GpuFailure::Refused(refusal)) => {
-                return Err(crate::error::RealizarError::CapacityRefused(refusal));
-            },
-            Err(Qwen35GpuFailure::Fallback(reason)) => {
-                eprintln!("{QWEN35_GPU_FALLBACK_PREFIX}, falling back to CPU: {reason}");
-            },
-        }
-    }
-    let tokens = run_qwen35_generate(mapped, base, input_tokens, gen_config)?;
-    Ok(Qwen35GenerateOutcome {
-        tokens,
-        used_gpu: false,
-        timings: Qwen35PhaseTimings::default(),
-        capacity: None,
-    })
-}
-
 /// Positions the F2 hybrid guard forwards on both backends before it will let
 /// the GPU serve a token. Same cap as the dense guard's `gpu_probe`.
 #[cfg(feature = "cuda")]
 pub(crate) const QWEN35_F2_PROBE_MAX: usize = 64;
-
-/// Why the GPU path did not produce the tokens.
-#[cfg(feature = "cuda")]
-enum Qwen35GpuFailure {
-    /// A reason to run the CPU forward instead — printed, never silent.
-    Fallback(String),
-    /// The context does not fit the device (#3596): refused before loading, with the
-    /// arithmetic. NOT a fallback — see `run_qwen35_generate_dispatch_timed`.
-    Refused(Box<crate::capacity::CapacityRefusal>),
-}
-
-#[cfg(feature = "cuda")]
-impl From<String> for Qwen35GpuFailure {
-    fn from(reason: String) -> Self {
-        Self::Fallback(reason)
-    }
-}
-
-/// The GPU twin of [`run_qwen35_generate`]: plan the device memory, build the hybrid
-/// on CUDA, prove it against its own CPU forward, then decode.
-///
-/// A [`Qwen35GpuFailure::Fallback`] is a reason the caller prints before running the
-/// CPU forward; a [`Qwen35GpuFailure::Refused`] is a capacity refusal the caller
-/// returns as an error, decided before any weight reaches the device.
-#[cfg(feature = "cuda")]
-fn run_qwen35_generate_gpu(
-    mapped: &crate::gguf::MappedGGUFModel,
-    base: &OwnedQuantizedModel,
-    input_tokens: &[u32],
-    gen_config: &crate::gguf::QuantizedGenerateConfig,
-) -> std::result::Result<
-    (
-        Vec<u32>,
-        Qwen35PhaseTimings,
-        crate::capacity::CapacityBudget,
-    ),
-    Qwen35GpuFailure,
-> {
-    if input_tokens.is_empty() {
-        return Err("the prompt is empty".to_string().into());
-    }
-    let qwen = Qwen35Model::from_model_and_layers(base, &mapped.model, mapped.data())
-        .map_err(|e| format!("the hybrid layers would not load: {e}"))?;
-
-    let mut executor = crate::cuda::CudaExecutor::new(0)
-        .map_err(|e| format!("CUDA initialization failed: {e}"))?;
-    let device_name = executor
-        .device_name()
-        .unwrap_or_else(|_| "Unknown GPU".to_string());
-    // #3596/#3714: discrete → cuMemGetInfo; unified (GB10) → the host's MemAvailable
-    // less a CI headroom, because there cuMemGetInfo's free excludes page cache.
-    let device_memory = crate::capacity::measure_device_memory(&executor)?;
-    let (gpu_free, gpu_total) = device_memory.plan_free_total();
-    let vram_mb = executor
-        .memory_info()
-        .map_or(0, |(_, total)| total / (1024 * 1024));
-
-    let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
-    // #3596: will it fit? Decided here, from the host model and the MEASURED free
-    // memory, before a byte is uploaded — never discovered as an OOM mid-prefill.
-    // #3596 (cop ruling 2026-09-21): cuBLAS f32 attention while its plan fits — exact,
-    // and faster than flash on sm_89 — flash only when flash alone fits.
-    let attention_paths =
-        crate::gguf::cuda::Qwen35CudaModel::prefill_attention_candidates_for(&qwen, &executor);
-    // Bigger GEMM chunks on a unified-memory host (the dequant is paid per chunk); if
-    // that workspace does not fit, the default does before the next path is tried.
-    let chunk_rows_to_try: &[usize] = match device_memory {
-        crate::capacity::DeviceMemory::Unified { .. } => &[
-            crate::gguf::cuda::UNIFIED_PREFILL_CHUNK_ROWS,
-            crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS,
-        ],
-        crate::capacity::DeviceMemory::Discrete { .. } => {
-            &[crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS]
-        },
-    };
-    let mut passed_over = Vec::new();
-    let planned =
-        crate::capacity::plan_first_fit(&attention_paths, chunk_rows_to_try, |attention, rows| {
-            let verdict = crate::capacity::plan(&crate::capacity::CapacityInputs {
-                memory: Some(device_memory),
-                ..crate::gguf::cuda::Qwen35CudaModel::capacity_inputs(
-                    &qwen,
-                    max_seq_len,
-                    gpu_free,
-                    gpu_total,
-                    attention,
-                    rows,
-                )
-            });
-            if let crate::capacity::CapacityVerdict::Refused(r) = &verdict {
-                passed_over.push(crate::capacity::passed_over_line(
-                    attention.as_str(),
-                    rows,
-                    r,
-                ));
-            }
-            verdict
-        });
-    let (attention, chunk_rows, budget) = match planned {
-        Ok(fit) => {
-            // A fallback changes speed and precision; it is printed, never silent.
-            if !passed_over.is_empty() {
-                eprintln!(
-                    "[qwen35] prefill plan: {} did not fit; using {} at {} rows ({:.0} MiB)",
-                    passed_over.join("; "),
-                    fit.0.as_str(),
-                    fit.1,
-                    fit.2.total_mb
-                );
-            }
-            fit
-        },
-        Err(Some(refusal)) => return Err(Qwen35GpuFailure::Refused(refusal)),
-        Err(None) => return Err("no prefill attention path to plan".to_string().into()),
-    };
-    if budget.kv_dtype != crate::capacity::KvDtype::F32 {
-        // `capacity_inputs` reports no f16 decode, so a plan cannot choose it; if that
-        // ever changes without the f16 cache existing, refuse loudly.
-        return Err(format!(
-            "the capacity plan chose a {:?} KV cache, which this build cannot allocate",
-            budget.kv_dtype
-        )
-        .into());
-    }
-    let mut gpu =
-        crate::gguf::cuda::Qwen35CudaModel::with_max_seq_len(&qwen, executor, max_seq_len)
-            .map_err(|e| format!("the CUDA model would not build: {e}"))?;
-    gpu.set_prefill_chunk_rows(chunk_rows);
-    gpu.set_prefill_attention(attention);
-
-    // Unconditional, like every other backend-selection line on this path: the
-    // user must be able to tell a GPU run from a CPU one without --verbose.
-    eprintln!(
-        "Backend: GPU (CUDA, {device_name}, {vram_mb} MB VRAM) [qwen35 hybrid forward, #3090]"
-    );
-
-    // #3604: the guard runs once per (model sha256, apr version, device) and
-    // leaves a receipt; a later run whose triple matches reads it instead of
-    // re-deriving a 64-position CPU forward that was 67 % of a 14 s TTFT.
-    let f2 =
-        f2_validate_qwen35_receipted(&mut gpu, &qwen, input_tokens, mapped.data(), &device_name);
-    if !f2.accepted {
-        return Err("the F2 CPU-parity guard rejected the GPU path"
-            .to_string()
-            .into());
-    }
-    let (tokens, timings) = qwen35_gpu_decode(&mut gpu, input_tokens, gen_config)?;
-    Ok((tokens, timings, budget))
-}
-
-/// Prefill + decode on the GPU, with the token choice
-/// [`run_qwen35_generate`] makes, from a state that has never seen the guard's
-/// probe.
-///
-/// The prompt goes through the batched prefill (#3596) — one chunked pass whose
-/// projections are GEMMs and whose recurrence is the chunk-resident scan — and
-/// generation continues token by token from the state it leaves, which is where the
-/// per-token loop this replaced would have left it (measured by
-/// `forward_qwen35_cuda_prefill_tests`).
-#[cfg(feature = "cuda")]
-fn qwen35_gpu_decode(
-    gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
-    input_tokens: &[u32],
-    gen_config: &crate::gguf::QuantizedGenerateConfig,
-) -> std::result::Result<(Vec<u32>, Qwen35PhaseTimings), String> {
-    use rand::SeedableRng;
-    let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
-    let mut state = gpu
-        .new_state()
-        .map_err(|e| format!("the decode state would not allocate: {e}"))?;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(gen_config.seed);
-
-    // `prefill` ends in the logits download, so this clock stops on finished work.
-    let prefill_start = std::time::Instant::now();
-    let mut logits = gpu.prefill(input_tokens, &mut state, 0).map_err(|e| {
-        format!(
-            "the GPU prefill of {} prompt tokens failed: {e}",
-            input_tokens.len()
-        )
-    })?;
-    let prefill_ms = prefill_start.elapsed().as_secs_f64() * 1000.0;
-    // Unconditional, like the Backend line: a run must show WHICH prefill it took
-    // without --verbose, or a per-token regression reads as a slow GPU.
-    let attention = gpu.prefill_attention_mode();
-    eprintln!(
-        "[qwen35] batched prefill: {} tokens in {prefill_ms:.0} ms ({:.0} tok/s, chunk {} rows, attention {})",
-        input_tokens.len(),
-        input_tokens.len() as f64 * 1000.0 / prefill_ms.max(1e-9),
-        gpu.prefill_chunk_rows(input_tokens.len()),
-        attention.as_str(),
-    );
-    let decode_start = std::time::Instant::now();
-    let mut tokens = input_tokens.to_vec();
-    for _ in 0..gen_config.max_tokens {
-        let next = if gen_config.temperature == 0.0 || gen_config.top_k == 1 {
-            crate::gguf::ops::argmax(&logits)
-        } else {
-            OwnedQuantizedModel::sample_topk_seeded(
-                &logits,
-                gen_config.temperature,
-                gen_config.top_k,
-                gen_config.top_p,
-                &mut rng,
-            )
-        };
-        tokens.push(next);
-        if gen_config.stop_tokens.contains(&next) || tokens.len() >= max_seq_len {
-            break;
-        }
-        let pos = tokens.len() - 1;
-        logits = gpu
-            .forward_single(next, &mut state, pos)
-            .map_err(|e| format!("the GPU forward failed at decode position {pos}: {e}"))?;
-    }
-    let timings = Qwen35PhaseTimings {
-        prefill_ms: Some(prefill_ms),
-        decode_ms: Some(decode_start.elapsed().as_secs_f64() * 1000.0),
-        prefill_attention: Some(attention.as_str()),
-    };
-    Ok((tokens, timings))
-}
 
 /// The F2 runtime guard for the hybrid: forward the real prompt through BOTH
 /// backends and accept the GPU only if every real position agrees.

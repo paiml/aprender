@@ -139,8 +139,10 @@ fn dispatch_serve(
         gpu_layers: match gpu_layers.as_deref() {
             Some(v) => Some(serve::GpuLayerRequest::parse(v).map_err(CliError::InvalidInput)?),
             None if gpu && !no_gpu => Some(serve::GpuLayerRequest::All),
-            None => None,
+            // #4089: no flag resolves as `apr run` resolves it on this build.
+            None => serve::GpuLayerRequest::serve_default(no_gpu, backend.as_deref()),
         },
+        gpu_layers_defaulted: gpu_layers.is_none() && !(gpu && !no_gpu),
         batch,
         trace,
         trace_level: trace_level.to_owned(),

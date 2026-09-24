@@ -133,6 +133,15 @@ fn build_qwen35_state(
     // Refuses a partial --gpu-layers before a request is ever served.
     config.resolve_layers(total_layers)?;
     let on_gpu = session.on_gpu();
+    if config.wants_accelerator() && !on_gpu {
+        let why = session.notices().join("; ");
+        config.refuse_unengaged_accelerator(&why)?;
+        eprintln!(
+            "{}",
+            format!("warning: the default GPU could not be used, serving on the CPU: {why}")
+                .yellow()
+        );
+    }
     let resolved_layers = if on_gpu { total_layers } else { 0 };
     let context_length = session.context_length();
     println!(

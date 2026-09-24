@@ -929,6 +929,10 @@ mod tests_sampling_3760;
 #[cfg(test)]
 #[path = "tests_sampling_default_3754.rs"]
 mod tests_sampling_default_3754;
+// #4268: dense `run` and `run --batch` go through the one engine.
+#[cfg(test)]
+#[path = "tests_dense_session_4268.rs"]
+mod tests_dense_session_4268;
 
 #[cfg(test)]
 mod sibling_tokenizer_config_3990 {

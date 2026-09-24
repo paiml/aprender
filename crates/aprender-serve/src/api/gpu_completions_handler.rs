@@ -469,7 +469,7 @@ pub(crate) fn completion_sse_response(response: &CompletionResponse) -> axum::re
         |c| c.finish_reason.clone(),
     );
 
-    let envelope = |text: String, finish_reason: Option<String>| CompletionChunk {
+    let envelope = |text: String, finish_reason: Option<String>, usage: Option<Usage>| CompletionChunk {
         id: response.id.clone(),
         object: response.object.clone(),
         created: response.created,
@@ -480,13 +480,19 @@ pub(crate) fn completion_sse_response(response: &CompletionResponse) -> axum::re
             logprobs: None,
             finish_reason,
         }],
+        usage,
     };
 
     let mut chunks: Vec<CompletionChunk> = crate::api::ollama_handlers::content_fragments(text)
         .into_iter()
-        .map(|fragment| envelope(fragment, None))
+        .map(|fragment| envelope(fragment, None, None))
         .collect();
-    chunks.push(envelope(String::new(), Some(finish_reason)));
+    // #4272: the terminal chunk carries the usage the body carries.
+    chunks.push(envelope(
+        String::new(),
+        Some(finish_reason),
+        Some(response.usage.clone()),
+    ));
 
     let stream = tokio_stream::iter(
         chunks
@@ -517,6 +523,13 @@ pub async fn openai_completions_handler(
     use axum::response::IntoResponse;
 
     let stream = request.stream;
+    // #4272: a Qwen3.5 session streams LIVE from its `on_token`; every other
+    // backend still buffers and slices (below).
+    if stream {
+        if let Some(live) = try_qwen35_completions_stream(&state, &request, &cancel)? {
+            return Ok(live);
+        }
+    }
     let completion = completions_inner(state, request, cancel).await?;
     Ok(if stream {
         completion_sse_response(&completion)

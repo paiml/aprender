@@ -727,6 +727,8 @@ fn start_gguf_server_cuda(
             run_server_async(app, &config.bind_addr(), "CUDA-optimized")
         }
         Err(e) => {
+            // #4089: an explicit request does not fall back.
+            config.refuse_unengaged_accelerator(&format!("CUDA init failed: {e}"))?;
             eprintln!(
                 "{}",
                 format!("CUDA init failed, falling back to CPU: {e}").yellow()

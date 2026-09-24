@@ -31,16 +31,27 @@
 // `realize_handlers.rs` — the repo idiom for this chain. No `use` block: the arm
 // shares the host's scope, exactly as its sibling arms do.
 
-/// `None` when this state serves no Qwen3.5 hybrid — "not mine", never "handled
-/// badly" — so a non-hybrid state falls through to the rest of the chain untouched.
-pub(crate) async fn try_qwen35_completions(
+/// One `/v1/completions` request, ready for the Qwen3.5 session: shared by the
+/// buffered arm and the live stream (#4272), so the two cannot disagree on the
+/// prompt, the budget or the stops.
+struct Qwen35CompletionPlan {
+    session: std::sync::Arc<crate::api::Qwen35Served>,
+    mapped: std::sync::Arc<crate::gguf::MappedGGUFModel>,
+    input_ids: Vec<u32>,
+    prompt_tokens: usize,
+    budget: usize,
+    stop_tokens: Vec<u32>,
+    gen_config: crate::gguf::QuantizedGenerateConfig,
+}
+
+/// `None` when this state serves no Qwen3.5 hybrid.
+fn qwen35_completion_plan(
     state: &AppState,
     request: &CompletionRequest,
     max_tokens: usize,
     temperature: f32,
-    start: std::time::Instant,
     cancel: &CancelToken,
-) -> Result<Option<CompletionResponse>, RErr> {
+) -> Result<Option<Qwen35CompletionPlan>, RErr> {
     use crate::gguf::QuantizedGenerateConfig;
 
     // The guard. Absence of a session is not an error here: it means another arm
@@ -96,6 +107,39 @@ pub(crate) async fn try_qwen35_completions(
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),
         ..Default::default()
+    };
+    Ok(Some(Qwen35CompletionPlan {
+        session,
+        mapped,
+        input_ids,
+        prompt_tokens,
+        budget,
+        stop_tokens,
+        gen_config,
+    }))
+}
+
+/// `None` when this state serves no Qwen3.5 hybrid — "not mine", never "handled
+/// badly" — so a non-hybrid state falls through to the rest of the chain untouched.
+pub(crate) async fn try_qwen35_completions(
+    state: &AppState,
+    request: &CompletionRequest,
+    max_tokens: usize,
+    temperature: f32,
+    start: std::time::Instant,
+    cancel: &CancelToken,
+) -> Result<Option<CompletionResponse>, RErr> {
+    let Some(Qwen35CompletionPlan {
+        session,
+        mapped,
+        input_ids,
+        prompt_tokens,
+        budget,
+        stop_tokens,
+        gen_config,
+    }) = qwen35_completion_plan(state, request, max_tokens, temperature, cancel)?
+    else {
+        return Ok(None);
     };
 
     let decode_mapped = mapped.clone();
@@ -161,3 +205,165 @@ pub(crate) async fn try_qwen35_completions(
 
 const POISONED: &str =
     "the Qwen3.5 session is unusable: an earlier request panicked while holding it (#3571)";
+
+/// What the decode thread sends the live stream (#4272).
+enum Qwen35StreamMsg {
+    /// Text that is final: it can no longer be cut by a stop sequence.
+    Delta(String),
+    /// The turn ended.
+    Done {
+        finish_reason: String,
+        completion_tokens: usize,
+    },
+    /// The turn failed after the response had started.
+    Failed(String),
+}
+
+/// The text of `generated` that is safe to send now, given `emitted` bytes
+/// already sent: the decoded text, less a tail that could still grow into a
+/// stop sequence, less an incomplete UTF-8 character. `None`: nothing new, or
+/// the decode of the prefix does not extend what was sent (it is then sent at
+/// the end, when the whole text is known).
+pub(crate) fn qwen35_stream_delta(decoded: &str, emitted: usize, stops: &[String]) -> Option<String> {
+    if decoded.ends_with('\u{FFFD}') || !decoded.is_char_boundary(emitted.min(decoded.len())) {
+        return None;
+    }
+    let hold = stops.iter().map(|s| s.len().saturating_sub(1)).max().unwrap_or(0);
+    let mut safe = decoded.len().saturating_sub(hold);
+    while !decoded.is_char_boundary(safe) {
+        safe -= 1;
+    }
+    (safe > emitted).then(|| decoded[emitted..safe].to_string())
+}
+
+/// `stream: true` on a Qwen3.5 session, LIVE (#4272): every chosen token goes
+/// through the session's `on_token`, and the text it makes final is sent as a
+/// chunk at once — the first chunk arrives after the prefill and one token, not
+/// after the whole completion. The terminal chunk carries `finish_reason` and
+/// `usage`. A client that goes away ends the turn at the next token.
+///
+/// `None` when this state serves no Qwen3.5 hybrid (the buffered chain then
+/// answers, as before).
+pub(crate) fn try_qwen35_completions_stream(
+    state: &AppState,
+    request: &CompletionRequest,
+    cancel: &CancelToken,
+) -> Result<Option<axum::response::Response>, RErr> {
+    use axum::response::sse::{Event, Sse};
+    use axum::response::IntoResponse;
+
+    let max_tokens = request.max_tokens.unwrap_or(256);
+    let temperature = request.temperature.unwrap_or(0.7) as f32;
+    let Some(plan) = qwen35_completion_plan(state, request, max_tokens, temperature, cancel)?
+    else {
+        return Ok(None);
+    };
+    let start = std::time::Instant::now();
+    let stops: Vec<String> = request.stop.clone().unwrap_or_default();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Qwen35StreamMsg>();
+
+    let Qwen35CompletionPlan {
+        session,
+        mapped,
+        input_ids,
+        prompt_tokens,
+        budget,
+        stop_tokens,
+        gen_config,
+    } = plan;
+    tokio::task::spawn_blocking(move || {
+        let Ok(mut s) = session.session.lock() else {
+            let _ = tx.send(Qwen35StreamMsg::Failed(POISONED.to_string()));
+            return;
+        };
+        let mut generated: Vec<u32> = Vec::new();
+        let mut emitted = 0usize;
+        let result = s.generate(&input_ids, &gen_config, &mut |token| {
+            if stop_tokens.contains(&token) {
+                return true; // the session ends the turn on it
+            }
+            generated.push(token);
+            let decoded = mapped.model.decode(&generated);
+            if stops.iter().any(|stop| decoded.contains(stop.as_str())) {
+                return false; // apply_stop_sequences cuts it below
+            }
+            if let Some(delta) = qwen35_stream_delta(&decoded, emitted, &stops) {
+                emitted += delta.len();
+                if tx.send(Qwen35StreamMsg::Delta(delta)).is_err() {
+                    return false; // the client went away
+                }
+            }
+            true
+        });
+        session
+            .on_gpu
+            .store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
+        drop(s);
+        if let Err(e) = result {
+            let _ = tx.send(Qwen35StreamMsg::Failed(format!("Qwen3.5 generation failed: {e}")));
+            return;
+        }
+        let completion_tokens = generated.len();
+        let (text, finish) = apply_stop_sequences(
+            mapped.model.decode(&generated),
+            Some(stops.as_slice()),
+            completion_tokens,
+            budget,
+        );
+        if text.len() > emitted && text.is_char_boundary(emitted) {
+            let _ = tx.send(Qwen35StreamMsg::Delta(text[emitted..].to_string()));
+        }
+        let _ = tx.send(Qwen35StreamMsg::Done {
+            finish_reason: finish.as_str().to_string(),
+            completion_tokens,
+        });
+    });
+
+    let id = format!("cmpl-qwen35-{}", epoch_millis());
+    let created = epoch_secs();
+    let model = request.model.clone();
+    let metrics = state.metrics.clone();
+    let chunk = move |text: String, finish_reason: Option<String>, usage: Option<Usage>| {
+        CompletionChunk {
+            id: id.clone(),
+            object: "text_completion".to_string(),
+            created,
+            model: model.clone(),
+            choices: vec![CompletionChunkChoice {
+                text,
+                index: 0,
+                logprobs: None,
+                finish_reason,
+            }],
+            usage,
+        }
+    };
+    let events = async_stream::stream! {
+        while let Some(msg) = rx.recv().await {
+            let data = match msg {
+                Qwen35StreamMsg::Delta(text) => serde_json::to_string(&chunk(text, None, None)),
+                Qwen35StreamMsg::Done { finish_reason, completion_tokens } => {
+                    metrics.record_success(completion_tokens, start.elapsed());
+                    serde_json::to_string(&chunk(
+                        String::new(),
+                        Some(finish_reason),
+                        Some(Usage {
+                            prompt_tokens,
+                            completion_tokens,
+                            total_tokens: prompt_tokens + completion_tokens,
+                        }),
+                    ))
+                },
+                Qwen35StreamMsg::Failed(e) => {
+                    metrics.record_failure();
+                    serde_json::to_string(&serde_json::json!({ "error": e }))
+                },
+            };
+            if let Ok(data) = data {
+                yield Ok::<Event, std::convert::Infallible>(Event::default().data(data));
+            }
+        }
+        yield Ok(Event::default().data("[DONE]"));
+    };
+    Ok(Some(Sse::new(events).into_response()))
+}
