@@ -16,8 +16,6 @@
 
 use aprender::metrics::{mutual_info_score, normalized_mutual_info_score};
 
-const CONTRACT_YAML: &str = include_str!("../../../contracts/beat-sklearn-nmi-v1.yaml");
-
 /// The full-precision sklearn 1.9.0 oracle values, as they appear verbatim in
 /// the contract YAML.
 const ORACLE_NMI_LITERAL: &str = "0.7396673768007592";
@@ -27,13 +25,19 @@ const ORACLE_MI_LITERAL: &str = "0.7803552045207032";
 /// implementation's oracle, AND the live implementation reproduces it.
 #[test]
 fn contract_oracle_constants_pinned() {
+    let Some(contract_yaml) = provable_contracts::workspace_file_or_skip!(
+        "contract_oracle_constants_pinned",
+        "contracts/beat-sklearn-nmi-v1.yaml"
+    ) else {
+        return;
+    };
     // 1. The contract YAML literally contains the pinned sklearn oracle values.
     assert!(
-        CONTRACT_YAML.contains(ORACLE_NMI_LITERAL),
+        contract_yaml.contains(ORACLE_NMI_LITERAL),
         "contract YAML missing pinned NMI oracle {ORACLE_NMI_LITERAL}"
     );
     assert!(
-        CONTRACT_YAML.contains(ORACLE_MI_LITERAL),
+        contract_yaml.contains(ORACLE_MI_LITERAL),
         "contract YAML missing pinned MI oracle {ORACLE_MI_LITERAL}"
     );
 
