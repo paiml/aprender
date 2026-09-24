@@ -272,7 +272,8 @@ fn run_gguf_inference(
     // #3714 R2: `moe_forward_handles` is the one dispatch predicate — `apr
     // parity` and `apr qa` ask the same function, so no tool can route this
     // architecture differently from `apr run`.
-    let (tokens, used_gpu) = if crate::gguf::moe_forward_handles(&model.config.architecture) {
+    let is_moe = crate::gguf::moe_forward_handles(&model.config.architecture);
+    let (tokens, used_gpu) = if is_moe {
         // #3714: the CUDA forward serves unless --no-gpu; a GPU that cannot
         // serve prints its reason before the CPU chain runs. This site used to
         // hard-code `(tokens, false)` and never try CUDA at all.
@@ -335,7 +336,7 @@ fn run_gguf_inference(
 
     // #3718: only the dense CPU loop (`generate_with_cache`) shrinks the budget to
     // the context room; the hybrid, MoE, CUDA and wgpu loops run `max_tokens`.
-    let clamps_to_context = !is_qwen35 && canonical_arch != "qwen3_moe" && !used_gpu;
+    let clamps_to_context = !is_qwen35 && !is_moe && !used_gpu;
     let budget = run_report::decode_budget(
         gen_config.max_tokens,
         input_token_count,
