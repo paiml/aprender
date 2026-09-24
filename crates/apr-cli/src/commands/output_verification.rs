@@ -835,11 +835,14 @@ fn validate_gpu_golden_output(
     let model = OwnedQuantizedModel::from_mapped(mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
     let generated = match OwnedQuantizedModelCuda::new(model, 0) {
-        Ok(cuda_model) => {
-            qa_dense_generate(&mut qa_dense_cuda(cuda_model), prompt_tokens, gen_config, true)
-            .map(|gpu_tokens| gguf.decode(&gpu_tokens))
-            .map_err(|e| format!("GPU generation: {e}"))
-        }
+        Ok(cuda_model) => qa_dense_generate(
+            &mut qa_dense_cuda(cuda_model),
+            prompt_tokens,
+            gen_config,
+            true,
+        )
+        .map(|gpu_tokens| gguf.decode(&gpu_tokens))
+        .map_err(|e| format!("GPU generation: {e}")),
         Err(e) => Err(format!("CUDA init on device 0: {e}")),
     };
     // #3711 + #3724: ONE typed leg. The budget is passed so the leg can
