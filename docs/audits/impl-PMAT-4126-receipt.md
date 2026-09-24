@@ -85,3 +85,9 @@ stall-named RED with exactly that contradiction.
   was unvalidated, and curl reads --max-time 0 as UNLIMITED, so a 0 hung the probe (reproduced under an
   outer timeout). The override must now be a positive integer; otherwise the probe declines by name.
   New case override-validated; mutant unvalidated-override (killed). 5 plants in all.
+- Round 3, lane 1 (claude-sonnet-5) FAILED 177c9fc56, measured: (1) a `nan` loadavg parses as a
+  float and compares false both ways, so it read as "under the cores" and the check failed open;
+  (2) `isinstance(t, int)` accepted a YAML bool (`cpu: yes`), so `curl --max-time True` was issued.
+  Fixed: non-finite or negative loads are unmeasurable (declines), and the bound needs
+  `type(t) is int`. New cases load-nan and contract-bool, plants nan-open and bool-int, all killed
+  (7 plants).

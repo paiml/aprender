@@ -752,7 +752,7 @@ ladder_route_timeout() { # <backend>
 import sys, yaml
 b = "cuda" if sys.argv[2] == "gpu" else sys.argv[2]
 t = ((yaml.safe_load(open(sys.argv[1]))["ladder"].get("serve_health") or {}).get("route_timeout_s") or {}).get(b)
-if not isinstance(t, int) or t <= 0:
+if type(t) is not int or t <= 0:   # `type is`, not isinstance: a YAML bool is an int subclass (round 3)
     sys.exit(1)
 print(t, end="")
 ' "${LADDER:-contracts/model-capability-ladder-v1.yaml}" "$1" 2>/dev/null
@@ -787,10 +787,12 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
         # 0 = over the core count, 1 = under it, 2 = UNMEASURABLE. An unreadable load never reads as
         # "fine": the check fails CLOSED (#4126 quorum lane 2).
         python3 -c '
-import sys
+import math, sys
 try:
     l, n = float(sys.argv[1]), float(sys.argv[2])
 except ValueError:
+    sys.exit(2)
+if not (math.isfinite(l) and math.isfinite(n)) or l < 0:   # nan/inf compare false: unmeasurable (round 3)
     sys.exit(2)
 sys.exit(0 if n <= 0 or l > n else 1)' "$load1" "$cores" 2>/dev/null
         case $? in
