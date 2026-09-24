@@ -123,54 +123,6 @@ fn test_imp_121b_cached_sync_adaptive_multihead() {
 #[test]
 #[cfg(feature = "gpu")]
 #[serial_test::serial]
-fn test_imp_121c_generate_with_adaptive_attention() {
-    // IMP-121c: Cached model should have generate_with_adaptive_attention
-    let config = GGUFConfig {
-        architecture: "test".to_string(),
-        constraints: crate::gguf::ArchConstraints::from_architecture("test"),
-        hidden_dim: 64,
-        intermediate_dim: 128,
-        num_layers: 1,
-        num_heads: 4,
-        num_kv_heads: 4,
-        vocab_size: 100,
-        context_length: 256,
-        rope_theta: 10000.0,
-        eps: 1e-5,
-        rope_type: 0,
-        explicit_head_dim: None,
-        query_pre_attn_scalar: None,
-        bos_token_id: None,
-        eos_token_id: None,
-    };
-
-    let model = create_test_model_with_config(&config);
-    let cached_model = OwnedQuantizedModelCached::new(model);
-
-    let prompt = vec![1u32, 2, 3, 4, 5];
-    let gen_config = QuantizedGenerateConfig {
-        max_tokens: 5,
-        temperature: 0.0,
-        top_k: 1,
-        stop_tokens: Vec::new(),
-        trace: false,
-        ..Default::default()
-    };
-
-    // Generate with adaptive attention (should use CPU for short prompts)
-    let result = cached_model
-        .generate_with_adaptive_attention(&prompt, &gen_config)
-        .expect("generate_with_adaptive_attention should succeed");
-
-    assert!(
-        result.len() > prompt.len(),
-        "IMP-121c: Generated output should include new tokens"
-    );
-}
-
-#[test]
-#[cfg(feature = "gpu")]
-#[serial_test::serial]
 fn test_imp_121d_thread_safe_adaptive_attention() {
     // IMP-121d: Verify thread-safe access to adaptive attention
     use std::sync::Arc;

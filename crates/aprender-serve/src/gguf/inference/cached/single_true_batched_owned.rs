@@ -274,27 +274,6 @@ impl OwnedQuantizedModelCached {
         }
     }
 
-    /// Generate tokens with adaptive attention (IMP-121)
-    ///
-    /// Uses adaptive attention that automatically selects CPU or GPU
-    /// based on sequence length for optimal performance.
-    ///
-    /// # Arguments
-    /// * `prompt` - Input token IDs
-    /// * `config` - Generation configuration
-    ///
-    /// # Returns
-    /// Generated token sequence including prompt
-    pub fn generate_with_adaptive_attention(
-        &self,
-        prompt: &[u32],
-        config: &QuantizedGenerateConfig,
-    ) -> Result<Vec<u32>> {
-        // Delegate to generate_with_cache which uses efficient KV cache.
-        // Adaptive attention (IMP-122) is tracked separately for long-context prefill optimization.
-        // Current implementation handles typical inference workloads efficiently.
-        self.model.generate_with_cache(prompt, config)
-    }
 }
 
 include!("scheduler.rs");
