@@ -34,12 +34,27 @@ for dp, _, fs in os.walk(os.path.join(root, "ProvableContracts")):
         if f.endswith(".lean"):
             p = os.path.join(dp, f)
             mods[os.path.relpath(p, root)[:-5].replace(os.sep, ".")] = p
+def strip_block_comments(src):
+    """Lean's /- ... -/ (and /-! -/, /-- -/) comments NEST; newlines are kept so a line stays a line."""
+    out, i, depth = [], 0, 0
+    while i < len(src):
+        two = src[i:i + 2]
+        if two == "/-":
+            depth += 1; i += 2
+        elif two == "-/" and depth:
+            depth -= 1; i += 2
+        else:
+            if not depth or src[i] == "\n":
+                out.append(src[i])
+            i += 1
+    return "".join(out)
 def imports(path):
     out = []
-    for ln in open(path, encoding="utf-8"):
-        m = re.match(r"\s*import\s+(.+)", ln)
+    text = strip_block_comments(open(path, encoding="utf-8").read())
+    for ln in text.splitlines():
+        m = re.match(r"\s*(?:(?:public|private|meta)\s+)*import\s+(?:all\s+)?(.+)", ln)
         if m:
-            out += m.group(1).split()
+            out += m.group(1).split("--")[0].split()
     return out
 seen, todo = set(), imports(top)
 while todo:
@@ -83,7 +98,8 @@ if [ "$SELF_TEST" = 1 ]; then
     out=$(check "$d" 2>&1); rc=$?
     ok=1; [ "$rc" = "$(cat "$d/want")" ] || ok=0
     while IFS= read -r needle; do [ -n "$needle" ] && ! grep -qF -- "$needle" <<< "$out" && ok=0; done < "$d/want-msg"
-    if [ "$ok" = 1 ]; then echo "ok    $(basename "$d")"; else echo "FAIL  $(basename "$d") -- rc $rc: $(tr '\n' ' ' <<< "$out" | cut -c1-200)"; bad=1; fi
+    if grep -qE '^Traceback|^ *File "<stdin>"|^[A-Za-z]+Error: ' <<< "$out"; then echo "CRASH $(basename "$d") -- $(tr '\n' ' ' <<< "$out" | cut -c1-200)"; bad=1
+    elif [ "$ok" = 1 ]; then echo "ok    $(basename "$d")"; else echo "FAIL  $(basename "$d") -- rc $rc: $(tr '\n' ' ' <<< "$out" | cut -c1-200)"; bad=1; fi
   done
   if [ "${ORPHANS_MUTANTS:-1}" = 1 ] && [ "$bad" = 0 ]; then
     M=$(mktemp -d)
@@ -96,12 +112,19 @@ open(sys.argv[2], "w").write(code.replace(sys.argv[3], sys.argv[4]) + cut + rest
         || { echo "FAIL  mutant $label did not apply"; bad=1; continue; }
       mkdir -p "$M/fixtures"; rm -rf -- "${M:?}/fixtures/orphans"; cp -r "$HERE/fixtures/orphans" "$M/fixtures/orphans"
       mo=$(ORPHANS_MUTANTS=0 bash "$M/m.sh" --self-test 2>&1)
-      if grep -q "^FAIL  $must " <<< "$mo"; then echo "ok    mutant $label killed by $must"; else echo "FAIL  mutant $label SURVIVED $must"; bad=1; fi
+      coll=$(grep -E '^(FAIL|CRASH) ' <<< "$mo" | awk -v m="$must" '$2 != m {print $2}' | paste -sd, -)
+      if [ "${label#crash:}" != "$label" ]; then   # the harness's own control: a crashing copy must be refused, not counted
+        if grep -q '^CRASH ' <<< "$mo"; then echo "ok    mutant $label refused as a crash"; else echo "FAIL  mutant $label: a crash was not detected"; bad=1; fi
+      elif grep -q '^CRASH ' <<< "$mo"; then echo "FAIL  mutant $label CRASHED -- a crash is not a kill"; bad=1
+      elif grep -q "^FAIL  $must " <<< "$mo"; then echo "ok    mutant $label killed by $must${coll:+ (collateral: $coll)}"
+      else echo "FAIL  mutant $label SURVIVED $must"; bad=1; fi
     done <<'MUT'
 unlisted-ok~unlisted-orphan-is-red~for m in sorted(orphans - listed):~for m in []:
 ticket-optional~entry-without-ticket-is-red~    missing = [k for k in ("ticket", "reason") if~    missing = [k for k in ("reason",) if
 stale-ok~stale-entry-is-red~    if mod not in orphans:~    if False:
 cone-not-transitive~transitive-import-is-in-cone~    todo += imports(mods[m])~    pass
+comments-kept~doc-comment-import-is-not-an-import~    text = strip_block_comments(open(path, encoding="utf-8").read())~    text = open(path, encoding="utf-8").read()
+crash:syntax-error~clean~    todo += imports(mods[m])~    todo += imports(mods[m]
 MUT
     if [ -d "${M:?}" ]; then rm -rf -- "${M:?}"; fi
   fi
