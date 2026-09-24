@@ -87,7 +87,11 @@
   "lanes_1_2_exit": 3,
   "attribution": "every moved ref attributed by reflog to a named foreign worktree: ci/4133-guard-steps-setsid (/home/noah/src/aprender-4133), fix/4108-guard-tree-zero-checks (/home/noah/src/aprender-4108), fix/3459-must-carry-universe (/mnt/nvme-raid0/agent-wt/aprender-f5-3459), PMAT-4166-pvl-11-lint-ratchets (another session's ev11 scratch worktree); both lane clones removed byte-identical; tree witness verified in both",
   "cop_ruling_abc": "(a)(b)(c) hold for refs",
-  "open": "lanes also flagged a shared .git/config change; it is only branch.* upstream stanzas written by the same two sibling branches, no user.* keys. The cop ruling names refs only; whether it covers this config line is for the cop to rule"
+  "open": "resolved by cop aprender-cf 2026-09-24: the branch.* upstream stanzas are foreign (each named for a sibling branch traced to a foreign worktree, no user.* keys), so the round counts",
+  "config_stanzas": [
+   "branch.fix/3459-must-carry-universe.merge (main -> its own branch; worktree /mnt/nvme-raid0/agent-wt/aprender-f5-3459)",
+   "[branch \"PMAT-4166-pvl-11-lint-ratchets\"] remote/merge (another session's ev11 scratch worktree)"
+  ]
  },
  "agreed": "the gone-tree rm -f of <dir>.lock runs under the held flock; a woken waiter's post-acquire inode check mismatches, closes fd 9 and re-opens (<=50 tries), so no waiter is stranded and no two holders exist; live_list keeps a live sibling's tree; register is fatal; release steps are terminal with if: always(); no runs-on/secret/permission change; roadmap entry not overclaimed",
  "verdict": "PASS 3/3 (2 non-Claude + 1 haiku)",
@@ -108,8 +112,13 @@
   "debug = \"line-tables-only\" as the next size lever: before/after NOT measured",
   "full-size du before/after of the release: comes from the final head's normal CI run logs (the release step logs du before and after)"
  ],
- "auto_merge": "not armed by the author; workflow-edit PR -> cop arms under the standing rule (3/3 non-Claude quorum + green CI, no runner-host/secret/permission change). Note: this round is 2 non-Claude + 1 haiku per the 2026-09-24 operator rule; whether that satisfies the 3/3 non-Claude standing rule is the cop's call",
+ "auto_merge": "not armed by the author. Cop aprender-cf ruled 2026-09-24 that 2 agy + 1 haiku-4-5 meets the workflow standing yes (the operator's 2026-09-24 shape for every quorum; haiku is not the author id); CI green and no runs-on/secret/permission/runner-host change remain conditions; the cop arms with --match-head-commit",
  "artifacts": {
   "agy_round_dir": "/run/user/1000/paiml-implement/agy/PMAT-4102/2f99f3bc-15d6-462a-981d-94c98c779790/r4"
+ },
+ "merge_main": {
+  "reviewed_patch_lines_sha256": "184ebb9340cec5dd8f33a6b90ab664a998ca282ca378f0c483d279b0c5c9c2ff",
+  "merged_patch_lines_sha256": "184ebb9340cec5dd8f33a6b90ab664a998ca282ca378f0c483d279b0c5c9c2ff",
+  "note": "+/- lines of ci.yml + ci_run_target_release.sh vs merge-base, reviewed c9ac0e1e2 vs after merging origin/main; the only diff-text delta is the blob index line (main edited ci.yml elsewhere); ci_run_target_release.sh blob sha256 6e8f49c0\u2026 identical"
  }
 }
