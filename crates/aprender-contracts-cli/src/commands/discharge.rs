@@ -1,8 +1,9 @@
-//! `pv discharge gen-axioms | check` (PVL-001 EV-6a, #4139; `--leanchecker` EV-6b, #4199). The judging lives in
+//! `pv discharge gen-axioms | check` (PVL-001 EV-6a, #4139; `--leanchecker` EV-6b, #4199; `--comparator` EV-7b,
+//! #4201). The judging lives in
 //! [`provable_contracts::discharge`]; this module prints the report and runs Lean.
 //!
 //! Exit: 0 accept · 1 reject (`reject:`) · 2 decline (`decline:` — no root file, zero roots, no `lake`, no
-//! `leanchecker` in the toolchain).
+//! `leanchecker` in the toolchain, no `Challenge/*.lean` or zero comparator rows).
 //!
 //! `--leanchecker` is NON-fresh: it re-checks the tree's own .olean files and trusts the Mathlib .oleans they
 //! import. `--fresh` replays Mathlib and is the nightly's (PVL-F7). `formalization.yaml` `scope` says so.
@@ -11,6 +12,7 @@ use std::fmt;
 use std::path::Path;
 use std::process::Command;
 
+use provable_contracts::discharge::comparator::{self, CHALLENGE_DIR, COMPARATOR};
 use provable_contracts::discharge::{self, CheckOpts, Report, AXIOMS_FILE};
 
 use crate::cli::DischargeAction;
@@ -56,13 +58,14 @@ pub fn run(action: DischargeAction) -> Res {
             leanchecker,
             leanchecker_timeout,
             leanchecker_ulimit_v,
+            comparator,
         } => {
             let r = discharge::check(&lean_dir, &contracts, CheckOpts { strict });
             let lc = leanchecker.then_some(Leanchecker {
                 timeout_s: leanchecker_timeout,
                 ulimit_v_kib: leanchecker_ulimit_v,
             });
-            finish_with("lake", r, &lean_dir, no_lake, lc)
+            finish_with("lake", r, &lean_dir, no_lake, comparator, lc)
         }
         DischargeAction::LabelRatchet {
             lean_dir,
@@ -72,6 +75,7 @@ pub fn run(action: DischargeAction) -> Res {
             discharge::ratchet_labels(&lean_dir, &contracts),
             &lean_dir,
             true,
+            false,
             None,
         ),
     }
@@ -113,17 +117,22 @@ pub struct Leanchecker {
 
 /// The Lean steps run only on a tree nothing else has already failed or declined: a 60-minute re-check of a tree
 /// that is already RED would only delay the verdict. They record their raw exits in `r.lake_exit` and
-/// `r.leanchecker_exit` (`None` = never ran) for `discharge-summary.json` (EV-8a).
+/// `r.leanchecker_exit`, and the comparator's closure in `r.challenges` (`None` = never ran), for
+/// `discharge-summary.json` (EV-8a). The comparator runs before the (much slower) leanchecker.
 pub(crate) fn lean_steps(
     lake: &str,
     r: &mut Report,
     lean_dir: &Path,
     no_lake: bool,
+    cmp: bool,
     lc: Option<Leanchecker>,
 ) {
     let open = |r: &Report| !r.reject && r.decline.is_none();
     if open(r) && !no_lake {
         elaborate(lake, lean_dir, r);
+    }
+    if cmp && open(r) {
+        compare(lake, lean_dir, r);
     }
     if let Some(lc) = lc {
         if open(r) {
@@ -137,9 +146,10 @@ fn finish_with(
     mut r: Report,
     lean_dir: &Path,
     no_lake: bool,
+    cmp: bool,
     lc: Option<Leanchecker>,
 ) -> Res {
-    lean_steps(lake, &mut r, lean_dir, no_lake, lc);
+    lean_steps(lake, &mut r, lean_dir, no_lake, cmp, lc);
     for l in &r.lines {
         println!("{l}");
     }
@@ -193,6 +203,74 @@ fn elaborate(lake: &str, lean_dir: &Path, r: &mut Report) {
             r.reject = true;
         }
     }
+}
+
+/// `lake env lean --run scripts/Comparator.lean Challenge/*.lean` (PVL-001 EV-7b): the script MEASURES, one NDJSON
+/// row per challenge, and [`comparator::judge_rows`] judges. No Challenge file, no script or no `lake` declines;
+/// a Challenge file that does not elaborate, or output that is not rows, rejects: its rows were never judged.
+fn compare(lake: &str, lean_dir: &Path, r: &mut Report) {
+    let files = comparator::challenge_files(lean_dir);
+    if files.is_empty() {
+        r.decline = Some(format!(
+            "comparator: no {CHALLENGE_DIR}/*.lean under {} -- EV-7a writes them; nothing to compare",
+            lean_dir.display()
+        ));
+        return;
+    }
+    if !lean_dir.join(COMPARATOR).is_file() {
+        r.decline = Some(format!(
+            "comparator: {} does not exist -- not a verdict",
+            lean_dir.join(COMPARATOR).display()
+        ));
+        return;
+    }
+    let what = format!("lake env lean --run {COMPARATOR} ({} file(s))", files.len());
+    let out = match Command::new(lake)
+        .args(["env", "lean", "--run", COMPARATOR])
+        .args(&files)
+        .current_dir(lean_dir)
+        .output()
+    {
+        Ok(o) => o,
+        Err(e) => {
+            r.decline = Some(format!(
+                "lake could not be run ({e}): the comparator did not run"
+            ));
+            return;
+        }
+    };
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    if !out.status.success() {
+        r.lines.push(format!(
+            "FAIL  {what} exited {} -- a Challenge file did not elaborate; its rows were withheld",
+            raw_exit(out.status)
+        ));
+        r.lines.extend(tail(&String::from_utf8_lossy(&out.stderr)));
+        r.reject = true;
+        return;
+    }
+    match comparator::parse_rows(&stdout) {
+        Ok(rows) => {
+            r.lines.push(format!("ok    {what}"));
+            r.challenges = Some(comparator::judge_rows(&rows, r));
+        }
+        Err(e) => {
+            r.lines.push(format!("FAIL  {what}: {e}"));
+            r.reject = true;
+        }
+    }
+}
+
+/// The last 20 lines of `text`, indented.
+fn tail(text: &str) -> Vec<String> {
+    let mut v: Vec<String> = text
+        .lines()
+        .rev()
+        .take(20)
+        .map(|l| format!("  {l}"))
+        .collect();
+    v.reverse();
+    v
 }
 
 /// The process's exit code, or 128+signal when a signal ended it (the shell's convention).
@@ -347,6 +425,7 @@ mod tests {
             leanchecker: false,
             leanchecker_timeout: 3600,
             leanchecker_ulimit_v: None,
+            comparator: false,
         })
     }
 
@@ -465,9 +544,16 @@ mod tests {
         let (d, lean, _) = tree();
         let ok = fake_lake(d.path(), 0, "fine");
         let bad = fake_lake(d.path(), 1, "Axioms.lean:3:0: error: AXIOMS x");
-        finish_with(&ok, Report::default(), &lean, false, None).expect("lake ok");
+        finish_with(&ok, Report::default(), &lean, false, false, None).expect("lake ok");
         assert!(
-            is_reject(&finish_with(&bad, Report::default(), &lean, false, None)),
+            is_reject(&finish_with(
+                &bad,
+                Report::default(),
+                &lean,
+                false,
+                false,
+                None
+            )),
             "a failing elaboration rejects"
         );
         assert!(
@@ -476,17 +562,18 @@ mod tests {
                 Report::default(),
                 &lean,
                 false,
+                false,
                 None
             )),
             "no lake declines"
         );
-        finish_with(&bad, Report::default(), &lean, true, None).expect("--no-lake skips it");
+        finish_with(&bad, Report::default(), &lean, true, false, None).expect("--no-lake skips it");
         let rejected = Report {
             reject: true,
             ..Report::default()
         };
         assert!(
-            is_reject(&finish_with(&ok, rejected, &lean, false, None)),
+            is_reject(&finish_with(&ok, rejected, &lean, false, false, None)),
             "a prior failure is not cleared by lake"
         );
     }
@@ -528,13 +615,28 @@ mod tests {
             "error: kernel rejected Theorems.Gelu.bound",
         );
         let absent = checker_lake(d.path(), false, 0, "never reached");
-        finish_with(&pass, Report::default(), &lean, false, LC).expect("leanchecker rc 0 accepts");
+        finish_with(&pass, Report::default(), &lean, false, false, LC)
+            .expect("leanchecker rc 0 accepts");
         assert!(
-            is_reject(&finish_with(&fail, Report::default(), &lean, false, LC)),
+            is_reject(&finish_with(
+                &fail,
+                Report::default(),
+                &lean,
+                false,
+                false,
+                LC
+            )),
             "leanchecker rc 1 rejects"
         );
         assert!(
-            is_decline(&finish_with(&absent, Report::default(), &lean, false, LC)),
+            is_decline(&finish_with(
+                &absent,
+                Report::default(),
+                &lean,
+                false,
+                false,
+                LC
+            )),
             "no leanchecker in the toolchain declines"
         );
         assert!(
@@ -543,11 +645,12 @@ mod tests {
                 Report::default(),
                 &lean,
                 true,
+                false,
                 LC
             )),
             "no lake declines under --leanchecker"
         );
-        finish_with(&fail, Report::default(), &lean, false, None)
+        finish_with(&fail, Report::default(), &lean, false, false, None)
             .expect("without --leanchecker it never runs");
     }
 
@@ -564,7 +667,14 @@ mod tests {
             ulimit_v_kib: None,
         });
         assert!(
-            is_reject(&finish_with(&slow, Report::default(), &lean, true, t1)),
+            is_reject(&finish_with(
+                &slow,
+                Report::default(),
+                &lean,
+                true,
+                false,
+                t1
+            )),
             "a timeout rejects"
         );
         // The limit reaches the checker: a stub that prints its own `ulimit -v` and fails shows it in the reject.
@@ -597,7 +707,7 @@ mod tests {
         let (d, lean, _) = tree();
         let exits = |lake: &str, no_lake: bool, lc: Option<Leanchecker>| {
             let mut r = Report::default();
-            lean_steps(lake, &mut r, &lean, no_lake, lc);
+            lean_steps(lake, &mut r, &lean, no_lake, false, lc);
             (r.lake_exit, r.leanchecker_exit)
         };
         let pass = checker_lake(d.path(), true, 0, "ok");
@@ -626,5 +736,197 @@ mod tests {
             ulimit_v_kib: None,
         });
         assert_eq!(exits(&slow, true, t1), (None, Some(124)), "timeout");
+    }
+
+    /// A `lake` for `--comparator`: `env lean --run …` writes `rows` to stdout, `stderr` to stderr, and exits
+    /// `rc`; every other `env lean` passes. The tree gets `Challenge/gelu-v1.lean` and the comparator script.
+    fn comparator_lake(dir: &Path, lean: &Path, rc: i32, rows: &str, stderr: &str) -> String {
+        std::fs::create_dir_all(lean.join(CHALLENGE_DIR)).expect("mkdir");
+        std::fs::write(lean.join(CHALLENGE_DIR).join("gelu-v1.lean"), "").expect("w");
+        std::fs::create_dir_all(lean.join("scripts")).expect("mkdir");
+        std::fs::write(lean.join(COMPARATOR), "").expect("w");
+        std::fs::write(dir.join(format!("rows-{rc}")), rows).expect("w");
+        let p = dir.join(format!("cmp-lake-{rc}"));
+        let script = format!(
+            "#!/bin/sh\nif [ \"$3\" = --run ]; then\n  [ \"$4 $5\" = \"{COMPARATOR} {CHALLENGE_DIR}/gelu-v1.lean\" ] || {{ echo \"bad args: $*\" >&2; exit 98; }}\n  cat '{}'; echo '{stderr}' >&2; exit {rc}\nfi\nexit 0\n",
+            dir.join(format!("rows-{rc}")).display()
+        );
+        std::fs::write(&p, script).expect("w");
+        let mut perm = std::fs::metadata(&p).expect("meta").permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
+        std::fs::set_permissions(&p, perm).expect("chmod");
+        p.to_string_lossy().into_owned()
+    }
+
+    fn cmp_row(name: &str, ch: &str, sol: &str, axioms: &str) -> String {
+        format!(
+            "{{\"name\": \"{name}\", \"challenge_type_hash\": \"{ch}\", \"solution_type_hash\": {sol}, \"axioms\": {axioms}}}\n"
+        )
+    }
+
+    fn compared(lake: &str, lean: &Path) -> Report {
+        let mut r = Report::default();
+        lean_steps(lake, &mut r, lean, false, true, None);
+        r
+    }
+
+    /// PVL-001 EV-7b: a matching, sorry-free solution closes its challenge; the closure is recorded for EV-8a.
+    #[test]
+    fn the_comparator_closes_a_matching_challenge() {
+        let (d, lean, _) = tree();
+        let h = "ab".repeat(32);
+        let lake = comparator_lake(
+            d.path(),
+            &lean,
+            0,
+            &cmp_row(
+                "ProvableContracts.Gelu.gelu_bound",
+                &h,
+                &format!("\"{h}\""),
+                "[]",
+            ),
+            "",
+        );
+        let r = compared(&lake, &lean);
+        assert!(!r.reject && r.decline.is_none(), "{:?}", r.lines);
+        assert_eq!(
+            r.challenges,
+            Some(comparator::Closure {
+                closed: 1,
+                total: 1
+            })
+        );
+        assert!(
+            r.lines
+                .iter()
+                .any(|l| l == "COMPARATOR 1/1 challenge(s) closed"),
+            "{:?}",
+            r.lines
+        );
+        finish_with(&lake, Report::default(), &lean, false, true, None).expect("accepts");
+    }
+
+    /// The spec's RED: a solution of a WEAKER statement is a mismatch, and a sorry'd one closes nothing.
+    #[test]
+    fn a_mismatched_or_sorry_solution_rejects() {
+        let (d, lean, _) = tree();
+        let (c, s) = ("ab".repeat(32), "cd".repeat(32));
+        let rows = format!(
+            "{}{}",
+            cmp_row("A.weak", &c, &format!("\"{s}\""), "[]"),
+            cmp_row("A.sorried", &c, &format!("\"{c}\""), "[\"sorryAx\"]")
+        );
+        let lake = comparator_lake(d.path(), &lean, 0, &rows, "");
+        let r = compared(&lake, &lean);
+        assert!(r.reject, "{:?}", r.lines);
+        assert!(r
+            .lines
+            .iter()
+            .any(|l| l.starts_with("FAIL  MISMATCH A.weak")));
+        assert!(r
+            .lines
+            .iter()
+            .any(|l| l.starts_with("FAIL  SORRY A.sorried")));
+        assert_eq!(r.challenges.map(|c| (c.closed, c.total)), Some((0, 2)));
+    }
+
+    #[test]
+    fn a_challenge_that_does_not_elaborate_rejects_with_its_errors() {
+        let (d, lean, _) = tree();
+        let lake = comparator_lake(
+            d.path(),
+            &lean,
+            1,
+            "",
+            "Challenge/gelu-v1.lean:5:0: error: unknown g",
+        );
+        let r = compared(&lake, &lean);
+        assert!(r.reject, "{:?}", r.lines);
+        assert!(
+            r.lines.iter().any(|l| l.contains("exited 1")),
+            "{:?}",
+            r.lines
+        );
+        assert!(
+            r.lines.iter().any(|l| l.contains("unknown g")),
+            "{:?}",
+            r.lines
+        );
+        assert_eq!(r.challenges, None, "rows withheld: nothing was judged");
+    }
+
+    #[test]
+    fn unreadable_comparator_output_rejects() {
+        let (d, lean, _) = tree();
+        let lake = comparator_lake(d.path(), &lean, 0, "not a row\n", "");
+        let r = compared(&lake, &lean);
+        assert!(r.reject, "{:?}", r.lines);
+        assert!(
+            r.lines.iter().any(|l| l.contains("line 1")),
+            "{:?}",
+            r.lines
+        );
+    }
+
+    /// Zero measured is a decline, never a pass: no Challenge file, no script, zero rows, no lake.
+    #[test]
+    fn the_comparator_declines_when_nothing_was_compared() {
+        let (d, lean, _) = tree();
+        let lake = comparator_lake(d.path(), &lean, 0, "", "");
+        let r = compared(&lake, &lean);
+        assert!(!r.reject, "{:?}", r.lines);
+        assert!(
+            r.decline
+                .as_deref()
+                .is_some_and(|w| w.contains("0 challenge rows")),
+            "{r:?}"
+        );
+        assert_eq!(r.challenges.map(|c| c.total), Some(0));
+
+        std::fs::remove_file(lean.join(COMPARATOR)).expect("rm");
+        let r = compared(&lake, &lean);
+        assert!(
+            r.decline
+                .as_deref()
+                .is_some_and(|w| w.contains("does not exist")),
+            "{r:?}"
+        );
+
+        std::fs::remove_dir_all(lean.join(CHALLENGE_DIR)).expect("rm");
+        let r = compared(&lake, &lean);
+        assert!(
+            r.decline
+                .as_deref()
+                .is_some_and(|w| w.contains("no Challenge/*.lean")),
+            "{r:?}"
+        );
+        assert!(is_decline(&finish_with(
+            &lake,
+            Report::default(),
+            &lean,
+            false,
+            true,
+            None
+        )));
+
+        let (d2, lean2, _) = tree();
+        comparator_lake(d2.path(), &lean2, 0, "", "");
+        let mut r = Report::default();
+        lean_steps("/nonexistent/lake", &mut r, &lean2, true, true, None);
+        assert!(
+            r.decline
+                .as_deref()
+                .is_some_and(|w| w.contains("comparator did not run")),
+            "{r:?}"
+        );
+    }
+
+    #[test]
+    fn without_the_flag_the_comparator_never_runs() {
+        let (d, lean, _) = tree();
+        let lake = comparator_lake(d.path(), &lean, 1, "", "would reject");
+        let mut r = Report::default();
+        lean_steps(&lake, &mut r, &lean, false, false, None);
+        assert!(!r.reject && r.challenges.is_none(), "{:?}", r.lines);
     }
 }

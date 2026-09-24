@@ -515,6 +515,11 @@ pub enum DischargeAction {
         /// `--leanchecker` under `ulimit -v <KIB>` (virtual memory, KiB); unset = no limit
         #[arg(long, requires = "leanchecker")]
         leanchecker_ulimit_v: Option<u64>,
+        /// Also run the comparator: `lake env lean --run scripts/Comparator.lean Challenge/*.lean` on the BUILT
+        /// tree. Each EV-7a challenge must be closed by a sorry-free solution of the SAME statement (sha256 of
+        /// the canonical type). No Challenge file, or zero rows, declines (PVL-001 EV-7b, #4201)
+        #[arg(long, conflicts_with = "no_lake")]
+        comparator: bool,
     },
     /// `make label-ratchet`: rewrite <lean-dir>/unresolved-labels.json DOWNWARD (it never gains a label; a missing
     /// file is seeded). `check` never writes it.

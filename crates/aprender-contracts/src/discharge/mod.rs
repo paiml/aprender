@@ -582,6 +582,8 @@ pub struct Report {
     pub lake_exit: Option<i32>,
     /// Raw exit of the `--leanchecker` recheck (124/137 on a timeout); `None` when it never ran.
     pub leanchecker_exit: Option<i32>,
+    /// What `--comparator` closed (EV-7b); `None` when it never judged a row set.
+    pub challenges: Option<comparator::Closure>,
 }
 
 impl Report {
