@@ -21775,6 +21775,22 @@ roadmap:
   labels:
   - kind:code
   notes: 'V2b: the dense qa gates (golden CPU, output_verification GPU golden, gpu_isolation, speedup parity and CPU/GPU, golden GGUF throughput) drive realizar::gguf::dense_session::dense_turn through apr-cli commands/qa_dense_session.rs; a GPU gate refuses a turn with used_gpu=false. Witnesses: qa_dense_session_tests (2, release mode; the require_gpu mutant kills one).'
+- id: PMAT-4275
+  github_issue: 4275
+  item_type: task
+  title: 'binary-release smoke: strip -rc.N and bind the asset to its commit'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T14:17:31Z
+  updated: 2026-09-24T14:17:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-4280
   github_issue: 4280
   item_type: task
