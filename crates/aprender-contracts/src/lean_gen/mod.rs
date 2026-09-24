@@ -56,14 +56,22 @@ pub fn generate_lean_files(contract: &Contract) -> Vec<LeanFile> {
 
 /// Report Lean proof status for a contract.
 ///
-/// Returns a `LeanStatusReport` with counts by status.
+/// Returns a `LeanStatusReport` with counts by status. `proved` is what the YAML SAYS (self-declared);
+/// `discharged` is the subset whose theorem a green, fresh, challenge-closed discharge summary grounds
+/// (PVL-001 EV-8b).
 pub fn lean_status(contract: &Contract) -> LeanStatusReport {
+    lean_status_with(contract, crate::proof_status::theorem_grounded)
+}
+
+/// [`lean_status`] with the grounding passed in, so a test can hold both sides of it.
+pub fn lean_status_with(contract: &Contract, grounded: impl Fn(&str) -> bool) -> LeanStatusReport {
     let mut report = LeanStatusReport {
         contract_description: contract.metadata.description.clone(),
         #[allow(clippy::cast_possible_truncation)]
         total_obligations: contract.proof_obligations.len() as u32,
         with_lean: 0,
         proved: 0,
+        discharged: 0,
         sorry: 0,
         wip: 0,
         not_applicable: 0,
@@ -74,7 +82,12 @@ pub fn lean_status(contract: &Contract) -> LeanStatusReport {
         if let Some(ref lean) = ob.lean {
             report.with_lean += 1;
             match lean.status {
-                LeanStatus::Proved => report.proved += 1,
+                LeanStatus::Proved => {
+                    report.proved += 1;
+                    if grounded(&lean.theorem) {
+                        report.discharged += 1;
+                    }
+                }
                 LeanStatus::Sorry => report.sorry += 1,
                 LeanStatus::Wip => report.wip += 1,
                 LeanStatus::NotApplicable => report.not_applicable += 1,
@@ -96,7 +109,10 @@ pub struct LeanStatusReport {
     pub contract_description: String,
     pub total_obligations: u32,
     pub with_lean: u32,
+    /// `status: proved` in the YAML: self-declared.
     pub proved: u32,
+    /// Of `proved`, those a discharge summary grounds (PVL-001 EV-8b). Totals use this.
+    pub discharged: u32,
     pub sorry: u32,
     pub wip: u32,
     pub not_applicable: u32,
@@ -116,14 +132,15 @@ pub fn format_status_report(reports: &[LeanStatusReport]) -> String {
     let mut out = String::new();
 
     out.push_str(&format!(
-        "{:<30} {:>5} {:>6} {:>5} {:>3} {:>3}\n",
-        "Contract", "Oblgs", "Proved", "Sorry", "WIP", "N/A"
+        "{:<30} {:>5} {:>8} {:>10} {:>5} {:>3} {:>3}\n",
+        "Contract", "Oblgs", "Self-dec", "Discharged", "Sorry", "WIP", "N/A"
     ));
-    out.push_str(&"─".repeat(60));
+    out.push_str(&"─".repeat(72));
     out.push('\n');
 
     let mut total_ob = 0u32;
     let mut total_proved = 0u32;
+    let mut total_discharged = 0u32;
     let mut total_sorry = 0u32;
     let mut total_wip = 0u32;
     let mut total_na = 0u32;
@@ -142,26 +159,28 @@ pub fn format_status_report(reports: &[LeanStatusReport]) -> String {
             &r.contract_description
         };
         out.push_str(&format!(
-            "{:<30} {:>5} {:>6} {:>5} {:>3} {:>3}\n",
-            name, r.with_lean, r.proved, r.sorry, r.wip, r.not_applicable
+            "{:<30} {:>5} {:>8} {:>10} {:>5} {:>3} {:>3}\n",
+            name, r.with_lean, r.proved, r.discharged, r.sorry, r.wip, r.not_applicable
         ));
         total_ob += r.with_lean;
         total_proved += r.proved;
+        total_discharged += r.discharged;
         total_sorry += r.sorry;
         total_wip += r.wip;
         total_na += r.not_applicable;
     }
 
-    out.push_str(&"─".repeat(60));
+    out.push_str(&"─".repeat(72));
     out.push('\n');
     out.push_str(&format!(
-        "{:<30} {:>5} {:>6} {:>5} {:>3} {:>3}\n",
-        "Total", total_ob, total_proved, total_sorry, total_wip, total_na
+        "{:<30} {:>5} {:>8} {:>10} {:>5} {:>3} {:>3}\n",
+        "Total", total_ob, total_proved, total_discharged, total_sorry, total_wip, total_na
     ));
 
-    if let Some(pct) = (total_proved * 100).checked_div(total_ob) {
+    // PVL-001 EV-8b: coverage is what a discharge grounds, never what the YAML says.
+    if let Some(pct) = (total_discharged * 100).checked_div(total_ob) {
         out.push_str(&format!(
-            "L4 Coverage: {pct}% ({total_proved}/{total_ob})   Sorry Debt: {total_sorry}\n"
+            "L4 Coverage: {pct}% ({total_discharged}/{total_ob} discharged; {total_proved} self-declared)   Sorry Debt: {total_sorry}\n"
         ));
     }
 
@@ -413,6 +432,7 @@ falsification_tests: []
             total_obligations: 5,
             with_lean: 3,
             proved: 1,
+            discharged: 1,
             sorry: 1,
             wip: 1,
             not_applicable: 0,
@@ -422,6 +442,44 @@ falsification_tests: []
         assert!(table.contains("Softmax kernel"));
         assert!(table.contains("L4 Coverage: 33%"));
         assert!(table.contains("Sorry Debt: 1"));
+    }
+
+    /// PVL-001 EV-8b: a YAML `status: proved` the discharge does not ground is self-declared, and the coverage
+    /// total counts only the discharged ones.
+    #[test]
+    fn coverage_counts_discharged_not_self_declared() {
+        let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "Two proved claims"
+  references: ["P"]
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - type: invariant
+    property: "grounded"
+    lean:
+      theorem: "Grounded.thm"
+      status: proved
+  - type: invariant
+    property: "claimed only"
+    lean:
+      theorem: "Claimed.thm"
+      status: proved
+falsification_tests: []
+"#;
+        let contract = parse_contract_str(yaml).unwrap();
+        let report = lean_status_with(&contract, |t| t == "Grounded.thm");
+        assert_eq!((report.proved, report.discharged), (2, 1));
+        let table = format_status_report(&[report]);
+        assert!(
+            table.contains("L4 Coverage: 50% (1/2 discharged; 2 self-declared)"),
+            "{table}"
+        );
+        let none = lean_status_with(&contract, |_| false);
+        assert_eq!((none.proved, none.discharged), (2, 0));
+        assert!(format_status_report(&[none]).contains("L4 Coverage: 0% (0/2 discharged"));
     }
 
     #[test]

@@ -117,8 +117,19 @@ pub struct ProofStatusReport {
     pub kernel_classes: Vec<KernelClassSummary>,
     /// ONT-2a andon: a self-declared L4 is excluded from the L4 total in this build
     pub l4_self_declared_excluded: bool,
+    /// PVL-001 EV-8b: `discharge` when a discharge summary was read (it grounds L4 only when green, fresh and
+    /// challenge-closed), `self-declared` when there is none and nothing grounds L4
+    #[serde(default = "default_l4_source")]
+    pub l4_source: crate::discharge::summary::L4Source,
+    /// PVL-001 EV-8b: why the summary grounds no L4 (red, stale, challenges open, absent); `None` when it does
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub l4_withheld: Option<String>,
     /// Aggregate totals across all contracts
     pub totals: ProofStatusTotals,
+}
+
+fn default_l4_source() -> crate::discharge::summary::L4Source {
+    crate::discharge::summary::L4Source::SelfDeclared
 }
 
 /// Aggregate totals across all contracts.
@@ -255,13 +266,12 @@ pub fn is_lean_proved_with_grounding(contract: &Contract, grounded: u32) -> bool
     if total == 0 {
         return false;
     }
-    // ONT-001 ONT-2a (andon): a `verification_summary` is the contract talking about ITSELF, and until a
-    // discharge summary exists to check it against (PVL EV-8b) the only grounding in this tree is a
-    // sorry-free Lean theorem an equation names and `lean_theorem_names()` resolves. L4 is therefore
-    // granted on the GROUNDED count alone; a claim with nothing under it is reported `self-declared` by
-    // `is_l4_self_declared`, excluded from the L4 total, and never counted quietly. The `not_applicable`
-    // credit still comes from the summary: it is a claim about APPLICABILITY, not about a proof, and it
-    // is ONT-8's evidence block that will give it its own provenance.
+    // ONT-001 ONT-2a (andon) and PVL-001 EV-8b: a `verification_summary` is the contract talking about ITSELF.
+    // L4 is granted on the GROUNDED count alone, and since EV-8b the only grounding is a GREEN discharge summary
+    // of the CURRENT Lean tree with every challenge closed, listing the theorems an equation names. A claim with
+    // nothing under it is reported `self-declared` by `is_l4_self_declared`, excluded from the L4 total, and never
+    // counted quietly. The `not_applicable` credit still comes from the summary: it is a claim about
+    // APPLICABILITY, not about a proof, and it is ONT-8's evidence block that will give it its own provenance.
     let not_applicable = contract
         .verification_summary
         .as_ref()
@@ -386,13 +396,6 @@ pub(crate) const LEAN_THEOREM_BASES: &[&str] = &[
     "../provable-contracts/lean",
 ];
 
-/// Register the three naming forms a single label contributes: namespaced, bare, and lowercased.
-fn insert_name_forms(names: &mut std::collections::HashSet<String>, label: &str) {
-    names.insert(format!("Theorems.{label}"));
-    names.insert(label.to_string());
-    names.insert(label.to_lowercase());
-}
-
 /// `relu_nonneg` → `ReluNonneg`.
 pub(crate) fn camel_case(snake: &str) -> String {
     snake
@@ -417,118 +420,84 @@ pub(crate) fn first_camel_word(camel: &str) -> String {
         .collect()
 }
 
-/// Register every `theorem <name>` a file declares, in the forms a contract may cite it by.
-fn insert_theorem_names_from_content(names: &mut std::collections::HashSet<String>, content: &str) {
-    for line in content.lines() {
-        let Some(pos) = line.find("theorem ") else {
-            continue;
-        };
-        let tname: String = line[pos + 8..]
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '_')
-            .collect();
-        if tname.is_empty() {
-            continue;
-        }
-        let camel = camel_case(&tname);
-        names.insert(format!("Theorems.{camel}"));
-        names.insert(camel.clone());
-        let first_word = first_camel_word(&camel);
-        if first_word.len() >= 3 {
-            names.insert(format!("Theorems.{first_word}"));
-            names.insert(first_word);
-        }
-    }
+/// The Lean tree's resolver and what its discharge summary grounds (PVL-001 EV-8b), for the first of
+/// [`LEAN_THEOREM_BASES`] that holds a tree. Built once per process.
+struct TreeGrounding {
+    resolver: Option<crate::discharge::Resolver>,
+    grounding: crate::discharge::summary::Grounding,
 }
 
-/// Register the names contributed by one domain directory's sorry-free `.lean` files.
-///
-/// A file containing `sorry` contributes NOTHING: an admitted proof grounds no claim, which is the whole
-/// reason this scan is the grounding ONT-2a trusts over a contract's own summary.
-fn insert_domain_theorems(names: &mut std::collections::HashSet<String>, domain: &std::path::Path) {
-    let domain_name = domain
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-    let Ok(files) = std::fs::read_dir(domain) else {
-        return;
-    };
-    for file in files.flatten() {
-        let path = file.path();
-        if path.extension().is_none_or(|e| e != "lean") {
-            continue;
-        }
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        if content.contains("sorry") {
-            continue;
-        }
-        let stem = path
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-        insert_name_forms(names, &domain_name);
-        insert_name_forms(names, &stem);
-        insert_theorem_names_from_content(names, &content);
-    }
-}
-
-/// Every theorem name one base directory contributes; empty when the base is absent.
-fn scan_theorem_base(base: &str) -> std::collections::HashSet<String> {
-    let mut names = std::collections::HashSet::new();
-    let search_dir = std::path::Path::new(base).join("ProvableContracts/Theorems");
-    if !search_dir.exists() {
-        return names;
-    }
-    let Ok(domains) = std::fs::read_dir(&search_dir) else {
-        return names;
-    };
-    for domain_entry in domains.flatten() {
-        let path = domain_entry.path();
-        if path.is_dir() {
-            insert_domain_theorems(&mut names, &path);
-        }
-    }
-    names
-}
-
-/// Build a set of all sorry-free Lean theorem names from the Theorems/ directory.
-/// Scans once, caches the result in a thread-local for repeated calls.
-fn lean_theorem_names() -> &'static std::collections::HashSet<String> {
+fn tree_grounding() -> &'static TreeGrounding {
+    use crate::discharge::summary::{current_tree_sha, load, summary_path, Grounding};
     use std::sync::OnceLock;
-    static CACHE: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
+    static CACHE: OnceLock<TreeGrounding> = OnceLock::new();
     CACHE.get_or_init(|| {
         for base in LEAN_THEOREM_BASES {
-            let names = scan_theorem_base(base);
-            if !names.is_empty() {
-                return names;
-            }
+            let dir = std::path::Path::new(base);
+            let Ok(tree) = crate::discharge::Tree::load(dir) else {
+                continue;
+            };
+            let grounding =
+                Grounding::from_summary(load(&summary_path(dir)), current_tree_sha(dir).as_deref());
+            return TreeGrounding {
+                resolver: Some(crate::discharge::Resolver::new(&tree)),
+                grounding,
+            };
         }
-        std::collections::HashSet::new()
+        TreeGrounding {
+            resolver: None,
+            grounding: Grounding::from_summary(
+                Err(format!("no Lean tree under any of {LEAN_THEOREM_BASES:?}")),
+                None,
+            ),
+        }
     })
 }
 
-/// Count Lean theorems for a contract by matching `lean_theorem` refs against
-/// sorry-free `.lean` files in the Theorems/ directory.
-fn count_lean_theorems_for_contract(contract: &Contract) -> u32 {
-    let theorems = lean_theorem_names();
+/// Where this process's L4 credit comes from, and why it grants none when it does not (PVL-001 EV-8b).
+#[must_use]
+pub fn l4_grounding() -> (crate::discharge::summary::L4Source, Option<String>) {
+    let g = &tree_grounding().grounding;
+    (g.source, g.withheld.clone())
+}
+
+/// Count the equations whose `lean_theorem:` reference names theorems (resolved by `resolve`) that ALL hold in
+/// `grounding` (PVL-001 EV-8b). A reference naming nothing grounds nothing; neither does a partly-derived label.
+pub(crate) fn count_grounded(
+    contract: &Contract,
+    resolve: impl Fn(&str) -> Vec<String>,
+    grounding: &crate::discharge::summary::Grounding,
+) -> u32 {
     let mut count = 0u32;
     for eq in contract.equations.values() {
         if let Some(ref theorem_ref) = eq.lean_theorem {
             let name = theorem_ref.trim().trim_matches('"');
-            // Try exact match, then without prefix, then lowercase
-            if theorems.contains(name)
-                || theorems.contains(name.strip_prefix("Theorems.").unwrap_or(name))
-                || theorems.contains(&name.to_lowercase())
-            {
+            if grounding.grounds_all(&resolve(name)) {
                 count += 1;
             }
         }
     }
     count
+}
+
+/// Does the discharge ground every theorem `reference` names (PVL-001 EV-8b)? False without a Lean tree.
+#[must_use]
+pub fn theorem_grounded(reference: &str) -> bool {
+    let tg = tree_grounding();
+    tg.resolver.as_ref().is_some_and(|r| {
+        tg.grounding
+            .grounds_all(&r.resolve(reference.trim().trim_matches('"')))
+    })
+}
+
+/// Count the equations a GREEN, FRESH, challenge-closed discharge summary grounds (PVL-001 EV-8b). Before EV-8b
+/// this scanned `.lean` files for sorry-free text; a file's text is not a kernel check, so it grounds nothing now.
+fn count_lean_theorems_for_contract(contract: &Contract) -> u32 {
+    let tg = tree_grounding();
+    let Some(resolver) = tg.resolver.as_ref() else {
+        return 0;
+    };
+    count_grounded(contract, |r| resolver.resolve(r), &tg.grounding)
 }
 
 /// Build a complete proof status report.
@@ -626,10 +595,13 @@ pub fn proof_status_report(
     };
 
     let timestamp = current_timestamp();
+    let (l4_source, l4_withheld) = l4_grounding();
 
     ProofStatusReport {
         schema_version: "1.0.0".to_string(),
         l4_self_declared_excluded: true,
+        l4_source,
+        l4_withheld,
         timestamp,
         contracts: statuses,
         kernel_classes,
@@ -693,8 +665,9 @@ pub fn format_text(report: &ProofStatusReport) -> String {
 
     out.push_str(&format!(
         "\nTotals: {} obligations ({} N/A, never counted as proved), {} tests, {} kani, {} lean claimed ({} grounded), {}/{} bound\n\
-         L4 evidence: {} contract(s) self-declared and excluded from L4 (ONT-2a andon); grounded means a \
-         sorry-free in-tree Lean theorem the equation names\n",
+         L4 evidence: {} contract(s) self-declared and excluded from L4 (ONT-2a andon); grounded means the \
+         equation's theorem is in a green, fresh, challenge-closed discharge summary (PVL-001 EV-8b)\n\
+         L4 source: {}{}\n",
         report.totals.obligations,
         report.totals.not_applicable,
         report.totals.falsification_tests,
@@ -704,6 +677,15 @@ pub fn format_text(report: &ProofStatusReport) -> String {
         report.totals.bindings_implemented,
         report.totals.bindings_total,
         report.totals.l4_self_declared,
+        match report.l4_source {
+            crate::discharge::summary::L4Source::Discharge => "discharge",
+            crate::discharge::summary::L4Source::SelfDeclared => "self-declared",
+        },
+        report
+            .l4_withheld
+            .as_deref()
+            .map(|w| format!(" -- grants no L4: {w}"))
+            .unwrap_or_default(),
     ));
 
     out

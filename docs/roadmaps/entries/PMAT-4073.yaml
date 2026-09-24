@@ -1,0 +1,16 @@
+- id: PMAT-4073
+  github_issue: 4073
+  item_type: task
+  title: 'ONT-3b: formalization.yaml gains model_of; no model earns no L4'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-59
+  created: 2026-09-24T17:12:12Z
+  updated: 2026-09-24T17:12:12Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

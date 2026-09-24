@@ -1,6 +1,23 @@
-# PVL-001 formalization record for ProvableContracts. EV-6b (#4199) lands `scope` only; EV-8b adds the rest of the
-# mathlib-initiative v0.4 schema (main_results, status.axioms, capstones, sorry_count, review, automation). Until
-# then `pv discharge check` reads the default pinned axioms (propext, Classical.choice, Quot.sound).
+# PVL-001 formalization record for ProvableContracts (mathlib-initiative schema v0.4). EV-6b (#4199) landed `scope`;
+# EV-8b (#4082) the rest. `pv discharge check --validate-formalization` rejects when it drifts: `main_results` must
+# be theorems discharge-summary.json lists, `status.axioms` the set Axioms.lean pins (regenerate with
+# `pv discharge gen-axioms` after editing it), `sorry_count` the count the escape scan measures.
+main_results:
+  - ProvableContracts.Attention.attention_weights_sum_to_one
+  - ProvableContracts.CrossEntropy.cross_entropy_onehot_eq
+  - ProvableContracts.Elementwise.relu_nonneg
+  - ProvableContracts.FP8.roundtrip_ulp
+  - ProvableContracts.Sigmoid.sigmoid_strictMono
+status:
+  axioms: [propext, Classical.choice, Quot.sound]
+# No `#print axioms` exact pin yet: a capstone added here changes Axioms.lean, so regenerate it in the same commit.
+capstones: []
+sorry_count: 0
+review:
+  # No one outside the authoring sessions has reviewed these proofs. Only the kernel and the comparator have checked them.
+  status: self-assessed
+automation:
+  methods: [llm-assisted, mathlib-tactics]
 scope: >-
   NOT covered by the discharge gate: (1) the Rust binding. A contract names a Lean theorem by a string in YAML,
   and nothing checks that the Rust code implements the statement the theorem proves (PVL-F5). (2) The YAML parser

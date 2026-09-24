@@ -1,0 +1,16 @@
+- id: PMAT-4082
+  github_issue: 4082
+  item_type: task
+  title: 'PVL-001 EV-8b: L4 credit from the summary, not YAML; formalization.yaml'
+  status: review
+  priority: medium
+  assigned_to: aprender-59
+  created: 2026-09-24T17:12:12Z
+  updated: 2026-09-24T17:12:12Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -198,6 +198,101 @@ pub fn summarize(
     }
 }
 
+/// `git rev-parse HEAD:<lean-dir>`, content-addressed: the tree a summary must describe to ground anything. `None`
+/// outside a git checkout, or when the dir is not in HEAD.
+#[must_use]
+pub fn current_tree_sha(lean_dir: &Path) -> Option<String> {
+    let o = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD:./"])
+        .current_dir(lean_dir)
+        .output()
+        .ok()?;
+    let sha = String::from_utf8_lossy(&o.stdout).trim().to_string();
+    (o.status.success() && !sha.is_empty()).then_some(sha)
+}
+
+/// Where the L4 column's credit comes from (PVL-001 EV-8b): a discharge summary was read, or there is none and
+/// the only L4 in the tree is what contracts say about themselves (which earns nothing).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum L4Source {
+    Discharge,
+    SelfDeclared,
+}
+
+/// What a summary grounds (PVL-001 EV-8b): the theorems a Lean proof is credited with. Only a summary that is
+/// GREEN, describes the CURRENT tree, and closed every challenge grounds any; otherwise `withheld` says why, and
+/// the set is empty, so every L4 in the report is zero rather than a claim nothing checked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Grounding {
+    pub source: L4Source,
+    pub derived: BTreeSet<String>,
+    pub withheld: Option<String>,
+}
+
+impl Grounding {
+    /// `loaded` is [`load`]'s result; `current` is [`current_tree_sha`] of the lean dir it describes.
+    #[must_use]
+    pub fn from_summary(loaded: Result<Summary, String>, current: Option<&str>) -> Self {
+        let s = match loaded {
+            Ok(s) => s,
+            Err(e) => {
+                return Self::withheld(L4Source::SelfDeclared, format!("no discharge summary: {e}"))
+            }
+        };
+        let why = if !s.is_green() {
+            Some(format!(
+                "red discharge: build_exit={:?} lake_exit={:?} leanchecker_exit={:?} axioms_ok={} escapes_ok={}",
+                s.build_exit, s.lake_exit, s.leanchecker_exit, s.axioms_ok, s.escapes_ok
+            ))
+        } else if current.is_none() || s.tree_sha.as_deref() != current {
+            Some(format!(
+                "stale discharge: summary tree_sha {} is not the current lean tree {}",
+                s.tree_sha.as_deref().unwrap_or("null"),
+                current.unwrap_or("(unknown)")
+            ))
+        } else if !challenges_closed(s.challenges_closed.as_deref()) {
+            Some(format!(
+                "challenges not closed: {}",
+                s.challenges_closed.as_deref().unwrap_or("never judged")
+            ))
+        } else {
+            None
+        };
+        match why {
+            Some(w) => Self::withheld(L4Source::Discharge, w),
+            None => Self {
+                source: L4Source::Discharge,
+                derived: s.derived().into_iter().map(str::to_string).collect(),
+                withheld: None,
+            },
+        }
+    }
+
+    fn withheld(source: L4Source, why: String) -> Self {
+        Self {
+            source,
+            derived: BTreeSet::new(),
+            withheld: Some(why),
+        }
+    }
+
+    /// Does this grounding hold every one of `theorems`? An empty list (a reference naming nothing) grounds nothing.
+    #[must_use]
+    pub fn grounds_all(&self, theorems: &[String]) -> bool {
+        !theorems.is_empty() && theorems.iter().all(|t| self.derived.contains(t))
+    }
+}
+
+/// `n/m` with `n == m`: every challenge the comparator judged, closed. Never judged is not closed.
+#[must_use]
+pub fn challenges_closed(field: Option<&str>) -> bool {
+    field
+        .and_then(|f| f.split_once('/'))
+        .and_then(|(n, m)| Some((n.trim().parse::<u32>().ok()?, m.trim().parse::<u32>().ok()?)))
+        .is_some_and(|(n, m)| n == m)
+}
+
 #[cfg(test)]
 #[path = "summary_tests.rs"]
 mod tests;

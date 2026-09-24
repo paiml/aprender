@@ -425,9 +425,60 @@ fn the_real_lean_tree_passes_the_ev_6a_probe() {
     let r = run(&["discharge", "check", lean, "--no-lake"]);
     assert_rc(&r, 0, "PENDING (7)");
     assert!(r.stdout.contains("ok    discharge"), "{}", r.show());
+    // PVL-001 EV-8b probe: the tracked formalization.yaml is consistent with the tree and the summary
+    assert_rc(
+        &run(&[
+            "discharge",
+            "check",
+            lean,
+            "--no-lake",
+            "--validate-formalization",
+        ]),
+        0,
+        "FORMALIZATION ok",
+    );
     assert_eq!(
         std::fs::read(&labels).expect("label set"),
         before,
         "check wrote the label set"
+    );
+}
+
+/// PVL-001 EV-8b (#4082): `--validate-formalization` rejects a missing or inconsistent formalization.yaml, and
+/// accepts one that agrees with the tree, Axioms.lean and discharge-summary.json.
+#[test]
+fn validate_formalization_rejects_inconsistency_and_accepts_agreement() {
+    let fx = Fx::new();
+    let form = "main_results: [ProvableContracts.Gelu.gelu_bound]\nstatus:\n  axioms: [propext, Classical.choice, Quot.sound]\n\
+capstones: []\nsorry_count: 0\nscope: all\nreview:\n  status: self-assessed\nautomation:\n  methods: [manual]\n";
+    fx.write("lean/formalization.yaml", form);
+    fx.write(
+        "discharge-summary.json",
+        r#"{"tree_sha":"t","toolchain":null,"mathlib_rev":null,"build_exit":0,"lake_exit":0,"leanchecker_exit":0,
+"axioms_ok":true,"escapes_ok":true,"challenges_closed":"1/1","modules":[{"path":"ProvableContracts/Theorems/Gelu/Bound.lean",
+"blake3":"b","theorems":["ProvableContracts.Gelu.gelu_bound"]}]}"#,
+    );
+    assert_rc(&fx.gen(), 0, "");
+    assert_rc(
+        &fx.check(&["--validate-formalization"]),
+        0,
+        "FORMALIZATION ok",
+    );
+    assert_rc(&fx.check(&[]), 0, "");
+    fx.write(
+        "lean/formalization.yaml",
+        &form.replace("sorry_count: 0", "sorry_count: 2"),
+    );
+    assert_rc(
+        &fx.check(&["--validate-formalization"]),
+        1,
+        "FAIL formalization: sorry_count is Some(2); the escape scan measures 0",
+    );
+    std::fs::remove_file(fx.path("discharge-summary.json")).expect("rm");
+    fx.write("lean/formalization.yaml", form);
+    assert_rc(
+        &fx.check(&["--validate-formalization"]),
+        1,
+        "no discharge summary",
     );
 }

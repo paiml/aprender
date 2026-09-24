@@ -199,3 +199,70 @@ fn summarize_reads_the_report_and_the_pins() {
     assert!(!summarize(&r, None, &lean, None, Some(0)).escapes_ok);
     assert!(summarize(&r, None, &lean, None, Some(0)).modules.is_empty());
 }
+
+// ---- PVL-001 EV-8b (#4082): what grounds L4 ----
+
+fn grounding(s: Summary, current: Option<&str>) -> Grounding {
+    Grounding::from_summary(Ok(s), current)
+}
+
+const GELU: &str = "ProvableContracts.Gelu.gelu_bound";
+
+#[test]
+fn a_green_fresh_closed_summary_grounds_its_theorems_and_only_them() {
+    let g = grounding(green(), Some("t"));
+    assert_eq!(g.source, L4Source::Discharge);
+    assert_eq!(g.withheld, None);
+    assert!(g.grounds_all(&[GELU.to_string()]));
+    assert!(!g.grounds_all(&[GELU.to_string(), "ProvableContracts.Gelu.absent".into()]));
+    assert!(
+        !g.grounds_all(&[]),
+        "a reference that resolves to nothing grounds nothing"
+    );
+}
+
+#[test]
+fn red_stale_unclosed_or_absent_grants_zero_and_says_why() {
+    let red = |f: fn(&mut Summary)| {
+        let mut s = green();
+        f(&mut s);
+        s
+    };
+    let cases: [(Grounding, &str); 6] = [
+        (
+            grounding(red(|s| s.lake_exit = Some(1)), Some("t")),
+            "red discharge",
+        ),
+        (
+            grounding(red(|s| s.leanchecker_exit = Some(1)), Some("t")),
+            "red discharge",
+        ),
+        (grounding(green(), Some("other")), "stale discharge"),
+        (grounding(green(), None), "stale discharge"),
+        (
+            grounding(red(|s| s.challenges_closed = Some("1/2".into())), Some("t")),
+            "challenges not closed",
+        ),
+        (
+            Grounding::from_summary(Err("gone".into()), Some("t")),
+            "no discharge summary",
+        ),
+    ];
+    for (g, why) in cases {
+        assert!(!g.grounds_all(&[GELU.to_string()]), "{why}");
+        assert!(g.derived.is_empty(), "{why}");
+        assert!(
+            g.withheld.as_deref().is_some_and(|w| w.contains(why)),
+            "{why}: {:?}",
+            g.withheld
+        );
+    }
+}
+
+#[test]
+fn challenges_close_only_when_every_one_is_closed() {
+    assert!(challenges_closed(Some("3/3")));
+    assert!(!challenges_closed(Some("2/3")));
+    assert!(!challenges_closed(Some("junk")));
+    assert!(!challenges_closed(None));
+}

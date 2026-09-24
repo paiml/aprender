@@ -60,8 +60,12 @@ pub fn run(action: DischargeAction) -> Res {
             leanchecker_timeout,
             leanchecker_ulimit_v,
             comparator,
+            validate_formalization,
         } => {
-            let r = discharge::check(&lean_dir, &contracts, CheckOpts { strict });
+            let mut r = discharge::check(&lean_dir, &contracts, CheckOpts { strict });
+            if validate_formalization && r.decline.is_none() {
+                judge_formalization(&lean_dir, &mut r);
+            }
             let lc = leanchecker.then_some(Leanchecker {
                 timeout_s: leanchecker_timeout,
                 ulimit_v_kib: leanchecker_ulimit_v,
@@ -154,6 +158,26 @@ pub(crate) fn lean_steps(
         if open(r) {
             recheck(lake, lean_dir, lc, r);
         }
+    }
+}
+
+/// `--validate-formalization` (PVL-001 EV-8b): each inconsistency is a FAIL line and rejects.
+fn judge_formalization(lean_dir: &Path, r: &mut Report) {
+    let (tree, allow) = match (Tree::load(lean_dir), discharge::load_allowlist(lean_dir)) {
+        (Ok(t), Ok(a)) => (t, a),
+        (Err(e), _) | (_, Err(e)) => {
+            r.decline = Some(e);
+            return;
+        }
+    };
+    let sum = summary::load(&summary::summary_path(lean_dir)).ok();
+    let bad = discharge::validate_formalization(lean_dir, &tree, &allow, sum.as_ref());
+    if bad.is_empty() {
+        r.lines.push("FORMALIZATION ok".into());
+    }
+    for b in bad {
+        r.lines.push(format!("FAIL formalization: {b}"));
+        r.reject = true;
     }
 }
 
@@ -553,6 +577,7 @@ mod tests {
             leanchecker_timeout: 3600,
             leanchecker_ulimit_v: None,
             comparator: false,
+            validate_formalization: false,
         })
     }
 

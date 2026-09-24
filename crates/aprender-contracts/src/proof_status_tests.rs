@@ -1160,3 +1160,54 @@ fn level_l5_needs_at_least_one_binding() {
         ProofLevel::L5
     );
 }
+
+/// PVL-001 EV-8b: an equation counts toward L4 only when every theorem its `lean_theorem` resolves to is in a
+/// green discharge; the YAML naming one is not enough.
+#[test]
+fn only_discharge_grounded_equations_count() {
+    use crate::discharge::summary::{Grounding, Module, Summary};
+    let c = parse_contract_str(
+        "metadata:\n  version: \"1.0.0\"\n  description: d\n  references: [r]\nequations:\n  \
+         a:\n    formula: x\n    lean_theorem: Theorems.A\n  \
+         b:\n    formula: x\n    lean_theorem: Theorems.B\n  \
+         c:\n    formula: x\n    lean_theorem: Theorems.Missing\n\
+         proof_obligations: []\nfalsification_tests: []\n",
+    )
+    .unwrap();
+    let resolve = |r: &str| match r {
+        "Theorems.A" => vec!["P.A.a".to_string()],
+        "Theorems.B" => vec!["P.B.b1".to_string(), "P.B.b2".to_string()],
+        _ => vec![],
+    };
+    let summary = |theorems: &[&str]| Summary {
+        tree_sha: Some("t".into()),
+        toolchain: None,
+        mathlib_rev: None,
+        build_exit: Some(0),
+        lake_exit: Some(0),
+        leanchecker_exit: Some(0),
+        axioms_ok: true,
+        escapes_ok: true,
+        challenges_closed: Some("1/1".into()),
+        modules: vec![Module {
+            path: "m.lean".into(),
+            blake3: "b".into(),
+            theorems: theorems.iter().map(|t| (*t).to_string()).collect(),
+        }],
+    };
+    let g = |th: &[&str], cur: &str| Grounding::from_summary(Ok(summary(th)), Some(cur));
+    // B is half-discharged: not grounded. The missing label resolves to nothing: not grounded.
+    assert_eq!(
+        count_grounded(&c, resolve, &g(&["P.A.a", "P.B.b1"], "t")),
+        1
+    );
+    assert_eq!(
+        count_grounded(&c, resolve, &g(&["P.A.a", "P.B.b1", "P.B.b2"], "t")),
+        2
+    );
+    // the same summary, stale: zero
+    assert_eq!(
+        count_grounded(&c, resolve, &g(&["P.A.a", "P.B.b1", "P.B.b2"], "new")),
+        0
+    );
+}

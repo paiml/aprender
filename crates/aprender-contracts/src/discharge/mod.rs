@@ -274,6 +274,116 @@ pub fn load_formalization(dir: &Path) -> Result<Formalization, String> {
     })
 }
 
+/// PVL-001 EV-8b: `formalization.yaml` (mathlib-initiative schema v0.4) judged against the tree, the tracked
+/// `Axioms.lean` and the discharge summary. Every inconsistency, or none: `main_results` must be theorems the
+/// summary lists, `status.axioms` the set `Axioms.lean` pins (less the allowlist's exemptions), and `sorry_count`
+/// the `sorry`s the escape scan measures. A missing file or field is itself an inconsistency.
+#[must_use]
+pub fn validate_formalization(
+    lean_dir: &Path,
+    tree: &Tree,
+    allow: &[Allowed],
+    summary: Option<&summary::Summary>,
+) -> Vec<String> {
+    let p = lean_dir.join("formalization.yaml");
+    let doc: serde_yaml::Value = match std::fs::read_to_string(&p)
+        .map_err(|e| e.to_string())
+        .and_then(|t| serde_yaml::from_str(&t).map_err(|e| e.to_string()))
+    {
+        Ok(d) => d,
+        Err(e) => return vec![format!("{}: {e}", p.display())],
+    };
+    let mut bad = Vec::new();
+    let at = |path: &[&str]| path.iter().try_fold(&doc, |v, k| v.get(k));
+    let seq = |path: &[&str]| -> Option<Vec<String>> {
+        at(path)?
+            .as_sequence()?
+            .iter()
+            .map(|x| x.as_str().map(str::to_string))
+            .collect()
+    };
+    for path in [
+        &["main_results"][..],
+        &["status", "axioms"],
+        &["automation", "methods"],
+    ] {
+        if seq(path).is_none_or(|v| v.is_empty()) {
+            bad.push(format!(
+                "{} missing or not a non-empty list of strings",
+                path.join(".")
+            ));
+        }
+    }
+    if seq(&["capstones"]).is_none() {
+        bad.push("capstones missing or not a list of strings".into());
+    }
+    if at(&["scope"])
+        .and_then(serde_yaml::Value::as_str)
+        .is_none_or(|s| s.trim().is_empty())
+    {
+        bad.push("scope missing".into());
+    }
+    let review = at(&["review", "status"]).and_then(serde_yaml::Value::as_str);
+    if review != Some("self-assessed") {
+        bad.push(format!(
+            "review.status is {review:?}, not \"self-assessed\" (no external review exists)"
+        ));
+    }
+    let measured = escapes(tree).iter().filter(|e| e.kind == "sorry").count();
+    match at(&["sorry_count"]).and_then(serde_yaml::Value::as_u64) {
+        Some(n) if usize::try_from(n).ok() == Some(measured) => {}
+        declared => bad.push(format!(
+            "sorry_count is {declared:?}; the escape scan measures {measured}"
+        )),
+    }
+    let exempt: BTreeSet<&str> = allow
+        .iter()
+        .filter(|a| a.kind == "axiom")
+        .map(|a| a.decl.as_str())
+        .collect();
+    let axioms_lean = std::fs::read_to_string(lean_dir.join("Axioms.lean")).unwrap_or_default();
+    let pinned: Option<BTreeSet<String>> = axioms_lean
+        .lines()
+        .find_map(|l| l.strip_prefix("def pvlPinned : List Name := ["))
+        .map(|l| {
+            l.trim_end_matches(']')
+                .split(',')
+                .map(|n| n.trim().trim_start_matches('`').to_string())
+                .filter(|n| !n.is_empty() && !exempt.contains(n.as_str()))
+                .collect()
+        });
+    let declared: BTreeSet<String> = seq(&["status", "axioms"])
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    match pinned {
+        None => bad.push("Axioms.lean has no `def pvlPinned` line: nothing pins the axioms".into()),
+        Some(pin) if pin != declared => bad.push(format!(
+            "status.axioms {declared:?} is not the set Axioms.lean pins {pin:?} (regenerate: pv discharge gen-axioms)"
+        )),
+        Some(_) => {}
+    }
+    let listed: BTreeSet<&str> = summary
+        .map(|s| {
+            s.modules
+                .iter()
+                .flat_map(|m| m.theorems.iter().map(String::as_str))
+                .collect()
+        })
+        .unwrap_or_default();
+    if summary.is_none() {
+        bad.push("no discharge summary: main_results cannot be checked".into());
+    }
+    for r in seq(&["main_results"]).unwrap_or_default() {
+        if summary.is_some() && !listed.contains(r.as_str()) {
+            bad.push(format!(
+                "main_results {r} is not a theorem the discharge summary lists"
+            ));
+        }
+    }
+    bad
+}
+
 /// A contract-bound theorem.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Root {
@@ -408,6 +518,46 @@ fn bind_one(
             .extend(hits.iter().map(|r| (*r).clone()));
     }
     b.roots.extend(hits.into_iter().cloned());
+}
+
+/// One `lean_theorem:` reference resolved to the theorems it names, by exactly [`bind`]'s rule: an exact name is
+/// itself or nothing, a label every `Theorems/<Domain>/*.lean` statement it matches. PVL-001 EV-8b asks this per
+/// equation, so the tree is indexed once and each reference is a lookup.
+pub struct Resolver {
+    theorems: BTreeSet<String>,
+    stmts: Vec<(Statement, Root)>,
+    accepted: Vec<BTreeSet<String>>,
+}
+
+impl Resolver {
+    #[must_use]
+    pub fn new(tree: &Tree) -> Self {
+        let stmts = statements(tree);
+        let accepted = stmts.iter().map(|(s, _)| s.accepted_names()).collect();
+        Self {
+            theorems: theorem_fqns(tree).into_iter().map(str::to_string).collect(),
+            stmts,
+            accepted,
+        }
+    }
+
+    /// The fully qualified theorems `reference` names; empty when it names none.
+    #[must_use]
+    pub fn resolve(&self, reference: &str) -> Vec<String> {
+        if is_exact_name(reference) {
+            return self
+                .theorems
+                .get(reference)
+                .map(|t| vec![t.clone()])
+                .unwrap_or_default();
+        }
+        self.stmts
+            .iter()
+            .zip(&self.accepted)
+            .filter(|(_, names)| reference_matches(reference, names))
+            .map(|((_, root), _)| root.fqn.clone())
+            .collect()
+    }
 }
 
 /// `unresolved-labels.json` `{command, labels: [{contract, label}]}`: the SET the label ratchet is keyed on.

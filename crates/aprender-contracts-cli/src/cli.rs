@@ -544,6 +544,11 @@ pub enum DischargeAction {
         /// the canonical type). No Challenge file, or zero rows, declines (PVL-001 EV-7b, #4201)
         #[arg(long, conflicts_with = "no_lake")]
         comparator: bool,
+        /// Also validate formalization.yaml (mathlib-initiative v0.4): `main_results` are theorems the tracked
+        /// discharge summary lists, `status.axioms` is the set Axioms.lean pins, `sorry_count` is the measured
+        /// count, and every required field is present. Any inconsistency rejects (PVL-001 EV-8b, #4082)
+        #[arg(long)]
+        validate_formalization: bool,
     },
     /// `build.sh`, then `check` with every arm (`--strict`, the comparator, `--leanchecker`), then write the
     /// untracked full log `<lean-dir>/discharge.json` and the TRACKED `<lean-dir>/../discharge-summary.json` --

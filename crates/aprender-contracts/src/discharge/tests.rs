@@ -706,3 +706,110 @@ fn private_theorems_are_not_roots_but_their_escapes_still_scan() {
     assert!(bind(&t, &fx.contracts()).roots.is_empty());
     assert_eq!(escapes(&t).len(), 1);
 }
+
+// ---- PVL-001 EV-8b (#4082): formalization.yaml against the tree, Axioms.lean and the summary ----
+
+const FORM_OK: &str = "main_results: [ProvableContracts.Gelu.gelu_bound]\nstatus:\n  axioms: [propext, Classical.choice, Quot.sound]\n\
+capstones: []\nsorry_count: 0\nscope: the whole tree\nreview:\n  status: self-assessed\nautomation:\n  methods: [manual]\n";
+
+fn fx_summary() -> summary::Summary {
+    summary::Summary {
+        tree_sha: Some("t".into()),
+        toolchain: None,
+        mathlib_rev: None,
+        build_exit: Some(0),
+        lake_exit: Some(0),
+        leanchecker_exit: Some(0),
+        axioms_ok: true,
+        escapes_ok: true,
+        challenges_closed: Some("1/1".into()),
+        modules: vec![summary::Module {
+            path: BOUND.into(),
+            blake3: "b".into(),
+            theorems: vec!["ProvableContracts.Gelu.gelu_bound".into()],
+        }],
+    }
+}
+
+fn validate(fx: &Fx, form: &str, sum: Option<&summary::Summary>) -> Vec<String> {
+    fx.put("lean/formalization.yaml", form);
+    fx.generate_to_disk();
+    let tree = Tree::load(&fx.lean()).expect("load");
+    validate_formalization(&fx.lean(), &tree, &[], sum)
+}
+
+#[test]
+fn a_consistent_formalization_validates() {
+    let fx = Fx::new();
+    assert_eq!(
+        validate(&fx, FORM_OK, Some(&fx_summary())),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn each_inconsistency_is_named() {
+    let fx = Fx::new();
+    let s = fx_summary();
+    let cases = [
+        (
+            FORM_OK.replace(
+                "[ProvableContracts.Gelu.gelu_bound]",
+                "[ProvableContracts.Gelu.absent]",
+            ),
+            "not a theorem the discharge summary lists",
+        ),
+        (
+            FORM_OK.replace("sorry_count: 0", "sorry_count: 3"),
+            "the escape scan measures 0",
+        ),
+        (
+            FORM_OK.replace("self-assessed", "peer-reviewed"),
+            "review.status",
+        ),
+        (
+            FORM_OK.replace("automation:\n  methods: [manual]\n", ""),
+            "automation.methods missing",
+        ),
+        (
+            FORM_OK.replace("scope: the whole tree\n", ""),
+            "scope missing",
+        ),
+    ];
+    for (form, why) in cases {
+        let bad = validate(&fx, &form, Some(&s));
+        assert!(bad.iter().any(|b| b.contains(why)), "{why}: {bad:?}");
+    }
+    let bad = validate(&fx, FORM_OK, None);
+    assert!(
+        bad.iter().any(|b| b.contains("no discharge summary")),
+        "{bad:?}"
+    );
+}
+
+#[test]
+fn status_axioms_must_be_the_set_axioms_lean_pins() {
+    let fx = Fx::new();
+    validate(&fx, FORM_OK, Some(&fx_summary()));
+    // edit the yaml WITHOUT regenerating Axioms.lean: the pin and the record now disagree
+    fx.put(
+        "lean/formalization.yaml",
+        &FORM_OK.replace(", Quot.sound]", "]"),
+    );
+    let tree = Tree::load(&fx.lean()).expect("load");
+    let bad = validate_formalization(&fx.lean(), &tree, &[], Some(&fx_summary()));
+    assert!(
+        bad.iter()
+            .any(|b| b.contains("is not the set Axioms.lean pins")),
+        "{bad:?}"
+    );
+}
+
+#[test]
+fn a_missing_formalization_is_one_inconsistency() {
+    let fx = Fx::new();
+    let tree = Tree::load(&fx.lean()).expect("load");
+    let bad = validate_formalization(&fx.lean(), &tree, &[], Some(&fx_summary()));
+    assert_eq!(bad.len(), 1, "{bad:?}");
+    assert!(bad[0].contains("formalization.yaml"));
+}
