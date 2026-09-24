@@ -1,0 +1,47 @@
+# src test files no mod/#[path]/include! declares -- never compiled, never run.
+# Read by scripts/check_src_test_files_wired.sh (#3809). SHRINK-ONLY: a new dark
+# file fails the guard, and an entry that becomes wired fails it too (delete it).
+#
+# Every entry below was already dark when the guard landed (2026-09-24, batch/0.70.0).
+# Reason for all: pre-existing, unreviewed. Wiring each may surface compile errors or
+# stale assertions against code that moved on; that is follow-up work under #3809,
+# not something to fold into the guard PR. Wire or delete; never add.
+# tool_version=none (measured by scripts/check_src_test_files_wired.sh: grep/sed over tracked src .rs files for mod/#[path]/include! declarations; not a versioned analyser)
+crates/aprender-gpu/src/testing/integration_tests/mod.rs
+crates/aprender-present-terminal/src/widgets/battery_panel.rs
+crates/aprender-present-terminal/src/widgets/disk_panel.rs
+crates/aprender-serve/src/apr/tests_matmul_scaling.rs
+crates/aprender-serve/src/bench_viz_tests_benchmark_runner.rs
+crates/aprender-serve/src/cli/benchmarks_2.rs
+crates/aprender-serve/src/cli/benchmarks_3.rs
+crates/aprender-serve/src/cli/inference_tests_sample_next.rs
+crates/aprender-serve/src/cli/tests_12.rs
+crates/aprender-serve/src/cli/tests_format_model.rs
+crates/aprender-serve/src/convert/conversion.rs
+crates/aprender-serve/src/convert/tests_conversion_stats_orphan.rs
+crates/aprender-serve/src/convert/tests_gguf_converter.rs
+crates/aprender-serve/src/convert/writing.rs
+crates/aprender-serve/src/cuda/executor/cuda_vs_wgpu.rs
+crates/aprender-serve/src/cuda/executor/mock_q.rs
+crates/aprender-serve/src/cuda/executor/reference.rs
+crates/aprender-serve/src/delayed_eos_model.rs
+crates/aprender-serve/src/generate/make.rs
+crates/aprender-serve/src/generate/mock_model.rs
+crates/aprender-serve/src/gguf/tests/loader_tests_02.rs
+crates/aprender-serve/src/gguf/tests/tests_12b.rs
+crates/aprender-serve/src/gpu/diagnostics_tests.rs
+crates/aprender-serve/src/gpu/executor_tests.rs
+crates/aprender-serve/src/gpu/metrics_tests.rs
+crates/aprender-serve/src/gpu/scheduler/config.rs
+crates/aprender-serve/src/gpu/scheduler/kv_tests.rs
+crates/aprender-serve/src/gpu/scheduler/model_tests.rs
+crates/aprender-serve/src/gpu/tests/tests_09.rs
+crates/aprender-serve/src/infer/tests_12.rs
+crates/aprender-serve/src/mock_model.rs
+crates/aprender-serve/src/qa_phase.rs
+crates/aprender-serve/src/quantize/tests/tests_22.rs
+crates/aprender-serve/src/testing/config.rs
+crates/aprender-test-cli/src/commands_tests.rs
+crates/aprender-test-cli/src/main_tests.rs
+crates/aprender-train/src/finetune/training_plan_execute.rs
+crates/aprender-verify/src/benchmark/metadata.rs

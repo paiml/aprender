@@ -133,6 +133,11 @@ pub struct NodeShape {
     pub closed: bool,
     pub ignored_properties: Vec<String>,
     pub properties: Vec<PropertyShape>,
+    /// `allowEmpty: "<why>"` (#3610): this shape's target class is empty BY DESIGN in the good state — a
+    /// `release:RefusalCell` exists only when a cell does not fit. Zero focus nodes then does not refuse the
+    /// verdict, but the shape is still named in the gate's `declines[]`. Not SHACL; pv's own key, and it
+    /// must carry its reason: an exemption with no reason is a silent one.
+    pub allow_empty: Option<String>,
 }
 
 /// One `sh:ValidationResult`.
@@ -190,7 +195,13 @@ pub fn expand(name: &str) -> String {
     }
 }
 
-const NODE_KEYS: &[&str] = &["targetClass", "closed", "ignoredProperties", "properties"];
+const NODE_KEYS: &[&str] = &[
+    "targetClass",
+    "closed",
+    "ignoredProperties",
+    "properties",
+    "allowEmpty",
+];
 const PROPERTY_KEYS: &[&str] = &[
     "path",
     "minCount",
@@ -342,7 +353,30 @@ fn parse_node_shape(
         closed,
         ignored_properties,
         properties,
+        allow_empty: allow_empty_of(id, map, depth)?,
     })
+}
+
+/// `allowEmpty` is a reason string on a TOP-LEVEL shape; a nested `node` shape has no focus set of its own.
+fn allow_empty_of(
+    id: &str,
+    map: &serde_yaml::Mapping,
+    depth: usize,
+) -> Result<Option<String>, ShapeError> {
+    let Some(v) = map.get("allowEmpty") else {
+        return Ok(None);
+    };
+    let malformed = |what: &str| ShapeError::Malformed {
+        shape: id.to_string(),
+        what: what.into(),
+    };
+    if depth > 0 {
+        return Err(malformed("`allowEmpty` on a nested node shape"));
+    }
+    match v.as_str().map(str::trim) {
+        Some(reason) if !reason.is_empty() => Ok(Some(reason.to_string())),
+        _ => Err(malformed("`allowEmpty` must be a non-empty reason string")),
+    }
 }
 
 fn parse_property(
@@ -1171,6 +1205,31 @@ mod tests {
     }
 
     const BASE: &str = "entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: ont:id, minCount: 1, maxCount: 1, pattern: '^[a-z0-9-]+$'}\n    - {path: ont:kind, maxCount: 1, in: [kernel, pattern]}\n";
+
+    #[test]
+    fn allow_empty_carries_its_reason_and_refuses_a_blank_or_nested_one() {
+        let with = |v: &str| {
+            format!("entity: {{type: pv-contract}}\nshape:\n  allowEmpty: {v}\n  properties: []\n")
+        };
+        assert_eq!(
+            shape(&with("\"none fit\"")).allow_empty.as_deref(),
+            Some("none fit")
+        );
+        assert_eq!(shape(BASE).allow_empty, None);
+        for bad in ["\"  \"", "true", "[a]"] {
+            let doc: serde_yaml::Value = serde_yaml::from_str(&with(bad)).unwrap();
+            assert!(
+                matches!(parse_shape("t", &doc), Err(ShapeError::Malformed { .. })),
+                "allowEmpty: {bad} must be refused"
+            );
+        }
+        let nested = "entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: ont:id, node: {allowEmpty: x, properties: []}}\n";
+        let doc: serde_yaml::Value = serde_yaml::from_str(nested).unwrap();
+        assert!(matches!(
+            parse_shape("t", &doc),
+            Err(ShapeError::Malformed { .. })
+        ));
+    }
 
     #[test]
     fn a_conforming_focus_node_yields_no_result() {

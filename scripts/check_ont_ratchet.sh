@@ -57,12 +57,37 @@ BASELINE="$REPO_ROOT/contracts/lint-baseline.json"
 # ── the consumer probe ───────────────────────────────────────────────────────
 # Derived from the binary's own surface, never from a list here. `pv census` is
 # ONT-1; until it exists, `entity:` is a key nothing reads.
-ont_consumer_present() {
-    local pvbin help_out
-    # Test seam for the self-test's direction table only.
-    case "${_ONT_FORCE_CONSUMER:-}" in true) return 0 ;; false) return 1 ;; esac
-    pvbin="$(command -v pv 2>/dev/null || true)"
-    [ -n "$pvbin" ] || return 1
+#
+# WHICH pv (#3679). This probe used to take a bare `pv` off PATH. On intel the
+# fleet pin was clobbered to 0.65.2 (paiml-implement#315), which has no census,
+# so the probe answered "no consumer" about the RUNNER, not the tree, and the
+# guard went RED on `contracts_anchored rose 3 -> 6`. It now resolves pv the way
+# check_fleet_pv_shapes_gate.sh does (#3633): the fleet paths, the pin, and the
+# version proved against the pin. A pv that cannot answer is UNMEASURED, and it
+# names its version: a binary too old to judge is not evidence of absence.
+#
+# Two outcomes, printed on one line:
+#   true                        the pinned pv lists `census`
+#   unmeasured <reason> <what>  no-pin | no-binary | pin-mismatch | incapable
+# There is no `false` outcome. The one binary that could say "absent" is a pinned
+# pv without census, and that says only that the pin predates ONT-1.
+FLEET_PV_CANDIDATES="${FLEET_PV_BIN:-"/opt/fleet-bin/bin/pv:$HOME/.cargo/bin/pv"}"
+FLEET_PV_PIN_FILE="${FLEET_PV_PIN:-"$HOME/.config/fleet/pv.pin"}"
+# resolve_fleet_pv -> the first candidate that is executable; rc 1 if none (same order as #3633)
+resolve_fleet_pv() {
+    local c IFS=:
+    for c in $FLEET_PV_CANDIDATES; do
+        if [ -x "$c" ]; then printf '%s\n' "$c"; return 0; fi
+    done
+    return 1
+}
+ont_consumer_probe() {
+    local pin pvbin ver help_out
+    [ -r "$FLEET_PV_PIN_FILE" ] || { printf 'unmeasured no-pin pin_file=%s\n' "$FLEET_PV_PIN_FILE"; return 0; }
+    pin="$(<"$FLEET_PV_PIN_FILE")"; pin="${pin//[[:space:]]/}"
+    pvbin="$(resolve_fleet_pv)" || { printf 'unmeasured no-binary pin=%s candidates=%s\n' "$pin" "$FLEET_PV_CANDIDATES"; return 0; }
+    ver="$("$pvbin" --version 2>/dev/null || true)"; ver="${ver%%$'\n'*}"; ver="$(awk '{print $2}' <<<"$ver")"
+    [ "$ver" = "$pin" ] || { printf 'unmeasured pin-mismatch pin=%s pv=%s version=%s\n' "$pin" "$pvbin" "${ver:-?}"; return 0; }
     help_out="$("$pvbin" --help 2>&1 || true)"
     # HERE-STRING, never a pipe into a quiet grep. Under pipefail the quiet grep
     # exits on the first match, the producer takes SIGPIPE and returns 141, and the
@@ -70,8 +95,8 @@ ont_consumer_present() {
     # EXISTS. check_no_pipe_into_grep_q.sh caught this line; it then caught the
     # COMMENT that replaced it, because the scanner reads text and a warning that
     # spells the banned construct IS the banned construct as far as it can tell.
-    grep -qE '^[[:space:]]+census[[:space:]]' <<<"$help_out" || return 1
-    return 0
+    if grep -qE '^[[:space:]]+census[[:space:]]' <<<"$help_out"; then printf 'true\n'; return 0; fi
+    printf 'unmeasured incapable pv=%s version=%s (no census subcommand)\n' "$pvbin" "$ver"
 }
 
 # ── the five counters ───────────────────────────────────────────────────────
@@ -252,7 +277,10 @@ measure() { # prints the JSON document
     types="$(count_entity_types)"; extractors="$(count_extractors)"
     bindable="$(count_unanchored_bindable)"
     total="$({ find "$REPO_ROOT/contracts" -name '*.yaml' -type f 2>/dev/null || true; } | wc -l | tr -d ' ')"
-    if ont_consumer_present; then consumer=true; else consumer=false; fi
+    # `true`, or the JSON STRING "unmeasured" -- never `false` from a runner that cannot judge (#3679).
+    # compare_against() skips the consumer rule on it, visibly; --write refuses to stamp it.
+    [ -n "${ONT_PROBE:-}" ] || ONT_PROBE="$(ont_consumer_probe)"
+    case "$ONT_PROBE" in true) consumer=true ;; *) consumer='"unmeasured"' ;; esac
     cat <<JSON
 {
   "_spec": "APR-RELEASE-001 §11.2 — moves only through \`make ont-ratchet\` (ONT R-6)",
@@ -279,7 +307,7 @@ JSON
 # characters is how a green-looking table measures nothing.
 field() { # field JSON_FILE NAME
     { grep -E "\"$2\"" "$1" || true; } | head -1 \
-        | sed -E "s/.*\"$2\"[[:space:]]*:[[:space:]]*//" \
+        | sed -E "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"?//" \
         | sed -E 's/[^A-Za-z0-9._-].*$//'
 }
 
@@ -292,6 +320,10 @@ self_test() {
         else fail=$((fail+1)); printf '  FAIL  %-44s want=%s got=%s\n' "$1" "$3" "$2"; fi
     }
     printf 'check_ont_ratchet self-test\n'
+    # The --write rows below test what --write PRESERVES, so they run against a MEASURED consumer. Left to
+    # the host's real probe, an unconverged box makes --write refuse and every "preserved" row passes on an
+    # untouched file (#3679). The probe's own rows set ONT_PROBE themselves.
+    local ONT_PROBE=true
     printf '{"ont":{"contracts_anchored": 7}}\n' > "$t/j.json"
     row "field reads a number"          "$(field "$t/j.json" contracts_anchored)" "7"
     printf '{"ont":{"consumer_present": false}}\n' > "$t/k.json"
@@ -372,7 +404,7 @@ self_test() {
     dir_row() { # dir_row NAME WANT_RC — measures $r's working tree against origin/main
         local rc=0
         REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" BASELINE_RATCHET_BASE_REF=origin/main \
-            _ONT_FORCE_CONSUMER=true main --check >"$t/dir.out" 2>&1 || rc=$?
+            ONT_PROBE=true main --check >"$t/dir.out" 2>&1 || rc=$?
         row "$1" "$rc" "$2"
         git -C "$r" checkout -q -- . ; git -C "$r" clean -qfd
     }
@@ -390,12 +422,12 @@ self_test() {
     git -C "$r" commit -qam "drop an anchor and restamp the counter in the same commit"
     local rc=0
     REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" BASELINE_RATCHET_BASE_REF=origin/main \
-        _ONT_FORCE_CONSUMER=true main --check >"$t/dir.out" 2>&1 || rc=$?
+        ONT_PROBE=true main --check >"$t/dir.out" 2>&1 || rc=$?
     row "RED: a fall committed WITH a restamped counter" "$rc" 1
     git -C "$r" update-ref -d refs/remotes/origin/main
     rc=0
     REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" BASELINE_RATCHET_BASE_REF=origin/main \
-        _ONT_FORCE_CONSUMER=true main --check >"$t/dir.out" 2>&1 || rc=$?
+        ONT_PROBE=true main --check >"$t/dir.out" 2>&1 || rc=$?
     row "RED: no comparand is UNMEASURED, not unchanged" "$rc" 1
 
     # THE DECIDING ROW: with no consumer, a rise in contracts_anchored is refused.
@@ -406,6 +438,46 @@ self_test() {
     rc=$?
     set -e
     row "anchored rises with NO consumer -> refused" "$rc" "1"
+    # #3679: WHICH pv the consumer probe asks. Stubs only -- a real pv on this box would make the rows
+    # pass here and vacuously everywhere else. `stale` has no census and sits FIRST on PATH (the intel
+    # 0.65.2 condition); `fleet` has census and is the pinned binary. The PATH-probe this replaced reads
+    # `stale` and says false, so reverting the resolution turns the first row RED.
+    mkdir -p "$t/stale" "$t/fleet"
+    printf '#!/bin/sh\ncase "$1" in --version) echo "pv 0.65.2 (stub)";; --help) printf "Commands:\\n  validate  V\\n";; esac\n' > "$t/stale/pv"
+    printf '#!/bin/sh\ncase "$1" in --version) echo "pv 9.9.9 (stub)";; --help) printf "Commands:\\n  validate  V\\n  census    C\\n";; esac\n' > "$t/fleet/pv"
+    chmod +x "$t/stale/pv" "$t/fleet/pv"
+    printf '9.9.9\n' > "$t/pin.ok"; printf '0.65.2\n' > "$t/pin.old"; printf '1.0.0\n' > "$t/pin.other"
+    PATH="$t/stale:$PATH" FLEET_PV_CANDIDATES="$t/fleet/pv" FLEET_PV_PIN_FILE="$t/pin.ok" ONT_PROBE='' \
+        BASELINE="$t/armed.json" measure > "$t/pinned.json"
+    row "stale PATH pv + pinned census pv -> consumer true" "$(field "$t/pinned.json" consumer_present)" "true"
+    row "pinned pv without census -> unmeasured, names version" \
+        "$(FLEET_PV_CANDIDATES="$t/stale/pv" FLEET_PV_PIN_FILE="$t/pin.old" ont_consumer_probe | awk '{print $1, $2, $4}')" \
+        "unmeasured incapable version=0.65.2"
+    row "no pin -> unmeasured no-pin" \
+        "$(FLEET_PV_CANDIDATES="$t/fleet/pv" FLEET_PV_PIN_FILE="$t/nope" ont_consumer_probe | awk '{print $1, $2}')" "unmeasured no-pin"
+    row "pin != binary version -> unmeasured pin-mismatch" \
+        "$(FLEET_PV_CANDIDATES="$t/fleet/pv" FLEET_PV_PIN_FILE="$t/pin.other" ont_consumer_probe | awk '{print $1, $2}')" "unmeasured pin-mismatch"
+    row "no fleet binary -> unmeasured no-binary" \
+        "$(FLEET_PV_CANDIDATES="$t/none/pv" FLEET_PV_PIN_FILE="$t/pin.ok" ont_consumer_probe | awk '{print $1, $2}')" "unmeasured no-binary"
+    PATH="$t/stale:$PATH" FLEET_PV_CANDIDATES="$t/stale/pv" FLEET_PV_PIN_FILE="$t/pin.old" ONT_PROBE='' \
+        BASELINE="$t/armed.json" measure > "$t/unm.json"
+    row "an unmeasured consumer is never written as false" "$(field "$t/unm.json" consumer_present)" "unmeasured"
+    set +e
+    BASELINE="$t/base.json" ONT_PROBE='unmeasured no-pin stub' _ONT_FORCE_ANCHORED=5 _ONT_FORCE_CONSUMER='"unmeasured"' \
+        compare_against "$t/base.json" > "$t/cmp.out" 2>&1
+    rc=$?
+    set -e
+    row "anchored rises, consumer UNMEASURED -> not judged (rc 0)" "$rc" "0"
+    row "...and says UNMEASURED, never silent" "$(grep -c '^UNMEASURED consumer probe' "$t/cmp.out")" "1"
+    # #3569: --write stores DECISIONS only, so an unmeasured probe has nothing to stamp and is no reason
+    # to refuse. It writes, and consumer_present stays out of the file (#3679's worry cannot arise).
+    cp "$t/armed.json" "$t/wu.json"
+    set +e
+    BASELINE="$t/wu.json" ONT_PROBE='unmeasured no-pin stub' main --write >/dev/null 2>&1
+    rc=$?
+    set -e
+    row "--write under an UNMEASURED probe writes decisions (rc 0)" "$rc" "0"
+    row "...and stamps no consumer_present" "$(grep -c '"consumer_present"' "$t/wu.json" || true)" "0"
     printf 'self-test: %s passed, %s failed\n' "$pass" "$fail"
     [ -n "$t" ] && [ -d "$t" ] && rm -rf "$t"
     [ "$fail" -eq 0 ]
@@ -425,9 +497,15 @@ compare_against() { # compare_against BASELINE_FILE -> 0 ok, 1 violation
     bind_now="$(field "$cur" unanchored_but_bindable)"; bind_was="$(field "$base" unanchored_but_bindable)"
     consumer_now="$(field "$cur" consumer_present)"
 
+    # UNMEASURED is fleet state, not a verdict (#3679, the #3633 convention): the runner's pv cannot
+    # say whether the consumer exists, so the consumer rule is not judged here -- and says so. The
+    # ratchet directions below still are.
+    if [ "$consumer_now" = "unmeasured" ]; then
+        printf 'UNMEASURED consumer probe: %s -- the anchored-rise rule is not judged on this runner; fleet state, not a pass\n' "${ONT_PROBE#unmeasured }"
+    fi
     # THE GATE. An anchor nothing reads is decoration, and a counter that rises on
     # decoration is the theater §11 exists to stop. Refuse the rise, name the fix.
-    if [ "$consumer_now" != "true" ] && [ "${anchored_now:-0}" -gt "${anchored_was:-0}" ]; then
+    if [ "$consumer_now" = "false" ] && [ "${anchored_now:-0}" -gt "${anchored_was:-0}" ]; then
         printf 'FAIL  contracts_anchored rose %s -> %s while consumer_present=false.\n' "${anchored_was:-0}" "${anchored_now:-0}"
         printf '      `pv census` does not exist, nothing in either contracts crate reads\n'
         printf '      `entity:`, and `pv validate` calls such a contract VALID by ignoring\n'

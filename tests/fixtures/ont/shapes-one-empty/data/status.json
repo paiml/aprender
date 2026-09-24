@@ -1,0 +1,1 @@
+{"schema":"tool/status-v1","ok":true,"push":{"state":"ok","attempts":0},"findings":[{"sensor":"s-self","open":1},{"sensor":"s-drift","open":0}]}

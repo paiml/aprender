@@ -42,7 +42,10 @@ models:
   qwen3.5-0.8b@cpu-vs-llama.cpp:
     compute_class: cpu
     host: intel                      # scripts/perf-matrix.yaml:138-143 — the only cpu-class host with a runner
-    comparator: 'llama.cpp [X], CPU build, pin 39173bcac (scripts/llama_pin.toml)'
+    # The pin of record is scripts/llama_pin.toml's build_commit (d1d3c3396 since 2026-09-15). The
+    # [U] basis below was measured 2026-09-15 against the PREVIOUS pin, 39173bcac, and says so; a
+    # citation of a superseded pin is valid only as dated history (#3741).
+    comparator: 'llama.cpp [X], CPU build, at scripts/llama_pin.toml build_commit (the basis below was measured against the previous pin 39173bcac, 2026-09-15)'
     record: evidence/parity/l0-1/intel/RECORD.md
     # min_cosine: ABSENT ON PURPOSE. Writing any number here without the four
     # pairs below would be a fabricated basis. judge() exits 2 while it is absent.
