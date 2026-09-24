@@ -243,10 +243,21 @@ def cmd_ask(args):
     brief = open(args.brief).read() if args.brief else sys.stdin.read()
     messages = [{"role": "user", "content": brief}]
     rec = {"lane": "apr-dogfood-4252", "advisory": True, "counts": False,
+           "timeout_s": args.timeout,
            "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "attempts": []}
+    # ONE budget for the whole ask, both hosts (cop 2026-09-24: the lane never hangs the
+    # quorum). A SIGSTOPped server (lambda's load watchdog) blocks a read forever, so the
+    # per-host timeouts are backed by an alarm on the whole call.
+    deadline = time.monotonic() + args.timeout
+    remaining = lambda: max(1, int(deadline - time.monotonic()))
+
+    def expired(*_):
+        raise TimeoutError(f"lane budget {args.timeout}s spent")
+    signal.signal(signal.SIGALRM, expired)
+    signal.alarm(args.timeout)
     if not args.force_lambda:
         try:
-            dt, resp, prov = gx10_ask(messages, args.max_tokens, args.timeout)
+            dt, resp, prov = gx10_ask(messages, args.max_tokens, max(1, remaining() - 30))
             # The device flag is intent; `used_gpu` on the response is the mechanism. A
             # gx10 answer without it is labelled CPU, never CUDA (#4089).
             used = resp.get("used_gpu")
@@ -261,18 +272,19 @@ def cmd_ask(args):
         except Exception as e:  # yield, stop mid-request, ssh loss: all pass to lambda
             rec["attempts"].append({"host": "gx10", "ok": False, "error": str(e)[:400]})
     if "served_by" not in rec:
-        h = health(LAMBDA_URL)
         try:
-            dt, resp = post_chat(LAMBDA_URL, messages, args.max_tokens, args.timeout)
+            h = health(LAMBDA_URL)
+            dt, resp = post_chat(LAMBDA_URL, messages, args.max_tokens, remaining())
             rec["attempts"].append({"host": "lambda", "ok": True, "wall_s": dt})
             rec.update({"served_by": "lambda-cpu", "response": resp,
                         "provenance": {"host": "lambda", "health": h,
                                        "unit": "apr-dogfood-4252.service (apr-dogfood.slice)"}})
         except Exception as e:  # advisory lane: no verdict is a receipt, never a crash
             rec["attempts"].append({"host": "lambda", "ok": False, "error": str(e)[:400]})
+    signal.alarm(0)
     rec["finished"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     if "served_by" not in rec:
-        rec.update({"served_by": None, "verdict": "NO-VERDICT"})
+        rec.update({"served_by": None, "verdict": "unavailable"})
         print(json.dumps(rec, indent=1))
         return 2
     rec["text"] = rec["response"]["choices"][0]["message"]["content"]
@@ -294,7 +306,8 @@ def main():
     a = sub.add_parser("ask")
     a.add_argument("--brief")
     a.add_argument("--max-tokens", type=int, default=512)
-    a.add_argument("--timeout", type=int, default=1800)
+    a.add_argument("--timeout", type=int, default=120,
+                   help="hard budget for the whole ask; on expiry the lane is 'unavailable'")
     a.add_argument("--force-lambda", action="store_true")
     sub.add_parser("need")
     args = ap.parse_args()
