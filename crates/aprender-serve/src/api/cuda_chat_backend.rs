@@ -179,12 +179,11 @@ async fn try_cuda_backend(
             tokio::task::spawn_blocking(move || {
                 let mut cuda_model = cuda_model_clone.write().expect("operation failed");
                 let generate_start = std::time::Instant::now();
-                let result = cuda_model.generate_gpu_resident_streaming(
-                    &prompt_ids_clone,
-                    &q_config_clone,
-                    // Stops when the client goes away — see `streaming_token_sink`.
-                    crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics),
-                );
+                // Stops when the client goes away — see `streaming_token_sink`.
+                let sink =
+                    crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics);
+                let result =
+                    dense_cuda_turn(&mut cuda_model, &prompt_ids_clone, &q_config_clone, sink);
                 // Taken under the SAME write lock the request ran under, so the
                 // split belongs to this request and to no other.
                 let _ = timing_tx.send(phase_split(&mut cuda_model, generate_start));
@@ -245,7 +244,7 @@ async fn try_cuda_backend(
         // Fallback: direct RwLock path (serialized, no batch scheduler)
         let mut cuda_model = cuda_model_lock.write().expect("operation failed");
         let generate_start = std::time::Instant::now();
-        let generated = match cuda_model.generate_gpu_resident(&prompt_ids, &q_config) {
+        let generated = match dense_cuda_turn(&mut cuda_model, &prompt_ids, &q_config, |_| true) {
             Ok(g) => g,
             Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
         };
@@ -287,6 +286,29 @@ async fn try_cuda_backend(
 /// request's number. `decode_ms` is left `None` in that case too — one measured
 /// phase is not a phase split, and `PhaseTimings::to_timings` refuses to build
 /// a wire block from it.
+/// #4268: one serve request's dense CUDA turn, run on the one engine over the
+/// model borrowed under the request's write lock. A GPU failure is an error,
+/// as it always was here: serve has no CPU copy to fall back to. `--trace`
+/// keeps the instrumented loop. Stale phase timings are cleared first so
+/// [`phase_split`] reads this request's.
+#[cfg(feature = "cuda")]
+fn dense_cuda_turn(
+    cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
+    prompt: &[u32],
+    config: &crate::gguf::QuantizedGenerateConfig,
+    mut on_token: impl FnMut(u32) -> bool,
+) -> crate::error::Result<Vec<u32>> {
+    if config.trace {
+        return cuda_model.generate_gpu_resident_streaming(prompt, config, on_token);
+    }
+    let _ = cuda_model.take_phase_timings();
+    let mut session = crate::session::Session::new(
+        crate::gguf::dense_session_borrowed::BorrowedCudaForward::new(cuda_model),
+    );
+    crate::gguf::dense_session::dense_stream(&mut session, prompt, config, &mut on_token)
+        .map(|(tokens, _)| tokens)
+}
+
 #[cfg(feature = "cuda")]
 fn phase_split(
     cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
@@ -298,6 +320,16 @@ fn phase_split(
         phases.decode_ms = Some((total_ms - prefill_ms).max(0.0));
     }
     phases
+}
+
+/// #4268: one request's dense CPU session over the shared model. Its KV cache
+/// lives for the request, as `generate_with_cache`'s did.
+fn dense_cpu_session(
+    model: &Arc<crate::gguf::OwnedQuantizedModel>,
+) -> crate::gguf::dense_session::DenseSession {
+    crate::gguf::dense_session::DenseSession::new(
+        crate::gguf::dense_session::DenseForward::cpu(Arc::clone(model)),
+    )
 }
 
 /// Quantized model (GGUF serve mode) backend with true streaming.
@@ -352,12 +384,23 @@ fn try_quantized_backend(
         let sink_metrics = state.metrics.clone();
 
         tokio::task::spawn_blocking(move || {
-            let result = quantized_model_clone.generate_with_cache_streaming(
-                &prompt_ids_clone,
-                &q_config_clone,
-                // Stops when the client goes away — see `streaming_token_sink`.
-                crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics),
-            );
+            // Stops when the client goes away — see `streaming_token_sink`.
+            let mut sink =
+                crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics);
+            let result = if q_config_clone.trace {
+                quantized_model_clone
+                    .generate_with_cache_streaming(&prompt_ids_clone, &q_config_clone, sink)
+                    .map(drop)
+            } else {
+                // #4268: the dense CPU turn runs on the one engine.
+                crate::gguf::dense_session::dense_stream(
+                    &mut dense_cpu_session(&quantized_model_clone),
+                    &prompt_ids_clone,
+                    &q_config_clone,
+                    &mut sink,
+                )
+                .map(drop)
+            };
             if let Err(e) = result {
                 let _ = tx.blocking_send(Err(e.to_string()));
             }
@@ -379,7 +422,19 @@ fn try_quantized_backend(
     }
 
     // Non-streaming quantized
-    let generated = match quantized_model.generate_with_cache(&prompt_ids, &q_config) {
+    // #4268: the dense CPU turn runs on the one engine; `--trace` keeps the
+    // instrumented loop.
+    let generated = if q_config.trace {
+        quantized_model.generate_with_cache(&prompt_ids, &q_config)
+    } else {
+        crate::gguf::dense_session::dense_turn(
+            &mut dense_cpu_session(quantized_model),
+            &prompt_ids,
+            &q_config,
+        )
+        .map(|(tokens, _)| tokens)
+    };
+    let generated = match generated {
         Ok(g) => g,
         Err(e) => return Some(fail_response(state, crate::api::generation_error_status(&e), e)),
     };
@@ -1326,3 +1381,7 @@ mod qwen3_moe_dispatch_guard_tests {
         assert!(!is_qwen3_moe_arch(""));
     }
 }
+
+#[cfg(all(test, feature = "gpu"))]
+#[path = "tests/dense_session_4268.rs"]
+mod dense_session_4268;
