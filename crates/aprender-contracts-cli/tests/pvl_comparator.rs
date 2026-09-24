@@ -209,5 +209,12 @@ fn the_committed_comparator_script_matches_the_row_shape() {
             && !text.contains("hash (canon"),
         "the statement hash must be sha256 over canon, not Lean's 64-bit hash"
     );
+    // A failed import is the root cause and `processCommands` drops the header's messages: measured on the
+    // lambda run of EV-7a's 39 files, 19 withheld files printed only `Unknown identifier ℝ`, never the missing
+    // `.olean`. The header's errors are printed and the file withheld before any command runs.
+    assert!(
+        text.contains("let hdr := messages.toList.filter (·.severity == .error)"),
+        "Comparator.lean must print processHeader's errors (a missing .olean) and withhold the file"
+    );
     assert_eq!(SORRY_AXIOM, "sorryAx");
 }

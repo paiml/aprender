@@ -107,6 +107,12 @@ def elabFile (path : System.FilePath) : IO (Option Environment) := do
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
   let opts := Options.empty.setBool `autoImplicit false
   let (env, messages) ← processHeader header opts messages inputCtx (trustLevel := 1024)
+  -- A failed import (an .olean never built) is the ROOT cause; the command errors after it are its echo.
+  -- `processCommands` does not carry the header's messages, so they are printed here or never.
+  let hdr := messages.toList.filter (·.severity == .error)
+  if !hdr.isEmpty then
+    for m in hdr do IO.eprint (← m.toString (includeEndPos := true))
+    return none
   let s ← IO.processCommands inputCtx parserState (Command.mkState env messages opts)
   let msgs := s.commandState.messages
   let errs := msgs.toList.filter (·.severity == .error)
