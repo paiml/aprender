@@ -1639,6 +1639,25 @@ pub fn run_qwen35_generate_dispatch(
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     no_gpu: bool,
 ) -> Result<(Vec<u32>, bool)> {
+    run_qwen35_generate_dispatch_timed(mapped, base, input_tokens, gen_config, no_gpu)
+        .map(|(tokens, used_gpu, _setup_ms)| (tokens, used_gpu))
+}
+
+/// [`run_qwen35_generate_dispatch`] that also returns `setup_ms`: time inside
+/// the dispatch that is not generation — the CUDA build and the F2 guard on
+/// the GPU path, or the failed GPU attempt before a CPU fallback. A caller that
+/// reports generation-only timing (`inference_ms`) subtracts it.
+///
+/// # Errors
+/// As [`run_qwen35_generate_dispatch`].
+pub fn run_qwen35_generate_dispatch_timed(
+    mapped: &crate::gguf::MappedGGUFModel,
+    base: &OwnedQuantizedModel,
+    input_tokens: &[u32],
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+    no_gpu: bool,
+) -> Result<(Vec<u32>, bool, f64)> {
+    let dispatch_start = std::time::Instant::now();
     let route = qwen35_route(no_gpu, cfg!(feature = "cuda"));
     if let Some(notice) = qwen35_route_notice(route) {
         eprintln!("{notice}");
@@ -1646,14 +1665,15 @@ pub fn run_qwen35_generate_dispatch(
     #[cfg(feature = "cuda")]
     if route == Qwen35Route::Gpu {
         match run_qwen35_generate_gpu(mapped, base, input_tokens, gen_config) {
-            Ok(tokens) => return Ok((tokens, true)),
+            Ok((tokens, setup_ms)) => return Ok((tokens, true, setup_ms)),
             Err(reason) => {
                 eprintln!("{QWEN35_GPU_FALLBACK_PREFIX}, falling back to CPU: {reason}");
             },
         }
     }
+    let setup_ms = dispatch_start.elapsed().as_secs_f64() * 1000.0;
     let tokens = run_qwen35_generate(mapped, base, input_tokens, gen_config)?;
-    Ok((tokens, false))
+    Ok((tokens, false, setup_ms))
 }
 
 /// Positions the F2 hybrid guard forwards on both backends before it will let
@@ -1662,7 +1682,8 @@ pub fn run_qwen35_generate_dispatch(
 const QWEN35_F2_PROBE_MAX: usize = 64;
 
 /// The GPU twin of [`run_qwen35_generate`]: build the hybrid on CUDA, prove it
-/// against its own CPU forward, then decode.
+/// against its own CPU forward, then decode. Returns the tokens and the setup
+/// milliseconds spent before the decode started.
 ///
 /// `Err` is a fallback reason, never a user-visible failure — the caller prints
 /// it and runs the CPU forward.
@@ -1672,7 +1693,8 @@ fn run_qwen35_generate_gpu(
     base: &OwnedQuantizedModel,
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
-) -> std::result::Result<Vec<u32>, String> {
+) -> std::result::Result<(Vec<u32>, f64), String> {
+    let setup_start = std::time::Instant::now();
     if input_tokens.is_empty() {
         return Err("the prompt is empty".to_string());
     }
@@ -1705,7 +1727,10 @@ fn run_qwen35_generate_gpu(
     if !f2.accepted {
         return Err("the F2 CPU-parity guard rejected the GPU path".to_string());
     }
-    qwen35_gpu_decode(&mut gpu, input_tokens, gen_config)
+    // Everything above is setup (layer load, CUDA build, F2 guard); only the
+    // decode below is generation.
+    let setup_ms = setup_start.elapsed().as_secs_f64() * 1000.0;
+    qwen35_gpu_decode(&mut gpu, input_tokens, gen_config).map(|tokens| (tokens, setup_ms))
 }
 
 /// Prefill + decode on the GPU, with the token choice

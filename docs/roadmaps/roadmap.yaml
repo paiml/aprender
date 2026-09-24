@@ -21527,3 +21527,23 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-4342
+  github_issue: 4342
+  item_type: task
+  title: 'qwen35 --gpu tok/s counts the CUDA build + F2 guard as generation (inference_ms not generation-only) — sibling of #3714'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-1c
+  created: 2026-09-25T00:30:00Z
+  updated: 2026-09-25T00:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'inference_ms for a qwen35 --gpu run excludes the layer load, the CUDA build and the F2 guard (batch.rs:51 contract), as the qwen3moe path does since #3714'
+  - 'Measured on lambda: apr run --gpu --json on Qwen3.5-4B-Q4_K_M reports a tok/s consistent with the decode wall time, before (2d1978aad) and after'
+  - 'apr chat keeps run_qwen35_generate_dispatch with an unchanged signature'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Found by aprender-1c while measuring #3714 (cop assignment 2026-09-24). Fix: run_qwen35_generate_dispatch_timed returns setup_ms; inference_result subtracts it.'
