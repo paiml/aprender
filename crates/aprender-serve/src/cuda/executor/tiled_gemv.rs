@@ -278,13 +278,13 @@ impl CudaExecutor {
         // Load kernel module
         let kernel_type = KernelType::Q8Quantize { n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("q8_quantize_{}", n);
+        let cache_key = module_key!(self, "q8_quantize_{}", n);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         // Q8_1 format: 36 bytes per 32 values
@@ -366,13 +366,13 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         let kernel_type = KernelType::Q8Quantize { n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("q8_quantize_{}", n);
+        let cache_key = module_key!(self, "q8_quantize_{}", n);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let num_blocks = (n + 31) / 32;
@@ -398,7 +398,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),

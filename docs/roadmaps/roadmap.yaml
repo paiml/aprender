@@ -21626,6 +21626,25 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4215
+  github_issue: 4215
+  item_type: task
+  title: 'Qwen3.5 CUDA greedy decode: persistent embedding buffer, GPU argmax, no format!/Vec on the launch path'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T08:28:19Z
+  updated: 2026-09-24T20:45:00Z
+  spec: null
+  acceptance_criteria:
+  - 'A steady-state greedy decode token makes 0 host heap allocations, 0 device allocations and downloads exactly the 4-byte token id (counted, not asserted by reading).'
+  - 'Greedy on the device is token-identical to the CPU argmax of the downloaded logits at temperature 0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Scope is #4215 (a)(b)(c) from /mnt/nvme-raid0/tmp/alt0693/REPORT.md §A. Measured +2% at 850 on 4B (78.3 -> 79.9 tok/s); the 0.58x gap to ollama is NOT closed by this slice.'
 - id: PMAT-4242
   github_issue: 4242
   item_type: task
