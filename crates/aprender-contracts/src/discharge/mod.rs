@@ -156,10 +156,14 @@ pub fn escapes(tree: &Tree) -> Vec<Escape> {
 }
 
 fn owner(decls: &[lex::Decl], i: usize, kind: &str) -> String {
+    // `k` splits the declarations into those whose keyword is at or before token `i` and those after it. An
+    // `axiom` token IS its declaration's keyword (at == i), so it lands on the left: the left side's last entry
+    // is the one a body escape sits in or an `axiom` declares, and the right side's first is the one a modifier
+    // precedes.
+    let k = decls.partition_point(|d| d.at <= i);
     let pick = match kind {
-        "sorry" | "admit" | "native_decide" => decls.iter().rev().find(|d| d.at < i),
-        "axiom" => decls.iter().find(|d| d.at == i),
-        _ => decls.iter().find(|d| d.at > i),
+        "implemented_by" | "extern" | "unsafe" | "partial" => decls.get(k),
+        _ => k.checked_sub(1).and_then(|p| decls.get(p)),
     };
     pick.map_or_else(|| "<none>".to_string(), |d| d.fqn.clone())
 }
