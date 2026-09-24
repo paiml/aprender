@@ -741,6 +741,19 @@ if [ "$t_rc" -ne 0 ] && grep -q 'the plan held 2 guard(s) and 0 were accounted' 
 else
     fail_row "32: a plan truncated in place" "rc=$t_rc; tail: $(tail -3 <<<"$t_out" | tr '\n' '|')"
 fi
+# 33 (gemini review lane 1): row 32's mutant -- without the #4108 check the truncated plan goes back to exit 0
+if ! vmutant_of "$GUARD_TREE" "$tfix/scripts/guard_tree.sh"; then
+    fail_row "33: mutant without the #4108 check" "vmutant_of did not produce the intended mutant (no-op or truncated)"
+else
+    tm_out="$(cd "$tfix" && bash scripts/guard_tree.sh 2>&1)"
+    tm_rc=$?
+    if [ "$tm_rc" -eq 0 ] && ! grep -q 'accounted' <<<"$tm_out"; then
+        pass_row "33: mutant without the #4108 check passes the truncated plan -- row 32 can fail"
+    else
+        fail_row "33: mutant without the #4108 check" "expected the vacuous exit 0; rc=$tm_rc"
+    fi
+fi
+cp "$GUARD_TREE" "$tfix/scripts/guard_tree.sh"
 
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then
