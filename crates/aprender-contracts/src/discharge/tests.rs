@@ -115,6 +115,11 @@ fn only_a_label_not_in_the_set_fails_and_by_name() {
     let mut ok = Report::default();
     judge_labels(&now, Some(&now), &mut ok);
     assert!(!ok.reject);
+    assert!(
+        !ok.lines.iter().any(|l| l.starts_with("RESOLVED-LABEL")),
+        "nothing resolved, nothing reported: {:?}",
+        ok.lines
+    );
 }
 
 #[test]
@@ -162,6 +167,8 @@ fn render_pins_only_the_cone_and_quotes_odd_components() {
     assert!(!s.contains("`P.D.u"));
     assert!(s.contains("1 pinned; 1 bound outside"));
     assert!(s.contains("[`propext, `P.«1x»]"));
+    assert_eq!(name_lit("A._x.y'"), "`A._x.y'");
+    assert_eq!(name_lit("A.x-y"), "`A.«x-y»");
     assert!(s.contains(
         "/-- info: 'P.D.t' depends on axioms: [propext] -/\n#guard_msgs in #print axioms P.D.t"
     ));

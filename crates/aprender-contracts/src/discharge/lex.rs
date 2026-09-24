@@ -5,20 +5,16 @@
 /// `src` with every comment (`--` to end of line, `/- … -/` nested) and string/char literal replaced by spaces.
 #[must_use]
 pub fn blank(src: &str) -> String {
+    // A `for` over the chars, not an index loop: no mutation of the stepping can hang the lexer (a hung mutant is
+    // a timeout, which the mutants gate counts as a survivor).
     let c: Vec<char> = src.chars().collect();
     let mut out = String::with_capacity(src.len());
-    let mut i = 0;
-    while i < c.len() {
-        let skip = literal_or_comment_len(&c, i, out.chars().next_back());
-        if skip == 0 {
-            out.push(c[i]);
-            i += 1;
-            continue;
+    let mut until = 0;
+    for (i, &ch) in c.iter().enumerate() {
+        if i >= until {
+            until = i + literal_or_comment_len(&c, i, out.chars().next_back());
         }
-        for &ch in &c[i..(i + skip).min(c.len())] {
-            out.push(if ch == '\n' { '\n' } else { ' ' });
-        }
-        i += skip;
+        out.push(if i >= until || ch == '\n' { ch } else { ' ' });
     }
     out
 }
@@ -250,6 +246,25 @@ mod tests {
             texts("def x' := 'a'\ndef y := '\"'\n"),
             vec!["def", "x'", "def", "y"]
         );
+    }
+
+    #[test]
+    fn a_prime_after_an_identifier_never_opens_a_char_literal() {
+        // `x'y'` is one Lean name; read as `x` + the literal `'y'` it would lose `y`.
+        assert_eq!(blank("x'y' z"), "x'y' z");
+        assert_eq!(blank("f 'y' z"), "f     z");
+    }
+
+    #[test]
+    fn a_line_comment_ends_at_its_own_newline_wherever_it_starts() {
+        assert_eq!(blank("ab -- c\nd e\n"), "ab     \nd e\n");
+    }
+
+    #[test]
+    fn an_unterminated_block_comment_blanks_to_the_end_without_panicking() {
+        assert_eq!(blank("a /- b\nc"), "a     \n ");
+        assert_eq!(blank("a /-"), "a   ");
+        assert_eq!(blank("/- /- -/ x -/ y"), "              y");
     }
 
     #[test]
