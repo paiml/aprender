@@ -86,7 +86,7 @@
       "findings": [],
       "executor": "claude-code Agent lane (agent ac858d80d1369911b), brief docs/audits/quorum-PMAT-4036.prompt.md for this head",
       "brief_sha256": "b5525af0fe55a3971752491c5086457a8b55dbf7c90fc99b7a73c68d486f953e",
-      "brief_bytes": 107000
+      "brief_bytes": 107148
     }
   ],
   "dissent": [],
