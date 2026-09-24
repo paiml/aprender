@@ -15,6 +15,8 @@ impl ChatSession {
                     let tokens = cuda_model
                         .generate(prompt, config.max_tokens, eos_id)
                         .map_err(|e| format!("SafeTensors CUDA generate failed: {e}"))?;
+                    // #3794: record the backend that actually answered.
+                    self.generated_on_gpu = true;
 
                     if config.trace {
                         let new_tokens = &tokens[prompt.len()..];
@@ -60,6 +62,8 @@ impl ChatSession {
                 temperature: config.temperature,
                 top_p: config.top_p,
                 top_k: 0,
+                // #3760: the sampler draws now; no seed is plumbed from this caller.
+                seed: realizar::apr_transformer::DEFAULT_SEED,
                 repetition_penalty: 1.0,
                 trace: config.trace,
             stop_tokens: vec![],
@@ -92,6 +96,11 @@ impl ChatSession {
         /// `run_repl`, to decide the command's exit code.
         pub(super) fn had_generate_error(&self) -> bool {
             self.had_generate_error
+        }
+
+        /// #3794: did an accelerator actually answer any turn this session?
+        pub(super) fn generated_on_gpu(&self) -> bool {
+            self.generated_on_gpu
         }
 
         #[allow(dead_code)]

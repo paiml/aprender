@@ -44,6 +44,8 @@ pub(crate) fn run(
     split_prompt: bool,
     // #3672: apply the model's chat template once, in realizar; the prompt is raw text.
     chat_template: bool,
+    // #3723: `--thinking on|off` (None: the production default), applied in realizar.
+    thinking: Option<bool>,
 ) -> Result<()> {
     // GH-516: Warn on --language/--task since whisper integration is not yet wired up
     if language.is_some() {
@@ -52,6 +54,12 @@ pub(crate) fn run(
     if task.is_some() {
         eprintln!("Warning: --task is not yet supported for inference. Flag ignored.");
     }
+
+    // #3817: refuse BEFORE the load when the user forced an accelerator this
+    // build has no forward for. Placed above every print, so a refused run emits
+    // no banner, no `Source:` line and no generation — the caller sees a named
+    // refusal and nothing that looks like a result.
+    refuse_forced_accelerator_without_forward(source, accel_forced)?;
 
     // GH-240: Suppress header/source in JSON mode for clean machine-parseable output
     if output_format != "json" {
@@ -91,6 +99,7 @@ pub(crate) fn run(
         output_format: output_format.to_string(),
         force: false,
         no_gpu,
+        accel_forced,
         offline,
         benchmark,
         verbose,
@@ -108,6 +117,7 @@ pub(crate) fn run(
         repeat_last_n,
         split_prompt,
         chat_template,
+        thinking,
         stream,
     };
 
@@ -192,6 +202,87 @@ fn reconcile_and_emit(
         )?;
     }
     reconciled
+}
+
+/// #3817: the refusal text for a forced accelerator this build has no forward
+/// for, or `None` when there is nothing to refuse.
+///
+/// Pure, so the rule is testable without a model on disk. `architecture` is the
+/// model's declared `general.architecture`; `None` means we could not read one
+/// (not a GGUF, a hub id rather than a path, an unreadable header), and an
+/// unknown architecture is never refused — this predicate lists what we know we
+/// did NOT build, never what we support.
+pub(crate) fn forced_accelerator_refusal(
+    accel_forced: bool,
+    architecture: Option<&str>,
+) -> Option<String> {
+    if !accel_forced {
+        return None;
+    }
+    realizar::capability::no_cuda_forward_reason(architecture?)
+}
+
+/// Read the declared architecture from a model path without loading it.
+///
+/// **A bounded PREFIX read, deliberately not an mmap.** The first draft called
+/// `MappedGGUFModel::from_path`, which maps with `MAP_POPULATE` (PMAT-304,
+/// matching llama.cpp) — that synchronously pre-faults *every* page. Measured on
+/// `Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf`: the refusal was correct (rc 12,
+/// nothing on stdout) and still touched **18 GB**, maxRSS 18,155,520 kB, 2.2 s
+/// warm and 8.8 s cold. A refusal that faults in the file it is refusing to load
+/// is not a pre-load refusal; it is the load, followed by a message.
+///
+/// GGUF places the header, the metadata KVs and the tensor INFO table before the
+/// tensor data, so a prefix carries `general.architecture`. The probe grows
+/// because a 579-tensor MoE has a larger info table than a 1.5B dense model, and
+/// stops at 64 MiB: past that we are reading weights, and an unread architecture
+/// is answered `None` — no refusal — rather than by paying for the whole file.
+fn declared_architecture(source: &str) -> Option<String> {
+    use std::io::Read;
+
+    let path = Path::new(source);
+    if !path.is_file() {
+        return None;
+    }
+    for prefix in [1_usize << 20, 8 << 20, 64 << 20] {
+        let Ok(file) = std::fs::File::open(path) else {
+            return None;
+        };
+        let mut buf = Vec::with_capacity(prefix.min(1 << 22));
+        if file.take(prefix as u64).read_to_end(&mut buf).is_err() {
+            return None;
+        }
+        let read = buf.len();
+        if let Ok(reader) = aprender::format::gguf::reader::GgufReader::from_bytes(buf) {
+            if let Some(arch) = reader.architecture() {
+                return Some(arch);
+            }
+        }
+        // A prefix that did not reach the end of the file may simply have been
+        // too short for the metadata; one that did is as much as there is.
+        if read < prefix {
+            return None;
+        }
+    }
+    None
+}
+
+/// #3817: `apr run --gpu` on an architecture with no CUDA forward refuses by
+/// name, before loading, with exit 12 (`NotImplemented` — "this build cannot do
+/// that", distinct from 14, which means "it tried and fell back").
+///
+/// # Errors
+/// [`crate::error::CliError::NotImplemented`] naming the architecture, the
+/// ticket and the release the path lands in.
+fn refuse_forced_accelerator_without_forward(source: &str, accel_forced: bool) -> Result<()> {
+    if !accel_forced {
+        return Ok(());
+    }
+    let arch = declared_architecture(source);
+    match forced_accelerator_refusal(true, arch.as_deref()) {
+        Some(reason) => Err(CliError::NotImplemented(reason)),
+        None => Ok(()),
+    }
 }
 
 /// Does [`print_run_output`] emit a MACHINE-readable document for these flags?
@@ -539,21 +630,54 @@ fn build_final_json(
         "completion_tokens": result.usage.completion_tokens,
         "finish_reason": result.usage.finish_reason,
         "context_length": result.usage.context_length,
+        // #3981: `tok_per_sec` is over generation when these are present. `inference_time_ms`
+        // is the whole window (load, upload, F2, generation), kept for compatibility.
+        "generation_ms": result.usage.generation_ms,
+        "setup_ms": result.usage.setup_ms,
         // #3602: `used_gpu: false` alone collapses two different outcomes — "no
         // accelerator was asked for" and "one was asked for, attempted, and
         // REFUSED at runtime". A consumer cannot tell a CPU run from a rejected
         // GPU run, which is how a 33.6 s fallback was read as a GPU timing.
         //
         // `requested` is what the USER asked for, `ran` is what executed, and
-        // `fell_back` is true only when those disagree. The rejection's REASON
-        // (e.g. `cosine 0.4153` at a named position) is on stderr but not yet
-        // here: it is produced inside realizar's F2 gate and no channel carries
-        // it to the CLI. Adding one is the #3606-shaped follow-up named in the
-        // PR — NOT silently approximated with a guess.
+        // `fell_back` is whether an accelerator was tried and did not produce
+        // the answer. The rejection's REASON (e.g. `cosine 0.4153` at a named
+        // position) is on stderr but not yet here: it is produced inside
+        // realizar's F2 gate and no channel carries it to the CLI. Adding one is
+        // the #3606-shaped follow-up named in the PR — NOT silently
+        // approximated with a guess.
+        //
+        // #3826: `fell_back` used to be `accel_forced && used_gpu == Some(false)`
+        // — it required the user to have ASKED. A bare `apr run` on a cuda build
+        // attempts CUDA without being asked, and when the F2 gate refuses that
+        // result (cosine 0.4153 on qwen2.5-coder-0.5b, #3804/#3602) the run fell
+        // back to CPU and reported `"fell_back": false`. Its own stderr said
+        // `attempting fallback` on the same run, so the machine-readable surface
+        // contradicted the human-readable one and a consumer counting fallbacks
+        // saw none, ever.
+        //
+        // Dropping `accel_forced` alone would be the opposite error: `used_gpu`
+        // records whether the GPU PRODUCED tokens, so every CPU-only run would
+        // then claim a fallback. `gpu_attempted` is the missing term — set by
+        // whichever path ENTERS a GPU backend, before its result is judged.
+        //
+        // So asking is SUFFICIENT but not NECESSARY, and the two terms are a
+        // disjunction rather than a replacement. `accel_forced` alone still
+        // carries #3602 — a requested GPU that never ran is a fallback even
+        // when nothing reported entering one. Making `gpu_attempted` the sole
+        // term would have silently retired that, which is how this was caught:
+        // `the_json_distinguishes_a_deliberate_cpu_run_from_a_rejected_gpu_run`
+        // went RED against the narrower predicate.
+        //
+        // `used_gpu == Some(false)`, not `!= Some(true)`: absent is Unknown,
+        // never Fail, so a backend that did not report has not reported a
+        // fallback. That is `reconcile_accelerator`'s own rule, and the JSON
+        // must not contradict the check that runs beside it.
         "backend": {
             "requested": if accel_forced { "gpu" } else { "default" },
             "ran": if result.used_gpu == Some(true) { "gpu" } else { "cpu" },
-            "fell_back": accel_forced && result.used_gpu == Some(false),
+            "fell_back": result.used_gpu == Some(false)
+                && (accel_forced || result.gpu_attempted == Some(true)),
         },
     })
 }

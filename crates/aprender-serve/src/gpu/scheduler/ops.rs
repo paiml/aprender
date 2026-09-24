@@ -161,25 +161,18 @@ pub(crate) fn layer_norm_static(
     output
 }
 
-/// Top-k sampling with temperature (returns highest prob token in top-k for determinism)
-pub(super) fn sample_topk(logits: &[f32], temperature: f32, top_k: usize) -> usize {
+/// Top-k sampling with temperature: one seeded draw through the shared sampler.
+///
+/// #3760: this sorted by probability and returned the FIRST entry, the argmax, so
+/// GpuModel "top-k sampling" never drew and `temperature`/`top_k` changed nothing.
+pub(super) fn sample_topk(
+    logits: &[f32],
+    temperature: f32,
+    top_k: usize,
+    rng: &mut rand::rngs::StdRng,
+) -> usize {
     contract_pre_temperature!();
-    // Apply temperature
-    let scaled: Vec<f32> = logits.iter().map(|&x| x / temperature).collect();
-
-    // Softmax with numerical stability
-    let max_logit = scaled.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let exp_logits: Vec<f32> = scaled.iter().map(|&x| (x - max_logit).exp()).collect();
-    let sum: f32 = exp_logits.iter().sum();
-    let probs: Vec<f32> = exp_logits.iter().map(|&x| x / sum).collect();
-
-    // Get top-k indices by sorting
-    let mut indexed: Vec<(usize, f32)> = probs.iter().enumerate().map(|(i, &p)| (i, p)).collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    // Truncate to top_k and return highest probability token (deterministic)
-    indexed.truncate(top_k);
-    let result = indexed.first().map_or(0, |&(idx, _)| idx);
+    let result = crate::sampling::draw_seeded(logits, temperature, top_k, 1.0, rng) as usize;
     contract_post_temperature!(&result);
     result
 }
@@ -242,7 +235,7 @@ mod tests {
     #[test]
     fn test_sample_topk_deterministic() {
         let logits = vec![1.0, 5.0, 2.0, 0.5];
-        let result = sample_topk(&logits, 1.0, 1);
+        let result = sample_topk(&logits, 1.0, 1, &mut rand::SeedableRng::seed_from_u64(1));
         assert_eq!(result, 1); // Highest logit is at index 1
     }
 

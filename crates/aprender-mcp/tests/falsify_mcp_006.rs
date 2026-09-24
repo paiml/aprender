@@ -1,3 +1,4 @@
+#![cfg(feature = "apr-tools")] // apr's own tools (PMAT-3954: they exist only under this feature)
 //! FALSIFY-MCP-006 — `notifications/cancelled` during `apr.run` stops the
 //! spawned subprocess within the grace window and returns a partial result.
 //!

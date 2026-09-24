@@ -163,7 +163,7 @@ fn try_quantized_generate(
         .generate_with_cache(&prompt_ids, &q_config)
         .map_err(|e| generation_err(&e))?;
     let text = tokenizer
-        .decode(&generated)
+        .decode(completion(&generated, prompt_tokens))
         .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     Ok(Some(GenerateResponse {
@@ -203,6 +203,8 @@ async fn try_apr_q4k_generate(
             prompt_ids,
             max_tokens: request.max_tokens,
             temperature: request.temperature,
+            // #3786: the request seed reaches the APR Q4K sampler.
+            seed: request.seed.unwrap_or(crate::sampling::DEFAULT_SEED),
             eos_ids,
             cancel: cancel.clone(),
             response_tx,
@@ -233,7 +235,7 @@ async fn try_apr_q4k_generate(
     let mut all_tokens = prompt_ids_copy;
     all_tokens.extend_from_slice(&resp.output_tokens);
     let text = tokenizer
-        .decode(&all_tokens)
+        .decode(&resp.output_tokens)
         .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     Ok(Some(GenerateResponse {
@@ -274,7 +276,7 @@ fn try_apr_generate(
             )
         })?;
     let text = tokenizer
-        .decode(&generated)
+        .decode(completion(&generated, prompt_tokens))
         .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     Ok(Some(GenerateResponse {
@@ -333,7 +335,7 @@ fn registry_generate(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let text = tokenizer
-        .decode(&token_ids)
+        .decode(completion(&token_ids, prompt.len()))
         .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     Ok(GenerateResponse {
@@ -341,6 +343,16 @@ fn registry_generate(
         token_ids,
         text,
     })
+}
+
+/// #3991: the generated tokens after the prompt. `text` in every `/generate`-family
+/// response is decoded from THIS, never from prompt + completion: a client reading
+/// `text` got the prompt back first, and a grader found the prompt's own answer
+/// template before the model's answer. `token_ids` still carries the full sequence
+/// and `num_generated` its generated length. Clamped: a backend that stops on its
+/// first sampled token returns the prompt alone.
+fn completion(sequence: &[u32], prompt_len: usize) -> &[u32] {
+    &sequence[prompt_len.min(sequence.len())..]
 }
 
 /// `POST /generate`.
@@ -389,6 +401,14 @@ pub async fn generate_handler(
     }
 
     if let Some(resp) = try_apr_generate(&state, &request, &cancel)? {
+        state
+            .metrics
+            .record_success(resp.num_generated, start.elapsed());
+        return Ok(Json(resp));
+    }
+
+    // Qwen3.5 holds no dense or quantized model for the arms above (see qwen35_raw_generate.rs).
+    if let Some(resp) = try_qwen35_generate(&state, &request, &cancel)? {
         state
             .metrics
             .record_success(resp.num_generated, start.elapsed());
@@ -500,7 +520,7 @@ fn try_cuda_batch_generate(
                 )
             })?;
         let text = tokenizer
-            .decode(&generated)
+            .decode(completion(&generated, prompt_tokens))
             .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
         results.push(GenerateResponse {
             num_generated: generated.len().saturating_sub(prompt_tokens),
@@ -555,7 +575,7 @@ fn try_quantized_batch_generate(
             .generate_with_cache(&prompt_ids, &q_config)
             .map_err(|e| generation_err(&e))?;
         let text = tokenizer
-            .decode(&generated)
+            .decode(completion(&generated, prompt_tokens))
             .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
         results.push(GenerateResponse {
             num_generated: generated.len().saturating_sub(prompt_tokens),
@@ -607,7 +627,7 @@ fn try_apr_batch_generate(
                 )
             })?;
         let text = tokenizer
-            .decode(&generated)
+            .decode(completion(&generated, prompt_tokens))
             .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
         results.push(GenerateResponse {
             num_generated: generated.len().saturating_sub(prompt_tokens),
@@ -675,7 +695,7 @@ fn registry_batch_generate(
             })
             .collect::<Result<Vec<_>, _>>()?;
         let text = tokenizer
-            .decode(&token_ids)
+            .decode(completion(&token_ids, prompt.len()))
             .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
         results.push(GenerateResponse {
             num_generated: generated.len() - prompt.len(),
@@ -711,6 +731,10 @@ pub async fn batch_generate_handler(
     }
 
     if let Some(results) = try_apr_batch_generate(&state, &request, &cancel)? {
+        return Ok(Json(BatchGenerateResponse { results }));
+    }
+
+    if let Some(results) = try_qwen35_batch_generate(&state, &request, &cancel)? {
         return Ok(Json(BatchGenerateResponse { results }));
     }
 

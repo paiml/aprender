@@ -45,6 +45,7 @@ pub type DispatchFn = fn(
 
 /// Submitted by every tool module via [`register_mcp_tool!`]. The
 /// dispatcher reads these out of [`inventory`] at startup.
+#[cfg(feature = "apr-tools")]
 #[derive(Debug)]
 pub struct McpToolEntry {
     /// MCP tool name advertised in `tools/list` and matched in
@@ -57,6 +58,7 @@ pub struct McpToolEntry {
     pub dispatch_fn: DispatchFn,
 }
 
+#[cfg(feature = "apr-tools")]
 inventory::collect!(McpToolEntry);
 
 /// One-time index built from the global inventory at startup. Holds
@@ -67,16 +69,50 @@ inventory::collect!(McpToolEntry);
 #[derive(Debug)]
 pub struct ToolIndex {
     definitions: Vec<ToolDefinition>,
-    dispatch: BTreeMap<&'static str, DispatchFn>,
+    /// Keyed by an OWNED name (PMAT-3954): a caller-supplied tool's name is a `String`
+    /// in its [`ToolDefinition`], never `'static`.
+    dispatch: BTreeMap<String, DispatchFn>,
 }
 
 impl ToolIndex {
+    /// Build an index from a caller-supplied tool set (PMAT-3954) — a downstream server
+    /// serving ITS OWN tools on this crate, with no `inventory` and no apr tool linked in.
+    ///
+    /// Definitions are sorted by name, as [`Self::from_inventory`] sorts them.
+    ///
+    /// # Errors
+    ///
+    /// Two entries with one name are refused, naming the tool — the same rule as
+    /// FALSIFY-INVENTORY-002, returned rather than panicked because the caller built it.
+    pub fn from_entries(entries: Vec<(ToolDefinition, DispatchFn)>) -> Result<Self, String> {
+        let mut definitions = Vec::with_capacity(entries.len());
+        let mut dispatch: BTreeMap<String, DispatchFn> = BTreeMap::new();
+        for (definition, dispatch_fn) in entries {
+            if dispatch
+                .insert(definition.name.clone(), dispatch_fn)
+                .is_some()
+            {
+                return Err(format!(
+                    "duplicate MCP tool name {:?}: two entries advertise the same name",
+                    definition.name
+                ));
+            }
+            definitions.push(definition);
+        }
+        definitions.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(Self {
+            definitions,
+            dispatch,
+        })
+    }
+
     /// Build the index from `inventory::iter::<McpToolEntry>()`.
     ///
     /// FALSIFY-INVENTORY-002: panics with a clear diagnostic if two
     /// entries share the same `name`. The panic fires the first time
     /// any test or production path constructs an `AprMcpServer`, so a
     /// duplicate-name regression cannot escape CI.
+    #[cfg(feature = "apr-tools")]
     #[must_use]
     pub fn from_inventory() -> Self {
         let mut by_name: BTreeMap<&'static str, &'static McpToolEntry> = BTreeMap::new();
@@ -99,9 +135,9 @@ impl ToolIndex {
             by_name.values().map(|e| (e.definition_fn)()).collect();
         definitions.sort_by(|a, b| a.name.cmp(&b.name));
 
-        let dispatch: BTreeMap<&'static str, DispatchFn> = by_name
+        let dispatch: BTreeMap<String, DispatchFn> = by_name
             .iter()
-            .map(|(name, entry)| (*name, entry.dispatch_fn))
+            .map(|(name, entry)| ((*name).to_string(), entry.dispatch_fn))
             .collect();
 
         Self {
@@ -129,8 +165,8 @@ impl ToolIndex {
     /// FALSIFY-INVENTORY-001 to assert the migrated set matches the
     /// pre-migration golden list.
     #[must_use]
-    pub fn names(&self) -> Vec<&'static str> {
-        self.dispatch.keys().copied().collect()
+    pub fn names(&self) -> Vec<&str> {
+        self.dispatch.keys().map(String::as_str).collect()
     }
 }
 
@@ -149,6 +185,7 @@ impl ToolIndex {
 /// The `dispatch` argument MUST point at a function with signature
 /// [`DispatchFn`] — typically a thin shim that calls the tool's
 /// existing `call` / `call_with_sink`.
+#[cfg(feature = "apr-tools")]
 #[macro_export]
 macro_rules! register_mcp_tool {
     (name: $name:expr, definition: $def:path, dispatch: $dispatch:path $(,)?) => {
@@ -162,7 +199,7 @@ macro_rules! register_mcp_tool {
     };
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "apr-tools"))] // from_inventory exists only with apr's tools
 mod tests {
     use super::*;
 

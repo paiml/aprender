@@ -419,6 +419,7 @@ impl GpuModel {
             }
         );
 
+        let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(config.seed);
         // Generate new tokens
         for _ in 0..config.max_tokens {
             // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
@@ -436,7 +437,7 @@ impl GpuModel {
                     .map_or(0, |(idx, _)| idx)
             } else {
                 // Top-k sampling with temperature
-                Self::sample_topk_generate(&current_logits, config.temperature, config.top_k)
+                Self::sample_topk_generate(&current_logits, config.temperature, config.top_k, &mut rng)
             };
 
             tokens.push(next_token);

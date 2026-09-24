@@ -1115,6 +1115,11 @@ DONE_NORM:
         n_per_seq: u32,
         k_per_seq: u32,
     ) -> Result<(), GpuError> {
+        // #3727: every dispatch drops the held FP8 activation unless its caller armed
+        // `fp8_act_cache.share_next()` (K/V after Q, up after gate). Before, a (ptr, count)
+        // match was enough, and on a mixed-quant model each layer's FP8 ffn_down reused
+        // layer 0's SwiGLU output, because nothing FP8 ran in between to change the key.
+        self.fp8_act_cache.begin_dispatch();
         // Route order is unchanged; each predicate is named above so this function stays
         // readable and under the complexity ceiling that froze this file (#2766).
         if self.route_w4a16_wmma(qtype, weight_ptr, m) {
@@ -1543,10 +1548,9 @@ DONE_NORM:
                     .expect("scratch just allocated")
                     .as_ptr();
 
-                let lt_handle = self.cublaslt_handle.as_ref().expect("just created");
-                let _ = lt_handle.gemm_fp8_e4m3_to_f16(
-                    trueno_gpu::driver::GemmOp::Trans,
-                    trueno_gpu::driver::GemmOp::NoTrans,
+                // #3728: warm the BF16-output kernel the prefill GEMM actually runs.
+                let lt_handle = self.cublaslt_handle.as_mut().expect("just created");
+                let _ = lt_handle.gemm_fp8_e4m3_to_bf16_cached(
                     n_warmup,
                     m_warmup,
                     k_warmup,
@@ -1598,6 +1602,7 @@ DONE_NORM:
             / 1_048_576.0;
         let count = self.fp8_weight_cache.len();
         self.fp8_weight_cache.clear();
+        self.fp8_weight_row_absmax.clear();
         self.fp8_activation_scratch = None;
         self.fp8_activation_scratch_size = 0;
         if count > 0 {
@@ -1634,13 +1639,16 @@ DONE_NORM:
     ) -> Result<(), GpuError> {
         use trueno_gpu::kernels::{Kernel as _, PrefillAttentionKernel};
 
-        // Compile and cache fused attention kernel
-        if !self.modules.contains_key("fused_prefill_attn") {
+        // Compile and cache fused attention kernel.
+        // #3759: head_dim and heads_per_kv are PTX immediates (and the 1/sqrt(head_dim) scale), so
+        // they are in the key. It was the constant "fused_prefill_attn", which handed a second
+        // model with a different head_dim or GQA ratio the first model's kernel.
+        let module_key = format!("fused_prefill_attn_{head_dim}_{heads_per_kv}");
+        if !self.modules.contains_key(&module_key) {
             let kernel = PrefillAttentionKernel::new(head_dim as u32, heads_per_kv as u32);
             let ptx = kernel.emit_ptx_for_target(&self.kernels.sm_target);
             let module = self.compile_ptx(&ptx)?;
-            self.modules
-                .insert("fused_prefill_attn".to_string(), module);
+            self.modules.insert(module_key.clone(), module);
             eprintln!(
                 "[PMAT-069] Compiled fused prefill attention: head_dim={}, heads_per_kv={}",
                 head_dim, heads_per_kv,
@@ -1649,10 +1657,7 @@ DONE_NORM:
 
         // Launch fused attention kernel
         {
-            let module = self
-                .modules
-                .get_mut("fused_prefill_attn")
-                .expect("just inserted");
+            let module = self.modules.get_mut(&module_key).expect("just inserted");
             let config = LaunchConfig {
                 grid: (num_heads as u32, 1, 1),
                 block: (32, 1, 1),
@@ -1906,11 +1911,7 @@ DONE_NORM:
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("interleaved_wmma_q4k_gemm_{m_padded}_{n_padded}_{k}");
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         // If padding needed, use WMMA scratch buffer
         let actual_output_ptr = if needs_padding {
@@ -2008,11 +2009,7 @@ DONE_NORM:
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("w4a16_wmma_q4k_gemm_{m_padded}_{n_padded}_{k}");
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let actual_output_ptr = if needs_padding {
             let padded_count = m_padded as usize * n_padded as usize;

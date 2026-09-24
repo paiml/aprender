@@ -9,6 +9,7 @@ pub mod auth;
 pub mod handlers;
 #[cfg(feature = "inference")]
 pub mod ollama;
+pub(crate) mod route_index;
 pub mod routes;
 #[cfg(feature = "inference")]
 pub mod safetensors;
@@ -20,6 +21,8 @@ pub use types::*;
 // Test modules
 #[cfg(test)]
 mod tests;
+#[cfg(all(test, feature = "inference"))]
+mod tests_route_index_3979;
 // PP-LLAMA-001 PP-14/PP-15/§9 #8: the offload report the served process
 // publishes. `inference`-gated because the report type comes from realizar.
 #[cfg(all(test, feature = "inference"))]
@@ -206,8 +209,8 @@ pub(crate) fn resolve_gpu_layers(
 ///
 /// `cargo install aprender` produces exactly that build — root `Cargo.toml` has
 /// `default = ["cli"]` and `cuda` is opt-in. Measured on 2026-08-24 with an
-/// idle RTX 4090 in the machine: 15.7 tok/s decode against llama.cpp's 158.9,
-/// and 7.5 SECONDS to first token. A tenth of the speed, no diagnostic, and a
+/// idle RTX 4090 in the machine (the numbers are on #2696): about a tenth of
+/// llama.cpp's decode rate, and 7.5 SECONDS to first token. A tenth of the speed, no diagnostic, and a
 /// plausible-looking number at the end of it.
 ///
 /// The remedy in the message is checked to be real. #2527 is the counter-case:

@@ -361,10 +361,11 @@ impl GpuModel {
         let logits = self.forward_gpu_with_cache(prompt, &mut kv_cache)?;
 
         // Sample first token (logits is already for last position only)
+        let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(config.seed);
         let mut next_token = if config.temperature == 0.0 || config.top_k == 1 {
             Self::argmax(&logits)
         } else {
-            Self::sample_topk_generate(&logits, config.temperature, config.top_k)
+            Self::sample_topk_generate(&logits, config.temperature, config.top_k, &mut rng)
         };
 
         if config.stop_tokens.contains(&next_token) {
@@ -385,7 +386,7 @@ impl GpuModel {
             next_token = if config.temperature == 0.0 || config.top_k == 1 {
                 Self::argmax(&logits)
             } else {
-                Self::sample_topk_generate(&logits, config.temperature, config.top_k)
+                Self::sample_topk_generate(&logits, config.temperature, config.top_k, &mut rng)
             };
 
             if config.stop_tokens.contains(&next_token) {

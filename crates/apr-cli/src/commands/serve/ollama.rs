@@ -634,41 +634,62 @@ pub(crate) fn ollama_embeddings_body(_req: &OllamaEmbeddingsRequest) -> OllamaEm
     }
 }
 
-pub(crate) fn add_ollama_stubs<S>(router: axum::Router<S>) -> axum::Router<S>
+/// #3979: the Ollama stub routes, as ONE table. `add_ollama_stubs` mounts it on a plain
+/// router, and `route_index::Indexed::routes` mounts AND records it, so a router's
+/// `GET /` index cannot omit a stub it serves. Before, the APR-CPU router's index and
+/// 404 body named none of these five.
+#[allow(clippy::type_complexity)]
+pub(crate) fn ollama_stub_table<S>(
+) -> Vec<(&'static str, &'static str, axum::routing::MethodRouter<S>)>
 where
     S: Clone + Send + Sync + 'static,
 {
     use axum::{
-        routing::{delete, get, post},
+        routing::{delete, post},
         Json,
     };
-    router
-        .route(
+    vec![
+        (
+            "POST",
             "/api/show",
             post(|Json(req): Json<OllamaShowRequest>| async move { Json(ollama_show_body(&req)) }),
-        )
-        .route(
+        ),
+        (
+            "POST",
             "/api/pull",
             post(|Json(req): Json<OllamaPullRequest>| async move { Json(ollama_pull_body(&req)) }),
-        )
-        .route(
+        ),
+        (
+            "DELETE",
             "/api/delete",
             delete(
                 |Json(_req): Json<OllamaDeleteRequest>| async move { axum::http::StatusCode::OK },
             ),
-        )
-        .route(
+        ),
+        (
+            "POST",
             "/v1/embeddings",
             post(|Json(req): Json<OllamaEmbeddingsRequest>| async move {
                 Json(ollama_embeddings_body(&req))
             }),
-        )
-        .route(
+        ),
+        (
+            "POST",
             "/api/embeddings",
             post(|Json(req): Json<OllamaEmbeddingsRequest>| async move {
                 Json(ollama_embeddings_body(&req))
             }),
-        )
+        ),
+    ]
+}
+
+pub(crate) fn add_ollama_stubs<S>(router: axum::Router<S>) -> axum::Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    ollama_stub_table()
+        .into_iter()
+        .fold(router, |r, (_, path, handler)| r.route(path, handler))
 }
 
 #[cfg(test)]

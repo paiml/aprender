@@ -263,6 +263,9 @@ mod activations;
 mod attention;
 mod bound_dispatch;
 mod core;
+// #3727: PMAT-084 FP8 activation reuse, opt-in per shared-input group.
+mod fp8_activation_cache;
+// #3759: one module-cache key, one PTX text (debug builds prove it).
 /// PMAT-3477 (#3090): wrappers for the six Gated `DeltaNet` device kernels.
 mod gdn_ops;
 mod gemm;
@@ -273,6 +276,7 @@ mod graph_dispatch;
 mod kv_cache;
 mod layer;
 mod layers;
+mod module_key_guard;
 mod q4k;
 mod q_basic;
 mod quantized;
@@ -292,6 +296,10 @@ mod gqa_parity_tests;
 
 #[cfg(test)]
 mod test_fixtures;
+
+// #3759: a norm kernel compiled for one epsilon is never reused for another.
+#[cfg(test)]
+mod rmsnorm_eps_tests_3759;
 
 #[cfg(test)]
 mod poison_trace_test;
@@ -353,6 +361,9 @@ pub struct CudaExecutor {
     // Thousands of cuModuleUnload cycles exhaust the CUDA driver.
     // Leaked modules (~KB each) are cleaned up at process exit.
     modules: std::mem::ManuallyDrop<HashMap<String, CudaModule>>,
+    /// #3759: debug and test builds record what each module key was compiled from.
+    #[cfg(any(debug_assertions, test))]
+    module_key_ledger: module_key_guard::ModuleKeyLedger,
     // Persistent weight buffers on GPU (PARITY-037)
     // These are loaded once at startup and reused for all forward passes
     weight_cache: HashMap<String, GpuBuffer<f32>>,
@@ -590,19 +601,15 @@ pub struct CudaExecutor {
     // PMAT-053: FP8 activation scratch for FP8 GEMM input conversion
     fp8_activation_scratch: Option<GpuBuffer<u8>>,
     fp8_activation_scratch_size: usize,
-    // PMAT-079: Per-tensor FP8 dequant scale = absmax / 448.0 (CPU float).
-    // Key: quantized weight GPU pointer → dequant scale.
-    // Used as GEMM alpha (constant per weight, no GPU→CPU sync needed).
-    fp8_weight_scales: HashMap<u64, f32>,
+    // #3807: per-output-channel FP8 weight absmax (f32 × N on the device), one per cached
+    // weight. Key: quantized weight GPU pointer. Applied in the GEMM's dequant step.
+    fp8_weight_row_absmax: HashMap<u64, GpuBuffer<f32>>,
     // PMAT-053b: Persistent activation scale buffer (single f32 on GPU).
     // Reused across prefill GEMMs to avoid alloc-per-matmul leak.
     fp8_act_scale_buf: Option<GpuBuffer<f32>>,
-    // PMAT-079: Persistent absmax result buffer (single u32 on GPU).
-    // Reused across prefill GEMMs — avoids alloc-per-matmul.
-    fp8_absmax_buf: Option<GpuBuffer<u32>>,
-    // PMAT-079: Persistent activation dequant scale buffer (single f32 on GPU).
-    // Holds act_absmax/448.0 — used as A_SCALE_POINTER for cuBLASLt scaled GEMM.
-    fp8_act_dequant_buf: Option<GpuBuffer<f32>>,
+    // #3807: persistent per-token FP8 activation absmax (f32 × rows on the GPU), reused
+    // across prefill GEMMs and by PMAT-084's K/V and up reuse. Grows, never shrinks.
+    fp8_act_row_absmax: Option<GpuBuffer<f32>>,
     // PMAT-091: Column-interleaved Q4K weight cache for coalesced WMMA GEMM.
     // Key: quantized weight GPU pointer → interleaved tile buffer.
     // Same size as original Q4K (ceil(N/16) × num_sb × 2304 bytes).
@@ -638,8 +645,10 @@ pub struct CudaExecutor {
     // PMAT-084: FP8 activation cache — skip redundant absmax+convert when
     // multiple FP8 GEMMs share the same input (QKV phase, FFN gate+up).
     // Saves 84 kernel pairs per prefill (3 per layer × 28 layers).
-    // Key: (input_ptr, element_count). Invalidated on scratch buffer realloc.
-    fp8_activation_cache_key: Option<(u64, u32)>,
+    // #3727: reuse is opt-in (`share_next` before K, V and up); every other
+    // dispatch drops the held conversion, so a (ptr, count) that outlives its
+    // contents can no longer be reused across layers.
+    fp8_act_cache: fp8_activation_cache::Fp8ActivationCache,
     // PMAT-291: Positions side-channel for graph-based dispatch.
     // Set before execute_graph(), read by dispatch_rope and dispatch_attention.
     pub(crate) graph_dispatch_positions: Vec<u32>,

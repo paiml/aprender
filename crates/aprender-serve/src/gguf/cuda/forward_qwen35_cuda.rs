@@ -262,6 +262,24 @@ pub struct Qwen35CudaModel<'a> {
     max_seq_len: usize,
 }
 
+/// Why a projection cannot go on the GPU, stated so the user can act on it
+/// (#3595 done_when 3): which tensor, which dtype by NAME, and what to use
+/// instead.
+///
+/// It used to say only "GGML type 1 has no verified GPU GEMV kernel". Unsloth's
+/// dynamic `UD-Q4_K_XL` keeps sensitive tensors (`ssm_alpha`, …) at F16, so its
+/// upload is correctly refused — and the one useful fact, that a plain `Q4_K_M`
+/// build uploads whole, was nowhere in the message.
+fn no_gemv_kernel_reason(name: &str, ggml_type: u32) -> String {
+    let dtype = trueno_quant::GgmlType::from_id(ggml_type)
+        .map_or("an unknown type", trueno_quant::GgmlType::as_str);
+    format!(
+        "'{name}' is {dtype} (GGML type {ggml_type}), which has no verified GPU GEMV kernel — \
+         the file is fine and runs on the CPU; a Q4_K_M build of this model keeps every \
+         projection in a GPU-eligible type"
+    )
+}
+
 /// Map a GPU error into the crate error type with the operation that raised it.
 fn gpu_err(operation: &str, e: &trueno_gpu::GpuError) -> RealizarError {
     RealizarError::UnsupportedOperation {
@@ -281,10 +299,7 @@ impl<'a> Qwen35CudaModel<'a> {
         let qtype = WeightQuantType::from_ggml_type(tensor.qtype).ok_or_else(|| {
             RealizarError::UnsupportedOperation {
                 operation: "qwen35_cuda_upload".to_string(),
-                reason: format!(
-                    "'{name}': GGML type {} has no verified GPU GEMV kernel",
-                    tensor.qtype
-                ),
+                reason: no_gemv_kernel_reason(name, tensor.qtype),
             }
         })?;
         if tensor.data.is_empty() {
@@ -322,6 +337,22 @@ impl<'a> Qwen35CudaModel<'a> {
     fn zeros(executor: &CudaExecutor, len: usize) -> Result<GpuBuffer<f32>> {
         GpuBuffer::from_host(executor.context(), &vec![0.0f32; len])
             .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))
+    }
+
+    /// Zero-filled device buffer of `len` f32, zeroed ON the device.
+    ///
+    /// For the K/V caches, whose size is `max_seq_len` rows: [`Self::zeros`]
+    /// stages a host vector of the same size, which at a long context is
+    /// gigabytes of transient host memory — on GB10's unified memory, drawn from
+    /// the pool the device is allocating from (#3595). The memset is queued on
+    /// the compute stream; [`Self::build_state`] synchronizes it before the
+    /// state is handed out.
+    fn zeros_on_device(executor: &CudaExecutor, len: usize) -> Result<GpuBuffer<f32>> {
+        let mut buf = GpuBuffer::new(executor.context(), len)
+            .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?;
+        buf.zero_async(executor.compute_stream())
+            .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?;
+        Ok(buf)
     }
 
     /// The shapes, read from the model — never hard-coded.
@@ -630,11 +661,15 @@ impl<'a> Qwen35CudaModel<'a> {
             kv.push(match layer {
                 CudaLayer::DeltaNet(_) => None,
                 CudaLayer::Attention(_) => Some((
-                    Self::zeros(executor, kv_row * max_seq_len)?,
-                    Self::zeros(executor, kv_row * max_seq_len)?,
+                    Self::zeros_on_device(executor, kv_row * max_seq_len)?,
+                    Self::zeros_on_device(executor, kv_row * max_seq_len)?,
                 )),
             });
         }
+        executor
+            .compute_stream()
+            .synchronize()
+            .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?;
         Ok(Qwen35CudaState {
             conv,
             ssm,
@@ -656,6 +691,66 @@ impl<'a> Qwen35CudaModel<'a> {
     /// Any CUDA allocation failure.
     pub fn new_state(&self) -> Result<Qwen35CudaState> {
         Self::build_state(&self.executor, &self.layers, self.dims, self.max_seq_len)
+    }
+
+    /// Make this model's CUDA context current on the calling thread.
+    ///
+    /// A context is current per THREAD. A model built on one thread and driven
+    /// from another — `apr serve` runs each request on a blocking-pool worker —
+    /// fails its first allocation there with `CUDA_ERROR_INVALID_CONTEXT` (201)
+    /// unless this runs first: measured on #3571, where a decode state for 4096
+    /// positions "would not allocate" and the session fell back to the CPU.
+    /// The dense path learned the same lesson as GH-282.
+    ///
+    /// # Errors
+    /// `cuCtxSetCurrent` failed.
+    pub fn make_current(&self) -> Result<()> {
+        self.executor
+            .make_current()
+            .map_err(|e| gpu_err("qwen35_cuda_make_current", &e))
+    }
+
+    /// A fresh decode state with room for `max_seq_len` positions, whatever
+    /// this model was built with (#3595).
+    ///
+    /// A session that outlives one generation sizes its state to the
+    /// conversation, not to the model: the model is built once with a
+    /// probe-sized state and the session grows its own. Capacity is a property
+    /// of the state — [`Self::forward_single`] bounds-checks the state it is
+    /// given, never the model's.
+    ///
+    /// # Errors
+    /// A `max_seq_len` of zero, or any CUDA allocation failure.
+    pub fn new_state_with_capacity(&self, max_seq_len: usize) -> Result<Qwen35CudaState> {
+        if max_seq_len == 0 {
+            return Err(RealizarError::InvalidShape {
+                reason: "qwen35_cuda: max_seq_len must be at least 1".to_string(),
+            });
+        }
+        Self::build_state(&self.executor, &self.layers, self.dims, max_seq_len)
+    }
+
+    /// Return `state` to position 0 in place, keeping its allocation (#3595).
+    ///
+    /// The conv windows and recurrent states are zeroed on the device — the
+    /// values a fresh state starts from. The K/V caches are only marked empty:
+    /// attention at `position` writes row `position` and reads rows
+    /// `0..=position`, so a row past `kv_len` is always written before it is
+    /// read.
+    ///
+    /// # Errors
+    /// Any CUDA memset or synchronization failure.
+    pub fn reset_state(&self, state: &mut Qwen35CudaState) -> Result<()> {
+        let stream = self.executor.compute_stream();
+        for buf in state.conv.iter_mut().chain(state.ssm.iter_mut()) {
+            buf.zero_async(stream)
+                .map_err(|e| gpu_err("qwen35_cuda_reset", &e))?;
+        }
+        stream
+            .synchronize()
+            .map_err(|e| gpu_err("qwen35_cuda_reset", &e))?;
+        state.kv_len = 0;
+        Ok(())
     }
 
     /// Run `f` with the model's own state detached.

@@ -134,7 +134,8 @@ fn run_cuda_moe_benchmark(
 ) -> Result<BenchResult> {
     use realizar::gguf::OwnedQuantizedModelCuda;
 
-    let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
+    // #3992: the MoE forward runs on this wrapper; the dense constructors refuse MoE.
+    let mut cuda_model = OwnedQuantizedModelCuda::new_for_moe_forward(model, 0)
         .map_err(|e| CliError::ValidationFailed(format!("MoE CUDA init failed: {e}")))?;
 
     bench_log(config, &"Running warmup (CUDA MoE)...".yellow().to_string());

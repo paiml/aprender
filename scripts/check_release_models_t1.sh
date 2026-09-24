@@ -79,7 +79,10 @@ A_CHOOM_R='choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST'
 A_CHOOM_L='    choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST"'
 R_VER='    out="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; rc=$?'
 R_RED='        *) printf '"'"'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n'"'"' "$version" "$rc" \'
-R_LINES='               "$(grep -E '"'"'^FAIL'"'"' <<< "$out" | head -n 10 | sed '"'"'s/^/        /'"'"')" ;;'
+# The FAIL-lines line also appears on the emergency-scope path (#4046 merge-back), so the
+# anchor carries the matrix path's own printf line above it, which keeps it unique.
+R_LINES_HEAD='        *) printf '"'"'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n'"'"' "$version" "$rc" \'
+R_LINES="$R_LINES_HEAD"$'\n''               "$(grep -E '"'"'^FAIL'"'"' <<< "$out" | head -n 10 | sed '"'"'s/^/        /'"'"')" ;;'
 R_DECLINE='        2) echo "FAIL  R7 the model-matrix judge DECLINED'
 R_NOJUDGE='    if [ ! -f "$judge" ]; then'
 
@@ -368,7 +371,7 @@ mutant no-choom         "$MODELS" "$A_CHOOM_R" 'bash scripts/model_ladder.sh --h
 mutant wrapper-flock    "$MODELS" "$A_CHOOM_L" '    flock /tmp/apr-gpu.lock choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST"' oom_victim
 mutant r7-no-version    "$PREFLIGHT" "$R_VER" '    out="$(cd "$root" && bash "$judge" 2>&1)"; rc=$?' r7_green preflight
 mutant r7-red-is-go     "$PREFLIGHT" "$R_RED" '        *) return 0; printf '"'"'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n'"'"' "$version" "$rc" \' r7_red preflight
-mutant r7-no-fail-lines "$PREFLIGHT" "$R_LINES" '               "" ;;' r7_missing preflight
+mutant r7-no-fail-lines "$PREFLIGHT" "$R_LINES" "$R_LINES_HEAD"$'\n''               "" ;;' r7_missing preflight
 mutant r7-decline-is-go "$PREFLIGHT" "$R_DECLINE" '        2) return 0; echo "FAIL  R7 the model-matrix judge DECLINED' r7_decline preflight
 mutant r7-no-judge-ok   "$PREFLIGHT" "$R_NOJUDGE" '    if false; then' r7_nojudge preflight
 

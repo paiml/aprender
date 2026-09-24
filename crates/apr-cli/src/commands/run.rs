@@ -46,6 +46,16 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+/// `apr run --top-k`'s default: realizar's `DEFAULT_TOP_K`, the top-k `apr chat` and
+/// `apr serve` also sample with (#3754). It used to be 1, which every decode loop reads as
+/// greedy, so `--temperature 0.8` alone decoded greedily and said nothing. Greedy is
+/// unchanged: it comes from `--temperature 0` (the default), or an explicit `--top-k 1`.
+#[cfg(feature = "inference")]
+pub(crate) const DEFAULT_TOP_K: usize = realizar::infer::DEFAULT_TOP_K;
+/// Without `inference` there is no sampler: `--top-k` parses and nothing reads it.
+#[cfg(not(feature = "inference"))]
+pub(crate) const DEFAULT_TOP_K: usize = 1;
+
 /// Model source types
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ModelSource {
@@ -136,6 +146,10 @@ pub(crate) struct RunOptions {
     pub force: bool,
     /// Disable GPU acceleration
     pub no_gpu: bool,
+    /// #3757: the user EXPLICITLY asked for an accelerator (`--gpu`, or
+    /// `--backend cuda|wgpu|gpu`). Gates the wgpu ATTEMPT, not just the
+    /// post-hoc `reconcile_accelerator` verdict.
+    pub accel_forced: bool,
     /// Offline mode: refuse any network access
     pub offline: bool,
     /// Benchmark mode: output performance metrics
@@ -172,6 +186,9 @@ pub(crate) struct RunOptions {
     /// #3672: apply the model's chat template (`--chat`, or an instruct/chat source name)
     /// even when its metadata and file name say base model. The prompt itself stays raw.
     pub chat_template: bool,
+    /// #3723: `--thinking on|off`. `None` renders the production default; realizar applies it
+    /// to the rendered prompt and refuses `on` for a template with no thinking mode.
+    pub thinking: Option<bool>,
     /// `--stream`: emit one NDJSON event per generated token.
     ///
     /// Known here (not only at the print site) because streaming is the one
@@ -189,6 +206,7 @@ impl Default for RunOptions {
             output_format: "text".to_string(),
             force: false,
             no_gpu: false,
+            accel_forced: false,
             offline: false,
             benchmark: false,
             verbose: false,
@@ -199,13 +217,14 @@ impl Default for RunOptions {
             trace_level: "basic".to_string(),
             profile: false,
             temperature: 0.0,
-            top_k: 1,
+            top_k: DEFAULT_TOP_K,
             top_p: None,
             seed: 299_792_458,
             repeat_penalty: 1.0,
             repeat_last_n: 64,
             split_prompt: false,
             chat_template: false,
+            thinking: None,
             stream: false,
         }
     }
@@ -228,6 +247,13 @@ pub(crate) struct RunUsage {
     pub finish_reason: Option<&'static str>,
     /// The model's context window, from its metadata.
     pub context_length: Option<usize>,
+    /// #3981: generation wall time (prefill + decode), in ms, when the backend marked
+    /// where generation began. `None` means the path did not measure it, and then
+    /// `tok_per_sec` still includes setup.
+    pub generation_ms: Option<u64>,
+    /// #3981: the part of the inference window that was NOT generation: weight upload,
+    /// F2 validation. `None` when `generation_ms` is.
+    pub setup_ms: Option<u64>,
 }
 
 /// Run result
@@ -245,6 +271,12 @@ pub(crate) struct RunResult {
     pub tok_per_sec: Option<f64>,
     /// Whether GPU was used (GH-250)
     pub used_gpu: Option<bool>,
+    /// #3826: whether a GPU backend was ATTEMPTED, whatever the outcome.
+    ///
+    /// `used_gpu` records whether the GPU PRODUCED the tokens, so on its own it
+    /// collapses "nothing was tried" and "something was tried and refused" into
+    /// one `false`. `fell_back` needs the difference.
+    pub gpu_attempted: Option<bool>,
     /// GH-250: Generated token IDs for parity checking
     pub generated_tokens: Option<Vec<u32>>,
     /// Per-token decoded text, positionally aligned with `generated_tokens`.
@@ -339,6 +371,7 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         tokens_generated,
         tok_per_sec: output.tok_per_sec,
         used_gpu: output.used_gpu,
+        gpu_attempted: output.gpu_attempted,
         generated_tokens: output.generated_tokens,
         token_texts: output.token_texts,
         usage: output.usage,

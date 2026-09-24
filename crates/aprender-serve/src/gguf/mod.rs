@@ -86,7 +86,10 @@ pub(crate) mod format_factory;
 pub use batch_scheduler::*;
 pub use config::*;
 #[cfg(feature = "cuda")]
-pub use cuda::{BatchedDecodeState, CudaBackend, CudaInitError, Qwen35CudaModel, Qwen35CudaState};
+pub use cuda::{
+    BatchedDecodeState, CudaBackend, CudaInitError, Qwen35CudaModel, Qwen35CudaState,
+    Qwen3MoeCudaModel, Qwen3MoeCudaState, Qwen3MoeShape,
+};
 #[cfg(feature = "cuda")]
 pub use cuda_model::*;
 pub use model::*;
@@ -133,3 +136,7 @@ pub mod f2_receipt;
 /// Qwen3.5 / Qwen3.8 hybrid (Gated `DeltaNet` + gated attention) CPU forward (#3091).
 #[path = "inference/forward/forward_qwen35.rs"]
 pub mod forward_qwen35;
+/// The Qwen3.5 hybrid held resident across calls — one build, one F2 guard, a
+/// decode state that outlives the turn (#3595 `apr chat`, #3571 `apr serve`).
+#[path = "inference/forward/qwen35_session.rs"]
+pub mod qwen35_session;

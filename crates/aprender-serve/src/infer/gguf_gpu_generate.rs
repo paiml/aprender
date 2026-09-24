@@ -58,9 +58,70 @@ pub(crate) fn cpu_vs_gpu_cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
+/// Printed when a sampled request skips a greedy-only wgpu decoder (#3760).
+pub const WGPU_SAMPLING_NOTICE: &str = "[wgpu: the wgpu decoder is greedy-only; \
+     sampling (--temperature > 0 with --top-k != 1) runs on the CPU (#3760)]";
+
+/// Whether the greedy-only wgpu decoders may serve this request (#3760): a greedy one
+/// yes; a sampled one no, with the notice printed, so the CPU loop that draws runs it.
+#[cfg(feature = "gpu")]
+fn wgpu_can_serve(temperature: f32, top_k: usize) -> bool {
+    if crate::sampling::is_greedy(temperature, top_k) {
+        return true;
+    }
+    eprintln!("{WGPU_SAMPLING_NOTICE}");
+    false
+}
+
+/// #3757: may the GH-559 wgpu fallback be ATTEMPTED for this request?
+///
+/// Pure so the rule has a case table instead of living inline in two `if`s that
+/// drifted. `FALSIFY-BACKEND-CUDA-HONESTY-001` covers `--backend cuda` on a
+/// non-cuda build and asserts the run never prints `Backend: wgpu`; nothing
+/// covered the BARE `apr run model.gguf`, which is the invocation that shipped
+/// broken.
+///
+/// `accel_forced` is the decisive term and it is the same signal
+/// `reconcile_accelerator` already consumes — the user explicitly asked for an
+/// accelerator (`--gpu`, or `--backend cuda|wgpu|gpu`). Without it in this
+/// predicate, `realizar`'s `default = [… "gpu"]` (which every
+/// `cargo install aprender` gets, because apr-cli depends on realizar without
+/// `default-features = false`) made the default path dequantize the model to
+/// F32, fail wgpu's own cpu-parity gate, and fall back to CPU anyway.
+#[cfg(feature = "gpu")]
+#[must_use]
+pub(crate) fn wgpu_fallback_allowed(
+    no_gpu: bool,
+    accel_forced: bool,
+    has_legacy_quant: bool,
+) -> bool {
+    !no_gpu && accel_forced && !has_legacy_quant
+}
+
 /// GH-559: Try wgpu (Vulkan) generation as fallback when CUDA JIT fails.
 /// Uses trueno's WgslForwardPass with dequantized F32 weights.
-/// Proven: cosine=0.999863 on Blackwell sm_121.
+///
+/// #3827: this said "Proven: cosine=0.999863 on Blackwell sm_121" and that is
+/// WITHDRAWN, because #3757 measured the same path failing its own cpu-parity
+/// gate on four GPUs including Blackwell — the architecture the claim named:
+///
+///   intel (Vulkan, no working driver)  0.955376
+///   gx10  (GB10 — this IS Blackwell)   0.955046
+///   mini  (Apple M4, Metal)            0.955169
+///   RTX 4090 (sm_89)                   0.955376
+///
+/// The same value to four significant figures on four different GPUs and
+/// drivers, so this is the wgpu path's own numerics rather than any one
+/// driver — which also rules out "the proof holds and gx10 is special".
+///
+/// A proof comment that contradicts a measurement on the architecture it names
+/// is worse than no comment, because it stops the next reader looking. Whether
+/// 0.999863 was a different model, a different build, or a since-regressed
+/// path is NOT known; #3827 owns deciding that, and whether wgpu is repaired or
+/// removed. Until then the honest statement is the one above.
+///
+/// #3757 made this path opt-in (`accel_forced`), so a user no longer pays for
+/// it unasked — that bounds the cost, it does not make the path correct.
 #[cfg(feature = "gpu")]
 fn try_wgpu_generate(
     model: &crate::gguf::OwnedQuantizedModel,
@@ -307,13 +368,22 @@ fn try_gguf_gpu_generate(
         );
     }
 
-    if !validate_gpu_first_token(&mut cuda_model, gen_config, input_tokens) {
-        // Validation failed — extract model back for CPU fallback
-        return Err(Box::new(cuda_model.into_model()));
+    // #3973: three states, each handled here. Routing is unchanged: only a MISMATCH
+    // leaves the GPU. A not-measured probe proceeds, and says it is unvalidated.
+    match validate_gpu_first_token(&mut cuda_model, gen_config, input_tokens) {
+        F2Outcome::Mismatch => {
+            // Validation failed — extract model back for CPU fallback
+            return Err(Box::new(cuda_model.into_model()));
+        },
+        F2Outcome::NotMeasured { reason } => {
+            eprintln!("[GH-480] F2 validation NOT MEASURED — {reason}. GPU output is UNVALIDATED (#3973)");
+        },
+        F2Outcome::Validated { .. } => {},
     }
 
     // Reuse existing CUDA model — generate_gpu_resident() creates fresh KV cache
     // and resets GPU KV positions internally, so validation doesn't "consume" it.
+    mark_generation_start(); // #3981: setup (upload + F2) ends here
     let result = cuda_model
         .generate_gpu_resident(input_tokens, gen_config)
         .map(|tokens| (tokens, true))
@@ -328,7 +398,12 @@ fn run_gguf_generate(
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     config: &InferenceConfig,
-) -> Result<(Vec<u32>, bool)> {
+) -> Result<(Vec<u32>, bool, bool)> {
+    // #3826: the third element is `gpu_attempted` — whether a GPU backend was
+    // ENTERED, whatever the outcome. `used_gpu` alone collapses "never tried"
+    // and "tried and refused" into one `false`, which is how
+    // `apr run --format json` reported `"fell_back": false` on a run whose own
+    // stderr said `attempting fallback`.
     // M32c.2.1: short-circuit MoE forward attempts BEFORE any GPU/CPU
     // dispatch. M32c.2 made `from_gguf` succeed for qwen3_moe by routing
     // to `from_gguf_for_moe` (which leaves dense FFN tensor refs as
@@ -360,10 +435,17 @@ fn run_gguf_generate(
     let has_legacy_quant = model_has_legacy_quant(&model);
 
     // GPU path: pass model by value (zero-clone) — model is returned on failure for CPU fallback
+    // #3826: an ATTEMPT is recorded before the outcome is known. Both arms below
+    // are attempts: `Ok` produced the tokens, `Err` had its result refused and
+    // handed the model back for the CPU to redo. Only the second is a fallback,
+    // and it is the one that reported nothing.
+    #[allow(unused_mut)]
+    let mut gpu_attempted = false;
     #[cfg(feature = "cuda")]
     let model = if !config.no_gpu && !has_legacy_quant {
+        gpu_attempted = true;
         match try_gguf_gpu_generate(model, input_tokens, gen_config, config.verbose) {
-            Ok(result) => return result,
+            Ok(result) => return result.map(|(t, u)| (t, u, true)),
             Err(returned_model) => *returned_model, // GPU failed, use returned model for CPU
         }
     } else {
@@ -371,11 +453,33 @@ fn run_gguf_generate(
     };
 
     // GH-559: wgpu fallback — try Vulkan compute before CPU.
-    // Proven: wgpu cosine=0.999863 on Blackwell sm_121 where CUDA JIT fails.
+    // #3827: the "Proven: wgpu cosine=0.999863 on Blackwell sm_121" claim that
+    // stood here is WITHDRAWN — #3757 measured 0.955046 on gx10, which IS
+    // Blackwell. See try_wgpu_generate's doc comment for the four-host table.
+    // #3760: the wgpu decode loop is greedy-only (an inline argmax over the LM head);
+    // a sampled request runs on the CPU loop, which draws, and says so.
+    //
+    // #3757: attempted ONLY when the user explicitly asked for an accelerator.
+    // `realizar`'s own `default = ["server", "cli", "gpu"]` reaches every
+    // `cargo install aprender`, because apr-cli depends on it without
+    // `default-features = false` — so this block is compiled into the nominally
+    // CPU-only default binary and, gated on `!no_gpu` alone, ran on the BARE
+    // `apr run model.gguf`. It dequantized the model to F32 (1726.8 MB on
+    // qwen2.5-coder-1.5b), failed wgpu's own cpu-parity gate at cosine 0.9554,
+    // and fell back — 7607 ms against `--no-gpu`'s 3035 ms for the same answer
+    // from the same CPU backend. The same cosine to four figures on intel, gx10,
+    // mini and an RTX 4090, so it is the wgpu path's numerics, not a driver.
+    //
+    // `--gpu` on such a build already REFUSES ("no GPU backend compiled in") and
+    // `--backend wgpu` already refuses to report a fallback as success. The bare
+    // default was the only path that paid for wgpu silently.
     #[cfg(feature = "gpu")]
-    if !config.no_gpu && !has_legacy_quant {
+    if wgpu_fallback_allowed(config.no_gpu, config.accel_forced, has_legacy_quant)
+        && wgpu_can_serve(gen_config.temperature, gen_config.top_k)
+    {
+        gpu_attempted = true;
         match try_wgpu_generate(&model, input_tokens, gen_config, config.verbose) {
-            Ok(result) => return Ok(result),
+            Ok((t, u)) => return Ok((t, u, true)),
             Err(e) => {
                 if config.verbose {
                     eprintln!("Backend: CPU (wgpu unavailable: {})", e);
@@ -385,10 +489,14 @@ fn run_gguf_generate(
     }
 
     log_cpu_backend(config.verbose, has_legacy_quant);
+    mark_generation_start(); // #3981
     let tokens = model
         .generate_with_cache(input_tokens, gen_config)
         .map_err(|e| RealizarError::InferenceError(format!("CPU generation failed: {}", e)))?;
-    Ok((tokens, false))
+    // #3826: the CPU answered. `gpu_attempted` distinguishes "CPU because
+    // nothing else was tried" from "CPU because the accelerator's result was
+    // refused" — the second is the fallback a consumer needs to see.
+    Ok((tokens, false, gpu_attempted))
 }
 
 /// Run APR model inference (PAR-302, PMAT-APR-CUDA-001)
@@ -420,8 +528,11 @@ fn run_apr_inference(
     }
 
     // GH-559: wgpu fallback for APR models — try Vulkan before CPU.
+    // #3757: explicit accelerator request only — see the GGUF path above.
     #[cfg(feature = "gpu")]
-    if !config.no_gpu {
+    if wgpu_fallback_allowed(config.no_gpu, config.accel_forced, false)
+        && wgpu_can_serve(config.temperature, config.top_k)
+    {
         match try_apr_wgpu_inference(config, input_tokens, input_token_count, load_start) {
             Some(Ok(result)) => return Ok(result),
             Some(Err(e)) => {
@@ -702,8 +813,10 @@ fn try_apr_wgpu_inference(
         inference_ms,
         load_ms: model_load_ms,
         tok_per_sec: if inference_ms > 0.0 { tokens_generated as f64 / (inference_ms / 1000.0) } else { 0.0 },
+        generation_ms: Some(inference_ms), // #3981: this path starts its clock AFTER setup, right before generation
         format: "APR".to_string(),
         used_gpu: true,
+        gpu_attempted: true,
     }))
 }
 
@@ -724,6 +837,37 @@ struct AprCudaModelInfo {
     hidden_dim: usize,
 }
 
+/// The notice a CUDA decline owes the user when the model's quantization has no verified
+/// GPU kernel — `None` when every inspected projection is GPU-eligible (#3908).
+///
+/// A FUNCTION rather than an inline `eprintln!` so the verdict and its wording can be
+/// asserted without capturing stderr or owning a GPU.
+///
+/// WHY THIS EXIT NEEDS AN UNCONDITIONAL NOTICE AND THE TWO ABOVE IT DO NOT. The standard
+/// its sibling carries — "CUDA init failure MUST be visible without --verbose … user saw
+/// downstream wgpu gibberish without ever knowing CUDA was rejected" — applies where the
+/// condition is CUDA-SPECIFIC, because then the other backends proceed and may SUCCEED and
+/// the rejection becomes unobservable. Verified rather than assumed:
+/// `run_apr_cpu_inference` delegates to `run_apr_quantized_cpu_inference`, which loads
+/// through the SAME `OwnedQuantizedModel`, and `try_apr_wgpu_inference` re-reads the same
+/// `MappedAprModel`. So a `from_path` or `from_apr` failure fails EVERY backend and
+/// surfaces loudly on its own; only the quant whitelist is a CUDA-only verdict that leaves
+/// the run going.
+///
+/// Measured cost of its absence: a bf16 `.apr` declines here, execution continues, wgpu
+/// fails with "Unsupported quantization type 30 for WGPU dequant", and two readers
+/// concluded the defect was wgpu routing. CUDA had already declined, correctly, silently.
+#[cfg(feature = "cuda")]
+fn apr_cuda_decline_notice(model: &crate::gguf::OwnedQuantizedModel) -> Option<String> {
+    let qtype = model.first_gpu_unsupported_quant()?;
+    Some(format!(
+        "{CUDA_FALLBACK_LOG_PREFIX}: no verified GPU kernel for quantization type {qtype} — \
+         CUDA declined this model before wgpu or CPU was tried. Any backend error after this \
+         line is downstream of THIS decision, not its cause. Convert with \
+         `apr convert --quantize fp16` (type 1 is GPU-eligible), or run with --no-gpu (#3908)."
+    ))
+}
+
 /// Load an APR model and initialize it on CUDA, returning None on any failure.
 #[cfg(feature = "cuda")]
 fn load_apr_cuda_model(
@@ -741,7 +885,8 @@ fn load_apr_cuda_model(
         if verbose { eprintln!("[APR-CUDA] OwnedQuantizedModel::from_apr failed: {}", e); }
     }).ok()?;
 
-    if model_has_legacy_quant(&model) {
+    if let Some(notice) = apr_cuda_decline_notice(&model) {
+        eprintln!("{notice}");
         return None;
     }
 
@@ -773,9 +918,12 @@ fn log_apr_cuda_info(
         "Architecture: {} ({} layers, vocab_size={})",
         info.arch, info.num_layers, info.vocab_size
     );
+    // #4006: the loaded weights' qtypes, not a backend name in the quant field.
+    let m = cuda_model.model();
     eprintln!(
-        "Config: hidden_size={}, quant=CUDA+KVCache, threads=1 (GPU)",
-        info.hidden_dim
+        "Config: hidden_size={}, quant={}, backend=CUDA+KVCache, threads=1 (GPU)",
+        info.hidden_dim,
+        body_quant_label(&model_body_qtypes(m), m.lm_head_weight.qtype)
     );
     eprintln!("Model loaded in {:.1}ms", load_ms);
     eprintln!(
@@ -827,11 +975,14 @@ fn try_apr_cuda_inference(
     config.apply_sampling_to(&mut gen_config);
 
     eprintln!("[GH-480] F2 validation starting...");
-    if !validate_gpu_first_token(&mut cuda_model, &gen_config, input_tokens) {
-        eprintln!("[GH-480] F2 validation FAILED — falling back to CPU");
+    // #3973: "PASSED" is printed ONLY for a comparison that ran and agreed, and it
+    // now carries the measured cosine. It used to print for every non-failure,
+    // including the two branches that compared nothing.
+    let f2 = validate_gpu_first_token(&mut cuda_model, &gen_config, input_tokens);
+    eprintln!("{}", f2_status_line(&f2));
+    if f2 == F2Outcome::Mismatch {
         return None;
     }
-    eprintln!("[GH-480] F2 validation PASSED — launching GPU generation");
 
     let infer_start = Instant::now();
 
@@ -866,9 +1017,11 @@ fn try_apr_cuda_inference(
         generated_token_count,
         inference_ms,
         tok_per_sec: tok_per_sec(generated_token_count, inference_ms),
+        generation_ms: Some(inference_ms), // #3981: this path starts its clock AFTER setup, right before generation
         load_ms,
         format: "APR".to_string(),
         used_gpu: true,
+        gpu_attempted: true,
     }))
 }
 
@@ -910,8 +1063,10 @@ fn run_apr_quantized_cpu_inference(
             model.config.architecture, model.config.num_layers, model.config.vocab_size
         );
         eprintln!(
-            "Config: hidden_size={}, quant=Q4_K (OwnedQuantizedModel CPU), threads={}",
+            "Config: hidden_size={}, quant={} (OwnedQuantizedModel CPU), threads={}",
             model.config.hidden_dim,
+            // #4006: a BF16 .apr printed Q4_K here; name what loaded.
+            body_quant_label(&model_body_qtypes(&model), model.lm_head_weight.qtype),
             rayon::current_num_threads()
         );
         eprintln!("Model loaded in {:.1}ms", load_ms);
@@ -949,9 +1104,11 @@ fn run_apr_quantized_cpu_inference(
         generated_token_count,
         inference_ms,
         tok_per_sec: tok_per_sec(generated_token_count, inference_ms),
+        generation_ms: Some(inference_ms), // #3981: this path starts its clock AFTER setup, right before generation
         load_ms,
         format: "APR".to_string(),
         used_gpu: false,
+        gpu_attempted: false,
     })
 }
 
@@ -1036,6 +1193,10 @@ fn tok_per_sec(count: usize, ms: f64) -> f64 {
 /// PMAT-236: Accepts `PreparedTokens` (compile-time enforced chat template).
 /// Previously, this function raw-encoded prompts WITHOUT chat template,
 /// producing garbage output for instruct models.
+/// Printed when a sampled request skips the greedy-only SafeTensors CUDA decoder (#3760).
+pub const SAFETENSORS_CUDA_SAMPLING_NOTICE: &str = "[safetensors: the CUDA decoder is greedy-only; \
+     sampling (--temperature > 0 with --top-k != 1) runs on the CPU (#3760)]";
+
 fn run_safetensors_inference(
     config: &InferenceConfig,
     prepared: &PreparedTokens,
@@ -1048,13 +1209,21 @@ fn run_safetensors_inference(
     let input_tokens = prepared.tokens().to_vec();
     let input_token_count = prepared.input_count();
 
-    // PMAT-129: Try GPU path first
+    // PMAT-129: Try GPU path first.
+    //
+    // #3760: `SafeTensorsCudaModel::generate(input, max_tokens, eos_id)` is greedy-only;
+    // it takes no sampling parameters. A sampled request used to go there and silently
+    // decode greedily. It now runs on the CPU loop, which draws, and says so.
     #[cfg(feature = "cuda")]
     if !config.no_gpu {
-        if let Some(result) =
-            try_safetensors_cuda_inference(config, &input_tokens, input_token_count)
-        {
-            return result;
+        if crate::sampling::is_greedy(config.temperature, config.top_k) {
+            if let Some(result) =
+                try_safetensors_cuda_inference(config, &input_tokens, input_token_count)
+            {
+                return result;
+            }
+        } else {
+            eprintln!("{SAFETENSORS_CUDA_SAMPLING_NOTICE}");
         }
     }
 
@@ -1091,9 +1260,11 @@ fn try_safetensors_cuda_inference(
             cuda_model.config().vocab_size
         );
         eprintln!(
-            "Config: hidden_size={}, context_length={}, quant=F16/BF16, threads=1 (GPU)",
+            "Config: hidden_size={}, context_length={}, quant={}, threads=1 (GPU)",
             cuda_model.config().hidden_dim,
-            cuda_model.config().context_length
+            cuda_model.config().context_length,
+            // #4006: read from the header, not an either/or guess.
+            safetensors_quant_label(&config.model_path)
         );
         eprintln!("Model loaded in {:.1}ms", load_ms);
         eprintln!(
@@ -1128,9 +1299,11 @@ fn try_safetensors_cuda_inference(
         generated_token_count,
         inference_ms,
         tok_per_sec: tok_per_sec(generated_token_count, inference_ms),
+        generation_ms: Some(inference_ms), // #3981: this path starts its clock AFTER setup, right before generation
         load_ms,
         format: "SafeTensors".to_string(),
         used_gpu: true,
+        gpu_attempted: true,
     }))
 }
 
@@ -1263,6 +1436,174 @@ mod tests {
             super::cpu_vs_gpu_cosine_similarity(&empty, &empty),
             0.0,
             "empty input must fail closed"
+        );
+    }
+}
+
+/// #3757: the case table for `wgpu_fallback_allowed`.
+///
+/// The row that shipped broken is `bare_apr_run_does_not_attempt_wgpu`. Deleting
+/// the `accel_forced` conjunct — the state `release/0.69.1-batch-2` @ `9f8836c71`
+/// was in — turns it RED.
+#[cfg(all(test, feature = "gpu"))]
+mod pmat3757_wgpu_attempt_gate {
+    use super::wgpu_fallback_allowed;
+
+    /// `(no_gpu, accel_forced, has_legacy_quant, allowed, what this invocation is)`
+    const CASES: &[(bool, bool, bool, bool, &str)] = &[
+        (
+            false, false, false, false,
+            "bare `apr run model.gguf` — the #3757 defect: on a default \
+             (non-cuda) install this dequantized 1726.8 MB to F32, failed wgpu's \
+             cpu-parity gate at cosine 0.9554 and fell back to CPU, costing \
+             7607 ms against --no-gpu's 3035 ms for the identical answer",
+        ),
+        (
+            false, true, false, true,
+            "`--backend wgpu` — an explicit request is still served, and still \
+             refuses to report a fallback as success (rc=14)",
+        ),
+        (
+            true, true, false, false,
+            "`--no-gpu --backend wgpu` — an explicit opt-out wins over an \
+             explicit request",
+        ),
+        (
+            true, false, false, false,
+            "`--no-gpu` — nothing to attempt",
+        ),
+        (
+            false, true, true, false,
+            "a legacy-quant model with `--gpu`: no GPU kernel exists for it, so \
+             the attempt would dequantize and fail",
+        ),
+    ];
+
+    #[test]
+    fn bare_apr_run_does_not_attempt_wgpu() {
+        let (no_gpu, accel_forced, legacy, _, why) = CASES[0];
+        assert!(
+            !wgpu_fallback_allowed(no_gpu, accel_forced, legacy),
+            "#3757 REGRESSION: {why}"
+        );
+    }
+
+    #[test]
+    fn an_explicit_accelerator_request_is_still_served() {
+        let (no_gpu, accel_forced, legacy, _, why) = CASES[1];
+        assert!(
+            wgpu_fallback_allowed(no_gpu, accel_forced, legacy),
+            "#3757 OVER-CORRECTION: the fix removed the backend instead of \
+             making it opt-in. {why}"
+        );
+    }
+
+    /// Every row at once, so a regression names each invocation it broke rather
+    /// than stopping at the first.
+    #[test]
+    fn the_whole_attempt_table_holds() {
+        let wrong: Vec<String> = CASES
+            .iter()
+            .filter(|(n, a, l, want, _)| wgpu_fallback_allowed(*n, *a, *l) != *want)
+            .map(|(n, a, l, want, why)| {
+                format!(
+                    "\n  - no_gpu={n} accel_forced={a} has_legacy_quant={l}: \
+                     expected allowed={want}, got {}. {why}",
+                    !*want
+                )
+            })
+            .collect();
+        assert!(
+            wrong.is_empty(),
+            "{} of {} wgpu-attempt cases are wrong:{}",
+            wrong.len(),
+            CASES.len(),
+            wrong.join("")
+        );
+    }
+
+    // ── #3908: a CUDA decline on the quant whitelist must ANNOUNCE itself ──────────
+
+    /// The notice exists and NAMES THE TYPE, both directions.
+    ///
+    /// A verdict test alone would not have caught the defect this fixes: the old code's
+    /// verdict was already correct — it declined bf16, rightly. What was missing was that
+    /// it said so. Hence the emission test below as well.
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn apr_cuda_decline_names_the_type_and_is_silent_when_eligible() {
+        // Built the same way the PMAT-785 whitelist tests build theirs.
+        let cfg = crate::gguf::GGUFConfig {
+            architecture: "test".to_string(),
+            constraints: crate::gguf::ArchConstraints::from_architecture("test"),
+            hidden_dim: 64,
+            intermediate_dim: 128,
+            num_layers: 1,
+            num_heads: 4,
+            num_kv_heads: 4,
+            vocab_size: 100,
+            context_length: 256,
+            rope_theta: 10000.0,
+            eps: 1e-5,
+            rope_type: 0,
+            explicit_head_dim: None,
+            query_pre_attn_scalar: None,
+            bos_token_id: None,
+            eos_token_id: None,
+        };
+        let eligible = crate::gguf::test_helpers::create_test_model_with_config(&cfg);
+
+        // Was 30 (BF16), the type that produced #3908 - until #3908 gave BF16 a
+        // measured kernel and admitted it. IQ1_M(29) still has none.
+        let mut bad = crate::gguf::test_helpers::create_test_model_with_config(&cfg);
+        bad.lm_head_weight.qtype = 29;
+        let notice = super::apr_cuda_decline_notice(&bad)
+            .expect("a model whose lm_head has no verified GPU kernel owes the user a notice");
+        assert!(notice.contains("29"), "the notice must NAME the declining type: {notice}");
+        assert!(
+            notice.starts_with(super::CUDA_FALLBACK_LOG_PREFIX),
+            "the notice must announce which backend was rejected: {notice}"
+        );
+        assert!(
+            notice.contains("downstream of THIS decision"),
+            "the notice must say later backend errors are downstream, since misattributing \
+             them to wgpu is the defect it exists to prevent: {notice}"
+        );
+
+        assert!(
+            super::apr_cuda_decline_notice(&eligible).is_none(),
+            "a fully GPU-eligible model must produce no decline notice"
+        );
+    }
+
+    /// MUST-RED: the notice is actually EMITTED at the exit, unconditionally.
+    ///
+    /// Read from source because the alternative is capturing stderr from a path that needs
+    /// a GPU. Delete the `eprintln!` at that exit and this goes red — which is the point:
+    /// the previous code's verdict was right and its silence was the bug, so a test that
+    /// only checks the verdict would have passed on the broken version.
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn the_decline_notice_is_emitted_unconditionally_not_behind_verbose() {
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/infer/gguf_gpu_generate.rs"
+        ))
+        .expect("own source readable");
+        let at = src
+            .find("if let Some(notice) = apr_cuda_decline_notice(&model)")
+            .expect("the quant-whitelist exit must consult apr_cuda_decline_notice");
+        let tail = &src[at..at + 220];
+        assert!(
+            tail.contains("eprintln!(\"{notice}\")"),
+            "the quant-whitelist exit must PRINT the notice before returning None — a silent \
+             decline here is #3908, and the sibling exit's own comment says a CUDA rejection \
+             MUST be visible without --verbose"
+        );
+        assert!(
+            !tail.contains("if verbose"),
+            "the decline notice must not be behind --verbose: the user who needs it is the \
+             one who did not pass it"
         );
     }
 }
