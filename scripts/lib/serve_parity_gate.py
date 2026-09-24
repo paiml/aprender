@@ -458,6 +458,7 @@ def verdict_rows(gate, pin):
               {"pass": True, "prompt_ids_match": True, "teacher_forced_steps": 32,
                "disagreements": [{"step": 0, "gap": 3.0, "rank": 2}]}), 0.9, RED),
         ("NaN gap is RED", _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0, "gap"], float("nan")), 0.9, RED),
+        ("bool gap is RED", _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0, "gap"], False), 0.9, RED),
         ("bool rank is RED", _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0, "rank"], True), 0.9, RED),
         ("too few teacher-forced steps is RED", _set(["models", 2, "correctness", "prompts", 0, "teacher_forced_steps"], 8), 0.9, RED),
         ("NaN decode ratio is RED", _set(["models", 2, "receipt", "bands", 0, "ratios", "dec", "point"], float("nan")), 0.9, RED),
@@ -559,10 +560,10 @@ MUTANTS = [
      ["disk measured elsewhere is NO-GO"]),
     ("disk resolution not read", "if not isinstance(disk.get(\"resolved\"), str) or not disk.get(\"resolved\"):", "if False:",
      ["unresolved disk path is NO-GO"]),
-    # Equivalent today: the negated range `not 0 <= gap < tau` already fails
-    # closed on NaN, so _finite there is defence in depth. It must flip nothing.
-    ("gap NaN-blind", "if not _finite(gap) or not 0", "if not isinstance(gap, (int, float)) or not 0",
-     []),
+    # The negated range already fails closed on NaN; _finite is what refuses a
+    # bool gap (0 <= False < tau holds). Round-4 quorum measured it live.
+    ("gap admits bool", "if not _finite(gap) or not 0", "if not isinstance(gap, (int, float)) or not 0",
+     ["bool gap is RED"]),
     ("rank admits bool", "if not _count(rank) or not 1", "if not isinstance(rank, int) or not 1",
      ["bool rank is RED"]),
     ("steps floor dropped", "steps < c[\"min_teacher_forced_steps\"]", "False",
