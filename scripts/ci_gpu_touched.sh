@@ -119,7 +119,7 @@ decide() {
     done
     local hit_lint=""
     for crate in $CUDA_LINT_CRATES; do
-        if printf '%s\n' "$diff" | grep -q "^crates/${crate}/"; then
+        if grep -q "^crates/${crate}/" <<< "$diff"; then
             hit_lint="${hit_lint}${crate} "
         fi
     done
@@ -202,7 +202,7 @@ self_test() {
     row 0 "MUTANT without apr-cli in CUDA_LINT_CRATES answers 0 on the apr-cli diff — the cuda_lint row discriminates" \
         '^MUTANT-BLIND$' bash -c "
             if ! grep -q '^CUDA_LINT_CRATES=\"\"$' '$td/mutant3.sh'; then echo MUTANT-NOT-PLANTED
-            elif bash '$td/mutant3.sh' --diff-from '$td/cli.txt' 2>/dev/null | grep -q '^cuda_lint=1'; then
+            elif grep -q '^cuda_lint=1' <<< \"\$(bash '$td/mutant3.sh' --diff-from '$td/cli.txt' 2>/dev/null)\"; then
                 echo MUTANT-STILL-SEES-IT
             else
                 echo MUTANT-BLIND
