@@ -54,18 +54,21 @@ impl From<RealizarError> for Step {
     }
 }
 
-/// The device side of a GPU session.
+/// #4234: the device model every sibling session shares, and the decode batcher
+/// that runs their steps together.
+#[cfg(feature = "cuda")]
+#[path = "qwen35_decode_batcher.rs"]
+mod decode_batcher;
+#[cfg(feature = "cuda")]
+pub use decode_batcher::{BatchStats, DEFAULT_BATCH_WINDOW};
+
+/// The device side of a GPU session: the shared device model, and this
+/// session's own decode state.
 #[cfg(feature = "cuda")]
 struct GpuBackend {
-    model: crate::gguf::cuda::Qwen35CudaModel<'static>,
+    shared: std::sync::Arc<decode_batcher::SharedGpu>,
     /// The session's decode state; `None` until the first turn sizes it.
     state: Option<crate::gguf::cuda::Qwen35CudaState>,
-    device_name: String,
-    /// The receipt key's model half, hashed once at load.
-    hash: crate::gguf::forward_qwen35::Qwen35ModelHash,
-    /// The F2 guard has accepted this device model (it runs once, on the first
-    /// turn's real prompt).
-    validated: bool,
 }
 
 #[cfg(feature = "cuda")]
@@ -113,11 +116,12 @@ impl GpuBackend {
             ),
         );
         Ok(Self {
-            model,
+            shared: std::sync::Arc::new(decode_batcher::SharedGpu::new(
+                model,
+                device_name,
+                Qwen35ModelHash::of(mapped.data()),
+            )),
             state: None,
-            device_name,
-            hash: Qwen35ModelHash::of(mapped.data()),
-            validated: false,
         })
     }
 }
@@ -253,6 +257,20 @@ impl crate::session::Session<Qwen35Forward> {
             no_gpu,
             Some(positions),
         )?))
+    }
+
+    /// #4234: a session over the same models with its own conversation; see
+    /// [`Qwen35Forward::sibling`].
+    #[must_use]
+    pub fn sibling(&self) -> Self {
+        Self::new(self.engine().sibling())
+    }
+
+    /// #4234: see [`Qwen35Forward::decode_batch_stats`].
+    #[cfg(feature = "cuda")]
+    #[must_use]
+    pub fn decode_batch_stats(&self) -> Option<BatchStats> {
+        self.engine().decode_batch_stats()
     }
 
     /// The hybrid's layers — Gated `DeltaNet` and full attention together, all
@@ -426,6 +444,46 @@ impl Qwen35Forward {
         self.qwen.base
     }
 
+    /// #4234: a second forward over the SAME models — the host model, and on the
+    /// GPU the same device weights — with its own, empty decode state. Siblings'
+    /// decode steps run together in one batched step; each keeps its own
+    /// conversation. A forward already on the CPU gives a CPU sibling.
+    #[must_use]
+    pub fn sibling(&self) -> Self {
+        let backend = match &self.backend {
+            #[cfg(feature = "cuda")]
+            Backend::Gpu(gpu) => Backend::Gpu(Box::new(GpuBackend {
+                shared: std::sync::Arc::clone(&gpu.shared),
+                state: None,
+            })),
+            Backend::Cpu(_) => Backend::Cpu(None),
+        };
+        Self {
+            qwen: self.qwen,
+            backend,
+            capacity: 0,
+            turn_positions: 0,
+            allocations: 0,
+            min_capacity: self.min_capacity,
+            context_length: self.context_length,
+            notices: self.notices.clone(),
+            per_token_prefill: self.per_token_prefill,
+            batched_prefills: 0,
+        }
+    }
+
+    /// #4234: the shared decode batcher's counters, when this forward is on the
+    /// GPU — the evidence that steps were batched, not a throughput that merely
+    /// looks like it.
+    #[cfg(feature = "cuda")]
+    #[must_use]
+    pub fn decode_batch_stats(&self) -> Option<BatchStats> {
+        match &self.backend {
+            Backend::Gpu(gpu) => Some(gpu.shared.stats()),
+            Backend::Cpu(_) => None,
+        }
+    }
+
     /// Advance the state from holding `tokens[..start]` to holding `tokens`.
     fn try_forward(&mut self, tokens: &[u32], start: usize) -> std::result::Result<Vec<f32>, Step> {
         #[cfg(feature = "cuda")]
@@ -469,7 +527,9 @@ impl Qwen35Forward {
             return Ok(None);
         }
         let end = pos0 + new.len();
-        if let Err(why) = fit_prefill_plan(qwen, &mut gpu.model, end) {
+        let GpuBackend { shared, state } = &mut **gpu;
+        let mut m = shared.lock();
+        if let Err(why) = fit_prefill_plan(qwen, &mut m.model, end) {
             eprintln!(
                 "[qwen35] batched prefill: {} tokens at position {pos0} would not fit ({why}); \
                  prefilling one token at a time on the GPU",
@@ -477,13 +537,12 @@ impl Qwen35Forward {
             );
             return Ok(None);
         }
-        let state = gpu
-            .state
+        let state = state
             .as_mut()
             .ok_or_else(|| Step::Gpu("the device state was never allocated".to_string()))?;
         // `prefill` ends in the logits download, so this clock stops on finished work.
         let t0 = std::time::Instant::now();
-        let logits = batched_prefill_outcome(gpu.model.prefill(new, state, pos0), new.len(), pos0)?;
+        let logits = batched_prefill_outcome(m.model.prefill(new, state, pos0), new.len(), pos0)?;
         let ms = t0.elapsed().as_secs_f64() * 1000.0;
         // The line `apr run` prints, plus the start position: a serve log must show
         // WHICH prefill it took, or a per-token regression reads as a slow GPU.
@@ -491,9 +550,10 @@ impl Qwen35Forward {
             "[qwen35] batched prefill: {} tokens in {ms:.0} ms ({:.0} tok/s, chunk {} rows, attention {}, from position {pos0})",
             new.len(),
             new.len() as f64 * 1000.0 / ms.max(1e-9),
-            gpu.model.prefill_chunk_rows(end),
-            gpu.model.prefill_attention_mode().as_str(),
+            m.model.prefill_chunk_rows(end),
+            m.model.prefill_attention_mode().as_str(),
         );
+        drop(m);
         self.batched_prefills += 1;
         Ok(Some(logits))
     }
@@ -506,22 +566,24 @@ impl Qwen35Forward {
         let Backend::Gpu(gpu) = &mut self.backend else {
             return Ok(());
         };
-        if gpu.validated {
+        let shared = &gpu.shared;
+        let mut m = shared.lock();
+        if m.validated {
             return Ok(());
         }
         let outcome = crate::gguf::forward_qwen35::f2_validate_qwen35_receipted_hashed(
-            &mut gpu.model,
+            &mut m.model,
             qwen,
             probe,
-            &gpu.hash,
-            &gpu.device_name,
+            &shared.hash,
+            &shared.device_name,
         );
         if !outcome.accepted {
             return Err(Step::Gpu(
                 "the F2 CPU-parity guard rejected the GPU path".to_string(),
             ));
         }
-        gpu.validated = true;
+        m.validated = true;
         Ok(())
     }
 
@@ -531,11 +593,15 @@ impl Qwen35Forward {
         match &mut self.backend {
             #[cfg(feature = "cuda")]
             Backend::Gpu(gpu) => {
+                // #4234: every GPU token goes through the shared batcher, which
+                // runs it with the sibling sessions' tokens of the same step.
                 let state = gpu
                     .state
-                    .as_mut()
+                    .take()
                     .ok_or_else(|| Step::Gpu("the device state was never allocated".to_string()))?;
-                gpu.model.forward_single(token, state, pos).map_err(|e| {
+                let (logits, state) = gpu.shared.decode(token, pos, state);
+                gpu.state = state;
+                logits.map_err(|e| {
                     Step::Gpu(format!("the GPU forward failed at position {pos}: {e}"))
                 })
             },
@@ -554,7 +620,9 @@ impl Qwen35Forward {
             #[cfg(feature = "cuda")]
             Backend::Gpu(gpu) => {
                 if let Some(state) = gpu.state.as_mut() {
-                    gpu.model
+                    gpu.shared
+                        .lock()
+                        .model
                         .reset_state(state)
                         .map_err(|e| Step::Gpu(format!("the device state would not reset: {e}")))?;
                 }
@@ -576,7 +644,8 @@ impl Qwen35Forward {
     fn bind_cuda_context_or_fall_back(&mut self) -> Result<()> {
         #[cfg(feature = "cuda")]
         if let Backend::Gpu(gpu) = &self.backend {
-            if let Err(e) = gpu.model.make_current() {
+            let bound = gpu.shared.lock().model.make_current();
+            if let Err(e) = bound {
                 self.fall_back_to_cpu(&format!(
                     "the CUDA context would not bind to this thread: {e}"
                 ))?;
@@ -617,8 +686,9 @@ impl Qwen35Forward {
             #[cfg(feature = "cuda")]
             Backend::Gpu(gpu) => {
                 // Free the old state before asking for the larger one.
+                let mut m = gpu.shared.lock();
                 gpu.state = None;
-                gpu.state = Some(gpu.model.new_state_with_capacity(capacity).map_err(|e| {
+                gpu.state = Some(m.model.new_state_with_capacity(capacity).map_err(|e| {
                     Step::Gpu(format!(
                         "a decode state for {capacity} positions would not allocate: {e}"
                     ))

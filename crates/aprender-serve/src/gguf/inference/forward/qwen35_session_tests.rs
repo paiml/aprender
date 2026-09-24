@@ -260,6 +260,100 @@ mod gpu {
         );
     }
 
+    /// #4234: sibling sessions decoding at the same time share each step's
+    /// batched forward, and each stream's tokens must be exactly what the same
+    /// prompt gives decoding alone. Prompts of different lengths put the streams
+    /// at different positions every step; two streams per prompt catch a batch
+    /// that hands one stream another's row. Batching is read off the batcher's
+    /// counters — overlapping threads alone would not prove it engaged.
+    #[test]
+    fn gpu_sibling_sessions_decoding_together_match_each_alone_token_for_token() {
+        const STREAMS: usize = 16;
+        let mapped = mapped_or_skip!();
+        let Some(mut session) = gpu_session_or_skip(&mapped) else {
+            return;
+        };
+        let config = greedy(24);
+        let texts = [
+            "Name the capital of Peru.",
+            "Hi",
+            "Write one sentence about the sea.",
+            "What is 2+2?",
+            "List three prime numbers, separated by commas, and nothing else.",
+            "Translate 'good morning' into Spanish.",
+            "Why is the sky blue? Answer in one line.",
+            "Count from one to five.",
+        ];
+        let prompts: Vec<Vec<u32>> = (0..STREAMS)
+            .map(|i| encode(&mapped, &user_turn(texts[i % texts.len()])))
+            .collect();
+
+        let t0 = std::time::Instant::now();
+        let want: Vec<Vec<u32>> = prompts
+            .iter()
+            .map(|p| {
+                let turn = session.generate(p, &config, &mut |_| true).expect("alone");
+                assert!(turn.used_gpu, "the reference must itself be a GPU run");
+                turn.tokens
+            })
+            .collect();
+        let alone_s = t0.elapsed().as_secs_f64();
+        let before = session.decode_batch_stats().expect("on the GPU");
+
+        let siblings: Vec<Qwen35Session> = (0..STREAMS).map(|_| session.sibling()).collect();
+        let start = std::sync::Barrier::new(STREAMS);
+        let t1 = std::time::Instant::now();
+        let got: Vec<(Vec<u32>, bool)> = std::thread::scope(|scope| {
+            let handles: Vec<_> = siblings
+                .into_iter()
+                .zip(&prompts)
+                .map(|(mut sibling, prompt)| {
+                    let (start, config) = (&start, &config);
+                    scope.spawn(move || {
+                        start.wait();
+                        let turn = sibling
+                            .generate(prompt, config, &mut |_| true)
+                            .expect("together");
+                        (turn.tokens, turn.used_gpu && sibling.on_gpu())
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().expect("a stream thread"))
+                .collect()
+        });
+        let together_s = t1.elapsed().as_secs_f64();
+        let after = session.decode_batch_stats().expect("on the GPU");
+
+        for (i, ((tokens, on_gpu), want)) in got.iter().zip(&want).enumerate() {
+            assert!(*on_gpu, "stream {i} fell back to the CPU");
+            assert_eq!(
+                tokens,
+                want,
+                "stream {i} ({:?}) decoded differently alongside its siblings",
+                texts[i % texts.len()]
+            );
+        }
+        let steps = after.steps - before.steps;
+        let sequences = after.sequences - before.sequences;
+        assert!(
+            after.widest >= 2,
+            "no step carried two streams — batching never engaged: {after:?}"
+        );
+        let generated = (STREAMS * config.max_tokens) as f64;
+        eprintln!(
+            "[4234] {STREAMS} streams x {} tokens: alone {alone_s:.2} s ({:.0} tok/s), \
+             together {together_s:.2} s ({:.0} tok/s); {steps} steps carried {sequences} \
+             tokens (mean {:.1}, widest {})",
+            config.max_tokens,
+            generated / alone_s,
+            generated / together_s,
+            sequences as f64 / steps.max(1) as f64,
+            after.widest,
+        );
+    }
+
     /// Built on one thread, driven from another — the shape `apr serve` has. A
     /// CUDA context is current per thread; without binding it the first
     /// allocation fails with CUDA_ERROR_INVALID_CONTEXT and the session falls

@@ -6,8 +6,10 @@ pub struct Qwen35Served {
     /// The GGUF's declared context length, readable while a generation holds
     /// the session — a request that cannot fit is refused without waiting.
     pub context_length: usize,
-    /// One request at a time: the hybrid is a single-stream model.
-    pub session: std::sync::Mutex<crate::gguf::qwen35_session::Qwen35Session>,
+    /// The resident sessions, one per request in flight (#4234). With one slot
+    /// (the default) requests take turns, as before; with more, their decode
+    /// steps run together on the one shared device model.
+    pub session: Qwen35Slots,
     /// Whether the session serves from the GPU — readable by `/health` while a
     /// generation holds the session, and refreshed after every generation, so a
     /// mid-run fallback to the CPU is reported, not remembered wrong.
@@ -79,7 +81,7 @@ impl AppState {
             qwen35_session: Some(Arc::new(Qwen35Served {
                 context_length: session.context_length(),
                 on_gpu: std::sync::atomic::AtomicBool::new(session.on_gpu()),
-                session: std::sync::Mutex::new(session),
+                session: Qwen35Slots::new(session, qwen35_serve_slots()),
             })),
             cached_eos_token_id: eos_token_id,
             verbose: false,
@@ -93,5 +95,145 @@ impl AppState {
     #[must_use]
     pub fn qwen35_session(&self) -> Option<Arc<Qwen35Served>> {
         self.qwen35_session.clone()
+    }
+}
+
+/// #4234: how many Qwen3.5 requests `apr serve` runs at once. Unset: 1 — one
+/// request at a time, the 0.69.x behaviour.
+pub const QWEN35_SERVE_SLOTS_ENV: &str = "APR_QWEN35_SERVE_SLOTS";
+
+/// The largest slot count [`QWEN35_SERVE_SLOTS_ENV`] may ask for.
+pub const QWEN35_SERVE_SLOTS_MAX: usize = 64;
+
+/// [`QWEN35_SERVE_SLOTS_ENV`], read once at startup. A value that is not a count
+/// in `1..=QWEN35_SERVE_SLOTS_MAX` is said loudly and replaced by 1, never
+/// guessed at.
+#[must_use]
+pub fn qwen35_serve_slots() -> usize {
+    match std::env::var(QWEN35_SERVE_SLOTS_ENV) {
+        Err(_) => 1,
+        Ok(raw) => match raw.trim().parse::<usize>() {
+            Ok(n) if (1..=QWEN35_SERVE_SLOTS_MAX).contains(&n) => n,
+            _ => {
+                eprintln!(
+                    "[qwen35] {QWEN35_SERVE_SLOTS_ENV}={raw:?} is not a slot count in \
+                     1..={QWEN35_SERVE_SLOTS_MAX}; serving one request at a time"
+                );
+                1
+            },
+        },
+    }
+}
+
+/// #4234: the resident Qwen3.5 sessions of one server — siblings over the same
+/// host and device models ([`Qwen35Session::sibling`]), each holding its own
+/// conversation. [`Self::lock`] waits for a free one.
+///
+/// [`Qwen35Session::sibling`]: crate::gguf::qwen35_session::Qwen35Session::sibling
+pub struct Qwen35Slots {
+    slots: Vec<std::sync::Mutex<crate::gguf::qwen35_session::Qwen35Session>>,
+    /// Free slot indices; the most recently released is taken first, so a lone
+    /// client's next turn lands on the session that holds its conversation.
+    free: std::sync::Mutex<Vec<usize>>,
+    released: std::sync::Condvar,
+}
+
+impl Qwen35Slots {
+    /// `first` and `count - 1` siblings of it (at least one slot).
+    #[must_use]
+    pub fn new(first: crate::gguf::qwen35_session::Qwen35Session, count: usize) -> Self {
+        let mut slots = Vec::with_capacity(count.max(1));
+        for _ in 1..count.max(1) {
+            slots.push(std::sync::Mutex::new(first.sibling()));
+        }
+        slots.insert(0, std::sync::Mutex::new(first));
+        // Slot 0 on top: a lone client always gets the same session.
+        let free = (0..slots.len()).rev().collect();
+        Self {
+            slots,
+            free: std::sync::Mutex::new(free),
+            released: std::sync::Condvar::new(),
+        }
+    }
+
+    /// The number of sessions — requests that can be in flight at once.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.slots.len()
+    }
+
+    /// Always false: there is at least one slot.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.slots.is_empty()
+    }
+
+    /// Wait for a free session and hold it until the guard drops.
+    ///
+    /// # Errors
+    /// The session was poisoned by a panic mid-turn — the same answer a plain
+    /// `Mutex` gives, with the guard inside it.
+    pub fn lock(&self) -> std::sync::LockResult<Qwen35Slot<'_>> {
+        let index = {
+            let mut free = self
+                .free
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            loop {
+                if let Some(i) = free.pop() {
+                    break i;
+                }
+                free = self
+                    .released
+                    .wait(free)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+            }
+        };
+        match self.slots[index].lock() {
+            Ok(guard) => Ok(Qwen35Slot {
+                pool: self,
+                index,
+                guard: Some(guard),
+            }),
+            Err(poisoned) => Err(std::sync::PoisonError::new(Qwen35Slot {
+                pool: self,
+                index,
+                guard: Some(poisoned.into_inner()),
+            })),
+        }
+    }
+}
+
+/// A session held for one request; releasing it frees the slot.
+pub struct Qwen35Slot<'a> {
+    pool: &'a Qwen35Slots,
+    index: usize,
+    guard: Option<std::sync::MutexGuard<'a, crate::gguf::qwen35_session::Qwen35Session>>,
+}
+
+impl std::ops::Deref for Qwen35Slot<'_> {
+    type Target = crate::gguf::qwen35_session::Qwen35Session;
+    fn deref(&self) -> &Self::Target {
+        self.guard.as_ref().expect("held until drop")
+    }
+}
+
+impl std::ops::DerefMut for Qwen35Slot<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.guard.as_mut().expect("held until drop")
+    }
+}
+
+impl Drop for Qwen35Slot<'_> {
+    fn drop(&mut self) {
+        // The session first, then the index: a waiter woken by the index must
+        // find the session free.
+        drop(self.guard.take());
+        self.pool
+            .free
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(self.index);
+        self.pool.released.notify_one();
     }
 }
