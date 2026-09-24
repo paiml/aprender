@@ -80,6 +80,7 @@ def _image_bytes(o):
 
 
 IMAGES = collections.defaultdict(lambda: [0, 0, None])   # session -> [bytes, images, first image time]
+COMPACTS = []   # real compactions in the window: {"pre", "post", "trigger", "session"} from compact_boundary records
 
 
 def claude(since):
@@ -104,6 +105,16 @@ def claude(since):
             continue
         with fh:
             for ln in fh:
+                if '"compact_boundary"' in ln:
+                    try:
+                        d = json.loads(ln)
+                    except ValueError:
+                        continue
+                    t, cm = ts_of(d.get("timestamp")), d.get("compactMetadata") or {}
+                    if t and t >= since and cm.get("preTokens"):
+                        COMPACTS.append({"pre": int(cm["preTokens"]), "post": int(cm.get("postTokens") or 0),
+                                         "trigger": cm.get("trigger") or "?", "session": d.get("sessionId") or "?", "t": t})
+                    continue
                 if '"image"' in ln and '"usage"' not in ln:
                     try:
                         d = json.loads(ln)
@@ -386,8 +397,8 @@ def main():
     all_main_cr = sum(r["cache_read"] for r in main_rows)
     L += ["", "### E. Levers, with ESTIMATED savings (arithmetic on the measured per-turn records; labelled estimates)", ""]
     L += ["- **E1. Cap the context at %s (compact / restart the session there)**: the context above %s re-read on every main turn "
-          "sums to %s tokens, %s of all main-turn cache reads -- the ceiling of what a cap saves (an estimate: compaction itself "
-          "costs a summary turn)." % (fmt(cap), fmt(cap), fmt(over), pct(over, all_main_cr))]
+          "sums to %s tokens, %s of all main-turn cache reads. That is NOT the ceiling: a compacted session restarts near its "
+          "post-compaction baseline, far below the cap -- F2 replays it with the measured compaction cost." % (fmt(cap), fmt(cap), fmt(over), pct(over, all_main_cr))]
     L += ["- **E2. Poll turns**: %s main turns wrote < 100 output tokens over a > 200k context (sleep / status polls, one-line "
           "acks); they re-read %s tokens (%s of main-turn cache reads). Waiting in ONE long tool call (or a background monitor "
           "that wakes the session) instead of repeated short turns saves up to that (estimate)." % (fmt(len(poll)), fmt(sum(r["cache_read"] for r in poll)),
@@ -396,6 +407,47 @@ def main():
           "documented upper bound of ~1,600 tokens per image, that is up to %s re-read tokens (%s of main-turn cache reads; an "
           "upper-bound estimate -- an image's real cost depends on its pixel size, which the transcript does not record)."
           % (fmt(sum(v[1] for v in IMAGES.values())), len(IMAGES), fmt(img_tok), pct(img_tok, all_main_cr))]
+    # --- F. what a context cap would COST, not only save: replay each session's measured per-turn growth under a cap
+    after = []
+    for c in COMPACTS:
+        rs = sorted((r for r in per.get(c["session"], []) if r["t"] > c["t"]), key=lambda r: r["t"])
+        if rs:
+            after.append(rs[0]["ctx"])
+    B = med(after) if after else 80000          # the context a session restarts from after a compaction (measured)
+    S = med([c["post"] for c in COMPACTS]) if COMPACTS else 13000   # the summary it writes (measured)
+    L += table("F1. Real compactions in the window (measured)", ["compactions", "auto / manual", "median context before",
+               "median summary written", "median context of the next turn"],
+               [[len(COMPACTS), "%d / %d" % (sum(1 for c in COMPACTS if c["trigger"] == "auto"), sum(1 for c in COMPACTS if c["trigger"] != "auto")),
+                 fmt(med([c["pre"] for c in COMPACTS])), fmt(S), fmt(B)]])
+    body = []
+    for cap_ in (200000, 300000, 400000, 600000):
+        n_comp = 0; read_sim = 0; comp_cost = 0; read_real = 0
+        for rs in per.values():
+            rs = sorted(rs, key=lambda r: r["t"])
+            sim = None; prev = None
+            for r in rs:
+                read_real += r["ctx"]
+                if prev is None:
+                    sim = min(r["ctx"], cap_)
+                else:
+                    delta = r["ctx"] - prev
+                    if delta < 0:            # a real compaction happened here: follow it (the sim keeps its own size)
+                        delta = 0
+                    sim += delta
+                    if sim > cap_:          # the cap compacts: the summarizer reads the whole context once, writes S,
+                        n_comp += 1         # and the next turn starts from B (a cache WRITE, counted at full size)
+                        comp_cost += sim + S + B
+                        sim = B
+                prev = r["ctx"]
+                read_sim += sim
+        net = read_real - read_sim - comp_cost
+        body.append([fmt(cap_), fmt(n_comp), fmt(comp_cost), fmt(read_real - read_sim), fmt(net), pct(net, read_real)])
+    L += table("F2. A context cap, replayed on the measured turns (ESTIMATE): compactions it forces, what they cost, and the NET saving",
+               ["cap", "compactions forced", "compaction cost (read + summary + restart)", "re-reads avoided", "NET saving", "net / all main-turn context"], body)
+    L += ["", "F2 replays each session's real per-turn context growth; when the simulated context passes the cap it compacts at the "
+          "MEASURED cost (the summarizer reads the whole context once, writes the median summary %s, the next turn starts from the "
+          "median post-compaction context %s). What it cannot see: work redone after a compaction (files re-read, lost state) -- so "
+          "the NET is an upper bound on the saving, and the compaction count is exact for this replay." % (fmt(S), fmt(B))]
     print("\n".join(L))
     return 0
 
