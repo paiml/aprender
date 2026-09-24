@@ -1,0 +1,20 @@
+- id: PMAT-4134
+  github_issue: 4134
+  item_type: bug
+  title: 'aarch64 clippy -D warnings fails in aprender-compute (4 cfg-dependent unused vars); no gate runs clippy on arm'
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-dd
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo clippy -p apr-cli --lib -- -D warnings exits 0 on gx10 (aarch64) and on x86_64, with no blanket allow'
+  - 'an aarch64 clippy run is on a gate with a first-green proof on gx10 and a planted arm-only unused binding turning it RED'
+  - 'any workflow edit is its own commit'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
