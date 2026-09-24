@@ -226,6 +226,11 @@ fi
 
 # 5. preflight (R1-R6; R5 reads the pre-publish receipt in this worktree)
 if run_step preflight; then
+  # #3690: the tag's own `ci / coverage` (COV_FLOOR, #3676) must be green before T-4. It was
+  # recorded and never consulted, so a floor breach on the tag still reached the cascade.
+  bash scripts/release/tag_coverage_gate.sh "$T" "$MC" > "$AP/tag-coverage.log" 2>&1; rc=$?
+  tail -1 "$AP/tag-coverage.log" >> "$STATUS"
+  [ $rc -eq 0 ] || die "tag coverage on $T refused rc=$rc ($AP/tag-coverage.log)"
   bash scripts/check_publish_preflight.sh > "$AP/preflight.log" 2>&1; rc=$?
   tail -3 "$AP/preflight.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "publish preflight refused rc=$rc"
