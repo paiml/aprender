@@ -1,0 +1,17 @@
+- id: GH-4143
+  github_issue: 4143
+  item_type: task
+  title: 'nightly_admission.resolve(): a relative receipt path with no verdict location falls back to the cwd (#4117 follow-up)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T05:10:00.006978068+00:00
+  updated: 2026-09-24T05:10:00.006978068+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  notes: null

@@ -107,6 +107,14 @@ def run(mod):
     esc_l = dict(rel, _path=os.path.join(moved, "verdict.json"), ladder={"receipt": "../../../outside-ladder.json"})
     why_l = mod.coherent(esc_l)
     res["relative-ladder-escaping-refused"] = (why_l is not None and "escapes" in why_l, why_l)
+    # a relative path in a verdict that says nowhere where it lives is refused, never resolved against the cwd --
+    # even when the cwd holds a valid GREEN receipt at that relative path (so only this rule can refuse it)
+    here = os.getcwd(); os.chdir(moved)
+    try:
+        why_n = mod.coherent(dict(rel, _path=None))
+    finally:
+        os.chdir(here)
+    res["relative-path-without-verdict-location-refused"] = (why_n is not None and "no verdict location" in why_n, why_n)
     return res
 
 
@@ -127,7 +135,8 @@ MUTANTS = [
     ("relative-from-cwd", '    base = os.path.dirname(os.path.abspath(v.get("_path") or ""))', '    base = os.getcwd()',
      "moved-root-admitted-by-relative-paths"),
     ("escape-followed", "    if not q.startswith(base + os.sep):", "    if False:", "relative-path-escaping-refused"),
-    ("escape-followed-ladder", '    if why and "escapes" in why:\n        return "its ladder receipt: %s" % why',
+    ("no-path-from-cwd", '    if not v.get("_path"):', "    if False:", "relative-path-without-verdict-location-refused"),
+    ("escape-followed-ladder", '    if lad_p is None and why and why != "no receipt recorded":\n        return "its ladder receipt: %s" % why',
      '    if False:\n        return "its ladder receipt: %s" % why', "relative-ladder-escaping-refused"),
 ]
 

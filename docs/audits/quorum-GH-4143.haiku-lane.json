@@ -1,0 +1,11 @@
+{
+ "verdict": "PASS",
+ "model": "claude-haiku-4-5-20251001",
+ "family": "claude",
+ "executor": "claude-code-subagent",
+ "role": "operator-rule cheap Claude seat (2026-09-24: 2 agy + 1 haiku)",
+ "agent_id": "a4661ac6862e39a2a",
+ "summary": "The diff correctly implements GH-4143 by refusing relative receipt paths with no `_path` and reporting all resolve failures by name in coherent(). The test suite confirms: 20/20 rows pass including the new case that verifies a relative path is refused even when the cwd holds a valid GREEN receipt at that location; 15/15 mutants are killed, including the new `no-path-from-cwd` mutant that would restore the cwd fallback. The coherent() logic widening correctly includes the new refusal message while preserving the existing behavior for absolute paths and verified _path cases (evidenced by green test row `moved-root-admitted-by-relative-paths`).",
+ "findings": [],
+ "judged_head": "4b5a97b387c71f5385d2e0a19f2b9e89d207183d"
+}
