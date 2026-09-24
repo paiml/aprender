@@ -21117,7 +21117,8 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-4219
   github_issue: 4219
