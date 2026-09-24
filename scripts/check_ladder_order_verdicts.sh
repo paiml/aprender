@@ -213,7 +213,9 @@ for leak in 0 1; do
   ia=$(python3 -c 'import json,sys; print(",".join(json.loads(sys.argv[1])["inventory"]))' "$A")
   ib=$(python3 -c 'import json,sys; print(",".join(json.loads(sys.argv[1])["inventory"]))' "$B")
   if [ "$ia" = "middle-inv.gguf,victim-small.gguf" ] && [ "$ib" = "middle-inv.gguf,victim-small.gguf" ]; then
-    case_line ok "$name: both held models are recorded, and the rung's file is measured once" "$ia | $ib"
+    # This reads the RECORD only: held models are recorded whether or not they are measured. "Measured once" is
+    # pinned by the exact order above (no inv:victim-small.gguf cell) and by executed=3 below.
+    case_line ok "$name: both held models are recorded in the receipt" "$ia | $ib"
   else
     case_line FAIL "$name: the inventory record is missing or wrong" "${ia:-none} | ${ib:-none}"
   fi
