@@ -85,6 +85,28 @@ impl<'a> KernelBuilder<'a> {
         dst
     }
 
+    /// Warp shuffle indexed for f32 with the source lane in a register — the
+    /// butterfly (`lane ^ k`) and quad reductions of an mma accumulator (#3596).
+    ///
+    /// Format: shfl.sync.idx.b32 dst, src, srcLane, c, membermask
+    pub fn shfl_idx_f32_reg(
+        &mut self,
+        val: VirtualReg,
+        src_lane_reg: VirtualReg,
+        mask: u32,
+    ) -> VirtualReg {
+        let dst = self.registers.allocate_virtual(PtxType::F32);
+        self.instructions.push(
+            PtxInstruction::new(PtxOp::ShflIdx, PtxType::F32)
+                .dst(Operand::Reg(dst))
+                .src(Operand::Reg(val))
+                .src(Operand::Reg(src_lane_reg))
+                .src(Operand::ImmU64(31)) // maxLane=31: allow reads from any lane
+                .src(Operand::ImmU64(mask as u64)), // membermask
+        );
+        dst
+    }
+
     // ===== KF-002: Warp Vote and Bit Manipulation =====
 
     /// Warp ballot - returns bitmask of lanes where predicate is true
