@@ -20610,3 +20610,21 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4193
+  github_issue: 4193
+  item_type: task
+  title: 'aprender-serve published tarball: tokenizer_tests_unk_3609 include_bytes! tests/fixtures, which Cargo.toml excludes (/tests/)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-6c
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #4193 done_when, verbatim: "`cargo build -p aprender-serve --lib --tests` from the unpacked tarball has no error at tokenizer_tests_unk_3609.rs, and the #3609 rows still pass in tree."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Option (a) from the ticket: the two header slices, MANIFEST.json and generate.py move from tests/fixtures/gguf-header-slices/ to src/fixtures/gguf-header-slices/ (the src/fixtures/chat_template_3990/ pattern), so they ship and the test runs for crates.io users. MEASURED: in tree, cargo test -p aprender-serve --lib tokenizer_tests_unk_3609 gives 9/9 pass. Tarball: the commit cherry-picked onto v0.69.1, packaged, and swapped into aprender-3a''s #4114 tarball workspace; cargo test -p aprender-serve --lib --no-run has 0 errors at tokenizer_tests_unk_3609.rs (it was 2). The one remaining error in that target is contracts/kernel-fusion-v1.yaml in fusion_call_site_guard_3985.rs, which is #4048 and out of scope. .crate is 8,224,489 bytes (under the 10 MB crates.io limit).'
