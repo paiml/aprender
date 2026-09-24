@@ -129,9 +129,17 @@ table() {
   else echo "FAIL  row worktree-removed -- $NR/$SHA/src still checked out"; fi
 
   run_case stamps "$d"
-  if python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); sys.exit(0 if v["t_end"] >= v["t_start"] > 0 and v["certification"]["sha256"] and __import__("os").path.isfile(v["certification"]["path"]) and v["apr_version_line"].startswith("apr 0.70.0 (") else 1)' "$V" 2> /dev/null; then
+  if python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); sys.exit(0 if v["t_end"] >= v["t_start"] > 0 and v["certification"]["sha256"] and __import__("os").path.isfile(__import__("os").path.join(__import__("os").path.dirname(sys.argv[1]), v["certification"]["path"])) and v["apr_version_line"].startswith("apr 0.70.0 (") else 1)' "$V" 2> /dev/null; then
     echo "ok    row verdict-provenance -- t_start<=t_end, the certification's sha256, the proved version line"
   else echo "FAIL  row verdict-provenance -- $(cat "$V" 2> /dev/null | tr '\n' ' ' | cut -c1-200)"; fi
+  # #4117: every path the verdict records is RELATIVE to its own directory and resolves there, so the night can be
+  # copied under another host's root and still be admitted (the two-host release gate judges on one host).
+  if python3 -c 'import json, os, sys
+v = json.load(open(sys.argv[1])); d = os.path.dirname(sys.argv[1])
+ps = [v["ladder"]["receipt"], v["certification"]["path"]] + [x["receipt"] for x in v["crux"]["lanes"].values()]
+sys.exit(0 if ps and all(p and not os.path.isabs(p) and os.path.isfile(os.path.join(d, p)) for p in ps) else 1)' "$V" 2> /dev/null; then
+    echo "ok    row verdict-relative -- the ladder, CRUX and certification paths are relative to the verdict and resolve there"
+  else echo "FAIL  row verdict-relative -- $(python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); print(v["ladder"]["receipt"], v["certification"]["path"])' "$V" 2>&1 | cut -c1-200)"; fi
 }
 
 out=$(table "$R/scripts/certify_nightly.sh")
@@ -164,6 +172,7 @@ mutant abbrev-exact-9     abbrev-any-length '[ "${SHA#"${BASH_REMATCH[1]}"}" != 
 mutant worktree-kept     worktree-removed 'git worktree remove --force "$SRC" >> "$LOG" 2>&1 ||' ': ||'
 mutant cert-left-in-src  verdict-provenance '  cp -f "$CERT" "$DIR/prompt-certification.json" && CERT="$DIR/prompt-certification.json"' '  :'
 mutant not-idempotent    idempotent     'if [ -f "$DIR/verdict.json" ]; then' 'if false; then'
+mutant absolute-paths    verdict-relative 'rel = lambda x: os.path.relpath(x, d) if' 'rel = lambda x: x if True else os.path.relpath(x, d) if'
 
 echo "check_certify_nightly: $([ "$bad" = 0 ] && echo PASS || echo FAIL)"
 exit "$bad"
