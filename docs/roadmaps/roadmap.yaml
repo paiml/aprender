@@ -20631,6 +20631,23 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4133
+  github_issue: 4133
+  item_type: task
+  title: 'CI: direct guard steps run under setsid --wait (#4133)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T01:27:53Z
+  updated: 2026-09-24T01:27:53Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4186
   github_issue: 4186
   item_type: task
@@ -20649,5 +20666,27 @@ roadmap:
   estimated_effort: null
   labels:
   - P0
+  - kind:code
+  notes: null
+- id: PMAT-4252
+  github_issue: 4252
+  item_type: task
+  title: 'Mandatory apr dogfood: apr serve Qwen3.5-4B as an advisory 4th quorum lane (gx10 CUDA primary, yields to lambda CPU on any need for the box) (#4252)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-6c
+  created: 2026-09-24T11:30:00Z
+  updated: 2026-09-24T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'gx10 serve runs --backend cuda --gpu-layers all; an answer is labelled gx10-cuda only with used_gpu true and the server pid holding GPU memory (#4089)'
+  - 'Any need for the box (gpu lock, queue, foreign GPU app, claim file, disk/mem alarm) stops the gx10 server by recorded pid; asks pass to lambda CPU'
+  - 'Mutation proof: planted hold -> watcher YIELD -> lambda answers -> watcher resumes'
+  - 'The lane never hangs a quorum: one hard budget per ask, verdict unavailable on expiry; advisory, counts=false'
+  - 'Every serve failure is filed under #4252'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
   - kind:code
   notes: null

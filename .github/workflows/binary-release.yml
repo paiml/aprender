@@ -665,7 +665,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.event.release.tag_name || inputs.tag }}"
-          bash scripts/check_release_assets.sh "$TAG" | tee "$RUNNER_TEMP/assets.txt"
+          setsid --wait bash scripts/check_release_assets.sh "$TAG" | tee "$RUNNER_TEMP/assets.txt"
           rc=${PIPESTATUS[0]}
           # 2 is ENV (the release could not be read) and is NOT a pass; 1 names
           # each missing asset. Both are red here, distinguished in the summary.

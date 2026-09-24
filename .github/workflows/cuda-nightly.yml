@@ -204,7 +204,7 @@ jobs:
       # NOT_RUN marker `decide` already wrote is the record.
       - name: PP-26 marker gate can still go RED (case table, no GPU)
         if: steps.decide.outputs.proceed == 'true'
-        run: bash scripts/check_perf041_marker.sh --selftest
+        run: setsid --wait bash scripts/check_perf041_marker.sh --selftest
 
       - name: Preflight — CUDA device + parity model present
         if: steps.decide.outputs.proceed == 'true'
