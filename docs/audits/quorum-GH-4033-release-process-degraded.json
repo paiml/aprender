@@ -1,0 +1,35 @@
+{
+  "ticket": "GH-4037,GH-4040,GH-4045,GH-4051",
+  "branch": "feat/4033-release-process-0.70",
+  "base": "6db770d2f",
+  "head": "649e5a6a3fe07b91b6a4e64dacb6d66bc88e1e26",
+  "executor": "claude-code-subagents",
+  "degraded": "same-family",
+  "degraded_because": "agy quota exhausted on every family; operator rule: Claude Code lanes, never the author's model id",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "lanes": [
+    {
+      "model": "claude-sonnet-5",
+      "verdict": "PASS",
+      "head": "649e5a6a3",
+      "findings": 0,
+      "history": "FAIL 823fc76b7 (3) -> fixed ae15411aa -> PASS ae15411aa -> PASS delta to 649e5a6a3"
+    },
+    {
+      "model": "claude-fable-5-1",
+      "verdict": "PASS",
+      "head": "649e5a6a3",
+      "findings": 1,
+      "history": "FAIL ae15411aa (6: 4 fixed in 7f3664c3a, 2 ticketed #4117/#4118) -> FAIL 7f3664c3a (regression: unreadable verdict skipped) -> PASS 649e5a6a3"
+    }
+  ],
+  "agreed": "degraded: 2 of 2 non-author Claude lanes PASS on the same head",
+  "no_self_review": true,
+  "open": [
+    "#4117 --scope release not wired into the publish path",
+    "#4118 a bookkeeping class does not reach the publish"
+  ]
+}
