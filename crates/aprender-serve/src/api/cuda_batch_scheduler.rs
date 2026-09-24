@@ -113,15 +113,33 @@ pub fn generate_single_request(cuda_model: &mut OwnedQuantizedModelCuda, req: Cu
     }
 }
 
+/// #4280: the single-request path is one turn of the one engine,
+/// [`Session`](crate::session::Session) over the dense CUDA forward, borrowing
+/// the scheduler's model for the turn. The session owns the loop — prefill,
+/// token choice, repetition penalty, stop tokens — and records the turn in the
+/// engine witness, which is how `tests_engine_identity` sees this entry.
 #[cfg(feature = "cuda")]
 fn generate_single_request_inner(cuda_model: &mut OwnedQuantizedModelCuda, req: CudaBatchRequest) {
+    // §3 / PP-2: phase timings belong to THIS request, never the last one's.
+    let _ = cuda_model.take_phase_timings();
+    if req.prompt_ids.is_empty() {
+        return;
+    }
+    let mut session = crate::session::Session::new(
+        crate::gguf::dense_session_borrowed::BorrowedCudaForward::new(cuda_model),
+    );
+    let stop_tokens = &req.config.stop_tokens;
     if req.non_streaming {
         let mut tokens = Vec::new();
-        let result =
-            cuda_model.generate_gpu_resident_streaming(&req.prompt_ids, &req.config, |tid| {
-                tokens.push(tid);
-                true
-            });
+        // A stop token ends the turn and is never sent, as the pre-port loop
+        // checked it before emitting.
+        let result = session.generate(&req.prompt_ids, &req.config, &mut |tid| {
+            if stop_tokens.contains(&tid) {
+                return false;
+            }
+            tokens.push(tid);
+            true
+        });
         match result {
             Ok(_) => {
                 for t in tokens {
@@ -135,10 +153,9 @@ fn generate_single_request_inner(cuda_model: &mut OwnedQuantizedModelCuda, req: 
             },
         }
     } else {
-        let result =
-            cuda_model.generate_gpu_resident_streaming(&req.prompt_ids, &req.config, |tid| {
-                req.token_tx.try_send(Ok(tid)).is_ok()
-            });
+        let result = session.generate(&req.prompt_ids, &req.config, &mut |tid| {
+            !stop_tokens.contains(&tid) && req.token_tx.try_send(Ok(tid)).is_ok()
+        });
         if let Err(e) = result {
             let _ = req.token_tx.try_send(Err(e.to_string()));
         }
@@ -587,3 +604,7 @@ fn process_cuda_batch(
         cuda_model.batched_cleanup(&state);
     }
 }
+
+#[cfg(all(test, feature = "cuda"))]
+#[path = "cuda_batch_scheduler_tests.rs"]
+mod tests;
