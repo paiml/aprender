@@ -29,7 +29,8 @@
   - `certify_nightly.sh` recorded host-absolute receipt paths, and admission read them as-is. gx10's night was therefore admissible on lambda only at the identical absolute path.
   - Verdicts now record paths relative to themselves, and `nightly_admission.resolve()` resolves them against the loaded verdict's directory.
   - A `..` escape is refused, and absolute paths from nights already on disk are still accepted.
-- **Shared gather:** `scripts/release/gather_nightly.sh` gathers both hosts' nights. It copies each night's verdict and the receipts it names, never the night's checkout, and is used by `models_t1` and `prepare_bump`.
+- **Shared gather:** `scripts/release/gather_nightly.sh` gathers both hosts' nights. It reads each night's `verdict.json` and copies it plus EXACTLY the receipts it names (ladder receipt, each CRUX lane's receipt, the certification), at the same relative place. It never copies the night's checkout, target or shard dirs. A named path that is absolute (a pre-215da7f79 night) or climbs out with `..` is not copied, so admission refuses it by name. Used by `models_t1` and `prepare_bump`.
+  - Quorum round 1, lane 1 (gemini-3.1-pro-high), FAIL, correct: the first version copied whole `ladder/` and `crux/` dirs without reading the verdict, which contradicted this claim. Fixed in round 2, with a row (`release-green` asserts an unnamed `crux/unnamed-shard.json` is NOT gathered) and a mutant (`gather-wholedir`) killed by it.
 
 ## Measured
 
@@ -38,7 +39,7 @@ Each "mutant … killed" below means the named row went RED on a copy with that 
 | table | result |
 |---|---|
 | `check_publish_preflight.sh --selftest` | 60/60 rows + 3 mutants killed (falls-back-to-ladder, unwired-ok, undecidable-is-ladder) = 63/63 |
-| `check_release_models_t1.sh` | 38/38 rows. New: release-green, release-no-nightly, release-red-smoke, release-stale-binary. Mutants killed: models-scope-dropped, models-no-gather, models-never-smoke, models-smoke-no-choom |
+| `check_release_models_t1.sh` | 39/39 rows. New: release-green, release-no-nightly, release-red-smoke, release-stale-binary. Mutants killed: models-scope-dropped, models-no-gather, models-never-smoke, models-smoke-no-choom, gather-wholedir |
 | `check_publish_reads_watch.sh` | PASS. New row fresh-hands-r7-the-models-outputs (the exact handoff incl. the case's release commit), mutant r7-handoff-dropped killed |
 | `check_release_shift_left.sh` | PASS. New rows watch-release-gate-red-andons, -green, -smoke-once-per-sha-then-rejudged. Mutants release-gate-skipped and release-smoke-uncached killed |
 | `check_release_bump_pr_body.sh` | 14/15. New row release-no-nightly-refuses, mutants drop-admission and never-release killed. The body rows now run on a release-gate fixture (cop ruling (a)). The one red row is `ladder-ignored` (see below) |

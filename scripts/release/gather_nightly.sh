@@ -3,8 +3,9 @@
 #
 # The 0.70 release gate (APR-RELEASE-001 §14.1) is judged on one host, and each host's night lives in ITS OWN
 # APR_NIGHTLY_ROOT (default ~/.cache/aprender-nightly, paiml/infra#959's timer). This copies, per host, every
-# <root>/<sha>/<host>/ night's verdict.json and the receipts it names (ladder/, crux/, prompt-certification.json)
-# -- never the night's checkout or target -- into <dst>/<sha>/<host>/. The remote host is read over the same
+# <root>/<sha>/<host>/ night's verdict.json and EXACTLY the receipts it names (its ladder receipt, each CRUX lane's
+# receipt, its certification), at the same relative place -- never the night's checkout, target or shard dirs --
+# into <dst>/<sha>/<host>/. The remote host is read over the same
 # operator-authorized SSH the models step uses. A verdict records its receipts relative to itself (#4117), so the
 # copy is admissible where it lands.
 #
@@ -23,18 +24,27 @@ case "$dst" in ''|/|*..*) echo "gather_nightly: refusing destination '$dst' (emp
 # bashrs disable-next-line=SEC010
 mkdir -p "$dst" || exit 1
 # The picker runs on BOTH hosts, so it is plain python with no single quote in it (it rides in a heredoc).
-PICK='import os, shutil, sys, glob
+PICK='import json, os, shutil, sys, glob
 root, host, dst = sys.argv[1:4]
-n = 0
+n = skipped = 0
 for v in glob.glob(os.path.join(root, "*", host, "verdict.json")):
     src = os.path.dirname(v); to = os.path.join(dst, os.path.basename(os.path.dirname(src)), host)
+    try:
+        doc = json.load(open(v))
+    except (OSError, ValueError):
+        doc = {}
+    named = [(doc.get("ladder") or {}).get("receipt"), (doc.get("certification") or {}).get("path")]
+    named += [(x or {}).get("receipt") for x in ((doc.get("crux") or {}).get("lanes") or {}).values()]
     os.makedirs(to, exist_ok=True); shutil.copy2(v, to); n += 1
-    for part in ("ladder", "crux"):
-        if os.path.isdir(os.path.join(src, part)):
-            shutil.copytree(os.path.join(src, part), os.path.join(to, part), dirs_exist_ok=True)
-    if os.path.isfile(os.path.join(src, "prompt-certification.json")):
-        shutil.copy2(os.path.join(src, "prompt-certification.json"), to)
-print("%s night(s) of %s" % (n, host))'
+    for p in named:
+        # exactly the receipts the verdict NAMES, at the same relative place; an absolute path (a night from before
+        # #4117) or one that climbs out of the night dir is not copied -- admission then refuses it by name
+        if not p or os.path.isabs(p) or os.path.normpath(p).startswith(".."):
+            skipped += bool(p); continue
+        if os.path.isfile(os.path.join(src, p)):
+            os.makedirs(os.path.dirname(os.path.join(to, p)) or to, exist_ok=True)
+            shutil.copy2(os.path.join(src, p), os.path.join(to, p))
+print("%s night(s) of %s, %s named path(s) not relocatable" % (n, host, skipped))'
 python3 -c "$PICK" "${APR_NIGHTLY_ROOT:-$HOME/.cache/aprender-nightly}" "$local_host" "$dst" || exit 1
 # bashrs SEC010: the archive is this script's own remote tar of <sha>/<host>/ dirs; $dst is validated above.
 # bashrs disable-next-line=SEC010

@@ -242,7 +242,7 @@ STUB
         mkdir -p "$r/contracts" "$r/scripts/lib" "$r/evidence/crux/9.9.8" || return 2
         printf 'ladder:\n  release_gate:\n    from: "9.9.0"\n    ruling: fixture\n' > "$r/contracts/model-capability-ladder-v1.yaml"
         cp -- "$ROOT/scripts/lib/crux_smoke_scope.py" "$ROOT/scripts/lib/model_ladder_crux.py" "$r/scripts/lib/" || return 2
-        cp -- "$ROOT/scripts/release/gather_nightly.sh" "$r/scripts/release/" || return 2
+        cp -- "${FX_GATHER:-$ROOT/scripts/release/gather_nightly.sh}" "$r/scripts/release/gather_nightly.sh" || return 2
         printf '{"schema": "crux-prompt-certification/v1", "fixture": true}\n' > "$r/evidence/crux/9.9.8/prompt-certification.json"
         cat > "$r/scripts/crux_sweep_shards.sh" <<'STUB'
 #!/usr/bin/env bash
@@ -281,6 +281,7 @@ STUB
             printf '{"schema":"apr-nightly-certification/v1","host":"%s","sha":"%s","green":true,"crux":{"lanes":{"gpu":{"receipt":"crux/%s-gpu.json"}}}}\n' \
                 "$h" "$par" "$h" > "$nd/verdict.json"
             printf '{}\n' > "$nd/crux/$h-gpu.json"; printf 'a night checkout that must NOT be gathered\n' > "$nd/src/HUGE"
+            printf '{}\n' > "$nd/crux/unnamed-shard.json"   # in the night dir, NOT named by its verdict: never gathered
         done
     fi
 }
@@ -375,6 +376,7 @@ release_green() {
     done
     ! ls "$d/ap/models-t1/nightly/"*/gx10/src > /dev/null 2>&1 || { printf 'a night CHECKOUT was gathered, not just its verdict and receipts\n'; return 1; }
     ls "$d/ap/models-t1/nightly/"*/gx10/crux/gx10-gpu.json > /dev/null 2>&1 || { printf 'the gx10 night came without the receipts its verdict names\n'; return 1; }
+    ! ls "$d/ap/models-t1/nightly/"*/*/crux/unnamed-shard.json > /dev/null 2>&1 || { printf 'a file the verdict does NOT name was gathered (the gather copies whole dirs)\n'; return 1; }
     return 0
 }
 # FX_NO_NIGHTLY_HOST shapes the FIXTURE (built before stops' ENV args are exported), so it rides on the call itself
@@ -475,8 +477,21 @@ mutant models-scope-dropped "$MODELS" "$M_SCOPE" '    bash scripts/check_model_l
 mutant models-no-gather     "$MODELS" "$M_GATHER" '    true || {' release_green
 mutant models-never-smoke   "$MODELS" "$M_PICK" '        0) ;;' release_green
 mutant models-smoke-no-choom "$MODELS" "$M_CHOOM" '    bash scripts/crux_sweep_shards.sh "$ver"' release_green
+# the gather copying whole dirs instead of exactly what the verdict names (quorum lane 1, GH-4117 round 1)
+GATHER="$ROOT/scripts/release/gather_nightly.sh"
+G_NAMED='    for p in named:'
+grep -qF -- "$G_NAMED" "$GATHER" || env_die "gather_nightly.sh has no '$G_NAMED' line -- the subject moved"
+python3 - "$GATHER" "$TMP/m-gather-wholedir.sh" <<'PY' || env_die "gather-wholedir mutant"
+import sys
+s = open(sys.argv[1]).read(); a = "    for p in named:"
+assert s.count(a) == 1
+open(sys.argv[2], "w").write(s.replace(a, '    shutil.copytree(os.path.join(src, "crux"), os.path.join(to, "crux"), dirs_exist_ok=True)\n' + a, 1))
+PY
+msg=$(FX_GATHER="$TMP/m-gather-wholedir.sh" release_green m-gather-wholedir "$AUTOPILOT" "$MODELS"); mrc=$?
+[ "$mrc" = 2 ] && env_die "gather-wholedir mutant could not build its fixture"
+[ "$mrc" != 0 ]; row "mutant gather-wholedir is killed by release_green (${msg:-survived})" "$?" "the mutant PASSED -- the row does not discriminate"
 
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
-[ "$rows" -ge 38 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 38 declared\n' "$rows" >&2; exit 1; }
+[ "$rows" -ge 39 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 39 declared\n' "$rows" >&2; exit 1; }
 [ "$fails" -eq 0 ] || { printf 'RED   %s of %s row(s) failed\n' "$fails" "$rows" >&2; exit 1; }
 printf 'PASS  %s row(s): the model matrix runs at T-1 on both hosts, every failure to prove the release STOPs before the tag, and R7 refuses the same failures at T-4 (#3717)\n' "$rows"
