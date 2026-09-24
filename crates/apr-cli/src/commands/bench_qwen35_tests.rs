@@ -27,7 +27,10 @@ fn bench_on_qwen35_times_session_generate() {
         .into_iter()
         .filter(|e| e.arch == "qwen35" && e.kind == realizar::session::EntryKind::Generate)
         .count();
-    assert_eq!(generates, 3, "1 warmup + 2 iterations through Session::generate");
+    assert_eq!(
+        generates, 3,
+        "1 warmup + 2 iterations through Session::generate"
+    );
     assert_eq!(result.iteration_times.len(), 2);
     assert!(result.total_tokens > 0, "{result:?}");
     assert!(result.time_to_first_token <= result.median_time.max(result.mean_time));

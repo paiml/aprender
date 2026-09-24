@@ -30,7 +30,13 @@ fn eval_perplexity_on_qwen35_enters_session_score() {
     }
     let result = run_evaluation(Path::new(MODEL), &config(PROSE), true).expect("eval runs");
     let mapped = realizar::gguf::MappedGGUFModel::from_path(MODEL).expect("map");
-    let tokens: Vec<u32> = mapped.model.encode(PROSE).expect("tokenizer").into_iter().take(64).collect();
+    let tokens: Vec<u32> = mapped
+        .model
+        .encode(PROSE)
+        .expect("tokenizer")
+        .into_iter()
+        .take(64)
+        .collect();
     let entries = realizar::session::entries_for(&tokens);
     assert!(
         entries.iter().any(|e| e.arch == "qwen35"
@@ -39,7 +45,10 @@ fn eval_perplexity_on_qwen35_enters_session_score() {
         "no qwen35 CPU Score entry for the scored sequence: {entries:?}"
     );
     assert_eq!(result.tokens_evaluated, tokens.len());
-    assert!(result.perplexity.is_finite() && result.perplexity > 1.0, "{result:?}");
+    assert!(
+        result.perplexity.is_finite() && result.perplexity > 1.0,
+        "{result:?}"
+    );
 }
 
 /// The score reads the logits after `pos` against `tokens[pos + 1]`. English prose
@@ -69,5 +78,8 @@ fn log_softmax_at_matches_the_closed_form() {
     let z: f64 = [1.0f64, 2.0, 3.0].iter().map(|x| x.exp()).sum();
     let got = log_softmax_at(&logits, 2).expect("in vocab");
     assert!((got - (3.0 - z.ln())).abs() < 1e-9);
-    assert!(log_softmax_at(&logits, 3).is_none(), "out of vocab is skipped, not clamped");
+    assert!(
+        log_softmax_at(&logits, 3).is_none(),
+        "out of vocab is skipped, not clamped"
+    );
 }
