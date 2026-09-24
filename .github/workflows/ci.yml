@@ -938,7 +938,7 @@ jobs:
       CARGO_INCREMENTAL: 0
       CARGO_TERM_COLOR: never
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Toolchain is the pinned one
         run: |
           set -euo pipefail
