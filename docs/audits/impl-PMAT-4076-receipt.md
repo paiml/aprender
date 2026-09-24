@@ -68,12 +68,28 @@ same-family artifact by design, so this record is for the cop's ruling, not for 
 | 2 | 3e60721f2 | PASS, PASS, lane 3 no verdict (account session limit). The notes were fixed in e6cf9f10b |
 | 3 | **e6cf9f10b** | **PASS ×3 — agreed** |
 
+## Foldable receipts: non-Claude majority (cop ruling, 2026-09-24)
+
+Under the operator's rule of 2026-09-24 ("one must always be a CHEAP claude code...perhaps haiku"), each quorum
+is 2 agy non-Claude lanes + 1 Claude Code lane on claude-haiku-4-5. The cop overrides receipt-lint on the single
+haiku seat. Each receipt below is ONE round on ONE head, not composed from other rounds.
+
+| Receipt | Head (base) | agy lanes (measured) | Claude seat (measured) | Agreed |
+|---|---|---|---|---|
+| `docs/audits/quorum-PMAT-4076-A.json` | `e6cf9f10b` (`49fe19c28`): the whole ONT-7 change | gemini-3.1-pro-high PASS, gemini-3.8-flash-high PASS | claude-haiku-4-5 PASS | **yes** |
+| `docs/audits/quorum-PMAT-4076-B.json` | `c9314e066` (`3913e2fad`): the follow-up alone | gemini-3.1-pro-high PASS, gemini-3.8-flash-high PASS | claude-haiku-4-5 PASS | **yes** |
+
+Fallback was restricted to `gpt-oss-120b-medium`, with no older claude-* ids, and it was not needed: the agy
+pre-check passed. Round B lane 1 records a partial_reason of 62 bytes of stderr. It was read: it is agy's
+"root agent idle; waiting … for 1 background task" narration, and the lane's verdict is measured.
+`docs/audits/quorum-PMAT-4076.json` (3 × claude-sonnet-5, degraded) is kept as the round-3 history.
+
 ## Open, non-blocking (round 3), for the fold or a follow-up
 
-- Σ `readers.worlds` still lists only `ontology/sigma.rs`; `lint/valid_under_gate.rs` now reads `worlds` too.
+- **Done in `c9314e066`, reviewed as receipt B:** Σ `readers.worlds` still listed only `ontology/sigma.rs`; `lint/valid_under_gate.rs` now reads `worlds` too.
   All three lanes noted it. It is a one-line change to `contracts/ontology.yaml`, and it changes the Σ
   checksum, so it was not made on a reviewed head.
-- VU-INV-003's `formal:` is a tautology. The rule itself is enforced (PV-ONT-013 on `{}`); the formula should
+- **Done in `c9314e066`, receipt B:** VU-INV-003's `formal:` was a tautology; it now reads `valid_under(c) ≠ ⊥ ⇒ len(keys(valid_under(c))) ≥ 1`. The rule itself is enforced (PV-ONT-013 on `{}`); the formula should
   read `len(keys(valid_under(c))) ≥ 1`.
 - Disclosed design, kept: a non-integer baseline value reads as "no baseline", and `make ont-ratchet` carries
   the key rather than re-measuring it. Both follow the formal_prose precedent.
