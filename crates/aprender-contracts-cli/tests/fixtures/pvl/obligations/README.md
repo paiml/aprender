@@ -77,6 +77,10 @@ script has no verdict to record:
 - zero contracts is `decline:` at exit 2 (PVL-1), where the script reports 0 over 0 at exit 0;
 - an input the script dies on with a traceback is a named problem. The module doc lists each
   one, and `a_non_string_proved_type_is_named_where_a_bound_fn_reaches_it` tests one;
-- YAML 1.2 (`serde_yaml`) against PyYAML's YAML 1.1: a plain `no` is a string here, and a duplicate
-  key is a parse problem here (it also fails `pv validate`, so the verdict agrees);
+- YAML 1.2 (`serde_yaml`) against PyYAML's YAML 1.1: a plain `no` is a string here;
+- a document `serde_yaml` refuses and PyYAML reads (a duplicate key, an integer beyond 64 bits)
+  fails `pv validate` on both sides. pv reports only that, as the script does, but cannot run
+  checks 2 and 3 on it, so a problem PyYAML would also find there goes unnamed (the verdict
+  agrees). `a_document_serde_yaml_refuses_fails_validate_so_the_verdict_agrees` holds both
+  shapes to the script's measured output;
 - `src/` is walked on disk, so untracked files count.

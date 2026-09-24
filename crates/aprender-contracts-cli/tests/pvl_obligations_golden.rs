@@ -253,3 +253,39 @@ fn a_non_string_proved_type_is_named_where_a_bound_fn_reaches_it() {
     );
     assert_eq!(run.code, 1, "{}", run.stderr);
 }
+
+/// A document `serde_yaml` refuses and PyYAML reads (a duplicate key, an integer beyond 64
+/// bits) cannot be checked for 2 and 3 here. Check 1 (`pv validate`, the same parser) fails
+/// on it on both sides, and pv adds no parse line of its own, so the report is the script's.
+#[test]
+fn a_document_serde_yaml_refuses_fails_validate_so_the_verdict_agrees() {
+    let valid = std::fs::read_to_string(fixtures().join("edge/contracts/g-unused-type-v1.yaml"))
+        .expect("g-unused-type-v1.yaml");
+    for (name, planted) in [
+        ("dup-v1.yaml", format!("{valid}proof_obligations: []\n")),
+        (
+            "bigint-v1.yaml",
+            valid.replacen(
+                "  proved_type: 7",
+                "  proved_type: 184467440737095516160",
+                1,
+            ),
+        ),
+    ] {
+        assert_ne!(planted, valid, "{name}: the plant took");
+        let root = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(root.path().join("contracts")).expect("contracts/");
+        std::fs::write(root.path().join("contracts").join(name), planted).expect("contract");
+        let run = obligations(root.path(), true);
+        // What the script prints for it (measured): the validate line and nothing else.
+        assert_eq!(
+            run.stdout,
+            format!(
+                "::error::contracts/{name}: pv validate failed\n\
+                 pv obligation gate: 1 problem(s) over 1 contracts\n"
+            ),
+            "{name}"
+        );
+        assert_eq!(run.code, 1, "{name}: {}", run.stderr);
+    }
+}

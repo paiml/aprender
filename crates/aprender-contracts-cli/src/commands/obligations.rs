@@ -30,8 +30,12 @@
 //!   string; a truthy `proved_type` that is not a string, where a bound `fn` would be searched
 //!   for it;
 //! - YAML is read by `serde_yaml` (YAML 1.2), the script's by PyYAML (YAML 1.1): a plain
-//!   `yes`/`no`/`on`/`off` is a string here and a boolean there, and a duplicate key is a
-//!   parse problem here where PyYAML keeps the last;
+//!   `yes`/`no`/`on`/`off` is a string here and a boolean there;
+//! - a document `serde_yaml` cannot read that PyYAML can (a duplicate key, an integer beyond
+//!   64 bits, …) gets no checks 2 and 3 here. `pv validate` reads with the same parser, so
+//!   check 1 fails on it on both sides, and pv adds no parse line of its own: the report is
+//!   the script's unless PyYAML also finds a check-2 or check-3 problem in it, which pv then
+//!   does not name (the verdict still agrees);
 //! - `src/` is walked on disk (symlinks not followed), where the script's `git grep` searches
 //!   tracked files only: an untracked file under `src/` counts here;
 //! - a word character is `char::is_alphanumeric` or `_`; next to non-ASCII text this can differ
@@ -112,7 +116,10 @@ fn check_contract(root: &Path, rel: &str, src: &mut SrcTree) -> Vec<String> {
     let mut problems = check_validate(root, rel);
     let doc = match load(&root.join(rel)) {
         Ok(doc) => doc,
-        Err(why) => {
+        // A document `serde_yaml` refuses also fails `pv validate`, the script's only
+        // report on it when PyYAML finds nothing else; a second line would miscount it.
+        Err(Load::Parse(_)) if !problems.is_empty() => return problems,
+        Err(Load::Parse(why) | Load::Other(why)) => {
             problems.push(format!("{rel}: {why}"));
             return problems;
         }
@@ -122,17 +129,24 @@ fn check_contract(root: &Path, rel: &str, src: &mut SrcTree) -> Vec<String> {
     problems
 }
 
+/// Why a contract could not be loaded. `Parse` is `serde_yaml` refusing the text.
+enum Load {
+    Parse(String),
+    Other(String),
+}
+
 /// `yaml.safe_load(...) or {}`: merge keys (`<<`) resolved as PyYAML resolves them, and a
 /// falsy document (empty, `false`, `0`, `[]`) is an empty mapping.
-fn load(path: &Path) -> Result<Mapping, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("cannot be read: {e}"))?;
-    let mut doc: Value =
-        serde_yaml::from_str(&text).map_err(|e| format!("does not parse as YAML: {e}"))?;
+fn load(path: &Path) -> Result<Mapping, Load> {
+    let text =
+        std::fs::read_to_string(path).map_err(|e| Load::Other(format!("cannot be read: {e}")))?;
+    let mut doc: Value = serde_yaml::from_str(&text)
+        .map_err(|e| Load::Parse(format!("does not parse as YAML: {e}")))?;
     // One pass resolves one level; a merged mapping that itself merges needs another.
     loop {
         let before = doc.clone();
         doc.apply_merge()
-            .map_err(|e| format!("has a merge key PyYAML refuses: {e}"))?;
+            .map_err(|e| Load::Other(format!("has a merge key PyYAML refuses: {e}")))?;
         if doc == before {
             break;
         }
@@ -140,7 +154,7 @@ fn load(path: &Path) -> Result<Mapping, String> {
     match doc {
         Value::Mapping(m) => Ok(m),
         v if !truthy(&v) => Ok(Mapping::new()),
-        _ => Err("is not a YAML mapping".into()),
+        _ => Err(Load::Other("is not a YAML mapping".into())),
     }
 }
 
