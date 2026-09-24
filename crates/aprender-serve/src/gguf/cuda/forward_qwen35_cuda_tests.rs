@@ -1276,21 +1276,22 @@ fn qwen35_cuda_a_fresh_model_pins_the_float_gemv_variants() {
     );
 }
 
-/// WHY THE PIN EXISTS (PMAT-3477 / #3090): with the DP4A GEMV kernels armed,
-/// the same forward that matches the CPU token for token produces a DIFFERENT
-/// token, or a direction nowhere near the CPU's.
+/// DP4A through the recurrence holds the parity contract (#4258).
 ///
-/// This is a falsifier, not a bug reproduction: it asserts the failure, so if a
-/// future DP4A activation-quantization change makes the path correct, this test
-/// goes RED and the pin (and the DP4A-through-recurrence ticket, 0.69.0) can be
-/// reconsidered on evidence.
+/// This was the falsifier `qwen35_cuda_dp4a_gemv_is_catastrophic_through_the_recurrence`
+/// (PMAT-3477 / #3090), which asserted the opposite: 1.656 relative away and a wrong
+/// argmax under `HwDp4a`. That reading was not Q8_1 quantization error. No qwen35
+/// writer kernel ever cleared `q8_activation_valid`, so every DP4A GEMV after the
+/// first reused the FIRST token's Q8_1 activation (#4258). With the activation cache
+/// keyed to its input and invalidated by the writers, the same run passes at every
+/// position. So this now guards the fix: if the stale-activation reuse comes back,
+/// the argmax breaks here.
 ///
-/// Measured on the real 0.8B file at position 0: see the printed reading. The
-/// DeltaNet-only path is 1.656 relative away from the CPU under `HwDp4a` versus
-/// 0.000 float-vs-float; end to end the argmax is simply wrong.
+/// The float pin in `Qwen35CudaModel::with_max_seq_len` stays until DP4A is
+/// re-measured on 2B/4B (#4030). This test only says the pin's stated reason is gone.
 #[test]
 #[serial_test::serial]
-fn qwen35_cuda_dp4a_gemv_is_catastrophic_through_the_recurrence() {
+fn qwen35_cuda_dp4a_gemv_holds_parity_through_the_recurrence() {
     use crate::cuda::gpu_profile::{Q4kVariant, Q6kVariant};
     let executor = qwen35_cuda_fixture_or_skip!();
     let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
@@ -1335,11 +1336,12 @@ fn qwen35_cuda_dp4a_gemv_is_catastrophic_through_the_recurrence() {
         }
     }
 
-    assert!(
-        broken > 0,
-        "the DP4A GEMV path passed the parity contract at every position — it is no longer \
-         catastrophic through the recurrence, so re-measure and revisit the pin in \
-         Qwen35CudaModel::with_max_seq_len (DP4A-through-recurrence ticket, 0.69.0)"
+    assert_eq!(
+        broken,
+        0,
+        "the DP4A GEMV path broke the parity contract at {broken} of {} positions: a stale \
+         Q8_1 activation is being reused again (#4258)",
+        LONG_PROMPT.len()
     );
 }
 
