@@ -187,3 +187,42 @@ fn greedy_on_the_device_is_token_identical_to_the_cpu_argmax_of_the_logits() {
         "device greedy diverged from the CPU argmax of the downloaded logits"
     );
 }
+
+/// Decode tokens/s after an 850-token prompt (#4215's reported number). Timing,
+/// not a gate: run in release with `--ignored`; `APR_4215_MODEL` picks the GGUF.
+#[test]
+#[ignore = "timing: run in release with --ignored"]
+#[serial_test::serial]
+fn bench_greedy_decode_tok_s_at_850() {
+    let path = std::env::var("APR_4215_MODEL").unwrap_or_else(|_| MODEL_PATH.to_string());
+    if !std::path::Path::new(&path).exists() {
+        eprintln!("SKIP: {path} is absent");
+        return;
+    }
+    let executor = crate::cuda_executor_or_skip!(0);
+    let mapped = crate::gguf::MappedGGUFModel::from_path(&path).expect("map the GGUF");
+    let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+    let mut gpu =
+        Qwen35CudaModel::with_max_seq_len(&qwen, executor, 1024).expect("build the CUDA model");
+    let mut state = gpu.new_state().expect("device state");
+
+    const PROMPT_LEN: usize = 850;
+    const DECODE: usize = 128;
+    let mut next = 0;
+    for pos in 0..PROMPT_LEN {
+        let t = PROMPT[pos % PROMPT.len()] + (pos as u32 % 97) * 13;
+        next = greedy_step(&mut gpu, t, &mut state, pos);
+    }
+    let t0 = std::time::Instant::now();
+    for i in 0..DECODE {
+        next = greedy_step(&mut gpu, next, &mut state, PROMPT_LEN + i);
+    }
+    let secs = t0.elapsed().as_secs_f64();
+    eprintln!(
+        "[4215] {path}: decode {:.1} tok/s at {PROMPT_LEN} ({DECODE} tokens, {:.3} ms/token)",
+        DECODE as f64 / secs,
+        secs * 1e3 / DECODE as f64
+    );
+}
