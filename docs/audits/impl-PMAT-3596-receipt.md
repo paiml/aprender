@@ -86,29 +86,31 @@ The ORIGINAL items 1–6 of #3596 (BEATS.md, `apr bench` for hybrids, the "(cach
 
 **llama.cpp.** `d1d3c3396`, `llama-server -ngl 99 -fa auto -ctk f16 -ctv f16 -ub 512 -np 1`, one chat request per prompt with `cache_prompt: false`. `prompt_ms` / `prompt_per_second` / `prompt_n` are read from the server's own timings. **apr ÷ llama** is the ratio of prefill rates, apr's best clean sample over llama's. Reported, never claimed.
 
+**Regenerate.** The run files are in-tree: `python3 docs/audits/impl-PMAT-3596-generators/mk_tables.py lambda=evidence/pmat-3596-lambda gx10=evidence/pmat-3596-gx10` prints every rung row below byte-identically, and its `source` column names the files each row was read from.
+
 #### lambda — Qwen3.5-9B-Q4_K_M — #3726 binary (merge 242d7e1a4)
 
-| rung | positions (apr) | cuBLAS f32 attention | flash (f16 in, f32 acc) | llama.cpp d1d3c3396 prompt | apr ÷ llama (best clean rate) | answer |
-|---|---|---|---|---|---|---|
-| p4k | 4,134 | 2,152 ms · 1,921 tok/s · 242d7e1a4 n=64 | 2,304 ms · 1,794 tok/s · 242d7e1a4 n=64 | 462 ms · 8,935 tok/s (4,131 tok) | 0.215 | path ✓, verbatim line ✓ |
-| p8k | 8,224 | 4,288 ms · 1,918 tok/s · 242d7e1a4 n=64 | 4,776 ms · 1,722 tok/s · 242d7e1a4 n=64 | 866 ms · 9,492 tok/s (8,221 tok) | 0.202 | path ✓, verbatim line ✓ |
-| p20k | 20,077 | 11,779 ms · 1,704 tok/s · 242d7e1a4 n=64 | 13,737 ms · 1,462 tok/s · 242d7e1a4 n=64 | 2,124 ms · 9,451 tok/s (20,074 tok) | 0.180 | path ✓, verbatim line ✓ |
-| p60k | 59,924 | 46,997 ms · 1,275 tok/s · 242d7e1a4 n=64 | 63,792 ms · 939 tok/s · 242d7e1a4 n=64 | 7,147 ms · 8,384 tok/s (59,921 tok) | 0.152 | path ✓, verbatim line ✓ |
-| p148k | 148,203 | 262,860 ms · 564 tok/s · 242d7e1a4 n=64 | 266,827 ms · 555 tok/s · 242d7e1a4 n=64 | 22,362 ms · 6,627 tok/s (148,200 tok) | 0.085 | path ✓, verbatim line ✓ |
-| p262k | 261,948 | REFUSED (242d7e1a4) | 729,115 ms · 359 tok/s · 242d7e1a4 n=64 | 50,734 ms · 5,163 tok/s (261,945 tok) | 0.070 | path ✓, verbatim line ✓ |
+| rung | positions (apr) | cuBLAS f32 attention | flash (f16 in, f32 acc) | llama.cpp d1d3c3396 prompt | apr ÷ llama (best clean rate) | answer | source |
+|---|---|---|---|---|---|---|---|
+| p4k | 4,134 | 2,152 ms · 1,921 tok/s · 242d7e1a4 n=64 | 2,304 ms · 1,794 tok/s · 242d7e1a4 n=64 | 462 ms · 8,935 tok/s (4,131 tok) | 0.215 | path ✓, verbatim line ✓ | `evidence/pmat-3596-lambda/m-f32-9b-p4k.err`<br>`evidence/pmat-3596-lambda/m-flash-9b-p4k.err`<br>`evidence/pmat-3596-lambda/llama-p4k.json` |
+| p8k | 8,224 | 4,288 ms · 1,918 tok/s · 242d7e1a4 n=64 | 4,776 ms · 1,722 tok/s · 242d7e1a4 n=64 | 866 ms · 9,492 tok/s (8,221 tok) | 0.202 | path ✓, verbatim line ✓ | `evidence/pmat-3596-lambda/m-f32-9b-p8k.err`<br>`evidence/pmat-3596-lambda/m-flash-9b-p8k.err`<br>`evidence/pmat-3596-lambda/llama-p8k.json` |
+| p20k | 20,077 | 11,779 ms · 1,704 tok/s · 242d7e1a4 n=64 | 13,737 ms · 1,462 tok/s · 242d7e1a4 n=64 | 2,124 ms · 9,451 tok/s (20,074 tok) | 0.180 | path ✓, verbatim line ✓ | `evidence/pmat-3596-lambda/m-f32-9b-p20k.err`<br>`evidence/pmat-3596-lambda/m-flash-9b-p20k.err`<br>`evidence/pmat-3596-lambda/llama-p20k.json` |
+| p60k | 59,924 | 46,997 ms · 1,275 tok/s · 242d7e1a4 n=64 | 63,792 ms · 939 tok/s · 242d7e1a4 n=64 | 7,147 ms · 8,384 tok/s (59,921 tok) | 0.152 | path ✓, verbatim line ✓ | `evidence/pmat-3596-lambda/m-f32-9b-p60k.err`<br>`evidence/pmat-3596-lambda/m-flash-9b-p60k.err`<br>`evidence/pmat-3596-lambda/llama-p60k.json` |
+| p148k | 148,203 | 262,860 ms · 564 tok/s · 242d7e1a4 n=64 | 266,827 ms · 555 tok/s · 242d7e1a4 n=64 | 22,362 ms · 6,627 tok/s (148,200 tok) | 0.085 | path ✓, verbatim line ✓ | `evidence/pmat-3596-lambda/m-f32-9b-p148k.err`<br>`evidence/pmat-3596-lambda/m-flash-9b-p148k.err`<br>`evidence/pmat-3596-lambda/llama-p148k.json` |
+| p262k | 261,948 | REFUSED (242d7e1a4) | 729,115 ms · 359 tok/s · 242d7e1a4 n=64 | 50,734 ms · 5,163 tok/s (261,945 tok) | 0.070 | path ✓, verbatim line ✓ | `evidence/pmat-3596-lambda/m-f32-9b-p262k.err`<br>`evidence/pmat-3596-lambda/m-auto-9b-p262k.err`<br>`evidence/pmat-3596-lambda/llama-p262k.json` |
 
 <details><summary>lambda: SUPERSEDED rows — pre-#3726 tokenizer binaries (kept, not mixed in)</summary>
 
 #### lambda — Qwen3.5-9B-Q4_K_M — SUPERSEDED — pre-#3726 tokenizer binaries
 
-| rung | positions (apr) | cuBLAS f32 attention | flash (f16 in, f32 acc) | llama.cpp d1d3c3396 prompt | apr ÷ llama (best clean rate) | answer |
-|---|---|---|---|---|---|---|
-| p4k | 4,131 | 2,895 ms · 1,427 tok/s · pre-record n=1<br>2,102 ms · 1,966 tok/s · d78eab8eb n=64 | 2,324 ms · 1,778 tok/s · d78eab8eb n=64 | 462 ms · 8,935 tok/s (4,131 tok) | 0.220 | first token "The" (n=1, not graded); path ✗ (crates/aprender-serve/src/gguf/cuda/foward_qwen35_cuda_prefill.rs), verbatim line ✓ |
-| p8k | 8,221 | 4,361 ms · 1,885 tok/s · pre-record n=1<br>4,308 ms · 1,908 tok/s · d78eab8eb n=64 | 4,784 ms · 1,719 tok/s · d78eab8eb n=64 | 866 ms · 9,492 tok/s (8,221 tok) | 0.201 | first token "The" (n=1, not graded); path ✓, verbatim line ✓ |
-| p20k | 20,085 | 11,464 ms · 1,752 tok/s · 4ff26a07a n=1<br>11,487 ms · 1,749 tok/s · pre-record n=1 ⚠busy 30%<br>11,558 ms · 1,738 tok/s · d78eab8eb n=64 | 13,751 ms · 1,461 tok/s · d78eab8eb n=1<br>13,768 ms · 1,459 tok/s · d78eab8eb n=64 | 2,124 ms · 9,451 tok/s (20,074 tok) | 0.185 | first token "The" (n=1, not graded); path ✓, verbatim line ✓ |
-| p60k | 59,887 | 46,513 ms · 1,288 tok/s · 4ff26a07a n=1<br>47,338 ms · 1,265 tok/s · pre-record n=1 ⚠busy 91%<br>46,962 ms · 1,275 tok/s · d78eab8eb n=64 | 61,551 ms · 973 tok/s · d78eab8eb n=1<br>61,924 ms · 967 tok/s · d78eab8eb n=64 | 7,147 ms · 8,384 tok/s (59,921 tok) | 0.154 | first token "The" (n=1, not graded); path ✓, verbatim line ✓ |
-| p148k | 148,563 | 257,963 ms · 576 tok/s · 4ff26a07a n=1 | 266,860 ms · 557 tok/s · d78eab8eb n=1 | 22,362 ms · 6,627 tok/s (148,200 tok) | 0.087 | first token "The" (n=1, not graded) |
-| p262k | 263,089 | REFUSED (4ff26a07a) | 731,063 ms · 360 tok/s · d78eab8eb n=1 | 50,734 ms · 5,163 tok/s (261,945 tok) | 0.070 | first token "The" (n=1, not graded) |
+| rung | positions (apr) | cuBLAS f32 attention | flash (f16 in, f32 acc) | llama.cpp d1d3c3396 prompt | apr ÷ llama (best clean rate) | answer | source |
+|---|---|---|---|---|---|---|---|
+| p4k | 4,131 | 2,895 ms · 1,427 tok/s · pre-record n=1<br>2,102 ms · 1,966 tok/s · d78eab8eb n=64 | 2,324 ms · 1,778 tok/s · d78eab8eb n=64 | 462 ms · 8,935 tok/s (4,131 tok) | 0.220 | first token "The" (n=1, not graded); path ✗ (crates/aprender-serve/src/gguf/cuda/foward_qwen35_cuda_prefill.rs), verbatim line ✓ | `evidence/pmat-3596-lambda/9b-p4k.err`<br>`evidence/pmat-3596-lambda/n64-f32-9b-p4k.err`<br>`evidence/pmat-3596-lambda/n64-flash-9b-p4k.err`<br>`evidence/pmat-3596-lambda/llama-p4k.json` |
+| p8k | 8,221 | 4,361 ms · 1,885 tok/s · pre-record n=1<br>4,308 ms · 1,908 tok/s · d78eab8eb n=64 | 4,784 ms · 1,719 tok/s · d78eab8eb n=64 | 866 ms · 9,492 tok/s (8,221 tok) | 0.201 | first token "The" (n=1, not graded); path ✓, verbatim line ✓ | `evidence/pmat-3596-lambda/9b-p8k.err`<br>`evidence/pmat-3596-lambda/n64-f32-9b-p8k.err`<br>`evidence/pmat-3596-lambda/n64-flash-9b-p8k.err`<br>`evidence/pmat-3596-lambda/llama-p8k.json` |
+| p20k | 20,085 | 11,464 ms · 1,752 tok/s · 4ff26a07a n=1<br>11,487 ms · 1,749 tok/s · pre-record n=1 ⚠busy 30%<br>11,558 ms · 1,738 tok/s · d78eab8eb n=64 | 13,751 ms · 1,461 tok/s · d78eab8eb n=1<br>13,768 ms · 1,459 tok/s · d78eab8eb n=64 | 2,124 ms · 9,451 tok/s (20,074 tok) | 0.185 | first token "The" (n=1, not graded); path ✓, verbatim line ✓ | `evidence/pmat-3596-lambda/9b-p20k-rerun.err`<br>`evidence/pmat-3596-lambda/9b-p20k.err`<br>`evidence/pmat-3596-lambda/n64-f32-9b-p20k.err`<br>`evidence/pmat-3596-lambda/flash-9b-p20k.err`<br>`evidence/pmat-3596-lambda/n64-flash-9b-p20k.err`<br>`evidence/pmat-3596-lambda/llama-p20k.json` |
+| p60k | 59,887 | 46,513 ms · 1,288 tok/s · 4ff26a07a n=1<br>47,338 ms · 1,265 tok/s · pre-record n=1 ⚠busy 91%<br>46,962 ms · 1,275 tok/s · d78eab8eb n=64 | 61,551 ms · 973 tok/s · d78eab8eb n=1<br>61,924 ms · 967 tok/s · d78eab8eb n=64 | 7,147 ms · 8,384 tok/s (59,921 tok) | 0.154 | first token "The" (n=1, not graded); path ✓, verbatim line ✓ | `evidence/pmat-3596-lambda/9b-p60k-rerun.err`<br>`evidence/pmat-3596-lambda/9b-p60k.err`<br>`evidence/pmat-3596-lambda/n64-f32-9b-p60k.err`<br>`evidence/pmat-3596-lambda/flash-9b-p60k.err`<br>`evidence/pmat-3596-lambda/n64-flash-9b-p60k.err`<br>`evidence/pmat-3596-lambda/llama-p60k.json` |
+| p148k | 148,563 | 257,963 ms · 576 tok/s · 4ff26a07a n=1 | 266,860 ms · 557 tok/s · d78eab8eb n=1 | 22,362 ms · 6,627 tok/s (148,200 tok) | 0.087 | first token "The" (n=1, not graded) | `evidence/pmat-3596-lambda/9b-p148k.err`<br>`evidence/pmat-3596-lambda/flash-9b-p148k.err`<br>`evidence/pmat-3596-lambda/llama-p148k.json` |
+| p262k | 263,089 | REFUSED (4ff26a07a) | 731,063 ms · 360 tok/s · d78eab8eb n=1 | 50,734 ms · 5,163 tok/s (261,945 tok) | 0.070 | first token "The" (n=1, not graded) | `evidence/pmat-3596-lambda/9b-p262k.err`<br>`evidence/pmat-3596-lambda/flash-9b-p262k.err`<br>`evidence/pmat-3596-lambda/llama-p262k.json` |
 
 </details>
 
@@ -156,46 +158,47 @@ The ORIGINAL items 1–6 of #3596 (BEATS.md, `apr bench` for hybrids, the "(cach
 
 #### gx10 — Qwen3.5-9B-Q4_K_M — #3726 binary (merge 242d7e1a4)
 
-| rung | positions (apr) | cuBLAS f32 attention | flash (f16 in, f32 acc) | llama.cpp d1d3c3396 prompt | apr ÷ llama (best clean rate) | answer |
-|---|---|---|---|---|---|---|
-| p4k | 4,134 | 8,598 ms · 481 tok/s · 242d7e1a4 n=64 | 7,824 ms · 528 tok/s · 242d7e1a4 n=64 | 1,580 ms · 2,614 tok/s (4,131 tok) | 0.202 | path ✓, verbatim line ✓ |
-| p8k | 8,224 | 18,355 ms · 448 tok/s · 242d7e1a4 n=64 | 16,494 ms · 499 tok/s · 242d7e1a4 n=64 | 3,059 ms · 2,688 tok/s (8,221 tok) | 0.186 | path ✓, verbatim line ✓ |
-| p20k | 20,077 | 45,906 ms · 437 tok/s · 242d7e1a4 n=64 | 44,786 ms · 448 tok/s · 242d7e1a4 n=64 | 7,549 ms · 2,659 tok/s (20,074 tok) | 0.168 | path ✓, verbatim line ✓ |
-| p60k | 59,924 | 172,156 ms · 348 tok/s · 242d7e1a4 n=64 | 188,863 ms · 317 tok/s · 242d7e1a4 n=64 | 24,723 ms · 2,424 tok/s (59,921 tok) | 0.144 | path ✓, verbatim line ✓ |
-| p148k | 148,203 | 612,477 ms · 242 tok/s · 242d7e1a4 n=64 | 759,363 ms · 195 tok/s · 242d7e1a4 n=64 | 79,211 ms · 1,871 tok/s (148,200 tok) | 0.129 | path ✓, verbatim line ✓ |
-| p262k | 261,948 | 1,594,855 ms · 164 tok/s · 242d7e1a4 n=64 | — | 175,409 ms · 1,493 tok/s (261,945 tok) | 0.110 | path ✓, verbatim line ✓ |
+| rung | positions (apr) | cuBLAS f32 attention | flash (f16 in, f32 acc) | llama.cpp d1d3c3396 prompt | apr ÷ llama (best clean rate) | answer | source |
+|---|---|---|---|---|---|---|---|
+| p4k | 4,134 | 8,598 ms · 481 tok/s · 242d7e1a4 n=64 | 7,824 ms · 528 tok/s · 242d7e1a4 n=64 | 1,580 ms · 2,614 tok/s (4,131 tok) | 0.202 | path ✓, verbatim line ✓ | `evidence/pmat-3596-gx10/m-f32-9B-p4k.err`<br>`evidence/pmat-3596-gx10/m-flash-9B-p4k.err`<br>`evidence/pmat-3596-gx10/llama-p4k.json` |
+| p8k | 8,224 | 18,355 ms · 448 tok/s · 242d7e1a4 n=64 | 16,494 ms · 499 tok/s · 242d7e1a4 n=64 | 3,059 ms · 2,688 tok/s (8,221 tok) | 0.186 | path ✓, verbatim line ✓ | `evidence/pmat-3596-gx10/m-f32-9B-p8k.err`<br>`evidence/pmat-3596-gx10/m-flash-9B-p8k.err`<br>`evidence/pmat-3596-gx10/llama-p8k.json` |
+| p20k | 20,077 | 45,906 ms · 437 tok/s · 242d7e1a4 n=64 | 44,786 ms · 448 tok/s · 242d7e1a4 n=64 | 7,549 ms · 2,659 tok/s (20,074 tok) | 0.168 | path ✓, verbatim line ✓ | `evidence/pmat-3596-gx10/m-f32-9B-p20k.err`<br>`evidence/pmat-3596-gx10/m-flash-9B-p20k.err`<br>`evidence/pmat-3596-gx10/llama-p20k.json` |
+| p60k | 59,924 | 172,156 ms · 348 tok/s · 242d7e1a4 n=64 | 188,863 ms · 317 tok/s · 242d7e1a4 n=64 | 24,723 ms · 2,424 tok/s (59,921 tok) | 0.144 | path ✓, verbatim line ✓ | `evidence/pmat-3596-gx10/m-f32-9B-p60k.err`<br>`evidence/pmat-3596-gx10/m-flash-9B-p60k.err`<br>`evidence/pmat-3596-gx10/llama-p60k.json` |
+| p148k | 148,203 | 612,477 ms · 242 tok/s · 242d7e1a4 n=64 | 759,363 ms · 195 tok/s · 242d7e1a4 n=64 | 79,211 ms · 1,871 tok/s (148,200 tok) | 0.129 | path ✓, verbatim line ✓ | `evidence/pmat-3596-gx10/m-f32-9B-p148k.err`<br>`evidence/pmat-3596-gx10/m-flash-9B-p148k.err`<br>`evidence/pmat-3596-gx10/llama-p148k.json` |
+| p262k | 261,948 | 1,594,855 ms · 164 tok/s · 242d7e1a4 n=64 | — | 175,409 ms · 1,493 tok/s (261,945 tok) | 0.110 | path ✓, verbatim line ✓ | `evidence/pmat-3596-gx10/m-auto-9B-p262k.err`<br>`evidence/pmat-3596-gx10/llama-p262k.json` |
 
 #### gx10 — Qwen3.5-27B-Q4_K_M — #3726 binary (merge 242d7e1a4)
 
-| rung | positions (apr) | cuBLAS f32 attention | flash (f16 in, f32 acc) | llama.cpp d1d3c3396 prompt | apr ÷ llama (best clean rate) | answer |
-|---|---|---|---|---|---|---|
-| p4k | 4,134 | 47,248 ms · 87 tok/s · 242d7e1a4 n=64 | 45,941 ms · 90 tok/s · 242d7e1a4 n=64 | — | — | path ✓, verbatim line ✓ |
-| p8k | 8,224 | 93,739 ms · 88 tok/s · 242d7e1a4 n=64 | 91,789 ms · 90 tok/s · 242d7e1a4 n=64 | — | — | path ✓, verbatim line ✓ |
-| p20k | 20,077 | 232,046 ms · 87 tok/s · 242d7e1a4 n=64 | 238,236 ms · 84 tok/s · 242d7e1a4 n=64 | — | — | path ✓, verbatim line ✓ |
-| p60k | 59,924 | 524,168 ms · 114 tok/s · 242d7e1a4 n=64 | 867,899 ms · 69 tok/s · 242d7e1a4 n=64 | — | — | path ✓, verbatim line ✓ |
-| p148k | 148,203 | 2,611,259 ms · 57 tok/s · 242d7e1a4 n=64 | — | — | — | path ✓, verbatim line ✓ |
+| rung | positions (apr) | cuBLAS f32 attention | flash (f16 in, f32 acc) | llama.cpp d1d3c3396 prompt | apr ÷ llama (best clean rate) | answer | source |
+|---|---|---|---|---|---|---|---|
+| p4k | 4,134 | 47,248 ms · 87 tok/s · 242d7e1a4 n=64 | 45,941 ms · 90 tok/s · 242d7e1a4 n=64 | — | — | path ✓, verbatim line ✓ | `evidence/pmat-3596-gx10/m-f32-27B-p4k.err`<br>`evidence/pmat-3596-gx10/m-flash-27B-p4k.err` |
+| p8k | 8,224 | 93,739 ms · 88 tok/s · 242d7e1a4 n=64 | 91,789 ms · 90 tok/s · 242d7e1a4 n=64 | — | — | path ✓, verbatim line ✓ | `evidence/pmat-3596-gx10/m-f32-27B-p8k.err`<br>`evidence/pmat-3596-gx10/m-flash-27B-p8k.err` |
+| p20k | 20,077 | 232,046 ms · 87 tok/s · 242d7e1a4 n=64 | 238,236 ms · 84 tok/s · 242d7e1a4 n=64 | — | — | path ✓, verbatim line ✓ | `evidence/pmat-3596-gx10/m-f32-27B-p20k.err`<br>`evidence/pmat-3596-gx10/m-flash-27B-p20k.err` |
+| p60k | 59,924 | 524,168 ms · 114 tok/s · 242d7e1a4 n=64 | 867,899 ms · 69 tok/s · 242d7e1a4 n=64 | — | — | path ✓, verbatim line ✓ | `evidence/pmat-3596-gx10/m-f32-27B-p60k.err`<br>`evidence/pmat-3596-gx10/m-flash-27B-p60k.err` |
+| p148k | 148,203 | 2,611,259 ms · 57 tok/s · 242d7e1a4 n=64 | — | — | — | path ✓, verbatim line ✓ | `evidence/pmat-3596-gx10/m-auto-27B-p148k.err` |
+| p262k | — | — | — | — | — | — | — |
 
 <details><summary>gx10: SUPERSEDED rows — pre-#3726 tokenizer binaries (kept, not mixed in)</summary>
 
 #### gx10 — Qwen3.5-9B-Q4_K_M — SUPERSEDED — pre-#3726 tokenizer binaries
 
-| rung | positions (apr) | cuBLAS f32 attention | flash (f16 in, f32 acc) | llama.cpp d1d3c3396 prompt | apr ÷ llama (best clean rate) | answer |
-|---|---|---|---|---|---|---|
-| brief | 6,472 | 15,152 ms · 427 tok/s · pre-record n=1 | — | — | — | first token "{" (n=1, not graded) |
-| p4k | 4,131 | 9,867 ms · 419 tok/s · pre-record n=1 | — | 1,580 ms · 2,614 tok/s (4,131 tok) | 0.160 | first token "The" (n=1, not graded) |
-| p8k | 8,221 | 21,926 ms · 375 tok/s · pre-record n=1 | — | 3,059 ms · 2,688 tok/s (8,221 tok) | 0.140 | first token "The" (n=1, not graded) |
-| p20k | 20,085 | 46,508 ms · 432 tok/s · pre-record n=1 | — | 7,549 ms · 2,659 tok/s (20,074 tok) | 0.162 | first token "The" (n=1, not graded) |
-| p60k | 59,887 | 161,653 ms · 370 tok/s · 4ff26a07a n=1 | — | 24,723 ms · 2,424 tok/s (59,921 tok) | 0.153 | first token "The" (n=1, not graded) |
-| p148k | 148,563 | 684,499 ms · 217 tok/s · 4ff26a07a n=1 | — | 79,211 ms · 1,871 tok/s (148,200 tok) | 0.116 | first token "The" (n=1, not graded) |
-| p262k | 263,089 | — | 1,932,537 ms · 136 tok/s · ab7ad29a4 n=1 | 175,409 ms · 1,493 tok/s (261,945 tok) | 0.091 | first token "The" (n=1, not graded) |
+| rung | positions (apr) | cuBLAS f32 attention | flash (f16 in, f32 acc) | llama.cpp d1d3c3396 prompt | apr ÷ llama (best clean rate) | answer | source |
+|---|---|---|---|---|---|---|---|
+| brief | 6,472 | 15,152 ms · 427 tok/s · pre-record n=1 | — | — | — | first token "{" (n=1, not graded) | `evidence/pmat-3596-gx10/9B-brief.err` |
+| p4k | 4,131 | 9,867 ms · 419 tok/s · pre-record n=1 | — | 1,580 ms · 2,614 tok/s (4,131 tok) | 0.160 | first token "The" (n=1, not graded) | `evidence/pmat-3596-gx10/9B-p4k.err`<br>`evidence/pmat-3596-gx10/llama-p4k.json` |
+| p8k | 8,221 | 21,926 ms · 375 tok/s · pre-record n=1 | — | 3,059 ms · 2,688 tok/s (8,221 tok) | 0.140 | first token "The" (n=1, not graded) | `evidence/pmat-3596-gx10/9B-p8k.err`<br>`evidence/pmat-3596-gx10/llama-p8k.json` |
+| p20k | 20,085 | 46,508 ms · 432 tok/s · pre-record n=1 | — | 7,549 ms · 2,659 tok/s (20,074 tok) | 0.162 | first token "The" (n=1, not graded) | `evidence/pmat-3596-gx10/9B-p20k.err`<br>`evidence/pmat-3596-gx10/llama-p20k.json` |
+| p60k | 59,887 | 161,653 ms · 370 tok/s · 4ff26a07a n=1 | — | 24,723 ms · 2,424 tok/s (59,921 tok) | 0.153 | first token "The" (n=1, not graded) | `evidence/pmat-3596-gx10/9B-p60k.err`<br>`evidence/pmat-3596-gx10/llama-p60k.json` |
+| p148k | 148,563 | 684,499 ms · 217 tok/s · 4ff26a07a n=1 | — | 79,211 ms · 1,871 tok/s (148,200 tok) | 0.116 | first token "The" (n=1, not graded) | `evidence/pmat-3596-gx10/9B-p148k.err`<br>`evidence/pmat-3596-gx10/llama-p148k.json` |
+| p262k | 263,089 | — | 1,932,537 ms · 136 tok/s · ab7ad29a4 n=1 | 175,409 ms · 1,493 tok/s (261,945 tok) | 0.091 | first token "The" (n=1, not graded) | `evidence/pmat-3596-gx10/9B-p262k.err`<br>`evidence/pmat-3596-gx10/llama-p262k.json` |
 
 #### gx10 — Qwen3.5-27B-Q4_K_M — SUPERSEDED — pre-#3726 tokenizer binaries
 
-| rung | positions (apr) | cuBLAS f32 attention | flash (f16 in, f32 acc) | llama.cpp d1d3c3396 prompt | apr ÷ llama (best clean rate) | answer |
-|---|---|---|---|---|---|---|
-| brief | 6,472 | — | 69,564 ms · 93 tok/s · ab7ad29a4 n=1 | — | — | first token "{" (n=1, not graded) |
-| p4k | 4,131 | — | 46,736 ms · 88 tok/s · ab7ad29a4 n=1 | — | — | first token "cr" (n=1, not graded) |
-| p20k | 20,085 | — | 240,325 ms · 84 tok/s · ab7ad29a4 n=64 | — | — | path ✓, verbatim line ✓ |
+| rung | positions (apr) | cuBLAS f32 attention | flash (f16 in, f32 acc) | llama.cpp d1d3c3396 prompt | apr ÷ llama (best clean rate) | answer | source |
+|---|---|---|---|---|---|---|---|
+| brief | 6,472 | — | 69,564 ms · 93 tok/s · ab7ad29a4 n=1 | — | — | first token "{" (n=1, not graded) | `evidence/pmat-3596-gx10/27B-brief.err` |
+| p4k | 4,131 | — | 46,736 ms · 88 tok/s · ab7ad29a4 n=1 | — | — | first token "cr" (n=1, not graded) | `evidence/pmat-3596-gx10/27B-p4k.err` |
+| p20k | 20,085 | — | 240,325 ms · 84 tok/s · ab7ad29a4 n=64 | — | — | path ✓, verbatim line ✓ | `evidence/pmat-3596-gx10/n64-flash-27B-p20k.err` |
 
 </details>
 
@@ -335,7 +338,7 @@ Also still open at wind-down: no quorum round has run. Both model families were 
 - The RMSNorm ε fix (#3759) changes lambda numerics. These measurements predate it and do not carry it.
 - **The gx10 27B at 262,144 and the gx10 20k parity pair were still running** when this receipt was written; § In flight says exactly where their files land.
 - **Host memory on a unified device is not counted against the row, but it is large.** Measured on gx10 during the 27B at 148k: the process holds 45.8 GB of host RSS — 15.6 GB of it the GGUF mapping, which `MappedGGUFModel::from_path` pre-faults and `mlock`s — beside ~36 GB of device allocations, and `MemAvailable` fell 120.9 → 36 GB. On GB10 that mapping duplicates weights the device already holds. Releasing it after upload (munlock + `MADV_DONTNEED`, unified only) would return ~16 GB to the plan. NOT done here: the 27B at 262k fit without it (MemAvailable held at 21.9 GB, above the 16 GiB headroom). It is the next lever if a rung refuses on a busier host.
-- **The 27B on GB10 is GEMM-bound, not attention-bound, and it was not profiled.** Its rate is flat — 87/88/87/114 tok/s at 4k/8k/20k/60k (f32) — where the 9B falls from 481 to 348 over the same range. No nsys run backs a mechanism, so none is claimed.
+- **The 27B on GB10 was not profiled, so no mechanism is claimed for its rate.** Its f32 rate is flat — 87/88/87/114 tok/s at 4k/8k/20k/60k (`evidence/pmat-3596-gx10/m-f32-27B-p4k.err`, `…-p8k.err`, `…-p20k.err`, `…-p60k.err`) — where the 9B falls from 481 to 348 over the same range (`evidence/pmat-3596-gx10/m-f32-9B-p4k.err`, `evidence/pmat-3596-gx10/m-f32-9B-p60k.err`). Whether it is GEMM-bound needs an nsys run; none was made.
 
 ## Verification
 

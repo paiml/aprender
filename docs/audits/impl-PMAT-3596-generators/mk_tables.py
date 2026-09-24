@@ -1,6 +1,8 @@
 """#3596 receipt tables, generated from the run files — never transcribed by hand.
 
 usage: mk_tables.py <label>=<dir> [<label>=<dir> ...]
+  (the receipt is generated with <dir> = evidence/pmat-3596-<label>, repo-relative, so the
+   `source` column cites the run files each row was read from — check_no_claim_literals.sh)
 Every apr run is a `<tag>.done` with .err/.json/.version/.start/.gpu_at_start beside it;
 every llama.cpp run is `llama-<rung>.json`.
 """
@@ -40,7 +42,7 @@ def runs(d):
         att = (m.group(5) or "") if m else ""
         mode = "flash" if att.startswith("flash") else ("f32" if m else None)
         out.append({
-            "tag": tag, "model": model, "rung": rung, "mode": mode,
+            "tag": tag, "path": os.path.join(d, tag + ".err"), "model": model, "rung": rung, "mode": mode,
             "sha": sha.group(1)[:9] if sha else "pre-record",
             "tokens": int(m.group(1)) if m else None, "ms": int(m.group(2)) if m else None,
             "rate": int(m.group(3)) if m else None, "chunk": int(m.group(4)) if m else None,
@@ -87,7 +89,7 @@ def llama(d):
             p = os.path.join(d, "llama-brief2.json") if os.path.exists(os.path.join(d, "llama-brief2.json")) else os.path.join(d, "llama-brief.json")
         if os.path.exists(p):
             try:
-                out[r] = json.load(open(p))
+                out[r] = dict(json.load(open(p)), _path=p)
             except ValueError:
                 pass
     return out
@@ -127,8 +129,8 @@ def main():
             if not mr:
                 continue
             print(f"\n#### {label} — Qwen3.5-{model}-Q4_K_M — {era}\n")
-            print("| rung | positions (apr) | cuBLAS f32 attention | flash (f16 in, f32 acc) | llama.cpp d1d3c3396 prompt | apr ÷ llama (best clean rate) | answer |")
-            print("|---|---|---|---|---|---|---|")
+            print("| rung | positions (apr) | cuBLAS f32 attention | flash (f16 in, f32 acc) | llama.cpp d1d3c3396 prompt | apr ÷ llama (best clean rate) | answer | source |")
+            print("|---|---|---|---|---|---|---|---|")
             for rung in RUNGS:
                 rr = [r for r in mr if r["rung"] == rung]
                 if not rr:
@@ -141,7 +143,8 @@ def main():
                 clean = [r["rate"] for r in rr if r["rate"] and (r["busy"] or 0) <= 5]
                 ratio = f"{max(clean) / lj['prompt_per_second']:.3f}" if lj and clean else "—"
                 ans = "; ".join(sorted({r["answer"] for r in rr if r["answer"] != "—"})) or "—"
-                print(f"| {rung} | {', '.join(f'{t:,}' for t in toks) or '—'} | {cell(f32)} | {cell(fl)} | {lcell} | {ratio} | {ans} |")
+                src = [f"`{r['path']}`" for r in f32 + fl] + ([f"`{lj['_path']}`"] if lj else [])
+                print(f"| {rung} | {', '.join(f'{t:,}' for t in toks) or '—'} | {cell(f32)} | {cell(fl)} | {lcell} | {ratio} | {ans} | {'<br>'.join(src) or '—'} |")
           if sup and rs:
             print("\n</details>")
         rs = rs_all
