@@ -65,7 +65,8 @@ pub fn run(action: DischargeAction) -> Res {
 }
 
 fn gen_axioms(lean_dir: &Path, contracts: &Path, check: bool) -> Res {
-    let (text, _, b) = discharge::generate(lean_dir, contracts).map_err(DischargeDeclined)?;
+    let g = discharge::generate(lean_dir, contracts).map_err(DischargeDeclined)?;
+    let (text, b) = (g.text, g.binding);
     let path = lean_dir.join(AXIOMS_FILE);
     if check {
         return match std::fs::read_to_string(&path) {

@@ -424,11 +424,28 @@ pub fn load_labels(dir: &Path) -> Result<Option<BTreeSet<(String, String)>>, Str
 /// The bytes `make label-ratchet` writes.
 #[must_use]
 pub fn render_labels(set: &BTreeSet<(String, String)>) -> String {
-    let labels: Vec<serde_json::Value> = set
+    use serde_json::{Map, Value};
+    let obj = |pairs: [(&str, Value); 2]| {
+        Value::Object(
+            pairs
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect::<Map<_, _>>(),
+        )
+    };
+    let labels = set
         .iter()
-        .map(|(c, l)| serde_json::json!({"contract": c, "label": l}))
+        .map(|(c, l)| {
+            obj([
+                ("contract", Value::from(c.as_str())),
+                ("label", Value::from(l.as_str())),
+            ])
+        })
         .collect();
-    let doc = serde_json::json!({"command": "make label-ratchet", "labels": labels});
+    let doc = obj([
+        ("command", Value::from("make label-ratchet")),
+        ("labels", Value::Array(labels)),
+    ]);
     format!(
         "{}\n",
         serde_json::to_string_pretty(&doc).unwrap_or_default()
@@ -518,8 +535,19 @@ pub fn render_axioms(
     s
 }
 
-/// The whole generation, from disk.
-pub fn generate(lean_dir: &Path, contract_dir: &Path) -> Result<(String, Tree, Binding), String> {
+/// Everything one generation read from disk, and the `Axioms.lean` it renders.
+#[derive(Debug, Clone)]
+pub struct Generated {
+    pub text: String,
+    pub tree: Tree,
+    pub binding: Binding,
+    pub allow: Vec<Allowed>,
+    pub form: Formalization,
+}
+
+/// The whole generation, from disk. `Err` (a decline: nothing can be judged) when the root file is missing or
+/// `escape-allowlist.yaml` / `formalization.yaml` cannot be read.
+pub fn generate(lean_dir: &Path, contract_dir: &Path) -> Result<Generated, String> {
     let tree = Tree::load(lean_dir)?;
     let binding = bind(&tree, contract_dir);
     let allow = load_allowlist(lean_dir)?;
@@ -530,7 +558,13 @@ pub fn generate(lean_dir: &Path, contract_dir: &Path) -> Result<(String, Tree, B
         &pinned_axioms(&form, &allow),
         &form,
     );
-    Ok((text, tree, binding))
+    Ok(Generated {
+        text,
+        tree,
+        binding,
+        allow,
+        form,
+    })
 }
 
 /// A `pv discharge` verdict: printed lines, and whether it rejects (rc 1) or declines (rc 2).
@@ -639,50 +673,23 @@ pub fn judge_labels(
 /// `--no-lake`). Failures are judged before the vacuity decline: a failure never hides behind "not a verdict".
 pub fn check(lean_dir: &Path, contract_dir: &Path, opts: CheckOpts) -> Report {
     let mut r = Report::default();
-    let (text, tree, b) = match generate(lean_dir, contract_dir) {
-        Ok(x) => x,
+    let g = match generate(lean_dir, contract_dir) {
+        Ok(g) => g,
         Err(e) => {
             r.decline = Some(e);
             return r;
         }
     };
-    match load_allowlist(lean_dir) {
-        Ok(allow) => judge_escapes(&escapes(&tree), &allow, opts.strict, &mut r),
-        Err(e) => r.fail(format!("{ALLOWLIST} unreadable: {e}")),
-    }
-    let kinds: BTreeMap<&str, &str> = tree
-        .files
-        .iter()
-        .flat_map(|f| f.decls.iter().map(|d| (d.fqn.as_str(), d.keyword.as_str())))
-        .collect();
-    for (s, x) in &b.missing {
-        let what = kinds.get(x.as_str()).map_or_else(
-            || "no such theorem in the tree".to_string(),
-            |k| format!("it names an `{k}`, not a proved theorem"),
-        );
-        r.fail(format!("MISSING-ROOT contract {s}: {x} -- {what}"));
-    }
-    match load_formalization(lean_dir) {
-        Ok(form) => {
-            for c in form
-                .capstones
-                .iter()
-                .filter(|c| !theorem_fqns(&tree).contains(c.as_str()))
-            {
-                r.fail(format!(
-                    "MISSING-ROOT capstone {c} -- no such theorem in the tree"
-                ));
-            }
-        }
-        Err(e) => r.fail(format!("formalization.yaml unreadable: {e}")),
-    }
-    judge_ratchet(lean_dir, &b, &mut r);
-    judge_axioms_file(lean_dir, &text, &mut r);
-    let cone = tree.cone();
-    let pinned = b.roots.iter().filter(|x| cone.contains(&x.module)).count();
+    judge_escapes(&escapes(&g.tree), &g.allow, opts.strict, &mut r);
+    judge_roots(&g, &mut r);
+    judge_ratchet(lean_dir, &g.binding, &mut r);
+    judge_axioms_file(lean_dir, &g.text, &mut r);
+    let cone = g.tree.cone();
+    let roots = &g.binding.roots;
+    let pinned = roots.iter().filter(|x| cone.contains(&x.module)).count();
     r.lines.push(format!(
         "ROOTS {pinned} pinned, {} ORPHANED-ROOT",
-        b.roots.len() - pinned
+        roots.len() - pinned
     ));
     if pinned == 0 && !r.reject {
         r.decline = Some(format!(
@@ -691,6 +698,35 @@ pub fn check(lean_dir: &Path, contract_dir: &Path, opts: CheckOpts) -> Report {
         ));
     }
     r
+}
+
+/// MISSING-ROOT: an exact-name reference naming no theorem (saying what it names instead, if anything), and a
+/// capstone naming no theorem.
+fn judge_roots(g: &Generated, r: &mut Report) {
+    let kinds: BTreeMap<&str, &str> = g
+        .tree
+        .files
+        .iter()
+        .flat_map(|f| f.decls.iter().map(|d| (d.fqn.as_str(), d.keyword.as_str())))
+        .collect();
+    for (s, x) in &g.binding.missing {
+        let what = kinds.get(x.as_str()).map_or_else(
+            || "no such theorem in the tree".to_string(),
+            |k| format!("it names an `{k}`, not a proved theorem"),
+        );
+        r.fail(format!("MISSING-ROOT contract {s}: {x} -- {what}"));
+    }
+    let theorems = theorem_fqns(&g.tree);
+    for c in g
+        .form
+        .capstones
+        .iter()
+        .filter(|c| !theorems.contains(c.as_str()))
+    {
+        r.fail(format!(
+            "MISSING-ROOT capstone {c} -- no such theorem in the tree"
+        ));
+    }
 }
 
 fn judge_ratchet(lean_dir: &Path, b: &Binding, r: &mut Report) {
