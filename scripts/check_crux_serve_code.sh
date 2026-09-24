@@ -254,8 +254,29 @@ stubborn() { # a server that ignores SIGTERM; its pid goes to $1
 : > "$TMP/smi-pids"
 stubborn "$TMP/srv1.pid"
 tdrow "T1 a server that ignores TERM is KILLed, then proven gone" 0 clean "$TD" "$TMP/srv1.pid" "$TMP/absent.pid"
-printf '1\n' > "$TMP/init.pid"
-tdrow "T2 MUST-RED a server that survives TERM and KILL fails the cell" 1 "FAILED: server" "$TD" "$TMP/init.pid"
+# T2 used to write `1` here: init as the server that survives TERM and KILL. On a dev box
+# that is EPERM; in a CI runner's container pid 1 IS the runner, and the row's
+# `kill -TERM 1` / `kill -KILL 1` shut the runner down mid guard-tree (#4120). A survivor
+# is now OUR OWN sleep behind a no-op kill (CRUX_TEARDOWN_KILL), so no row of this table
+# can signal a pid it did not start.
+FAKE_KILL="$TMP/fake-kill"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\n' "$TMP/kill.log" > "$FAKE_KILL"
+chmod +x "$FAKE_KILL"
+sleep 60 > /dev/null 2>&1 &
+printf '%s\n' "$!" > "$TMP/srv2.pid"
+CRUX_TEARDOWN_KILL="$FAKE_KILL" tdrow "T2 MUST-RED a server that survives TERM and KILL fails the cell" 1 "FAILED: server" "$TD" "$TMP/srv2.pid"
+kill "$(cat "$TMP/srv2.pid")" 2> /dev/null
+# T2b (#4120) MUST-RED: a pid file naming 1 is REFUSED -- the cell fails and no signal is
+# ever addressed to pid 1. The kill seam records every signal the teardown sends, so the
+# row can prove the negative on any host, including a runner where `kill 1` would land.
+m_t2b() { # <teardown script>
+  printf '1\n' > "$TMP/init.pid"
+  : > "$TMP/kill.log"
+  CRUX_TEARDOWN_KILL="$FAKE_KILL" td_case x 1 "FAILED: pid file" "$1" "$TMP/init.pid" \
+    && ! grep -qE '(^| )1( |$)' "$TMP/kill.log"
+}
+if m_t2b "$TD"; then ok "T2b MUST-RED a pid file naming pid 1 (init; the runner in CI) is refused and never signalled"
+else bad "T2b MUST-RED a pid file naming pid 1 is refused and never signalled (state: $(cat "$TMP/td.state" 2> /dev/null); signals: $(tr '\n' ';' < "$TMP/kill.log"))"; fi
 sleep 30 > /dev/null 2>&1 &
 printf '%s\n' "$!" > "$TMP/srv3.pid"
 printf '%s\n' "$(cat "$TMP/srv3.pid")" > "$TMP/smi-pids"
@@ -336,7 +357,8 @@ mutant "M8 C5 vs no empty-result check" "$CODE_PY" 'if not env.get("result"):' '
 m_c7() { code_case x "$1" ok p1 4 - --backend cpu; }
 mutant "M9 C7 vs the cpu lane run on an apr code that cannot honour it" "$CODE_PY" '    if a.backend == "cpu" and not ctl:' '    if False:' m_c7
 m_t1() { stubborn "$TMP/srv1.pid"; td_case x 0 clean "$1" "$TMP/srv1.pid"; }
-mutant "M10 T1 vs no KILL escalation" "$TD" '    kill -KILL $left 2> /dev/null' '    :' m_t1
+mutant "M10 T1 vs no KILL escalation" "$TD" '    sig -KILL $left 2> /dev/null' '    :' m_t1
+mutant "M17 T2b vs pid 1 not refused" "$TD" '    case "$p" in 1) refused="$refused$f "; continue ;; esac' '' m_t2b
 m_t3() { sleep 30 > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP/srv3.pid"; cp "$TMP/srv3.pid" "$TMP/smi-pids"; td_case x 1 "FAILED: pid" "$1" "$TMP/srv3.pid"; }
 mutant "M11 T3 vs no nvidia-smi check" "$TD" 'if [ "${#pids[@]}" -gt 0 ] && command -v "$SMI" > /dev/null 2>&1; then' 'if false; then' m_t3
 m_t4() { : > "$TMP/tdrows/manifest.jsonl"; python3 "$1" rows --out-dir "$TMP/ok" --prompt-list "$TMP/list.jsonl" --manifest "$TMP/tdrows/manifest.jsonl" --engine apr --sha abc --host h --backend gpu --cell-fault "cell teardown FAILED: x" > /dev/null 2>&1; python3 -c 'import json,sys; g=[json.loads(l) for l in open(sys.argv[1]) if l.strip()]; g=[r for r in g if r["kind"]=="gen"]; assert g and all(r["refused"] for r in g)' "$TMP/tdrows/manifest.jsonl" 2> /dev/null; }
