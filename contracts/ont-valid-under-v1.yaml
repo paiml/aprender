@@ -34,7 +34,7 @@ metadata:
   references:
     - 'paiml/infra docs/specifications/paiml-ontology.md §4.2 (metadata.valid_under), §5 ONT-7, Appendix B, R-2, R-8'
     - 'crates/aprender-contracts/src/lint/valid_under_gate.rs — PV-ONT-013..016'
-    - 'contracts/ontology.yaml — worlds (committed), reader ontology/sigma.rs'
+    - 'contracts/ontology.yaml — worlds (committed), readers ontology/sigma.rs and lint/valid_under_gate.rs'
 
 relations:
   depends_on: [ont-sigma-v1, ont-verdict-lattice-v1]
@@ -65,7 +65,7 @@ invariants:
     prose: false
   - id: VU-INV-003
     property: a valid_under block is never empty
-    formal: 'valid_under(c) ≠ ∅ ⇒ len(keys(valid_under(c))) ≥ 1'
+    formal: 'valid_under(c) ≠ ⊥ ⇒ len(keys(valid_under(c))) ≥ 1'
     prose: false
   - id: VU-INV-004
     property: the kernel-kind debt is shrink-only
