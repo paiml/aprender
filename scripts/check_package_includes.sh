@@ -321,12 +321,17 @@ if [ "${1:-}" = "--self-test" ]; then
   fi
   # the #4048 shape: a #[cfg(test)] include of a file the package EXCLUDES
   tb_fixture "$TD/tb-planted" 'pub fn f() {}\n#[cfg(test)]\nmod t { const B: &[u8] = include_bytes!("../tests/fixtures/header.bin"); #[test] fn b() { assert!(!B.is_empty()); } }\n'
-  # the source reader's blind spot, asserted rather than claimed: it does not list this include at all
-  reader_sees="$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/tb-planted" 2>/dev/null | grep -c 'header.bin' || true)"
+  # the source reader's blind spot, over BOTH of its paths (lane 1 of the #4114 quorum: the default
+  # mode alone matches only include!() and would be blind to include_bytes! for an unrelated reason).
+  # The default scan lists include!() targets; --escapes lists include_str!/include_bytes! targets
+  # that leave the crate, with #[cfg(test)] bodies stripped. Neither reports this defect.
+  reader_sees="$( { python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/tb-planted"
+                    python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/tb-planted" --escapes; } 2>/dev/null \
+                  | grep -c 'header.bin' || true)"
   tb_run "$TD/tb-planted"
   if [ "$tb_rc" = 1 ] && grep -q 'RED   pti-fixture-0.1.0' <<< "$tb_out" \
      && grep -q 'src/lib.rs:3:.*header.bin' <<< "$tb_out" && [ "$reader_sees" = 0 ]; then
-    printf 'ok    row 15 a #[cfg(test)] include of an excluded file: the source reader lists it 0 times, the tarball build is RED naming it\n'
+    printf 'ok    row 15 a #[cfg(test)] include of an excluded file: neither source-reader path (include!() scan, --escapes) reports it; the tarball build is RED naming it\n'
   else
     printf 'FAIL  row 15 planted cfg(test) include: tarball rc=%s (want 1)\n%s\n' "$tb_rc" "$tb_out"; fails=1
   fi
