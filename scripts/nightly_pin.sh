@@ -52,7 +52,7 @@ nightly_pin_refuse() {
 }
 
 nightly_pin_manifest_path() {
-    printf '%s\n' "${APR_NIGHTLY_MANIFEST:-$HOME/.cache/aprender/nightly-manifest.json}"
+    printf '%s\n' "${APR_NIGHTLY_MANIFEST:-${HOME:-}/.cache/aprender/nightly-manifest.json}"
 }
 
 nightly_pin_triple() {
@@ -194,10 +194,18 @@ nightly_pin_resolve() {
 #     job sets REQUIRE_VAR=nightly itself. A bare GITHUB_ACTIONS=true (exported
 #     while debugging) does not qualify, and the skip is never silent: it
 #     prints a notice, so a shell that inherited a runner's env says so.
+# With HOME unset or empty and no APR_FLEET_MARKER, the marker cannot be
+# looked for: an unset REQUIRE_VAR is refused (rc 2), never read as "no marker".
 nightly_pin_mode() {
     case "$1" in '' | *[!A-Za-z0-9_]*) printf 'NIGHTLY PIN REFUSED: bad mode variable name %s\n' "$1" >&2; return 2 ;; esac
     eval "np_mode=\${$1:-}"  # bashrs disable-line=SEC001 (name validated above; bash+zsh portable)
-    if [ -z "$np_mode" ] && [ -e "${APR_FLEET_MARKER:-$HOME/.config/aprender/fleet-nightly}" ]; then
+    if [ -z "$np_mode" ] && [ -z "${APR_FLEET_MARKER:-}" ] && [ -z "${HOME:-}" ]; then
+        # No HOME (env -i, a bare systemd unit): the marker cannot be looked for,
+        # and "not found" would silently mean HEAD provenance. Say so instead.
+        printf 'NIGHTLY PIN REFUSED: HOME is unset, so the fleet marker cannot be checked; set %s=nightly|head or APR_FLEET_MARKER\n' "$1" >&2
+        return 2
+    fi
+    if [ -z "$np_mode" ] && [ -e "${APR_FLEET_MARKER:-${HOME:-}/.config/aprender/fleet-nightly}" ]; then
         np_actions=0
         if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
             case "${GITHUB_RUN_ID:-}" in '' | *[!0-9]*) ;; *) np_actions=1 ;; esac

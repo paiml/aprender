@@ -738,7 +738,7 @@ pv_bin_assert_fresh() {
 # current NIGHTLY_PIN_API refuses.
 PV_NP_RC=0
 PV_NP_SELF=""
-if [ -n "${BASH_VERSION:-}" ]; then PV_NP_SELF="${BASH_SOURCE[0]:-}"; elif [ -n "${ZSH_VERSION:-}" ]; then eval 'PV_NP_SELF=${(%):-%x}'; fi
+if [ -n "${BASH_VERSION:-}" ]; then PV_NP_SELF="${BASH_SOURCE[0]:-}"; elif [ -n "${ZSH_VERSION:-}" ]; then eval 'PV_NP_SELF=${(%):-%x}'; fi  # bashrs disable-line=SEC001 (constant string; zsh-only %x expansion)
 case "$PV_NP_SELF" in
     */pv_bin.sh) PV_NP_LIB="$(dirname "$PV_NP_SELF")/nightly_pin.sh" ;;
     pv_bin.sh) PV_NP_LIB="./nightly_pin.sh" ;;  # ./ : a bare `.` searches PATH first
@@ -752,7 +752,7 @@ if [ -n "$PV_NP_LIB" ] && [ -f "$PV_NP_LIB" ]; then
     else
         # An older rule is not a fallback. Refuse only if nightly mode could be
         # meant; a dev tree with neither the knob nor the marker keeps HEAD mode.
-        if [ "${PV_BIN_REQUIRE:-}" = "head" ] || { [ -z "${PV_BIN_REQUIRE:-}" ] && [ ! -e "${APR_FLEET_MARKER:-$HOME/.config/aprender/fleet-nightly}" ]; }; then
+        if [ "${PV_BIN_REQUIRE:-}" = "head" ] || { [ -z "${PV_BIN_REQUIRE:-}" ] && [ -n "${APR_FLEET_MARKER:-}${HOME:-}" ] && [ ! -e "${APR_FLEET_MARKER:-${HOME:-}/.config/aprender/fleet-nightly}" ]; }; then
             PV_NP_RC=1
         else
             printf 'NIGHTLY PIN REFUSED: %s predates NIGHTLY_PIN_API=1 (an older rule is never a fallback)\n' "$PV_NP_LIB" >&2
@@ -761,7 +761,8 @@ if [ -n "$PV_NP_LIB" ] && [ -f "$PV_NP_LIB" ]; then
     fi
 elif { [ -n "${PV_BIN_REQUIRE:-}" ] && [ "${PV_BIN_REQUIRE}" != "head" ]; } \
     || { [ -z "${PV_BIN_REQUIRE:-}" ] \
-        && [ -e "${APR_FLEET_MARKER:-$HOME/.config/aprender/fleet-nightly}" ]; }; then
+        && { [ -z "${APR_FLEET_MARKER:-}${HOME:-}" ] || [ -e "${APR_FLEET_MARKER:-${HOME:-}/.config/aprender/fleet-nightly}" ]; }; }; then
+    # (no HOME and no APR_FLEET_MARKER: the marker cannot be ruled out, so refuse)
     # nightly mode is asked for (explicitly, or by the fleet marker) and the rule
     # that enforces it is not here: refuse rather than fall back to HEAD. No
     # Actions exemption here on purpose: that rule lives only in nightly_pin_mode.

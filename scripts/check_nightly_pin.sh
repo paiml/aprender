@@ -117,6 +117,11 @@ fleet marker inside GitHub Actions -> HEAD provenance|GITHUB_ACTIONS=true GITHUB
 fleet marker, bare GITHUB_ACTIONS=true (no run id) -> nightly|GITHUB_ACTIONS=true APR_FLEET_MARKER=$T/marker|0
 fleet marker, non-numeric run id -> nightly|GITHUB_ACTIONS=true GITHUB_RUN_ID=x APR_FLEET_MARKER=$T/marker|0
 fleet marker, nightly job in Actions -> nightly|GITHUB_ACTIONS=true APR_BIN_REQUIRE=nightly APR_FLEET_MARKER=$T/marker|0
+no HOME, unset -> refused (marker cannot be checked)|-u HOME -u APR_FLEET_MARKER|2
+empty HOME, unset -> refused (marker cannot be checked)|-u APR_FLEET_MARKER HOME=|2
+no HOME, explicit head -> HEAD provenance|-u HOME -u APR_FLEET_MARKER APR_BIN_REQUIRE=head|1
+no HOME, explicit nightly -> nightly|-u HOME -u APR_FLEET_MARKER APR_BIN_REQUIRE=nightly|0
+no HOME, APR_FLEET_MARKER names no file -> HEAD provenance|-u HOME APR_FLEET_MARKER=$T/nomarker|1
 EOF
 )
 : >"$T/marker"
@@ -259,6 +264,21 @@ run_e2e() {
     cp "$ROOT/scripts/apr_bin.sh" "$T/lone/"
     e2e_in "$T" "fleet marker, no rule anywhere, refused" refuse "nightly_pin.sh is not beside this resolver" \
         env APR_FLEET_MARKER="$T/marker" bash -c '. "$1" || exit 1; printf %s "$APR"' _ "$T/lone/apr_bin.sh"
+    # No HOME (env -i, a bare systemd unit): the marker default cannot be
+    # looked for, so "no marker" must not mean HEAD mode (quorum round 6).
+    e2e_in "$T" "real resolver, no HOME, refused" refuse "HOME is unset" \
+        env -u HOME -u APR_FLEET_MARKER PATH="$T/stale:$PATH" bash -c '. "$1" || exit 1; printf %s "$APR"' _ "$ROOT/scripts/apr_bin.sh"
+    e2e_in "$T" "real pv resolver, no HOME, refused" refuse "HOME is unset" \
+        env -u HOME -u APR_FLEET_MARKER PATH="$T/stale:$PATH" bash -c '. "$1" || exit 1; printf %s "$PV"' _ "$ROOT/scripts/pv_bin.sh"
+    e2e_in "$T" "no HOME, rule without NIGHTLY_PIN_API, refused" refuse "predates NIGHTLY_PIN_API" \
+        env -u HOME -u APR_FLEET_MARKER bash -c '. "$1" || exit 1; printf %s "$APR"' _ "$T/old/apr_bin.sh"
+    e2e_in "$T" "no HOME, pv rule without NIGHTLY_PIN_API, refused" refuse "predates NIGHTLY_PIN_API" \
+        env -u HOME -u APR_FLEET_MARKER bash -c '. "$1" || exit 1; printf %s "$PV"' _ "$T/old/pv_bin.sh"
+    e2e_in "$T" "no HOME, no rule anywhere, refused" refuse "nightly_pin.sh is not beside this resolver" \
+        env -u HOME -u APR_FLEET_MARKER bash -c '. "$1" || exit 1; printf %s "$APR"' _ "$T/lone/apr_bin.sh"
+    cp "$ROOT/scripts/pv_bin.sh" "$T/lone/"
+    e2e_in "$T" "no HOME, no pv rule anywhere, refused" refuse "nightly_pin.sh is not beside this resolver" \
+        env -u HOME -u APR_FLEET_MARKER bash -c '. "$1" || exit 1; printf %s "$PV"' _ "$T/lone/pv_bin.sh"
     # zsh names a sourced file by $0, not BASH_SOURCE: the rule is still found.
     if command -v zsh >/dev/null 2>&1; then
         e2e_in "$T/foreign" "zsh-sourced apr_bin.sh uses its own rule" refuse "NOT THE NIGHTLY" \
@@ -295,6 +315,7 @@ typo mode falls back to HEAD|s/return 2 ;;/return 1 ;;/
 marker honoured in Actions|s/\[ "\${GITHUB_ACTIONS:-}" = "true" \]/[ "${GITHUB_ACTIONS:-}" = "never" ]/
 bare GITHUB_ACTIONS=true qualifies|s/'' | \*\[!0-9\]\*) ;;/'' | *[!0-9]*) np_actions=1 ;;/
 marker ignored|s/np_mode=nightly$/np_mode=/
+no-HOME read as no marker|s/\[ -z "\${HOME:-}" \]; then/false; then/
 EOF
 )
     echo "check_nightly_pin: mutants"
