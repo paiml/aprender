@@ -427,6 +427,7 @@ mod ship_003_tests {
     /// RTX 4090. Falsifier: if the contract is edited to drop the
     /// live-evidence block or downgrade the discharge marker, this
     /// test fails before any compute runs.
+    #[cfg(aprender_monorepo)] // #4130: reads the repo-root contracts/, absent from the published .crate
     #[test]
     fn falsify_ship_003_yaml_binding_pins_discharged_status() {
         const CONTRACT_YAML: &str =

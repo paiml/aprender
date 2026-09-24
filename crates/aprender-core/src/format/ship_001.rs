@@ -431,6 +431,7 @@ mod ship_001_tests {
     /// Falsifier: if the contract is edited to drop the YAML block,
     /// downgrade the discharge marker, or remove the live evidence,
     /// this test fails.
+    #[cfg(aprender_monorepo)] // #4130: reads the repo-root contracts/, absent from the published .crate
     #[test]
     fn falsify_ship_001_yaml_binding_pins_discharged_status() {
         const CONTRACT_YAML: &str =
