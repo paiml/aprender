@@ -48,6 +48,7 @@ try:
 except Exception as e:  # noqa: BLE001
     print(f"cannot parse {ci}: {e}", file=sys.stderr); sys.exit(2)
 SH, FAN, GT = "workspace-test-shard", "workspace-test", "guard-tree"
+RELEASE_PUSH_SKIP = "!(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/'))"
 for j in (SH, FAN, GT):
     if j not in jobs:
         print(f"FAIL structure: job '{j}' is not in {ci}"); sys.exit(0)
@@ -59,6 +60,10 @@ def needs(j):
 def runs(j, results):
     """GitHub: no `if:` means success(); always() runs whatever the needs concluded."""
     cond = str(jobs[j].get("if", "")).replace("${{", "").replace("}}", "").strip()
+    # #4112 skips these jobs on a push to release/*; every row here is a pull_request / merge_group event, where
+    # that clause is true. Only this EXACT clause is reduced: any other `if:` stays unmodelled and fails the row.
+    for clause in (" && " + RELEASE_PUSH_SKIP, RELEASE_PUSH_SKIP):
+        cond = cond.replace(clause, "")
     if cond == "always()":
         return True
     if cond not in ("", "success()"):
