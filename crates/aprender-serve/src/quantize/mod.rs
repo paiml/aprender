@@ -123,8 +123,9 @@ pub use fused_q5k_q6k::{
 pub use parallel_k::{
     fused_q4k_multirow_matmul_f32_into, fused_q4k_parallel_matvec, fused_q4k_parallel_matvec_into,
     fused_q4k_q8k_ffn_up_gate_into, fused_q4k_q8k_multirow_matmul_into,
-    fused_q4k_q8k_parallel_matvec_into, fused_q4k_tiled_matvec, fused_q5k_parallel_matvec,
-    fused_q5k_parallel_matvec_into, fused_q6k_parallel_matvec, fused_q6k_parallel_matvec_into,
+    fused_q4k_q8k_parallel_matvec_into, fused_q4k_tiled_matvec, fused_q5k_multirow_matmul_into,
+    fused_q5k_parallel_matvec, fused_q5k_parallel_matvec_into, fused_q6k_multirow_matmul_into,
+    fused_q6k_parallel_matvec, fused_q6k_parallel_matvec_into,
 };
 
 // Re-export activation functions (PMAT-802)

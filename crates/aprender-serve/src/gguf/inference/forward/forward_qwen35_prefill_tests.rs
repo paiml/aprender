@@ -5,6 +5,13 @@
 
 use super::{Qwen35Model, Qwen35State, QWEN35_PREFILL_CHUNK};
 
+/// `$APR_QWEN35_MODEL_DIR/<file>`, else `$HOME/models/<file>` — never a literal home.
+fn model_path(file: &str) -> String {
+    let dir = std::env::var("APR_QWEN35_MODEL_DIR")
+        .unwrap_or_else(|_| format!("{}/models", std::env::var("HOME").unwrap_or_default()));
+    format!("{dir}/{file}")
+}
+
 fn load(path: &str) -> Option<crate::gguf::MappedGGUFModel> {
     if !std::path::Path::new(path).exists() {
         assert!(
@@ -97,13 +104,13 @@ fn check_model(path: &str) {
 /// FALSIFY-4228-004: 0.8B (ratio-1 recurrence).
 #[test]
 fn falsify_4228_004_prefill_bit_identical_0_8b() {
-    check_model("/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf");
+    check_model(&model_path("Qwen3.5-0.8B-Q4_K_M.gguf"));
 }
 
 /// FALSIFY-4228-005: 4B (GQA recurrence, 32 value heads to 16 key heads).
 #[test]
 fn falsify_4228_005_prefill_bit_identical_4b() {
-    check_model("/home/noah/models/Qwen3.5-4B-Q4_K_M.gguf");
+    check_model(&model_path("Qwen3.5-4B-Q4_K_M.gguf"));
 }
 
 /// Prefill throughput, batched vs per-token (#4228 acceptance). Not a gate: run with
@@ -112,7 +119,7 @@ fn falsify_4228_005_prefill_bit_identical_4b() {
 #[ignore = "perf probe, needs a real model"]
 fn qwen35_prefill_throughput_probe() {
     let path = std::env::var("APR_QWEN35_PREFILL_MODEL")
-        .unwrap_or_else(|_| "/home/noah/models/Qwen3.5-4B-Q4_K_M.gguf".to_string());
+        .unwrap_or_else(|_| model_path("Qwen3.5-4B-Q4_K_M.gguf"));
     let n: usize = std::env::var("APR_QWEN35_PREFILL_N")
         .ok()
         .and_then(|s| s.parse().ok())

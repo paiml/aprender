@@ -209,6 +209,139 @@ pub fn fused_q4k_multirow_matmul_f32_into(
     )
 }
 
+const Q5K_SB_BYTES: usize = 176;
+/// Tokens per SIMD accumulator group in the Q5_K multi-row kernel.
+const Q5K_LANES: usize = 8;
+
+/// Token-major `input` (`m` rows of `in_dim`) into `groups` lane blocks:
+/// `act_t[g][i][lane]`. Tail lanes stay zero; their results are discarded.
+fn transpose_token_lanes(input: &[f32], in_dim: usize, groups: usize) -> Vec<f32> {
+    let mut act_t = vec![0.0f32; groups * in_dim * Q5K_LANES];
+    for (t, row) in input.chunks_exact(in_dim).enumerate() {
+        let base = (t / Q5K_LANES) * in_dim * Q5K_LANES + t % Q5K_LANES;
+        for (i, &x) in row.iter().enumerate() {
+            act_t[base + i * Q5K_LANES] = x;
+        }
+    }
+    act_t
+}
+
+/// One Q5_K weight row against every token: dequantize the row into `w` once, then
+/// replay `fused_q5k_dot`'s mul-then-add order per lane. `out_r[t]` is token `t`'s output.
+fn q5k_row_all_tokens(row: &[u8], act_t: &[f32], w: &mut [f32], out_r: &mut [f32]) {
+    let in_dim = w.len();
+    for (sb_i, sb) in row.chunks_exact(Q5K_SB_BYTES).enumerate() {
+        let wb = &mut w[sb_i * QK_K..(sb_i + 1) * QK_K];
+        super::dequant::for_each_q5k_value(sb, |i, v| wb[i] = v);
+    }
+    let m = out_r.len();
+    for (g, a) in act_t.chunks_exact(in_dim * Q5K_LANES).enumerate() {
+        let mut acc = [0.0f32; Q5K_LANES];
+        for (wi, ai) in w.iter().zip(a.chunks_exact(Q5K_LANES)) {
+            for l in 0..Q5K_LANES {
+                acc[l] += *wi * ai[l];
+            }
+        }
+        let n = Q5K_LANES.min(m - g * Q5K_LANES);
+        out_r[g * Q5K_LANES..g * Q5K_LANES + n].copy_from_slice(&acc[..n]);
+    }
+}
+
+/// Multi-row Q5_K matmul over `m` token rows, bit-identical to [`fused_q5k_parallel_matvec_into`]
+/// once per row (#4228). Token-major `input`/`output`.
+///
+/// # Errors
+/// Mis-sized buffers.
+pub fn fused_q5k_multirow_matmul_into(
+    weight_data: &[u8],
+    input: &[f32],
+    m: usize,
+    in_dim: usize,
+    out_dim: usize,
+    output: &mut [f32],
+) -> Result<()> {
+    use rayon::prelude::*;
+    const SB_BYTES: usize = Q5K_SB_BYTES;
+
+    // A padded tail would add w*0.0 terms whose sign can differ; keep the generic path there.
+    if m <= 1 || in_dim % QK_K != 0 {
+        return super::generic_matvec::generic_multirow_matmul_into::<Q5K>(
+            weight_data,
+            input,
+            m,
+            in_dim,
+            out_dim,
+            output,
+            fused_q5k_dot_simd,
+        );
+    }
+    let bytes_per_row = in_dim / QK_K * SB_BYTES;
+    if weight_data.len() < out_dim * bytes_per_row
+        || input.len() != m * in_dim
+        || output.len() < m * out_dim
+    {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "Q5_K multirow: weight {} < {out_dim}x{bytes_per_row}, input {} != {m}x{in_dim} \
+                 or output {} < {m}x{out_dim}",
+                weight_data.len(),
+                input.len(),
+                output.len()
+            ),
+        });
+    }
+
+    let groups = m.div_ceil(Q5K_LANES);
+    let act_t = transpose_token_lanes(input, in_dim, groups);
+
+    // `fused_q5k_dot` is `acc += v * act[i]` over i ascending, v from `for_each_q5k_value`
+    // (which emits i = 0..256 in order per super-block). Each row is dequantized ONCE here and
+    // every token replays that exact sequence in its own lane — separate mul and add, no FMA,
+    // same order — so each output is bit-identical to the per-token dot.
+    let rows_per_task = 8;
+    let mut by_row = vec![0.0f32; out_dim * m];
+    by_row
+        .par_chunks_mut(rows_per_task * m)
+        .enumerate()
+        .for_each(|(ti, chunk)| {
+            let mut w = vec![0.0f32; in_dim];
+            for (r, out_r) in chunk.chunks_exact_mut(m).enumerate() {
+                let at = (ti * rows_per_task + r) * bytes_per_row;
+                q5k_row_all_tokens(&weight_data[at..at + bytes_per_row], &act_t, &mut w, out_r);
+            }
+        });
+    for (row, vals) in by_row.chunks_exact(m).enumerate() {
+        for (t, &v) in vals.iter().enumerate() {
+            output[t * out_dim + row] = v;
+        }
+    }
+    Ok(())
+}
+
+/// Multi-row Q6_K matmul over `m` token rows, bit-identical to [`fused_q6k_parallel_matvec_into`]
+/// once per row (#4228). Token-major `input`/`output`.
+///
+/// # Errors
+/// Mis-sized buffers.
+pub fn fused_q6k_multirow_matmul_into(
+    weight_data: &[u8],
+    input: &[f32],
+    m: usize,
+    in_dim: usize,
+    out_dim: usize,
+    output: &mut [f32],
+) -> Result<()> {
+    super::generic_matvec::generic_multirow_matmul_into::<Q6K>(
+        weight_data,
+        input,
+        m,
+        in_dim,
+        out_dim,
+        output,
+        fused_q6k_dot_simd,
+    )
+}
+
 #[cfg(test)]
 mod multirow_tests {
     use super::*;
@@ -367,6 +500,52 @@ mod multirow_tests {
                 best[1] * 1e3,
                 best[0] / best[1]
             );
+        }
+    }
+
+    /// FALSIFY-4228-006: the Q5_K/Q6_K multi-row GEMMs equal the per-row matvec bit for bit,
+    /// including a ragged last tile and an out_dim below the per-row parallel threshold.
+    #[test]
+    fn falsify_4228_006_q5k_q6k_multirow_bit_identical() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        for &(sb_bytes, is_q5) in &[(176usize, true), (210usize, false)] {
+            for &(m, in_dim, out_dim) in &[(3usize, 256usize, 70usize), (9, 512, 300), (2, 768, 257), (17, 1024, 33)] {
+                let nsb = in_dim / 256;
+                let w: Vec<u8> = (0..out_dim * nsb * sb_bytes).map(|_| next() as u8).collect();
+                let x: Vec<f32> = (0..m * in_dim)
+                    .map(|_| ((next() % 2001) as f32 - 1000.0) / 997.0)
+                    .collect();
+                let mut want = vec![0.0f32; m * out_dim];
+                for t in 0..m {
+                    let (xi, yo) = (&x[t * in_dim..(t + 1) * in_dim], &mut want[t * out_dim..(t + 1) * out_dim]);
+                    if is_q5 {
+                        fused_q5k_parallel_matvec_into(&w, xi, in_dim, out_dim, yo).expect("q5k");
+                    } else {
+                        fused_q6k_parallel_matvec_into(&w, xi, in_dim, out_dim, yo).expect("q6k");
+                    }
+                }
+                let mut got = vec![0.0f32; m * out_dim];
+                if is_q5 {
+                    fused_q5k_multirow_matmul_into(&w, &x, m, in_dim, out_dim, &mut got).expect("q5k mr");
+                } else {
+                    fused_q6k_multirow_matmul_into(&w, &x, m, in_dim, out_dim, &mut got).expect("q6k mr");
+                }
+                // Random bytes make some f16 scales NaN/Inf. Which NaN payload an add
+                // propagates depends on operand order in the SIMD lane, not on the math, so
+                // every NaN compares as one canonical NaN; every other bit must match.
+                let bits = |v: &[f32]| {
+                    v.iter()
+                        .map(|f| if f.is_nan() { f32::NAN.to_bits() } else { f.to_bits() })
+                        .collect::<Vec<_>>()
+                };
+                assert_eq!(bits(&got), bits(&want), "q5={is_q5} m={m} in={in_dim} out={out_dim}");
+            }
         }
     }
 }

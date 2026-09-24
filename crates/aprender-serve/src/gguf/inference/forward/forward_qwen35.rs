@@ -1211,9 +1211,9 @@ impl<'a> Qwen35Model<'a> {
         Ok(logits)
     }
 
-    /// `b` rows of `weight.in_dim` through `weight`, token-major out. Q4_K with `b > 1` takes
-    /// the multi-row GEMM (bit-identical to the per-row matvec); every other type loops the
-    /// same per-row `fused_matmul_into` the per-token forward calls.
+    /// `b` rows of `weight.in_dim` through `weight`, token-major out. Q4_K/Q5_K/Q6_K with
+    /// `b > 1` take the multi-row GEMMs (each bit-identical to its per-row matvec); every other
+    /// type loops the same per-row `fused_matmul_into` the per-token forward calls.
     fn matmul_rows(
         &self,
         input: &[f32],
@@ -1224,6 +1224,24 @@ impl<'a> Qwen35Model<'a> {
         let mut out = vec![0.0; b * out_dim];
         if weight.qtype == crate::gguf::GGUF_TYPE_Q4_K && b > 1 {
             crate::quantize::fused_q4k_multirow_matmul_f32_into(
+                &weight.data,
+                &input[..b * in_dim],
+                b,
+                in_dim,
+                out_dim,
+                &mut out,
+            )?;
+        } else if weight.qtype == crate::gguf::GGUF_TYPE_Q5_K && b > 1 {
+            crate::quantize::fused_q5k_multirow_matmul_into(
+                &weight.data,
+                &input[..b * in_dim],
+                b,
+                in_dim,
+                out_dim,
+                &mut out,
+            )?;
+        } else if weight.qtype == crate::gguf::GGUF_TYPE_Q6_K && b > 1 {
+            crate::quantize::fused_q6k_multirow_matmul_into(
                 &weight.data,
                 &input[..b * in_dim],
                 b,
