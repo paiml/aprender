@@ -158,17 +158,24 @@ fn a_dp4a_gemv_after_a_qwen35_writer_rewrites_its_input_requantizes() {
         }),
     ];
 
+    // Every `x` stays alive for the whole test: a freed buffer's address is handed
+    // straight back to the next allocation, and a host upload into it is not a write
+    // the executor sees (see `ensure_q8_activation`).
+    let xs: Vec<GpuBuffer<f32>> = (0..DP4A.len() * writers.len())
+        .map(|_| rig.buf(&a_host))
+        .collect();
+    let mut xs = xs.iter();
     for variant in DP4A {
         for (name, write) in writers {
-            let x = rig.buf(&a_host);
-            let before = rig.gemv(variant, &x);
-            write(&mut rig.ex, &a, &b, &ones, &x);
-            let want = rig.float_ref(&x);
+            let x = xs.next().expect("one x per case");
+            let before = rig.gemv(variant, x);
+            write(&mut rig.ex, &a, &b, &ones, x);
+            let want = rig.float_ref(x);
             assert!(
                 rel_l2(&before, &want) > DISTINCT_FLOOR,
                 "{name}: write changed too little"
             );
-            let got = rig.gemv(variant, &x);
+            let got = rig.gemv(variant, x);
             let err = rel_l2(&got, &want);
             eprintln!("[4258] {variant:?} after {name}: {err:.3e}");
             assert!(
