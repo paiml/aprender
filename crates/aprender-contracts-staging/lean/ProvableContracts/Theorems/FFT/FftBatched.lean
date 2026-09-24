@@ -12,7 +12,7 @@ namespace ProvableContracts.FFT
 
 -- Status: proved
 /-- Batch independence: function applied to i-th element doesn't depend on j-th. -/
-theorem batch_independence {n : ℕ} (f : Fin n → α) (i : Fin n) :
+theorem batch_independence {n : ℕ} {α : Type*} (f : Fin n → α) (i : Fin n) :
     f i = f i := rfl
 
 #check @batch_independence

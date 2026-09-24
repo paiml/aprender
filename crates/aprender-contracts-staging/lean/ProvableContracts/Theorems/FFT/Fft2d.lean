@@ -1,3 +1,4 @@
+import Mathlib.Analysis.Complex.Exponential
 import Mathlib.Data.Complex.Basic
 import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 

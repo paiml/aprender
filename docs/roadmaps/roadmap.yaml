@@ -20627,3 +20627,20 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4244
+  github_issue: 4244
+  item_type: task
+  kind: code
+  title: 'PVL-001 EV-6c: 59 Lean modules unreachable from root'
+  status: planned
+  priority: medium
+  assigned_to: aprender-ea
+  created: 2026-09-24T16:52:28Z
+  updated: 2026-09-24T16:52:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
