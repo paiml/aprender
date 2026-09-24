@@ -276,6 +276,16 @@ run_e2e() {
         env -u HOME -u APR_FLEET_MARKER bash -c '. "$1" || exit 1; printf %s "$PV"' _ "$T/old/pv_bin.sh"
     e2e_in "$T" "no HOME, no rule anywhere, refused" refuse "nightly_pin.sh is not beside this resolver" \
         env -u HOME -u APR_FLEET_MARKER bash -c '. "$1" || exit 1; printf %s "$APR"' _ "$T/lone/apr_bin.sh"
+    # zsh restores an UNSET HOME from passwd (the real marker path, correct);
+    # an EMPTY one it keeps, and that must refuse in zsh as it does in bash.
+    if command -v zsh >/dev/null 2>&1; then
+        e2e_in "$T" "zsh: real resolver, empty HOME, refused" refuse "HOME is unset" \
+            env -u APR_FLEET_MARKER HOME= PATH="$T/stale:$PATH" zsh -fc '. "$1" || exit 1; printf %s "$APR"' _ "$ROOT/scripts/apr_bin.sh"
+        e2e_in "$T" "zsh: real pv resolver, empty HOME, refused" refuse "HOME is unset" \
+            env -u APR_FLEET_MARKER HOME= PATH="$T/stale:$PATH" zsh -fc '. "$1" || exit 1; printf %s "$PV"' _ "$ROOT/scripts/pv_bin.sh"
+        e2e_in "$T" "zsh: empty HOME, no rule anywhere, refused" refuse "nightly_pin.sh is not beside this resolver" \
+            env -u APR_FLEET_MARKER HOME= zsh -fc '. "$1" || exit 1; printf %s "$APR"' _ "$T/lone/apr_bin.sh"
+    fi
     cp "$ROOT/scripts/pv_bin.sh" "$T/lone/"
     e2e_in "$T" "no HOME, no pv rule anywhere, refused" refuse "nightly_pin.sh is not beside this resolver" \
         env -u HOME -u APR_FLEET_MARKER bash -c '. "$1" || exit 1; printf %s "$PV"' _ "$T/lone/pv_bin.sh"

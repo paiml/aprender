@@ -270,7 +270,7 @@ apr_bin_origin() {
 
     case "$bin" in
         */bin/apr)
-            inst=$(apr_bin_installed_from "${CARGO_HOME:-$HOME/.cargo}/.crates2.json") || inst=""
+            inst=$(apr_bin_installed_from "${CARGO_HOME:-${HOME:-}/.cargo}/.crates2.json") || inst=""
             if [ -n "$inst" ] && [ -n "$APR_BIN_WS_ROOT" ]; then
                 case "$inst" in
                     "$APR_BIN_WS_ROOT"|"$APR_BIN_WS_ROOT"/*) printf 'own\n' ;;
@@ -339,7 +339,7 @@ apr_bin_scan() {
     apr_bin_load_meta || true
     td="$APR_BIN_TARGET_DIR"
     lr=$(apr_bin_local_root) || lr=""
-    ch="${CARGO_HOME:-$HOME/.cargo}"
+    ch="${CARGO_HOME:-${HOME:-}/.cargo}"
 
     if [ -n "$td" ]; then
         apr_bin_try "$want" "$td/release/apr" && return 0
@@ -369,7 +369,7 @@ apr_bin_report_candidate() {
     owner=$(apr_bin_dep_owner "${cand}.d") || owner=""
     if [ -z "$owner" ] && [ "$origin" != "own" ]; then
         case "$cand" in
-            */bin/apr) owner=$(apr_bin_installed_from "${CARGO_HOME:-$HOME/.cargo}/.crates2.json") || owner="" ;;
+            */bin/apr) owner=$(apr_bin_installed_from "${CARGO_HOME:-${HOME:-}/.cargo}/.crates2.json") || owner="" ;;
         esac
     fi
     printf '    %-46s %-8s %s\n' "$cand" "$origin" "$("$cand" --version 2>&1 | head -1)"
@@ -383,7 +383,7 @@ apr_bin_report_all_candidates() {
     apr_bin_load_meta || true
     td="$APR_BIN_TARGET_DIR"
     lr=$(apr_bin_local_root) || lr=""
-    ch="${CARGO_HOME:-$HOME/.cargo}"
+    ch="${CARGO_HOME:-${HOME:-}/.cargo}"
     if [ -n "$td" ]; then
         apr_bin_report_candidate "$td/release/apr"
         apr_bin_report_candidate "$td/debug/apr"
