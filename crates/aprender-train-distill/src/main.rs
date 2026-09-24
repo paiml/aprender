@@ -13,7 +13,7 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(name = "entrenar-distill")]
 #[command(about = "End-to-end knowledge distillation CLI")]
-#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"))]
+#[command(version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

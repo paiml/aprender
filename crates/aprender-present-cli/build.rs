@@ -19,9 +19,6 @@ struct Binding {
 }
 
 fn main() {
-    // #4219: stamp APR_GIT_SHA for `--version` before anything can return early.
-    build_sha::emit();
-
     // From crates/presentar-cli/ -> ../../.. -> src/ -> provable-contracts/
     let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")

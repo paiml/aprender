@@ -289,9 +289,6 @@ required-features = ["inference", "cuda"]
 name = "ptx_parity_validation"
 required-features = ["inference"]
 
-[build-dependencies]
-aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
-
 [dev-dependencies]
 jsonschema = "0.28"  # apr devices --json validated against contracts/schemas/apr-devices-v1.schema.json (PP-066 R-0a)
 assert_cmd = "2.0"

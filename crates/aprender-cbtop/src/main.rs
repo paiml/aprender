@@ -18,7 +18,7 @@ use clap::{Parser, Subcommand};
 #[derive(Parser, Debug)]
 #[command(name = "cbtop")]
 #[command(author = "Trueno Engineering")]
-#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"))]
+#[command(version)]
 #[command(about = "Real-time load testing and hardware monitoring TUI", long_about = None)]
 struct Cli {
     /// Subcommand (bench for headless benchmarking)

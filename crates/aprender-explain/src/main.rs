@@ -17,7 +17,7 @@ use trueno_gpu::kernels::{
 
 #[derive(Parser)]
 #[command(name = "trueno-explain")]
-#[command(author, version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"), about = "PTX/SIMD/wgpu Visualization and Tracing CLI")]
+#[command(author, version, about = "PTX/SIMD/wgpu Visualization and Tracing CLI")]
 #[command(long_about = "
 Implements the Toyota Way principle of Genchi Genbutsu (Go and See)
 by making invisible compiler transformations visible.

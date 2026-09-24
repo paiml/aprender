@@ -66,9 +66,6 @@ cuda = ["dep:trueno-gpu"]
 # at release time. Not in CI's default set, and not in the nightly full surface.
 timing-gate = []
 
-[build-dependencies]
-aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
-
 [dev-dependencies]
 proptest = "1.9"
 tempfile = "3"

@@ -22,7 +22,7 @@ use presentar_terminal::ColorMode;
 
 /// Presentar System Monitor - widget composition demo
 #[derive(Parser)]
-#[command(name = "ptop", version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"), about, long_about = None)]
+#[command(name = "ptop", version, about, long_about = None)]
 struct Cli {
     /// Refresh interval in milliseconds
     #[arg(short, long, default_value = "1000")]

@@ -16,7 +16,7 @@ pub(crate) use cli::pipeline_cmds::{OptimizationProfile, ReportFormat};
 
 #[derive(Parser)]
 #[command(name = "batuta")]
-#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"), about = "Sovereign AI orchestration: agents, ML serving, code analysis, and transpilation", long_about = None)]
+#[command(version, about = "Sovereign AI orchestration: agents, ML serving, code analysis, and transpilation", long_about = None)]
 pub(crate) struct Cli {
     #[command(subcommand)]
     pub command: Commands,

@@ -21,6 +21,3 @@ std = []
 
 [lints]
 workspace = true
-
-[build-dependencies]
-aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version

@@ -17,7 +17,7 @@ use verificar::Language;
 /// Verificar - Synthetic Data Factory for Code Intelligence
 #[derive(Parser)]
 #[command(name = "verificar")]
-#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"), about, long_about = None)]
+#[command(version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

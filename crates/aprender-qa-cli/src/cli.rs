@@ -32,7 +32,7 @@ use std::path::{Path, PathBuf};
 #[derive(Parser)]
 #[command(name = "apr-qa")]
 #[command(about = "APR Model QA Playbook Runner", long_about = None)]
-#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"))]
+#[command(version)]
 pub struct Cli {
     /// The subcommand to run.
     #[command(subcommand)]

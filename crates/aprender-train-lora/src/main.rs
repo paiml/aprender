@@ -14,7 +14,7 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(name = "entrenar-lora")]
 #[command(about = "LoRA/QLoRA configuration optimizer and memory planner")]
-#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"))]
+#[command(version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

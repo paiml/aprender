@@ -26,7 +26,7 @@ pub enum OutputFormat {
 
 #[derive(Parser, Debug)]
 #[command(name = "renacer")]
-#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"))]
+#[command(version)]
 #[command(about = "Pure Rust system call tracer with source correlation", long_about = None)]
 pub struct Cli {
     /// Enable source code correlation using DWARF debug info

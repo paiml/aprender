@@ -127,9 +127,6 @@ wgpu-profiler = { version = "0.18", optional = true }
 # CUDA kernel tracing (Sprint 38)
 cudarc = { version = "0.18", optional = true, features = ["f16", "cuda-version-from-build-system"] }
 
-[build-dependencies]
-aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
-
 [dev-dependencies]
 # Testing
 assert_cmd = "2.0"

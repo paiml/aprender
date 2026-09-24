@@ -22,9 +22,6 @@ clap.workspace = true
 unsafe_code = "allow"
 
 
-[build-dependencies]
-aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
-
 [dev-dependencies]
 proptest = "1.9"
 

@@ -38,9 +38,6 @@ sqlite = ["aprender-rag/sqlite"]
 # Image OCR via tesseract CLI (PMAT-023)
 ocr = ["aprender-rag/ocr"]
 
-[build-dependencies]
-aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
-
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.1"

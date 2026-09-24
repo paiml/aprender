@@ -102,9 +102,6 @@ chrono = { version = "0.4", features = ["serde"], optional = true }
 regex = { version = "1", optional = true }
 walkdir = { version = "2", optional = true }
 
-[build-dependencies]
-aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
-
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
