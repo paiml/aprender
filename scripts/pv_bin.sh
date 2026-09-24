@@ -576,11 +576,11 @@ pv_bin_build() {
     pv_bin_build_log=$(mktemp) || pv_bin_build_log=''
     pv_bin_build_rc=0
     if [ -n "$pv_bin_build_log" ]; then
-        ( cd "$pv_bin_build_root" && cargo build -q -p aprender-contracts-cli --bin pv ) \
+        ( cd "$pv_bin_build_root" && cargo build -q -p aprender-contracts-cli --bin pv --bin pv-sat ) \
             > "$pv_bin_build_log" 2>&1 || pv_bin_build_rc=$?
         cat "$pv_bin_build_log" >&2
     else
-        ( cd "$pv_bin_build_root" && cargo build -q -p aprender-contracts-cli --bin pv ) >&2 \
+        ( cd "$pv_bin_build_root" && cargo build -q -p aprender-contracts-cli --bin pv --bin pv-sat ) >&2 \
             || pv_bin_build_rc=$?
     fi
 
@@ -738,3 +738,9 @@ if [ "$PV_BIN_RC" -ne 0 ]; then
 fi
 pv_bin_assert_fresh "$PV" || return 1 2>/dev/null || exit 1
 export PV
+
+# ONT-5: pv-sat, the untrusted reasoner, is a second bin of the same package, built by the same
+# `cargo build` above into the same directory -- so it is this tree's whenever PV is. Under a PV_BIN
+# override there may be none beside it; the caller tests `-x` and says so, never falls back to PATH.
+PV_SAT="$(dirname "$PV")/pv-sat"
+export PV_SAT

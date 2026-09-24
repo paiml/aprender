@@ -104,7 +104,7 @@ fn an_inconsistent_corpus_fails_on_the_witness_pv_sat_wrote() {
     assert!(r.stdout.contains("PV-ONT-022"), "{}", show(&r));
     assert_eq!(
         json_of(&r)["core"],
-        serde_json::json!(["a", "d"]),
+        serde_json::Value::from(vec!["a", "d"]),
         "{}",
         show(&r)
     );

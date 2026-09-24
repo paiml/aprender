@@ -592,6 +592,9 @@ contracts:
 	@git diff --exit-code contracts/census.json || { echo "FAIL: the tracked census differs from a fresh one — commit the regenerated contracts/census.json"; exit 1; }
 	@echo "== graph: tracked contracts/contracts.nt + shapes.ttl == a fresh extraction (ONT-001 ONT-4b, R-18) =="
 	@. scripts/pv_bin.sh && "$$PV" extract contracts --check >/dev/null
+	@echo "== consistency: pv-sat writes the witness, pv lint re-checks it (ONT-001 ONT-5, R-1) =="
+	@. scripts/pv_bin.sh && { [ -x "$$PV_SAT" ] || { echo "FAIL: no pv-sat beside $$PV -- a PV_BIN override must ship its pv-sat too"; exit 1; }; } && "$$PV_SAT" contracts && "$$PV" lint contracts/ --gate ont-consistency >/dev/null
+	@test -z "$$(git status --porcelain -- contracts/witness)" || { git status --short -- contracts/witness; echo "FAIL: contracts/witness/ differs from what pv-sat writes -- commit it"; exit 1; }
 	@echo "== README states the censused count =="
 	@bash scripts/readme_sync.sh --check
 	@echo "== provenance marks, interim (ONT-001 R-10) =="

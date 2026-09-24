@@ -55,7 +55,7 @@ fn every_answer_the_reasoner_gives_checks() {
             implies: BTreeSet::new(),
             conflicts: BTreeSet::new(),
         };
-        for _ in 0..r.next(3) + 1 {
+        for _ in 0..=r.next(3) {
             cs.units.insert(names[r.next(8)].clone());
         }
         for _ in 0..r.next(10) {
