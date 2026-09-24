@@ -577,6 +577,12 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     gates.push(shapes_gate_result);
     all_findings.append(&mut shapes_findings);
 
+    // Gate 13: valid-under (ONT-7). Same R-8 shape: computed in every run, armed per repo.
+    let (valid_under_gate_result, mut valid_under_findings) =
+        valid_under_result(config.contract_dir, validation_passed);
+    gates.push(valid_under_gate_result);
+    all_findings.append(&mut valid_under_findings);
+
     // Gate 9: strict test-binding (Issue #1510, opt-in via --strict-test-binding)
     if config.strict_test_binding {
         push_gate(
@@ -722,6 +728,35 @@ fn sigma_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, Ve
         ),
         sigma_gate::SigmaOutcome::Malformed(e) => (
             skipped_gate("sigma", &format!("Σ is malformed: {e}")),
+            Vec::new(),
+        ),
+    }
+}
+
+/// The `valid-under` gate as `run_lint` reports it (ONT-7). Its three non-verdict answers become SKIPPED gates
+/// here, as sigma's do — under `--gate valid-under` they are exits of their own (decline / error).
+fn valid_under_result(
+    contract_dir: &Path,
+    validation_passed: bool,
+) -> (GateResult, Vec<LintFinding>) {
+    if !validation_passed {
+        return (skipped_gate("valid-under", "validation failed"), Vec::new());
+    }
+    match valid_under_gate::run_valid_under_gate(contract_dir) {
+        valid_under_gate::ValidUnderOutcome::Ran { result, findings } => (*result, findings),
+        valid_under_gate::ValidUnderOutcome::NoSigma => (
+            skipped_gate("valid-under", "no contracts/ontology.yaml"),
+            Vec::new(),
+        ),
+        valid_under_gate::ValidUnderOutcome::Malformed(e) => (
+            skipped_gate("valid-under", &format!("Σ is malformed: {e}")),
+            Vec::new(),
+        ),
+        valid_under_gate::ValidUnderOutcome::NoKernels { contracts_checked } => (
+            skipped_gate(
+                "valid-under",
+                &format!("no kernel-kind contract and no valid_under in {contracts_checked} contracts — R-2: zero is a decline"),
+            ),
             Vec::new(),
         ),
     }

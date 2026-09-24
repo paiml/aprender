@@ -299,7 +299,7 @@ fn decide_named_gate(
         .into()),
         NamedGateOutcome::ValidUnder(ValidUnderOutcome::NoKernels { contracts_checked }) => {
             eprintln!(
-                "valid-under: no kernel-kind contract in {contracts_checked} contract(s) — nothing the world index is required of"
+                "valid-under: no kernel-kind contract and no valid_under in {contracts_checked} contract(s) — nothing was measured"
             );
             Err(LintDeclined {
                 reason: provable_contracts::ontology::verdict::Reason::NoCheckable,

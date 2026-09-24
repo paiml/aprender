@@ -11,8 +11,11 @@
 //! |---|---|
 //! | `valid-under-ok` | exit 0, Pass — world + every qualifier well-formed |
 //! | `valid-under-unknown-world` | exit 1, PV-ONT-014 — `world: mars`, not in Σ |
-//! | `valid-under-no-world` | exit 1, PV-ONT-014 — qualifiers but no index |
+//! | `valid-under-appendix-b` | exit 0, Pass — the spec's Appendix B example verbatim: no `world`, reads `committed` |
+//! | `valid-under-world-not-a-string` | exit 1, PV-ONT-014 |
 //! | `valid-under-undeclared-key` | exit 1, PV-ONT-013 — closed key set |
+//! | `valid-under-empty` | exit 1, PV-ONT-013 — `valid_under: {}` |
+//! | `valid-under-nonkernel-bad` | exit 1, PV-ONT-014 — no kernel at all, and still a reject, not a decline |
 //! | `valid-under-bad-qualifier` | exit 1, PV-ONT-015 — `backend: []`, non-string toolchain version |
 //! | `valid-under-ratchet-rise` | exit 1, PV-ONT-016 — one kernel without, baseline 0 |
 //! | `valid-under-no-kernels` | exit 2, decline — nothing the row obliges |
@@ -85,7 +88,7 @@ fn assert_rejects_with(fixture_name: &str, rule: &str) {
         show(&r)
     );
     for other in ["PV-ONT-013", "PV-ONT-014", "PV-ONT-015", "PV-ONT-016"] {
-        if other != rule && fixture_name != "valid-under-bad-qualifier" {
+        if other != rule {
             assert!(
                 !r.stdout.contains(other),
                 "{fixture_name} fired {other} as well as {rule} — one fixture, one rule\n{}",
@@ -122,10 +125,11 @@ fn the_row_probe_passes_on_the_repo_corpus() {
         "ont-verdict-lattice-v1 carries world: committed\n{}",
         show(&r)
     );
-    assert_eq!(
-        extra["contracts_without_valid_under"],
-        extra["baseline"],
-        "the baseline records the measured debt exactly — restamp it when it falls\n{}",
+    // The ratchet's own rule, not equality: a PR that annotates contracts lowers the count and passes whether
+    // or not it also lowers the baseline (as `formal_prose` does), so this never forces a hand-edit.
+    assert!(
+        extra["contracts_without_valid_under"].as_u64() <= extra["baseline"].as_u64(),
+        "the debt may not rise above the recorded baseline\n{}",
         show(&r)
     );
 }
@@ -145,8 +149,49 @@ fn a_world_sigma_does_not_declare_rejects() {
 }
 
 #[test]
-fn a_valid_under_without_a_world_rejects() {
-    assert_rejects_with("valid-under-no-world", "PV-ONT-014");
+fn the_specs_own_appendix_b_example_passes_and_reads_committed() {
+    let r = gate(&fixture("valid-under-appendix-b"));
+    assert_eq!(r.code, 0, "{}", show(&r));
+    assert_eq!(
+        json_of(&r)["extra"]["by_world"][0],
+        "committed=1",
+        "{}",
+        show(&r)
+    );
+}
+
+#[test]
+fn a_world_that_is_not_a_string_rejects() {
+    assert_rejects_with("valid-under-world-not-a-string", "PV-ONT-014");
+}
+
+#[test]
+fn an_empty_valid_under_rejects() {
+    assert_rejects_with("valid-under-empty", "PV-ONT-013");
+}
+
+#[test]
+fn a_bad_valid_under_rejects_even_with_no_kernel_contract() {
+    assert_rejects_with("valid-under-nonkernel-bad", "PV-ONT-014");
+}
+
+/// R-8: a new ONT gate is COMPUTED in every run and armed per repo, like sigma, relations and shapes.
+#[test]
+fn the_full_lint_run_computes_valid_under() {
+    let r = pv(&[
+        "lint",
+        repo_contracts().to_str().expect("utf-8 path"),
+        "--format",
+        "json",
+    ]);
+    let v = json_of(&r);
+    let gate = v["gates"]
+        .as_array()
+        .expect("gates")
+        .iter()
+        .find(|g| g["name"] == "valid-under")
+        .unwrap_or_else(|| panic!("the full run did not compute valid-under\n{}", show(&r)));
+    assert_eq!(gate["verdict"], "Pass", "{}", show(&r));
 }
 
 #[test]

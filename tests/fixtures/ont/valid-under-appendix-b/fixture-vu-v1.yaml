@@ -6,7 +6,10 @@ metadata:
   author: PAIML Engineering
   description: ONT-7 fixture
   valid_under:
-    backend: [cpu]
+    toolchain: { rust: "1.93" }
+    host_class: [x86_64-linux]
+    backend: [cpu, cuda]
+    features: [cuda]
 equations:
   identity:
     formal: "len(out) = len(x)"

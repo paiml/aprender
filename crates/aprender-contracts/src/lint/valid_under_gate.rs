@@ -7,7 +7,7 @@
 //! ```yaml
 //! metadata:
 //!   valid_under:
-//!     world: committed                      # REQUIRED — a key of Σ's `worlds:` (the index)
+//!     world: committed                      # a key of Σ's `worlds:` (the index); omitted = `committed`
 //!     toolchain: { rust: "1.93" }           # optional qualifiers, closed set
 //!     host_class: [x86_64-linux]
 //!     backend: [cpu, cuda]
@@ -16,8 +16,9 @@
 //!
 //! Rules, all `reject:` (exit 1) because the corpus is what is wrong:
 //!
-//! - PV-ONT-013 — `valid_under` is present but not a mapping, or carries a key outside the closed set;
-//! - PV-ONT-014 — `world` is missing, or names a world Σ does not declare;
+//! - PV-ONT-013 — `valid_under` is present but not a mapping, is empty, or carries a key outside the closed set;
+//! - PV-ONT-014 — `world` is not a string, or names a world Σ does not declare (an omitted `world` reads
+//!   [`DEFAULT_WORLD`], which Σ must declare — so the spec's Appendix B example is admitted as written);
 //! - PV-ONT-015 — a qualifier has the wrong shape (`toolchain` a map of strings; the others non-empty lists
 //!   of non-empty strings);
 //! - PV-ONT-016 — the `contracts_without_valid_under` ratchet ROSE. The debt is the kernel-kind contracts
@@ -27,7 +28,8 @@
 //!
 //! The rules apply to `valid_under` wherever it appears; only the ratchet is scoped to kernel-kind, because
 //! that is the class the row obliges. Non-verdict answers: no Σ → decline, malformed Σ → error, and a corpus
-//! with no kernel-kind contract measured nothing → decline (ONT R-2: zero is a decline, never an accept).
+//! with no kernel-kind contract AND no `valid_under` anywhere measured nothing → decline (ONT R-2: zero is a
+//! decline, never an accept). The gate is computed in every `pv lint` run (gate 13, R-8) and armed per repo.
 //!
 //! **Reads RAW YAML for the key** (the `Contract` struct does not carry it, and serde drops what it does
 //! not know — sigma_gate's reason), and the PARSED contract for the kind, so "kernel" means exactly what
@@ -46,6 +48,12 @@ use super::{GateDetail, GateExtra, GateResult, Verdict};
 
 /// The keys `metadata.valid_under` may carry. Closed world: anything else is a reject.
 pub const VALID_UNDER_KEYS: [&str; 5] = ["world", "toolchain", "host_class", "backend", "features"];
+
+/// The world a `valid_under` without `world:` is read in. Σ declares it, in its own words: `committed` is
+/// "the world every contract is read in unless it says otherwise" (contracts/ontology.yaml). So the spec's
+/// Appendix B example — qualifiers and no `world` — is admitted, and indexes `committed`. It must still be a
+/// world Σ declares: a Σ without `committed` gives an omitted `world` nothing to default to (PV-ONT-014).
+pub const DEFAULT_WORLD: &str = "committed";
 
 /// The top-level key of `lint-baseline.json` that records the debt.
 pub const BASELINE_KEY: &str = "contracts_without_valid_under";
@@ -92,7 +100,9 @@ pub fn run_valid_under_gate(contract_dir: &Path) -> ValidUnderOutcome {
     for file in files.iter().filter(|f| **f != sigma_path) {
         c.observe(&sigma, file);
     }
-    if c.kernels == 0 {
+    // Zero is a decline only when NOTHING was measured: a malformed `valid_under` on a non-kernel contract is
+    // still a reject (the rules apply wherever the key appears — #4076 re-review, lane 2).
+    if c.kernels == 0 && c.carrying == 0 {
         return ValidUnderOutcome::NoKernels {
             contracts_checked: c.checked,
         };
@@ -184,9 +194,11 @@ impl Census {
         let before = self.findings.len();
         check_valid_under(sigma, v, &stem, file, &mut self.findings);
         if self.findings.len() == before {
-            if let Some(w) = v.get("world").and_then(serde_yaml::Value::as_str) {
-                *self.by_world.entry(w.to_string()).or_default() += 1;
-            }
+            let w = v
+                .get("world")
+                .and_then(serde_yaml::Value::as_str)
+                .unwrap_or(DEFAULT_WORLD);
+            *self.by_world.entry(w.to_string()).or_default() += 1;
         }
     }
 }
@@ -246,13 +258,24 @@ fn check_valid_under(
             ));
         }
     }
+    if map.is_empty() {
+        out.push(finding(
+            "PV-ONT-013",
+            "`metadata.valid_under` is empty — name a `world:` or a qualifier, or remove the key"
+                .to_string(),
+            stem,
+            file,
+        ));
+        return;
+    }
     match map.get("world").map(|w| w.as_str()) {
-        None => out.push(finding(
+        None if !sigma.worlds.contains_key(DEFAULT_WORLD) => out.push(finding(
             "PV-ONT-014",
-            "`metadata.valid_under` names no `world:` — the world index is the field this row requires".to_string(),
+            format!("`metadata.valid_under` names no `world:` and Σ declares no `{DEFAULT_WORLD}` world to default to"),
             stem,
             file,
         )),
+        None => {}
         Some(None) => out.push(finding(
             "PV-ONT-014",
             "`metadata.valid_under.world` must be a string naming a world in contracts/ontology.yaml".to_string(),

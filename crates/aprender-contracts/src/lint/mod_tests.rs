@@ -10,9 +10,10 @@ fn lint_passes_on_real_contracts() {
     let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
     assert!(report.passed, "lint should pass: {report:?}");
-    // 12 gates: validate, audit, score, verify, enforce, enforcement-level, reverse-coverage,
-    // duplicate-stems (PV-DUP-001), composition, sigma (ONT-2b), relations (ONT-4), shapes (ONT-4b).
-    assert_eq!(report.gates.len(), 12);
+    // 13 gates: validate, audit, score, verify, enforce, enforcement-level, reverse-coverage,
+    // duplicate-stems (PV-DUP-001), composition, sigma (ONT-2b), relations (ONT-4), shapes (ONT-4b),
+    // valid-under (ONT-7).
+    assert_eq!(report.gates.len(), 13);
 }
 
 #[test]
@@ -162,7 +163,7 @@ fn lint_validation_failure_skips_audit_and_score() {
     let report = run_lint(&config);
     assert!(!report.passed);
     // validate should fail, all subsequent gates should be skipped
-    assert_eq!(report.gates.len(), 12);
+    assert_eq!(report.gates.len(), 13);
     assert!(!report.gates[0].passed); // validate failed
     assert!(report.gates[1].skipped); // audit skipped
     assert!(report.gates[2].skipped); // score skipped
@@ -368,7 +369,9 @@ fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus() {
             "reverse-coverage".to_string(),
             "sigma".to_string(),
             "relations".to_string(),
-            "shapes".to_string()
+            "shapes".to_string(),
+            // ONT-7, R-8: computed in every run, armed only when the baseline names it.
+            "valid-under".to_string()
         ]
     );
 }
