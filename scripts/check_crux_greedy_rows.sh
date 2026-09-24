@@ -159,7 +159,7 @@ import json, sys
 for l in open(sys.argv[1]):
     r = json.loads(l)
     if r["refused"]:
-        print("row %s %s %s REFUSED %s" % (r["engine"], r["thinking"], r["prompt_source"], r["refused"][:60]))
+        print("row %s %s %s REFUSED %s" % (r["engine"], r["thinking"], r["prompt_source"], (r["refused"] if len(r["refused"]) <= 60 else "%s … and %d more chars" % (r["refused"][:60], len(r["refused"]) - 60))))
     else:
         d = json.load(open(r["tokens"]))
         print("row %s %s %s ids=%s text=%r max=%s special=%s" % (r["engine"], r["thinking"], r["prompt_source"], d["generated_ids"],

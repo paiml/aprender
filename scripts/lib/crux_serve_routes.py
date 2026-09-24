@@ -140,6 +140,16 @@ RAW_KINDS = ("text_prompt", "raw_generate", "raw_sse", "raw_batch")
 SINGLE_PROMPT_KINDS = ("ollama_generate",)
 
 
+def clip_head(s, n):
+    """`s` cut to its first `n` chars, SAYING how many were cut (#4046: a silent cut reads as the whole text)."""
+    return s if len(s) <= n else f"{s[:n]} … and {len(s) - n} more chars"
+
+
+def clip_tail(s, n):
+    """`s` cut to its last `n` chars, SAYING how many were dropped (#4046)."""
+    return s if len(s) <= n else f"[{len(s) - n} earlier chars dropped] {s[-n:]}"
+
+
 def history_refusal(route, prompt):
     """Why `route` cannot be asked `prompt` (a multi-turn prompt on a single-prompt wire), else None."""
     spec = GENERATION.get(route)
@@ -229,7 +239,7 @@ def _post(url, body, timeout):
     try:
         return urllib.request.urlopen(req, timeout=timeout)
     except urllib.error.HTTPError as exc:
-        raise Fault("http_%s: %s" % (exc.code, exc.read().decode("utf-8", "replace")[:200]),
+        raise Fault("http_%s: %s" % (exc.code, clip_head(exc.read().decode("utf-8", "replace"), 200)),
                     {"http": exc.code})
     except (urllib.error.URLError, OSError) as exc:
         raise Fault("unreachable: %s" % exc)
@@ -239,7 +249,7 @@ def _json(raw, what):
     try:
         return json.loads(raw)
     except ValueError:
-        raise Fault("unparseable: %s is not JSON: %r" % (what, raw[:120]))
+        raise Fault("unparseable: %s is not JSON: %s" % (what, clip_head(repr(raw), 120)))
 
 
 def _stream_verdict(parts, meta, terminal_what):

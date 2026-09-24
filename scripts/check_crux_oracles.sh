@@ -119,7 +119,7 @@ LINT = [
 for name, doc, want in LINT:
     errs = o.validate_set(doc)
     good = (not errs) is want
-    print(f"  {'ok   ' if good else 'BROKE'} lint: {name}  ->  {errs[:1] or 'valid'}")
+    print(f"  {'ok   ' if good else 'BROKE'} lint: {name}  ->  {(errs[0] + (f' … and {len(errs) - 1} more error(s)' if len(errs) > 1 else '')) if errs else 'valid'}")
     fail += not good
 
 # The certifier (crux_prompt_certify.py): admission needs EVERY leg correct; missing is never agreement.

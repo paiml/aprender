@@ -952,7 +952,7 @@ for name, want_fail, needle, kw, version in rows:
         lines = []
         got = C.judge(L, version, d, os.path.join(d, "prompt-certification.json"), CUT, "crux-smoke", lines.append)
         ok = got == want_fail and any(needle in ln for ln in lines)
-        print(("ok    smoke " if ok else "FAIL  smoke ") + name + ("" if ok else " -> failed=%s %s" % (got, lines[-3:])))
+        print(("ok    smoke " if ok else "FAIL  smoke ") + name + ("" if ok else " -> failed=%s %s%s" % (got, "[%d earlier lines dropped] " % (len(lines) - 3) if len(lines) > 3 else "", lines[-3:])))
         bad |= not ok
 sys.exit(bad)
 SM
