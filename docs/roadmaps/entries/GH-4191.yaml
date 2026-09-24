@@ -1,6 +1,7 @@
 - id: GH-4191
   github_issue: 4191
   item_type: task
+  kind: code
   title: 'aprender-orchestrate: test_resolve_project_root_nonexistent_falls_back is host-dependent (stray /tmp/Cargo.toml)'
   status: inprogress
   priority: medium
