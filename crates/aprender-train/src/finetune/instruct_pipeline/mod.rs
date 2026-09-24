@@ -228,6 +228,9 @@ pub struct InstructPipeline {
 
 /// State for wgpu-based training pipeline (WgpuTrainingPipeline)
 #[cfg(feature = "gpu")]
+// `fwd` and the lm_head buffers are held to keep GPU allocations alive; the
+// config fields are not read yet. First linted by #4056.
+#[allow(dead_code)]
 struct WgpuTrainingState {
     /// GPU forward pass with persistent weight buffers + tiled GEMM
     fwd: trueno::backends::gpu::WgslForwardPass,
