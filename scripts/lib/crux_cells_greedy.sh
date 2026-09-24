@@ -20,12 +20,19 @@
 # Each is one `kind: "greedy"` manifest row, key (model_sha256, host, prompt_id, thinking), whose `tokens`
 # file is the `raw` object: {generated_ids, generated_text, greedy, special, max_tokens}. Both engines use the
 # same max_tokens ($GREEDY_MAXTOK).
+#
+# The llama-server is stopped by crux_teardown_trap (scripts/lib/crux_cells_serve_code.sh), the cell's EXIT/TERM/INT
+# trap that PROVES it gone from /proc and nvidia-smi before the lock drops (#4209) — never an inline `kill` line,
+# which a timeout skips and which cannot see device memory. Anything but a `clean` teardown makes EVERY row RED.
 greedy_cells() {
   local d="$WORK/$SHA12/greedy" cell port pid th content think_flag=0 aprflag
   mkdir -p "$d"
   "$APR" run --help 2>/dev/null | grep -q -- '--thinking' && think_flag=1
   cell="$d/cell-greedy.sh"
+  # a pid file left by an earlier run would name a pid the kernel may have reused: the trap must see only this cell's
+  rm -f -- "$d/llama-server.pid" "$d/teardown.state"
   printf '#!/usr/bin/env bash\n# one CRUX greedy cell: apr + llama.cpp greedy ids on the identical GGUF\n' > "$cell"
+  crux_teardown_trap "$cell" "$d/teardown.state" "$d/llama-server.pid"
   if [ "$HAVE_LLAMA" = 1 ]; then
     port=$(free_port)
     { printf '%q ' "$LLAMA_SERVER" -m "$M" --port "$port" --host 127.0.0.1 -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}" \
@@ -55,21 +62,23 @@ greedy_cells() {
       fi
     done
   done
-  [ "$HAVE_LLAMA" = 1 ] && printf 'kill "$(cat %q)" 2> /dev/null; wait "$(cat %q)" 2> /dev/null\n' \
-    "$d/llama-server.pid" "$d/llama-server.pid" >> "$cell"
   printf 'exit 0\n' >> "$cell"
   run_cell "$cell"
+  local td_why
+  td_why=$(crux_teardown_why "$d/teardown.state")
   python3 - "$MANIFEST" "$SHA" "$HOST" "$BACKEND" "$d" "$GREEDY_MAXTOK" "$HAVE_LLAMA" "${LLAMA_WHY:-}" \
-    "${CELL_WHY:-}" "$think_flag" $GREEDY_PIDS <<'PY'
+    "${CELL_WHY:-}" "$think_flag" "$td_why" $GREEDY_PIDS <<'PY'
 import json, os, sys
-m, sha, host, backend, d, maxtok, llama_ok, llama_why, cell_why, think_flag = sys.argv[1:11]
-pids = sys.argv[11:]
+m, sha, host, backend, d, maxtok, llama_ok, llama_why, cell_why, think_flag, cell_fault = sys.argv[1:12]
+pids = sys.argv[12:]
 NO_ON = ("#3723: this apr has no `run --thinking` flag — realizar routes every Qwen3/Qwen3.5 to the no-think "
          "template, and a pre-rendered thinking-ON prompt is escaped (zero-width space inside its special tokens), "
          "so apr cannot generate greedily with thinking ON")
 
 
 def row(engine, pid, th, path, refused, source="apr"):
+    if cell_fault:  # the teardown did not prove the server gone: no row of this cell is a measurement (#4209)
+        refused = cell_fault
     r = {"kind": "greedy", "engine": engine, "model_sha256": sha, "host": host, "backend": backend, "prompt_id": pid,
          "thinking": th, "prompt_source": source, "max_tokens": int(maxtok), "tokens": None, "logits": None,
          "refused": refused}

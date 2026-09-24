@@ -16,6 +16,9 @@
 #   3. llama.cpp unavailable (HAVE_LLAMA=0) → llama rows refused with LLAMA_WHY; apr OFF refused naming why
 #   4. apr prints no `tokens`  → apr OFF refused by name
 #   5. MUTANT: the apr-ON refusal dropped from the lib → the no-flag row goes missing, and that is caught
+#   6. the llama-server is stopped by the cell's teardown trap (#4209): state `clean`, its pid gone from /proc
+#   6b. a teardown that cannot prove the server gone (the kill seam a no-op) → EVERY row REFUSED naming it
+#   6c. no inline server kill in scripts/lib/crux_cells_*.sh (case table + a planted mutant of the old kill line)
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
@@ -121,9 +124,12 @@ ran=gpu; fb=false; [ -n "${STUB_APR_FELL_BACK:-}" ] && { ran=cpu; fb=true; }
 if [ -n "${STUB_APR_NO_TOKENS:-}" ]; then printf '{"text": "4"}\n'; else printf '{"text": "4", "tokens": %s, "finish_reason": "stop", "backend": {"requested": "gpu", "ran": "%s", "fell_back": %s}}\n' "$ids" "$ran" "$fb"; fi
 SH
 chmod +x "$BIN/llama-server" "$BIN/apr"
+# the teardown's GPU check reads a stub nvidia-smi that lists no compute app: this table owns no GPU
+printf '#!/bin/sh\nexit 0\n' > "$TMP/shim/nvidia-smi"; chmod +x "$TMP/shim/nvidia-smi"
+export CRUX_NVIDIA_SMI="$TMP/shim/nvidia-smi" CRUX_TEARDOWN_GPU_POLLS=2
 
 # The dogfood's own cell helpers, extracted by name.
-python3 - "$DOGFOOD" "$TMP/helpers.sh" <<'PY'
+python3 - "$DOGFOOD" "$TMP/helpers.sh" "$ROOT/scripts/lib/crux_cells_serve_code.sh" <<'PY'
 import re, sys
 s = open(sys.argv[1]).read()
 out = []
@@ -131,6 +137,13 @@ for name in ("cell_add", "serve_wait_line", "free_port", "run_cell"):
     m = re.search(r"^%s\(\) \{.*?^\}\n" % name, s, re.S | re.M) or re.search(r"^%s\(\) \{[^\n]*\}\n" % name, s, re.M)
     if not m:
         sys.exit("helper %s() not found in the dogfood: update this check" % name)
+    out.append(m.group(0))
+# the teardown trap the dogfood sources from the serve/code lib BEFORE the greedy lib (#4209)
+s = open(sys.argv[3]).read()
+for name in ("crux_teardown_trap", "crux_teardown_why"):
+    m = re.search(r"^%s\(\) \{.*?^\}\n" % name, s, re.S | re.M)
+    if not m:
+        sys.exit("helper %s() not found in crux_cells_serve_code.sh: update this check" % name)
     out.append(m.group(0))
 open(sys.argv[2], "w").write("\n".join(out))
 PY
@@ -263,6 +276,42 @@ PY
 run_case mutant "$TMP/mutant-lib.sh"
 got=$(rows mutant | grep -c '^row apr on')
 [ "$got" = 0 ] && ok "MUTANT (apr ON refusal dropped) is caught: the no-flag table's ON row is gone" || broke "MUTANT not caught ($got apr-ON rows)"
+
+# Row 6: the server is stopped by the teardown trap, and PROVEN gone (#4209)
+g="$TMP/up/abc123abc123/greedy"
+st=$(cat "$g/teardown.state" 2>/dev/null); spid=$(cat "$g/llama-server.pid" 2>/dev/null)
+if [ "$st" = clean ] && [ -n "$spid" ] && [ ! -d "/proc/$spid" ] && grep -q '^trap .*crux_cell_teardown.sh' "$g/cell-greedy.sh"; then
+  ok "the llama-server is stopped by the cell's teardown trap: state clean, pid $spid gone"
+else
+  broke "greedy teardown: state '$st', pid '$spid' (alive: $([ -d "/proc/${spid:-x}" ] && echo yes || echo no))"
+fi
+# Row 6b: the kill seam a no-op → the server survives TERM and KILL → the teardown FAILS → every row RED
+run_case tdfail "$LIB" STUB_APR_THINKING=1 CRUX_TEARDOWN_KILL=true
+pkill -f "$TMP/bin/llama-server" 2>/dev/null
+got=$(rows tdfail)
+n=$(printf '%s\n' "$got" | grep -c '^row ')
+nred=$(printf '%s\n' "$got" | grep -c '^row .* REFUSED cell teardown FAILED: server pid(s) ')
+[ "$n" -ge 6 ] && [ "$n" = "$nred" ] && ok "a teardown that cannot prove the server gone makes EVERY greedy row RED ($nred/$n)" \
+  || { broke "teardown FAILED rows: $nred of $n refused"; printf '%s\n' "$got" | sed 's/^/        /'; }
+
+# Row 6c: no crux cell lib stops a server with an inline kill — the trap is the one way (#4209). Case table first.
+inline_kill() { grep -nE '^[^#]*(^|[^[:alnum:]_-])(p?kill|killall)([^[:alnum:]_-]|$)' "$@"; }
+ct_ok=1
+for l in "  [ \"\$HAVE_LLAMA\" = 1 ] && printf 'kill \"\$(cat %q)\" 2> /dev/null\\n' \"\$d/x.pid\" >> \"\$cell\"" \
+         'kill "$pid"' '  pkill -f llama-server' 'x; killall llama-server'; do
+  printf '%s\n' "$l" | inline_kill > /dev/null || { ct_ok=0; broke "inline-kill scan missed: $l"; }
+done
+for l in '# a timeout kill runs the trap too' '  crux_teardown_trap "$cell" "$d/t" "$d/p.pid"' 'skill=1' 'kill_seam=x' '--no-kill'; do
+  printf '%s\n' "$l" | inline_kill > /dev/null && { ct_ok=0; broke "inline-kill scan false positive: $l"; }
+done
+[ "$ct_ok" = 1 ] && ok "inline-kill scan: case table (4 must-match, 5 must-not-match)"
+hits=$(inline_kill "$ROOT"/scripts/lib/crux_cells_*.sh)
+[ -z "$hits" ] && ok "no scripts/lib/crux_cells_*.sh stops a server inline: the teardown trap is the only way" \
+  || { broke "inline server kill in a crux cell lib (route it through crux_teardown_trap):"; printf '%s\n' "$hits" | sed 's/^/        /'; }
+cp "$LIB" "$TMP/mutant-kill.sh"
+printf '  [ "$HAVE_LLAMA" = 1 ] && printf %s "$d/llama-server.pid" >> "$cell"\n' "'kill \"\$(cat %q)\" 2> /dev/null\\n'" >> "$TMP/mutant-kill.sh"
+[ -n "$(inline_kill "$TMP/mutant-kill.sh")" ] && ok "MUTANT (the old inline kill line planted back) is caught by the scan" \
+  || broke "MUTANT inline kill NOT caught"
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
