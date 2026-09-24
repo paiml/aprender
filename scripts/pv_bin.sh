@@ -741,7 +741,7 @@ PV_NP_SELF=""
 if [ -n "${BASH_VERSION:-}" ]; then PV_NP_SELF="${BASH_SOURCE[0]:-}"; elif [ -n "${ZSH_VERSION:-}" ]; then eval 'PV_NP_SELF=${(%):-%x}'; fi
 case "$PV_NP_SELF" in
     */pv_bin.sh) PV_NP_LIB="$(dirname "$PV_NP_SELF")/nightly_pin.sh" ;;
-    pv_bin.sh) PV_NP_LIB="nightly_pin.sh" ;;
+    pv_bin.sh) PV_NP_LIB="./nightly_pin.sh" ;;  # ./ : a bare `.` searches PATH first
     *) PV_NP_LIB=$(git rev-parse --show-toplevel 2>/dev/null) && PV_NP_LIB="$PV_NP_LIB/scripts/nightly_pin.sh" || PV_NP_LIB="" ;;
 esac
 if [ -n "$PV_NP_LIB" ] && [ -f "$PV_NP_LIB" ]; then

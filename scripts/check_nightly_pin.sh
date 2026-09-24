@@ -223,15 +223,27 @@ run_e2e() {
         env APR_BIN_REQUIRE=nightly PATH="$T/stale:$PATH" bash -c '. "$1" || exit 1; printf %s "$APR"' _ "$ROOT/scripts/apr_bin.sh"
     e2e_in "$T/foreign" "pv_bin.sh from a foreign checkout uses its own rule" refuse "NOT THE NIGHTLY" \
         env PV_BIN_REQUIRE=nightly PATH="$T/cratesio:$PATH" bash -c '. "$1" || exit 1; printf %s "$PV"' _ "$ROOT/scripts/pv_bin.sh"
-    # Sourced by BARE NAME found via PATH, from a cwd holding another rule:
-    # zsh's $0 is then the bare name, and a cwd lookup ran that rule (round 5).
+    # Sourced by BARE NAME found via PATH, from a cwd holding another rule that
+    # is ALSO on PATH ahead of the resolver: zsh's $0 is then the bare name, and
+    # the rule lookup ran the foreign one (round 5).
+    FP="$T/stale:$T/foreign/scripts:$ROOT/scripts:$PATH"
     e2e_in "$T/foreign/scripts" "bash: bare-name apr_bin.sh via PATH, own rule" refuse "NOT THE NIGHTLY" \
-        env APR_BIN_REQUIRE=nightly PATH="$T/stale:$ROOT/scripts:$PATH" bash -c '. apr_bin.sh || exit 1; printf %s "$APR"'
+        env APR_BIN_REQUIRE=nightly PATH="$FP" bash -c '. apr_bin.sh || exit 1; printf %s "$APR"'
     if command -v zsh >/dev/null 2>&1; then
         e2e_in "$T/foreign/scripts" "zsh: bare-name apr_bin.sh via PATH, own rule" refuse "NOT THE NIGHTLY" \
-            env APR_BIN_REQUIRE=nightly PATH="$T/stale:$ROOT/scripts:$PATH" zsh -fc '. apr_bin.sh || exit 1; printf %s "$APR"'
+            env APR_BIN_REQUIRE=nightly PATH="$FP" zsh -fc '. apr_bin.sh || exit 1; printf %s "$APR"'
         e2e_in "$T/foreign/scripts" "zsh: bare-name pv_bin.sh via PATH, own rule" refuse "NOT THE NIGHTLY" \
-            env PV_BIN_REQUIRE=nightly PATH="$T/cratesio:$ROOT/scripts:$PATH" zsh -fc '. pv_bin.sh || exit 1; printf %s "$PV"'
+            env PV_BIN_REQUIRE=nightly PATH="$T/cratesio:$FP" zsh -fc '. pv_bin.sh || exit 1; printf %s "$PV"'
+    fi
+    # Resolver found in the CWD (bare name) while a foreign rule is on PATH: the
+    # rule beside it is ./nightly_pin.sh, which a bare `.` would not reach first.
+    mkdir -p "$T/cwdres"
+    cp "$ROOT/scripts/apr_bin.sh" "$LIB_REAL" "$T/cwdres/"
+    e2e_in "$T/cwdres" "bash: resolver in cwd, foreign rule on PATH" refuse "NOT THE NIGHTLY" \
+        env APR_BIN_REQUIRE=nightly PATH="$T/stale:$T/foreign/scripts:$PATH" bash -c '. apr_bin.sh || exit 1; printf %s "$APR"'
+    if command -v zsh >/dev/null 2>&1; then
+        e2e_in "$T/cwdres" "zsh: resolver in cwd, foreign rule on PATH" refuse "NOT THE NIGHTLY" \
+            env APR_BIN_REQUIRE=nightly PATH="$T/stale:$T/foreign/scripts:$PATH" zsh -fc '. ./apr_bin.sh || exit 1; printf %s "$APR"'
     fi
     # A rule beside the resolver that predates NIGHTLY_PIN_API is refused, not run.
     mkdir -p "$T/old"

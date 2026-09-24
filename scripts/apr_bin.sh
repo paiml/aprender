@@ -567,7 +567,7 @@ APR_NP_SELF=""
 if [ -n "${BASH_VERSION:-}" ]; then APR_NP_SELF="${BASH_SOURCE[0]:-}"; elif [ -n "${ZSH_VERSION:-}" ]; then eval 'APR_NP_SELF=${(%):-%x}'; fi
 case "$APR_NP_SELF" in
     */apr_bin.sh) APR_NP_LIB="$(dirname "$APR_NP_SELF")/nightly_pin.sh" ;;
-    apr_bin.sh) APR_NP_LIB="nightly_pin.sh" ;;
+    apr_bin.sh) APR_NP_LIB="./nightly_pin.sh" ;;  # ./ : a bare `.` searches PATH first
     *) APR_NP_LIB=$(git rev-parse --show-toplevel 2>/dev/null) && APR_NP_LIB="$APR_NP_LIB/scripts/nightly_pin.sh" || APR_NP_LIB="" ;;
 esac
 if [ -n "$APR_NP_LIB" ] && [ -f "$APR_NP_LIB" ]; then
