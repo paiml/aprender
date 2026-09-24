@@ -622,7 +622,7 @@ jobs:
     name: apr (cpu) aarch64-apple-darwin on mini
     needs: assets
     if: needs.assets.outputs.present == 'false'
-    runs-on: [self-hosted, macOS, ARM64, mini]
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
     steps:
       - name: Resolve release tag
         id: tag
