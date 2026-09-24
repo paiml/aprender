@@ -17,7 +17,10 @@
 #       from an argument.
 #   R3  the tag `v<version>` points at HEAD: the crate that is uploaded is the
 #       commit that is tagged, not a neighbour of it.
-#   R4  HEAD is an ancestor of the main ref: nothing publishes from a branch.
+#   R4  HEAD is an ancestor of release/<version> (origin/release/X.Y.Z): nothing
+#       publishes from a topic branch. NOT main (cop ruling 2026-09-24, #4286): RC
+#       binaries ship from the release branch before merge-back, and main ancestry
+#       is enforced at merge-back (#4224). A missing release ref refuses.
 #   R6  no versioned sibling dev-dependency lies on a CYCLE. cargo keeps a versioned
 #       dev-dependency in the published manifest and resolves it on the registry,
 #       so two siblings that name each other can never be uploaded first
@@ -41,7 +44,8 @@
 # SEAMS (the selftest builds a throwaway repository and drives every rule to
 # both verdicts through them; production never sets them):
 #   PUBLISH_PREFLIGHT_ROOT         repository root (default: this script's repo)
-#   PUBLISH_PREFLIGHT_MAIN_REF     the main ref for R4 (default: origin/main)
+#   PUBLISH_PREFLIGHT_RELEASE_REF  the ref for R4 (default: origin/release/<R2 version>;
+#                                  the selftest leaves it unset so the derivation is tested)
 #   PUBLISH_PREFLIGHT_RECEIPT_DIR  the dogfood receipt dir (default: $ROOT/.dogfood)
 #   PUBLISH_PREFLIGHT_LADDER_JUDGE the R7 judge (default: $ROOT/scripts/check_model_ladder.sh)
 #
@@ -217,7 +221,7 @@ for n, t, req in sorted(vdev):
 }
 
 gate() {
-    local root="${PUBLISH_PREFLIGHT_ROOT:-}" main_ref="${PUBLISH_PREFLIGHT_MAIN_REF:-origin/main}"
+    local root="${PUBLISH_PREFLIGHT_ROOT:-}" release_ref
     local fails=0 status version tags head
     for t in git cargo python3; do
         command -v "$t" >/dev/null 2>&1 || die_env "$t is not on PATH"
@@ -259,12 +263,15 @@ gate() {
         fails=1
     fi
 
-    # R4 HEAD is on main
-    if git -C "$root" rev-parse --verify --quiet "${main_ref}^{commit}" >/dev/null \
-       && git -C "$root" merge-base --is-ancestor "$head" "$main_ref" 2>/dev/null; then
-        echo "ok    R4 HEAD is an ancestor of $main_ref"
+    # R4 HEAD is on the release branch of THIS version (#4286), not main: main is
+    # merge-back's check (#4224). No version, no release ref to judge: refuse.
+    release_ref="${PUBLISH_PREFLIGHT_RELEASE_REF:-origin/release/${version:-?}}"
+    if [ -n "$version" ] \
+       && git -C "$root" rev-parse --verify --quiet "${release_ref}^{commit}" >/dev/null \
+       && git -C "$root" merge-base --is-ancestor "$head" "$release_ref" 2>/dev/null; then
+        echo "ok    R4 HEAD is an ancestor of $release_ref"
     else
-        echo "FAIL  R4 HEAD ${head:0:9} is not an ancestor of $main_ref (or that ref does not exist)"
+        echo "FAIL  R4 HEAD ${head:0:9} is not an ancestor of $release_ref (or that ref does not exist)"
         fails=1
     fi
 
@@ -280,12 +287,12 @@ gate() {
         echo "REFUSE $PROG: publishing is not allowed from this tree (see the FAIL rows)."
         return 1
     fi
-    echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO, model matrix green"
+    echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, dogfood GO, model matrix green"
     return 0
 }
 
 # --graph-only (#4287): R2 + R6 on PUBLISH_PREFLIGHT_ROOT, the rc cut's end of the
-# publish graph. R1/R3/R4/R5/R7 describe the upload (a tag, main, receipts) and are
+# publish graph. R1/R3/R4/R5/R7 describe the upload (a tag, the release branch, receipts) and are
 # judged at T-4 as before.
 graph_gate() {
     local root="${PUBLISH_PREFLIGHT_ROOT:-}" version
@@ -371,6 +378,7 @@ selftest() {
         git -C "$d" add -A
         git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'fixture' >/dev/null
         git -C "$d" tag v1.2.3
+        git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
         mkdir -p "$d/.dogfood"
         write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     }
@@ -407,12 +415,13 @@ selftest() {
         git -C "$d" add -A
         git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'fixture' >/dev/null
         git -C "$d" tag v1.2.3
+        git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
         mkdir -p "$d/.dogfood"
         write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     }
     row() { # name, expect(0|1), needle, dir [, gate|receipt_gate]
         local name="$1" expect="$2" needle="$3" d="$4" mode="${5:-gate}" out rc=0
-        out="$( PUBLISH_PREFLIGHT_ROOT="$d" PUBLISH_PREFLIGHT_MAIN_REF=fixture-main "$mode" 2>&1 )" || rc=$?
+        out="$( PUBLISH_PREFLIGHT_ROOT="$d" "$mode" 2>&1 )" || rc=$?
         if [ "$rc" != "$expect" ]; then
             printf '  BROKE %-36s expected exit %s got %s\n' "$name" "$expect" "$rc"; fail=$((fail + 1)); return 0
         fi
@@ -443,7 +452,22 @@ selftest() {
     d="$tmp/branch"; build_repo "$d"; git -C "$d" checkout -q -b topic
     printf 'pub fn k() {}\n' >> "$d/src/lib.rs"; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'topic' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
-    row head_off_main_refuses          1 "FAIL  R4" "$d"
+    row head_off_release_branch_refuses 1 "FAIL  R4 HEAD" "$d"
+
+    # R4 (#4286, cop ruling 2026-09-24): the release branch, not main. An rc commit on
+    # release/1.2.3 that main does not contain yet passes; main containing HEAD does not
+    # rescue a missing release ref; another version's release branch does not count.
+    d="$tmp/rc-on-release"; build_repo "$d"; git -C "$d" checkout -q -b release-1.2.3
+    printf 'pub fn r() {}\n' >> "$d/src/lib.rs"; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'rc fix' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    ! git -C "$d" merge-base --is-ancestor HEAD fixture-main || { echo "  BROKE fixture: rc commit is on main"; fail=$((fail + 1)); }
+    row rc_on_release_not_main_passes  0 "ok    R4 HEAD is an ancestor of origin/release/1.2.3" "$d"
+    d="$tmp/no-release-ref"; build_repo "$d"; git -C "$d" update-ref -d refs/remotes/origin/release/1.2.3
+    row release_ref_absent_on_main_refuses 1 "FAIL  R4" "$d"
+    d="$tmp/other-release"; build_repo "$d"; git -C "$d" update-ref -d refs/remotes/origin/release/1.2.3
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.4 HEAD
+    row other_versions_release_refuses 1 "not an ancestor of origin/release/1.2.3" "$d"
 
     d="$tmp/nogo"; build_repo "$d"; write_receipt "$d" NO-GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row dogfood_no_go_refuses          1 "FAIL  R5" "$d"
@@ -501,11 +525,10 @@ selftest() {
     d="$tmp/devdep_path"; build_ws_repo "$d" ''
     row pathed_sibling_devdep_passes   0 "PASS" "$d"
     # --graph-only (#4287), both polarities: the rc cut refuses the same cycle, and passes
-    # an untagged, off-main tree that the full gate would refuse on R3/R4.
+    # an untagged tree off its release branch that the full gate would refuse on R3/R4.
     d="$tmp/devdep_cycle"; row graph_only_cycle_refuses      1 "FAIL  R6" "$d" graph_gate
     d="$tmp/devdep_version"; git -C "$d" tag -d v1.2.3 >/dev/null
-    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -q --allow-empty -m 'off main' >/dev/null
-    git -C "$d" update-ref refs/heads/fixture-main HEAD~1
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -q --allow-empty -m 'off release' >/dev/null
     row graph_only_acyclic_untagged_passes 0 "PASS  $PROG --graph-only" "$d" graph_gate
     row graph_only_control_full_gate_refuses 1 "FAIL  R3" "$d"
 
