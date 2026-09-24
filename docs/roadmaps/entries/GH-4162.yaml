@@ -1,6 +1,7 @@
 - id: GH-4162
   github_issue: 4162
   item_type: task
+  kind: code
   title: 'P0: measured token usage for the fleet -- Claude Code + agy, by project / model / lane / hour, with the top levers'
   status: inprogress
   priority: medium
