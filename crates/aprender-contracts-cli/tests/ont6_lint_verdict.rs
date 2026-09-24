@@ -265,6 +265,8 @@ fn json_report_carries_the_lattice() {
             serde_json::Value::String("shapes".into()),
             // ONT-7's gate: same R-8 shape.
             serde_json::Value::String("valid-under".into()),
+            // ONT-8's gate: same R-8 shape.
+            serde_json::Value::String("evidence".into()),
         ]),
         "{}",
         show(&r)
