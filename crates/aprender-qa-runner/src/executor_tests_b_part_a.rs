@@ -65,6 +65,15 @@ fn test_parse_tps_from_output_multiline() {
     assert!((tps.unwrap() - 25.5).abs() < f64::EPSILON);
 }
 
+/// #4211: `apr run --benchmark --json` stdout is one JSON document with
+/// `tok_s` and no `tok/s:` line; the parser must still read the throughput.
+#[test]
+fn test_parse_tps_from_benchmark_json_stdout_4211() {
+    let output = r#"{"latency_basis":"wall","latency_ms":8892.1,"tok_s":6.3,"tok_s_basis":"generation","tokens":56}"#;
+    let tps = Executor::parse_tps_from_output(output).expect("tok_s from the JSON document");
+    assert!((tps - 6.3).abs() < f64::EPSILON, "{tps}");
+}
+
 /// Verify extract_output_text captures final answer at end of output
 #[test]
 fn test_extract_output_text_output_at_end() {
