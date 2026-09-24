@@ -1,0 +1,316 @@
+{
+  "ticket": "PMAT-4080",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "4bffbaedf291ea185211fe762965d787a1514033",
+  "diff_sha256": "35afad0847f5330894b7f6d70fc1622506015a2a6d5904d15da45b783a1c0427",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 35246,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff completely implements the PMAT-4080 requirements. `proof-status --binding` now resolves bindings by matching symbols extracted from declarations (across various qualifiers and visibilities) rather than blindly counting entries. Ghost bindings downgrade the status and explicitly reject the command. The workspace fallback logic robustly supports monorepos by locating `src/` or `crates/` along ancestor paths. `--verify-bindings` behaves as a backward-compatible alias. The unit tests, test fixtures, contracts, and census accurately reflect these additions. No contradictory assertions or unrequested modifications were found.",
+      "findings": [
+        {
+          "claim": "proof-status --binding unconditionally resolves bindings: It invokes resolve_bindings and errors out (returning Err) if any ghosts are found.",
+          "file": "crates/aprender-contracts-cli/src/commands/proof_status.rs",
+          "grounding": "cited",
+          "line": 19
+        },
+        {
+          "claim": "--verify-bindings is a no-op alias: The argument is preserved for backwards compatibility but its logic is executed unconditionally by `--binding` instead, and its root argument is ignored via `let _ = verify_root;`.",
+          "file": "crates/aprender-contracts-cli/src/cli.rs",
+          "grounding": "cited",
+          "line": 185
+        },
+        {
+          "claim": "Resolver properly accommodates all fn item declarations including `pub`, `pub(...)`, `const`, `async`, `unsafe`, and `extern`, avoiding false ghost rejects.",
+          "file": "crates/aprender-contracts-cli/src/commands/verify_bindings.rs",
+          "grounding": "cited",
+          "line": 202
+        },
+        {
+          "claim": "Monorepo source directory resolution properly falls back to the nearest ancestor containing `src/` or `crates/`, decoupling from caller's CWD.",
+          "file": "crates/aprender-contracts-cli/src/commands/verify_bindings.rs",
+          "grounding": "cited",
+          "line": 104
+        }
+      ],
+      "raw_bytes": 6354,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for PMAT-4080 (PVL-2) has been audited against its ticket requirements and successfully verified.\n\nKey verifications:\n1. Core Behavior: In `crates/aprender-contracts-cli/src/commands/proof_status.rs`, `run()` now resolves all `implemented` bindings against source code via `resolve_bindings()` and `scan_all_sources()`. Any ghost binding is downgraded to `not_implemented` (preventing false L5 credit), displayed in a `GHOST BINDINGS (n)` block, and rejected with exit code 1.\n2. Resolver Precision: In `crates/aprender-contracts-cli/src/commands/verify_bindings.rs`, `fn_item_name()` robustly parses all visibility qualifiers (`pub`, `pub(crate)`, `pub(super)`, `pub(in ...)`), function qualifiers (`const`, `async`, `unsafe`, `default`, `extern \"ABI\"`), and item forms (`fn`, `struct`, `enum`, `type`, `trait`). `derive_src_root()` properly walks ancestor directories to resolve the monorepo root, eliminating cwd sensitivity and false rejects.\n3. Compatibility: In `crates/aprender-contracts-cli/src/cli.rs`, `--verify-bindings` is preserved as a no-op alias to maintain backward compatibility.\n4. Test Harnesses: `crates/aprender-contracts-cli/tests/pvl_ghost_binding.rs` cleanly verifies ghost rejection, alias no-op behavior, resolved binding acceptance, and missing file error separation. The previous bug encoding in `dispatch_proof_status_with_binding` was updated to assert rejection.\n5. Contracts & Graphs: `contracts/work/PMAT-4080.yaml`, `contracts/census.json`, `contracts/contracts.nt` (including the fresh RDF triples for PMAT-4080), and `README.md` are properly aligned.\n6. Verification Runs:\n   - `cargo test -p aprender-contracts-cli`: 98 unit tests, 19 integration test suites pass (including `pvl_ghost_binding`, `ont4b_shapes_gate`).\n   - `cargo clippy -p aprender-contracts-cli -- -D warnings`: 0 warnings.\n   - `pv lint`: PASS (0 errors, 11 armed gates monotone OK, 3 armed shapes monotone OK).\n   - `./scripts/check_readme_claims.sh`: PASS.\n   - `./scripts/check_tree_reader_tests.sh`: PASS.\n\nNo refuting findings found. Diff strictly satisfies all requirements of PMAT-4080.",
+      "findings": [],
+      "raw_bytes": 5576,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff adheres strictly to PMAT-4080 (PVL-001 EV-2): `pv proof-status --binding` now resolves all bindings against source, downgrades ghost bindings, outputs `GHOST BINDINGS (n)` with details, and exits 1 with an error. No gates weakened; all test suites and contract validations pass.",
+      "findings": [
+        {
+          "claim": "`pv proof-status --binding` always resolves `implemented` bindings against source, downgrades ghosts to `not_implemented`, outputs `GHOST BINDINGS (n)` block, and returns an error (exit 1).",
+          "file": "crates/aprender-contracts-cli/src/commands/proof_status.rs",
+          "fix": "N/A (working as designed)",
+          "grounding": "cited",
+          "line": 26
+        },
+        {
+          "claim": "All `pvl_ghost_binding` integration tests (rejection of ghost binding, noop-alias behavior of `--verify-bindings`, acceptance of resolved control, and discrimination of missing file read errors) pass cleanly.",
+          "file": "crates/aprender-contracts-cli/tests/pvl_ghost_binding.rs",
+          "fix": "N/A (working as designed)",
+          "grounding": "measured",
+          "line": 55
+        },
+        {
+          "claim": "The resolver case table in `verify_bindings.rs` correctly parses all visibility and qualifier forms of `fn` items and item kinds (struct/enum/type/trait) without false ghost rejections.",
+          "file": "crates/aprender-contracts-cli/src/commands/verify_bindings.rs",
+          "fix": "N/A (working as designed)",
+          "grounding": "measured",
+          "line": 258
+        },
+        {
+          "claim": "Repository contract graph, census, and README claims remain synchronized and validated by `pv lint` and `scripts/check_readme_claims.sh`.",
+          "file": "README.md",
+          "fix": "N/A (working as designed)",
+          "grounding": "measured",
+          "line": 44
+        }
+      ],
+      "raw_bytes": 7254,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "README.md",
+      "line": 44,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Repository contract graph, census, and README claims remain synchronized and validated by `pv lint` and `scripts/check_readme_claims.sh`."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/cli.rs",
+      "line": 185,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "--verify-bindings is a no-op alias: The argument is preserved for backwards compatibility but its logic is executed unconditionally by `--binding` instead, and its root argument is ignored via `let _ = verify_root;`."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/proof_status.rs",
+      "line": 19,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "proof-status --binding unconditionally resolves bindings: It invokes resolve_bindings and errors out (returning Err) if any ghosts are found."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/proof_status.rs",
+      "line": 26,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "`pv proof-status --binding` always resolves `implemented` bindings against source, downgrades ghosts to `not_implemented`, outputs `GHOST BINDINGS (n)` block, and returns an error (exit 1)."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/verify_bindings.rs",
+      "line": 104,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Monorepo source directory resolution properly falls back to the nearest ancestor containing `src/` or `crates/`, decoupling from caller's CWD."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/verify_bindings.rs",
+      "line": 202,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Resolver properly accommodates all fn item declarations including `pub`, `pub(...)`, `const`, `async`, `unsafe`, and `extern`, avoiding false ghost rejects."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/verify_bindings.rs",
+      "line": 258,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The resolver case table in `verify_bindings.rs` correctly parses all visibility and qualifier forms of `fn` items and item kinds (struct/enum/type/trait) without false ghost rejections."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/tests/pvl_ghost_binding.rs",
+      "line": 55,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "All `pvl_ghost_binding` integration tests (rejection of ghost binding, noop-alias behavior of `--verify-bindings`, acceptance of resolved control, and discrimination of missing file read errors) pass cleanly."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 3: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}
