@@ -119,7 +119,7 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
 /// The threshold is untouched (10 tok/s for unasserted GGUF); what changes is
 /// that the number the gate compares is decode throughput.
 #[cfg(feature = "inference")]
-fn throughput_runtime(path: &Path, config: &QaConfig) -> Result<f64> {
+fn throughput_runtime(path: &Path, config: &QaConfig) -> Result<(f64, &'static str)> {
     use realizar::{run_inference, InferenceConfig};
 
     let infer_config = InferenceConfig::new(path)
@@ -139,17 +139,34 @@ fn throughput_runtime(path: &Path, config: &QaConfig) -> Result<f64> {
 
     let mut generated = 0usize;
     let mut seconds = 0.0_f64;
+    let (mut gpu_runs, mut runs) = (0usize, 0usize);
     for _ in 0..config.iterations.max(1) {
         let result = run()?;
         generated += result.generated_token_count;
         seconds += result.inference_ms / 1000.0;
+        runs += 1;
+        gpu_runs += usize::from(result.used_gpu);
     }
 
-    Ok(if seconds > 0.0 {
+    let tps = if seconds > 0.0 {
         generated as f64 / seconds
     } else {
         0.0
-    })
+    };
+    Ok((tps, runtime_backend_label(gpu_runs, runs)))
+}
+
+/// #3714: the backend the timed runs REPORTED (`used_gpu`), never the build's
+/// features — a cuda build whose device could not serve ran on the CPU, and the
+/// gate used to print "GPU" for it (and "hybrid" for a MoE file).
+#[cfg(feature = "inference")]
+fn runtime_backend_label(gpu_runs: usize, runs: usize) -> &'static str {
+    match (gpu_runs, runs) {
+        (_, 0) => "runtime entry point, no timed run",
+        (g, r) if g == r => "runtime entry point, GPU on every timed run",
+        (0, _) => "runtime entry point, CPU on every timed run",
+        _ => "runtime entry point, MIXED GPU/CPU timed runs",
+    }
 }
 
 /// Gate 2 for an architecture the dense loader refuses: the same falsifiable
@@ -168,14 +185,9 @@ fn run_throughput_gate_runtime(path: &Path, config: &QaConfig) -> Result<GateRes
 
     #[cfg(feature = "inference")]
     {
-        let tps = throughput_runtime(path, config)?;
+        let (tps, backend) = throughput_runtime(path, config)?;
         let threshold = throughput_threshold(config.min_tps, realizar::format::ModelFormat::Gguf);
         let duration = start.elapsed();
-        let backend = if cfg!(feature = "cuda") {
-            "hybrid forward, GPU #3090"
-        } else {
-            "hybrid forward, CPU #3091"
-        };
         let message = format!(
             "{tps:.1} tok/s {} {threshold:.0} tok/s threshold ({backend})",
             if tps >= threshold { ">=" } else { "<" }
