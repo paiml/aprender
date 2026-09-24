@@ -148,6 +148,67 @@ pub fn fused_q4k_q8k_multirow_matmul_into(
     Ok(())
 }
 
+/// f32-activation multi-row Q4_K matmul: `input` is `m` token rows of `in_dim`, `output` is `m`
+/// rows of `out_dim` (token-major).
+///
+/// Each row is quantized to Q8_K exactly as [`fused_q4k_parallel_matvec_into`] quantizes its
+/// single row, so the result is bit-identical to calling that function once per row (#4228).
+/// Falls back to that per-row call when `m == 1`, `in_dim` is not a multiple of 256, or
+/// `DIRECT_FP32_GEMV=1` selects the f32 path.
+///
+/// # Errors
+/// Mis-sized buffers, or a failure in the underlying matvec.
+pub fn fused_q4k_multirow_matmul_f32_into(
+    weight_data: &[u8],
+    input: &[f32],
+    m: usize,
+    in_dim: usize,
+    out_dim: usize,
+    output: &mut [f32],
+) -> Result<()> {
+    if input.len() != m * in_dim || output.len() < m * out_dim {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "Q4K multirow f32: input {} != {m}x{in_dim} or output {} < {m}x{out_dim}",
+                input.len(),
+                output.len()
+            ),
+        });
+    }
+    let direct_fp32 = std::env::var("DIRECT_FP32_GEMV").as_deref() == Ok("1");
+    if m <= 1 || in_dim % QK_K != 0 || direct_fp32 {
+        for t in 0..m {
+            fused_q4k_parallel_matvec_into(
+                weight_data,
+                &input[t * in_dim..(t + 1) * in_dim],
+                in_dim,
+                out_dim,
+                &mut output[t * out_dim..(t + 1) * out_dim],
+            )?;
+        }
+        return Ok(());
+    }
+    let nsb = in_dim / QK_K;
+    let mut scales = vec![0.0f32; m * nsb];
+    let mut quants = vec![0i8; m * in_dim];
+    for t in 0..m {
+        super::quantize_activations_q8k_into(
+            &input[t * in_dim..(t + 1) * in_dim],
+            &mut scales[t * nsb..(t + 1) * nsb],
+            &mut quants[t * in_dim..(t + 1) * in_dim],
+        )?;
+    }
+    fused_q4k_q8k_multirow_matmul_into(
+        weight_data,
+        &scales,
+        &quants,
+        m,
+        in_dim,
+        out_dim,
+        &mut output[..m * out_dim],
+    )
+}
+
 #[cfg(test)]
 mod multirow_tests {
     use super::*;
