@@ -53,6 +53,37 @@ want="apr $ver ($sha9)"
 mkdir -p "$out" || exit 2
 rm -f -- "$out/$LOCAL_HOST.json" "$out/$REMOTE_HOST.json" "$out/$REMOTE_HOST.json.part"
 
+# #4117: WHICH GATE. From ladder.release_gate.from (0.70.0) the T-1 model step is the NORMAL release gate (#4045
+# §14.1): CRUX smoke on THIS release binary, on both hosts, plus the admitted nightly -- Phase 2's full ladder moved
+# to the nightly. ONE rule decides it for every caller (scripts/lib/crux_smoke_scope.py `applies`). A tree with no
+# ladder contract predates the gate and keeps the full ladder; a contract that cannot answer is ENV, never a guess.
+MODE=ladder; CERT=""
+if [ -f contracts/model-capability-ladder-v1.yaml ]; then
+    [ -f scripts/lib/crux_smoke_scope.py ] \
+        || { echo "MODELS NO-GO: the ladder contract is here but scripts/lib/crux_smoke_scope.py is not -- which gate judges $ver cannot be decided"; exit 2; }
+    gw=$(python3 -B scripts/lib/crux_smoke_scope.py applies contracts/model-capability-ladder-v1.yaml "$ver" 2>&1); grc=$?
+    case $grc in
+        0) MODE=smoke ;;
+        1) ;;
+        *) echo "MODELS NO-GO: which gate judges $ver cannot be decided: $gw"; exit 2 ;;
+    esac
+    echo "MODELS gate: $MODE -- $gw"
+fi
+if [ "$MODE" = smoke ]; then
+    # the certification the smoke runs AND the judge reads: the newest one committed in the release tree
+    CERT=$(ls -1 evidence/crux/*/prompt-certification.json 2> /dev/null | sort -V | tail -n 1)
+    [ -n "$CERT" ] && [ -f "$CERT" ] || { echo "MODELS NO-GO: ENV: no evidence/crux/*/prompt-certification.json in the release tree -- the smoke has no certified models to run"; exit 2; }
+    if [ -n "$out" ] && [ "$out" != / ]; then rm -rf -- "$out/crux" "$out/nightly"
+    else echo "models_t1: refusing out-dir '$out'" >&2; exit 2; fi
+    mkdir -p "$out/crux" || exit 2
+    cp -- "$CERT" "$out/crux/prompt-certification.json" || exit 2
+fi
+# smoke_run HOST APR OUTDIR -- the CRUX smoke on the release binary: every certified model x admitted mode. Its
+# cells take the GPU lock through gpu-q themselves (never a flock here); choom makes THIS run the OOM victim.
+smoke_run() {
+    choom -n 1000 -- bash scripts/crux_sweep_shards.sh "$ver" --host "$1" --backend gpu --apr "$2" --out "$3" --certification "$CERT"
+}
+
 local_leg() {
     local tdir got
     cargo build --release -p apr-cli --bin apr --features cuda --locked \
@@ -60,6 +91,7 @@ local_leg() {
     tdir=${CARGO_TARGET_DIR:-$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')}
     got=$("$tdir/release/apr" --version 2>/dev/null | head -n 1)
     [ "$got" = "$want" ] || { echo "MODELS-LEG $LOCAL_HOST NOT-THE-RELEASE: '$got' (want '$want')"; return 3; }
+    if [ "$MODE" = smoke ]; then smoke_run "$LOCAL_HOST" "$tdir/release/apr" "$out/crux"; return; fi
     choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST" --out "$out"
 }
 
@@ -91,13 +123,25 @@ cargo build --release -p apr-cli --bin apr --features cuda --locked > "\$dir/bui
 got=\$("\$CARGO_TARGET_DIR/release/apr" --version 2>/dev/null | head -n 1)
 [ "\$got" = "$want" ] || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE: '\$got' (want '$want')"; exit 3; }
 rm -rf -- "\$dir/out"
+if [ "$MODE" = smoke ]; then
+  choom -n 1000 -- bash scripts/crux_sweep_shards.sh $ver --host $REMOTE_HOST --backend gpu --apr "\$CARGO_TARGET_DIR/release/apr" --out "\$dir/out" --certification "$CERT"; lrc=\$?
+  rcpt="\$dir/out/$REMOTE_HOST-gpu.json"
+else
 choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST --out "\$dir/out"; lrc=\$?
-if [ -f "\$dir/out/$REMOTE_HOST.json" ]; then
-  echo "---RECEIPT $REMOTE_HOST---"; cat "\$dir/out/$REMOTE_HOST.json"; echo "---END RECEIPT---"
+  rcpt="\$dir/out/$REMOTE_HOST.json"
+fi
+if [ -f "\$rcpt" ]; then
+  echo "---RECEIPT $REMOTE_HOST---"; cat "\$rcpt"; echo "---END RECEIPT---"
 fi
 git -C "\$repo" worktree remove --force "\$dir/wt" > /dev/null 2>&1
 exit \$lrc
 HOST
+}
+
+# gather_nightly -> <out>/nightly/<sha>/<host>/ for both hosts (scripts/release/gather_nightly.sh, shared with
+# prepare_bump --ship): each host's night from ITS OWN APR_NIGHTLY_ROOT, gx10's over the same SSH.
+gather_nightly() {
+    bash scripts/release/gather_nightly.sh "$out/nightly" "$LOCAL_HOST" "$REMOTE_HOST" > "$out/nightly-gather.log" 2>&1
 }
 
 # leg_reason HOST RC -> why a leg produced no usable receipt, from its own log
@@ -113,8 +157,10 @@ local_leg > "$out/$LOCAL_HOST.log" 2>&1 & lpid=$!
 remote_leg > "$out/$REMOTE_HOST.log" 2>&1 & rpid=$!
 wait "$lpid"; lrc=$?
 wait "$rpid"; rrc=$?
+# rcpt_of HOST -> where that host's receipt lives: the ladder's <out>/<host>.json, or the smoke's <out>/crux/<host>-gpu.json
+rcpt_of() { if [ "$MODE" = smoke ]; then printf '%s/crux/%s-gpu.json' "$out" "$1"; else printf '%s/%s.json' "$out" "$1"; fi; }
 sed -n "/^---RECEIPT $REMOTE_HOST---\$/,/^---END RECEIPT---\$/p" "$out/$REMOTE_HOST.log" | sed '1d;$d' > "$out/$REMOTE_HOST.json.part"
-if [ -s "$out/$REMOTE_HOST.json.part" ]; then mv -- "$out/$REMOTE_HOST.json.part" "$out/$REMOTE_HOST.json"
+if [ -s "$out/$REMOTE_HOST.json.part" ]; then mv -- "$out/$REMOTE_HOST.json.part" "$(rcpt_of "$REMOTE_HOST")"
 else rm -f -- "$out/$REMOTE_HOST.json.part"; fi
 
 nogo=0; env=0
@@ -122,7 +168,7 @@ for h in "$LOCAL_HOST" "$REMOTE_HOST"; do
     grep -qE "^MODELS-LEG $h ENV:" "$out/$h.log" && env=1
 done
 for hr in "$LOCAL_HOST $lrc" "$REMOTE_HOST $rrc"; do
-    set -- $hr; h=$1; rc=$2; receipt="$out/$h.json"
+    set -- $hr; h=$1; rc=$2; receipt=$(rcpt_of "$h")
     if [ ! -s "$receipt" ]; then
         echo "MODELS $h NO-GO: no receipt -- $(leg_reason "$h" "$rc")"; nogo=1; continue
     fi
@@ -131,14 +177,29 @@ for hr in "$LOCAL_HOST $lrc" "$REMOTE_HOST $rrc"; do
 import json, sys
 try: d = json.load(open(sys.argv[1]))
 except Exception: print("UNREADABLE\t-\t-"); sys.exit(0)
-print("\t".join(str(d.get(k, "-")) for k in ("apr_version", "executed", "red")))' "$receipt")
+if sys.argv[2] == "smoke":   # a CRUX receipt names its binary by `apr --version`; "executed"/"red" are its cells
+    cells = d.get("cells") or []
+    print("\t".join([str((d.get("apr") or {}).get("version_line") or "-"), str(len(cells)),
+                     str(sum(1 for c in cells if c.get("verdict") != "GREEN"))]))
+else:
+    print("\t".join(str(d.get(k, "-")) for k in ("apr_version", "executed", "red")))' "$receipt" "$MODE")
     if [ "$av" != "$want" ]; then
         echo "MODELS $h NO-GO: the receipt was measured by '$av', not '$want'"; nogo=1; continue
     fi
     echo "MODELS $h measured by $want: executed=$executed red=$red (model_ladder rc $rc)"
 done
 
+if [ "$MODE" = smoke ]; then
+    # #4117: the nightly half. Both hosts' nights, gathered into ONE root the judge reads: this host's from its own
+    # APR_NIGHTLY_ROOT, gx10's over the same SSH -- only verdict.json and the receipts it names (a verdict records
+    # them relative to itself, #4117), never the night's checkout or target. Admission (age, green, ancestry) is
+    # the JUDGE's, not decided here.
+    gather_nightly || { echo "MODELS NO-GO: the nightly could not be gathered from both hosts ($out/nightly-gather.log)"; nogo=1; }
+    bash scripts/check_model_ladder.sh --version "$ver" --scope release --nightly "$out/nightly" --crux "$out/crux" \
+        --cut-commit "$sha" > "$out/judge.log" 2>&1; jrc=$?
+else
 bash scripts/check_model_ladder.sh --version "$ver" --receipts "$out" > "$out/judge.log" 2>&1; jrc=$?
+fi
 case $jrc in
     0) ;;
     2) echo "MODELS NO-GO: the judge DECLINED (rc 2), and a decline is not a pass: $(tail -n 1 "$out/judge.log")"; nogo=1 ;;
@@ -147,5 +208,9 @@ case $jrc in
 esac
 [ "$env" -eq 0 ] || exit 2
 [ "$nogo" -eq 0 ] || exit 1
+if [ "$MODE" = smoke ]; then
+    echo "MODELS GO on $LOCAL_HOST and $REMOTE_HOST at $sha9: RELEASE GATE -- CRUX smoke on the release binary ($want) + an admitted nightly"
+    exit 0
+fi
 echo "MODELS GO on $LOCAL_HOST and $REMOTE_HOST at $sha9: the judge passed both receipts ($want)"
 exit 0

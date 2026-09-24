@@ -30,6 +30,8 @@
 #   GPU_WAIT_SECS      how long to wait for an empty card before giving up (default 1800)
 #   GPU_LOCK           lock file (default /tmp/apr-gpu.lock)
 #   GPU_OCC_LOG        where the occupancy samples go (default: a temp file)
+#   GPU_ACQ_STAMP      optional file; when set, the UTC epoch at which the lock was held (taken
+#                      or inherited) is written to it, so a caller can stamp its lock wait (#4051)
 #   GPU_SAMPLE_SECS    sampling interval (default 0.1). A run shorter than this can still be
 #                      missed; that case exits 75 as UNVERIFIED rather than claiming anything.
 # Exit: the command's status; 75 = CONTENDED or the card never cleared; 2 = usage.
@@ -93,6 +95,9 @@ else
   flock -w "$WAIT" 9 || { echo "gpu_exclusive_run: CONTENDED -- $LOCK not free after ${WAIT}s" >&2; exit 75; }
   TOOK_LOCK=1
 fi
+# bashrs DET002: #4051 timing stamp: wall-clock time IS the measured quantity, not a build input.
+# bashrs disable-next-line=DET002
+[ -z "${GPU_ACQ_STAMP:-}" ] || date +%s.%N > "$GPU_ACQ_STAMP"
 SAMPLER=""
 cleanup() { [ -n "$SAMPLER" ] && kill "$SAMPLER" 2>/dev/null; }
 trap 'cleanup' EXIT
