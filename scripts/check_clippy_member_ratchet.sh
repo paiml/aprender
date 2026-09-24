@@ -266,6 +266,15 @@ esac
 echo "=== clippy over every workspace member, shrink-only (check_clippy_member_ratchet.sh, #4152) ==="
 [ -f "$BASELINE" ] || { echo "FAIL  $BASELINE_REL is missing"; exit 1; }
 check_version || exit $?
+# The comparand. This guard runs as a ci/explicit-test-commands.d fragment, and that job fetches
+# origin/main only on pull_request. On a push the ref is absent, and the library would (correctly)
+# refuse. So fetch it here, with the exact command the library's own refusal prescribes. The
+# library still judges; this only supplies the ref it needs. A PR cannot rewrite the ref either way.
+if ! git -C "$ROOT" rev-parse -q --verify refs/remotes/origin/main >/dev/null 2>&1; then
+    echo "note  origin/main is not fetched here; fetching it as the ratchet's comparand"
+    git -C "$ROOT" fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main >/dev/null 2>&1 \
+        || echo "note  the fetch failed; the ratchet below will say UNRESOLVABLE and refuse"
+fi
 # shellcheck source=scripts/lib_baseline_ratchet.sh
 . "$ROOT/scripts/lib_baseline_ratchet.sh" || exit 1
 baseline_ratchet_check "$ROOT" "$BASELINE_REL" keyed || exit 1
