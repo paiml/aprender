@@ -16,4 +16,4 @@ lean_exe test where
   srcDir := "test"
 
 require mathlib from git
-  "https://github.com/leanprover-community/mathlib4" @ "master"
+  "https://github.com/leanprover-community/mathlib4" @ "1d042d3e1e93904b24c4fe209c75d2adbb22ee24"
