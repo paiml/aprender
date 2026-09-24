@@ -282,3 +282,122 @@ fn a_defeq_match_on_sorry_closes_nothing() {
     assert_eq!(c.closed, 0);
     assert!(fails(&r)[0].starts_with("FAIL  SORRY A.f"), "{:?}", r.lines);
 }
+
+// #4240: rows are cross-checked against the roots the Challenge files declare.
+
+fn cross(rows: &[Row], roots: &[&str]) -> (Report, Closure) {
+    let (mut r, mut c) = judge(rows);
+    let roots: BTreeSet<String> = roots.iter().map(|s| (*s).to_string()).collect();
+    cross_check(rows, &roots, &mut c, &mut r);
+    (r, c)
+}
+
+#[test]
+fn roots_in_reads_every_challenge_declaration_and_strips_universes() {
+    let text = "section\nopen Real\n\
+        theorem _root_.PvlChallenge.A.b (x : ℝ) : x = x := sorry\n\
+        theorem _root_.PvlChallenge.A.poly.{u v} {α : Sort u} : True := sorry\n\
+          theorem _root_.PvlChallenge.A.indented : True := sorry\n\
+        theorem A.not_a_challenge : True := sorry\n\
+        -- theorem _root_.PvlChallenge.commented : True := sorry\n\
+        theorem _root_.Other.C : True := sorry\nend\n";
+    let got: Vec<String> = roots_in(text).into_iter().collect();
+    assert_eq!(got, vec!["A.b", "A.indented", "A.poly"]);
+}
+
+#[test]
+fn a_root_with_no_row_is_missing_row_and_counts_in_m() {
+    // `rowsOf` dropped `A.internal` (isInternal): n/m must not read 1/1.
+    let (r, c) = cross(&[closed("A.b")], &["A.b", "A.internal"]);
+    assert!(r.reject, "a dropped row rejects: {:?}", r.lines);
+    let f = fails(&r);
+    assert_eq!(f.len(), 1, "{f:?}");
+    assert!(f[0].contains("MISSING-ROW A.internal"), "{f:?}");
+    assert!(f[0].contains("PvlChallenge.A.internal"), "{f:?}");
+    assert_eq!(
+        c,
+        Closure {
+            closed: 1,
+            total: 2
+        }
+    );
+}
+
+#[test]
+fn a_row_with_no_root_is_unexpected_row() {
+    let (r, c) = cross(&[closed("A.b"), closed("A.ghost")], &["A.b"]);
+    assert!(r.reject);
+    let f = fails(&r);
+    assert_eq!(f.len(), 1, "{f:?}");
+    assert!(f[0].contains("UNEXPECTED-ROW A.ghost"), "{f:?}");
+    assert_eq!(c.total, 2);
+}
+
+#[test]
+fn rows_equal_to_roots_add_no_failure_and_keep_the_count() {
+    let (r, c) = cross(&[closed("A.b"), closed("A.c")], &["A.b", "A.c"]);
+    assert!(!r.reject, "{:?}", r.lines);
+    assert!(fails(&r).is_empty());
+    assert_eq!(
+        c,
+        Closure {
+            closed: 2,
+            total: 2
+        }
+    );
+    assert!(r
+        .lines
+        .iter()
+        .any(|l| l.contains("2 row(s), 2 declared root(s)")));
+}
+
+#[test]
+fn zero_rows_against_declared_roots_rejects_not_declines_away() {
+    let (r, c) = cross(&[], &["A.b"]);
+    assert!(
+        r.reject,
+        "every declared root missing is a failure, not vacuity"
+    );
+    assert!(fails(&r)[0].contains("MISSING-ROW A.b"));
+    assert_eq!(
+        c,
+        Closure {
+            closed: 0,
+            total: 1
+        }
+    );
+}
+
+#[test]
+fn a_duplicate_row_is_one_name_in_the_cross_check() {
+    let (r, c) = cross(&[closed("A.b"), closed("A.b")], &["A.b"]);
+    let f = fails(&r);
+    assert_eq!(f.len(), 1, "only the DUPLICATE: {f:?}");
+    assert!(f[0].contains("DUPLICATE"));
+    assert_eq!(c.total, 1);
+}
+
+#[test]
+fn expected_roots_reads_the_listed_files_and_an_unreadable_one_is_an_error() {
+    let d = tempfile::tempdir().expect("tempdir");
+    let ch = d.path().join(CHALLENGE_DIR);
+    std::fs::create_dir_all(&ch).expect("mkdir");
+    std::fs::write(
+        ch.join("a-v1.lean"),
+        "theorem _root_.PvlChallenge.X.y : True := sorry\n",
+    )
+    .expect("w");
+    std::fs::write(
+        ch.join("b-v1.lean"),
+        "theorem _root_.PvlChallenge.Z : True := sorry\n",
+    )
+    .expect("w");
+    let files = challenge_files(d.path());
+    let got: Vec<String> = expected_roots(d.path(), &files)
+        .expect("roots")
+        .into_iter()
+        .collect();
+    assert_eq!(got, vec!["X.y", "Z"]);
+    let gone = vec![PathBuf::from("Challenge/gone-v1.lean")];
+    assert!(expected_roots(d.path(), &gone).is_err());
+}
