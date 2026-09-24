@@ -3286,6 +3286,105 @@ jobs:
           path: target/aprender-viz/raster-receipt.json
           if-no-files-found: error
 
+  # ── PVL-001 EV-9 (#4083): the provable ladder, ADVISORY ────────────────────
+  #
+  # `pv discharge run` over the Lean tree: build.sh (Mathlib cache get, and a cache
+  # MISS declines instead of silently building Mathlib), then `check` with every arm
+  # (--strict, the comparator, --leanchecker), then the tracked discharge-summary.json.
+  # The committed summary must be what the run writes (summary-fresh: the tree carries
+  # the summary and CI regenerates it and diffs it; a gate never rewrites its own
+  # baseline, PVL-001 §5.3).
+  #
+  # ADVISORY: NOT in `gate`'s `needs:` (cop ruling, 2026-09-24). Measured at 4a870daf5 on
+  # lambda (4m21s, 1.4 GB RSS), the ladder is RED: 7 escape-allowlist.yaml entries are still
+  # `confirmed_by: pending`, and only a person may confirm them (§5.3). On top of that, yoga
+  # has no elan, and no host has /mnt/nvme-raid0/lean-cache (proof-toolchain tag, via forjar).
+  # Flip to required -- add it to `gate.needs` and read its result there -- only when
+  # both are clear.
+  #
+  # X64 is mandatory: `ci / lint` once landed on aarch64 gx10 and failed on x86-only code.
+  # 90 min: under the merge queue's 180 min. build.sh is ~6 min on a warm cache, the leanchecker
+  # arm's own cap is 3600 s, and a cold pv build takes a few minutes.
+  provable-ladder:
+    runs-on: [self-hosted, Linux, clean-room, X64]
+    timeout-minutes: 90
+    env:
+      LEAN: crates/aprender-contracts-staging/lean
+      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
+      CARGO_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/provable-ladder
+      PV: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/provable-ladder/debug/pv
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Preconditions -- elan, and a persistent .lake cache keyed on the toolchain + manifest
+        id: pre
+        # An absent cache DECLINES; it is never a silent cold Mathlib build. The toolchain is
+        # read from lean-toolchain, so this workflow never names a Lean version.
+        shell: bash
+        run: |
+          set -uo pipefail
+          decline() { echo "decline: $1" | tee -a "$GITHUB_STEP_SUMMARY"; exit 2; }
+          export PATH="$HOME/.elan/bin:$PATH"
+          command -v elan >/dev/null || decline "no elan on $(hostname) -- runner-elan: apply the proof-toolchain tag via forjar (machines/intel/forjar.yaml)"
+          key=$(cat "$LEAN/lean-toolchain" "$LEAN/lake-manifest.json" | sha256sum | cut -c1-16)
+          cache=/mnt/nvme-raid0/lean-cache/$key
+          [ -d "$cache" ] || decline "no lean cache $cache on $(hostname) -- provision /mnt/nvme-raid0/lean-cache (proof-toolchain)"
+          elan toolchain install "$(cat "$LEAN/lean-toolchain")"
+          ln -sfn "$cache" "$LEAN/.lake"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          echo "cache=$cache" >> "$GITHUB_OUTPUT"
+
+      - name: Build the in-tree pv
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked -p aprender-contracts-cli --bin pv
+          test -x "$PV"
+
+      - name: pv discharge run (build.sh, then check --strict + comparator + leanchecker)
+        shell: bash
+        # One run at a time per cache: two runs unpacking into the same .lake would race.
+        run: |
+          set -uo pipefail
+          flock "${{ steps.pre.outputs.cache }}.lock" "$PV" discharge run "$LEAN" > "$RUNNER_TEMP/discharge-run.log" 2>&1; rc=$?
+          tail -n 40 "$RUNNER_TEMP/discharge-run.log"
+          echo "pv discharge run: rc=$rc" >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+      - name: summary-fresh -- the committed discharge-summary.json is what the run wrote
+        if: ${{ !cancelled() && steps.pre.outcome == 'success' }}
+        shell: bash
+        run: git diff --exit-code -- "${LEAN%/lean}/discharge-summary.json"
+
+      - name: pv lint contracts/
+        if: ${{ !cancelled() && steps.pre.outcome == 'success' }}
+        shell: bash
+        run: '"$PV" lint contracts/'
+
+      - name: Upload the discharge logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: provable-ladder
+          path: |
+            ${{ runner.temp }}/discharge-run.log
+            crates/aprender-contracts-staging/lean/discharge.json
+            crates/aprender-contracts-staging/discharge-summary.json
+          if-no-files-found: warn
+
+      - name: Advisory verdict
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### provable-ladder (PVL-001 EV-9, #4083): ADVISORY, not in gate.needs"
+            echo "Job status: ${{ job.status }}. It becomes required only when both blockers are clear:"
+            echo "1. escape-allowlist.yaml: 7 entries are \`confirmed_by: pending\`, and a person must confirm them or delete the axioms (PVL-001 §5.3)"
+            echo "2. runner-elan / lean-cache: elan and /mnt/nvme-raid0/lean-cache on every X64 clean-room host (proof-toolchain tag, forjar)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   gate:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     # 22: BSE-05 formula T = max(15, ceil(1.5*p99), p99+20) over this job's own
