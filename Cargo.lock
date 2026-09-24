@@ -368,6 +368,9 @@ dependencies = [
 [[package]]
 name = "aprender-build-sha"
 version = "0.69.0"
+dependencies = [
+ "tempfile",
+]
 
 [[package]]
 name = "aprender-cbtop"
