@@ -159,22 +159,29 @@ def rowsOf (env : Environment) : IO (Array String) := do
 /-- The `defeq_instances` controls, elaborated against core. `inst_*` state one fact through two instance paths
 (the `Zero ℤ` false reject of #4237, in miniature): they must be defeq. `hyp` adds a hypothesis and `rhs` changes
 the right-hand side (the two negative controls the cop ruling keeps): they must not be, even though every
-instance in them unfolds. -/
+instance in them unfolds. `dflt` hides the same `0` behind a plain `def`: defeq at `.default`, not at `.instances`
+— it pins the transparency, which the other three would not notice being widened. -/
 def defeqControls : String := "
 theorem inst_a (xs : List Int) : @List.foldr Int Int (· + ·) (@OfNat.ofNat Int 0 _) xs = xs.foldr (· + ·) 0 := sorry
 theorem inst_b (xs : List Int) : @List.foldr Int Int (· + ·) (@OfNat.ofNat Int 0 ⟨Int.ofNat 0⟩) xs = xs.foldr (· + ·) 0 := sorry
 theorem hyp (xs : List Int) (h : xs ≠ []) : @List.foldr Int Int (· + ·) (@OfNat.ofNat Int 0 _) xs = xs.foldr (· + ·) 0 := sorry
+def zeroDef : Int := 0
+theorem dflt (xs : List Int) : @List.foldr Int Int (· + ·) zeroDef xs = xs.foldr (· + ·) 0 := sorry
 theorem rhs (xs : List Int) : @List.foldr Int Int (· + ·) (@OfNat.ofNat Int 0 _) xs = xs.reverse.foldr (· + ·) 0 := sorry
 "
 
 def selfTestDefeq : IO Nat := do
   initSearchPath (← findSysroot)
   let some env ← elabInput defeqControls "<self-test>" | IO.println "FAIL  the defeq controls did not elaborate"; return 1
-  let ty (n : Name) : Expr := (env.find? n).map (·.type) |>.getD (.sort 0)
   let mut bad := 0
-  for (a, b, want) in [(`inst_a, `inst_b, true), (`inst_a, `hyp, false), (`inst_a, `rhs, false)] do
-    let hashEq := typeHash (ty a) == typeHash (ty b)
-    let got ← defeqInstances env (ty a) (ty b)
+  for (a, b, want) in [(`inst_a, `inst_b, true), (`inst_a, `hyp, false), (`inst_a, `rhs, false),
+      (`inst_a, `dflt, false)] do
+    -- A control that is not in the environment is a FAIL, never a stand-in type that differs by accident.
+    let (some ca, some cb) := (env.find? a, env.find? b)
+      | IO.println s!"FAIL  defeq control {a} or {b} is not in the environment"; bad := bad + 1; continue
+    let (ta, tb) := (ca.type, cb.type)
+    let hashEq := typeHash ta == typeHash tb
+    let got ← defeqInstances env ta tb
     -- The positive control is only a control if the hashes DIFFER: else it would pass on the hash alone.
     let ok := got == want && !hashEq
     IO.println s!"{if ok then "ok  " else "FAIL"}  defeq_instances {a} {b} = {got} (want {want}, hashes differ: {!hashEq})"
