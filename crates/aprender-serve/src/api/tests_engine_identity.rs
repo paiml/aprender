@@ -23,9 +23,9 @@ const MODEL_PATH: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
 /// `Session` — and then the verb rows must cover it too.
 const ARCHES: &[(&str, Arch)] = &[
     ("qwen35", Arch::Session("Qwen35Forward")),
-    ("qwen3", Arch::NotYet("#4268 (aprender-49): dense ports")),
-    ("qwen2", Arch::NotYet("#4268 (aprender-49): dense ports")),
-    ("llama", Arch::NotYet("#4268 (aprender-49): dense ports")),
+    ("qwen3", Arch::Session("DenseForward")),
+    ("qwen2", Arch::Session("DenseForward")),
+    ("llama", Arch::Session("DenseForward")),
     ("qwen3_moe", Arch::NotYet("#4263 MoE (aprender-cb)")),
 ];
 
@@ -223,6 +223,43 @@ fn apr_run_enters_the_one_engine() {
     );
     assert_eq!(entries[0].arch, "qwen35");
     assert_eq!(entries[0].kind, EntryKind::Generate);
+}
+
+/// The dense verb rows (#4268 D1, #4293): `apr run` on a dense GGUF enters the
+/// engine through `DenseForward`. One model per dense arch that is present on
+/// this box; an absent file skips its row, never the others.
+const DENSE_RUN_ROWS: &[(&str, &str)] = &[("qwen3", "/home/noah/models/Qwen3-1.7B-Q4_K_M.gguf")];
+
+#[test]
+fn apr_run_on_a_dense_gguf_enters_the_one_engine() {
+    for (i, (arch, path)) in DENSE_RUN_ROWS.iter().enumerate() {
+        assert!(
+            ARCHES.contains(&(*arch, Arch::Session("DenseForward"))),
+            "{arch} has a dense verb row but its ARCHES row is not DenseForward"
+        );
+        if !std::path::Path::new(path).exists() {
+            eprintln!("SKIP: {path} is absent");
+            continue;
+        }
+        // Ids no other test uses, so the witness answers for this call alone.
+        let base = 9_801 + 10 * i as u32;
+        let prompt: Vec<u32> = (base..base + 5).collect();
+        let mut config = crate::infer::InferenceConfig::new(*path);
+        config.input_tokens = Some(prompt.clone());
+        config.max_tokens = 2;
+        config.temperature = 0.0;
+        config.top_k = 1;
+        config.no_gpu = true;
+        crate::infer::run_inference(&config).expect("apr run's inference");
+        let entries = entries_for(&prompt);
+        assert_eq!(
+            entries.len(),
+            1,
+            "apr run on {path} left {entries:?}: it decoded outside the session"
+        );
+        assert_eq!(entries[0].arch, *arch);
+        assert_eq!(entries[0].kind, EntryKind::Generate);
+    }
 }
 
 /// Every `impl ArchForward for X` in production source is exactly the set of
