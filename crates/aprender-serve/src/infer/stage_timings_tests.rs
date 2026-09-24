@@ -244,3 +244,7 @@ fn with_a_prefill_phase_the_split_is_unchanged() {
         "a prefill plant moves prefill; decode is unchanged"
     );
 }
+
+/// PMAT-4105: the same falsifier through the call sites that ship (shares `with_delay`'s lock).
+#[path = "stage_timings_callsite_tests.rs"]
+mod callsite;

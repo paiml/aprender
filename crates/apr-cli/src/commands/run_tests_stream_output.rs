@@ -1,4 +1,3 @@
-
 /// `--stream` emits one JSON token line per generated token id, then one
 /// `event:final` blob — N tokens → N+1 NDJSON lines.
 #[test]
@@ -266,5 +265,46 @@ fn run_json_emits_the_five_stage_keys_and_null_when_not_measured() {
         );
     }
     assert_eq!(v["load_ms"], 5.0);
-    assert_eq!(v["tokens_out"], 0, "tokens_out is a count, present even when zero");
+    assert_eq!(
+        v["tokens_out"], 0,
+        "tokens_out is a count, present even when zero"
+    );
+}
+
+/// PMAT-4105 / #3606 done_when 2: the wall-clock boundary is stated, not implied. `wall_ms` is
+/// the engine's clock (the stages close against it); `inference_time_ms` is the CLI's, and also
+/// covers resolve and tokenization. `outside_wall_ms` is exactly their difference, and it is
+/// `null`, never 0, when the engine never closed its books.
+#[cfg(feature = "inference")]
+#[test]
+fn run_json_states_the_gap_between_the_cli_clock_and_the_engine_clock() {
+    use realizar::infer::stage_timings::StageTimings;
+    let mut stages = StageTimings {
+        load_ms: Some(100.0),
+        ..StageTimings::default()
+    };
+    stages.close(400.0);
+    let closed = RunResult {
+        duration_secs: 0.45,
+        stages,
+        ..RunResult::default()
+    };
+    let v = build_final_json(&closed, "m.gguf", 16, false);
+    assert_eq!(v["inference_time_ms"], 450.0);
+    assert_eq!(v["wall_ms"], 400.0);
+    assert_eq!(
+        v["outside_wall_ms"], 50.0,
+        "the CLI clock minus the engine clock: {v}"
+    );
+
+    let unclosed = RunResult {
+        duration_secs: 0.45,
+        ..RunResult::default()
+    };
+    let v = build_final_json(&unclosed, "m.gguf", 16, false);
+    assert!(
+        v.get("outside_wall_ms")
+            .is_some_and(serde_json::Value::is_null),
+        "no engine clock, no gap: present and null, never 0: {v}"
+    );
 }

@@ -590,7 +590,10 @@ fn build_final_json(
 /// Fold the measured stages into the report. Separate from [`build_final_json`] so the
 /// non-inference build has no opinion about timings it could not take.
 #[cfg(feature = "inference")]
-fn merge_stage_fields(json: &mut serde_json::Value, stages: &realizar::infer::stage_timings::StageTimings) {
+fn merge_stage_fields(
+    json: &mut serde_json::Value,
+    stages: &realizar::infer::stage_timings::StageTimings,
+) {
     let Some(obj) = json.as_object_mut() else {
         return;
     };
@@ -613,16 +616,39 @@ fn merge_stage_fields(json: &mut serde_json::Value, stages: &realizar::infer::st
     // time and attributed all of it. Absent is NOT MEASURED here exactly as it is for every stage.
     obj.insert("unattributed_ms".into(), ms(stages.unattributed_ms));
     obj.insert("wall_ms".into(), ms(stages.wall_ms));
-    obj.insert("stages_measured".into(), serde_json::json!(stages.measured()));
+    // PMAT-4105 / #3606: TWO clocks, stated. `wall_ms` is the engine's: it starts just before the
+    // load stage inside realizar's `run_gguf_inference`, and the stages close against it exactly.
+    // `inference_time_ms` is the CLI's: it also covers resolving the model and preparing the tokens.
+    // The difference belongs to no stage, so it is its own labelled field rather than being
+    // silently absent from both. `null` when the books were never closed.
+    let outside = match (
+        stages.wall_ms,
+        obj.get("inference_time_ms")
+            .and_then(serde_json::Value::as_f64),
+    ) {
+        (Some(wall), Some(total)) => Some(total - wall),
+        _ => None,
+    };
+    obj.insert("outside_wall_ms".into(), ms(outside));
+    obj.insert(
+        "stages_measured".into(),
+        serde_json::json!(stages.measured()),
+    );
     // `backend` is #3602's {requested, ran, fell_back} object: never overwrite it. Which generate
     // PATH produced these timings (so a reader knows which stages could be measured) goes inside it.
-    match obj.get_mut("backend").and_then(serde_json::Value::as_object_mut) {
+    match obj
+        .get_mut("backend")
+        .and_then(serde_json::Value::as_object_mut)
+    {
         Some(b) => {
             b.insert("path".into(), serde_json::json!(stages.backend));
-        },
+        }
         None => {
-            obj.insert("backend".into(), serde_json::json!({ "path": stages.backend }));
-        },
+            obj.insert(
+                "backend".into(),
+                serde_json::json!({ "path": stages.backend }),
+            );
+        }
     }
 }
 
