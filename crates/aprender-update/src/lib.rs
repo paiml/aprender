@@ -403,11 +403,11 @@ mod tests {
         nightly: true,
     };
     const T: &str = "x86_64-unknown-linux-gnu";
-    const LATEST: &str = "https://api.github.com/repos/o/r/releases/latest";
+    const LATEST: &str = "https://api.github.com/repos/o/r/releases?per_page=30";
 
     fn with_release(tag: &str) -> HashMap<String, Vec<u8>> {
         let n = format!("pv-{tag}-{T}.tar.gz");
-        let body = serde_json::json!({"tag_name": tag, "assets": [{"name": n, "browser_download_url": format!("https://dl/{n}")}]});
+        let body = serde_json::json!([{"tag_name": tag, "prerelease": false, "draft": false, "assets": [{"name": n, "browser_download_url": format!("https://dl/{n}")}]}]);
         HashMap::from([(LATEST.to_string(), serde_json::to_vec(&body).expect("json"))])
     }
 

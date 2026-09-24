@@ -57,12 +57,64 @@ pub fn asset_name(template: &str, bin: &str, tag: &str, target: &str) -> String 
         .replace("{target}", target)
 }
 
-/// The latest release's asset for this product and target, if it has one. A
-/// release without this bin's asset is no candidate: never announce a build
-/// that `update` could not install.
+/// A release's asset for this product and target, if it has one. A release
+/// without this bin's asset is no candidate: never announce a build that
+/// `update` could not install.
 #[must_use]
 pub fn release_candidate(body: &[u8], p: &Product, target: &str) -> Option<Candidate> {
-    let v = json(body)?;
+    candidate_of(&json(body)?, p, target)
+}
+
+/// The line a release manager writes into an `-rc` prerelease's notes once
+/// the hand-smoke passed. Until it is there the prerelease is not installable.
+pub const HAND_SMOKE_MARKER: &str = "Hand-smoke: PASS";
+
+fn hand_smoked(v: &Value) -> bool {
+    v.get("body").and_then(Value::as_str).is_some_and(|b| {
+        b.lines().any(|l| {
+            l.trim_start_matches(|c: char| c == '#' || c == '*' || c == '-' || c.is_whitespace())
+                .starts_with(HAND_SMOKE_MARKER)
+        })
+    })
+}
+
+/// Whether a `/releases` entry may be installed: not a draft, a semver tag
+/// (the rolling `nightly` release is a prerelease with no version — it comes
+/// in through its manifest instead), and a prerelease only once hand-smoked.
+/// Every intermediate release is dogfooded (operator, 2026-09-24: "we use all
+/// intermediate releases for dogfood").
+fn eligible(v: &Value) -> bool {
+    let flag = |k: &str| v.get(k).and_then(Value::as_bool);
+    let Some(tag) = v.get("tag_name").and_then(Value::as_str) else {
+        return false;
+    };
+    if flag("draft") != Some(false) || semver::Version::parse(tag.trim_start_matches('v')).is_err()
+    {
+        return false;
+    }
+    match flag("prerelease") {
+        Some(false) => true,
+        Some(true) => hand_smoked(v),
+        None => false,
+    }
+}
+
+/// The highest-versioned eligible release in a `/releases` list that carries
+/// this target's asset. Semver orders `0.69.1 < 0.69.3-rc.1 < 0.69.3`, so a
+/// hand-smoked rc supersedes the last release and the final tag supersedes it.
+#[must_use]
+pub fn newest_release_candidate(body: &[u8], p: &Product, target: &str) -> Option<Candidate> {
+    json(body)?
+        .as_array()?
+        .iter()
+        .filter(|v| eligible(v))
+        .filter_map(|v| candidate_of(v, p, target))
+        .filter_map(|c| Some((semver::Version::parse(&c.version).ok()?, c)))
+        .max_by(|a, b| a.0.cmp(&b.0))
+        .map(|(_, c)| c)
+}
+
+fn candidate_of(v: &Value, p: &Product, target: &str) -> Option<Candidate> {
     let tag = v.get("tag_name")?.as_str()?;
     let want = asset_name(p.release_asset?, p.bin, tag, target);
     let url = v
@@ -138,10 +190,15 @@ pub fn latest_release(
     if p.release_asset.is_none() {
         return Ok(None);
     }
-    let url = format!("https://api.github.com/repos/{}/releases/latest", p.repo);
+    // Not /releases/latest: GitHub leaves every prerelease out of it, and a
+    // hand-smoked -rc is installable.
+    let url = format!(
+        "https://api.github.com/repos/{}/releases?per_page=30",
+        p.repo
+    );
     Ok(net
         .get(&url)?
-        .and_then(|b| release_candidate(&b, p, target)))
+        .and_then(|b| newest_release_candidate(&b, p, target)))
 }
 
 pub fn nightly(net: &dyn Net, p: &Product, target: &str) -> Result<Option<Candidate>, String> {
@@ -218,6 +275,159 @@ mod tests {
             ..P
         };
         assert!(release_candidate(&release_json(&["x"]), &no_release, T).is_none());
+    }
+
+    /// One `/releases` entry: (tag, prerelease, draft, body, has this target's asset).
+    fn rel(tag: &str, pre: bool, draft: bool, body: &str, asset: bool) -> Value {
+        let name = format!("apr-{tag}-{T}-cpu.tar.gz");
+        let assets = if asset {
+            vec![
+                serde_json::json!({"name": name, "browser_download_url": format!("https://dl/{name}")}),
+            ]
+        } else {
+            vec![]
+        };
+        serde_json::json!({"tag_name": tag, "prerelease": pre, "draft": draft, "body": body, "assets": assets})
+    }
+
+    fn newest(list: &[Value]) -> Option<String> {
+        let body = serde_json::to_vec(&Value::Array(list.to_vec())).expect("json");
+        newest_release_candidate(&body, &P, T).map(|c| c.git_ref)
+    }
+
+    /// Every intermediate release is dogfooded; an -rc only once hand-smoked.
+    #[test]
+    fn newest_release_candidate_case_table() {
+        let smoked =
+            "Pre-release of 0.69.3.\n\n## Hand-smoke: PASS on lambda-labs (apr serve, qwen3.5)\n";
+        let bullet = "notes\n- **Hand-smoke: PASS** 2026-09-24\n";
+        let unsmoked = "Pre-release of 0.69.3. Use it to dogfood today.";
+        let r0691 = rel("v0.69.1", false, false, "", true);
+        let nightly = rel("nightly", true, false, smoked, true);
+        let rows: Vec<(&str, Vec<Value>, Option<&str>)> = vec![
+            ("R1 release only", vec![r0691.clone()], Some("v0.69.1")),
+            (
+                "R2 rc WITHOUT hand-smoke is not installable",
+                vec![
+                    rel("v0.69.3-rc.1", true, false, unsmoked, true),
+                    r0691.clone(),
+                ],
+                Some("v0.69.1"),
+            ),
+            (
+                "R3 hand-smoked rc supersedes the release",
+                vec![
+                    rel("v0.69.3-rc.1", true, false, smoked, true),
+                    r0691.clone(),
+                ],
+                Some("v0.69.3-rc.1"),
+            ),
+            (
+                "R4 marker as a markdown bullet counts",
+                vec![
+                    rel("v0.69.3-rc.1", true, false, bullet, true),
+                    r0691.clone(),
+                ],
+                Some("v0.69.3-rc.1"),
+            ),
+            (
+                "R5 final tag supersedes its rc",
+                vec![
+                    rel("v0.69.3", false, false, "", true),
+                    rel("v0.69.3-rc.2", true, false, smoked, true),
+                    r0691.clone(),
+                ],
+                Some("v0.69.3"),
+            ),
+            (
+                "R6 rc.10 > rc.2 by semver, not by string",
+                vec![
+                    rel("v0.69.3-rc.2", true, false, smoked, true),
+                    rel("v0.69.3-rc.10", true, false, smoked, true),
+                ],
+                Some("v0.69.3-rc.10"),
+            ),
+            (
+                "R7 the rolling nightly release is never a release candidate",
+                vec![nightly.clone(), r0691.clone()],
+                Some("v0.69.1"),
+            ),
+            (
+                "R8 a draft is never installable",
+                vec![rel("v0.69.4", false, true, smoked, true), r0691.clone()],
+                Some("v0.69.1"),
+            ),
+            (
+                "R9 smoked rc without THIS target's asset is skipped",
+                vec![
+                    rel("v0.69.3-rc.1", true, false, smoked, false),
+                    r0691.clone(),
+                ],
+                Some("v0.69.1"),
+            ),
+            (
+                "R10 list order does not matter",
+                vec![
+                    r0691.clone(),
+                    rel("v0.69.3-rc.1", true, false, smoked, true),
+                ],
+                Some("v0.69.3-rc.1"),
+            ),
+            (
+                "R11 marker mid-sentence is not a hand-smoke",
+                vec![
+                    rel(
+                        "v0.69.3-rc.1",
+                        true,
+                        false,
+                        "hand-smoke pending; not Hand-smoke: PASS yet",
+                        true,
+                    ),
+                    r0691.clone(),
+                ],
+                Some("v0.69.1"),
+            ),
+            (
+                "R13 a Hand-smoke: FAIL line is not installable",
+                vec![
+                    rel(
+                        "v0.69.3-rc.1",
+                        true,
+                        false,
+                        "Hand-smoke: FAIL apr-v0.69.3-rc.1-x86_64-unknown-linux-gnu-cuda.tar.gz used_gpu=false",
+                        true,
+                    ),
+                    r0691.clone(),
+                ],
+                Some("v0.69.1"),
+            ),
+            (
+                "R14 the line the release driver writes (aprender-36's format)",
+                vec![
+                    rel(
+                        "v0.69.3-rc.1",
+                        true,
+                        false,
+                        "Pre-release.\nHand-smoke: PASS apr-v0.69.3-rc.1-x86_64-unknown-linux-gnu-cuda.tar.gz sha256=ab12 version=apr 0.69.3-rc.1 commit=7ff50ec2a==tag used_gpu=true\n",
+                        true,
+                    ),
+                    r0691.clone(),
+                ],
+                Some("v0.69.3-rc.1"),
+            ),
+            (
+                "R12 nothing eligible",
+                vec![nightly, rel("v0.69.3-rc.1", true, false, unsmoked, true)],
+                None,
+            ),
+        ];
+        for (name, list, want) in rows {
+            assert_eq!(newest(&list).as_deref(), want, "{name}");
+        }
+        assert!(
+            newest_release_candidate(b"{\"tag_name\":\"v1.0.0\"}", &P, T).is_none(),
+            "an object is not a /releases list"
+        );
     }
 
     fn manifest(status: &str, schema: &str) -> Vec<u8> {
