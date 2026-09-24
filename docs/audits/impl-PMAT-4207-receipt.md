@@ -35,3 +35,23 @@ pattern the neighbouring tests already use (`lint_cache_second_run_hits`, `lifec
 `pv lint <dir>` still reads `<dir>/../scripts/…` as its baseline. That is the lint's design (a corpus lives at
 `<repo>/contracts`). A user who lints a stray dir directly under `/tmp` would see the same effect. That is a product
 question and is not in this ticket.
+
+## Quorum round 1 (agy lane 429: not counted; sonnet-5 PASS with one finding, verified and fixed in ce4dcba91; haiku-4-5 PASS)
+**Finding (sonnet-5, cited):** `ont6_lint_verdict.rs::a_failing_armed_gate_rejects_at_exit_1` still linted a bare tempdir.
+It did not flip, because it expects a reject. That is exactly the danger: on a host with the stray baseline,
+PV-DUP-002 also rejects, so the test could pass for the WRONG reason. It now goes through `corpus(None)`, which does
+the same setup (the control contract, no baseline) nested in a private tempdir.
+
+Mutant, measured with the baseline planted in a private `TMPDIR`: the `broken-v1.yaml` fixture was deleted, so nothing
+in the corpus should reject.
+
+| form of the test | result |
+|---|---|
+| pre-fix (bare tempdir) | **passes**: `rc=0`. The stray baseline supplied the reject, so it is vacuous |
+| this branch (`corpus(None)`) | **fails** at `ont6_lint_verdict.rs:135`, `left: 0, right: 1`: the mutant is KILLED |
+
+Unmutated, with the baseline planted and with it absent: `ont6_lint_verdict` 7/0 and `pvl_zero_contracts` 22/0.
+
+**The other bare tempdirs in the contracts-cli tests were checked and do not need the change.** They already nest
+`contracts/`, never run `pv lint`, or (`lint --watch <empty dir>`, `pvl_zero_contracts.rs`) hit the zero-contract
+refusal before any gate reads the root.
