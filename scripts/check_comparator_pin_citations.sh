@@ -63,9 +63,9 @@ def entries(path):
         l = l.rstrip("\n")
         if not l.strip() or l.lstrip().startswith("#"): continue
         f = l.split("\t")
-        if len(f) != 3 or f[1] not in ("historical", "fixture") or not f[2].strip():
-            print(f"FAIL  ledger line {n} is not <path>TAB<historical|fixture>TAB<why>: {l!r}"); sys.exit(1)
-        out[f[0]] = (f[1], f[2])
+        if len(f) != 4 or f[1] not in ("historical", "fixture") or not f[2].strip() or not re.fullmatch(r"[1-9][0-9]*", f[3]):
+            print(f"FAIL  ledger line {n} is not <path>TAB<historical|fixture>TAB<why>TAB<citing-line count>: {l!r}"); sys.exit(1)
+        out[f[0]] = (f[1], f[2], int(f[3]))
     return out
 led = entries(ledger)
 tracked = subprocess.run(["git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], capture_output=True).stdout.decode(errors="replace").split("\0")
@@ -94,10 +94,15 @@ for rel, lines in sorted(citing.items()):
         print(f"FAIL  R1 {rel}:{lines[0]} cites a superseded comparator pin and is not on {os.path.relpath(ledger, root)} "
               f"({len(lines)} line(s)). A live claim against a superseded comparator is the defect; dated history or a fixture value is listed by file, with why.")
         bad = 1
-for rel, (cls, why) in sorted(led.items()):
+for rel, (cls, why, count) in sorted(led.items()):
     if rel not in citing:
         print(f"FAIL  R2 stale ledger entry {rel} ({cls}): the file no longer cites a superseded pin (or is not tracked) -- delete the line"); bad = 1
         continue
+    # R6: the ledger pins HOW MANY lines cite, not just which file -- a ledgered file is not a blind spot for a
+    # live claim appended to it later (#3741 quorum r3). Fewer lines is a stale count: lower it (the ledger shrinks).
+    if len(citing[rel]) != count:
+        print(f"FAIL  R6 {rel} has {len(citing[rel])} citing line(s) ({','.join(map(str, citing[rel]))}) but the ledger pins {count}: "
+              f"{'a NEW citation was added to a ledgered file -- it is judged like a new file, so date it as history or drop it' if len(citing[rel]) > count else 'a citation left -- lower the count'}"); bad = 1
     if cls == "historical":
         text = open(os.path.join(root, rel), encoding="utf-8", errors="replace").read()
         if not (date_re.search(text) or date_re.search(rel) or date_re.search(why)):
@@ -111,7 +116,7 @@ if main != "-":
         print(f"FAIL  R4 the ledger GREW against origin/main ({len(mled)} -> {len(led)}): it may only shrink"); bad = 1
 if not bad:
     print(f"ok    build_commit {build}; superseded {' '.join(sup)}; {len(citing)} file(s) cite a superseded pin, every one ledgered "
-          f"({sum(1 for c,_ in led.values() if c=='historical')} historical, {sum(1 for c,_ in led.values() if c=='fixture')} fixture); no stale entry")
+          f"({sum(1 for v in led.values() if v[0]=='historical')} historical, {sum(1 for v in led.values() if v[0]=='fixture')} fixture), {sum(v[2] for v in led.values())} line(s) pinned; no stale entry")
 sys.exit(bad)
 PY
 }
@@ -133,7 +138,7 @@ if [ "${1:-}" = "--self-test" ]; then
         printf '[comparator]\nbuild_commit = "%s"\nsuperseded_commits = "%s %s"\n' "$CUR" "$OLD" "$OLD2" > "$d/scripts/llama_pin.toml"
         printf 'measured 2026-08-24 against llama.cpp %s: 0.59x\n' "$OLD" > "$d/evidence/parity/old-ratio.md"
         printf '{"comparator_sha": "%s0123456789abcdef"}\n' "$OLD" > "$d/tests/fx/case.json"
-        printf 'evidence/parity/old-ratio.md\thistorical\ta ratio measured before the 2026-09-15 bump, dated in the file\ntests/fx/case.json\tfixture\ta sample value in a self-test\n' > "$d/scripts/comparator_pin_citations.txt"
+        printf 'evidence/parity/old-ratio.md\thistorical\ta ratio measured before the 2026-09-15 bump, dated in the file\t1\ntests/fx/case.json\tfixture\ta sample value in a self-test\t1\n' > "$d/scripts/comparator_pin_citations.txt"
         git -C "$d" init -q && git -C "$d" add -A && git -C "$d" commit -q -m fx || return 2
     }
     row() { rows=$((rows + 1)); if [ "$2" = 0 ]; then printf 'ok    %s\n' "$1"; elif [ "$2" = 2 ]; then printf 'ENV   %s\n' "$1"; exit 2; else printf 'FAIL  %s: %s\n' "$1" "$3"; fails=$((fails + 1)); fi; }
@@ -150,12 +155,12 @@ if [ "${1:-}" = "--self-test" ]; then
     fixture c4 && printf 'nothing here\n' > "$TMP/c4/evidence/parity/old-ratio.md"
     expect 'C4 a ledger entry whose file no longer cites -> R2 stale' "$TMP/c4" 1 'R2 stale ledger entry evidence/parity/old-ratio.md'
     fixture c5 && printf 'against llama.cpp %s: 0.59x (no date anywhere)\n' "$OLD" > "$TMP/c5/evidence/parity/old-ratio.md" \
-        && printf 'evidence/parity/old-ratio.md\thistorical\tundated\ntests/fx/case.json\tfixture\ta sample value\n' > "$TMP/c5/scripts/comparator_pin_citations.txt"
+        && printf 'evidence/parity/old-ratio.md\thistorical\tundated\t1\ntests/fx/case.json\tfixture\ta sample value\t1\n' > "$TMP/c5/scripts/comparator_pin_citations.txt"
     expect 'C5 a historical entry with no date in file, path or ledger -> R3' "$TMP/c5" 1 'R3 evidence/parity/old-ratio.md is ledgered as historical'
     fixture c5b && printf 'against llama.cpp %s: 0.59x\n' "$OLD" > "$TMP/c5b/evidence/parity/old-ratio.md" \
-        && printf 'evidence/parity/old-ratio.md\thistorical\tmeasured 2026-08-24 (dated here)\ntests/fx/case.json\tfixture\ta sample value\n' > "$TMP/c5b/scripts/comparator_pin_citations.txt"
+        && printf 'evidence/parity/old-ratio.md\thistorical\tmeasured 2026-08-24 (dated here)\t1\ntests/fx/case.json\tfixture\ta sample value\t1\n' > "$TMP/c5b/scripts/comparator_pin_citations.txt"
     expect 'C5b the date on the ledger line satisfies R3' "$TMP/c5b" 0 'every one ledgered'
-    fixture c6 && printf 'evidence/parity/old-ratio.md\thistorical\tdated 2026-08-24\n' > "$TMP/c6/main-ledger.txt"
+    fixture c6 && printf 'evidence/parity/old-ratio.md\thistorical\tdated 2026-08-24\t1\n' > "$TMP/c6/main-ledger.txt"
     expect 'C6 a ledger that GREW against main (1 -> 2) -> R4' "$TMP/c6" 1 'R4 the ledger GREW against origin/main (1 -> 2)' "$TMP/c6/main-ledger.txt"
     fixture c7 && printf '[comparator]\nbuild_commit = "%s"\nsuperseded_commits = "%s %s"\n' "$CUR" "$OLD" "$CUR" > "$TMP/c7/scripts/llama_pin.toml"
     expect 'C7 build_commit listed as superseded -> R5' "$TMP/c7" 1 "R5 build_commit $CUR is listed as superseded by itself"
@@ -172,6 +177,12 @@ if [ "${1:-}" = "--self-test" ]; then
     expect 'C12 a non-PMAT file under docs/roadmaps/ is NOT a ticket record -> R1' "$TMP/c12" 1 'R1 docs/roadmaps/entries/PLANTED.yaml:1'
     fixture c13 && mkdir -p "$TMP/c13/docs/audits" && printf 'comparator %s\n' "$OLD" > "$TMP/c13/docs/audits/quorum-planted.md" && git -C "$TMP/c13" add -A
     expect 'C13 a quorum-*.md under docs/audits/ is NOT a quorum record -> R1' "$TMP/c13" 1 'R1 docs/audits/quorum-planted.md:1'
+    fixture c14 && printf 'measured just now against llama.cpp %s: CURRENT baseline\n' "$OLD" >> "$TMP/c14/evidence/parity/old-ratio.md"
+    expect 'C14 a live claim APPENDED to an already-ledgered file -> R6 naming the new line' "$TMP/c14" 1 'R6 evidence/parity/old-ratio.md has 2 citing line(s) (1,2) but the ledger pins 1'
+    fixture c15 && printf 'evidence/parity/old-ratio.md\thistorical\tdated in the file\t2\ntests/fx/case.json\tfixture\ta sample value\t1\n' > "$TMP/c15/scripts/comparator_pin_citations.txt"
+    expect 'C15 a count above the file -> R6 (lower it: the ledger shrinks)' "$TMP/c15" 1 'a citation left -- lower the count'
+    fixture c16 && printf 'evidence/parity/old-ratio.md\thistorical\tdated in the file\ntests/fx/case.json\tfixture\ta sample value\n' > "$TMP/c16/scripts/comparator_pin_citations.txt"
+    expect 'C16 a ledger line with no count -> RED, never a pass' "$TMP/c16" 1 'TAB<citing-line count>'
 
     # MUTANTS: each must turn its row RED. The judge is re-sourced from a mutated copy of this file.
     mutant() { # NAME OLD NEW WANT-RC NEEDLE FIXTURE-DIR [MAIN-LEDGER] -- killed iff the row's expectation no longer holds
@@ -197,6 +208,7 @@ PY
         print(f"FAIL  R2' '    if False:
         print(f"FAIL  R2' 1 'R2 stale ledger entry' "$TMP/c4"
     mutant drop-r3 '        if not (date_re.search(text) or date_re.search(rel) or date_re.search(why)):' '        if False:' 1 'R3 evidence/parity/old-ratio.md' "$TMP/c5"
+    mutant drop-r6 '    if len(citing[rel]) != count:' '    if False:' 1 'R6 evidence/parity/old-ratio.md' "$TMP/c14"
     mutant drop-r4 '    if mled is not None and len(led) > len(mled):' '    if False:' 1 'R4 the ledger GREW' "$TMP/c6" "$TMP/c6/main-ledger.txt"
     mutant shape-exempt 'pin_rel):' 'pin_rel) or rel.startswith("docs/roadmaps/entries/PMAT-"):' 1 'R1 docs/roadmaps/entries/PMAT-9.yaml:1' "$TMP/c11"
     mutant prefix-exempt 'pin_rel):' 'pin_rel) or rel.startswith(("docs/roadmaps/", "docs/audits/quorum-")):' 1 'R1 docs/roadmaps/entries/PLANTED.yaml:1' "$TMP/c12"
