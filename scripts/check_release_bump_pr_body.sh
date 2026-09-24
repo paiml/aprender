@@ -199,7 +199,8 @@ run_ship() {
     local rel=0; case "$ladder" in all|release-nonight) rel=1 ;; esac
     python3 - "$LADDER_CONTRACT" "$d/seed/contracts/model-capability-ladder-v1.yaml" "$rel" <<'PY' || return 2
 import sys, yaml
-inv = yaml.safe_load(open(sys.argv[1]))["ladder"]["inventory"]
+real = yaml.safe_load(open(sys.argv[1]))["ladder"]
+inv = real["inventory"]
 # the real contract's red_* verdicts name REAL model files the fixture hosts do not hold; the judge
 # refuses a verdict for a file nobody holds (#3957 F9/F10), so they are not the fixture's (#4128)
 inv = {k: v for k, v in inv.items() if k not in ("red_model", "red_unsupported")}
@@ -209,7 +210,8 @@ lad = {
     "inventory": inv,
     "rungs": [{"id": "fx-rung", "gguf": "fx.gguf", "required": True, "backends": ["cpu"]}]}
 if sys.argv[3] == "1":
-    lad["release_gate"] = {"from": "9.9.0", "ruling": "fixture"}
+    # the admission window is the contract's own (nightly_admission.py refuses a contract that states none, #4045)
+    lad["release_gate"] = {"from": "9.9.0", "ruling": "fixture", "nightly": real["release_gate"]["nightly"]}
 yaml.safe_dump({"ladder": lad}, open(sys.argv[2], "w"), sort_keys=False)
 PY
     git init -q --bare -b main "$d/origin.git" \

@@ -96,7 +96,7 @@ bash "$CLOSES_GUARD" --body "$AP/pr_body.md" > "$AP/r2.log" 2>&1 || die "the bum
 # #4117: FROM ladder.release_gate.from the full-ladder receipts are no longer the bump's precondition -- Phase 2
 # moved to the nightly (APR-RELEASE-001 §14). The gate is MOVED, not deleted: the bump requires an ADMISSIBLE
 # nightly for this candidate on every required host, by the judge's own admission (nightly_admission.py: GREEN
-# re-derived, <= 24 h, at an ancestor), over both hosts' nights gathered into one root. The smoke on the release
+# re-derived, within the contract's release_gate.nightly.max_age_h, at an ancestor), over both hosts' nights gathered into one root. The smoke on the release
 # binary is judged at T-1 (models) and T-4 (R7). ONE rule decides which applies (crux_smoke_scope.py `applies`).
 gw=$(python3 -B scripts/lib/crux_smoke_scope.py applies contracts/model-capability-ladder-v1.yaml "$V" 2>&1); grc=$?
 [ "$grc" -le 1 ] || die "which gate the bump for $V needs cannot be decided: $gw"
@@ -110,7 +110,7 @@ if [ "$grc" = 0 ]; then
   # shellcheck disable=SC2086
   python3 scripts/lib/nightly_admission.py "$nt/root" "$(git rev-parse HEAD)" "$nt/admitted" $hosts > "$AP/nightly-admission.log" 2>&1 || {
     grep -E 'NIGHTLY|nightly' "$AP/nightly-admission.log" >&2
-    die "RELEASE GATE: no admissible nightly for this candidate on every required host ($hosts) -- the bump needs a GREEN night <= 24 h at an ancestor (nightly_admission.py); nothing committed, pushed or opened ($AP/nightly-admission.log)"
+    die "RELEASE GATE: no admissible nightly for this candidate on every required host ($hosts) -- the bump needs a GREEN night within ladder.release_gate.nightly.max_age_h at an ancestor (nightly_admission.py); nothing committed, pushed or opened ($AP/nightly-admission.log)"
   }
   printf 'RELEASE GATE: an admissible nightly for the candidate on %s (%s)\n' "$hosts" "$gw"
 else

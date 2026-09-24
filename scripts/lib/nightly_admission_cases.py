@@ -115,6 +115,18 @@ def run(mod):
     finally:
         os.chdir(here)
     res["relative-path-without-verdict-location-refused"] = (why_n is not None and "no verdict location" in why_n, why_n)
+    # #4045 quorum: the freshness window is the CONTRACT's `ladder.release_gate.nightly.max_age_h`, never a default
+    import yaml as _y
+    w6, w0 = os.path.join(d, "w6.yaml"), os.path.join(d, "w0.yaml")
+    _y.safe_dump({"ladder": {"release_gate": {"nightly": {"max_age_h": 6}}}}, open(w6, "w"))
+    _y.safe_dump({"ladder": {"release_gate": {"from": "1.0.0"}}}, open(w0, "w"))
+    res["contract-window-read"] = (mod.contract_max_age(w6) == 6.0, mod.contract_max_age(w6))
+    lp = os.path.join(HERE, "..", "..", "contracts", "model-capability-ladder-v1.yaml")
+    real = _y.safe_load(open(lp))["ladder"]["release_gate"]["nightly"]["max_age_h"]
+    res["real-contract-window-read"] = (mod.contract_max_age(lp) == float(real), (mod.contract_max_age(lp), real))
+    os.makedirs(os.path.join(d, "empty-root"))
+    rc = mod.main(["--ladder", w0, os.path.join(d, "empty-root"), "a" * 40, os.path.join(d, "out4"), "lambda"])
+    res["windowless-contract-refused"] = (rc == 2, rc)
     return res
 
 
@@ -138,6 +150,8 @@ MUTANTS = [
     ("no-path-from-cwd", '    if not v.get("_path"):', "    if False:", "relative-path-without-verdict-location-refused"),
     ("escape-followed-ladder", '    if lad_p is None and why and why != "no receipt recorded":\n        return "its ladder receipt: %s" % why',
      '    if False:\n        return "its ladder receipt: %s" % why', "relative-ladder-escaping-refused"),
+    ("window-default", "    return float(h)\n", "    return 24.0\n", "contract-window-read"),
+    ("window-hardcoded", "    max_age = contract_max_age(ladder)\n", "    max_age = 24.0\n", "windowless-contract-refused"),
 ]
 
 

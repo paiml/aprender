@@ -3,7 +3,8 @@
 The long certification (full ladder + full CRUX) runs nightly on main (scripts/certify_nightly.sh). A release
 is admitted only on a nightly that is, for EVERY required host:
   GREEN     its verdict says green (apr-nightly-certification/v1);
-  FRESH     t_end within `max_age_h` hours (default 24) of now;
+  FRESH     t_end within `max_age_h` hours of now -- `ladder.release_gate.nightly.max_age_h` of the ladder contract,
+            the one place the window is stated; a contract that does not state it is refused, never defaulted;
   UPSTREAM  measured at the cut or at an ANCESTOR of it -- never a sibling branch, never a later commit;
   COHERENT  its green is RE-DERIVED from the receipts it names, never trusted: the ladder receipt is at the
             verdict's sha with executed >= 1 and red == 0, and every CRUX lane receipt (gpu AND cpu -- every
@@ -14,7 +15,8 @@ Admission does NOT bind the receipts to the cut: check_model_ladder.sh does that
 at an ancestor binds only through equivalence -- evidence-only, the scoped hotfix, or the #4037 carry-forward
 (no path in nightly..cut reaches apr inference). Otherwise it is STALE BY SHA and the release re-measures.
 
-    python3 scripts/lib/nightly_admission.py <nightly root> <cut sha> <out dir> <host>...
+    python3 scripts/lib/nightly_admission.py [--ladder <contract>] <nightly root> <cut sha> <out dir> <host>...
+      (--ladder defaults to contracts/model-capability-ladder-v1.yaml in this checkout)
       -> <out>/receipts/<host>.json, <out>/crux/<host>-{gpu,cpu}.json, <out>/crux/prompt-certification.json
          (symlinks to the chosen night's files); one line per host; exit 0 admitted, 1 refused
 """
@@ -29,6 +31,21 @@ import time
 
 REQUIRED_LANES = ("gpu", "cpu")
 SKEW_S = 300.0
+LADDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "contracts", "model-capability-ladder-v1.yaml")
+
+
+def contract_max_age(path):
+    """`ladder.release_gate.nightly.max_age_h` of the ladder contract at `path`, in hours; None when it is unreadable,
+    absent, or not a positive number. The caller refuses on None -- a built-in default would let the contract's
+    value be edited to no effect (quorum, #4045)."""
+    try:
+        import yaml
+        h = yaml.safe_load(open(path))["ladder"]["release_gate"]["nightly"]["max_age_h"]
+    except Exception:  # noqa: BLE001 -- any unreadable shape is the same refusal
+        return None
+    if isinstance(h, bool) or not isinstance(h, (int, float)) or h <= 0:
+        return None
+    return float(h)
 
 
 def _load(p):
@@ -163,11 +180,21 @@ def assemble(chosen, out):
 
 
 def main(argv):
+    ladder = LADDER
+    if argv[:1] == ["--ladder"]:
+        if len(argv) < 2:
+            sys.stderr.write("--ladder needs a value\n")
+            return 2
+        ladder, argv = argv[1], argv[2:]
     if len(argv) < 4:
-        sys.stderr.write("usage: nightly_admission.py <nightly root> <cut sha> <out dir> <host>...\n")
+        sys.stderr.write("usage: nightly_admission.py [--ladder <contract>] <nightly root> <cut sha> <out dir> <host>...\n")
         return 2
     root, cut, out, hosts = argv[0], argv[1], argv[2], argv[3:]
-    max_age = float(os.environ.get("NIGHTLY_MAX_AGE_H", "24"))
+    max_age = contract_max_age(ladder)
+    if max_age is None:
+        sys.stderr.write("nightly_admission: %s states no positive ladder.release_gate.nightly.max_age_h -- refusing "
+                         "rather than assuming a window (#4045)\n" % ladder)
+        return 2
     chosen, refused = select(load_verdicts(root), hosts, time.time(), git_is_ancestor(cut), max_age)
     for h in hosts:
         if h in chosen:

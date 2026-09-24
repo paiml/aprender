@@ -1485,7 +1485,7 @@ sys.exit(1 if crux_smoke_scope.judge(L, sys.argv[2], sys.argv[3], sys.argv[4], s
 fi
 # #4040: --nightly <root> judges the release on last night's long certification (scripts/certify_nightly.sh)
 # instead of receipts measured for this cut. Admission (scripts/lib/nightly_admission.py): per REQUIRED host,
-# the newest GREEN nightly, at most NIGHTLY_MAX_AGE_H (24) hours old, at the cut or an ancestor of it. Its
+# the newest GREEN nightly, at most the contract's ladder.release_gate.nightly.max_age_h hours old, at the cut or an ancestor of it. Its
 # receipts then bind to the cut like any other -- through equivalence / the #4037 carry-forward, or STALE.
 if [ -n "$NIGHTLY_ROOT_DIR" ]; then
   NIGHTLY_OUT=$(mktemp -d)
@@ -1493,7 +1493,7 @@ if [ -n "$NIGHTLY_ROOT_DIR" ]; then
     || { echo "decline: the required hosts cannot be read from $LADDER"; exit 2; }
   # shellcheck disable=SC2086
   if ! python3 scripts/lib/nightly_admission.py "$NIGHTLY_ROOT_DIR" "$CUT_COMMIT" "$NIGHTLY_OUT" $nightly_hosts; then
-    echo "RED   no admissible nightly for this cut -- a release is judged on a GREEN nightly <=24 h old at an ancestor, or re-measured in full (#4040)"
+    echo "RED   no admissible nightly for this cut -- a release is judged on a GREEN nightly within ladder.release_gate.nightly.max_age_h at an ancestor, or re-measured in full (#4040)"
     exit 1
   fi
   RECEIPT_DIR="$NIGHTLY_OUT/receipts"; CRUX_DIR="$NIGHTLY_OUT/crux"
