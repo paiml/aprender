@@ -3292,6 +3292,11 @@ jobs:
       # mutant introduced/touched by this PR must be caught by a test. Tune up
       # via repo variable MUTANTS_MAX_MISSED if a diff legitimately can't reach 0.
       MUTANTS_MAX_MISSED: ${{ vars.MUTANTS_MAX_MISSED || '0' }}
+      # #4142 (operator ruling via the cop, 2026-09-24): a PR diff of more than MUTANTS_CAP mutants is RED
+      # "too many to judge" -- about 60 fit this job's hour at -j 4 (measured: ~85 s per aprender-contracts
+      # mutant). mutants-nightly.yml judges main's merges with no cap.
+      MUTANTS_CAP: ${{ vars.MUTANTS_CAP || '60' }}
+      MUTANTS_JOBS: ${{ vars.MUTANTS_JOBS || '4' }}
     steps:
       - name: Pre-checkout ownership restore (EACCES self-heal)
         # Same guard as workspace-test: a hard-killed docker job leaves
@@ -3396,7 +3401,7 @@ jobs:
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace \
-            -e MUTANTS_MAX_MISSED \
+            -e MUTANTS_MAX_MISSED -e MUTANTS_CAP -e MUTANTS_JOBS \
             "$IMAGE" \
             bash -c '
               set -uo pipefail
@@ -3434,54 +3439,23 @@ jobs:
                 echo "::error::cargo-mutants still not runnable after install"
                 exit 1
               }
-              # --in-diff pr.diff: mutate only PR-touched lines.
-              # cargo-mutants exits non-zero when mutants survive; we still
-              # parse outcomes.json so the threshold (MUTANTS_MAX_MISSED) is
-              # explicit and the failure message is actionable.
-              cargo mutants --no-times --timeout 300 --in-place \
-                --in-diff pr.diff -- --lib
-              MUT_EXIT=$?
-              echo "cargo-mutants exit: $MUT_EXIT"
-              OUTCOMES=mutants.out/outcomes.json
-              if [ ! -f "$OUTCOMES" ]; then
-                # #2481 F-7: this used to be an unconditional `exit 0` on the
-                # theory that no outcomes file means no mutants in the diff.
-                # That is one reason the file can be absent. The other is that
-                # cargo-mutants CRASHED before writing it -- and that passed
-                # too. MUT_EXIT distinguishes them, and it was captured on the
-                # line above and then never tested.
-                if [ "$MUT_EXIT" -ne 0 ]; then
-                  echo "::error::cargo-mutants exited $MUT_EXIT and wrote no outcomes.json. The gate cannot tell whether the diff was clean or the run died, so it refuses rather than passing."
-                  exit 1
-                fi
-                echo "No mutants.out/outcomes.json and cargo-mutants exited 0 — 0 mutants in diff. Pass."
-                exit 0
-              fi
-              MISSED=$(grep -o "\"summary\"[^}]*\"missed\":[0-9]*" "$OUTCOMES" \
-                | grep -o "\"missed\":[0-9]*" | grep -o "[0-9]*" | head -1)
-              TIMEOUT=$(grep -o "\"timeout\":[0-9]*" "$OUTCOMES" \
-                | grep -o "[0-9]*" | head -1)
-              # #2481 F-7: `MISSED=${MISSED:-0}` made an UNPARSEABLE outcomes.json
-              # read as "zero missed" -- so a cargo-mutants JSON format change
-              # would silently disarm this gate rather than break it. Not being
-              # able to measure is not the same as measuring zero.
-              if [ -z "$MISSED" ] || [ -z "$TIMEOUT" ]; then
-                echo "::error::could not parse missed/timeout out of $OUTCOMES. The gate refuses rather than assuming zero — check whether cargo-mutants changed its JSON shape."
-                head -40 "$OUTCOMES" || true
-                exit 1
-              fi
-              echo "Diff-scoped mutation result: missed=$MISSED timeout=$TIMEOUT (max allowed missed=$MUTANTS_MAX_MISSED)"
-              UNCAUGHT=$((MISSED + TIMEOUT))
-              if [ "$UNCAUGHT" -gt "$MUTANTS_MAX_MISSED" ]; then
-                echo "::error::$UNCAUGHT mutant(s) survived/timed-out on the PR diff (> $MUTANTS_MAX_MISSED allowed). New code is under-tested — add tests that kill these mutants. This would have merged SILENTLY before (PMAT gap #1)."
-                exit 1
-              fi
-              echo "All diff-scoped mutants caught (or within threshold). Pass."
-              exit 0
+              # #4142: the gate lives in scripts/mutants_diff_gate.sh, under a stubbed-cargo case table.
+              # It mutates with --workspace (without it only the root facade was mutated, so every crate
+              # diff listed 0 mutants and passed), goes RED over MUTANTS_CAP ("too many to judge"), runs
+              # -j MUTANTS_JOBS in copies, and refuses a dead run, an unparseable result, or a tested count
+              # that differs from the listed one.
+              # The crates workspace-test --excludes (hardware; aprender-compute segfaults at harness exit on a
+              # clean pass) are DERIVED from its nextest line, never restated, and kept out of mutation too.
+              EXCL=$(grep -m1 -E "^[[:space:]]+cargo nextest run --profile ci --workspace --lib" .github/workflows/ci.yml \
+                | grep -oE -- "--exclude [a-z0-9_-]+" | sed "s/^--exclude /--exclude-crate /" | tr "\n" " ")
+              [ -n "$EXCL" ] || { echo "::error::no --exclude list found on the workspace-test nextest line"; exit 1; }
+              # shellcheck disable=SC2086
+              bash scripts/mutants_diff_gate.sh pr.diff --cap "$MUTANTS_CAP" --jobs "$MUTANTS_JOBS" \
+                --max-missed "$MUTANTS_MAX_MISSED" --out mutants-gate $EXCL
             '
       - name: Upload mutation results
         if: always() && steps.prdiff.outputs.has_rs == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: mutation-results
-          path: mutants.out/
+          path: mutants-gate/
