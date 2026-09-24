@@ -19,9 +19,10 @@ INVOKE_RE='llvm-cov[[:space:]]+report([[:space:]]|$)'
 COMMENT_RE='^[[:space:]]*@?#'
 
 scan() {
-  local bad=0 f n line
+  local bad=0 scanned=0 f n line
   for f in "$@"; do
     [ -f "$f" ] || continue
+    scanned=$((scanned + 1))
     n=0
     while IFS= read -r line || [ -n "$line" ]; do
       n=$((n + 1))
@@ -33,6 +34,12 @@ scan() {
       fi
     done < "$f"
   done
+  # Anti-vacuity: a scan that read nothing proves nothing (run from the wrong
+  # directory, or every path missing). It must fail, not pass silently.
+  if [ "$scanned" -eq 0 ]; then
+    echo "check_coverage_report_scoped: scanned 0 files (none of: $*) -- refusing to pass vacuously"
+    return 2
+  fi
   if [ "$bad" -gt 0 ]; then
     echo "check_coverage_report_scoped: $bad unscoped \`llvm-cov report\` invocation(s). Scope each with"
     echo "  \$(python3 scripts/coverage_report_scope.py [--exclude NAME]) or -p/--package: an unscoped"
@@ -59,11 +66,13 @@ self_test() {
     rc=0; scan "$dir/$c.mk" > /dev/null || rc=$?
     [ "$rc" -eq 1 ] || { echo "SELF-TEST FAIL: $c must be flagged (rc=$rc)"; fails=$((fails + 1)); }
   done
+  rc=0; scan "$dir/does-not-exist.mk" > /dev/null || rc=$?
+  [ "$rc" -eq 2 ] || { echo "SELF-TEST FAIL: scanning 0 files must refuse (rc=$rc)"; fails=$((fails + 1)); }
   for c in derived explicit package comment test; do
     rc=0; scan "$dir/$c.mk" > /dev/null || rc=$?
     [ "$rc" -eq 0 ] || { echo "SELF-TEST FAIL: $c must pass (rc=$rc)"; fails=$((fails + 1)); }
   done
-  if [ "$fails" -eq 0 ]; then echo "check_coverage_report_scoped self-test: 7/7 cases OK"; return 0; fi
+  if [ "$fails" -eq 0 ]; then echo "check_coverage_report_scoped self-test: 8/8 cases OK"; return 0; fi
   return 1
 }
 
