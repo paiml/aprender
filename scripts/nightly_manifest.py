@@ -162,7 +162,10 @@ def sha256_file(path):
 
 def probe_version(exe):
     # Empty cwd, no stdin, a hard timeout: every shipped bin answers --version
-    # (clap), and a bin that cannot is not "working".
+    # (clap), and a bin that cannot is not "working". The workflow passes a
+    # RELATIVE --bin-dir; resolved against the empty cwd it names nothing, and
+    # every bin read as version-failed rc=127 -- so resolve it first.
+    exe = os.path.abspath(exe)
     with tempfile.TemporaryDirectory() as cwd:
         try:
             p = subprocess.run([exe, "--version"], cwd=cwd, stdin=subprocess.DEVNULL,
@@ -368,6 +371,19 @@ def self_test():
     gt = lambda sha: {"status": "green", "green_sha": sha, "tools": {}}  # noqa: E731
 
     print("gate:")
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "rel"))
+        with open(os.path.join(d, "rel", "fake"), "w") as f:
+            f.write("#!/bin/sh\necho 'fake 0.1.0 (abc123def)'\n")
+        os.chmod(os.path.join(d, "rel", "fake"), 0o755)
+        here = os.getcwd()
+        os.chdir(d)
+        try:
+            got = probe_version(os.path.join("rel", "fake"))
+        finally:
+            os.chdir(here)
+    check("probe_version runs a RELATIVE bin path (the workflow's --bin-dir)",
+          got, (0, "fake 0.1.0 (abc123def)"))
     check("no prev manifest, CI green -> build", gate(S, None, T, green)[0], "build")
     check("HEAD == green_sha on every target -> reused (no work, no build)",
           gate(S, man({t: gt(S) for t in T}), T, [])[0], "reused")
