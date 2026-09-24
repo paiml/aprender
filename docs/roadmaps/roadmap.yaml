@@ -20610,3 +20610,21 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4259
+  github_issue: 4259
+  item_type: task
+  title: 'GPU argmax kernel keeps the later index on an exact tie; CPU argmax keeps the first — breaks greedy token identity once #4215(b) moves argmax to GPU'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:01:41Z
+  updated: 2026-09-24T12:01:41Z
+  spec: null
+  acceptance_criteria:
+  - 'The GPU argmax returns the FIRST index of an exact maximum, as the CPU argmax does; a red-first tie-break falsifier covers ties within a thread, across threads, and across blocks.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Ported from c8ce988c3 (perf/4215, based on 0.69.3) onto main; prerequisite for #4215(b), greedy GPU argmax.'

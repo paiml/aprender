@@ -16,3 +16,5 @@ mod barrier_bounds;
 mod gpu_correctness;
 #[cfg(feature = "cuda")]
 mod ptx_analysis;
+#[cfg(feature = "cuda")]
+mod tie_break;
