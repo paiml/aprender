@@ -20610,3 +20610,21 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4186
+  github_issue: 4186
+  item_type: task
+  title: 'P0: dogfood hosts run ONLY the latest green nightly apr/pv — apr_bin.sh + pv_bin.sh refuse anything older (arbiter manifest, fail closed)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-49
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - nightly mode (APR_BIN_REQUIRE / PV_BIN_REQUIRE=nightly) accepts only the manifest's green binary
+  - 'case table — stale/tagged/missing/malformed/stale-manifest/denylisted refuse; nightly accepts'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: [P0]
+  notes: null

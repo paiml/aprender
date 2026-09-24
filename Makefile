@@ -267,6 +267,8 @@ tier3:
 	@echo "Checking no test asserts about the fd 0 it inherited (aprender#2307)..."
 	@bash scripts/check_hermetic_stdin_tests.sh --self-test
 	@bash scripts/check_hermetic_stdin_tests.sh
+	@echo "Checking fleet hosts accept only the manifest nightly apr/pv (aprender#4186)..."
+	@bash scripts/check_nightly_pin.sh --self-test
 	@if [ -d tests/golden ]; then \
 		if . scripts/apr_bin.sh 2>/dev/null; then \
 			echo "Running probar golden regression with profiling... ($$APR)"; \

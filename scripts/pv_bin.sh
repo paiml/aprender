@@ -722,6 +722,37 @@ pv_bin_assert_fresh() {
 # per-shell ones: a caller that sources this file, cd's into a different
 # checkout and sources it again must get that checkout's answer, not the first
 # one's.
+# NIGHTLY MODE (#4186). On a fleet host, or with PV_BIN_REQUIRE=nightly, the only
+# acceptable pv is the one the arbiter's nightly manifest names; HEAD
+# provenance below is for dev trees and PR CI. scripts/nightly_pin.sh holds the
+# rule and scripts/check_nightly_pin.sh its case table. Unknown mode -> refuse.
+PV_NP_RC=0
+PV_NP_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || PV_NP_ROOT=""
+if [ -n "$PV_NP_ROOT" ] && [ -f "$PV_NP_ROOT/scripts/nightly_pin.sh" ]; then
+    . "$PV_NP_ROOT/scripts/nightly_pin.sh" || { printf 'NIGHTLY PIN REFUSED: cannot load %s/scripts/nightly_pin.sh\n' "$PV_NP_ROOT" >&2; return 1 2>/dev/null || exit 1; }
+    nightly_pin_mode PV_BIN_REQUIRE || PV_NP_RC=$?
+elif { [ -n "${PV_BIN_REQUIRE:-}" ] && [ "${PV_BIN_REQUIRE}" != "head" ]; } \
+    || { [ -z "${PV_BIN_REQUIRE:-}" ] && [ "${GITHUB_ACTIONS:-}" != "true" ] \
+        && [ -e "${APR_FLEET_MARKER:-$HOME/.config/aprender/fleet-nightly}" ]; }; then
+    # nightly mode is asked for (explicitly, or by the fleet marker) and the rule
+    # that enforces it is not here: refuse rather than fall back to HEAD.
+    printf 'NIGHTLY PIN REFUSED: nightly mode (%s=%s, fleet marker) but scripts/nightly_pin.sh is not in this checkout\n' PV_BIN_REQUIRE "${PV_BIN_REQUIRE:-}" >&2
+    return 1 2>/dev/null || exit 1
+else
+    PV_NP_RC=1
+fi
+if [ "$PV_NP_RC" -eq 2 ]; then
+    return 1 2>/dev/null || exit 1
+fi
+if [ "$PV_NP_RC" -eq 0 ]; then
+    PV=$(nightly_pin_resolve pv PV_BIN PV_BIN_REQUIRE) || { return 1 2>/dev/null || exit 1; }
+    export PV
+    if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
+        printf '%s\n' "$PV"
+    fi
+    return 0 2>/dev/null || exit 0
+fi
+
 PV_BIN_META_LOADED=0
 PV_BIN_DECLARED=""
 

@@ -548,6 +548,37 @@ apr_bin_assert_fresh() {
 # per-shell one: a caller that sources this file, cd's into a different
 # checkout and sources it again must get that checkout's answer, not the
 # first one's.
+# NIGHTLY MODE (#4186). On a fleet host, or with APR_BIN_REQUIRE=nightly, the only
+# acceptable apr is the one the arbiter's nightly manifest names; HEAD
+# provenance below is for dev trees and PR CI. scripts/nightly_pin.sh holds the
+# rule and scripts/check_nightly_pin.sh its case table. Unknown mode -> refuse.
+APR_NP_RC=0
+APR_NP_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || APR_NP_ROOT=""
+if [ -n "$APR_NP_ROOT" ] && [ -f "$APR_NP_ROOT/scripts/nightly_pin.sh" ]; then
+    . "$APR_NP_ROOT/scripts/nightly_pin.sh" || { printf 'NIGHTLY PIN REFUSED: cannot load %s/scripts/nightly_pin.sh\n' "$APR_NP_ROOT" >&2; return 1 2>/dev/null || exit 1; }
+    nightly_pin_mode APR_BIN_REQUIRE || APR_NP_RC=$?
+elif { [ -n "${APR_BIN_REQUIRE:-}" ] && [ "${APR_BIN_REQUIRE}" != "head" ]; } \
+    || { [ -z "${APR_BIN_REQUIRE:-}" ] && [ "${GITHUB_ACTIONS:-}" != "true" ] \
+        && [ -e "${APR_FLEET_MARKER:-$HOME/.config/aprender/fleet-nightly}" ]; }; then
+    # nightly mode is asked for (explicitly, or by the fleet marker) and the rule
+    # that enforces it is not here: refuse rather than fall back to HEAD.
+    printf 'NIGHTLY PIN REFUSED: nightly mode (%s=%s, fleet marker) but scripts/nightly_pin.sh is not in this checkout\n' APR_BIN_REQUIRE "${APR_BIN_REQUIRE:-}" >&2
+    return 1 2>/dev/null || exit 1
+else
+    APR_NP_RC=1
+fi
+if [ "$APR_NP_RC" -eq 2 ]; then
+    return 1 2>/dev/null || exit 1
+fi
+if [ "$APR_NP_RC" -eq 0 ]; then
+    APR=$(nightly_pin_resolve apr APR_BIN APR_BIN_REQUIRE) || { return 1 2>/dev/null || exit 1; }
+    export APR
+    if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
+        printf '%s\n' "$APR"
+    fi
+    return 0 2>/dev/null || exit 0
+fi
+
 APR_BIN_META_LOADED=0
 
 APR_BIN_RC=0
