@@ -649,8 +649,11 @@ cp "$GUARD_TREE" "$sfix/scripts/guard_tree.sh"
 #     exactly -- a guard that deletes $GUARD_TREE_RUN_DIR (workers inherit it)
 #     -- and the mutant deletes the new check, so each assertion can fail.
 # ---------------------------------------------------------------------------
-vmutant_of() { # vmutant_of SRC DST -- guard_tree.sh with the #4108 vacuity block deleted
+vmutant_of() { # vmutant_of SRC DST -- guard_tree.sh with the #4108 vacuity block deleted; rc 1 if the edit is wrong
     sed '/^# #4108 -- VACUITY IS A FAILURE\./,/^printf .dispatch: up to/{/^printf .dispatch: up to/!d;}' "$1" >"$2"
+    # The mutant must DIFFER from the source AND keep the summary tail. A drifted end anchor makes the sed range
+    # run to EOF, and a script truncated there also exits 0 -- a false PASS for rows 29/31 (review lane B).
+    ! cmp -s "$1" "$2" && grep -q '^printf .%d checks, %d failed' "$2" && ! grep -q '#4108 -- VACUITY' "$2"
 }
 vfix="$(mktemp -d)" || exit 1
 cleanup_dirs="$cleanup_dirs $vfix"
@@ -672,9 +675,8 @@ else
     fail_row "28: a scratch dir lost mid-run" "rc=$v_rc; tail: $(tail -3 <<<"$v_out" | tr '\n' '|')"
 fi
 
-vmutant_of "$GUARD_TREE" "$vfix/scripts/guard_tree.sh"
-if cmp -s "$GUARD_TREE" "$vfix/scripts/guard_tree.sh"; then
-    fail_row "29: mutant without the #4108 check" "the sed did not apply -- the mutant is the original"
+if ! vmutant_of "$GUARD_TREE" "$vfix/scripts/guard_tree.sh"; then
+    fail_row "29: mutant without the #4108 check" "vmutant_of did not produce the intended mutant (no-op or truncated)"
 else
     vm_out="$(cd "$vfix" && bash scripts/guard_tree.sh 2>&1)"
     vm_rc=$?
@@ -703,14 +705,41 @@ if [ "$e_rc" -ne 0 ] && grep -q '0 checks executed' <<<"$e_out"; then
 else
     fail_row "30: an empty guard universe" "rc=$e_rc; tail: $(tail -3 <<<"$e_out" | tr '\n' '|')"
 fi
-vmutant_of "$GUARD_TREE" "$efix/scripts/guard_tree.sh"
-em_out="$(cd "$efix" && bash scripts/guard_tree.sh 2>&1)"
-em_rc=$?
-: "${em_out:=}"
-if [ "$em_rc" -eq 0 ]; then
+if ! vmutant_of "$GUARD_TREE" "$efix/scripts/guard_tree.sh"; then
+    em_rc=-1
+    em_out="vmutant_of did not produce the intended mutant (no-op or truncated)"
+else
+    em_out="$(cd "$efix" && bash scripts/guard_tree.sh 2>&1)"
+    em_rc=$?
+fi
+if [ "$em_rc" -eq 0 ] && grep -q '^0 checks, 0 failed$' <<<"$em_out"; then
     pass_row "31: mutant without the #4108 check passes the empty universe -- row 30 can fail"
 else
-    fail_row "31: mutant without the #4108 check" "expected exit 0 on the empty universe; rc=$em_rc"
+    fail_row "31: mutant without the #4108 check" "expected the vacuous exit 0 on the empty universe; rc=$em_rc; $(tail -1 <<<"$em_out")"
+fi
+
+# 32 (review lane A): the plan TRUNCATED in place, dir intact -- the tally reads fewer lines than were planned
+tfix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $tfix"
+mkdir -p "$tfix/.empty-git-template" "$tfix/scripts"
+git -C "$tfix" init -q --template="$tfix/.empty-git-template"
+git -C "$tfix" config user.email test@example.invalid
+git -C "$tfix" config user.name guard_tree_test
+cp "$GUARD_TREE" "$tfix/scripts/guard_tree.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$tfix/scripts/check_t_good.sh"
+cat >"$tfix/scripts/check_t_truncate.sh" <<'SH'
+#!/usr/bin/env bash
+truncate -s 0 "${GUARD_TREE_RUN_DIR:?}/plan"
+exit 0
+SH
+git -C "$tfix" add -A
+git -C "$tfix" -c commit.gpgsign=false commit -q -m tfixture
+t_out="$(cd "$tfix" && bash scripts/guard_tree.sh 2>&1)"
+t_rc=$?
+if [ "$t_rc" -ne 0 ] && grep -q 'the plan held 2 guard(s) and 0 were accounted' <<<"$t_out"; then
+    pass_row "32: a plan truncated in place fails naming planned vs accounted (rc=$t_rc)"
+else
+    fail_row "32: a plan truncated in place" "rc=$t_rc; tail: $(tail -3 <<<"$t_out" | tr '\n' '|')"
 fi
 
 printf '%d checks, %d failed\n' "$total" "$failed"
