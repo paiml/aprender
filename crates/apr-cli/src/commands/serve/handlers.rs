@@ -6,6 +6,7 @@
 
 #![allow(unused_imports)]
 #![allow(unused_variables)]
+#![allow(dead_code)]
 
 #[cfg(feature = "wgpu")]
 use axum::response::IntoResponse;
@@ -114,9 +115,22 @@ fn wgpu_detokenize_one(id: u32, vocab: &[String]) -> String {
     String::from_utf8_lossy(&gpt2_token_bytes(token)).into_owned()
 }
 
-/// PMAT-355: Qwen2 stop tokens for the WGPU greedy decode loop (`<|im_end|>`, pad).
+/// PMAT-355: Qwen2 stop conditions for the WGPU greedy decode loop.
 #[cfg(feature = "wgpu")]
-const WGPU_STOP_TOKENS: [u32; 2] = [151645, 0];
+fn wgpu_is_stop_token(token: u32) -> bool {
+    token == 151645 || token == 0
+}
+
+/// PMAT-355: Greedy argmax over a logits vector (0 when empty).
+#[cfg(feature = "wgpu")]
+fn wgpu_argmax(logits: &[f32]) -> u32 {
+    logits
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(i, _)| i as u32)
+        .unwrap_or(0)
+}
 
 /// PMAT-355: Tokens per second, guarding the zero-elapsed case.
 #[cfg(feature = "wgpu")]
@@ -251,8 +265,8 @@ fn wgpu_stream_generate(
 
     let mut completion_tokens = 0u32;
     for step in 0..max_tokens {
-        let next_token = realizar::sampling::argmax(&last_logits);
-        if realizar::sampling::is_stop(next_token, &WGPU_STOP_TOKENS) {
+        let next_token = wgpu_argmax(&last_logits);
+        if wgpu_is_stop_token(next_token) {
             break;
         }
         let text = wgpu_detokenize_one(next_token, vocab);
@@ -314,8 +328,8 @@ fn wgpu_chat_completion_blocking(
     };
 
     for step in 0..max_tokens {
-        let next_token = realizar::sampling::argmax(&last_logits);
-        if realizar::sampling::is_stop(next_token, &WGPU_STOP_TOKENS) {
+        let next_token = wgpu_argmax(&last_logits);
+        if wgpu_is_stop_token(next_token) {
             break;
         }
         output_ids.push(next_token);
@@ -1034,7 +1048,12 @@ fn start_safetensors_server_with_fallback(model_path: &Path, config: &ServerConf
 #[cfg(feature = "inference")]
 #[derive(Clone)]
 struct AprServerState {
-    transformer: Option<Arc<std::sync::Mutex<realizar::apr_transformer::AprTransformer>>>,
+    /// PMAT-4269: the APR CPU decode loop, driven through
+    /// `realizar::session::Session` (the one engine, #4263) — never
+    /// `AprTransformer::generate_with_cache*` directly.
+    transformer: Option<
+        Arc<std::sync::Mutex<realizar::session::Session<realizar::apr_transformer::AprCpuForward>>>,
+    >,
     model_type: String,
     architecture: String,
     is_transformer: bool,
@@ -1073,7 +1092,7 @@ fn run_apr_cpu_inference(
     temperature: f32,
     top_p: Option<f32>,
 ) -> std::result::Result<AprInferenceOutput, String> {
-    let transformer = state
+    let session = state
         .transformer
         .as_ref()
         .ok_or("Transformer not loaded, inference not supported")?;
@@ -1093,10 +1112,11 @@ fn run_apr_cpu_inference(
 
     let gen_start = Instant::now();
     let output_tokens = {
-        let t = transformer.lock().map_err(|_| {
+        let mut s = session.lock().map_err(|_| {
             "Transformer state corrupted (lock poisoned). Please restart the server.".to_string()
         })?;
-        t.generate_with_cache(&input_tokens, &gen_config)
+        s.generate(&input_tokens, &gen_config, &mut |_| true)
+            .map(|turn| turn.tokens)
             .map_err(|e| format!("Generate failed: {e}"))?
     };
     let gen_duration = gen_start.elapsed();
@@ -1186,15 +1206,21 @@ fn apr_cpu_reply_tokens<'a>(new_tokens: &'a [u32], stop_ids: &[u32]) -> &'a [u32
     }
 }
 
-/// #4265: the one `GenerateConfig` every APR CPU path (blocking, SSE, NDJSON) builds.
+/// #4265: the one config every APR CPU path (blocking, SSE, NDJSON) builds.
+/// PMAT-4269: it drives `Session::generate`, which has no implicit token-0 rule
+/// of its own, so 0 is added to the stop set here to keep the old
+/// `is_eos_token` contract (token 0 is always EOS).
 #[cfg(feature = "inference")]
 fn apr_cpu_generate_config(
     max_tokens: usize,
     temperature: f32,
     top_p: Option<f32>,
-    stop_tokens: Vec<u32>,
-) -> realizar::apr_transformer::GenerateConfig {
-    realizar::apr_transformer::GenerateConfig {
+    mut stop_tokens: Vec<u32>,
+) -> realizar::gguf::QuantizedGenerateConfig {
+    if !stop_tokens.contains(&0) {
+        stop_tokens.push(0);
+    }
+    realizar::gguf::QuantizedGenerateConfig {
         max_tokens,
         temperature,
         // The same default every other serve backend applies when the request is silent.
@@ -1202,10 +1228,9 @@ fn apr_cpu_generate_config(
         top_k: 0,
         // #3760: the sampler draws now; no seed is plumbed from this caller.
         seed: realizar::apr_transformer::DEFAULT_SEED,
-        repetition_penalty: 1.0,
-        trace: false,
         stop_tokens,
         cancel: realizar::generate::CancelToken::never(),
+        ..Default::default()
     }
 }
 
@@ -1304,7 +1329,9 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
                     )
                     .cyan()
                 );
-                Some(Arc::new(std::sync::Mutex::new(t)))
+                let forward = realizar::apr_transformer::AprCpuForward::new(t);
+                let session = realizar::session::Session::new(forward);
+                Some(Arc::new(std::sync::Mutex::new(session)))
             }
             Err(e) => {
                 println!(
