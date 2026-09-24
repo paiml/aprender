@@ -14,6 +14,8 @@
 #   8. refusals (exit 2): a sample under the floor, an unknown CRUX_MUTANTS, an unknown event, no labels
 #   9. the judge table refuses a thin run: CRUX_MIN_TABLE_ROWS above what it judged → a BROKE naming the floor
 #  10. MUTANT: WATCHED emptied → row 4 sees a sample where it must see all
+#  11. the REAL table in fabricated repos: a push and a merge_group head that touch the judge → all 24;
+#      an untouched push samples with its diff READ (never 'could not be read')
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
@@ -106,6 +108,41 @@ out=$(CRUX_MUTANTS=none CRUX_MIN_TABLE_ROWS=100000 timeout 600 bash "$ROOT/scrip
 case "$rc:$out" in
   1:*"under the floor of 100000"*) ok "the judge table refuses a thin run: a floor above what it judged is a BROKE" ;;
   *) broke "table floor: rc $rc, $(printf '%s' "$out" | tail -2 | tr '\n' ' ')" ;;
+esac
+
+# Rows 11-13: the REAL table in fabricated repos, one per CI shape, so the diff the table READS is tested, not a
+# hand-built file. GITHUB_BASE_REF exists only on pull_request; a push or merge group that touched the judge once
+# sampled because its diff was never read (quorum round 1, lane 1, measured). CRUX_MUTANTS_PLAN_ONLY stops after
+# the plan line.
+# The fixture commits bypass hooks: a global pre-commit hook (pmat complexity) refused them, so no HEAD existed.
+fab() { # fab <dir>: a repo holding the scripts and the golden file the table reads, one commit, origin/main on it
+  local d="$1"
+  mkdir -p "$d/crates/apr-cli/src/commands"
+  cp -r "$ROOT/scripts" "$d/scripts"
+  cp "$ROOT/crates/apr-cli/src/commands/golden_output.rs" "$d/crates/apr-cli/src/commands/"
+  git -C "$d" init -q && git -C "$d" add -A && git -C "$d" -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit --no-verify -q -m base \
+    && git -C "$d" update-ref refs/remotes/origin/main HEAD
+}
+touch_commit() { # touch_commit <dir> <path>: one commit that changes <path>
+  printf '\n# touched\n' >> "$1/$2"
+  git -C "$1" add -A && git -C "$1" -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit --no-verify -q -m "touch $2"
+}
+plan_line() { # plan_line <dir> <event>: the table's own plan line
+  ( cd "$1" && env -u GITHUB_BASE_REF -u CRUX_MUTANT_DIFF_BASE GITHUB_EVENT_NAME="$2" CRUX_MUTANTS_PLAN_ONLY=1 \
+      timeout 600 bash scripts/check_crux_inference_judge.sh 2>&1 | grep 'F6 mutants:' )
+}
+P1="$TMP/push-judge"; fab "$P1"; touch_commit "$P1" scripts/lib/crux_inference_judge.py
+git -C "$P1" update-ref refs/remotes/origin/main HEAD          # a push to main: HEAD is the origin/main tip
+l1=$(plan_line "$P1" push)
+P2="$TMP/mg-judge"; fab "$P2"; touch_commit "$P2" scripts/lib/crux_inference_judge.py
+l2=$(plan_line "$P2" merge_group)                              # the queue head: single parent == origin/main tip
+P3="$TMP/push-readme"; fab "$P3"; touch_commit "$P3" scripts/guards_nightly_manifest.txt
+git -C "$P3" update-ref refs/remotes/origin/main HEAD
+l3=$(plan_line "$P3" push)
+case "$l1|$l2|$l3" in
+  *"all, 24 of 24"*"crux_inference_judge.py"*"|"*"all, 24 of 24"*"crux_inference_judge.py"*"|"*"sample, 6 of 24"*"touches none"*)
+    ok "the REAL table reads its diff on push and merge_group: the judge touched → all 24; an untouched push samples, diff read" ;;
+  *) broke "table-read diff: push '$l1' / merge_group '$l2' / untouched push '$l3'" ;;
 esac
 
 python3 - "$PLAN" "$TMP/mutant-plan.py" <<'PY'

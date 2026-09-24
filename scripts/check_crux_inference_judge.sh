@@ -1114,8 +1114,8 @@ MUT
   MUTANTS=$(mutant_list)
   labels=$(printf '%s\n' "$MUTANTS" | cut -d'|' -f1 | paste -sd,)
   changed_arg=()
-  diff_base="${CRUX_MUTANT_DIFF_BASE:-${GITHUB_BASE_REF:+origin/$GITHUB_BASE_REF}}"
-  if [ -n "$diff_base" ] && git -C "$ROOT" diff --name-only "$diff_base...HEAD" > "$TMP/changed.txt" 2>/dev/null; then
+  # shellcheck source=scripts/lib/crux_mutant_plan.sh
+  if . "$ROOT/scripts/lib/crux_mutant_plan.sh" && crux_mutant_changed "$ROOT" "$TMP/changed.txt"; then
     changed_arg=(--changed "$TMP/changed.txt")
   fi
   plan=$(python3 "$ROOT/scripts/lib/crux_mutant_plan.py" --labels "$labels" --event "${GITHUB_EVENT_NAME:-}" \
@@ -1128,6 +1128,9 @@ MUT
     printf '  F6 mutants: %s\n' "$(python3 -c 'import json,sys; p=json.loads(sys.argv[1]); print("%s, %d of %d -- %s" % (p["mode"], len(p["selected"]), p["total"], p["reason"]))' "$plan")"
     selected=$(python3 -c 'import json,sys; print(" ".join(json.loads(sys.argv[1])["selected"]))' "$plan")
   fi
+  # CRUX_MUTANTS_PLAN_ONLY=1: the table and its plan line, no mutant (check_crux_mutant_plan.sh drives the plan
+  # through this very script in fabricated push / merge_group repos)
+  [ -n "${CRUX_MUTANTS_PLAN_ONLY:-}" ] && selected=""
   # label|the row that MUST break (#3887: a kill for the wrong reason is no kill)|sed deleting the rule
   while IFS='|' read -r label must expr; do
     [ -n "$label" ] || continue

@@ -32,6 +32,8 @@ WATCHED = (
     "scripts/lib/crux_prompt_certify.py",
     "scripts/check_crux_inference_judge.sh",
     "scripts/lib/crux_mutant_plan.py",
+    "scripts/lib/crux_mutant_plan.sh",
+    "scripts/lib/resolve_base.sh",
 )
 FULL_EVENTS = ("schedule", "workflow_dispatch")
 SAMPLED_EVENTS = ("pull_request", "merge_group", "push")
