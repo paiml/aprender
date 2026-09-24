@@ -22,7 +22,7 @@
       "stderr": [
         "agy-lane: tree witness verified: the lane read its workspace",
         "agy-lane: LANE ISOLATION VIOLATED — a shared ref changed: a lane created or moved a branch or tag (refs/heads/fix/3477-ptxas-target-portable,refs/remotes/origin/fix/3957-gate-hardening,refs/remotes/origin/release/0.69.1-batch-2)",
-        "agy-lane: lane clone /home/noah/src/aprender-wt-plans/.claude/worktrees/lane-bba01afaa-2279947 removed (the lane left it byte-identical)"
+        "agy-lane: lane clone <wt-plans>/.claude/worktrees/lane-bba01afaa-2279947 removed (the lane left it byte-identical)"
       ]
     },
     {
@@ -35,7 +35,7 @@
       "stderr": [
         "agy-lane: tree witness verified: the lane read its workspace",
         "agy-lane: LANE ISOLATION VIOLATED — a shared ref changed: a lane created or moved a branch or tag (refs/heads/d8/tok-per-sec-3981,refs/heads/fix/3477-ptxas-target-portable,refs/heads/fix/3990-chat-template-fidelity,refs/heads/release/0.69.1-batch-2,refs/remotes/origin/fix/3957-gate-hardening,refs/remotes/origin/release/0.69.1-batch-2)",
-        "agy-lane: lane clone /home/noah/src/aprender-wt-plans/.claude/worktrees/lane-bba01afaa-2279956 removed (the lane left it byte-identical)"
+        "agy-lane: lane clone <wt-plans>/.claude/worktrees/lane-bba01afaa-2279956 removed (the lane left it byte-identical)"
       ]
     },
     {
@@ -48,7 +48,7 @@
       "stderr": [
         "agy-lane: tree witness verified: the lane read its workspace",
         "agy-lane: LANE ISOLATION VIOLATED — a shared ref changed: a lane created or moved a branch or tag (refs/heads/fix/3477-ptxas-target-portable,refs/remotes/origin/release/0.69.1-batch-2)",
-        "agy-lane: lane clone /home/noah/src/aprender-wt-plans/.claude/worktrees/lane-bba01afaa-2279972 removed (the lane left it byte-identical)"
+        "agy-lane: lane clone <wt-plans>/.claude/worktrees/lane-bba01afaa-2279972 removed (the lane left it byte-identical)"
       ]
     }
   ],
@@ -736,7 +736,7 @@
     "artifact": "/run/user/1000/paiml-implement/agy/PMAT-3998/0209f4cf-058f-49af-9871-4e9440cd0502/ph1/lane-reduce.json"
   },
   "open_questions": [
-    "Exit 3 on all 3 lanes: agy-lane.sh asserts EVERY ref in the shared common dir /home/noah/src/aprender/.git, which ~40 worktrees share. The refs that moved belong to other sessions (d8/tok-per-sec-3981, fix/3477-ptxas-target-portable, fix/3990-chat-template-fidelity, release/0.69.1-batch-2, and remote refs from someone else's fetch). Shared HEAD stayed bba01afaa, the tree is clean, and every lane clone was removed byte-identical, which points to concurrent sessions and not the lanes. The rail still cannot tell them apart. Per rule 2c I did not add --concurrent-scope, and that flag does not cover refs anyway ('a new branch or tag is RED regardless'). Rerunning in this fleet will probably fail the same way. Fable decides whether to accept the claims or rerun during a quiet window.",
+    "Exit 3 on all 3 lanes: agy-lane.sh asserts EVERY ref in the shared common dir <repo>/.git, which ~40 worktrees share. The refs that moved belong to other sessions (d8/tok-per-sec-3981, fix/3477-ptxas-target-portable, fix/3990-chat-template-fidelity, release/0.69.1-batch-2, and remote refs from someone else's fetch). Shared HEAD stayed bba01afaa, the tree is clean, and every lane clone was removed byte-identical, which points to concurrent sessions and not the lanes. The rail still cannot tell them apart. Per rule 2c I did not add --concurrent-scope, and that flag does not cover refs anyway ('a new branch or tag is RED regardless'). Rerunning in this fleet will probably fail the same way. Fable decides whether to accept the claims or rerun during a quiet window.",
     "lane-reduce.sh only reported the exit-3 lanes as non-empty .err in partial_reasons and did not void them. It also reported agreed=false. Do not read its artifact as three counted FAILs.",
     "Lane models: the installed config quorum.lane_models maps lane 3 to claude-opus-4-6-thinking, but the brief rules out Claude-family lanes. So I ran the lanes under a scratch PAIML_IMPLEMENT_CONFIG with lane_models=[gemini-3.1-pro-high, gemini-3.8-flash-high, gemini-3.7-flash-high], and all three were measured from their logs. That means one family and one agy quota pool. The gpt-oss-120b-medium fallback was probed first and returned 429 RESOURCE_EXHAUSTED, so no second family was available.",
     "Schema/mode: mode=grillme with --schema quorum-lane-schema.json overriding grillme-schema.json. The verdict mapping was PASS->PASS, PASS-WITH-FIXES->FAIL, dniaw->dniaw, and the unmapped verdict was kept in a DESIGN_VERDICT= summary prefix. All 3 lanes followed it.",
