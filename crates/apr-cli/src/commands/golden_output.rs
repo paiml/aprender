@@ -2082,11 +2082,12 @@ mod golden_output_tests {
     /// 0.8B-Q4_K_M emits an instant empty block that it does not emit on the official one.
     #[test]
     fn the_on_prompt_is_the_official_template() {
-        let tpl = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../aprender-serve/src/fixtures/chat_template_3990/qwen35.jinja"
-        ))
-        .expect("f5's qwen35 fixture");
+        let Some(tpl) = workspace_file_or_skip(
+            "the_on_prompt_is_the_official_template",
+            "crates/aprender-serve/src/fixtures/chat_template_3990/qwen35.jinja",
+        ) else {
+            return;
+        };
         let (question, _) = golden_questions()
             .into_iter()
             .next()
@@ -2314,6 +2315,30 @@ mod golden_output_tests {
 
 include!("throughput.rs");
 
+/// A workspace file read at RUN time for tests (#4129, the #4048 pattern agreed with #4130).
+///
+/// `include_str!` of a path outside this crate cannot compile from the published tarball, and
+/// a run-time read that `expect`s the file panics there. In tree (the workspace's `contracts/`
+/// beside the crate) a missing file FAILS the test; only out of tree does it print
+/// `SKIP <test>: ...` and return `None`. `rel` is relative to the repository root.
+#[cfg(test)]
+fn workspace_file_or_skip(test: &str, rel: &str) -> Option<String> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    if !root.join("contracts").is_dir() {
+        eprintln!(
+            "SKIP {test}: out of tree (no {} beside this crate) - {rel} lives in the workspace, \
+             which a published crate does not carry (#4129)",
+            root.join("contracts").display()
+        );
+        return None;
+    }
+    let path = root.join(rel);
+    Some(
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("in tree, {} must be readable: {e}", path.display())),
+    )
+}
+
 /// #3914: which string the template detector is keyed on.
 ///
 /// Every triple below is MEASURED from the GGUF on disk (`general.architecture`,
@@ -2436,10 +2461,13 @@ mod golden_official_template_3990 {
     /// name for a file not on this host.
     #[test]
     fn the_golden_default_prompt_equals_llama_cpp_on_real_ggufs_3990() {
-        let cells: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../aprender-serve/src/fixtures/chat_template_3990/llama_cpp_df03399.json"
-        ))
-        .expect("oracle parses");
+        let Some(oracle) = workspace_file_or_skip(
+            "the_golden_default_prompt_equals_llama_cpp_on_real_ggufs_3990",
+            "crates/aprender-serve/src/fixtures/chat_template_3990/llama_cpp_df03399.json",
+        ) else {
+            return;
+        };
+        let cells: Vec<serde_json::Value> = serde_json::from_str(&oracle).expect("oracle parses");
         let mut ran = 0usize;
         for c in cells
             .iter()
@@ -2483,18 +2511,27 @@ mod golden_official_template_3990 {
     /// cell exactly as llama.cpp does.
     #[test]
     fn a_safetensors_tokenizer_config_is_the_golden_prompt_3990() {
-        let cfg = include_str!("../../../aprender-serve/src/fixtures/chat_template_3990/tinyllama_tokenizer_config.json");
-        let cells: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../aprender-serve/src/fixtures/chat_template_3990/llama_cpp_df03399.json"
-        ))
-        .expect("oracle parses");
+        let test = "a_safetensors_tokenizer_config_is_the_golden_prompt_3990";
+        let Some(cfg) = workspace_file_or_skip(
+            test,
+            "crates/aprender-serve/src/fixtures/chat_template_3990/tinyllama_tokenizer_config.json",
+        ) else {
+            return;
+        };
+        let Some(oracle) = workspace_file_or_skip(
+            test,
+            "crates/aprender-serve/src/fixtures/chat_template_3990/llama_cpp_df03399.json",
+        ) else {
+            return;
+        };
+        let cells: Vec<serde_json::Value> = serde_json::from_str(&oracle).expect("oracle parses");
         let c = cells
             .iter()
             .find(|c| c["model"] == "tinyllama" && c["system"] == false && c["thinking"] == false)
             .expect("the tinyllama system-less cell");
         let question = c["messages"][0]["content"].as_str().expect("question");
         assert_eq!(
-            golden_prompt_for_model(None, Some(cfg), Some("llama"), question),
+            golden_prompt_for_model(None, Some(&cfg), Some("llama"), question),
             c["prompt"].as_str().expect("prompt")
         );
     }
