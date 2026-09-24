@@ -12,6 +12,7 @@
 //! | hashes differ | FAIL `MISMATCH` — the solution proves a different statement (a weakened one, say) |
 //! | `sorryAx` among the solution's axioms | FAIL `SORRY` — it closes nothing |
 //! | a name twice | FAIL `DUPLICATE` |
+//! | no `challenge_type_hash`, or a solution with no `axioms` | FAIL `MALFORMED` — unmeasured is never closed |
 //! | otherwise | closed |
 //!
 //! Zero rows is not a pass: [`judge_rows`] declines (rc 2).
@@ -117,19 +118,19 @@ pub fn judge_rows(rows: &[Row], r: &mut Report) -> Closure {
             ));
             continue;
         };
+        let Some(axioms) = &row.axioms else {
+            r.fail(format!(
+                "MALFORMED {ch} -- a solution with no axioms list: its sorry-freedom was never measured"
+            ));
+            continue;
+        };
         if c != s {
             r.fail(format!(
                 "MISMATCH {n} -- it proves a different statement than {ch} pins (challenge {c}, solution {s})"
             ));
             continue;
         }
-        if row
-            .axioms
-            .as_deref()
-            .unwrap_or_default()
-            .iter()
-            .any(|a| a == SORRY_AXIOM)
-        {
+        if axioms.iter().any(|a| a == SORRY_AXIOM) {
             r.fail(format!(
                 "SORRY {n} -- the solution rests on {SORRY_AXIOM}: it closes nothing"
             ));

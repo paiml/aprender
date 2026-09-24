@@ -181,6 +181,21 @@ fn a_row_without_a_challenge_hash_is_malformed() {
 }
 
 #[test]
+fn a_solution_without_an_axioms_list_is_malformed_not_closed() {
+    let (r, c) = judge(&[row("A.f", Some(h(1)), Some(h(1)), None)]);
+    assert!(r.reject);
+    assert_eq!(c.closed, 0);
+    let f = fails(&r);
+    assert_eq!(f.len(), 1, "{f:?}");
+    assert!(
+        f[0].starts_with("FAIL  MALFORMED PvlChallenge.A.f"),
+        "{}",
+        f[0]
+    );
+    assert!(f[0].contains("no axioms list"), "{}", f[0]);
+}
+
+#[test]
 fn zero_rows_declines_and_is_never_a_pass() {
     let (r, c) = judge(&[]);
     assert!(!r.reject);
