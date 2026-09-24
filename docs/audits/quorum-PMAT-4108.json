@@ -15,7 +15,9 @@
    "model": "gemini-3.8-flash-high",
    "family": "google",
    "verdict": "PASS",
-   "findings": 11
+   "findings": 11,
+   "counted": false,
+   "void_reason": "cop ruling 2026-09-24: the .git/config tracking stanza is a write BY the lane into shared .git, not foreign churn"
   },
   {
    "lane": 2,
@@ -35,12 +37,8 @@
    "note": "ran scripts/tests/guard_tree_test.sh: 40/40; enumerated callers ci.yml:1096, Makefile:759, predict_merge.sh:157, check_guards_are_wired.sh:107"
   }
  ],
- "agreed": true,
- "verdict": "PASS 3/3",
+ "agreed": false,
+ "verdict": "2/3 counted \u2014 NOT armable; superseded by a fresh full round (no composed receipts)",
  "receipt_lint_note": "single haiku seat recorded by hand; cop overrides receipt-lint's refusal until tooling lands",
- "open_for_cop": [
-  "agy lane 1 exited 3: its .git/config delta is a branch.<name>.remote/merge stanza from a tracking-branch creation (not a push -u) \u2014 ruling requested whether that counts under (a)-(c)",
-  "row 36 (unreadable guard) cannot discriminate when the suite runs as root (chmod 000 is readable to root); CI runners are non-root"
- ],
  "prior_rounds": "ph5: gemini-3.1-pro FAIL (|| exit 1 declined with measurement; --dry-run count check adopted as row 37), 3.8/3.7 PASS"
 }
