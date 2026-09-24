@@ -1,6 +1,24 @@
-# PVL-001 formalization record for ProvableContracts. EV-6b (#4199) lands `scope` only; EV-8b adds the rest of the
-# mathlib-initiative v0.4 schema (main_results, status.axioms, capstones, sorry_count, review, automation). Until
-# then `pv discharge check` reads the default pinned axioms (propext, Classical.choice, Quot.sound).
+# PVL-001 formalization record for ProvableContracts, mathlib-initiative schema v0.4 (EV-6b #4199 landed `scope`;
+# EV-8b #4082 the rest). `pv discharge check --validate-formalization` MEASURES the factual fields: every
+# `main_results` entry must be a theorem discharge-summary.json lists, `status.axioms` must be the pinned kernel set,
+# and `sorry_count` must equal the escape scan's count. A stale number here is RED, so edit it with the tree.
+main_results:
+  - ProvableContracts.CrossEntropy.cross_entropy_nonneg
+  - ProvableContracts.CrossEntropy.log_softmax_le_zero
+  - ProvableContracts.Attention.attention_weights_sum_to_one
+  - ProvableContracts.AttentionScaling.softmax_max_subtraction_invariant
+  - ProvableContracts.LayerNorm.mean_layernorm_centering
+  - ProvableContracts.RMSNorm.rms_pos
+  - ProvableContracts.Gelu.gelu_nonneg_of_nonneg
+status:
+  axioms: [propext, Classical.choice, Quot.sound]
+# Theorems that get an EXACT axiom pin in Axioms.lean (the rest get a subset pin). None yet.
+capstones: []
+sorry_count: 0
+review:
+  status: self-assessed
+automation:
+  methods: [simp, ring, linarith, nlinarith, norm_num, positivity, omega, field_simp]
 scope: >-
   NOT covered by the discharge gate: (1) the Rust binding. A contract names a Lean theorem by a string in YAML,
   and nothing checks that the Rust code implements the statement the theorem proves (PVL-F5). (2) The YAML parser

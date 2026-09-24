@@ -198,6 +198,86 @@ pub fn summarize(
     }
 }
 
+/// Where L4 credit comes from (EV-8b): a discharge summary beside the Lean base, or — with none to read — the
+/// ONT-2a scan of the tree's own `.lean` text, which the report labels `self-declared`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum L4Source {
+    Discharge,
+    #[default]
+    SelfDeclared,
+}
+
+/// What a summary grants: the theorems it discharges, or none and the first reason why.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Discharged {
+    pub theorems: BTreeSet<String>,
+    /// `None` when the summary grants; otherwise why it grants nothing (`stale discharge`, `lake_exit 1`, …).
+    pub withheld: Option<String>,
+}
+
+impl Discharged {
+    /// Does this grant the equation's `lean_theorem`? Same naming rule as [`claim_derived`].
+    #[must_use]
+    pub fn grants(&self, theorem: &str) -> bool {
+        let t = theorem.trim().trim_matches('"');
+        self.theorems.contains(t) || self.theorems.contains(&format!("ProvableContracts.{t}"))
+    }
+}
+
+/// `n/m` with `n == m` and `m > 0`: every pinned statement was compared and closed.
+fn all_challenges_closed(closed: Option<&str>) -> bool {
+    let Some((n, m)) = closed.and_then(|c| c.split_once('/')) else {
+        return false;
+    };
+    matches!((n.trim().parse::<u32>(), m.trim().parse::<u32>()), (Ok(n), Ok(m)) if m > 0 && n == m)
+}
+
+/// L4 credit from a summary: its theorems, only when every Lean step exited 0, its `tree_sha` is the CURRENT Lean
+/// tree's, and every challenge closed. Anything else grants nothing, and says why — a stale or red summary is the
+/// andon, never a partial credit.
+#[must_use]
+pub fn discharged(s: &Summary, current_tree_sha: Option<&str>) -> Discharged {
+    let withheld = if s.tree_sha.is_none() || s.tree_sha.as_deref() != current_tree_sha {
+        Some(format!(
+            "stale discharge: summary tree_sha {} != current lean tree {}",
+            s.tree_sha.as_deref().unwrap_or("null"),
+            current_tree_sha.unwrap_or("unknown")
+        ))
+    } else if !s.is_green() {
+        Some(format!(
+            "red discharge: build_exit {:?}, lake_exit {:?}, leanchecker_exit {:?}, axioms_ok {}, escapes_ok {}",
+            s.build_exit, s.lake_exit, s.leanchecker_exit, s.axioms_ok, s.escapes_ok
+        ))
+    } else if !all_challenges_closed(s.challenges_closed.as_deref()) {
+        Some(format!(
+            "challenges not closed: {}",
+            s.challenges_closed.as_deref().unwrap_or("never judged")
+        ))
+    } else {
+        None
+    };
+    let theorems = if withheld.is_none() {
+        s.derived().into_iter().map(str::to_string).collect()
+    } else {
+        BTreeSet::new()
+    };
+    Discharged { theorems, withheld }
+}
+
+/// `git rev-parse HEAD:./` in `lean_dir`: the tree a fresh summary must name. `None` outside a git checkout, or
+/// when the dir is not in HEAD.
+#[must_use]
+pub fn current_tree_sha(lean_dir: &Path) -> Option<String> {
+    let o = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD:./"])
+        .current_dir(lean_dir)
+        .output()
+        .ok()?;
+    let sha = String::from_utf8_lossy(&o.stdout).trim().to_string();
+    (o.status.success() && !sha.is_empty()).then_some(sha)
+}
+
 #[cfg(test)]
 #[path = "summary_tests.rs"]
 mod tests;
