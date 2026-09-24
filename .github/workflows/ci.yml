@@ -388,6 +388,16 @@ jobs:
           }
           parent="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}"
           reg="/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}"
+          # infra#1059: admit this target unit against gx10's disk budget BEFORE creating it
+          # (free >= 50G + 25G x (live+1), live < 2; waits <=20m, then exit 1). The admit
+          # record is what the runner's JOB_COMPLETED hook reaps, and nothing else. Hosts
+          # without the gate skip; gx10 exports CI_TARGET_ADMIT_REQUIRED=1, so a missing
+          # gate there is red, never a silent skip.
+          if command -v ci-target-admit >/dev/null 2>&1; then
+            ci-target-admit "${parent}/run-${GITHUB_RUN_ID}" || exit 1
+          elif [ "${CI_TARGET_ADMIT_REQUIRED:-0}" = 1 ]; then
+            echo "::error::infra#1059: ci-target-admit is required on ${RUNNER_NAME:-this runner} and is missing"; exit 1
+          fi
           heal_path /mnt/nvme-raid0/targets/aprender-ci "${parent}/run-${GITHUB_RUN_ID}"
           heal_path /mnt/nvme-raid0/cargo-ci/registry "$reg"
           ls -ld "$parent" "${parent}/run-${GITHUB_RUN_ID}" "$reg"
@@ -891,11 +901,17 @@ jobs:
           # workspace. Runner (noah:1000) can't git-clean them on next run
           # → checkout fails → CI breaks. This runs inside the container
           # (as root) restoring host ownership for subsequent bare-metal jobs.
+          # infra#1059: mount the target unit only if it exists. When the disk
+          # admit gate refused it, a bind mount here would make docker create the
+          # refused unit as root, unrecorded, so the reap hook would never free it.
+          unit="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}"
+          target_mount=()
+          if [ -d "$unit" ]; then target_mount=(-v "${unit}:/workspace/target"); fi
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            "${target_mount[@]}" \
             "$IMAGE" \
             bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
 
@@ -1746,6 +1762,16 @@ jobs:
             done
             mkdir -p "$path"
           }
+          # infra#1059: admit this target unit against gx10's disk budget BEFORE creating it
+          # (free >= 50G + 25G x (live+1), live < 2; waits <=20m, then exit 1). The admit
+          # record is what the runner's JOB_COMPLETED hook reaps, and nothing else. Hosts
+          # without the gate skip; gx10 exports CI_TARGET_ADMIT_REQUIRED=1, so a missing
+          # gate there is red, never a silent skip.
+          if command -v ci-target-admit >/dev/null 2>&1; then
+            CI_TARGET_ADMIT_WAIT_S=300 ci-target-admit "$GUARD_TARGET_DIR" || exit 1   # 5 min, not 20: the 30 min job budget is rule E and is never widened; gx10 guard-cargo max 23 min (46 runs, 2026-09-24)
+          elif [ "${CI_TARGET_ADMIT_REQUIRED:-0}" = 1 ]; then
+            echo "::error::infra#1059: ci-target-admit is required on ${RUNNER_NAME:-this runner} and is missing"; exit 1
+          fi
           heal_path /mnt/nvme-raid0/targets/aprender-ci "$GUARD_TARGET_DIR"
           heal_path /mnt/nvme-raid0/cargo-ci/home "$GUARD_CARGO_HOME/registry"
           printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
