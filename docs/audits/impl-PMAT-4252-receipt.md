@@ -19,12 +19,21 @@ Readings:
 ## Yield mutation proof (lane `scripts/apr_dogfood_lane_4252.py`, branch feat/4252-apr-dogfood-lane 0f83b9a7a)
 1. The gx10 watcher starts serve `--backend cuda --gpu-layers all`. `ask` → **served_by gx10-cuda**: wall 1.9 s, server pid 563471 holds GPU (175 MiB), used_gpu probe true, trace `gpu-layers … resolved=32 (backend=cuda)`, answer "PASS".
 2. PLANT: on gx10, `flock /tmp/apr-gpu.lock sleep 150` (pid 739221). The watcher logs `11:12:27Z YIELD ['gpu lock held (/tmp/apr-gpu.lock)']`. `kill -0 563471` → No such process. nvidia-smi compute-apps are empty.
-3. `ask` during the hold: gx10 attempt `CURL_RC=7` (state serving:false, stop_reason lock) → **served_by lambda-cpu**, wall 360 s (queued behind the bench), answer "PASS", 51 prompt tok.
+3. `ask` during the hold: gx10 attempt `CURL_RC=7` (state serving:false, stop_reason lock) → **served_by lambda-cpu**, wall 360 s (queued behind the bench). This run predates the hard budget: 0f83b9a7a had none. Under the current default (120 s) the same wait is `unavailable`; see below, answer "PASS", 51 prompt tok.
 4. Hold released → `11:14:57Z START` (the watcher resumes).
 Negative control (accidental): while the used_gpu probe was malformed, the lane labelled a real CUDA answer `gx10-cpu-UNPROVEN-GPU`. The label fails closed.
 
 ## Filed / commented
+These are separate issues, each cross-linked from a #4252 comment. The ticket's "filed under #4252" means that link.
 #4271 (Qwen3.5 no wgpu path), #4272 (buffered completions stream), #4056 (wgpu feature doesn't compile; fix evidence), #4146 (qwen35 chat omits used_gpu), #4254 (effective-config backend_loaded [] on CUDA too).
 
-## Hard budget (commit 92e3c9c97)
-Against a local server that accepts and never answers (the SIGSTOP case): `ask --force-lambda --timeout 8` → `{"served_by": null, "verdict": "unavailable"}`, rc 2, wall 7.0 s.
+## Hard budget (added in 92e3c9c97; the proofs below run on the current head)
+The quorum-round-1 finding (sonnet) said the budget was only shown on `--force-lambda`. It is now tested on the yield path.
+- `scripts/test_apr_dogfood_lane_4252.py <budget>`: gx10 raises (the yield, `CURL_RC=7`), and lambda is a local socket that accepts and never answers (the SIGSTOP case).
+  - At the **default 120 s**: `{"rc": 2, "verdict": "unavailable", "attempts": ["gx10", "lambda"], "wall_s": 119.1, "result": "PASS"}`.
+  - At 6 s: wall 5.0, PASS.
+- MUTANT (scratch copy): `signal.alarm` removed and lambda given a fixed 30 s timeout in place of `remaining()` → `wall_s 30.0 … "result": "FAIL"`, rc 1. The test goes RED without the budget.
+- Live: `ask --force-lambda --timeout 8` against the same hung-server shape → `unavailable`, rc 2, wall 7.0 s.
+
+## Server identity (round-1 finding)
+`pid_alive` now requires `serve` and the lane's own port (`18253`) as whole argv tokens, not the substring `serve`, so a recycled pid is not taken for the server.

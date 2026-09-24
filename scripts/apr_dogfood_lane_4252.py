@@ -69,12 +69,14 @@ def pid_alive(pid):
         os.kill(pid, 0)
     except OSError:
         return False
-    # the pid must still be OUR server, not a recycled number
+    # the pid must still be OUR server, not a recycled number: `serve` and our own port as
+    # whole argv tokens, never a substring of some other process's path
     try:
         with open(f"/proc/{pid}/cmdline", "rb") as f:
-            return b"serve" in f.read()
+            argv = f.read().split(b"\0")
     except OSError:
         return False
+    return b"serve" in argv and str(GX10_PORT).encode() in argv
 
 
 def need_signals(own_pid):
