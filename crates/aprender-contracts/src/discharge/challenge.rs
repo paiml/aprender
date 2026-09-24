@@ -164,8 +164,24 @@ fn statement(blanked: &str, line: usize, keyword: &str) -> Option<(String, Strin
     let after_kw = &rest[kw + keyword.len()..];
     let name_at = after_kw.find(|c: char| !c.is_whitespace())?;
     let named = &after_kw[name_at..];
-    // The name as written (`foo`, `Foo.bar`, `«x»`-free); a `.` continues it only when an identifier char follows,
-    // so `foo.{u}` stops before `.{`.
+    let end = name_len(named);
+    if end == 0 {
+        return None;
+    }
+    let after_name = &named[end..];
+    let (universes, body) = match after_name.strip_prefix(".{") {
+        Some(u) => {
+            let close = u.find('}')?;
+            (format!(".{{{}}}", &u[..close]), &u[close + 1..])
+        }
+        None => (String::new(), after_name),
+    };
+    statement_text(body).map(|text| (universes, text))
+}
+
+/// Byte length of the name as written (`foo`, `Foo.bar`, `«x»`-free); a `.` continues it only when an identifier
+/// char follows, so `foo.{u}` stops before `.{`.
+fn name_len(named: &str) -> usize {
     let mut end = 0;
     let mut it = named.char_indices().peekable();
     while let Some((i, c)) = it.next() {
@@ -178,36 +194,49 @@ fn statement(blanked: &str, line: usize, keyword: &str) -> Option<(String, Strin
         }
         end = i + c.len_utf8();
     }
-    if end == 0 {
-        return None;
-    }
-    let after_name = &named[end..];
-    let (universes, body) = match after_name.strip_prefix(".{") {
-        Some(u) => {
-            let close = u.find('}')?;
-            (format!(".{{{}}}", &u[..close]), &u[close + 1..])
-        }
-        None => (String::new(), after_name),
-    };
+    end
+}
+
+/// The statement text of `body` (everything after the name and universes): up to the first `:=` outside brackets,
+/// or the first equation arm, whitespace collapsed. `None` when empty or a new command starts first.
+fn statement_text(body: &str) -> Option<String> {
     let mut depth = 0usize;
     let mut prev = ' ';
     let chars: Vec<(usize, char)> = body.char_indices().collect();
-    for (k, &(i, c)) in chars.iter().enumerate() {
+    for (k, &(_, c)) in chars.iter().enumerate() {
         if OPENERS.contains(&c) {
             depth += 1;
         } else if CLOSERS.contains(&c) {
             depth = depth.saturating_sub(1);
-        } else if depth == 0 && c == '=' && prev == ':' {
-            let text = collapse(&body[..i - 1]);
-            return (!text.is_empty()).then_some((universes, text));
-        } else if depth == 0 && prev == '\n' && !c.is_whitespace() {
-            return None; // a new command at column 0 before any `:=`
-        } else if depth == 0 && c == '|' && line_is_blank_before(&chars, k) && is_arm(&body[i..]) {
-            // Equation style: the type before the first `| pat => …` arm is the whole statement.
-            let text = collapse(&body[..i]);
-            return (!text.is_empty()).then_some((universes, text));
+        } else if depth == 0 {
+            if let Some(end) = statement_end(&chars, k, body, prev) {
+                let text = collapse(&body[..end?]);
+                return (!text.is_empty()).then_some(text);
+            }
         }
         prev = c;
+    }
+    None
+}
+
+/// At bracket depth 0, char `k` of `chars` ends the statement: `Some(Some(byte end))` at `:=` or an equation arm,
+/// `Some(None)` at a new command in column 0 before any `:=`, `None` to keep scanning.
+fn statement_end(
+    chars: &[(usize, char)],
+    k: usize,
+    body: &str,
+    prev: char,
+) -> Option<Option<usize>> {
+    let (i, c) = chars[k];
+    if c == '=' && prev == ':' {
+        return Some(Some(i - 1));
+    }
+    if prev == '\n' && !c.is_whitespace() {
+        return Some(None); // a new command at column 0 before any `:=`
+    }
+    // Equation style: the type before the first `| pat => …` arm is the whole statement.
+    if c == '|' && line_is_blank_before(chars, k) && is_arm(&body[i..]) {
+        return Some(Some(i));
     }
     None
 }

@@ -17,11 +17,11 @@ moved to 0.74 (#3999 comment), so 0.73 is **pure performance parity**.
 
 | Metric | apr (`lambda-apr.json`, 08-25) | llama.cpp (`lambda-llamacpp.json`, 08-25) | apr ÷ llama.cpp |
 |---|---|---|---|
-| decode tok/s | 113.6 | 175.3 | **0.65×** |
-| prefill tok/s | 3,067 | 11,290 | **0.27×** |
-| TTFT p50 | 33.3 ms | 9.0 ms | **3.7× slower** |
-| quiet re-run, decode (`quiet-*.json`) | 104.1 | 159.5 | 0.65× |
-| **gx10 GB10 sm_121** (`findings.json` `gx10_gb10_sm121`, same protocol) decode / prefill / TTFT | 31.09 / 2,976 / 34.3 ms | 46.87 / 3,950 / 25.8 ms | **0.66× / 0.75× / 1.33× slower** |
+| decode tok/s (`evidence/parity-http/lambda-apr.json`, `evidence/parity-http/lambda-llamacpp.json`) | 113.6 | 175.3 | **0.65×** |
+| prefill tok/s (`evidence/parity-http/lambda-apr.json`, `evidence/parity-http/lambda-llamacpp.json`) | 3,067 | 11,290 | **0.27×** |
+| TTFT p50 (`evidence/parity-http/lambda-apr.json`, `evidence/parity-http/lambda-llamacpp.json`) | 33.3 ms | 9.0 ms | **3.7× slower** |
+| quiet re-run, decode (`evidence/parity-http/quiet-apr.json`, `evidence/parity-http/quiet-llamacpp.json`) | 104.1 | 159.5 | 0.65× |
+| **gx10 GB10 sm_121** (`evidence/parity-http/findings.json` `gx10_gb10_sm121`, same protocol) decode / prefill / TTFT | 31.09 / 2,976 / 34.3 ms | 46.87 / 3,950 / 25.8 ms | **0.66× / 0.75× / 1.33× slower** |
 
 The `findings.json` verdict: "decode ~0.65x on BOTH hosts, a consistent engine gap, not a host artifact". apr's
 prefill is flat across hosts (3,067 vs 2,976), which is what a host-bound prefill looks like. Its declared floor was
@@ -48,10 +48,10 @@ version and sha are in every receipt.
 | Row | Item | done_when | Baseline (measured) | First-green proof |
 |---|---|---|---|---|
 | **R-0** | Re-measure the matrix before setting thresholds; derive the noise band from llama.cpp vs itself | a parity receipt per certified cell, with N runs per engine and the band in the receipt | 1 cell, 29 days old | the receipt itself. Positive control: apr vs apr must give `r` ≈ 1.0 within the band. **Negative control (quorum fix):** apr run with a planted 20% sleep per token must give `r` < 1 − band, i.e. RED |
-| **R-1** | `contracts/beat-llamacpp-*`: re-baseline the beat contracts against llama.cpp (Ollama stays as a secondary reference) | contracts per metric with the declared band, gated by `pv` and the nightly on exclusive GPU time | 0 contracts reference llama.cpp for perf | the contract goes RED on today's numbers (0.65× decode). That RED is the proof it is not vacuous, and it goes GREEN only when R-2..R-4 land |
-| **R-2** | Prefill: batched CPU prefill (#2801) and GPU prefill parity | prefill cells `r ≥ 1 − band` | 0.27× (the CUDA cell above); CPU prefill runs at decode rate (#2801, OPEN) | the prefill cell on lambda CUDA, and the CPU cell on lambda and gx10 |
-| **R-3** | Decode and TTFT gap on CUDA sm_89 | decode and TTFT cells within band | 0.65× decode, 3.7× TTFT | per cell |
-| **R-4** | GB10 (sm_121) shortfall (#2800) | gx10 cells within band | decode 0.66×, prefill 0.75×, TTFT 1.33× slower (`findings.json`, 08-24) | per cell on gx10 |
+| **R-1** | `contracts/beat-llamacpp-*`: re-baseline the beat contracts against llama.cpp (Ollama stays as a secondary reference) | contracts per metric with the declared band, gated by `pv` and the nightly on exclusive GPU time | 0 contracts reference llama.cpp for perf | the contract goes RED on today's numbers (0.65× decode, `evidence/parity-http/findings.json`). That RED is the proof it is not vacuous, and it goes GREEN only when R-2..R-4 land |
+| **R-2** | Prefill: batched CPU prefill (#2801) and GPU prefill parity | prefill cells `r ≥ 1 − band` | 0.27× (the CUDA cell above, `evidence/parity-http/lambda-apr.json`); CPU prefill runs at decode rate (#2801, OPEN) | the prefill cell on lambda CUDA, and the CPU cell on lambda and gx10 |
+| **R-3** | Decode and TTFT gap on CUDA sm_89 | decode and TTFT cells within band | 0.65× decode, 3.7× TTFT (`evidence/parity-http/lambda-apr.json`, `evidence/parity-http/lambda-llamacpp.json`) | per cell |
+| **R-4** | GB10 (sm_121) shortfall (#2800) | gx10 cells within band | decode 0.66×, prefill 0.75×, TTFT 1.33× slower (`evidence/parity-http/findings.json`, 08-24) | per cell on gx10 |
 | **R-5** | CPU x86/ARM and Apple Silicon cells | cells within band on every certified CPU/Metal host | not measured | per cell |
 | **R-5b** | Peak memory (quorum fix: the exit bar named it and no row did) | peak RSS/VRAM cells `apr ≤ llama.cpp × (1 + band)`, sampled by the harness at 10 Hz | not measured in `evidence/parity-http/` | per cell; a planted 2× allocation in apr must go RED |
 | **R-6** | Exclusive-time protocol | every parity run holds the exclusive GPU lock (benchmarks never share, per 0.70) and records `nvidia-smi --query-compute-apps` empty at start | protocol exists for the 08-25 run (it records mechanism lines) | a run started while a foreign GPU process is present must refuse (RED) |

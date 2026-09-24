@@ -544,6 +544,10 @@ pub enum DischargeAction {
         /// the canonical type). No Challenge file, or zero rows, declines (PVL-001 EV-7b, #4201)
         #[arg(long, conflicts_with = "no_lake")]
         comparator: bool,
+        /// Wall-clock limit on each `lake env lean` call (Axioms.lean, the comparator), seconds. A call that
+        /// exceeds it is killed with its process group and rejects: a hang is RED, not a wait (#4239)
+        #[arg(long, default_value_t = crate::commands::discharge::LAKE_TIMEOUT_S)]
+        lake_timeout: u64,
     },
     /// `build.sh`, then `check` with every arm (`--strict`, the comparator, `--leanchecker`), then write the
     /// untracked full log `<lean-dir>/discharge.json` and the TRACKED `<lean-dir>/../discharge-summary.json` --
@@ -558,6 +562,9 @@ pub enum DischargeAction {
         /// The leanchecker arm under `ulimit -v <KIB>` (virtual memory, KiB); unset = no limit
         #[arg(long)]
         leanchecker_ulimit_v: Option<u64>,
+        /// Wall-clock limit on each `lake env` call outside the leanchecker arm, seconds; a timeout rejects (#4239)
+        #[arg(long, default_value_t = crate::commands::discharge::LAKE_TIMEOUT_S)]
+        lake_timeout: u64,
     },
     /// `make label-ratchet`: rewrite <lean-dir>/unresolved-labels.json DOWNWARD (it never gains a label; a missing
     /// file is seeded). `check` never writes it.
