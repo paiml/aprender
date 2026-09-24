@@ -707,6 +707,25 @@ SH
         fi
     fi
     cp "$GUARD_TREE" "$gfix/scripts/guard_tree.sh"
+
+    # 42 (review lane A): on CI without isolation guard_tree refuses BEFORE dispatch. The
+    # victim surviving proves no guard ran -- the group-kill guard would have taken it.
+    rm -f "$gfix/victim.pid" "$gfix/gt.out"
+    (cd "$gfix" && GITHUB_ACTIONS=true GUARD_TREE_ISOLATE=0 setsid --wait bash -c '
+        sleep 60 & echo $! > victim.pid
+        bash scripts/guard_tree.sh > gt.out 2>&1; echo "rc=$?" >> gt.out
+    ' 2>/dev/null)
+    r_v="$(cat "$gfix/victim.pid" 2>/dev/null)"
+    r_alive=KILLED
+    if [ -n "$r_v" ] && kill -0 "$r_v" 2>/dev/null; then r_alive=ALIVE; kill "$r_v" 2>/dev/null; fi
+    r_ok=0
+    grep -q '^rc=1$' "$gfix/gt.out" && grep -q 'refusing to dispatch any' "$gfix/gt.out" && r_ok=1
+    grep -q 'check_g_' "$gfix/gt.out" && r_ok=0
+    if [ "$r_alive" = ALIVE ] && [ "$r_ok" = 1 ]; then
+        pass_row "42: on CI without isolation guard_tree refuses before dispatch (rc=1, no guard ran, victim alive)"
+    else
+        fail_row "42: on CI without isolation guard_tree refuses before dispatch" "victim=$r_alive; out: $(tr '\n' '|' < "$gfix/gt.out" 2>/dev/null | cut -c1-300)"
+    fi
 fi
 
 printf '%d checks, %d failed\n' "$total" "$failed"

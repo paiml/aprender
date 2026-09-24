@@ -437,7 +437,7 @@ wired_elsewhere_in() {
 # red about it. The two halves cannot both go quiet.
 RELEASE_TIME_GUARDS=""
 if [ -f scripts/check_no_timing_in_required.sh ]; then
-    RELEASE_TIME_GUARDS="$(bash scripts/check_no_timing_in_required.sh --list 2>/dev/null)" \
+    RELEASE_TIME_GUARDS="$(isolate bash scripts/check_no_timing_in_required.sh --list 2>/dev/null)" \
         || RELEASE_TIME_GUARDS=""
 fi
 
@@ -553,6 +553,18 @@ if [ "$dry_run" -eq 1 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# #4120 -- REFUSE BEFORE DISPATCH, not after. On CI a guard that shares the runner's
+# process group can take the runner down, and with it this script: a check placed
+# after the pool would never print (review lane A reproduced exactly that). So a CI
+# run that cannot isolate its guards runs none of them.
+if [ "$GUARD_TREE_ISOLATE" != 1 ] && [ "${GITHUB_ACTIONS:-}" = true ]; then
+    printf 'FAIL  guard_tree [isolation]\n'
+    printf '      | guard_tree: setsid --wait is unavailable, so every guard would share the runner'"'"'s process group (#4120) -- refusing to dispatch any.\n'
+    printf '0 checks, 1 failed\n'
+    printf 'FAILED:\nguard_tree [isolation]\n' >&2
+    exit 1
+fi
+
 # 2. THE POOL. `<index>:<guard>` per line, one worker per line, -P at a time.
 #    The index is the guard's LINE NUMBER IN THE PLAN, so a worker's files are
 #    addressable by the parent without any communication back from the pool.
@@ -633,19 +645,10 @@ while IFS="$TAB" read -r kind g reason; do
     fi
 done < "$PLAN"
 
-# #4120 -- isolation is a precondition of a CI run, not a nicety: without it a guard's
-# group kill reaches the runner. Off CI (a macOS box with no util-linux setsid) it is
-# reported, and the run goes on.
+# #4120 -- off CI (a macOS box with no util-linux setsid) a missing setsid is reported
+# and the run goes on; on CI it was refused above, before any guard ran.
 if [ "$GUARD_TREE_ISOLATE" != 1 ]; then
-    if [ "${GITHUB_ACTIONS:-}" = true ]; then
-        failed=$((failed + 1))
-        printf 'FAIL  guard_tree [isolation]\n'
-        printf '      | guard_tree: setsid --wait is unavailable, so guards would share the runner'"'"'s process group (#4120).\n'
-        fail_rows="${fail_rows}guard_tree [isolation]
-"
-    else
-        printf 'warning: guards ran WITHOUT their own session (no setsid --wait); a group kill in a guard reaches this shell\n'
-    fi
+    printf 'warning: guards ran WITHOUT their own session (no setsid --wait); a group kill in a guard reaches this shell\n'
 fi
 printf 'dispatch: up to %d guard(s) at a time (GUARD_TREE_JOBS)\n' "$GUARD_TREE_JOBS"
 printf '%d guard(s) skipped\n' "$skipped"

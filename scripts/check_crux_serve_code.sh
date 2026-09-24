@@ -36,7 +36,10 @@ _cleanup() {
   if [ -f "${TMP:-}/stubborn.all" ]; then
     while IFS= read -r p; do
       case "$p" in ''|*[!0-9]*|0*|1) continue ;; esac
-      kill -KILL "$p" 2> /dev/null
+      # only if that pid is STILL our fixture: T1 reaps its own for real, and a pid can
+      # be reused by the time this trap runs (review lane B -- provenance is not ownership)
+      tr '\0' ' ' < "/proc/$p/cmdline" 2> /dev/null | grep -qF 'trap "" TERM; while :; do sleep 0.2; done' \
+        && kill -KILL "$p" 2> /dev/null
     done < "$TMP/stubborn.all"
   fi
   case "${TMP:-}" in
