@@ -35,6 +35,9 @@ const ARCHES: &[(&str, Arch)] = &[
     ("apr-cpu", Arch::Session("AprCpuForward")),
     ("safetensors-cpu", Arch::Session("StCpuForward")),
     ("qwen3_moe", Arch::Session("Qwen3MoeForward")),
+    // #4269 M2b: `apr serve`'s APR Q4K CUDA scheduler (a format row, like apr-cpu); its
+    // witnesses are api/tests/apr_q4k_cancel_2465.rs and apr_q4k_scheduler::generate_q4k.
+    ("apr-q4k", Arch::Session("AprQ4kForward")),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -306,6 +309,51 @@ fn apr_run_on_a_moe_gguf_enters_the_one_engine() {
 /// Every `impl ArchForward for X` in production source is exactly the set of
 /// `Arch::Session` rows — a port cannot land without the table (and so the
 /// verb rows) knowing.
+/// `impl<S: Q4kStep> ArchForward for X<S>` → `impl ArchForward for X<S>`: a
+/// generic impl must not escape the scan below (#4269 M2b, the first one).
+fn strip_impl_generics(line: &str) -> std::borrow::Cow<'_, str> {
+    let Some(rest) = line.strip_prefix("impl<") else {
+        return std::borrow::Cow::Borrowed(line);
+    };
+    let mut depth = 1usize;
+    for (i, c) in rest.char_indices() {
+        match c {
+            '<' => depth += 1,
+            '>' => {
+                depth -= 1;
+                if depth == 0 {
+                    return std::borrow::Cow::Owned(format!("impl {}", rest[i + 1..].trim_start()));
+                }
+            },
+            _ => {},
+        }
+    }
+    std::borrow::Cow::Borrowed(line)
+}
+
+#[test]
+fn strip_impl_generics_case_table() {
+    let cases = [
+        (
+            "impl<S: Q4kStep> crate::session::ArchForward for AprQ4kForward<S> {",
+            "impl crate::session::ArchForward for AprQ4kForward<S> {",
+        ),
+        (
+            "impl<'a, T: Iterator<Item = u32>> ArchForward for X<'a, T> {",
+            "impl ArchForward for X<'a, T> {",
+        ),
+        (
+            "impl crate::session::ArchForward for DenseForward<'_> {",
+            "impl crate::session::ArchForward for DenseForward<'_> {",
+        ),
+        ("impl<S> Q4kStep for Y {", "impl Q4kStep for Y {"),
+        ("fn impl_thing() {}", "fn impl_thing() {}"),
+    ];
+    for (input, want) in cases {
+        assert_eq!(strip_impl_generics(input), want, "{input}");
+    }
+}
+
 #[test]
 fn every_arch_forward_is_a_session_row() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -320,10 +368,11 @@ fn every_arch_forward_is_a_session_row() {
             } else if name.ends_with(".rs") && !name.contains("test") {
                 let text = std::fs::read_to_string(&path).expect("read source");
                 for line in text.lines() {
-                    let line = line.trim_start();
+                    let line = strip_impl_generics(line.trim_start());
                     let rest = line
+                        .as_ref()
                         .strip_prefix("impl crate::session::ArchForward for ")
-                        .or_else(|| line.strip_prefix("impl ArchForward for "));
+                        .or_else(|| line.as_ref().strip_prefix("impl ArchForward for "));
                     if let Some(rest) = rest {
                         let ty: String = rest
                             .chars()
