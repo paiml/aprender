@@ -21574,6 +21574,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'Roadmap id authorized by the 0.69.3 captain (aprender-36). Targets release/0.69.3 via the #4263 one-engine branch; #4265 (APR CPU stop/top_p) closed from this workstream.'
+- id: PMAT-4270
+  github_issue: 4270
+  item_type: task
+  title: 'one-engine 0.69.3 workstream V: tool verbs on the Session trait (bench, qa dense gates, eval perplexity, profile, trace)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-36
+  created: 2026-09-24 12:35:00+00:00
+  updated: '2026-09-24T16:30:00Z'
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'V2b: the dense qa gates (golden CPU, output_verification GPU golden, gpu_isolation, speedup parity and CPU/GPU, golden GGUF throughput) drive realizar::gguf::dense_session::dense_turn through apr-cli commands/qa_dense_session.rs; a GPU gate refuses a turn with used_gpu=false. Witnesses: qa_dense_session_tests (2, release mode; the require_gpu mutant kills one).'
 - id: PMAT-4280
   github_issue: 4280
   item_type: task
