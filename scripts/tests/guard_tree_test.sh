@@ -656,20 +656,22 @@ git -C "$pfix" init -q --template="$pfix/.empty-git-template"
 git -C "$pfix" config user.email test@example.invalid
 git -C "$pfix" config user.name "guard_tree_test"
 cp "$GUARD_TREE" "$pfix/scripts/guard_tree.sh"
-printf '#!/usr/bin/env bash\n# ignores every argument, --help included\nsleep 4\nexit 0\n' >"$pfix/scripts/check_p_deaf.sh"
+# The body records each COMPLETED run after its sleep: a probe cut at the timeout
+# records nothing, so a bounded tree leaves exactly one line and an unbounded
+# one leaves two. No clock is read (DET002).
+printf '#!/usr/bin/env bash\n# ignores every argument, --help included\nsleep 4\necho ran >> "%s/body-runs"\nexit 0\n' "$pfix" >"$pfix/scripts/check_p_deaf.sh"
 git -C "$pfix" add -A && git -C "$pfix" commit -q -m fixture
-p_start=$(date +%s)
 p_out="$(cd "$pfix" && GUARD_TREE_HELP_TIMEOUT=1 bash scripts/guard_tree.sh 2>&1)"
-p_secs=$(( $(date +%s) - p_start ))
+p_runs="$(grep -c . "$pfix/body-runs" 2>/dev/null)"
 if grep -q '^PROBE-TIMEOUT scripts/check_p_deaf.sh' <<<"$p_out"; then
     pass_row "50: a guard that ignores --help is named as PROBE-TIMEOUT"
 else
     fail_row "50: a guard that ignores --help is named as PROBE-TIMEOUT" "$(tail -n 5 <<<"$p_out" | tr '\n' '|')"
 fi
-if [ "$p_secs" -lt 8 ]; then
-    pass_row "51: the probe is cut at the timeout (${p_secs}s < 8s; an unbounded probe costs 4s + 4s)"
+if [ "${p_runs:-0}" = 1 ]; then
+    pass_row "51: the body completed exactly once (the probe was cut before it; unbounded would be 2)"
 else
-    fail_row "51: the probe is cut at the timeout" "took ${p_secs}s"
+    fail_row "51: the body completed exactly once" "completed runs: ${p_runs:-0}"
 fi
 sed 's/help_out="$(timeout "${GUARD_TREE_HELP_TIMEOUT:-10}" bash "$g" --help 2>&1)"/help_out="$(bash "$g" --help 2>\&1)"/' \
     "$GUARD_TREE" >"$pfix/scripts/guard_tree.sh"
