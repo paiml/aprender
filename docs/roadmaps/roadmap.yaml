@@ -20630,6 +20630,26 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-3998
+  github_issue: 3998
+  item_type: task
+  title: 'EPIC 0.70.0 Fast Train: concrete plan under docs/ + 3-lane quorum deciding the epic''s open questions'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-19
+  created: 2026-09-23T12:30:00Z
+  updated: 2026-09-23T12:30:00Z
+  spec: docs/specifications/release-0.70-fast-train-plan.md
+  acceptance_criteria:
+  - 'A plan under docs/ gives every must-carry row of #3998 an owner-free done_when, the measured baseline with its source, and a first-green proof (a command or artifact that can fail).'
+  - 'The plan includes 0.70''s debt-ratchet slice (#3997, slice 1 of 5).'
+  - 'A 3-lane quorum (paiml-implement kind=docs, agy delegate, gpt-oss fallback on quota, never NO-VERDICT-and-park) reviews the plan and decides the epic''s open questions; its receipt is committed beside the plan.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: 'Assigned by aprender-cf (planning/triage cop), 2026-09-23, relaying the operator: "quorum decide. now use quorum and claud plan for each epic". Scope: plan + quorum receipt + one summary comment on #3998. No child issues and no milestone moves until operator review.'
 - id: PMAT-4067
   github_issue: 4067
   item_type: task

@@ -1,0 +1,747 @@
+{
+  "ticket": "PMAT-3998",
+  "lane": "quorum",
+  "mode": "grillme",
+  "width": 3,
+  "agy_version": "1.2.9",
+  "conversations": [
+    "b6e69384-3b63-4811-b234-c2e8d67786db",
+    "c5f390be-1789-43a3-b579-ec8f9ef81800",
+    "c3f48880-c732-4a8e-9406-39ea282851c3"
+  ],
+  "child_conversations": 3,
+  "fanout": "children=3 method=lane-files label=consensus",
+  "results": [
+    {
+      "lane": 1,
+      "exit": 3,
+      "file": "/run/user/1000/paiml-implement/agy/PMAT-3998/0209f4cf-058f-49af-9871-4e9440cd0502/ph1/lane-1.json",
+      "verdict": "FAIL (DESIGN_VERDICT=PASS-WITH-FIXES) -- NOT COUNTED, exit 3",
+      "model": "gemini-3.1-pro-high",
+      "summary": "Q1=0.70; Q2=c; Q3=wasted-GPU-minutes; Q4=no; Q5=yes; Q6=split-X1; Q7=FT-1,2,3,7,10. Vacuous proofs: FT-1 (gpu-q only), FT-4, FT-11 (no proof section), FT-12 ([U] thresholds). input_tokens 38917, 92 s.",
+      "stderr": [
+        "agy-lane: tree witness verified: the lane read its workspace",
+        "agy-lane: LANE ISOLATION VIOLATED — a shared ref changed: a lane created or moved a branch or tag (refs/heads/fix/3477-ptxas-target-portable,refs/remotes/origin/fix/3957-gate-hardening,refs/remotes/origin/release/0.69.1-batch-2)",
+        "agy-lane: lane clone /home/noah/src/aprender-wt-plans/.claude/worktrees/lane-bba01afaa-2279947 removed (the lane left it byte-identical)"
+      ]
+    },
+    {
+      "lane": 2,
+      "exit": 3,
+      "file": "/run/user/1000/paiml-implement/agy/PMAT-3998/0209f4cf-058f-49af-9871-4e9440cd0502/ph1/lane-2.json",
+      "verdict": "FAIL (DESIGN_VERDICT=PASS-WITH-FIXES) -- NOT COUNTED, exit 3",
+      "model": "gemini-3.8-flash-high",
+      "summary": "Q1=0.71 (keep only #3951 oracle in 0.70); Q2=c; Q3=both; Q4=no; Q5=conditional; Q6=split-X1; Q7=FT-1,2,3,5,7,8,9,10,12. Vacuous/defective: FT-1, FT-4 (receipt-header proof; sm_121 idle twin asserted impossible), FT-7(b) no proof, FT-8 shrink-only, FT-9 'or documented as not a gate' loophole, FT-12 no Pillar B baseline + [U] thresholds. input_tokens 400130, 205 s.",
+      "stderr": [
+        "agy-lane: tree witness verified: the lane read its workspace",
+        "agy-lane: LANE ISOLATION VIOLATED — a shared ref changed: a lane created or moved a branch or tag (refs/heads/d8/tok-per-sec-3981,refs/heads/fix/3477-ptxas-target-portable,refs/heads/fix/3990-chat-template-fidelity,refs/heads/release/0.69.1-batch-2,refs/remotes/origin/fix/3957-gate-hardening,refs/remotes/origin/release/0.69.1-batch-2)",
+        "agy-lane: lane clone /home/noah/src/aprender-wt-plans/.claude/worktrees/lane-bba01afaa-2279956 removed (the lane left it byte-identical)"
+      ]
+    },
+    {
+      "lane": 3,
+      "exit": 3,
+      "file": "/run/user/1000/paiml-implement/agy/PMAT-3998/0209f4cf-058f-49af-9871-4e9440cd0502/ph1/lane-3.json",
+      "verdict": "FAIL (DESIGN_VERDICT=PASS-WITH-FIXES) -- NOT COUNTED, exit 3",
+      "model": "gemini-3.7-flash-high",
+      "summary": "Q1=0.71 except #3951 oracle; Q2=c; Q3=both; Q4=no; Q5=conditional (record host ids+sha+CPU flags); Q6=split-X1; Q7=FT-1,2,3,4,5,7,8,9,10,12. Defective: FT-1 (omits in-repo bare-flock wrappers), FT-4 partially vacuous, FT-7(b) no proof, FT-12 no Pillar B baseline. input_tokens 53951, 69 s.",
+      "stderr": [
+        "agy-lane: tree witness verified: the lane read its workspace",
+        "agy-lane: LANE ISOLATION VIOLATED — a shared ref changed: a lane created or moved a branch or tag (refs/heads/fix/3477-ptxas-target-portable,refs/remotes/origin/release/0.69.1-batch-2)",
+        "agy-lane: lane clone /home/noah/src/aprender-wt-plans/.claude/worktrees/lane-bba01afaa-2279972 removed (the lane left it byte-identical)"
+      ]
+    }
+  ],
+  "consensus": "NO COUNTED VERDICT: all 3 lanes exited 3 (isolation violation: shared refs moved), so none may be reduced to a verdict. As uncounted claims only, all 3 lanes returned DESIGN_VERDICT=PASS-WITH-FIXES (schema FAIL). Question tallies from those claims: Q1 2/3 0.71 with the #3951 oracle kept in 0.70 (dissent lane 1: all of FT-11 in 0.70); Q2 3/3 c (both); Q3 2/3 both (dissent lane 1: wasted GPU-minutes only); Q4 3/3 no; Q5 2/3 conditional on sha+ISA match being recorded (lane 1: yes); Q6 3/3 split X1; Q7 3/3 FT-1,2,3,7,10, 2/3 add FT-5,8,9,12, 1/3 add FT-4. Delegate checked 4 citations against bba01afaa: (i) plan FT-12 baselines list A, C, D and omit Pillar B (lanes 2,3), confirmed at plan lines 160-165; (ii) FT-7 first-green proof covers (a) and (c) only, none for (b) (lanes 2,3), confirmed at lines 108-112; (iii) scripts/model_ladder.sh:77 apr_locked is a bare flock, so a gpu-q-only FT-1 refusal misses in-tree callers (lanes 2,3; basis of Q2=c), confirmed; (iv) FT-11 has done_when/baseline but no labelled first-green proof (lane 1), confirmed. Not checked: lane 2 says the sm_121 idle-twin in FT-4 is impossible because gx10 is the only sm_121 host (asserted).",
+  "lane_reduce": {
+    "dedup": [
+      {
+        "file": "docs/roadmaps/entries/PMAT-3998.yaml",
+        "line": 14,
+        "lanes_agreeing": [
+          2
+        ],
+        "claims": [
+          "Ran ls -la .quorum/ which returned \"No such file or directory\" (exit 2). Acceptance criterion #3 of PMAT-3998 requires: \"A 3-lane quorum ... reviews the plan and decides the epic's open questions; its receipt is committed beside the plan.\" The receipt directory .quorum/PMAT-3998/ does not exist."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 1,
+        "lanes_agreeing": [
+          1
+        ],
+        "claims": [
+          "Missing #3986 P2 from the FT rows. The epic context cites #3986 (GPU lock efficiency P1-P5), but only P1, P3, P4, and P5 are addressed in the plan (FT-1, FT-3, FT-6, FT-4, FT-5). P2 is missing."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 29,
+        "lanes_agreeing": [
+          1
+        ],
+        "claims": [
+          "FT-1 done_when is owner-free and falsifiable, baseline is measured with cited source ('#3986'), but the first-green proof is vacuous because it only tests gpu-q, while Q2 notes that bare-flock users bypass gpu-q."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 30,
+        "lanes_agreeing": [
+          2,
+          3
+        ],
+        "claims": [
+          "Line 30: \"done_when: gpu-q refuses, with a non-zero exit and before taking the lock, a locked command whose argv is a bare `cargo test` / `cargo build` / `cargo nextest run` without a prior `--no-run` build.\" FT-1 is owner-free and falsifiable, baseline is measured (#3986, 1.5 min compile in 25 min suite), but proof only tests gpu-q and omits in-repo bare-flock wrappers (scripts/gpu_exclusive_run.sh, apr_locked).",
+          "Quoting line 30: \"gpu-q refuses, with a non-zero exit and before taking the lock, a locked command whose argv is a bare cargo test / cargo build / cargo nextest run without a prior --no-run build.\" The done_when is owner-free and falsifiable, baseline is measured (#3986), but the first-green proof tests only gpu-q externally and fails to prevent bare flock bypasses in repo scripts."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 39,
+        "lanes_agreeing": [
+          1
+        ],
+        "claims": [
+          "FT-2 done_when is owner-free and falsifiable, baseline is measured with cited source ('#3986\\'s 97 % was taken by hand'), and the first-green proof fails when the row is not done ('0-sample window exits non-zero')."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 40,
+        "lanes_agreeing": [
+          2,
+          3
+        ],
+        "claims": [
+          "Line 40: \"done_when: `scripts/gpu_lock_idle_sample.sh` samples utilization at 1 Hz while the lock is held, and writes `{host, window, samples, idle_fraction, holders[]}`.\" FT-2 is owner-free, falsifiable, baseline is cited (#3986 97% hand measurement), and first-green proof tests fake nvidia-smi series and non-zero exit on 0-sample windows.",
+          "Quoting line 40: \"scripts/gpu_lock_idle_sample.sh samples utilization at 1 Hz while the lock is held, and writes {host, window, samples, idle_fraction, holders[]}.\" The done_when is owner-free and falsifiable, baseline is honestly cited as no instrument exists (#3986), and proof verifies calculations and 0-sample errors, but lacks a test ensuring daemon terminates upon lock release."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 48,
+        "lanes_agreeing": [
+          1
+        ],
+        "claims": [
+          "FT-3 done_when is owner-free and falsifiable, baseline is measured with cited source ('(#3986 P3)'), and first-green proof fails when the row is not done ('Mutant: the CPU leg wrapped back in the lock ⇒ that row is RED')."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 49,
+        "lanes_agreeing": [
+          2,
+          3
+        ],
+        "claims": [
+          "Line 49: \"done_when: `scripts/model_ladder.sh`'s CPU legs (`--no-gpu`, `-ngl 0 -dev none`) and its sha256 pass run without `apr_locked`/gpu-q.\" FT-3 is owner-free, falsifiable, baseline is cited (#3986 P3), and first-green proof asserts concurrency with sibling lock holder and mutant failure.",
+          "Quoting line 49: \"scripts/model_ladder.sh CPU legs (--no-gpu, -ngl 0 -dev none) and its sha256 pass run without apr_locked/gpu-q. GPU legs are unchanged.\" The done_when is owner-free and falsifiable, baseline is cited (#3986 P3), and the first-green proof is non-vacuous (mutant is caught)."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 57,
+        "lanes_agreeing": [
+          1
+        ],
+        "claims": [
+          "FT-4 done_when is owner-free and falsifiable, baseline is measured with cited source ('(#3986 comment)'). The first-green proof is vacuous because checking that 'the stage refuses when the pre-screen card\\'s compute capability differs' only validates the runner's guardrails, not that the pre-screen risk cells actually executed on an idle card."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 59,
+        "lanes_agreeing": [
+          2
+        ],
+        "claims": [
+          "Quoting line 59: \"The release train pre-freeze stage runs the risk cells on an idle card of the same compute capability as each release host (sm_89 for lambda, sm_121 for gx10).\" The done_when is compromised by an informal ticketing dependency (\"before it is ticketed\") and an impossible sm_121 idle host, while the first-green proof is vacuous because it only validates receipt headers rather than asserting execution of risk cells."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 69,
+        "lanes_agreeing": [
+          3
+        ],
+        "claims": [
+          "Lines 69-71: \"the pre-freeze stage's receipt names the pre-screen host, its `compute_cap`, and the binary sha; the stage refuses when the pre-screen card's compute capability differs from the release host's; the stage refuses when the binary sha differs.\" FT-4 proof is partially vacuous: it validates receipt metadata and rejection on mismatched arch, but fails to assert that risk cells actually execute or that pre-screen REDs trigger required host reproduction before ticketing."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 75,
+        "lanes_agreeing": [
+          1
+        ],
+        "claims": [
+          "FT-5 done_when is owner-free and falsifiable, and first-green proof fails when not done. However, the baseline is uncited and only asserted as 'one host runs its whole column serially.'"
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 76,
+        "lanes_agreeing": [
+          2,
+          3
+        ],
+        "claims": [
+          "Line 76: \"the ladder sweep partitions its cells across the hosts that can run them, and one reducer merges the shards into ONE receipt per release host.\" FT-5 is owner-free, falsifiable, baseline is cited (single host serial sweep), and proof tests rejection of missing shards, duplicates, and arch mismatches.",
+          "Quoting line 76: \"The hosts are lambda, gx10 and yoga (CUDA), plus the Mac host (CPU/Metal legs only; it has no CUDA).\" The fleet contains only one sm_121 host (gx10); yoga and lambda are sm_89. Therefore, FT-4's requirement to run pre-screen risk cells on an \"idle card of the same compute capability ... sm_121 for gx10\" is impossible with existing fleet hosts.",
+          "Quoting line 76: \"the ladder sweep partitions its cells across the hosts that can run them, and one reducer merges the shards into ONE receipt per release host.\" The done_when is owner-free and falsifiable, baseline is stated, and proof tests reducer rejection of bad shards, but definition of architecture-independent cells is unstated."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 87,
+        "lanes_agreeing": [
+          1
+        ],
+        "claims": [
+          "FT-6 done_when is owner-free and falsifiable, and first-green proof fails when not done. However, the baseline is uncited and asserted as 'a binary mutex; no concurrent run has ever been compared.'"
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 89,
+        "lanes_agreeing": [
+          3
+        ],
+        "claims": [
+          "Line 89: \"On yoga, a known-green model run executes concurrently with a CUDA correctness suite as separate processes (NOT MPS: an MPS client fault can kill the others).\" FT-6 is owner-free, falsifiable, baseline is cited (binary mutex), and proof tests output sha256 equivalence and planted perturbation failure. However, it is an out-of-scope pilot for a speed release that changes no lock policy."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 98,
+        "lanes_agreeing": [
+          2
+        ],
+        "claims": [
+          "Quoting line 98: \"The pilot does NOT change the lock policy (see Q4).\" The done_when and first-green proof are falsifiable, but the row provides zero operational benefit or speedup for release 0.70 while risking GPU stability during sweeps."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 100,
+        "lanes_agreeing": [
+          1
+        ],
+        "claims": [
+          "FT-7 done_when is owner-free and falsifiable, and first-green proof fails when not done. However, the baseline is uncited and asserted, only noting 'the q4k.apr cell went RED while it was still waiting for the lock.'"
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 103,
+        "lanes_agreeing": [
+          2,
+          3
+        ],
+        "claims": [
+          "Line 103: \"(b) the serve probe keeps its own evidence (#3949, already merged; this row is its regression guard staying wired)\" FT-7 defines done_when for (a), (b), and (c), but lines 108-112 provide first-green proofs only for (a) and (c), completely omitting a proof for (b).",
+          "Quoting line 103: \"(b) the serve probe keeps its own evidence (#3949, already merged; this row is its regression guard staying wired).\" The done_when is falsifiable for (a) and (c), but sub-item (b) has no baseline in lines 105-107 and no first-green proof in lines 108-112."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 114,
+        "lanes_agreeing": [
+          1
+        ],
+        "claims": [
+          "FT-8 done_when is owner-free and falsifiable, baseline is measured with cited source ('measured at origin/main 49fe19c28'), and first-green proof fails when not done ('fails when a target is neither compiled... nor listed')."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 115,
+        "lanes_agreeing": [
+          3
+        ],
+        "claims": [
+          "Line 115: \"done_when: every integration-test target is compiled by some CI job, or deleted.\" FT-8 is owner-free, falsifiable, baseline is measured at origin/main 49fe19c28 (28 targets, 96/36 required-features), and proof uses check_test_targets_compiled.sh census with shrink-only baseline."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 127,
+        "lanes_agreeing": [
+          2
+        ],
+        "claims": [
+          "Quoting line 127: \"The baseline starts at the measured dark count, and can only go down.\" The done_when is owner-free, baseline is measured at 49fe19c28, but the first-green proof is vacuous: a shrink-only baseline allows 0.70 to pass without compiling any dark tests. Furthermore, first-green proofs for #3984 and #3982 are omitted."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 129,
+        "lanes_agreeing": [
+          1
+        ],
+        "claims": [
+          "FT-9 done_when is owner-free and falsifiable, baseline is measured with cited source ('the drain was fixed in cab272e5d', 'lines at 49fe19c28'), and first-green proof fails when not done ('each new self-test proven RED on its own mutant')."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 132,
+        "lanes_agreeing": [
+          3
+        ],
+        "claims": [
+          "Lines 132-134: \"(a) a guard simulates the publish cascade's drain over the current `cargo metadata` graph and requires completion; `TIERS[]` is corrected to the real order: 0 strictly-later-tier edges, from 44. (b) #3974: each of the release surface's verdict lines is classified, and every line is closed.\" FT-9 is owner-free, falsifiable, baseline is measured (cab272e5d, 44 edges, 58 dogfood lines at 49fe19c28), and proof tests planted cycle and verdict shrink-only ratchet."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 136,
+        "lanes_agreeing": [
+          2
+        ],
+        "claims": [
+          "Quoting line 136: \"apr validate --quality F exits non-zero or is documented as not a gate.\" The done_when contains an evasion loophole allowing un-gated failures if documented, though baselines and drain guard first-green proofs are otherwise solid."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 146,
+        "lanes_agreeing": [
+          1
+        ],
+        "claims": [
+          "FT-10 done_when is owner-free and falsifiable, and first-green proof fails when not done. The baseline is honestly [U] as noted in the baselines section ('X1 baseline: [U]')."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 147,
+        "lanes_agreeing": [
+          2,
+          3
+        ],
+        "claims": [
+          "Line 147: \"the train ledger records `freeze_at` (the release branch cut) and `published_at` (crates.io + the GH release, the later of the two) from the automation. `scripts/check_release_train_duration.sh` computes X1 and fails a > 4 h release in the post-publish stage.\" FT-10 is owner-free, falsifiable, baseline is honestly unrecorded [U] for 0.69.0, and proof tests 4h01m failure and missing timestamp failure.",
+          "Quoting line 147: \"the train ledger records freeze_at (the release branch cut) and published_at (crates.io + the GH release, the later of the two) from the automation.\" The done_when is owner-free and falsifiable, baseline gap is honestly noted, and first-green proof is non-vacuous."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 151,
+        "lanes_agreeing": [
+          1
+        ],
+        "claims": [
+          "FT-11 done_when is owner-free and falsifiable, and baseline is measured with a cited source ('open at 0.69.1\\'s freeze (13:00Z 2026-09-23)'). The first-green proof is vacuous because the structured 'first-green proof' section is entirely missing from the plan for this row."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 156,
+        "lanes_agreeing": [
+          2,
+          3
+        ],
+        "claims": [
+          "Line 156: \"all open at 0.69.1's freeze (13:00Z 2026-09-23). Which of them land in 0.69.1 is settled by 0.69.1's own receipt. This row carries only what 0.69.1 did not close.\" FT-11 is owner-free, falsifiable, baseline is cited, but carrying low-bit and MoE bug fixes into 0.70 risks 4h train budget; #3951 oracle should stay in 0.70 while unclosed kernel bugs defer to 0.71.",
+          "Quoting line 156: \"This row carries only what 0.69.1 did not close.\" The done_when is falsifiable and baselines are cited, but carrying low-bit admission kernels and MoE CUDA fixes into 0.70 threatens the <= 4h train speed goal."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 158,
+        "lanes_agreeing": [
+          1
+        ],
+        "claims": [
+          "FT-12 done_when is owner-free and falsifiable, and baseline is measured with a cited source ('from #3997'). The first-green proof is vacuous because the thresholds are currently '[U] until aprender-cb\\'s sizing lands', meaning the gate cannot fail against a non-existent threshold today."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 160,
+        "lanes_agreeing": [
+          3
+        ],
+        "claims": [
+          "Lines 160, 162-165: Line 160 specifies \"Pillars: A coverage, B pv depth, C ONT-001 rows bound, D backlog\", but lines 162-165 only provide baselines for A, C, and D, completely omitting Pillar B (pv depth). In addition, line 167 marks 0.70 thresholds as [U] pending aprender-cb sizing."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 162,
+        "lanes_agreeing": [
+          2
+        ],
+        "claims": [
+          "Quoting line 162: \"baselines (from #3997, to be re-derived by aprender-cb commands): - A: 88.78 % line (COV_FLOOR := 88); - C: 13/27 ONT rows bound; - D: 715 open issues (121 with no milestone), 57 open PRs, 2,594 remote branches (2026-09-23 09:50Z).\" The baseline for Pillar B (pv depth) is completely missing from the plan."
+        ]
+      },
+      {
+        "file": "docs/specifications/release-0.70-fast-train-plan.md",
+        "line": 167,
+        "lanes_agreeing": [
+          2
+        ],
+        "claims": [
+          "Quoting line 167: \"[U] until aprender-cb sizing lands. The thresholds are copied into this row verbatim in a follow-up commit on this PR.\" The done_when violates the owner-free requirement by naming a person, the text omits Pillar B's baseline entirely, numeric thresholds are missing, and the proof is vacuous."
+        ]
+      },
+      {
+        "file": "scripts/model_ladder.sh",
+        "line": 77,
+        "lanes_agreeing": [
+          2
+        ],
+        "claims": [
+          "Ran grep -rn \"apr-gpu.lock\" scripts/ and inspected scripts/model_ladder.sh:77: \"apr_locked() { flock -E \\\"$LOCK_BUSY\\\" -w \\\"$LOCK_WAIT\\\" \\\"$GPU_LOCK\\\" choom -n 1000 -- \\\"$APR\\\" \\\"$@\\\"; }\". Repo scripts bypass gpu-q with bare flock calls, making FT-1's external gpu-q check ineffective against in-tree code."
+        ]
+      }
+    ],
+    "uncovered": [],
+    "dissent": [
+      {
+        "lane": 1,
+        "verdict": "FAIL",
+        "summary": "DESIGN_VERDICT=PASS-WITH-FIXES | Q1=0.70; Q2=c; Q3=wasted-GPU-minutes; Q4=no; Q5=yes; Q6=split-X1; Q7=FT-1, FT-2, FT-3, FT-7, FT-10.\nQ1: 0.70 because known REDs from the prior patch should not be deferred when stability is a prerequisite for a fast train.\nQ2: c (both), because bare-flock users bypass gpu-q (requiring a wrapper), but gpu-q is the fleet-wide infrastructure that must enforce it defensively.\nQ3: wasted-GPU-minutes, because a lock held for 1 minute at 90% idle is better than a lock held for 10 minutes at 50% idle; absolute time matters.\nQ4: no, because a pilot that doesn't change policy doesn't improve freeze-to-publish time and risks distraction in a speed-focused release.\nQ5: yes, because CPU and architecture-independent tasks should produce identical results for the same binary sha, allowing parallel offloading.\nQ6: split-X1, because achieving <=4h purely in automation is different from manual fix cycles; budget should distinguish automation speed from human intervention.\nQ7: FT-1, FT-2, FT-3, FT-7, FT-10 must land first because X2 relies on the lock being measured and optimized (FT-1,2,3,7) and X1 requires the ledger to measure itself (FT-10).",
+        "findings": [
+          {
+            "claim": "FT-1 done_when is owner-free and falsifiable, baseline is measured with cited source ('#3986'), but the first-green proof is vacuous because it only tests gpu-q, while Q2 notes that bare-flock users bypass gpu-q.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "grounding": "cited",
+            "line": 29
+          },
+          {
+            "claim": "FT-2 done_when is owner-free and falsifiable, baseline is measured with cited source ('#3986\\'s 97 % was taken by hand'), and the first-green proof fails when the row is not done ('0-sample window exits non-zero').",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "grounding": "cited",
+            "line": 39
+          },
+          {
+            "claim": "FT-3 done_when is owner-free and falsifiable, baseline is measured with cited source ('(#3986 P3)'), and first-green proof fails when the row is not done ('Mutant: the CPU leg wrapped back in the lock ⇒ that row is RED').",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "grounding": "cited",
+            "line": 48
+          },
+          {
+            "claim": "FT-4 done_when is owner-free and falsifiable, baseline is measured with cited source ('(#3986 comment)'). The first-green proof is vacuous because checking that 'the stage refuses when the pre-screen card\\'s compute capability differs' only validates the runner's guardrails, not that the pre-screen risk cells actually executed on an idle card.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "grounding": "cited",
+            "line": 57
+          },
+          {
+            "claim": "FT-5 done_when is owner-free and falsifiable, and first-green proof fails when not done. However, the baseline is uncited and only asserted as 'one host runs its whole column serially.'",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "grounding": "cited",
+            "line": 75
+          },
+          {
+            "claim": "FT-6 done_when is owner-free and falsifiable, and first-green proof fails when not done. However, the baseline is uncited and asserted as 'a binary mutex; no concurrent run has ever been compared.'",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "grounding": "cited",
+            "line": 87
+          },
+          {
+            "claim": "FT-7 done_when is owner-free and falsifiable, and first-green proof fails when not done. However, the baseline is uncited and asserted, only noting 'the q4k.apr cell went RED while it was still waiting for the lock.'",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "grounding": "cited",
+            "line": 100
+          },
+          {
+            "claim": "FT-8 done_when is owner-free and falsifiable, baseline is measured with cited source ('measured at origin/main 49fe19c28'), and first-green proof fails when not done ('fails when a target is neither compiled... nor listed').",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "grounding": "cited",
+            "line": 114
+          },
+          {
+            "claim": "FT-9 done_when is owner-free and falsifiable, baseline is measured with cited source ('the drain was fixed in cab272e5d', 'lines at 49fe19c28'), and first-green proof fails when not done ('each new self-test proven RED on its own mutant').",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "grounding": "cited",
+            "line": 129
+          },
+          {
+            "claim": "FT-10 done_when is owner-free and falsifiable, and first-green proof fails when not done. The baseline is honestly [U] as noted in the baselines section ('X1 baseline: [U]').",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "grounding": "cited",
+            "line": 146
+          },
+          {
+            "claim": "FT-11 done_when is owner-free and falsifiable, and baseline is measured with a cited source ('open at 0.69.1\\'s freeze (13:00Z 2026-09-23)'). The first-green proof is vacuous because the structured 'first-green proof' section is entirely missing from the plan for this row.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "grounding": "cited",
+            "line": 151
+          },
+          {
+            "claim": "FT-12 done_when is owner-free and falsifiable, and baseline is measured with a cited source ('from #3997'). The first-green proof is vacuous because the thresholds are currently '[U] until aprender-cb\\'s sizing lands', meaning the gate cannot fail against a non-existent threshold today.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "grounding": "cited",
+            "line": 158
+          },
+          {
+            "claim": "Missing #3986 P2 from the FT rows. The epic context cites #3986 (GPU lock efficiency P1-P5), but only P1, P3, P4, and P5 are addressed in the plan (FT-1, FT-3, FT-6, FT-4, FT-5). P2 is missing.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "grounding": "asserted",
+            "line": 1
+          }
+        ]
+      },
+      {
+        "lane": 2,
+        "verdict": "FAIL",
+        "summary": "DESIGN_VERDICT=PASS-WITH-FIXES | Q1=0.71: Defer low-bit admission kernels and MoE CUDA fixes to 0.71 to protect 0.70 speed scope, keeping only #3951 harness oracle in 0.70; Q2=c: Fleet gpu-q must enforce refusal, while repo wrapper/linter must prevent bare-flock bypasses in model_ladder.sh; Q3=both: Idle fraction verifies contractual X2 bar while wasted GPU-minutes measures true developer queue starvation and prevents gaming; Q4=no: Concurrency pilot does not alter lock policy in 0.70, delivers zero speedup, and introduces stability risks; Q5=conditional: Allowed only for functional correctness where binary sha and ISA flags strictly match, never cross-ISA or for throughput; Q6=split-X1: 4h is achievable for automated pipeline execution, but requires a separate bounded triage budget for fix/re-sweep loops; Q7=FT-1, FT-2, FT-3, FT-5, FT-7, FT-8, FT-9, FT-10, FT-12: Instrumentation, lock hygiene, sharding, CI census, gates, and duration tracking must be operational prior to cutting the release branch.",
+        "findings": [
+          {
+            "claim": "Quoting line 30: \"gpu-q refuses, with a non-zero exit and before taking the lock, a locked command whose argv is a bare cargo test / cargo build / cargo nextest run without a prior --no-run build.\" The done_when is owner-free and falsifiable, baseline is measured (#3986), but the first-green proof tests only gpu-q externally and fails to prevent bare flock bypasses in repo scripts.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Add an in-repo CI check/wrapper ensuring no script runs bare flock /tmp/apr-gpu.lock or compiles under the lock.",
+            "grounding": "cited",
+            "line": 30
+          },
+          {
+            "claim": "Quoting line 40: \"scripts/gpu_lock_idle_sample.sh samples utilization at 1 Hz while the lock is held, and writes {host, window, samples, idle_fraction, holders[]}.\" The done_when is owner-free and falsifiable, baseline is honestly cited as no instrument exists (#3986), and proof verifies calculations and 0-sample errors, but lacks a test ensuring daemon terminates upon lock release.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Add a test asserting that the sampling daemon terminates cleanly immediately upon lock release to prevent orphaned processes.",
+            "grounding": "cited",
+            "line": 40
+          },
+          {
+            "claim": "Quoting line 49: \"scripts/model_ladder.sh CPU legs (--no-gpu, -ngl 0 -dev none) and its sha256 pass run without apr_locked/gpu-q. GPU legs are unchanged.\" The done_when is owner-free and falsifiable, baseline is cited (#3986 P3), and the first-green proof is non-vacuous (mutant is caught).",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Implement as written; ensure the flag parser regex covers all CPU flag variants and prevents lock acquisition for CPU-only rungs.",
+            "grounding": "cited",
+            "line": 49
+          },
+          {
+            "claim": "Quoting line 59: \"The release train pre-freeze stage runs the risk cells on an idle card of the same compute capability as each release host (sm_89 for lambda, sm_121 for gx10).\" The done_when is compromised by an informal ticketing dependency (\"before it is ticketed\") and an impossible sm_121 idle host, while the first-green proof is vacuous because it only validates receipt headers rather than asserting execution of risk cells.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Automate reproduction without human ticketing clauses, remove nonexistent sm_121 idle host requirement (or provision one), and assert executed risk cell count > 0 in the receipt.",
+            "grounding": "cited",
+            "line": 59
+          },
+          {
+            "claim": "Quoting line 76: \"the ladder sweep partitions its cells across the hosts that can run them, and one reducer merges the shards into ONE receipt per release host.\" The done_when is owner-free and falsifiable, baseline is stated, and proof tests reducer rejection of bad shards, but definition of architecture-independent cells is unstated.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Specify the exact contract and metadata filter identifying which cells are architecture-independent and eligible for migration.",
+            "grounding": "cited",
+            "line": 76
+          },
+          {
+            "claim": "Quoting line 98: \"The pilot does NOT change the lock policy (see Q4).\" The done_when and first-green proof are falsifiable, but the row provides zero operational benefit or speedup for release 0.70 while risking GPU stability during sweeps.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Defer FT-6 to release 0.71 or 0.72 as out-of-scope for the 0.70 Fast Train release.",
+            "grounding": "cited",
+            "line": 98
+          },
+          {
+            "claim": "Quoting line 103: \"(b) the serve probe keeps its own evidence (#3949, already merged; this row is its regression guard staying wired).\" The done_when is falsifiable for (a) and (c), but sub-item (b) has no baseline in lines 105-107 and no first-green proof in lines 108-112.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Supply the missing baseline for (b) and add a first-green proof asserting that the serve probe evidence file is generated, non-empty, and preserved.",
+            "grounding": "cited",
+            "line": 103
+          },
+          {
+            "claim": "Quoting line 127: \"The baseline starts at the measured dark count, and can only go down.\" The done_when is owner-free, baseline is measured at 49fe19c28, but the first-green proof is vacuous: a shrink-only baseline allows 0.70 to pass without compiling any dark tests. Furthermore, first-green proofs for #3984 and #3982 are omitted.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Enforce that the shrink-only dark baseline must reach zero at release freeze, and add explicit first-green compilation tests for #3984 and #3982.",
+            "grounding": "cited",
+            "line": 127
+          },
+          {
+            "claim": "Quoting line 136: \"apr validate --quality F exits non-zero or is documented as not a gate.\" The done_when contains an evasion loophole allowing un-gated failures if documented, though baselines and drain guard first-green proofs are otherwise solid.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Remove the \"or is documented as not a gate\" escape hatch; require strict non-zero exits for all release gates.",
+            "grounding": "cited",
+            "line": 136
+          },
+          {
+            "claim": "Quoting line 147: \"the train ledger records freeze_at (the release branch cut) and published_at (crates.io + the GH release, the later of the two) from the automation.\" The done_when is owner-free and falsifiable, baseline gap is honestly noted, and first-green proof is non-vacuous.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Implement as written, ensuring freeze_at is written immutably during the branch cut.",
+            "grounding": "cited",
+            "line": 147
+          },
+          {
+            "claim": "Quoting line 156: \"This row carries only what 0.69.1 did not close.\" The done_when is falsifiable and baselines are cited, but carrying low-bit admission kernels and MoE CUDA fixes into 0.70 threatens the <= 4h train speed goal.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Move all low-bit admission kernels and MoE CUDA fixes to 0.71 \"Don't Leave Behind\", retaining only the #3951 RED-MODEL attribution oracle in 0.70.",
+            "grounding": "cited",
+            "line": 156
+          },
+          {
+            "claim": "Quoting line 167: \"[U] until aprender-cb sizing lands. The thresholds are copied into this row verbatim in a follow-up commit on this PR.\" The done_when violates the owner-free requirement by naming a person, the text omits Pillar B's baseline entirely, numeric thresholds are missing, and the proof is vacuous.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Incorporate explicit numeric thresholds for all pillars A-D directly into the specification, remove personal ownership references, and supply the baseline for Pillar B.",
+            "grounding": "cited",
+            "line": 167
+          },
+          {
+            "claim": "Quoting line 162: \"baselines (from #3997, to be re-derived by aprender-cb commands): - A: 88.78 % line (COV_FLOOR := 88); - C: 13/27 ONT rows bound; - D: 715 open issues (121 with no milestone), 57 open PRs, 2,594 remote branches (2026-09-23 09:50Z).\" The baseline for Pillar B (pv depth) is completely missing from the plan.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Measure and document the current 0.69.x pv depth baseline in the FT-12 baselines block.",
+            "grounding": "cited",
+            "line": 162
+          },
+          {
+            "claim": "Ran ls -la .quorum/ which returned \"No such file or directory\" (exit 2). Acceptance criterion #3 of PMAT-3998 requires: \"A 3-lane quorum ... reviews the plan and decides the epic's open questions; its receipt is committed beside the plan.\" The receipt directory .quorum/PMAT-3998/ does not exist.",
+            "file": "docs/roadmaps/entries/PMAT-3998.yaml",
+            "fix": "Create .quorum/PMAT-3998/ and commit the 3-lane quorum review receipts alongside the plan.",
+            "grounding": "measured",
+            "line": 14
+          },
+          {
+            "claim": "Ran grep -rn \"apr-gpu.lock\" scripts/ and inspected scripts/model_ladder.sh:77: \"apr_locked() { flock -E \\\"$LOCK_BUSY\\\" -w \\\"$LOCK_WAIT\\\" \\\"$GPU_LOCK\\\" choom -n 1000 -- \\\"$APR\\\" \\\"$@\\\"; }\". Repo scripts bypass gpu-q with bare flock calls, making FT-1's external gpu-q check ineffective against in-tree code.",
+            "file": "scripts/model_ladder.sh",
+            "fix": "Update scripts/model_ladder.sh and CI scripts to route through the compliant gpu_test.sh harness rather than invoking bare flock directly.",
+            "grounding": "measured",
+            "line": 77
+          },
+          {
+            "claim": "Quoting line 76: \"The hosts are lambda, gx10 and yoga (CUDA), plus the Mac host (CPU/Metal legs only; it has no CUDA).\" The fleet contains only one sm_121 host (gx10); yoga and lambda are sm_89. Therefore, FT-4's requirement to run pre-screen risk cells on an \"idle card of the same compute capability ... sm_121 for gx10\" is impossible with existing fleet hosts.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Either adjust FT-4 to exempt unique hardware architectures or explicitly provision a secondary sm_121 instance.",
+            "grounding": "cited",
+            "line": 76
+          }
+        ]
+      },
+      {
+        "lane": 3,
+        "verdict": "FAIL",
+        "summary": "DESIGN_VERDICT=PASS-WITH-FIXES | Q1=0.71 (defer to 0.71 except #3951 oracle in 0.70); Q2=c; Q3=both; Q4=no; Q5=conditional; Q6=split-X1; Q7=FT-1, FT-2, FT-3, FT-4, FT-5, FT-7, FT-8, FT-9, FT-10, FT-12.\n\nRulings & Rationales:\n- Q1 (0.71 / defer except #3951): 0.70 is themed around release train speed and lock efficiency; carrying low-bit kernel admissions (#3963, #3953, #3960) and MoE fixes (#3987) risks unpredictable debugging cycles, whereas #3951 oracle attribution is already resolved via operator rule (a).\n- Q2 (c - both): Enforcing refusal in both fleet-wide gpu-q and aprender repository wrappers (scripts/gpu_test.sh, apr_locked, gpu_exclusive_run.sh) ensures bare-flock scripts cannot bypass compilation-outside-lock discipline.\n- Q3 (both): Idle fraction samples in-lock utilization, while wasted GPU-minutes (queue depth * lock duration) measures systemic contention and fleet throughput drag.\n- Q4 (no): FT-6 is an experimental pilot that changes no 0.70 lock policy and produces zero release velocity improvement in 0.70.\n- Q5 (conditional): CPU legs may migrate across hosts only if binary SHA256 and target CPU ISA/microarchitecture match identically, and evidence explicitly records both host IDs, SHA256, and CPU flags; GPU legs remain strictly host-bound.\n- Q6 (split-X1): Split X1 into <= 4h for the automated execution path and a separate budget for triage/fix cycles, avoiding human fix times contaminating release train automation metrics.\n- Q7 (FT-1, FT-2, FT-3, FT-4, FT-5, FT-7, FT-8, FT-9, FT-10, FT-12): All hygiene, instrumentation, sharding, CI census, publish drain simulation, duration ledgering, and debt ratchet slice 1 gates must be operational prior to cutting the 0.70 release branch.",
+        "findings": [
+          {
+            "claim": "Line 30: \"done_when: gpu-q refuses, with a non-zero exit and before taking the lock, a locked command whose argv is a bare `cargo test` / `cargo build` / `cargo nextest run` without a prior `--no-run` build.\" FT-1 is owner-free and falsifiable, baseline is measured (#3986, 1.5 min compile in 25 min suite), but proof only tests gpu-q and omits in-repo bare-flock wrappers (scripts/gpu_exclusive_run.sh, apr_locked).",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Extend first-green proof and enforcement to cover repo-level wrappers (scripts/gpu_test.sh, apr_locked, gpu_exclusive_run.sh) in addition to gpu-q.",
+            "grounding": "cited",
+            "line": 30
+          },
+          {
+            "claim": "Line 40: \"done_when: `scripts/gpu_lock_idle_sample.sh` samples utilization at 1 Hz while the lock is held, and writes `{host, window, samples, idle_fraction, holders[]}`.\" FT-2 is owner-free, falsifiable, baseline is cited (#3986 97% hand measurement), and first-green proof tests fake nvidia-smi series and non-zero exit on 0-sample windows.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "None required; implement as written.",
+            "grounding": "cited",
+            "line": 40
+          },
+          {
+            "claim": "Line 49: \"done_when: `scripts/model_ladder.sh`'s CPU legs (`--no-gpu`, `-ngl 0 -dev none`) and its sha256 pass run without `apr_locked`/gpu-q.\" FT-3 is owner-free, falsifiable, baseline is cited (#3986 P3), and first-green proof asserts concurrency with sibling lock holder and mutant failure.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "None required; implement as written.",
+            "grounding": "cited",
+            "line": 49
+          },
+          {
+            "claim": "Lines 69-71: \"the pre-freeze stage's receipt names the pre-screen host, its `compute_cap`, and the binary sha; the stage refuses when the pre-screen card's compute capability differs from the release host's; the stage refuses when the binary sha differs.\" FT-4 proof is partially vacuous: it validates receipt metadata and rejection on mismatched arch, but fails to assert that risk cells actually execute or that pre-screen REDs trigger required host reproduction before ticketing.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Add test assertions to FT-4 proof verifying risk cells are executed and included in the receipt, and that pre-screen RED triggers the reproduction requirement.",
+            "grounding": "cited",
+            "line": 69
+          },
+          {
+            "claim": "Line 76: \"the ladder sweep partitions its cells across the hosts that can run them, and one reducer merges the shards into ONE receipt per release host.\" FT-5 is owner-free, falsifiable, baseline is cited (single host serial sweep), and proof tests rejection of missing shards, duplicates, and arch mismatches.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "None required; implement as written.",
+            "grounding": "cited",
+            "line": 76
+          },
+          {
+            "claim": "Line 89: \"On yoga, a known-green model run executes concurrently with a CUDA correctness suite as separate processes (NOT MPS: an MPS client fault can kill the others).\" FT-6 is owner-free, falsifiable, baseline is cited (binary mutex), and proof tests output sha256 equivalence and planted perturbation failure. However, it is an out-of-scope pilot for a speed release that changes no lock policy.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Defer FT-6 pilot to 0.71/0.72 or classify explicitly as non-blocking research for 0.70.",
+            "grounding": "cited",
+            "line": 89
+          },
+          {
+            "claim": "Line 103: \"(b) the serve probe keeps its own evidence (#3949, already merged; this row is its regression guard staying wired)\" FT-7 defines done_when for (a), (b), and (c), but lines 108-112 provide first-green proofs only for (a) and (c), completely omitting a proof for (b).",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Add a specific first-green proof / regression test asserting serve probe evidence persistence for FT-7(b).",
+            "grounding": "cited",
+            "line": 103
+          },
+          {
+            "claim": "Line 115: \"done_when: every integration-test target is compiled by some CI job, or deleted.\" FT-8 is owner-free, falsifiable, baseline is measured at origin/main 49fe19c28 (28 targets, 96/36 required-features), and proof uses check_test_targets_compiled.sh census with shrink-only baseline.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "None required; implement as written.",
+            "grounding": "cited",
+            "line": 115
+          },
+          {
+            "claim": "Lines 132-134: \"(a) a guard simulates the publish cascade's drain over the current `cargo metadata` graph and requires completion; `TIERS[]` is corrected to the real order: 0 strictly-later-tier edges, from 44. (b) #3974: each of the release surface's verdict lines is classified, and every line is closed.\" FT-9 is owner-free, falsifiable, baseline is measured (cab272e5d, 44 edges, 58 dogfood lines at 49fe19c28), and proof tests planted cycle and verdict shrink-only ratchet.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "None required; implement as written.",
+            "grounding": "cited",
+            "line": 132
+          },
+          {
+            "claim": "Line 147: \"the train ledger records `freeze_at` (the release branch cut) and `published_at` (crates.io + the GH release, the later of the two) from the automation. `scripts/check_release_train_duration.sh` computes X1 and fails a > 4 h release in the post-publish stage.\" FT-10 is owner-free, falsifiable, baseline is honestly unrecorded [U] for 0.69.0, and proof tests 4h01m failure and missing timestamp failure.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "None required; implement as written.",
+            "grounding": "cited",
+            "line": 147
+          },
+          {
+            "claim": "Line 156: \"all open at 0.69.1's freeze (13:00Z 2026-09-23). Which of them land in 0.69.1 is settled by 0.69.1's own receipt. This row carries only what 0.69.1 did not close.\" FT-11 is owner-free, falsifiable, baseline is cited, but carrying low-bit and MoE bug fixes into 0.70 risks 4h train budget; #3951 oracle should stay in 0.70 while unclosed kernel bugs defer to 0.71.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Scope FT-11 in 0.70 strictly to #3951 oracle attribution; defer #3987, #3963, #3953, #3960 to 0.71 if not closed by 0.69.1.",
+            "grounding": "cited",
+            "line": 156
+          },
+          {
+            "claim": "Lines 160, 162-165: Line 160 specifies \"Pillars: A coverage, B pv depth, C ONT-001 rows bound, D backlog\", but lines 162-165 only provide baselines for A, C, and D, completely omitting Pillar B (pv depth). In addition, line 167 marks 0.70 thresholds as [U] pending aprender-cb sizing.",
+            "file": "docs/specifications/release-0.70-fast-train-plan.md",
+            "fix": "Add baseline measurement for Pillar B (pv depth) to lines 162-165 and populate concrete numerical 0.70 thresholds for Pillars A-D once sized.",
+            "grounding": "cited",
+            "line": 160
+          }
+        ]
+      }
+    ],
+    "partial_reasons": [
+      "lane 1: non-empty .err (635 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+      "lane 2: non-empty .err (743 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+      "lane 3: non-empty .err (591 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+    ],
+    "coverage_source": "lanes",
+    "author": {
+      "model": "claude-opus-5-5",
+      "family": "claude"
+    },
+    "lanes": [
+      {
+        "lane": 1,
+        "model": "gemini-3.1-pro-high",
+        "model_measured": "gemini-3.1-pro-high",
+        "model_source": "measured",
+        "family": "gemini"
+      },
+      {
+        "lane": 2,
+        "model": "gemini-3.8-flash-high",
+        "model_measured": "gemini-3.8-flash-high",
+        "model_source": "measured",
+        "family": "gemini"
+      },
+      {
+        "lane": 3,
+        "model": "gemini-3.7-flash-high",
+        "model_measured": "gemini-3.7-flash-high",
+        "model_source": "measured",
+        "family": "gemini"
+      }
+    ],
+    "agreed": false,
+    "artifact": "/run/user/1000/paiml-implement/agy/PMAT-3998/0209f4cf-058f-49af-9871-4e9440cd0502/ph1/lane-reduce.json"
+  },
+  "open_questions": [
+    "Exit 3 on all 3 lanes: agy-lane.sh asserts EVERY ref in the shared common dir /home/noah/src/aprender/.git, which ~40 worktrees share. The refs that moved belong to other sessions (d8/tok-per-sec-3981, fix/3477-ptxas-target-portable, fix/3990-chat-template-fidelity, release/0.69.1-batch-2, and remote refs from someone else's fetch). Shared HEAD stayed bba01afaa, the tree is clean, and every lane clone was removed byte-identical, which points to concurrent sessions and not the lanes. The rail still cannot tell them apart. Per rule 2c I did not add --concurrent-scope, and that flag does not cover refs anyway ('a new branch or tag is RED regardless'). Rerunning in this fleet will probably fail the same way. Fable decides whether to accept the claims or rerun during a quiet window.",
+    "lane-reduce.sh only reported the exit-3 lanes as non-empty .err in partial_reasons and did not void them. It also reported agreed=false. Do not read its artifact as three counted FAILs.",
+    "Lane models: the installed config quorum.lane_models maps lane 3 to claude-opus-4-6-thinking, but the brief rules out Claude-family lanes. So I ran the lanes under a scratch PAIML_IMPLEMENT_CONFIG with lane_models=[gemini-3.1-pro-high, gemini-3.8-flash-high, gemini-3.7-flash-high], and all three were measured from their logs. That means one family and one agy quota pool. The gpt-oss-120b-medium fallback was probed first and returned 429 RESOURCE_EXHAUSTED, so no second family was available.",
+    "Schema/mode: mode=grillme with --schema quorum-lane-schema.json overriding grillme-schema.json. The verdict mapping was PASS->PASS, PASS-WITH-FIXES->FAIL, dniaw->dniaw, and the unmapped verdict was kept in a DESIGN_VERDICT= summary prefix. All 3 lanes followed it.",
+    "Lane 2 (400k input tokens) claims 'measured' commands (ls .quorum/, grep over scripts/). Lanes 1 and 3 read about 40-54k tokens, which fits reading the plan only. None of them ran gh issue view successfully per their prose, so the must-carry comparison against epic #3998 comes from the plan's own quotes.",
+    "Lane 2, finding L14: the PMAT-3998 acceptance criterion #3 wants the quorum receipt committed beside the plan. .quorum/PMAT-3998/ does not exist yet. That is expected before this receipt lands, and it is Fable's to commit."
+  ],
+  "partial": true
+}
