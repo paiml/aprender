@@ -24,3 +24,5 @@ self-hosted-runner:
     - apple-silicon
     - m4
     - mini
+    # #4292 / infra#1042: the mini's dedicated repo-level release runner
+    - mini-builder
