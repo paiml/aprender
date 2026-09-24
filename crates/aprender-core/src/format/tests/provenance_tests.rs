@@ -174,6 +174,7 @@ fn falsify_ship_009_apr_metadata_applies_to_model_1_teacher() {
 /// `apr stamp` fixture-swap on the canonical lambda-labs staging
 /// artifact). Falsifier: if the contract is edited to drop AC-SHIP1-009
 /// binding or downgrade the discharge marker, this test fails.
+#[cfg(aprender_monorepo)] // #4130: reads the repo-root contracts/, absent from the published .crate
 #[test]
 fn falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker() {
     let Some(contract_yaml) = provable_contracts::workspace_file_or_skip!(

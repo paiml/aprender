@@ -1430,7 +1430,9 @@ mod envelope {
 /// `ExecutionBackend::identity` — and because the plan fixes
 /// `setfit::classify::backend` as this task's filter. No case here needs
 /// encoder-private state.
-#[cfg(test)]
+// #4130: every test here pins the code to the repo-root contracts/ (CONTRACT/BINDING below), which the
+// published .crate does not carry.
+#[cfg(all(test, aprender_monorepo))]
 mod backend {
     use super::*;
     use crate::setfit::encoder::ExecutionBackend;
@@ -1859,6 +1861,7 @@ mod classify_path {
         TRUNCATION_PROBE_UNIT.repeat(TRUNCATION_PROBE_REPEATS)
     }
 
+    #[cfg(aprender_monorepo)] // #4130: reads the repo-root contracts/, absent from the published .crate
     #[test]
     fn the_truncation_probe_matches_the_contract_construction_rule() {
         // The probe is only evidence about truncation if it is the contract's

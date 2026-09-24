@@ -4447,6 +4447,7 @@ mod ladder {
     /// F-05's defect — a source assertion scanning its own needle — and cutting at
     /// the first test banner removes it structurally rather than by being careful
     /// about wording. Every symbol asserted below lives above that cut.
+    #[cfg(aprender_monorepo)] // #4130: reads the repo-root contracts/, absent from the published .crate
     #[test]
     fn the_rung_numbering_matches_the_contracts_eight_rung_ladder() {
         const CONTRACT: &str = include_str!("../../../../contracts/setfit-apr-v1.yaml");
