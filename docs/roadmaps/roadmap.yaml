@@ -21660,6 +21660,24 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4258
+  github_issue: 4258
+  item_type: task
+  title: 'Qwen3.5 CUDA: q8_activation_valid is never cleared on the qwen35 path, so DP4A reuses a stale Q8_1 activation'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T10:25:13Z
+  updated: 2026-09-24T12:01:41Z
+  spec: null
+  acceptance_criteria:
+  - 'A DP4A GEMV requantizes its input whenever the input buffer differs from the cached Q8_1 activation or a qwen35 writer kernel (rmsnorm_into, per_head_rmsnorm_into, residual_add_into, fused_swiglu_into, gdn_sigmoid_gate_into) rewrote it; a red-first test covers both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Found in /mnt/nvme-raid0/tmp/alt0693/REPORT.md "Extra finding". The DP4A-catastrophic falsifier now passes parity at every position on 0.8B; re-measure the #4030 pin on 2B/4B.'
 - id: PMAT-4263
   github_issue: 4263
   item_type: task
