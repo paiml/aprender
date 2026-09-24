@@ -18,7 +18,8 @@
 # util-linux 2.39.3; measured in #4120's review).
 #
 # Usage: check_guard_steps_isolated.sh [--self-test] [workflow.yml ...]
-#   default workflows: every .github/workflows/*.yml (every one runs on a self-hosted Linux
+#   default workflows: every .github/workflows/*.y{a,}ml and .github/actions/*/action.y{a,}ml
+#   (every workflow runs on a self-hosted Linux
 #   runner; review of #4133 measured the runs-on of all 13 that call a guard)
 # Exit: 0 every invocation isolated · 1 an unisolated invocation (named) · 2 usage/ENV.
 set -uo pipefail
@@ -30,6 +31,9 @@ cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" || exit 2
 scan() {
     awk -v f="$1" '
         /^[[:space:]]*#/ { next }
+        # the BARE form -- a command that starts with the guard path (`run: scripts/check_x.sh`,
+        # or a block line that is just the path) -- can never be wrapped, so it is refused as is
+        /^[[:space:]]*(-[[:space:]]+)?(run:[[:space:]]*)?scripts\/check_[A-Za-z0-9_]+\.sh/ { printf "%s:%d: %s\n", f, NR, $0; next }
         {
             line = $0
             while (match(line, /(^|[^a-z_.\/-])(bash scripts|sh scripts|\.\/scripts)\/check_[A-Za-z0-9_]+\.sh/)) {
@@ -84,6 +88,9 @@ self_test() {
     row "./ form, unwrapped"                1 $'        run: ./scripts/check_a.sh --x\n'
     row "./ form, wrapped"                  0 $'        run: setsid --wait ./scripts/check_a.sh --x\n'
     row "a path mention is not an invocation" 0 $'        paths: [scripts/check_a.sh]\n'
+    row "bare run: form is refused"         1 $'        run: scripts/check_a.sh --x\n'
+    row "bare block line is refused"        1 $'        run: |\n          scripts/check_a.sh\n'
+    row "list item bare form is refused"    1 $'      - run: scripts/check_a.sh\n'
     # the MUTANT the ticket names: the real ci.yml with ONE wrapper removed must go RED
     if [ -f .github/workflows/ci.yml ]; then
         sed '0,/setsid --wait bash scripts\/check_/s//bash scripts\/check_/' .github/workflows/ci.yml > "$t/ci.yml"
@@ -107,8 +114,11 @@ esac
 if [ "$#" -gt 0 ]; then files=("$@")
 else
     files=()
-    for f in .github/workflows/*.yml; do [ -f "$f" ] && files+=("$f"); done
-    [ "${#files[@]}" -gt 0 ] || { printf '%s: ENV - no .github/workflows/*.yml\n' "$PROG" >&2; exit 2; }
+    # workflows in both extensions, and composite actions (#4133 ph2 lane 1: latent today)
+    for f in .github/workflows/*.yml .github/workflows/*.yaml .github/actions/*/action.yml .github/actions/*/action.yaml; do
+        [ -f "$f" ] && files+=("$f")
+    done
+    [ "${#files[@]}" -gt 0 ] || { printf '%s: ENV - no workflow files found\n' "$PROG" >&2; exit 2; }
 fi
 check "${files[@]}"
 rc=$?
