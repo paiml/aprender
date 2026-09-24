@@ -15,7 +15,8 @@
 #   9. the judge table refuses a thin run: CRUX_MIN_TABLE_ROWS above what it judged → a BROKE naming the floor
 #  10. MUTANT: WATCHED emptied → row 4 sees a sample where it must see all
 #  11. the REAL table in fabricated repos: a push and a merge_group head that touch the judge → all 24;
-#      an untouched push samples with its diff READ (never 'could not be read')
+#      an untouched push samples with its diff READ (never 'could not be read'); the table still names itself
+#  12. the sourced diff lib leaves its caller's PROG and REPO_ROOT alone
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
@@ -127,9 +128,9 @@ touch_commit() { # touch_commit <dir> <path>: one commit that changes <path>
   printf '\n# touched\n' >> "$1/$2"
   git -C "$1" add -A && git -C "$1" -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit --no-verify -q -m "touch $2"
 }
-plan_line() { # plan_line <dir> <event>: the table's own plan line
+plan_line() { # plan_line <dir> <event>: the table's own plan line, and its summary line (the name it reports)
   ( cd "$1" && env -u GITHUB_BASE_REF -u CRUX_MUTANT_DIFF_BASE GITHUB_EVENT_NAME="$2" CRUX_MUTANTS_PLAN_ONLY=1 \
-      timeout 600 bash scripts/check_crux_inference_judge.sh 2>&1 | grep 'F6 mutants:' )
+      timeout 600 bash scripts/check_crux_inference_judge.sh 2>&1 | grep -E 'F6 mutants:|ok, [0-9]+ broke$' | tr '\n' ' ' )
 }
 P1="$TMP/push-judge"; fab "$P1"; touch_commit "$P1" scripts/lib/crux_inference_judge.py
 git -C "$P1" update-ref refs/remotes/origin/main HEAD          # a push to main: HEAD is the origin/main tip
@@ -140,10 +141,16 @@ P3="$TMP/push-readme"; fab "$P3"; touch_commit "$P3" scripts/guards_nightly_mani
 git -C "$P3" update-ref refs/remotes/origin/main HEAD
 l3=$(plan_line "$P3" push)
 case "$l1|$l2|$l3" in
-  *"all, 24 of 24"*"crux_inference_judge.py"*"|"*"all, 24 of 24"*"crux_inference_judge.py"*"|"*"sample, 6 of 24"*"touches none"*)
-    ok "the REAL table reads its diff on push and merge_group: the judge touched → all 24; an untouched push samples, diff read" ;;
+  *"all, 24 of 24"*"crux_inference_judge.py"*" check_crux_inference_judge: "*"|"*"all, 24 of 24"*"crux_inference_judge.py"*" check_crux_inference_judge: "*"|"*"sample, 6 of 24"*"touches none"*" check_crux_inference_judge: "*)
+    ok "the REAL table reads its diff on push and merge_group: the judge touched → all 24; an untouched push samples, diff read; the table still names itself" ;;
   *) broke "table-read diff: push '$l1' / merge_group '$l2' / untouched push '$l3'" ;;
 esac
+
+# Row 12: the sourced lib leaves its caller's globals alone (it once set PROG and REPO_ROOT in the caller's shell).
+g=$( PROG=caller-prog; REPO_ROOT=caller-root; . "$ROOT/scripts/lib/crux_mutant_plan.sh" \
+     && crux_mutant_changed "$P1" "$TMP/g.txt"; printf '%s|%s|%s' "$PROG" "$REPO_ROOT" "$(grep -c crux_inference_judge "$TMP/g.txt" 2>/dev/null)" )
+[ "$g" = "caller-prog|caller-root|1" ] && ok "the sourced diff lib leaves the caller's PROG and REPO_ROOT alone, and still reads the diff" \
+  || broke "caller globals after crux_mutant_changed: $g (want caller-prog|caller-root|1)"
 
 python3 - "$PLAN" "$TMP/mutant-plan.py" <<'PY'
 import re, sys
