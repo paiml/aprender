@@ -1024,7 +1024,7 @@ impl<'a> Qwen35CudaModel<'a> {
         position: usize,
     ) -> Result<()> {
         self.require_attention(il)?;
-        self.with_own_state(|m, s| m.attention_layer(s, il, hidden, position, true))
+        self.with_own_state(|m, s| m.attention_layer(s, il, hidden, position))
     }
 
     /// The attention body against an explicit state.
@@ -1034,7 +1034,6 @@ impl<'a> Qwen35CudaModel<'a> {
         il: usize,
         hidden: &GpuBuffer<f32>,
         position: usize,
-        ffn: bool,
     ) -> Result<()> {
         self.require_attention(il)?;
         if position >= state.max_seq_len {
@@ -1045,7 +1044,7 @@ impl<'a> Qwen35CudaModel<'a> {
                 ),
             });
         }
-        self.attention_layer_inner(state, il, hidden, position, ffn)
+        self.attention_layer_inner(state, il, hidden, position)
             .map_err(|e| gpu_err("qwen35_cuda_attention", &e))
     }
 
@@ -1057,7 +1056,6 @@ impl<'a> Qwen35CudaModel<'a> {
         il: usize,
         hidden: &GpuBuffer<f32>,
         position: usize,
-        ffn: bool,
     ) -> std::result::Result<(), trueno_gpu::GpuError> {
         let d = self.dims;
         let CudaLayer::Attention(w) = &self.layers[il] else {
@@ -1181,43 +1179,40 @@ impl<'a> Qwen35CudaModel<'a> {
         )?;
         ex.residual_add_into(hidden, &a.attn_out, hidden, d.hidden_dim)?;
 
-        // post_attention_norm -> SwiGLU FFN -> the second residual. A batched
-        // step (`forward_batch`) runs this part for every sequence at once.
-        if ffn {
-            ex.rmsnorm_into(
-                hidden,
-                &w.post_attention_norm,
-                &s.post_normed,
-                d.hidden_dim,
-                d.eps,
-            )?;
-            ex.gemv_dispatch(
-                w.ffn_gate.qtype,
-                w.ffn_gate.ptr,
-                &s.post_normed,
-                &s.ffn_gate,
-                w.ffn_gate.n,
-                w.ffn_gate.k,
-            )?;
-            ex.gemv_dispatch(
-                w.ffn_up.qtype,
-                w.ffn_up.ptr,
-                &s.post_normed,
-                &s.ffn_up,
-                w.ffn_up.n,
-                w.ffn_up.k,
-            )?;
-            ex.fused_swiglu_into(&s.ffn_gate, &s.ffn_up, &s.ffn_act, d.intermediate_dim)?;
-            ex.gemv_dispatch(
-                w.ffn_down.qtype,
-                w.ffn_down.ptr,
-                &s.ffn_act,
-                &s.ffn_down,
-                w.ffn_down.n,
-                w.ffn_down.k,
-            )?;
-            ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)?;
-        }
+        // post_attention_norm -> SwiGLU FFN -> the second residual
+        ex.rmsnorm_into(
+            hidden,
+            &w.post_attention_norm,
+            &s.post_normed,
+            d.hidden_dim,
+            d.eps,
+        )?;
+        ex.gemv_dispatch(
+            w.ffn_gate.qtype,
+            w.ffn_gate.ptr,
+            &s.post_normed,
+            &s.ffn_gate,
+            w.ffn_gate.n,
+            w.ffn_gate.k,
+        )?;
+        ex.gemv_dispatch(
+            w.ffn_up.qtype,
+            w.ffn_up.ptr,
+            &s.post_normed,
+            &s.ffn_up,
+            w.ffn_up.n,
+            w.ffn_up.k,
+        )?;
+        ex.fused_swiglu_into(&s.ffn_gate, &s.ffn_up, &s.ffn_act, d.intermediate_dim)?;
+        ex.gemv_dispatch(
+            w.ffn_down.qtype,
+            w.ffn_down.ptr,
+            &s.ffn_act,
+            &s.ffn_down,
+            w.ffn_down.n,
+            w.ffn_down.k,
+        )?;
+        ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)?;
 
         // NO sync here (#3090 review). Every op above is enqueued on the one
         // stream this model uses, so the next layer's first kernel is already
@@ -1333,7 +1328,7 @@ impl<'a> Qwen35CudaModel<'a> {
     /// `DeltaNet` layer.
     pub fn forward_deltanet_layer(&mut self, il: usize, hidden: &GpuBuffer<f32>) -> Result<()> {
         self.require_deltanet(il)?;
-        self.with_own_state(|m, s| m.deltanet_layer(s, il, hidden, true))
+        self.with_own_state(|m, s| m.deltanet_layer(s, il, hidden))
     }
 
     /// The `DeltaNet` body against an explicit state.
@@ -1342,10 +1337,9 @@ impl<'a> Qwen35CudaModel<'a> {
         state: &mut Qwen35CudaState,
         il: usize,
         hidden: &GpuBuffer<f32>,
-        ffn: bool,
     ) -> Result<()> {
         self.require_deltanet(il)?;
-        self.deltanet_layer_inner(state, il, hidden, ffn)
+        self.deltanet_layer_inner(state, il, hidden)
             .map_err(|e| gpu_err("qwen35_cuda_deltanet", &e))
     }
 
@@ -1356,7 +1350,6 @@ impl<'a> Qwen35CudaModel<'a> {
         state: &Qwen35CudaState,
         il: usize,
         hidden: &GpuBuffer<f32>,
-        ffn: bool,
     ) -> std::result::Result<(), trueno_gpu::GpuError> {
         let d = self.dims;
         let CudaLayer::DeltaNet(w) = &self.layers[il] else {
@@ -1472,43 +1465,40 @@ impl<'a> Qwen35CudaModel<'a> {
         )?;
         ex.residual_add_into(hidden, &s.ssm_out, hidden, d.hidden_dim)?;
 
-        // post_attention_norm -> SwiGLU FFN -> the second residual. A batched
-        // step (`forward_batch`) runs this part for every sequence at once.
-        if ffn {
-            ex.rmsnorm_into(
-                hidden,
-                &w.post_attention_norm,
-                &s.post_normed,
-                d.hidden_dim,
-                d.eps,
-            )?;
-            ex.gemv_dispatch(
-                w.ffn_gate.qtype,
-                w.ffn_gate.ptr,
-                &s.post_normed,
-                &s.ffn_gate,
-                w.ffn_gate.n,
-                w.ffn_gate.k,
-            )?;
-            ex.gemv_dispatch(
-                w.ffn_up.qtype,
-                w.ffn_up.ptr,
-                &s.post_normed,
-                &s.ffn_up,
-                w.ffn_up.n,
-                w.ffn_up.k,
-            )?;
-            ex.fused_swiglu_into(&s.ffn_gate, &s.ffn_up, &s.ffn_act, d.intermediate_dim)?;
-            ex.gemv_dispatch(
-                w.ffn_down.qtype,
-                w.ffn_down.ptr,
-                &s.ffn_act,
-                &s.ffn_down,
-                w.ffn_down.n,
-                w.ffn_down.k,
-            )?;
-            ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)?;
-        }
+        // post_attention_norm -> SwiGLU FFN -> the second residual
+        ex.rmsnorm_into(
+            hidden,
+            &w.post_attention_norm,
+            &s.post_normed,
+            d.hidden_dim,
+            d.eps,
+        )?;
+        ex.gemv_dispatch(
+            w.ffn_gate.qtype,
+            w.ffn_gate.ptr,
+            &s.post_normed,
+            &s.ffn_gate,
+            w.ffn_gate.n,
+            w.ffn_gate.k,
+        )?;
+        ex.gemv_dispatch(
+            w.ffn_up.qtype,
+            w.ffn_up.ptr,
+            &s.post_normed,
+            &s.ffn_up,
+            w.ffn_up.n,
+            w.ffn_up.k,
+        )?;
+        ex.fused_swiglu_into(&s.ffn_gate, &s.ffn_up, &s.ffn_act, d.intermediate_dim)?;
+        ex.gemv_dispatch(
+            w.ffn_down.qtype,
+            w.ffn_down.ptr,
+            &s.ffn_act,
+            &s.ffn_down,
+            w.ffn_down.n,
+            w.ffn_down.k,
+        )?;
+        ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)?;
 
         // NO sync here — see `attention_layer_inner`. Stream order IS the
         // dependency; the host only has to wait where it reads.
@@ -1559,8 +1549,8 @@ impl<'a> Qwen35CudaModel<'a> {
         .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
         for il in 0..self.layers.len() {
             match self.layers[il] {
-                CudaLayer::DeltaNet(_) => self.deltanet_layer(state, il, &dev, true)?,
-                CudaLayer::Attention(_) => self.attention_layer(state, il, &dev, position, true)?,
+                CudaLayer::DeltaNet(_) => self.deltanet_layer(state, il, &dev)?,
+                CudaLayer::Attention(_) => self.attention_layer(state, il, &dev, position)?,
             }
         }
         // The tail stays on the device (#3090 review). `hidden_to_logits` would
