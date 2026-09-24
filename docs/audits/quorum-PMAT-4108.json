@@ -38,7 +38,10 @@
   }
  ],
  "agreed": false,
- "verdict": "2/3 counted \u2014 NOT armable; superseded by a fresh full round (no composed receipts)",
+ "verdict": "2/3 counted — NOT armable; superseded by a fresh full round (no composed receipts)",
  "receipt_lint_note": "single haiku seat recorded by hand; cop overrides receipt-lint's refusal until tooling lands",
- "prior_rounds": "ph5: gemini-3.1-pro FAIL (|| exit 1 declined with measurement; --dry-run count check adopted as row 37), 3.8/3.7 PASS"
+ "prior_rounds": {
+  "earlier": "ph5: gemini-3.1-pro FAIL (|| exit 1 declined with measurement; --dry-run count check adopted as row 37), 3.8/3.7 PASS",
+  "ph9": "head 66c77945f, brief_sha256 072ce991, diff_sha256 fbbff109, shape sonnet-5 + 1 agy gemini-3.1-pro-high + haiku-4-5 (OPERATOR verbatim 2026-09-24: \"we need to switch default to sonnet, agy, haiku\"). sonnet-5 FAIL, measured: (a) --dry-run over an empty universe exits 0; (b) check_guards_are_wired.sh `|| out=''` reads a failed dry-run as nothing dispatched; (c, minor) rows 34b/36/37 had no mutant. haiku-4-5 PASS, no findings. gemini-3.1-pro-high (conv 7b2c6d0d) VOID: agy-lane exit 3 (shared refs/config moved; they belong to other sessions' worktrees, attributed by worktree ownership, which is not a clearance), and the lane WROTE 2 files into its writes=false clone (existing.sh, test_grep_fail.sh). Its claim that a short universe_for_subset listing is unguarded was taken as a finding anyway. All findings fixed in 9a56c6bef; the round is superseded and a fresh full round will run at the new head."
+ }
 }
