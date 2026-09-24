@@ -45,7 +45,7 @@ impl<'a> StCpuForward<'a> {
     }
 }
 
-impl<'a> ArchForward for StCpuForward<'a> {
+impl ArchForward for StCpuForward<'_> {
     fn arch(&self) -> &'static str {
         "safetensors"
     }
@@ -55,11 +55,21 @@ impl<'a> ArchForward for StCpuForward<'a> {
     }
 
     fn context_length(&self) -> usize {
-        // FIXME(#4269 RED): this must be the length `AprKVCache::new` builds
-        // (config.context_length, or its own 2048 fallback when unset) —
-        // returning 0 unconditionally is the RED commit's deliberate defect;
-        // `Session::generate` refuses any prompt whole against it.
-        0
+        // The length `AprKVCache::new` builds to (config.rs): the declared
+        // context, or its own 2048 fallback when the SafeTensors
+        // `config.json` left it unset (0). Read off the cache once it
+        // exists, so this can never disagree with what was actually
+        // allocated.
+        self.cache.as_ref().map_or_else(
+            || {
+                if self.model.config.context_length > 0 {
+                    self.model.config.context_length
+                } else {
+                    2048
+                }
+            },
+            AprKVCache::capacity,
+        )
     }
 
     fn batched_prefills(&self) -> usize {
