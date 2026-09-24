@@ -135,6 +135,8 @@ pub fn run_bindings_gate(contract_dir: &Path) -> RatchetOutcome {
             Vec::new()
         }
     };
+    // Keyed by the symbol path alone, not (contract, equation): resolution is a function of the path, so every row
+    // binding the same path is the same ghost. A NEW path is never covered by an old entry.
     let allowed: BTreeMap<&str, &AllowEntry> =
         allow.iter().map(|e| (e.symbol.as_str(), e)).collect();
 
