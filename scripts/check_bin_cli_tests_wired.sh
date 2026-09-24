@@ -37,7 +37,46 @@ SELF="${BASH_SOURCE[0]}"
 
 derive() { # derive <root> -> "<pkg>\t--test\t<name>" for each spawning target no lane runs
     python3 - "$1" <<'PY'
-import glob, os, re, sys, tomllib
+import glob, os, re, sys
+# CI's guard-tree python is 3.10: no tomllib (#4315 run 36032470368 failed on
+# ModuleNotFoundError). Use tomllib/tomli when present, else read only the keys
+# this guard needs. APR_TOML_READER=minimal forces the fallback so the self-test
+# proves it on any interpreter.
+toml = None
+if os.environ.get("APR_TOML_READER") != "minimal":
+    for _name in ("tomllib", "tomli"):
+        try:
+            toml = __import__(_name); break
+        except ImportError:
+            pass
+
+def _scalar(v):
+    v = v.strip()
+    if v[:1] in ('"', "'"):
+        q = v[0]; end = v.find(q, 1)
+        return v[1:end] if end > 0 else None
+    v = v.split("#", 1)[0].strip()
+    return {"true": True, "false": False}.get(v, v)
+
+def load_minimal(man):
+    """[package] name/autotests and [[test]] name/path -- all this guard reads."""
+    d = {"package": {}, "test": []}; cur = None
+    for line in open(man, encoding="utf-8"):
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if s.startswith("[[") :
+            cur = {} if s.split("]]")[0].strip("[ ") == "test" else None
+            if cur is not None: d["test"].append(cur)
+            continue
+        if s.startswith("["):
+            cur = d["package"] if s.split("]")[0].strip("[ ") == "package" else None
+            continue
+        if cur is not None and "=" in s:
+            k, v = s.split("=", 1); k = k.strip()
+            if k in ("name", "autotests", "path"):
+                cur[k] = _scalar(v)
+    return d
 root = sys.argv[1]
 SPAWN = re.compile(r'CARGO_BIN_EXE_|cargo_bin\(|cargo_bin_cmd!')
 
@@ -48,8 +87,8 @@ def manifests():
 def targets(man):
     """(package, name, [source files]) for every test target of one manifest."""
     try:
-        d = tomllib.load(open(man, "rb"))
-    except (OSError, tomllib.TOMLDecodeError) as e:
+        d = toml.load(open(man, "rb")) if toml else load_minimal(man)
+    except (OSError, ValueError) as e:  # TOMLDecodeError is a ValueError
         print("cannot parse %s: %s" % (man, e), file=sys.stderr); sys.exit(2)
     pkg = (d.get("package") or {}).get("name")
     if not pkg:
@@ -196,6 +235,15 @@ autotests = false'
     }
     echo "case table:"
     run_rows "$SELF" || red=1
+    echo "case table, fallback TOML reader (python 3.10 has no tomllib):"
+    APR_TOML_READER=minimal run_rows "$SELF" || red=1
+    # Parity on the real tree: the fallback derives exactly what tomllib does.
+    local root; root=$(git -C "$(dirname "$SELF")" rev-parse --show-toplevel 2>/dev/null)
+    if [ -n "$root" ] && python3 -c 'import tomllib' 2>/dev/null; then
+        if [ "$(bash "$SELF" --print "$root" 2>&1)" = "$(APR_TOML_READER=minimal bash "$SELF" --print "$root" 2>&1)" ]; then
+            echo "  ok    reader-parity    the fallback reader derives the tomllib set on this tree"
+        else echo "  FAIL  reader-parity    the fallback reader differs from tomllib on this tree"; red=1; fi
+    fi
     # The ledger itself: equal passes, a missing line and a stale line both fail.
     printf '%s\n' "$want" > "$T/ledger"
     bash "$SELF" --check "$T/tree" "$T/ledger" > /dev/null 2>&1 && echo "  ok    ledger-equal     an exact ledger passes" || { echo "  FAIL  ledger-equal     an exact ledger failed"; red=1; }

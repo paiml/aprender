@@ -2,10 +2,6 @@
 # Test targets that READ THE TREE and that no workflow runs. Not in the quick
 # tier (it must never be stricter than the full tier), and each line is a
 # finding: a test nothing executes (BSE-17, PMAT-1077).
-apr-cli	--test	falsification_crux_a_01
-apr-cli	--test	falsification_crux_a_03
-apr-cli	--test	falsification_crux_a_20
-aprender-cgp	--test	integration
 aprender-contracts	--test	apr_hnsw_persistence_contract
 aprender-contracts	--test	apr_hybrid_retrieval_contract
 aprender-contracts	--test	apr_mcp_server_contract

@@ -24,11 +24,15 @@ apr-cli	--lib	commands::tokenize
 apr-cli	--test	backend_refusal_case_table
 apr-cli	--test	beat_apr_sibling_cli_reach
 apr-cli	--test	cli_commands
+apr-cli	--test	falsification_crux_a_01
+apr-cli	--test	falsification_crux_a_03
+apr-cli	--test	falsification_crux_a_20
 apr-cli	--test	pixel_regression
 apr-cli	--test	registry_failure_catalogue
 apr-format	--lib	falsifiers
 apr-format	--test	golden_fixtures
 aprender-cgp	--lib	analysis::contracts
+aprender-cgp	--test	integration
 aprender-compute-xtask	--bins
 aprender-contracts	--lib	binding
 aprender-contracts	--lib	build_helper
