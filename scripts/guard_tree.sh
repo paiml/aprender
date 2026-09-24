@@ -539,6 +539,28 @@ if [ "$dry_run" -eq 1 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# #4108 (gemini review, lane 1) -- THE UNIVERSE ITSELF must be whole before it is
+# planned. A guard tracked in git but missing from disk is dropped SILENTLY by both
+# `grep -L` (no-cargo) and `grep -l` (cargo-only): it lands in neither universe, is
+# never planned, and the planned/accounted check below cannot see what was never
+# planned. So every tracked guard must exist, and a failed listing is fatal.
+if ! tracked="$(git ls-files 'scripts/check_*.sh')"; then
+    printf 'FAIL  guard_tree [universe]\n'
+    printf '      | guard_tree: git ls-files failed -- the guard universe is unknown, so no run is a verdict.\n'
+    printf '0 checks, 1 failed\n'
+    exit 1
+fi
+missing=""
+while IFS= read -r g; do
+    [ -n "$g" ] && [ ! -f "$g" ] && missing="${missing}${g} "
+done <<<"$tracked"
+if [ -n "$missing" ]; then
+    printf 'FAIL  guard_tree [universe]\n'
+    printf '      | guard_tree: tracked guard(s) missing from disk: %s-- they would be dropped from every universe unseen.\n' "$missing"
+    printf '0 checks, 1 failed\n'
+    exit 1
+fi
+
 # 2. THE POOL. `<index>:<guard>` per line, one worker per line, -P at a time.
 #    The index is the guard's LINE NUMBER IN THE PLAN, so a worker's files are
 #    addressable by the parent without any communication back from the pool.

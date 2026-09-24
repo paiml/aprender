@@ -755,6 +755,49 @@ else
 fi
 cp "$GUARD_TREE" "$tfix/scripts/guard_tree.sh"
 
+# 34/35 (gemini review, lane 1): a guard tracked in git but MISSING from disk is dropped
+# silently by grep -L/-l in the --no-cargo / --cargo-only subsets (what CI runs; the
+# default `all` universe keeps it and fails it loudly), so it would never be planned. The run must refuse; the mutant
+# without the universe check runs the rest and exits 0 with the guard silently gone.
+ufix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $ufix"
+mkdir -p "$ufix/.empty-git-template" "$ufix/scripts"
+git -C "$ufix" init -q --template="$ufix/.empty-git-template"
+git -C "$ufix" config user.email test@example.invalid
+git -C "$ufix" config user.name guard_tree_test
+cp "$GUARD_TREE" "$ufix/scripts/guard_tree.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$ufix/scripts/check_u_good.sh"
+printf '#!/usr/bin/env bash\nexit 1\n' >"$ufix/scripts/check_u_gone.sh"
+git -C "$ufix" add -A
+git -C "$ufix" -c commit.gpgsign=false commit -q -m ufixture
+rm -f "$ufix/scripts/check_u_gone.sh"
+u_out="$(cd "$ufix" && bash scripts/guard_tree.sh --no-cargo 2>&1)"
+u_rc=$?
+if [ "$u_rc" -ne 0 ] && grep -q 'missing from disk: scripts/check_u_gone.sh' <<<"$u_out"; then
+    pass_row "34: a tracked guard missing from disk fails the run by name (rc=$u_rc), never dropped unseen"
+else
+    fail_row "34: a tracked guard missing from disk" "rc=$u_rc; tail: $(tail -3 <<<"$u_out" | tr '\n' '|')"
+fi
+python3 - "$GUARD_TREE" "$ufix/scripts/guard_tree.sh" <<'PY2'
+import sys
+s = open(sys.argv[1]).read()
+a = s.index("# #4108 (gemini review, lane 1) -- THE UNIVERSE ITSELF")
+b = s.index("# 2. THE POOL.")
+open(sys.argv[2], "w").write(s[:a] + s[b:])
+PY2
+if cmp -s "$GUARD_TREE" "$ufix/scripts/guard_tree.sh"; then
+    fail_row "35: mutant without the universe check" "the edit did not apply -- the mutant is the original"
+else
+    um_out="$(cd "$ufix" && bash scripts/guard_tree.sh --no-cargo 2>&1)"
+    um_rc=$?
+    # grep's own "No such file" may name it on stderr; what matters is that no row RAN it
+    if [ "$um_rc" -eq 0 ] && ! grep -q 'check_u_gone\.sh \[run\]' <<<"$um_out"; then
+        pass_row "35: mutant without the universe check exits 0 with the missing guard silently gone -- row 34 can fail"
+    else
+        fail_row "35: mutant without the universe check" "expected a silent exit 0; rc=$um_rc"
+    fi
+fi
+
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then
     exit 1
