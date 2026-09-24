@@ -1,5 +1,88 @@
 impl CudaExecutor {
 
+    /// #4234: [`Self::mwv_q4k_gemv_into`] for `m` activation vectors — `input`
+    /// `[m][k]`, `output` `[m][n]`, row-major — reading each weight row once per
+    /// launch of up to `BatchedMwvQ4KGemvKernel::MAX_M` vectors. Each output row is
+    /// bitwise what `mwv_q4k_gemv_into` computes for that input row: same kernel
+    /// arithmetic per vector, same `mwv_warps`.
+    ///
+    /// # Errors
+    /// `m == 0`, buffers shorter than `m*k` / `m*n`, a CUDA-graph recording in
+    /// progress (this launch is not recorded, so a replay would skip it), or a
+    /// module / launch failure.
+    pub fn batched_mwv_q4k_gemv_into(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        m: u32,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        validate_device_ptr(weight_ptr, "batched_mwv_q4k_gemv_into")?;
+        let (mu, nu, ku) = (m as usize, n as usize, k as usize);
+        if m == 0 || input.len() < mu * ku || output.len() < mu * nu {
+            return Err(GpuError::InvalidParameter(format!(
+                "batched_mwv_q4k_gemv_into: m={m}, n={n}, k={k} needs input >= {} and output \
+                 >= {} elements, got {} and {}",
+                mu * ku,
+                mu * nu,
+                input.len(),
+                output.len()
+            )));
+        }
+        if self.graph_recording {
+            return Err(GpuError::NotSupported(
+                "batched_mwv_q4k_gemv_into: not recorded into a CUDA graph".to_string(),
+            ));
+        }
+        let num_warps = self.gpu_profile.mwv_warps;
+        let max_m = trueno_gpu::kernels::BatchedMwvQ4KGemvKernel::MAX_M;
+        let mut done = 0u32;
+        while done < m {
+            let tile = (m - done).min(max_m);
+            let kernel_type = KernelType::BatchedMwvQ4KGemv {
+                k,
+                n,
+                num_warps,
+                m: tile,
+            };
+            let kernel_name = self.kernels.kernel_name(&kernel_type);
+            let cache_key = format!("batched_mwv_q4k_gemv_{k}_{n}_{num_warps}_{tile}");
+            self.ensure_kernel_module(&cache_key, &kernel_type)?;
+            let module = self
+                .modules
+                .get_mut(&cache_key)
+                .expect("module just inserted");
+            let config = LaunchConfig::grid_2d(n, 1, num_warps * 32, 1);
+            let mut ptr_output = output.as_ptr() + u64::from(done) * u64::from(n) * 4;
+            let mut ptr_weights = weight_ptr;
+            let mut ptr_input = input.as_ptr() + u64::from(done) * u64::from(k) * 4;
+            let mut k_val = k;
+            let mut n_val = n;
+            // SAFETY: `output` holds `m*n` and `input` `m*k` f32s (checked above), so
+            // the tile's `tile*n` outputs from `ptr_output` and `tile*k` inputs from
+            // `ptr_input` are in bounds; the weights are the executor's resident
+            // Q4_K matrix of `n` rows of `k`. k_val / n_val are stack scalars.
+            unsafe {
+                self.stream.launch_kernel(
+                    module,
+                    kernel_name,
+                    &config,
+                    &mut [
+                        std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                        std::ptr::from_mut(&mut ptr_weights) as *mut std::ffi::c_void,
+                        std::ptr::from_mut(&mut ptr_input) as *mut std::ffi::c_void,
+                        std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                        std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                    ],
+                )?;
+            }
+            done += tile;
+        }
+        Ok(())
+    }
+
     /// PAR-082-V2: Multi-warp Vectorized Q4K GEMV (4 warps + u32 coalesced loads)
     ///
     /// Combines VectorizedQ4K's coalesced u32 loads with multi-warp parallelism.
