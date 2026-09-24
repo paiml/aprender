@@ -166,6 +166,27 @@ die_env() { echo "$PROG: ENV - $*" >&2; exit 2; }
 
 sha256_stdin() { sha256sum | cut -d' ' -f1; }
 
+# json_docs <file> - how many JSON documents <file> holds, or nothing if it does not
+# parse. THIS, not `jq -e .`, is the readability test (#3594). `jq -e` sets its status
+# from the LAST OUTPUT VALUE, never from whether the input parsed: jq 1.6 exits 0 on a
+# zero-byte or whitespace-only file for ANY filter, so every `jq -e` assertion after it
+# passed vacuously, and every version refuses the valid document `null`. Counting
+# documents behaves identically on 1.6, 1.7 and 1.8: empty/blank -> 0, garbage -> non-zero
+# exit, so "exactly one" is decided here, and the `jq -e` value assertions below read a
+# file that is known to hold one document.
+json_docs() { jq -n '[inputs] | length' "$1" 2>/dev/null; }
+
+# one_doc <file> - succeeds iff <file> parses as exactly one JSON document; on failure
+# prints what it holds instead, for the refusal reason.
+one_doc() {
+  local n
+  if ! n=$(json_docs "$1") || [ -z "$n" ]; then echo "is not parseable JSON"; return 1; fi
+  [ "$n" = 1 ] && return 0
+  if [ "$n" = 0 ]; then echo "is empty (no JSON document; zero bytes or whitespace only)"
+  else echo "holds $n JSON documents, not exactly one"; fi
+  return 1
+}
+
 # ---------------------------------------------------------------------------
 # Tools. An absent tool is a REFUSAL to arm, never a skip.
 # ---------------------------------------------------------------------------
@@ -221,10 +242,11 @@ phase_a() {
   [ -f "$rcpt" ]  || refuse Q1 "receipt.intoto.jsonl is missing from $dir; there is nothing to evaluate, so there is nothing to arm" || return 1
   [ -f "$sarif" ] || refuse Q1 "findings.sarif is missing from $dir" || return 1
   [ -f "$sig" ]   || refuse Q1 "the receipt is unsigned - no $sig; an unsigned receipt never arms an autonomous merge (S4.3)" || return 1
-  jq -e . "$rcpt"  >/dev/null 2>&1 || refuse Q1 "receipt.intoto.jsonl is not parseable JSON" || return 1
-  jq -e . "$sarif" >/dev/null 2>&1 || refuse Q1 "findings.sarif is not parseable JSON" || return 1
+  local why
+  why=$(one_doc "$rcpt")  || refuse Q1 "receipt.intoto.jsonl $why" || return 1
+  why=$(one_doc "$sarif") || refuse Q1 "findings.sarif $why" || return 1
   [ -f "$ctx" ]   || refuse Q1 "no PR context at $ctx; the predicate reads the pull request's labels, reviews and checks, and cannot assume them" || return 1
-  jq -e . "$ctx"   >/dev/null 2>&1 || refuse Q1 "the PR context at $ctx is not parseable JSON" || return 1
+  why=$(one_doc "$ctx")   || refuse Q1 "the PR context at $ctx $why" || return 1
 
   # --- Q1: the S13 autonomy block exists and has the shape S13.2 reads. -----
   # ABSENT IS A REFUSAL, NOT A DEFAULT. A receipt written before S13, or by a

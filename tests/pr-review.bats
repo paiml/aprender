@@ -2051,3 +2051,34 @@ land_prior_art_on_main() {
   [ "$output" = "PASS" ] || { echo "row 7 verdict is $output, expected PASS"; return 1; }
   assert_row row-07-honest-docs-only-pmat-consulted GREEN
 }
+
+# --- #3594: the parse test counts DOCUMENTS; `jq -e .` tested the last value --------
+# A blank receipt is ONE newline-terminated line, so the record count above calls it
+# one record, and jq 1.6's `jq -e .` then exits 0 on it. Each row runs once per
+# distinct jq binary on PATH, so the 1.6 side is exercised wherever 1.6 exists.
+guard_under_every_jq() {
+  local dir=$1 reason=$2 j real n=0 seen='' bin
+  while IFS= read -r j; do
+    real=$(readlink -f "$j")
+    case " $seen " in *" $real "*) continue ;; esac
+    seen="$seen $real"
+    bin="$WORK/jqbin-$n"; mkdir -p "$bin"; ln -sf "$real" "$bin/jq"
+    PATH="$bin:$PATH" run "$GUARD" "$dir"
+    [ "$status" -eq 1 ] && [[ "$output" == *"[B1]"* && "$output" == *"$reason"* ]] || {
+      echo "$("$real" --version): wanted RED [B1] '$reason', got $status:"; echo "$output"; return 1; }
+    n=$((n + 1))
+  done < <(type -aP jq)
+  [ "$n" -ge 1 ]
+}
+
+@test "row e1 whitespace-only receipt: one 'record', ZERO documents   RED  B1 (#3594)" {
+  local d="$WORK/e1"; mkdir -p "$d"; cp -r "$FIX/row-07-honest-docs-only-pmat-consulted/." "$d/"
+  printf '\n' > "$d/receipt.intoto.jsonl"
+  guard_under_every_jq "$d" "holds 0 JSON document/s"
+}
+
+@test "row e2 whitespace-only SARIF is empty, not parseable-and-fine   RED  B1 (#3594)" {
+  local d="$WORK/e2"; mkdir -p "$d"; cp -r "$FIX/row-07-honest-docs-only-pmat-consulted/." "$d/"
+  printf '\n' > "$d/findings.sarif"
+  guard_under_every_jq "$d" "findings.sarif holds 0 JSON document/s"
+}

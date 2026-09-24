@@ -6,10 +6,10 @@ pub enum ModelOpsCommands {
     Finetune {
         /// Input model file
         #[arg(value_name = "FILE")]
-        file: Option<PathBuf>,
+        file: Option<ModelPath>,
         /// Fine-tuning method: auto, full, lora, qlora
         #[arg(long, short = 'm', default_value = "auto")]
-        method: String,
+        method: FreeText,
         /// LoRA rank (default: auto-selected)
         #[arg(long, short = 'r')]
         rank: Option<u32>,
@@ -21,13 +21,13 @@ pub enum ModelOpsCommands {
         plan: bool,
         /// Training data file (JSONL format)
         #[arg(long, short = 'd', value_name = "FILE")]
-        data: Option<PathBuf>,
+        data: Option<InputFile>,
         /// Output path (adapter dir or merged model)
         #[arg(short, long)]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
         /// Adapter path for merge mode
         #[arg(long)]
-        adapter: Option<PathBuf>,
+        adapter: Option<InputFile>,
         /// Merge adapter into base model
         #[arg(long)]
         merge: bool,
@@ -42,16 +42,16 @@ pub enum ModelOpsCommands {
         learning_rate: Option<f64>,
         /// Model size for planning (e.g., "7B", "1.5B")
         #[arg(long, value_name = "SIZE")]
-        model_size: Option<String>,
+        model_size: Option<FreeText>,
         /// Fine-tuning task: classify (sequence classification)
         #[arg(long)]
-        task: Option<String>,
+        task: Option<FreeText>,
         /// Number of classes for classification task
         #[arg(long, default_value = "5")]
         num_classes: usize,
         /// Output format for checkpoints: apr, safetensors, or both (comma-separated)
         #[arg(long, value_name = "FORMAT", default_value = "apr,safetensors")]
-        checkpoint_format: String,
+        checkpoint_format: FreeText,
         /// Oversample minority classes to match majority (for imbalanced datasets)
         #[arg(long)]
         oversample: bool,
@@ -63,7 +63,7 @@ pub enum ModelOpsCommands {
         quantize_nf4: bool,
         /// GPU indices for data-parallel training (e.g., "0,1" for dual GPU)
         #[arg(long, value_name = "INDICES")]
-        gpus: Option<String>,
+        gpus: Option<FreeText>,
         /// GPU backend selection: auto, cuda, wgpu
         // #2583: no `value_parser` here meant `--gpu-backend cudaa` parsed and
         // silently took the `_ =>` ("auto") arm of `gpu_backend_notice`.
@@ -72,13 +72,13 @@ pub enum ModelOpsCommands {
         gpu_backend: String,
         /// Distributed training role: coordinator or worker
         #[arg(long, value_name = "ROLE")]
-        role: Option<String>,
+        role: Option<FreeText>,
         /// Address to bind (coordinator) or connect to (worker)
         #[arg(long, value_name = "ADDR")]
-        bind: Option<String>,
+        bind: Option<FreeText>,
         /// Coordinator address for worker nodes (e.g., "intel:9000")
         #[arg(long, value_name = "ADDR")]
-        coordinator: Option<String>,
+        coordinator: Option<FreeText>,
         /// Expected number of workers (coordinator only)
         #[arg(long, value_name = "N")]
         expect_workers: Option<usize>,
@@ -89,11 +89,11 @@ pub enum ModelOpsCommands {
         /// Format: --adapters data/corpus-a.jsonl:checkpoints/adapter-a
         /// Can be specified multiple times for concurrent adapter training.
         #[arg(long, value_name = "DATA:CHECKPOINT")]
-        adapters: Vec<String>,
+        adapters: Vec<FreeText>,
 
         /// Multi-adapter config file: TOML with [[adapter]] entries (GPU-SHARE §2.4)
         #[arg(long, value_name = "FILE")]
-        adapters_config: Option<PathBuf>,
+        adapters_config: Option<ConfigPath>,
 
         /// Enable experimental CUDA MPS for concurrent GPU sharing (GPU-SHARE §1.5).
         /// WARNING: A GPU fault in any MPS client will crash ALL clients on that GPU.
@@ -113,10 +113,10 @@ pub enum ModelOpsCommands {
     Prune {
         /// Input model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Pruning method: magnitude, structured, depth, width, wanda, sparsegpt
         #[arg(long, short = 'm', default_value = "magnitude")]
-        method: String,
+        method: FreeText,
         /// Target pruning ratio (0-1)
         #[arg(long, default_value = "0.5")]
         target_ratio: f32,
@@ -125,10 +125,10 @@ pub enum ModelOpsCommands {
         sparsity: f32,
         /// Output file path
         #[arg(short, long)]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
         /// Layers to remove for depth pruning (e.g., "20-24")
         #[arg(long)]
-        remove_layers: Option<String>,
+        remove_layers: Option<FreeText>,
         /// Analyze mode (identify pruning opportunities)
         #[arg(long)]
         analyze: bool,
@@ -137,25 +137,25 @@ pub enum ModelOpsCommands {
         plan: bool,
         /// Calibration data file
         #[arg(long, value_name = "FILE")]
-        calibration: Option<PathBuf>,
+        calibration: Option<InputFile>,
     },
     /// Knowledge distillation (teacher -> student) (GH-247, ALB-011)
     Distill {
         /// Teacher model file (positional, for file-based mode)
         #[arg(value_name = "TEACHER")]
-        teacher: Option<PathBuf>,
+        teacher: Option<ModelPath>,
         /// Student model file
         #[arg(long, value_name = "FILE")]
-        student: Option<PathBuf>,
+        student: Option<ModelPath>,
         /// Training data file
         #[arg(long, short = 'd', value_name = "FILE")]
-        data: Option<PathBuf>,
+        data: Option<InputFile>,
         /// Output file path
         #[arg(short, long)]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
         /// Distillation strategy: standard, progressive, ensemble
         #[arg(long, default_value = "standard")]
-        strategy: String,
+        strategy: FreeText,
         /// Temperature for softmax scaling
         #[arg(long, default_value = "3.0")]
         temperature: f64,
@@ -170,10 +170,10 @@ pub enum ModelOpsCommands {
         plan: bool,
         /// YAML config file for two-stage distillation (ALB-011)
         #[arg(long, value_name = "FILE")]
-        config: Option<PathBuf>,
+        config: Option<ConfigPath>,
         /// Distillation stage: precompute, train (logit KD), or generate (text-based, GH-455)
         #[arg(long, value_name = "STAGE")]
-        stage: Option<String>,
+        stage: Option<FreeText>,
         /// SPEC-DISTILL-001 Phase 3-prep (PMAT-697): teacher/student backend
         /// selector. `fixture` (default) uses the in-memory FixtureTeacher
         /// + FixtureStudent (CPU-only, useful for plumbing tests + CI).
@@ -196,6 +196,6 @@ pub enum ModelOpsCommands {
         /// Phase 4 50K-step dispatch sets this to a tokenized Python
         /// corpus directory.
         #[arg(long, value_name = "DIR")]
-        dataset: Option<PathBuf>,
+        dataset: Option<InputFile>,
     },
 }
