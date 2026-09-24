@@ -1,0 +1,249 @@
+{
+  "ticket": "PMAT-4134",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "bbdc7d70c4faa29abc4b40709578b7bca96f991e",
+  "diff_sha256": "9cb4cf27bd806940d879d16666ae4c1c41bb2dcc730c6921b5baae975aed5f51",
+  "width": 2,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 31580,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fully satisfies the ticket's acceptance criteria without introducing unrequested changes or weakening gates. The unused variable warnings are resolved cleanly by conditionally consuming the variables when not on x86_64, rather than adding a blanket allow. The new checking script is robust, verifying the correct architecture and accurately proving a RED outcome using a planted arm-specific warning in its --self-test mode. Finally, the checking script is properly wired into the silicon-nightly workflow.",
+      "findings": [
+        {
+          "claim": "The four findings are fixed, with no allow attribute",
+          "file": "crates/aprender-compute/src/blis/compute.rs",
+          "fix": "Variables mr_block and nr_block are correctly consumed on non-x86_64 architectures via #[cfg(not(target_arch = \"x86_64\"))] let _ = (mr_block, nr_block); avoiding blanket allows. Similar fixes are applied in brick/quant_ops/mod.rs.",
+          "grounding": "cited",
+          "line": 114
+        },
+        {
+          "claim": "an aarch64 clippy gate, with a first-green proof and a planted RED",
+          "file": "scripts/check_clippy_aarch64.sh",
+          "fix": "Script correctly restricts execution to aarch64 architectures (exits 2 otherwise). The --self-test plants an aarch64-only unused variable and asserts that the check fails (turns RED).",
+          "grounding": "cited",
+          "line": 77
+        },
+        {
+          "claim": "wiring (the workflow edit)",
+          "file": ".github/workflows/silicon-nightly.yml",
+          "fix": "The aarch64 clippy check script is successfully wired into the aarch64-cuda-sm121 job as specified.",
+          "grounding": "cited",
+          "line": 206
+        }
+      ],
+      "raw_bytes": 4325,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff fully satisfies all acceptance criteria of PMAT-4134 without regressions, gate weakening, or extraneous changes:\n\n1. **4 cfg-dependent unused variables resolved**: In `crates/aprender-compute/src/blis/compute.rs` (`mr_block`, `nr_block`) and `crates/aprender-compute/src/brick/quant_ops/mod.rs` (`backend` in `DotQ5KOp` and `DotQ6KOp`), bindings are consumed under `#[cfg(not(target_arch = \"x86_64\"))] let _ = ...;` next to the AVX2 paths using them, without blanket allow attributes. Measured: `cargo clippy -p apr-cli --lib -- -D warnings` exits 0 on x86_64.\n2. **aarch64 clippy gate**: `scripts/check_clippy_aarch64.sh` refuses non-aarch64 execution (measured: exits 2 on x86_64 host), and `--self-test` plants an aarch64-only unused binding in `crates/aprender-compute/src/lib.rs` requiring the default axis to go RED. Cuda axis is cleanly excluded with justification. `shellcheck` and `bash -n` are clean.\n3. **Workflow wiring in dedicated commit**: Commit `0a2acd0d2` modifies solely `.github/workflows/silicon-nightly.yml` to run the gate on `gx10`. All CI verifications (`actionlint`, `check_guards_are_wired.sh`, `check_runner_labels.sh`, `check_workflow_cargo_packages.sh`) pass cleanly.",
+      "findings": [
+        {
+          "claim": "The 4 cfg-dependent unused variable warnings in aprender-compute are resolved on non-x86_64 architectures without blanket allow attributes.",
+          "file": "crates/aprender-compute/src/blis/compute.rs",
+          "fix": "Consumed mr_block and nr_block in dispatch_microkernel (and backend in DotQ5KOp::execute and DotQ6KOp::execute) via `#[cfg(not(target_arch = \"x86_64\"))] let _ = ...;`. Measured: `cargo clippy -p apr-cli --lib -- -D warnings` exits 0 on x86_64 without altering semantics.",
+          "grounding": "measured",
+          "line": 118
+        },
+        {
+          "claim": "The check_clippy_aarch64.sh gate enforces execution on aarch64 only and provides a self-test with a planted RED condition.",
+          "file": "scripts/check_clippy_aarch64.sh",
+          "fix": "The script verifies architecture matches aarch64/arm64 and exits 2 otherwise. Measured: executing on x86_64 exits 2 with 'could not check'. In `--self-test` mode, it plants an aarch64-only unused binding in crates/aprender-compute/src/lib.rs, verifying that cargo clippy flags `unused_on_arm` and fails. shellcheck and bash -n pass with 0 warnings.",
+          "grounding": "measured",
+          "line": 43
+        },
+        {
+          "claim": "Workflow wiring is isolated to its own dedicated commit.",
+          "file": ".github/workflows/silicon-nightly.yml",
+          "fix": "The step invoking `check_clippy_aarch64.sh --self-test` followed by `check_clippy_aarch64.sh` is wired into job `aarch64-cuda-sm121` on gx10. Measured: commit 0a2acd0d2 contains only the changes to .github/workflows/silicon-nightly.yml. actionlint, check_guards_are_wired.sh, check_runner_labels.sh, and check_workflow_cargo_packages.sh all pass cleanly.",
+          "grounding": "measured",
+          "line": 209
+        }
+      ],
+      "raw_bytes": 7172,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": ".github/workflows/silicon-nightly.yml",
+      "line": 206,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "wiring (the workflow edit)"
+      ]
+    },
+    {
+      "file": ".github/workflows/silicon-nightly.yml",
+      "line": 209,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Workflow wiring is isolated to its own dedicated commit."
+      ]
+    },
+    {
+      "file": "crates/aprender-compute/src/blis/compute.rs",
+      "line": 114,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The four findings are fixed, with no allow attribute"
+      ]
+    },
+    {
+      "file": "crates/aprender-compute/src/blis/compute.rs",
+      "line": 118,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The 4 cfg-dependent unused variable warnings in aprender-compute are resolved on non-x86_64 architectures without blanket allow attributes."
+      ]
+    },
+    {
+      "file": "scripts/check_clippy_aarch64.sh",
+      "line": 43,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The check_clippy_aarch64.sh gate enforces execution on aarch64 only and provides a self-test with a planted RED condition."
+      ]
+    },
+    {
+      "file": "scripts/check_clippy_aarch64.sh",
+      "line": 77,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "an aarch64 clippy gate, with a first-green proof and a planted RED"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=2 author=claude-opus-5-5/claude"
+  }
+}
