@@ -200,6 +200,7 @@ for ref in json.load(sys.stdin):
         *) echo "$PROG: rc_decide printed '$decision'" >&2; return 2 ;;
     esac
     emit tag "$tag"
+    emit sha "$D_HEAD_SHA"   # rc-cut.yml gates exactly this commit before the real cut (#4287)
     if [ "$dry" = 1 ]; then summary "(dry run: no tag, release or dispatch written)"; emit result dry-run; return 0; fi
 
     # 1. The tag. Creating the ref first makes the name the lock: a concurrent cut of

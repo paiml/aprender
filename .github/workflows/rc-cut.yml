@@ -20,6 +20,14 @@ name: RC Cut
 # in binary-release.yml (GitHub suppresses recursive triggers), so rc_cut.sh
 # dispatches binary-release.yml with inputs.tag. That needs `actions: write`.
 #
+# PUBLISH GATE (#4287). Before anything is written, the job decides with --dry-run,
+# checks the rc commit out beside the default-branch checkout (in RUNNER_TEMP, so no
+# cargo config is inherited from this tree) and runs scripts/release/rc_publish_gate.sh
+# on it: the publish graph (R6), the path-only dev-dep rule that #3425 broke v0.68.0
+# on, and a `cargo package --no-verify` walk of every publishable crate. Red means the
+# job fails and no rc exists; the defect is found on the rc, never at the final tag.
+# The real cut then re-decides from the same run, so it tags the commit that was gated.
+#
 # CI cuts the tag and the prerelease. Publishing a crate stays out of CI (RP-001).
 
 on:
@@ -44,7 +52,8 @@ jobs:
     # Operator rule (2026-09-10): self-hosted fleet only. The job needs bash, curl
     # and python3, which clean-room carries (binary-release.yml's verify job).
     runs-on: [self-hosted, Linux, clean-room]
-    timeout-minutes: 10
+    # the package walk is ~65 s warm on lambda; a cold registry index is the rest
+    timeout-minutes: 30
     # Cheap pre-filter only; rc_cut.sh re-judges every condition itself.
     if: github.event.workflow_run.conclusion != 'cancelled'
     steps:
@@ -53,9 +62,26 @@ jobs:
           # the default branch's script, never the release branch's
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 1
-      - name: Case table (the decision must still be able to refuse)
-        run: bash scripts/release/rc_cut.sh --self-test
+      - name: Case tables (the decision and the gate must still be able to refuse)
+        run: |
+          bash scripts/release/rc_cut.sh --self-test
+          bash scripts/release/rc_publish_gate.sh --self-test
+      - name: Decide (writes nothing)
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: bash scripts/release/rc_cut.sh --run-id "$RUN_ID" --dry-run
+      - name: Publish gate on the rc commit (#4287)
+        if: steps.decide.outputs.tag != ''
+        env:
+          SHA: ${{ steps.decide.outputs.sha }}
+        run: |
+          git fetch --no-tags --depth 1 origin "$SHA"
+          git worktree add --detach "$RUNNER_TEMP/rc-tree" "$SHA"
+          bash scripts/release/rc_publish_gate.sh "$RUNNER_TEMP/rc-tree"
       - name: Cut the rc
+        if: steps.decide.outputs.tag != ''
         id: cut
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

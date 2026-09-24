@@ -49,6 +49,7 @@
 #   bash scripts/check_publish_preflight.sh             # the gate
 #   bash scripts/check_publish_preflight.sh --selftest  # case table, both polarities
 #   bash scripts/check_publish_preflight.sh --receipt-only  # R2+R5 only: T-1, before the tag (#3708)
+#   bash scripts/check_publish_preflight.sh --graph-only    # R2+R6 only: the rc cut (#4287)
 set -uo pipefail
 
 PROG=${0##*/}
@@ -156,6 +157,65 @@ rule_r7() {
     return 1
 }
 
+# R6, ONE function for both ends (#4287): the full gate at T-4, and --graph-only at the
+# rc cut, so a publish-graph defect is found on the rc and not at the final tag.
+# rule_r6 root -> prints its row; 0 accepted, 1 refused
+rule_r6() {
+    local root=$1
+    # R6 no versioned sibling dev-dependency lies on a cycle (PMAT-955, #3468). A
+    # dev-dependency with a version is kept in the published manifest and resolved
+    # on the registry at publish time; a path-only one is stripped. The edge is a
+    # defect only when its target can reach its source: then neither crate can be
+    # uploaded first. Acyclic edges are printed, so the publish order that must
+    # honour them is visible in the receipt.
+    local r6
+    r6="$(cargo metadata --no-deps --offline --format-version 1 --manifest-path "$root/Cargo.toml" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("UNREADABLE"); sys.exit(0)
+pk = {p["name"]: p for p in d.get("packages", []) if p.get("publish") != []}
+edges = {n: set() for n in pk}
+vdev = []
+for n, p in pk.items():
+    for dep in p.get("dependencies", []):
+        t = dep.get("name")
+        if t not in pk or t == n:
+            continue
+        if dep.get("kind") == "dev":
+            if (dep.get("req") or "*") == "*":
+                continue
+            vdev.append((n, t, dep.get("req")))
+        edges[n].add(t)
+def reaches(src, dst):
+    seen, stack = set(), [src]
+    while stack:
+        x = stack.pop()
+        for y in edges.get(x, ()):
+            if y == dst:
+                return True
+            if y not in seen:
+                seen.add(y); stack.append(y)
+    return False
+for n, t, req in sorted(vdev):
+    print("%s %s -> %s %s" % ("CYCLE" if reaches(t, n) else "ACYCLIC", n, t, req))')"
+    if [ "$r6" = UNREADABLE ]; then
+        echo "FAIL  R6 cargo metadata is unreadable, so sibling dev-dependencies cannot be judged"
+        return 1
+    elif grep -q '^CYCLE ' <<< "$r6"; then
+        printf 'FAIL  R6 a versioned sibling dev-dependency lies on a cycle (kept in the published manifest; neither crate can be uploaded first):\n%s\n' \
+            "$(printf '%s\n' "$r6" | sed -n 's/^CYCLE //p')"
+        return 1
+    elif [ -n "$r6" ]; then
+        printf 'ok    R6 %s versioned sibling dev-dependency edge(s), none on a cycle (the target publishes first):\n%s\n' \
+            "$(printf '%s\n' "$r6" | grep -c '^ACYCLIC ')" "$(printf '%s\n' "$r6" | sed -n 's/^ACYCLIC /        /p')"
+    else
+        echo "ok    R6 no sibling dev-dependency carries a version (path-only, stripped at publish)"
+    fi
+    return 0
+}
+
 gate() {
     local root="${PUBLISH_PREFLIGHT_ROOT:-}" main_ref="${PUBLISH_PREFLIGHT_MAIN_REF:-origin/main}"
     local fails=0 status version tags head
@@ -211,56 +271,7 @@ gate() {
     # R5 dogfood receipt: GO, this commit, this version
     rule_r5 "$root" "$head" "$version" || fails=1
 
-    # R6 no versioned sibling dev-dependency lies on a cycle (PMAT-955, #3468). A
-    # dev-dependency with a version is kept in the published manifest and resolved
-    # on the registry at publish time; a path-only one is stripped. The edge is a
-    # defect only when its target can reach its source: then neither crate can be
-    # uploaded first. Acyclic edges are printed, so the publish order that must
-    # honour them is visible in the receipt.
-    r6="$(cargo metadata --no-deps --offline --format-version 1 --manifest-path "$root/Cargo.toml" 2>/dev/null | python3 -c '
-import json, sys
-try:
-    d = json.load(sys.stdin)
-except Exception:
-    print("UNREADABLE"); sys.exit(0)
-pk = {p["name"]: p for p in d.get("packages", []) if p.get("publish") != []}
-edges = {n: set() for n in pk}
-vdev = []
-for n, p in pk.items():
-    for dep in p.get("dependencies", []):
-        t = dep.get("name")
-        if t not in pk or t == n:
-            continue
-        if dep.get("kind") == "dev":
-            if (dep.get("req") or "*") == "*":
-                continue
-            vdev.append((n, t, dep.get("req")))
-        edges[n].add(t)
-def reaches(src, dst):
-    seen, stack = set(), [src]
-    while stack:
-        x = stack.pop()
-        for y in edges.get(x, ()):
-            if y == dst:
-                return True
-            if y not in seen:
-                seen.add(y); stack.append(y)
-    return False
-for n, t, req in sorted(vdev):
-    print("%s %s -> %s %s" % ("CYCLE" if reaches(t, n) else "ACYCLIC", n, t, req))')"
-    if [ "$r6" = UNREADABLE ]; then
-        echo "FAIL  R6 cargo metadata is unreadable, so sibling dev-dependencies cannot be judged"
-        fails=1
-    elif grep -q '^CYCLE ' <<< "$r6"; then
-        printf 'FAIL  R6 a versioned sibling dev-dependency lies on a cycle (kept in the published manifest; neither crate can be uploaded first):\n%s\n' \
-            "$(printf '%s\n' "$r6" | sed -n 's/^CYCLE //p')"
-        fails=1
-    elif [ -n "$r6" ]; then
-        printf 'ok    R6 %s versioned sibling dev-dependency edge(s), none on a cycle (the target publishes first):\n%s\n' \
-            "$(printf '%s\n' "$r6" | grep -c '^ACYCLIC ')" "$(printf '%s\n' "$r6" | sed -n 's/^ACYCLIC /        /p')"
-    else
-        echo "ok    R6 no sibling dev-dependency carries a version (path-only, stripped at publish)"
-    fi
+    rule_r6 "$root" || fails=1
 
     # R7 the model matrix, re-read at T-4 through the T-1 judge (#3717)
     rule_r7 "$root" "$version" || fails=1
@@ -271,6 +282,32 @@ for n, t, req in sorted(vdev):
     fi
     echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO, model matrix green"
     return 0
+}
+
+# --graph-only (#4287): R2 + R6 on PUBLISH_PREFLIGHT_ROOT, the rc cut's end of the
+# publish graph. R1/R3/R4/R5/R7 describe the upload (a tag, main, receipts) and are
+# judged at T-4 as before.
+graph_gate() {
+    local root="${PUBLISH_PREFLIGHT_ROOT:-}" version
+    for t in cargo python3; do
+        command -v "$t" >/dev/null 2>&1 || die_env "$t is not on PATH"
+    done
+    if [ -z "$root" ]; then
+        root="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+    fi
+    [ -f "$root/Cargo.toml" ] || die_env "$root has no Cargo.toml"
+    version="$(root_version "$root")" || version=""
+    if [ -z "$version" ]; then
+        echo "FAIL  R2 cargo metadata names no version for the root manifest"
+        echo "REFUSE $PROG --graph-only: no version to judge."
+        return 1
+    fi
+    echo "ok    R2 version $version (cargo metadata, root manifest)"
+    if ! rule_r6 "$root"; then
+        echo "REFUSE $PROG --graph-only: the publish graph of $version cannot be uploaded (R6)."
+        return 1
+    fi
+    echo "PASS  $PROG --graph-only: R6 holds at $version (R1/R3/R4/R5/R7 are judged at publish)"
 }
 
 # --receipt-only (#3708): R2 + R5 and nothing else. R1/R3/R4/R6 describe the tree
@@ -463,6 +500,14 @@ selftest() {
     row versioned_sibling_devdep_acyclic_passes 0 "fx-a -> fx-b" "$d"
     d="$tmp/devdep_path"; build_ws_repo "$d" ''
     row pathed_sibling_devdep_passes   0 "PASS" "$d"
+    # --graph-only (#4287), both polarities: the rc cut refuses the same cycle, and passes
+    # an untagged, off-main tree that the full gate would refuse on R3/R4.
+    d="$tmp/devdep_cycle"; row graph_only_cycle_refuses      1 "FAIL  R6" "$d" graph_gate
+    d="$tmp/devdep_version"; git -C "$d" tag -d v1.2.3 >/dev/null
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -q --allow-empty -m 'off main' >/dev/null
+    git -C "$d" update-ref refs/heads/fixture-main HEAD~1
+    row graph_only_acyclic_untagged_passes 0 "PASS  $PROG --graph-only" "$d" graph_gate
+    row graph_only_control_full_gate_refuses 1 "FAIL  R3" "$d"
 
     # R7 (#3717): the committed model-matrix receipts, judged by the T-1 judge. all_rules_hold above
     # is the green row (the stub refuses any version but 1.2.3, so it also proves the argument).
@@ -501,6 +546,7 @@ selftest() {
 case "${1:-}" in
     --selftest) selftest ;;
     --receipt-only) receipt_gate ;;
+    --graph-only) graph_gate ;;
     '')         gate ;;
     -h|--help)  sed -n '2,40p' "$0" ;;
     *)          printf '%s: unknown argument %s\n' "$PROG" "$1" >&2; exit 2 ;;
