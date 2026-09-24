@@ -778,11 +778,18 @@ if [ "$u_rc" -ne 0 ] && grep -q 'missing from disk: scripts/check_u_gone.sh' <<<
 else
     fail_row "34: a tracked guard missing from disk" "rc=$u_rc; tail: $(tail -3 <<<"$u_out" | tr '\n' '|')"
 fi
+ud_out="$(cd "$ufix" && bash scripts/guard_tree.sh --dry-run --no-cargo 2>&1)"
+ud_rc=$?
+if [ "$ud_rc" -ne 0 ] && grep -q 'missing from disk: scripts/check_u_gone.sh' <<<"$ud_out"; then
+    pass_row "34b: --dry-run refuses a tracked guard missing from disk too (rc=$ud_rc) -- the wiring meta-guard reads it"
+else
+    fail_row "34b: --dry-run refuses a tracked guard missing from disk" "rc=$ud_rc; tail: $(tail -2 <<<"$ud_out" | tr '\n' '|')"
+fi
 python3 - "$GUARD_TREE" "$ufix/scripts/guard_tree.sh" <<'PY2'
 import sys
 s = open(sys.argv[1]).read()
 a = s.index("# #4108 (gemini review, lane 1) -- THE UNIVERSE ITSELF")
-b = s.index("# 2. THE POOL.")
+b = s.index('guards="$(universe_for_subset)"')
 open(sys.argv[2], "w").write(s[:a] + s[b:])
 PY2
 if cmp -s "$GUARD_TREE" "$ufix/scripts/guard_tree.sh"; then
