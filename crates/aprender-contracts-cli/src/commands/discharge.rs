@@ -507,10 +507,32 @@ impl Lake<'_> {
     /// group is SIGKILLed by the child's own PID (pgid == pid) -- never by pattern -- so a `lean` under `lake env`
     /// dies with it. The deadline also bounds the output drain: a grandchild holding a pipe cannot stall it.
     fn run<S: AsRef<OsStr>>(self, args: &[S], dir: &Path) -> std::io::Result<Bounded> {
-        use std::io::Read;
+        let mut child = self.spawn(args, dir)?;
+        let pgid = child.id();
+        let rx = drain_pipes(&mut child);
+        let deadline = Instant::now() + Duration::from_secs(self.timeout_s);
+        let Some(status) = wait_until(&mut child, deadline)? else {
+            return Ok(kill_group(&mut child, pgid));
+        };
+        let Some([stdout, stderr]) = collect(&rx, deadline) else {
+            return Ok(kill_group(&mut child, pgid));
+        };
+        Ok(Bounded::Done(std::process::Output {
+            status,
+            stdout,
+            stderr,
+        }))
+    }
+
+    /// `lake <args>` spawned in its own process group, piped. ETXTBSY (26): a just-written `lake` whose write fd a
+    /// concurrent fork still holds until its exec. Transient, so it is retried.
+    fn spawn<S: AsRef<OsStr>>(
+        self,
+        args: &[S],
+        dir: &Path,
+    ) -> std::io::Result<std::process::Child> {
         use std::os::unix::process::CommandExt;
         use std::process::Stdio;
-        use std::sync::mpsc;
         let spawn = || {
             Command::new(self.bin)
                 .args(args)
@@ -521,7 +543,6 @@ impl Lake<'_> {
                 .process_group(0)
                 .spawn()
         };
-        // ETXTBSY (26): a just-written `lake` whose write fd a concurrent fork still holds until its exec. Transient.
         let mut child = spawn();
         for _ in 0..20 {
             match &child {
@@ -532,57 +553,7 @@ impl Lake<'_> {
                 _ => break,
             }
         }
-        let mut child = child?;
-        let pgid = child.id();
-        let (tx, rx) = mpsc::channel();
-        let drain = |mut pipe: Box<dyn Read + Send>, which: usize| {
-            let tx = tx.clone();
-            std::thread::spawn(move || {
-                let mut buf = Vec::new();
-                let _ = pipe.read_to_end(&mut buf);
-                let _ = tx.send((which, buf));
-            });
-        };
-        if let Some(p) = child.stdout.take() {
-            drain(Box::new(p), 0);
-        }
-        if let Some(p) = child.stderr.take() {
-            drain(Box::new(p), 1);
-        }
-        drop(tx);
-        let deadline = Instant::now() + Duration::from_secs(self.timeout_s);
-        let kill = |child: &mut std::process::Child| {
-            let _ = Command::new("kill")
-                .args(["-s", "KILL", "--", &format!("-{pgid}")])
-                .status();
-            let _ = child.kill();
-            let _ = child.wait();
-            Ok(Bounded::TimedOut(pgid))
-        };
-        let status = loop {
-            if let Some(status) = child.try_wait()? {
-                break status;
-            }
-            if Instant::now() >= deadline {
-                return kill(&mut child);
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        };
-        let mut out = [Vec::new(), Vec::new()];
-        for _ in 0..2 {
-            let left = deadline.saturating_duration_since(Instant::now());
-            match rx.recv_timeout(left) {
-                Ok((which, buf)) => out[which] = buf,
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                Err(mpsc::RecvTimeoutError::Timeout) => return kill(&mut child),
-            }
-        }
-        let [stdout, stderr] = out;
-        Ok(Bounded::Done(std::process::Output {
-            status,
-            stdout,
-            stderr,
-        }))
+        child
     }
 
     fn timed_out(self, what: &str, pgid: u32) -> String {
@@ -591,6 +562,70 @@ impl Lake<'_> {
             self.timeout_s
         )
     }
+}
+
+type Drained = std::sync::mpsc::Receiver<(usize, Vec<u8>)>;
+
+/// Read the child's stdout (0) and stderr (1) on their own threads, so a full pipe cannot block its exit.
+fn drain_pipes(child: &mut std::process::Child) -> Drained {
+    use std::io::Read;
+    let (tx, rx) = std::sync::mpsc::channel();
+    let drain = |mut pipe: Box<dyn Read + Send>, which: usize| {
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            let _ = pipe.read_to_end(&mut buf);
+            let _ = tx.send((which, buf));
+        });
+    };
+    if let Some(p) = child.stdout.take() {
+        drain(Box::new(p), 0);
+    }
+    if let Some(p) = child.stderr.take() {
+        drain(Box::new(p), 1);
+    }
+    rx
+}
+
+/// The child's exit status, or `None` once `deadline` passes with it still running.
+fn wait_until(
+    child: &mut std::process::Child,
+    deadline: Instant,
+) -> std::io::Result<Option<std::process::ExitStatus>> {
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(Some(status));
+        }
+        if Instant::now() >= deadline {
+            return Ok(None);
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Both drained pipes, or `None` if `deadline` passes first: a grandchild holding a pipe cannot stall the drain.
+fn collect(rx: &Drained, deadline: Instant) -> Option<[Vec<u8>; 2]> {
+    use std::sync::mpsc::RecvTimeoutError;
+    let mut out = [Vec::new(), Vec::new()];
+    for _ in 0..2 {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(left) {
+            Ok((which, buf)) => out[which] = buf,
+            Err(RecvTimeoutError::Disconnected) => break,
+            Err(RecvTimeoutError::Timeout) => return None,
+        }
+    }
+    Some(out)
+}
+
+/// SIGKILL the whole process group by the child's own PID (pgid == pid) -- never by pattern -- then reap the child.
+fn kill_group(child: &mut std::process::Child, pgid: u32) -> Bounded {
+    let _ = Command::new("kill")
+        .args(["-s", "KILL", "--", &format!("-{pgid}")])
+        .status();
+    let _ = child.kill();
+    let _ = child.wait();
+    Bounded::TimedOut(pgid)
 }
 
 /// The toolchain `lake env` puts on PATH for this tree: `lake env printenv LEAN_SYSROOT`. `Err` is the decline;
