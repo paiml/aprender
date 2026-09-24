@@ -245,6 +245,13 @@ fi
 #     auto-publish and never wait for me." The 0.68.2 run logged the old wording and did NOT stop
 #     (TO=close), but the line read as a park and cost a minute of reading -- so it now says what it is.
 if run_step dryrun; then
+  # The receipt above is about not WAITING for the operator; a tarball that does not compile is a
+  # defect, not a park. `--verify` builds every publishable crate's tarball against the local
+  # overlay (= `cargo publish --dry-run` for the whole cascade), so a red here would have been a
+  # half-uploaded cascade (#4287 follow-up, operator publish word for 0.70.0, 2026-09-24).
+  bash scripts/release/rc_publish_gate.sh --verify "$WT" > "$AP/publish-dryrun.log" 2>&1; rc=$?
+  tail -2 "$AP/publish-dryrun.log" >> "$STATUS"
+  [ $rc -eq 0 ] || die "publish dry-run refused rc=$rc (1 = a tarball defect, 2 = could not measure; $AP/publish-dryrun.log)"
   bash scripts/cascade-publish.sh --check > "$AP/cascade-check.log" 2>&1; rc=$?
   behind=$(grep -cE "\(want ${V//./\\.}\)" "$AP/cascade-check.log" || true)
   tail -3 "$AP/cascade-check.log" >> "$STATUS"
