@@ -178,7 +178,7 @@ serde_yaml_ng = "0.10"
 
 [dev-dependencies]
 # Contract trait enforcement (Section 23)
-provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }
+provable-contracts = { workspace = true }  # versioned (#4175): tests call its in-tree helper, so it must survive `cargo package`; no cycle - aprender-contracts depends only on -macros
 
 # Visual regression testing framework (playbooks, TUI testing, GPU pixel verification)
 jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib", features = ["tui", "gpu"] }
