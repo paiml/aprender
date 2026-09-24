@@ -320,6 +320,32 @@ fn cycle_sweep(sigma: &Sigma, edges: &BTreeSet<Edge>) -> (Vec<LintFinding>, Vec<
             cycles.push(format!("{role}: {shown}"));
         }
     }
+    // ONT-9: `depends_on ∪ supersedes` is acyclic as ONE relation (ont-self-v1 INV-2). A cycle that alternates the
+    // two roles is a cycle in neither alone, so the per-role sweep above passes it; only the union sees it. Reported
+    // only when neither role already closed a cycle of its own, so one defect is one finding.
+    let union_roles = ["depends_on", "supersedes"];
+    let per_role_hit = cycles
+        .iter()
+        .any(|c| union_roles.iter().any(|r| c.starts_with(&format!("{r}:"))));
+    if !per_role_hit {
+        let adj: BTreeMap<&str, Vec<&str>> = edges
+            .iter()
+            .filter(|e| union_roles.contains(&e.role.as_str()))
+            .fold(BTreeMap::new(), |mut m, e| {
+                m.entry(e.from.as_str()).or_default().push(e.to.as_str());
+                m
+            });
+        if let Some(path) = first_cycle(&adj) {
+            let shown = path.join(" -> ");
+            findings.push(LintFinding::new(
+                "PV-ONT-009",
+                RuleSeverity::Error,
+                format!("`depends_on ∪ supersedes` is acyclic (ont-self-v1 INV-2), and the corpus closes a cycle through the two roles together: {shown}"),
+                format!("contracts/{}.yaml", path[0]),
+            ));
+            cycles.push(format!("depends_on ∪ supersedes: {shown}"));
+        }
+    }
     (findings, cycles)
 }
 
@@ -542,6 +568,22 @@ mod tests {
         assert_eq!(rules(&findings), vec!["PV-ONT-009"]);
         assert!(
             findings[0].message.contains("a -> b -> c -> a"),
+            "{}",
+            findings[0].message
+        );
+    }
+
+    /// ONT-9 (`ont-self-v1` ONTSELF-INV-002): `depends_on ∪ supersedes` is acyclic, not just each role alone.
+    /// `a depends_on b` and `b supersedes a` close a cycle through neither role by itself — the per-role sweep
+    /// passed it (measured on the pre-ONT-9 gate: `passed: true`, zero findings).
+    #[test]
+    fn a_cycle_through_depends_on_and_supersedes_together_is_rejected() {
+        let (result, findings) = ran("relations-mixed-cycle");
+        assert!(!result.passed, "{findings:?}");
+        assert_eq!(rules(&findings), vec!["PV-ONT-009"]);
+        assert!(
+            findings[0].message.contains("depends_on ∪ supersedes")
+                && findings[0].message.contains("a -> b -> a"),
             "{}",
             findings[0].message
         );

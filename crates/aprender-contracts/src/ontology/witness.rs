@@ -404,3 +404,85 @@ pub fn implication_adjacency(cs: &ClauseSet) -> BTreeMap<&str, Vec<&str>> {
 #[cfg(test)]
 #[path = "witness_tests.rs"]
 mod tests;
+
+/// ONT-001 §5 ONT-9, F-12 — planted-solution generation: every graph's answer is fixed by how it was BUILT, and
+/// the checker's verdict must equal the construction. A consistent-by-construction graph's planted model checks
+/// and no core does; a planted contradiction's derivation checks and no model does. A brute-force oracle over all
+/// 2ⁿ assignments checks the construction itself first, so a generator bug cannot pass as a checker property.
+#[cfg(test)]
+mod planted {
+    use super::super::witness_planted::{
+        adversarial_cores, adversarial_models, consistent, contradicted, satisfiable, Rng,
+    };
+    use super::{check, Checked};
+    use proptest::prelude::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(512))]
+        #[test]
+        fn ont_planted(seed in any::<u64>()) {
+            let mut rng = Rng::new(seed);
+
+            let sat = consistent(&mut rng);
+            prop_assert!(satisfiable(&sat.clauses, sat.n), "the generator built an unsatisfiable 'consistent' graph");
+            prop_assert_eq!(check(&sat.clauses, &sat.planted), Ok(Checked::Sat));
+            for c in adversarial_cores(&mut rng, &sat.clauses, sat.n) {
+                let v = check(&sat.clauses, &c);
+                prop_assert!(v.is_err(), "a consistent-by-construction graph got a core: {:?} for {:?} over {:?}", v, c, sat.clauses);
+            }
+
+            let unsat = contradicted(&mut rng);
+            prop_assert!(!satisfiable(&unsat.clauses, unsat.n), "the generator built a satisfiable 'contradiction'");
+            prop_assert!(
+                matches!(check(&unsat.clauses, &unsat.planted), Ok(Checked::Unsat { .. })),
+                "the planted derivation did not check: {:?}", check(&unsat.clauses, &unsat.planted)
+            );
+            for m in adversarial_models(&mut rng, unsat.n) {
+                let v = check(&unsat.clauses, &m);
+                prop_assert!(v.is_err(), "a planted contradiction got a model: {:?} for {:?} over {:?}", v, m, unsat.clauses);
+            }
+        }
+    }
+}
+
+/// ONT-001 §5 ONT-9 — **KANI-ONT-9-1**: a certificate the checker accepts is true under relation semantics. Over
+/// every graph on three variables (every unit, implication and conflict clause present or absent), every core of
+/// one to [`CORE_BOUND`](super::witness_small::CORE_BOUND) steps and every model: `check` returning
+/// `Unsat` ⇒ no assignment satisfies the graph; `Sat` ⇒ one does. The oracle reads the clause flags, not the
+/// checker's `BTreeSet`s (`witness_small.rs`). L3 status: DECLARED — not yet executed by `cargo kani`; the L2
+/// twin `witness_small::tests::kani_ont_9_1_twin` runs the same body on 2048 sampled inputs every `cargo test`.
+#[cfg(kani)]
+mod kani_proofs {
+    use super::super::witness_small::{
+        accepted_verdict_is_semantic, core, model, SmallGraph, CORE_BOUND, STEP_CODES,
+    };
+
+    /// KANI-ONT-9-1: a core the checker accepts is contradictory under relation semantics (and a model it
+    /// accepts satisfies), bounded at the measured max core length.
+    #[kani::proof]
+    #[kani::unwind(12)]
+    fn kani_ont_9_1() {
+        let g = SmallGraph {
+            units: kani::any(),
+            implies: kani::any(),
+            conflicts: kani::any(),
+        };
+        let len: usize = kani::any();
+        kani::assume(len >= 1 && len <= CORE_BOUND);
+        let mut codes = [0u8; CORE_BOUND];
+        for c in &mut codes {
+            let k: u8 = kani::any();
+            kani::assume(k < STEP_CODES);
+            *c = k;
+        }
+        let conflict: usize = kani::any();
+        kani::assume(conflict < 3);
+        assert!(accepted_verdict_is_semantic(
+            &g,
+            &core(&codes[..len], conflict)
+        ));
+        let false_bits: u8 = kani::any();
+        kani::assume(false_bits < 8);
+        assert!(accepted_verdict_is_semantic(&g, &model(false_bits)));
+    }
+}
