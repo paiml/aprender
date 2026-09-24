@@ -18212,6 +18212,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Cop ruling (aprender-cf, 2026-09-24): option B, a shrink-only ratchet. The mass reformat (A) and touched=clean (C) are deferred to a quiet window after the 0.70 fold. MEASURED on main 49fe19c28 with rustfmt 1.8.0-stable (254b59607d): 1778 include!d .rs files, 1584 misformatted (baselined). A full pass over them changes 1783 files, +135611/-128345. 163 remain misformatted after one pass (non-convergent, listed in the receipt separately). The instrument is pinned exactly in the baseline header, and a different rustfmt is "cannot check" (2).'
+- id: GH-4190
+  github_issue: 4190
+  item_type: task
+  kind: code
+  title: 'apr-format: golden_v2_f32_writer_is_byte_identical fails in tree (516 vs 1092 bytes) — a dark CI target'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:00:00+00:00
+  updated: 2026-09-24T12:00:00+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  notes: null
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
