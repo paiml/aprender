@@ -299,6 +299,8 @@ mod poison_trace_test;
 // FALSIFY-QDOT-008 (#3111): the Q5_K GEMV against gguf-py's values of a llama.cpp block
 #[cfg(test)]
 mod tests_q5k_ggml;
+#[cfg(test)]
+mod tests_q8_activation_staleness;
 
 // COV-003 through COV-006 (layer preload, kv_cache, attention, quantized)
 #[cfg(test)]
@@ -635,6 +637,11 @@ pub struct CudaExecutor {
     // Set to true after q8_quantize_into; callers invalidate (set false)
     // when the input buffer content changes (e.g. after RMSNorm write).
     q8_activation_valid: bool,
+    // #4258: which activation the Q8 cache holds — (source buffer ptr, element
+    // count). `ensure_q8_activation` re-quantizes when a GEMV's input is not this
+    // buffer, and every in-place writer clears `q8_activation_valid` when it writes
+    // this buffer, so a DP4A GEMV never reads another activation's Q8_1 bytes.
+    q8_activation_src: (u64, u32),
     // PMAT-084: FP8 activation cache — skip redundant absmax+convert when
     // multiple FP8 GEMMs share the same input (QKV phase, FFN gate+up).
     // Saves 84 kernel pairs per prefill (3 per layer × 28 layers).

@@ -50,6 +50,9 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         for (i, &p) in ptrs.iter().enumerate() {
             validate_device_ptr(p, &format!("{kernel_name} arg {i}"))?;
+            // #4258: any pointer argument may be an output (several GDN kernels
+            // write in place), so any of them can stale the Q8 activation.
+            self.q8_activation_written(p);
         }
         let mut args: Vec<u64> = ptrs.to_vec();
         let mut raw: Vec<*mut std::ffi::c_void> = args
@@ -103,6 +106,9 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         for (i, &p) in ptrs.iter().enumerate() {
             validate_device_ptr(p, &format!("{kernel_name} arg {i}"))?;
+            // #4258: any pointer argument may be an output (several GDN kernels
+            // write in place), so any of them can stale the Q8 activation.
+            self.q8_activation_written(p);
         }
         let mut args: Vec<u64> = ptrs.to_vec();
         args.extend_from_slice(scalars);
