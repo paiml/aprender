@@ -4,10 +4,12 @@
 #   bash scripts/release/promote_rc.sh vX.Y.Z-rc.N [--dry-run] [--work DIR]
 #   bash scripts/release/promote_rc.sh --self-test
 #
-# The final's assets ARE the rc's bytes. Cargo stays at X.Y.Z for an rc (cop ruling,
-# 2026-09-24), so the rc binary already reports `apr X.Y.Z (<sha>)`, and the bytes that
-# were dogfooded are the bytes that ship. Only the asset NAME carries the rc label, so
-# only the name changes:
+# The final's assets ARE the rc's bytes: the bytes that were dogfooded are the bytes that
+# ship. Cargo stays at X.Y.Z in the tree (cop ruling, 2026-09-24), but binary-release.yml
+# stamps an rc build to X.Y.Z-rc.N (stamp_rc_version.sh, #4110), so the promoted final
+# prints `apr X.Y.Z-rc.N (<sha>)` — the rc it was promoted from, as #4286 asks.
+# asset_version_check.sh accepts exactly that on vX.Y.Z when <sha> is the final tag's
+# commit, which step 6 below guarantees. Only the asset NAME changes:
 #
 #   1. read the rc release: a prerelease, carrying all eighteen assets
 #      (scripts/check_release_assets.sh), its tag resolved to a commit
