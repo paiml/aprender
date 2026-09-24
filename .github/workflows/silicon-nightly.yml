@@ -206,6 +206,16 @@ jobs:
       # axis's EVIDENCE. Both lanes run on gx10 and share the `perf-gx10`
       # concurrency group and the runner's target dir, so the second is a warm
       # rebuild and a seconds-long `--exact` run.
+      - name: aarch64 clippy -D warnings (self-test, then the tree)
+        run: |
+          set -euo pipefail
+          # #4134: every other clippy gate runs on x86_64, so arm-only findings (bindings used
+          # only inside x86 cfg branches) reached main unseen. This is the gate that runs on arm.
+          # It refuses (exit 2) on any other architecture; the self-test plants an aarch64-only
+          # unused binding and must go RED before the real run is believed.
+          bash scripts/check_clippy_aarch64.sh --self-test
+          bash scripts/check_clippy_aarch64.sh
+
       - name: CUDA on sm_121 — pre-warm covers runtime, zero JIT compiles
         run: |
           set -euo pipefail
