@@ -90,9 +90,10 @@ for rel in tracked:
             raw = h.read()
     except OSError:
         continue
-    if b"\0" in raw[:4096]: continue
+    # NO binary skip: a NUL byte made git diff AND this scan blind to a planted receipt (#3741 quorum r5). The byte
+    # prefilter keeps real binaries cheap; one that happens to contain the hex is ledgered like any file.
+    if not any(s[:7].encode() in raw for s in sup): continue
     text = raw.decode("utf-8", errors="replace")
-    if not any(s[:7] in text for s in sup): continue
     lines, texts = [], []
     for i, line in enumerate(text.splitlines(), 1):
         if any(pt.search(line) for pt in pats): lines.append(i); texts.append(line)
@@ -208,6 +209,8 @@ if [ "${1:-}" = "--self-test" ]; then
     expect 'C15 a count above the file -> R6 (re-pin: the ledger shrinks)' "$TMP/c15" 1 'a citation left -- re-pin'
     fixture c17 && printf 'measured JUST NOW against llama.cpp %s: CURRENT, 0.99x\n' "$OLD" > "$TMP/c17/evidence/parity/old-ratio.md" \
         && printf 'dated 2026-08-24 elsewhere in the file\n' >> "$TMP/c17/evidence/parity/old-ratio.md"
+    fixture c18 && printf '\0comparator %s measured just now, CURRENT\n' "$OLD" > "$TMP/c18/evidence/parity/nul.md" && git -C "$TMP/c18" add -A
+    expect 'C18 a planted receipt behind a NUL byte (git diff shows "Binary files differ") -> R1' "$TMP/c18" 1 'R1 evidence/parity/nul.md:1'
     expect 'C17 a dated line EDITED IN PLACE into a live claim (same count, a date elsewhere) -> R6' "$TMP/c17" 1 'a citing line was EDITED in place'
     fixture c16 && printf 'evidence/parity/old-ratio.md\thistorical\tdated in the file\ntests/fx/case.json\tfixture\ta sample value\n' > "$TMP/c16/scripts/comparator_pin_citations.txt"
     expect 'C16 a ledger line with no pin -> RED, never a pass' "$TMP/c16" 1 'TAB<n>:<sha12>'
@@ -237,6 +240,7 @@ PY
         print(f"FAIL  R2' 1 'R2 stale ledger entry' "$TMP/c4"
     mutant drop-r3 '        if not (date_re.search(text) or date_re.search(rel) or date_re.search(why)):' '        if False:' 1 'R3 evidence/parity/old-ratio.md' "$TMP/c5"
     mutant drop-r6 '    if pinned[rel] != pin:' '    if False:' 1 'R6 evidence/parity/old-ratio.md' "$TMP/c14"
+    mutant nul-skip '    if not any(s[:7].encode() in raw for s in sup): continue' '    if b"\0" in raw[:4096] or not any(s[:7].encode() in raw for s in sup): continue' 1 'R1 evidence/parity/nul.md:1' "$TMP/c18"
     mutant count-only '    if pinned[rel] != pin:' '    if pinned[rel].split(":")[0] != pin.split(":")[0]:' 1 'EDITED in place' "$TMP/c17"
     mutant drop-r4 '    if mled is not None and len(led) > len(mled):' '    if False:' 1 'R4 the ledger GREW' "$TMP/c6" "$TMP/c6/main-ledger.txt"
     mutant shape-exempt 'pin_rel):' 'pin_rel) or rel.startswith("docs/roadmaps/entries/PMAT-"):' 1 'R1 docs/roadmaps/entries/PMAT-9.yaml:1' "$TMP/c11"
