@@ -32,7 +32,9 @@ after #4046.
 | `accel::tests::a_forced_accelerator_is_never_lowered_by_the_device_check` | `accel_forced` guard removed from `run_no_gpu` | RED: "forced --gpu must reach the forward (I-17)", run with `CUDA_VISIBLE_DEVICES=` |
 | `tests/falsify_serve_run_default_backend_4089.rs` on Qwen3.5-4B-Q4_K_M | the base binary (no fix) | RED: `apr run used_gpu=true fell_back=Some(false)  apr serve used_gpu=false` |
 
-Unit rows `serve::types::default_backend_parity_4089` (3 tests) plus the I-17 row: 4/4 pass at f9c942c39.
+Unit rows `serve::types::default_backend_parity_4089` (3 tests) plus the I-17 row: 4/4 pass at f9c942c39. At ddfc6d30b, `commands::run`, `commands::serve::types` and `accel::`: 251 passed, 0 failed (`CUDA_VISIBLE_DEVICES=`).
+
+Final GREEN leg at ddfc6d30b (sha c72721a23a5f7ec5), Qwen3.5-4B, gpu-q, compute-apps empty before and after: run `used_gpu=true fell_back=false`; serve `requested=auto(default) resolved=32 (backend=cuda)`, `used_gpu=true`.
 
 ## Device measurement (lambda RTX 4090, all through gpu-q, `nvidia-smi --query-compute-apps` empty before and after every leg)
 - Binary: `apr-mbbase` = `apr 0.69.1 (bfafca251)`, sha256 4eafe3688063c32c. Qwen3.5-4B-Q4_K_M, no backend flag. Serve: `requested=none resolved=0 total=32 (backend=cpu)`, `/v1/completions used_gpu=false`. Run: `used_gpu=true fell_back=false`. **RED.**
@@ -40,10 +42,18 @@ Unit rows `serve::types::default_backend_parity_4089` (3 tests) plus the I-17 ro
 - Qwen3-1.7B-Q4_K_M (dense), both binaries: resolution changes from base `requested=none resolved=0` to fix `requested=auto(default) resolved=28 (backend=cuda)`, then "CUDA optimized model ready". But the dense serve route reports NO `used_gpu` on `/v1/completions` or `/v1/chat/completions`, so the falsifier stays RED ("no provenance to assert"), by design: there is no third state. Filed as **#4146**. The ticket had called the dense case "undetermined", and it still is, at the provenance level.
 
 ## Side effects a reviewer should weigh
-- On a cuda build with NO device, a flagless `apr run` of a GGUF now runs on CPU. It used to error "CUDA init failed": the rule's device check now applies on every run path, not only APR. A forced `--gpu` keeps the old behaviour.
+- On a cuda build with NO device, a flagless `apr run` now runs on CPU without attempting CUDA. The rule's device check applies on every run path, not only APR. A forced `--gpu` keeps the old behaviour.
+- **Cop condition, 2026-09-24: this is allowed only if LOUD.** Commit ddfc6d30b adds `accel::default_accelerator_unavailable_reason`. The run prints `Backend: CPU — <reason>` on stderr. The envelope says `used_gpu: false`, `backend.ran: cpu`, `backend.fell_back: true` and `backend.reason: <reason>` (null otherwise). The fell_back term is keyed on the rule's answer, never on `used_gpu`.
+  - **Why it was needed:** the rule sends the run to CPU before any GPU backend is entered, so `gpu_attempted` is never set, and the #3602/#3826 terms alone said `fell_back: false`.
+  - **Row:** `a_flagless_run_that_found_no_device_says_it_fell_back_and_why`. Deleting the term goes RED ("that is a fallback (None)"), measured.
+  - **Row:** `only_a_flagless_run_gets_the_no_device_reason`.
+  - **Device proof** (`CUDA_VISIBLE_DEVICES=`, Qwen3-1.7B, flagless):
+    - base bfafca251: `{requested: default, ran: cpu, fell_back: true}`, because it attempted CUDA;
+    - fix ddfc6d30b (sha c72721a23a5f7ec5): `{…, fell_back: true, reason: "no CUDA device present: this cuda build defaults to the GPU and found none, so CPU ran (#4089)"}`.
+  - So the fix is not quieter than base; it adds the reason.
 - `apr serve` on a cuda build with a device now uses the GPU by default. That is the ticket's intent, and it changes serve's default VRAM footprint. `--gpu-layers 0` or `--no-gpu` restores CPU.
 
 ## Lint
 - `cargo fmt --all -- --check`: rc 0.
-- `cargo clippy -p apr-cli --lib --tests -- -D warnings`: rc 101, but no finding lands in any file this branch touches. The same failures appear at base bfafca251, in pre-existing test targets such as `falsification_crux_*`.
+- `cargo clippy --keep-going -p apr-cli --lib --tests -- -D warnings`: rc 101 from 23 pre-existing files; no finding lands in any file this branch touches. The same failures appear at base bfafca251, in pre-existing test targets such as `falsification_crux_*`.
 - The `--features cuda` clippy aborts earlier in `aprender-train` (59 trivial-cast findings, untouched here).
