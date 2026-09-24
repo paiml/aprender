@@ -114,6 +114,10 @@ const ROUTES: &[Route] = &[
 const EXCUSED: &[(&str, &str)] = &[
     ("/batch/tokenize", "tokenization only, no forward"),
     (
+        "/api/embeddings",
+        "embeddings, not generation — the engine has no embed entry",
+    ),
+    (
         "/realize/embed",
         "embeddings, not generation — the engine has no embed entry",
     ),
