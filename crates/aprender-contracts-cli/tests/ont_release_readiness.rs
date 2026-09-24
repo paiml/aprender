@@ -369,7 +369,10 @@ fn the_green_release_passes_with_every_derived_cell_carrying_a_row() {
     // fails to fit, so `.refusal` grades zero focus nodes: it declares `allowEmpty`, so the verdict stands, and
     // like every vacuity it is named in `declines` and in neither shape list (#3610).
     let armed = v["armed_shapes"].as_array().expect("armed").len();
-    assert_eq!(armed, 15, "sixteen armed, less the one that measured nothing");
+    assert_eq!(
+        armed, 15,
+        "sixteen armed, less the one that measured nothing"
+    );
     assert_eq!(
         names(&v["declines"]),
         vec!["release-readiness-v1.refusal"] as Vec<&str>

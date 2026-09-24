@@ -495,6 +495,7 @@ const COUNTED_ENTITY_TYPES: &[&str] = &[
     "code",
     "lean",
     "release-evidence",
+    "cli-surface",
 ];
 
 /// Focus nodes each extractor produced, for one Σ entity type. `None` is "this build has no counting arm for the
@@ -516,6 +517,13 @@ fn entity_count(name: &str, extraction: &extract::Extraction) -> Option<usize> {
         "lean" => extraction.lean.statements,
         // By rule 0 when no release subject was given (an ordinary PR has none): the extractor did not run.
         "release-evidence" => extraction.release.as_ref().map_or(0, |r| r.cells),
+        // #3777 registered cli-surface in Σ after #3624 derived these keys from it: the leaf commands the
+        // release's `apr surface --json` declares. By rule 0 without `--surface` (the extractor did not run).
+        "cli-surface" => extraction
+            .release
+            .as_ref()
+            .and_then(|r| r.surface.as_ref())
+            .map_or(0, |s| s.leaves),
         _ => return None,
     })
 }
