@@ -90,7 +90,9 @@ pub(crate) fn run(
         max_tokens,
         output_format: output_format.to_string(),
         force: false,
-        no_gpu,
+        // #4089: every run path (APR, GGUF, Qwen3.5) reads this one field; it is the shared
+        // default rule's answer, the same one `apr serve` resolves a flagless start with.
+        no_gpu: !crate::accel::default_wants_accelerator(no_gpu),
         offline,
         benchmark,
         verbose,

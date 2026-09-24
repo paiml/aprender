@@ -40,7 +40,8 @@ fn execute_apr_inference(
 
     // Check if GPU should be used
     #[cfg(feature = "cuda")]
-    let use_gpu = !options.no_gpu && realizar::apr::AprV2ModelCuda::is_available();
+    // #4089: `options.no_gpu` already carries the shared default rule (device check included).
+    let use_gpu = !options.no_gpu;
     #[cfg(not(feature = "cuda"))]
     let use_gpu = false;
 

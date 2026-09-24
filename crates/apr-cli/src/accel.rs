@@ -28,6 +28,28 @@ pub(crate) fn build_has_accelerator() -> bool {
     cfg!(any(feature = "cuda", feature = "wgpu"))
 }
 
+/// #4089: the backend a verb uses when the user named NONE. ONE rule for `apr run` and
+/// `apr serve`: the accelerator when this build has one and a device is present, unless
+/// `--no-gpu`. `apr run` used it and `apr serve` resolved a flagless start to CPU on the same
+/// cuda build and file, so a user switching verbs silently lost the GPU (yoga, Qwen3.5-4B:
+/// run said "Backend: GPU", serve said `used_gpu: false`). A defaulted request is SOFT: it
+/// falls back to CPU, visibly, where the accelerator cannot load, exactly as an explicit
+/// request does not (I-17).
+#[must_use]
+pub(crate) fn default_wants_accelerator(no_gpu: bool) -> bool {
+    !no_gpu && accelerator_device_present()
+}
+
+#[cfg(feature = "cuda")]
+fn accelerator_device_present() -> bool {
+    realizar::cuda::CudaExecutor::is_available()
+}
+
+#[cfg(not(feature = "cuda"))]
+fn accelerator_device_present() -> bool {
+    false
+}
+
 /// Refuse an accelerator request this build cannot honour.
 ///
 /// `asked` is the flag the USER typed, quoted back verbatim. Telling someone

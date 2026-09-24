@@ -157,7 +157,7 @@ impl ServerConfig {
     /// # Errors
     /// [`CliError::InvalidInput`] for a partial request this loader cannot honour.
     pub(crate) fn resolve_layers(&self, total_layers: u32) -> Result<u32> {
-        let Some(request) = self.gpu_layers else {
+        let Some(request) = self.effective_gpu_layers() else {
             return Ok(0);
         };
         if self.no_gpu {
@@ -182,9 +182,18 @@ impl ServerConfig {
     }
 
     pub(crate) fn wants_accelerator(&self) -> bool {
-        self.gpu_layers
+        self.effective_gpu_layers()
             .is_some_and(GpuLayerRequest::wants_accelerator)
             && !self.no_gpu
+    }
+
+    /// The layer request the server acts on: the user's, or with no backend flag the SAME
+    /// default `apr run` uses (#4089), as `auto`, the one request I-17 lets be reduced to
+    /// what fits. Explicit flags are untouched: `--gpu-layers 0` / `--no-gpu` still mean CPU.
+    pub(crate) fn effective_gpu_layers(&self) -> Option<GpuLayerRequest> {
+        self.gpu_layers.or_else(|| {
+            crate::accel::default_wants_accelerator(self.no_gpu).then_some(GpuLayerRequest::Auto)
+        })
     }
     /// Translate the operator-facing hardening flags into realizar's
     /// [`RouterConfig`](realizar::api::RouterConfig).
@@ -633,5 +642,53 @@ impl GpuLayerRequest {
     #[must_use]
     pub fn may_autofit(self) -> bool {
         matches!(self, Self::Auto)
+    }
+}
+
+/// #4089: `apr serve` and `apr run` resolve a flagless start through ONE rule,
+/// `crate::accel::default_wants_accelerator`. Before, run took the accelerator and
+/// serve took CPU on the same cuda build and file. These rows pin the equality on
+/// every build; the device-level proof (provenance `used_gpu` from both verbs) is
+/// `tests/falsify_serve_run_default_backend_4089.rs`.
+#[cfg(test)]
+mod default_backend_parity_4089 {
+    use super::{GpuLayerRequest, ServerConfig};
+
+    /// What `apr run` does with no flag: its effective `no_gpu`, as run_entry sets it.
+    fn run_uses_accelerator(no_gpu: bool) -> bool {
+        let effective_no_gpu = !crate::accel::default_wants_accelerator(no_gpu);
+        !effective_no_gpu
+    }
+
+    #[test]
+    fn a_flagless_serve_resolves_exactly_as_run_does() {
+        for no_gpu in [false, true] {
+            let cfg = ServerConfig { gpu_layers: None, no_gpu, ..ServerConfig::default() };
+            assert_eq!(
+                cfg.wants_accelerator(),
+                run_uses_accelerator(no_gpu),
+                "no_gpu={no_gpu}: serve and run must take the same default backend (#4089)"
+            );
+        }
+    }
+
+    #[test]
+    fn a_flagless_serve_defaults_to_auto_only_when_the_rule_says_accelerator() {
+        let cfg = ServerConfig { gpu_layers: None, no_gpu: false, ..ServerConfig::default() };
+        let want = crate::accel::default_wants_accelerator(false).then_some(GpuLayerRequest::Auto);
+        assert_eq!(cfg.effective_gpu_layers(), want);
+    }
+
+    #[test]
+    fn explicit_flags_still_win() {
+        // --gpu-layers 0 is an explicit CPU request; --no-gpu is too. Neither is overridden.
+        let cpu = ServerConfig { gpu_layers: Some(GpuLayerRequest::None), ..ServerConfig::default() };
+        assert!(!cpu.wants_accelerator());
+        let no_gpu = ServerConfig { gpu_layers: None, no_gpu: true, ..ServerConfig::default() };
+        assert!(!no_gpu.wants_accelerator());
+        assert_eq!(no_gpu.effective_gpu_layers(), None);
+        // an explicit request is returned as typed, never replaced by the default
+        let all = ServerConfig { gpu_layers: Some(GpuLayerRequest::All), ..ServerConfig::default() };
+        assert_eq!(all.effective_gpu_layers(), Some(GpuLayerRequest::All));
     }
 }
