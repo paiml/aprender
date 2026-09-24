@@ -1,0 +1,25 @@
+{
+  "agree": true,
+  "blind_to": [],
+  "elk": {
+    "consistent": true,
+    "entailed_subsumptions": [],
+    "ignored_axiom_kinds": [
+      "ObjectPropertyRange",
+      "SymmetricObjectProperty"
+    ]
+  },
+  "jvm": "openjdk version \"17.0.20\" 2026-07-21",
+  "measured": true,
+  "oracle": "ELK 0.4.3 (jar sha256 de1fffafbe0bb19656335b53b4a5a44d8b8feb75e077ad1677ba8a2fb91cac7c; out of gate, release only)",
+  "positive_control": {
+    "differential_went_red": true,
+    "elk_entailed_it": true,
+    "planted": "SubClassOf(Contract Symbol)"
+  },
+  "report": {
+    "consistent": true,
+    "entailed_subsumptions": []
+  },
+  "schema": "ont-tbox-differential/v1"
+}

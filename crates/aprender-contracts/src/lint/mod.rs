@@ -24,6 +24,7 @@ pub mod shapes_gate;
 pub mod sigma_gate;
 pub mod sigma_symbols;
 mod strict_test_binding;
+pub mod tbox_gate;
 pub mod trend;
 
 use std::collections::{HashMap, HashSet};
@@ -635,6 +636,8 @@ pub enum NamedGateOutcome {
     Relations(relations_gate::RelationsOutcome),
     /// The `shapes` gate (ONT-4b), with four non-verdict answers (unsupported shape, no shapes, no focus, control failed).
     Shapes(shapes_gate::ShapesOutcome),
+    /// The `tbox` gate (ONT-2c): advisory classification. It has no Pass answer at all (R-7).
+    Tbox(tbox_gate::TboxOutcome),
     /// A gate that ran and judged the corpus.
     Ran {
         result: Box<GateResult>,
@@ -666,6 +669,7 @@ pub fn run_named_gate_with(
             NamedGateOutcome::Shapes(shapes_gate::run_shapes_gate_with(contract_dir, shapes_opts))
         }
         "sigma" => NamedGateOutcome::Sigma(sigma_gate::run_sigma_gate(contract_dir)),
+        "tbox" => NamedGateOutcome::Tbox(tbox_gate::run_tbox_gate(contract_dir)),
         "validate" => {
             let (contracts, parse_errors) = load_contracts(contract_dir);
             let (result, findings) = run_validate_gate(&contracts, &parse_errors);
@@ -679,7 +683,7 @@ pub fn run_named_gate_with(
 }
 
 /// The gate names `--gate` computes alone, for the refusal message.
-pub const NAMED_GATES: [&str; 4] = ["relations", "shapes", "sigma", "validate"];
+pub const NAMED_GATES: [&str; 5] = ["relations", "shapes", "sigma", "tbox", "validate"];
 
 /// The `sigma` gate as `run_lint` reports it. Σ's two non-verdict answers become SKIPPED gates here — under
 /// `--gate sigma` they are an exit of their own (decline / error), but inside a full run "skipped" is how the

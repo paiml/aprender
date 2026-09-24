@@ -167,6 +167,14 @@ not_expressible:
   - {key: taste, reader: ontology/sigma.rs}
   - {key: urgency, reader: ontology/sigma.rs}
   - {key: authorship_intent, reader: ontology/sigma.rs}
+  # ONT-2c: Σ content the OWL 2 EL writer (ontology/owl.rs) deliberately does not turn into axioms. Each key's
+  # reason is printed in the header of contracts/ontology.ofn; a populated key missing here refuses the export.
+  - {key: acyclic, reader: ontology/owl.rs}
+  - {key: symbols, reader: ontology/owl.rs}
+  - {key: worlds, reader: ontology/owl.rs}
+  - {key: agents, reader: ontology/owl.rs}
+  - {key: entity_types, reader: ontology/owl.rs}
+  - {key: extractors, reader: ontology/owl.rs}
 
 readers:
   concepts: ontology/sigma.rs

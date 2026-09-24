@@ -1,0 +1,46 @@
+# ontology.ofn — Σ as OWL 2 functional syntax. GENERATED from its ontology.yaml by
+# `pv ontology export --owl`; do not edit (ONT-001 ONT-2c, R-18). Not expressed here, by design:
+#   acyclic: irreflexive ∧ transitive is disallowed in OWL 2 DL; acyclicity is checked in Rust (R-19)
+#   agents: agents are provenance actors (prov), not classes of the TBox
+#   entity_types: entity types name extractors; their classes are concepts, which ARE written
+#   extractors: extractors are readers (code), not ontology
+#   symbols: the `formal:` token vocabulary is a lexicon, not a TBox
+#   worlds: worlds scope contracts; OWL 2 EL has no modal or context construct
+Ontology(<https://ont.paiml.dev/v1alpha1/sigma>
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Code>))
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Contract>))
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Dataset>))
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Doc>))
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Entity>))
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Kernel>))
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Model>))
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Proof>))
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Statement>))
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Symbol>))
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Test>))
+Declaration(ObjectProperty(<https://ont.paiml.dev/v1alpha1/binds>))
+Declaration(ObjectProperty(<https://ont.paiml.dev/v1alpha1/contradicts>))
+Declaration(ObjectProperty(<https://ont.paiml.dev/v1alpha1/depends_on>))
+Declaration(ObjectProperty(<https://ont.paiml.dev/v1alpha1/documents>))
+Declaration(ObjectProperty(<https://ont.paiml.dev/v1alpha1/falsified_by>))
+Declaration(ObjectProperty(<https://ont.paiml.dev/v1alpha1/proved_by>))
+Declaration(ObjectProperty(<https://ont.paiml.dev/v1alpha1/refines>))
+Declaration(ObjectProperty(<https://ont.paiml.dev/v1alpha1/supersedes>))
+ObjectPropertyDomain(<https://ont.paiml.dev/v1alpha1/binds> <https://ont.paiml.dev/v1alpha1/Contract>)
+ObjectPropertyDomain(<https://ont.paiml.dev/v1alpha1/contradicts> <https://ont.paiml.dev/v1alpha1/Contract>)
+ObjectPropertyDomain(<https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/Contract>)
+ObjectPropertyDomain(<https://ont.paiml.dev/v1alpha1/documents> <https://ont.paiml.dev/v1alpha1/Doc>)
+ObjectPropertyDomain(<https://ont.paiml.dev/v1alpha1/falsified_by> <https://ont.paiml.dev/v1alpha1/Contract>)
+ObjectPropertyDomain(<https://ont.paiml.dev/v1alpha1/proved_by> <https://ont.paiml.dev/v1alpha1/Contract>)
+ObjectPropertyDomain(<https://ont.paiml.dev/v1alpha1/refines> <https://ont.paiml.dev/v1alpha1/Contract>)
+ObjectPropertyDomain(<https://ont.paiml.dev/v1alpha1/supersedes> <https://ont.paiml.dev/v1alpha1/Contract>)
+ObjectPropertyRange(<https://ont.paiml.dev/v1alpha1/binds> <https://ont.paiml.dev/v1alpha1/Code>)
+ObjectPropertyRange(<https://ont.paiml.dev/v1alpha1/contradicts> <https://ont.paiml.dev/v1alpha1/Contract>)
+ObjectPropertyRange(<https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/Contract>)
+ObjectPropertyRange(<https://ont.paiml.dev/v1alpha1/documents> <https://ont.paiml.dev/v1alpha1/Code>)
+ObjectPropertyRange(<https://ont.paiml.dev/v1alpha1/falsified_by> <https://ont.paiml.dev/v1alpha1/Test>)
+ObjectPropertyRange(<https://ont.paiml.dev/v1alpha1/proved_by> <https://ont.paiml.dev/v1alpha1/Proof>)
+ObjectPropertyRange(<https://ont.paiml.dev/v1alpha1/refines> <https://ont.paiml.dev/v1alpha1/Contract>)
+ObjectPropertyRange(<https://ont.paiml.dev/v1alpha1/supersedes> <https://ont.paiml.dev/v1alpha1/Contract>)
+SymmetricObjectProperty(<https://ont.paiml.dev/v1alpha1/contradicts>)
+)
