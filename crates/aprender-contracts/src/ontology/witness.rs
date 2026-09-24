@@ -401,6 +401,227 @@ pub fn implication_adjacency(cs: &ClauseSet) -> BTreeMap<&str, Vec<&str>> {
     adj
 }
 
+/// A clause set whose answer is known by CONSTRUCTION, with the certificate the construction yields (ONT-9, F-12).
+///
+/// The generator never asks a reasoner or the checker: a satisfiable instance is built around a planted assignment
+/// and admits only clauses that assignment satisfies, so the planted assignment is its model; an unsatisfiable one
+/// is built around a planted derivation — unit, implication chain, `contradicts` — and every clause added after it
+/// only adds constraints, so the derivation stays a core. The checker's verdict on the certificate must equal the
+/// construction, and a checker weakened to accept less or more is caught by the instances either side.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Planted {
+    pub clauses: ClauseSet,
+    pub certificate: WitnessResult,
+    pub satisfiable: bool,
+}
+
+/// splitmix64: a generator the planted corpus can be reproduced from by its seed alone.
+struct Mix(u64);
+
+impl Mix {
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    /// Uniform in `0..n` (n > 0; the modulo bias is irrelevant at these sizes).
+    fn below(&mut self, n: usize) -> usize {
+        usize::try_from(self.next() % n as u64).unwrap_or(0)
+    }
+
+    fn coin(&mut self) -> bool {
+        self.next() & 1 == 1
+    }
+}
+
+/// The planted instance for `(seed, n, satisfiable)` over the variables `v00..v{n-1}`. `n` is raised to 1 for a
+/// satisfiable instance and to 2 for an unsatisfiable one (a conflict needs two sides).
+#[must_use]
+pub fn ont_planted(seed: u64, n: usize, satisfiable: bool) -> Planted {
+    let mut rng = Mix(seed);
+    let n = n.max(if satisfiable { 1 } else { 2 });
+    let vars: Vec<String> = (0..n).map(|i| format!("v{i:02}")).collect();
+    if satisfiable {
+        plant_sat(&mut rng, &vars)
+    } else {
+        plant_unsat(&mut rng, &vars)
+    }
+}
+
+/// Two distinct variables.
+fn pair<'a>(rng: &mut Mix, vars: &'a [String]) -> (&'a String, &'a String) {
+    let a = rng.below(vars.len());
+    let b = (a + 1 + rng.below(vars.len() - 1)) % vars.len();
+    (&vars[a], &vars[b])
+}
+
+fn plant_sat(rng: &mut Mix, vars: &[String]) -> Planted {
+    let truth: BTreeMap<&str, bool> = vars
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (v.as_str(), i == 0 || rng.coin()))
+        .collect();
+    let mut cs = ClauseSet::default();
+    for (v, &t) in &truth {
+        if t && (*v == vars[0] || rng.below(3) == 0) {
+            cs.units.insert((*v).to_string());
+        }
+    }
+    if vars.len() > 1 {
+        for _ in 0..2 * vars.len() {
+            let (a, b) = pair(rng, vars);
+            if !(truth[a.as_str()] && !truth[b.as_str()]) {
+                cs.implies.insert((a.clone(), b.clone()));
+            }
+        }
+        for _ in 0..vars.len() {
+            let (a, b) = pair(rng, vars);
+            if !(truth[a.as_str()] && truth[b.as_str()]) {
+                cs.conflicts.insert(ordered(a, b));
+            }
+        }
+    }
+    let false_vars = truth
+        .iter()
+        .filter(|(_, &t)| !t)
+        .map(|(v, _)| (*v).to_string())
+        .collect();
+    Planted {
+        clauses: cs,
+        certificate: WitnessResult::Model(Model { false_vars }),
+        satisfiable: true,
+    }
+}
+
+/// A unit and the implication chain it drives through `chain`, as clauses and as derivation steps.
+fn plant_chain(cs: &mut ClauseSet, steps: &mut Vec<Step>, chain: &[&String]) {
+    cs.units.insert(chain[0].clone());
+    steps.push(Step::Unit(chain[0].clone()));
+    for w in chain.windows(2) {
+        cs.implies.insert((w[0].clone(), w[1].clone()));
+        steps.push(Step::Implies(w[0].clone(), w[1].clone()));
+    }
+}
+
+fn plant_unsat(rng: &mut Mix, vars: &[String]) -> Planted {
+    let mut order: Vec<&String> = vars.iter().collect();
+    for i in (1..order.len()).rev() {
+        order.swap(i, rng.below(i + 1));
+    }
+    let mut cs = ClauseSet::default();
+    let mut steps = Vec::new();
+    let conflict = if rng.coin() {
+        // One chain; the conflict joins an earlier link to its end (the pc_reasoner plant is the 3-link case).
+        let k = 2 + rng.below(order.len() - 1);
+        plant_chain(&mut cs, &mut steps, &order[..k]);
+        (order[rng.below(k - 1)].clone(), order[k - 1].clone())
+    } else {
+        // Two disjoint chains, each from its own unit; the conflict joins their ends.
+        let k = 1 + rng.below(order.len() - 1);
+        let m = 1 + rng.below(order.len() - k);
+        plant_chain(&mut cs, &mut steps, &order[..k]);
+        plant_chain(&mut cs, &mut steps, &order[k..k + m]);
+        (order[k - 1].clone(), order[k + m - 1].clone())
+    };
+    cs.conflicts.insert(ordered(&conflict.0, &conflict.1));
+    for _ in 0..vars.len() {
+        let (a, b) = pair(rng, vars);
+        match rng.below(3) {
+            0 => cs.units.insert(a.clone()),
+            1 => cs.implies.insert((a.clone(), b.clone())),
+            _ => cs.conflicts.insert(ordered(a, b)),
+        };
+    }
+    Planted {
+        clauses: cs,
+        certificate: WitnessResult::UnsatCore(Core { steps, conflict }),
+        satisfiable: false,
+    }
+}
+
+#[cfg(kani)]
+mod kani_proofs {
+    use super::*;
+
+    const V: [&str; 3] = ["a", "b", "c"];
+    /// The six implications and three conflicts over `V`.
+    const IMP: [(usize, usize); 6] = [(0, 1), (0, 2), (1, 0), (1, 2), (2, 0), (2, 1)];
+    const CON: [(usize, usize); 3] = [(0, 1), (0, 2), (1, 2)];
+
+    fn s(i: usize) -> String {
+        V[i].to_string()
+    }
+
+    /// Does the assignment `mask` (bit i = V[i] true) satisfy every clause? Evaluated on the bits, not by `check`.
+    fn satisfies(units: u8, imp: u8, con: u8, mask: u8) -> bool {
+        let t = |i: usize| mask >> i & 1 == 1;
+        (0..3).all(|i| units >> i & 1 == 0 || t(i))
+            && IMP
+                .iter()
+                .enumerate()
+                .all(|(k, &(a, b))| imp >> k & 1 == 0 || !t(a) || t(b))
+            && CON
+                .iter()
+                .enumerate()
+                .all(|(k, &(a, b))| con >> k & 1 == 0 || !(t(a) && t(b)))
+    }
+
+    /// KANI-ONT-9-1: checker soundness at three variables. Any clause set over `V`, any core of at most three steps:
+    /// if `check` accepts the core, no assignment satisfies the clause set; if it accepts a model, that model does.
+    #[kani::proof]
+    #[kani::unwind(10)]
+    fn kani_ont_9_1() {
+        let (units, imp, con): (u8, u8, u8) = (kani::any(), kani::any(), kani::any());
+        kani::assume(units < 8 && imp < 64 && con < 8);
+        let cs = ClauseSet {
+            units: (0..3).filter(|i| units >> i & 1 == 1).map(s).collect(),
+            implies: (0..6)
+                .filter(|k| imp >> k & 1 == 1)
+                .map(|k| (s(IMP[k].0), s(IMP[k].1)))
+                .collect(),
+            conflicts: (0..3)
+                .filter(|k| con >> k & 1 == 1)
+                .map(|k| (s(CON[k].0), s(CON[k].1)))
+                .collect(),
+        };
+        let len: usize = kani::any();
+        kani::assume((1..=3).contains(&len));
+        let steps: Vec<Step> = (0..len)
+            .map(|_| {
+                let k: usize = kani::any();
+                kani::assume(k < 9);
+                if k < 3 {
+                    Step::Unit(s(k))
+                } else {
+                    Step::Implies(s(IMP[k - 3].0), s(IMP[k - 3].1))
+                }
+            })
+            .collect();
+        let c: usize = kani::any();
+        kani::assume(c < 3);
+        let core = WitnessResult::UnsatCore(Core {
+            steps,
+            conflict: (s(CON[c].0), s(CON[c].1)),
+        });
+        if check(&cs, &core).is_ok() {
+            assert!((0u8..8).all(|m| !satisfies(units, imp, con, m)));
+        }
+        let mask: u8 = kani::any();
+        kani::assume(mask < 8);
+        let model = WitnessResult::Model(Model {
+            false_vars: (0..3).filter(|i| mask >> i & 1 == 0).map(s).collect(),
+        });
+        assert_eq!(check(&cs, &model).is_ok(), satisfies(units, imp, con, mask));
+    }
+}
+
 #[cfg(test)]
 #[path = "witness_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "witness_ont9_tests.rs"]
+mod ont9_tests;
