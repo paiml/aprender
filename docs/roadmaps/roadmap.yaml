@@ -18194,6 +18194,7 @@ roadmap:
 - id: GH-4114
   github_issue: 4114
   item_type: task
+  kind: code
   title: check_package_includes.sh skips cfg(test) modules — it passed a crate whose published-tarball cargo test cannot compile (3 includes); the gate must build the real .crate
   status: inprogress
   priority: medium
