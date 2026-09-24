@@ -47,6 +47,10 @@ def resolve(v, p):
         return None, "no receipt recorded"
     if os.path.isabs(p):
         return p, None
+    if not v.get("_path"):
+        # a relative path means "relative to the verdict": with no verdict location it has no meaning, and
+        # resolving it against the cwd is exactly the host-dependence #4117 removed (6c's review of 215da7f79)
+        return None, "a relative receipt path %r with no verdict location" % p
     base = os.path.dirname(os.path.abspath(v.get("_path") or ""))
     q = os.path.normpath(os.path.join(base, p))
     if not q.startswith(base + os.sep):
@@ -57,7 +61,7 @@ def resolve(v, p):
 def coherent(v):
     """-> None when the verdict's own receipts say green, else why not. Re-derived, never read from `green`."""
     lad_p, why = resolve(v, (v.get("ladder") or {}).get("receipt"))
-    if why and "escapes" in why:
+    if lad_p is None and why and why != "no receipt recorded":
         return "its ladder receipt: %s" % why
     lad = _load(lad_p) if lad_p else None
     if not isinstance(lad, dict):
@@ -69,7 +73,7 @@ def coherent(v):
     lanes = (v.get("crux") or {}).get("lanes") or {}
     for lane in REQUIRED_LANES:
         rp, why = resolve(v, (lanes.get(lane) or {}).get("receipt"))
-        if why and "escapes" in why:
+        if rp is None and why and why != "no receipt recorded":
             return "its CRUX %s receipt: %s" % (lane, why)
         r = _load(rp) if rp else None
         if not isinstance(r, dict) or (r.get("summary") or {}).get("verdict") != "PASS":
