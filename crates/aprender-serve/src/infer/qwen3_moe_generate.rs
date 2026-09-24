@@ -32,10 +32,8 @@
 //! - Cache rollback / beam search (cache.rollback_to exists; not wired)
 
 use crate::error::{RealizarError, Result};
-use crate::gguf::qwen3_moe_load::load_qwen3_moe_layer;
-use crate::gguf::{
-    MappedGGUFModel, OwnedQuantizedKVCache, OwnedQuantizedModel, QuantizedGenerateConfig,
-};
+use crate::gguf::moe_session::{Qwen3MoeForward, Qwen3MoeSession};
+use crate::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -46,10 +44,9 @@ use rand::{Rng, SeedableRng};
 /// - seeded RNG → deterministic across runs with same seed (V1_002)
 /// - seed differences produce different outputs (V1_003)
 ///
-/// Mirrors the dense path's `Self::sample_advanced` (in
-/// `gguf/inference/fails.rs:100`) but uses a seeded `StdRng`
-/// instead of `rand::rng()` for reproducibility.
-fn sample_from_logits(
+/// Mirrors the deleted dense `sample_advanced` (#4266) but uses a seeded
+/// `StdRng` instead of `rand::rng()` for reproducibility.
+pub(crate) fn sample_from_logits(
     logits: &[f32],
     config: &QuantizedGenerateConfig,
     rng: &mut StdRng,
@@ -63,8 +60,8 @@ fn sample_from_logits(
 
     // Step 1: Repetition penalty (qwen3-moe-repetition-penalty-v1).
     // Apply BEFORE temperature scaling. Mirrors Candle's
-    // apply_repeat_penalty semantics (PMAT-383/384, dense-path
-    // sample_advanced in gguf/inference/fails.rs:100).
+    // apply_repeat_penalty semantics (PMAT-383/384; the
+    // dense `sample_advanced`, deleted with fails.rs in #4266).
     // No-op when repeat_penalty == 1.0 OR repeat_last_n == 0.
     let penalized: Vec<f32> =
         if config.repeat_penalty != 1.0 && config.repeat_last_n > 0 && !recent_tokens.is_empty() {
@@ -87,12 +84,7 @@ fn sample_from_logits(
 
     // Greedy fallback: temperature == 0 OR top_k == 1 (after repetition penalty)
     if config.temperature == 0.0 || config.top_k == 1 {
-        return Ok(penalized
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(i, _)| i as u32)
-            .expect("non-empty logits guaranteed above"));
+        return Ok(crate::sampling::argmax(&penalized));
     }
 
     // Temperature scaling
@@ -145,169 +137,47 @@ fn sample_from_logits(
 
 /// Run autoregressive token generation for a Qwen3-MoE GGUF model.
 ///
+/// PMAT-4269 (M1): a thin entry into the one engine — a
+/// [`Qwen3MoeSession`](crate::gguf::moe_session::Qwen3MoeSession) owns the
+/// prefill, token choice, stop tokens and context budget; this function only
+/// opens it and runs one turn.
+///
 /// # Arguments
-/// * `mapped` — the mmapped GGUF (caller holds it for the lifetime of
-///   this call; the per-layer expert tensors borrow from it during
-///   `forward_qwen3_moe`).
+/// * `mapped` — the mmapped GGUF (the per-layer expert tensors borrow from it
+///   for the length of the call).
 /// * `model` — the standard `OwnedQuantizedModel` constructed via
-///   `OwnedQuantizedModel::from_mapped` (post-M32c.2.1, this dispatches
-///   to `from_gguf_for_moe` for qwen3_moe arch automatically).
+///   `OwnedQuantizedModel::from_mapped`.
 /// * `input_tokens` — the prompt token IDs.
-/// * `gen_config` — generation config (max_tokens, sampling params).
+/// * `gen_config` — generation config (max_tokens, sampling, stop tokens).
 ///
 /// # Returns
 /// Full token sequence including prompt: `[prompt..., generated...]`.
 ///
 /// # Errors
+/// - An empty prompt, or one the declared context cannot hold.
 /// - Architecture isn't qwen3_moe (caller should dispatch correctly).
 /// - MoE config metadata missing (`expert_count`, `expert_used_count`,
 ///   `expert_feed_forward_length`).
-/// - Per-layer MoE descriptor load failure (M32c.1).
-/// - Forward pass error (M32c.2.2.2.1.1).
+/// - Per-layer MoE descriptor load failure, or a forward pass error.
 pub fn run_qwen3_moe_generate(
     mapped: &MappedGGUFModel,
     model: &OwnedQuantizedModel,
     input_tokens: &[u32],
     gen_config: &QuantizedGenerateConfig,
 ) -> Result<Vec<u32>> {
-    if input_tokens.is_empty() {
-        return Err(RealizarError::InvalidShape {
-            reason: "run_qwen3_moe_generate: prompt cannot be empty".to_string(),
-        });
-    }
-
-    let canonical_arch = crate::tensor_names::normalize_architecture(&model.config().architecture);
-    if canonical_arch != "qwen3_moe" {
-        return Err(RealizarError::InvalidShape {
-            reason: format!(
-                "run_qwen3_moe_generate: arch '{}' (canonical '{}') is not qwen3_moe — \
-                 caller should dispatch to run_gguf_generate instead",
-                model.config().architecture,
-                canonical_arch
-            ),
-        });
-    }
-
-    // Read MoE config from GGUF metadata
-    let num_experts = mapped
-        .model
-        .expert_count()
-        .ok_or_else(|| RealizarError::InvalidShape {
-            reason: format!(
-                "run_qwen3_moe_generate: missing '{}.expert_count' in GGUF metadata",
-                model.config().architecture
-            ),
-        })?;
-    let num_experts_per_tok =
-        mapped
-            .model
-            .expert_used_count()
-            .ok_or_else(|| RealizarError::InvalidShape {
-                reason: format!(
-                    "run_qwen3_moe_generate: missing '{}.expert_used_count' in GGUF metadata",
-                    model.config().architecture
-                ),
-            })?;
-    let moe_intermediate =
-        mapped
-            .model
-            .expert_feed_forward_length()
-            .ok_or_else(|| RealizarError::InvalidShape {
-                reason: format!(
-                "run_qwen3_moe_generate: missing '{}.expert_feed_forward_length' in GGUF metadata",
-                model.config().architecture
-            ),
-            })?;
-
-    // Load per-layer MoE descriptors once
-    let data = mapped.data();
-    let num_layers = model.config().num_layers;
-    let mut moe_layers = Vec::with_capacity(num_layers);
-    for layer_idx in 0..num_layers {
-        moe_layers.push(load_qwen3_moe_layer(&mapped.model, data, layer_idx)?);
-    }
-
-    // M32d: KV cache decode. Sized to fit prompt + max_tokens + small
-    // safety buffer. Honors REALIZR_CONTEXT_LENGTH env var (matches dense
-    // path's convention; default 4096).
-    let env_ctx = std::env::var("REALIZR_CONTEXT_LENGTH")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(4096);
-    let needed = input_tokens.len() + gen_config.max_tokens + 8;
-    let max_seq_len = env_ctx.max(needed);
-    let mut cache = OwnedQuantizedKVCache::from_config(model.config(), max_seq_len);
-
-    // Seeded RNG for reproducible sampling (qwen3-moe-sampling-v1).
-    // Greedy fallback (temperature == 0 OR top_k == 1) doesn't touch
-    // the RNG; non-greedy paths consume from it deterministically.
-    let mut rng = StdRng::seed_from_u64(gen_config.seed);
-
-    // Prefill: per prompt token, run cache-aware forward. Cache fills
-    // incrementally; the LAST iteration's logits seed the decode loop.
-    // Position is each token's absolute index (0..prompt_len).
-    let mut tokens = input_tokens.to_vec();
-    let mut last_logits = Vec::new();
-    for (pos, &tok) in input_tokens.iter().enumerate() {
-        last_logits = model.forward_single_qwen3_moe_with_cache(
-            tok,
-            &mut cache,
-            pos,
-            &moe_layers,
-            num_experts,
-            num_experts_per_tok,
-            moe_intermediate,
-            data,
-        )?;
-    }
-    if last_logits.is_empty() {
-        return Err(RealizarError::InvalidShape {
-            reason: "run_qwen3_moe_generate: prefill produced no logits".to_string(),
-        });
-    }
-
-    // Decode loop: greedy-sample from `last_logits`, append, then run
-    // one more cache-aware forward to seed the next iteration.
-    for _step in 0..gen_config.max_tokens {
-        let next_token = sample_from_logits(&last_logits, gen_config, &mut rng, &tokens)?;
-        tokens.push(next_token);
-
-        // GH-373-style stop check (matches dense path semantics)
-        if gen_config.stop_tokens.contains(&next_token) {
-            break;
-        }
-        if tokens.len() >= max_seq_len {
-            // Cache is full; stop before overflow
-            break;
-        }
-
-        let pos = tokens.len() - 1;
-        last_logits = model.forward_single_qwen3_moe_with_cache(
-            next_token,
-            &mut cache,
-            pos,
-            &moe_layers,
-            num_experts,
-            num_experts_per_tok,
-            moe_intermediate,
-            data,
-        )?;
-    }
-
-    Ok(tokens)
+    let mut session = Qwen3MoeSession::new(Qwen3MoeForward::cpu(mapped, model)?);
+    Ok(session
+        .generate(input_tokens, gen_config, &mut |_| true)?
+        .tokens)
 }
 
 /// Streaming variant of `run_qwen3_moe_generate` — discharges
 /// `qwen3-moe-streaming-sse-v1.yaml` per-token emit requirement.
 ///
-/// Mirrors `run_qwen3_moe_generate` step-for-step, but invokes
-/// `on_token(next_token)` after each decode step. The callback returns
-/// `bool` — `false` short-circuits the loop (e.g. client disconnect).
-///
-/// Stop tokens and max-context guards are honored identically to the
-/// non-streaming variant. The callback fires for every appended token
-/// (including the one that triggered the stop, if any) before the loop
-/// exits — matching the dense path's streaming semantics.
+/// `on_token(next_token)` fires for every chosen token, including the one that
+/// triggered a stop, before the stop is honoured; returning `false` ends the
+/// turn (e.g. client disconnect). The same session turn as the non-streaming
+/// variant, so the two emit the same tokens.
 pub fn run_qwen3_moe_generate_streaming(
     mapped: &MappedGGUFModel,
     model: &OwnedQuantizedModel,
@@ -315,120 +185,8 @@ pub fn run_qwen3_moe_generate_streaming(
     gen_config: &QuantizedGenerateConfig,
     mut on_token: impl FnMut(u32) -> bool,
 ) -> Result<()> {
-    if input_tokens.is_empty() {
-        return Err(RealizarError::InvalidShape {
-            reason: "run_qwen3_moe_generate_streaming: prompt cannot be empty".to_string(),
-        });
-    }
-
-    let canonical_arch = crate::tensor_names::normalize_architecture(&model.config().architecture);
-    if canonical_arch != "qwen3_moe" {
-        return Err(RealizarError::InvalidShape {
-            reason: format!(
-                "run_qwen3_moe_generate_streaming: arch '{}' (canonical '{}') is not qwen3_moe",
-                model.config().architecture,
-                canonical_arch
-            ),
-        });
-    }
-
-    let num_experts = mapped
-        .model
-        .expert_count()
-        .ok_or_else(|| RealizarError::InvalidShape {
-            reason: format!(
-                "run_qwen3_moe_generate_streaming: missing '{}.expert_count'",
-                model.config().architecture
-            ),
-        })?;
-    let num_experts_per_tok =
-        mapped
-            .model
-            .expert_used_count()
-            .ok_or_else(|| RealizarError::InvalidShape {
-                reason: format!(
-                    "run_qwen3_moe_generate_streaming: missing '{}.expert_used_count'",
-                    model.config().architecture
-                ),
-            })?;
-    let moe_intermediate =
-        mapped
-            .model
-            .expert_feed_forward_length()
-            .ok_or_else(|| RealizarError::InvalidShape {
-                reason: format!(
-                    "run_qwen3_moe_generate_streaming: missing '{}.expert_feed_forward_length'",
-                    model.config().architecture
-                ),
-            })?;
-
-    let data = mapped.data();
-    let num_layers = model.config().num_layers;
-    let mut moe_layers = Vec::with_capacity(num_layers);
-    for layer_idx in 0..num_layers {
-        moe_layers.push(load_qwen3_moe_layer(&mapped.model, data, layer_idx)?);
-    }
-
-    let env_ctx = std::env::var("REALIZR_CONTEXT_LENGTH")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(4096);
-    let needed = input_tokens.len() + gen_config.max_tokens + 8;
-    let max_seq_len = env_ctx.max(needed);
-    let mut cache = OwnedQuantizedKVCache::from_config(model.config(), max_seq_len);
-    let mut rng = StdRng::seed_from_u64(gen_config.seed);
-
-    let mut tokens = input_tokens.to_vec();
-    let mut last_logits = Vec::new();
-    for (pos, &tok) in input_tokens.iter().enumerate() {
-        last_logits = model.forward_single_qwen3_moe_with_cache(
-            tok,
-            &mut cache,
-            pos,
-            &moe_layers,
-            num_experts,
-            num_experts_per_tok,
-            moe_intermediate,
-            data,
-        )?;
-    }
-    if last_logits.is_empty() {
-        return Err(RealizarError::InvalidShape {
-            reason: "run_qwen3_moe_generate_streaming: prefill produced no logits".to_string(),
-        });
-    }
-
-    for _step in 0..gen_config.max_tokens {
-        let next_token = sample_from_logits(&last_logits, gen_config, &mut rng, &tokens)?;
-        tokens.push(next_token);
-
-        // Emit BEFORE checking stop conditions so the client sees every
-        // sampled token (matches dense path streaming semantics).
-        if !on_token(next_token) {
-            // Callback signaled stop (e.g. client disconnect).
-            return Ok(());
-        }
-
-        if gen_config.stop_tokens.contains(&next_token) {
-            break;
-        }
-        if tokens.len() >= max_seq_len {
-            break;
-        }
-
-        let pos = tokens.len() - 1;
-        last_logits = model.forward_single_qwen3_moe_with_cache(
-            next_token,
-            &mut cache,
-            pos,
-            &moe_layers,
-            num_experts,
-            num_experts_per_tok,
-            moe_intermediate,
-            data,
-        )?;
-    }
-
+    let mut session = Qwen3MoeSession::new(Qwen3MoeForward::cpu(mapped, model)?);
+    session.generate(input_tokens, gen_config, &mut on_token)?;
     Ok(())
 }
 

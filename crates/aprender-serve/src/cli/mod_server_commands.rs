@@ -673,7 +673,7 @@ mod server_commands {
         // `create_router_with_config` mounts two lines above, so advertising a
         // route and mounting it are one act and `--no-metrics` / `openai_api:false`
         // are honoured without a second `if`.
-        let endpoints = crate::api::advertised_routes(&router_config);
+        let endpoints = crate::api::advertised_routes(&router_config, &state);
         let app = crate::api::create_router_with_config(state, router_config);
 
         // Parse and validate address
@@ -734,7 +734,7 @@ mod server_commands {
         // aprender#2609: same table, same act — see `serve_model` above. This banner
         // named three routes of the thirty-one it mounts and, unlike `serve_model`,
         // did not even mention `/v1/*` unless they were DISABLED.
-        let endpoints = crate::api::advertised_routes(&router_config);
+        let endpoints = crate::api::advertised_routes(&router_config, &state);
         let app = crate::api::create_router_with_config(state, router_config);
 
         let addr: SocketAddr = format!("{host}:{port}").parse().map_err(|e| {

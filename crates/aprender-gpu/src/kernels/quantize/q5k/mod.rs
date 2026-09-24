@@ -18,8 +18,10 @@
 //! - [`Q5KKernel`]: Q5_K GEMM kernel (PARITY-116)
 //! - [`Q5KGemvKernel`]: Q5_K GEMV kernel for M=1 decode throughput (PAR-003)
 
+mod dequant;
 mod gemm;
 mod gemv;
 
+pub use dequant::Q5KDequantKernel;
 pub use gemm::Q5KKernel;
 pub use gemv::Q5KGemvKernel;

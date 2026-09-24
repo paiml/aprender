@@ -100,7 +100,7 @@ metadata:
     - 'evidence/ship-two-001/ex-06-ac006-preupload-local.json (2026-04-17 — same "ampiezza..." canned text observed pre-§60 on APR; APR was fixed by §60 cascade, GGUF was not)'
     - 'crates/aprender-serve/src/infer/mod.rs:268-318 (prepare_tokens_gguf — auto-wraps in ChatML)'
     - 'crates/aprender-serve/src/infer/inference_result.rs:174 (run_gguf_inference dispatch)'
-    - 'crates/aprender-serve/src/gguf/inference/fails.rs:188-319 (generate_with_cache — prefill loop)'
+    - 'crates/aprender-serve/src/gguf/inference/generate_quantized.rs (generate_with_cache — prefill loop)'
     - 'crates/aprender-serve/src/gguf/inference/matmul_fused.rs:40-60 (embed — token_embedding lookup)'
     - 'feedback_test_methodology_can_fake_bugs.md (methodology lesson #7)'
     - 'feedback_falsifier_chain_assert_difference.md (assert_ne!-driven bisection pattern)'
@@ -186,7 +186,8 @@ falsification_tests:
   if_fails: |
     Regression — GGUF inference path collapsed to true byte-identity
     across distinct prompts. Bisect:
-    1. Add eprintln! at `crates/aprender-serve/src/gguf/inference/fails.rs:228`
+    1. Add eprintln! at the prefill loop of `generate_with_cache`
+       (`crates/aprender-serve/src/gguf/inference/generate_quantized.rs`)
        to log token IDs entering the prefill loop.
     2. Add eprintln! at `crates/aprender-serve/src/gguf/inference/matmul_fused.rs:45`
        to log embedding-lookup token IDs.

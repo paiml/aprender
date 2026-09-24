@@ -26,10 +26,11 @@ async fn handle_apr_cpu_completion(
     let max_tokens = req.max_tokens.min(4096);
     let prompt = req.prompt.clone();
     let temperature = req.temperature.unwrap_or(0.0);
+    let top_p = req.top_p;
 
     // GH-284: Run inference off the async runtime to avoid blocking
     let result = tokio::task::spawn_blocking(move || {
-        run_apr_cpu_inference(&s, &prompt, max_tokens, temperature)
+        run_apr_cpu_inference(&s, &prompt, max_tokens, temperature, top_p)
     })
     .await;
 
@@ -114,6 +115,7 @@ fn spawn_cpu_streaming_task(
     prompt: String,
     max_tokens: usize,
     temperature: f32,
+    top_p: Option<f32>,
     tx: tokio::sync::mpsc::Sender<std::result::Result<u32, String>>,
 ) {
     tokio::task::spawn_blocking(move || {
@@ -129,18 +131,10 @@ fn spawn_cpu_streaming_task(
             None => prompt.chars().map(|c| c as u32).collect(),
         };
 
-        let gen_config = realizar::apr_transformer::GenerateConfig {
-            max_tokens,
-            temperature,
-            top_p: 0.9,
-            top_k: 0,
-            repetition_penalty: 1.0,
-            trace: false,
-            stop_tokens: vec![],
-            cancel: realizar::generate::CancelToken::never(),
-        };
+        let gen_config =
+            apr_cpu_generate_config(max_tokens, temperature, top_p, apr_cpu_stop_tokens(&s));
 
-        let Ok(t) = transformer.lock() else {
+        let Ok(mut s) = transformer.lock() else {
             if tx.blocking_send(Err("Lock poisoned".to_string())).is_err() {
                 eprintln!("Warning: failed to send error to client (channel closed)");
             }
@@ -148,7 +142,7 @@ fn spawn_cpu_streaming_task(
         };
 
         // GH-326: Log generation errors instead of silently discarding
-        if let Err(e) = t.generate_with_cache_streaming(&input_tokens, &gen_config, |token_id| {
+        if let Err(e) = s.generate(&input_tokens, &gen_config, &mut |token_id| {
             tx.blocking_send(Ok(token_id)).is_ok()
         }) {
             eprintln!("Warning: streaming generation failed: {e}");
@@ -171,6 +165,7 @@ fn spawn_cpu_token_text_stream(
     prompt: String,
     max_tokens: usize,
     temperature: f32,
+    top_p: Option<f32>,
     tx: tokio::sync::mpsc::Sender<std::result::Result<String, String>>,
 ) {
     // Test seam: replay a scripted token sequence through the channel.
@@ -203,25 +198,17 @@ fn spawn_cpu_token_text_stream(
             None => prompt.chars().map(|c| c as u32).collect(),
         };
 
-        let gen_config = realizar::apr_transformer::GenerateConfig {
-            max_tokens,
-            temperature,
-            top_p: 0.9,
-            top_k: 0,
-            repetition_penalty: 1.0,
-            trace: false,
-            stop_tokens: vec![],
-            cancel: realizar::generate::CancelToken::never(),
-        };
+        let gen_config =
+            apr_cpu_generate_config(max_tokens, temperature, top_p, apr_cpu_stop_tokens(&s));
 
-        let Ok(t) = transformer.lock() else {
+        let Ok(mut s) = transformer.lock() else {
             if tx.blocking_send(Err("Lock poisoned".to_string())).is_err() {
                 eprintln!("Warning: failed to send error to client (channel closed)");
             }
             return;
         };
 
-        if let Err(e) = t.generate_with_cache_streaming(&input_tokens, &gen_config, |token_id| {
+        if let Err(e) = s.generate(&input_tokens, &gen_config, &mut |token_id| {
             let text = decode_single_token(tokenizer.as_ref(), token_id);
             tx.blocking_send(Ok(text)).is_ok()
         }) {
@@ -237,50 +224,73 @@ fn build_cpu_sse_stream(
     rx: tokio::sync::mpsc::Receiver<std::result::Result<u32, String>>,
     tokenizer: Option<SafeTensorsTokenizerInfo>,
     model_name: String,
+    max_tokens: usize,
 ) -> axum::response::Response {
     use axum::response::{sse::{Event, Sse}, IntoResponse};
 
-    let request_id = generate_request_id();
-    let created = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    // #3979: the stream MUST end with the OpenAI terminal pair: a chunk carrying
+    // `finish_reason`, then `data: [DONE]`. It sent every delta with finish_reason null
+    // and then `[DONE]`, so a client could not tell a finished generation from one cut
+    // at the token budget (CRUX `stream_no_finish`). A producer ERROR sends an error
+    // event and `[DONE]` but no finish_reason: it did not finish, so nothing claims it did.
+    enum Phase {
+        Streaming(tokio::sync::mpsc::Receiver<std::result::Result<u32, String>>, usize),
+        Done,
+        End,
+    }
+    struct Ctx {
+        tokenizer: Option<SafeTensorsTokenizerInfo>,
+        request_id: String,
+        created: u64,
+        model_name: String,
+        max_tokens: usize,
+    }
+    let ctx = std::sync::Arc::new(Ctx {
+        tokenizer,
+        request_id: generate_request_id(),
+        created: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        model_name,
+        max_tokens,
+    });
+    let chunk = |ctx: &Ctx, delta: serde_json::Value, finish: serde_json::Value| {
+        serde_json::json!({
+            "id": &ctx.request_id,
+            "object": "chat.completion.chunk",
+            "created": ctx.created,
+            "model": &ctx.model_name,
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]
+        })
+        .to_string()
+    };
 
     let stream = futures_util::stream::unfold(
-        (Some(rx), tokenizer, request_id, created, model_name),
-        |(maybe_rx, tokenizer, request_id, created, model_name)| async move {
-            let mut rx = maybe_rx?;
-            match rx.recv().await {
-                Some(Ok(token_id)) => {
-                    let text = decode_single_token(tokenizer.as_ref(), token_id);
-                    let chunk = serde_json::json!({
-                        "id": &request_id,
-                        "object": "chat.completion.chunk",
-                        "created": created,
-                        "model": &model_name,
-                        "choices": [{
-                            "index": 0,
-                            "delta": {"content": text},
-                            "finish_reason": serde_json::Value::Null
-                        }]
-                    });
-                    let event = Event::default().data(chunk.to_string());
-                    Some((
-                        Ok::<_, std::convert::Infallible>(event),
-                        (Some(rx), tokenizer, request_id, created, model_name),
-                    ))
-                }
-                Some(Err(_)) | None => {
-                    let event = Event::default().data("[DONE]");
-                    Some((
-                        Ok::<_, std::convert::Infallible>(event),
-                        (None, tokenizer, request_id, created, model_name),
-                    ))
-                }
+        (Phase::Streaming(rx, 0), ctx),
+        move |(phase, ctx)| async move {
+            match phase {
+                Phase::Streaming(mut rx, n) => match rx.recv().await {
+                    Some(Ok(token_id)) => {
+                        let text = decode_single_token(ctx.tokenizer.as_ref(), token_id);
+                        let data = chunk(&ctx, serde_json::json!({"content": text}), serde_json::Value::Null);
+                        Some((Ok::<_, std::convert::Infallible>(Event::default().data(data)), (Phase::Streaming(rx, n + 1), ctx)))
+                    },
+                    None => {
+                        let reason = if n >= ctx.max_tokens { "length" } else { "stop" };
+                        let data = chunk(&ctx, serde_json::json!({}), serde_json::json!(reason));
+                        Some((Ok(Event::default().data(data)), (Phase::Done, ctx)))
+                    },
+                    Some(Err(msg)) => {
+                        let data = serde_json::json!({"error": {"message": msg, "type": "generation_error"}}).to_string();
+                        Some((Ok(Event::default().data(data)), (Phase::Done, ctx)))
+                    },
+                },
+                Phase::Done => Some((Ok(Event::default().data("[DONE]")), (Phase::End, ctx))),
+                Phase::End => None,
             }
         },
     );
-
     Sse::new(stream).into_response()
 }
 
@@ -335,6 +345,7 @@ async fn handle_apr_cpu_chat_completion(
     let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);
     let max_tokens = req.get("max_tokens").and_then(serde_json::Value::as_u64).unwrap_or(32) as usize;
     let temperature = req.get("temperature").and_then(serde_json::Value::as_f64).unwrap_or(0.0) as f32;
+    let top_p = req.get("top_p").and_then(serde_json::Value::as_f64).map(|v| v as f32);
 
     let Some(msgs) = messages else {
         return Json(serde_json::json!({"error": "Missing messages"})).into_response();
@@ -345,8 +356,8 @@ async fn handle_apr_cpu_chat_completion(
     // GH-284: True SSE streaming path
     if stream_mode {
         let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<u32, String>>(16);
-        spawn_cpu_streaming_task(s.clone(), prompt, max_tokens.min(4096), temperature, tx);
-        return build_cpu_sse_stream(rx, s.tokenizer.clone(), s.model_name.clone());
+        spawn_cpu_streaming_task(s.clone(), prompt, max_tokens.min(4096), temperature, top_p, tx);
+        return build_cpu_sse_stream(rx, s.tokenizer.clone(), s.model_name.clone(), max_tokens.min(4096));
     }
 
     // GH-284: Non-streaming path
@@ -356,7 +367,7 @@ async fn handle_apr_cpu_chat_completion(
     let max_t = max_tokens.min(4096);
 
     let result = tokio::task::spawn_blocking(move || {
-        run_apr_cpu_inference(&s_for_blocking, &prompt_owned, max_t, temperature)
+        run_apr_cpu_inference(&s_for_blocking, &prompt_owned, max_t, temperature, top_p)
     })
     .await;
 
@@ -432,7 +443,8 @@ async fn handle_apr_cpu_ollama_chat(
         let (max_tokens, temperature) = ollama_sampling(&req.options);
         let prompt_eval_count = count_prompt_tokens(&s, &prompt);
         let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(16);
-        spawn_cpu_token_text_stream(s, prompt, max_tokens, temperature, tx);
+        let top_p = req.options.as_ref().and_then(|o| o.top_p);
+        spawn_cpu_token_text_stream(s, prompt, max_tokens, temperature, top_p, tx);
         return super::ollama::ollama_ndjson_stream(
             super::ollama::OllamaStreamKind::Chat,
             model,
@@ -475,7 +487,8 @@ async fn handle_apr_cpu_ollama_generate(
         let (max_tokens, temperature) = ollama_sampling(&req.options);
         let prompt_eval_count = count_prompt_tokens(&s, &prompt);
         let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(16);
-        spawn_cpu_token_text_stream(s, prompt, max_tokens, temperature, tx);
+        let top_p = req.options.as_ref().and_then(|o| o.top_p);
+        spawn_cpu_token_text_stream(s, prompt, max_tokens, temperature, top_p, tx);
         return super::ollama::ollama_ndjson_stream(
             super::ollama::OllamaStreamKind::Generate,
             model,
@@ -867,3 +880,60 @@ mod apr_cpu_completion_tests {
 }
 
 include!("handlers_include_01.rs");
+
+// #3979: the APR-CPU OpenAI stream's terminal events, on the REAL builder.
+#[cfg(all(test, feature = "inference"))]
+mod sse_terminal_3979_tests {
+    use super::*;
+
+    async fn events(
+        items: Vec<std::result::Result<u32, String>>,
+        max_tokens: usize,
+    ) -> Vec<String> {
+        let (tx, rx) = tokio::sync::mpsc::channel(16);
+        for it in items {
+            tx.send(it).await.expect("send");
+        }
+        drop(tx);
+        let resp = build_cpu_sse_stream(rx, None, "m".to_string(), max_tokens);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.expect("body");
+        String::from_utf8_lossy(&body)
+            .lines()
+            .filter_map(|l| l.strip_prefix("data: ").map(str::to_string))
+            .collect()
+    }
+
+    fn finishes(ev: &[String]) -> Vec<serde_json::Value> {
+        ev.iter()
+            .filter_map(|e| serde_json::from_str::<serde_json::Value>(e).ok())
+            .map(|v| v["choices"][0]["finish_reason"].clone())
+            .filter(|f| !f.is_null())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_finished_stream_ends_with_a_finish_reason_chunk_then_done() {
+        let ev = events(vec![Ok(1), Ok(2)], 10).await;
+        assert_eq!(ev.last().map(String::as_str), Some("[DONE]"), "{ev:?}");
+        assert_eq!(finishes(&ev), vec![serde_json::json!("stop")], "one finish before [DONE]: {ev:?}");
+        assert!(serde_json::from_str::<serde_json::Value>(&ev[ev.len() - 2]).is_ok()
+            && finishes(&ev[ev.len() - 2..ev.len() - 1]).len() == 1,
+            "the finish chunk must be the event immediately before [DONE]: {ev:?}");
+    }
+
+    #[tokio::test]
+    async fn a_stream_cut_at_the_budget_says_length_not_stop() {
+        let ev = events(vec![Ok(1), Ok(2)], 2).await;
+        assert_eq!(finishes(&ev), vec![serde_json::json!("length")], "{ev:?}");
+        assert_eq!(ev.last().map(String::as_str), Some("[DONE]"), "{ev:?}");
+    }
+
+    #[tokio::test]
+    async fn a_failed_stream_ends_with_done_but_claims_no_finish() {
+        let ev = events(vec![Ok(1), Err("boom".to_string())], 10).await;
+        assert_eq!(ev.last().map(String::as_str), Some("[DONE]"), "{ev:?}");
+        assert!(finishes(&ev).is_empty(), "a failed stream must not claim a finish_reason: {ev:?}");
+        assert!(ev.iter().any(|e| e.contains("boom")), "the error must be visible: {ev:?}");
+    }
+}
+

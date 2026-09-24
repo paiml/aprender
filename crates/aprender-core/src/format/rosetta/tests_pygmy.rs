@@ -448,3 +448,91 @@ mod tcov;
 mod computation;
 #[path = "tests_pygmy_validation.rs"]
 mod tests_pygmy_validation;
+
+// ========================================================================
+// #3903: is_all_zeros must not be VACUOUSLY true on an empty tensor.
+//
+// `empty_tensor_validation` deliberately returns `is_valid: true` for a
+// zero-element tensor, and `p060_compute_validation_empty_data` asserts that
+// ("Empty tensor should be valid"). But `is_all_zeros()` was
+// `zero_count == element_count`, which is `0 == 0` for that same tensor — so
+// the two verdicts contradicted each other, and `strict_blocking` reads the
+// vacuous one:
+//
+//     strict_blocking(report) = nan > 0 OR inf > 0 OR all_zero_tensors non-empty
+//
+// The live consequence: `apr import` emits `lm_head.weight` as a 0-byte
+// tied-embedding placeholder (#2309 — the runtime ties it to
+// `model.embed_tokens.weight`), so EVERY tied-embedding model imported from
+// SafeTensors was reported as carrying one all-zero tensor and rejected by
+// `apr validate --strict`, though it loads and generates correctly. That
+// violates the stated obligation of `contracts/apr-validate-fail-closed-v1.yaml`:
+// "A healthy .apr (report.is_valid, no strict-blocking findings) passes — no
+// false positive".
+//
+// "every element is zero" is not a claim you can make about no elements.
+// ========================================================================
+
+/// Builds a `TensorValidation` with the counts under test; every other field is
+/// the neutral value `empty_tensor_validation` uses, so these tests isolate the
+/// `zero_count`/`element_count` relation and nothing else.
+fn tv_with_counts(name: &str, zero_count: usize, element_count: usize) -> TensorValidation {
+    TensorValidation {
+        name: name.to_string(),
+        is_valid: true,
+        nan_count: 0,
+        inf_count: 0,
+        zero_count,
+        element_count,
+        min: 0.0,
+        max: 0.0,
+        mean: 0.0,
+        std: 0.0,
+        failures: Vec::new(),
+    }
+}
+
+#[test]
+fn empty_tensor_is_not_all_zeros_3903() {
+    let tv = tv_with_counts("lm_head.weight", 0, 0);
+    assert!(
+        !tv.is_all_zeros(),
+        "a 0-element tensor has no elements to be zero; reporting it as all-zeros \
+         makes --strict reject every tied-embedding model (#2309 placeholder; see #3903)"
+    );
+}
+
+#[test]
+fn the_empty_tensor_the_validator_actually_builds_is_not_all_zeros_3903() {
+    // Not a hand-built struct: the value the production path returns for the
+    // 0-byte placeholder, so the test cannot drift from what ships.
+    let rosetta = RosettaStone::new();
+    let tv = rosetta.compute_tensor_validation("lm_head.weight", &[]);
+    assert_eq!(tv.element_count, 0, "precondition: this is the empty path");
+    assert!(
+        tv.is_valid,
+        "precondition: empty is valid (p060_compute_validation_empty_data)"
+    );
+    assert!(
+        !tv.is_all_zeros(),
+        "is_valid and is_all_zeros must not contradict each other on the same tensor"
+    );
+}
+
+#[test]
+fn a_genuinely_all_zero_tensor_is_still_all_zeros_3903() {
+    // The control: the guard must not weaken real detection. This is the shape of
+    // the 11 dead `self_attn.v_proj.weight` tensors in the stale
+    // qwen2.5-coder-1.5b-instruct-st.apr — 256 * 1536 elements, every one zero.
+    let tv = tv_with_counts("model.layers.0.self_attn.v_proj.weight", 393_216, 393_216);
+    assert!(
+        tv.is_all_zeros(),
+        "a populated tensor whose every element is zero is still a real finding"
+    );
+}
+
+#[test]
+fn a_partially_zero_tensor_is_not_all_zeros_3903() {
+    let tv = tv_with_counts("model.layers.0.self_attn.v_proj.weight", 393_215, 393_216);
+    assert!(!tv.is_all_zeros(), "one nonzero element is enough to disqualify");
+}

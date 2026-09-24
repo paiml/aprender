@@ -364,13 +364,14 @@ ACT III: THE VERDICT
 
 ## Validate Command
 
-Validate model integrity with optional 100-point quality assessment.
+Validate model integrity, with an optional structural quality assessment
+scored on the checks that actually ran.
 
 ```bash
 # Basic validation
 apr validate model.apr
 
-# With 100-point quality scoring
+# With structural quality scoring
 apr validate model.apr --quality
 
 # Strict mode (fail on warnings)
@@ -993,7 +994,7 @@ apr cbtop --refresh 500  # 500ms
 │ Model: qwen2.5-coder-1.5b-q4_k_m.gguf                   │
 │ Backend: GPU (CUDA)                                      │
 ├──────────────────────────────────────────────────────────┤
-│ Throughput: 125.3 tok/s                                  │
+│ Throughput: N.N tok/s                                    │
 │ Latency:    8.0 ms/tok                                   │
 │ Memory:     1.2 GB / 8.0 GB                              │
 │ Utilization: ████████████░░░░░░░░ 60%                    │

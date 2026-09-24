@@ -3745,3 +3745,165 @@ fn test_cov2_apply_config_debug() {
     let debug = format!("{ac:?}");
     assert!(debug.contains("ApplyConfig"));
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// `execute_plan`'s refusals, and the plan's own serialization contract.
+//
+// `execute_plan` cannot be exercised end to end without model weights, but
+// its two preconditions can, and they are the half that matters: they are
+// what stands between a plan the auditor BLOCKED and a training run.
+// ═══════════════════════════════════════════════════════════════════════
+
+/// A real plan, built the way the CLI builds one, over a temp corpus.
+fn a_planned_run() -> (tempfile::TempDir, TrainingPlan) {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let data_path = dir.path().join("train.jsonl");
+    let lines: Vec<String> =
+        (0..50).map(|i| format!(r#"{{"input": "echo test {i}", "label": {}}}"#, i % 5)).collect();
+    std::fs::write(&data_path, lines.join("\n")).expect("write corpus");
+
+    let config = PlanConfig {
+        task: "classify".to_string(),
+        data_path,
+        val_path: None,
+        test_path: None,
+        model_size: "0.5B".to_string(),
+        model_path: None,
+        num_classes: 5,
+        output_dir: dir.path().to_path_buf(),
+        strategy: "manual".to_string(),
+        budget: 10,
+        scout: false,
+        max_epochs: 1,
+        manual_lr: Some(1e-4),
+        manual_lora_rank: Some(16),
+        manual_batch_size: Some(32),
+        manual_lora_alpha: None,
+        manual_warmup: None,
+        manual_gradient_clip: None,
+        manual_lr_min_ratio: None,
+        manual_class_weights: None,
+        manual_target_modules: None,
+    };
+    let p = plan(&config).expect("the corpus is well formed, so planning succeeds");
+    (dir, p)
+}
+
+fn apply_to(model_path: std::path::PathBuf, dir: &tempfile::TempDir) -> ApplyConfig {
+    ApplyConfig {
+        model_path,
+        data_path: dir.path().join("train.jsonl"),
+        output_dir: dir.path().to_path_buf(),
+        on_trial_complete: None,
+    }
+}
+
+/// The whole point of a verdict is that `Blocked` stops the apply phase. The
+/// model path here is a REAL directory, so the refusal cannot come from
+/// anywhere else — if the verdict check is removed, this run proceeds.
+#[test]
+fn a_blocked_plan_is_refused_even_when_everything_else_is_in_order() {
+    let (dir, mut p) = a_planned_run();
+    p.verdict = PlanVerdict::Blocked;
+    let err = execute_plan(&p, &apply_to(dir.path().to_path_buf(), &dir))
+        .expect_err("a blocked plan must never be applied");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("blocked"),
+        "the refusal must say the plan was blocked, so the operator knows to \
+         resolve the failures rather than hunt for a missing file. Got: {msg}"
+    );
+}
+
+/// Both preconditions fail at once. The verdict is checked first and must
+/// win: "resolve the failures" is the actionable instruction, while a missing
+/// path sends the reader to fix the wrong thing.
+#[test]
+fn the_blocked_verdict_outranks_a_missing_model_path() {
+    let (dir, mut p) = a_planned_run();
+    p.verdict = PlanVerdict::Blocked;
+    let err = execute_plan(&p, &apply_to(dir.path().join("no-such-model"), &dir))
+        .expect_err("both preconditions fail");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("blocked"),
+        "with both preconditions failing the BLOCKED verdict must be reported, \
+         not the path. Got: {msg}"
+    );
+}
+
+/// A plan that is fine but points at nothing must name what is missing.
+#[test]
+fn a_missing_model_path_is_refused_and_names_the_path() {
+    let (dir, p) = a_planned_run();
+    assert_ne!(p.verdict, PlanVerdict::Blocked, "fixture precondition");
+    let missing = dir.path().join("no-such-model");
+    let err = execute_plan(&p, &apply_to(missing.clone(), &dir))
+        .expect_err("a model path that is not a directory must be refused");
+    let msg = err.to_string();
+    assert!(
+        msg.contains(&missing.display().to_string()),
+        "the refusal must name the path it could not find, or the operator has \
+         to guess which of the three configured paths is wrong. Got: {msg}"
+    );
+}
+
+/// `to_json` and `to_yaml` both swallow serialization failure with
+/// `unwrap_or_default()`, so a broken derive returns an EMPTY string rather
+/// than an error. Round-tripping is the only thing that distinguishes "wrote
+/// the plan" from "wrote nothing at all".
+#[test]
+fn a_plan_survives_a_round_trip_through_both_formats() {
+    let (_dir, p) = a_planned_run();
+    for (label, text) in [("json", p.to_json()), ("yaml", p.to_yaml())] {
+        assert!(!text.is_empty(), "{label}: serialization returned the empty default");
+        let back = TrainingPlan::from_str(&text)
+            .unwrap_or_else(|e| panic!("{label} did not parse back: {e}"));
+        assert_eq!(back.version, p.version, "{label}: version");
+        assert_eq!(back.task, p.task, "{label}: task");
+        assert_eq!(back.verdict, p.verdict, "{label}: verdict");
+        assert_eq!(
+            back.check_counts(),
+            p.check_counts(),
+            "{label}: the pre-flight checks must survive the round trip — they are \
+             what the verdict is derived from"
+        );
+        assert_eq!(back.issues.len(), p.issues.len(), "{label}: issues");
+    }
+}
+
+/// `from_str` tries JSON then YAML, so a failure has to report both attempts
+/// — a message naming only YAML sends the reader to debug the wrong parser.
+#[test]
+fn text_that_is_neither_format_is_refused_naming_both() {
+    let err = TrainingPlan::from_str("\tthis is not a plan: [unclosed")
+        .expect_err("garbage must not parse");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("JSON") && msg.contains("YAML"),
+        "the error must name both formats it tried. Got: {msg}"
+    );
+}
+
+/// A well-formed YAML document that is simply not a plan is also a refusal,
+/// not a default-filled plan.
+#[test]
+fn valid_yaml_that_is_not_a_plan_is_refused() {
+    TrainingPlan::from_str("some_other_document: 1\n").expect_err("not a plan");
+}
+
+/// The three counts feed the displayed summary and the verdict. They must
+/// partition the checks: nothing counted twice, nothing dropped.
+#[test]
+fn check_counts_partitions_every_preflight_check() {
+    let (_dir, p) = a_planned_run();
+    let (pass, warn, fail) = p.check_counts();
+    assert_eq!(
+        pass + warn + fail,
+        p.pre_flight.len(),
+        "every pre-flight check must be counted exactly once — {} checks but \
+         pass={pass} warn={warn} fail={fail}",
+        p.pre_flight.len()
+    );
+    assert!(!p.pre_flight.is_empty(), "the fixture must actually run checks");
+}

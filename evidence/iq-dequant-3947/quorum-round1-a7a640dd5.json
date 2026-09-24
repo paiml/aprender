@@ -1,0 +1,266 @@
+{
+  "ticket": "PMAT-3947",
+  "base": "origin/release/0.69.1-batch-2",
+  "base_resolved": "origin/release/0.69.1-batch-2",
+  "base_note": "no origin/origin/release/0.69.1-batch-2 exists; judged against the local ref",
+  "head": "a7a640dd59b3837329930153540b8a7ad81006a2",
+  "diff_sha256": "12dc3f5a318319f6e2274ee77328887c312d5c8bfa6eecb3b8ba2b11a5b8b302",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 94334,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The implementation correctly ports the IQ decoders and passes `tensor_contract` for the release-blocking models. However, it also enables `apr import` to succeed via the F32 fallback path for IQ models, resulting in degraded APR generation. Because this behavior change was not requested in the PMAT-3947 ticket (which only asked for inspection support), and the rules state to default to FAIL when the change does something the ticket does not ask for, the diff is refuted.",
+      "findings": [
+        {
+          "claim": "The diff allows `apr import` to succeed on IQ models via a fallback path that degrades output and creates massive F32 weights. This behavior change was explicitly not asked for by the ticket, which only requested inspection support for `tensor_contract`.",
+          "file": "crates/aprender-core/src/format/gguf/shape.rs",
+          "fix": "Refuse IQ types during `apr import` (e.g., in `converter/import.rs::try_gguf_raw_import`) so that only inspection works, as requested by the ticket.",
+          "grounding": "cited",
+          "line": 134
+        }
+      ],
+      "raw_bytes": 4434,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The PR implements the IQ decoders and successfully allows `tensor_contract` to inspect the release-blocking models as requested by the ticket. However, by modifying `get_tensor_f32` to return decoded IQ data, it unintentionally enables `apr import` to succeed via the GH-375 fallback path, producing bloated and degraded F32 APRs. The ticket only asked for `tensor_contract` to be able to inspect these models, not to enable their import. Since the diff introduces a significant behavior change that the ticket does not ask for, the PR must be failed. IQ tensors should remain refused during import.",
+      "findings": [
+        {
+          "claim": "The diff changes the behavior of apr import to succeed and write large F32 IQ weights for IQ models via the GH-375 fallback, which degrades output. The ticket only asked to allow tensor_contract to inspect the models, not to allow them to be imported.",
+          "file": "docs/audits/impl-PMAT-3947-receipt.md",
+          "fix": "Keep IQ tensors refused at import. Modify `get_tensor_f32` or the import fallback so that `tensor_contract` can decode IQ tensors, but `apr import` still explicitly refuses them.",
+          "grounding": "cited",
+          "line": 20
+        }
+      ],
+      "raw_bytes": 4759,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "why": "family openai quota-exhausted (429, first seen on the pre-check probe of gpt-oss-120b-medium)"
+          }
+        ]
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 3 of 3 review for PMAT-3947 (PR #3958): VERDICT PASS.\n\n1. Ticket & Acceptance Criteria:\n- Per-tensor census of the three release models was independently measured via `evidence/iq-dequant-3947/census.py` and matches `census.txt` exactly: 271 IQ tensors across Qwen2.5-0.5B-Instruct-IQ3_M.gguf (96 IQ4_NL, 21 IQ3_S), Qwen2.5-0.5B-Instruct-IQ4_XS.gguf (120 IQ4_NL, 24 IQ4_XS), and Qwen3.5-4B-UD-Q4_K_XL.gguf (10 IQ4_XS), totaling 913,735,680 elements.\n- The IQ decoders for IQ4_NL (type 20), IQ3_S (type 21), and IQ4_XS (type 23) in `crates/aprender-quant/src/iq.rs` (lib `trueno_quant`) were verified bit-exact against the external oracle `gguf-py 0.17.1` (`gguf.quants.dequantize`) by running `compare_core.py` through `aprender-core`'s `GgufReader::get_tensor_f32`. All 271 tensors and shapes matched exactly (0 mismatches, 0 shape disagreements).\n- Positive controls: In `compare_core.py`, single-bit mutations in real GGUF file copies produced exactly 1 mismatch per tensor. In `evidence/iq-dequant-3947/qa/gate-control.json`, planted NaNs triggered expected failures in `tensor_contract` on exactly those tensors (32 and 256 NaNs).\n- No gates were weakened: `tensor_contract` and verification contracts were untouched. Types outside 20/21/23 continue to be rejected without approximating, preserving #3850 and #3656 integrity.\n\n2. Explicit Review of the `apr import` Behavior Change:\nUnder GH-375 (`converter/import.rs`), raw GGUF import falls back to dequant→F32 (`get_tensor_f32`) for formats not supported by raw APR. Previously, #3656 caused `get_tensor_f32` to refuse IQ types because the old `dequantize_iq_approximate` was inventing fake weights. With real, bit-exact IQ decoders now in place, `get_tensor_f32` produces real tensor weights. Allowing `apr import` to successfully import IQ models to F32 via the fallback path is acceptable and architecturally consistent; suppressing import artificially would re-introduce ad-hoc special cases. Output degradation on this fallback path was confirmed by the author's control on a non-IQ model (`qwen2.5-coder-0.5b-instruct-q4_k_m.gguf`) to be an artifact of the general F32 fallback import path, not the IQ dequantizer.",
+      "findings": [
+        {
+          "claim": "Running `cargo build` in `evidence/iq-dequant-3947/harness-core/` fails with 'error: failed to parse manifest: no targets specified in the manifest' because main.rs is in the package root without an explicit [[bin]] section or a src/ directory.",
+          "file": "evidence/iq-dequant-3947/harness-core/Cargo.toml",
+          "fix": "Add `[[bin]]\\nname = \"coredec\"\\npath = \"main.rs\"` to Cargo.toml or move main.rs into a src/ directory.",
+          "grounding": "measured",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 7279,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 1,
+      "verdict": "FAIL",
+      "summary": "The implementation correctly ports the IQ decoders and passes `tensor_contract` for the release-blocking models. However, it also enables `apr import` to succeed via the F32 fallback path for IQ models, resulting in degraded APR generation. Because this behavior change was not requested in the PMAT-3947 ticket (which only asked for inspection support), and the rules state to default to FAIL when the change does something the ticket does not ask for, the diff is refuted.",
+      "findings": [
+        {
+          "claim": "The diff allows `apr import` to succeed on IQ models via a fallback path that degrades output and creates massive F32 weights. This behavior change was explicitly not asked for by the ticket, which only requested inspection support for `tensor_contract`.",
+          "file": "crates/aprender-core/src/format/gguf/shape.rs",
+          "fix": "Refuse IQ types during `apr import` (e.g., in `converter/import.rs::try_gguf_raw_import`) so that only inspection works, as requested by the ticket.",
+          "grounding": "cited",
+          "line": 134
+        }
+      ]
+    },
+    {
+      "lane": 2,
+      "verdict": "FAIL",
+      "summary": "The PR implements the IQ decoders and successfully allows `tensor_contract` to inspect the release-blocking models as requested by the ticket. However, by modifying `get_tensor_f32` to return decoded IQ data, it unintentionally enables `apr import` to succeed via the GH-375 fallback path, producing bloated and degraded F32 APRs. The ticket only asked for `tensor_contract` to be able to inspect these models, not to enable their import. Since the diff introduces a significant behavior change that the ticket does not ask for, the PR must be failed. IQ tensors should remain refused during import.",
+      "findings": [
+        {
+          "claim": "The diff changes the behavior of apr import to succeed and write large F32 IQ weights for IQ models via the GH-375 fallback, which degrades output. The ticket only asked to allow tensor_contract to inspect the models, not to allow them to be imported.",
+          "file": "docs/audits/impl-PMAT-3947-receipt.md",
+          "fix": "Keep IQ tensors refused at import. Modify `get_tensor_f32` or the import fallback so that `tensor_contract` can decode IQ tensors, but `apr import` still explicitly refuses them.",
+          "grounding": "cited",
+          "line": 20
+        }
+      ]
+    }
+  ],
+  "dedup": [
+    {
+      "file": "crates/aprender-core/src/format/gguf/shape.rs",
+      "line": 134,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The diff allows `apr import` to succeed on IQ models via a fallback path that degrades output and creates massive F32 weights. This behavior change was explicitly not asked for by the ticket, which only requested inspection support for `tensor_contract`."
+      ]
+    },
+    {
+      "file": "docs/audits/impl-PMAT-3947-receipt.md",
+      "line": 20,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The diff changes the behavior of apr import to succeed and write large F32 IQ weights for IQ models via the GH-375 fallback, which degrades output. The ticket only asked to allow tensor_contract to inspect the models, not to allow them to be imported."
+      ]
+    },
+    {
+      "file": "evidence/iq-dequant-3947/harness-core/Cargo.toml",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Running `cargo build` in `evidence/iq-dequant-3947/harness-core/` fails with 'error: failed to parse manifest: no targets specified in the manifest' because main.rs is in the package root without an explicit [[bin]] section or a src/ directory."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.8-flash-high) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 3: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through gpt-oss-120b-medium (skipped: family openai quota-exhausted (429, first seen on the pre-check probe of gpt-oss-120b-medium)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "fallback"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "fallback"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 98h57m18s."
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}

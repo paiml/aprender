@@ -1,0 +1,181 @@
+{
+  "ticket": "PMAT-3947",
+  "base": "origin/release/0.69.1-batch-2",
+  "base_resolved": "origin/release/0.69.1-batch-2",
+  "base_note": "no origin/origin/release/0.69.1-batch-2 exists; judged against the local ref",
+  "head": "22c6c625945c1123c41cb08be242d1e0874a689b",
+  "diff_sha256": "1c37236298d7de62eee8830e09d513241a70288a22673fbc306b63f8ad7aa09c",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 132320,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The PR successfully implements bit-exact CPU dequantization for IQ4_NL, IQ3_S, and IQ4_XS types via `trueno_quant::iq`, allowing `tensor_contract` to inspect them (via `get_tensor_f32`). It explicitly guards the bulk loader `get_all_tensors_f32_with_progress` to prevent unwanted conversions of these types to F32 during `apr import`, completely addressing the scope-creep concerns raised in Round 1. The oracle tests and positive controls verify correctness. No gates were weakened.",
+      "findings": [],
+      "raw_bytes": 4043,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully ports the IQ decoders from `aprender-serve` and routes IQ tensors to them, permitting `tensor_contract` to inspect the release-blocking models. The author correctly addressed the round 1 feedback: whole-model F32 loading now explicitly refuses decoded IQ types to prevent `apr import` from generating degraded fallback F32 weights, and the test harnesses were correctly relocated to `src/main.rs` so they build properly. All claims in the receipt are backed by the code and evidence.",
+      "findings": [],
+      "raw_bytes": 2386,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "why": "family openai quota-exhausted (429, first seen on the pre-check probe of gpt-oss-120b-medium)"
+          }
+        ]
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "## Quorum Review Verdict: PASS (Lane 3 of 3)\n\n### Summary of Evaluation\n\nThe diff for ticket **PMAT-3947** (PR #3958) ports the validated importance-quantized (IQ) decoders from `aprender-serve` into `trueno_quant` (`crates/aprender-quant/src/iq.rs`) and hooks them into `aprender-core`'s per-tensor reader (`GgufReader::get_tensor_f32`). This enables `apr qa`'s `tensor_contract` gate to inspect the three previously blocked release models:\n- `Qwen2.5-0.5B-Instruct-IQ3_M.gguf` (96 IQ4_NL, 21 IQ3_S tensors)\n- `Qwen2.5-0.5B-Instruct-IQ4_XS.gguf` (120 IQ4_NL, 24 IQ4_XS tensors)\n- `Qwen3.5-4B-UD-Q4_K_XL.gguf` (10 IQ4_XS tensors)\n\n### Refutation Doctrine Checklist & Verification\n\n1. **Ticket Requirements & Acceptance Criteria**:\n   - **Census**: Per-tensor census of all three models was measured and recorded in `evidence/iq-dequant-3947/census.txt` (271 IQ tensors, 913,735,680 total elements across IQ4_NL, IQ3_S, and IQ4_XS).\n   - **Oracle Parity**: Bit-exact against external oracle `gguf-py 0.17.1` (`gguf.quants.dequantize`) on all 271 tensors through `GgufReader::get_tensor_f32` with zero element mismatches and zero shape disagreements (`evidence/iq-dequant-3947/compare_core.txt`, `compare_core_report.json`).\n   - **Positive Controls**:\n     - Single-bit quant-byte mutations in real GGUF copies triggered exact 1-element mismatches (RED) before green was counted (`compare_core.py`).\n     - Gate positive control (`evidence/iq-dequant-3947/qa/gate-control.json`) planted an f16 NaN scale in block 0 of `blk.0.ffn_gate` (IQ4_NL) and `blk.11.ffn_down` (IQ3_S), verifying that `apr qa` fails `tensor_contract` on exactly those 2 tensors (32 and 256 NaNs).\n     - Unit test `a_single_flipped_quant_bit_is_seen_by_the_pinned_values` in `crates/aprender-quant/src/iq.rs` verifies that flipped quant bits are detected on pinned real model blocks.\n   - **Integrity (#3850 / #3656)**: No gate was weakened. Undecoded IQ/TQ types (`16..=19, 22`) still reach the strict refusal path in both `trueno_quant::dequantize_iq_to_f32` and `shape.rs`, verified by unit tests `an_undecoded_iq_type_is_refused_not_approximated` and `test_3656_get_tensor_f32_refuses_iq_and_tq_instead_of_approximating`.\n\n2. **Resolution of Round 1 Dissent**:\n   - **Scope Enforcement on `apr import`**: In Round 1, Lanes 1 and 2 failed the PR because `get_tensor_f32` allowed the GH-375 fallback in `apr import` to convert IQ models to bloated, degraded F32 APRs. In commit `73f350011`, the bulk whole-model loader `GgufReader::get_all_tensors_f32_with_progress` explicitly checks for IQ types (20, 21, 23) and refuses them before decoding, using phrasing that does not re-trigger the GH-375 fallback (\"decodes it for inspection only and does not convert IQ models to F32 (#3947)\"). This was confirmed by test `test_3947_whole_model_f32_load_still_refuses_decoded_iq_types`, and re-measured runs in `evidence/iq-dequant-3947/qa-73f350011/` (`import-iq3m.rc` = 5, no APR written).\n   - **Harness Builds**: Lane 3's Round 1 finding regarding missing targets in `harness-*/Cargo.toml` was addressed by moving binaries to `src/main.rs`. Both `evidence/iq-dequant-3947/harness-core` and `evidence/iq-dequant-3947/harness-serve` build cleanly.\n\n3. **Test Execution**:\n   - `cargo test -p aprender-quant`: 27 unit tests pass (including real block bit-exactness, layout checks, partial block checks, truncated data checks, and mutant controls).\n   - `cargo test --lib -p aprender-core test_3947`: both `test_3947_get_tensor_f32_decodes_iq4_nl_iq3_s_iq4_xs` and `test_3947_whole_model_f32_load_still_refuses_decoded_iq_types` pass.\n   - `cargo test --lib -p aprender-core test_3656`: passes (asserts refusal for the remaining 8 undecoded types).\n\nNo refutation criteria met. Verdict: **PASS**.",
+      "findings": [],
+      "raw_bytes": 9618,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.8-flash-high) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 3: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through gpt-oss-120b-medium (skipped: family openai quota-exhausted (429, first seen on the pre-check probe of gpt-oss-120b-medium)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "fallback"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "fallback"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 98h31m11s."
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}
