@@ -24,7 +24,7 @@ equations:
     formula: "|C_f32_accum - C_exact| ≤ K * ε_f16 * max|A| * max|B|"
     domain: "K reduction dimension, ε_f16 = 2^{-10}"
     codomain: "error bound ∈ ℝ≥0"
-    lean_theorem: ProvableContracts.CooperativeMatrix.f16_accumulation_error_bound
+    lean_theorem: "none — f16_accumulation_error_bound is an AXIOM, not a proof (CooperativeTiling.lean, escape-allowlist.yaml, #4139)"
     notes:
       - "Uses wgpu::Features::SUBGROUP_VERTEX_STAGE or cooperative_matrix feature"
       - "Dispatch: ceil(M/coop_M) × ceil(N/coop_N) workgroups"
