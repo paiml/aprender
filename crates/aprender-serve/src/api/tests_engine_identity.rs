@@ -299,7 +299,7 @@ fn every_arch_forward_is_a_session_row() {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if path.is_dir() {
                 stack.push(path);
-            } else if name.ends_with(".rs") && !name.contains("test") {
+            } else if path.extension().is_some_and(|e| e == "rs") && !name.contains("test") {
                 let text = std::fs::read_to_string(&path).expect("read source");
                 found.extend(text.lines().filter_map(arch_forward_impl_type));
             }
