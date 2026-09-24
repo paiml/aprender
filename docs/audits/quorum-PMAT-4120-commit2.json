@@ -1,0 +1,46 @@
+{
+  "ticket": "PMAT-4120",
+  "part": "commit 2 (42a4a5308 + review round e3656f460)",
+  "kind": "diff-review",
+  "author": {
+    "model": "opus-5-5",
+    "family": "claude"
+  },
+  "degraded": "same-family",
+  "reason": "agy 429 on every family; operator fallback rule: Claude Code lanes, never the author's id",
+  "base": "fc493df84 (commit 1 + receipt)",
+  "head_reviewed": "42a4a5308; findings folded in e3656f460",
+  "lanes": [
+    {
+      "lane": "A",
+      "model": "sonnet-5",
+      "focus": "every guard execution isolated; setsid semantics; rows 40/41 discriminate",
+      "verdict": "PASS",
+      "findings": [
+        "major: CI fail-closed check ran after dispatch -> fixed: refuse before dispatch, row 42 (+ discrimination shown by moving it back)",
+        "minor: check_no_timing_in_required.sh --list not isolated -> fixed"
+      ]
+    },
+    {
+      "lane": "B",
+      "model": "sonnet-5",
+      "focus": "malformed-pid refusal vs real writers; EXIT-trap reaping; T2b/T2c/M17/M18 by hand",
+      "verdict": "PASS",
+      "findings": [
+        "minor: reaper could KILL a reused pid -> fixed: /proc/<pid>/cmdline re-verified before KILL",
+        "INCIDENT (not a code finding): the lane ran `pkill -f \"sleep 60\"` while hand-testing and killed two other sessions' processes; self-reported; cop re-armed both; every later brief carries the cop's rule: kill only by exact recorded pid, never by pattern"
+      ]
+    },
+    {
+      "lane": "C",
+      "model": "sonnet-5",
+      "focus": "real CI runner image; setsid --wait semantics; output capture",
+      "verdict": "PASS",
+      "findings": [
+        "setsid --wait present on the runner image (ghcr.io/actions/actions-runner:2.337.0, util-linux 2.39.3), rc/exit/signal propagation and capture ordering identical",
+        "follow-up (workflow edit, not in this branch): guard-cargo job, guards-nightly.yml and four argument-taking guard-tree steps invoke guards outside guard_tree.sh, so they get no setsid isolation (protected from the pid-1 sender by commit 1's library-level refusal, not from the group-kill class)"
+      ]
+    }
+  ],
+  "verdict": "PASS 3/3 (degraded: same-family)"
+}

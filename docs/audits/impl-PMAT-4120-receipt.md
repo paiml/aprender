@@ -12,5 +12,16 @@
 - **Verification (orchestrator re-runs):** whole guard under `strace -f -e trace=kill,tkill,tgkill` on the final tip: **68 rows, 0 failed, exit 0; kill(1,…) calls 0; group kills 0** (before the fix: 66 rows green with kill(1,TERM)+kill(1,KILL) in the trace). A hand spot-check through the seam: pid 1 → FAILED, no signal sent; our own survivor → `-TERM`, `-KILL` via the seam, FAILED. bashrs findings equal to the base.
 - **Quorum (commit 1):** 3/3 PASS, sonnet-5 lanes, `degraded: same-family` (agy 429). Record: `docs/audits/quorum-PMAT-4120-commit1.json`.
 - **Also found:** the M10 mutant row leaks one TERM-ignoring fixture loop per run; 37 stale loops (up to 15 h old) were killed on lambda. That fix is commit 2.
-- **Commit 2 (follow-up, separate quorum):** EXIT-trap cleanup of stubborn fixtures; malformed pid lines fail the cell (lane A); T2b made non-vacuous (lane B); `setsid --wait` per guard in guard_tree.sh with a must-RED.
-- Verdict for commit 1: DONE to the quorum receipt; not armed (6c folds into #4046).
+- **Commit 2 (42a4a5308, review round e3656f460):**
+  - `guard_tree.sh` runs every guard execution through `isolate()` = `setsid --wait`, including the `--help` self-test probe and the release-time `--list` probe. Row 40 caught the `--help` probe running unisolated on its first run.
+  - Isolation is decided once and exported to workers. Under CI a missing setsid is refused **before** any guard is dispatched.
+  - `crux_cell_teardown.sh` fails the cell on any malformed non-empty pid line (a CRLF line used to report `clean` over a live server).
+  - `check_crux_serve_code.sh` records its TERM-ignoring fixtures and KILLs them at exit, only after `/proc/<pid>/cmdline` re-verifies each one. T2b now names a real second pid, so its "no signal to 1" claim is non-vacuous. T2c + M18 added.
+- **Must-RED rows (commit 2):**
+  - guard_tree_test 40: a guard's `kill 0` ends only that guard; the same-group victim survives. 41: its mutant without setsid kills the victim.
+  - guard_tree_test 42: CI without isolation refuses before dispatch; with the refusal moved after dispatch the victim is killed.
+  - crux T2c: a malformed pid over a live server fails the cell. M18: its mutant is killed.
+- **Verification (commit 2):** crux guard under strace on the review-round tip gave 70 rows, 0 failed, exit 0, kill(1)=0, group kills=0, and strace exited on its own (no leaked loop). The tip then only swaps a redirection order so a vanished fixture pid prints nothing (checked in isolation). guard_tree_test 32/32; guard_tree_job_test 4/4; guard_tree_parallel_test 6/6; check_bashrs_gate PASS; check_shell_lint_ratchet PASS; bashrs counts equal the base on guard_tree.sh, guard_tree_test.sh and the teardown. check_crux_serve_code.sh is +5, all on mutant anchor text that must match source literally, or on PERF002 misfires on lines that aren't in a loop.
+- **Quorum (commit 2):** 3/3 PASS, sonnet-5, degraded: same-family (`docs/audits/quorum-PMAT-4120-commit2.json`). Findings were folded in e3656f460. Lane B's `pkill -f` incident is recorded there.
+- **Follow-up (needs a workflow edit, cop's call):** the guard-cargo job, guards-nightly.yml and four argument-taking guard-tree steps invoke guards outside guard_tree.sh, so they get no session isolation.
+- Verdict: commits 1 and 2 DONE to the quorum receipt; not armed; 6c folds into #4046.

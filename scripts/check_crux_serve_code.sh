@@ -38,7 +38,7 @@ _cleanup() {
       case "$p" in ''|*[!0-9]*|0*|1) continue ;; esac
       # only if that pid is STILL our fixture: T1 reaps its own for real, and a pid can
       # be reused by the time this trap runs (review lane B -- provenance is not ownership)
-      tr '\0' ' ' < "/proc/$p/cmdline" 2> /dev/null | grep -qF 'trap "" TERM; while :; do sleep 0.2; done' \
+      tr '\0' ' ' 2> /dev/null < "/proc/$p/cmdline" | grep -qF 'trap "" TERM; while :; do sleep 0.2; done' \
         && kill -KILL "$p" 2> /dev/null
     done < "$TMP/stubborn.all"
   fi
