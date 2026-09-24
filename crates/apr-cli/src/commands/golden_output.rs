@@ -2315,12 +2315,6 @@ mod golden_output_tests {
 
 include!("throughput.rs");
 
-/// #3914: which string the template detector is keyed on.
-///
-/// Every triple below is MEASURED from the GGUF on disk (`general.architecture`,
-/// `general.name`, `tokenizer.chat_template`), not invented, because the whole point of
-/// the referee is that it must be inert for models whose declared template agrees with
-/// their architecture — and "agrees" is a fact about real files.
 /// A workspace file read at RUN time for tests (#4129, the #4048 pattern agreed with #4130).
 ///
 /// `include_str!` of a path outside this crate cannot compile from the published tarball, and
@@ -2345,6 +2339,12 @@ fn workspace_file_or_skip(test: &str, rel: &str) -> Option<String> {
     )
 }
 
+/// #3914: which string the template detector is keyed on.
+///
+/// Every triple below is MEASURED from the GGUF on disk (`general.architecture`,
+/// `general.name`, `tokenizer.chat_template`), not invented, because the whole point of
+/// the referee is that it must be inert for models whose declared template agrees with
+/// their architecture — and "agrees" is a fact about real files.
 #[cfg(all(test, feature = "inference"))]
 mod template_key_3914 {
     use super::*;
