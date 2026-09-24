@@ -68,13 +68,28 @@ census_invariants() { # census_invariants FILE -> prints one line per violation;
 }
 
 # ── the writer exemption ─────────────────────────────────────────────────────
+# A branch NAME is chosen by whoever pushes it, so on a pull_request the name alone
+# is not the train: a fork can call its branch release/1.0.0. The train is a branch
+# of THIS repository, so a PR whose head repo is not its base repo never is.
+is_fork_pr() { # rc 0 iff the event payload names a head repo other than the base repo
+    local ev="${GITHUB_EVENT_PATH:-}" head base
+    [ -n "$ev" ] && [ -r "$ev" ] || return 1
+    head=$(jq -r '.pull_request.head.repo.full_name // empty' "$ev" 2>/dev/null) || head=""
+    base=$(jq -r '.pull_request.base.repo.full_name // empty' "$ev" 2>/dev/null) || base=""
+    [ -n "$head" ] && [ "$head" != "$base" ]
+}
+
 is_train() { # is_train BRANCH -> 0 iff this run is the census's one writer
     [ "${CENSUS_WRITER:-}" = train ] && return 0
+    is_fork_pr && return 1
     [[ "$1" =~ ^release/[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
 
+# GITHUB_HEAD_REF on a pull_request; GITHUB_REF_NAME on a push (actions/checkout
+# leaves a detached HEAD, where rev-parse --abbrev-ref says only "HEAD").
 current_branch() {
     local b="${GITHUB_HEAD_REF:-}"
+    [ -n "$b" ] || b="${GITHUB_REF_NAME:-}"
     [ -n "$b" ] || b=$(git -C "$1" rev-parse --abbrev-ref HEAD 2>/dev/null) || b=""
     printf '%s' "$b"
 }
@@ -119,6 +134,8 @@ self_test() {
         else fail=$((fail + 1)); printf '  FAIL  rc=%s (wanted %s)  %s\n' "$2" "$3" "$1"; fi
     }
     printf 'check_census_derived self-test\n'
+    # The runner's own event payload must not decide a row: a fork PR would turn the train rows RED.
+    local GITHUB_EVENT_PATH=''
 
     # -- invariants. A good census, then one corruption per invariant: each must go RED.
     good='{"schema":"s1","git_sha":null,"n_files":5,"n_parsed":4,"n_parse_errors":1,"parse_errors":["x.yaml"],"quarantined_n":0,"by_kind":{"kernel":3,"pattern":1},"by_entity_type":{"k":2},"by_anchoring":{"unanchored":1,"class":2,"instance":1},"id_set_sha256":"'"$(printf '%064d' 0 | tr 0 a)"'","declared_external":[],"timing":{}}'
@@ -170,6 +187,12 @@ CASES
     rc=0; CENSUS_WRITER='' touch_check "$r" fix/release/0.70.0 >/dev/null || rc=$?; row "RED: a branch that merely CONTAINS release/X.Y.Z is not the train" "$rc" 1
     rc=0; CENSUS_WRITER='' touch_check "$r" release/0.70.0-x >/dev/null || rc=$?; row "RED: release/X.Y.Z<suffix> is not the train" "$rc" 1
     rc=0; CENSUS_WRITER='' touch_check "$r" batch/0.70.0 >/dev/null || rc=$?; row "RED: a batch branch is not the train" "$rc" 1
+    printf '{"pull_request":{"head":{"repo":{"full_name":"someone/aprender"}},"base":{"repo":{"full_name":"paiml/aprender"}}}}\n' > "$t/fork.json"
+    printf '{"pull_request":{"head":{"repo":{"full_name":"paiml/aprender"}},"base":{"repo":{"full_name":"paiml/aprender"}}}}\n' > "$t/same.json"
+    rc=0; CENSUS_WRITER='' GITHUB_EVENT_PATH="$t/fork.json" touch_check "$r" release/0.70.0 >/dev/null || rc=$?; row "RED: a FORK PR named release/X.Y.Z is not the train" "$rc" 1
+    rc=0; CENSUS_WRITER='' GITHUB_EVENT_PATH="$t/same.json" touch_check "$r" release/0.70.0 >/dev/null || rc=$?; row "a same-repo release/X.Y.Z PR is the train" "$rc" 0
+    row "a push names its branch from GITHUB_REF_NAME, not the detached HEAD" "$(GITHUB_HEAD_REF='' GITHUB_REF_NAME=release/0.70.0 current_branch "$r")" release/0.70.0
+    row "a pull_request names its SOURCE branch" "$(GITHUB_HEAD_REF=feat GITHUB_REF_NAME=123/merge current_branch "$r")" feat
     git -C "$r" update-ref -d refs/remotes/origin/main
     rc=0; CENSUS_WRITER='' touch_check "$r" feat >/dev/null || rc=$?; row "RED: no comparand is UNMEASURED, not untouched" "$rc" 1
 

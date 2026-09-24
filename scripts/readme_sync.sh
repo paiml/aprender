@@ -92,7 +92,7 @@ measured_contract_count() {
         }
         n=$(jq -r '.n_files // empty' "$CENSUS_JSON" 2>/dev/null || true)
     else
-        n=$(cd "$REPO_ROOT" && { find contracts -type f -name '*.yaml' 2>/dev/null || true; } | contract_files_only | grep -c .) || n=""
+        n=$(cd "$REPO_ROOT" && { find contracts -type f -name '*.yaml' 2>/dev/null || true; } | contract_files_only | grep -c .) || true
     fi
     case "$n" in
         '' | *[!0-9]*)
@@ -101,7 +101,7 @@ measured_contract_count() {
             ;;
     esac
     [ "$n" -gt 0 ] || {
-        printf 'FAIL readme_sync: the census reports 0 contracts. A zero count is a broken measurement, not a README to regenerate.\n' >&2
+        printf 'FAIL readme_sync: the contract count is 0. A zero count is a broken measurement, not a README to regenerate.\n' >&2
         return 1
     }
     printf '%s' "$n"
@@ -189,7 +189,7 @@ case "$mode" in
             printf 'FAIL readme_sync: %s of %s block(s) carry the measured count %s after the rewrite.\n' "$after" "$n" "$count" >&2
             exit 1
         fi
-        printf 'ok    readme_sync: %s CONTRACT_COUNT block(s) now state %s (contracts/census.json .n_files)\n' "$n" "$count"
+        printf 'ok    readme_sync: %s CONTRACT_COUNT block(s) now state %s (contract files under contracts/, walked)\n' "$n" "$count"
         exit 0
         ;;
 esac

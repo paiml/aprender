@@ -119,7 +119,7 @@ measured_contract_count() {
     }
     n=$(jq -r '.n_files // empty' "$CENSUS_JSON" 2>/dev/null || true)
   else
-    n=$(cd "$REPO_ROOT" && { find contracts -type f -name '*.yaml' 2>/dev/null || true; } | contract_files_only | grep -c .) || n=""
+    n=$(cd "$REPO_ROOT" && { find contracts -type f -name '*.yaml' 2>/dev/null || true; } | contract_files_only | grep -c .) || true
   fi
   case "$n" in
     '' | *[!0-9]*)
@@ -128,7 +128,7 @@ measured_contract_count() {
       ;;
   esac
   [ "$n" -gt 0 ] || {
-    printf 'FAIL readme_sync: the census reports 0 contracts. A zero count is a broken measurement, not a README to regenerate.\n' >&2
+    printf 'FAIL readme_sync: the contract count is 0. A zero count is a broken measurement, not a README to regenerate.\n' >&2
     return 1
   }
   printf '%s' "$n"
@@ -279,7 +279,7 @@ measure_contract_count_rev() { # measure_contract_count_rev <rev>
   n=$(git -C "$REPO_ROOT" archive --format=tar "$rev" -- contracts 2>/dev/null \
         | tar -tf - 2>/dev/null \
         | contract_files_only \
-        | grep -c .) || n=""
+        | grep -c .) || true
   # 0 is a FAILED measurement, never a count. The preflight has already proved
   # the revision carries contracts/, so an empty listing means the instrument
   # broke -- and "0 violations over 0 files" is this fleet's signature defect.
