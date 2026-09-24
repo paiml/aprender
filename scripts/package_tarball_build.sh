@@ -58,7 +58,7 @@ NEG_NEEDLES=("kernel-fusion-v1.yaml" "gguf-header-slices" "fusion_call_site_guar
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --root) ROOT="$(cd -- "$2" && pwd)" || { echo "  cannot check: no directory $2" >&2; exit 2; }; shift 2 ;;
+    --root) ROOT="$2"; shift 2 ;;
     --crate-file) CRATE_FILES+=("$2"); shift 2 ;;
     --allow-dirty) DIRTY=(--allow-dirty); shift ;;
     --negative-control) NEG=1; shift ;;
@@ -69,6 +69,10 @@ done
 for t in cargo python3 tar sha256sum; do
   command -v "$t" > /dev/null || { echo "  cannot check: $t is not on PATH" >&2; exit 2; }
 done
+# SEC010: canonicalize the caller-supplied root before any cd/cp, and refuse a traversal
+ROOT="$(realpath -e -- "$ROOT" 2>/dev/null)" || { echo "  cannot check: no directory for --root" >&2; exit 2; }
+case "$ROOT" in /?*) ;; *) echo "  cannot check: --root resolved to '$ROOT'" >&2; exit 2 ;; esac
+case "$ROOT" in *..*) echo "  cannot check: --root holds '..': $ROOT" >&2; exit 2 ;; esac
 [ -f "$ROOT/Cargo.toml" ] || { echo "  cannot check: no Cargo.toml at $ROOT" >&2; exit 2; }
 
 T=$(mktemp -d) || { echo "  cannot check: mktemp failed" >&2; exit 2; }
@@ -128,16 +132,26 @@ done
 for f in "${CRATE_FILES[@]}"; do
   [ -f "$f" ] || { echo "  cannot check: no crate file $f" >&2; exit 2; }
   top=$(tar -tzf "$f" | head -n 1); top=${top%%/*}
-  cname=${top%-*}
-  case "$cname" in ''|*/*|*..*) echo "  cannot check: $f unpacks to '$top'" >&2; exit 2 ;; esac
-  # the packaged crate of the SAME name (name = dir minus its last -<version>; "aprender" never
-  # matches "aprender-serve-0.69.1", whose name part is "aprender-serve")
+  case "$top" in ''|*/*|*..*) echo "  cannot check: $f unpacks to '$top'" >&2; exit 2 ;; esac
+  stage="$T/stage-${#CRATE_FILES[@]}-$top"
+  mkdir -p "$stage" || { echo "  cannot check: mkdir $stage" >&2; exit 2; }
+  tar -xzmf "$f" -C "$stage" || { echo "  cannot check: could not unpack $f" >&2; exit 2; }
+  # the name comes from the MANIFEST, never from splitting "$top" on '-' (0.70.0-rc.1)
+  cname=$(python3 "$SCRIPT_DIR/lib/tarball_workspace.py" --name "$stage/$top") \
+    || { echo "  cannot check: $f carries no readable [package] name" >&2; exit 2; }
+  replaced=0
   for old in "$T"/ws/pkgs/*; do
-    ob=${old##*/}
-    if [ -d "$old" ] && [ "${ob%-*}" = "$cname" ]; then rm -rf -- "$old"; fi
+    [ -d "$old" ] || continue
+    oname=$(python3 "$SCRIPT_DIR/lib/tarball_workspace.py" --name "$old") || continue
+    if [ "$oname" = "$cname" ]; then
+      case "$old" in
+        "$T"/ws/pkgs/?*) rm -rf -- "${old:?}"; replaced=$((replaced + 1)) ;;
+      esac
+    fi
   done
-  tar -xzmf "$f" -C "$T/ws/pkgs" || { echo "  cannot check: could not unpack $f" >&2; exit 2; }
-  echo "SUBSTITUTED $top from $f (not the freshly packaged crate)"
+  [ "$replaced" = 1 ] || { echo "  cannot check: $f is $cname, which matched $replaced packaged crate(s), not 1" >&2; exit 2; }
+  mv -- "$stage/$top" "$T/ws/pkgs/$top" || { echo "  cannot check: could not place $top" >&2; exit 2; }
+  echo "SUBSTITUTED $cname ($top) from $f (not the freshly packaged crate)"
 done
 
 # 2. one workspace of tarballs, siblings patched to their unpacked copies
@@ -155,6 +169,10 @@ brc=$?
 report="$(python3 "$SCRIPT_DIR/lib/tarball_build_errors.py" "$T/build.log")"; erc=$?
 if [ "$brc" -eq 0 ] && [ "$erc" -eq 0 ]; then
   echo "PASS  all $n_crate published tarball(s) compile their tests (cargo build --tests)"; exit 0
+fi
+if [ "$erc" -eq 4 ]; then
+  printf '%s\n' "$report"
+  echo "  cannot check: the build HOST failed (disk, memory, writes) - no crate verdict (not a pass)"; exit 2
 fi
 if [ "$erc" -eq 1 ]; then
   printf '%s\n' "$report"
