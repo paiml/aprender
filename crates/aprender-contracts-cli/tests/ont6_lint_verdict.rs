@@ -294,6 +294,8 @@ fn json_report_carries_the_lattice() {
             // ONT-3a's bindings gate and ONT-3b's refinement gate likewise.
             serde_json::Value::String("bindings".into()),
             serde_json::Value::String("refinement".into()),
+            // ONT-8's gate: same R-8 shape.
+            serde_json::Value::String("evidence".into()),
         ]),
         "{}",
         show(&r)
