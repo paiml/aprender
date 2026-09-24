@@ -24,6 +24,7 @@
 #   load-decline    loadavg above the core count DECLINES a cpu serve by name (rc 2); the same load does
 #                   not decline a cuda serve
 #   load-unmeasurable  an unreadable loadavg DECLINES a cpu serve by name: the check fails CLOSED
+#   override-validated  LADDER_ROUTE_MAX_TIME=0 (curl's "unlimited") DECLINES by name, never runs unbounded
 #   contract-timeout  with no test override the bound comes from the contract (cpu 300, cuda 60); a
 #                   contract without serve_health.route_timeout_s DECLINES by name
 # --self-test plants the old bare `"http":$code` (parses RED), a deleted load check (load-decline RED)
@@ -180,6 +181,12 @@ PY
   if [ "$out" = "300 60" ] && ! grep -q 'route_timeout_s' "$T/ladder-no-rto.yaml" && [ "$prc" = 2 ] \
      && grep -q '^decline: ENV the ladder declares no serve_health.route_timeout_s for backend cuda' <<< "$dout"; then ok contract-timeout
   else bad contract-timeout "resolved '$out' (want '300 60'); undeclared rc=$prc: $(head -c 160 <<< "$dout")"; fi
+  # override-validated: a 0 override would be curl's UNLIMITED; it must decline, never run unbounded
+  dout=$(LADDER_ROUTE_MAX_TIME=0 LADDER_LOADAVG_FILE="$T/loadavg.low" LADDER_NPROC=4 GPU_LOCK="$T/lock" WORK="$T/work" \
+        timeout 20 bash -c "$body"$'\n''ladder_serve_probe /fake.gguf "" r1 cuda' 2>&1); prc=$?
+  pkill -f "$T/fake_serve.py" 2> /dev/null || :
+  if [ "$prc" = 2 ] && grep -q "LADDER_ROUTE_MAX_TIME='0' is not a positive integer" <<< "$dout"; then ok override-validated
+  else bad override-validated "rc=$prc (124 = hung on an unbounded curl): $(head -c 160 <<< "$dout")"; fi
   pkill -f "$T/fake_serve.py" 2> /dev/null || :
   return "$rc"
 }
@@ -210,6 +217,12 @@ if [ "$SELF_TEST" = 1 ]; then
   o=$(run_cases "$m" 2>&1) || true
   grep -q 'FAIL  load-unmeasurable' <<< "$o" || { printf '%s\n' "$o"; echo "SELF-TEST FAIL: a fail-open load check left load-unmeasurable green"; exit 1; }
   echo "  ok    mutant fail-open killed by load-unmeasurable"
+  m="$T/m-unvalidated.sh"
+  sed 's/^        \[\[ "\$LADDER_ROUTE_MAX_TIME" =~ ^\[1-9\]\[0-9\]\*\$ \]\] || return 1$/        :/' "$SCRIPT" > "$m"
+  cmp -s "$SCRIPT" "$m" && { echo "  FAIL  mutant unvalidated-override did not apply"; exit 1; }
+  o=$(run_cases "$m" 2>&1) || true
+  grep -q 'FAIL  override-validated' <<< "$o" || { printf '%s\n' "$o"; echo "SELF-TEST FAIL: an unvalidated override left override-validated green"; exit 1; }
+  echo "  ok    mutant unvalidated-override killed by override-validated"
   echo "SELF-TEST OK"; exit 0
 fi
 echo "ladder serve probe: a route with no response keeps the record parseable and the other routes' evidence ($SCRIPT)"

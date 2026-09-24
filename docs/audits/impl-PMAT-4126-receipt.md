@@ -81,3 +81,7 @@ stall-named RED with exactly that contradiction.
   (unmeasurable), and 2 declines by name ("host load unmeasurable"). New case load-unmeasurable
   (a missing loadavg file declines). Self-test plants: no-load-check -> load-decline, fail-open
   (unmeasurable read as fine) -> load-unmeasurable; 4 plants, all killed.
+- Round 2, lane 1 (claude-sonnet-5) FAILED f87037f50, measured: the LADDER_ROUTE_MAX_TIME override
+  was unvalidated, and curl reads --max-time 0 as UNLIMITED, so a 0 hung the probe (reproduced under an
+  outer timeout). The override must now be a positive integer; otherwise the probe declines by name.
+  New case override-validated; mutant unvalidated-override (killed). 5 plants in all.

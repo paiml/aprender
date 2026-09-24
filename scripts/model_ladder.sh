@@ -741,7 +741,13 @@ ladder_serve_wait_health() { # <wrapper-pid> <port> <log> <stall-s> <ceiling-s>
 # TEST override. Prints the seconds, or nothing with rc 1 when the contract declares none (the caller
 # declines by name: an unbounded or invented timeout is not a measurement).
 ladder_route_timeout() { # <backend>
-    if [ -n "${LADDER_ROUTE_MAX_TIME:-}" ]; then printf '%s' "$LADDER_ROUTE_MAX_TIME"; return 0; fi
+    # The override is validated like the contract value: a positive integer, or nothing. curl reads
+    # --max-time 0 as UNLIMITED, so a 0 here would unbound the very timeout this policy sets
+    # (#4126 quorum round 2, lane 1).
+    if [ -n "${LADDER_ROUTE_MAX_TIME:-}" ]; then
+        [[ "$LADDER_ROUTE_MAX_TIME" =~ ^[1-9][0-9]*$ ]] || return 1
+        printf '%s' "$LADDER_ROUTE_MAX_TIME"; return 0
+    fi
     python3 -c '
 import sys, yaml
 b = "cuda" if sys.argv[2] == "gpu" else sys.argv[2]
@@ -773,7 +779,7 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
     # #4126: the route bound for THIS backend, from the contract, or a decline by name.
     rto=$(ladder_route_timeout "$bname") || rto=""
     if [ -z "$rto" ]; then
-        echo "decline: ENV the ladder declares no serve_health.route_timeout_s for backend $bname -- the serve probe's route bound would be invented (#4126)" >&2
+        echo "decline: ENV the ladder declares no serve_health.route_timeout_s for backend $bname (or LADDER_ROUTE_MAX_TIME='${LADDER_ROUTE_MAX_TIME:-}' is not a positive integer) -- the serve probe's route bound would be invented or unbounded (#4126)" >&2
         return 2
     fi
     read -r load1 cores <<< "$(ladder_host_load)"
