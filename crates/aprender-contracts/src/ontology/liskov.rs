@@ -440,69 +440,82 @@ pub fn check(pairs: &[Pair], witness: &LiskovWitness) -> Result<Vec<Violation>, 
     Ok(out)
 }
 
+type Atoms = BTreeMap<String, String>;
+
+/// `id -> atom` for parsed clauses; a clause that is not parsed has no atom and cannot be reasoned over.
+fn atoms(cs: &[Clause]) -> Result<Atoms, String> {
+    cs.iter()
+        .map(|c| {
+            c.atom()
+                .map(|a| (c.id.clone(), a))
+                .ok_or_else(|| format!("{} is not parsed", c.id))
+        })
+        .collect()
+}
+
 /// Verify one certificate; `Ok` names the conclusion clauses it proves violated (empty for a chain).
 fn check_obligation(
     premise: &[Clause],
     conclusion: &[Clause],
     ob: &Obligation,
 ) -> Result<Vec<String>, String> {
-    let atoms = |cs: &[Clause]| -> Result<BTreeMap<String, String>, String> {
-        cs.iter()
-            .map(|c| {
-                c.atom()
-                    .map(|a| (c.id.clone(), a))
-                    .ok_or_else(|| format!("{} is not parsed", c.id))
-            })
-            .collect()
-    };
     let prem = atoms(premise)?;
     let concl = atoms(conclusion)?;
-    let prem_atoms: BTreeSet<&String> = prem.values().collect();
     match (&ob.chain, &ob.counter_model) {
-        (Some(chain), None) => {
-            let covered: BTreeSet<&str> = chain.iter().map(|s| s.clause.as_str()).collect();
-            if covered.len() != chain.len() || covered != concl.keys().map(String::as_str).collect()
-            {
-                return Err("the chain does not derive each conclusion clause exactly once".into());
-            }
-            for step in chain {
-                let Some(from) = prem.get(&step.from) else {
-                    return Err(format!(
-                        "{} is derived from {}, which is not a premise",
-                        step.clause, step.from
-                    ));
-                };
-                if Some(from) != concl.get(&step.clause) {
-                    return Err(format!(
-                        "{} does not follow from {}",
-                        step.clause, step.from
-                    ));
-                }
-            }
-            Ok(Vec::new())
-        }
-        (None, Some(cm)) => {
-            let holds: BTreeSet<&str> = cm.holds.iter().map(String::as_str).collect();
-            if holds.len() != cm.holds.len() || holds != prem.keys().map(String::as_str).collect() {
-                return Err("the counter-model does not make exactly the premises true".into());
-            }
-            let violated: BTreeSet<&str> = cm.violated.iter().map(String::as_str).collect();
-            let unimplied: BTreeSet<&str> = concl
-                .iter()
-                .filter(|(_, atom)| !prem_atoms.contains(atom))
-                .map(|(id, _)| id.as_str())
-                .collect();
-            if violated.is_empty() || violated.len() != cm.violated.len() || violated != unimplied {
-                return Err(format!(
-                    "the counter-model names [{}]; the premises leave [{}] unimplied",
-                    cm.violated.join(", "),
-                    unimplied.into_iter().collect::<Vec<_>>().join(", ")
-                ));
-            }
-            Ok(violated.into_iter().map(str::to_string).collect())
-        }
+        (Some(chain), None) => check_chain(&prem, &concl, chain).map(|()| Vec::new()),
+        (None, Some(cm)) => check_counter_model(&prem, &concl, cm),
         _ => Err("exactly one of chain and counter_model is required".into()),
     }
+}
+
+/// A chain derives each conclusion clause exactly once, each from a premise clause with the same atom.
+fn check_chain(prem: &Atoms, concl: &Atoms, chain: &[Step]) -> Result<(), String> {
+    let covered: BTreeSet<&str> = chain.iter().map(|s| s.clause.as_str()).collect();
+    if covered.len() != chain.len() || covered != concl.keys().map(String::as_str).collect() {
+        return Err("the chain does not derive each conclusion clause exactly once".into());
+    }
+    for step in chain {
+        let Some(from) = prem.get(&step.from) else {
+            return Err(format!(
+                "{} is derived from {}, which is not a premise",
+                step.clause, step.from
+            ));
+        };
+        if Some(from) != concl.get(&step.clause) {
+            return Err(format!(
+                "{} does not follow from {}",
+                step.clause, step.from
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A counter-model makes exactly the premises true and names exactly the conclusion clauses they leave unimplied.
+fn check_counter_model(
+    prem: &Atoms,
+    concl: &Atoms,
+    cm: &CounterModel,
+) -> Result<Vec<String>, String> {
+    let holds: BTreeSet<&str> = cm.holds.iter().map(String::as_str).collect();
+    if holds.len() != cm.holds.len() || holds != prem.keys().map(String::as_str).collect() {
+        return Err("the counter-model does not make exactly the premises true".into());
+    }
+    let prem_atoms: BTreeSet<&String> = prem.values().collect();
+    let violated: BTreeSet<&str> = cm.violated.iter().map(String::as_str).collect();
+    let unimplied: BTreeSet<&str> = concl
+        .iter()
+        .filter(|(_, atom)| !prem_atoms.contains(atom))
+        .map(|(id, _)| id.as_str())
+        .collect();
+    if violated.is_empty() || violated.len() != cm.violated.len() || violated != unimplied {
+        return Err(format!(
+            "the counter-model names [{}]; the premises leave [{}] unimplied",
+            cm.violated.join(", "),
+            unimplied.into_iter().collect::<Vec<_>>().join(", ")
+        ));
+    }
+    Ok(violated.into_iter().map(str::to_string).collect())
 }
 
 /// The fixture shape: pairs and a witness for them.
