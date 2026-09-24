@@ -143,6 +143,8 @@ write_receipt() {
     # CRUX beside it, for the one certified fixture model, on this host: the certification admits
     # fx.gguf's sha, and this host's receipt answers every verb for it, bound to the same cut.
     local crux; crux="$(git -C "$1" rev-parse --show-toplevel)/evidence/crux/9.9.9"
+    # bashrs SEC010: $crux is inside the fixture bump tree under this guard's own mktemp -d dir.
+    # bashrs disable-next-line=SEC010
     mkdir -p "$crux" || return 2
     python3 - "$crux" "$2" "$cut" <<'PY'
 import json, os, sys
