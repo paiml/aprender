@@ -1,0 +1,45 @@
+{
+  "ticket": "PMAT-4120",
+  "part": "commit 1 (dc92d818c + f1b09d4d6)",
+  "kind": "diff-review",
+  "author": {
+    "model": "opus-5-5",
+    "family": "claude"
+  },
+  "degraded": "same-family",
+  "reason": "agy 429 on every family (cop broadcast ~02:35 CEST); operator fallback rule: Claude Code lanes, never the author's id",
+  "base": "375b34522 (chore/0.69.1-merge-back)",
+  "head_reviewed": "f1b09d4d6",
+  "lanes": [
+    {
+      "lane": "A",
+      "model": "sonnet-5",
+      "focus": "any remaining path to pid 1 or a foreign pid",
+      "verdict": "PASS",
+      "findings": [
+        "major (pre-existing): a malformed non-empty pid line is silently skipped -> false 'clean' (fixed in commit 2)",
+        "minor: header claims one signal exit; kill -0 probe bypasses the seam (comment corrected in commit 2)",
+        "minor: pid-reuse race, pre-existing, out of scope"
+      ]
+    },
+    {
+      "lane": "B",
+      "model": "sonnet-5",
+      "focus": "tests discriminate (T2, T2b, M10, M17, seam escaping, CI wiring)",
+      "verdict": "PASS",
+      "findings": [
+        "minor: T2b's no-signal-to-1 grep is vacuous when nothing is signalled (made non-empty in commit 2)"
+      ]
+    },
+    {
+      "lane": "C",
+      "model": "sonnet-5",
+      "focus": "other senders in the --no-cargo universe",
+      "verdict": "PASS",
+      "findings": [
+        "minor: scripts/lib/crux_cells_greedy.sh:58 inline kill bypasses the teardown (safe today; handed to the CRUX owner)"
+      ]
+    }
+  ],
+  "verdict": "PASS 3/3 (degraded: same-family)"
+}
