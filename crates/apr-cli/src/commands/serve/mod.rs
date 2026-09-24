@@ -25,6 +25,8 @@ mod tests;
 mod tests_route_index_3979;
 // PP-LLAMA-001 PP-14/PP-15/§9 #8: the offload report the served process
 // publishes. `inference`-gated because the report type comes from realizar.
+#[cfg(test)]
+mod tests_default_backend_4089;
 #[cfg(all(test, feature = "inference"))]
 #[path = "tests_offload_report_pp14.rs"]
 mod tests_offload_report_pp14;
@@ -786,6 +788,13 @@ mod gpu_layers_contract_tests {
             src.contains("None if gpu && !no_gpu => Some(serve::GpuLayerRequest::All)"),
             "the deprecated --gpu no longer maps to --gpu-layers all, so the old \
              spelling stops reaching the new gate"
+        ); // #4089: no flag must resolve as `apr run` does, and must be MARKED as a
+           // default so only a typed request refuses when it cannot engage.
+        assert!(
+            src.contains(
+                "None => serve::GpuLayerRequest::serve_default(no_gpu, backend.as_deref())"
+            ) && src.contains("gpu_layers_defaulted: gpu_layers.is_none() && !(gpu && !no_gpu)"),
+            "dispatch_serve no longer applies the #4089 default"
         );
     }
 
