@@ -26,10 +26,15 @@ fn lint_score_gate_fails_with_high_threshold() {
 
 #[test]
 fn lint_empty_dir() {
+    // The lint takes the contract dir's PARENT as the project root and reads
+    // `scripts/contract_duplicate_stem_baseline.txt` from it. A bare tempdir's parent is
+    // the shared `/tmp`, so a stray `/tmp/scripts/` failed this test (#4207). Nest it.
     let tmp = tempfile::tempdir().unwrap();
-    let config = LintConfig::new(tmp.path(), None, 0.0);
+    let dir = tmp.path().join("contracts");
+    std::fs::create_dir_all(&dir).unwrap();
+    let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
-    assert!(report.passed);
+    assert!(report.passed, "empty dir should pass: {report:?}");
 }
 
 #[test]
@@ -155,10 +160,12 @@ fn lint_cache_second_run_hits() {
 #[test]
 fn lint_validation_failure_skips_audit_and_score() {
     let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("contracts");
+    std::fs::create_dir_all(&dir).unwrap();
     // Write a malformed YAML that will parse into a Contract with validation errors
     // Actually: write something that fails to parse entirely
-    std::fs::write(tmp.path().join("bad.yaml"), "not: valid: yaml: {{{{").unwrap();
-    let config = LintConfig::new(tmp.path(), None, 0.0);
+    std::fs::write(dir.join("bad.yaml"), "not: valid: yaml: {{{{").unwrap();
+    let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
     assert!(!report.passed);
     // validate should fail, all subsequent gates should be skipped
