@@ -126,10 +126,11 @@ def correctness_reasons(model, gate):
         for d in dis:
             gap = d.get("gap")
             rank = d.get("rank")
-            if not _count(rank) or rank > c["max_rank"]:
-                out.append("%s prompt %d step %s: the oracle's token is apr's rank %r > %d"
+            if not _count(rank) or not 2 <= rank <= c["max_rank"]:
+                out.append("%s prompt %d step %s: the oracle's token is apr's rank %r, outside [2, %d] "
+                           "(rank 1 is agreement; a disagreement is rank >= 2)"
                            % (size, i, d.get("step"), rank, c["max_rank"]))
-            if not _finite(gap) or gap >= c["tau"]:
+            if not _finite(gap) or not 0 <= gap < c["tau"]:
                 out.append("%s prompt %d step %s: apr disagrees with the oracle at gap "
                            "%r >= tau %s" % (size, i, d.get("step"), gap, c["tau"]))
     return out
@@ -180,7 +181,15 @@ def model_reasons(model, pinned, gate, pin_commit):
 
 
 def evaluate(run, gate, pin_commit, baseline):
-    """The whole verdict. Returns (verdict, reasons, rows)."""
+    """The whole verdict. Returns (verdict, reasons, rows). A record too
+    malformed to read is RED, never a crash that a caller might misread."""
+    try:
+        return _evaluate(run, gate, pin_commit, baseline)
+    except (AttributeError, TypeError, KeyError, IndexError, ValueError) as exc:
+        return RED, ["run record is malformed: %s: %s" % (type(exc).__name__, exc)], []
+
+
+def _evaluate(run, gate, pin_commit, baseline):
     if run.get("schema") != RUN_SCHEMA:
         return RED, ["run schema is %r, not %r" % (run.get("schema"), RUN_SCHEMA)], []
     nogo = preflight_reasons(run, gate)
@@ -447,7 +456,7 @@ def verdict_rows(gate, pin):
         ("scrambled output is RED even when pass=true",
          _set(["models", 0, "correctness", "prompts", 0],
               {"pass": True, "prompt_ids_match": True, "teacher_forced_steps": 32,
-               "disagreements": [{"step": 0, "gap": 3.0, "rank": 1}]}), 0.9, RED),
+               "disagreements": [{"step": 0, "gap": 3.0, "rank": 2}]}), 0.9, RED),
         ("NaN gap is RED", _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0, "gap"], float("nan")), 0.9, RED),
         ("bool rank is RED", _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0, "rank"], True), 0.9, RED),
         ("too few teacher-forced steps is RED", _set(["models", 2, "correctness", "prompts", 0, "teacher_forced_steps"], 8), 0.9, RED),
@@ -464,6 +473,10 @@ def verdict_rows(gate, pin):
         ("control of an ungated size is RED",
          _set(["control", "models", 0], {"size": "70B", "receipt": _fx_receipt(0.4, pin)}),
          lambda b: (b["models"].update({"70B": {"point": 0.9}}), b)[1], RED),  # a stale baseline key
+        ("negative gap is RED", _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0, "gap"], -0.5), 0.9, RED),
+        ("rank below 2 is RED", _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0, "rank"], -1), 0.9, RED),
+        ("zero RSS is RED", _set(["models", 0, "memory", "apr_rss_kb"], 0), 0.9, RED),
+        ("malformed models is RED", _set(["models"], "not-a-list"), 0.9, RED),
         ("oracle token deep in apr's ranking is RED",
          _set(["models", 1, "correctness", "prompts", 0, "disagreements", 0, "rank"], 3), 0.9, RED),
         ("prompt ids differ is RED", _set(["models", 2, "correctness", "prompts", 0, "prompt_ids_match"], False), 0.9, RED),
@@ -522,7 +535,7 @@ MUTANTS = [
      ["within tolerance PASSes"]),
     ("missing baseline passes", "mr.append(\"%s: no committed baseline", "pass  # (\"%s: no committed baseline",
      ["no baseline is RED"]),
-    ("gap check dropped", "gap >= c[\"tau\"]", "False",
+    ("gap check dropped", "0 <= gap < c[\"tau\"]", "0 <= gap",
      ["scrambled output is RED even when pass=true"]),
     ("prompt id check dropped", "if p.get(\"prompt_ids_match\") is not True:", "if False:",
      ["prompt ids differ is RED"]),
@@ -536,7 +549,7 @@ MUTANTS = [
      ["control mislabeled to another size is RED"]),
     ("control comparator not bound", "        if comp != pin_commit:\n            out.append(\"control", "        if False:\n            out.append(\"control",
      ["control on an unpinned comparator is RED"]),
-    ("rank check dropped", "rank > c[\"max_rank\"]", "False",
+    ("rank check dropped", "2 <= rank <= c[\"max_rank\"]", "2 <= rank",
      ["oracle token deep in apr's ranking is RED"]),
     ("unrecorded disk read as fine", "out.append(\"free disk at %s was not recorded\"", "pass  # (\"free disk at %s was not recorded\"",
      ["unrecorded free disk is NO-GO"]),
@@ -544,10 +557,13 @@ MUTANTS = [
      ["disk measured elsewhere is NO-GO"]),
     ("disk resolution not read", "if not isinstance(disk.get(\"resolved\"), str) or not disk.get(\"resolved\"):", "if False:",
      ["unresolved disk path is NO-GO"]),
-    ("gap NaN-blind", "if not _finite(gap) or gap", "if not isinstance(gap, (int, float)) or gap",
-     ["NaN gap is RED"]),
-    ("rank admits bool", "if not _count(rank) or rank", "if not isinstance(rank, int) or rank",
-     ["bool rank is RED"]),
+    # Equivalent today: the negated range `not 0 <= gap < tau` and `not 2 <= rank
+    # <= max_rank` already fail closed on NaN and on a bool (True == 1 < 2), so
+    # _finite/_count there are defence in depth. They must flip nothing.
+    ("gap NaN-blind", "if not _finite(gap) or not 0", "if not isinstance(gap, (int, float)) or not 0",
+     []),
+    ("rank admits bool", "if not _count(rank) or not 2", "if not isinstance(rank, int) or not 2",
+     []),
     ("steps floor dropped", "steps < c[\"min_teacher_forced_steps\"]", "False",
      ["too few teacher-forced steps is RED"]),
     # Equivalent today: band_ratio and the baseline check already refuse a
@@ -567,6 +583,14 @@ MUTANTS = [
      ["control of an ungated size is RED"]),
     ("first c=1 band taken", "if len(hits) != 1:", "if not hits:",
      ["two c=1 bands is RED"]),
+    ("gap lower bound dropped", "not 0 <= gap < c[\"tau\"]", "not gap < c[\"tau\"]",
+     ["negative gap is RED"]),
+    ("rank lower bound dropped", "not 2 <= rank <= c[\"max_rank\"]", "not rank <= c[\"max_rank\"]",
+     ["rank below 2 is RED"]),
+    ("memory sign not read", "if not _count(mem.get(key)) or mem.get(key) <= 0:", "if not _count(mem.get(key)):",
+     ["zero RSS is RED"]),
+    ("malformed record crashes", "    except (AttributeError, TypeError, KeyError, IndexError, ValueError) as exc:\n", "    except ZeroDivisionError as exc:\n",
+     ["malformed models is RED"]),
     ("lock not read", "if pre.get(\"gpu_lock\") != \"free\":", "if False:",
      ["busy GPU lock is NO-GO"]),
     ("foreign apps not read", "elif apps:", "elif False:",
