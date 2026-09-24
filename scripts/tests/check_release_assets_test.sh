@@ -105,7 +105,7 @@ t 0 "a build-apr-cpu lane exists" bash -c "grep -q 'build-apr-cpu:' '$WF'"
 t 0 "a smoke-cpu lane exists" bash -c "grep -q 'smoke-cpu:' '$WF'"
 t 0 "a build-apr-darwin lane exists (#4292)" bash -c "grep -q 'build-apr-darwin:' '$WF'"
 t 0 "verify-apr-assets waits for the darwin lane" \
-  bash -c "grep -A2 'verify-apr-assets:' '$WF' | grep -q 'needs:.*build-apr-darwin'"
+  bash -c "grep -q 'needs:.*build-apr-darwin' <<<\"\$(grep -A2 'verify-apr-assets:' '$WF')\""
 
 printf '%s/%s rows\n' "$((n - red))" "$n"
 [ "$red" = 0 ] || exit 1
