@@ -20560,6 +20560,7 @@ roadmap:
 - id: PMAT-3769
   github_issue: 3769
   item_type: task
+  kind: code
   title: 'cookbook-recipe-v1: SHACL shape for apr-cookbook recipes + receipts (aprender#3769 done_when 1, cookbook #440)'
   status: planned
   priority: high
