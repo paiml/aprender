@@ -210,6 +210,21 @@ mod tests {
         );
     }
 
+    /// The table's missing-`crates/<name>` rows cannot tell "is listed" from "exists": this row
+    /// can. A crate two levels under a `[workspace]` root, outside `crates/`, whose name a
+    /// DIFFERENT directory `crates/<name>` also carries, is not that workspace's member: skip.
+    #[test]
+    fn a_same_named_crates_dir_that_is_not_this_crate_is_out_of_tree() {
+        let (tmp, krate) = fixture(Some(WS), "vendor/foo", true);
+        fs::create_dir_all(tmp.path().join("crates/foo")).unwrap();
+        assert_eq!(
+            workspace_file_or_skip_at("decoy", &krate, "contracts/x.yaml"),
+            None,
+            "crates/foo exists but is not {}: out of tree",
+            krate.display()
+        );
+    }
+
     /// The macro captures THIS crate's manifest dir. In the checkout that is in tree and this
     /// file exists; in the published tarball it is out of tree and skips by name.
     #[test]
