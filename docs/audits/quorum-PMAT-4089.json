@@ -1,0 +1,144 @@
+{
+  "ticket": "PMAT-4089",
+  "base": "origin/chore/0.69.1-merge-back",
+  "base_resolved": "origin/chore/0.69.1-merge-back",
+  "base_note": "no origin/origin/chore/0.69.1-merge-back exists; judged against the local ref",
+  "head": "6df198bba16812e9852850bb5590997d4da1d1ed",
+  "diff_sha256": "3d91bb0bbc0bc763bc2f7cb1f36f28c2f04d494bb4d9f8c605ddf43d10ea1477",
+  "width": 2,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 48913,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have reviewed the diff against PMAT-4089 and its receipt. The implementation correctly addresses all the requirements of the ticket without introducing forbidden behavior:\n\n1. **One Rule for Default Backend**: `apr run` and `apr serve` both use `accel::default_wants_accelerator(no_gpu)` to determine if they should run on the GPU when no backend is explicitly requested.\n2. **Forced `--gpu` Preservation**: `accel::run_no_gpu` ensures that if `accel_forced` is true, the device check is bypassed, preserving the I-17 requirement that explicit requests must reach the forward to be reconciled or refused.\n3. **Cop Condition for Silent CPU Fallback**: As required by the cop condition, a flagless run on a CUDA build without a device explicitly falls back to CPU \"loudly.\" It prints `Backend: CPU — no CUDA device present...` to stderr and populates `backend.fell_back: true` and `backend.reason` in the JSON machine envelope via `accel::default_accelerator_unavailable_reason`. \n4. **Serve Layer Resolution & Logs**: `ServerConfig::effective_gpu_layers()` properly applies `Auto` when the default rule resolves to the GPU. The startup log accurately reflects this via `requested_gpu_layers_label()`, emitting `auto(default)` for flagless starts instead of `none`.\n\nThe falsification tests and integration tests thoroughly enforce this behavior, and the roadmap and receipt were updated exactly as expected. Everything aligns.",
+      "findings": [],
+      "raw_bytes": 4168,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fully satisfies PMAT-4089 and violates no constraints:\n1. Unified Default Backend Rule: `crates/apr-cli/src/accel.rs` implements `default_wants_accelerator(no_gpu)` (`!no_gpu && accelerator_device_present()`). Both `apr run` (via `accel::run_no_gpu` in `run_entry.rs`) and `apr serve` (via `ServerConfig::effective_gpu_layers()` in `serve/types.rs`) use this single shared rule to determine default accelerator behavior.\n2. Invariance I-17: `accel::run_no_gpu` guards `accel_forced` so forced accelerator requests (`--gpu`, `--backend cuda|wgpu|gpu`) bypass the device check and reach the forward untouched. Validated by unit test `accel::tests::a_forced_accelerator_is_never_lowered_by_the_device_check`.\n3. Loud Fallback (Cop Condition): `accel::default_accelerator_unavailable_reason` produces an explicit explanation on stderr and sets `backend.fell_back: true` with `backend.reason` in the machine envelope for flagless runs on CUDA builds lacking a device. Verified by unit tests `a_flagless_run_that_found_no_device_says_it_fell_back_and_why` and `only_a_flagless_run_gets_the_no_device_reason`.\n4. Tests & Falsifier: Unit tests in `serve::types::default_backend_parity_4089` confirm parity across flagless, auto, and explicit cases. Integration falsifier `tests/falsify_serve_run_default_backend_4089.rs` validates end-to-end provenance parity.\n5. Quality Gates: `cargo fmt --all -- --check` and `cargo clippy -p apr-cli --lib -- -D warnings` pass cleanly with zero warnings or errors in touched files. No gate was weakened.",
+      "findings": [],
+      "raw_bytes": 5894,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=2 author=claude-opus-5-5/claude"
+  }
+}
