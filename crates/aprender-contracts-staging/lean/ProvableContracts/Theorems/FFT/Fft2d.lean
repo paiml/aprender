@@ -1,4 +1,5 @@
 import Mathlib.Data.Complex.Basic
+import Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic
 import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 
 /-!

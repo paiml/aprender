@@ -28,11 +28,11 @@ namespace ProvableContracts.NF4
 axiom nf4_lut : Fin 16 → ℝ
 
 /-- NF4 dequantization of a single nibble. -/
-def dequant_nibble (nibble : Fin 16) : ℝ :=
+noncomputable def dequant_nibble (nibble : Fin 16) : ℝ :=
   nf4_lut nibble
 
 /-- Blockwise dequantization: x_i = LUT[nibble_i] * absmax[i / blocksize] -/
-def dequant_blockwise (nibbles : List (Fin 16)) (absmax : List ℝ) (blocksize : ℕ)
+noncomputable def dequant_blockwise (nibbles : List (Fin 16)) (absmax : List ℝ) (blocksize : ℕ)
     (_hbs : blocksize > 0) : List ℝ :=
   (nibbles.zip (List.range nibbles.length)).map fun ⟨n, i⟩ =>
     dequant_nibble n * (absmax.getD (i / blocksize) 0)

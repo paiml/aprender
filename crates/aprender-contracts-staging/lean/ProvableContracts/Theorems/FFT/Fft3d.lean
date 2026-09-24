@@ -1,4 +1,5 @@
 import Mathlib.Data.Complex.Basic
+import Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic
 
 /-!
 # FFT 3D — Triple Separability
