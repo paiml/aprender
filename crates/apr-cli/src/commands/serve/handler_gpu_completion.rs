@@ -610,7 +610,7 @@ fn start_gguf_server_cuda(
             "{}",
             "qwen3moe: serving through the MoE CUDA dispatch (#3714, #3987)".cyan()
         );
-        let model_source = measured_model_source(&quantized_model, config);
+        let model_source = measured_model_source(&quantized_model, Some(&mapped_model), config);
         let state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
             .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
             .with_model_source(model_source)
@@ -633,6 +633,10 @@ fn start_gguf_server_cuda(
     );
     println!("  Max sequence length: {max_seq_len}");
 
+    // #4254: measured before the model moves into CUDA. Without it `/v1/effective-config`
+    // on a CUDA server reported quantization, path and parameter count all null.
+    let model_source = measured_model_source(&quantized_model, Some(&mapped_model), config);
+
     match OwnedQuantizedModelCuda::with_max_seq_len(quantized_model, 0, max_seq_len) {
         Ok(mut cuda_model) => {
             preload_gpu_weights(&mut cuda_model);
@@ -650,6 +654,7 @@ fn start_gguf_server_cuda(
             let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
                 .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
                 .with_mapped_gguf_model(mapped_model.clone())
+                .with_model_source(model_source)
                 // PP-14/PP-15/§9 #8: the resolved offload AND this binary's
                 // `cfg!` feature list (including `cuda-batch`) reach the served
                 // process, so a receipt records what the build was rather than
