@@ -267,6 +267,9 @@ pub struct Qwen35CudaModel<'a> {
     /// The batched prefill's attention path (#3596): cuBLAS f32 unless only flash
     /// fits, as the capacity plan decides.
     prefill_attention: prefill::PrefillAttention,
+    /// #4234: `forward_batch`'s input and logits buffers, kept for the next step
+    /// and grown when a wider batch arrives — a decode step allocates nothing.
+    batch_io: Option<batch::BatchIo>,
 }
 
 /// Why a projection cannot go on the GPU, stated so the user can act on it
@@ -654,6 +657,7 @@ impl<'a> Qwen35CudaModel<'a> {
             max_seq_len,
             prefill_rows: prefill::PREFILL_MAX_CHUNK_ROWS,
             prefill_attention,
+            batch_io: None,
         })
     }
 
