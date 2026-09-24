@@ -5,6 +5,8 @@
 
 use super::*;
 use crate::gguf::forward_qwen35::run_qwen35_generate;
+use crate::gguf::QuantizedGenerateConfig;
+use crate::session::turn_budget;
 
 /// The real hybrid file the rest of the Qwen3.5 tests are specified against.
 const MODEL_PATH: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
@@ -297,7 +299,7 @@ mod gpu {
         let Some(mut one_token) = gpu_session_or_skip(&mapped) else {
             return;
         };
-        one_token.per_token_prefill = true;
+        one_token.engine_mut().per_token_prefill = true;
         let config = greedy(8);
 
         let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));

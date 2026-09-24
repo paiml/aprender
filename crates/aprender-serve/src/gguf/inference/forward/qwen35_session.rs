@@ -25,7 +25,7 @@ use crate::gguf::forward_qwen35::{
     qwen35_route, qwen35_route_notice, Qwen35Model, Qwen35Route, Qwen35State,
     QWEN35_GPU_FALLBACK_PREFIX,
 };
-use crate::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
+use crate::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
 /// The smallest decode state a session allocates. Growing by doubling from
 /// here keeps a short conversation from paying for the model's whole declared
@@ -38,22 +38,8 @@ const MIN_CAPACITY: usize = 4096;
 /// it is set.
 pub const QWEN35_SESSION_PREFILL_ENV: &str = "APR_QWEN35_SESSION_PREFILL";
 
-/// What one [`Qwen35Session::generate`] call did.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Qwen35Turn {
-    /// The prompt followed by the generated tokens — the shape
-    /// `run_qwen35_generate` returns.
-    pub tokens: Vec<u32>,
-    /// Leading prompt tokens served from the state an earlier call left, not
-    /// prefilled again. 0 when the prompt did not extend it.
-    pub reused: usize,
-    /// Whether the GPU served the turn to its end.
-    pub used_gpu: bool,
-    /// The generation stopped at the model's declared context length, before
-    /// `max_tokens` and before a stop token — the one reason a reply is shorter
-    /// than asked for that the caller did not choose.
-    pub context_capped: bool,
-}
+/// What one Qwen3.5 turn did: the engine's [`Turn`](crate::session::Turn).
+pub type Qwen35Turn = crate::session::Turn;
 
 /// Why a step could not complete: a GPU failure the session recovers from by
 /// moving to the CPU, or anything else, which the caller gets.
@@ -132,7 +118,30 @@ enum Backend {
     Cpu(Option<Qwen35State>),
 }
 
-/// A Qwen3.5 hybrid, loaded once and kept for every call after (#3595/#3571).
+/// A Qwen3.5 hybrid held resident for the whole run (#3595/#3571): the
+/// engine's [`Session`](crate::session::Session) over [`Qwen35Forward`].
+pub type Qwen35Session = crate::session::Session<Qwen35Forward>;
+
+impl crate::session::Session<Qwen35Forward> {
+    /// Load the hybrid from `mapped` and, unless `no_gpu`, put it on the GPU.
+    /// See [`Qwen35Forward::load`].
+    ///
+    /// # Errors
+    /// The base or a hybrid layer would not load.
+    pub fn load(mapped: &MappedGGUFModel, no_gpu: bool) -> Result<Self> {
+        Ok(Self::new(Qwen35Forward::load(mapped, no_gpu)?))
+    }
+
+    /// The hybrid's layers — Gated `DeltaNet` and full attention together, all
+    /// resident on the one backend the session serves from.
+    #[must_use]
+    pub fn num_layers(&self) -> usize {
+        self.engine().qwen.layers.len()
+    }
+}
+
+/// The Qwen3.5 hybrid's forward: the only Qwen3.5 code a verb reaches, and
+/// only through a [`Qwen35Session`].
 ///
 /// The host model lives as long as the process. A session is what `apr chat`
 /// and `apr serve` hold for their whole run — one per process — and the device
@@ -140,16 +149,17 @@ enum Backend {
 /// are leaked on purpose, to give that borrow the lifetime it already has.
 /// Dropping a session releases the device model and its state, not the host
 /// copy.
-pub struct Qwen35Session {
+pub struct Qwen35Forward {
     qwen: &'static Qwen35Model<'static>,
     backend: Backend,
-    /// The tokens whose forward the decode state holds, in order.
-    processed: Vec<u32>,
     /// Positions the decode state was allocated for (0: not yet allocated).
     capacity: usize,
     /// Positions the current turn can reach — what a mid-turn move to the CPU
     /// must allocate, not just what the turn has reached so far.
     turn_positions: usize,
+    /// Bumped each time the decode state is (re)allocated, so
+    /// [`ArchForward::reserve`] can say whether what it held was dropped.
+    allocations: u64,
     /// `{arch}.context_length` from the GGUF.
     context_length: usize,
     /// Every line the session has told the user about its route, in order.
@@ -161,7 +171,7 @@ pub struct Qwen35Session {
     batched_prefills: usize,
 }
 
-impl Qwen35Session {
+impl Qwen35Forward {
     /// Load the hybrid from `mapped` and, unless `no_gpu`, put it on the GPU.
     ///
     /// The route notice is [`qwen35_route_notice`]'s — the one place that
@@ -207,9 +217,9 @@ impl Qwen35Session {
         Ok(Self {
             qwen,
             backend,
-            processed: Vec::new(),
             capacity: 0,
             turn_positions: 0,
+            allocations: 0,
             context_length,
             notices,
             per_token_prefill,
@@ -217,172 +227,33 @@ impl Qwen35Session {
         })
     }
 
-    /// Whether the session is currently serving from the GPU.
+    /// The host model the forward serves from (the base's config, tokenizer
+    /// metadata and weights).
     #[must_use]
-    pub fn on_gpu(&self) -> bool {
-        match self.backend {
-            #[cfg(feature = "cuda")]
-            Backend::Gpu(_) => true,
-            Backend::Cpu(_) => false,
-        }
+    pub fn base(&self) -> &'static OwnedQuantizedModel {
+        self.qwen.base
     }
 
-    /// The model's declared context length, in tokens.
-    #[must_use]
-    pub const fn context_length(&self) -> usize {
-        self.context_length
-    }
-
-    /// The hybrid's layers — Gated `DeltaNet` and full attention together, all
-    /// resident on the one backend the session serves from.
-    #[must_use]
-    pub fn num_layers(&self) -> usize {
-        self.qwen.layers.len()
-    }
-
-    /// Every line the session has printed about its route — the route notice,
-    /// the `Backend:` line, each fallback — in order. The printed banner and
-    /// the route actually taken can then be checked against each other, which
-    /// is what #3595's two contradictory lines needed and nothing asserted.
-    #[must_use]
-    pub fn notices(&self) -> &[String] {
-        &self.notices
-    }
-
-    /// How many prompts (or new prompt suffixes) the GPU prefilled in one batched
-    /// call rather than token by token.
-    #[must_use]
-    pub const fn batched_prefills(&self) -> usize {
-        self.batched_prefills
-    }
-
-    /// Positions the decode state currently holds.
-    #[must_use]
-    pub fn processed_len(&self) -> usize {
-        self.processed.len()
-    }
-
-    /// Generate from `prompt` with `config`'s token choice and stop tokens,
-    /// calling `on_token` with each new token as it is chosen; `on_token`
-    /// returning `false` ends the turn after that token.
-    ///
-    /// The token choice is `run_qwen35_generate`'s exactly: argmax at
-    /// temperature 0 or `top_k` 1, else seeded top-k/top-p. A turn that fails on
-    /// the GPU moves the whole session to the CPU, loudly, and finishes there —
-    /// the tokens already chosen are kept, never re-emitted.
-    ///
-    /// Cancellation through `config.cancel` ends the turn early with the tokens
-    /// chosen so far, as every other decode loop does.
-    ///
-    /// # Errors
-    /// An empty prompt; a prompt the model's declared context cannot hold
-    /// (refused whole — never truncated); a CPU forward failure.
-    pub fn generate(
-        &mut self,
-        prompt: &[u32],
-        config: &QuantizedGenerateConfig,
-        on_token: &mut dyn FnMut(u32) -> bool,
-    ) -> Result<Qwen35Turn> {
-        use rand::SeedableRng;
-        if prompt.is_empty() {
-            return Err(RealizarError::InvalidShape {
-                reason: "qwen35 session: the prompt is empty".to_string(),
-            });
-        }
-        if prompt.len() >= self.context_length {
-            return Err(RealizarError::InvalidShape {
-                reason: format!(
-                    "qwen35 session: the prompt is {} tokens and this model declares a context of \
-                     {} (context_length in the GGUF) — it cannot fit with room to answer, so it \
-                     was refused whole rather than truncated",
-                    prompt.len(),
-                    self.context_length
-                ),
-            });
-        }
-        // Every position the turn can reach, allocated up front so the state
-        // never grows (and never re-prefills) mid-generation.
-        let (budget, context_limited) =
-            turn_budget(prompt.len(), config.max_tokens, self.context_length);
-        self.turn_positions = prompt.len() + budget;
-        // A session may be driven from any thread (it is `Send`; `apr serve` runs
-        // every request on a blocking-pool worker), and a CUDA context is current
-        // per thread: bind it here, before the first allocation or launch.
-        self.bind_cuda_context_or_fall_back()?;
-        self.ensure_capacity_or_fall_back()?;
-
-        let (mut logits, reused) = self.advance_to(prompt)?;
-        let mut tokens = prompt.to_vec();
-        let mut rng = rand::rngs::StdRng::seed_from_u64(config.seed);
-        let mut context_capped = false;
-        for generated in 1..=budget {
-            if config.cancel.is_cancelled() {
-                break;
-            }
-            let next = choose_token(&logits, config, &mut rng);
-            tokens.push(next);
-            let keep_going = on_token(next);
-            if !keep_going || config.stop_tokens.contains(&next) {
-                break;
-            }
-            if generated == budget {
-                context_capped = context_limited;
-                break;
-            }
-            logits = self.advance_to(&tokens)?.0;
-        }
-        Ok(Qwen35Turn {
-            tokens,
-            reused,
-            used_gpu: self.on_gpu(),
-            context_capped,
-        })
-    }
-
-    /// `tokens` strictly extends what the state holds.
-    fn extends(&self, tokens: &[u32]) -> bool {
-        !self.processed.is_empty()
-            && tokens.len() > self.processed.len()
-            && tokens.starts_with(&self.processed)
-    }
-
-    /// Make the decode state hold exactly `tokens` and return the logits after
-    /// the last one, with how many leading tokens were already held. A GPU
-    /// failure moves the session to the CPU and replays `tokens` there.
-    fn advance_to(&mut self, tokens: &[u32]) -> Result<(Vec<f32>, usize)> {
-        loop {
-            match self.try_advance_to(tokens) {
-                Ok(done) => return Ok(done),
-                Err(Step::Gpu(reason)) => self.fall_back_to_cpu(&reason)?,
-                Err(Step::Fatal(e)) => return Err(e),
-            }
-        }
-    }
-
-    fn try_advance_to(&mut self, tokens: &[u32]) -> std::result::Result<(Vec<f32>, usize), Step> {
+    /// Advance the state from holding `tokens[..start]` to holding `tokens`.
+    fn try_forward(&mut self, tokens: &[u32], start: usize) -> std::result::Result<Vec<f32>, Step> {
         #[cfg(feature = "cuda")]
         self.validate_gpu_once(tokens)?;
-        let start = if self.extends(tokens) {
-            self.processed.len()
-        } else {
+        if start == 0 {
             self.reset_state()?;
-            0
-        };
+        }
         // A prompt, or a turn's new suffix, goes through the batched prefill (#3596)
         // — the path `apr run` takes. Decode steps (one new token) stay one-token.
         #[cfg(feature = "cuda")]
         if tokens.len().saturating_sub(start) > 1 {
             if let Some(logits) = self.try_batched_prefill(&tokens[start..], start)? {
-                self.processed.extend_from_slice(&tokens[start..]);
-                return Ok((logits, start));
+                return Ok(logits);
             }
         }
         let mut logits = Vec::new();
         for (pos, &token) in tokens.iter().enumerate().skip(start) {
-            logits = self.forward(token, pos)?;
-            self.processed.push(token);
+            logits = self.forward_one(token, pos)?;
         }
-        Ok((logits, start))
+        Ok(logits)
     }
 
     /// Prefill `new` at positions `pos0..` in one batched call on the GPU and return
@@ -468,7 +339,7 @@ impl Qwen35Session {
     }
 
     /// One token's forward at `pos` on the current backend.
-    fn forward(&mut self, token: u32, pos: usize) -> std::result::Result<Vec<f32>, Step> {
+    fn forward_one(&mut self, token: u32, pos: usize) -> std::result::Result<Vec<f32>, Step> {
         let qwen = self.qwen;
         match &mut self.backend {
             #[cfg(feature = "cuda")]
@@ -492,7 +363,6 @@ impl Qwen35Session {
 
     /// Return the decode state to position 0 without reallocating it.
     fn reset_state(&mut self) -> std::result::Result<(), Step> {
-        self.processed.clear();
         match &mut self.backend {
             #[cfg(feature = "cuda")]
             Backend::Gpu(gpu) => {
@@ -511,16 +381,11 @@ impl Qwen35Session {
         Ok(())
     }
 
-    /// Make room for the current turn, moving to the CPU if the device cannot.
     /// Bind the CUDA context to THIS thread before the first allocation or launch.
     ///
-    /// A CUDA context is per-thread, and `generate` runs under `spawn_blocking`, so the
-    /// thread that binds is not the thread that built the model. A bind failure falls
-    /// back to the CPU rather than failing the turn.
-    ///
-    /// Extracted from `generate` (#3844): `cfg` -> `if let Backend::Gpu` -> `if let Err`
-    /// was three levels of nesting for a single precondition, and cognitive complexity
-    /// counts nesting. Behaviour unchanged; a no-op without the `cuda` feature.
+    /// A CUDA context is per-thread, and a session runs under `spawn_blocking` in
+    /// `apr serve`, so the thread that binds is not the thread that built the
+    /// model. A bind failure falls back to the CPU rather than failing the turn.
     fn bind_cuda_context_or_fall_back(&mut self) -> Result<()> {
         #[cfg(feature = "cuda")]
         if let Backend::Gpu(gpu) = &self.backend {
@@ -559,7 +424,7 @@ impl Qwen35Session {
             .max(MIN_CAPACITY)
             .min(self.context_length)
             .max(positions);
-        self.processed.clear();
+        self.allocations += 1;
         let qwen = self.qwen;
         match &mut self.backend {
             #[cfg(feature = "cuda")]
@@ -584,7 +449,6 @@ impl Qwen35Session {
         say(&mut self.notices, fallback_line(reason));
         self.backend = Backend::Cpu(None);
         self.capacity = 0;
-        self.processed.clear();
         match self.ensure_capacity() {
             Ok(()) => Ok(()),
             Err(Step::Fatal(e)) => Err(e),
@@ -592,6 +456,69 @@ impl Qwen35Session {
                 operation: "qwen35_session".to_string(),
                 reason: format!("the CPU backend reported a GPU failure: {reason}"),
             }),
+        }
+    }
+}
+
+impl crate::session::ArchForward for Qwen35Forward {
+    fn arch(&self) -> &'static str {
+        "qwen35"
+    }
+
+    fn on_gpu(&self) -> bool {
+        match self.backend {
+            #[cfg(feature = "cuda")]
+            Backend::Gpu(_) => true,
+            Backend::Cpu(_) => false,
+        }
+    }
+
+    fn context_length(&self) -> usize {
+        self.context_length
+    }
+
+    fn batched_prefills(&self) -> usize {
+        self.batched_prefills
+    }
+
+    fn notices(&self) -> &[String] {
+        &self.notices
+    }
+
+    fn reserve(&mut self, positions: usize) -> Result<bool> {
+        let before = self.allocations;
+        self.turn_positions = positions;
+        self.bind_cuda_context_or_fall_back()?;
+        self.ensure_capacity_or_fall_back()?;
+        Ok(self.allocations != before)
+    }
+
+    fn validate(&mut self, probe: &[u32]) -> Result<()> {
+        #[cfg(feature = "cuda")]
+        match self.validate_gpu_once(probe) {
+            Ok(()) => {},
+            Err(Step::Gpu(reason)) => self.fall_back_to_cpu(&reason)?,
+            Err(Step::Fatal(e)) => return Err(e),
+        }
+        #[cfg(not(feature = "cuda"))]
+        let _ = probe;
+        Ok(())
+    }
+
+    /// A GPU failure moves the forward to the CPU, loudly, and replays all of
+    /// `tokens` there: the tokens a turn already chose are kept, never
+    /// re-emitted.
+    fn forward(&mut self, tokens: &[u32], start: usize) -> Result<Vec<f32>> {
+        let mut start = start;
+        loop {
+            match self.try_forward(tokens, start) {
+                Ok(logits) => return Ok(logits),
+                Err(Step::Gpu(reason)) => {
+                    self.fall_back_to_cpu(&reason)?;
+                    start = 0;
+                },
+                Err(Step::Fatal(e)) => return Err(e),
+            }
         }
     }
 }
@@ -650,33 +577,6 @@ fn say(notices: &mut Vec<String>, line: String) {
 /// The loud, never-silent GPU fallback, in the one shape every hybrid path uses.
 fn fallback_line(reason: &str) -> String {
     format!("{QWEN35_GPU_FALLBACK_PREFIX}, falling back to CPU: {reason}")
-}
-
-/// How many tokens a turn may generate: `max_tokens`, or fewer when the
-/// declared context ends first — and whether it did. The caller has already
-/// refused a prompt of `context_length` tokens or more.
-fn turn_budget(prompt_len: usize, max_tokens: usize, context_length: usize) -> (usize, bool) {
-    let room = context_length.saturating_sub(prompt_len);
-    (max_tokens.min(room), room < max_tokens)
-}
-
-/// `run_qwen35_generate`'s token choice, verbatim.
-fn choose_token(
-    logits: &[f32],
-    config: &QuantizedGenerateConfig,
-    rng: &mut rand::rngs::StdRng,
-) -> u32 {
-    if config.temperature == 0.0 || config.top_k == 1 {
-        crate::gguf::ops::argmax(logits)
-    } else {
-        OwnedQuantizedModel::sample_topk_seeded(
-            logits,
-            config.temperature,
-            config.top_k,
-            config.top_p,
-            rng,
-        )
-    }
 }
 
 #[cfg(test)]
