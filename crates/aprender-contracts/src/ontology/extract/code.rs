@@ -246,22 +246,14 @@ fn workspace_membership(text: &str) -> Option<Membership> {
     let mut open: Option<bool> = None; // Some(true) = collecting members, Some(false) = exclude
     for line in text.lines() {
         let t = line.split('#').next().unwrap_or_default().trim();
-        if open.is_none() && t.starts_with('[') && t.ends_with(']') && !t.contains('=') {
-            section = t.trim_matches(['[', ']']).trim().to_string();
-            seen |= section == "workspace";
-            out.root_package |= section == "package";
+        if let Some(name) = open.is_none().then(|| section_name(t)).flatten() {
+            seen |= name == "workspace";
+            out.root_package |= name == "package";
+            section = name;
             continue;
         }
-        let body = match open {
-            Some(_) => t,
-            None if section == "workspace" => match t.split_once('=') {
-                Some((k, v)) if matches!(k.trim(), "members" | "exclude") => {
-                    open = Some(k.trim() == "members");
-                    v
-                }
-                _ => continue,
-            },
-            None => continue,
+        let Some(body) = list_body(t, &mut open, section == "workspace") else {
+            continue;
         };
         let list = if open == Some(true) {
             &mut out.members
@@ -274,6 +266,30 @@ fn workspace_membership(text: &str) -> Option<Membership> {
         }
     }
     seen.then_some(out)
+}
+
+/// The table name of a `[section]` header line, or `None` when `t` is not one.
+fn section_name(t: &str) -> Option<String> {
+    (t.starts_with('[') && t.ends_with(']') && !t.contains('='))
+        .then(|| t.trim_matches(['[', ']']).trim().to_string())
+}
+
+/// The part of `t` that holds array items: all of it inside an open array, or the value of a `members` /
+/// `exclude` key in `[workspace]`, which opens one (`open`: `Some(true)` = members, `Some(false)` = exclude).
+fn list_body<'t>(t: &'t str, open: &mut Option<bool>, in_workspace: bool) -> Option<&'t str> {
+    if open.is_some() {
+        return Some(t);
+    }
+    if !in_workspace {
+        return None;
+    }
+    let (k, v) = t.split_once('=')?;
+    let k = k.trim();
+    if !matches!(k, "members" | "exclude") {
+        return None;
+    }
+    *open = Some(k == "members");
+    Some(v)
 }
 
 /// The quoted strings of one TOML line, `"…"` or `'…'`.
@@ -511,12 +527,7 @@ impl<'a> Resolver<'a> {
             match self.step(&module, seg)? {
                 Step::Module(next) => module = next,
                 Step::ReExport(target) => {
-                    // `use crate::a::T;` then `impl T { fn f() }` in THIS module: the binding names this
-                    // module, so its own impls are searched before following the `use` to T's definition.
-                    if let Ok(r) = self.type_member(&module, seg, rest, function) {
-                        return Ok(r);
-                    }
-                    return self.resolve_depth(&join_path(&target, rest), function, depth + 1);
+                    return self.re_export(&module, seg, rest, &target, function, depth);
                 }
                 Step::Globs(targets) => {
                     return self.first_of(&targets, seg, rest, function, depth, &module);
@@ -524,19 +535,46 @@ impl<'a> Resolver<'a> {
                 Step::Type => return self.type_member(&module, seg, rest, function),
             }
         }
+        self.resolve_leaf(&module, function, depth)
+    }
+
+    /// `seg` is re-exported here from `target`. `use crate::a::T;` then `impl T { fn f() }` in THIS module: the
+    /// binding names this module, so its own impls are searched before following the `use` to T's definition.
+    fn re_export(
+        &mut self,
+        module: &Module,
+        seg: &str,
+        rest: &[&str],
+        target: &str,
+        function: &str,
+        depth: usize,
+    ) -> Result<Resolved, Unresolved> {
+        if let Ok(r) = self.type_member(module, seg, rest, function) {
+            return Ok(r);
+        }
+        self.resolve_depth(&join_path(target, rest), function, depth + 1)
+    }
+
+    /// `function` in the module the walk ended in: defined here, `use`d here, or under a `pub use …::*`.
+    fn resolve_leaf(
+        &mut self,
+        module: &Module,
+        function: &str,
+        depth: usize,
+    ) -> Result<Resolved, Unresolved> {
         if let Some((i, mut r)) = find_indexed(&module.items, function) {
             r.file = self.rel(&module.origins[i]);
             return Ok(r);
         }
         if let Some(target) = use_target(&module.items, function) {
-            let target = absolute_use(&target, &module, self.ws);
+            let target = absolute_use(&target, module, self.ws);
             return self.resolve_by_use(&target, depth);
         }
-        let globs = pub_globs(&module.items, &module, self.ws);
+        let globs = pub_globs(&module.items, module, self.ws);
         if globs.is_empty() {
-            return Err(self.not_found(function, &module));
+            return Err(self.not_found(function, module));
         }
-        let mut last = self.not_found(function, &module);
+        let mut last = self.not_found(function, module);
         for g in globs {
             match self.resolve_depth(&g, function, depth + 1) {
                 Ok(r) => return Ok(r),
@@ -635,20 +673,8 @@ impl<'a> Resolver<'a> {
     }
 
     fn step(&mut self, module: &Module, seg: &str) -> Result<Step, Unresolved> {
-        for (i, item) in module.items.iter().enumerate() {
-            if let syn::Item::Mod(m) = item {
-                if m.ident != seg {
-                    continue;
-                }
-                if let Some((_, content)) = &m.content {
-                    let origin = module.origins[i].clone();
-                    let mut inner = self.module_of(content, &origin, module.child_dir.join(seg));
-                    inner.file = module.file.clone();
-                    return Ok(Step::Module(inner));
-                }
-                let (file, child_dir) = child_file(&module.child_dir, seg, &m.attrs)?;
-                return self.file_module(&file, child_dir).map(Step::Module);
-            }
+        if let Some(step) = self.step_into_mod(module, seg) {
+            return step;
         }
         if let Some(target) = use_target(&module.items, seg) {
             let target = absolute_use(&target, module, self.ws);
@@ -667,6 +693,28 @@ impl<'a> Resolver<'a> {
                 self.rel(&module.file)
             ),
         })
+    }
+
+    /// `mod seg` in this module (inline, or its file), or `None` when the module declares no such `mod`.
+    fn step_into_mod(&mut self, module: &Module, seg: &str) -> Option<Result<Step, Unresolved>> {
+        let (i, m) = module
+            .items
+            .iter()
+            .enumerate()
+            .find_map(|(i, item)| match item {
+                syn::Item::Mod(m) if m.ident == seg => Some((i, m)),
+                _ => None,
+            })?;
+        if let Some((_, content)) = &m.content {
+            let origin = module.origins[i].clone();
+            let mut inner = self.module_of(content, &origin, module.child_dir.join(seg));
+            inner.file = module.file.clone();
+            return Some(Ok(Step::Module(inner)));
+        }
+        Some(
+            child_file(&module.child_dir, seg, &m.attrs)
+                .and_then(|(file, child_dir)| self.file_module(&file, child_dir).map(Step::Module)),
+        )
     }
 
     fn rel(&self, file: &Path) -> String {
@@ -1256,6 +1304,24 @@ mod tests {
     #[test]
     fn the_positive_control_fires() {
         assert!(positive_control());
+    }
+
+    /// `[workspace]` membership: multi-line arrays, either quote, trailing `/`, comments, `exclude`, keys outside
+    /// `[workspace]` ignored, a root `[package]` recorded, and no `[workspace]` table at all is `None`.
+    #[test]
+    fn workspace_membership_reads_members_and_exclude_in_every_shape() {
+        let text = "[package]\nname = \"root\"\nmembers = [\"not-a-workspace-key\"]\n\n\
+                    [workspace]\nresolver = \"2\"\nmembers = [\n  \"crates/*\", # every crate\n  'tools/x/',\n]\n\
+                    exclude = [\"crates/skip\"]\n\n[workspace.dependencies]\nmembers = [\"nope\"]\n";
+        let m = workspace_membership(text).expect("a [workspace] table");
+        assert_eq!(m.members, ["crates/*", "tools/x"]);
+        assert_eq!(m.exclude, ["crates/skip"]);
+        assert!(m.root_package);
+        let root = Path::new("/r");
+        assert!(m.admits(root, Path::new("/r/crates/a")));
+        assert!(!m.admits(root, Path::new("/r/crates/skip")));
+        assert!(m.admits(root, Path::new("/r")));
+        assert!(workspace_membership("[package]\nname = \"x\"\n").is_none());
     }
 
     #[test]
