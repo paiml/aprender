@@ -236,7 +236,8 @@ impl CudaExecutor {
         head_dim: u32,
         seq_len: u32,
     ) -> Result<(), GpuError> {
-        if !decode_attention_unsplit() {
+        // The split kernel scores a position with one warp in 16-byte lanes.
+        if head_dim % 128 == 0 && !decode_attention_unsplit() {
             return self.gdn_decode_attention_split_into(
                 q,
                 k_cache,
@@ -340,7 +341,13 @@ impl CudaExecutor {
             &split_key,
             split_name,
             LaunchConfig::grid_2d(gx, gy, bx, 1),
-            &[q.as_ptr(), k_cache.as_ptr(), v_cache.as_ptr(), part_acc, part_ml],
+            &[
+                q.as_ptr(),
+                k_cache.as_ptr(),
+                v_cache.as_ptr(),
+                part_acc,
+                part_ml,
+            ],
             &[u64::from(seq_len)],
         )?;
 
@@ -604,7 +611,6 @@ impl CudaExecutor {
 /// single-pass-per-head kernel, for A/B receipts (nsys, token identity). Read once.
 fn decode_attention_unsplit() -> bool {
     static UNSPLIT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *UNSPLIT.get_or_init(|| {
-        std::env::var("APR_QWEN35_DECODE_ATTENTION").is_ok_and(|v| v == "unsplit")
-    })
+    *UNSPLIT
+        .get_or_init(|| std::env::var("APR_QWEN35_DECODE_ATTENTION").is_ok_and(|v| v == "unsplit"))
 }

@@ -74,8 +74,8 @@ impl DecodeAttentionSplitKernel {
             "head_dim {head_dim} exceeds the {BLOCK}-thread block; one thread owns one output element"
         );
         assert!(
-            head_dim % 4 == 0,
-            "head_dim {head_dim} must be a multiple of 4: the score dot reads 16-byte vectors"
+            head_dim % 128 == 0,
+            "head_dim {head_dim} must be a multiple of 128: a warp scores a position in 16-byte lanes"
         );
         assert!(
             num_kv_heads > 0 && num_heads % num_kv_heads == 0,
@@ -155,6 +155,7 @@ impl Kernel for DecodeAttentionSplitKernel {
             head_dim,
             cap: split_len,
             row_stride_bytes: self.num_kv_heads * head_dim * 4,
+            warp_dot: true,
         };
 
         PtxKernel::new(self.name())
@@ -358,10 +359,22 @@ mod ptx_tests {
         let split = DecodeAttentionSplitKernel::new(16, 4, 256);
         let ptx = split.emit_ptx();
         assert!(ptx.contains(".entry gdn_decode_attention_split"), "{ptx}");
-        assert!(ptx.contains("%ctaid.y"), "the split index is the grid's y:\n{ptx}");
-        assert!(ptx.contains("gdn_attn_dot_loop"), "{ptx}");
+        assert!(
+            ptx.contains("%ctaid.y"),
+            "the split index is the grid's y:\n{ptx}"
+        );
+        // A warp scores a position: coalesced lanes and a shuffle sum.
+        assert!(ptx.contains("gdn_attn_wscore_loop"), "{ptx}");
+        assert!(ptx.contains("shfl.sync.down"), "{ptx}");
+        assert!(
+            !ptx.contains("gdn_attn_dot_loop"),
+            "the thread-per-position dot is the unsplit kernel's:\n{ptx}"
+        );
         let reduce = split.reduce().emit_ptx();
-        assert!(reduce.contains(".entry gdn_decode_attention_reduce"), "{reduce}");
+        assert!(
+            reduce.contains(".entry gdn_decode_attention_reduce"),
+            "{reduce}"
+        );
         assert_eq!(split.shared_bytes(), 256 * 4 + 64);
     }
 
@@ -482,7 +495,13 @@ mod gdn_decode_attention_split_device_tests {
 
         fn run_unsplit(&mut self, stream: &CudaStream, f: &Fixture, seq_len: u32) {
             let (k, l) = &mut self.unsplit;
-            let mut args = [f.q.as_ptr(), f.k.as_ptr(), f.v.as_ptr(), f.out.as_ptr(), u64::from(seq_len)];
+            let mut args = [
+                f.q.as_ptr(),
+                f.k.as_ptr(),
+                f.v.as_ptr(),
+                f.out.as_ptr(),
+                u64::from(seq_len),
+            ];
             l.launch(stream, k.grid(), &mut args);
         }
 
@@ -497,7 +516,12 @@ mod gdn_decode_attention_split_device_tests {
                 u64::from(seq_len),
             ];
             split.launch(stream, k.grid(seq_len), &mut a);
-            let mut b = [f.part_acc.as_ptr(), f.part_ml.as_ptr(), f.out.as_ptr(), u64::from(seq_len)];
+            let mut b = [
+                f.part_acc.as_ptr(),
+                f.part_ml.as_ptr(),
+                f.out.as_ptr(),
+                u64::from(seq_len),
+            ];
             reduce.launch(stream, k.reduce().grid(), &mut b);
         }
     }
@@ -519,28 +543,36 @@ mod gdn_decode_attention_split_device_tests {
             paths.run_split(&stream, &f, seq_len);
             stream.synchronize().expect("sync");
             let got = f.download();
-            if seq_len <= 8 {
-                // One split: the reduce scales by exp(0) = 1 and adds to zero.
-                let same = got.iter().zip(&want).all(|(g, w)| g.to_bits() == w.to_bits());
-                assert!(same, "seq_len {seq_len}: a single split must be bit-identical to the unsplit kernel");
-            } else {
-                assert_close(&got, &want, 1e-5, &format!("split vs unsplit, seq_len {seq_len}"));
-            }
+            // The split kernel scores with a warp-wide shuffle sum, so even a
+            // single split is close to, not bit-identical with, the unsplit one.
+            assert_close(
+                &got,
+                &want,
+                1e-5,
+                &format!("split vs unsplit, seq_len {seq_len}"),
+            );
         }
     }
 
-    /// Wall time per call over `n` calls, after warm-up, fully synchronised.
+    /// Wall time per call: the median of seven trials of `n` calls each, after
+    /// warm-up, fully synchronised. One trial swung 0.62 to 0.94 ms between runs.
     fn time_ms(stream: &CudaStream, n: u32, mut f: impl FnMut()) -> f64 {
         for _ in 0..3 {
             f();
         }
         stream.synchronize().expect("sync");
-        let t = Instant::now();
-        for _ in 0..n {
-            f();
-        }
-        stream.synchronize().expect("sync");
-        t.elapsed().as_secs_f64() * 1e3 / f64::from(n)
+        let mut trials: Vec<f64> = (0..7)
+            .map(|_| {
+                let t = Instant::now();
+                for _ in 0..n {
+                    f();
+                }
+                stream.synchronize().expect("sync");
+                t.elapsed().as_secs_f64() * 1e3 / f64::from(n)
+            })
+            .collect();
+        trials.sort_by(f64::total_cmp);
+        trials[3]
     }
 
     /// aprender#4273 red test. At 32k the decode attention must be bound by reading
@@ -561,13 +593,19 @@ mod gdn_decode_attention_split_device_tests {
         let long: u32 = 32_768;
         let short: u32 = 850;
         let split_len = super::DEFAULT_SPLIT_LEN;
-        let f = Fixture::new(&ctx, long as usize, long.div_ceil(split_len) as usize, 0x4273_0002);
+        let f = Fixture::new(
+            &ctx,
+            long as usize,
+            long.div_ceil(split_len) as usize,
+            0x4273_0002,
+        );
         let mut paths = Paths::new(&ctx, split_len);
 
         // Copy bandwidth: a D2D copy of the K cache reads and writes its bytes once.
         let kv_row_bytes = f64::from(NUM_KV_HEADS * HEAD_DIM * 4);
         let cache_bytes = kv_row_bytes * f64::from(long);
-        let mut scratch = GpuBuffer::<f32>::new(&ctx, (long * NUM_KV_HEADS * HEAD_DIM) as usize).expect("scratch");
+        let mut scratch = GpuBuffer::<f32>::new(&ctx, (long * NUM_KV_HEADS * HEAD_DIM) as usize)
+            .expect("scratch");
         let copy_ms = {
             for _ in 0..3 {
                 scratch.copy_from_buffer(&f.k).expect("copy");
@@ -610,7 +648,10 @@ mod gdn_decode_attention_split_device_tests {
             !unsplit_pass,
             "negative control: the unsplit kernel passed the bound, so it discriminates nothing\n{report:#?}"
         );
-        assert!(split_pass, "split decode attention at 32k is not KV-read bound\n{report:#?}");
+        assert!(
+            split_pass,
+            "split decode attention at 32k is not KV-read bound\n{report:#?}"
+        );
     }
 
     /// Sweep of `split_len` at 32k: prints bandwidth per split length. A probe,
@@ -630,6 +671,32 @@ mod gdn_decode_attention_split_device_tests {
             let ms = time_ms(&stream, 50, || paths.run_split(&stream, &f, long));
             let bw = 2.0 * kv_row_bytes * f64::from(long) / ms / 1e6;
             println!("sweep split_len={split_len}: {ms:.4} ms  {bw:.0} GB/s");
+        }
+        // The same KV bytes read by one query head per KV head: no GQA re-read.
+        for split_len in [64, 256] {
+            let s = DecodeAttentionSplitKernel::new(NUM_KV_HEADS, NUM_KV_HEADS, HEAD_DIM)
+                .with_split_len(split_len);
+            let (mut ls, mut lr) = (Loaded::new(&ctx, &s), Loaded::new(&ctx, &s.reduce()));
+            let ms = time_ms(&stream, 50, || {
+                let mut a = [
+                    f.q.as_ptr(),
+                    f.k.as_ptr(),
+                    f.v.as_ptr(),
+                    f.part_acc.as_ptr(),
+                    f.part_ml.as_ptr(),
+                    u64::from(long),
+                ];
+                ls.launch(&stream, s.grid(long), &mut a);
+                let mut b = [
+                    f.part_acc.as_ptr(),
+                    f.part_ml.as_ptr(),
+                    f.out.as_ptr(),
+                    u64::from(long),
+                ];
+                lr.launch(&stream, s.reduce().grid(), &mut b);
+            });
+            let bw = 2.0 * kv_row_bytes * f64::from(long) / ms / 1e6;
+            println!("sweep group=1 split_len={split_len}: {ms:.4} ms  {bw:.0} GB/s");
         }
     }
 }
