@@ -1,0 +1,59 @@
+{
+  "ticket": "GH-4045",
+  "pr": 4212,
+  "branch": "feat/4045-release-gate-normal",
+  "base": "eed4a959ae7d2e32391ce548a5f4ecc72f834f01",
+  "head": "0e1fd86c6da8ba785e05946d10114bcd5e707201",
+  "diff_sha256": "a4347dd7214a1b42463c090aa330047c84428ea65450e0ca0f00573c864ee3ef",
+  "executor": "claude-code-subagents",
+  "degraded": "same-family",
+  "degraded_because": "agy pre-check (quorum-review.sh, 2026-09-24) returned 429 on gemini (reset ~3h), openai and claude (~74h); cop fallback shape sonnet-5 + haiku-4-5 + opus-5.5, degraded same-family",
+  "substitution": {
+    "configured": "claude-opus-5-5",
+    "ran": "claude-sonnet-5",
+    "why": "the author is claude-opus-5-5; an opus lane would review its own work (never the author id), so the third lane is a second sonnet-5 -- valid only because the author is opus (cop, 2026-09-24)"
+  },
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "lanes": [
+    {
+      "model": "claude-sonnet-5",
+      "lane": "A",
+      "verdict": "PASS",
+      "head": "0e1fd86c6da8ba785e05946d10114bcd5e707201",
+      "history": "FAIL 856cfff3a (contract ladder.release_gate.nightly.max_age_h declared, never read: nightly_admission.py used an unset env default; gate_classes.yaml named a nonexistent check_release_gate_classes.sh) -> fixed 0e1fd86c6 -> fresh lane PASS 0e1fd86c6 (re-ran 9 guards + nightly_admission_cases --mutants 23/17)"
+    },
+    {
+      "model": "claude-haiku-4-5-20251001",
+      "verdict": "PASS",
+      "head": "0e1fd86c6da8ba785e05946d10114bcd5e707201",
+      "history": "PASS 0e1fd86c6 (re-ran ladder self-test, preflight, admission mutants, models_t1, bump_pr_body, shift_left, dogfood_no_defer)"
+    },
+    {
+      "model": "claude-sonnet-5",
+      "lane": "B",
+      "role": "substitution for opus-5.5",
+      "verdict": "PASS",
+      "head": "0e1fd86c6da8ba785e05946d10114bcd5e707201",
+      "history": "PASS 0e1fd86c6 (weighted to workflows/contracts/certify_nightly/gather_nightly/candidate_watch/release_gate_classes; re-ran 12 guards; verified cut->cut_sha call sites all positional)"
+    }
+  ],
+  "agreed": "degraded: 3 of 3 non-author Claude lanes (2 sonnet-5, 1 haiku-4-5) PASS on the same head",
+  "no_self_review": true,
+  "acceptance": {
+    "ladder_self_test": "155/0",
+    "preflight_selftest": "63/63",
+    "nightly_admission_cases": "23 rows, 17/17 mutants (window-hardcoded = pre-fix behaviour, killed by windowless-contract-refused)",
+    "models_t1": 39,
+    "bump_pr_body": 15,
+    "shift_left": "PASS",
+    "certify_nightly": "PASS",
+    "autopilot_dogfood_close": 17
+  },
+  "open": [
+    "bare check_model_ladder.sh RED is a live-tree verdict, RED on the base too",
+    "lands after #4046 (infra#1002); cop arms"
+  ]
+}
