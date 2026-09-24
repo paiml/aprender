@@ -59,6 +59,8 @@ llama_out() { # llama_out <dir> <pid> <prompt> <answer> — the pinned chat CLI'
 }
 ollama_out() { # ollama_out <dir> <pid> <answer>
   printf '%s\n' "$3" > "$1/ollama-$2.out"
+  # 'eval count' is ollama's --verbose stats text in a fixture, not the eval builtin
+  # bashrs disable-next-line=SEC001
   printf 'total duration:       1.2s\nprompt eval count:    30 token(s)\neval count:           8 token(s)\neval rate:            90.00 tokens/s\n' > "$1/ollama-$2.err"
 }
 row() { # row <manifest> <engine> <pid> <rc> <stdout> <stderr> [refused]

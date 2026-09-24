@@ -501,6 +501,8 @@ PY
   for pid in $(pids_for "$VERB"); do
     content=$(cat "$WORK/prompt-$pid.txt")
     d="$WORK/$SHA12/$VERB"
+    # $WORK is mktemp -d, $SHA12 is hex, $VERB is a literal
+    # bashrs disable-next-line=SEC010
     mkdir -p "$d"
     cell="$d/cell-$pid.sh"
     printf '#!/usr/bin/env bash\n# one CRUX cell: %s prompt %s through every engine, one hold of the GPU lock\n' "$VERB" "$pid" > "$cell"
@@ -575,6 +577,8 @@ PY
   done
 
   if [ "$OLLAMA_OK" = 1 ] && [ "$KEEP_OLLAMA" = 0 ]; then
+    # `ollama rm` removes a model by the per-run import name, not a path
+    # bashrs disable-next-line=SEC010
     "$OLLAMA" rm "$OL_NAME" > /dev/null 2>&1
   fi
 done
@@ -617,6 +621,8 @@ meta = {
 }
 json.dump(meta, open(out, "w"), indent=2)
 PY
+# $OUT_DIR is the operator's own --out (default evidence/crux/<version>)
+# bashrs disable-next-line=SEC010
 mkdir -p "$OUT_DIR" || decline "cannot create $OUT_DIR"
 python3 scripts/lib/crux_inference_judge.py collect --manifest "$MANIFEST" --prompts "$PROMPTS" \
   --meta "$WORK/meta.json" --out-json "$OUT_DIR/$HOST-$BACKEND.json" --out-md "$OUT_DIR/$HOST-$BACKEND.md"
