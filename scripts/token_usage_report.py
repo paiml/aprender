@@ -165,6 +165,15 @@ def lane_dirs():
     return sorted(out)
 
 
+def lane_model(f):
+    """The model a lane RAN, measured from agy's own log line model="..." beside its envelope (the envelope names none)."""
+    try:
+        m = re.findall(r'model="([^"]+)"', open(re.sub(r"\.json$", ".log", f), errors="replace").read())
+    except OSError:
+        m = []
+    return m[-1] if m else "(unrecorded)"
+
+
 def agy(since):
     lanes, rounds = [], []
     for d in lane_dirs():
@@ -188,7 +197,7 @@ def agy(since):
                           "q429": bool(re.search(r"429|RESOURCE_EXHAUSTED", err)), "dur": float(env.get("duration_seconds") or 0),
                           "input": int(u.get("input_tokens") or 0), "output": int(u.get("output_tokens") or 0),
                           "thinking": int(u.get("thinking_tokens") or 0), "cache_read": int(u.get("cache_read_tokens") or 0),
-                          "total": int(u.get("total_tokens") or 0)})
+                          "total": int(u.get("total_tokens") or 0), "model": lane_model(f)})
             got += 1
         if got:
             rounds.append(d)
@@ -326,6 +335,14 @@ def main():
     L += table("B2. agy quorum lanes by project", ["project", "rounds", "lanes", "total tokens", "avg input / lane", "avg lane minutes"],
                [[p, len({x["dir"] for x in xs}), len(xs), fmt(sum(x["total"] for x in xs)), fmt(int(sum(x["input"] for x in xs) / len(xs))),
                  "%.1f" % (sum(x["dur"] for x in xs) / 60.0 / len(xs))] for p, xs in sorted(byp.items(), key=lambda kv: -sum(x["total"] for x in kv[1]))])
+    bym = collections.defaultdict(list)
+    for x in real:
+        bym[x["model"]].append(x)
+    L += table("B2b. agy quorum lanes by model (measured from each lane's own agy log)",
+               ["model", "lanes", "input", "output", "thinking", "total tokens", "429 envelopes"],
+               [[m, len(xs), fmt(sum(x["input"] for x in xs)), fmt(sum(x["output"] for x in xs)), fmt(sum(x["thinking"] for x in xs)),
+                 fmt(sum(x["total"] for x in xs)), sum(1 for x in xs if x["q429"])]
+                for m, xs in sorted(bym.items(), key=lambda kv: -sum(x["total"] for x in kv[1]))])
     byh = collections.defaultdict(list)
     for x in lanes:
         byh[x["t"].strftime("%m-%d %H:00")].append(x)
@@ -434,16 +451,16 @@ def main():
                     if delta < 0:            # a real compaction happened here: follow it (the sim keeps its own size)
                         delta = 0
                     sim += delta
-                    if sim > cap_:          # the cap compacts: the summarizer reads the whole context once, writes S,
-                        n_comp += 1         # and the next turn starts from B (a cache WRITE, counted at full size)
-                        comp_cost += sim + S + B
+                    if sim > cap_:          # the cap compacts: the summarizer reads the whole context once and writes S;
+                        n_comp += 1         # the next turn's B is counted ONCE, by read_sim below (GH-4162 quorum r1)
+                        comp_cost += sim + S
                         sim = B
                 prev = r["ctx"]
                 read_sim += sim
         net = read_real - read_sim - comp_cost
         body.append([fmt(cap_), fmt(n_comp), fmt(comp_cost), fmt(read_real - read_sim), fmt(net), pct(net, read_real)])
     L += table("F2. A context cap, replayed on the measured turns (ESTIMATE): compactions it forces, what they cost, and the NET saving",
-               ["cap", "compactions forced", "compaction cost (read + summary + restart)", "re-reads avoided", "NET saving", "net / all main-turn context"], body)
+               ["cap", "compactions forced", "compaction cost (read + summary)", "re-reads avoided", "NET saving", "net / all main-turn context"], body)
     L += ["", "F2 replays each session's real per-turn context growth; when the simulated context passes the cap it compacts at the "
           "MEASURED cost (the summarizer reads the whole context once, writes the median summary %s, the next turn starts from the "
           "median post-compaction context %s). What it cannot see: work redone after a compaction (files re-read, lost state) -- so "
