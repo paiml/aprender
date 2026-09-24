@@ -9,6 +9,7 @@
 //! Spec: `docs/specifications/sub/lint.md`
 
 pub mod cache;
+pub mod capability_cells_gate;
 mod composition_gate;
 pub mod config;
 pub mod diff;
@@ -137,6 +138,21 @@ pub enum GateDetail {
     Skipped { reason: String },
 }
 
+/// The `shapes` gate's positive controls and ONT-4c5's cell report — one boxed, flattened block of
+/// [`GateExtra::Shapes`].
+#[derive(Debug, Clone, Serialize)]
+pub struct ShapesControls {
+    /// The extractor positive controls: `gguf` (corrupt magic refused), `apr-model` (lying header refused).
+    pub pc_extract: std::collections::BTreeMap<String, String>,
+    /// ONT-4c5: per-shape positive controls (`capability-cells` → `fired`); the gate never reaches `Ran` with
+    /// one that is not.
+    pub pc_shapes: std::collections::BTreeMap<String, String>,
+    /// ONT-4c5: the capability-cell domain D and its NotRun cells at the current release — absent unless a
+    /// contract declares the `capability-cells` shape.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_cells: Option<capability_cells_gate::CapabilityCellsReport>,
+}
+
 /// Out-of-band structured detail for gates that post-date the frozen [`GateDetail`]
 /// vocabulary.
 ///
@@ -144,6 +160,23 @@ pub enum GateDetail {
 /// it and none can `match` it. That is what makes it extensible where `GateDetail` is
 /// not, and it is `#[non_exhaustive]` from birth so the *next* post-0.3.1 gate does
 /// not have to repeat this exercise.
+// `Shapes` is 304 bytes against a 88-byte second-largest, and adding `declines` to it is what
+// crossed the threshold — `origin/main` at 237fbc32f lints clean, this branch does not, so the
+// finding is this PR's and not inherited.
+//
+// ALLOWED RATHER THAN BOXED, deliberately. `large_enum_variant` is a cost heuristic about copying
+// and stack size: a `GateExtra` is built ONCE PER GATE RUN, moved a handful of times, and then
+// serialised. There is no hot path here for 216 bytes to matter on, so the lint is measuring a cost
+// this type does not pay.
+//
+// The alternatives are worse. Boxing one field (clippy suggests `pc_extract`) reclaims 16 bytes and
+// does not clear the ratio, so it would be churn that silences nothing. Boxing the whole payload —
+// `Shapes(Box<ShapesExtra>)` — turns a struct variant into a newtype variant, which CHANGES THE
+// SERDE REPRESENTATION of a `#[serde(tag = "type")]` enum that downstream consumers parse; the SLK
+// gate reads this JSON. Breaking a wire format to satisfy a stack-size heuristic is the wrong trade.
+//
+// If `GateExtra` ever ends up in a loop or a large collection, this allow is the thing to revisit.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
 #[non_exhaustive]
@@ -221,12 +254,36 @@ pub enum GateExtra {
         armed_shapes: Vec<String>,
         /// Shapes computed and reported but not armed — their violations are in `unarmed_violations`.
         not_armed_shapes: Vec<String>,
+        /// #3610: shapes that graded ZERO focus nodes, named — the reach the gate did not have.
+        ///
+        /// A separate list from `not_armed_shapes` on purpose. "Not armed by policy" and "armed and
+        /// measured nothing" are different facts, and folding the second into the first would file a
+        /// vacuity as a deliberate choice — which is how the defect hid in the first place.
+        ///
+        /// **This carries EVERY shape that graded zero, armed or unarmed**, and it is the only list
+        /// any of them appears in: a vacuity is in neither `armed_shapes` (the tool's claim about
+        /// what it MEASURED) nor `not_armed_shapes` (a policy choice it never made).
+        ///
+        /// The two differ in what they do to the verdict, not in whether they are listed here. An
+        /// ARMED vacuity drives the verdict to `Unknown(NoFocus)` and the run declines — unless an
+        /// armed shape that DID grade something found a violation, in which case the verdict is
+        /// `Fail` (a measured violation outranks a vacuity, #3622). An UNARMED one leaves the
+        /// verdict alone, because it never fed it. Both are named, because a reader
+        /// needs to know the gate looked at nothing for them either way.
+        ///
+        /// An earlier draft of this comment said an armed vacuity "does not reach here at all",
+        /// which was false — nothing returns early at the verdict, and both kinds reach this field.
+        /// A quorum lane caught the sentence; the code beside it had the matching bug.
+        declines: Vec<String>,
         /// Violations from unarmed shapes (named in the findings as warnings; never in the meet).
         unarmed_violations: usize,
         /// Focus nodes each extractor produced: `pv-contract`, `gguf`, `apr-model`.
         by_entity_type: std::collections::BTreeMap<String, usize>,
-        /// The extractor positive controls: `gguf` (corrupt magic refused), `apr-model` (lying header refused).
-        pc_extract: std::collections::BTreeMap<String, String>,
+        /// The positive controls (`pc_extract`, `pc_shapes`) and ONT-4c5's `capability_cells`, boxed and
+        /// FLATTENED: the JSON keys stay top-level where the §5 probes read them, and the variant stays under
+        /// clippy's large-enum-variant bound (it sat exactly at it before ONT-4c5).
+        #[serde(flatten)]
+        controls: Box<ShapesControls>,
         /// Ladder receipt files read under `evidence/dogfood/models/`.
         receipts: usize,
         /// Receipt rows whose `sha256` equals a rung's.
@@ -755,8 +812,16 @@ fn shapes_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, V
             skipped_gate("shapes", &format!("extract:parity-receipt matched {found} focus node(s) and evidence/parity/EXPECTED_RECEIPTS says {expected} ({shapes_n} shape(s)){} — an extractor that saw the wrong corpus reports the same \"no violations\" as one that saw all of it", if refused.is_empty() { String::new() } else { format!("; refused: {}", refused.join("; ")) })),
             Vec::new(),
         ),
+        shapes_gate::ShapesOutcome::HarnessBroken { causes } => (
+            skipped_gate("shapes", &format!("the CRUX harness measured itself, not apr: {}", causes.join("; "))),
+            Vec::new(),
+        ),
         shapes_gate::ShapesOutcome::NoReceipts { shapes_n, dir } => (
             skipped_gate("shapes", &format!("{shapes_n} shape(s) resolve receipts and the tree holds none under {dir}/ — R-2: unmeasured is a decline")),
+            Vec::new(),
+        ),
+        shapes_gate::ShapesOutcome::EmptyDomain { shapes_n } => (
+            skipped_gate("shapes", &format!("capability-cells: the required-cell domain D is empty ({shapes_n} shape(s)) — R-2: zero is a decline, never a pass")),
             Vec::new(),
         ),
         shapes_gate::ShapesOutcome::PositiveControlFailed { shapes_n, focus_nodes_n, which } => (

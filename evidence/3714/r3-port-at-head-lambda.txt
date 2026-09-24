@@ -1,0 +1,148 @@
+apr 0.69.0 (0979b3481) host=noah-Lambda-Vector gpu=NVIDIA GeForce RTX 4090
+== apr run --gpu Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+rc=0 wall=29s
+{"used_gpu":true,"backend":{"requested":"gpu","ran":"gpu","fell_back":false},"fell_back":null,"tokens":8,"text":"2 + 2 = 4"}
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen3moe routed-expert forward, #3714; weights resident in 4086 ms]
+F2 guard: GPU matches the CPU forward on 16 positions (min cosine 1.0000) in 4946 ms
+qwen3moe CUDA: 15 prompt + 8 generated tokens in 259 ms (88.8 tok/s including the token-by-token prefill)
+== apr parity --assert Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+rc=0 wall=10s
+  Cosine similarity: avg=1.000000 min=1.000000 (threshold: 0.950)
+  Control limits (from layer-parity-v1.yaml):
+    USL: cosine ≥ 0.950  USL: KL div ≤ 0.010  USL: |diff| ≤ 4.0  LSL: σ ≥ 3  LSL: Cpk ≥ 1.33
+    PARITY PROVEN: GPU inference is mathematically equivalent to CPU  
+== apr qa --json Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+rc=0 wall=565s
+gates=12 executed=7 passed=12
+  capability_match passed=true skipped=false Architecture 'qwen3moe': all 5 required ops supported by GPU
+  tensor_contract passed=true skipped=false 579 tensors passed all PMAT-235 contract gates
+  metadata_plausibility passed=true skipped=false 4 metadata checks passed (arch=qwen3moe, rope_theta=none, max_pos=none)
+  classifier_head passed=true skipped=true Skipped: Not requested (use --assert-classifier-head)
+  golden_output passed=true skipped=false 3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true
+  throughput passed=true skipped=false 12.1 tok/s >= 10 tok/s threshold (hybrid forward, GPU #3090)
+  ollama_parity passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  gpu_speedup passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  format_parity passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  ptx_parity passed=true skipped=false 6/6 kernel pairs passed PTX parity
+  gpu_state_isolation passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  performance_regression passed=true skipped=false No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-Coder-30B-A3B-Instruct
+== apr run --gpu Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf
+rc=0 wall=28s
+{"used_gpu":true,"backend":{"requested":"gpu","ran":"gpu","fell_back":false},"fell_back":null,"tokens":9,"text":"2 + 2 = 4."}
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen3moe routed-expert forward, #3714; weights resident in 4874 ms]
+F2 guard: GPU matches the CPU forward on 16 positions (min cosine 1.0000) in 3458 ms
+qwen3moe CUDA: 15 prompt + 9 generated tokens in 303 ms (79.3 tok/s including the token-by-token prefill)
+== apr parity --assert Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf
+rc=0 wall=8s
+  Cosine similarity: avg=1.000000 min=1.000000 (threshold: 0.950)
+  Control limits (from layer-parity-v1.yaml):
+    USL: cosine ≥ 0.950  USL: KL div ≤ 0.010  USL: |diff| ≤ 4.0  LSL: σ ≥ 3  LSL: Cpk ≥ 1.33
+    PARITY PROVEN: GPU inference is mathematically equivalent to CPU  
+== apr qa --json Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf
+rc=5 wall=387s
+gates=12 executed=7 passed=11
+  capability_match passed=true skipped=false Architecture 'qwen3moe': all 5 required ops supported by GPU
+  tensor_contract passed=true skipped=false 579 tensors passed all PMAT-235 contract gates
+  metadata_plausibility passed=true skipped=false 4 metadata checks passed (arch=qwen3moe, rope_theta=none, max_pos=none)
+  classifier_head passed=true skipped=true Skipped: Not requested (use --assert-classifier-head)
+  golden_output passed=true skipped=false 3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true
+  throughput passed=false skipped=false 8.6 tok/s < 10 tok/s threshold (hybrid forward, GPU #3090)
+  ollama_parity passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  gpu_speedup passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  format_parity passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  ptx_parity passed=true skipped=false 6/6 kernel pairs passed PTX parity
+  gpu_state_isolation passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  performance_regression passed=true skipped=false No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-30B-A3B-Instruct-2507-
+== r3b: after 805803f7b (label) + setup-time fix, apr 0.69.0 (6d8d5b155)
+== apr qa --json Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+rc=0 wall=407s
+gates=12 executed=7 passed=12
+  capability_match passed=true skipped=false Architecture 'qwen3moe': all 5 required ops supported by GPU
+  tensor_contract passed=true skipped=false 579 tensors passed all PMAT-235 contract gates
+  metadata_plausibility passed=true skipped=false 4 metadata checks passed (arch=qwen3moe, rope_theta=none, max_pos=none)
+  classifier_head passed=true skipped=true Skipped: Not requested (use --assert-classifier-head)
+  golden_output passed=true skipped=false 3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true
+  throughput passed=true skipped=false 59.9 tok/s >= 10 tok/s threshold (runtime entry point, GPU on every timed run)
+  ollama_parity passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  gpu_speedup passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  format_parity passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  ptx_parity passed=true skipped=false 6/6 kernel pairs passed PTX parity
+  gpu_state_isolation passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  performance_regression passed=true skipped=false No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-Coder-30B-A3B-Instruct
+== apr qa --json Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf
+rc=0 wall=399s
+gates=12 executed=7 passed=12
+  capability_match passed=true skipped=false Architecture 'qwen3moe': all 5 required ops supported by GPU
+  tensor_contract passed=true skipped=false 579 tensors passed all PMAT-235 contract gates
+  metadata_plausibility passed=true skipped=false 4 metadata checks passed (arch=qwen3moe, rope_theta=none, max_pos=none)
+  classifier_head passed=true skipped=true Skipped: Not requested (use --assert-classifier-head)
+  golden_output passed=true skipped=false 3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true
+  throughput passed=true skipped=false 45.1 tok/s >= 10 tok/s threshold (runtime entry point, GPU on every timed run)
+  ollama_parity passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  gpu_speedup passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  format_parity passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  ptx_parity passed=true skipped=false 6/6 kernel pairs passed PTX parity
+  gpu_state_isolation passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  performance_regression passed=true skipped=false No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-30B-A3B-Instruct-2507-
+== apr run --gpu Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+rc=0 wall=22s
+{"used_gpu":true,"backend":{"requested":"gpu","ran":"gpu","fell_back":false},"fell_back":null,"tokens":8,"text":"2 + 2 = 4"}
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen3moe routed-expert forward, #3714; weights resident in 5776 ms]
+F2 guard: GPU matches the CPU forward on 16 positions (min cosine 1.0000) in 2540 ms
+qwen3moe CUDA: 15 prompt + 8 generated tokens in 256 ms (89.9 tok/s including the token-by-token prefill)
+== apr parity --assert Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+rc=0 wall=8s
+  Cosine similarity: avg=1.000000 min=1.000000 (threshold: 0.950)
+  Control limits (from layer-parity-v1.yaml):
+    USL: cosine ≥ 0.950  USL: KL div ≤ 0.010  USL: |diff| ≤ 4.0  LSL: σ ≥ 3  LSL: Cpk ≥ 1.33
+    PARITY PROVEN: GPU inference is mathematically equivalent to CPU  
+== apr qa --json Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+rc=0 wall=389s
+gates=12 executed=7 passed=12
+  capability_match passed=true skipped=false Architecture 'qwen3moe': all 5 required ops supported by GPU
+  tensor_contract passed=true skipped=false 579 tensors passed all PMAT-235 contract gates
+  metadata_plausibility passed=true skipped=false 4 metadata checks passed (arch=qwen3moe, rope_theta=none, max_pos=none)
+  classifier_head passed=true skipped=true Skipped: Not requested (use --assert-classifier-head)
+  golden_output passed=true skipped=false 3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true
+  throughput passed=true skipped=false 59.3 tok/s >= 10 tok/s threshold (runtime entry point, GPU on every timed run)
+  ollama_parity passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  gpu_speedup passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  format_parity passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  ptx_parity passed=true skipped=false 6/6 kernel pairs passed PTX parity
+  gpu_state_isolation passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  performance_regression passed=true skipped=false No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-Coder-30B-A3B-Instruct
+== apr run --gpu Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf
+rc=0 wall=20s
+{"used_gpu":true,"backend":{"requested":"gpu","ran":"gpu","fell_back":false},"fell_back":null,"tokens":9,"text":"2 + 2 = 4."}
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3moe'
+Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen3moe routed-expert forward, #3714; weights resident in 1690 ms]
+F2 guard: GPU matches the CPU forward on 16 positions (min cosine 1.0000) in 2141 ms
+qwen3moe CUDA: 15 prompt + 9 generated tokens in 264 ms (91.0 tok/s including the token-by-token prefill)
+== apr parity --assert Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf
+rc=0 wall=7s
+  Cosine similarity: avg=1.000000 min=1.000000 (threshold: 0.950)
+  Control limits (from layer-parity-v1.yaml):
+    USL: cosine ≥ 0.950  USL: KL div ≤ 0.010  USL: |diff| ≤ 4.0  LSL: σ ≥ 3  LSL: Cpk ≥ 1.33
+    PARITY PROVEN: GPU inference is mathematically equivalent to CPU  
+== apr qa --json Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf
+rc=0 wall=298s
+gates=12 executed=7 passed=12
+  capability_match passed=true skipped=false Architecture 'qwen3moe': all 5 required ops supported by GPU
+  tensor_contract passed=true skipped=false 579 tensors passed all PMAT-235 contract gates
+  metadata_plausibility passed=true skipped=false 4 metadata checks passed (arch=qwen3moe, rope_theta=none, max_pos=none)
+  classifier_head passed=true skipped=true Skipped: Not requested (use --assert-classifier-head)
+  golden_output passed=true skipped=false 3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true
+  throughput passed=true skipped=false 50.5 tok/s >= 10 tok/s threshold (runtime entry point, GPU on every timed run)
+  ollama_parity passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  gpu_speedup passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  format_parity passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  ptx_parity passed=true skipped=false 6/6 kernel pairs passed PTX parity
+  gpu_state_isolation passed=true skipped=true Skipped: Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU #3367), but this 
+  performance_regression passed=true skipped=false No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-30B-A3B-Instruct-2507-

@@ -1,0 +1,17 @@
+schema: crux-verb-correspondence/v1
+surface: {source: "surface.json", sha256: "fixture"}
+engines: [llama.cpp, ollama, hf, llamafile]
+verbs:
+  - verb: gen
+    judged_by: golden
+    comparators:
+      llama.cpp: {binary: llama-cli, args: {--prompt: -p}}
+      ollama: {none: "fixture: the generic verb has no ollama subcommand"}
+      hf: {none: "fixture: no transformers entry point for the generic verb"}
+      llamafile: {none: "fixture: no llamafile build pinned"}
+  - verb: look
+    comparator: none
+    reason: "fixture: reading a model's header has no comparator counterpart"
+  - verb: list
+    comparator: none
+    reason: "fixture: listing is apr's own"

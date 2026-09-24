@@ -130,8 +130,8 @@ use crate::autograd::cuda_forward::{
     batched_softmax_forward, batched_to_interleaved_forward, batched_transpose_forward,
     cast_f32_to_f16_gpu, elementwise_mul_forward, expand_kv_heads, fused_residual_rmsnorm_forward,
     fused_swiglu_forward, gemm_f16_to_f32_forward, gemm_forward, interleaved_to_batched_forward,
-    per_head_rmsnorm_forward, residual_add_forward, rms_norm_forward, rms_norm_forward_with_eps,
-    scale_forward, silu_forward,
+    per_head_rmsnorm_forward, residual_add_forward, rms_norm_forward_with_eps, scale_forward,
+    silu_forward,
 };
 #[cfg(feature = "cuda")]
 use crate::autograd::cuda_optim::{adamw_step_cuda, gradient_clip_cuda, squared_sum_cuda};
@@ -2527,6 +2527,7 @@ impl CudaTransformerBlock {
 /// The classify pipeline stores `Vec<CudaBlock>` and calls `forward()` without
 /// caring which quantization format the frozen weights use.
 #[cfg(feature = "cuda")]
+#[allow(clippy::large_enum_variant)] // 2288 vs 2040 bytes: boxing would save ~250 B per layer
 pub enum CudaBlock {
     /// Standard fp32 weights (full precision, ~16 GB for Qwen3-4B)
     Fp32(CudaTransformerBlock),
@@ -3244,9 +3245,9 @@ impl CudaNf4TransformerBlock {
         }
 
         let _t = scratch.op_begin(); // QKV GEMM timing
-        if fp16_gemm && self.w_q_fp16.is_some() {
+        if let Some(w_q16) = self.w_q_fp16.as_ref().filter(|_| fp16_gemm) {
             let f16_act = scratch.norm1_out_f16.as_ref().unwrap();
-            gemm_f16_to_f32_forward(f16_act, self.w_q_fp16.as_ref().unwrap(), &mut scratch.q,
+            gemm_f16_to_f32_forward(f16_act, w_q16, &mut scratch.q,
                 saturating_u32(seq_len), saturating_u32(hidden_size), saturating_u32(q_dim), stream)?;
         } else if nf4_tc_gemm {
             gemm_nf4_tc_forward(&scratch.norm1_out, &self.w_q_nf4, &self.w_q_scales, &mut scratch.q,
@@ -3280,9 +3281,9 @@ impl CudaNf4TransformerBlock {
             cuda_add_inplace(&mut scratch.q, &scratch.lora_temp, seq_len * q_dim, stream)?;
         }
 
-        if fp16_gemm && self.w_k_fp16.is_some() {
+        if let Some(w_k16) = self.w_k_fp16.as_ref().filter(|_| fp16_gemm) {
             let f16_act = scratch.norm1_out_f16.as_ref().unwrap();
-            gemm_f16_to_f32_forward(f16_act, self.w_k_fp16.as_ref().unwrap(), &mut scratch.k,
+            gemm_f16_to_f32_forward(f16_act, w_k16, &mut scratch.k,
                 saturating_u32(seq_len), saturating_u32(hidden_size), saturating_u32(kv_hidden_size), stream)?;
             gemm_f16_to_f32_forward(f16_act, self.w_v_fp16.as_ref().unwrap(), &mut scratch.v,
                 saturating_u32(seq_len), saturating_u32(hidden_size), saturating_u32(kv_hidden_size), stream)?;
@@ -3353,13 +3354,13 @@ impl CudaNf4TransformerBlock {
 
         // === Output Projection ===
         let _t = scratch.op_begin();
-        if fp16_gemm && self.w_o_fp16.is_some() {
+        if let Some(w_o16) = self.w_o_fp16.as_ref().filter(|_| fp16_gemm) {
             if scratch.attn_out_f16.is_none() {
                 scratch.attn_out_f16 = Some(GpuBuffer::new(&self.ctx, seq_len * q_dim)?);
             }
             let f16_buf = scratch.attn_out_f16.as_mut().unwrap();
             cast_f32_to_f16_gpu(&scratch.attn_out, f16_buf, (seq_len * q_dim) as u32, stream)?;
-            gemm_f16_to_f32_forward(f16_buf, self.w_o_fp16.as_ref().unwrap(), &mut scratch.o_proj_out,
+            gemm_f16_to_f32_forward(f16_buf, w_o16, &mut scratch.o_proj_out,
                 saturating_u32(seq_len), saturating_u32(q_dim), saturating_u32(hidden_size), stream)?;
         } else if nf4_tc_gemm {
             gemm_nf4_tc_forward(&scratch.attn_out, &self.w_o_nf4, &self.w_o_scales, &mut scratch.o_proj_out,
@@ -3406,13 +3407,13 @@ impl CudaNf4TransformerBlock {
 
         // === FFN: Gate + Up + SwiGLU + Down ===
         let _t = scratch.op_begin(); // Gate+Up GEMM timing
-        if fp16_gemm && self.w_gate_fp16.is_some() {
+        if let Some(w_gate16) = self.w_gate_fp16.as_ref().filter(|_| fp16_gemm) {
             if scratch.norm2_out_f16.is_none() {
                 scratch.norm2_out_f16 = Some(GpuBuffer::new(&self.ctx, seq_len * hidden_size)?);
             }
             let f16_buf = scratch.norm2_out_f16.as_mut().unwrap();
             cast_f32_to_f16_gpu(&scratch.norm2_out, f16_buf, (seq_len * hidden_size) as u32, stream)?;
-            gemm_f16_to_f32_forward(f16_buf, self.w_gate_fp16.as_ref().unwrap(), &mut scratch.gate_out,
+            gemm_f16_to_f32_forward(f16_buf, w_gate16, &mut scratch.gate_out,
                 saturating_u32(seq_len), saturating_u32(hidden_size), saturating_u32(intermediate_size), stream)?;
             gemm_f16_to_f32_forward(f16_buf, self.w_up_fp16.as_ref().unwrap(), &mut scratch.up_out,
                 saturating_u32(seq_len), saturating_u32(hidden_size), saturating_u32(intermediate_size), stream)?;
@@ -3460,13 +3461,13 @@ impl CudaNf4TransformerBlock {
 
         // === FFN: Down Projection ===
         let _t = scratch.op_begin();
-        if fp16_gemm && self.w_down_fp16.is_some() {
+        if let Some(w_down16) = self.w_down_fp16.as_ref().filter(|_| fp16_gemm) {
             if scratch.swiglu_out_f16.is_none() {
                 scratch.swiglu_out_f16 = Some(GpuBuffer::new(&self.ctx, seq_len * intermediate_size)?);
             }
             let f16_buf = scratch.swiglu_out_f16.as_mut().unwrap();
             cast_f32_to_f16_gpu(&scratch.swiglu_out, f16_buf, (seq_len * intermediate_size) as u32, stream)?;
-            gemm_f16_to_f32_forward(f16_buf, self.w_down_fp16.as_ref().unwrap(), &mut scratch.ffn_out,
+            gemm_f16_to_f32_forward(f16_buf, w_down16, &mut scratch.ffn_out,
                 saturating_u32(seq_len), saturating_u32(intermediate_size), saturating_u32(hidden_size), stream)?;
         } else if nf4_tc_gemm {
             gemm_nf4_tc_forward(&scratch.swiglu_out, &self.w_down_nf4, &self.w_down_scales, &mut scratch.ffn_out,

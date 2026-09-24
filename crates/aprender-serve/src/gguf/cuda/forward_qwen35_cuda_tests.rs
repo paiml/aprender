@@ -1711,3 +1711,81 @@ fn qwen35_cuda_refuses_only_value_heads_that_do_not_group() {
     Qwen35CudaModel::check_head_grouping(dims(0, 16, 128, 128))
         .expect_err("zero key heads must be refused, not divided by");
 }
+
+/// #4233: greedy decode `steps` tokens after `prompt`, one `forward_single` per
+/// token; returns the generated ids and the decode tok/s (prompt excluded).
+fn qwen35_greedy(gpu: &mut Qwen35CudaModel<'_>, prompt: &[u32], steps: usize) -> (Vec<u32>, f64) {
+    let mut state = gpu.new_state().expect("device state");
+    let mut logits = Vec::new();
+    for (pos, &token) in prompt.iter().enumerate() {
+        logits = gpu
+            .forward_single(token, &mut state, pos)
+            .expect("prompt forward");
+    }
+    let mut out = Vec::with_capacity(steps);
+    let start = std::time::Instant::now();
+    for i in 0..steps {
+        let next = crate::gguf::ops::argmax(&logits) as u32;
+        out.push(next);
+        logits = gpu
+            .forward_single(next, &mut state, prompt.len() + i)
+            .expect("decode forward");
+    }
+    (out, steps as f64 / start.elapsed().as_secs_f64())
+}
+
+/// #4233 acceptance: greedy decode through the captured graph is token-identical
+/// to the eager step for 256 tokens, the graph is actually replayed, and the
+/// decode tok/s of both paths is printed from the same process and GPU.
+fn qwen35_graph_matches_eager(path: &str, executor: crate::cuda::CudaExecutor) {
+    const STEPS: usize = 256;
+    let mapped = crate::gguf::MappedGGUFModel::from_path(path).expect("map the GGUF");
+    let base = load_cpu_model(&mapped);
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+    let mut gpu = Qwen35CudaModel::with_max_seq_len(&qwen, executor, LONG_PROMPT.len() + STEPS + 1)
+        .expect("build the CUDA model");
+
+    gpu.set_decode_graph(false);
+    let (eager, eager_tps) = qwen35_greedy(&mut gpu, &LONG_PROMPT, STEPS);
+    assert_eq!(
+        gpu.decode_graph_replays(),
+        0,
+        "the eager run must not touch the graph"
+    );
+
+    gpu.set_decode_graph(true);
+    let (graphed, graph_tps) = qwen35_greedy(&mut gpu, &LONG_PROMPT, STEPS);
+    let replays = gpu.decode_graph_replays();
+
+    eprintln!(
+        "[aprender#4233] {path}: eager {eager_tps:.1} tok/s, graph {graph_tps:.1} tok/s \
+         ({:.3}x), {replays} replays",
+        graph_tps / eager_tps
+    );
+    // Captured at prompt position 0; every later forward is a replay.
+    assert_eq!(
+        replays,
+        (LONG_PROMPT.len() + STEPS - 1) as u64,
+        "every forward after the capture token must be a graph replay"
+    );
+    let first_diff = eager.iter().zip(&graphed).position(|(a, b)| a != b);
+    assert_eq!(
+        first_diff, None,
+        "graph decode diverged from eager at step {first_diff:?}: eager {eager:?} graph {graphed:?}"
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn qwen35_cuda_graph_decode_is_token_identical_to_eager_0_8b() {
+    let executor = qwen35_cuda_fixture_or_skip!();
+    qwen35_graph_matches_eager(MODEL_PATH, executor);
+}
+
+#[test]
+#[serial_test::serial]
+fn qwen35_cuda_graph_decode_is_token_identical_to_eager_4b() {
+    let executor = qwen35_cuda_file_or_skip!(MODEL_PATH_4B);
+    qwen35_graph_matches_eager(MODEL_PATH_4B, executor);
+}

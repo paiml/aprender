@@ -257,7 +257,7 @@ impl CudaKernels {
     /// kernels (sm_70 default).
     fn generate_gdn_ptx(kernel_type: &KernelType) -> Option<String> {
         use trueno_gpu::kernels::gdn::{
-            CausalConv1dSiluKernel, DecodeAttention256Kernel, DeltaRuleRecurrenceKernel,
+            CausalConv1dSiluKernel, DecodeAttention256Kernel, DeltaRuleRecurrenceKernel, KvRowScatterIndirectKernel,
             GatedRmsNormKernel, GdnGatesKernel, PartialNeoxRopeKernel, PerHeadL2NormKernel,
             SigmoidGateKernel, SplitInterleavedKernel,
         };
@@ -285,6 +285,19 @@ impl CudaKernels {
             },
             KernelType::GdnDecodeAttention { num_heads, num_kv_heads, head_dim } => {
                 DecodeAttention256Kernel::new(*num_heads, *num_kv_heads, *head_dim).emit_ptx()
+            },
+            KernelType::GdnPartialNeoxRopeIndirect { num_heads, head_dim, n_rot } => {
+                PartialNeoxRopeKernel::new(*num_heads, *head_dim, *n_rot)
+                    .indirect()
+                    .emit_ptx()
+            },
+            KernelType::GdnDecodeAttentionIndirect { num_heads, num_kv_heads, head_dim } => {
+                DecodeAttention256Kernel::new(*num_heads, *num_kv_heads, *head_dim)
+                    .indirect()
+                    .emit_ptx()
+            },
+            KernelType::GdnKvRowScatterIndirect { row } => {
+                KvRowScatterIndirectKernel::new(*row).emit_ptx()
             },
             _ => return None,
         };

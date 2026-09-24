@@ -55,6 +55,9 @@ dirs = "5.0"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
+
 [dev-dependencies]
 proptest = "1"
 tempfile = "3"

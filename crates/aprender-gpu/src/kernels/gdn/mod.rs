@@ -47,6 +47,7 @@ mod decode_attention;
 mod delta_rule;
 mod gated_rmsnorm;
 mod gdn_gates;
+mod kv_row_scatter;
 mod l2_norm;
 mod partial_rope;
 mod sigmoid_gate;
@@ -60,6 +61,7 @@ pub use decode_attention::{DecodeAttention256Kernel, DEFAULT_MAX_POSITIONS_PER_P
 pub use delta_rule::DeltaRuleRecurrenceKernel;
 pub use gated_rmsnorm::GatedRmsNormKernel;
 pub use gdn_gates::GdnGatesKernel;
+pub use kv_row_scatter::KvRowScatterIndirectKernel;
 pub use l2_norm::PerHeadL2NormKernel;
 pub use partial_rope::PartialNeoxRopeKernel;
 pub use sigmoid_gate::SigmoidGateKernel;

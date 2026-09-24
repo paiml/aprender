@@ -146,6 +146,24 @@ for h in hosts:
         print(f"FAIL  {h['id']:7} receipt carries no measured inventory (schema {R.get('schema')!r}) — the universe is what the host HOLDS, not a list (#3712)"); rc = 1; continue
     if not inv:
         print(f"FAIL  {h['id']:7} measured inventory is EMPTY — a host holding no Q4_K model proved nothing (#3712)"); rc = 1; continue
+    # #3842: RECONCILE THE SCALAR AGAINST THE ROWS. A RED THAT HIDES.
+    # gx10's 0.69.1 receipt said `red: 3` and carried only 2 non-green rows: the failed
+    # REQUIRED rung qwen35-27b-q4km was absent from its own receipt entirely. `apr qa
+    # --json` wrote 0 bytes for that cell (after 78 s of successful GPU work and a
+    # PASSED F2 guard), the ladder appended an empty line to rows.jsonl, the assembler
+    # dropped it -- and `red` was counted on a separate path. A consumer reading `rows`
+    # would see 13/15 green plus two known refusals and could not learn that a required
+    # rung failed at all. Every other guard here looks for a false GREEN; this one looks
+    # for a MISSING RED, which no amount of per-row judging can find.
+    declared_red = R.get("red")
+    if isinstance(declared_red, int):
+        rows_red = sum(1 for x in R.get("rungs", []) if not x.get("green"))
+        if declared_red != rows_red:
+            # Report and KEEP JUDGING. An inconsistent counter is an ADDITIONAL finding,
+            # not a reason to stop reading the rows -- a `continue` here would suppress
+            # every real per-row refusal behind it, which is the same suppression the
+            # check exists to expose.
+            print(f"FAIL  {h['id']:7} receipt says red={declared_red} but carries {rows_red} non-green row(s) — a red that is counted and not recorded is a red nobody can read (#3842)"); rc = 1
     good[h["id"]] = R
     by = {r.get("id"): r for r in R.get("rungs", [])}
     by_file = {x.get("file"): x for x in R.get("rungs", []) if x.get("file")}
@@ -221,6 +239,27 @@ for n, line in enumerate(open(sys.argv[1]), 1):
 sys.exit(bad)
 LOCKPY
 }
+# exclusive_audit <producer> -> the GPU run leg goes through gpu_exclusive_run and a CONTENDED
+# refusal declines (#3964). Static: the helper's behaviour is its own 12-row self-test
+# (scripts/lib/gpu_exclusive_run_selftest.sh); this proves the ladder is wired to it.
+exclusive_audit() {
+  python3 - "$1" <<'EXCLPY'
+import re, sys
+src = open(sys.argv[1]).read()
+code = "\n".join(re.sub(r"(^|\s)#.*$", "", l) for l in src.splitlines())
+bad = 0
+body = re.search(r"apr_exclusive\(\) \{(.*?)\n\}", code, re.S)
+if not body or 'bash scripts/lib/gpu_exclusive_run.sh "$APR" "$@"' not in body.group(1):
+    print("FAIL  apr_exclusive does not run apr through scripts/lib/gpu_exclusive_run.sh"); bad = 1
+elif "GPU_OWNED_PREFIX=" not in body.group(1) or 'GPU_LOCK="$GPU_LOCK"' not in body.group(1):
+    print("FAIL  apr_exclusive does not pass GPU_OWNED_PREFIX and the ladder's GPU_LOCK"); bad = 1
+if not re.search(r'if \[ "\$flag" = --gpu \].*\n\s*run_out=\$\(apr_exclusive run "\$path"', code):
+    print("FAIL  the --gpu run leg does not go through apr_exclusive -- a foreign GPU process goes unseen"); bad = 1
+if not re.search(r"gpu_exclusive_run: CONTENDED' <<< \"\$run_out\"; then\n[^\n]*decline: ENV the GPU was not exclusive[^\n]*\n\s*exit 2", code):
+    print("FAIL  a CONTENDED GPU leg does not decline (exit 2) -- a shared-card result would be judged"); bad = 1
+sys.exit(bad)
+EXCLPY
+}
 # lock_probe <producer> <work dir> -> prints ok/FAIL lines, exit 1 on any failure
 lock_probe() {
   local prod=$1 w=$2 out rc hp bad=0
@@ -290,6 +329,18 @@ if [ "$SELF_TEST" = 1 ]; then
     pmutant no-lock      's/^apr_locked() { flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" choom/apr_locked() { choom/'
     pmutant no-choom     's/ choom -n 1000 -- "\$APR" "\$@"/ "$APR" "$@"/'
     pmutant unbounded    's/ -w "\$LOCK_WAIT"//'
+    if exclusive_audit "$prod" > "$mdir/excl.out"; then echo "ok    exclusive: $prod runs its GPU leg through gpu_exclusive_run and declines CONTENDED (#3964)"
+    else cat "$mdir/excl.out"; bad=$((bad+1)); fi
+    emutant() { # emutant <label> <sed expression breaking the exclusive GPU leg in a copy of the producer>
+      local m="$mdir/e-$1.sh"
+      sed "$2" "$prod" > "$m"
+      if cmp -s "$prod" "$m"; then echo "FAIL  exclusive mutant $1 did not apply -- the check proves nothing"; bad=$((bad+1)); return; fi
+      if exclusive_audit "$m" > /dev/null; then echo "FAIL  exclusive mutant $1 SURVIVED the exclusive check"; bad=$((bad+1))
+      else printf 'ok    exclusive mutant %-16s killed\n' "$1"; fi
+    }
+    emutant gpu-leg-locked    's/run_out=$(apr_exclusive run "$path"/run_out=$(apr_locked run "$path"/'
+    emutant helper-bypassed   's/bash scripts\/lib\/gpu_exclusive_run.sh "$APR" "$@"/"$APR" "$@"/'
+    emutant contended-judged  '/decline: ENV the GPU was not exclusive/{n;s/exit 2/:/}'
     # The cells module (scripts/lib/model_ladder_cells.py): each rule deleted in a copy, imported through
     # MODEL_LADDER_CELLS_LIB, and the case that names the rule must go RED under the copy.
     cmutant() { # cmutant <label> <case that must kill it> <sed expression deleting the rule>
@@ -307,9 +358,9 @@ if [ "$SELF_TEST" = 1 ]; then
     cmutant prompt-short    red-cells-prompt-under-rung     's/if int(c.get("prompt_tokens") or 0) < tok:/if False:/'
     cmutant modes-evidence  red-cells-thinking-modes-disagree-with-template 's/elif want is not None and modes != want:/elif False:/'
     cmutant no-representative red-cells-arch-without-representative 's/        if not r:/        if False:/'
-    cmutant pass-beyond-fit red-cells-pass-beyond-its-arithmetic 's/                            if not fit:/                            if False:/'
+    cmutant pass-beyond-fit red-cells-pass-beyond-its-arithmetic 's/    if not fit:/    if False:/'
     cmutant family-long     red-cells-missing-cell          's/    if arch in (long_for.get("families") or \[\]):/    if False:/'
-    cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/            if gone:/            if False:/'
+    cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/        if gone:/        if False:/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
   fi
   echo "self-test: $n case(s), $bad bad"

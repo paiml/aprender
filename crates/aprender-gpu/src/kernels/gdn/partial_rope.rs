@@ -68,6 +68,9 @@ pub struct PartialNeoxRopeKernel {
     pub head_dim: u32,
     /// Rotated prefix of each head: `2 * sum(rope.dimension_sections)` (128).
     pub n_rot: u32,
+    /// #4233: read the position from a device `u32` (`pos_ptr`) instead of a
+    /// `u32` argument, so a captured CUDA graph replays at any position.
+    pub indirect: bool,
 }
 
 impl PartialNeoxRopeKernel {
@@ -78,7 +81,16 @@ impl PartialNeoxRopeKernel {
             num_heads,
             head_dim,
             n_rot,
+            indirect: false,
         }
+    }
+
+    /// #4233: the graph-capturable variant — `position` is read from the device
+    /// `u32` at `pos_ptr`, so the launch arguments are identical at every token.
+    #[must_use]
+    pub const fn indirect(mut self) -> Self {
+        self.indirect = true;
+        self
     }
 
     /// Number of rotated pairs per head (`n_rot / 2`).
@@ -134,16 +146,25 @@ fn emit_sin_cos(
 
 impl Kernel for PartialNeoxRopeKernel {
     fn name(&self) -> &str {
-        "gdn_partial_neox_rope"
+        if self.indirect {
+            "gdn_partial_neox_rope_indirect"
+        } else {
+            "gdn_partial_neox_rope"
+        }
     }
 
     fn build_ptx(&self) -> PtxKernel {
         let head_dim = self.head_dim;
         let half = self.half();
+        let indirect = self.indirect;
 
-        PtxKernel::new(self.name())
-            .param(PtxType::U64, "x_ptr") // [num_heads * head_dim], rotated in place
-            .param(PtxType::U32, "position")
+        let kernel = PtxKernel::new(self.name()).param(PtxType::U64, "x_ptr"); // [num_heads * head_dim], rotated in place
+        let kernel = if indirect {
+            kernel.param(PtxType::U64, "pos_ptr") // device u32 position
+        } else {
+            kernel.param(PtxType::U32, "position")
+        };
+        kernel
             .param(PtxType::F32, "theta_scale") // freq_base^(-2/n_rot), from the host
             .shared_memory(0)
             .build(|ctx| {
@@ -155,7 +176,12 @@ impl Kernel for PartialNeoxRopeKernel {
                 ctx.branch_if_not(in_bounds, "gdn_rope_exit");
 
                 let x_ptr = ctx.load_param_u64("x_ptr");
-                let position = ctx.load_param_u32("position");
+                let position = if indirect {
+                    let pos_ptr = ctx.load_param_u64("pos_ptr");
+                    ctx.ld_global_u32(pos_ptr)
+                } else {
+                    ctx.load_param_u32("position")
+                };
                 let theta_scale = ctx.load_param_f32("theta_scale");
 
                 // theta = pos * theta_scale^j, by j multiplications in the CPU's order.
@@ -347,6 +373,51 @@ mod gdn_partial_rope_device_tests {
                     );
                 }
             }
+        }
+    }
+
+    /// #4233: the graph variant reads `position` from the device and must rotate
+    /// bit-identically to the eager kernel.
+    #[test]
+    fn gdn_partial_neox_rope_indirect_is_bit_identical_to_direct() {
+        let Ok(ctx) = CudaContext::new(0) else {
+            println!("gdn_partial_neox_rope indirect: no CUDA device — SKIPPED.");
+            return;
+        };
+        let stream = CudaStream::new(&ctx).expect("stream");
+        let direct = PartialNeoxRopeKernel::new(NUM_HEADS as u32, HEAD_DIM as u32, N_ROT as u32);
+        let indirect = direct.indirect();
+        let mut rng = Lcg::new(0x4233_0003);
+        let host = rng.vec(NUM_HEADS * HEAD_DIM, 1.0);
+        let scale = u64::from(direct.theta_scale(10_000_000.0).to_bits());
+        for pos in [0u32, 1, 17, 1000, 4095] {
+            let a = GpuBuffer::from_host(&ctx, &host).expect("x");
+            let mut args = [a.as_ptr(), u64::from(pos), scale];
+            run_kernel(
+                &ctx,
+                &stream,
+                &direct,
+                direct.grid(),
+                direct.block(),
+                &mut args,
+            );
+            let mut want = vec![0.0f32; host.len()];
+            a.copy_to_host(&mut want).expect("download");
+
+            let b = GpuBuffer::from_host(&ctx, &host).expect("x");
+            let pos_buf = GpuBuffer::from_host(&ctx, &[pos]).expect("pos");
+            let mut args = [b.as_ptr(), pos_buf.as_ptr(), scale];
+            run_kernel(
+                &ctx,
+                &stream,
+                &indirect,
+                indirect.grid(),
+                indirect.block(),
+                &mut args,
+            );
+            let mut got = vec![0.0f32; host.len()];
+            b.copy_to_host(&mut got).expect("download");
+            assert_eq!(got, want, "indirect vs direct at pos {pos}");
         }
     }
 

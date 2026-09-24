@@ -233,7 +233,7 @@ pub enum KernelType {
         n: u32,
         k: u32,
     },
-    /// PAR-108: Batched Q4_K GEMV for 2x Ollama via shared dequantization
+    /// PAR-108: Batched Q4_K GEMV via shared dequantization (the throughput target is PAR-108's)
     BatchedQ4KGemv {
         m: u32,
         k: u32,
@@ -614,4 +614,20 @@ pub enum KernelType {
         num_kv_heads: u32,
         head_dim: u32,
     },
+    /// aprender#4233: [`Self::GdnPartialNeoxRope`] reading `position` from a
+    /// device `u32`, so a captured decode graph replays at any position.
+    GdnPartialNeoxRopeIndirect {
+        num_heads: u32,
+        head_dim: u32,
+        n_rot: u32,
+    },
+    /// aprender#4233: [`Self::GdnDecodeAttention`] with `seq_len = *pos + 1`
+    /// read on the device.
+    GdnDecodeAttentionIndirect {
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+    },
+    /// aprender#4233: `cache[*pos * row ..][..row] = src`, the graph-safe KV append.
+    GdnKvRowScatterIndirect { row: u32 },
 }

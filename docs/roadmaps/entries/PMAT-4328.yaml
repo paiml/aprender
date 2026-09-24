@@ -1,0 +1,19 @@
+- id: PMAT-4328
+  github_issue: 4328
+  item_type: task
+  title: 'ci(release): cross-repo release-asset contract — RED on missing platform asset or .sha256 (C6)'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-88
+  created: 2026-09-24T18:06:35Z
+  updated: 2026-09-24T18:06:35Z
+  spec: null
+  acceptance_criteria:
+  - scripts/check_sovereign_release_assets.sh --live exits 10 when any manifest repo's latest release lacks linux-x86_64 (musl or gnu.2.NN<=35), linux-aarch64 or darwin-arm64 for a binary, or an archive lacks its .sha256
+  - bare run is an offline 17-case table (guard_tree), each removed platform / missing .sha256 / plain-gnu x86_64 RED; 5 checker mutants killed
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

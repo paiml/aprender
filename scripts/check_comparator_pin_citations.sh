@@ -1,0 +1,292 @@
+#!/usr/bin/env bash
+# check_comparator_pin_citations.sh -- exactly one llama.cpp comparator pin is CITED in-tree; every
+# other sha is dated history or a fixture value, listed by file, or it is RED (#3741, #3563 part B).
+#
+# WHY. scripts/llama_pin.toml pins the comparator (build_commit, d1d3c3396 since 2026-09-15), and
+# scripts/llama_bin.sh refuses to RESOLVE any other build. Nothing refused a CITATION: a committed
+# receipt, threshold row or how-to could go on claiming a current baseline against the previous
+# pin, and two did (evidence/parity/thresholds.yaml named it as "the pin in llama_pin.toml"
+# after the file had said d1d3c3396 for a week). A bump is a decision with a named cost -- every
+# ratio measured against the old pin becomes incomparable -- and the cost is visible only if every
+# citation of the old pin is dated history or a fixture, never a live claim.
+#
+# THE MECHANISM
+#   llama_pin.toml `superseded_commits` names every pin ever replaced. The LEDGER,
+#   scripts/comparator_pin_citations.txt, is the enumeration #3741 asked for, committed: one line per
+#   file that cites a superseded pin, "<path><TAB><historical|fixture><TAB><why><TAB><n>:<sha12>",
+#   where n:sha12 PINS the citing lines themselves: their count and the sha256 of their text.
+#   R1  an unlisted file that cites a superseded pin is RED, naming file:line -- a planted receipt
+#       citing an old pin is exactly this
+#   R2  a ledger entry whose file no longer cites any superseded pin is RED (stale: delete the line;
+#       that is how the ledger shrinks)
+#   R3  a historical entry carries the date of what it records: YYYY-MM-DD in the file, in its path,
+#       or in the ledger line's why
+#   R4  the ledger may not GROW against origin/main (shrink-only; scripts/check_baseline_ratchets.sh
+#       classifies it `set`)
+#   R5  superseded_commits is declared, non-empty, and never contains build_commit
+#   R6  the file's citing lines match their pin: a line APPENDED to a ledgered file, or a dated line
+#       EDITED in place into a live claim, is RED (#3741 quorum r3/r4) -- a ledgered file is not a
+#       blind spot. A deliberate edit re-pins in the same diff: --pin prints the value.
+#   A citation is the commit's first 7 hex digits followed by hex (git's abbreviation floor), so
+#   the 8-digit, 9-digit and 40-digit forms of the previous pin all count.
+#
+#   bash scripts/check_comparator_pin_citations.sh              # the tree
+#   bash scripts/check_comparator_pin_citations.sh --self-test  # the case table, a mutant per row
+#   bash scripts/check_comparator_pin_citations.sh --pin PATH   # the n:sha12 for a ledger line
+# exit 0 green; 1 RED; 2 ENV (nothing was judged).
+set -uo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
+PIN_REL="scripts/llama_pin.toml"
+LEDGER_REL="scripts/comparator_pin_citations.txt"
+
+env_die() { printf 'ENV   %s -- nothing was judged, not a pass\n' "$*" >&2; exit 2; }
+for t in git python3 grep; do command -v "$t" > /dev/null 2>&1 || env_die "no $t"; done
+
+# pin_value FILE KEY -> the quoted value of KEY in a llama_pin.toml (the same shape llama_bin.sh reads)
+pin_value() { sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\"\\(.*\\)\"[[:space:]]*$/\\1/p" "$1" | head -n 1; }
+
+# judge ROOT [MAIN_LEDGER_FILE|-] -> prints ok/FAIL rows; rc 0/1; rc 2 when nothing could be judged
+judge() {
+    local r=$1 main=${2:--} pin ledger build sup rc
+    pin="$r/$PIN_REL"; ledger="$r/$LEDGER_REL"
+    [ -f "$pin" ] || { printf 'FAIL  R5 no %s\n' "$PIN_REL"; return 1; }
+    build=$(pin_value "$pin" build_commit); sup=$(pin_value "$pin" superseded_commits)
+    [ -n "$build" ] || { printf 'FAIL  R5 %s declares no build_commit\n' "$PIN_REL"; return 1; }
+    [ -n "$sup" ] || { printf 'FAIL  R5 %s declares no superseded_commits: a pin with no history is a pin that was never bumped, and this one was\n' "$PIN_REL"; return 1; }
+    case " $sup " in *" $build "*) printf 'FAIL  R5 build_commit %s is listed as superseded by itself\n' "$build"; return 1 ;; esac
+    [ -f "$ledger" ] || { printf 'FAIL  R1 no %s: the enumeration is the ledger\n' "$LEDGER_REL"; return 1; }
+    python3 - "$r" "$ledger" "$main" "$build" "$PIN_REL" $sup <<'PY'
+import os, re, subprocess, sys
+root, ledger, main, build, pin_rel = sys.argv[1:6]
+sup = sys.argv[6:]
+import hashlib
+pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s[:7]) + r"[0-9a-f]*") for s in sup]
+ENCS = ("utf-8", "utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be")
+def decode_citing(raw, sup):  # SAME in judge() and pin_line(): the first encoding in which a superseded pin appears
+    for enc in ENCS:
+        if any(s[:7].encode(enc) in raw for s in sup):
+            t = raw.decode(enc, errors="replace")  # a UTF-16-BE stream also holds the LE needle one byte off: keep
+            if any(s[:7] in t for s in sup): return t  # the encoding whose DECODED text really cites
+    return None
+def pin_of(texts):  # the SAME formula --pin prints; the self-test's fixtures are pinned by --pin, so C1 proves they agree
+    return f"{len(texts)}:{hashlib.sha256(chr(10).join(texts).encode()).hexdigest()[:12]}"
+date_re = re.compile(r"20[0-9]{2}-[01][0-9]-[0-3][0-9]")
+bad = 0
+def entries(path):
+    out = {}
+    for n, l in enumerate(open(path, encoding="utf-8", errors="replace"), 1):
+        l = l.rstrip("\n")
+        if not l.strip() or l.lstrip().startswith("#"): continue
+        f = l.split("\t")
+        if len(f) != 4 or f[1] not in ("historical", "fixture") or not f[2].strip() or not re.fullmatch(r"[1-9][0-9]*:[0-9a-f]{12}", f[3]):
+            print(f"FAIL  ledger line {n} is not <path>TAB<historical|fixture>TAB<why>TAB<n>:<sha12>: {l!r}"); sys.exit(1)
+        out[f[0]] = (f[1], f[2], f[3])
+    return out
+led = entries(ledger)
+tracked = subprocess.run(["git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], capture_output=True).stdout.decode(errors="replace").split("\0")
+tracked = sorted({t for t in tracked if t})
+if len(tracked) < 1: print("FAIL  the tracked universe is empty"); sys.exit(1)
+citing, pinned, decoded = {}, {}, {}
+for rel in tracked:
+    if rel in (os.path.relpath(ledger, root), pin_rel):
+        continue  # the ledger and the pin file declare the old pins. NOTHING else is exempt by path or shape: a roadmap
+                  # fragment or quorum record that quotes an old pin is ledgered like any file (#3741 quorum r1+r2)
+    p = os.path.join(root, rel)
+    try:
+        with open(p, "rb") as h:
+            raw = h.read()
+    except OSError:
+        continue
+    # NO binary skip: a NUL byte made git diff AND this scan blind to a planted receipt (#3741 quorum r5), and so did
+    # UTF-16 (r6). The byte prefilter, in every encoding a text tool writes, keeps real binaries cheap; one that
+    # happens to contain the hex is ledgered like any file.
+    text = decode_citing(raw, sup)
+    if text is None: continue
+    lines, texts = [], []
+    for i, line in enumerate(text.splitlines(), 1):
+        if any(pt.search(line) for pt in pats): lines.append(i); texts.append(line)
+    if lines: citing[rel] = lines; pinned[rel] = pin_of(texts); decoded[rel] = text
+for rel, lines in sorted(citing.items()):
+    if rel not in led:
+        print(f"FAIL  R1 {rel}:{lines[0]} cites a superseded comparator pin and is not on {os.path.relpath(ledger, root)} "
+              f"({len(lines)} line(s)). A live claim against a superseded comparator is the defect; dated history or a fixture value is listed by file, with why.")
+        bad = 1
+for rel, (cls, why, pin) in sorted(led.items()):
+    if rel not in citing:
+        print(f"FAIL  R2 stale ledger entry {rel} ({cls}): the file no longer cites a superseded pin (or is not tracked) -- delete the line"); bad = 1
+        continue
+    # R6: the ledger pins the citing LINES (count + text hash), not just the file -- a live claim appended to a
+    # ledgered file, or a dated line rewritten in place, is RED (#3741 quorum r3/r4).
+    if pinned[rel] != pin:
+        count = int(pin.split(":")[0])
+        what = ("a NEW citation was added to a ledgered file -- date it as history or drop it" if len(citing[rel]) > count
+                else "a citation left -- re-pin (the ledger shrinks)" if len(citing[rel]) < count
+                else "a citing line was EDITED in place -- dated history is not rewritten into a claim; if the edit is deliberate, re-pin")
+        print(f"FAIL  R6 {rel} citing line(s) {','.join(map(str, citing[rel]))} pin {pinned[rel]}, the ledger pins {pin}: {what} "
+              f"(bash scripts/check_comparator_pin_citations.sh --pin {rel})"); bad = 1
+    if cls == "historical":
+        text = decoded[rel]  # as the scan decoded it (a UTF-16 record's date is not readable as UTF-8)
+        if not (date_re.search(text) or date_re.search(rel) or date_re.search(why)):
+            print(f"FAIL  R3 {rel} is ledgered as historical but neither it, its path nor its ledger line carries a date (YYYY-MM-DD)"); bad = 1
+if main != "-":
+    try:
+        mled = entries(main)
+    except SystemExit:
+        mled = None
+    if mled is not None and len(led) > len(mled):
+        print(f"FAIL  R4 the ledger GREW against origin/main ({len(mled)} -> {len(led)}): it may only shrink"); bad = 1
+if not bad:
+    print(f"ok    build_commit {build}; superseded {' '.join(sup)}; {len(citing)} file(s) cite a superseded pin, every one ledgered "
+          f"({sum(1 for v in led.values() if v[0]=='historical')} historical, {sum(1 for v in led.values() if v[0]=='fixture')} fixture), {sum(int(v[2].split(':')[0]) for v in led.values())} line(s) pinned; no stale entry")
+sys.exit(bad)
+PY
+}
+
+# pin_line ROOT PATH -> the n:sha12 value R6 compares (the same formula as judge()'s pin_of)
+pin_line() {
+    python3 - "$1" "$2" $(pin_value "$1/$PIN_REL" superseded_commits) <<'PY'
+import hashlib, re, sys
+root, rel = sys.argv[1:3]
+pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s[:7]) + r"[0-9a-f]*") for s in sys.argv[3:]]
+sup = sys.argv[3:]
+ENCS = ("utf-8", "utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be")
+def decode_citing(raw, sup):  # SAME in judge() and pin_line(): the first encoding in which a superseded pin appears
+    for enc in ENCS:
+        if any(s[:7].encode(enc) in raw for s in sup):
+            t = raw.decode(enc, errors="replace")  # a UTF-16-BE stream also holds the LE needle one byte off: keep
+            if any(s[:7] in t for s in sup): return t  # the encoding whose DECODED text really cites
+    return None
+text = decode_citing(open(f"{root}/{rel}", "rb").read(), sup) or ""
+texts = [l for l in text.splitlines() if any(p.search(l) for p in pats)]
+if not texts: sys.exit(f"{rel} cites no superseded pin")
+print(f"{len(texts)}:{hashlib.sha256(chr(10).join(texts).encode()).hexdigest()[:12]}")
+PY
+}
+if [ "${1:-}" = "--pin" ]; then [ -n "${2:-}" ] || env_die "--pin PATH"; pin_line "$ROOT" "$2"; exit $?; fi
+
+# ---- the case table --------------------------------------------------------------------------
+if [ "${1:-}" = "--self-test" ]; then
+    TMP=$(mktemp -d) || exit 2
+    cleanup() { case "${TMP:-}" in ''|/) return 0 ;; *) [ -d "$TMP" ] && rm -rf -- "$TMP" ;; esac; }
+    trap cleanup EXIT
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=fx GIT_AUTHOR_EMAIL=fx@x GIT_COMMITTER_NAME=fx GIT_COMMITTER_EMAIL=fx@x
+    fails=0; rows=0
+    # the superseded shas, BUILT so this file cites none of them (its own R1 would read it otherwise)
+    OLD="39173""bcac"; OLD2="60b06""ab9a"; CUR="d1d3c""3396"
+    # fixture NAME -> $TMP/NAME: a tracked tree with the pin file, a dated historical record, a fixture,
+    # and the ledger listing both
+    fixture() {
+        local d="$TMP/$1"
+        mkdir -p "$d/scripts" "$d/evidence/parity" "$d/tests/fx" || return 2
+        printf '[comparator]\nbuild_commit = "%s"\nsuperseded_commits = "%s %s"\n' "$CUR" "$OLD" "$OLD2" > "$d/scripts/llama_pin.toml"
+        printf 'measured 2026-08-24 against llama.cpp %s: 0.59x\n' "$OLD" > "$d/evidence/parity/old-ratio.md"
+        printf '{"comparator_sha": "%s0123456789abcdef"}\n' "$OLD" > "$d/tests/fx/case.json"
+        printf 'evidence/parity/old-ratio.md\thistorical\ta ratio measured before the 2026-09-15 bump, dated in the file\t%s\ntests/fx/case.json\tfixture\ta sample value in a self-test\t%s\n' "$(pin_line "$d" evidence/parity/old-ratio.md)" "$(pin_line "$d" tests/fx/case.json)" > "$d/scripts/comparator_pin_citations.txt"
+        git -C "$d" init -q && git -C "$d" add -A && git -C "$d" commit -q -m fx || return 2
+    }
+    row() { rows=$((rows + 1)); if [ "$2" = 0 ]; then printf 'ok    %s\n' "$1"; elif [ "$2" = 2 ]; then printf 'ENV   %s\n' "$1"; exit 2; else printf 'FAIL  %s: %s\n' "$1" "$3"; fails=$((fails + 1)); fi; }
+    expect() { # NAME FIXTURE-DIR WANT-RC NEEDLE [MAIN-LEDGER]
+        local out rc; out=$(judge "$2" "${5:--}" 2>&1); rc=$?
+        [ "$rc" = "$3" ] && grep -qF -- "$4" <<< "$out"; row "$1" $? "rc=$rc (want $3): $(tr '\n' '|' <<< "$out" | cut -c1-300)"
+    }
+    fixture c1 || exit 2
+    expect 'C1 control: dated history + a fixture, both ledgered -> green' "$TMP/c1" 0 'every one ledgered'
+    fixture c2 && printf '{"comparator": "llama.cpp %s", "ratio": 0.6}\n' "$OLD" > "$TMP/c2/evidence/parity/new-receipt.json" && git -C "$TMP/c2" add -A
+    expect 'C2 a PLANTED receipt citing the old pin, unlisted -> R1 RED naming it' "$TMP/c2" 1 'R1 evidence/parity/new-receipt.json:1 cites a superseded'
+    fixture c3 && printf 'comparator %s (8 digits)\n' "${OLD%?}" > "$TMP/c3/evidence/parity/abbrev.md" && git -C "$TMP/c3" add -A
+    expect 'C3 an 8-digit abbreviation of the old pin is a citation -> R1' "$TMP/c3" 1 'R1 evidence/parity/abbrev.md:1'
+    fixture c4 && printf 'nothing here\n' > "$TMP/c4/evidence/parity/old-ratio.md"
+    expect 'C4 a ledger entry whose file no longer cites -> R2 stale' "$TMP/c4" 1 'R2 stale ledger entry evidence/parity/old-ratio.md'
+    fixture c5 && printf 'against llama.cpp %s: 0.59x (no date anywhere)\n' "$OLD" > "$TMP/c5/evidence/parity/old-ratio.md" \
+        && printf 'evidence/parity/old-ratio.md\thistorical\tundated\t%s\ntests/fx/case.json\tfixture\ta sample value\t%s\n' "$(pin_line "$TMP/c5" evidence/parity/old-ratio.md)" "$(pin_line "$TMP/c5" tests/fx/case.json)" > "$TMP/c5/scripts/comparator_pin_citations.txt"
+    expect 'C5 a historical entry with no date in file, path or ledger -> R3' "$TMP/c5" 1 'R3 evidence/parity/old-ratio.md is ledgered as historical'
+    fixture c5b && printf 'against llama.cpp %s: 0.59x\n' "$OLD" > "$TMP/c5b/evidence/parity/old-ratio.md" \
+        && printf 'evidence/parity/old-ratio.md\thistorical\tmeasured 2026-08-24 (dated here)\t%s\ntests/fx/case.json\tfixture\ta sample value\t%s\n' "$(pin_line "$TMP/c5b" evidence/parity/old-ratio.md)" "$(pin_line "$TMP/c5b" tests/fx/case.json)" > "$TMP/c5b/scripts/comparator_pin_citations.txt"
+    expect 'C5b the date on the ledger line satisfies R3' "$TMP/c5b" 0 'every one ledgered'
+    fixture c6 && printf 'evidence/parity/old-ratio.md\thistorical\tdated 2026-08-24\t%s\n' "$(pin_line "$TMP/c6" evidence/parity/old-ratio.md)" > "$TMP/c6/main-ledger.txt"
+    expect 'C6 a ledger that GREW against main (1 -> 2) -> R4' "$TMP/c6" 1 'R4 the ledger GREW against origin/main (1 -> 2)' "$TMP/c6/main-ledger.txt"
+    fixture c7 && printf '[comparator]\nbuild_commit = "%s"\nsuperseded_commits = "%s %s"\n' "$CUR" "$OLD" "$CUR" > "$TMP/c7/scripts/llama_pin.toml"
+    expect 'C7 build_commit listed as superseded -> R5' "$TMP/c7" 1 "R5 build_commit $CUR is listed as superseded by itself"
+    fixture c8 && printf '[comparator]\nbuild_commit = "%s"\n' "$CUR" > "$TMP/c8/scripts/llama_pin.toml"
+    expect 'C8 no superseded_commits declared -> R5' "$TMP/c8" 1 'declares no superseded_commits'
+    fixture c9 && printf 'evidence/parity/old-ratio.md\thistorical\n' > "$TMP/c9/scripts/comparator_pin_citations.txt"
+    expect 'C9 a malformed ledger line -> RED, never a pass' "$TMP/c9" 1 'is not <path>TAB<historical|fixture>TAB<why>'
+    fixture c10 && printf 'cites %s only, the pin of record\n' "$CUR" > "$TMP/c10/evidence/parity/current.md" && git -C "$TMP/c10" add -A
+    expect 'C10 a citation of the CURRENT pin needs no ledger -> green' "$TMP/c10" 0 'every one ledgered'
+    fixture c11 && mkdir -p "$TMP/c11/docs/roadmaps/entries" \
+        && printf 'notes: measured just now against llama.cpp %s, CURRENT\n' "$OLD" > "$TMP/c11/docs/roadmaps/entries/PMAT-9.yaml" && git -C "$TMP/c11" add -A
+    expect 'C11 a PMAT-shaped roadmap fragment gets no free pass either -> R1' "$TMP/c11" 1 'R1 docs/roadmaps/entries/PMAT-9.yaml:1'
+    fixture c12 && mkdir -p "$TMP/c12/docs/roadmaps/entries" && printf 'comparator: %s\n' "$OLD" > "$TMP/c12/docs/roadmaps/entries/PLANTED.yaml" && git -C "$TMP/c12" add -A
+    expect 'C12 a non-PMAT file under docs/roadmaps/ is NOT a ticket record -> R1' "$TMP/c12" 1 'R1 docs/roadmaps/entries/PLANTED.yaml:1'
+    fixture c13 && mkdir -p "$TMP/c13/docs/audits" && printf 'comparator %s\n' "$OLD" > "$TMP/c13/docs/audits/quorum-planted.md" && git -C "$TMP/c13" add -A
+    expect 'C13 a quorum-*.md under docs/audits/ is NOT a quorum record -> R1' "$TMP/c13" 1 'R1 docs/audits/quorum-planted.md:1'
+    fixture c14 && printf 'measured just now against llama.cpp %s: CURRENT baseline\n' "$OLD" >> "$TMP/c14/evidence/parity/old-ratio.md"
+    expect 'C14 a live claim APPENDED to an already-ledgered file -> R6 naming the new line' "$TMP/c14" 1 'R6 evidence/parity/old-ratio.md citing line(s) 1,2 pin 2:'
+    fixture c15 && printf 'evidence/parity/old-ratio.md\thistorical\tdated in the file\t2:000000000000\ntests/fx/case.json\tfixture\ta sample value\t%s\n' "$(pin_line "$TMP/c15" tests/fx/case.json)" > "$TMP/c15/scripts/comparator_pin_citations.txt"
+    expect 'C15 a count above the file -> R6 (re-pin: the ledger shrinks)' "$TMP/c15" 1 'a citation left -- re-pin'
+    fixture c17 && printf 'measured JUST NOW against llama.cpp %s: CURRENT, 0.99x\n' "$OLD" > "$TMP/c17/evidence/parity/old-ratio.md" \
+        && printf 'dated 2026-08-24 elsewhere in the file\n' >> "$TMP/c17/evidence/parity/old-ratio.md"
+    fixture c18 && printf '\0comparator %s measured just now, CURRENT\n' "$OLD" > "$TMP/c18/evidence/parity/nul.md" && git -C "$TMP/c18" add -A
+    expect 'C18 a planted receipt behind a NUL byte (git diff shows "Binary files differ") -> R1' "$TMP/c18" 1 'R1 evidence/parity/nul.md:1'
+    fixture c19 && python3 -c 'import sys; open(sys.argv[1], "wb").write(("comparator %s measured just now, CURRENT\n" % sys.argv[2]).encode("utf-16"))' "$TMP/c19/evidence/parity/u16.md" "$OLD" && git -C "$TMP/c19" add -A
+    expect 'C19 a planted receipt saved as UTF-16 (git diff: "Binary files differ") -> R1' "$TMP/c19" 1 'R1 evidence/parity/u16.md:1'
+    fixture c19b && python3 -c 'import sys; open(sys.argv[1], "wb").write(("dated 2026-08-24, comparator %s\n" % sys.argv[2]).encode("utf-16-be"))' "$TMP/c19b/evidence/parity/u16.md" "$OLD" \
+        && printf 'evidence/parity/u16.md\thistorical\ta UTF-16 record\t%s\n' "$(pin_line "$TMP/c19b" evidence/parity/u16.md)" >> "$TMP/c19b/scripts/comparator_pin_citations.txt" && git -C "$TMP/c19b" add -A
+    expect 'C19b --pin and the judge decode UTF-16 the same way: ledgered by --pin -> green' "$TMP/c19b" 0 'every one ledgered'
+    expect 'C17 a dated line EDITED IN PLACE into a live claim (same count, a date elsewhere) -> R6' "$TMP/c17" 1 'a citing line was EDITED in place'
+    fixture c16 && printf 'evidence/parity/old-ratio.md\thistorical\tdated in the file\ntests/fx/case.json\tfixture\ta sample value\n' > "$TMP/c16/scripts/comparator_pin_citations.txt"
+    expect 'C16 a ledger line with no pin -> RED, never a pass' "$TMP/c16" 1 'TAB<n>:<sha12>'
+
+    # MUTANTS: each must turn its row RED. The judge is re-sourced from a mutated copy of this file.
+    mutant() { # NAME OLD NEW WANT-RC NEEDLE FIXTURE-DIR [MAIN-LEDGER] -- killed iff the row's expectation no longer holds
+        local name=$1 old=$2 new=$3 want=$4 needle=$5; shift 5
+        python3 - "$0" "$TMP/mut-$name.sh" "$old" "$new" <<'PY' || { printf 'FAIL  mutant %s: anchor not found exactly once\n' "$name"; fails=$((fails + 1)); return; }
+import sys
+src, dst, old, new = sys.argv[1:5]
+s = open(src).read()
+# judge() precedes the self-test, whose mutant calls quote the same anchors: mutate the FIRST occurrence only
+if s.count(old) < 1: sys.exit(1)
+open(dst, "w").write(s.replace(old, new, 1))
+PY
+        local out rc
+        out=$( . "$TMP/mut-$name.sh" --source-only; judge "$@" 2>&1 ); rc=$?
+        rows=$((rows + 1))
+        if [ "$rc" = "$want" ] && grep -qF -- "$needle" <<< "$out"; then printf 'FAIL  mutant %s SURVIVED (the row still holds)\n' "$name"; fails=$((fails + 1))
+        else printf 'ok    mutant %s killed\n' "$name"; fi
+    }
+    mutant drop-r1 '    if rel not in led:
+        print(f"FAIL  R1' '    if False:
+        print(f"FAIL  R1' 1 'R1 evidence/parity/new-receipt.json:1' "$TMP/c2"
+    mutant drop-r2 '    if rel not in citing:
+        print(f"FAIL  R2' '    if False:
+        print(f"FAIL  R2' 1 'R2 stale ledger entry' "$TMP/c4"
+    mutant drop-r3 '        if not (date_re.search(text) or date_re.search(rel) or date_re.search(why)):' '        if False:' 1 'R3 evidence/parity/old-ratio.md' "$TMP/c5"
+    mutant drop-r6 '    if pinned[rel] != pin:' '    if False:' 1 'R6 evidence/parity/old-ratio.md' "$TMP/c14"
+    mutant nul-skip '    if text is None: continue' '    if text is None or b"\0" in raw[:4096]: continue' 1 'R1 evidence/parity/nul.md:1' "$TMP/c18"
+    mutant utf8-only 'ENCS = ("utf-8", "utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be")' 'ENCS = ("utf-8",)' 1 'R1 evidence/parity/u16.md:1' "$TMP/c19"
+    mutant count-only '    if pinned[rel] != pin:' '    if pinned[rel].split(":")[0] != pin.split(":")[0]:' 1 'EDITED in place' "$TMP/c17"
+    mutant drop-r4 '    if mled is not None and len(led) > len(mled):' '    if False:' 1 'R4 the ledger GREW' "$TMP/c6" "$TMP/c6/main-ledger.txt"
+    mutant shape-exempt 'pin_rel):' 'pin_rel) or rel.startswith("docs/roadmaps/entries/PMAT-"):' 1 'R1 docs/roadmaps/entries/PMAT-9.yaml:1' "$TMP/c11"
+    mutant prefix-exempt 'pin_rel):' 'pin_rel) or rel.startswith(("docs/roadmaps/", "docs/audits/quorum-")):' 1 'R1 docs/roadmaps/entries/PLANTED.yaml:1' "$TMP/c12"
+    mutant full-sha-only 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s[:7]) + r"[0-9a-f]*") for s in sup]' 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s) + r"(?![0-9a-f])") for s in sup]' 1 'R1 evidence/parity/abbrev.md:1' "$TMP/c3"
+
+    [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED (%s of %s)\n' "$fails" "$rows"; exit 1; }
+    printf '\nSELF-TEST PASSED (%s rows and mutants)\n' "$rows"
+    exit 0
+fi
+# a mutated copy is sourced by the self-test for its judge() only
+[ "${1:-}" = "--source-only" ] && return 0 2> /dev/null
+
+# ---- the tree --------------------------------------------------------------------------------
+printf '=== one comparator pin is cited; every other is dated history or a fixture, by file (#3741) ===\n'
+MAINL=$(mktemp) || exit 2
+if git -C "$ROOT" cat-file -e "origin/main:$LEDGER_REL" 2> /dev/null; then
+    git -C "$ROOT" show "origin/main:$LEDGER_REL" > "$MAINL"
+else
+    printf '!     BOOTSTRAP: %s is not on origin/main yet, so the shrink-only floor has no comparand this run\n' "$LEDGER_REL"
+    rm -f -- "$MAINL"; MAINL=-
+fi
+judge "$ROOT" "$MAINL"; rc=$?
+[ "$MAINL" = - ] || rm -f -- "$MAINL"
+[ "$rc" -eq 0 ] && printf 'PASS\n' || printf 'FAIL  (rc=%s)\n' "$rc"
+exit "$rc"

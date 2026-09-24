@@ -12,9 +12,9 @@
 # job runs on the fleet. x86_64 builds on yoga and aarch64 natively on gx10, both
 # inside rust:1.93.0-bullseye (binary-release.yml's CPU-lane pattern), so the
 # nightly's glibc floor is 2.31; the ubuntu-latest build needed GLIBC_2.39 and did
-# not run on lambda's 22.04. The macOS and Windows targets are gone: no self-hosted
-# macOS or Windows runner is registered in the org, and there is no hosted
-# fallback. They come back when a box for them does.
+# not run on lambda's 22.04. Windows is gone: no self-hosted Windows runner is
+# registered and there is no hosted fallback. macOS came back with a box for it
+# (#3204): aarch64-apple-darwin builds host-native on mini-m4 (build-darwin).
 
 name: Nightly
 
@@ -123,9 +123,62 @@ jobs:
             apr-${{ matrix.target }}.tar.gz
             apr-${{ matrix.target }}.tar.gz.sha256
 
+  # ── Build apr: macOS aarch64 natively on mini-m4 (#3204) ──
+  # Host-native: there is no docker on macOS and no glibc floor to pin, so the
+  # toolchain is rust-toolchain.toml via the runner's rustup, as in ci.yml's
+  # mac-check. A LITERAL runs-on list, not fromJSON, so check_runner_labels.sh
+  # sees the apple-silicon label. One box with 16 GB: this leg is not allowed to
+  # hold the Linux nightly hostage -- `release` publishes when `build` is green
+  # whatever this job did, and the darwin tarball is simply absent that night.
+  build-darwin:
+    needs: check-activity
+    if: needs.check-activity.outputs.has_commits == 'true'
+    name: apr aarch64-apple-darwin on mini
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_TERM_COLOR: never
+      T: aarch64-apple-darwin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build apr (host-native, pinned toolchain)
+        run: |
+          set -euo pipefail
+          rustup show active-toolchain
+          cargo build --release --locked -p apr-cli --target "$T"
+          "target/$T/release/apr" --version
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          ARCHIVE="apr-$T"
+          rm -rf "$ARCHIVE" "$ARCHIVE.tar.gz" "$ARCHIVE.tar.gz.sha256"
+          mkdir -p "$ARCHIVE"
+          cp "target/$T/release/apr" "$ARCHIVE/"
+          for f in README.md LICENSE LICENSE-MIT COPYING UNLICENSE; do
+            if [ -f "$f" ]; then cp "$f" "$ARCHIVE/"; fi
+          done
+          tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
+          shasum -a 256 "${ARCHIVE}.tar.gz" > "${ARCHIVE}.tar.gz.sha256"
+          echo "Packaged: ${ARCHIVE}.tar.gz ($(du -h "${ARCHIVE}.tar.gz" | cut -f1))"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: apr-aarch64-apple-darwin
+          path: |
+            apr-aarch64-apple-darwin.tar.gz
+            apr-aarch64-apple-darwin.tar.gz.sha256
+
   # ── Create/update nightly prerelease ─────────────────────
+  # Gated on the Linux matrix alone: build-darwin is in `needs` only so its
+  # artifact is downloaded when it exists (see build-darwin's comment).
   release:
-    needs: build
+    needs: [build, build-darwin]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - name: Checkout

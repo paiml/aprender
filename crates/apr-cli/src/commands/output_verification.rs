@@ -15,11 +15,11 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
         );
     }
 
-    // Extract metadata from the model file
-    let data = std::fs::read(path)
+    // #3750: the 4-byte magic here, and that format's header below, never the whole model
+    let magic = super::model_header::read_prefix(path, 4)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
 
-    if data.len() < 4 {
+    if magic.len() < 4 {
         let duration = start.elapsed();
         return Ok(GateResult::failed(
             "metadata_plausibility",
@@ -30,7 +30,7 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
         ));
     }
 
-    let (architecture, rope_theta, max_pos, rms_norm_eps) = extract_model_metadata(&data, path)?;
+    let (architecture, rope_theta, max_pos, rms_norm_eps) = extract_model_metadata(&magic, path)?;
 
     let mut violations: Vec<String> = Vec::new();
     let mut checks_passed = 0usize;
@@ -38,7 +38,7 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
     check_rope_theta(
         architecture.as_deref(),
         rope_theta,
-        &data,
+        &magic,
         &mut violations,
         &mut checks_passed,
     );
@@ -188,13 +188,16 @@ fn check_arch_theta_cross_validation(
 /// Metadata extracted from model file for plausibility validation.
 type ModelMetadata = (Option<String>, Option<f32>, Option<usize>, Option<f32>);
 
-/// Extract model metadata from file bytes (GGUF, APR, or SafeTensors format).
-fn extract_model_metadata(data: &[u8], path: &Path) -> Result<ModelMetadata> {
-    let magic = &data[0..4];
+/// Extract model metadata (GGUF, APR, or SafeTensors format) given the file's magic.
+///
+/// #3750: each format is read to the end of its header and no further: the GGUF header
+/// prefix, the APR header + metadata + tensor index, or SafeTensors' sibling config.json.
+fn extract_model_metadata(magic: &[u8], path: &Path) -> Result<ModelMetadata> {
+    let magic = &magic[0..4];
 
     if magic == b"GGUF" {
-        // GGUF format: use GgufReader
-        let reader = aprender::format::gguf::reader::GgufReader::from_bytes(data.to_vec())
+        // GGUF format: use GgufReader, over the header prefix
+        let reader = super::model_header::gguf_header(path)
             .map_err(|e| CliError::ValidationFailed(format!("GGUF parse failed: {e}")))?;
         let arch = reader.architecture();
         let rope_theta = reader.rope_theta();
@@ -204,7 +207,9 @@ fn extract_model_metadata(data: &[u8], path: &Path) -> Result<ModelMetadata> {
     } else if &magic[0..3] == b"APR" || magic == b"APRN" {
         // APR format: parse v2 header + JSON metadata
         use aprender::format::v2::AprV2Reader;
-        let reader = AprV2Reader::from_bytes(data)
+        let prefix = super::model_header::apr_header_prefix(path)
+            .map_err(|e| CliError::ValidationFailed(format!("APR parse failed: {e}")))?;
+        let reader = AprV2Reader::from_bytes(&prefix)
             .map_err(|e| CliError::ValidationFailed(format!("APR parse failed: {e}")))?;
         let meta = reader.metadata();
         let _ = path;

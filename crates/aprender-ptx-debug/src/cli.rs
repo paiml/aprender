@@ -31,7 +31,7 @@ EXAMPLES:
 #[command(
     name = "aprender-ptx-debug",
     about = "Pure Rust PTX debugging and static analysis tool",
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"),
     subcommand_required = true,
     arg_required_else_help = true,
     after_help = AFTER_HELP

@@ -106,7 +106,10 @@ cuda = ["inference", "realizar/cuda", "entrenar/cuda", "trueno/cuda", "aprender-
 # the binary was built with it (§2.1 INVALID-BUILD reads that entry).
 cuda-batch = ["cuda"]
 # PMAT-335: WGPU backend for AMD/Intel/Apple GPU inference via Vulkan/Metal/WebGPU
-wgpu = ["inference"]
+# #4056: the finetune wgpu path (commands/finetune.rs) uses entrenar items gated
+# behind entrenar's own `gpu` feature. Weak dep: enabled only when `training`
+# brings entrenar in, which is exactly when that path compiles.
+wgpu = ["inference", "entrenar?/gpu"]
 visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
 training = ["dep:entrenar", "dep:entrenar-lora", "dep:aprender-train-distill", "dep:aprender-train-common", "aprender-train-distill?/shard-batch-source"]
@@ -136,7 +139,7 @@ async-stream = "0.3"
 provable-contracts-macros = { workspace = true }
 
 # Shared formatting and system utilities (Batuta stack)
-batuta-common = { workspace = true }
+batuta-common = { workspace = true, features = ["cli-roles"] }
 
 # Sovereign coding assistant (apr code → batuta agent engine) — PMAT-182.
 # Non-optional since claude-code-parity-apr M150 (outcome-parity Phase 3
@@ -174,7 +177,7 @@ gag = "1.0"
 
 # Output formatting
 colored = "2.1"
-tabled = "0.16"
+tabled = "0.22"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
@@ -288,6 +291,9 @@ required-features = ["inference", "cuda"]
 [[example]]
 name = "ptx_parity_validation"
 required-features = ["inference"]
+
+[build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 
 [dev-dependencies]
 jsonschema = "0.28"  # apr devices --json validated against contracts/schemas/apr-devices-v1.schema.json (PP-066 R-0a)

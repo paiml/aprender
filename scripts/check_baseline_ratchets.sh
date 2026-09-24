@@ -79,6 +79,8 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         assertion_exclusion_baseline.txt)        printf 'keyed\n' ;;
         claim_literal_baseline.txt)              printf 'set-aperture\tscripts/check_no_claim_literals.sh\n' ;;
         contract_duplicate_stem_baseline.txt)    printf 'set\n' ;;
+        comparator_consumer_baseline.txt)        printf 'set\n' ;;   # known llama.cpp consumers not resolving through llama_bin.sh, each owned by an issue (scripts/check_comparator_consumers_resolve.sh, #3740)
+        comparator_pin_citations.txt)            printf 'set\n' ;;   # files citing a SUPERSEDED llama.cpp pin as dated history / fixture, one line each (scripts/check_comparator_pin_citations.sh, #3741)
         contract_test_binding_baseline.txt)      printf 'keyed\n' ;;
         complexity_baseline.txt)                 printf 'keyed2\n' ;;
         fabricated_baseline_rust_sites.txt)      printf 'set\n' ;;
@@ -90,6 +92,7 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         pathonly_devdeps_baseline.txt)           printf 'set\n' ;;   # (manifest,alias) pairs whose src/ uses a publish-stripped dev-dep (scripts/check_pathonly_devdeps_unused_in_src.sh, #3305/#3306)
         roadmap_uncited_completion_baseline.txt) printf 'set\n' ;;
         shell_lint_baseline.txt)                 printf 'count\n' ;;
+        src_test_files_unwired_baseline.txt)     printf 'set\n' ;;   # dark src test files, SHRINK-ONLY exact set (scripts/check_src_test_files_wired.sh, #3809)
         cb200_baseline.txt)                      printf 'count\n' ;;   # mirrors .pmat-gates.toml [tdg] baseline (PMAT-937)
         test_fixture_path_baseline.txt)          printf 'count\n' ;;
         tracked_ignored_baseline.txt)            printf 'count\n' ;;
