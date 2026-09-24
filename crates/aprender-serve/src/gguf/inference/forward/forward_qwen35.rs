@@ -1454,6 +1454,9 @@ fn qwen35_gpu_decode(
     let mut state = gpu
         .new_state()
         .map_err(|e| format!("the decode state would not allocate: {e}"))?;
+    if gen_config.temperature == 0.0 || gen_config.top_k == 1 {
+        return qwen35_gpu_decode_greedy(gpu, &mut state, input_tokens, gen_config, max_seq_len);
+    }
     let mut rng = rand::rngs::StdRng::seed_from_u64(gen_config.seed);
 
     let mut logits = Vec::new();
@@ -1464,17 +1467,13 @@ fn qwen35_gpu_decode(
     }
     let mut tokens = input_tokens.to_vec();
     for _ in 0..gen_config.max_tokens {
-        let next = if gen_config.temperature == 0.0 || gen_config.top_k == 1 {
-            crate::gguf::ops::argmax(&logits)
-        } else {
-            OwnedQuantizedModel::sample_topk_seeded(
-                &logits,
-                gen_config.temperature,
-                gen_config.top_k,
-                gen_config.top_p,
-                &mut rng,
-            )
-        };
+        let next = OwnedQuantizedModel::sample_topk_seeded(
+            &logits,
+            gen_config.temperature,
+            gen_config.top_k,
+            gen_config.top_p,
+            &mut rng,
+        );
         tokens.push(next);
         if gen_config.stop_tokens.contains(&next) || tokens.len() >= max_seq_len {
             break;
@@ -1482,6 +1481,36 @@ fn qwen35_gpu_decode(
         let pos = tokens.len() - 1;
         logits = gpu
             .forward_single(next, &mut state, pos)
+            .map_err(|e| format!("the GPU forward failed at decode position {pos}: {e}"))?;
+    }
+    Ok(tokens)
+}
+
+/// Temperature 0 (#4215): the argmax runs on the device, so each token
+/// downloads its 4-byte id instead of the 248,320-entry logits vector.
+#[cfg(feature = "cuda")]
+fn qwen35_gpu_decode_greedy(
+    gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
+    state: &mut crate::gguf::cuda::Qwen35CudaState,
+    input_tokens: &[u32],
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+    max_seq_len: usize,
+) -> std::result::Result<Vec<u32>, String> {
+    let mut next = 0;
+    for (pos, &token) in input_tokens.iter().enumerate() {
+        next = gpu
+            .forward_single_greedy(token, state, pos)
+            .map_err(|e| format!("the GPU forward failed at prompt position {pos}: {e}"))?;
+    }
+    let mut tokens = input_tokens.to_vec();
+    for _ in 0..gen_config.max_tokens {
+        tokens.push(next);
+        if gen_config.stop_tokens.contains(&next) || tokens.len() >= max_seq_len {
+            break;
+        }
+        let pos = tokens.len() - 1;
+        next = gpu
+            .forward_single_greedy(next, state, pos)
             .map_err(|e| format!("the GPU forward failed at decode position {pos}: {e}"))?;
     }
     Ok(tokens)

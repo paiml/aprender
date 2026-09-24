@@ -237,17 +237,17 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         let kernel_type = KernelType::FusedSwiglu { n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("fused_swiglu_{}", n);
+        let cache_key = module_key!(self, "fused_swiglu_{}", n);
 
-        if !self.modules.contains_key(&cache_key) {
+        if !self.modules.contains_key(&*cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
             let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.modules.insert(cache_key.to_string(), module);
         }
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let threads = 256;
@@ -276,7 +276,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),

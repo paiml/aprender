@@ -19,17 +19,17 @@ impl CudaExecutor {
 
         let kernel_type = KernelType::BatchedQ6KGemv { k, n, m };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("batched_q6k_gemv_{}_{}_{}", m, k, n);
+        let cache_key = module_key!(self, "batched_q6k_gemv_{}_{}_{}", m, k, n);
 
-        if !self.modules.contains_key(&cache_key) {
+        if !self.modules.contains_key(&*cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
             let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.modules.insert(cache_key.to_string(), module);
         }
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         // Grid: N blocks (one per output row), 32 threads per block
@@ -107,18 +107,18 @@ impl CudaExecutor {
         // Original Q6K kernel (CoalescedQ6K disabled due to CORRECTNESS-006)
         let kernel_type = KernelType::Q6KGemv { k, n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("q6k_gemv_{}_{}", k, n);
+        let cache_key = module_key!(self, "q6k_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
-        if !self.modules.contains_key(&cache_key) {
+        if !self.modules.contains_key(&*cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
             let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.modules.insert(cache_key.to_string(), module);
         }
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let mut ptr_output = output.as_ptr();
@@ -145,7 +145,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -183,17 +183,17 @@ impl CudaExecutor {
         let num_warps = self.gpu_profile.mwv_warps;
         let kernel_type = KernelType::MwvQ6KGemv { k, n, num_warps };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("mwv_q6k_gemv_{}_{}_{}", k, n, num_warps);
+        let cache_key = module_key!(self, "mwv_q6k_gemv_{}_{}_{}", k, n, num_warps);
 
-        if !self.modules.contains_key(&cache_key) {
+        if !self.modules.contains_key(&*cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
             let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.modules.insert(cache_key.to_string(), module);
         }
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let threads = num_warps * 32;
@@ -224,7 +224,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -280,17 +280,17 @@ impl CudaExecutor {
         let num_warps = self.gpu_profile.mwv_warps;
         let kernel_type = KernelType::Dp4aQ6KGemv { k, n, num_warps };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("dp4a_q6k_gemv_{}_{}_{}", k, n, num_warps);
+        let cache_key = module_key!(self, "dp4a_q6k_gemv_{}_{}_{}", k, n, num_warps);
 
-        if !self.modules.contains_key(&cache_key) {
+        if !self.modules.contains_key(&*cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
             let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.modules.insert(cache_key.to_string(), module);
         }
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let threads = num_warps * 32;
@@ -323,7 +323,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -373,17 +373,17 @@ impl CudaExecutor {
         let num_warps = self.gpu_profile.mwv_warps;
         let kernel_type = KernelType::HwDp4aQ6KGemv { k, n, num_warps };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("hw_dp4a_q6k_gemv_{}_{}_{}", k, n, num_warps);
+        let cache_key = module_key!(self, "hw_dp4a_q6k_gemv_{}_{}_{}", k, n, num_warps);
 
-        if !self.modules.contains_key(&cache_key) {
+        if !self.modules.contains_key(&*cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
             let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.modules.insert(cache_key.to_string(), module);
         }
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let threads = num_warps * 32;
@@ -414,7 +414,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -453,18 +453,18 @@ impl CudaExecutor {
         validate_device_ptr(weight_ptr, "coalesced_q6k_gemv_into")?;
         let kernel_type = KernelType::CoalescedQ6KGemv { k, n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("coalesced_q6k_gemv_{}_{}", k, n);
+        let cache_key = module_key!(self, "coalesced_q6k_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
-        if !self.modules.contains_key(&cache_key) {
+        if !self.modules.contains_key(&*cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
             let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.modules.insert(cache_key.to_string(), module);
         }
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let mut ptr_output = output.as_ptr();
@@ -519,18 +519,18 @@ impl CudaExecutor {
         // PAR-058: Zero allocation Q8_0 GEMV for mixed-quantization models
         let kernel_type = KernelType::Q8_0Gemv { k, n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("q8_0_gemv_{}_{}", k, n);
+        let cache_key = module_key!(self, "q8_0_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
-        if !self.modules.contains_key(&cache_key) {
+        if !self.modules.contains_key(&*cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
             let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.modules.insert(cache_key.to_string(), module);
         }
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let mut ptr_output = output.as_ptr();
@@ -557,7 +557,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -596,18 +596,18 @@ impl CudaExecutor {
         // PAR-058: Zero allocation Q5_0 GEMV for Qwen 0.5B Q/K weights
         let kernel_type = KernelType::Q5_0Gemv { k, n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("q5_0_gemv_{}_{}", k, n);
+        let cache_key = module_key!(self, "q5_0_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
-        if !self.modules.contains_key(&cache_key) {
+        if !self.modules.contains_key(&*cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
             let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.modules.insert(cache_key.to_string(), module);
         }
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let mut ptr_output = output.as_ptr();
@@ -634,7 +634,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -673,18 +673,18 @@ impl CudaExecutor {
         // PAR-058: Zero allocation Q4_0 GEMV for GGUF qtype mismatch
         let kernel_type = KernelType::Q4_0Gemv { k, n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("q4_0_gemv_{}_{}", k, n);
+        let cache_key = module_key!(self, "q4_0_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
-        if !self.modules.contains_key(&cache_key) {
+        if !self.modules.contains_key(&*cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
             let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.modules.insert(cache_key.to_string(), module);
         }
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let mut ptr_output = output.as_ptr();
@@ -711,7 +711,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -742,18 +742,18 @@ impl CudaExecutor {
         validate_device_ptr(weight_ptr, "f32_gemv_into")?;
         let kernel_type = KernelType::Gemv { k, n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("f32_gemv_{}_{}", k, n);
+        let cache_key = module_key!(self, "f32_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
-        if !self.modules.contains_key(&cache_key) {
+        if !self.modules.contains_key(&*cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
             let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.modules.insert(cache_key.to_string(), module);
         }
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let mut ptr_output = output.as_ptr();
@@ -780,7 +780,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),

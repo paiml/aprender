@@ -257,6 +257,10 @@ pub struct Qwen35CudaModel<'a> {
     out_normed: GpuBuffer<f32>,
     /// `[vocab_size]`, the logits — the ONE buffer a token's forward downloads.
     logits_buf: GpuBuffer<f32>,
+    /// `[hidden_dim]`, the token's residual stream (#4215): the embedding row is
+    /// copied in, every layer updates it in place. `None` only while a forward
+    /// has it out.
+    hidden_buf: Option<GpuBuffer<f32>>,
     dims: Qwen35CudaDims,
     /// Positions the device KV caches hold.
     max_seq_len: usize,
@@ -589,6 +593,7 @@ impl<'a> Qwen35CudaModel<'a> {
         let attn_scratch = Self::build_attn_scratch(&executor, dims)?;
         let out_normed = Self::zeros(&executor, dims.hidden_dim as usize)?;
         let logits_buf = Self::zeros(&executor, dims.vocab_size as usize)?;
+        let hidden_buf = Some(Self::zeros(&executor, dims.hidden_dim as usize)?);
         let state = Self::build_state(&executor, &layers, dims, max_seq_len)?;
         Ok(Self {
             model,
@@ -601,6 +606,7 @@ impl<'a> Qwen35CudaModel<'a> {
             lm_head,
             out_normed,
             logits_buf,
+            hidden_buf,
             dims,
             max_seq_len,
         })
@@ -1388,6 +1394,51 @@ impl<'a> Qwen35CudaModel<'a> {
         state: &mut Qwen35CudaState,
         position: usize,
     ) -> Result<Vec<f32>> {
+        self.forward_to_logits(token, state, position)?;
+        // The ONE sync of the whole token, in front of the ONE download.
+        self.executor
+            .sync_stream()
+            .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
+        let mut logits = vec![0.0f32; self.dims.vocab_size as usize];
+        self.logits_buf
+            .copy_to_host(&mut logits)
+            .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
+
+        state.kv_len = state.kv_len.max(position + 1);
+        Ok(logits)
+    }
+
+    /// The token temperature 0 picks after `token` at `position` (#4215): the
+    /// argmax runs on the device over `logits_buf`, so the token downloads its
+    /// 4-byte id instead of the whole logits vector. Ties go to the LOWEST
+    /// index, as [`crate::gguf::ops::argmax`] does.
+    ///
+    /// # Errors
+    /// As [`Self::forward_single`].
+    pub fn forward_single_greedy(
+        &mut self,
+        token: u32,
+        state: &mut Qwen35CudaState,
+        position: usize,
+    ) -> Result<u32> {
+        self.forward_to_logits(token, state, position)?;
+        let next = self
+            .executor
+            .gpu_argmax(self.logits_buf.as_ptr(), self.dims.vocab_size)
+            .map_err(|e| gpu_err("qwen35_cuda_greedy", &e))?;
+        state.kv_len = state.kv_len.max(position + 1);
+        Ok(next)
+    }
+
+    /// Enqueue one token at `position` through every layer, the output norm and
+    /// the `lm_head` into `logits_buf`. Nothing is synced or downloaded, and the
+    /// caller advances `state.kv_len` once it has read the result.
+    fn forward_to_logits(
+        &mut self,
+        token: u32,
+        state: &mut Qwen35CudaState,
+        position: usize,
+    ) -> Result<()> {
         let hidden_dim = self.dims.hidden_dim as usize;
         let embedding = self.model.base.token_embedding();
         let start = (token as usize) * hidden_dim;
@@ -1408,15 +1459,37 @@ impl<'a> Qwen35CudaModel<'a> {
             });
         }
 
-        let dev = GpuBuffer::from_host(
-            self.executor.context(),
+        // #4215: the residual stream lives in one persistent buffer; taking it
+        // out of `self` lets the layers borrow `self` mutably beside it.
+        let mut dev = self
+            .hidden_buf
+            .take()
+            .ok_or_else(|| RealizarError::InvalidShape {
+                reason: "qwen35_cuda: the hidden buffer is already in use".to_string(),
+            })?;
+        let run = self.run_layers_and_head(
+            &mut dev,
             &embedding[start..start + hidden_dim],
-        )
-        .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
+            state,
+            position,
+        );
+        self.hidden_buf = Some(dev);
+        run
+    }
+
+    fn run_layers_and_head(
+        &mut self,
+        dev: &mut GpuBuffer<f32>,
+        embedding_row: &[f32],
+        state: &mut Qwen35CudaState,
+        position: usize,
+    ) -> Result<()> {
+        dev.copy_from_host(embedding_row)
+            .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
         for il in 0..self.layers.len() {
             match self.layers[il] {
-                CudaLayer::DeltaNet(_) => self.deltanet_layer(state, il, &dev)?,
-                CudaLayer::Attention(_) => self.attention_layer(state, il, &dev, position)?,
+                CudaLayer::DeltaNet(_) => self.deltanet_layer(state, il, dev)?,
+                CudaLayer::Attention(_) => self.attention_layer(state, il, dev, position)?,
             }
         }
         // The tail stays on the device (#3090 review). `hidden_to_logits` would
@@ -1429,7 +1502,7 @@ impl<'a> Qwen35CudaModel<'a> {
         let d = self.dims;
         self.executor
             .rmsnorm_into(
-                &dev,
+                dev,
                 &self.output_norm,
                 &self.out_normed,
                 d.hidden_dim,
@@ -1446,18 +1519,7 @@ impl<'a> Qwen35CudaModel<'a> {
                 self.lm_head.k,
             )
             .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e))?;
-
-        // The ONE sync of the whole token, in front of the ONE download.
-        self.executor
-            .sync_stream()
-            .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
-        let mut logits = vec![0.0f32; d.vocab_size as usize];
-        self.logits_buf
-            .copy_to_host(&mut logits)
-            .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
-
-        state.kv_len = state.kv_len.max(position + 1);
-        Ok(logits)
+        Ok(())
     }
 
     /// Run every Gated `DeltaNet` layer over a host hidden state and read the
@@ -1499,3 +1561,8 @@ impl<'a> Qwen35CudaModel<'a> {
 #[cfg(test)]
 #[path = "forward_qwen35_cuda_tests.rs"]
 mod qwen35_cuda_tests;
+
+/// #4215: host allocations, device allocations and D2H bytes per decode token.
+#[cfg(test)]
+#[path = "forward_qwen35_decode_overhead_tests.rs"]
+mod qwen35_decode_overhead_tests;
