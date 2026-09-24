@@ -20951,6 +20951,25 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4082
+  github_issue: 4082
+  item_type: task
+  title: '#4082: PVL-8b — L4 credit from discharge-summary.json; lean-status discharged column; formalization.yaml validated'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-ont
+  created: 2026-09-24T18:00:00Z
+  updated: 2026-09-24T18:00:00Z
+  spec: infra docs/specifications/PVL-001-pv-lean-gate.md
+  acceptance_criteria:
+  - pv discharge check <lean> --no-lake --validate-formalization exits 0 on the tracked record, 1 on a stale field
+  - pv proof-status --format json reports l4_source == discharge
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4102
   github_issue: 4102
   item_type: task

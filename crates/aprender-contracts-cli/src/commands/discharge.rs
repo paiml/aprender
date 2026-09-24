@@ -56,12 +56,17 @@ pub fn run(action: DischargeAction) -> Res {
             contracts,
             no_lake,
             strict,
+            validate_formalization,
             leanchecker,
             leanchecker_timeout,
             leanchecker_ulimit_v,
             comparator,
         } => {
-            let r = discharge::check(&lean_dir, &contracts, CheckOpts { strict });
+            let opts = CheckOpts {
+                strict,
+                validate_formalization,
+            };
+            let r = discharge::check(&lean_dir, &contracts, opts);
             let lc = leanchecker.then_some(Leanchecker {
                 timeout_s: leanchecker_timeout,
                 ulimit_v_kib: leanchecker_ulimit_v,
@@ -213,7 +218,14 @@ pub(crate) fn run_all(
         ),
         Err(e) => (None, e.to_string()),
     };
-    let mut r = discharge::check(lean_dir, contracts, CheckOpts { strict: true });
+    let mut r = discharge::check(
+        lean_dir,
+        contracts,
+        CheckOpts {
+            strict: true,
+            validate_formalization: false,
+        },
+    );
     match build_exit {
         Some(0) => {
             r.lines.insert(0, format!("ok    {build}"));
@@ -543,6 +555,7 @@ mod tests {
             contracts: contracts.into(),
             no_lake: true,
             strict,
+            validate_formalization: false,
             leanchecker: false,
             leanchecker_timeout: 3600,
             leanchecker_ulimit_v: None,

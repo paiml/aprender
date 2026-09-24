@@ -528,6 +528,11 @@ pub enum DischargeAction {
         /// Allowlist entries still `confirmed_by: pending` are RED
         #[arg(long)]
         strict: bool,
+        /// Also judge `<lean-dir>/formalization.yaml`: `main_results` listed by discharge-summary.json,
+        /// `status.axioms` the pinned kernel set, `sorry_count` the measured count; a missing file is RED
+        /// (PVL-001 EV-8b, #4082)
+        #[arg(long)]
+        validate_formalization: bool,
         /// Also re-check the BUILT tree's .olean files: `timeout <T> lake env leanchecker ProvableContracts`
         /// (non-fresh; `--fresh`, which replays Mathlib, is the nightly's, PVL-F7). rc != 0 rejects; no
         /// `leanchecker` in the toolchain declines (PVL-001 EV-6b, #4199)
