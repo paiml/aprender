@@ -201,10 +201,18 @@ def gx10_ask(messages, max_tokens, timeout):
     """Run the request ON gx10 against its loopback server (no tunnel, no LAN bind)."""
     payload = json.dumps({"model": "default", "messages": messages,
                           "max_tokens": max_tokens, "temperature": 0.0})
-    remote = (f"S={STATE_DIR}; cat $S/state.json; echo; "
+    # state.json is written indented; the protocol is line-based, so emit it on ONE line.
+    remote = (f"S={STATE_DIR}; python3 -c 'import json,sys; "
+              f"print(json.dumps(json.load(open(sys.argv[1]))))' $S/state.json; "
               f"L=$(wc -l < $S/serve.log); "
               f"curl -sf -m {timeout} http://127.0.0.1:{GX10_PORT}/v1/chat/completions "
               f"-H 'Content-Type: application/json' -d @- ; rc=$?; echo; echo CURL_RC=$rc; "
+              # The qwen35 chat response carries no used_gpu (#4146); a 1-token
+              # /v1/completions probe on the SAME process right after it does.
+              f"echo PROBE=$(curl -sf -m 60 http://127.0.0.1:{GX10_PORT}/v1/completions "
+              f"-H 'Content-Type: application/json' "
+              f"-d '{{\"model\":\"default\",\"prompt\":\"Hi\",\"max_tokens\":1,\"temperature\":0}}' | "
+              f"python3 -c 'import json,sys; print(json.load(sys.stdin).get(\"used_gpu\"))'); "
               f"nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader; "
               f"echo TRACE_BEGIN; grep -iE 'gpu.layers|offload' $S/serve.log | tail -2; "
               f"tail -n +$((L+1)) $S/serve.log | grep -iE 'cuda|gpu|kernel' | head -5")
@@ -220,12 +228,14 @@ def gx10_ask(messages, max_tokens, timeout):
     resp = json.loads(lines[1])
     i = lines.index(rc_line)
     j = lines.index("TRACE_BEGIN")
-    apps = lines[i + 1:j]
+    probe = next((l for l in lines if l.startswith("PROBE=")), "PROBE=")
+    apps = [l for l in lines[i + 1:j] if not l.startswith("PROBE=")]
     trace = lines[j + 1:]
     pid = str(st.get("pid"))
     return dt, resp, {"host": "gx10", "server_pid": st.get("pid"),
                       "gpu_apps": apps,
                       "server_holds_gpu": any(a.split(",")[0].strip() == pid for a in apps),
+                      "used_gpu_probe": probe.removeprefix("PROBE=") == "True",
                       "trace_lines": trace}
 
 
@@ -239,7 +249,11 @@ def cmd_ask(args):
             dt, resp, prov = gx10_ask(messages, args.max_tokens, args.timeout)
             # The device flag is intent; `used_gpu` on the response is the mechanism. A
             # gx10 answer without it is labelled CPU, never CUDA (#4089).
-            on_gpu = resp.get("used_gpu") is True and prov["server_holds_gpu"]
+            used = resp.get("used_gpu")
+            if used is None:  # #4146: the chat route omits it; take the probe's answer
+                used = prov["used_gpu_probe"]
+                prov["used_gpu_source"] = "completions probe (chat omits used_gpu, #4146)"
+            on_gpu = used is True and prov["server_holds_gpu"]
             rec["attempts"].append({"host": "gx10", "ok": True, "wall_s": dt,
                                     "used_gpu": resp.get("used_gpu")})
             rec.update({"served_by": "gx10-cuda" if on_gpu else "gx10-cpu-UNPROVEN-GPU",
@@ -248,14 +262,21 @@ def cmd_ask(args):
             rec["attempts"].append({"host": "gx10", "ok": False, "error": str(e)[:400]})
     if "served_by" not in rec:
         h = health(LAMBDA_URL)
-        dt, resp = post_chat(LAMBDA_URL, messages, args.max_tokens, args.timeout)
-        rec["attempts"].append({"host": "lambda", "ok": True, "wall_s": dt})
-        rec.update({"served_by": "lambda-cpu", "response": resp,
-                    "provenance": {"host": "lambda", "health": h,
-                                   "unit": "apr-dogfood-4252.service (apr-dogfood.slice)"}})
+        try:
+            dt, resp = post_chat(LAMBDA_URL, messages, args.max_tokens, args.timeout)
+            rec["attempts"].append({"host": "lambda", "ok": True, "wall_s": dt})
+            rec.update({"served_by": "lambda-cpu", "response": resp,
+                        "provenance": {"host": "lambda", "health": h,
+                                       "unit": "apr-dogfood-4252.service (apr-dogfood.slice)"}})
+        except Exception as e:  # advisory lane: no verdict is a receipt, never a crash
+            rec["attempts"].append({"host": "lambda", "ok": False, "error": str(e)[:400]})
+    rec["finished"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    if "served_by" not in rec:
+        rec.update({"served_by": None, "verdict": "NO-VERDICT"})
+        print(json.dumps(rec, indent=1))
+        return 2
     rec["text"] = rec["response"]["choices"][0]["message"]["content"]
     rec["usage"] = rec["response"].get("usage")
-    rec["finished"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     print(json.dumps(rec, indent=1))
     return 0
 
