@@ -66,14 +66,15 @@ impl Fx {
         std::fs::write(p, text).expect("write");
     }
 
-    /// `bin/lake` on the test's PATH: `env lean --run <script> <files>` prints `rows` and exits `rc`; every other
-    /// `env lean` (Axioms.lean) passes.
+    /// `bin/lake` on the test's PATH: `env lean --run <script> --self-test` passes the 3 FIPS vectors (the
+    /// real script's own check; pv runs it before trusting a hash), `env lean --run <script> <files>` prints
+    /// `rows` and exits `rc`; every other `env lean` (Axioms.lean) passes.
     fn stub_lake(&self, rc: i32, rows: &str) {
         self.write("rows.ndjson", rows);
         self.write(
             "bin/lake",
             &format!(
-                "#!/bin/sh\nif [ \"$3\" = --run ]; then cat '{}'; echo 'stub comparator rc {rc}' >&2; exit {rc}; fi\nexit 0\n",
+                "#!/bin/sh\nif [ \"$5\" = --self-test ]; then printf 'ok    sha256 \"\" = e3\\nok    sha256 \"abc\" = ba\\nok    sha256 \"abcdbcde\" = 24\\n'; exit 0; fi\nif [ \"$3\" = --run ]; then cat '{}'; echo 'stub comparator rc {rc}' >&2; exit {rc}; fi\nexit 0\n",
                 self.path("rows.ndjson").display()
             ),
         );
