@@ -31,10 +31,10 @@ pub mod w4a16;
 pub use basic::Q4KGemvKernel;
 pub use batched::BatchedQ4KGemvKernel;
 pub use coalesced::{
-    BatchedHwDp4aQ4KGemvKernel, CoalescedQ4KGemvKernel, FusedFp32Q4KGemvKernel,
-    FusedGateUpSwigluHwDp4aQ4KGemvKernel, FusedQKVHwDp4aQ4KGemvKernel, HalfWarpDp4aQ4KGemvKernel,
-    InlineQ8Dp4aQ4KGemvKernel, MultiWarpVectorizedQ4KGemvKernel, MwvDp4aQ4KGemvKernel,
-    VectorizedQ4KGemvKernel, WideQ4KGemvKernel,
+    BatchedHwDp4aQ4KGemvKernel, BatchedMwvQ4KGemvKernel, CoalescedQ4KGemvKernel,
+    FusedFp32Q4KGemvKernel, FusedGateUpSwigluHwDp4aQ4KGemvKernel, FusedQKVHwDp4aQ4KGemvKernel,
+    HalfWarpDp4aQ4KGemvKernel, InlineQ8Dp4aQ4KGemvKernel, MultiWarpVectorizedQ4KGemvKernel,
+    MwvDp4aQ4KGemvKernel, VectorizedQ4KGemvKernel, WideQ4KGemvKernel,
 };
 pub use dequant::{Q4KDequantFp16Kernel, Q4KDequantKernel};
 pub use dp4a::{Dp4aQ4KGemvKernel, TrueDp4aQ4KGemvKernel};
