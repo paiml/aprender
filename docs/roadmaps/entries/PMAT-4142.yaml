@@ -1,0 +1,21 @@
+- id: PMAT-4142
+  github_issue: 4142
+  item_type: task
+  title: 'ci: the mutants gate mutates the WORKSPACE -- it was vacuous for crates/** (0 mutants on every crate diff)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-6c
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'The PR mutants job lists and runs cargo-mutants with --workspace (the fix for #4142: without it every crate diff listed 0 mutants and passed -- measured on #3772/#3737/#3707/#3706)'
+  - 'OPERATOR ruling via the cop (2026-09-24, verbatim "go with recommended yes"): on-PR --workspace -j N with a RED "too many to judge" cap of ~60 mutants, plus a nightly full run'
+  - 'The gate refuses rather than passes: a failed list, a run that wrote no outcomes, an unparseable outcomes.json, and a tested count that differs from the listed count are RED'
+  - 'scripts/mutants_diff_gate.sh --self-test: every rule deleted in a copy breaks the row that names it'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'cargo-mutants 27 refuses `workspace = true` in .cargo/mutants.toml ("unknown field"), so the fix is the --workspace flag, which is a ci.yml edit approved by the operator through the cop. Measured on gx10 with the real tool: the #4139 diff lists 270 mutants and the gate prints RED "too many to judge: 270 mutants in the diff > cap 60"; a README-only diff prints "0 mutants in the diff". Cost: ~85 s per aprender-contracts mutant, serially.'

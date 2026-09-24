@@ -1,0 +1,91 @@
+name: Mutants Nightly
+
+# #4142 (operator ruling via the cop, 2026-09-24): the PR `mutants` job caps a diff at MUTANTS_CAP mutants and is
+# RED "too many to judge" above it. This run is the other half: every night it mutates the last 24 hours of main
+# across the WORKSPACE with no cap, through the same scripts/mutants_diff_gate.sh, so nothing that merged is
+# left unjudged. A survivor turns this run red and names itself.
+
+on:
+  schedule:
+    - cron: '0 1 * * *'   # 01:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutants-nightly
+  cancel-in-progress: false
+
+jobs:
+  mutants:
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 360
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
+      MUTANTS_JOBS: ${{ vars.MUTANTS_NIGHTLY_JOBS || '8' }}
+    steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        # Same guard as the PR mutants job: a hard-killed docker job leaves root-owned files behind.
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: The last 24 hours of main, as a diff
+        id: day
+        run: |
+          set -euo pipefail
+          SINCE=$(git rev-list -n1 --before='24 hours ago' HEAD)
+          if [ -z "$SINCE" ]; then
+            echo "::error::no commit on main older than 24 hours -- the nightly cannot scope its diff"
+            exit 1
+          fi
+          git diff "$SINCE" HEAD > day.diff
+          echo "day.diff: ${SINCE:0:9}..$(git rev-parse --short=9 HEAD), $(wc -l < day.diff) lines"
+      - name: Pull sovereign-ci image (with retry + local-cache fallback)
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "Image $IMAGE already cached locally — skipping pull"
+            exit 0
+          fi
+          for i in $(seq 1 15); do
+            if docker pull "$IMAGE"; then exit 0; fi
+            sleep $((4 + 6 * i))
+          done
+          echo "::error::Registry localhost:5000 unreachable after 15 attempts AND image not in local cache"
+          exit 1
+      - name: Mutate the day's merges across the workspace (no cap)
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            -e MUTANTS_JOBS \
+            "$IMAGE" \
+            bash -c '
+              set -uo pipefail
+              # Private install root, per scripts/check_cargo_install_private_root.sh.
+              export CARGO_INSTALL_ROOT=/usr/local/cargo-mutants-root
+              export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
+              if ! cargo mutants --version > /dev/null 2>&1; then
+                cargo install cargo-mutants --locked --version 27.1.0 > /tmp/mi.log 2>&1 || {
+                  echo "::error::cargo-mutants install failed; the nightly cannot run"
+                  tail -20 /tmp/mi.log
+                  exit 1
+                }
+              fi
+              cargo mutants --version || { echo "::error::cargo-mutants not runnable after install"; exit 1; }
+              bash scripts/mutants_diff_gate.sh day.diff --cap 0 --jobs "$MUTANTS_JOBS" --max-missed 0 --out mutants-gate
+            '
+      - name: Upload mutation results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutants-nightly
+          path: mutants-gate/
