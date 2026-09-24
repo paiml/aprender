@@ -154,6 +154,20 @@ jobs:
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
+      # #4110/#4290: an rc asset's crate version IS its tag. The rc commit's Cargo.toml says
+      # X.Y.Z, so without this every vX.Y.Z-rc.N asset printed bare `X.Y.Z` (v0.69.3-rc.2:
+      # `apr 0.69.3 (v0.69.3+no-git)`). The stamper comes from THIS workflow's commit, not the
+      # tag's tree, which an rc cut from release/X.Y.Z predates. A final tag stamps nothing.
+      # verify-apr-assets then requires `apr --version` to equal the tag exactly.
+      - name: Stamp the rc version into the tag tree (#4110)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          case "$TAG" in *-rc.*) ;; *) echo "final tag $TAG: nothing to stamp"; exit 0 ;; esac
+          git fetch --no-tags --depth 1 origin "$GITHUB_WORKFLOW_SHA"
+          git show "FETCH_HEAD:scripts/release/stamp_rc_version.sh" > "$RUNNER_TEMP/stamp_rc_version.sh"
+          bash "$RUNNER_TEMP/stamp_rc_version.sh" "$GITHUB_WORKSPACE" "$TAG"
+
       - name: Preflight - this box has the tools this job assumes
         run: bash scripts/ci_self_hosted_preflight.sh --need docker objdump
 
@@ -292,6 +306,20 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ steps.tag.outputs.tag }}
+
+      # #4110/#4290: an rc asset's crate version IS its tag. The rc commit's Cargo.toml says
+      # X.Y.Z, so without this every vX.Y.Z-rc.N asset printed bare `X.Y.Z` (v0.69.3-rc.2:
+      # `apr 0.69.3 (v0.69.3+no-git)`). The stamper comes from THIS workflow's commit, not the
+      # tag's tree, which an rc cut from release/X.Y.Z predates. A final tag stamps nothing.
+      # verify-apr-assets then requires `apr --version` to equal the tag exactly.
+      - name: Stamp the rc version into the tag tree (#4110)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          case "$TAG" in *-rc.*) ;; *) echo "final tag $TAG: nothing to stamp"; exit 0 ;; esac
+          git fetch --no-tags --depth 1 origin "$GITHUB_WORKFLOW_SHA"
+          git show "FETCH_HEAD:scripts/release/stamp_rc_version.sh" > "$RUNNER_TEMP/stamp_rc_version.sh"
+          bash "$RUNNER_TEMP/stamp_rc_version.sh" "$GITHUB_WORKSPACE" "$TAG"
 
       # FIRST thing this box does after it has a working tree. Run 34448908554
       # built a 21 MB CUDA asset here and then died on `gh: command not found`
@@ -441,6 +469,20 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ steps.tag.outputs.tag }}
+
+      # #4110/#4290: an rc asset's crate version IS its tag. The rc commit's Cargo.toml says
+      # X.Y.Z, so without this every vX.Y.Z-rc.N asset printed bare `X.Y.Z` (v0.69.3-rc.2:
+      # `apr 0.69.3 (v0.69.3+no-git)`). The stamper comes from THIS workflow's commit, not the
+      # tag's tree, which an rc cut from release/X.Y.Z predates. A final tag stamps nothing.
+      # verify-apr-assets then requires `apr --version` to equal the tag exactly.
+      - name: Stamp the rc version into the tag tree (#4110)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          case "$TAG" in *-rc.*) ;; *) echo "final tag $TAG: nothing to stamp"; exit 0 ;; esac
+          git fetch --no-tags --depth 1 origin "$GITHUB_WORKFLOW_SHA"
+          git show "FETCH_HEAD:scripts/release/stamp_rc_version.sh" > "$RUNNER_TEMP/stamp_rc_version.sh"
+          bash "$RUNNER_TEMP/stamp_rc_version.sh" "$GITHUB_WORKSPACE" "$TAG"
 
       # 67-C2: the first thing this box does after it has a working tree. No
       # `--cuda` here — a CPU asset must build on a box with no visible device,
