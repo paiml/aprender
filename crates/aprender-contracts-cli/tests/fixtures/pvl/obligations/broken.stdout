@@ -1,0 +1,7 @@
+::error::contracts/a-invalid-v1.yaml: pv validate failed
+::error::contracts/b-hidden-v1.yaml: 2 test-bearing obligation(s) under `falsification:`, which pv cannot read — use `falsification_tests:`
+::error::contracts/c-unbound-v1.yaml: applies_to 'ghost_fn_xyz' names neither an equation of this contract nor any `fn` under src/
+::error::contracts/c-unbound-v1.yaml: applies_to 'bounded' names neither an equation of this contract nor any `fn` under src/
+::error::contracts/d-proved-v1.yaml: applies_to 'grade_gate' is proved against 'Grade', but none of ['src/gate.rs.txt'] mentions it — the proof does not reach the code it names
+::error::contracts/d-proved-v1.yaml: applies_to 'grade_prefixed' is proved against 'Grade', but none of ['src/prefixed.rs.txt'] mentions it — the proof does not reach the code it names
+pv obligation gate: 6 problem(s) over 4 contracts

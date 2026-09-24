@@ -374,6 +374,17 @@ pub enum Commands {
         #[arg(long, default_value = "20")]
         top: usize,
     },
+    /// Obligation gate (PVL-001 EV-10): every contract under ROOT/contracts validates, hides no
+    /// test under `falsification:`, and binds each `applies_to` to a `fn` under ROOT/src that
+    /// mentions the contract's `proved_type`. Replaces pmat's `scripts/pv-obligation-gate.py`.
+    Obligations {
+        /// Repository root holding `contracts/` and `src/`
+        #[arg(default_value = ".")]
+        root: PathBuf,
+        /// Exit 1 (`reject:`) when any problem is found; without it the report exits 0
+        #[arg(long)]
+        gate: bool,
+    },
     /// Remove enforcement level lock from a contract (requires --reason)
     Unlock {
         /// Path to the contract YAML file
