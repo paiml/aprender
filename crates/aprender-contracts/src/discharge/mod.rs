@@ -14,6 +14,7 @@
 //!   exact `#guard_msgs in #print axioms`. Bound theorems outside the cone are ORPHANED-ROOT: `lake env lean`
 //!   cannot see a module `lake build` never built (EV-5a's orphans; EV-5c drains them).
 
+pub mod comparator;
 pub mod lex;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -577,6 +578,12 @@ pub struct Report {
     pub lines: Vec<String>,
     pub reject: bool,
     pub decline: Option<String>,
+    /// Raw exit of `lake env lean Axioms.lean` (a signal is 128+n); `None` when it never ran.
+    pub lake_exit: Option<i32>,
+    /// Raw exit of the `--leanchecker` recheck (124/137 on a timeout); `None` when it never ran.
+    pub leanchecker_exit: Option<i32>,
+    /// What `--comparator` closed (EV-7b); `None` when it never judged a row set.
+    pub challenges: Option<comparator::Closure>,
 }
 
 impl Report {

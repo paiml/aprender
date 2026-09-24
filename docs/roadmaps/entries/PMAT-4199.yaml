@@ -1,0 +1,22 @@
+- id: PMAT-4199
+  github_issue: 4199
+  item_type: task
+  title: 'PVL-001 EV-6b: pv discharge check --leanchecker -- non-fresh kernel re-check, bounded'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-dd
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'PVL-001 EV-6b probe: tests/pvl_discharge_leanchecker.rs tracked and `cargo test -p aprender-contracts-cli --test pvl_discharge_leanchecker` wired (ci/explicit-test-commands.d, as EV-6a -- no workflow edit)'
+  - 'RED: a stub `lake` on PATH whose leanchecker returns 1 -> rc 1; no lake -> rc 2; a toolchain without bin/leanchecker -> rc 2 `decline: leanchecker not in toolchain`, never rc 1'
+  - '`timeout <T> lake env leanchecker ProvableContracts` (--leanchecker-timeout, default 3600 s; --leanchecker-ulimit-v KiB when set); a timeout rejects; timeout/ulimit/lake start failures (rc 125-127) decline'
+  - 'formalization.yaml `scope` states the non-fresh limitation: --fresh replays Mathlib and is the nightly''s (PVL-F7)'
+  - 'accept on lambda: `timeout 60m "$PV" discharge check "$LEAN" --leanchecker`'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Stacked on EV-6a (#4139). Absent vs failed is decided by probing `lake env printenv LEAN_SYSROOT` for bin/leanchecker, because MEASURED on elan v4.15.0 `lake env leanchecker` exits 1 "does not have the binary" -- the rc alone would read a missing checker as a failed proof.'
