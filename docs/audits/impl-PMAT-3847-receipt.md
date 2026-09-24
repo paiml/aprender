@@ -1,4 +1,4 @@
-| 16 / 12 / 7 / 8 / 34 (+ `ont2b_sigma_gate` 8), all pass |---
+---
 status: complete-pending-merge
 ticket: PMAT-3847
 row: ONT-4c
@@ -77,7 +77,7 @@ Every conjunct before `merged ONT-4c` is GREEN. The measured values:
 | check | result |
 |---|---|
 | `cargo test -p aprender-contracts --lib` | 1730 passed, 0 failed |
-| `cargo test -p aprender-contracts-cli --test ont4c_doc_contracts` / `ont4c1_model_receipts` / `ont6_lint_verdict` / `ont4b2_code_lean_w3c` / `ont_release_readiness` | 12 / 12 / 34 / 7 / 8, all pass |
+| `cargo test -p aprender-contracts-cli --test ont4c_doc_contracts` / `ont4c1_model_receipts` / `ont6_lint_verdict` / `ont4b2_code_lean_w3c` / `ont_release_readiness` | 16 / 12 / 7 / 8 / 34 (+ `ont2b_sigma_gate` 8), all pass |
 | `cargo clippy -p aprender-contracts -p aprender-contracts-cli --all-targets -D warnings` · `cargo fmt --all --check` · `cargo deny check advisories` | clean · 0 · ok |
 | `make contracts` (pv lint 11/11 armed, census, `pv extract --check`, readme_sync, provenance, engine tests) | PASS |
 | check_ont_ratchet --check · explicit_test_commands · tree_reader_tests · readme_claims · package_includes | all PASS |
