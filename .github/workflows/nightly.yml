@@ -128,7 +128,7 @@ jobs:
             sh -c 'set -e; ldd --version | head -1; cargo build --locked --release -p apr-cli -p aprender-contracts-cli --bin apr --bin pv --target "$T"'
           mkdir -p "target/$T/release" dist
           # The --bin list above and NIGHTLY_BINS must agree; a bin named only in
-          # NIGHTLY_BINS fails this cp, and record() marks it missing-artifact.
+          # NIGHTLY_BINS fails this cp, which fails this step: build-failed.
           for b in ${NIGHTLY_BINS//,/ }; do
             cp "$CACHE/target/$T/release/$b" "target/$T/release/$b"
             A="$b-$T"
