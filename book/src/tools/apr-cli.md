@@ -994,7 +994,7 @@ apr cbtop --refresh 500  # 500ms
 │ Model: qwen2.5-coder-1.5b-q4_k_m.gguf                   │
 │ Backend: GPU (CUDA)                                      │
 ├──────────────────────────────────────────────────────────┤
-│ Throughput: 125.3 tok/s                                  │
+│ Throughput: N.N tok/s                                    │
 │ Latency:    8.0 ms/tok                                   │
 │ Memory:     1.2 GB / 8.0 GB                              │
 │ Utilization: ████████████░░░░░░░░ 60%                    │

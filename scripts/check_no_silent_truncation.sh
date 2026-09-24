@@ -230,5 +230,30 @@ mkdir -p "$TD/empty/scripts" "$TD/empty/crates"
 row 1 "a tree with no candidates: refused as an instrument failure" "$TD/empty" "$BASELINE"
 says 8 "claim about the INSTRUMENT"
 
+# THE IDENTIFIER-PREFIX CLASS (#4046, cop ruling A'; truncation_scan.id_prefix_only).
+# An id prefix of literal width 1-16 on a name that SAYS it is an id is exempt; each
+# must-RED below plants the nearest thing that is not, and must still be refused.
+# Composed, never literal (see row 1). Rows 9-13, appended so rows 1-8 keep their numbers.
+plant() { printf '%s\n' "$1" > "$TD/scripts/planted_id.py"; }
+plant "$(printf 'print(f"model {model_sha%s12]} measured")' '[:')"
+row 0 "an identifier prefix (model_sha, literal width 12) is the id class, not a truncation" "$TD" "$TD/plain.txt"
+plant "$(printf 'print(f"why {why_text%s12]}")' '[:')"
+row 1 "the same width on a NON-id name is still a display truncation" "$TD" "$TD/plain.txt"
+says 10 "planted_id.py"
+plant "$(printf 'print(f"model {model_sha%sn]}")' '[:')"
+row 1 "a VARIABLE-width id slice is still a truncation" "$TD" "$TD/plain.txt"
+plant "$(printf 'print(f"model {model_sha%s40]}")' '[:')"
+row 1 "an id slice WIDER than 16 is prose, not a prefix: still a truncation" "$TD" "$TD/plain.txt"
+plant "$(printf 'print(f"{model_sha%s12]} {reason%s80]}")' '[:' '[:')"
+row 1 "an id prefix BESIDE a display slice: the display slice still counts" "$TD" "$TD/plain.txt"
+# THE COMPUTED-LOUD CLASS (#4046; truncation_scan.loud_on_line). Rows 14-16.
+plant "$(printf 'print(s if len(s) <= n else f"{s%sn]} … and {len(s) - n} more chars")' '[:')"
+row 0 "a slice beside a COMPUTED drop count on the same line is loud, not silent" "$TD" "$TD/plain.txt"
+plant "$(printf 'print(f"{why_text%s80]} … and 80 more chars")' '[:')"
+row 1 "a LITERAL drop count can lie: still a truncation" "$TD" "$TD/plain.txt"
+plant "$(printf 'n_more = len(s) - 80  # … and n more chars\nprint(f"{why_text%s80]}")' '[:')"
+row 1 "the marker on a DIFFERENT line does not make the slice loud" "$TD" "$TD/plain.txt"
+rm -f "$TD/scripts/planted_id.py"
+
 printf '%s/%s rows\n' "$((n - bad))" "$n"
 [ "$bad" = 0 ] || exit 1

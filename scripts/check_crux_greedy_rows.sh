@@ -13,12 +13,15 @@
 #   1c. apr's prompt ≠ llama's template → the parity row runs on apr's ids (prompt_ids_equal FALSE, visible),
 #       the OFFICIAL row on the template's own ids (cop ruling on F9, #3990: RED-MODEL needs the official row)
 #   2. llama.cpp returns no `tokens` (return_tokens unsupported) → its rows refused BY NAME, never absent
-#   3. llama.cpp unavailable (LLAMA_OK=0) → llama rows refused with LLAMA_WHY; apr OFF refused naming why
+#   3. llama.cpp unavailable (HAVE_LLAMA=0) → llama rows refused with LLAMA_WHY; apr OFF refused naming why
 #   4. apr prints no `tokens`  → apr OFF refused by name
 #   5. MUTANT: the apr-ON refusal dropped from the lib → the no-flag row goes missing, and that is caught
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
+# guard_tree.sh probes `--help` to decide whether to run a self-test. Answer it before any work:
+# a probe that fell through to the body ran this whole guard a second time, serially (#4046).
+case "${1:-}" in -h|--help) printf 'usage: bash scripts/check_crux_greedy_rows.sh (no arguments: runs its rows)\n'; exit 0 ;; esac
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
 PROG=check_crux_greedy_rows
@@ -145,7 +148,7 @@ run_case() {
       M=/stub/model.gguf; SHA=$(printf "a%.0s" $(seq 64)); SHA12=abc123abc123; HOST=stub; BACKEND=gpu
       CTX=512; NGL=999; LLAMA_DEV=(); SEED=42; TMO=30; LOCK_WAIT=30; APR_BE="--gpu"
       GPUQ_OK=0; GPU_LOCK=$3/lock; LLAMA_SERVER=$4/llama-server; APR=$4/apr
-      LLAMA_OK=${LLAMA_OK:-1}; LLAMA_WHY=${LLAMA_WHY:-}
+      HAVE_LLAMA=${HAVE_LLAMA:-1}; LLAMA_WHY=${LLAMA_WHY:-}
       GREEDY_PIDS=ctl; GREEDY_MAXTOK=64
       greedy_cells' _ "$TMP/helpers.sh" "$lib" "$w" "$BIN" ) > "$w/run.log" 2>&1
 }
@@ -156,7 +159,7 @@ import json, sys
 for l in open(sys.argv[1]):
     r = json.loads(l)
     if r["refused"]:
-        print("row %s %s %s REFUSED %s" % (r["engine"], r["thinking"], r["prompt_source"], r["refused"][:60]))
+        print("row %s %s %s REFUSED %s" % (r["engine"], r["thinking"], r["prompt_source"], (r["refused"] if len(r["refused"]) <= 60 else "%s … and %d more chars" % (r["refused"][:60], len(r["refused"]) - 60))))
     else:
         d = json.load(open(r["tokens"]))
         print("row %s %s %s ids=%s text=%r max=%s special=%s" % (r["engine"], r["thinking"], r["prompt_source"], d["generated_ids"],
@@ -238,7 +241,7 @@ case "$got" in *"llama.cpp on apr REFUSED RuntimeError"*"llama.cpp on official R
   ok "llama.cpp without return_tokens: both its rows refused by name" ;;
   *) broke "no-tokens llama rows: $got" ;; esac
 
-run_case nollama "$LIB" LLAMA_OK=0 "LLAMA_WHY=llama.cpp unresolved: fixture"
+run_case nollama "$LIB" HAVE_LLAMA=0 "LLAMA_WHY=llama.cpp unresolved: fixture"
 got=$(rows nollama)
 case "$got" in *"llama.cpp on apr REFUSED llama.cpp unresolved: fixture"*"llama.cpp on official REFUSED llama.cpp unresolved: fixture"*"apr off apr REFUSED apr's ids are decoded through llama-server"*)
   ok "llama.cpp unavailable: its rows carry LLAMA_WHY; apr OFF names why it cannot be decoded" ;;

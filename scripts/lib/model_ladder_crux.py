@@ -104,7 +104,7 @@ def apr_sha_of(receipt, resolve=None):
     return (resolve or _git_resolve)(m.group(1))
 
 
-def load_crux(crux_dir, cut, equiv, out, timing_required=False):
+def load_crux(crux_dir, cut_sha, equiv, out, timing_required=False):
     """-> ({(sha, host, lane, crux_verb): [verdict, ...]}, failed)."""
     index, failed = {}, False
     files = sorted(f for f in glob.glob(os.path.join(crux_dir or "", "*.json"))
@@ -128,8 +128,8 @@ def load_crux(crux_dir, cut, equiv, out, timing_required=False):
             failed = True
             continue
         asha = apr_sha_of(R)
-        if not (asha and HEX40.fullmatch(asha)) or (asha != cut and asha not in equiv):
-            out(f"FAIL  CRUX receipt {os.path.basename(f)} is bound to apr sha {asha!r}, not the cut {cut[:12]} -- "
+        if not (asha and HEX40.fullmatch(asha)) or (asha != cut_sha and asha not in equiv):
+            out(f"FAIL  CRUX receipt {os.path.basename(f)} is bound to apr sha {asha!r}, not the cut {cut_sha[:12]} -- "
                 f"its cells are not evidence for this build (#3957 F2)")
             failed = True
             continue
@@ -267,10 +267,10 @@ def judge(L, good, crux_dir, cut, equiv, out, red=None, cert_p=None, timing_requ
     else:
         index = {}
         out("note  no CRUX receipt needed: no held model is CRUX-certified; every model is proven by the ladder (#3710 ruling 1)")
-    for s_ in sorted(certified or ()):
-        if s_ not in held:
+    for model_sha in sorted(certified or ()):
+        if model_sha not in held:
             failed = True
-            out(f"FAIL  certified model {s_[:12]} is held by no required host -- CRUX must prove every certified model (#3710 ruling 1)")
+            out(f"FAIL  certified model {model_sha[:12]} is held by no required host -- CRUX must prove every certified model (#3710 ruling 1)")
     tally = {}
     for host in sorted(good):
         R = good[host]

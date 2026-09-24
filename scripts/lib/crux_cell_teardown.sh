@@ -18,7 +18,14 @@
 #   writes `clean`, or `FAILED: <why>`, to <state file>. The producer reads that file
 #   AFTER the cell, and anything but `clean` makes every row of the cell RED.
 # Env: CRUX_NVIDIA_SMI overrides the nvidia-smi binary, CRUX_TEARDOWN_GPU_POLLS the
-#      number of 0.5 s polls (default 60); both exist for the case table.
+#      number of 0.5 s polls (default 60), CRUX_TEARDOWN_KILL the command that sends the
+#      TERM/KILL (default: the `kill` builtin); all three exist for the case table.
+#
+# PID 1 IS REFUSED BY NAME (#4120). A pid file naming 1 is never signalled: it FAILS the
+# cell. On a dev box `kill 1` is EPERM and looks harmless, but inside a CI runner's
+# container pid 1 IS the runner (Runner.Listener): the case table's own T2 row used
+# init as its "unkillable server", and its `kill -TERM 1` / `kill -KILL 1` shut down the
+# gx10/yoga runners mid guard-tree job (runs 35900354071, 35913559755, 35935643646).
 # Exit: 0 clean · 1 FAILED · 2 usage.
 set -u
 
@@ -26,12 +33,15 @@ set -u
 state="$1"
 shift
 pids=()
+refused=""
 for f in "$@"; do
   [ -f "$f" ] || continue
   while IFS= read -r p; do
     # Only a real pid. `0` would signal this whole PROCESS GROUP, the calling cell
-    # and whatever runs it, and a leading zero is not a pid either.
+    # and whatever runs it, and a leading zero is not a pid either. `1` is init, or in
+    # a container the runner itself (#4120): refused by name, and the cell FAILS.
     case "$p" in ''|*[!0-9]*|0*) continue ;; esac
+    case "$p" in 1) refused="$refused$f "; continue ;; esac
     pids+=("$p")
   done < "$f"
 done
@@ -52,9 +62,15 @@ alive() {
   printf '%s ' "${out[@]}"
 }
 
+# The one place a signal leaves this script (the case table swaps it for a logging no-op).
+KILL_SEAM="${CRUX_TEARDOWN_KILL:-}"
+sig() {
+  if [ -n "$KILL_SEAM" ]; then "$KILL_SEAM" "$@"; else kill "$@"; fi
+}
+
 left=""
 if [ "${#pids[@]}" -gt 0 ]; then
-  kill -TERM "${pids[@]}" 2> /dev/null
+  sig -TERM "${pids[@]}" 2> /dev/null
   for _ in $(seq 1 30); do
     left=$(alive "${pids[@]}")
     [ -z "${left// /}" ] && break
@@ -62,13 +78,17 @@ if [ "${#pids[@]}" -gt 0 ]; then
   done
   if [ -n "${left// /}" ]; then
     # shellcheck disable=SC2086
-    kill -KILL $left 2> /dev/null
+    sig -KILL $left 2> /dev/null
     for _ in $(seq 1 20); do
       left=$(alive "${pids[@]}")
       [ -z "${left// /}" ] && break
       sleep 0.5
     done
   fi
+fi
+if [ -n "$refused" ]; then
+  printf 'FAILED: pid file(s) %sname pid 1 (init; in a CI container, the runner) -- refused, never signalled\n' "$refused" > "$state"
+  exit 1
 fi
 if [ -n "${left// /}" ]; then
   printf 'FAILED: server pid(s) %ssurvived TERM and KILL\n' "$left" > "$state"

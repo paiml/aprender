@@ -2274,7 +2274,8 @@ mod throughput_3981_tests {
     use super::*;
 
     /// The ticket's must-RED shape: 5 s of setup (load/upload + F2) around 1 s of
-    /// generating 100 tokens. The rate is 100 tok/s, not 100/6 = 16.7.
+    /// generating N tokens. The rate is N per the 1 s of generation, not N per the
+    /// 6 s wall clock (#3981).
     #[test]
     fn a_five_second_setup_does_not_dilute_the_generation_rate() {
         let rate = throughput(100, 6_000.0, Some(1_000.0));

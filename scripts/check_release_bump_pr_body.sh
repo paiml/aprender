@@ -134,8 +134,30 @@ export PR_CLOSES_REF_KIND_CMD="$TMP/bin/kind"
 # rediscover it from five confusing FAIL rows.
 write_receipt() {
     mkdir -p "$1"
-    printf '{"schema":"apr-model-ladder-receipt/v2","host":"%s","version":"9.9.9","sha":"fixture","executed":1,"red":0,"inventory":[{"file":"fx.gguf","sha256":"0000000000000000000000000000000000000000000000000000000000000000","bytes":1}],"candidates":[{"file":"fx.gguf","bytes":1,"dtype_counts":{"Q4_K":1},"dominant":["Q4_K"],"member":true}],"rungs":[{"id":"fx-rung","file":"fx.gguf","present":true,"sha_ok":true,"required":true,"capability_match":{"passed":true,"skipped":false},"golden_output":{"passed":true,"skipped":false},"backends":{"cpu":{"ran":true,"fallback":false,"rc":0,"verbs":{"run":{"ran":true,"rc":0},"chat":{"ran":true,"rc":0},"code":{"ran":true,"rc":0},"serve":{"probed":true,"teardown":"clean","routes":{"/api/chat|stream=false":{"http":200,"ok":true},"/api/chat|stream=true":{"http":200,"ok":true},"/v1/chat/completions|stream=false":{"http":200,"ok":true},"/v1/completions|stream=false":{"http":200,"ok":true}}}}}},"green":true}]}\n' \
-        "$2" > "$1/$2.json"
+    # #4128: the judge now binds a receipt to a BUILD (a 40-hex apr_sha that is the cut, #3957 F2)
+    # and requires CRUX proof of every certified model (#3957 F4, #3710 ruling 1). The cut is the
+    # bump tree's HEAD at judge time: prepare_bump.sh runs the judge before its own commit.
+    local cut; cut=$(git -C "$1" rev-parse HEAD) || return 2
+    printf '{"schema":"apr-model-ladder-receipt/v2","host":"%s","version":"9.9.9","sha":"fixture","apr_sha":"%s","executed":1,"red":0,"inventory":[{"file":"fx.gguf","sha256":"0000000000000000000000000000000000000000000000000000000000000000","bytes":1}],"candidates":[{"file":"fx.gguf","bytes":1,"dtype_counts":{"Q4_K":1},"dominant":["Q4_K"],"member":true}],"rungs":[{"id":"fx-rung","file":"fx.gguf","present":true,"sha_ok":true,"required":true,"qa_rc":0,"capability_match":{"passed":true,"skipped":false},"golden_output":{"passed":true,"skipped":false},"backends":{"cpu":{"ran":true,"fallback":false,"rc":0,"verbs":{"run":{"ran":true,"rc":0},"chat":{"ran":true,"rc":0},"code":{"ran":true,"rc":0},"serve":{"probed":true,"teardown":"clean","routes":{"/api/chat|stream=false":{"http":200,"ok":true},"/api/chat|stream=true":{"http":200,"ok":true},"/v1/chat/completions|stream=false":{"http":200,"ok":true},"/v1/completions|stream=false":{"http":200,"ok":true}}}}}},"green":true}]}\n' \
+        "$2" "$cut" > "$1/$2.json"
+    # CRUX beside it, for the one certified fixture model, on this host: the certification admits
+    # fx.gguf's sha, and this host's receipt answers every verb for it, bound to the same cut.
+    local crux; crux="$(git -C "$1" rev-parse --show-toplevel)/evidence/crux/9.9.9"
+    # bashrs SEC010: $crux is inside the fixture bump tree under this guard's own mktemp -d dir.
+    # bashrs disable-next-line=SEC010
+    mkdir -p "$crux" || return 2
+    python3 - "$crux" "$2" "$cut" <<'PY'
+import json, os, sys
+crux, host, cut = sys.argv[1:4]
+fx = "0" * 64
+json.dump({"schema": "crux-prompt-certification/v1", "admitted_by_sha": {fx: ["fixture-control"]}},
+          open(os.path.join(crux, "prompt-certification.json"), "w"))
+cells = [{"key": {"model_sha256": fx, "host": host, "verb": v, "thinking": "off", "rung": "golden",
+                  "prompt_id": "fixture-control"}, "verdict": "GREEN"} for v in ("run", "chat", "serve run", "code")]   # CRUX verb names (model_ladder_crux.VERB_TO_CRUX)
+json.dump({"schema": "crux-inference-receipt/v1", "host": host, "backend": "cpu", "apr": {"sha": cut},
+           "cells": cells, "summary": {"verdict": "PASS", "cells": len(cells)}},
+          open(os.path.join(crux, host + "-cpu.json"), "w"))
+PY
 }
 
 # run_ship NAME SUBJECT CHANGELOG_SECTION [LADDER: all|no-gx10|ignored] -> the fixture dir;
@@ -165,6 +187,9 @@ run_ship() {
     python3 - "$LADDER_CONTRACT" "$d/seed/contracts/model-capability-ladder-v1.yaml" <<'PY' || return 2
 import sys, yaml
 inv = yaml.safe_load(open(sys.argv[1]))["ladder"]["inventory"]
+# the real contract's red_* verdicts name REAL model files the fixture hosts do not hold; the judge
+# refuses a verdict for a file nobody holds (#3957 F9/F10), so they are not the fixture's (#4128)
+inv = {k: v for k, v in inv.items() if k not in ("red_model", "red_unsupported")}
 yaml.safe_dump({"ladder": {
     "hosts": [{"id": "lambda", "required": True, "gpu": "fixture", "cc": "sm_89"},
               {"id": "gx10", "required": True, "gpu": "fixture", "cc": "sm_121"}],

@@ -630,8 +630,11 @@ impl CpuGoldenVerdict {
         let generated = output_text.strip_prefix(prompt).unwrap_or(output_text);
         let answer = match split_thinking_blocks(generated) {
             ThinkingSplit::Unclosed => {
-                return Self::Unclosed { budget, generated_chars: generated.len() }
-            },
+                return Self::Unclosed {
+                    budget,
+                    generated_chars: generated.len(),
+                }
+            }
             ThinkingSplit::Answer(a) => a,
         };
         match verify_output(&answer, "golden_output", expected_patterns) {
@@ -790,11 +793,13 @@ pub(crate) fn runtime_golden_backend(
         (false, Some(why)) => Ok(format!(
             "CPU: the dispatch reported used_gpu=false, and the GPU was not expected ({why})"
         )),
-        (false, None) => Err("the GPU should have served this model (a cuda build, a CUDA \
+        (false, None) => Err(
+            "the GPU should have served this model (a cuda build, a CUDA \
              device, an architecture the GPU runs) and the dispatch reported CPU: the GPU \
              forward failed and fell back, and its reason is on stderr. A broken GPU, not a \
              pass (#3711)"
-            .to_string()),
+                .to_string(),
+        ),
     }
 }
 
@@ -884,7 +889,11 @@ fn note_gpu_golden_skip(config: &QaConfig, message: &str) {
 ///
 /// Returns the text, the dispatch's own `used_gpu` (#3711) and the generated token count (#3961).
 #[cfg(feature = "inference")]
-fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result<(String, bool, usize)> {
+fn golden_output_runtime(
+    path: &Path,
+    prompt: &str,
+    max_tokens: usize,
+) -> Result<(String, bool, usize)> {
     use realizar::gguf::MappedGGUFModel;
     use realizar::{run_inference, InferenceConfig};
 
@@ -954,7 +963,8 @@ fn run_golden_output_gate_runtime(
 
     let mut served_by = String::new();
     for (prompt, expected_patterns) in &test_cases {
-        let (output_text, used_gpu, _) = golden_output_runtime(path, prompt.as_str(), golden_max_tokens)?;
+        let (output_text, used_gpu, _) =
+            golden_output_runtime(path, prompt.as_str(), golden_max_tokens)?;
         // #3711: the backend first — a GPU that fell back is a FAIL even when the CPU's answer is right
         match runtime_golden_backend(used_gpu, gpu_not_run) {
             Ok(label) => served_by = label,
@@ -1002,21 +1012,53 @@ fn run_golden_output_gate_runtime(
 
     // #3724 done_when 3: the hybrid rungs are thinking-capable too, and this leg
     // is where they are judged.
-    let mut on_leg = String::new();
-    let on_case = match thinking_on_case_for_model(
+    let on_leg = match runtime_thinking_on_leg(
+        path,
         architecture.as_deref(),
         mapped_header.as_ref().map(|m| &m.model),
-    ) {
+        gpu_not_run,
+        start,
+    )? {
+        Ok(on_leg) => on_leg,
+        Err(failed) => return Ok(failed),
+    };
+
+    Ok(GateResult::passed(
+        "golden_output",
+        &format!(
+            "{} golden test cases passed through the runtime entry point (served by {served_by}){on_leg}",
+            test_cases.len(),
+        ),
+        Some(test_cases.len() as f64),
+        Some(test_cases.len() as f64),
+        start.elapsed(),
+    ))
+}
+
+/// #3724 done_when 3: the thinking-ON leg of the runtime golden gate. `Ok(suffix)` is the
+/// pass message's ON-leg clause (empty when the model has no thinking-on case), and
+/// `Err(failed)` ends the gate. Extracted from `run_golden_output_gate_runtime` unchanged,
+/// to keep that function under the complexity ratchet.
+fn runtime_thinking_on_leg(
+    path: &Path,
+    architecture: Option<&str>,
+    header: Option<&realizar::gguf::GGUFModel>,
+    gpu_not_run: Option<&'static str>,
+    start: Instant,
+) -> Result<std::result::Result<String, GateResult>> {
+    // #3724 done_when 3: the hybrid rungs are thinking-capable too, and this leg
+    // is where they are judged.
+    let on_case = match thinking_on_case_for_model(architecture, header) {
         Ok(c) => c,
         Err(reason) => {
-            return Ok(GateResult::failed(
+            return Ok(Err(GateResult::failed(
                 "golden_output",
                 &format!("golden_output_thinking_on: {reason}"),
                 None,
                 None,
                 start.elapsed(),
-            ))
-        },
+            )))
+        }
     };
     if let Some((on_prompt, on_patterns)) = on_case {
         // #3907 WIRING (#3907 landed the resolver and reached only the DENSE leg at
@@ -1034,16 +1076,17 @@ fn run_golden_output_gate_runtime(
         let (on_budget, budget_basis) = match thinking_on_budget_for(&model_file) {
             Ok(v) => v,
             Err(reason) => {
-                return Ok(GateResult::failed(
+                return Ok(Err(GateResult::failed(
                     "golden_output",
                     &format!("golden_output_thinking_on: {reason}"),
                     None,
                     None,
                     start.elapsed(),
-                ))
-            },
+                )))
+            }
         };
-        let (on_text, on_used_gpu, on_tokens) = golden_output_runtime(path, on_prompt.as_str(), on_budget)?;
+        let (on_text, on_used_gpu, on_tokens) =
+            golden_output_runtime(path, on_prompt.as_str(), on_budget)?;
         let generated = on_text.strip_prefix(on_prompt.as_str()).unwrap_or(&on_text);
         let judged = on_leg_judged_text(&on_prompt, generated);
         let generated = judged.as_str();
@@ -1055,34 +1098,24 @@ fn run_golden_output_gate_runtime(
             gpu_not_run,
             &budget_basis,
         ) {
-            return Ok(GateResult::failed(
+            return Ok(Err(GateResult::failed(
                 "golden_output",
                 &reason,
                 None,
                 None,
                 start.elapsed(),
-            ));
+            )));
         }
         // #3961: a pass says what the ON leg did -- its own backend, how much it reasoned
         // and how long it ran. `think_body_chars` is the number that told the 0.8B model
         // that skipped reasoning (0) from the controls that did (445-2149).
-        on_leg = format!(
+        return Ok(Ok(format!(
             "; thinking-ON leg served by {}, think_body_chars={}, generated_tokens={on_tokens}",
             if on_used_gpu { "GPU" } else { "CPU" },
             think_body_chars(generated),
-        );
+        )));
     }
-
-    Ok(GateResult::passed(
-        "golden_output",
-        &format!(
-            "{} golden test cases passed through the runtime entry point (served by {served_by}){on_leg}",
-            test_cases.len(),
-        ),
-        Some(test_cases.len() as f64),
-        Some(test_cases.len() as f64),
-        start.elapsed(),
-    ))
+    Ok(Ok(String::new()))
 }
 
 /// #3961: the hybrid thinking-ON leg's whole verdict, pure so a table can drive it.
@@ -1290,7 +1323,10 @@ mod thinking_on_leg_3961 {
     /// Positive controls: GPU-served, and CPU where the GPU was never expected.
     #[test]
     fn an_on_leg_on_its_expected_backend_passes() {
-        assert_eq!(thinking_on_leg_failure(REASONED, &["4"], 2048, true, None, "b"), None);
+        assert_eq!(
+            thinking_on_leg_failure(REASONED, &["4"], 2048, true, None, "b"),
+            None
+        );
         assert_eq!(
             thinking_on_leg_failure(REASONED, &["4"], 2048, false, Some("no cuda build"), "b"),
             None
@@ -1310,7 +1346,10 @@ mod thinking_on_leg_3961 {
             "row Qwen3.5-0.8B-Q4_K_M",
         )
         .expect("a wrong answer fails");
-        assert!(got.contains("[budget basis — row Qwen3.5-0.8B-Q4_K_M]"), "{got}");
+        assert!(
+            got.contains("[budget basis — row Qwen3.5-0.8B-Q4_K_M]"),
+            "{got}"
+        );
     }
 }
 
@@ -1320,7 +1359,10 @@ mod loud_truncation_3904 {
 
     #[test]
     fn a_short_reason_is_untouched() {
-        assert_eq!(loudly_truncated("The capital of France is Paris.", 100), "The capital of France is Paris.");
+        assert_eq!(
+            loudly_truncated("The capital of France is Paris.", 100),
+            "The capital of France is Paris."
+        );
     }
 
     /// Exactly at the bound is NOT truncated, so the marker never appears on a complete

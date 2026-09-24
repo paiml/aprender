@@ -14,13 +14,40 @@
 //! would look landed and change nothing the gate reads, which for a FAIL-CLOSED table is
 //! the worst direction: the model stays refused and the edit looks done.
 
-const SOURCE: &str = include_str!("../../../contracts/thinking-budgets-v1.yaml");
+//! #4129: the SOURCE lives outside this crate, so it is read at RUN time (an `include_str!` of it
+//! cannot compile from the published apr-cli tarball). The MIRROR is inside the crate and ships.
+//! In tree a missing source FAILS; out of tree the comparison SKIPs by name. The anti-vacuity
+//! test below reads the MIRROR, which the comparison proves identical in tree, so it still runs
+//! from the tarball.
+
 const MIRROR: &str = include_str!("../contracts/thinking-budgets-v1.yaml");
+
+/// The linted source, or `None` (after naming the skip) when out of tree.
+fn source_or_skip(test: &str) -> Option<String> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    if !root.join("contracts").is_dir() {
+        eprintln!(
+            "SKIP {test}: out of tree (no {} beside this crate) - the linted source lives in the \
+             workspace, which a published crate does not carry (#4129)",
+            root.join("contracts").display()
+        );
+        return None;
+    }
+    let path = root.join("contracts/thinking-budgets-v1.yaml");
+    Some(
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("in tree, {} must be readable: {e}", path.display())),
+    )
+}
 
 #[test]
 fn the_packaged_mirror_is_byte_identical_to_the_linted_source() {
+    let Some(source) = source_or_skip("the_packaged_mirror_is_byte_identical_to_the_linted_source")
+    else {
+        return;
+    };
     assert_eq!(
-        SOURCE, MIRROR,
+        source, MIRROR,
         "contracts/thinking-budgets-v1.yaml and crates/apr-cli/contracts/thinking-budgets-v1.yaml \
          have diverged. The linted copy is the source; copy it over the mirror:\n  \
          cp contracts/thinking-budgets-v1.yaml crates/apr-cli/contracts/thinking-budgets-v1.yaml"
@@ -31,7 +58,7 @@ fn the_packaged_mirror_is_byte_identical_to_the_linted_source() {
 /// the table must actually carry the things the gate refuses without.
 #[test]
 fn the_table_declares_a_default_with_a_basis_and_at_least_one_model() {
-    let doc: serde_yaml::Value = serde_yaml::from_str(SOURCE).expect("source parses");
+    let doc: serde_yaml::Value = serde_yaml::from_str(MIRROR).expect("mirror parses");
     let default = doc.get("default").expect("a `default` section");
     assert!(
         default

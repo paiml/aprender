@@ -26,7 +26,7 @@ greedy_cells() {
   "$APR" run --help 2>/dev/null | grep -q -- '--thinking' && think_flag=1
   cell="$d/cell-greedy.sh"
   printf '#!/usr/bin/env bash\n# one CRUX greedy cell: apr + llama.cpp greedy ids on the identical GGUF\n' > "$cell"
-  if [ "$LLAMA_OK" = 1 ]; then
+  if [ "$HAVE_LLAMA" = 1 ]; then
     port=$(free_port)
     { printf '%q ' "$LLAMA_SERVER" -m "$M" --port "$port" --host 127.0.0.1 -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}" \
         --jinja --no-warmup
@@ -41,11 +41,11 @@ greedy_cells() {
       if [ "$think_flag" = 1 ] || [ "$th" = off ]; then
         cell_add "$cell" "$d/apr-$pid-$th.run" "$APR" run "$M" --prompt "$content" --chat --max-tokens "$GREEDY_MAXTOK" \
           --temperature 0 --seed "$SEED" --format json -v "$APR_BE" "${aprflag[@]}"
-        [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/apr-$pid-$th" python3 scripts/lib/crux_greedy_llama.py apr \
+        [ "$HAVE_LLAMA" = 1 ] && cell_add "$cell" "$d/apr-$pid-$th" python3 scripts/lib/crux_greedy_llama.py apr \
           --url "http://127.0.0.1:$port" --apr-json "$d/apr-$pid-$th.run.out" --apr-stderr "$d/apr-$pid-$th.run.err" \
           --messages "$WORK/messages-$pid.json" --thinking "$th" --max-tokens "$GREEDY_MAXTOK" --out "$d/apr-$pid-$th.json"
       fi
-      if [ "$LLAMA_OK" = 1 ]; then
+      if [ "$HAVE_LLAMA" = 1 ]; then
         cell_add "$cell" "$d/llama-$pid-$th" python3 scripts/lib/crux_greedy_llama.py gen --prompt-source apr \
           --url "http://127.0.0.1:$port" --messages "$WORK/messages-$pid.json" --thinking "$th" \
           --max-tokens "$GREEDY_MAXTOK" --seed "$SEED" --out "$d/llama-$pid-$th.json" --apr-stderr "$d/apr-$pid-$th.run.err"
@@ -55,11 +55,11 @@ greedy_cells() {
       fi
     done
   done
-  [ "$LLAMA_OK" = 1 ] && printf 'kill "$(cat %q)" 2> /dev/null; wait "$(cat %q)" 2> /dev/null\n' \
+  [ "$HAVE_LLAMA" = 1 ] && printf 'kill "$(cat %q)" 2> /dev/null; wait "$(cat %q)" 2> /dev/null\n' \
     "$d/llama-server.pid" "$d/llama-server.pid" >> "$cell"
   printf 'exit 0\n' >> "$cell"
   run_cell "$cell"
-  python3 - "$MANIFEST" "$SHA" "$HOST" "$BACKEND" "$d" "$GREEDY_MAXTOK" "$LLAMA_OK" "${LLAMA_WHY:-}" \
+  python3 - "$MANIFEST" "$SHA" "$HOST" "$BACKEND" "$d" "$GREEDY_MAXTOK" "$HAVE_LLAMA" "${LLAMA_WHY:-}" \
     "${CELL_WHY:-}" "$think_flag" $GREEDY_PIDS <<'PY'
 import json, os, sys
 m, sha, host, backend, d, maxtok, llama_ok, llama_why, cell_why, think_flag = sys.argv[1:11]

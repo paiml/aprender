@@ -216,7 +216,7 @@ impl CudaExecutor {
         Ok(())
     }
 
-    /// Execute GEMV using cached weight matrix (PARITY-120: 10x speedup)
+    /// Execute GEMV using cached weight matrix (PARITY-120)
     ///
     /// This is the fast path for single-token generation (M=1).
     /// The weight matrix must be pre-loaded via `load_weights()`.

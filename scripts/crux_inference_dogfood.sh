@@ -169,7 +169,7 @@ TEMP=$(llama_pin_get_raw temperature 2>/dev/null)
 SEED=$(llama_pin_get_raw seed 2>/dev/null)
 CTX=$(llama_pin_get_raw context_length 2>/dev/null)
 [ -n "$TEMP" ] && [ -n "$SEED" ] && [ -n "$CTX" ] || decline "scripts/llama_pin.toml [protocol] temperature/seed/context_length unreadable"
-LLAMA_OK=0
+HAVE_LLAMA=0
 LLAMA_WHY=""
 if want llama.cpp; then
   if [ "$LLAMA_RC" -ne 0 ]; then
@@ -177,13 +177,13 @@ if want llama.cpp; then
   elif [ -z "${LLAMA_CLI:-}" ] || [ -z "${LLAMA_SERVER:-}" ]; then
     LLAMA_WHY="the pinned build has no chat CLI or no server binary beside it"
   else
-    LLAMA_OK=1
+    HAVE_LLAMA=1
   fi
 fi
 
 # ---- ollama: resolved by declaration, recorded by what the server says ----------
 OLLAMA=""
-OLLAMA_OK=0
+HAVE_OLLAMA=0
 OLLAMA_WHY=""
 OLLAMA_CLIENT=""
 OLLAMA_SERVER=""
@@ -200,7 +200,7 @@ if want ollama; then
     if [ -z "$OLLAMA_SERVER" ]; then
       OLLAMA_WHY="the ollama server at $OLLAMA_HOST_URL did not answer /api/version"
     else
-      OLLAMA_OK=1
+      HAVE_OLLAMA=1
     fi
   fi
 fi
@@ -253,7 +253,7 @@ fi
 EXT_ANY=0
 for eng in "${!EXT_OK[@]}"; do [ "${EXT_OK[$eng]}" = 1 ] && EXT_ANY=1; done
 
-[ "$LLAMA_OK" = 1 ] || [ "$OLLAMA_OK" = 1 ] || [ "$EXT_ANY" = 1 ] || decline "no comparator: llama.cpp (${LLAMA_WHY:-not requested}); ollama (${OLLAMA_WHY:-not requested})"
+[ "$HAVE_LLAMA" = 1 ] || [ "$HAVE_OLLAMA" = 1 ] || [ "$EXT_ANY" = 1 ] || decline "no comparator: llama.cpp (${LLAMA_WHY:-not requested}); ollama (${OLLAMA_WHY:-not requested})"
 
 # ---- work dir -------------------------------------------------------------------
 WORK=$(mktemp -d) || decline "mktemp failed"
@@ -280,7 +280,7 @@ ollama_rm_own() {
 _cleanup() {
   [ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null
   # A run killed mid-model leaves its ollama import behind unless removed here.
-  if [ "$OLLAMA_OK" = 1 ] && [ "$KEEP_OLLAMA" = 0 ]; then
+  if [ "$HAVE_OLLAMA" = 1 ] && [ "$KEEP_OLLAMA" = 0 ]; then
     ollama_rm_own "$OL_NAME"
   fi
   [ "$KEEP_WORK" = 1 ] && { printf 'work kept: %s\n' "$WORK" >&2; return 0; }
@@ -531,8 +531,8 @@ serve_wait_line() { # serve_wait_line <cell> <port> <health path> <server pid fi
 # ---- the run ---------------------------------------------------------------------
 printf -- '--- CRUX inference dogfood %s on %s (%s lane) ---\n' "$VERSION" "$HOST" "$BACKEND"
 printf '  apr       %s\n' "$APR_VERSION_LINE"
-printf '  llama.cpp %s\n' "$( [ "$LLAMA_OK" = 1 ] && printf '%s' "${LLAMA_BUILD:-?}" || printf 'UNAVAILABLE: %s' "${LLAMA_WHY:-not requested}")"
-printf '  ollama    %s\n' "$( [ "$OLLAMA_OK" = 1 ] && printf 'server %s (client %s)' "$OLLAMA_SERVER" "${OLLAMA_CLIENT:-?}" || printf 'UNAVAILABLE: %s' "${OLLAMA_WHY:-not requested}")"
+printf '  llama.cpp %s\n' "$( [ "$HAVE_LLAMA" = 1 ] && printf '%s' "${LLAMA_BUILD:-?}" || printf 'UNAVAILABLE: %s' "${LLAMA_WHY:-not requested}")"
+printf '  ollama    %s\n' "$( [ "$HAVE_OLLAMA" = 1 ] && printf 'server %s (client %s)' "$OLLAMA_SERVER" "${OLLAMA_CLIENT:-?}" || printf 'UNAVAILABLE: %s' "${OLLAMA_WHY:-not requested}")"
 
 # -dev none keeps the cpu lane's llama.cpp off every device, op-offload included;
 # -ngl 0 alone still offloads large host ops to the GPU by default.
@@ -585,7 +585,7 @@ PY
 
   THINKING_CAPABLE=unknown
   TOK_WHY=""
-  if [ "$LLAMA_OK" = 1 ]; then
+  if [ "$HAVE_LLAMA" = 1 ]; then
     llama_tokenize_prompts || TOK_WHY="llama.cpp server did not come up for tokenization (see its log)"
   fi
 
@@ -595,7 +595,7 @@ PY
   OL_REFUSED=""
   OL_BLOB=""
   OL_TEMPLATE_SHA=""
-  if [ "$OLLAMA_OK" = 1 ]; then
+  if [ "$HAVE_OLLAMA" = 1 ]; then
     {
       printf 'FROM %s\n' "$M"
       printf 'PARAMETER temperature %s\nPARAMETER seed %s\nPARAMETER num_predict %s\nPARAMETER num_ctx %s\n' "$TEMP" "$SEED" "$MAXTOK" "$CTX"
@@ -637,9 +637,9 @@ PY
   modes="off"
   [ "$THINKING_CAPABLE" = true ] && modes="${THINK_MODES//,/ }"
   apr_think_flag=0
-  "$APR" run --help 2>/dev/null | grep -q -- '--thinking' && apr_think_flag=1
+  grep -q -- '--thinking' <<< "$("$APR" run --help 2>/dev/null)" && apr_think_flag=1
   ol_help=""
-  [ "$OLLAMA_OK" = 1 ] && ol_help=$("$OLLAMA" run --help 2>&1)
+  [ "$HAVE_OLLAMA" = 1 ] && ol_help=$("$OLLAMA" run --help 2>&1)
   SHA12_MODEL=$SHA12
   for THINK in $modes; do
   # every cell dir of this mode lives under <sha12>/<mode>: ON and OFF cells of one prompt must not overwrite each
@@ -706,11 +706,11 @@ PY
       # time, and writes the row-contract JSON the judge reads.
       cell_add_stdin "$cell" "$d/apr-$pid" "$WORK/turns-$pid.txt" "$APR" chat "$M" \
         --temperature "$TEMP" --max-tokens "$MAXTOK" "$APR_BE" "${APR_THINK[@]}"
-      [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/llama-$pid" python3 scripts/lib/crux_pty_chat.py \
+      [ "$HAVE_LLAMA" = 1 ] && cell_add "$cell" "$d/llama-$pid" python3 scripts/lib/crux_pty_chat.py \
         --marker '(?m)^> $' --turns "$WORK/turns-$pid.json" --out "$d/llama-$pid.json" --exit-line /exit \
         --device "$LLAMA_DEVICE" --turn-timeout "$TMO" --start-timeout "$TMO" --strip '\[ Prompt:[^]]*\]' -- \
         "$LLAMA_CLI" -m "$M" -n "$MAXTOK" --temp "$TEMP" --seed "$SEED" -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}" "${LLAMA_THINK[@]}"
-      if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then
+      if [ "$HAVE_OLLAMA" = 1 ] && [ -z "$OL_REFUSED" ]; then
         cell_add "$cell" "$d/ollama-$pid" python3 scripts/lib/crux_pty_chat.py \
           --marker '>>> ' --answer-after '^[.][.][.].*$' --turns "$WORK/turns-$pid.json" --out "$d/ollama-$pid.json" \
           --exit-line /bye --device "$OL_DEVICE" --turn-timeout "$TMO" --start-timeout "$TMO" -- \
@@ -720,9 +720,9 @@ PY
     else
       cell_add "$cell" "$d/apr-$pid" "$APR" run "$M" --prompt "$content" --max-tokens "$MAXTOK" \
         --temperature "$TEMP" --seed "$SEED" --format json -v "$APR_BE" "${APR_THINK[@]}"
-      [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/llama-$pid" "$LLAMA_CLI" -m "$M" -p "$content" -st -n "$MAXTOK" \
+      [ "$HAVE_LLAMA" = 1 ] && cell_add "$cell" "$d/llama-$pid" "$LLAMA_CLI" -m "$M" -p "$content" -st -n "$MAXTOK" \
         --temp "$TEMP" --seed "$SEED" -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}" "${LLAMA_THINK[@]}"
-      if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then
+      if [ "$HAVE_OLLAMA" = 1 ] && [ -z "$OL_REFUSED" ]; then
         cell_add "$cell" "$d/ollama-$pid" "$OLLAMA" run "$OL_NAME" "$content" --verbose --nowordwrap \
           --keepalive 0 "${OLLAMA_THINK[@]}"
         cell_add_ollama_unload "$cell" "$d/ollama-$pid" "$OL_NAME"
@@ -751,9 +751,9 @@ PY
 
     pty_out=""; [ "$VERB" = chat ] && pty_out=json
     cell_result apr "$pid" "$d/apr-$pid"
-    if [ "$LLAMA_OK" = 1 ]; then cell_result llama.cpp "$pid" "$d/llama-$pid" "${pty_out:+$d/llama-$pid.json}"
+    if [ "$HAVE_LLAMA" = 1 ]; then cell_result llama.cpp "$pid" "$d/llama-$pid" "${pty_out:+$d/llama-$pid.json}"
     elif want llama.cpp; then emit_gen llama.cpp "$pid" "" "" "" "$LLAMA_WHY"; fi
-    if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then cell_result ollama "$pid" "$d/ollama-$pid" "${pty_out:+$d/ollama-$pid.json}"
+    if [ "$HAVE_OLLAMA" = 1 ] && [ -z "$OL_REFUSED" ]; then cell_result ollama "$pid" "$d/ollama-$pid" "${pty_out:+$d/ollama-$pid.json}"
     elif want ollama; then emit_gen ollama "$pid" "" "" "" "${OL_REFUSED:-$OLLAMA_WHY}"; fi
     for eng in "${PLUGIN_ENGINES[@]}"; do
       want "$eng" || continue
@@ -772,7 +772,7 @@ PY
 
   [ "$GREEDY" = 1 ] && greedy_cells
 
-  if [ "$OLLAMA_OK" = 1 ] && [ "$KEEP_OLLAMA" = 0 ]; then
+  if [ "$HAVE_OLLAMA" = 1 ] && [ "$KEEP_OLLAMA" = 0 ]; then
     ollama_rm_own "$OL_NAME"
   fi
 done

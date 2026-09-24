@@ -22,6 +22,9 @@
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
+# guard_tree.sh probes `--help` to decide whether to run a self-test. Answer it before any work:
+# a probe that fell through to the body ran this whole guard a second time, serially (#4046).
+case "${1:-}" in -h|--help) printf 'usage: bash scripts/check_crux_ollama_in_lock.sh (no arguments: runs its rows)\n'; exit 0 ;; esac
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
 PROG=check_crux_ollama_in_lock
@@ -217,7 +220,7 @@ printf '%s: every ollama model load runs inside the GPU lock (#3964)\n' "$PROG"
 
 # Row 1: the real dogfood through gpu-q (the production path on lambda and gx10).
 GPUQ_REAL="${GPUQ_BIN_UNDER_TEST:-$HOME/.local/bin/gpu-q}"
-if [ -x "$GPUQ_REAL" ] && "$GPUQ_REAL" --caps 2>/dev/null | grep -q wait; then
+if [ -x "$GPUQ_REAL" ] && grep -q wait <<< "$("$GPUQ_REAL" --caps 2>/dev/null)"; then
   run_row gpuq "$ROOT" "$GPUQ_REAL"
   expect_held gpuq "gpu-q path"
 else

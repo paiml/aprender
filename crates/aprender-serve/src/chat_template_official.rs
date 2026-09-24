@@ -45,27 +45,10 @@ fn official_template_str_method(
             format!("{method} is only provided on strings here"),
         ));
     };
-    let arg_str = |i: usize| -> Option<String> {
-        args.get(i).filter(|v| !v.is_none() && !v.is_undefined()).and_then(|v| v.as_str().map(str::to_string))
-    };
-    let affix_any = |f: &dyn Fn(&str) -> bool| -> Result<Value, Error> {
-        // Python accepts a str or a tuple of strs.
-        let a = args.first().ok_or_else(|| Error::new(ErrorKind::MissingArgument, method.to_string()))?;
-        if let Some(p) = a.as_str() {
-            return Ok(Value::from(f(p)));
-        }
-        let mut any = false;
-        for item in a.try_iter()? {
-            if let Some(p) = item.as_str() {
-                any |= f(p);
-            }
-        }
-        Ok(Value::from(any))
-    };
-    let chars_of = |i: usize| arg_str(i).map(|c| c.chars().collect::<Vec<char>>());
+    let chars_of = |i: usize| str_arg(args, i).map(|c| c.chars().collect::<Vec<char>>());
     match method {
-        "startswith" => affix_any(&|p| s.starts_with(p)),
-        "endswith" => affix_any(&|p| s.ends_with(p)),
+        "startswith" => str_affix_any(method, args, &|p| s.starts_with(p)),
+        "endswith" => str_affix_any(method, args, &|p| s.ends_with(p)),
         "strip" => Ok(Value::from(match chars_of(0) {
             Some(cs) => s.trim_matches(|c| cs.contains(&c)).to_string(),
             None => s.trim().to_string(),
@@ -78,27 +61,56 @@ fn official_template_str_method(
             Some(cs) => s.trim_end_matches(|c| cs.contains(&c)).to_string(),
             None => s.trim_end().to_string(),
         })),
-        "split" => {
-            let maxsplit = args.get(1).and_then(|v| i64::try_from(v.clone()).ok()).unwrap_or(-1);
-            let parts: Vec<Value> = match arg_str(0) {
-                // Python: no separator splits on runs of whitespace and drops empties.
-                None => s.split_whitespace().map(Value::from).collect(),
-                Some(sep) if sep.is_empty() => {
-                    return Err(Error::new(ErrorKind::InvalidOperation, "split: empty separator"));
-                },
-                Some(sep) if maxsplit >= 0 => s
-                    .splitn(usize::try_from(maxsplit).unwrap_or(0) + 1, sep.as_str())
-                    .map(Value::from)
-                    .collect(),
-                Some(sep) => s.split(sep.as_str()).map(Value::from).collect(),
-            };
-            Ok(Value::from(parts))
-        },
+        "split" => str_split(s, args),
         _ => Err(Error::new(
             ErrorKind::UnknownMethod,
             format!("str.{method} is not provided (#3990 implements only what the templates call)"),
         )),
     }
+}
+
+/// Positional argument `i` as a string; `None`/undefined count as absent (Python's default).
+fn str_arg(args: &[minijinja::Value], i: usize) -> Option<String> {
+    args.get(i).filter(|v| !v.is_none() && !v.is_undefined()).and_then(|v| v.as_str().map(str::to_string))
+}
+
+/// `str.startswith` / `str.endswith`: Python accepts a str or a tuple of strs.
+fn str_affix_any(
+    method: &str,
+    args: &[minijinja::Value],
+    f: &dyn Fn(&str) -> bool,
+) -> Result<minijinja::Value, minijinja::Error> {
+    use minijinja::{Error, ErrorKind, Value};
+    let a = args.first().ok_or_else(|| Error::new(ErrorKind::MissingArgument, method.to_string()))?;
+    if let Some(p) = a.as_str() {
+        return Ok(Value::from(f(p)));
+    }
+    let mut any = false;
+    for item in a.try_iter()? {
+        if let Some(p) = item.as_str() {
+            any |= f(p);
+        }
+    }
+    Ok(Value::from(any))
+}
+
+/// `str.split(sep=None, maxsplit=-1)`.
+fn str_split(s: &str, args: &[minijinja::Value]) -> Result<minijinja::Value, minijinja::Error> {
+    use minijinja::{Error, ErrorKind, Value};
+    let maxsplit = args.get(1).and_then(|v| i64::try_from(v.clone()).ok()).unwrap_or(-1);
+    let parts: Vec<Value> = match str_arg(args, 0) {
+        // Python: no separator splits on runs of whitespace and drops empties.
+        None => s.split_whitespace().map(Value::from).collect(),
+        Some(sep) if sep.is_empty() => {
+            return Err(Error::new(ErrorKind::InvalidOperation, "split: empty separator"));
+        },
+        Some(sep) if maxsplit >= 0 => s
+            .splitn(usize::try_from(maxsplit).unwrap_or(0) + 1, sep.as_str())
+            .map(Value::from)
+            .collect(),
+        Some(sep) => s.split(sep.as_str()).map(Value::from).collect(),
+    };
+    Ok(Value::from(parts))
 }
 
 /// Render a model's own jinja chat template, with llama.cpp/HuggingFace semantics (#3990).

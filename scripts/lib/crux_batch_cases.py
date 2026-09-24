@@ -15,6 +15,16 @@ LOADS = {"inproc": 0, "serve": 0}
 CALLS = []
 
 
+def clip_head(s, n):
+    """`s` cut to its first `n` chars, SAYING how many were cut (#4046: a silent cut reads as the whole text)."""
+    return s if len(s) <= n else f"{s[:n]} … and {len(s) - n} more chars"
+
+
+def clip_tail(s, n):
+    """`s` cut to its last `n` chars, SAYING how many were dropped (#4046)."""
+    return s if len(s) <= n else f"[{len(s) - n} earlier chars dropped] {s[-n:]}"
+
+
 def batch_env():
     w = Path(tempfile.mkdtemp())
     os.environ["CRUX_MANIFEST"], os.environ["CRUX_WORK"] = str(w / "manifest.jsonl"), str(w)
@@ -193,7 +203,7 @@ def run(engine, serve_interface: str) -> int:
             ok = detail is True
         except Exception as e:  # a case that raises is a broken case, not a pass
             ok, detail = False, f"{type(e).__name__}: {e}"
-        print(f"{'ok  ' if ok else 'FAIL'} [batch] {name}" + ("" if ok else f"\n     got: {str(detail)[:300]}"))
+        print(f"{'ok  ' if ok else 'FAIL'} [batch] {name}" + ("" if ok else f"\n     got: {clip_head(str(detail), 300)}"))
         failed += not ok
     return failed
 
@@ -239,7 +249,7 @@ def run_sse() -> int:
             ok = got == want
         except Exception as e:  # noqa: BLE001
             got, ok = f"{type(e).__name__}: {e}", isinstance(want, type) and isinstance(e, want)
-        print(f"{'ok  ' if ok else 'FAIL'} [sse] {name}" + ("" if ok else f"\n     got: {str(got)[:200]}"))
+        print(f"{'ok  ' if ok else 'FAIL'} [sse] {name}" + ("" if ok else f"\n     got: {clip_head(str(got), 200)}"))
         failed += not ok
     return failed
 
@@ -297,7 +307,7 @@ def run_proc() -> int:
         line = parent.stdout.readline().strip()
         if not line.isdigit():
             parent.kill()
-            return "ENV", parent.stderr.read().strip()[:160] or "no pid printed"
+            return "ENV", clip_head(parent.stderr.read().strip(), 160) or "no pid printed"
         deadline = time.time() + 5
         while time.time() < deadline and len(survivors(marker)) < 3:
             time.sleep(0.05)

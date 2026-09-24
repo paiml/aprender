@@ -243,7 +243,7 @@ pub enum KernelType {
         n: u32,
         k: u32,
     },
-    /// PAR-108: Batched Q4_K GEMV for 2x Ollama via shared dequantization
+    /// PAR-108: Batched Q4_K GEMV via shared dequantization (the throughput target is PAR-108's)
     BatchedQ4KGemv {
         m: u32,
         k: u32,

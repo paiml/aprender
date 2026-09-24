@@ -366,6 +366,117 @@ pub struct CodeServeOptions {
     pub think: Option<bool>,
 }
 
+/// `--manifest` if given, else the default manifest with the settings ladder folded in
+/// (PMAT-CODE-CONFIG-LADDER-001). Extracted from `cmd_code_with` (complexity ratchet, #4046);
+/// behaviour unchanged.
+fn load_code_manifest(manifest_path: Option<&PathBuf>) -> anyhow::Result<AgentManifest> {
+    match manifest_path {
+        Some(path) => {
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| anyhow::anyhow!("cannot read manifest {}: {e}", path.display()))?;
+            let m = AgentManifest::from_toml(&content)
+                .map_err(|e| anyhow::anyhow!("invalid manifest: {e}"))?;
+            eprintln!("✓ Loaded manifest: {}", path.display());
+            Ok(m)
+        }
+        None => {
+            let mut m = build_default_manifest();
+            // PMAT-CODE-CONFIG-LADDER-001: settings.json layered defaults.
+            // Errors are surfaced (Poka-Yoke) — a malformed settings file
+            // is reported rather than silently ignored.
+            let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let settings = crate::agent::settings::AprSettings::load_layered(&project_root)?;
+            apply_settings_to_manifest(&mut m, &settings)?;
+            Ok(m)
+        }
+    }
+}
+
+/// PMAT-160: `apr serve` first (full CUDA/GPU), the embedded driver as the fallback -- except for
+/// `--thinking on`, which the fallback cannot honour (#3723). Extracted from `cmd_code_with`
+/// (complexity ratchet, #4046); behaviour unchanged.
+fn launch_code_driver(
+    manifest: &AgentManifest,
+    serve_opts: CodeServeOptions,
+) -> anyhow::Result<Arc<dyn LlmDriver>> {
+    let driver: Arc<dyn LlmDriver> = if let Some(model_path) = manifest.model.resolve_model_path() {
+        let launch = crate::agent::driver::apr_serve::ServeLaunchOptions {
+            think: serve_opts.think,
+            ..serve_opts.serve
+        };
+        match crate::agent::driver::apr_serve::AprServeDriver::launch_with(
+            model_path,
+            manifest.model.context_window,
+            &launch,
+        ) {
+            Ok(d) => Arc::new(d),
+            Err(e) if serve_opts.think == Some(true) => {
+                // #3723: the embedded fallback renders thinking OFF only; serving it for an
+                // explicit ON would be the silent false pin the flag exists to prevent.
+                anyhow::bail!(CodeOutcome::refused(
+                    "invalid_input",
+                    format!(
+                        "--thinking on: apr serve is unavailable ({e}) and the embedded fallback \
+                     has no thinking-ON path (#3723); use --thinking off or make `apr` available"
+                    ),
+                    exit_code::AGENT_ERROR,
+                ));
+            }
+            Err(e) => {
+                eprintln!("⚠ apr serve unavailable ({e}), using embedded inference");
+                Arc::from(build_fallback_driver(manifest)?)
+            }
+        }
+    } else {
+        Arc::from(build_fallback_driver(manifest)?)
+    };
+    Ok(driver)
+}
+
+/// PMAT-CODE-HOOKS-001: fire SessionStart; a Warn is shown, a Block aborts. Extracted from
+/// `cmd_code_with` (complexity ratchet, #4046); behaviour unchanged.
+fn run_session_start_hook(manifest: &AgentManifest) -> anyhow::Result<()> {
+    let hooks_reg = crate::agent::hooks::HookRegistry::from_configs(manifest.hooks.clone());
+    let hook_cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    match hooks_reg.run(crate::agent::hooks::HookEvent::SessionStart, "", &hook_cwd) {
+        crate::agent::hooks::HookDecision::Allow => {}
+        crate::agent::hooks::HookDecision::Warn(msg) => {
+            if !msg.is_empty() {
+                eprintln!("⚠ SessionStart hook: {msg}");
+            }
+        }
+        crate::agent::hooks::HookDecision::Block(reason) => {
+            anyhow::bail!(CodeOutcome::refused(
+                "hook_blocked",
+                format!("SessionStart hook blocked session: {reason}"),
+                exit_code::AGENT_ERROR,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The one prompt of a non-interactive run: the arguments, else stdin (a JSON envelope under
+/// `--input-format json`). Extracted from `cmd_code_with` (complexity ratchet, #4046); behaviour unchanged.
+fn read_single_prompt_text(prompt: &[String], input_format: &str) -> anyhow::Result<String> {
+    let prompt_text = if prompt.is_empty() {
+        let mut buf = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)?;
+        // PMAT-CODE-INPUT-FORMAT-001: when --input-format=json, parse
+        // a `{"role":"user","content":"..."}` envelope and use `content`
+        // as the prompt. Empty/missing content is a hard error so the
+        // operator notices the malformed envelope.
+        if input_format.eq_ignore_ascii_case("json") {
+            parse_json_input_envelope(&buf)?
+        } else {
+            buf
+        }
+    } else {
+        prompt.join(" ")
+    };
+    Ok(prompt_text)
+}
+
 /// [`cmd_code`] with explicit `apr serve` controls (#3978).
 #[allow(clippy::too_many_arguments)]
 pub fn cmd_code_with(
@@ -437,26 +548,7 @@ pub fn cmd_code_with(
     // `~/.config/apr/settings.json` (user-global) and
     // `<project_root>/.apr/settings.json` (project-local) as Claude-Code
     // parity defaults (PMAT-CODE-CONFIG-LADDER-001). CLI flags always win.
-    let mut manifest = match manifest_path {
-        Some(ref path) => {
-            let content = std::fs::read_to_string(path)
-                .map_err(|e| anyhow::anyhow!("cannot read manifest {}: {e}", path.display()))?;
-            let m = AgentManifest::from_toml(&content)
-                .map_err(|e| anyhow::anyhow!("invalid manifest: {e}"))?;
-            eprintln!("✓ Loaded manifest: {}", path.display());
-            m
-        }
-        None => {
-            let mut m = build_default_manifest();
-            // PMAT-CODE-CONFIG-LADDER-001: settings.json layered defaults.
-            // Errors are surfaced (Poka-Yoke) — a malformed settings file
-            // is reported rather than silently ignored.
-            let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            let settings = crate::agent::settings::AprSettings::load_layered(&project_root)?;
-            apply_settings_to_manifest(&mut m, &settings)?;
-            m
-        }
-    };
+    let mut manifest = load_code_manifest(manifest_path.as_ref())?;
 
     // --model flag overrides manifest model_path (and therefore overrides
     // any settings.json `model` field — CLI always wins, per the parity
@@ -486,37 +578,7 @@ pub fn cmd_code_with(
     // Falls back to embedded RealizarDriver if `apr` binary not found.
     // PMAT-CODE-SPAWN-PARITY-001: driver stored as Arc so TaskTool can
     // share it with the AgentPool for sub-agent execution.
-    let driver: Arc<dyn LlmDriver> = if let Some(model_path) = manifest.model.resolve_model_path() {
-        let launch = crate::agent::driver::apr_serve::ServeLaunchOptions {
-            think: serve_opts.think,
-            ..serve_opts.serve
-        };
-        match crate::agent::driver::apr_serve::AprServeDriver::launch_with(
-            model_path,
-            manifest.model.context_window,
-            &launch,
-        ) {
-            Ok(d) => Arc::new(d),
-            Err(e) if serve_opts.think == Some(true) => {
-                // #3723: the embedded fallback renders thinking OFF only; serving it for an
-                // explicit ON would be the silent false pin the flag exists to prevent.
-                anyhow::bail!(CodeOutcome::refused(
-                    "invalid_input",
-                    format!(
-                        "--thinking on: apr serve is unavailable ({e}) and the embedded fallback \
-                         has no thinking-ON path (#3723); use --thinking off or make `apr` available"
-                    ),
-                    exit_code::AGENT_ERROR,
-                ));
-            }
-            Err(e) => {
-                eprintln!("⚠ apr serve unavailable ({e}), using embedded inference");
-                Arc::from(build_fallback_driver(&manifest)?)
-            }
-        }
-    } else {
-        Arc::from(build_fallback_driver(&manifest)?)
-    };
+    let driver: Arc<dyn LlmDriver> = launch_code_driver(&manifest, serve_opts)?;
 
     // PMAT-CODE-MCP-JSON-LOADER-001: merge `<project>/.mcp.json` (Claude-Code-
     // shape) servers into manifest.mcp_servers BEFORE tool registration. The
@@ -558,23 +620,7 @@ pub fn cmd_code_with(
     // PMAT-CODE-HOOKS-001: build hook registry from manifest and fire SessionStart.
     // Returned Warn messages are surfaced to the user; a Block here aborts session
     // startup (matching Claude Code's exit-code-2 semantics).
-    let hooks_reg = crate::agent::hooks::HookRegistry::from_configs(manifest.hooks.clone());
-    let hook_cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    match hooks_reg.run(crate::agent::hooks::HookEvent::SessionStart, "", &hook_cwd) {
-        crate::agent::hooks::HookDecision::Allow => {}
-        crate::agent::hooks::HookDecision::Warn(msg) => {
-            if !msg.is_empty() {
-                eprintln!("⚠ SessionStart hook: {msg}");
-            }
-        }
-        crate::agent::hooks::HookDecision::Block(reason) => {
-            anyhow::bail!(CodeOutcome::refused(
-                "hook_blocked",
-                format!("SessionStart hook blocked session: {reason}"),
-                exit_code::AGENT_ERROR,
-            ));
-        }
-    }
+    run_session_start_hook(&manifest)?;
 
     // Build memory
     let memory = crate::agent::memory::InMemorySubstrate::new();
@@ -586,21 +632,7 @@ pub fn cmd_code_with(
     // PMAT-161: Return exit code instead of process::exit() so driver Drop
     // runs and kills the apr serve subprocess (no zombie processes).
     if let Some(permit) = single_prompt_permit {
-        let prompt_text = if prompt.is_empty() {
-            let mut buf = String::new();
-            std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)?;
-            // PMAT-CODE-INPUT-FORMAT-001: when --input-format=json, parse
-            // a `{"role":"user","content":"..."}` envelope and use `content`
-            // as the prompt. Empty/missing content is a hard error so the
-            // operator notices the malformed envelope.
-            if input_format.eq_ignore_ascii_case("json") {
-                parse_json_input_envelope(&buf)?
-            } else {
-                buf
-            }
-        } else {
-            prompt.join(" ")
-        };
+        let prompt_text = read_single_prompt_text(&prompt, input_format)?;
         // `--resume <id> -p ...` used to run with an EMPTY history — the
         // resumed session was accepted and then ignored, so the reply looked
         // plausible while the model had no idea what came before. Restore the
