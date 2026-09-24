@@ -19,7 +19,8 @@ a `cargo test` and each gap below measured a false RED in the 0.69.1 run:
 Options: --jobs N (2) --test-threads N (4) --timeout S (1800, per binary) --skip-crate NAME (repeatable:
 compile-only crates, printed) --cargo PATH --toolchain NAME --sysroot DIR --target-dir DIR.
 Prints one RUN line per failing binary naming its failing tests, and a total.
-Exit: 0 every binary passed · 1 a binary failed (named) · 2 could not check (no binary: vacuous; bad input).
+Exit: 0 every binary passed · 1 a binary failed (named) · 2 could not check (no binary: vacuous; bad input;
+a binary that did not start; a harness crash). Only a test binary that RAN and failed is 1.
 """
 import argparse
 import concurrent.futures
@@ -76,6 +77,7 @@ def test_env(base, a, pkg, version, mdir, bins):
     return env
 
 
+NOT_STARTED = "not-started"
 FAILED_TEST = re.compile(r"^---- (\S+) stdout ----$")
 
 
@@ -84,13 +86,19 @@ def run_one(row, a, bins, run_dir):
     log = pathlib.Path(run_dir) / ("%s__%s__%s.log" % (pkg, kind, target))
     t0 = time.monotonic()
     with open(log, "wb") as out:
-        p = subprocess.Popen([exe, "--test-threads=%d" % a.test_threads], cwd=mdir, stdout=out, stderr=subprocess.STDOUT,
-                             stdin=subprocess.DEVNULL, env=test_env(os.environ, a, pkg, version, mdir, bins),
-                             start_new_session=True)
+        try:
+            p = subprocess.Popen([exe, "--test-threads=%d" % a.test_threads], cwd=mdir, stdout=out, stderr=subprocess.STDOUT,
+                                 stdin=subprocess.DEVNULL, env=test_env(os.environ, a, pkg, version, mdir, bins),
+                                 start_new_session=True)
+        except OSError as e:  # missing exe, EACCES, fork ENOMEM/EAGAIN: the harness, not the test
+            return row, NOT_STARTED, 0.0, [str(e)], log
         try:
             rc = p.wait(timeout=a.timeout)
         except subprocess.TimeoutExpired:
-            os.killpg(p.pid, signal.SIGKILL)  # its OWN process group, by the pid we started: never a pattern
+            try:
+                os.killpg(p.pid, signal.SIGKILL)  # its OWN process group, by the pid we started: never a pattern
+            except ProcessLookupError:
+                pass  # the group exited between the timeout and the kill
             p.wait()
             rc = "timeout"
     failed = [m.group(1) for m in map(FAILED_TEST.match, log.read_text(errors="replace").splitlines()) if m]
@@ -130,10 +138,12 @@ def main(argv):
     os.makedirs(a.run_dir, exist_ok=True)
     print("running %d test binary(ies), %d at a time, --test-threads=%d, timeout %ds each (RUSTUP_TOOLCHAIN=%s)"
           % (len(run), a.jobs, a.test_threads, a.timeout, a.toolchain))
-    fails = []
+    fails, unstarted = [], []
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.jobs) as ex:
         for row, rc, dt, failed, log in ex.map(lambda r: run_one(r, a, bins, a.run_dir), run):
-            if rc != 0:
+            if rc == NOT_STARTED:
+                unstarted.append((row, failed[0]))
+            elif rc != 0:
                 fails.append((row, rc, dt, failed, log))
     peak_gib = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1048576
     for (pkg, version, kind, target, _exe, _m), rc, dt, failed, log in fails:
@@ -142,8 +152,17 @@ def main(argv):
               % (pkg, version, kind, target, rc, dt, names or "no failing test named (see log)", log))
     print("RUN: %d of %d test binary(ies) passed; peak single-binary RSS %.1f GiB"
           % (len(run) - len(fails), len(run), peak_gib))
+    if unstarted:
+        # A binary that never started proves nothing either way: the run as a whole could not check.
+        for (pkg, version, kind, target, exe, _m), why in unstarted:
+            print("  cannot check: %s-%s %s %s did not start (%s): %s" % (pkg, version, kind, target, exe, why), file=sys.stderr)
+        return 2
     return 1 if fails else 0
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    try:
+        sys.exit(main(sys.argv))
+    except Exception as e:  # an uncaught harness error exits 1 by default, and 1 means "a test failed"
+        print("  cannot check: the run harness crashed: %r" % (e,), file=sys.stderr)
+        sys.exit(2)

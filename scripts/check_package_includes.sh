@@ -422,6 +422,17 @@ if [ "${1:-}" = "--self-test" ]; then
   else
     printf 'FAIL  row 23 --run unstartable cap: rc=%s (want 2)\n%s\n' "$tr_rc" "$tr_out"; fails=1
   fi
+  # a test binary that cannot even start (stale exe, EACCES, fork failure) is could-not-check (2), not RED:
+  # 1 is reserved for a binary that RAN and failed. Hermetic: a hand-written stream, no cargo.
+  printf '{"reason":"compiler-artifact","manifest_path":"%s","target":{"kind":["test"],"name":"gone"},"profile":{"test":true},"executable":"%s"}\n' \
+    "$TD/tr-clean/Cargo.toml" "$TD/no-such-test-exe" > "$TD/tr-gone.json"
+  python3 "$REPO_ROOT/scripts/lib/tarball_test_run.py" "$TD/tr-gone.json" "$TD/tr-gone.run" --cargo /bin/true --toolchain x \
+    --sysroot "$TD" --target-dir "$TD" > "$TD/tr-gone.out" 2>&1; tr_rc=$?
+  if [ "$tr_rc" = 2 ] && grep -q 'did not start' "$TD/tr-gone.out"; then
+    printf 'ok    row 24 --run: a test binary that cannot start is could-not-check (2), never a named RED\n'
+  else
+    printf 'FAIL  row 24 --run unstartable binary: rc=%s (want 2)\n%s\n' "$tr_rc" "$(cat "$TD/tr-gone.out")"; fails=1
+  fi
   [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
   printf '\nSELF-TEST PASSED\n'
   exit 0
