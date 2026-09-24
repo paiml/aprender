@@ -1,7 +1,9 @@
 //! #4087: a cache for the `tensor_contract` qa gate, keyed so it can never mask a checker change.
 //!
-//! The gate reads every tensor of the model (15–40 s measured on yoga, 19–46% of `apr qa`), and a ladder runs
-//! `apr qa` on the same file once per backend with the same binary, so all but the first run repeat work.
+//! The gate reads every tensor of the model (15–40 s measured on yoga, 19–46% of `apr qa`; 20 s / 43 s / 2.1 min
+//! for Qwen3.5 4B / 9B / 27B on lambda). `scripts/model_ladder.sh` runs `apr qa` once per rung and per inventory
+//! GGUF, so every re-run of the ladder with the same binary (a retry, a rerun after a fix elsewhere, the nightly on
+//! an unchanged build) repeats all of it. With this cache a repeat costs one sha256 of the file.
 //!
 //! THE KEY is (sha256 of the model file, sha256 of the running `apr` executable). The executable stands in
 //! for "the checker's source": every line the gate executes is in it, so ANY change to the checker, its
@@ -17,6 +19,17 @@
 //!
 //! Default on; `APR_QA_NO_CONTRACT_CACHE=1` turns it off; `APR_QA_CACHE_DIR` moves it (tests always set this,
 //! so no test ever reads a real `~/.cache`).
+
+// apr-cli's lib.rs allows clippy::all/pedantic, unused_* and dead_code crate-wide (APR-MONO), which would make
+// `cargo clippy -D warnings` vacuous for this module. Lint levels are scoped: this module is linted for real.
+#![warn(
+    clippy::all,
+    clippy::pedantic,
+    unused_variables,
+    unused_imports,
+    dead_code,
+    unused_assignments
+)]
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -78,8 +91,11 @@ pub(crate) fn bypass_reason(model: &Path) -> Option<String> {
         // A missing single-file path may resolve to a sharded index (GH-346) — also multi-file.
         return Some("not a single regular file".into());
     }
-    let stem = name.trim_end_matches(".gguf");
-    if name.ends_with(".gguf") && is_split_gguf(stem) {
+    let is_gguf = model
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("gguf"));
+    let stem = model.file_stem().and_then(|n| n.to_str()).unwrap_or("");
+    if is_gguf && is_split_gguf(stem) {
         return Some(
             "split GGUF (-NNNNN-of-NNNNN): other parts are not covered by one file's hash".into(),
         );
@@ -242,7 +258,13 @@ pub(crate) fn cached_gate(
 }
 
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    use std::fmt::Write;
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
+            let _ = write!(s, "{b:02x}");
+            s
+        })
 }
 
 #[cfg(test)]

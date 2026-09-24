@@ -1,5 +1,16 @@
 //! #4087 case table. Every test uses its own temp cache dir and temp model; none reads a real `~/.cache`.
 
+// apr-cli's lib.rs allows clippy::all/pedantic, unused_* and dead_code crate-wide (APR-MONO), which would make
+// `cargo clippy -D warnings` vacuous for this module. Lint levels are scoped: this module is linted for real.
+#![warn(
+    clippy::all,
+    clippy::pedantic,
+    unused_variables,
+    unused_imports,
+    dead_code,
+    unused_assignments
+)]
+
 use super::*;
 use std::cell::Cell;
 use std::time::Duration;
