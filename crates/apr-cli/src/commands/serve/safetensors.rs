@@ -460,3 +460,7 @@ fn classify_bos_eos(content: &str) -> (bool, bool) {
 
 include!("chat.rs");
 include!("simple.rs");
+
+#[cfg(all(test, feature = "inference"))]
+#[path = "tests_safetensors_stop_4334.rs"]
+mod tests_safetensors_stop_4334;

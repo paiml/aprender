@@ -1177,16 +1177,41 @@ fn apr_cpu_stop_tokens(state: &AprServerState) -> Vec<u32> {
         );
     }
     if let Some(tok) = &state.tokenizer {
-        stop.extend(tok.eos_token_id);
-        stop.extend(tok.vocab.iter().enumerate().filter_map(|(id, t)| {
-            APR_CPU_TURN_END_TOKENS
-                .contains(&t.as_str())
-                .then_some(id as u32)
-        }));
+        stop.extend(tokenizer_info_stop_tokens(tok));
     }
     stop.sort_unstable();
     stop.dedup();
     stop
+}
+
+/// #4334: the stop ids a tokenizer.json-backed tokenizer declares: its EOS plus
+/// the chat-turn terminators its vocab has. Shared by the APR CPU path and the
+/// SafeTensors handlers (`chat.rs`, `simple.rs`), which hardcoded an empty set.
+#[cfg(feature = "inference")]
+pub(crate) fn tokenizer_info_stop_tokens(tok: &SafeTensorsTokenizerInfo) -> Vec<u32> {
+    let mut stop: Vec<u32> = tok.eos_token_id.into_iter().collect();
+    stop.extend(tok.vocab.iter().enumerate().filter_map(|(id, t)| {
+        APR_CPU_TURN_END_TOKENS
+            .contains(&t.as_str())
+            .then_some(id as u32)
+    }));
+    stop.sort_unstable();
+    stop.dedup();
+    stop
+}
+
+/// #4334: the reply tokens of a `generate_with_cache` result: everything past the
+/// prompt, minus the stop id the loop ended on (its stop set is
+/// `gen_config.stop_tokens` plus token 0).
+#[cfg(feature = "inference")]
+pub(crate) fn generated_reply_tokens<'a>(
+    output_ids: &'a [u32],
+    prompt_len: usize,
+    gen_config: &realizar::apr_transformer::GenerateConfig,
+) -> &'a [u32] {
+    let mut stop_ids = gen_config.stop_tokens.clone();
+    stop_ids.push(0);
+    apr_cpu_reply_tokens(output_ids.get(prompt_len..).unwrap_or(&[]), &stop_ids)
 }
 
 /// The reply text's tokens: `new_tokens` without the stop id the loop ended on.
@@ -1202,7 +1227,7 @@ fn apr_cpu_reply_tokens<'a>(new_tokens: &'a [u32], stop_ids: &[u32]) -> &'a [u32
 
 /// #4265: the one `GenerateConfig` every APR CPU path (blocking, SSE, NDJSON) builds.
 #[cfg(feature = "inference")]
-fn apr_cpu_generate_config(
+pub(crate) fn apr_cpu_generate_config(
     max_tokens: usize,
     temperature: f32,
     top_p: Option<f32>,
