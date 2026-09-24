@@ -1,0 +1,46 @@
+{
+ "ticket": "PMAT-4108",
+ "pr": 4121,
+ "kind": "diff-review",
+ "head_reviewed": "b75088a2e",
+ "author": {
+  "model": "opus-5-5",
+  "family": "claude"
+ },
+ "shape": "2 agy non-Claude + 1 Claude Code haiku-4-5 (OPERATOR verbatim 2026-09-24: \"one must always be a CHEAP claude code...perhaps haiku\")",
+ "lanes": [
+  {
+   "lane": 1,
+   "executor": "agy",
+   "model": "gemini-3.8-flash-high",
+   "family": "google",
+   "verdict": "PASS",
+   "findings": 11
+  },
+  {
+   "lane": 2,
+   "executor": "agy",
+   "model": "gemini-3.7-flash-high",
+   "family": "google",
+   "verdict": "PASS",
+   "findings": 10
+  },
+  {
+   "lane": 3,
+   "executor": "claude-code Agent (read-only)",
+   "model": "claude-haiku-4-5",
+   "family": "claude",
+   "verdict": "PASS",
+   "findings": 0,
+   "note": "ran scripts/tests/guard_tree_test.sh: 40/40; enumerated callers ci.yml:1096, Makefile:759, predict_merge.sh:157, check_guards_are_wired.sh:107"
+  }
+ ],
+ "agreed": true,
+ "verdict": "PASS 3/3",
+ "receipt_lint_note": "single haiku seat recorded by hand; cop overrides receipt-lint's refusal until tooling lands",
+ "open_for_cop": [
+  "agy lane 1 exited 3: its .git/config delta is a branch.<name>.remote/merge stanza from a tracking-branch creation (not a push -u) \u2014 ruling requested whether that counts under (a)-(c)",
+  "row 36 (unreadable guard) cannot discriminate when the suite runs as root (chmod 000 is readable to root); CI runners are non-root"
+ ],
+ "prior_rounds": "ph5: gemini-3.1-pro FAIL (|| exit 1 declined with measurement; --dry-run count check adopted as row 37), 3.8/3.7 PASS"
+}
