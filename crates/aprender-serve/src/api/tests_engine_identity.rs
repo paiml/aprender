@@ -26,7 +26,18 @@ const ARCHES: &[(&str, Arch)] = &[
     ("qwen3", Arch::Session("DenseForward")),
     ("qwen2", Arch::Session("DenseForward")),
     ("llama", Arch::Session("DenseForward")),
-    ("qwen3_moe", Arch::NotYet("#4263 MoE (aprender-cb)")),
+    // #4280 (#4308): `apr serve`'s dense CUDA batch scheduler drives qwen2/qwen3/llama
+    // through the session on a borrowed CUDA model; its witness is api/cuda_batch_scheduler_tests.rs.
+    ("dense-cuda-batch", Arch::Session("BorrowedCudaForward")),
+    // #4269 M (#4305): `apr serve`/`apr chat` on APR CPU and SafeTensors CPU. These rows are
+    // formats, not GGUF archs; their verb witnesses are tests_st_serve_session_4269.rs and the
+    // tests in apr_transformer/apr_cpu_forward.rs.
+    ("apr-cpu", Arch::Session("AprCpuForward")),
+    ("safetensors-cpu", Arch::Session("StCpuForward")),
+    ("qwen3_moe", Arch::Session("Qwen3MoeForward")),
+    // #4269 M2b: `apr serve`'s APR Q4K CUDA scheduler (a format row, like apr-cpu); its
+    // witnesses are api/tests/apr_q4k_cancel_2465.rs and apr_q4k_scheduler::generate_q4k.
+    ("apr-q4k", Arch::Session("AprQ4kForward")),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -262,9 +273,87 @@ fn apr_run_on_a_dense_gguf_enters_the_one_engine() {
     }
 }
 
+/// The MoE verb row (PMAT-4269 M1): `apr run --no-gpu` on a qwen3_moe GGUF
+/// enters the engine through `Qwen3MoeForward`. Skipped when the file is absent.
+const MOE_RUN_PATH: &str = "/home/noah/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf";
+
+#[test]
+fn apr_run_on_a_moe_gguf_enters_the_one_engine() {
+    assert!(
+        ARCHES.contains(&("qwen3_moe", Arch::Session("Qwen3MoeForward"))),
+        "qwen3_moe has a verb row but its ARCHES row is not Qwen3MoeForward"
+    );
+    if !std::path::Path::new(MOE_RUN_PATH).exists() {
+        eprintln!("SKIP: {MOE_RUN_PATH} is absent");
+        return;
+    }
+    // Ids no other test uses, so the witness answers for this call alone.
+    let prompt: Vec<u32> = (9_701..9_706).collect();
+    let mut config = crate::infer::InferenceConfig::new(MOE_RUN_PATH);
+    config.input_tokens = Some(prompt.clone());
+    config.max_tokens = 2;
+    config.temperature = 0.0;
+    config.top_k = 1;
+    config.no_gpu = true;
+    crate::infer::run_inference(&config).expect("apr run's inference");
+    let entries = entries_for(&prompt);
+    assert_eq!(
+        entries.len(),
+        1,
+        "apr run on {MOE_RUN_PATH} left {entries:?}: it decoded outside the session"
+    );
+    assert_eq!(entries[0].arch, "qwen3_moe");
+    assert_eq!(entries[0].kind, EntryKind::Generate);
+}
+
 /// Every `impl ArchForward for X` in production source is exactly the set of
 /// `Arch::Session` rows — a port cannot land without the table (and so the
 /// verb rows) knowing.
+/// `impl<S: Q4kStep> ArchForward for X<S>` → `impl ArchForward for X<S>`: a
+/// generic impl must not escape the scan below (#4269 M2b, the first one).
+fn strip_impl_generics(line: &str) -> std::borrow::Cow<'_, str> {
+    let Some(rest) = line.strip_prefix("impl<") else {
+        return std::borrow::Cow::Borrowed(line);
+    };
+    let mut depth = 1usize;
+    for (i, c) in rest.char_indices() {
+        match c {
+            '<' => depth += 1,
+            '>' => {
+                depth -= 1;
+                if depth == 0 {
+                    return std::borrow::Cow::Owned(format!("impl {}", rest[i + 1..].trim_start()));
+                }
+            },
+            _ => {},
+        }
+    }
+    std::borrow::Cow::Borrowed(line)
+}
+
+#[test]
+fn strip_impl_generics_case_table() {
+    let cases = [
+        (
+            "impl<S: Q4kStep> crate::session::ArchForward for AprQ4kForward<S> {",
+            "impl crate::session::ArchForward for AprQ4kForward<S> {",
+        ),
+        (
+            "impl<'a, T: Iterator<Item = u32>> ArchForward for X<'a, T> {",
+            "impl ArchForward for X<'a, T> {",
+        ),
+        (
+            "impl crate::session::ArchForward for DenseForward<'_> {",
+            "impl crate::session::ArchForward for DenseForward<'_> {",
+        ),
+        ("impl<S> Q4kStep for Y {", "impl Q4kStep for Y {"),
+        ("fn impl_thing() {}", "fn impl_thing() {}"),
+    ];
+    for (input, want) in cases {
+        assert_eq!(strip_impl_generics(input), want, "{input}");
+    }
+}
+
 #[test]
 fn every_arch_forward_is_a_session_row() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -279,10 +368,11 @@ fn every_arch_forward_is_a_session_row() {
             } else if name.ends_with(".rs") && !name.contains("test") {
                 let text = std::fs::read_to_string(&path).expect("read source");
                 for line in text.lines() {
-                    let line = line.trim_start();
+                    let line = strip_impl_generics(line.trim_start());
                     let rest = line
+                        .as_ref()
                         .strip_prefix("impl crate::session::ArchForward for ")
-                        .or_else(|| line.strip_prefix("impl ArchForward for "));
+                        .or_else(|| line.as_ref().strip_prefix("impl ArchForward for "));
                     if let Some(rest) = rest {
                         let ty: String = rest
                             .chars()

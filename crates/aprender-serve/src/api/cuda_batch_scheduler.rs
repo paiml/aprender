@@ -128,15 +128,12 @@ fn generate_single_request_inner(cuda_model: &mut OwnedQuantizedModelCuda, req: 
     let mut session = crate::session::Session::new(
         crate::gguf::dense_session_borrowed::BorrowedCudaForward::new(cuda_model),
     );
-    let stop_tokens = &req.config.stop_tokens;
+    // `dense_stream` never hands on the stop token that ends the turn, as the
+    // pre-port loop checked it before emitting.
+    let stream = crate::gguf::dense_session::dense_stream;
     if req.non_streaming {
         let mut tokens = Vec::new();
-        // A stop token ends the turn and is never sent, as the pre-port loop
-        // checked it before emitting.
-        let result = session.generate(&req.prompt_ids, &req.config, &mut |tid| {
-            if stop_tokens.contains(&tid) {
-                return false;
-            }
+        let result = stream(&mut session, &req.prompt_ids, &req.config, &mut |tid| {
             tokens.push(tid);
             true
         });
@@ -153,8 +150,8 @@ fn generate_single_request_inner(cuda_model: &mut OwnedQuantizedModelCuda, req: 
             },
         }
     } else {
-        let result = session.generate(&req.prompt_ids, &req.config, &mut |tid| {
-            !stop_tokens.contains(&tid) && req.token_tx.try_send(Ok(tid)).is_ok()
+        let result = stream(&mut session, &req.prompt_ids, &req.config, &mut |tid| {
+            req.token_tx.try_send(Ok(tid)).is_ok()
         });
         if let Err(e) = result {
             let _ = req.token_tx.try_send(Err(e.to_string()));

@@ -57,10 +57,12 @@ pub use cancel_scope::request_cancel_token;
 // PMAT-802: Extracted handlers
 //
 // aprender#2465(1): NOT `#[cfg(feature = "cuda")]` on the module. Every
-// CUDA-dependent item inside is individually gated; the decode loop
-// (`q4k_decode`) and its cancellation falsifiers are not, so they compile and
-// run under the default feature set. Gating the whole module put the only
-// cancellation-free decode loop in the crate outside every CI test job.
+// CUDA-dependent item inside is individually gated; the session config
+// (`q4k_generate_config`), the forward over it (`apr_q4k_forward`) and their
+// cancellation falsifiers are not, so they compile and run under the default
+// feature set. Gating the whole module put the only cancellation-free decode
+// loop in the crate outside every CI test job.
+pub mod apr_q4k_forward;
 pub mod apr_q4k_scheduler;
 // PERF-041: NOT `#[cfg(feature = "cuda")]`, on purpose. It holds the admission
 // predicate of contracts/batch-admission-v1.yaml and its exhaustive table test,

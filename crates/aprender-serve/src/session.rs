@@ -42,7 +42,7 @@ use crate::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
 
 /// One architecture's forward on one backend: the only per-arch code a verb
 /// reaches, and only through a [`Session`].
-pub trait ArchForward: Send {
+pub trait ArchForward {
     /// The GGUF architecture served (`qwen35`, `qwen2`, ...). The guard keys
     /// its verb × arch matrix on it.
     fn arch(&self) -> &'static str;

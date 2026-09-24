@@ -278,7 +278,8 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
     if cuda_available {
         use realizar::gguf::OwnedQuantizedModelCuda;
         match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
-            Ok(mut cuda_model) => {
+            Ok(cuda_model) => {
+                let mut session = qa_dense_cuda(cuda_model);
                 let (tps, _) = measure_generate_throughput(
                     config.warmup,
                     config.iterations,
@@ -288,8 +289,7 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
                     budget_us,
                     config.verbose,
                     || {
-                        cuda_model
-                            .generate_gpu_resident(&prompt_tokens, &gen_config)
+                        qa_dense_generate(&mut session, &prompt_tokens, &gen_config, true)
                             .unwrap_or_default()
                     },
                 );
@@ -297,7 +297,7 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
             }
             Err(e) => {
                 // Recover the model for CPU fallback (CudaInitError preserves the model)
-                let model = e.into_model();
+                let mut session = qa_dense_cpu(e.into_model());
                 let (tps, _) = measure_generate_throughput(
                     config.warmup,
                     config.iterations,
@@ -307,8 +307,7 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
                     budget_us,
                     config.verbose,
                     || {
-                        model
-                            .generate_with_cache(&prompt_tokens, &gen_config)
+                        qa_dense_generate(&mut session, &prompt_tokens, &gen_config, false)
                             .unwrap_or_default()
                     },
                 );
@@ -316,6 +315,7 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
             }
         }
     }
+    let mut session = qa_dense_cpu(model);
     let (tps, _) = measure_generate_throughput(
         config.warmup,
         config.iterations,
@@ -324,11 +324,7 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
         "qa_ollama_parity_cpu",
         budget_us,
         config.verbose,
-        || {
-            model
-                .generate_with_cache(&prompt_tokens, &gen_config)
-                .unwrap_or_default()
-        },
+        || qa_dense_generate(&mut session, &prompt_tokens, &gen_config, false).unwrap_or_default(),
     );
     Ok(tps)
 }
@@ -433,6 +429,7 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> R
     // CPU throughput
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+    let mut session = qa_dense_cpu(model);
     let (cpu_tps, _) = measure_generate_throughput(
         config.warmup,
         config.iterations,
@@ -441,11 +438,7 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> R
         "qa_gpu_speedup_cpu",
         budget_us,
         config.verbose,
-        || {
-            model
-                .generate_with_cache(&prompt_tokens, &gen_config)
-                .unwrap_or_default()
-        },
+        || qa_dense_generate(&mut session, &prompt_tokens, &gen_config, false).unwrap_or_default(),
     );
 
     // GPU throughput — GH-284: fall back to 0.0 on capability mismatch
@@ -454,7 +447,8 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> R
     let model2 = OwnedQuantizedModel::from_mapped(&mapped2)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
     let gpu_tps = match OwnedQuantizedModelCuda::with_max_seq_len(model2, 0, 2048) {
-        Ok(mut cuda_model) => {
+        Ok(cuda_model) => {
+            let mut session = qa_dense_cuda(cuda_model);
             let (tps, _) = measure_generate_throughput(
                 config.warmup,
                 config.iterations,
@@ -464,8 +458,7 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> R
                 budget_us,
                 config.verbose,
                 || {
-                    cuda_model
-                        .generate_gpu_resident(&prompt_tokens, &gen_config)
+                    qa_dense_generate(&mut session, &prompt_tokens, &gen_config, true)
                         .unwrap_or_default()
                 },
             );

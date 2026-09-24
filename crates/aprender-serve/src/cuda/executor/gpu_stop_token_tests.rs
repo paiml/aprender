@@ -6,7 +6,7 @@
 /// resulting TEXT.
 ///
 /// Both legs honour `config.stop_tokens` — the CPU at
-/// `gguf/inference/fails.rs:301`, the GPU inside `decode_blocking`
+/// `generate_with_cache` (`gguf/inference/generate_quantized.rs`), the GPU inside `decode_blocking`
 /// (`gguf/cuda/generate_2.rs`), which `generate_gpu_resident` delegates to. I
 /// first reported the GPU check as missing, having grepped the delegating
 /// function's body rather than the loop it calls. A `grep -c` over a function

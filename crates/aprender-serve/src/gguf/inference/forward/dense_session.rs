@@ -495,16 +495,37 @@ impl crate::session::ArchForward for DenseForward {
 /// # Errors
 /// The prompt does not fit the context, or a forward failure no fallback can
 /// recover from.
-pub fn dense_turn(
-    session: &mut DenseSession,
+pub fn dense_turn<F: crate::session::ArchForward>(
+    session: &mut crate::session::Session<F>,
     prompt: &[u32],
     config: &crate::gguf::QuantizedGenerateConfig,
 ) -> Result<(Vec<u32>, bool)> {
-    session
-        .engine()
-        .model()
-        .effective_max_tokens(prompt.len(), config.max_tokens)?;
-    let turn = session.generate(prompt, config, &mut |_| true)?;
+    dense_stream(session, prompt, config, &mut |_| true)
+}
+
+/// [`dense_turn`] that hands each generated token to `on_token` as it is
+/// chosen, the way `generate_with_cache_streaming` did: the stop token that
+/// ends the turn is never handed on, and `on_token` returning `false` ends
+/// the turn.
+///
+/// # Errors
+/// As [`dense_turn`].
+pub fn dense_stream<F: crate::session::ArchForward>(
+    session: &mut crate::session::Session<F>,
+    prompt: &[u32],
+    config: &crate::gguf::QuantizedGenerateConfig,
+    on_token: &mut dyn FnMut(u32) -> bool,
+) -> Result<(Vec<u32>, bool)> {
+    let maximum = session.context_length();
+    if prompt.len() > maximum {
+        return Err(RealizarError::ContextLimitExceeded {
+            provided: prompt.len(),
+            maximum,
+        });
+    }
+    let turn = session.generate(prompt, config, &mut |t| {
+        config.stop_tokens.contains(&t) || on_token(t)
+    })?;
     let mut tokens = turn.tokens;
     if tokens.len() > prompt.len()
         && tokens

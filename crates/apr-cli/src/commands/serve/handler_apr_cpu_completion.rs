@@ -134,7 +134,7 @@ fn spawn_cpu_streaming_task(
         let gen_config =
             apr_cpu_generate_config(max_tokens, temperature, top_p, apr_cpu_stop_tokens(&s));
 
-        let Ok(t) = transformer.lock() else {
+        let Ok(mut s) = transformer.lock() else {
             if tx.blocking_send(Err("Lock poisoned".to_string())).is_err() {
                 eprintln!("Warning: failed to send error to client (channel closed)");
             }
@@ -142,7 +142,7 @@ fn spawn_cpu_streaming_task(
         };
 
         // GH-326: Log generation errors instead of silently discarding
-        if let Err(e) = t.generate_with_cache_streaming(&input_tokens, &gen_config, |token_id| {
+        if let Err(e) = s.generate(&input_tokens, &gen_config, &mut |token_id| {
             tx.blocking_send(Ok(token_id)).is_ok()
         }) {
             eprintln!("Warning: streaming generation failed: {e}");
@@ -201,14 +201,14 @@ fn spawn_cpu_token_text_stream(
         let gen_config =
             apr_cpu_generate_config(max_tokens, temperature, top_p, apr_cpu_stop_tokens(&s));
 
-        let Ok(t) = transformer.lock() else {
+        let Ok(mut s) = transformer.lock() else {
             if tx.blocking_send(Err("Lock poisoned".to_string())).is_err() {
                 eprintln!("Warning: failed to send error to client (channel closed)");
             }
             return;
         };
 
-        if let Err(e) = t.generate_with_cache_streaming(&input_tokens, &gen_config, |token_id| {
+        if let Err(e) = s.generate(&input_tokens, &gen_config, &mut |token_id| {
             let text = decode_single_token(tokenizer.as_ref(), token_id);
             tx.blocking_send(Ok(text)).is_ok()
         }) {

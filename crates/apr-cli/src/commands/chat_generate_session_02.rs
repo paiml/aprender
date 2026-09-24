@@ -341,26 +341,32 @@ impl ChatSession {
                 return Ok(mapped.model.decode(new_tokens));
             }
 
-            // GH-224: Try cached CUDA model first (no re-upload)
-            #[cfg(feature = "cuda")]
-            if !config.force_cpu && !self.cuda_init_failed {
-                if let Some(ref mut cuda_model) = self.cached_gguf_cuda {
-                    let output_tokens = cuda_model
-                        .generate_gpu_resident(&prompt_tokens, &gen_config)
-                        .map_err(|e| format!("CUDA generate failed: {e}"))?;
-                    // #3794: record the backend that actually answered.
-                    self.generated_on_gpu = true;
-
-                    let new_tokens = if output_tokens.len() > prompt_len {
-                        &output_tokens[prompt_len..]
-                    } else {
-                        &output_tokens[..]
-                    };
-
-                    trace_generated_tokens(config.trace, &mapped.model, new_tokens);
-
-                    return Ok(mapped.model.decode(new_tokens));
+            // #4268: a dense turn is the one engine: the CUDA session built at load
+            // (GH-224), else a CPU session built on the first turn. Either keeps its
+            // decode state, so a turn prefills only what the history added. `--trace`
+            // with no session yet keeps the instrumented CPU loop below.
+            if self.gguf_session.is_some() || !config.trace {
+                if self.gguf_session.is_none() {
+                    let model = OwnedQuantizedModel::from_mapped(mapped)
+                        .map_err(|e| format!("Failed to create GGUF model: {e}"))?;
+                    self.gguf_session = Some(realizar::gguf::dense_session::DenseSession::new(
+                        realizar::gguf::dense_session::DenseForward::cpu(std::sync::Arc::new(
+                            model,
+                        )),
+                    ));
                 }
+                let session = self
+                    .gguf_session
+                    .as_mut()
+                    .expect("the dense session was built above");
+                let (output_tokens, used_gpu) =
+                    realizar::gguf::dense_session::dense_turn(session, &prompt_tokens, &gen_config)
+                        .map_err(|e| format!("GGUF generate failed: {e}"))?;
+                // #3794: record the backend that actually answered.
+                self.generated_on_gpu = used_gpu;
+                let new_tokens = output_tokens.get(prompt_len..).unwrap_or(&[]);
+                trace_generated_tokens(config.trace, &mapped.model, new_tokens);
+                return Ok(mapped.model.decode(new_tokens));
             }
 
             let output_tokens =
@@ -442,38 +448,27 @@ impl ChatSession {
             // If model has no EOS metadata, use 0 (no token matches → rely on max_tokens).
             let eos_token_id = self.extract_apr_eos_token().unwrap_or(0);
 
-            // GH-224: Try cached CUDA model first (no re-upload per message)
-            #[cfg(feature = "cuda")]
-            if !config.force_cpu && !self.cuda_init_failed {
-                if let Some(ref mut cuda_model) = self.cached_apr_cuda {
-                    let max_tokens = config.max_tokens;
-                    // #3794: record the backend that actually answered.
-                    self.generated_on_gpu = true;
-                    // #3922: the fused path's API. `generate_cuda_with_cache` belonged
-                    // to `AprV2ModelCuda`; this is what `run` and `bench` call, and it
-                    // resets its own KV cache per generation (cache.rs:340, GH-260) —
-                    // which is why routing costs nothing per turn: there was never any
-                    // cross-turn KV reuse to lose.
-                    let gen_config = realizar::gguf::QuantizedGenerateConfig {
-                        max_tokens,
-                        stop_tokens: if eos_token_id == 0 { vec![] } else { vec![eos_token_id] },
-                        ..Default::default()
-                    };
-                    return cuda_model
-                        .generate_gpu_resident(prompt, &gen_config)
-                        .map_err(|e| format!("APR CUDA generate failed: {e}"));
-                }
+            // GH-224 / #4268: the CUDA session built at load (no re-upload per message).
+            // #3922: the fused path `run` and `bench` use. Since #4268 the session keeps
+            // its decode state, so a turn prefills only what the history added.
+            if let Some(session) = self.apr_session.as_mut().filter(|s| s.on_gpu()) {
+                let gen_config = realizar::gguf::QuantizedGenerateConfig {
+                    max_tokens: config.max_tokens,
+                    stop_tokens: if eos_token_id == 0 { vec![] } else { vec![eos_token_id] },
+                    ..Default::default()
+                };
+                let (tokens, used_gpu) =
+                    realizar::gguf::dense_session::dense_turn(session, prompt, &gen_config)
+                        .map_err(|e| format!("APR CUDA generate failed: {e}"))?;
+                // #3794: record the backend that actually answered.
+                self.generated_on_gpu = used_gpu;
+                return Ok(tokens);
             }
 
             // GH-479: CPU path now loads via MappedAprModel + OwnedQuantizedModel
             // (per-tensor scratch dequant from GH-478) instead of eager F32 AprTransformer.
             use realizar::apr::MappedAprModel;
             use realizar::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
-
-            let mapped = MappedAprModel::from_path(&self.model_path)
-                .map_err(|e| format!("Failed to mmap APR: {e}"))?;
-            let model = OwnedQuantizedModel::from_apr(&mapped)
-                .map_err(|e| format!("Failed to load APR model: {e}"))?;
 
             let gen_config = QuantizedGenerateConfig {
                 max_tokens: config.max_tokens,
@@ -484,8 +479,29 @@ impl ChatSession {
                 ..Default::default()
             };
 
-            model
-                .generate_with_cache(prompt, &gen_config)
+            // #4268: the CPU turn is the one engine too, built on the first turn and
+            // kept (a CUDA session that fell back is already on the CPU, and serves
+            // the same way). `--trace` keeps the instrumented loop.
+            if self.apr_session.is_none() {
+                let mapped = MappedAprModel::from_path(&self.model_path)
+                    .map_err(|e| format!("Failed to mmap APR: {e}"))?;
+                let model = OwnedQuantizedModel::from_apr(&mapped)
+                    .map_err(|e| format!("Failed to load APR model: {e}"))?;
+                if config.trace {
+                    return model
+                        .generate_with_cache(prompt, &gen_config)
+                        .map_err(|e| format!("APR generate failed: {e}"));
+                }
+                self.apr_session = Some(realizar::gguf::dense_session::DenseSession::new(
+                    realizar::gguf::dense_session::DenseForward::cpu(std::sync::Arc::new(model)),
+                ));
+            }
+            let session = self
+                .apr_session
+                .as_mut()
+                .expect("the dense session was built above");
+            realizar::gguf::dense_session::dense_turn(session, prompt, &gen_config)
+                .map(|(tokens, _)| tokens)
                 .map_err(|e| format!("APR generate failed: {e}"))
         }
 
@@ -530,95 +546,5 @@ impl ChatSession {
             }
 
             None
-        }
-
-        #[allow(dead_code)]
-        fn generate_gguf(&self, prompt: &[u32], config: &ChatConfig) -> Result<Vec<u32>, String> {
-            use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
-
-            // Use MappedGGUFModel -> OwnedQuantizedModel for proper attention
-            // This has RoPE position encoding, causal mask, and GQA support
-            let mapped = MappedGGUFModel::from_path(&self.model_path)
-                .map_err(|e| format!("Failed to mmap GGUF: {e}"))?;
-
-            let model = OwnedQuantizedModel::from_mapped(&mapped)
-                .map_err(|e| format!("Failed to create GGUF model: {e}"))?;
-
-            // With KV cache, we can generate more tokens efficiently
-            let practical_max = config.max_tokens;
-
-            let is_gqa = model.config().num_kv_heads < model.config().num_heads;
-            let gqa_note = if is_gqa {
-                format!(" (GQA: {} kv_heads)", model.config().num_kv_heads)
-            } else {
-                String::new()
-            };
-
-            // C-06 (Meyer DbC): EOS from model config, not hardcoded.
-            let stop_tokens = model
-                .config()
-                .eos_token_id
-                .map(|id| vec![id])
-                .unwrap_or_default();
-
-            let gen_config = QuantizedGenerateConfig {
-                max_tokens: practical_max,
-                temperature: config.temperature,
-                top_k: realizar::infer::sampling_top_k(config.temperature, None),
-                stop_tokens,
-                trace: config.trace,
-                ..Default::default()
-            };
-
-            // Try CUDA GPU path first (200+ tok/s target)
-            // Uses generate_gpu_resident which is the tested/working GPU path
-            #[cfg(feature = "cuda")]
-            if !config.force_cpu {
-                use realizar::gguf::OwnedQuantizedModelCuda;
-                if OwnedQuantizedModelCuda::is_available() {
-                    // Print model info before attempting CUDA (model consumed on success)
-                    let num_layers = model.config().num_layers;
-
-                    match OwnedQuantizedModelCuda::new(model, 0) {
-                        Ok(mut cuda_model) => {
-                            let gpu_name = cuda_model.device_name().to_string();
-                            let vram_mb = cuda_model.vram_mb();
-                            println!(
-                                "{}",
-                                format!(
-                                    "[GGUF CUDA: {} ({} MB VRAM), {} layers, {} tokens{}]",
-                                    gpu_name, vram_mb, num_layers, practical_max, gqa_note
-                                )
-                                .bright_green()
-                            );
-                            // Use generate_gpu_resident (tested working path) not generate_full_cuda_with_cache
-                            return cuda_model
-                                .generate_gpu_resident(prompt, &gen_config)
-                                .map_err(|e| format!("CUDA generate failed: {e}"));
-                        }
-                        Err(e) => {
-                            // REG-15 (#2971): a parity-gate failure is never a silent downgrade. `apr chat`
-                            // has no forced-GPU flag until R-0b's `--backend`, so the request is unforced here.
-                            let handled = crate::commands::parity_admission::on_cuda_load_error(&format!("{e}"), false)?;
-                            if !handled {
-                                println!("{}", format!("[CUDA init failed: {}, falling back to CPU]", e).yellow());
-                            }
-                            // Re-create model for CPU fallback (model was consumed)
-                            let model = OwnedQuantizedModel::from_mapped(&mapped)
-                                .map_err(|e| format!("Failed to recreate model: {e}"))?;
-
-                            return model
-                                .generate_with_cache(prompt, &gen_config)
-                                .map_err(|e| format!("GGUF generate failed: {e}"));
-                        }
-                    }
-                }
-            }
-
-            // CPU path with KV cache (12+ tok/s) - used when CUDA feature disabled or unavailable
-            // Use KV cache path for O(n) instead of O(n²)
-            model
-                .generate_with_cache(prompt, &gen_config)
-                .map_err(|e| format!("GGUF generate failed: {e}"))
         }
 }

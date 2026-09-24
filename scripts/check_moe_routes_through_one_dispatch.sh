@@ -110,7 +110,7 @@ for verb, path, fn, pred, must, after in ENTRY:
 # Layer 2: the derived universe of dense GGUF CUDA construction sites
 AUDITED = {  # routed for qwen3moe by #3987, or MoE returns before the dense site
   "crates/apr-cli/src/commands/chat_load_tokenizers.rs",          # try_init_gguf_cuda: preload_gguf skips it for MoE
-  "crates/apr-cli/src/commands/chat_generate_session_02.rs",       # generate_gguf fallback: MoE returns earlier
+  "crates/apr-cli/src/commands/chat_generate_session_02.rs",       # MoE returns before any dense CUDA site
   "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",   # start_gguf_server_cuda: MoE returns earlier
 }
 # DEBT, not approval: dense GGUF CUDA construction outside the four release verbs, with no

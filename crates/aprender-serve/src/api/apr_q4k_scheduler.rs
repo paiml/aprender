@@ -22,9 +22,10 @@
 //!   because this scheduler accumulates `output_tokens` and sends **one**
 //!   [`AprQ4kResponse`] at the end. There is no per-token send left to fail.
 //!
-//! So the request carries the token and [`q4k_decode`] polls it once per decode
-//! step, exactly like `layers/model_model.rs::generate` and
-//! `gguf/inference/generate_quantized.rs`.
+//! So the request carries the token into the one engine: since #4269 (M2b) each
+//! request decodes through a [`Session`](crate::session::Session) over
+//! [`AprQ4kForward`](crate::api::apr_q4k_forward::AprQ4kForward), and the session
+//! polls it once per generated token, as it does for every other architecture.
 //!
 //! Contract: `contracts/apr-serve-cancellation-v1.yaml`
 //! (FALSIFY-SERVE-CANCEL-009/010/011).
@@ -125,12 +126,8 @@ pub fn spawn_apr_q4k_inference_thread(
         upload_result.total_bytes as f64 / (1024.0 * 1024.0)
     );
 
-    let Q4kHostWeights {
-        embedding: embedding_weight,
-        output_norm: output_norm_weight,
-        layer_norms: layer_norm_weights,
-        qkv_biases: layer_qkv_biases,
-    } = load_q4k_host_weights(&model, config.num_layers)?;
+    let weights = load_q4k_host_weights(&model, config.num_layers)?;
+    let context_length = model.metadata().max_position_embeddings;
 
     // Release mmap pages — weights are on GPU now
     let _ = model.release_cpu_pages();
@@ -165,10 +162,8 @@ pub fn spawn_apr_q4k_inference_thread(
                 let result = generate_q4k(
                     &mut executor,
                     &config,
-                    &embedding_weight,
-                    &output_norm_weight,
-                    &layer_norm_weights,
-                    &layer_qkv_biases,
+                    &weights,
+                    context_length,
                     &req.prompt_ids,
                     req.max_tokens,
                     req.temperature,
@@ -323,15 +318,17 @@ fn optional_f32(
     }
 }
 
-/// Run a single Q4K generation request (called on the inference thread).
 #[cfg(feature = "cuda")]
+/// Run one request through the one engine (#4269 M2b), on the inference thread:
+/// a fresh session per request (so a fresh KV cache, as before) over the
+/// executor this thread owns. The session owns the prefill, token choice, EOS
+/// and the cancellation poll.
+#[allow(clippy::too_many_arguments)]
 fn generate_q4k(
     executor: &mut crate::cuda::CudaExecutor,
     config: &crate::gpu::adapters::apr_q4k::AprQ4KConfig,
-    embedding_weight: &[f32],
-    output_norm_weight: &[f32],
-    layer_norm_weights: &[(Vec<f32>, Vec<f32>, Option<Vec<f32>>, Option<Vec<f32>>)],
-    layer_qkv_biases: &[(Option<Vec<f32>>, Option<Vec<f32>>, Option<Vec<f32>>)],
+    weights: &Q4kHostWeights,
+    context_length: Option<usize>,
     prompt_ids: &[u32],
     max_tokens: usize,
     temperature: f32,
@@ -339,75 +336,17 @@ fn generate_q4k(
     eos_ids: &[u32],
     cancel: &CancelToken,
 ) -> Result<AprQ4kResponse, String> {
-    use crate::cli::inference::argmax;
-    use crate::gpu::adapters::apr_q4k::forward_token_apr_q4k;
-    use rand::SeedableRng;
+    use crate::api::apr_q4k_forward::{AprQ4kForward, AprQ4kSession, CudaQ4kStep};
     use std::time::Instant;
 
-    // Fresh KV cache per request
-    let mut kv_cache_k: Vec<Vec<f32>> = vec![Vec::new(); config.num_layers];
-    let mut kv_cache_v: Vec<Vec<f32>> = vec![Vec::new(); config.num_layers];
-
     let gen_start = Instant::now();
-
-    // Prefill: process all prompt tokens
-    let mut last_logits = Vec::new();
-    for (pos, &token_id) in prompt_ids.iter().enumerate() {
-        last_logits = forward_token_apr_q4k(
-            executor,
-            config,
-            embedding_weight,
-            output_norm_weight,
-            layer_norm_weights,
-            layer_qkv_biases,
-            &mut kv_cache_k,
-            &mut kv_cache_v,
-            token_id,
-            pos,
-        )
-        .map_err(|e| format!("Prefill failed at pos {pos}: {e}"))?;
-    }
-
-    // Sample first token. #3786: one RNG per request, seeded from the request, so the
-    // same request and seed give the same tokens (the old sampler hashed the wall clock).
-    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-    let first_token = if temperature <= 0.01 {
-        argmax(&last_logits)
-    } else {
-        q4k_sampled_token(&last_logits, temperature, &mut rng)
-    };
-
-    // Autoregressive decode. The loop itself lives in `q4k_decode` so that the
-    // loop which ships is the loop the falsifiers drive (aprender#2465(1)) —
-    // everything CUDA-specific stays here, inside the step closure.
-    let output_tokens = q4k_decode(
-        first_token,
-        prompt_ids.len(),
-        max_tokens,
-        eos_ids,
-        cancel,
-        |token, position, step| {
-            let logits = forward_token_apr_q4k(
-                executor,
-                config,
-                embedding_weight,
-                output_norm_weight,
-                layer_norm_weights,
-                layer_qkv_biases,
-                &mut kv_cache_k,
-                &mut kv_cache_v,
-                token,
-                position,
-            )
-            .map_err(|e| format!("Decode failed at step {step}: {e}"))?;
-
-            Ok(if temperature <= 0.01 {
-                argmax(&logits)
-            } else {
-                q4k_sampled_token(&logits, temperature, &mut rng)
-            })
-        },
-    )?;
+    let step = CudaQ4kStep::new(executor, config, weights);
+    let mut session = AprQ4kSession::new(AprQ4kForward::new(step, true, context_length));
+    let gen_config = q4k_generate_config(max_tokens, temperature, seed, eos_ids, cancel);
+    let turn = session
+        .generate(prompt_ids, &gen_config, &mut |_| true)
+        .map_err(|e| format!("Q4K generate failed: {e}"))?;
+    let output_tokens = turn.tokens[prompt_ids.len()..].to_vec();
 
     let gen_time = gen_start.elapsed();
     let tokens_generated = output_tokens.len();
@@ -425,126 +364,41 @@ fn generate_q4k(
     })
 }
 
-/// The Q4K scheduler's autoregressive decode loop.
-///
-/// `first_token` is the token sampled from the prefill logits; it is always part
-/// of the output, so an uncancelled run returns exactly `max_tokens` tokens
-/// (`first_token` plus `max_tokens - 1` decode steps) unless EOS or cancellation
-/// stops it earlier.
-///
-/// `step(token, position, step_idx)` performs one decode step and returns the next
-/// sampled token. In production it closes over the `CudaExecutor` and the uploaded
-/// Q4K weights; in the falsifiers it is a pure function. That is the whole point of
-/// the split: it is the same loop either way, so FALSIFY-SERVE-CANCEL-009/010 can
-/// assert **token counts** on the shipped control flow without a GPU. Nothing about
-/// the scheduler's thread/channel/oneshot architecture changes.
-///
-/// # Cancellation
-///
-/// `cancel` is polled once at the top of each decode step, **before** that step's
-/// forward pass — matching `layers/model_model.rs::generate` and
-/// `gguf/inference/generate_quantized.rs`. Polling at the bottom instead would cost
-/// one wasted forward pass per cancelled request, which FALSIFY-SERVE-CANCEL-010
-/// detects.
-///
-/// # Errors
-///
-/// Propagates whatever `step` returns, unchanged.
 /// The top-k the APR Q4K chat path samples with.
 const Q4K_TOP_K: usize = 40;
 
-/// A sampled APR Q4K step: one seeded draw through the shared sampler (#3786).
+/// The session config a Q4K request decodes with.
 ///
-/// This replaced `cli::inference::sample_with_temperature`, whose uniform draw was a hash
-/// of `SystemTime::now()`: a request's `seed` never reached it, and the same request
-/// gave different tokens on every call. Kept outside the `cuda` gate so the draw the
-/// GPU loop makes is testable on any host.
-pub(crate) fn q4k_sampled_token(
-    logits: &[f32],
-    temperature: f32,
-    rng: &mut rand::rngs::StdRng,
-) -> u32 {
-    crate::sampling::draw_seeded(logits, temperature, Q4K_TOP_K, 1.0, rng)
-}
-
-pub(crate) fn q4k_decode<F>(
-    first_token: u32,
-    prompt_len: usize,
+/// The Q4K path has always decoded greedily at `temperature <= 0.01`, and
+/// samples otherwise with top-k 40, top-p 1.0 and one RNG seeded from the
+/// request (#3786). Kept outside the `cuda` gate so the falsifiers decode with
+/// the exact config the GPU thread does.
+pub(crate) fn q4k_generate_config(
     max_tokens: usize,
+    temperature: f32,
+    seed: u64,
     eos_ids: &[u32],
     cancel: &CancelToken,
-    mut step: F,
-) -> Result<Vec<u32>, String>
-where
-    F: FnMut(u32, usize, usize) -> Result<u32, String>,
-{
-    let mut next_token = first_token;
-    let mut output_tokens = vec![next_token];
-
-    for step_idx in 0..max_tokens.saturating_sub(1) {
-        // aprender#2465(1)/#2376(3): CANCELLATION POLL. The HTTP client may be
-        // gone. This loop runs on the dedicated CUDA thread, so neither the
-        // handler future's drop nor a failed per-token send can reach it — the
-        // poll is the only thing that stops it burning the GPU to max_tokens.
-        // aprender#2465(1)/#2376(3): CANCELLATION POLL. The HTTP client may be
-        // gone. This loop runs on the dedicated CUDA thread, so neither the
-        // handler future's drop nor a failed per-token send can reach it — the
-        // poll is the only thing that stops it burning the GPU to max_tokens.
-        if cancel.is_cancelled() {
-            break;
-        }
-
-        // ALB-109: Configurable EOS — Qwen3 uses 151643, not 0/2
-        if eos_ids.contains(&next_token) {
-            break;
-        }
-
-        next_token = step(next_token, prompt_len + step_idx, step_idx)?;
-        output_tokens.push(next_token);
+) -> crate::gguf::QuantizedGenerateConfig {
+    crate::gguf::QuantizedGenerateConfig {
+        max_tokens,
+        temperature: if temperature <= 0.01 {
+            0.0
+        } else {
+            temperature
+        },
+        top_k: Q4K_TOP_K,
+        top_p: 1.0,
+        seed,
+        stop_tokens: eos_ids.to_vec(),
+        cancel: cancel.clone(),
+        ..crate::gguf::QuantizedGenerateConfig::default()
     }
-
-    Ok(output_tokens)
 }
 
 #[cfg(test)]
 #[path = "tests/apr_q4k_cancel_2465.rs"]
 mod apr_q4k_cancel_2465;
-
-/// #3786: the APR Q4K sampled step draws from the request's seeded RNG.
-#[cfg(test)]
-mod sampled_token_3786 {
-    use super::q4k_sampled_token;
-    use rand::rngs::StdRng;
-    use rand::SeedableRng;
-
-    const LOGITS: [f32; 6] = [1.0, 0.9, 1.1, 0.95, 1.05, 0.85];
-
-    fn run(seed: u64) -> Vec<u32> {
-        let mut rng = StdRng::seed_from_u64(seed);
-        (0..32)
-            .map(|_| q4k_sampled_token(&LOGITS, 1.0, &mut rng))
-            .collect()
-    }
-
-    /// The same seed reproduces the draws byte for byte: the wall-clock sampler it
-    /// replaced could not, whatever the request said.
-    #[test]
-    fn the_same_seed_reproduces_the_sampled_tokens() {
-        assert_eq!(run(7), run(7));
-    }
-
-    /// A different seed changes them, so the seed is actually read.
-    #[test]
-    fn a_different_seed_changes_the_sampled_tokens() {
-        assert_ne!(run(7), run(8));
-    }
-
-    /// It is a draw, not the argmax (index 2) in disguise.
-    #[test]
-    fn a_sampled_step_draws_off_the_argmax() {
-        assert!(run(7).iter().any(|&t| t != 2));
-    }
-}
 
 /// #3791: the APR Q4K pool path (ALB-095) against the CPU forward, and its
 /// health. Both measured wrong at 0.69.0: NaN logits (every Q6_K weight decoded
