@@ -61,6 +61,11 @@ def trickle_server():
 
 
 def main():
+    # A case that hangs is a FAIL, not a stuck test: hard exit well past every budget.
+    guard = threading.Timer(60, lambda: (print("FAIL: a case hung past 60 s", file=sys.__stderr__, flush=True),
+                                 os._exit(3)))
+    guard.daemon = True
+    guard.start()
     budget = int(sys.argv[1]) if len(sys.argv) > 1 else 6
     url = hung_server()
     lane.LAMBDA_URL = url
@@ -87,9 +92,13 @@ def main():
                       "result": "PASS" if ok else "FAIL"}))
     if not ok:
         return 1
-    # --timeout 0 must still be a budget: signal.alarm(0) would cancel it. The trickle
-    # server defeats urlopen's per-read timeout, so this row sees the alarm alone.
+    # gx10 hangs in Python (no socket timeout applies) and lambda trickles one byte per
+    # 0.3 s (defeats urlopen's per-read timeout): from here on only the alarm ends an ask.
+    def gx10_hangs(*_a, **_k):
+        time.sleep(3600)
+    lane.gx10_ask = gx10_hangs
     lane.LAMBDA_URL = trickle_server()
+    # --timeout 0 must still be a budget: signal.alarm(0) would cancel it.
     open(brief, "w").write("Reply PASS.")
     args = argparse.Namespace(brief=brief, max_tokens=8, timeout=0, force_lambda=False)
     t0 = time.monotonic()
@@ -100,7 +109,25 @@ def main():
     ok0 = rc0 == 2 and wall0 <= 4
     print(json.dumps({"case": "timeout 0", "rc": rc0, "wall_s": round(wall0, 1),
                       "result": "PASS" if ok0 else "FAIL"}))
-    return 0 if ok0 else 1
+    if not ok0:
+        return 1
+    # The alarm fires INSIDE the gx10 leg and the except swallows it; a lambda attempt
+    # made after that would trickle unbounded. The ask must still end within the budget.
+    open(brief, "w").write("Reply PASS.")
+    args = argparse.Namespace(brief=brief, max_tokens=8, timeout=budget, force_lambda=False)
+    out = io.StringIO()
+    t0 = time.monotonic()
+    with contextlib.redirect_stdout(out):
+        rcg = lane.cmd_ask(args)
+    wallg = time.monotonic() - t0
+    os.unlink(brief)
+    recg = json.loads(out.getvalue())
+    okg = (rcg == 2 and wallg <= budget + 2
+           and [a["host"] for a in recg["attempts"]] == ["gx10", "lambda"])
+    print(json.dumps({"case": "alarm spent in the gx10 leg", "rc": rcg,
+                      "wall_s": round(wallg, 1), "lambda": recg["attempts"][-1].get("error"),
+                      "result": "PASS" if okg else "FAIL"}))
+    return 0 if okg else 1
 
 
 if __name__ == "__main__":

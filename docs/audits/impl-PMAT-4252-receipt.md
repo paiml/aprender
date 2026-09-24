@@ -69,3 +69,16 @@ The quorum-round-1 finding (sonnet) said the budget was only shown on `--force-l
 | (sonnet-A, non-blocking) bench `decode_tok_s` fell back to 0.0 when tN<=t1 | `None` instead of a fabricated 0.0 | — |
 
 Real code: ask test 2/2 PASS (budget 6 s → 5.0 s; timeout 0 → 1.0 s), watch test 8/8 PASS.
+
+## Round-4 fixes (quorum R4 on 5d17cc35d: sonnet-A FAIL, sonnet-B FAIL, haiku PASS)
+
+Both sonnet lanes found the same gap independently. The alarm is one-shot. If it fired inside the gx10 leg, the broad `except` swallowed the TimeoutError and the lambda leg then ran with no wall-clock bound. Also, gx10's ssh timeout (`timeout + 30` against a caller's `remaining() - 30`) expired at the exact instant of the alarm, so the race was the default outcome.
+
+| Fix | Mutant → result |
+|---|---|
+| lambda is not tried when < 1 s of budget is left; it records `not tried: lane budget Ns spent on gx10` | guard → `if False`: row "alarm spent in the gx10 leg" hangs, and the test's 60 s guard exits rc 3 (RED) |
+| ssh timeout is `timeout + 10`, so it ends 20 s before the deadline and a hung gx10 raises TimeoutExpired without spending the alarm | — (a bound tighter than the one that was racing) |
+| `--timeout 0` row reworked: gx10 now hangs in Python, so the alarm alone ends it (the lambda-skip guard would otherwise make the old row pass under the mutant) | `max(1,…)` → `pass`: rc 3 (RED) |
+| the test has a daemon 60 s guard, so a hang is reported as a FAIL, not a stuck run | — |
+
+Real code: 3/3 rows PASS (budget 6 → 5.0 s; timeout 0 → 1.0 s; gx10-leg alarm → 6.0 s, lambda not tried).

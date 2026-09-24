@@ -244,8 +244,10 @@ def gx10_ask(messages, max_tokens, timeout):
               f"echo TRACE_BEGIN; grep -iE 'gpu.layers|offload' $S/serve.log | tail -2; "
               f"tail -n +$((L+1)) $S/serve.log | grep -iE 'cublas|prefill|cuda|gpu|kernel' | head -5")
     t0 = time.monotonic()
+    # ssh ends 10 s after the remote curl's -m, i.e. 20 s BEFORE the caller's deadline: a
+    # hung gx10 raises TimeoutExpired here and never spends the alarm (quorum R4).
     r = subprocess.run(["ssh", "-o", "ConnectTimeout=5", "gx10", remote], input=payload,
-                       capture_output=True, text=True, timeout=timeout + 30)
+                       capture_output=True, text=True, timeout=timeout + 10)
     dt = time.monotonic() - t0
     lines = r.stdout.splitlines()
     st = json.loads(lines[0]) if lines and lines[0].startswith("{") else {}
@@ -300,7 +302,14 @@ def cmd_ask(args):
                         "provenance": prov, "response": resp})
         except Exception as e:  # yield, stop mid-request, ssh loss: all pass to lambda
             rec["attempts"].append({"host": "gx10", "ok": False, "error": str(e)[:400]})
-    if "served_by" not in rec:
+    if "served_by" not in rec and deadline - time.monotonic() < 1:
+        # The alarm is one-shot: if it fired in the gx10 leg, a lambda attempt would run
+        # with no wall-clock bound at all (quorum R4, both sonnet lanes). With >= 1 s left
+        # it has not fired (it was armed after `deadline` was taken), so it still bounds
+        # lambda.
+        rec["attempts"].append({"host": "lambda", "ok": False,
+                                "error": f"not tried: lane budget {args.timeout}s spent on gx10"})
+    elif "served_by" not in rec:
         try:
             h = health(LAMBDA_URL)
             dt, resp = post_chat(LAMBDA_URL, messages, args.max_tokens, remaining())
