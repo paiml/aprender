@@ -166,3 +166,62 @@ fn digest_separates_order_and_length() {
     assert_ne!(prompt_digest(&[1]), prompt_digest(&[1, 0]));
     assert_eq!(prompt_digest(&[5, 6]), prompt_digest(&[5, 6]));
 }
+
+/// Scripted with a device argmax: counts `forward_greedy` calls and answers
+/// `greedy_answer` without logits.
+struct DeviceGreedy {
+    inner: Scripted,
+    greedy_answer: u32,
+    greedy_calls: usize,
+}
+
+impl ArchForward for DeviceGreedy {
+    fn arch(&self) -> &'static str {
+        "scripted-greedy"
+    }
+    fn on_gpu(&self) -> bool {
+        true
+    }
+    fn context_length(&self) -> usize {
+        self.inner.context
+    }
+    fn batched_prefills(&self) -> usize {
+        0
+    }
+    fn notices(&self) -> &[String] {
+        &[]
+    }
+    fn reserve(&mut self, positions: usize) -> Result<bool> {
+        self.inner.reserve(positions)
+    }
+    fn forward(&mut self, tokens: &[u32], start: usize) -> Result<Vec<f32>> {
+        self.inner.forward(tokens, start)
+    }
+    fn forward_greedy(&mut self, tokens: &[u32], start: usize) -> Result<Option<u32>> {
+        self.inner.calls.push((tokens.len(), start));
+        self.greedy_calls += 1;
+        Ok(Some(self.greedy_answer))
+    }
+}
+
+#[test]
+fn plain_greedy_takes_the_device_argmax_and_a_penalty_or_sampling_does_not() {
+    let device = |answer| DeviceGreedy {
+        inner: Scripted::new(3, 100),
+        greedy_answer: answer,
+        greedy_calls: 0,
+    };
+    let mut s = Session::new(device(5));
+    let turn = s
+        .generate(&[7701, 7702], &greedy(2), &mut |_| true)
+        .expect("turn");
+    assert_eq!(turn.tokens, vec![7701, 7702, 5, 5]);
+    assert_eq!(s.engine().greedy_calls, 2);
+    assert_eq!(s.engine().inner.calls, vec![(2, 0), (3, 2)], "the state still advances by extension");
+
+    let mut penalized = greedy(2);
+    penalized.repeat_penalty = 1.3;
+    let mut s = Session::new(device(5));
+    s.generate(&[7703], &penalized, &mut |_| true).expect("turn");
+    assert_eq!(s.engine().greedy_calls, 0, "a repeat penalty needs the logits");
+}

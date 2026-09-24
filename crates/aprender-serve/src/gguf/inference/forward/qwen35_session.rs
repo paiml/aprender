@@ -1,8 +1,8 @@
 //! #3595 (`apr chat`) / #3571 (`apr serve`): a Qwen3.5 hybrid held resident for
 //! a whole session.
 //!
-//! [`run_qwen35_generate_dispatch`](crate::gguf::forward_qwen35::run_qwen35_generate_dispatch)
-//! serves ONE call: it builds the hybrid, uploads it, runs the F2 guard (which
+//! `apr run`'s old `run_qwen35_generate_dispatch` (deleted in #4263; `apr run`
+//! now loads a one-call session, [`Qwen35Session::load_for_run`]) served ONE call: it builds the hybrid, uploads it, runs the F2 guard (which
 //! hashes the whole file), prefills the prompt token by token, decodes, and
 //! drops all of it on return. That is the right shape for `apr run`. It was
 //! also what `apr chat` did on every turn, measured at 0.69.0 on both GPU hosts
@@ -70,15 +70,22 @@ struct GpuBackend {
 
 #[cfg(feature = "cuda")]
 impl GpuBackend {
-    /// Build the hybrid on the device, once.
+    /// Build the hybrid on the device, once. With `plan_positions`, the device
+    /// memory is planned for that many positions BEFORE a byte is uploaded, and
+    /// a context that cannot fit is [`GpuBuild::Refused`] (#3596).
     fn build(
         qwen: &'static Qwen35Model<'static>,
         mapped: &MappedGGUFModel,
         notices: &mut Vec<String>,
-    ) -> std::result::Result<Self, String> {
+        plan_positions: Option<usize>,
+    ) -> std::result::Result<Self, GpuBuild> {
         use crate::gguf::forward_qwen35::{Qwen35ModelHash, QWEN35_F2_PROBE_MAX};
         let executor = crate::cuda::CudaExecutor::new(0)
             .map_err(|e| format!("CUDA initialization failed: {e}"))?;
+        let planned = match plan_positions {
+            Some(positions) => Some(plan_capacity(qwen, &executor, positions)?),
+            None => None,
+        };
         let device_name = executor
             .device_name()
             .unwrap_or_else(|_| "Unknown GPU".to_string());
@@ -91,7 +98,12 @@ impl GpuBackend {
             executor,
             QWEN35_F2_PROBE_MAX + 2,
         )
-        .map_err(|e| format!("the CUDA model would not build: {e}"))?;
+        .map_err(|e| GpuBuild::Fallback(format!("the CUDA model would not build: {e}")))?;
+        let mut model = model;
+        if let Some((attention, rows)) = planned {
+            model.set_prefill_chunk_rows(rows);
+            model.set_prefill_attention(attention);
+        }
         // The same line, byte for byte, the one-shot path prints — once here,
         // not once per turn.
         say(
@@ -107,6 +119,95 @@ impl GpuBackend {
             hash: Qwen35ModelHash::of(mapped.data()),
             validated: false,
         })
+    }
+}
+
+/// Why the device model was not built.
+#[cfg(feature = "cuda")]
+enum GpuBuild {
+    /// A reason to serve from the CPU instead — printed, never silent.
+    Fallback(String),
+    /// The context does not fit the device (#3596): refused before loading,
+    /// with the arithmetic. NOT a fallback — at the lengths that trip this the
+    /// CPU forward takes hours, which is a stall, not a fallback.
+    Refused(Box<crate::capacity::CapacityRefusal>),
+}
+
+#[cfg(feature = "cuda")]
+impl From<String> for GpuBuild {
+    fn from(reason: String) -> Self {
+        Self::Fallback(reason)
+    }
+}
+
+/// Will `positions` fit? Decided from the host model and the MEASURED free
+/// memory, before a byte is uploaded — never discovered as an OOM mid-prefill
+/// (#3596). cuBLAS f32 attention while its plan fits, flash only when flash
+/// alone fits; bigger chunks on a unified-memory host. A path passed over is
+/// printed.
+#[cfg(feature = "cuda")]
+fn plan_capacity(
+    qwen: &Qwen35Model<'_>,
+    executor: &crate::cuda::CudaExecutor,
+    positions: usize,
+) -> std::result::Result<(crate::gguf::cuda::PrefillAttention, usize), GpuBuild> {
+    let device_memory = crate::capacity::measure_device_memory(executor)?;
+    let (gpu_free, gpu_total) = device_memory.plan_free_total();
+    let attention_paths =
+        crate::gguf::cuda::Qwen35CudaModel::prefill_attention_candidates_for(qwen, executor);
+    let chunk_rows_to_try: &[usize] = match device_memory {
+        crate::capacity::DeviceMemory::Unified { .. } => &[
+            crate::gguf::cuda::UNIFIED_PREFILL_CHUNK_ROWS,
+            crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS,
+        ],
+        crate::capacity::DeviceMemory::Discrete { .. } => {
+            &[crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS]
+        },
+    };
+    let mut passed_over = Vec::new();
+    let planned =
+        crate::capacity::plan_first_fit(&attention_paths, chunk_rows_to_try, |attention, rows| {
+            let verdict = crate::capacity::plan(&crate::capacity::CapacityInputs {
+                memory: Some(device_memory),
+                ..crate::gguf::cuda::Qwen35CudaModel::capacity_inputs(
+                    qwen, positions, gpu_free, gpu_total, attention, rows,
+                )
+            });
+            if let crate::capacity::CapacityVerdict::Refused(r) = &verdict {
+                passed_over.push(crate::capacity::passed_over_line(
+                    attention.as_str(),
+                    rows,
+                    r,
+                ));
+            }
+            verdict
+        });
+    match planned {
+        Ok(fit) => {
+            if !passed_over.is_empty() {
+                eprintln!(
+                    "[qwen35] prefill plan: {} did not fit; using {} at {} rows ({:.0} MiB)",
+                    passed_over.join("; "),
+                    fit.0.as_str(),
+                    fit.1,
+                    fit.2.total_mb
+                );
+            }
+            if fit.2.kv_dtype != crate::capacity::KvDtype::F32 {
+                // `capacity_inputs` reports no f16 decode, so a plan cannot
+                // choose it; if that ever changes without the f16 cache
+                // existing, refuse loudly.
+                return Err(GpuBuild::Fallback(format!(
+                    "the capacity plan chose a {:?} KV cache, which this build cannot allocate",
+                    fit.2.kv_dtype
+                )));
+            }
+            Ok((fit.0, fit.1))
+        },
+        Err(Some(refusal)) => Err(GpuBuild::Refused(refusal)),
+        Err(None) => Err(GpuBuild::Fallback(
+            "no prefill attention path to plan".to_string(),
+        )),
     }
 }
 
@@ -130,6 +231,28 @@ impl crate::session::Session<Qwen35Forward> {
     /// The base or a hybrid layer would not load.
     pub fn load(mapped: &MappedGGUFModel, no_gpu: bool) -> Result<Self> {
         Ok(Self::new(Qwen35Forward::load(mapped, no_gpu)?))
+    }
+
+    /// `apr run`'s load: one call of at most `positions` positions, on the
+    /// host model `qwen` (see [`Qwen35Forward::leak_host`]). The device memory
+    /// is planned for `positions` before the upload and a context that cannot
+    /// fit is refused (#3596); the decode state is sized to exactly the call.
+    ///
+    /// # Errors
+    /// [`RealizarError::CapacityRefused`] when the GPU was asked for and the
+    /// context does not fit it.
+    pub fn load_for_run(
+        qwen: &'static Qwen35Model<'static>,
+        mapped: &MappedGGUFModel,
+        no_gpu: bool,
+        positions: usize,
+    ) -> Result<Self> {
+        Ok(Self::new(Qwen35Forward::from_host(
+            qwen,
+            mapped,
+            no_gpu,
+            Some(positions),
+        )?))
     }
 
     /// The hybrid's layers — Gated `DeltaNet` and full attention together, all
@@ -160,6 +283,9 @@ pub struct Qwen35Forward {
     /// Bumped each time the decode state is (re)allocated, so
     /// [`ArchForward::reserve`] can say whether what it held was dropped.
     allocations: u64,
+    /// The smallest state allocated: [`MIN_CAPACITY`] for a resident session,
+    /// 0 for `apr run`'s one call.
+    min_capacity: usize,
     /// `{arch}.context_length` from the GGUF.
     context_length: usize,
     /// Every line the session has told the user about its route, in order.
@@ -183,13 +309,67 @@ impl Qwen35Forward {
     /// The base or a hybrid layer would not load. A GPU failure is never an
     /// error — it is the fallback.
     pub fn load(mapped: &MappedGGUFModel, no_gpu: bool) -> Result<Self> {
-        let base = Qwen35Model::create_base_model(&mapped.model, mapped.data())?;
-        let context_length = base.config.context_length.max(1);
-        let base: &'static OwnedQuantizedModel = Box::leak(Box::new(base));
-        let qwen: &'static Qwen35Model<'static> = Box::leak(Box::new(
-            Qwen35Model::from_model_and_layers(base, &mapped.model, mapped.data())?,
-        ));
+        Self::from_host(Self::leak_host(mapped)?, mapped, no_gpu, None)
+    }
 
+    /// Build the host model (base and hybrid layers) and leak it, to give the
+    /// device model's borrow the process lifetime it has. A caller that loads
+    /// the same file more than once (`apr run` under `qa`/`eval`) keeps the one
+    /// it got, rather than leaking a copy per call.
+    ///
+    /// # Errors
+    /// The base or a hybrid layer would not load.
+    pub fn leak_host(mapped: &MappedGGUFModel) -> Result<&'static Qwen35Model<'static>> {
+        let base = Qwen35Model::create_base_model(&mapped.model, mapped.data())?;
+        let base: &'static OwnedQuantizedModel = Box::leak(Box::new(base));
+        Ok(Box::leak(Box::new(Qwen35Model::from_model_and_layers(
+            base,
+            &mapped.model,
+            mapped.data(),
+        )?)))
+    }
+
+    /// [`Self::leak_host`] once per file per process: `apr qa`/`eval` call
+    /// `apr run`'s path many times on one model, and each call would otherwise
+    /// leak a fresh host copy. Keyed by the canonical path, length and mtime,
+    /// so a file rewritten in place is loaded again.
+    ///
+    /// # Errors
+    /// As [`Self::leak_host`].
+    pub fn cached_host(
+        path: &std::path::Path,
+        mapped: &MappedGGUFModel,
+    ) -> Result<&'static Qwen35Model<'static>> {
+        type Key = (std::path::PathBuf, u64, Option<std::time::SystemTime>);
+        static HOSTS: std::sync::Mutex<Vec<(Key, &'static Qwen35Model<'static>)>> =
+            std::sync::Mutex::new(Vec::new());
+        let meta = std::fs::metadata(path).ok();
+        let key: Key = (
+            std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()),
+            meta.as_ref().map_or(0, std::fs::Metadata::len),
+            meta.and_then(|m| m.modified().ok()),
+        );
+        let mut hosts = HOSTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((_, host)) = hosts.iter().find(|(k, _)| *k == key) {
+            return Ok(host);
+        }
+        let host = Self::leak_host(mapped)?;
+        hosts.push((key, host));
+        Ok(host)
+    }
+
+    /// Put the host model `qwen` on its backend. `plan_positions`: see
+    /// [`Qwen35Session::load_for_run`]; `None` is a resident session whose state
+    /// grows by doubling from [`MIN_CAPACITY`].
+    fn from_host(
+        qwen: &'static Qwen35Model<'static>,
+        mapped: &MappedGGUFModel,
+        no_gpu: bool,
+        plan_positions: Option<usize>,
+    ) -> Result<Self> {
+        let context_length = qwen.base.config.context_length.max(1);
         let mut notices = Vec::new();
         let per_token_prefill =
             std::env::var(QWEN35_SESSION_PREFILL_ENV).as_deref() == Ok("per-token");
@@ -205,21 +385,28 @@ impl Qwen35Forward {
         }
         let backend = match route {
             #[cfg(feature = "cuda")]
-            Qwen35Route::Gpu => match GpuBackend::build(qwen, mapped, &mut notices) {
+            Qwen35Route::Gpu => match GpuBackend::build(qwen, mapped, &mut notices, plan_positions) {
                 Ok(gpu) => Backend::Gpu(Box::new(gpu)),
-                Err(reason) => {
+                Err(GpuBuild::Refused(refusal)) => {
+                    return Err(RealizarError::CapacityRefused(refusal));
+                },
+                Err(GpuBuild::Fallback(reason)) => {
                     say(&mut notices, fallback_line(&reason));
                     Backend::Cpu(None)
                 },
             },
             _ => Backend::Cpu(None),
         };
+        // A one-call state is sized to the call: the plan above was made for
+        // exactly `plan_positions`, not for MIN_CAPACITY.
+        let min_capacity = if plan_positions.is_some() { 0 } else { MIN_CAPACITY };
         Ok(Self {
             qwen,
             backend,
             capacity: 0,
             turn_positions: 0,
             allocations: 0,
+            min_capacity,
             context_length,
             notices,
             per_token_prefill,
@@ -421,7 +608,7 @@ impl Qwen35Forward {
         }
         let capacity = positions
             .max(self.capacity.saturating_mul(2))
-            .max(MIN_CAPACITY)
+            .max(self.min_capacity)
             .min(self.context_length)
             .max(positions);
         self.allocations += 1;
