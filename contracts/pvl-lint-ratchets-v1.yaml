@@ -43,7 +43,7 @@ relations:
 
 equations:
   shrink_only_ratchet:
-    formula: "admits(corpus) ⇔ baseline ≠ ⊥ ∧ debt(corpus) ≤ baseline"
+    formula: "admits(corpus) ⟺ baseline ≠ ⊥ ∧ debt(corpus) ≤ baseline"
     domain: "a contract corpus, its repo root (lean/, book/) and contracts/lint-baseline.json"
     codomain: "Pass | Fail | Unknown"
     invariants:
@@ -67,11 +67,11 @@ invariants:
     prose: false
   - id: RAT-INV-003
     property: a module is paired only by its full dotted name on identifier boundaries
-    formal: 'paired(m) ⇔ ∃ p ∈ book: mentions(p, name(m))'
+    formal: 'paired(m) ⟺ ∃ p ∈ book: mentions(p, name(m))'
     prose: false
   - id: RAT-INV-004
     property: a gate never writes its baseline
-    formal: 'bytes(baseline) after gate = bytes(baseline) before gate'
+    formal: '¬(after_gate(baseline) ≠ before_gate(baseline))'
     prose: false
 
 falsification_tests:

@@ -5,7 +5,7 @@
 //!   (`ProvableContracts.Theorems.Softmax.PartitionOfUnity`). It is PAIRED when that full name appears, on
 //!   identifier boundaries, in a `.md` file under `book/` or `crates/aprender-contracts-staging/book/` of the repo
 //!   root (the contract dir's parent). The debt `unpaired_theorem_modules` may not rise.
-//! - `depends-on-present` (PV-RAT-002): a kernel-kind contract (the parsed kind, registries excluded — the class
+//! - `depends-on-present` (PV-RAT-002): a kernel-kind contract (the effective `kind()`, which reads registries as Registry — the class
 //!   the valid-under gate obliges) with an empty `metadata.depends_on`. The debt `contracts_without_depends_on`
 //!   may not rise.
 //!
@@ -268,7 +268,8 @@ pub fn run_depends_on_present_gate(contract_dir: &Path) -> RatchetOutcome {
             continue;
         };
         checked += 1;
-        if contract.kind() == ContractKind::Kernel && !contract.is_registry() {
+        // `kind()` already reads a `registry: true` kernel as Registry, so Kernel here is never a registry.
+        if contract.kind() == ContractKind::Kernel {
             kernels += 1;
             without += usize::from(contract.metadata.depends_on.is_empty());
         }
