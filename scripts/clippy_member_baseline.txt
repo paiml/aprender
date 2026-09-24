@@ -4,6 +4,7 @@
 # Measured by: cargo clippy --workspace --all-targets --no-deps --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --keep-going --message-format=json
 # (no -D warnings: a warning must not stop its dependents from being checked; every warn-level lint is counted)
 # First measurement, main aa7c6ef03 (2026-09-24): 3807 diagnostics under -D warnings across 87 failing targets.
+# The biggest bucket, clippy::disallowed_methods (the .clippy.toml unwrap ban: 2137 unique sites), is swept by #4161.
 # This census: 3262 finding(s). Regenerate with: bash scripts/check_clippy_member_ratchet.sh --update-baseline
 apr-cli|lib|unused_mut	2
 apr-cli|test|clippy::disallowed_methods	717

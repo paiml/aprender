@@ -233,6 +233,7 @@ write_baseline() { # write_baseline <census-file>
         echo "# Measured by: cargo clippy --workspace --all-targets --no-deps ${EXCLUDES[*]} --keep-going --message-format=json"
         echo "# (no -D warnings: a warning must not stop its dependents from being checked; every warn-level lint is counted)"
         echo "# First measurement, main aa7c6ef03 (2026-09-24): 3807 diagnostics under -D warnings across 87 failing targets."
+        echo "# The biggest bucket, clippy::disallowed_methods (the .clippy.toml unwrap ban: 2137 unique sites), is swept by #4161."
         echo "# This census: $total finding(s). Regenerate with: bash scripts/check_clippy_member_ratchet.sh --update-baseline"
         cat "$1"
     } > "$BASELINE"
