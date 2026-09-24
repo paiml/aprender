@@ -70,3 +70,18 @@ The dev-dep, checked BEFORE the change:
   `[dev-dependencies.provable-contracts] version = "0.69.0"`, `package = "aprender-contracts"`.
 
 Lint: `cargo clippy -p aprender-contracts --lib --tests -- -D warnings` rc 0, and `rustfmt --check tree.rs` rc 0.
+
+## Follow-up commit 718d72c58: trailing comma (stacked on #4183 at cfc55e447)
+
+aprender-3a measured this on the #4149 branch after running `cargo fmt`. When a call is too long for one line,
+rustfmt breaks it across lines and appends a trailing comma. Both macro arms rejected that with `error: no rules
+expected ','` (5 sites; `registry_failure_catalogue` and `beat_apr_sibling_cli_reach` did not compile). Both arms
+now take `($test:expr, $rel:expr $(,)?)`. The new test `the_macros_accept_the_trailing_comma_rustfmt_adds` calls
+each macro in that multi-line, trailing-comma shape.
+
+Measured on gx10 at 718d72c58 (a clean checkout of the pushed SHA, private target, deleted afterwards):
+```
+cargo test -p aprender-contracts --lib tree::   -> 4 passed
+mutant: both arms back to `($test:expr, $rel:expr)` -> rc 101, "error: no rules expected `,`"
+```
+`rustfmt --check tree.rs` rc 0. #4183 itself is unchanged; its armed head stays cfc55e447.
