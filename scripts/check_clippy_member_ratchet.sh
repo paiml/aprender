@@ -111,6 +111,34 @@ print(len(names))
 PY
 }
 
+# errors_of <json-file> -> one line per ERROR-level diagnostic: what stopped the build, and where.
+errors_of() {
+    python3 - "$1" <<'PY'
+import json, sys
+n = 0
+for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    if '"compiler-message"' not in line:
+        continue
+    try:
+        o = json.loads(line)
+    except ValueError:
+        continue
+    m = o.get("message") or {}
+    code = (m.get("code") or {}).get("code")
+    if m.get("level") != "error" or not code:
+        continue
+    span = next((s for s in m.get("spans", []) if s.get("is_primary")), {})
+    where = f'{span.get("file_name", "?")}:{span.get("line_start", "?")}'
+    print(f"      {code} at {where}: {m.get('message', '')[:160]}")
+    n += 1
+    if n >= 10:
+        print("      (first 10 shown)")
+        break
+if n == 0:
+    print("      (no coded error-level diagnostic: see cargo's stderr)")
+PY
+}
+
 # judge <baseline-file> <census-file> -> verdict rows; rc 0 clean, 1 on any new/rise/stale key.
 judge() {
     python3 - "$1" "$2" <<'PY'
@@ -246,8 +274,8 @@ tmp=$(mktemp -d)
 trap 'rm -rf -- "${tmp:?}"' EXIT
 if [ -z "$json" ]; then json="$tmp/run.json"; measure "$json"; fi
 if ! census "$json" > "$tmp/census.txt"; then
-    echo "FAIL  clippy did not finish, so the census is incomplete and NOT judged. Last compiler lines:"
-    grep -h '"rendered"' "$json" 2>/dev/null | tail -3 | cut -c1-300 || true
+    echo "FAIL  clippy did not finish, so the census is incomplete and NOT judged. The error(s) that stopped it:"
+    errors_of "$json"
     exit 1
 fi
 # VACUITY: an empty census is legitimate the day every finding is fixed, so emptiness proves
