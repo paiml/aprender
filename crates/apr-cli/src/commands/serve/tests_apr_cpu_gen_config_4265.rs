@@ -110,3 +110,16 @@ fn reply_keeps_a_budget_cut_and_an_inner_stop_id() {
     assert_eq!(apr_cpu_reply_tokens(&[151_645, 8], &stop), &[151_645, 8]);
     assert!(apr_cpu_reply_tokens(&[], &stop).is_empty());
 }
+
+#[test]
+fn stop_set_holds_sibling_tokenizer_json_turn_end_by_vocab_index() {
+    let mut s = state_with(None, Some(2));
+    if let Some(tok) = s.tokenizer.as_mut() {
+        tok.vocab = ["a", "<|im_start|>", "b", "<|im_end|>"]
+            .iter()
+            .map(|t| (*t).to_string())
+            .collect();
+    }
+    // <|im_end|> sits at index 3; <|im_start|> (index 1) is not a stop.
+    assert_eq!(apr_cpu_stop_tokens(&s), vec![2, 3]);
+}

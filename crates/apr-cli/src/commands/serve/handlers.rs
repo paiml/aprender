@@ -1192,6 +1192,7 @@ fn apr_cpu_stop_tokens(state: &AprServerState) -> Vec<u32> {
 /// The reply text's tokens: `new_tokens` without the stop id the loop ended on.
 /// `stop_ids` must be the loop's whole stop set, token 0 included — the loop
 /// ends on 0 even when it is not in `stop_tokens` (#4265).
+#[cfg(feature = "inference")]
 fn apr_cpu_reply_tokens<'a>(new_tokens: &'a [u32], stop_ids: &[u32]) -> &'a [u32] {
     match new_tokens.split_last() {
         Some((last, head)) if stop_ids.contains(last) => head,
