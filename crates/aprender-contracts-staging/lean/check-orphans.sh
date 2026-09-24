@@ -35,11 +35,13 @@ for dp, _, fs in os.walk(os.path.join(root, "ProvableContracts")):
             p = os.path.join(dp, f)
             mods[os.path.relpath(p, root)[:-5].replace(os.sep, ".")] = p
 def strip_block_comments(src):
-    """Lean's /- ... -/ (and /-! -/, /-- -/) comments NEST; newlines are kept so a line stays a line."""
+    """Lean's /- ... -/ (and /-! -/, /-- -/) comments NEST, and `--` runs to end of line; newlines are kept."""
     out, i, depth = [], 0, 0
     while i < len(src):
         two = src[i:i + 2]
-        if two == "/-":
+        if two == "--" and not depth:   # a line comment: a `/-` inside it opens nothing
+            j = src.find("\n", i); i = len(src) if j < 0 else j
+        elif two == "/-":
             depth += 1; i += 2
         elif two == "-/" and depth:
             depth -= 1; i += 2
@@ -124,6 +126,7 @@ ticket-optional~entry-without-ticket-is-red~    missing = [k for k in ("ticket",
 stale-ok~stale-entry-is-red~    if mod not in orphans:~    if False:
 cone-not-transitive~transitive-import-is-in-cone~    todo += imports(mods[m])~    pass
 comments-kept~doc-comment-import-is-not-an-import~    text = strip_block_comments(open(path, encoding="utf-8").read())~    text = open(path, encoding="utf-8").read()
+line-comment-not-skipped~line-comment-with-slash-dash-is-not-a-block~        if two == "--" and not depth:   # a line comment: a `/-` inside it opens nothing~        if False:
 crash:syntax-error~clean~    todo += imports(mods[m])~    todo += imports(mods[m]
 MUT
     if [ -d "${M:?}" ]; then rm -rf -- "${M:?}"; fi
