@@ -400,6 +400,20 @@ impl<'a> Qwen3MoeCudaModel<'a> {
         {
             return Err(refuse(format!("incomplete MoE shape {shape:?}")));
         }
+        Self::check_config(c)?;
+        if model.lm_head_bias.is_some() {
+            return Err(refuse("an lm_head bias is not implemented".to_string()));
+        }
+        for (il, layer) in model.layers.iter().enumerate() {
+            if let Some(what) = Self::layer_unsupported(layer) {
+                return Err(refuse(format!("layer {il}: {what} is not implemented")));
+            }
+        }
+        Ok(())
+    }
+
+    /// The config-level half of `check_supported`: norm, rope, positions and head grouping.
+    fn check_config(c: &crate::gguf::GGUFConfig) -> Result<()> {
         if !c.constraints.uses_rmsnorm() {
             return Err(refuse("only RMSNorm is implemented".to_string()));
         }
@@ -422,28 +436,26 @@ impl<'a> Qwen3MoeCudaModel<'a> {
                 c.num_heads, c.num_kv_heads
             )));
         }
-        if model.lm_head_bias.is_some() {
-            return Err(refuse("an lm_head bias is not implemented".to_string()));
-        }
-        for (il, layer) in model.layers.iter().enumerate() {
-            let missing = if layer.qkv_bias.is_some() || layer.attn_output_bias.is_some() {
-                Some("attention biases")
-            } else if layer.attn_norm_bias.is_some() {
-                Some("an attention-norm bias")
-            } else if layer.attn_q_norm_weight.is_none() || layer.attn_k_norm_weight.is_none() {
-                Some("the per-head Q/K RMSNorm Qwen3 requires (absent here)")
-            } else if layer.ffn_norm_weight.is_none() {
-                Some("the ffn_norm Qwen3-MoE requires (absent here)")
-            } else if !matches!(layer.qkv_weight, OwnedQKVWeights::Separate { .. }) {
-                Some("a fused QKV tensor")
-            } else {
-                None
-            };
-            if let Some(what) = missing {
-                return Err(refuse(format!("layer {il}: {what} is not implemented")));
-            }
-        }
         Ok(())
+    }
+
+    /// The first thing a decoder layer carries that this forward does not implement.
+    fn layer_unsupported(
+        layer: &super::super::quantized::OwnedQuantizedLayer,
+    ) -> Option<&'static str> {
+        if layer.qkv_bias.is_some() || layer.attn_output_bias.is_some() {
+            Some("attention biases")
+        } else if layer.attn_norm_bias.is_some() {
+            Some("an attention-norm bias")
+        } else if layer.attn_q_norm_weight.is_none() || layer.attn_k_norm_weight.is_none() {
+            Some("the per-head Q/K RMSNorm Qwen3 requires (absent here)")
+        } else if layer.ffn_norm_weight.is_none() {
+            Some("the ffn_norm Qwen3-MoE requires (absent here)")
+        } else if !matches!(layer.qkv_weight, OwnedQKVWeights::Separate { .. }) {
+            Some("a fused QKV tensor")
+        } else {
+            None
+        }
     }
 
     /// Refuse, with the arithmetic, a device that cannot hold the model.
