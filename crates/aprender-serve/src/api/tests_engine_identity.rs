@@ -26,6 +26,9 @@ const ARCHES: &[(&str, Arch)] = &[
     ("qwen3", Arch::Session("DenseForward")),
     ("qwen2", Arch::Session("DenseForward")),
     ("llama", Arch::Session("DenseForward")),
+    // #4280 (#4308): `apr serve`'s dense CUDA batch scheduler drives qwen2/qwen3/llama
+    // through the session on a borrowed CUDA model; its witness is #4308's own test.
+    ("dense-cuda-batch", Arch::Session("BorrowedCudaForward")),
     ("qwen3_moe", Arch::NotYet("#4263 MoE (aprender-cb)")),
 ];
 
