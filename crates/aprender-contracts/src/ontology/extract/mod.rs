@@ -55,13 +55,13 @@ pub struct Extraction {
     pub parity: parity_receipt::ParityStats,
     /// ONT-4f: the GitHub snapshots under `evidence/github/<type>/`, per Σ snapshot type, and the refused files.
     pub github: json::github::GithubStats,
-    /// aprender#3715: the release evidence — `None` unless a release subject was given (an ordinary PR has none).
     /// ONT-4c: `README.md` — files read, the claim commands CI runs (the MEASURED set), refusals.
     pub readme: claims::DocStats,
     /// ONT-4c: `CLAUDE.md` (`llm-context`) — the same.
     pub llm_context: claims::DocStats,
     /// ONT-4c: CSV datasets read, and the files refused.
     pub csv: claims::DocStats,
+    /// aprender#3715: the release evidence — `None` unless a release subject was given (an ordinary PR has none).
     pub release: Option<release_evidence::ReleaseStats>,
     /// ONT-4d: how many `rdf:type` triples the Σ closure added.
     pub type_closure_added: usize,
