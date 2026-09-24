@@ -67,6 +67,24 @@
     }
 
     #[test]
+    fn benchmark_json_and_human_line_agree_at_a_rounding_tie_4211() {
+        // 6.25 is exact in binary64 (25 tokens / 4.0 s). `.round()` breaks the tie
+        // away from zero and `{:.1}` does not, so rounding twice printed two
+        // throughputs for one run. Whichever digit wins, both streams show it.
+        let mut r = bench_result_4211(Some(6.25), Some(true));
+        r.usage.generation_ms = Some(4000);
+        let (stdout, stderr) = render_benchmark_results(&r, "m.gguf", "json", 32);
+        let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
+        let human: f64 = stderr
+            .lines()
+            .find_map(|l| l.strip_prefix("tok/s: "))
+            .and_then(|rest| rest.split_whitespace().next())
+            .and_then(|n| n.parse().ok())
+            .unwrap_or_else(|| panic!("no tok/s line on stderr: {stderr:?}"));
+        assert_eq!(v["tok_s"].as_f64(), Some(human), "json {v} vs stderr {stderr:?}");
+    }
+
+    #[test]
     fn benchmark_human_format_keeps_the_block_on_stdout_4211() {
         let r = bench_result_4211(Some(6.3), None);
         let (stdout, stderr) = render_benchmark_results(&r, "m.gguf", "text", 32);

@@ -871,23 +871,28 @@ pub(crate) fn render_benchmark_results(
     let (tok_per_sec, basis) = benchmark_throughput(result, tokens_generated);
     let wall_ms = result.duration_secs * 1000.0;
     let basis_label = benchmark_basis_label(basis);
+    // Round ONCE, by the formatter, and print that text on both streams: `.round()`
+    // breaks ties away from zero where `{:.1}` does not, so 6.25 would read 6.3 in
+    // the JSON and 6.2 on stderr.
+    let tok_s_text = format!("{tok_per_sec:.1}");
+    let latency_text = format!("{wall_ms:.2}");
 
     let human = format!(
-        "\n{}\ntok/s: {:.1} ({})\ntokens: {}\nlatency: {:.2}ms (wall clock, load included)\nmodel: {}\n\n",
+        "\n{}\ntok/s: {} ({})\ntokens: {}\nlatency: {}ms (wall clock, load included)\nmodel: {}\n\n",
         "=== Benchmark Results ===".cyan().bold(),
-        tok_per_sec,
+        tok_s_text,
         basis_label,
         tokens_generated,
-        wall_ms,
+        latency_text,
         source
     );
 
     if output_format == "json" {
         let json = serde_json::json!({
-            "tok_s": (tok_per_sec * 10.0).round() / 10.0,
+            "tok_s": tok_s_text.parse::<f64>().unwrap_or(tok_per_sec),
             "tok_s_basis": basis,
             "tokens": tokens_generated,
-            "latency_ms": (wall_ms * 100.0).round() / 100.0,
+            "latency_ms": latency_text.parse::<f64>().unwrap_or(wall_ms),
             "latency_basis": "wall",
             "generation_ms": result.usage.generation_ms,
             "setup_ms": result.usage.setup_ms,
