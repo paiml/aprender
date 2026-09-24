@@ -125,7 +125,13 @@ pub struct Session<F: ArchForward> {
     forward: F,
     /// The tokens whose forward the state holds, in order.
     processed: Vec<u32>,
+    /// Unique per session in this process: the witness names the session a
+    /// call entered, so a guard can ask "did THIS verb's session serve it?"
+    /// without re-deriving the verb's prompt tokens.
+    id: u64,
 }
+
+static NEXT_SESSION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl<F: ArchForward> Session<F> {
     /// Wrap a loaded forward. The state starts empty.
@@ -133,7 +139,14 @@ impl<F: ArchForward> Session<F> {
         Self {
             forward,
             processed: Vec::new(),
+            id: NEXT_SESSION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         }
+    }
+
+    /// This session's witness id (see [`entries_of_session`]).
+    #[must_use]
+    pub fn id(&self) -> u64 {
+        self.id
     }
 
     /// The architecture's forward, for route reporting and tests.
@@ -281,6 +294,7 @@ impl<F: ArchForward> Session<F> {
         witness(Entry {
             arch: self.arch(),
             kind: EntryKind::Generate,
+            session: self.id,
             digest: prompt_digest(prompt),
             on_gpu: self.on_gpu(),
         });
@@ -351,6 +365,7 @@ impl<F: ArchForward> Session<F> {
         witness(Entry {
             arch: self.arch(),
             kind: EntryKind::Score,
+            session: self.id,
             digest: prompt_digest(tokens),
             on_gpu: self.on_gpu(),
         });
@@ -440,6 +455,8 @@ pub struct Entry {
     pub digest: u64,
     /// Whether the session was on the GPU when the call entered.
     pub on_gpu: bool,
+    /// [`Session::id`] of the session that served the call.
+    pub session: u64,
 }
 
 /// How many entries the witness keeps. The guard picks prompts no other test
@@ -484,6 +501,18 @@ pub fn entries_for(tokens: &[u32]) -> Vec<Entry> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter()
         .filter(|e| e.digest == digest)
+        .cloned()
+        .collect()
+}
+
+/// Every retained entry the session `id` served, oldest first.
+#[must_use]
+pub fn entries_of_session(id: u64) -> Vec<Entry> {
+    WITNESS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .filter(|e| e.session == id)
         .cloned()
         .collect()
 }
