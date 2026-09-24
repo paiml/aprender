@@ -21,12 +21,12 @@ pub fn mwv_warp_count() -> u32 {
 #[allow(unused_imports)]
 use trueno_gpu::kernels::{
     backward::GemmBackwardAKernel, Activation, ArgMaxFinalKernel, ArgMaxKernel, AttentionKernel,
-    BatchedHwDp4aQ4KGemvKernel, BatchedIncrementalAttentionKernel, BatchedQ4KGemvKernel,
-    BatchedQ6KGemvKernel, BatchedResidualAddKernel, BatchedRopeKernel, BatchedSwigluKernel,
-    BatchedVectorizedRmsNormKernel, BiasActivationKernel, ChunkedTiledQ4KGemvKernel,
-    CoalescedGemvKernel, CoalescedQ4KGemvKernel, CoalescedQ6KGemvKernel, Dp4aQ4KGemmKernel,
-    Dp4aQ4KGemvKernel, Dp4aQ6KGemvKernel, ElementwiseMulKernel, Fp16Q4KGemvKernel,
-    FusedFp32Q4KGemvKernel, FusedGateUpKernel, FusedGateUpQ4KGemvKernel,
+    BatchedHwDp4aQ4KGemvKernel, BatchedIncrementalAttentionKernel, BatchedMwvQ4KGemvKernel,
+    BatchedQ4KGemvKernel, BatchedQ6KGemvKernel, BatchedResidualAddKernel, BatchedRopeKernel,
+    BatchedSwigluKernel, BatchedVectorizedRmsNormKernel, BiasActivationKernel,
+    ChunkedTiledQ4KGemvKernel, CoalescedGemvKernel, CoalescedQ4KGemvKernel, CoalescedQ6KGemvKernel,
+    Dp4aQ4KGemmKernel, Dp4aQ4KGemvKernel, Dp4aQ6KGemvKernel, ElementwiseMulKernel,
+    Fp16Q4KGemvKernel, FusedFp32Q4KGemvKernel, FusedGateUpKernel, FusedGateUpQ4KGemvKernel,
     FusedGateUpSwigluHwDp4aQ4KGemvKernel, FusedQKVHwDp4aQ4KGemvKernel, FusedQKVKernel,
     FusedResidualRmsNormKernel, FusedRmsNormGateUpSwigluQ4KKernel, FusedRmsNormQ4KGemvKernel,
     FusedSwigluKernel, GeluKernel, GemmKernel, GemvKernel, HalfWarpDp4aQ4KGemvKernel,

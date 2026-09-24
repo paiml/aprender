@@ -336,6 +336,11 @@ mod tests_cov021_q4k;
 #[path = "tests_zeroed_layer.rs"]
 mod tests_zeroed_layer;
 
+// #4234: batched Mwv Q4_K GEMV, bitwise the single-vector kernel per vector
+#[cfg(test)]
+#[path = "tests_batched_mwv_4234.rs"]
+mod tests_batched_mwv_4234;
+
 /// Process-level set of PTX hashes that failed compilation.
 /// Prevents re-attempting cuModuleLoadData with the same broken PTX,
 /// which would poison the CUDA context again.
