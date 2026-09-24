@@ -175,8 +175,6 @@
 #
 # Recorded, not blessed. Shrink-only from here.
 #
-CLAUDE.md:218
-CLAUDE.md:222
 ROADMAP.md:55
 book/src/advanced-testing/popperian-falsification.md:44
 book/src/tools/apr-cli.md:996
@@ -186,8 +184,6 @@ crates/apr-cli/src/commands/benchmark.rs:438
 crates/apr-cli/src/commands/gguf_generate_result.rs:371
 crates/apr-cli/src/commands/gguf_generate_result.rs:372
 crates/apr-cli/src/commands/qa.rs:147
-crates/apr-cli/src/commands/run_tests_layer_trace.rs:55
-crates/apr-cli/src/commands/run_tests_layer_trace.rs:56
 crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:362
 crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:363
 crates/apr-cli/src/commands/serve/handlers_include_01.rs:4

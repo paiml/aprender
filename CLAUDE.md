@@ -219,11 +219,11 @@ the crate count run the command in the Project Overview table, don't trust a num
 | CUDA/GPU Inference | Never | Primary | Kernels |
 
 ```rust
-// WRONG - bypasses realizar, 0.3 tok/s
+// WRONG - bypasses realizar
 use aprender::models::Qwen2Model;
 let output = model.generate(&input_ids, 32, 0.7, 0.9);
 
-// CORRECT - uses realizar, 225+ tok/s
+// CORRECT - uses realizar
 use realizar::Model;
 let model = Model::load_safetensors(&path)?;
 let output = model.generate(&input_ids, config)?;

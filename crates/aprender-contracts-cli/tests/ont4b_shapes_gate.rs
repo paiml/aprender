@@ -88,11 +88,12 @@ fn the_repo_corpus_passes_with_the_plant_fired_and_the_whole_corpus_as_focus_nod
     );
     assert_eq!(v["extra"]["pc_shape"], "fired", "{}", show(&r));
     // ONT-4b: exactly one, from ont:id minCount. ONT-4c1 plants a bare model:Model too, which draws
-    // ladder-measured's two minCounts: three on this corpus, and never zero.
+    // ladder-measured's two minCounts: three. ONT-4c (#3847) arms readme-root, claude-md, model-setfit-slice and csv-train, and
+    // their plants add sixteen (measured on its branch, 0 real violations): nineteen, never zero.
     assert_eq!(
         v["extra"]["plant_violations"],
-        3,
-        "ont:id minCount + ladder-measured's two (ONT-4c1)\n{}",
+        19,
+        "ont:id minCount + ladder-measured's two (ONT-4c1) + the ONT-4c plants against readme-root, claude-md, model-setfit-slice, csv-train\n{}",
         show(&r)
     );
 }
@@ -230,11 +231,12 @@ fn the_tracked_repo_graph_is_fresh() {
     // that is the ratchet working, not a conflict to route around. It did: the
     // 0.69 batch folded #3600 in and the count went 6 -> 9 with its three shapes. #3715 added the nine-shape
     // `release-readiness-v1` family (shapes_n=18, triples=15863, measured on its branch); it contributes no focus
-    // node to a PR's graph — the release evidence is extracted only under `--release-*`.
+    // node to a PR's graph — the release evidence is extracted only under `--release-*`. ONT-4c (#3847) adds the
+    // four armed non-code shapes readme-root, claude-md, model-setfit-slice, csv-train (shapes_n=22).
     assert_eq!(
         v["shapes_n"],
-        18,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715)\n{}",
+        22,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + readme-root + claude-md + model-setfit-slice + csv-train (ONT-4c, #3847)\n{}",
         show(&r)
     );
 }
