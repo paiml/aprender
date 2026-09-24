@@ -1,0 +1,3 @@
+haiku rc=0
+sonnet-b rc=0
+sonnet-a rc=0
