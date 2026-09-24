@@ -291,12 +291,7 @@ impl Qwen35Forward {
             .ok_or_else(|| Step::Gpu("the device state was never allocated".to_string()))?;
         // `prefill` ends in the logits download, so this clock stops on finished work.
         let t0 = std::time::Instant::now();
-        let logits = gpu.model.prefill(new, state, pos0).map_err(|e| {
-            Step::Gpu(format!(
-                "the GPU batched prefill of {} tokens at position {pos0} failed: {e}",
-                new.len()
-            ))
-        })?;
+        let logits = batched_prefill_outcome(gpu.model.prefill(new, state, pos0), new.len(), pos0)?;
         let ms = t0.elapsed().as_secs_f64() * 1000.0;
         // The line `apr run` prints, plus the start position: a serve log must show
         // WHICH prefill it took, or a per-token regression reads as a slow GPU.
@@ -549,23 +544,67 @@ fn fit_prefill_plan(
         qwen,
         model.executor_mut(),
     );
-    let mut refused = Vec::new();
-    for &attention in &attentions {
-        for &rows in rows_to_try {
+    let (attention, rows) = choose_prefill_plan(
+        free,
+        &attentions,
+        rows_to_try,
+        |attention, rows| {
             model.set_prefill_attention(attention);
             model.set_prefill_chunk_rows(rows);
-            let need = model.prefill_workspace_bytes(end) as u64 + crate::capacity::OVERHEAD_BYTES;
+            model.prefill_workspace_bytes(end) as u64 + crate::capacity::OVERHEAD_BYTES
+        },
+        |attention| attention.as_str(),
+    )?;
+    model.set_prefill_attention(attention);
+    model.set_prefill_chunk_rows(rows);
+    Ok(())
+}
+
+/// The first `(attention, rows)`, attention-major in the order given, whose
+/// `need` fits in `free` bytes. When none fits, the Err names every candidate
+/// refused and the free MiB; the session then prefills one token at a time on
+/// the GPU and says so. Pure, so the no-fit branch is tested without a device
+/// (#4255).
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+fn choose_prefill_plan<A: Copy>(
+    free: u64,
+    attentions: &[A],
+    rows_to_try: &[usize],
+    mut need: impl FnMut(A, usize) -> u64,
+    name: impl Fn(A) -> &'static str,
+) -> std::result::Result<(A, usize), String> {
+    let mut refused = Vec::new();
+    for &attention in attentions {
+        for &rows in rows_to_try {
+            let need = need(attention, rows);
             if need <= free {
-                return Ok(());
+                return Ok((attention, rows));
             }
             refused.push(format!(
                 "{} at {rows} rows needs {} MiB",
-                attention.as_str(),
+                name(attention),
                 need >> 20
             ));
         }
     }
     Err(format!("{}; {} MiB free", refused.join(", "), free >> 20))
+}
+
+/// What a batched prefill's result means for the session. A failed prefill is a
+/// GPU failure ([`Step::Gpu`]): the session moves to the CPU, which also discards
+/// the device state as `prefill`'s contract requires. It is never a per-token
+/// retry on that state, and never a [`Step::Fatal`] that ends the turn (#4255).
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+fn batched_prefill_outcome<E: std::fmt::Display>(
+    result: std::result::Result<Vec<f32>, E>,
+    tokens: usize,
+    pos0: usize,
+) -> std::result::Result<Vec<f32>, Step> {
+    result.map_err(|e| {
+        Step::Gpu(format!(
+            "the GPU batched prefill of {tokens} tokens at position {pos0} failed: {e}"
+        ))
+    })
 }
 
 /// Print `line` to stderr and keep it in the session's notices.
