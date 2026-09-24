@@ -11,6 +11,7 @@
 pub mod cache;
 mod composition_gate;
 pub mod config;
+pub mod consistency_gate;
 pub mod diff;
 pub mod duplicate_stems;
 pub mod finding;
@@ -248,6 +249,24 @@ pub enum GateExtra {
         /// aprender#3715: what `extract:release-evidence` derived — absent unless a release subject was given.
         #[serde(skip_serializing_if = "Option::is_none")]
         release: Option<Box<crate::ontology::extract::release_evidence::ReleaseStats>>,
+    },
+    /// ONT-5: the typed relations are jointly satisfiable, by a witness pv-sat wrote and this run re-checked.
+    #[serde(rename = "ont_consistency")]
+    Consistency {
+        /// Clauses a typed relation produced (`depends_on`/`refines` implications, `contradicts` conflicts).
+        checkable_n: usize,
+        /// Contracts asserted in force (every id no contract supersedes).
+        units: usize,
+        /// Typed edges through a role the encoding does not name.
+        unencoded_edges: usize,
+        /// `fired` — the checker refused the corrupt-core fixture this run.
+        pc_checker: String,
+        /// The contracts of a checked unsat core; empty when the witness is a model.
+        core: Vec<String>,
+        /// Findings.
+        violations: usize,
+        /// The witness this run checked.
+        witness: consistency_gate::WitnessReport,
     },
 }
 
@@ -557,6 +576,13 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     gates.push(shapes_gate_result);
     all_findings.append(&mut shapes_findings);
 
+    // Gate 17 (numbered by agreement: ONT-7 13, EV-11 14-15, ONT-8 16): ont-consistency (ONT-5). Same R-8 shape:
+    // computed in every run, armed per repo.
+    let (consistency_gate_result, mut consistency_findings) =
+        consistency_result(config.contract_dir, validation_passed);
+    gates.push(consistency_gate_result);
+    all_findings.append(&mut consistency_findings);
+
     // Gate 9: strict test-binding (Issue #1510, opt-in via --strict-test-binding)
     if config.strict_test_binding {
         push_gate(
@@ -638,6 +664,8 @@ pub enum NamedGateOutcome {
     Shapes(shapes_gate::ShapesOutcome),
     /// The `tbox` gate (ONT-2c): advisory classification. It has no Pass answer at all (R-7).
     Tbox(tbox_gate::TboxOutcome),
+    /// The `ont-consistency` gate (ONT-5): no Σ, malformed Σ, nothing checkable, a control that did not fire, a stale witness.
+    Consistency(consistency_gate::ConsistencyOutcome),
     /// A gate that ran and judged the corpus.
     Ran {
         result: Box<GateResult>,
@@ -670,6 +698,9 @@ pub fn run_named_gate_with(
         }
         "sigma" => NamedGateOutcome::Sigma(sigma_gate::run_sigma_gate(contract_dir)),
         "tbox" => NamedGateOutcome::Tbox(tbox_gate::run_tbox_gate(contract_dir)),
+        consistency_gate::GATE => {
+            NamedGateOutcome::Consistency(consistency_gate::run_consistency_gate(contract_dir))
+        }
         "validate" => {
             let (contracts, parse_errors) = load_contracts(contract_dir);
             let (result, findings) = run_validate_gate(&contracts, &parse_errors);
@@ -683,7 +714,14 @@ pub fn run_named_gate_with(
 }
 
 /// The gate names `--gate` computes alone, for the refusal message.
-pub const NAMED_GATES: [&str; 5] = ["relations", "shapes", "sigma", "tbox", "validate"];
+pub const NAMED_GATES: [&str; 6] = [
+    consistency_gate::GATE,
+    "relations",
+    "shapes",
+    "sigma",
+    "tbox",
+    "validate",
+];
 
 /// The `sigma` gate as `run_lint` reports it. Σ's two non-verdict answers become SKIPPED gates here — under
 /// `--gate sigma` they are an exit of their own (decline / error), but inside a full run "skipped" is how the
@@ -779,6 +817,29 @@ fn shapes_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, V
             (g, Vec::new())
         }
     }
+}
+
+/// The `ont-consistency` gate as `run_lint` reports it. Its declines keep their lattice reason here (a stale witness
+/// is `Unknown{WitnessStale}`, not a bare skip), so the meet says what could not be checked.
+fn consistency_result(
+    contract_dir: &Path,
+    validation_passed: bool,
+) -> (GateResult, Vec<LintFinding>) {
+    if !validation_passed {
+        return (
+            skipped_gate(consistency_gate::GATE, "validation failed"),
+            Vec::new(),
+        );
+    }
+    let outcome = consistency_gate::run_consistency_gate(contract_dir);
+    if let consistency_gate::ConsistencyOutcome::Ran { result, findings } = outcome {
+        return (*result, findings);
+    }
+    let mut g = skipped_gate(consistency_gate::GATE, &consistency_gate::why(&outcome));
+    if let Some(reason) = consistency_gate::decline_reason(&outcome) {
+        g.verdict = Verdict::Unknown(reason);
+    }
+    (g, Vec::new())
 }
 
 fn skipped_gate(name: &str, reason: &str) -> GateResult {

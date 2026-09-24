@@ -31,6 +31,7 @@ aprender-cgp	--lib	analysis::contracts
 aprender-compute-xtask	--bins
 aprender-contracts	--lib	binding
 aprender-contracts	--lib	build_helper
+aprender-contracts	--lib	lint::consistency_gate
 aprender-contracts	--lib	lint::diff
 aprender-contracts	--lib	lint::duplicate_stems
 aprender-contracts	--lib	lint::finding
@@ -47,6 +48,7 @@ aprender-contracts	--lib	ontology::extract::lean
 aprender-contracts	--lib	ontology::extract::pv_contract
 aprender-contracts	--lib	ontology::sigma
 aprender-contracts	--lib	ontology::w3c
+aprender-contracts	--lib	ontology::witness
 aprender-contracts	--lib	pipeline
 aprender-contracts	--lib	query
 aprender-contracts	--lib	query::index
@@ -70,6 +72,7 @@ aprender-contracts-cli	--test	ont4b2_code_lean_w3c
 aprender-contracts-cli	--test	ont4b_shapes_gate
 aprender-contracts-cli	--test	ont4c1_model_receipts
 aprender-contracts-cli	--test	ont4c3_parity_receipts
+aprender-contracts-cli	--test	ont5_consistency_gate
 aprender-contracts-cli	--test	ont6_lint_verdict
 aprender-contracts-cli	--test	ont6b_kind_default
 aprender-contracts-cli	--test	ont_entity_properties

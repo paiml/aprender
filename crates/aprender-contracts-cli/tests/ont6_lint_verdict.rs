@@ -278,6 +278,8 @@ fn json_report_carries_the_lattice() {
             serde_json::Value::String("sigma".into()),
             serde_json::Value::String("relations".into()),
             serde_json::Value::String("shapes".into()),
+            // ONT-5 (gate 17) likewise: computed everywhere, armed by nobody yet.
+            serde_json::Value::String("ont-consistency".into()),
         ]),
         "{}",
         show(&r)
