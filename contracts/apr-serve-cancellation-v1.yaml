@@ -204,18 +204,21 @@ falsification_tests:
 - id: FALSIFY-SERVE-CANCEL-009
   name: q4k_scheduler_decode_stops_at_the_cancel_point_not_max_tokens
   prediction: 'A Q4K request (Session over AprQ4kForward, q4k_generate_config) with
-    max_tokens=64 and CancelToken::with_budget(8) emits 8 tokens, performs exactly 8
-    decode forward passes and polls 9 times; the same call with CancelToken::never()
-    emits 64 tokens over 63 decode forward passes at contiguous positions, and the
-    cancelled output is a prefix of it. (Pre-#4269-M2b q4k_decode emitted 9: it
-    returned the prefill token unpolled.)'
+    max_tokens=64 and CancelToken::with_budget(8) emits 8 tokens, performs exactly 7
+    decode forward passes (emitted - 1: the first token is the prefill''s, and no
+    forward runs after the poll that cancelled) and polls 9 times; the same call with
+    CancelToken::never() emits 64 tokens over 63 decode forward passes at contiguous
+    positions, and the cancelled output is a prefix of it. (Pre-#4269-M2b q4k_decode
+    emitted 9: it returned the prefill token unpolled. #4269 M2b to #4325 performed 8:
+    the forward after the 8th token was computed and thrown away.)'
   test_harness: cargo test -p aprender-serve --lib q4k_scheduler_decode_stops_at_the_cancel_point_not_max_tokens
   expected_output: 'test result: ok'
   if_fails: 'PRE-FIX (aprender#2465(1)): AprQ4kRequest had no cancel field and the Q4K
     decode loop''s only exit was EOS, so /v1/chat/completions, /v1/completions,
     /generate, /api/chat and /api/generate all ran the GPU to max_tokens for a client
     that had hung up. Mutation-verified (#4269 M2b) by deleting the session''s poll:
-    emitted 64 tokens where 8 were required.'
+    emitted 64 tokens where 8 were required. #4325: moving the session''s decode
+    forward back after the emit (before the next poll) performs 8 where 7 are required.'
 - id: FALSIFY-SERVE-CANCEL-010
   name: q4k_scheduler_decode_cancelled_before_start_does_no_forward_passes
   prediction: 'A Q4K request (Session over AprQ4kForward) with an already-cancelled
