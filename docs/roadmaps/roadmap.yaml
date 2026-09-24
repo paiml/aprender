@@ -18211,6 +18211,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Cop rows (aprender-cf, 2026-09-23/24): (1) build.rs reads the sha1 from .cargo_vcs_info.json with a must-RED fixture; scope widened after aprender-70 found the release binaries print +no-git too: cover both surfaces, each with its own must-RED, and keep any binary-release.yml edit a separate commit. ROOT CAUSE (b), measured: git inside rust:1.93.0-bookworm running as root refuses the runner-owned checkout (fatal: detected dubious ownership); main build.rs printed v0.69.1+no-git there, this one prints the HEAD. The retry marks ONLY the enclosing checkout safe.directory through a private GIT_CONFIG_GLOBAL under OUT_DIR (-c safe.directory is ignored before git 2.39, measured on 2.34.1), so NO workflow edit is needed. Tests: crates/aprender-build-sha/src/emit_tests.rs (8 rows, 3 plants; moved from apr-cli when the resolution became shared, 4219), run by workspace-test. Also Cargo.lock chacha20 0.10.0 (yanked) -> 0.10.2, lock-only.'
+- id: GH-4162
+  github_issue: 4162
+  item_type: task
+  kind: code
+  title: 'P0: measured token usage for the fleet -- Claude Code + agy, by project / model / lane / hour, with the top levers'
+  status: inprogress
+  priority: medium
+  assigned_to: pvl-b
+  created: 2026-09-24T06:55:50.906231018+00:00
+  updated: 2026-09-24T20:20:00+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  notes: null
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
