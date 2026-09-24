@@ -1,0 +1,6 @@
+- module: ProvableContracts.C
+  ticket: "#1"
+  reason: fixture
+- module: ProvableContracts.B
+  ticket: "#1"
+  reason: fixture

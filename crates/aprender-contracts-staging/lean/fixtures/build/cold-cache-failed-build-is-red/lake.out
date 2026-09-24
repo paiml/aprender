@@ -1,0 +1,4 @@
+✔ [120/16435] Built Mathlib.Algebra.Group.Defs (41s)
+✖ [2400/16435] Building ProvableContracts.Theorems.Foo
+error: ProvableContracts/Theorems/Foo.lean:3:0: unknown identifier 'bar'
+error: build failed

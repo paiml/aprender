@@ -84,6 +84,11 @@ pub enum Commands {
         /// Path to the new contract YAML file
         new: PathBuf,
     },
+    /// What the Lean proofs rest on: axiom subset pins and the compiler-escape allowlist (PVL-001 EV-6a, #4139)
+    Discharge {
+        #[command(subcommand)]
+        action: DischargeAction,
+    },
     /// Census the contract corpus: one cardinality, by_anchoring, by_entity_type (ONT-001 ONT-1)
     Census {
         /// Directory containing contract YAML files
@@ -472,6 +477,58 @@ pub enum Commands {
         contract_dir: PathBuf,
         #[arg(long)]
         dry_run: bool,
+    },
+}
+
+/// `pv discharge` actions (PVL-001 EV-6a, #4139).
+#[derive(Subcommand, Clone, Debug)]
+pub enum DischargeAction {
+    /// Generate `<lean-dir>/Axioms.lean`: a subset axiom pin per contract-bound theorem in the root's import cone
+    GenAxioms {
+        /// The Lean dir (holds ProvableContracts.lean)
+        lean_dir: PathBuf,
+        /// Directory of the contracts whose `lean_theorem:` references bind the roots
+        #[arg(long, default_value = "contracts")]
+        contracts: PathBuf,
+        /// Do not write: rc 1 when the tracked Axioms.lean differs from its regeneration
+        #[arg(long)]
+        check: bool,
+    },
+    /// Judge the tree: escapes vs escape-allowlist.yaml, exact-name roots, the label ratchet, Axioms.lean
+    /// freshness, then `lake env lean Axioms.lean` (after `build.sh`) unless `--no-lake`
+    Check {
+        lean_dir: PathBuf,
+        #[arg(long, default_value = "contracts")]
+        contracts: PathBuf,
+        /// Skip the Lean elaboration of Axioms.lean
+        #[arg(long)]
+        no_lake: bool,
+        /// Allowlist entries still `confirmed_by: pending` are RED
+        #[arg(long)]
+        strict: bool,
+        /// Also re-check the BUILT tree's .olean files: `timeout <T> lake env leanchecker ProvableContracts`
+        /// (non-fresh; `--fresh`, which replays Mathlib, is the nightly's, PVL-F7). rc != 0 rejects; no
+        /// `leanchecker` in the toolchain declines (PVL-001 EV-6b, #4199)
+        #[arg(long, conflicts_with = "no_lake")]
+        leanchecker: bool,
+        /// `--leanchecker`'s wall-clock limit, seconds
+        #[arg(long, default_value_t = 3600, requires = "leanchecker")]
+        leanchecker_timeout: u64,
+        /// `--leanchecker` under `ulimit -v <KIB>` (virtual memory, KiB); unset = no limit
+        #[arg(long, requires = "leanchecker")]
+        leanchecker_ulimit_v: Option<u64>,
+        /// Also run the comparator: `lake env lean --run scripts/Comparator.lean Challenge/*.lean` on the BUILT
+        /// tree. Each EV-7a challenge must be closed by a sorry-free solution of the SAME statement (sha256 of
+        /// the canonical type). No Challenge file, or zero rows, declines (PVL-001 EV-7b, #4201)
+        #[arg(long, conflicts_with = "no_lake")]
+        comparator: bool,
+    },
+    /// `make label-ratchet`: rewrite <lean-dir>/unresolved-labels.json DOWNWARD (it never gains a label; a missing
+    /// file is seeded). `check` never writes it.
+    LabelRatchet {
+        lean_dir: PathBuf,
+        #[arg(long, default_value = "contracts")]
+        contracts: PathBuf,
     },
 }
 

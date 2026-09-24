@@ -38,6 +38,7 @@ pub mod codegen;
 pub mod coq_gen;
 pub mod coverage;
 pub mod diff;
+pub mod discharge;
 pub mod doc_integrity;
 pub mod error;
 pub mod explain;

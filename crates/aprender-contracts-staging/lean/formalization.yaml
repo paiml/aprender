@@ -1,0 +1,10 @@
+# PVL-001 formalization record for ProvableContracts. EV-6b (#4199) lands `scope` only; EV-8b adds the rest of the
+# mathlib-initiative v0.4 schema (main_results, status.axioms, capstones, sorry_count, review, automation). Until
+# then `pv discharge check` reads the default pinned axioms (propext, Classical.choice, Quot.sound).
+scope: >-
+  NOT covered by the discharge gate: (1) the Rust binding. A contract names a Lean theorem by a string in YAML,
+  and nothing checks that the Rust code implements the statement the theorem proves (PVL-F5). (2) The YAML parser
+  and the `--trusted`-class modes of pv. (3) Mathlib itself. `pv discharge check --leanchecker` is NON-FRESH: it runs
+  `lake env leanchecker ProvableContracts`, which replays the kernel over this tree's own .olean files and TRUSTS
+  the Mathlib .olean files they import. Replaying Mathlib (`leanchecker --fresh`) takes hours; it runs only in the
+  nightly (PVL-F7), never on the per-PR gate.

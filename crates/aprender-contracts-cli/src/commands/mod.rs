@@ -7,6 +7,7 @@ pub mod codegen;
 pub mod coq;
 pub mod coverage;
 pub mod diff;
+pub mod discharge;
 pub mod equations;
 pub mod explain;
 pub mod extract;
