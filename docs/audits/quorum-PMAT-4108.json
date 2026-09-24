@@ -1,47 +1,102 @@
 {
- "ticket": "PMAT-4108",
- "pr": 4121,
- "kind": "diff-review",
- "head_reviewed": "b75088a2e",
- "author": {
-  "model": "opus-5-5",
-  "family": "claude"
- },
- "shape": "2 agy non-Claude + 1 Claude Code haiku-4-5 (OPERATOR verbatim 2026-09-24: \"one must always be a CHEAP claude code...perhaps haiku\")",
- "lanes": [
-  {
-   "lane": 1,
-   "executor": "agy",
-   "model": "gemini-3.8-flash-high",
-   "family": "google",
-   "verdict": "PASS",
-   "findings": 11,
-   "counted": false,
-   "void_reason": "cop ruling 2026-09-24: the .git/config tracking stanza is a write BY the lane into shared .git, not foreign churn"
+  "ticket": "PMAT-4108",
+  "pr": 4121,
+  "kind": "diff-review",
+  "round": "ph10",
+  "head_reviewed": "b91760c5acf04d1a95ba72f4a5ddbfef45f4778d",
+  "base": "49fe19c28f1a3ef53f6b51096bafddc6609dc6c7",
+  "brief_sha256": "24f4dcc382ec70e5cd9d6816e4499b08a5f444de5b04e248d3d1c79913324c61",
+  "diff_sha256": "6e998d30945bf595482986eb04037eff0b2349600e556945783aff189552caa2",
+  "author": {
+    "model": "opus-5-5",
+    "family": "claude"
   },
-  {
-   "lane": 2,
-   "executor": "agy",
-   "model": "gemini-3.7-flash-high",
-   "family": "google",
-   "verdict": "PASS",
-   "findings": 10
-  },
-  {
-   "lane": 3,
-   "executor": "claude-code Agent (read-only)",
-   "model": "claude-haiku-4-5",
-   "family": "claude",
-   "verdict": "PASS",
-   "findings": 0,
-   "note": "ran scripts/tests/guard_tree_test.sh: 40/40; enumerated callers ci.yml:1096, Makefile:759, predict_merge.sh:157, check_guards_are_wired.sh:107"
+  "shape": "sonnet-5 + 1 agy gemini-3.1-pro-high + haiku-4-5 (OPERATOR verbatim 2026-09-24: \"we need to switch default to sonnet, agy, haiku\"); agy seat VOID -> fallback seat sonnet-5 (author is opus-5-5, so the opus seat is a second sonnet sample)",
+  "degraded": "same-family",
+  "lanes": [
+    {
+      "lane": 1,
+      "executor": "claude-code Agent (read-only)",
+      "model": "claude-sonnet-5",
+      "family": "claude",
+      "verdict": "PASS",
+      "counted": true,
+      "findings": "minors only: --list exits before the universe check (guard_tree.sh:202; --list is no verdict and no caller reads it); receipt md says case table 34/34 (stale; 45/45 at this head); cargo universe computed twice; row 36 (chmod 000) has no dedicated mutant"
+    },
+    {
+      "lane": 2,
+      "executor": "agy",
+      "model": "gemini-3.1-pro-high",
+      "family": "google",
+      "verdict": null,
+      "counted": false,
+      "void_reason": "agy-lane exit 3: shared .git/config and refs moved during the lane (other sessions' worktrees: refs/heads/fix/4175-*, feat/4189-*, ...); the lane also wrote test_grep*/ files into its clone (writes=false). Its evidence found no exit-0 path; not counted."
+    },
+    {
+      "lane": 3,
+      "executor": "claude-code Agent (read-only)",
+      "model": "claude-haiku-4-5",
+      "family": "claude",
+      "verdict": "PASS",
+      "counted": true,
+      "findings": "none"
+    },
+    {
+      "lane": 4,
+      "executor": "claude-code Agent (read-only)",
+      "model": "claude-sonnet-5",
+      "family": "claude",
+      "verdict": "PASS",
+      "counted": true,
+      "fallback_for": "lane 2",
+      "findings": "low: 4 new PERF002 hits (498, 525-527), not 1 as the receipt says, none in a loop, ungated; low: the partition check recomputes the listings instead of measuring $guards (theoretical); info: receipt md predates 9a56c6bef. Reproduced rows 34/35 by hand in a mktemp fixture; dry-run 107+34=67+21+40+13=141; wired self-test 11/11."
+    }
+  ],
+  "agreed": true,
+  "verdict": "3/3 counted PASS at b91760c5a (degraded: same-family)",
+  "known_limits": [
+    "row 36 (unreadable guard) has no dedicated mutant",
+    "guard_tree.sh --list answers before the universe check; --list is informational and no caller reads it",
+    "impl receipt md counts are stale (34/34 -> 45/45 at this head)"
+  ],
+  "prior_rounds": {
+    "earlier": "ph5: gemini-3.1-pro FAIL (|| exit 1 declined with measurement; --dry-run count check adopted as row 37), 3.8/3.7 PASS",
+    "ph9": "head 66c77945f, brief_sha256 072ce991, diff_sha256 fbbff109, shape sonnet-5 + 1 agy gemini-3.1-pro-high + haiku-4-5 (OPERATOR verbatim 2026-09-24: \"we need to switch default to sonnet, agy, haiku\"). sonnet-5 FAIL, measured: (a) --dry-run over an empty universe exits 0; (b) check_guards_are_wired.sh `|| out=''` reads a failed dry-run as nothing dispatched; (c, minor) rows 34b/36/37 had no mutant. haiku-4-5 PASS, no findings. gemini-3.1-pro-high (conv 7b2c6d0d) VOID: agy-lane exit 3 (shared refs/config moved; they belong to other sessions' worktrees, attributed by worktree ownership, which is not a clearance), and the lane WROTE 2 files into its writes=false clone (existing.sh, test_grep_fail.sh). Its claim that a short universe_for_subset listing is unguarded was taken as a finding anyway. All findings fixed in 9a56c6bef; the round is superseded and a fresh full round will run at the new head.",
+    "round_b75088a2e": {
+      "head_reviewed": "b75088a2e",
+      "shape": "2 agy non-Claude + 1 Claude Code haiku-4-5 (OPERATOR verbatim 2026-09-24: \"one must always be a CHEAP claude code...perhaps haiku\")",
+      "lanes": [
+        {
+          "lane": 1,
+          "executor": "agy",
+          "model": "gemini-3.8-flash-high",
+          "family": "google",
+          "verdict": "PASS",
+          "findings": 11,
+          "counted": false,
+          "void_reason": "cop ruling 2026-09-24: the .git/config tracking stanza is a write BY the lane into shared .git, not foreign churn"
+        },
+        {
+          "lane": 2,
+          "executor": "agy",
+          "model": "gemini-3.7-flash-high",
+          "family": "google",
+          "verdict": "PASS",
+          "findings": 10
+        },
+        {
+          "lane": 3,
+          "executor": "claude-code Agent (read-only)",
+          "model": "claude-haiku-4-5",
+          "family": "claude",
+          "verdict": "PASS",
+          "findings": 0,
+          "note": "ran scripts/tests/guard_tree_test.sh: 40/40; enumerated callers ci.yml:1096, Makefile:759, predict_merge.sh:157, check_guards_are_wired.sh:107"
+        }
+      ],
+      "agreed": false,
+      "verdict": "2/3 counted — NOT armable; superseded by a fresh full round (no composed receipts)",
+      "receipt_lint_note": "single haiku seat recorded by hand; cop overrides receipt-lint's refusal until tooling lands"
+    }
   }
- ],
- "agreed": false,
- "verdict": "2/3 counted — NOT armable; superseded by a fresh full round (no composed receipts)",
- "receipt_lint_note": "single haiku seat recorded by hand; cop overrides receipt-lint's refusal until tooling lands",
- "prior_rounds": {
-  "earlier": "ph5: gemini-3.1-pro FAIL (|| exit 1 declined with measurement; --dry-run count check adopted as row 37), 3.8/3.7 PASS",
-  "ph9": "head 66c77945f, brief_sha256 072ce991, diff_sha256 fbbff109, shape sonnet-5 + 1 agy gemini-3.1-pro-high + haiku-4-5 (OPERATOR verbatim 2026-09-24: \"we need to switch default to sonnet, agy, haiku\"). sonnet-5 FAIL, measured: (a) --dry-run over an empty universe exits 0; (b) check_guards_are_wired.sh `|| out=''` reads a failed dry-run as nothing dispatched; (c, minor) rows 34b/36/37 had no mutant. haiku-4-5 PASS, no findings. gemini-3.1-pro-high (conv 7b2c6d0d) VOID: agy-lane exit 3 (shared refs/config moved; they belong to other sessions' worktrees, attributed by worktree ownership, which is not a clearance), and the lane WROTE 2 files into its writes=false clone (existing.sh, test_grep_fail.sh). Its claim that a short universe_for_subset listing is unguarded was taken as a finding anyway. All findings fixed in 9a56c6bef; the round is superseded and a fresh full round will run at the new head."
- }
 }
