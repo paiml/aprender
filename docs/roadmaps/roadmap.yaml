@@ -21510,6 +21510,12 @@ roadmap:
   title: 'CRUX producer: per-verb prompt sets (incl. hard prompts) + code verb + hf/vllm quorum rows — prompt-certification half (aprender-dd)'
   status: in_progress
   priority: critical
+- id: PMAT-3837
+  github_issue: 3837
+  item_type: task
+  title: 'The --features cuda lint surface has never been gated: clippy -p apr-cli --lib --features cuda is RED'
+  status: in_progress
+  priority: medium
   assigned_to: aprender-dd
   created: 2026-09-23T00:00:00Z
   updated: 2026-09-23T00:00:00Z
@@ -21604,6 +21610,10 @@ roadmap:
   updated: 2026-09-24T00:32:40Z
   spec: null
   acceptance_criteria: []
+  acceptance_criteria:
+  - 'cargo clippy -p apr-cli --lib --features cuda -- -D warnings exits 0'
+  - 'a gate that runs in a workflow lints the cuda axis, with flags passed literally and a planted RED proving it'
+  - 'other feature axes enumerated; any excluded one is named with a ticket'
   phases: []
   subtasks: []
   estimated_effort: null
@@ -21730,6 +21740,20 @@ roadmap:
   updated: 2026-09-24T11:30:00Z
   spec: null
   acceptance_criteria: []
+- id: PMAT-4041
+  github_issue: 4041
+  item_type: task
+  title: 'apr-cli --no-default-features compiles and lints clean: gate the inference-only sites; add the axis to the feature-matrix lint'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-75
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo clippy -p apr-cli --lib --no-default-features -- -D warnings exits 0 (was 8 compile errors on main@49fe19c28)'
+  - 'supported, not dark: crates/apr-cli/Cargo.toml documents the minimal crates.io install; a gate runs the axis so it cannot rot again'
+  - 'the other single-feature axes are measured and each is green or ticketed'
   phases: []
   subtasks: []
   estimated_effort: null
@@ -21772,3 +21796,4 @@ roadmap:
   notes: 'cuda_batch_scheduler generate_single_request (the m==1 fast path, shared with the iteration scheduler) runs one Session::generate over BorrowedCudaForward, a dense CUDA ArchForward over the scheduler''s borrowed model built on aprender-49''s cuda_reset/cuda_forward/cuda_forward_greedy. Stop tokens are filtered in the callback so none is sent (pre-port semantics). The m>1 batched path (batched_setup_and_prefill/batched_decode_step) is multi-slot and stays as is. Known delta: the per-request prefix cache (establish_prompt_kv/populate_prefix_cache) is not used on the ported path.'
   notes: 'Option (a) from the ticket: the two header slices, MANIFEST.json and generate.py move from tests/fixtures/gguf-header-slices/ to src/fixtures/gguf-header-slices/ (the src/fixtures/chat_template_3990/ pattern), so they ship and the test runs for crates.io users. MEASURED: in tree, cargo test -p aprender-serve --lib tokenizer_tests_unk_3609 gives 9/9 pass. Tarball: the commit cherry-picked onto v0.69.1, packaged, and swapped into aprender-3a''s #4114 tarball workspace; cargo test -p aprender-serve --lib --no-run has 0 errors at tokenizer_tests_unk_3609.rs (it was 2). The one remaining error in that target is contracts/kernel-fusion-v1.yaml in fusion_call_site_guard_3985.rs, which is #4048 and out of scope. .crate is 8,224,489 bytes (under the 10 MB crates.io limit).'
   notes: 'Ported from c8ce988c3 (perf/4215, based on 0.69.3) onto main; prerequisite for #4215(b), greedy GPU argmax.'
+  notes: null
