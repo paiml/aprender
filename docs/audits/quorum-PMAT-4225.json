@@ -1,0 +1,168 @@
+{
+  "ticket": "PMAT-4225",
+  "base": "origin/feat/4209-greedy-teardown",
+  "base_resolved": "origin/feat/4209-greedy-teardown",
+  "base_note": "no origin/origin/feat/4209-greedy-teardown exists; judged against the local ref",
+  "head": "cd0f0af835300998217790a915af04770580973d",
+  "diff_sha256": "8654172a0e8e60b96a2ab8e1e1020cba7f6780286eca15e94c6e2b7bb5c5dad6",
+  "width": 3,
+  "executor": "claude-sequential (operator 429 fallback)",
+  "prompt_mode": "inline",
+  "prompt_bytes": 3287,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "opus-seat (author is claude-opus-5-5: second sonnet-5 sample, per operator fallback)",
+      "verdict": "PASS",
+      "brief_sha256": "c641fc3178f5626418053bcc4ea78506b50e386c9c91b75c2e2f3119f89cb42a",
+      "summary": "Diff is purely additive: two must-match rows (kill -TERM, kill -9) and the updated ok label. Ran check_crux_greedy_rows.sh at cd0f0af83: 17 ok, 0 broke. A constructed mutant regex that drops flag forms turns the new rows RED, so they catch a flag-dropping regression.",
+      "findings": [],
+      "executor": "agent aaa5270566ac39b38"
+    },
+    {
+      "lane": 2,
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "sonnet",
+      "verdict": "PASS",
+      "brief_sha256": "c641fc3178f5626418053bcc4ea78506b50e386c9c91b75c2e2f3119f89cb42a",
+      "summary": "Diff matches the brief exactly. Verified the two new must-match lines match on the literal 'kill' word under the row-6c regex; no must-not-match row weakened; roadmap entry consistent with #4225.",
+      "findings": [],
+      "executor": "agent ac2f4b4ac7cc977ab"
+    },
+    {
+      "lane": 3,
+      "model": "claude-haiku-4-5-20251001",
+      "model_measured": "claude-haiku-4-5-20251001",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "haiku",
+      "verdict": "PASS",
+      "brief_sha256": "c641fc3178f5626418053bcc4ea78506b50e386c9c91b75c2e2f3119f89cb42a",
+      "summary": "Adds kill -TERM and kill -9 as explicit must-match cases in row 6c, updates the count label, and adds a roadmap entry whose acceptance criterion matches the ticket. Script passes all 17 assertions.",
+      "findings": [],
+      "executor": "agent a298b9e671288e1b2"
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "agy pre-check: gemini, openai and claude families all 429 (see gemini_429.record); lanes run as Claude subagents per the operator fallback rule, degraded: same-family"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config \u2014 the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h38m0s."
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 5): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 73h26m47s."
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 73h26m15s."
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": null,
+    "output": "not run: receipt-lint refuses same-family lanes by design; operator fallback rule applies"
+  },
+  "brief_sha256": "c641fc3178f5626418053bcc4ea78506b50e386c9c91b75c2e2f3119f89cb42a",
+  "brief_bytes": 3287,
+  "brief_path": "docs/audits/quorum-PMAT-4225.brief.md",
+  "degraded": "same-family (all 3 lanes)",
+  "operator_rule": "OPERATOR, verbatim via aprender-cf 2026-09-24: 'if gemini returns 429 I want fallback sonnet + haiku + opus5.5'. The author is claude-opus-5-5, so the opus seat is a second, independent claude-sonnet-5 sample. degraded: same-family.",
+  "gemini_429": {
+    "record": "docs/audits/quorum-PMAT-4225.agy.json",
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h38m0s."
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 5): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 73h26m47s."
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 73h26m15s."
+      }
+    ]
+  }
+}

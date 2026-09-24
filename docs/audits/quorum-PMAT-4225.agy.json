@@ -1,0 +1,148 @@
+{
+  "ticket": "PMAT-4225",
+  "base": "origin/feat/4209-greedy-teardown",
+  "base_resolved": "origin/feat/4209-greedy-teardown",
+  "base_note": "no origin/origin/feat/4209-greedy-teardown exists; judged against the local ref",
+  "head": "cd0f0af835300998217790a915af04770580973d",
+  "diff_sha256": "8654172a0e8e60b96a2ab8e1e1020cba7f6780286eca15e94c6e2b7bb5c5dad6",
+  "width": 1,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 3287,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "MISSING",
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": [],
+      "raw_bytes": 0,
+      "err_bytes": 0,
+      "model": "gemini-3.1-pro-high",
+      "model_measured": null,
+      "model_source": "declared",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": null,
+        "exhausted": true,
+        "attempts": [],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini quota-exhausted (429, first seen on the pre-check probe of gemini-3.1-pro-high)"
+          },
+          {
+            "model": "gpt-oss-120b-medium",
+            "why": "family openai quota-exhausted (429, first seen on the pre-check probe of gpt-oss-120b-medium)"
+          },
+          {
+            "model": "qwen3.5",
+            "why": "not-run: no quorum.local_lane in the config — the aprender lane has no model to load"
+          },
+          {
+            "model": "claude-opus-4-6-thinking",
+            "why": "family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)"
+          },
+          {
+            "model": "claude-sonnet-4-6",
+            "why": "family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)"
+          }
+        ]
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 1,
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": []
+    }
+  ],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: lane file missing",
+    "lane 1: fallback chain exhausted — gemini-3.1-pro-high (skipped: family gemini quota-exhausted (429, first seen on the pre-check probe of gemini-3.1-pro-high)); gpt-oss-120b-medium (skipped: family openai quota-exhausted (429, first seen on the pre-check probe of gpt-oss-120b-medium)); qwen3.5 (skipped: not-run: no quorum.local_lane in the config — the aprender lane has no model to load); claude-opus-4-6-thinking (skipped: family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)); claude-sonnet-4-6 (skipped: family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)). NO-VERDICT, never a pass (PMAT-321)",
+    "receipt-lint refused the artifact (PMAT-124/#128): FAIL quorum artifact: lane 1 model 'gemini-3.1-pro-high' is DECLARED, never measured (model_measured is null or empty: no lane log line) — a declared family is not a proof of independence (#128)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h38m0s."
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 5): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 73h26m47s."
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 73h26m15s."
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": false,
+    "output": "FAIL quorum artifact: lane 1 model 'gemini-3.1-pro-high' is DECLARED, never measured (model_measured is null or empty: no lane log line) — a declared family is not a proof of independence (#128)"
+  }
+}
