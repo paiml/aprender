@@ -1633,6 +1633,10 @@ pub use prefill::{
     UNIFIED_PREFILL_CHUNK_ROWS,
 };
 
+/// #4234: one decode step for several sequences — [`Qwen35CudaModel::forward_batch`].
+#[path = "forward_qwen35_cuda_batch.rs"]
+mod batch;
+
 /// Per-layer CPU parity on the real Qwen3.5-0.8B file.
 #[cfg(test)]
 #[path = "forward_qwen35_cuda_tests.rs"]
