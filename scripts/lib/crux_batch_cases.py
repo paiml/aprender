@@ -165,7 +165,7 @@ def _case_not_prefilled(engine):
     return True if (doc["reported"]["prompt_opens_think"] is False and doc["raw_text"] == doc["text"]) else doc
 
 
-def _cases(serve_interface):
+def _cases():
     """(name, case(engine)) in the order the table has always run them."""
     return [("a prompt that OPENED the think block (#3990): the closed block splits into answer + reasoning",
              lambda e: _case_prefilled(e, "add them</think>4", "4", "add them")),
@@ -198,7 +198,7 @@ def run(engine, serve_interface: str) -> int:
     "transformers serve")."""
     engine.serve_session = fake_serve_for(serve_interface)
     failed = 0
-    for name, fn in _cases(serve_interface):
+    for name, fn in _cases():
         ok, detail = _run_case(engine, fn)
         print(f"{'ok  ' if ok else 'FAIL'} [batch] {name}" + ("" if ok else f"\n     got: {str(detail)[:300]}"))
         failed += not ok

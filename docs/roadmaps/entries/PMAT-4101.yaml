@@ -2,7 +2,7 @@
   github_issue: 4101
   item_type: task
   title: CB-200 back under its baseline, measured on every PR (#4101)
-  status: planned
+  status: in_progress
   priority: high
   assigned_to: null
   created: 2026-09-24T00:58:10Z

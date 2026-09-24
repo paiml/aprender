@@ -246,7 +246,7 @@ def _held_shas(good, rung_by_file):
 
 
 def _owed_rungs(good, rung_by_file, inv_backends):
-    """Yield (host, file, sha, backends) for every present rung a required host owes, in report order."""
+    """Yield (host, rung row, file, sha, backends) for every present rung a required host owes, in report order."""
     for host in sorted(good):
         R = good[host]
         inv_sha = {i.get("file"): i.get("sha256") for i in R.get("inventory") or [] if isinstance(i, dict)}
