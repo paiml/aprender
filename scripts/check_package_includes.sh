@@ -310,7 +310,7 @@ if [ "${1:-}" = "--self-test" ]; then
     printf '%b' "$2" > "$1/src/lib.rs"
   }
   tb_run() { # root -> output; rc in tb_rc
-    tb_out="$(TARBALL_BUILD_TARGET_DIR="$TD/tb-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$1" 2>&1)"; tb_rc=$?
+    tb_out="$(TARBALL_BUILD_MIN_FREE_GB=1 TARBALL_BUILD_TARGET_DIR="$TD/tb-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$1" 2>&1)"; tb_rc=$?
   }
   tb_fixture "$TD/tb-clean" 'pub fn f() {}\n#[cfg(test)]\nmod t { const B: &[u8] = include_bytes!("in_src.bin"); #[test] fn b() { assert!(!B.is_empty()); } }\n'
   tb_run "$TD/tb-clean"
@@ -360,7 +360,7 @@ if [ "${1:-}" = "--self-test" ]; then
   sed -i 's/^version = "0.1.0"$/version = "0.1.0-rc.1"/' "$TD/tb-rc/Cargo.toml"
   ( cd "$TD/tb-rc" && CARGO_TARGET_DIR="$TD/tb-rc-pkg" cargo package --no-verify --allow-dirty > /dev/null 2>&1 )
   rc_crate="$TD/tb-rc-pkg/package/pti-fixture-0.1.0-rc.1.crate"
-  tb_out="$(TARBALL_BUILD_TARGET_DIR="$TD/tb-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$TD/tb-rc" --crate-file "$rc_crate" 2>&1)"; tb_rc=$?
+  tb_out="$(TARBALL_BUILD_MIN_FREE_GB=1 TARBALL_BUILD_TARGET_DIR="$TD/tb-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$TD/tb-rc" --crate-file "$rc_crate" 2>&1)"; tb_rc=$?
   if [ -f "$rc_crate" ] && [ "$tb_rc" = 0 ] && grep -q '^SUBSTITUTED pti-fixture (pti-fixture-0.1.0-rc.1)' <<< "$tb_out"; then
     printf 'ok    row 18 a prerelease --crate-file substitutes by manifest name\n'
   else
@@ -377,6 +377,17 @@ if [ "${1:-}" = "--self-test" ]; then
     printf 'ok    row 19 a dropped integration target and a run-time skip site are both counted, never silent\n'
   else
     printf 'FAIL  row 19 shrink report: rc=%s\n%s\n' "$tb_rc" "$tb_out"; fails=1
+  fi
+  # Row 20 (cop, 2026-09-24): a gate that fills its disk is its own outage. Below the free-space
+  # floor it refuses (2) before writing, and its work dir is BESIDE the target, never in /tmp.
+  fl_out="$(TARBALL_BUILD_MIN_FREE_GB=999999999 TARBALL_BUILD_TARGET_DIR="$TD/tb-floor" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$TD/tb-clean" 2>&1)"; fl_rc=$?
+  left="$(find "$TD" -maxdepth 1 -name 'tb-floor.work.*' | grep -c . || true)"
+  tb_run "$TD/tb-clean"
+  if [ "$fl_rc" = 2 ] && grep -q 'below the 999999999G floor' <<< "$fl_out" && [ "$left" = 0 ] \
+     && grep -qF "work dir: $TD/tb-target.work." <<< "$tb_out"; then
+    printf 'ok    row 20 below the free-space floor the gate refuses (2) before writing; the work dir sits beside the target\n'
+  else
+    printf 'FAIL  row 20 floor: rc=%s left=%s\n%s\n' "$fl_rc" "$left" "$fl_out"; fails=1
   fi
   [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
   printf '\nSELF-TEST PASSED\n'
