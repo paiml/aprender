@@ -1,0 +1,161 @@
+{
+  "ticket": "PMAT-4036",
+  "base": "origin/chore/0.69.1-merge-back",
+  "base_resolved": "origin/chore/0.69.1-merge-back",
+  "base_note": "no origin/origin/chore/0.69.1-merge-back exists; judged against the local ref",
+  "head": "33ebdff1ae22b71d6117959c9421c2a69422c5b0",
+  "diff_sha256": "23587b83ea839ac71f9d775bd64511b5505492e5e72f614ddeecb17d6e7ecd01",
+  "width": 3,
+  "executor": "mixed: agy x2 + claude-code haiku x1",
+  "prompt_mode": "file",
+  "prompt_bytes": 1392801,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "REVIEW_VERDICT=PASS | The PR implements the caching correctly, satisfying all PMAT-4036 constraints: (1) `crux_ref_cache.py` uses a key that includes model sha256, prompt sha256, engine, verb, and sampling parameters, excluding host. (2) Falsifiers in `scripts/check_crux_ref_cache.sh` enforce that stale/corrupted entries turn the lane RED. (3) `llama.cpp` is explicitly refused for caching as requested. (4) Engines are loaded once per mode and results are correctly parsed. (5) The receipts confirm execution correctness and exact match. Note: The witness file `paiml-lane-witness` was not found in the git-dir (evaluated to /home/noah/src/aprender/.git/worktrees/a83-4036q), so a placeholder of zeros is provided.",
+      "findings": [],
+      "raw_bytes": 2810,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "REVIEW_VERDICT=PASS | Refutation audit for PMAT-4036 (CRUX reference cache + source-weight batching):\n\n1. Acceptance Criteria Verified:\n   - Keying (AC1): Entry key in `scripts/lib/crux_ref_cache.py` (L151-L165) binds model_sha256, thinking mode, backend, engine, verb, prompt_id, prompt_sha256, sampling (temperature, seed, context, max_tokens), oracle package versions, and harness sha256 (including `crux_ref_cache.py` itself). Host is explicitly excluded from the key (origin only).\n   - Invalidation & Stale Defenses (AC2): `why_stale` (L215-L263) verifies content digest seal covering whole entry (including origin), key match, row identity and count (exactly 1 row per entry), artifact pointer format (`refcache:<basename>`, no traversal `../`), bidirectional row<->files{} mapping (no unreferenced files, no unmapped pointers), artifact field shapes (`stdout`/`stderr` must be null or `refcache:` pointer), and artifact sha256 integrity. Stale entries emit refused rows with STALE reason (rc 11), turning cells RED without engine calls.\n   - Pure Comparators Only (AC3): Only `hf`, `vllm`, and `llamafile` are cached (`CACHED_ENGINES`). `llama.cpp` is explicitly refused by name (`NOT_CACHEABLE`, L58-60) because its server renders apr serve raw-prompt routes.\n   - Engine Batching (AC4): Source-weight engines (`hf`, `vllm`) supporting `gen-batch --help` load once per mode across two interface cells (inproc and serve), verified by `scripts/check_crux_plugin_batch.sh`. Output rows are identical row-for-row to unbatched baseline (`identical_ignoring_batch_id: true` in `reference-texts.json`).\n   - Measurements (AC5): Baseline cold 1037 s (17.3 min) -> batched 306 s (5.1 min) -> final warm 130 s (2.2 min) / head warm 158 s (2.6 min). All 6 green legs verified cell-for-cell against baseline (32/32 GREEN, matching keys and verdicts). Warm leg RED failure at 1b483fff6 confirmed 14/32 RED due to missing renderer when llama.cpp was erroneously cached.\n\n2. Test Suites Executed and Measured:\n   - `scripts/check_crux_ref_cache.sh`: 17 ok, 0 broke (17/17).\n   - `scripts/check_crux_plugin_batch.sh`: 6 ok, 0 broke (6/6).\n   - `scripts/check_crux_inference_judge.sh`: 153/153 passed (all mutants killed).\n   - `scripts/check_crux_greedy_rows.sh`: 12 ok, 0 broke (12/12).\n   - `scripts/check_crux_ollama_in_lock.sh`: 6 ok, 0 broke (6/6).\n   - `scripts/check_crux_serve_code.sh`: 66 row(s), 0 failed (66/66).\n   - `scripts/check_crux_oracles.sh`: PASS.\n\nNo gates were weakened, no receipt claims were ungrounded, and no refuting defects were found. Note: `paiml-lane-witness` is not present in worktree git-dir, providing placeholder zero-filled token.",
+      "findings": [],
+      "raw_bytes": 12078,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "model": "claude-haiku-4-5-20251001",
+      "model_measured": "claude-haiku-4-5-20251001",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "cheap-claude-seat",
+      "verdict": "PASS",
+      "summary": "Implementation meets all 5 acceptance criteria. Hermetic tests (23/23) and real measurements (6 legs, 32/32 GREEN each) all pass. Exit contract correctly declines on corruption (no silent recompute). Cache key excludes host, includes oracle/harness versions. Batching verified to preserve rows identically. Threat model (corruption/partial edits) properly stated as out-of-scope for deliberate forgery.",
+      "findings": [],
+      "executor": "claude-code Agent lane (agent ac858d80d1369911b), brief docs/audits/quorum-PMAT-4036.prompt.md for this head"
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 2: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 3 is a Claude Code haiku-4-5 seat run by hand (not quorum-review.sh); receipt-lint refuses same-family lanes \u2014 cop override per operator rule"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config \u2014 the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=2 author=claude-opus-5-5/claude"
+  },
+  "operator_rule": "Every quorum = 2 agy non-Claude lanes + 1 Claude Code lane on claude-haiku-4-5 (OPERATOR, verbatim via aprender-cf, 2026-09-24: 'Since we are running out of agy credits too often over 5 hour window we need to not allow three agy quorum workers, one must always be a CHEAP claude code...perhaps haiku'). Lane 3 is same-family as the author (claude-opus-5-5): marked degraded: same-family per the operator's fallback rule; the cop overrides the lint refusal for the single haiku seat.",
+  "degraded": "same-family (lane 3 only)"
+}
