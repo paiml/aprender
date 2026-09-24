@@ -47,9 +47,27 @@ fn repo_contracts() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts")
 }
 
+struct Corpus {
+    dir: PathBuf,
+    _root: tempfile::TempDir,
+}
+
+impl Corpus {
+    fn path(&self) -> &Path {
+        &self.dir
+    }
+}
+
 /// A corpus directory holding the PVL-1 control contract, and optionally a `lint-baseline.json`.
-fn corpus(baseline: Option<&str>) -> tempfile::TempDir {
-    let d = tempfile::tempdir().expect("corpus dir is creatable");
+/// Nested one level inside a private tempdir: `pv lint` takes the dir's PARENT as the
+/// project root, and a bare tempdir's parent is the shared `/tmp` (#4207).
+fn corpus(baseline: Option<&str>) -> Corpus {
+    let root = tempfile::tempdir().expect("corpus dir is creatable");
+    let d = Corpus {
+        dir: root.path().join("contracts"),
+        _root: root,
+    };
+    std::fs::create_dir(d.path()).expect("nested corpus dir is creatable");
     std::fs::copy(
         repo_contracts().join("softmax-kernel-v1.yaml"),
         d.path().join("softmax-kernel-v1.yaml"),
