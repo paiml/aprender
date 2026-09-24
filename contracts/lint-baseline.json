@@ -9,15 +9,15 @@
   "underived_proved_claims": 95,
   "ont": {
     "consumer_present": true,
-    "contracts_total": 1889,
-    "entity_types_registered": 15,
-    "extractors_implemented": 8,
-    "contracts_anchored": 8,
-    "contracts_shaped": 7,
+    "contracts_total": 1891,
+    "entity_types_registered": 16,
+    "extractors_implemented": 9,
+    "contracts_anchored": 9,
+    "contracts_shaped": 8,
     "unanchored_but_bindable": 297,
     "formal_prose": 1464,
     "legacy_unresolved_depends_on": 8,
     "liskov_prose": 0,
-    "shapes_unarmed": 15
+    "shapes_unarmed": 17
   }
 }
