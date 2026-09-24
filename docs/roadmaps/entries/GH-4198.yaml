@@ -1,7 +1,7 @@
 - id: GH-4198
   github_issue: 4198
   item_type: task
-  title: 'PVL-001 EV-10: pv obligations [ROOT] --gate (commands/obligations.rs, cli/lib/mod wiring, ObligationsRejected) byte-identical to pv-obligation-gate.py; 11 golden tests, pmat+broken+edge fixtures, ci fragment 460. NO ci.yml, Makefile or pmat-side change'
+  title: 'PVL-001 EV-10: pv obligations [ROOT] --gate (commands/obligations.rs, cli/lib/mod wiring) = pv-obligation-gate.py; 11 golden tests, fixtures, ci fragment 460; tree_reader registry +2, surface_audit pv cites +11 lines. NO ci.yml/Makefile/pmat edit'
   status: inprogress
   priority: medium
   assigned_to: null

@@ -59,6 +59,7 @@ aprender-contracts	--test	kani_harness_generation
 aprender-contracts	--test	probar_test_generation
 aprender-contracts	--test	validate_contracts
 aprender-contracts-cli	--lib	commands::certify
+aprender-contracts-cli	--lib	commands::obligations
 aprender-contracts-cli	--lib	commands::verify_pipeline
 aprender-contracts-cli	--lib	contract_walk
 aprender-contracts-cli	--test	cli_integration
@@ -76,6 +77,7 @@ aprender-contracts-cli	--test	ont_extract_json
 aprender-contracts-cli	--test	ont_refusal_receipt
 aprender-contracts-cli	--test	ont_release_readiness
 aprender-contracts-cli	--test	pv_surface_gate
+aprender-contracts-cli	--test	pvl_obligations_golden
 aprender-contracts-cli	--test	pvl_zero_contracts
 aprender-core	--lib	format::metadata_bounds_contract_falsify
 aprender-core	--lib	format::model_family_loader
