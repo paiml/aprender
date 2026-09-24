@@ -20610,3 +20610,24 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4160
+  github_issue: 4160
+  item_type: task
+  title: 'pv-contract extractor: a class per entity type (ont:entity/<type>), so a SHACL shape can target one entity type (apex EV-19b)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-75
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'a contract with entity.type T is also typed rdf:type <ONT_BASE>entity/T, and `targetClass: entity:T` expands to exactly that IRI (pinned by a test)'
+  - 'accept-level (pv lint --gate shapes on a fixture): two entity types, two closed shapes scoped by entity class, Pass with no cross-firing'
+  - 'must-RED: the same two shapes scoped by ont:Contract cross-fire (the gap, measured); a planted wrong-type contract fails its type''s shape'
+  - 'apex: the study shape over all apex contracts passes and does not fire on the 18 claim contracts (acceptance run coordinated with apex-4c)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

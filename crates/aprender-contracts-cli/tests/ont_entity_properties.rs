@@ -178,3 +178,93 @@ fn the_properties_are_namespaced_by_the_entity_type_and_land_in_the_extraction()
     let _ = std::fs::remove_file(dir.join("contracts/contracts.nt"));
     let _ = std::fs::remove_file(dir.join("contracts/shapes.ttl"));
 }
+
+// #4160 (apex EV-19b) — a shape can target ONE entity type. `ont:Contract` is every contract, so apex's closed
+// study shape failed its 18 claim contracts and the claim shape failed the study. The pv-contract extractor now
+// also types each contract `entity:<type>`, and `targetClass: entity:study` selects the study contracts only.
+// DISCRIMINATION: `entity-types-scoped/` must PASS with exactly 3 focus nodes (a build without the entity class
+// has 0; `ont:Contract` would give 4, the shape-only contract included); `entity-types-unscoped/` — the same two
+// shapes on `ont:Contract` — must FAIL on the cross-firing, which is the gap measured; `entity-types-wrong-type/`
+// adds a contract typed `study` that carries a claim's `row`, which the study shape must reject.
+
+#[test]
+fn two_closed_shapes_scoped_by_entity_type_pass_with_no_cross_firing() {
+    let r = gate("entity-types-scoped", "shapes");
+    assert_eq!(r.code, 0, "{}", show(&r));
+    let v = json_of(&r);
+    assert_eq!(v["verdict"], "Pass", "{}", show(&r));
+    assert_eq!(v["violations"], 0, "{}", show(&r));
+    // study-shape-v1 (study) + PMAT-001, PMAT-002 (claim). claim-shape-v1 has no entity type: a focus of neither.
+    assert_eq!(v["focus_nodes_n"], 3, "{}", show(&r));
+}
+
+#[test]
+fn must_red_the_same_shapes_on_ont_contract_cross_fire() {
+    let r = gate("entity-types-unscoped", "shapes");
+    assert_eq!(r.code, 1, "{}", show(&r));
+    let v = json_of(&r);
+    assert_eq!(v["verdict"], "Fail", "{}", show(&r));
+    let msgs = messages(&v);
+    assert!(
+        msgs.iter().any(|m| m.contains("contract/PMAT-001")
+            && m.contains("study-shape-v1")
+            && m.contains("(closed)")
+            && m.contains("ont:claim/row")),
+        "the study shape fires on a claim contract: {msgs:?}"
+    );
+    assert!(
+        msgs.iter()
+            .any(|m| m.contains("contract/study-shape-v1") && m.contains("claim-shape-v1")),
+        "the claim shape fires on the study: {msgs:?}"
+    );
+}
+
+#[test]
+fn a_contract_of_the_wrong_type_fails_its_types_shape_and_only_that_one() {
+    let r = gate("entity-types-wrong-type", "shapes");
+    assert_eq!(r.code, 1, "{}", show(&r));
+    let v = json_of(&r);
+    assert_eq!(v["verdict"], "Fail", "{}", show(&r));
+    let msgs = messages(&v);
+    let fired: Vec<&String> = msgs.iter().filter(|m| m.contains("violates")).collect();
+    assert!(
+        fired.iter().any(|m| m.contains("contract/PMAT-003")
+            && m.contains("(closed)")
+            && m.contains("ont:study/row")),
+        // properties are namespaced by the contract's OWN type, so a claim's `row` on a study is `study:row`
+        "the study shape rejects a study-typed contract carrying a claim's row: {msgs:?}"
+    );
+    assert!(
+        fired
+            .iter()
+            .all(|m| m.contains("contract/PMAT-003") && m.contains("study-shape-v1")),
+        "nothing else fires — the claim contracts are still out of the study shape's scope: {msgs:?}"
+    );
+}
+
+#[test]
+fn the_entity_class_lands_in_the_extraction() {
+    let dir = fixture("entity-types-scoped");
+    let r = pv_in(&dir, &["extract", "contracts"]);
+    assert_eq!(r.code, 0, "{}", show(&r));
+    let nt = std::fs::read_to_string(dir.join("contracts/contracts.nt")).expect("contracts.nt");
+    let ty = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
+    assert!(
+        nt.contains(&format!(
+            "/contract/PMAT-001> {ty} <https://ont.paiml.dev/v1alpha1/entity/claim>"
+        )),
+        "{nt}"
+    );
+    assert!(
+        nt.contains(&format!(
+            "/contract/study-shape-v1> {ty} <https://ont.paiml.dev/v1alpha1/entity/study>"
+        )),
+        "{nt}"
+    );
+    assert!(
+        !nt.contains("/contract/claim-shape-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/entity/"),
+        "no entity.type, no entity class: {nt}"
+    );
+    let _ = std::fs::remove_file(dir.join("contracts/contracts.nt"));
+    let _ = std::fs::remove_file(dir.join("contracts/shapes.ttl"));
+}
