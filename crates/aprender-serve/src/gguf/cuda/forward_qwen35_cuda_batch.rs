@@ -28,6 +28,15 @@ use super::super::{RealizarError, Result};
 use super::{gpu_err, CudaLayer, Qwen35CudaModel, Qwen35CudaState};
 use trueno_gpu::driver::GpuBuffer;
 
+/// `forward_batch`'s device input (`[rows][hidden_dim]`) and logits
+/// (`[rows][vocab_size]`), reused across steps. A step of `B <= rows` uses the
+/// first `B` rows of each.
+pub(super) struct BatchIo {
+    hidden: GpuBuffer<f32>,
+    logits: GpuBuffer<f32>,
+    rows: usize,
+}
+
 impl Qwen35CudaModel<'_> {
     /// Advance `B = tokens.len()` independent sequences by one token each and return
     /// their logits, `B` rows of `vocab_size`, in input order.
@@ -62,28 +71,47 @@ impl Qwen35CudaModel<'_> {
             let start = (token as usize) * hidden_dim;
             rows.extend_from_slice(&embedding[start..start + hidden_dim]);
         }
-        let hidden = GpuBuffer::from_host(self.executor.context(), &rows)
-            .map_err(|e| gpu_err("qwen35_cuda_forward_batch", &e))?;
-        let logits = GpuBuffer::<f32>::new(self.executor.context(), batch * vocab)
-            .map_err(|e| gpu_err("qwen35_cuda_forward_batch", &e))?;
-
-        let outcome = self.forward_batch_enqueued(&hidden, &logits, states, positions);
+        let mut io = self.take_batch_io(batch)?;
+        let outcome = io
+            .hidden
+            .copy_from_host_at(&rows, 0)
+            .map_err(|e| gpu_err("qwen35_cuda_forward_batch", &e))
+            .and_then(|()| self.forward_batch_enqueued(&io.hidden, &io.logits, states, positions));
         let mut host = vec![0.0f32; batch * vocab];
         let downloaded = outcome.and_then(|()| {
-            // The ONE sync of the whole step, in front of the ONE download.
+            // The ONE sync of the whole step, in front of the ONE download — of
+            // this batch's rows only; a wider earlier batch sized the buffer.
             self.executor
                 .sync_stream()
                 .map_err(|e| gpu_err("qwen35_cuda_forward_batch", &e))?;
-            logits
+            io.logits
                 .copy_to_host(&mut host)
                 .map_err(|e| gpu_err("qwen35_cuda_forward_batch", &e))
         });
+        self.batch_io = Some(io);
         downloaded?;
 
         for (state, &position) in states.iter_mut().zip(positions) {
             state.kv_len = state.kv_len.max(position + 1);
         }
         Ok(host.chunks_exact(vocab).map(<[f32]>::to_vec).collect())
+    }
+
+    /// The step's buffers, holding at least `batch` rows: the kept pair, or a new
+    /// pair when this batch is wider than any before it.
+    fn take_batch_io(&mut self, batch: usize) -> Result<BatchIo> {
+        if let Some(io) = self.batch_io.take().filter(|io| io.rows >= batch) {
+            return Ok(io);
+        }
+        let ctx = self.executor.context();
+        let alloc = |len: usize| {
+            GpuBuffer::<f32>::new(ctx, len).map_err(|e| gpu_err("qwen35_cuda_forward_batch", &e))
+        };
+        Ok(BatchIo {
+            hidden: alloc(batch * self.dims.hidden_dim as usize)?,
+            logits: alloc(batch * self.dims.vocab_size as usize)?,
+            rows: batch,
+        })
     }
 
     /// Refuse a batch before any work is enqueued.
