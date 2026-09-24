@@ -781,6 +781,8 @@ fn serve_wgpu_backend(
         dims.head_dim,
         dims.intermediate_dim,
     );
+    // #4056: the WGSL RMSNorm takes the model's eps (it hardcoded 1e-6).
+    fwd.set_rms_norm_eps(quantized.config().eps);
 
     upload_wgpu_weights(&mut fwd, quantized, weights, num_layers);
 
