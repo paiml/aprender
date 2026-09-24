@@ -121,4 +121,17 @@ impl CudaExecutor {
             });
         }
     }
+
+    /// aprender#4316: upload `host` into `buf` on THIS executor's stream — no
+    /// allocation, no host block, and ordered before the next launch on it.
+    pub(crate) fn upload_on_stream<T: Copy>(
+        &self,
+        buf: &mut GpuBuffer<T>,
+        host: &[T],
+    ) -> Result<(), GpuError> {
+        // SAFETY: `host` is a pageable slice; cuMemcpyHtoDAsync stages pageable
+        // memory before it returns. The callers also sync the stream before
+        // `host` goes out of scope (the ONE sync in front of the logits read).
+        unsafe { buf.copy_from_host_async(host, &self.stream) }
+    }
 }

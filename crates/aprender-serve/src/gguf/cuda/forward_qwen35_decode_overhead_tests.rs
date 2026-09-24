@@ -226,3 +226,62 @@ fn bench_greedy_decode_tok_s_at_850() {
         secs * 1e3 / DECODE as f64
     );
 }
+
+/// #4316: the residual stream is ONE resident device buffer. Its address is the
+/// same on every token (a captured graph can replay it), and a refused token —
+/// a bad id or a position past the cache — neither loses nor replaces it.
+#[test]
+#[serial_test::serial]
+fn the_residual_buffer_address_is_stable_across_tokens_and_refused_tokens() {
+    let executor = model_or_skip!();
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
+    let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base");
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+    let mut gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the CUDA model");
+    let mut state = gpu.new_state().expect("device state");
+
+    let ptr = gpu
+        .hidden_buf_ptr()
+        .expect("the residual is allocated at construction");
+    for (pos, &t) in PROMPT.iter().enumerate() {
+        let logits = gpu.forward_single(t, &mut state, pos).expect("forward");
+        assert!(
+            logits.iter().all(|l| l.is_finite()),
+            "pos {pos}: non-finite logit"
+        );
+        assert_eq!(
+            gpu.hidden_buf_ptr(),
+            Some(ptr),
+            "pos {pos}: the residual moved"
+        );
+    }
+
+    let pos = PROMPT.len();
+    assert!(
+        gpu.forward_single(u32::MAX, &mut state, pos).is_err(),
+        "a token id outside the vocabulary must be refused"
+    );
+    assert_eq!(
+        gpu.hidden_buf_ptr(),
+        Some(ptr),
+        "a refused token id lost the residual"
+    );
+    let past = state.max_seq_len();
+    assert!(
+        gpu.forward_single(PROMPT[0], &mut state, past).is_err(),
+        "a position past the KV cache must be refused"
+    );
+    assert_eq!(
+        gpu.hidden_buf_ptr(),
+        Some(ptr),
+        "a refused position lost the residual"
+    );
+
+    // And the model still decodes after the refusals.
+    let logits = gpu
+        .forward_single(PROMPT[0], &mut state, pos)
+        .expect("forward after refusal");
+    assert!(logits.iter().all(|l| l.is_finite()));
+    assert_eq!(gpu.hidden_buf_ptr(), Some(ptr));
+}

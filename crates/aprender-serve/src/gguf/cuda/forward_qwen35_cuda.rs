@@ -1477,6 +1477,13 @@ impl<'a> Qwen35CudaModel<'a> {
         run
     }
 
+    /// #4316: the resident residual buffer's device address, `None` while a
+    /// forward has it out.
+    #[cfg(test)]
+    pub(crate) fn hidden_buf_ptr(&self) -> Option<u64> {
+        self.hidden_buf.as_ref().map(GpuBuffer::as_ptr)
+    }
+
     fn run_layers_and_head(
         &mut self,
         dev: &mut GpuBuffer<f32>,
@@ -1484,7 +1491,10 @@ impl<'a> Qwen35CudaModel<'a> {
         state: &mut Qwen35CudaState,
         position: usize,
     ) -> Result<()> {
-        dev.copy_from_host(embedding_row)
+        // #4316: an in-stream async copy into the resident buffer — no host
+        // block per token; the embedding table outlives the token's sync.
+        self.executor
+            .upload_on_stream(dev, embedding_row)
             .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
         for il in 0..self.layers.len() {
             match self.layers[il] {
