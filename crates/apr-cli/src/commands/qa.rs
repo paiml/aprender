@@ -242,6 +242,54 @@ pub struct GateResult {
     pub duration_ms: u64,
     /// Whether the gate was skipped
     pub skipped: bool,
+    /// #4087: where this result came from when the gate is cached (`tensor_contract`): `run` (a miss, now
+    /// stored), `cache` (a hit, replayed), `refused` (an untrusted entry; the gate ran) or `bypassed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache: Option<GateCache>,
+}
+
+/// #4087: the provenance of a cached gate's result.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GateCache {
+    /// `run` | `cache` | `refused` | `bypassed`
+    pub source: String,
+    /// sha256 of the model file (absent when bypassed)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_sha256: Option<String>,
+    /// sha256 of the `apr` executable that produced the stored verdict (absent when bypassed)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checker_sha256: Option<String>,
+    /// why the entry was refused or the cache bypassed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+impl GateCache {
+    fn keyed(source: &str, key: &super::qa_contract_cache::CacheKey, reason: Option<&str>) -> Self {
+        Self {
+            source: source.into(),
+            model_sha256: Some(key.model_sha256.clone()),
+            checker_sha256: Some(key.checker_sha256.clone()),
+            reason: reason.map(Into::into),
+        }
+    }
+    pub(crate) fn hit(key: &super::qa_contract_cache::CacheKey) -> Self {
+        Self::keyed("cache", key, None)
+    }
+    pub(crate) fn miss(key: &super::qa_contract_cache::CacheKey) -> Self {
+        Self::keyed("run", key, None)
+    }
+    pub(crate) fn refused(key: &super::qa_contract_cache::CacheKey, why: &str) -> Self {
+        Self::keyed("refused", key, Some(why))
+    }
+    pub(crate) fn bypassed(why: &str) -> Self {
+        Self {
+            source: "bypassed".into(),
+            model_sha256: None,
+            checker_sha256: None,
+            reason: Some(why.into()),
+        }
+    }
 }
 
 impl GateResult {
@@ -260,6 +308,7 @@ impl GateResult {
             threshold,
             duration_ms: duration.as_millis() as u64,
             skipped: false,
+            cache: None,
         }
     }
 
@@ -278,6 +327,7 @@ impl GateResult {
             threshold,
             duration_ms: duration.as_millis() as u64,
             skipped: false,
+            cache: None,
         }
     }
 
@@ -290,6 +340,7 @@ impl GateResult {
             threshold: None,
             duration_ms: 0,
             skipped: true,
+            cache: None,
         }
     }
 }

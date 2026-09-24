@@ -166,6 +166,7 @@ pub(crate) mod pull_scheme;
 pub(crate) mod pull_verify;
 pub(crate) mod qa;
 pub(crate) mod qa_capability;
+pub(crate) mod qa_contract_cache;
 pub(crate) mod qualify;
 pub(crate) mod quant_preservation;
 pub(crate) mod quantize;

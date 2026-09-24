@@ -474,6 +474,26 @@ fn build_qa_summary(
 /// Toyota Way: Jidoka - Stop the line before producing defective output.
 /// Poka-Yoke: Invalid tensor data is rejected before it can cause garbage inference.
 fn run_tensor_contract_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
+    // #4087: the verdict is cached by (model sha256, apr executable sha256); see qa_contract_cache.rs.
+    let start = Instant::now();
+    let mut r = super::qa_contract_cache::cached_gate(
+        path,
+        super::qa_contract_cache::cache_dir(),
+        || run_tensor_contract_uncached(path, config),
+    );
+    if r.cache.as_ref().is_some_and(|c| c.source == "cache") {
+        // A replayed verdict reports the time actually spent (hash + lookup), never the stored run's.
+        r.duration_ms = start.elapsed().as_millis() as u64;
+        if !config.json && config.verbose {
+            println!("{}", "tensor_contract: verdict replayed from the qa cache (#4087)".dimmed());
+        }
+    }
+    Ok(r)
+}
+
+/// The gate itself. The bool is whether validation COMPLETED (a verdict the cache may store); an error such as
+/// an unreadable file is returned as a failed gate but never cached, because it may be transient.
+fn run_tensor_contract_uncached(path: &Path, config: &QaConfig) -> (GateResult, bool) {
     let start = Instant::now();
 
     if !config.json && config.verbose {
@@ -488,13 +508,16 @@ fn run_tensor_contract_gate(path: &Path, config: &QaConfig) -> Result<GateResult
         Ok(r) => r,
         Err(e) => {
             let duration = start.elapsed();
-            return Ok(GateResult::failed(
-                "tensor_contract",
-                &format!("Failed to validate: {e}"),
-                None,
-                None,
-                duration,
-            ));
+            return (
+                GateResult::failed(
+                    "tensor_contract",
+                    &format!("Failed to validate: {e}"),
+                    None,
+                    None,
+                    duration,
+                ),
+                false,
+            );
         }
     };
 
@@ -507,8 +530,8 @@ fn run_tensor_contract_gate(path: &Path, config: &QaConfig) -> Result<GateResult
         .flat_map(|t| t.failures.iter().map(|f| format!("{}: {}", t.name, f)))
         .collect();
 
-    if contract_failures.is_empty() {
-        Ok(GateResult::passed(
+    let verdict = if contract_failures.is_empty() {
+        GateResult::passed(
             "tensor_contract",
             &format!(
                 "{} tensors passed all PMAT-235 contract gates",
@@ -517,7 +540,7 @@ fn run_tensor_contract_gate(path: &Path, config: &QaConfig) -> Result<GateResult
             Some(report.tensor_count as f64),
             Some(0.0),
             duration,
-        ))
+        )
     } else {
         let summary = if contract_failures.len() <= 3 {
             contract_failures.join("; ")
@@ -528,7 +551,7 @@ fn run_tensor_contract_gate(path: &Path, config: &QaConfig) -> Result<GateResult
                 contract_failures.len() - 3
             )
         };
-        Ok(GateResult::failed(
+        GateResult::failed(
             "tensor_contract",
             &format!(
                 "{} contract violations in {} tensors: {}",
@@ -539,8 +562,9 @@ fn run_tensor_contract_gate(path: &Path, config: &QaConfig) -> Result<GateResult
             Some(contract_failures.len() as f64),
             Some(0.0),
             duration,
-        ))
-    }
+        )
+    };
+    (verdict, true)
 }
 
 /// F-CLASS-004: Validate classifier head tensor presence and shape.
