@@ -1,0 +1,30 @@
+# #4252 3-way `apr serve` bench: Qwen3.5-4B-Q4_K_M (aprender-6c [3ada9a], 2026-09-24)
+
+GGUF sha256 `00fe7986…11a4` (identical on lambda, intel and gx10). Prompts: `p_fr.txt` ("The capital of France is", 5 tok) and `p850.txt` (lqw p850, 839 tok). n=3, temp 0, max_tokens 64.
+Method: non-streaming two-request (TTFT = wall of max_tokens=1; decode = 63/(T64−T1)), because `/v1/completions` stream:true is buffered (#4272). `used_gpu` is read per request and `--expect-gpu` voids CPU answers.
+
+| tier | binary (v0.69.1 d8a6df53a) | backend proof | prompt | TTFT s | prefill tok/s | decode tok/s (range) |
+|---|---|---|---|---|---|---|
+| **gx10 CUDA** (GB10) | aarch64-cuda asset `49afbc26…fad8` | `Backend: GPU (CUDA, NVIDIA GB10…) [qwen35 hybrid forward, #3090]` + `gpu-layers: requested=all resolved=32 total=32 (backend=cuda)`; used_gpu true 12/12; server pid 443076 held GPU mem | 5 tok | 0.171 | 29.3 | **34.1** (33.9–34.2) |
+| | | | 839 tok | **26.2** | **32.0** | 31.9 (21–61, noisy: T64−T1 ≈ 2 s window) |
+| **lambda CPU** | x86_64-cpu asset `9518ef96…79f3` | /health compute_mode cpu; used_gpu false 6/6; `taskset -c 0-7` + CPUQuota 800% + nice 19; host load 40→210; **overlaps f5's GPU hold** | 5 tok | 3.11 | 1.6 | **1.20** (1.18–1.38) |
+| | | | 839 tok | PENDING: >20 min/rep at load 210 | | |
+| **intel wgpu** (2× W5700X) | local `--features wgpu` build `7b7e6018…3311` (needed the #4056 one-line fix) | `--list-devices`: wgpu compiled in | — | **RED**: serve refuses at load ("qwen35 resolved to 0 transformer layers"); `run --backend wgpu` refuses with R-0b. No Qwen3.5 wgpu forward → **#4271** | | |
+
+Readings:
+- gx10 prefill ≈ decode rate (32 vs 34 tok/s): v0.69.1 prefills one token at a time. The 839-token TTFT is 26 s. rc.1's batched prefill (0.74 s claimed) is the next column once infra-8d installs it (operator: dogfood every rc.N).
+- Lambda CPU pinned to 8 cores under load is ~28× slower on decode than gx10. That is not usable as more than a yield fallback.
+- The same binary was not possible across tiers: 3 hosts, 2 arches, and intel needed a wgpu build. Each row names its sha.
+
+## Yield mutation proof (lane `scripts/apr_dogfood_lane_4252.py`, branch feat/4252-apr-dogfood-lane 0f83b9a7a)
+1. The gx10 watcher starts serve `--backend cuda --gpu-layers all`. `ask` → **served_by gx10-cuda**: wall 1.9 s, server pid 563471 holds GPU (175 MiB), used_gpu probe true, trace `gpu-layers … resolved=32 (backend=cuda)`, answer "PASS".
+2. PLANT: on gx10, `flock /tmp/apr-gpu.lock sleep 150` (pid 739221). The watcher logs `11:12:27Z YIELD ['gpu lock held (/tmp/apr-gpu.lock)']`. `kill -0 563471` → No such process. nvidia-smi compute-apps are empty.
+3. `ask` during the hold: gx10 attempt `CURL_RC=7` (state serving:false, stop_reason lock) → **served_by lambda-cpu**, wall 360 s (queued behind the bench), answer "PASS", 51 prompt tok.
+4. Hold released → `11:14:57Z START` (the watcher resumes).
+Negative control (accidental): while the used_gpu probe was malformed, the lane labelled a real CUDA answer `gx10-cpu-UNPROVEN-GPU`. The label fails closed.
+
+## Filed / commented
+#4271 (Qwen3.5 no wgpu path), #4272 (buffered completions stream), #4056 (wgpu feature doesn't compile; fix evidence), #4146 (qwen35 chat omits used_gpu), #4254 (effective-config backend_loaded [] on CUDA too).
+
+## Hard budget (commit 92e3c9c97)
+Against a local server that accepts and never answers (the SIGSTOP case): `ask --force-lambda --timeout 8` → `{"served_by": null, "verdict": "unavailable"}`, rc 2, wall 7.0 s.
