@@ -110,6 +110,14 @@ impl GpuBackend {
     }
 }
 
+/// The copy of the decode state a session resumes from (#4214), on the backend
+/// that took it.
+enum Checkpoint {
+    #[cfg(feature = "cuda")]
+    Gpu(crate::gguf::cuda::Qwen35CudaCheckpoint),
+    Cpu(crate::gguf::forward_qwen35::Qwen35Checkpoint),
+}
+
 /// Where a session runs its forward.
 enum Backend {
     #[cfg(feature = "cuda")]
@@ -169,6 +177,12 @@ pub struct Qwen35Forward {
     /// Prompts the GPU prefilled in one batched call — the evidence that `apr
     /// serve` took the batched path, not a speed that merely looks like it.
     batched_prefills: usize,
+    /// The saved copy of the decode state (#4214); dropped whenever the state
+    /// it was taken from is reallocated or the backend changes.
+    checkpoint: Option<Checkpoint>,
+    /// The `<|im_start|>` token, when the vocabulary has one: a chat prompt's
+    /// checkpoint goes just before its last one (the generation header).
+    im_start: Option<u32>,
 }
 
 impl Qwen35Forward {
@@ -199,6 +213,11 @@ impl Qwen35Forward {
                 format!("[qwen35] {QWEN35_SESSION_PREFILL_ENV}=per-token: prompts prefill one token at a time, not batched"),
             );
         }
+        let im_start = mapped
+            .model
+            .vocabulary()
+            .and_then(|v| v.iter().position(|t| t == "<|im_start|>"))
+            .and_then(|i| u32::try_from(i).ok());
         let route = qwen35_route(no_gpu, cfg!(feature = "cuda"));
         if let Some(notice) = qwen35_route_notice(route) {
             say(&mut notices, notice.to_string());
@@ -224,6 +243,8 @@ impl Qwen35Forward {
             notices,
             per_token_prefill,
             batched_prefills: 0,
+            checkpoint: None,
+            im_start,
         })
     }
 
@@ -425,6 +446,7 @@ impl Qwen35Forward {
             .min(self.context_length)
             .max(positions);
         self.allocations += 1;
+        self.checkpoint = None;
         let qwen = self.qwen;
         match &mut self.backend {
             #[cfg(feature = "cuda")]
@@ -448,6 +470,7 @@ impl Qwen35Forward {
     fn fall_back_to_cpu(&mut self, reason: &str) -> Result<()> {
         say(&mut self.notices, fallback_line(reason));
         self.backend = Backend::Cpu(None);
+        self.checkpoint = None;
         self.capacity = 0;
         match self.ensure_capacity() {
             Ok(()) => Ok(()),
@@ -491,6 +514,60 @@ impl crate::session::ArchForward for Qwen35Forward {
         self.bind_cuda_context_or_fall_back()?;
         self.ensure_capacity_or_fall_back()?;
         Ok(self.allocations != before)
+    }
+
+    /// Before the prompt's last `<|im_start|>` — a chat's history, up to the
+    /// generation header — else before its last token.
+    fn checkpoint_at(&self, prompt: &[u32]) -> Option<usize> {
+        self.im_start
+            .and_then(|id| prompt.iter().rposition(|&t| t == id))
+            .filter(|&k| k > 0)
+            .or_else(|| prompt.len().checked_sub(1))
+    }
+
+    fn save_checkpoint(&mut self) -> Result<()> {
+        let saved = match &mut self.backend {
+            #[cfg(feature = "cuda")]
+            Backend::Gpu(gpu) => {
+                let Some(state) = gpu.state.as_ref() else {
+                    self.checkpoint = None;
+                    return Ok(());
+                };
+                let mut slot = match self.checkpoint.take() {
+                    Some(Checkpoint::Gpu(c)) => Some(c),
+                    _ => None,
+                };
+                gpu.model.save_checkpoint(state, &mut slot)?;
+                slot.map(Checkpoint::Gpu)
+            },
+            Backend::Cpu(state) => state
+                .as_ref()
+                .map(|state| Checkpoint::Cpu(state.checkpoint())),
+        };
+        self.checkpoint = saved;
+        Ok(())
+    }
+
+    /// A device copy that fails is a GPU failure: the session moves to the CPU,
+    /// loudly, and the turn prefills from 0 there.
+    fn restore_checkpoint(&mut self) -> Result<bool> {
+        let restored = match (&mut self.backend, &self.checkpoint) {
+            #[cfg(feature = "cuda")]
+            (Backend::Gpu(gpu), Some(Checkpoint::Gpu(c))) => match gpu.state.as_mut() {
+                Some(state) => gpu.model.restore_checkpoint(c, state),
+                None => Ok(false),
+            },
+            (Backend::Cpu(Some(state)), Some(Checkpoint::Cpu(c))) => Ok(state.restore(c)),
+            _ => Ok(false),
+        };
+        match restored {
+            Ok(restored) => Ok(restored),
+            Err(e) if self.on_gpu() => {
+                self.fall_back_to_cpu(&format!("the device checkpoint would not restore: {e}"))?;
+                Ok(false)
+            },
+            Err(e) => Err(e),
+        }
     }
 
     fn validate(&mut self, probe: &[u32]) -> Result<()> {

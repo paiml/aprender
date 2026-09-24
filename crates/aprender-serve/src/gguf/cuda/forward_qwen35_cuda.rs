@@ -118,6 +118,16 @@ pub struct Qwen35CudaState {
     kv_len: usize,
 }
 
+/// A copy of a [`Qwen35CudaState`]'s recurrent half at one position (#4214),
+/// on the device: each Gated `DeltaNet` layer's conv window and recurrent
+/// state, plus how many KV rows the state held. The KV rows stay in the
+/// state; a later position writes only rows past them.
+pub struct Qwen35CudaCheckpoint {
+    /// `(layer, conv, ssm)` for every `DeltaNet` layer.
+    layers: Vec<(usize, GpuBuffer<f32>, GpuBuffer<f32>)>,
+    kv_len: usize,
+}
+
 impl Qwen35CudaState {
     /// Elements in one layer's causal-conv window.
     #[must_use]
@@ -786,6 +796,102 @@ impl<'a> Qwen35CudaModel<'a> {
             .map_err(|e| gpu_err("qwen35_cuda_reset", &e))?;
         state.kv_len = 0;
         Ok(())
+    }
+
+    /// Copy `state`'s recurrent half into `into`, reusing its buffers when it
+    /// already holds a copy of this model's shape (#4214).
+    ///
+    /// # Errors
+    /// Any CUDA allocation, copy or synchronization failure.
+    pub fn save_checkpoint(
+        &self,
+        state: &Qwen35CudaState,
+        into: &mut Option<Qwen35CudaCheckpoint>,
+    ) -> Result<()> {
+        let stream = self.executor.compute_stream();
+        // The copy runs on the compute stream, after every launch that wrote the state.
+        let deltanet: Vec<usize> = (0..state.kv.len())
+            .filter(|&i| state.kv[i].is_none())
+            .collect();
+        let reusable = into.as_ref().is_some_and(|c| {
+            c.layers.len() == deltanet.len()
+                && c.layers.iter().zip(&deltanet).all(|((l, conv, ssm), &i)| {
+                    *l == i && conv.len() == state.conv_len && ssm.len() == state.ssm_len
+                })
+        });
+        if !reusable {
+            *into = None;
+            let mut layers = Vec::with_capacity(deltanet.len());
+            for &i in &deltanet {
+                layers.push((
+                    i,
+                    Self::zeros(&self.executor, state.conv_len)?,
+                    Self::zeros(&self.executor, state.ssm_len)?,
+                ));
+            }
+            *into = Some(Qwen35CudaCheckpoint { layers, kv_len: 0 });
+        }
+        let ckpt = into
+            .as_mut()
+            .ok_or_else(|| RealizarError::InvalidShape {
+                reason: "qwen35_cuda: the checkpoint was never allocated".to_string(),
+            })?;
+        for (i, conv, ssm) in &mut ckpt.layers {
+            // SAFETY: source and destination are live device buffers of equal
+            // length (checked by the copy) owned by `state` and `ckpt`, which
+            // both outlive the synchronize below.
+            unsafe {
+                conv.copy_from_buffer_async(&state.conv[*i], stream)
+                    .map_err(|e| gpu_err("qwen35_cuda_checkpoint", &e))?;
+                ssm.copy_from_buffer_async(&state.ssm[*i], stream)
+                    .map_err(|e| gpu_err("qwen35_cuda_checkpoint", &e))?;
+            }
+        }
+        stream
+            .synchronize()
+            .map_err(|e| gpu_err("qwen35_cuda_checkpoint", &e))?;
+        ckpt.kv_len = state.kv_len;
+        Ok(())
+    }
+
+    /// Return `state` to `ckpt`. `false` (the state unchanged) when the state
+    /// no longer holds the KV rows the copy was taken over, or is shaped
+    /// differently.
+    ///
+    /// # Errors
+    /// Any CUDA copy or synchronization failure; the state is then unknown.
+    pub fn restore_checkpoint(
+        &self,
+        ckpt: &Qwen35CudaCheckpoint,
+        state: &mut Qwen35CudaState,
+    ) -> Result<bool> {
+        let fits = state.kv_len >= ckpt.kv_len
+            && ckpt.kv_len <= state.max_seq_len
+            && ckpt.layers.iter().all(|(i, conv, ssm)| {
+                state.kv.get(*i).is_some_and(Option::is_none)
+                    && conv.len() == state.conv_len
+                    && ssm.len() == state.ssm_len
+            });
+        if !fits {
+            return Ok(false);
+        }
+        let stream = self.executor.compute_stream();
+        for (i, conv, ssm) in &ckpt.layers {
+            // SAFETY: as in `save_checkpoint`, with the roles swapped.
+            unsafe {
+                state.conv[*i]
+                    .copy_from_buffer_async(conv, stream)
+                    .map_err(|e| gpu_err("qwen35_cuda_restore", &e))?;
+                state.ssm[*i]
+                    .copy_from_buffer_async(ssm, stream)
+                    .map_err(|e| gpu_err("qwen35_cuda_restore", &e))?;
+            }
+        }
+        stream
+            .synchronize()
+            .map_err(|e| gpu_err("qwen35_cuda_restore", &e))?;
+        state.kv_len = ckpt.kv_len;
+        Ok(true)
     }
 
     /// Run `f` with the model's own state detached.

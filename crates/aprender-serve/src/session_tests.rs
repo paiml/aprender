@@ -250,13 +250,14 @@ fn a_re_rendered_history_resumes_from_the_last_turns_checkpoint() {
     // does not extend what the state holds.
     let p2 = [7811, MARK, 7812, 7899, MARK, 7813];
     let before = s.engine().calls.len();
-    let t2 = s.generate(&p2, &greedy(1), &mut |_| true).expect("t2");
+    let t2 = s.generate(&p2, &greedy(2), &mut |_| true).expect("t2");
     assert_eq!(t2.reused, 1, "resumed at turn 1's checkpoint, not at 0");
-    assert_eq!(s.engine().calls[before..], [(5, 1), (6, 5)]);
-    // And turn 3 resumes at turn 2's.
+    // From the checkpoint to turn 2's own (its last marker), then the rest.
+    assert_eq!(s.engine().calls[before..before + 2], [(4, 1), (6, 4)]);
+    // Turn 3 re-renders turn 2's reply too, and resumes at turn 2's checkpoint.
     let p3 = [7811, MARK, 7812, 7899, MARK, 7813, 7898, MARK, 7814];
     let t3 = s.generate(&p3, &greedy(1), &mut |_| true).expect("t3");
-    assert_eq!(t3.reused, 5);
+    assert_eq!(t3.reused, 4);
 }
 
 #[test]

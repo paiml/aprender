@@ -479,6 +479,50 @@ impl Qwen35State {
     }
 }
 
+/// A copy of a [`Qwen35State`]'s recurrent half at one position (#4214): the
+/// conv windows and recurrent states, which cannot be rolled back, plus how
+/// many KV rows it held — the rows themselves stay in the state, where a later
+/// position never overwrites them.
+#[derive(Debug, Clone)]
+pub struct Qwen35Checkpoint {
+    conv_states: Vec<Vec<f32>>,
+    ssm_states: Vec<Vec<f32>>,
+    kv_len: usize,
+}
+
+impl Qwen35State {
+    /// Copy the state as it holds now.
+    #[must_use]
+    pub fn checkpoint(&self) -> Qwen35Checkpoint {
+        Qwen35Checkpoint {
+            conv_states: self.conv_states.clone(),
+            ssm_states: self.ssm_states.clone(),
+            kv_len: self.kv_cache.len(),
+        }
+    }
+
+    /// Return to `checkpoint`. `false` (the state unchanged) when the state no
+    /// longer holds the KV rows the copy was taken over.
+    pub fn restore(&mut self, checkpoint: &Qwen35Checkpoint) -> bool {
+        if self.kv_cache.len() < checkpoint.kv_len
+            || self.conv_states.len() != checkpoint.conv_states.len()
+            || self.ssm_states.len() != checkpoint.ssm_states.len()
+        {
+            return false;
+        }
+        for (dst, src) in self
+            .conv_states
+            .iter_mut()
+            .zip(&checkpoint.conv_states)
+            .chain(self.ssm_states.iter_mut().zip(&checkpoint.ssm_states))
+        {
+            dst.copy_from_slice(src);
+        }
+        self.kv_cache.truncate(checkpoint.kv_len);
+        true
+    }
+}
+
 pub(crate) struct Qwen35OwnedDeltaNetLayer {
     pub(crate) attn_norm: Vec<f32>,
     pub(crate) attn_qkv: OwnedQuantizedTensor,

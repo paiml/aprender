@@ -178,6 +178,60 @@ fn on_token_returning_false_ends_the_turn_after_that_token() {
     );
 }
 
+/// Where a chat prompt's checkpoint goes: before its last `<|im_start|>`.
+fn header_at(mapped: &MappedGGUFModel, prompt: &[u32]) -> usize {
+    let im_start = encode(mapped, "<|im_start|>");
+    assert_eq!(im_start.len(), 1, "<|im_start|> is one token");
+    prompt
+        .iter()
+        .rposition(|&t| t == im_start[0])
+        .expect("a chat prompt holds <|im_start|>")
+}
+
+/// Turn 2 as a chat server renders it: turn 1's reply re-rendered from text
+/// (here, not the tokens turn 1 generated), then the new user turn.
+fn re_rendered_turn_two(mapped: &MappedGGUFModel, p1: &[u32]) -> Vec<u32> {
+    let mut p2 = p1.to_vec();
+    p2.extend(encode(
+        mapped,
+        &format!("The capital of Peru is Lima.<|im_end|>\n{}", user_turn("And of Chile?")),
+    ));
+    p2
+}
+
+#[test]
+fn cpu_an_identical_prompt_again_resumes_at_its_generation_header_and_matches_one_shot() {
+    // #4214: the same prompt twice cost the whole prefill twice.
+    let mapped = mapped_or_skip!();
+    let mut session = Qwen35Session::load(&mapped, true).expect("load");
+    let config = greedy(6);
+    let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
+    let t1 = session.generate(&p1, &config, &mut |_| true).expect("turn 1");
+    let t2 = session.generate(&p1, &config, &mut |_| true).expect("turn 2");
+    assert_eq!(t2.reused, header_at(&mapped, &p1), "resumed at the checkpoint");
+    assert!(t2.reused > 0);
+    assert_eq!(t2.tokens, t1.tokens);
+    assert_eq!(t2.tokens, one_shot_cpu(&mapped, &p1, &config));
+}
+
+#[test]
+fn cpu_a_re_rendered_turn_two_resumes_at_turn_ones_header_and_matches_one_shot() {
+    // #4274: serve re-renders the history, so turn 2 never extended turn 1.
+    let mapped = mapped_or_skip!();
+    let mut session = Qwen35Session::load(&mapped, true).expect("load");
+    let config = greedy(6);
+    let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
+    session.generate(&p1, &config, &mut |_| true).expect("turn 1");
+    let p2 = re_rendered_turn_two(&mapped, &p1);
+    let t2 = session.generate(&p2, &config, &mut |_| true).expect("turn 2");
+    assert_eq!(t2.reused, header_at(&mapped, &p1), "resumed at turn 1's checkpoint");
+    assert_eq!(
+        t2.tokens,
+        one_shot_cpu(&mapped, &p2, &config),
+        "a resumed state must decode exactly what a fresh one does"
+    );
+}
+
 #[cfg(feature = "cuda")]
 mod gpu {
     use super::*;
@@ -368,6 +422,39 @@ mod gpu {
             .expect("turn 2");
         assert!(t2.used_gpu);
         assert_eq!(t2.reused, 0);
+        assert_eq!(t2.tokens, one_shot_gpu(&mapped, &p2, &config));
+    }
+
+    #[test]
+    fn gpu_an_identical_prompt_again_resumes_at_its_generation_header_and_matches_one_shot() {
+        let mapped = mapped_or_skip!();
+        let Some(mut session) = gpu_session_or_skip(&mapped) else {
+            return;
+        };
+        let config = greedy(6);
+        let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
+        let t1 = session.generate(&p1, &config, &mut |_| true).expect("turn 1");
+        let t2 = session.generate(&p1, &config, &mut |_| true).expect("turn 2");
+        assert!(t1.used_gpu && t2.used_gpu, "no fallback");
+        assert_eq!(t2.reused, header_at(&mapped, &p1));
+        assert!(t2.reused > 0);
+        assert_eq!(t2.tokens, t1.tokens);
+        assert_eq!(t2.tokens, one_shot_gpu(&mapped, &p1, &config));
+    }
+
+    #[test]
+    fn gpu_a_re_rendered_turn_two_resumes_at_turn_ones_header_and_matches_one_shot() {
+        let mapped = mapped_or_skip!();
+        let Some(mut session) = gpu_session_or_skip(&mapped) else {
+            return;
+        };
+        let config = greedy(6);
+        let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
+        session.generate(&p1, &config, &mut |_| true).expect("turn 1");
+        let p2 = re_rendered_turn_two(&mapped, &p1);
+        let t2 = session.generate(&p2, &config, &mut |_| true).expect("turn 2");
+        assert!(t2.used_gpu, "no fallback");
+        assert_eq!(t2.reused, header_at(&mapped, &p1));
         assert_eq!(t2.tokens, one_shot_gpu(&mapped, &p2, &config));
     }
 }
