@@ -18,6 +18,7 @@
 //! - [`Q6KKernel`]: Fused Q6_K GEMM kernel (PARITY-117)
 
 mod batched;
+mod batched_multi_warp;
 mod coalesced;
 mod dequant;
 mod dp4a;
@@ -27,6 +28,7 @@ mod hw_dp4a;
 mod multi_warp;
 
 pub use batched::BatchedQ6KGemvKernel;
+pub use batched_multi_warp::BatchedMwvQ6KGemvKernel;
 pub use coalesced::CoalescedQ6KGemvKernel;
 pub use dequant::Q6KDequantKernel;
 pub use dp4a::Dp4aQ6KGemvKernel;
