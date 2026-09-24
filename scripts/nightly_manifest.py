@@ -183,10 +183,13 @@ def record(target, sha, bins, bin_dir, dist, build_outcome="success", probe=prob
         reason = "build-failed" if build_outcome == "failure" else "build-cancelled"
         return {"target": target, "sha": sha, "status": "red", "tools": {},
                 "red": {"sha": sha, "reason": reason, "detail": f"build step: {build_outcome}"}}
+    # dist=None is the release-commit smoke (`smoke`, #4189): the same verdicts
+    # on the built executables, with no tarball to require or hash.
     tools, red = {}, None
     for b in bins:
-        exe, tar = os.path.join(bin_dir, b), os.path.join(dist, f"{b}-{target}.tar.gz")
-        if not (os.path.isfile(exe) and os.path.isfile(tar)):
+        exe = os.path.join(bin_dir, b)
+        tar = os.path.join(dist, f"{b}-{target}.tar.gz") if dist is not None else None
+        if not (os.path.isfile(exe) and (tar is None or os.path.isfile(tar))):
             red = red or {"sha": sha, "reason": "missing-artifact", "detail": b}
             continue
         rc, line = probe(exe)
@@ -206,8 +209,8 @@ def record(target, sha, bins, bin_dir, dist, build_outcome="success", probe=prob
             red = red or {"sha": sha, "reason": "version-no-sha",
                           "detail": f"{b}: --version names no build SHA: {line}"}
         tools[b] = {
-            "asset": os.path.basename(tar),
-            "sha256": sha256_file(tar),
+            "asset": os.path.basename(tar) if tar else None,
+            "sha256": sha256_file(tar) if tar else None,
             "bin_sha256": sha256_file(exe),
             "version_sha": sha if vsha and sha.startswith(vsha) else None,
             "version_output": line,
@@ -481,6 +484,15 @@ def self_test():
         os.remove(os.path.join(d, f"pv-{T[0]}.tar.gz"))
         ma = record(T[0], S, ["apr", "pv"], d, d, probe=fake(good))
         check("a missing tarball -> missing-artifact", (ma["status"], ma["red"]["reason"]), ("red", "missing-artifact"))
+        sk = record("release-commit", S, ["apr", "pv"], d, None, probe=fake(good), version="0.69.0")
+        check("smoke (dist=None): no tarball is required -> green", sk["status"], "green")
+        os.remove(os.path.join(d, "pv"))
+        sm = record("release-commit", S, ["apr", "pv"], d, None, probe=fake(good), version="0.69.0")
+        check("smoke: a bin that did not build -> missing-artifact",
+              (sm["status"], (sm["red"] or {}).get("reason")), ("red", "missing-artifact"))
+        sv = record("release-commit", S, ["apr"], d, None, probe=fake(dict(good, apr=(0, "apr 0.69.0"))), version="0.69.0")
+        check("smoke: a bin printing no SHA -> version-no-sha",
+              (sv["status"], (sv["red"] or {}).get("reason")), ("red", "version-no-sha"))
 
     print("merge:")
     now = "2026-09-24T12:00:00Z"
@@ -584,6 +596,9 @@ def main(argv):
     bn = sub.add_parser("bins")
     bn.add_argument("--metadata", required=True, help="`cargo metadata --no-deps --format-version 1` output")
     bn.add_argument("--format", default="list", choices=["list", "cargo"])
+    sm = sub.add_parser("smoke", help="record's verdicts on built bins, no tarballs; rc 1 when red")
+    for a in ("--sha", "--bins", "--bin-dir", "--version"):
+        sm.add_argument(a, required=True)
     p = sub.add_parser("publish")
     for a in ("--manifest", "--dist", "--sha"):
         p.add_argument(a, required=True)
@@ -620,6 +635,10 @@ def main(argv):
         wb = workspace_bins(load(a.metadata))
         print(",".join(b for b, _, _ in wb) if a.format == "list" else " ".join(cargo_args(wb)))
         return 0
+    if a.cmd == "smoke":
+        out = record("release-commit", a.sha, a.bins.split(","), a.bin_dir, None, version=a.version)
+        print(json.dumps(out, indent=1))
+        return 1 if out["status"] != "green" else 0
     if a.cmd == "publish":
         publish(a.manifest, a.dist, a.sha, a.repo, os.environ["GH_TOKEN"])
         return 0
