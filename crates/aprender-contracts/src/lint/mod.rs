@@ -25,6 +25,8 @@ pub mod shapes_gate;
 pub mod sigma_gate;
 pub mod sigma_symbols;
 mod strict_test_binding;
+pub mod subsumption;
+pub mod tbox_gate;
 pub mod trend;
 
 use std::collections::{HashMap, HashSet};
@@ -239,12 +241,11 @@ pub enum GateExtra {
         /// ONT-4b2: vendored W3C SHACL-Core cases that passed this run, and how many are vendored.
         w3c_cases_passed: usize,
         w3c_cases_n: usize,
-        /// ONT-4b2: bound Rust symbols the `syn` walk resolved / could not resolve.
-        symbols_resolved: usize,
-        symbols_unresolved: usize,
-        /// ONT-4b2: Lean theorems extracted, and contract `lean_theorem:` references naming none of them.
-        lean_statements: usize,
-        lean_refs_unresolved: usize,
+        /// The ONT-4b2 extractor counters and ONT-4d's inheritance, FLATTENED into this object: the JSON keys
+        /// (`symbols_resolved`, …, `inherited_shapes_applied`) are unchanged. They are boxed only so the variant
+        /// stays under clippy's `large_enum_variant` once ONT-4d's two fields joined it.
+        #[serde(flatten)]
+        counters: Box<ShapesCounters>,
         /// aprender#3715: what `extract:release-evidence` derived — absent unless a release subject was given.
         #[serde(skip_serializing_if = "Option::is_none")]
         release: Option<Box<crate::ontology::extract::release_evidence::ReleaseStats>>,
@@ -267,6 +268,24 @@ pub enum GateExtra {
         /// The witness this run checked.
         witness: consistency_gate::WitnessReport,
     },
+}
+
+/// Counters a `shapes` run reports, flattened into [`GateExtra::Shapes`]'s JSON.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ShapesCounters {
+    /// ONT-4b2: bound Rust symbols the `syn` walk resolved / could not resolve.
+    pub symbols_resolved: usize,
+    pub symbols_unresolved: usize,
+    /// ONT-4b2: Lean theorems extracted, and contract `lean_theorem:` references naming none of them.
+    pub lean_statements: usize,
+    pub lean_refs_unresolved: usize,
+    /// ONT-4d (R-19): applications of a shape to instances of a strict sub-concept of its target, summed over shapes. Such a
+    /// node may ALSO be typed the target directly (`pv_contract` asserts `ont:Contract` on every contract), so
+    /// this counts the hierarchy being applied, not reach that exists only through it. The fixture
+    /// `subsumption-inherit` is where inheritance is the ONLY path.
+    pub inherited_shapes_applied: usize,
+    /// `<shape> <- <sub-concept>=<n>` for each shape inherited down the hierarchy, sorted.
+    pub inherited_by_shape: Vec<String>,
 }
 
 /// Overall lint report.
@@ -663,6 +682,8 @@ pub enum NamedGateOutcome {
     Shapes(shapes_gate::ShapesOutcome),
     /// The `ont-consistency` gate (ONT-5): no Σ, malformed Σ, nothing checkable, a control that did not fire, a stale witness.
     Consistency(consistency_gate::ConsistencyOutcome),
+    /// The `tbox` gate (ONT-2c): advisory classification. It has no Pass answer at all (R-7).
+    Tbox(tbox_gate::TboxOutcome),
     /// A gate that ran and judged the corpus.
     Ran {
         result: Box<GateResult>,
@@ -697,6 +718,7 @@ pub fn run_named_gate_with(
         consistency_gate::GATE => {
             NamedGateOutcome::Consistency(consistency_gate::run_consistency_gate(contract_dir))
         }
+        "tbox" => NamedGateOutcome::Tbox(tbox_gate::run_tbox_gate(contract_dir)),
         "validate" => {
             let (contracts, parse_errors) = load_contracts(contract_dir);
             let (result, findings) = run_validate_gate(&contracts, &parse_errors);
@@ -710,11 +732,12 @@ pub fn run_named_gate_with(
 }
 
 /// The gate names `--gate` computes alone, for the refusal message.
-pub const NAMED_GATES: [&str; 5] = [
+pub const NAMED_GATES: [&str; 6] = [
     consistency_gate::GATE,
     "relations",
     "shapes",
     "sigma",
+    "tbox",
     "validate",
 ];
 
