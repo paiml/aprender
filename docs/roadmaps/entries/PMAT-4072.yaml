@@ -1,0 +1,16 @@
+- id: PMAT-4072
+  github_issue: 4072
+  item_type: task
+  title: 'ONT-3a: extract:code — bindings resolve fail-closed across the workspace, via syn'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T14:05:08Z
+  updated: 2026-09-24T14:05:08Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
