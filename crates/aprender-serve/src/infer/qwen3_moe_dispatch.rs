@@ -3,7 +3,7 @@
 //! Before #3714 `apr run` sent every qwen3moe file to the CPU chain and
 //! reported `used_gpu = false` without ever trying CUDA, so `--gpu` exited 14
 //! with a message about a "runtime attempt" that never happened. This module
-//! is the qwen3moe sibling of `run_qwen35_generate_dispatch`: the CUDA forward
+//! is the qwen3moe sibling of the qwen35 one-call session (`Qwen35Session::load_for_run`, #4263): the CUDA forward
 //! (`Qwen3MoeCudaModel`) serves unless `--no-gpu` or a build without `cuda`,
 //! it proves itself against the CPU forward on the real prompt first (the F2
 //! rule every GPU path is held to), and a GPU that cannot serve says why —

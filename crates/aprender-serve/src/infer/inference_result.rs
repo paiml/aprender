@@ -277,22 +277,35 @@ fn run_gguf_inference(
     let load_start = Instant::now();
     let mapped = MappedGGUFModel::from_path(&config.model_path)?;
     prefault_mmap(mapped.data());
-    // #3091: Qwen3.5/Qwen3.8 hybrids (Gated DeltaNet) have their own CPU forward. The dense
-    // loader refuses them, so only the shared base (embeddings, final norm, lm_head) is built
-    // here and generation dispatches to `run_qwen35_generate` below.
+    // #3091: Qwen3.5/Qwen3.8 hybrids (Gated DeltaNet) are refused by the dense
+    // loader. Their host model (base + hybrid layers) is built once per file and
+    // generation goes through the one engine, `realizar::session` (#4263).
     let is_qwen35 = mapped.model.architecture() == Some("qwen35");
-    let model = if is_qwen35 {
-        crate::gguf::forward_qwen35::Qwen35Model::create_base_model(&mapped.model, mapped.data())?
+    let qwen35_host = if is_qwen35 {
+        Some(crate::gguf::qwen35_session::Qwen35Forward::cached_host(
+            &config.model_path,
+            &mapped,
+        )?)
     } else {
-        OwnedQuantizedModel::from_mapped(&mapped)?
+        None
     };
+    let owned = match qwen35_host {
+        Some(_) => None,
+        None => Some(OwnedQuantizedModel::from_mapped(&mapped)?),
+    };
+    let model: &OwnedQuantizedModel = owned
+        .as_ref()
+        .or(qwen35_host.map(|q| q.base))
+        .ok_or_else(|| RealizarError::InvalidShape {
+            reason: "no model was loaded".to_string(),
+        })?;
     let load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
 
     // PMAT-109: Architecture from GGUF metadata (not filename)
     let gguf_arch = mapped.model.architecture().unwrap_or("transformer");
 
     if config.verbose {
-        print_gguf_verbose_info(gguf_arch, &model, &body_qtypes(&mapped.model), load_ms);
+        print_gguf_verbose_info(gguf_arch, model, &body_qtypes(&mapped.model), load_ms);
     }
 
     // PMAT-236: Use PreparedTokens (chat template already applied by prepare_tokens)
@@ -343,27 +356,39 @@ fn run_gguf_inference(
     let (tokens, used_gpu, gpu_attempted) = if crate::gguf::moe_forward_handles(&model.config.architecture) {
         let (tokens, used_gpu) = crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
             &mapped,
-            &model,
+            model,
             &input_tokens,
             &gen_config,
             config.no_gpu,
         )?;
         (tokens, used_gpu, cfg!(feature = "cuda") && !config.no_gpu)
-    } else if is_qwen35 {
-        // #3477: the hybrid now has a GPU forward (#3090), so `apr run --gpu`
-        // routes to it and reports CUDA; the CPU forward (#3091) serves
-        // `--no-gpu`, a build without cuda, and any GPU failure — the last of
-        // which is printed, never silent.
-        crate::gguf::forward_qwen35::run_qwen35_generate_dispatch(
+    } else if let Some(qwen) = qwen35_host {
+        // #3477/#4263: the one engine. The GPU forward (#3090) when this is a
+        // cuda build and `--no-gpu` was not given; the CPU forward (#3091)
+        // otherwise, and after any GPU failure — printed, never silent. A
+        // context the device cannot hold is refused before upload (#3596).
+        crate::gguf::forward_qwen35::qwen35_check_context(
+            input_tokens.len(),
+            model_config.context_length,
+        )?;
+        let positions =
+            (input_tokens.len() + gen_config.max_tokens).min(model_config.context_length);
+        let mut session = crate::gguf::qwen35_session::Qwen35Session::load_for_run(
+            qwen,
             &mapped,
-            &model,
-            &input_tokens,
-            &gen_config,
             config.no_gpu,
-        )
-        .map(|(t, u)| (t, u, u))? // #3826: see the note above — attempt == used here
-    } else {
+            positions,
+        )?;
+        mark_generation_start(); // #3981: host + device load end here
+        let turn = session.generate(&input_tokens, &gen_config, &mut |_| true)?;
+        // #3826: attempted is the same two facts as the MoE dispatch's.
+        (turn.tokens, turn.used_gpu, cfg!(feature = "cuda") && !config.no_gpu)
+    } else if let Some(model) = owned {
         run_gguf_generate(model, &input_tokens, &gen_config, config)?
+    } else {
+        return Err(RealizarError::InvalidShape {
+            reason: "no model was loaded".to_string(),
+        });
     };
     let inference_ms = infer_start.elapsed().as_secs_f64() * 1000.0;
     let generation_ms = take_generation_start().map(|t| t.elapsed().as_secs_f64() * 1000.0);
@@ -401,9 +426,10 @@ fn run_gguf_inference(
         used_gpu,
     );
 
-    // #3718: only the dense CPU loop (`generate_with_cache`) shrinks the budget to
-    // the context room; the hybrid, MoE, CUDA and wgpu loops run `max_tokens`.
-    let clamps_to_context = !is_qwen35 && canonical_arch != "qwen3_moe" && !used_gpu;
+    // #3718: the dense CPU loop (`generate_with_cache`) and the one engine
+    // (#4263, every qwen35 run) shrink the budget to the context room; the MoE,
+    // CUDA and wgpu loops run `max_tokens`.
+    let clamps_to_context = is_qwen35 || (canonical_arch != "qwen3_moe" && !used_gpu);
     let budget = run_report::decode_budget(
         gen_config.max_tokens,
         input_token_count,

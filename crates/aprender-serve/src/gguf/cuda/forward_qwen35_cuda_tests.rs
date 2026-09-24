@@ -283,7 +283,7 @@ fn load_cpu_model(mapped: &crate::gguf::MappedGGUFModel) -> crate::gguf::OwnedQu
 fn qwen35_cuda_deltanet_layers_match_cpu_on_the_real_file() {
     let executor = qwen35_cuda_fixture_or_skip!();
 
-    // Load exactly as run_qwen35_generate does.
+    // Load exactly as qwen35_reference_generate does.
     let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
     let base = load_cpu_model(&mapped);
     let qwen =

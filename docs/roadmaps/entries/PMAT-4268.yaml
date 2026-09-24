@@ -1,0 +1,17 @@
+- id: PMAT-4268
+  github_issue: 4268
+  item_type: task
+  title: 'Workstream D (#4263): dense GGUF (llama, qwen2, qwen3, mistral, ...) CUDA and CPU forwards behind the one engine (realizar::session); apr run, run --batch, chat and serve dense route through it'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-49
+  created: 2026-09-24 14:00:00+00:00
+  updated: '2026-09-24T16:30:00Z'
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'D1 (this PR): DenseForward (CPU + CUDA) implements ArchForward in gguf/inference/forward/dense_session.rs; apr run (run_gguf_generate) and apr run --batch (BatchModel) drive DenseSession through dense_turn, which answers token-for-token what generate_with_cache answered (greedy, seeded sampled, stop token dropped, ContextLimitExceeded kept). Witness guards in infer/tests_dense_session_4268.rs turn RED when either route goes back to its own loop (mutation measured). --trace keeps the instrumented loops (the engine has no brick profiler). The wgpu fallback keeps its own greedy loop (out of scope). The CUDA arms are free fns (cuda_reset/cuda_forward/cuda_forward_greedy) for aprender-98''s serve cuda_batch_scheduler (#4280). D2 (next PR): dense chat and serve CPU/CUDA backends. CUDA path is not yet run on a GPU in this PR.'

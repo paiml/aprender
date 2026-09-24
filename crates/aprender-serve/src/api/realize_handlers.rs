@@ -626,9 +626,10 @@ pub struct CompletionChoice {
 
 /// One `data:` frame of a streamed `/v1/completions` response.
 ///
-/// Same envelope as [`CompletionResponse`] minus `usage`, which OpenAI omits
-/// from completion chunks. `finish_reason` is `null` on every chunk but the
-/// last — clients use exactly that transition to know the stream ended.
+/// Same envelope as [`CompletionResponse`]. `finish_reason` is `null` on every
+/// chunk but the last — clients use exactly that transition to know the stream
+/// ended — and the last also carries `usage` (#4272: it was null, so a
+/// streaming client could not count what it was billed for).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompletionChunk {
     /// Response ID (identical across every chunk of one completion)
@@ -641,6 +642,9 @@ pub struct CompletionChunk {
     pub model: String,
     /// Chunk choices
     pub choices: Vec<CompletionChunkChoice>,
+    /// Token counts — on the terminal chunk only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
 }
 
 /// One choice inside a [`CompletionChunk`].
