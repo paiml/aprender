@@ -62,6 +62,8 @@ do_release() { # <dir> <token> <delete cmd…>
   fi
   if [ "$#" -eq 0 ]; then set -- rm -rf --; fi
   if "$@" "$dir"; then
+    # Still holding the lock: unlink it too. A waiter on this inode re-opens the path (see locked()).
+    rm -f -- "${dir%/}.lock"
     echo "released: deleted $dir"
     return 0
   fi
@@ -70,10 +72,19 @@ do_release() { # <dir> <token> <delete cmd…>
 }
 
 locked() { # <dir> <fn> <args…>: run fn under the dir's flock (a sibling path, same filesystem)
-  local dir=$1 lock; shift
+  # The last release UNLINKS the lock file (else one 0-byte file per job-run leaks, #4102 round 2). A waiter that
+  # was blocked on the old inode would then hold a lock nobody else can see, so after every acquire the fd's inode
+  # must still be the path's; if not, re-open the path and lock again. Standard lock-file-with-unlink protocol.
+  local dir=$1 lock tries=0; shift
   lock="${dir%/}.lock"
-  exec 9>> "$lock" || die "cannot open the lock $lock"
-  flock -w "$LOCK_WAIT" 9 || die "the lock $lock was not free within ${LOCK_WAIT}s"
+  while :; do
+    exec 9>> "$lock" || die "cannot open the lock $lock"
+    flock -w "$LOCK_WAIT" 9 || die "the lock $lock was not free within ${LOCK_WAIT}s"
+    [ "$(stat -L -c %i /proc/self/fd/9 2> /dev/null)" = "$(stat -c %i "$lock" 2> /dev/null)" ] && break
+    exec 9>&-
+    tries=$((tries + 1))
+    [ "$tries" -lt 50 ] || die "the lock $lock was replaced 50 times while waiting"
+  done
   "$@"
   local rc=$?
   exec 9>&-
@@ -101,6 +112,24 @@ self_test() {
     && case_line ok "a live sibling keeps the tree, and is named" || case_line FAIL "a live sibling's tree was touched ($out)"
   out=$(bash "$me" release "$d" shard-2)
   [ ! -e "$d" ] && case_line ok "the last sibling out deletes" || case_line FAIL "the last sibling out did not delete ($out)"
+  [ ! -e "$d.lock" ] && case_line ok "the last release unlinks the lock file (no 0-byte leak per run)" \
+    || case_line FAIL "the lock file $d.lock was left behind"
+
+  # must-RED: a waiter blocked on a lock whose file is then unlinked must NOT proceed on the stale inode while a
+  # newcomer holds the fresh one. A holds the old inode; W (register) waits on it; A unlinks and a newcomer N takes
+  # the fresh file for 2 s; A releases. W must finish only AFTER N releases. N closes the inherited fd 8 first:
+  # a lock is held until EVERY fd on its open file is closed, so an inherited fd 8 would keep W waiting anyway and
+  # make this case pass without the inode re-check (measured: it did, before this line).
+  d="$T/g/run-1"; mkdir -p "$d"; lk="$d.lock"; : > "$lk"; ord="$T/g.order"
+  ( exec 8>> "$lk"; flock 8; sleep 1; rm -f "$lk"; ( exec 8>&-; exec 7>> "$lk"; flock 7; echo "N-holds" >> "$ord"; sleep 2; echo "N-releases" >> "$ord" ) & sleep 0.3; exit 0 ) &
+  sleep 0.2
+  ( bash "$me" register "$d" w > /dev/null 2>&1; echo "W-registered" >> "$ord" ) &
+  wait
+  if [ "$(tr '\n' ' ' < "$ord")" = "N-holds N-releases W-registered " ]; then
+    case_line ok "a waiter on an unlinked lock re-opens and waits for the fresh one (no two holders)"
+  else
+    case_line FAIL "two holders: order was '$(tr '\n' ' ' < "$ord")'"
+  fi
 
   # must-RED (cop ruling, 2026-09-24): two jobs finishing TOGETHER. Exactly one deletes: never zero, never both.
   for i in 1 2 3 4 5 6 7 8; do
