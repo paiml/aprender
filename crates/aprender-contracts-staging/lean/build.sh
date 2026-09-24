@@ -29,7 +29,7 @@ if miss:
 ours = []
 for m in re.finditer(r"^warning: (\S+?):(\d+):(\d+): (.*)$", text, re.M):
     path = m.group(1)
-    rel = path[2:] if path.startswith("./") else path
+    rel = re.sub(r"^(?:\./)+", "", path)   # lake 4.29 prints ProvableContracts/..., older lakes ././././ProvableContracts/...
     if rel.startswith("ProvableContracts/") or "/lean/ProvableContracts/" in path:
         ours.append("%s:%s: %s" % (rel, m.group(2), m.group(4)[:100]))
 bad = 0
@@ -70,6 +70,7 @@ our-warning-ignored~our-warning-is-red~    print("FAIL  warning in our tree: %s"
 cache-miss-ignored~mathlib-elaborated-is-a-cache-miss~if miss:~if False:
 native-counted-as-miss~native-object-is-not-a-miss~(Mathlib\.[^\s:(]+)(?=\s|$)~(Mathlib\.[^\s(]+)
 build-rc-ignored~failed-build-is-red~if brc != 0:~if False:
+single-dot-strip~dot-prefixed-warning-is-red~    rel = re.sub(r"^(?:\./)+", "", path)~    rel = path[2:] if path.startswith("./") else path
 MUT
     if [ -d "${M:?}" ]; then rm -rf -- "${M:?}"; fi
   fi
