@@ -1,5 +1,5 @@
 ---
-status: complete-pending-merge
+status: complete
 ticket: PMAT-3847
 row: ONT-4c
 issue: 3847
