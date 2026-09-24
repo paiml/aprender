@@ -88,6 +88,12 @@ def main():
     t = tick(); st = lane.load_state()
     row("gpu lock held -> YIELD, pid gone", "YIELD" in t and not lane.pid_alive(pid1)
         and st.get("serving") is False, f"{t!r} stop_reason={st.get('stop_reason')}")
+    # the killed server is reaped, not left a zombie in the long-lived watcher
+    try:
+        state = open(f"/proc/{pid1}/stat").read().split(")")[-1].split()[0]
+    except OSError:
+        state = "gone"
+    row("yielded server reaped, not a zombie", state == "gone", f"/proc/{pid1} state={state}")
     hold.close()
     t = tick(); st = lane.load_state(); pid2 = st.get("pid")
     row("released -> START again", "START" in t and lane.pid_alive(pid2), f"{t!r} pid={pid2}")

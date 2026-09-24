@@ -133,6 +133,18 @@ def need_signals(own_pid):
     return why
 
 
+def reap_children():
+    """Reap every exited child: a server killed on yield (or dead on its own) would
+    otherwise stay a zombie in the long-lived watcher, one per yield cycle."""
+    while True:
+        try:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            return
+        if pid == 0:
+            return
+
+
 def stop_server(st, reason):
     pid = st.get("pid")
     # the server may exit between pid_alive and the kill; that is "already gone", never a
@@ -148,6 +160,7 @@ def stop_server(st, reason):
                 os.killpg(pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
+    reap_children()
     st.update({"serving": False, "pid": None, "stopped_at": time.time(),
                "stop_reason": reason})
     save_state(st)
@@ -185,6 +198,10 @@ def start_server(st, args):
     stop_server(st, ["startup timeout: /health never answered in 300 s"])
 
 
+class LaneBudgetSpent(BaseException):
+    """The ask's one hard budget ran out (raised by the SIGALRM handler)."""
+
+
 def health(url):
     try:
         with urllib.request.urlopen(url + "/health", timeout=3) as r:
@@ -195,6 +212,7 @@ def health(url):
 
 def cmd_watch(args):
     while True:
+        reap_children()
         st = load_state()
         why = need_signals(st.get("pid"))
         running = pid_alive(st.get("pid"))
@@ -283,9 +301,39 @@ def cmd_ask(args):
     remaining = lambda: max(1, int(deadline - time.monotonic()))
 
     def expired(*_):
-        raise TimeoutError(f"lane budget {args.timeout}s spent")
+        # NOT an Exception: every `except Exception` on the way (health(), the per-leg
+        # handlers) would swallow it and leave the next call unbounded (quorum R4/R5).
+        raise LaneBudgetSpent(f"lane budget {args.timeout}s spent")
     signal.signal(signal.SIGALRM, expired)
     signal.alarm(args.timeout)
+    try:
+        _ask_legs(args, messages, rec, deadline, remaining)
+    except LaneBudgetSpent as e:
+        rec["budget_spent"] = str(e)
+        hosts = [a["host"] for a in rec["attempts"]]
+        for h in ([] if args.force_lambda else ["gx10"]) + ["lambda"]:
+            if h not in hosts:
+                rec["attempts"].append({"host": h, "ok": False, "error": str(e)})
+    signal.alarm(0)
+    rec["finished"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    if "served_by" in rec:
+        try:
+            rec["text"] = rec["response"]["choices"][0]["message"]["content"]
+            rec["usage"] = rec["response"].get("usage")
+        except (KeyError, IndexError, TypeError) as e:
+            # a 200 without the OpenAI shape is no answer; the lane still prints a receipt
+            rec["attempts"][-1].update({"ok": False, "error": f"malformed response: {e!r}"})
+            del rec["served_by"]
+    if "served_by" not in rec:
+        rec.update({"served_by": None, "verdict": "unavailable"})
+        print(json.dumps(rec, indent=1))
+        return 2
+    print(json.dumps(rec, indent=1))
+    return 0
+
+
+def _ask_legs(args, messages, rec, deadline, remaining):
+    """gx10 first, lambda on any gx10 failure; each leg records one attempt."""
     if not args.force_lambda:
         try:
             dt, resp, prov = gx10_ask(messages, args.max_tokens, max(1, remaining() - 30))
@@ -303,12 +351,11 @@ def cmd_ask(args):
         except Exception as e:  # yield, stop mid-request, ssh loss: all pass to lambda
             rec["attempts"].append({"host": "gx10", "ok": False, "error": str(e)[:400]})
     if "served_by" not in rec and deadline - time.monotonic() < 1:
-        # The alarm is one-shot: if it fired in the gx10 leg, a lambda attempt would run
-        # with no wall-clock bound at all (quorum R4, both sonnet lanes). With >= 1 s left
-        # it has not fired (it was armed after `deadline` was taken), so it still bounds
-        # lambda.
+        # gx10 failed with under a second left: starting lambda now could only be cut off
+        # by the alarm mid-request. (The alarm itself can no longer be swallowed: it
+        # raises LaneBudgetSpent, a BaseException — quorum R4/R5.)
         rec["attempts"].append({"host": "lambda", "ok": False,
-                                "error": f"not tried: lane budget {args.timeout}s spent on gx10"})
+                                "error": f"not tried: < 1 s of the {args.timeout}s lane budget left"})
     elif "served_by" not in rec:
         try:
             h = health(LAMBDA_URL)
@@ -319,16 +366,6 @@ def cmd_ask(args):
                                        "unit": "apr-dogfood-4252.service (apr-dogfood.slice)"}})
         except Exception as e:  # advisory lane: no verdict is a receipt, never a crash
             rec["attempts"].append({"host": "lambda", "ok": False, "error": str(e)[:400]})
-    signal.alarm(0)
-    rec["finished"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    if "served_by" not in rec:
-        rec.update({"served_by": None, "verdict": "unavailable"})
-        print(json.dumps(rec, indent=1))
-        return 2
-    rec["text"] = rec["response"]["choices"][0]["message"]["content"]
-    rec["usage"] = rec["response"].get("usage")
-    print(json.dumps(rec, indent=1))
-    return 0
 
 
 def main():

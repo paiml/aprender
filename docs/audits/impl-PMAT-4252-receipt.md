@@ -82,3 +82,14 @@ Both sonnet lanes found the same gap independently. The alarm is one-shot. If it
 | the test has a daemon 60 s guard, so a hang is reported as a FAIL, not a stuck run | — |
 
 Real code: 3/3 rows PASS (budget 6 → 5.0 s; timeout 0 → 1.0 s; gx10-leg alarm → 6.0 s, lambda not tried).
+
+## Round-5 fixes (quorum R5 on af759e9c6: sonnet-A PASS, haiku PASS, sonnet-B FAIL). Round 6 NOT yet run
+
+| sonnet-B finding | Fix | Row |
+|---|---|---|
+| `health()`'s `except Exception` swallowed the alarm's TimeoutError, which left post_chat unbounded | the alarm raises `LaneBudgetSpent(BaseException)`, which no `except Exception` can catch; cmd_ask catches it once and records the legs it cut | "alarm fires inside health()" (real health vs the trickle server) PASS 6.0 s. Mutant `BaseException→Exception` → hangs, 60 s guard rc 3 (RED) |
+| a yielded server is never reaped, so each yield cycle leaves a zombie | `reap_children()` (waitpid -1 WNOHANG) in stop_server and on every watch tick | watch row "yielded server reaped, not a zombie" PASS |
+| a malformed 200 crashed cmd_ask with no receipt | extraction guarded; the result is verdict unavailable plus `malformed response: …` | "malformed 200 -> unavailable receipt" PASS |
+| (sonnet-A, non-blocking) under `--force-lambda`, the <1 s skip was mislabelled "spent on gx10" | message is now "< 1 s of the Ns lane budget left" | — |
+
+Real code: ask 5/5 PASS, watch 9/9 PASS.

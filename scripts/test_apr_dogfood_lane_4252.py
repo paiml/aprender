@@ -69,6 +69,7 @@ def main():
     budget = int(sys.argv[1]) if len(sys.argv) > 1 else 6
     url = hung_server()
     lane.LAMBDA_URL = url
+    real_health = lane.health
     lane.health = lambda u: {"stub": u}          # /health would hang too; the POST is the case
 
     def gx10_yielded(*_a, **_k):
@@ -127,7 +128,45 @@ def main():
     print(json.dumps({"case": "alarm spent in the gx10 leg", "rc": rcg,
                       "wall_s": round(wallg, 1), "lambda": recg["attempts"][-1].get("error"),
                       "result": "PASS" if okg else "FAIL"}))
-    return 0 if okg else 1
+    if not okg:
+        return 1
+    # The alarm fires inside health() — the REAL one, whose `except Exception` swallowed
+    # a TimeoutError — against the trickle server; post_chat after it would be unbounded.
+    lane.health = real_health
+    open(brief, "w").write("Reply PASS.")
+    args = argparse.Namespace(brief=brief, max_tokens=8, timeout=budget, force_lambda=True)
+    out = io.StringIO()
+    t0 = time.monotonic()
+    with contextlib.redirect_stdout(out):
+        rch = lane.cmd_ask(args)
+    wallh = time.monotonic() - t0
+    os.unlink(brief)
+    rech = json.loads(out.getvalue())
+    okh = rch == 2 and wallh <= budget + 2 and "budget_spent" in rech
+    print(json.dumps({"case": "alarm fires inside health()", "rc": rch,
+                      "wall_s": round(wallh, 1), "budget_spent": rech.get("budget_spent"),
+                      "result": "PASS" if okh else "FAIL"}))
+    if not okh:
+        return 1
+    # A 200 that is not the OpenAI shape: no answer, but a receipt, never a crash.
+    lane.post_chat = lambda *_a, **_k: (0.1, {"error": "not a completion"})
+    lane.health = lambda u: {"stub": u}
+    open(brief, "w").write("Reply PASS.")
+    args = argparse.Namespace(brief=brief, max_tokens=8, timeout=budget, force_lambda=True)
+    out = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out):
+            rcm = lane.cmd_ask(args)
+        recm = json.loads(out.getvalue())
+        okm = rcm == 2 and recm["verdict"] == "unavailable" and \
+            "malformed response" in recm["attempts"][-1].get("error", "")
+        detail = recm["attempts"][-1].get("error")
+    except Exception as e:
+        rcm, okm, detail = None, False, repr(e)
+    os.unlink(brief)
+    print(json.dumps({"case": "malformed 200 -> unavailable receipt", "rc": rcm,
+                      "detail": detail, "result": "PASS" if okm else "FAIL"}))
+    return 0 if okm else 1
 
 
 if __name__ == "__main__":
