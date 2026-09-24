@@ -262,7 +262,14 @@ impl Fx {
     }
 
     fn check(&self, strict: bool) -> Report {
-        check(&self.lean(), &self.contracts(), CheckOpts { strict })
+        check(
+            &self.lean(),
+            &self.contracts(),
+            CheckOpts {
+                strict,
+                validate_formalization: false,
+            },
+        )
     }
 }
 

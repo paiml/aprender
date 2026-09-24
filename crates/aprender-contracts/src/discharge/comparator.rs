@@ -20,6 +20,11 @@
 //! fingerprint: `defeq_instances` is measured only when the hashes differ, and an absent one is `MISMATCH`.
 //!
 //! Zero rows is not a pass: [`judge_rows`] declines (rc 2).
+//!
+//! Rows are cross-checked against the roots the Challenge files DECLARE (#4240): `Comparator.lean`'s `rowsOf`
+//! drops any name that trips `isInternal`, and a dropped root emits no row, so `n/m` would understate `m` with
+//! nothing noticing. [`cross_check`] counts every `theorem _root_.PvlChallenge.F` line ([`expected_roots`]) and
+//! fails `MISSING-ROW` for a root with no row and `UNEXPECTED-ROW` for a row with no root; `m` is the union.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -100,6 +105,61 @@ pub fn challenge_files(lean_dir: &Path) -> Vec<PathBuf> {
         .collect();
     out.sort();
     out
+}
+
+/// The prefix EV-7a's `render` writes on every challenge declaration.
+const ROOT_DECL: &str = "theorem _root_.";
+
+/// The solution names the Challenge files declare roots for: `theorem _root_.PvlChallenge.F[.{u}] …` ↦ `F`.
+/// Scans the text, never the elaborated environment, so it cannot share a filter with `rowsOf`.
+#[must_use]
+pub fn roots_in(text: &str) -> BTreeSet<String> {
+    text.lines()
+        .filter_map(|l| l.trim_start().strip_prefix(ROOT_DECL))
+        .filter_map(|rest| {
+            let end = rest.find(|c: char| c.is_whitespace()).unwrap_or(rest.len());
+            let decl = &rest[..end];
+            let decl = decl.find(".{").map_or(decl, |i| &decl[..i]);
+            solution_of(decl).map(str::to_string)
+        })
+        .collect()
+}
+
+/// [`roots_in`] over `files` (relative to `lean_dir`). An unreadable file is an error: its roots were never counted.
+pub fn expected_roots(lean_dir: &Path, files: &[PathBuf]) -> Result<BTreeSet<String>, String> {
+    let mut out = BTreeSet::new();
+    for f in files {
+        let p = lean_dir.join(f);
+        let text = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+        out.extend(roots_in(&text));
+    }
+    Ok(out)
+}
+
+/// Rows vs declared roots (#4240): a root with no row is `MISSING-ROW`, a row with no root `UNEXPECTED-ROW`, both
+/// rc 1. `c.total` becomes the size of the union, so a dropped row can never shrink `m`.
+pub fn cross_check(rows: &[Row], roots: &BTreeSet<String>, c: &mut Closure, r: &mut Report) {
+    let names: BTreeSet<&str> = rows.iter().map(|row| row.name.as_str()).collect();
+    let mut missing = 0;
+    for root in roots.iter().filter(|n| !names.contains(n.as_str())) {
+        missing += 1;
+        r.fail(format!(
+            "MISSING-ROW {root} -- {} is declared in a Challenge file but the comparator emitted no row for it",
+            challenge_decl(root)
+        ));
+    }
+    for n in names.iter().filter(|n| !roots.contains(**n)) {
+        r.fail(format!(
+            "UNEXPECTED-ROW {n} -- the comparator reported {} but no Challenge file declares it",
+            challenge_decl(n)
+        ));
+    }
+    c.total = names.len() + missing;
+    r.lines.push(format!(
+        "COMPARATOR rows cross-checked: {} row(s), {} declared root(s)",
+        names.len(),
+        roots.len()
+    ));
 }
 
 /// Judge the rows into `r`. Failures are judged before the zero-row decline.
