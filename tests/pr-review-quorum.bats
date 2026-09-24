@@ -672,3 +672,80 @@ arm_row() {
   n=$(find "$FIX" -maxdepth 1 -type d -name 'q-*' | wc -l)
   [ "$n" -eq 69 ] || { echo "expected 69 q-* fixture directories (q-02..q-70; q-01 is a path that must NOT exist), found $n"; false; }
 }
+
+# --- #3594: readability is decided by COUNTING DOCUMENTS, on every jq on the box ---
+#
+# `jq -e .` was the Q1 readability test, and it tests the LAST VALUE's truthiness, not
+# parsing: jq 1.6 exits 0 on a zero-byte or blank file for any filter, so the five
+# `jq -e` autonomy assertions after it passed vacuously and a zero-byte receipt was
+# refused only by the unrelated delta_sweep.status capture. The fleet floor (infra#833,
+# jq 1.8.2) hides that on the runners; these rows prove the gate WITHOUT the floor by
+# running the arm script once per distinct jq binary on PATH (lambda carries 1.6 at
+# /usr/bin/jq), and they assert the reason names EMPTINESS - a refusal for the wrong
+# reason is what the old gate produced, and a status-only assertion scores it a pass.
+
+# derive_fixture <name> <base-row> -> echoes a private writable copy of <base-row>
+derive_fixture() {
+  local d="$WORK/$1"
+  mkdir -p "$d"
+  cp -r "$FIX/$2/." "$d/"
+  printf '%s' "$d"
+}
+
+# arm_under_every_jq <dir> <class> <reason>: REFUSE under every distinct jq binary.
+arm_under_every_jq() {
+  local dir=$1 class=$2 reason=$3 j n=0 bin seen=''
+  while IFS= read -r j; do
+    local real; real=$(readlink -f "$j")
+    case " $seen " in *" $real "*) continue ;; esac
+    seen="$seen $real"
+    bin="$WORK/jqbin-$n"; mkdir -p "$bin"; ln -sf "$real" "$bin/jq"
+    PATH="$bin:$PATH" run "$ARM" --explain --pr 2783 --receipt "$dir" --context "$dir/pr-context.json"
+    [ "$status" -eq 1 ] || { echo "$("$real" --version): expected REFUSE, got $status:"; echo "$output"; return 1; }
+    # The reason is matched AFTER the REFUSE line only: the positive-control banner
+    # printed before it quotes refusal reasons too ("carries no predicate.autonomy
+    # block"), and matching the whole output made e-05 pass against the unfixed gate.
+    local verdict=${output#*REFUSE  pr=}
+    [[ "$output" == *"REFUSE  pr="* && "$verdict" == *"[$class]"* && "$verdict" == *"$reason"* ]] || {
+      echo "$("$real" --version): refused for the wrong reason, wanted [$class] '$reason':"; echo "$output"; return 1; }
+    n=$((n + 1))
+  done < <(type -aP jq)
+  [ "$n" -ge 1 ] || { echo "no jq on PATH"; return 1; }
+}
+
+@test "e-01 a ZERO-BYTE receipt refuses Q1 naming emptiness, under every jq on PATH (#3594)" {
+  local d; d=$(derive_fixture e-01 q-05-receipt-unparseable)
+  : > "$d/receipt.intoto.jsonl"
+  arm_under_every_jq "$d" Q1 "receipt.intoto.jsonl is empty"
+}
+
+@test "e-02 a WHITESPACE-ONLY receipt is empty, not one record (#3594)" {
+  local d; d=$(derive_fixture e-02 q-05-receipt-unparseable)
+  printf '\n  \n' > "$d/receipt.intoto.jsonl"
+  arm_under_every_jq "$d" Q1 "receipt.intoto.jsonl is empty"
+}
+
+@test "e-03 two JSON documents in the receipt are not one statement (#3594)" {
+  local d; d=$(derive_fixture e-03 q-05-receipt-unparseable)
+  printf '{}\n{}\n' > "$d/receipt.intoto.jsonl"
+  arm_under_every_jq "$d" Q1 "holds 2 JSON documents"
+}
+
+@test "e-04 a zero-byte SARIF and a zero-byte PR context are empty too (#3594)" {
+  local d; d=$(derive_fixture e-04s q-06-sarif-unparseable)
+  : > "$d/findings.sarif"
+  arm_under_every_jq "$d" Q1 "findings.sarif is empty"
+  d=$(derive_fixture e-04c q-08-context-unparseable)
+  : > "$d/pr-context.json"
+  arm_under_every_jq "$d" Q1 "is empty"
+}
+
+@test "e-05 the document \`null\` PARSES, and is refused by the autonomy block, not as unparseable (#3594)" {
+  local d; d=$(derive_fixture e-05 q-05-receipt-unparseable)
+  printf 'null\n' > "$d/receipt.intoto.jsonl"
+  arm_under_every_jq "$d" Q1 "carries no predicate.autonomy block"
+}
+
+@test "e-06 garbage is still unparseable under every jq (q-05, re-run per binary)" {
+  arm_under_every_jq "$FIX/q-05-receipt-unparseable" Q1 "not parseable JSON"
+}
