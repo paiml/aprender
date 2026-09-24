@@ -205,3 +205,45 @@ fn dense_turn_keeps_the_old_context_error() {
         "{err:?}"
     );
 }
+
+/// Streaming hands on every generated token but the stop, exactly the tokens
+/// the turn returns past the prompt.
+#[test]
+fn dense_stream_never_hands_on_the_stop_token() {
+    let model = model();
+    let prompt = [2, 4, 6];
+    let unstopped = model
+        .generate_with_cache(&prompt, &gen(4))
+        .expect("reference loop");
+    let stop = unstopped[prompt.len() + 2];
+    let cfg = QuantizedGenerateConfig {
+        stop_tokens: vec![stop],
+        ..gen(8)
+    };
+    let want = model
+        .generate_with_cache(&prompt, &cfg)
+        .expect("reference loop");
+    let mut seen = Vec::new();
+    let mut session = DenseSession::new(DenseForward::cpu(Arc::clone(&model)));
+    let (tokens, _) = dense_stream(&mut session, &prompt, &cfg, &mut |t| {
+        seen.push(t);
+        true
+    })
+    .expect("dense stream");
+    assert_eq!(tokens, want);
+    assert_eq!(seen, want[prompt.len()..], "the stop token was streamed");
+}
+
+/// A sink that stops (the client went away) ends the turn there.
+#[test]
+fn dense_stream_stops_when_the_sink_does() {
+    let mut session = DenseSession::new(DenseForward::cpu(model()));
+    let mut calls = 0;
+    let (tokens, _) = dense_stream(&mut session, &[1, 2], &gen(8), &mut |_| {
+        calls += 1;
+        calls < 2
+    })
+    .expect("dense stream");
+    assert_eq!(calls, 2);
+    assert_eq!(tokens.len(), 4);
+}
