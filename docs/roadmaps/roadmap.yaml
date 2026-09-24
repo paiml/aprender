@@ -21497,3 +21497,21 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4209
+  github_issue: 4209
+  item_type: task
+  title: 'CRUX greedy cell: route the llama-server stop through crux_cell_teardown (no inline kill) (#4209)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T08:30:51Z
+  updated: 2026-09-24T08:30:51Z
+  spec: null
+  acceptance_criteria:
+  - Greedy cell installs crux_teardown_trap over llama-server.pid; rows read crux_teardown_why and a non-clean teardown makes every greedy row RED; no inline server kill in scripts/lib/crux_cells_*.sh (must-RED row with planted mutant); greedy + serve-code tables stay green.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
