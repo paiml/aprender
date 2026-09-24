@@ -108,7 +108,7 @@ make tier1                   # Fast feedback (<1s): fmt, clippy, check
 make tier2                   # Pre-commit (<5s): tests + strict clippy
 make tier3                   # Pre-push (1-5min): full validation + coverage
 make tier4                   # CI/CD: includes pmat analysis
-make coverage                # Coverage report (enforced floor 88%, target ≥95%)
+make coverage                # Coverage report (enforced floor: COV_FLOOR in Makefile, target ≥95%)
 ```
 
 ## Debugging: Use apr Tools First (MANDATORY)
@@ -404,7 +404,7 @@ ran (#2361). When a fix seems to have no effect, ask what else claims that name
 
 ## Testing
 
-Target: 60% unit, 30% property, 10% integration. Coverage: **88.78% line** (786448/885829, measured 2026-07-29 by coverage-nightly on 95145584f; target ≥95%, enforced floor 88% via COV_FLOOR). The long-quoted "96.35%" predates the measurement ever working - the pipeline reported 0/0 until #2333.
+Target: 60% unit, 30% property, 10% integration. Coverage: **90.84% line** (849706/935347, measured 2026-09-24 by coverage-nightly run 36065904363 on 237f10f8b, the monorepo-scoped report of #3839/#4023; target ≥95%, enforced floor 89% via COV_FLOOR). Before #3839 the exclude regex still described the pre-monorepo tree, so the 88.78% of 2026-07-29 measured a different set of files. The long-quoted "96.35%" predates the measurement ever working - the pipeline reported 0/0 until #2333.
 
 ```bash
 cargo test -p <crate> --lib             # Unit tests for one crate (what you run while working)
@@ -508,7 +508,7 @@ still carries a header comment claiming it was "Updated for PMAT v2.215.0".
 
 | Score | Value | Provenance |
 |-------|-------|------------|
-| Line coverage | **88.78%** (786448/885829) | coverage-nightly, 2026-07-29, commit `95145584f`. The long-quoted "96.35%"/"96.94%" predates the pipeline ever working — it reported 0/0 until #2333 |
+| Line coverage | **90.84%** (849706/935347) | coverage-nightly run 36065904363, 2026-09-24, commit `237f10f8b` (monorepo scope, #3839). The previous 88.78% (2026-07-29, `95145584f`) used the pre-monorepo exclude regex. The long-quoted "96.35%"/"96.94%" predates the pipeline ever working — it reported 0/0 until #2333 |
 | Project score / TDG / mutation % | **re-derive** — `pmat rust-project-score`, `pmat tdg . --include-components`, `cargo mutants` | The previously published "124/134", "TDG 95.2/100" and "Mutation 85.3%" carried no date or commit and could not be reproduced from the tree |
 
 **Thresholds — read from the config, which does not say what this file used to say:**
@@ -516,7 +516,7 @@ still carries a header comment claiming it was "Updated for PMAT v2.215.0".
 | Gate | Configured as | Where |
 |------|---------------|-------|
 | Coverage (aspirational) | `min_coverage = 95.0` | `.pmat-gates.toml` |
-| Coverage (**enforced**) | `COV_FLOOR := 88` — the last *measured* value, and the one that actually fails a build | `Makefile:287`, `.github/workflows/coverage-nightly.yml` |
+| Coverage (**enforced**) | `COV_FLOOR := 89` — a ratchet under the last *measured* value, and the one that actually fails a build | `Makefile` (`COV_FLOOR`), `.github/workflows/coverage-nightly.yml` |
 | Cyclomatic complexity | `max_complexity = 10` per fn | `.pmat-gates.toml` |
 | TDG | `min_grade = "B"` — **not** "≥95" | `.pmat-gates.toml` `[tdg]` |
 | Mutation | `MUTANTS_MAX_MISSED` (default **0**) surviving mutants **on the PR diff** — not a global 85% score | `.github/workflows/ci.yml:517` |
