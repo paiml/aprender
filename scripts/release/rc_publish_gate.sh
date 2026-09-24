@@ -28,6 +28,10 @@
 #             compiles the tarballs (the autopilot dryrun step used to run `--check`, a
 #             version report, and never stopped). Verify does NOT build tests or benches:
 #             test-in-tarball defects (#4192/#4193/#4129/#4130) stay with the tarball lane.
+#             Run it on the BUMPED tree: at an already-published version (batch/0.70.0 still
+#             said 0.69.0 while crates.io had 0.69.1) `^0.69.0` resolves the registry's
+#             newer copy over the overlay and aprender-orchestrate red on a stale realizar
+#             API -- a false red. Measured 2026-09-24 at 0.70.0: 72/72 green, 18 min warm.
 #
 # ROOT is a clean checkout of the rc commit. The checks run from THIS file's checkout,
 # so a release branch cannot weaken the gate that judges it.
