@@ -37,7 +37,10 @@
 # restamp in the same commit and every direction check compared the branch with
 # itself. Every PR that moved a counter also had to restamp, and two such PRs
 # conflicted on the same lines. Now `--check` measures the comparand tree
-# (merge-base with origin/main, else its tip — scripts/lib_baseline_ratchet.sh),
+# (scripts/lib/resolve_base.sh: merge-base with origin/main on a branch, the
+# FIRST PARENT on a push to main — where the merge-base is HEAD itself and HEAD
+# judged against HEAD is a vacuous pass — and a refusal, never the tree against
+# itself, when no base can be named),
 # extracted with `git archive`, and the working tree, with ONE instrument, and
 # holds each direction between those two measurements. lint-baseline.json keeps
 # only DECISIONS: armed_gates, armed_shapes (both reviewable, and read by `pv
@@ -51,8 +54,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASELINE="$REPO_ROOT/contracts/lint-baseline.json"
-# shellcheck source=scripts/lib_baseline_ratchet.sh
-. "$REPO_ROOT/scripts/lib_baseline_ratchet.sh" || exit 2
+PROG=check_ont_ratchet
+# shellcheck source=scripts/lib/resolve_base.sh
+. "$REPO_ROOT/scripts/lib/resolve_base.sh" || exit 2
 
 # ── the consumer probe ───────────────────────────────────────────────────────
 # Derived from the binary's own surface, never from a list here. `pv census` is
@@ -248,20 +252,18 @@ decisions() { # prints the lint-baseline.json document
 # The comparand's measurement: the SAME measure(), run over the comparand's
 # contracts/ extracted from the object store — never over a number on disk.
 measure_comparand() { # measure_comparand SCRATCH_DIR -> JSON on stdout; rc 1 when unmeasurable
-    local tree="$1" res mode ref
-    res=$(baseline_ratchet_resolve "$REPO_ROOT" "$BASELINE_RATCHET_BASE_REF" contracts/lint-baseline.json)
-    mode=${res%%$'\t'*}; ref=${res##*$'\t'}
-    case "$mode" in
-        MERGEBASE | TIP) ;;
-        *)
-            printf 'FAIL  comparand <%s> resolved %s: the counters are UNMEASURED at the base, and that is not "unchanged".\n' "$ref" "$mode" >&2
-            printf '      In CI: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main\n' >&2
-            return 1 ;;
-    esac
+    local tree="$1" ref
+    BASE_REF="" BASE_HOW=""
+    if ! resolve_base HEAD || [ -z "$BASE_REF" ]; then
+        printf 'FAIL  no comparand could be named for HEAD: the counters are UNMEASURED at the base, and that is not "unchanged".\n' >&2
+        printf '      In CI: git fetch --no-tags --depth=2 origin +refs/heads/main:refs/remotes/origin/main\n' >&2
+        return 1
+    fi
+    ref="$BASE_REF"
     git -C "$REPO_ROOT" archive --format=tar "$ref" -- contracts | tar -xf - -C "$tree" || {
         printf 'FAIL  could not extract contracts/ at %s\n' "$ref" >&2; return 1; }
     [ -d "$tree/contracts" ] || { printf 'FAIL  %s carries no contracts/\n' "$ref" >&2; return 1; }
-    printf '  comparand   %s %s\n' "$mode" "$(git -C "$REPO_ROOT" rev-parse --short "$ref" 2>/dev/null || printf '%s' "$ref")" >&2
+    printf '  comparand   %s (%s)\n' "$(git -C "$REPO_ROOT" rev-parse --short "$ref" 2>/dev/null || printf '%s' "$ref")" "$BASE_HOW" >&2
     REPO_ROOT="$tree" BASELINE="$tree/contracts/lint-baseline.json" measure
 }
 
@@ -401,9 +403,10 @@ self_test() {
     base_sha=$(git -C "$r" rev-parse HEAD)
     git -C "$r" update-ref refs/remotes/origin/main "$base_sha"
     git -C "$r" checkout -qb feat
+    git -C "$r" commit -q --allow-empty -m "feat: a branch commit, so HEAD is not the origin/main tip (push shape)"
     dir_row() { # dir_row NAME WANT_RC — measures $r's working tree against origin/main
         local rc=0
-        REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" BASELINE_RATCHET_BASE_REF=origin/main \
+        REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" \
             ONT_PROBE=true main --check >"$t/dir.out" 2>&1 || rc=$?
         row "$1" "$rc" "$2"
         git -C "$r" checkout -q -- . ; git -C "$r" clean -qfd
@@ -421,12 +424,26 @@ self_test() {
     printf '{\n  "armed_gates": ["validate"],\n  "ont": {"contracts_anchored": 0}\n}\n' > "$r/contracts/lint-baseline.json"
     git -C "$r" commit -qam "drop an anchor and restamp the counter in the same commit"
     local rc=0
-    REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" BASELINE_RATCHET_BASE_REF=origin/main \
+    REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" \
         ONT_PROBE=true main --check >"$t/dir.out" 2>&1 || rc=$?
     row "RED: a fall committed WITH a restamped counter" "$rc" 1
+    # PUSH SHAPE: HEAD is the origin/main tip, so merge-base(origin/main, HEAD) is HEAD
+    # itself and a merge-base comparand would pass the fall vacuously (pvl-a, 19:55Z)
+    git -C "$r" update-ref refs/remotes/origin/main HEAD
+    rc=0
+    REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" \
+        ONT_PROBE=true main --check >"$t/dir.out" 2>&1 || rc=$?
+    row "RED: a push to main that drops an anchor is judged against its FIRST PARENT" "$rc" 1
+    grep -q 'first parent of HEAD' "$t/dir.out"; row "push shape names its comparand as the first parent" "$?" 0
+    printf 'entity: kernel\n' > "$r/contracts/a1.yaml"; git -C "$r" add -A; git -C "$r" commit -qm "restore the anchor"
+    git -C "$r" update-ref refs/remotes/origin/main HEAD
+    rc=0
+    REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" \
+        ONT_PROBE=true main --check >"$t/dir.out" 2>&1 || rc=$?
+    row "GREEN: a push to main that restores the anchor (control)" "$rc" 0
     git -C "$r" update-ref -d refs/remotes/origin/main
     rc=0
-    REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" BASELINE_RATCHET_BASE_REF=origin/main \
+    REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" \
         ONT_PROBE=true main --check >"$t/dir.out" 2>&1 || rc=$?
     row "RED: no comparand is UNMEASURED, not unchanged" "$rc" 1
 
