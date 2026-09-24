@@ -33,5 +33,7 @@ fn bench_on_qwen35_times_session_generate() {
     );
     assert_eq!(result.iteration_times.len(), 2);
     assert!(result.total_tokens > 0, "{result:?}");
-    assert!(result.time_to_first_token <= result.median_time.max(result.mean_time));
+    // TTFT is iteration 0's; it cannot exceed iteration 0's own total.
+    assert!(result.time_to_first_token <= result.iteration_times[0]);
+    assert!(result.time_to_first_token > std::time::Duration::ZERO);
 }

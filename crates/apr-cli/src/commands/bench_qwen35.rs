@@ -81,6 +81,7 @@ fn session_timed_turn(
             turn.reused
         )));
     }
-    let total = Duration::from_micros(traced.duration_us);
+    // TTFT and the total are read off the same clock, so ttft <= total holds.
+    let total = t0.elapsed();
     Ok((turn, total, first.unwrap_or(total)))
 }
