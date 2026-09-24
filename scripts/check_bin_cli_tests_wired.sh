@@ -131,7 +131,7 @@ update() { # update <root> <ledger>
 self_test() {
     local T red=0 got
     T=$(mktemp -d -t check_bin_cli_tests_wired.XXXXXXXX) || { echo "cannot mktemp" >&2; return 2; }
-    trap 'case "$T" in /tmp/?*) rm -rf -- "$T" ;; esac' RETURN
+    trap 'case "$T" in /tmp/?*) rm -rf -- "${T:?}" ;; esac' RETURN
     mk() { mkdir -p "$(dirname "$T/tree/$1")"; printf '%s\n' "$2" > "$T/tree/$1"; }
     mk Cargo.toml '[package]
 name = "facade"'

@@ -189,7 +189,7 @@ run_e2e() {
         env APR_BIN_REQUIRE=nighty bash -c '. scripts/apr_bin.sh || exit 1; printf %s "$APR"'
     e2e "apr_bin.sh fleet marker makes nightly the default" refuse "NOT THE NIGHTLY" \
         env APR_FLEET_MARKER="$T/marker" PATH="$T/stale:$PATH" bash -c '. scripts/apr_bin.sh || exit 1; printf %s "$APR"'
-    e2e "pv_bin.sh nightly mode resolves the nightly (no cargo build)" accept "$T/nightly/pv" \
+    e2e "pv_bin.sh nightly mode resolves the nightly (no local build)" accept "$T/nightly/pv" \
         env PV_BIN_REQUIRE=nightly PATH="$T/nightly:$PATH" bash -c '. scripts/pv_bin.sh || exit 1; printf %s "$PV"'
     e2e "pv_bin.sh nightly mode refuses a crates.io pv" refuse "NOT THE NIGHTLY" \
         env PV_BIN_REQUIRE=nightly PATH="$T/cratesio:$PATH" bash -c '. scripts/pv_bin.sh || exit 1; printf %s "$PV"'
