@@ -22,6 +22,14 @@ T=$(mktemp -d)
 case "$T" in /tmp/* | "${TMPDIR:-/tmp}"/*) ;; *) echo "check_nightly_pin: unexpected mktemp dir '$T'" >&2; exit 2 ;; esac
 trap 'rm -rf -- "${T:?}"' EXIT
 
+# HERMETIC: every knob nightly_pin.sh reads is scrubbed here, once, so a row
+# sees only what it sets. The refusal text itself advises exporting
+# APR_BIN_REQUIRE=head, and a fleet host carries a real marker under $HOME;
+# either leaked into the "marker makes nightly the default" row and failed a
+# correct tree (PMAT-4186 quorum). The marker baseline points at nothing.
+unset APR_BIN PV_BIN APR_BIN_REQUIRE PV_BIN_REQUIRE APR_NIGHTLY_MANIFEST APR_NIGHTLY_MAX_AGE_H GITHUB_ACTIONS
+export APR_FLEET_MARKER="$T/nomarker"
+
 case "$(uname -m)" in
     x86_64) TRIPLE=x86_64-unknown-linux-gnu ;;
     aarch64 | arm64) TRIPLE=aarch64-unknown-linux-gnu ;;
@@ -167,6 +175,8 @@ run_e2e() {
         env PV_BIN_REQUIRE=nightly PATH="$T/nightly:$PATH" bash -c '. scripts/pv_bin.sh || exit 1; printf %s "$PV"'
     e2e "pv_bin.sh nightly mode refuses a crates.io pv" refuse "NOT THE NIGHTLY" \
         env PV_BIN_REQUIRE=nightly PATH="$T/cratesio:$PATH" bash -c '. scripts/pv_bin.sh || exit 1; printf %s "$PV"'
+    e2e "pv_bin.sh fleet marker makes nightly the default" refuse "NOT THE NIGHTLY" \
+        env APR_FLEET_MARKER="$T/marker" PATH="$T/cratesio:$PATH" bash -c '. scripts/pv_bin.sh || exit 1; printf %s "$PV"'
     e2e "pv_bin.sh missing manifest refused" refuse "MISSING MANIFEST" \
         env PV_BIN_REQUIRE=nightly APR_NIGHTLY_MANIFEST="$T/none.json" PATH="$T/nightly:$PATH" bash -c '. scripts/pv_bin.sh || exit 1; printf %s "$PV"'
     # Outside any checkout the rule itself is unreachable; with the fleet
