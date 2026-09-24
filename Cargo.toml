@@ -4,6 +4,8 @@ members = [
     "crates/aprender-core",
     # --- APR-2231: sovereign `.apr` container leaf crate ---
     "crates/apr-format",
+    # --- #4219: shared build.rs helper that stamps APR_GIT_SHA into every [[bin]] ---
+    "crates/aprender-build-sha",
     # --- Pre-existing aprender crates ---
     "crates/aprender-shell",
     "crates/aprender-tsp",
@@ -294,6 +296,7 @@ aprender-train-common = { path = "crates/aprender-train-common", version = "0.69
 aprender-train-distill = { path = "crates/aprender-train-distill", version = "0.69.0" }
 aprender-orchestrate = { path = "crates/aprender-orchestrate", version = "0.69.0" }
 aprender-contracts = { path = "crates/aprender-contracts", version = "0.69.0" }
+aprender-build-sha = { path = "crates/aprender-build-sha", version = "0.69.0" }
 aprender-profile = { path = "crates/aprender-profile", version = "0.69.0" }
 aprender-profile-core = { path = "crates/aprender-profile-core", version = "0.69.0" }
 aprender-zram-core = { path = "crates/aprender-zram-core", version = "0.69.0" }

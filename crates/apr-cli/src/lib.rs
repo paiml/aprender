@@ -49,9 +49,6 @@ pub mod verbosity;
 /// PERF-021: the accelerator refusal, shared by serve, run and chat.
 mod accel;
 
-/// #4110: the shipped build.rs, compiled and run as cargo would on a packaged crate.
-#[cfg(test)]
-mod build_rs_vcs_sha_tests;
 mod commands;
 pub mod error;
 mod output;

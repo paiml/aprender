@@ -52,7 +52,7 @@ const REQUIRED_TOP_KEYS: &[&str] = &[
 #[derive(Parser)]
 #[command(
     name = "apr-corpus-ingest",
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"),
     about = "Dry-run scaffold for SHIP-TWO-001 MODEL-2 corpus ingest (C-DATA-THESTACK-PYTHON)"
 )]
 struct Cli {
