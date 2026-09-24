@@ -9,7 +9,7 @@
 # were dogfooded are the bytes that ship. Only the asset NAME carries the rc label, so
 # only the name changes:
 #
-#   1. read the rc release: a prerelease, carrying all sixteen assets
+#   1. read the rc release: a prerelease, carrying all eighteen assets
 #      (scripts/check_release_assets.sh), its tag resolved to a commit
 #   2. download every asset and verify each tarball against its .sha256; a missing
 #      .sha256 or a mismatch refuses
@@ -25,7 +25,7 @@
 # autopilot's host check therefore take the one apr-* directory an archive holds.
 #
 # Publishing with a personal token fires `release: published` in binary-release.yml.
-# Its `assets` job sees all sixteen present and skips every build, so nothing
+# Its `assets` job sees all eighteen present and skips every build, so nothing
 # overwrites these bytes. Verify and smoke still run, on the promoted bytes.
 #
 # Exit: 0 promoted (or the dry run passed) · 1 refused / a check failed · 2 ENV/usage.

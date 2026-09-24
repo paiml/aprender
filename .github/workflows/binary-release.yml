@@ -83,7 +83,7 @@ jobs:
   # is its rc's exact bytes (scripts/release/promote_rc.sh); publishing it with a
   # personal token fires `release: published` here, and the upload steps below delete
   # and replace same-named assets, so an ungated rebuild would silently swap the bytes
-  # that were dogfooded for new ones. With all sixteen present the build jobs skip and
+  # that were dogfooded for new ones. With all eighteen present the build jobs skip and
   # verify + smoke still run, on the promoted bytes. A partial release (a lane died)
   # still rebuilds. An unreadable release (exit 2) fails this job, so the builds skip:
   # when in doubt, never overwrite.
@@ -264,7 +264,10 @@ jobs:
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
-          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG")
+          # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
+          # and releases/tags/ never returns a draft
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
           rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
           for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
             # --clobber semantics: delete an asset of the same name first
@@ -409,7 +412,10 @@ jobs:
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
-          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG")
+          # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
+          # and releases/tags/ never returns a draft
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
           rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
           for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
             # --clobber semantics: delete an asset of the same name first
@@ -593,10 +599,89 @@ jobs:
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
-          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG")
+          # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
+          # and releases/tags/ never returns a draft
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
           rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
           for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
             # --clobber semantics: delete an asset of the same name first
+            aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next((a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n), ""))' "$f")
+            [ -n "$aid" ] && curl -sSf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "$API/releases/assets/$aid" > /dev/null
+            curl -sSf -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/octet-stream" \
+              --data-binary @"$f" "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/$rid/assets?name=$f" \
+              | python3 -c 'import json,sys; a=json.load(sys.stdin); print("uploaded", a["name"], a["size"], "bytes")'
+          done
+
+  # mini (Darwin arm64) is fleet hardware and could not take v0.69.3-rc.2: the release shipped
+  # no darwin asset, so mini was RED on every rc (#4327, infra-64 evidence/fleet-versions.md).
+  # Native build on the self-hosted mini-m4 runner (no hosted runners, #3073). No container:
+  # macOS has no glibc floor to pin, and the stamped version + the sha are checked below
+  # before anything is uploaded.
+  build-apr-darwin:
+    name: apr (cpu) aarch64-apple-darwin on mini
+    needs: assets
+    if: needs.assets.outputs.present == 'false'
+    runs-on: [self-hosted, macOS, ARM64, mini]
+    steps:
+      - name: Resolve release tag
+        id: tag
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          [ -n "$TAG" ] || { echo "::error::No tag resolved"; exit 1; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout at tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      # The release scripts come from THIS workflow's commit: the tag tree predates them.
+      - name: Stamp the rc version into the tag tree (#4110)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git fetch --no-tags --depth 1 origin "$GITHUB_WORKFLOW_SHA"
+          for f in stamp_rc_version.sh asset_version_check.sh; do
+            git show "FETCH_HEAD:scripts/release/$f" > "$RUNNER_TEMP/$f"
+          done
+          case "$TAG" in *-rc.*) ;; *) echo "final tag $TAG: nothing to stamp"; exit 0 ;; esac
+          bash "$RUNNER_TEMP/stamp_rc_version.sh" "$GITHUB_WORKSPACE" "$TAG"
+
+      - name: Build apr on the default features (no cuda)
+        run: |
+          APR_GIT_SHA_OVERRIDE="$(git rev-parse --short=9 HEAD)" \
+            cargo build --release -p apr-cli --bin apr --target aarch64-apple-darwin --locked
+          strip target/aarch64-apple-darwin/release/apr
+
+      - name: The binary names its tag and commit (#4110)
+        run: |
+          line=$(target/aarch64-apple-darwin/release/apr --version)
+          bash "$RUNNER_TEMP/asset_version_check.sh" "${{ steps.tag.outputs.tag }}" "$(git rev-parse HEAD)" "$line"
+
+      - name: Package archive
+        id: package
+        run: |
+          ARCHIVE="apr-${{ steps.tag.outputs.tag }}-aarch64-apple-darwin-cpu"
+          mkdir -p "$ARCHIVE"
+          cp target/aarch64-apple-darwin/release/apr "$ARCHIVE/"
+          for f in README.md LICENSE LICENSE-MIT LICENSE-APACHE; do [ -f "$f" ] && cp "$f" "$ARCHIVE/"; done
+          tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
+          shasum -a 256 "${ARCHIVE}.tar.gz" > "${ARCHIVE}.tar.gz.sha256"
+          echo "archive=${ARCHIVE}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "sha=${ARCHIVE}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload assets to release (REST, no gh)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327)
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
+          rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
             aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next((a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n), ""))' "$f")
             [ -n "$aid" ] && curl -sSf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "$API/releases/assets/$aid" > /dev/null
             curl -sSf -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/octet-stream" \
@@ -616,7 +701,7 @@ jobs:
   # mutation (RED) that this job cannot demonstrate on a real release.
   verify-apr-assets:
     name: All four apr assets are on the release
-    needs: [build, build-apr-cuda, build-apr-cpu]
+    needs: [build, build-apr-cuda, build-apr-cpu, build-apr-darwin]
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
@@ -685,7 +770,10 @@ jobs:
           T="${{ matrix.target }}"
           D="$RUNNER_TEMP/apr-cuda-smoke"; rm -rf "$D"; mkdir -p "$D"; cd "$D"
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
-          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG")
+          # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
+          # and releases/tags/ never returns a draft
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
           for f in "apr-${TAG}-${T}-cuda.tar.gz" "apr-${TAG}-${T}-cuda.tar.gz.sha256"; do
             aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next(a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n))' "$f")
             curl -sSfL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" -o "$f" "$API/releases/assets/$aid"
@@ -760,7 +848,10 @@ jobs:
           T="${{ matrix.target }}"
           D="$RUNNER_TEMP/apr-cpu-smoke"; rm -rf "$D"; mkdir -p "$D"; cd "$D"
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
-          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG")
+          # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
+          # and releases/tags/ never returns a draft
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
           for f in "apr-${TAG}-${T}-cpu.tar.gz" "apr-${TAG}-${T}-cpu.tar.gz.sha256"; do
             aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next(a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n))' "$f")
             curl -sSfL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" -o "$f" "$API/releases/assets/$aid"
@@ -798,7 +889,7 @@ jobs:
 
   summary:
     name: Summary
-    needs: [assets, build, build-apr-cuda, build-apr-cpu, verify-apr-assets, smoke-cuda, smoke-cpu]
+    needs: [assets, build, build-apr-cuda, build-apr-cpu, build-apr-darwin, verify-apr-assets, smoke-cuda, smoke-cpu]
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
@@ -830,10 +921,11 @@ jobs:
             echo "  - aarch64-unknown-linux-gnu"
             echo ""
             echo "### apr Binary Release: $TAG - four assets, {cuda,cpu} x {x86_64,aarch64}"
-            echo "- cuda build: ${{ needs.build-apr-cuda.result }} · cpu build: ${{ needs.build-apr-cpu.result }}"
+            echo "- cuda build: ${{ needs.build-apr-cuda.result }} · cpu build: ${{ needs.build-apr-cpu.result }} · darwin build (mini): ${{ needs.build-apr-darwin.result }}"
             echo "- all four on the release: ${{ needs.verify-apr-assets.result }} · smoke cuda (yoga+gx10): ${{ needs.smoke-cuda.result }} · smoke cpu (clean-room+yoga+gx10): ${{ needs.smoke-cpu.result }}"
             echo "  - apr-$TAG-x86_64-unknown-linux-gnu-cuda.tar.gz (+ .sha256)"
             echo "  - apr-$TAG-aarch64-unknown-linux-gnu-cuda.tar.gz (+ .sha256)"
             echo "  - apr-$TAG-x86_64-unknown-linux-gnu-cpu.tar.gz (+ .sha256)"
             echo "  - apr-$TAG-aarch64-unknown-linux-gnu-cpu.tar.gz (+ .sha256)"
+            echo "  - apr-$TAG-aarch64-apple-darwin-cpu.tar.gz (+ .sha256)"
           } >> "$GITHUB_STEP_SUMMARY"

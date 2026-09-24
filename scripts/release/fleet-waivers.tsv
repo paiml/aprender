@@ -1,0 +1,5 @@
+# Fleet-cell waivers for the rc cut (#4328 C4) -- read by scripts/release/fleet_cells_gate.sh.
+# One line per waiver, TAB-separated, dated, with a reason. A waiver expires after `until`.
+#   <host|*>  <binary|*>  <until YYYY-MM-DD>  <reason, who ruled, when>
+# `*  *` also covers MISSING or STALE cells (the C3 monitor down); a host key never does.
+# A retired host is removed from the cells by C3; it is never waived here (C7).
