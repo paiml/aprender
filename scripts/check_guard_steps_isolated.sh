@@ -10,13 +10,16 @@
 # this guard covers the ones a workflow step calls directly (guard-cargo, guards-nightly,
 # the argument-taking guard-tree steps).
 #
-# RULE. In every scanned workflow, each non-comment occurrence of
-# `bash scripts/check_<name>.sh` must be immediately preceded by `setsid --wait `.
+# RULE. In every scanned workflow, each non-comment invocation of a guard --
+# `bash scripts/check_<name>.sh`, `sh scripts/check_<name>.sh` or `./scripts/check_<name>.sh`
+# -- must be immediately preceded by `setsid --wait `. Only whole-line comments are
+# exempt: an invocation-shaped text after an inline `#` is refused too (strict on purpose).
 # The runner image carries util-linux setsid with --wait (actions-runner:2.337.0,
 # util-linux 2.39.3; measured in #4120's review).
 #
 # Usage: check_guard_steps_isolated.sh [--self-test] [workflow.yml ...]
-#   default workflows: .github/workflows/ci.yml .github/workflows/guards-nightly.yml
+#   default workflows: every .github/workflows/*.yml (every one runs on a self-hosted Linux
+#   runner; review of #4133 measured the runs-on of all 13 that call a guard)
 # Exit: 0 every invocation isolated · 1 an unisolated invocation (named) · 2 usage/ENV.
 set -uo pipefail
 
@@ -29,8 +32,9 @@ scan() {
         /^[[:space:]]*#/ { next }
         {
             line = $0
-            while (match(line, /(^|[^a-z_-])bash scripts\/check_[A-Za-z0-9_]+\.sh/)) {
-                start = RSTART + (substr(line, RSTART, 4) == "bash" ? 0 : 1)
+            while (match(line, /(^|[^a-z_.\/-])(bash scripts|sh scripts|\.\/scripts)\/check_[A-Za-z0-9_]+\.sh/)) {
+                c = substr(line, RSTART, 1)
+                start = RSTART + ((c == "b" || c == "s" || c == ".") && RSTART == 1 ? 0 : 1)
                 before = substr(line, 1, start - 1)
                 if (before !~ /setsid --wait $/) { printf "%s:%d: %s\n", f, NR, $0; break }
                 line = substr(line, RSTART + RLENGTH)
@@ -75,6 +79,11 @@ self_test() {
     row "comment is not an invocation"      0 $'      # bash scripts/check_a.sh is run below\n'
     row "two on a line, second unwrapped"   1 $'          setsid --wait bash scripts/check_a.sh && bash scripts/check_b.sh\n'
     row "not a guard (guard_tree) is out of scope" 0 $'        run: bash scripts/guard_tree.sh --no-cargo\n'
+    row "sh form, unwrapped"                1 $'        run: sh scripts/check_a.sh\n'
+    row "sh form, wrapped"                  0 $'        run: setsid --wait sh scripts/check_a.sh\n'
+    row "./ form, unwrapped"                1 $'        run: ./scripts/check_a.sh --x\n'
+    row "./ form, wrapped"                  0 $'        run: setsid --wait ./scripts/check_a.sh --x\n'
+    row "a path mention is not an invocation" 0 $'        paths: [scripts/check_a.sh]\n'
     # the MUTANT the ticket names: the real ci.yml with ONE wrapper removed must go RED
     if [ -f .github/workflows/ci.yml ]; then
         sed '0,/setsid --wait bash scripts\/check_/s//bash scripts\/check_/' .github/workflows/ci.yml > "$t/ci.yml"
@@ -96,7 +105,11 @@ case "${1:-}" in
 esac
 
 if [ "$#" -gt 0 ]; then files=("$@")
-else files=(.github/workflows/ci.yml .github/workflows/guards-nightly.yml); fi
+else
+    files=()
+    for f in .github/workflows/*.yml; do [ -f "$f" ] && files+=("$f"); done
+    [ "${#files[@]}" -gt 0 ] || { printf '%s: ENV - no .github/workflows/*.yml\n' "$PROG" >&2; exit 2; }
+fi
 check "${files[@]}"
 rc=$?
 case "$rc" in
