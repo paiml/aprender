@@ -31,6 +31,9 @@
 # repository or resolves one from the manifest dir:
 #   "scripts/  "docs/  "README  "contracts/  "../../  "../..
 #   CARGO_MANIFEST_DIR  workspace_root(  project_root(
+#   workspace_path_or_skip!(  workspace_file_or_skip!(   (#4175: the shared macro
+#   hides the manifest-dir walk, and a relative path like "configs/x.yaml" names
+#   none of the prefixes above, so a caller moved onto it would drop out silently)
 # Integration targets: crates/<c>/tests/<t>.rs -> `<c> --test <t>`.
 # Lib targets: any crates/<c>/src/**/*.rs that contains `#[cfg(test)]` AND the
 # oracle -> `<c> --lib <module>`. Fixture-only readers (tests/fixtures/...) are
@@ -45,7 +48,7 @@
 #   scripts/check_tree_reader_tests.sh --self-test
 set -euo pipefail
 
-ORACLE=${ORACLE:-'"scripts/|"docs/|"README|"contracts/|"\.\./\.\./|"\.\./\.\.|CARGO_MANIFEST_DIR|workspace_root\(|project_root\('}
+ORACLE=${ORACLE:-'"scripts/|"docs/|"README|"contracts/|"\.\./\.\./|"\.\./\.\.|CARGO_MANIFEST_DIR|workspace_root\(|project_root\(|workspace_(path|file)_or_skip!\('}
 REGISTRY_DEFAULT="scripts/tree_reader_tests.txt"
 export ORACLE
 
@@ -368,6 +371,17 @@ self_test() {
     else
         printf 'FAIL  row %-2s        bin-only crate mis-targeted: %s\n' "$n" "$(bash "$T" --derive "$td" 2>/dev/null | grep '^delta' | tr '\n' ';')"; red=1
     fi
+    # eta (#4175): a target that reaches the tree ONLY through the shared macro,
+    # with a relative path no other oracle pattern names. Moving a caller onto the
+    # macro must never drop it from the ledger.
+    mkdir -p "$td/crates/eta/tests"
+    printf '#[test] fn t() { let _p = provable_contracts::workspace_file_or_skip!(t, "configs/aliases.yaml"); }\n' > "$td/crates/eta/tests/via_macro.rs"
+    n=$((n + 1))
+    if grep -q '^eta	--test	via_macro$' <<< "$(bash "$T" --derive "$td" 2>/dev/null)"; then
+        printf 'ok    row %-2s        a target reading the tree only through workspace_file_or_skip!() is derived (#4175)\n' "$n"
+    else
+        printf 'FAIL  row %-2s        a workspace_file_or_skip!() caller dropped out of the derived set\n' "$n"; red=1
+    fi
     # A workflow that names one target, so the wired/unwired split is exercised
     # rather than assumed: alpha reads_readme is run by a lane, gamma manifest_dir
     # is not, beta --lib is covered by the full tier's --workspace --lib.
@@ -425,6 +439,10 @@ CASES
     # MUTANT: drop the scripts/ pattern from the oracle -> beta vanishes from the derived set (the falsifier discriminates)
     row 0 "mutant oracle without the scripts/ pattern loses beta --lib lint — this row proves the oracle is load-bearing" 'MUTANT-LOST-BETA' \
         env ORACLE="${ORACLE/\"scripts\/|/}" bash -c "if bash '$T' --derive '$td' 2>/dev/null | grep -q '^beta'; then echo MUTANT-KEPT-BETA; else echo MUTANT-LOST-BETA; fi"
+
+    # MUTANT: drop the macro pattern from the oracle -> eta vanishes (the #4175 row is load-bearing)
+    row 0 "mutant oracle without the workspace_*_or_skip! pattern loses eta via_macro" 'MUTANT-LOST-ETA' \
+        env ORACLE="${ORACLE/|workspace_(path|file)_or_skip!\\(/}" bash -c "if bash '$T' --derive '$td' 2>/dev/null | grep -q '^eta'; then echo MUTANT-KEPT-ETA; else echo MUTANT-LOST-ETA; fi"
 
     # --- PMAT-3120: module granularity, against the COMMITTED fixture crate.
     # Hermetic (no cargo, no workspace): tests/fixtures/tree_reader/crates/** is
