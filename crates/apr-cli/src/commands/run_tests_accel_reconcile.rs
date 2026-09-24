@@ -111,8 +111,8 @@ fn a_backend_that_did_not_report_is_not_treated_as_a_fallback() {
 /// the GPU". The JSON must separate them, since that is what a consumer reads.
 #[test]
 fn the_json_distinguishes_a_deliberate_cpu_run_from_a_rejected_gpu_run() {
-    let cpu = build_final_json(&gpu_result(Some(false)), "m.gguf", 1, false);
-    let rejected = build_final_json(&gpu_result(Some(false)), "m.gguf", 1, true);
+    let cpu = build_final_json(&gpu_result(Some(false)), "m.gguf", 1, false, None);
+    let rejected = build_final_json(&gpu_result(Some(false)), "m.gguf", 1, true, None);
 
     // Same `used_gpu` — this is exactly the ambiguity that let a 33.6 s CPU
     // fallback be read as a GPU timing.
@@ -134,7 +134,7 @@ fn the_json_distinguishes_a_deliberate_cpu_run_from_a_rejected_gpu_run() {
 /// decoration rather than a measurement.
 #[test]
 fn a_successful_gpu_run_is_not_labelled_a_fallback() {
-    let json = build_final_json(&gpu_result(Some(true)), "m.gguf", 1, true);
+    let json = build_final_json(&gpu_result(Some(true)), "m.gguf", 1, true, None);
     assert_eq!(json["backend"]["requested"], "gpu");
     assert_eq!(json["backend"]["ran"], "gpu");
     assert_eq!(json["backend"]["fell_back"], false);
@@ -303,7 +303,7 @@ mod pmat3826_fell_back_names_a_real_fallback {
     }
 
     fn fell_back(accel_forced: bool, attempted: Option<bool>, used: Option<bool>) -> bool {
-        let json = build_final_json(&result(attempted, used), "m.gguf", 8, accel_forced);
+        let json = build_final_json(&result(attempted, used), "m.gguf", 8, accel_forced, None);
         json["backend"]["fell_back"].as_bool().expect("fell_back is a bool")
     }
 
@@ -395,4 +395,47 @@ mod pmat3826_fell_back_names_a_real_fallback {
              defect, not a rounding difference."
         );
     }
+}
+
+/// #4089 (cop condition): a flagless run on a cuda build with NO device goes to CPU through the
+/// shared default rule. That is allowed only if it is loud: the envelope says
+/// `used_gpu: false`, `ran: cpu`, `fell_back: true` and carries the reason. The rule sends the
+/// run to CPU BEFORE any GPU backend is entered, so `gpu_attempted` is never set, and the
+/// #3602/#3826 terms alone would report `fell_back: false`. That is the silent shape this row
+/// refuses. It holds whether the path reported `used_gpu` (Some(false)) or not (None).
+#[test]
+fn a_flagless_run_that_found_no_device_says_it_fell_back_and_why() {
+    let reason = "no CUDA device present (test)";
+    for used in [None, Some(false)] {
+        let json = build_final_json(&gpu_result(used), "m.gguf", 1, false, Some(reason));
+        assert_eq!(json["used_gpu"], false, "a CPU run is never reported as a GPU one ({used:?})");
+        assert_eq!(json["backend"]["requested"], "default");
+        assert_eq!(json["backend"]["ran"], "cpu");
+        assert_eq!(
+            json["backend"]["fell_back"], true,
+            "the build's default accelerator did not run: that is a fallback ({used:?})"
+        );
+        assert_eq!(json["backend"]["reason"], reason);
+    }
+    // A deliberate CPU run (no reason) is still not a fallback, and says no reason.
+    let cpu = build_final_json(&gpu_result(Some(false)), "m.gguf", 1, false, None);
+    assert_eq!(cpu["backend"]["fell_back"], false);
+    assert!(cpu["backend"]["reason"].is_null());
+}
+
+/// The reason is produced only for the flagless case: `--no-gpu` asked for CPU, and a forced
+/// accelerator is reconciled at the forward (I-17). On a cuda build with no visible device
+/// (`CUDA_VISIBLE_DEVICES=`), the flagless case must produce it.
+#[test]
+fn only_a_flagless_run_gets_the_no_device_reason() {
+    use crate::accel::default_accelerator_unavailable_reason as reason;
+    assert_eq!(reason(true, false), None, "--no-gpu asked for CPU");
+    assert_eq!(reason(false, true), None, "a forced accelerator is reconciled, not excused");
+    assert_eq!(reason(true, true), None);
+    let flagless = reason(false, false);
+    assert_eq!(
+        flagless.is_some(),
+        cfg!(feature = "cuda") && !crate::accel::default_wants_accelerator(false),
+        "flagless: a reason exactly when the build defaults to the GPU and the rule found no device"
+    );
 }

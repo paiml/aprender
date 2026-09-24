@@ -21,7 +21,7 @@ fn stream_output_emits_n_plus_one_json_lines() {
     };
 
     let mut buf: Vec<u8> = Vec::new();
-    write_stream_output(&mut buf, &result, "model.gguf", 32, false).expect("write must succeed");
+    write_stream_output(&mut buf, &result, "model.gguf", 32, false, None).expect("write must succeed");
     let s = String::from_utf8(buf).expect("utf-8");
     let lines: Vec<&str> = s.lines().collect();
     assert_eq!(
@@ -92,7 +92,7 @@ fn stream_token_events_carry_their_own_decoded_text() {
     };
 
     let mut buf: Vec<u8> = Vec::new();
-    write_stream_output(&mut buf, &result, "model.gguf", 8, false).expect("write must succeed");
+    write_stream_output(&mut buf, &result, "model.gguf", 8, false, None).expect("write must succeed");
     let s = String::from_utf8(buf).expect("utf-8");
     let lines: Vec<&str> = s.lines().collect();
 
@@ -134,7 +134,7 @@ fn stream_token_events_degrade_to_empty_text_without_a_tokenizer() {
     };
 
     let mut buf: Vec<u8> = Vec::new();
-    write_stream_output(&mut buf, &result, "model.apr", 8, false).expect("write");
+    write_stream_output(&mut buf, &result, "model.apr", 8, false, None).expect("write");
     let s = String::from_utf8(buf).expect("utf-8");
     let lines: Vec<&str> = s.lines().collect();
     assert_eq!(lines.len(), 3, "2 tokens + final, got: {s}");
@@ -161,7 +161,7 @@ fn stream_output_no_tokens_emits_only_final() {
     };
 
     let mut buf: Vec<u8> = Vec::new();
-    write_stream_output(&mut buf, &result, "noprompt.apr", 1, false).expect("write must succeed");
+    write_stream_output(&mut buf, &result, "noprompt.apr", 1, false, None).expect("write must succeed");
     let s = String::from_utf8(buf).expect("utf-8");
     let lines: Vec<&str> = s.lines().collect();
     assert_eq!(lines.len(), 1, "0 tokens + 1 final = 1 line, got: {s}");
@@ -188,7 +188,7 @@ fn stream_output_none_tokens_emits_only_final() {
     };
 
     let mut buf: Vec<u8> = Vec::new();
-    write_stream_output(&mut buf, &result, "x.apr", 1, false).expect("write");
+    write_stream_output(&mut buf, &result, "x.apr", 1, false, None).expect("write");
     let s = String::from_utf8(buf).expect("utf-8");
     assert_eq!(s.lines().count(), 1);
     let v: serde_json::Value =
@@ -212,7 +212,7 @@ fn build_final_json_matches_legacy_json_shape() {
         token_texts: None,
         usage: Default::default(),
     };
-    let v = build_final_json(&result, "src.apr", 100, false);
+    let v = build_final_json(&result, "src.apr", 100, false, None);
     assert_eq!(v["model"], "src.apr");
     assert_eq!(v["text"], "abc");
     assert_eq!(v["tokens"], serde_json::json!([1, 2, 3]));

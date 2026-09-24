@@ -53,6 +53,21 @@ pub(crate) fn run_no_gpu(no_gpu: bool, accel_forced: bool) -> bool {
     }
 }
 
+/// #4089: why a flagless `apr run` did NOT use the accelerator its build defaults to, or `None`.
+/// On a cuda build with no device, the shared rule sends the run to CPU. That is allowed only
+/// if it is LOUD: the run's provenance says `fell_back: true` with this reason, and never reports
+/// the CPU run as a GPU one. A forced accelerator and `--no-gpu` are never this case: the
+/// first is reconciled at the forward, and the second asked for CPU.
+#[must_use]
+pub(crate) fn default_accelerator_unavailable_reason(
+    no_gpu: bool,
+    accel_forced: bool,
+) -> Option<&'static str> {
+    (cfg!(feature = "cuda") && !accel_forced && !no_gpu && !accelerator_device_present()).then_some(
+        "no CUDA device present: this cuda build defaults to the GPU and found none, so CPU ran (#4089)",
+    )
+}
+
 #[cfg(feature = "cuda")]
 fn accelerator_device_present() -> bool {
     realizar::cuda::CudaExecutor::is_available()
