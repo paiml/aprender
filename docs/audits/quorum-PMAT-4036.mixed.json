@@ -14,7 +14,7 @@
     "family": "claude",
     "source": "flag"
   },
-  "agreed": true,
+  "agreed": false,
   "lanes": [
     {
       "lane": 1,
@@ -84,7 +84,9 @@
       "verdict": "PASS",
       "summary": "Implementation meets all 5 acceptance criteria. Hermetic tests (23/23) and real measurements (6 legs, 32/32 GREEN each) all pass. Exit contract correctly declines on corruption (no silent recompute). Cache key excludes host, includes oracle/harness versions. Batching verified to preserve rows identically. Threat model (corruption/partial edits) properly stated as out-of-scope for deliberate forgery.",
       "findings": [],
-      "executor": "claude-code Agent lane (agent ac858d80d1369911b), brief docs/audits/quorum-PMAT-4036.prompt.md for this head"
+      "executor": "claude-code Agent lane (agent ac858d80d1369911b), brief docs/audits/quorum-PMAT-4036.prompt.md for this head",
+      "brief_sha256": "b5525af0fe55a3971752491c5086457a8b55dbf7c90fc99b7a73c68d486f953e",
+      "brief_bytes": 107000
     }
   ],
   "dissent": [],
@@ -157,5 +159,10 @@
     "output": "receipt complete: kind=artifact lanes=2 author=claude-opus-5-5/claude"
   },
   "operator_rule": "Every quorum = 2 agy non-Claude lanes + 1 Claude Code lane on claude-haiku-4-5 (OPERATOR, verbatim via aprender-cf, 2026-09-24: 'Since we are running out of agy credits too often over 5 hour window we need to not allow three agy quorum workers, one must always be a CHEAP claude code...perhaps haiku'). Lane 3 is same-family as the author (claude-opus-5-5): marked degraded: same-family per the operator's fallback rule; the cop overrides the lint refusal for the single haiku seat.",
-  "degraded": "same-family (lane 3 only)"
+  "degraded": "same-family (lane 3 only)",
+  "agy_brief_sha256": "5088392f4b738390872d099f69eb3249c88a6d96992a5a1f95b47e8cf9874ab6",
+  "agy_brief_bytes": 1392801,
+  "agy_brief_note": "regenerated with quorum-review.sh --brief-only at 33ebdff1a after the round (the script deletes its brief); its byte count equals the round's prompt_bytes. The ticket text is read live from pmat, so this is a reconstruction.",
+  "brief_match": false,
+  "agreed_note": "NOT counted: lane 3 (haiku) read a different brief (evidence JSON excluded) from the agy lanes, which fails the cop's equal-brief rule. The 1.39 MB agy brief does not fit a haiku-4-5 context, so a new 3-lane round on one brief under 256 KB is needed."
 }
