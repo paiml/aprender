@@ -21444,3 +21444,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4098
+  github_issue: 4098
+  item_type: task
+  title: 'check_crux_inference_judge.sh: CI-fast mode — sampled F6 mutants on PRs, the full set nightly'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-83
+  created: 2026-09-24T00:30:00Z
+  updated: 2026-09-24T01:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'On a PR, merge group or push the table runs a deterministic sample of the F6 mutants: every mutant when the diff touches a file they test, else a rotating slice keyed by the head sha'
+  - 'The PR mode refuses vacuously small runs: a floor on the mutants sampled and on the rows the table judged'
+  - 'The full set runs nightly (guards-nightly.yml) and fails the job loudly'
+  - 'Not in scope: raising guard-tree''s timeout'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
