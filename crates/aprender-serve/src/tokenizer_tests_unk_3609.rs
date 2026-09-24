@@ -8,16 +8,16 @@
 //! dropped: a byte with no token is refused by name at construction.
 //!
 //! The two `*.gguf-header` fixtures are REAL headers, cut down by
-//! `tests/fixtures/gguf-header-slices/generate.py`: every key and scalar value verbatim,
+//! `src/fixtures/gguf-header-slices/generate.py`: every key and scalar value verbatim,
 //! only the per-token arrays sliced (see that directory's MANIFEST.json).
 
 use crate::gguf::{GGUFModel, GGUFValue};
 use crate::tokenizer::{vocabulary_unk_token, BPETokenizer};
 
 const QWEN35_HEADER: &[u8] =
-    include_bytes!("../tests/fixtures/gguf-header-slices/qwen3.5-0.8b.gguf-header");
+    include_bytes!("fixtures/gguf-header-slices/qwen3.5-0.8b.gguf-header");
 const TINYLLAMA_HEADER: &[u8] =
-    include_bytes!("../tests/fixtures/gguf-header-slices/tinyllama-1.1b-chat.gguf-header");
+    include_bytes!("fixtures/gguf-header-slices/tinyllama-1.1b-chat.gguf-header");
 
 const UNK_ID_KEY: &str = "tokenizer.ggml.unknown_token_id";
 const EOS_ID_KEY: &str = "tokenizer.ggml.eos_token_id";
