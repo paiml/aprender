@@ -28,6 +28,41 @@ pub(crate) fn build_has_accelerator() -> bool {
     cfg!(any(feature = "cuda", feature = "wgpu"))
 }
 
+/// #4089: the backend a verb uses when the user named NONE. ONE rule for `apr run` and
+/// `apr serve`: the accelerator when this build has one and a device is present, unless
+/// `--no-gpu`. `apr run` used it and `apr serve` resolved a flagless start to CPU on the same
+/// cuda build and file, so a user switching verbs silently lost the GPU (yoga, Qwen3.5-4B:
+/// run said "Backend: GPU", serve said `used_gpu: false`). A defaulted request is SOFT: it
+/// falls back to CPU, visibly, where the accelerator cannot load, exactly as an explicit
+/// request does not (I-17).
+#[must_use]
+pub(crate) fn default_wants_accelerator(no_gpu: bool) -> bool {
+    !no_gpu && accelerator_device_present()
+}
+
+/// #4089: `RunOptions.no_gpu` for `apr run`. With no backend named, it is the shared default
+/// rule's answer. A FORCED accelerator (`--gpu` / `--backend cuda|wgpu|gpu`) passes through
+/// untouched: the device check never lowers it (I-17). It reaches the forward and is reconciled
+/// there, or refused.
+#[must_use]
+pub(crate) fn run_no_gpu(no_gpu: bool, accel_forced: bool) -> bool {
+    if accel_forced {
+        no_gpu
+    } else {
+        !default_wants_accelerator(no_gpu)
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn accelerator_device_present() -> bool {
+    realizar::cuda::CudaExecutor::is_available()
+}
+
+#[cfg(not(feature = "cuda"))]
+fn accelerator_device_present() -> bool {
+    false
+}
+
 /// Refuse an accelerator request this build cannot honour.
 ///
 /// `asked` is the flag the USER typed, quoted back verbatim. Telling someone
@@ -145,5 +180,27 @@ mod tests {
         assert_eq!(asked_flag(true, None), "--gpu");
         assert_eq!(asked_flag(false, Some("cuda")), "--backend cuda");
         assert_eq!(asked_flag(false, Some("cpu")), "--gpu");
+    }
+
+    /// #4089 / I-17: the device check is for DEFAULTED requests only. A forced accelerator
+    /// keeps `no_gpu == false` whether or not a device is present, so the forward is attempted
+    /// and reconciled, never silently run on CPU. Under `CUDA_VISIBLE_DEVICES=` (no device) the
+    /// default rule says CPU, which is exactly the case a missing `accel_forced` guard lowers.
+    #[test]
+    fn a_forced_accelerator_is_never_lowered_by_the_device_check() {
+        assert!(
+            !run_no_gpu(false, true),
+            "forced --gpu must reach the forward (I-17)"
+        );
+        assert!(
+            run_no_gpu(true, true),
+            "--no-gpu alongside a force is kept as typed"
+        );
+        assert!(run_no_gpu(true, false), "--no-gpu always means CPU");
+        assert_eq!(
+            run_no_gpu(false, false),
+            !default_wants_accelerator(false),
+            "a flagless run takes the shared default rule"
+        );
     }
 }
