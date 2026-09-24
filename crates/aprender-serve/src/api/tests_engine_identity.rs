@@ -27,8 +27,13 @@ const ARCHES: &[(&str, Arch)] = &[
     ("qwen2", Arch::Session("DenseForward")),
     ("llama", Arch::Session("DenseForward")),
     // #4280 (#4308): `apr serve`'s dense CUDA batch scheduler drives qwen2/qwen3/llama
-    // through the session on a borrowed CUDA model; its witness is #4308's own test.
+    // through the session on a borrowed CUDA model; its witness is api/cuda_batch_scheduler_tests.rs.
     ("dense-cuda-batch", Arch::Session("BorrowedCudaForward")),
+    // #4269 M (#4305): `apr serve`/`apr chat` on APR CPU and SafeTensors CPU. These rows are
+    // formats, not GGUF archs; their verb witnesses are tests_st_serve_session_4269.rs and the
+    // tests in apr_transformer/apr_cpu_forward.rs.
+    ("apr-cpu", Arch::Session("AprCpuForward")),
+    ("safetensors-cpu", Arch::Session("StCpuForward")),
     ("qwen3_moe", Arch::NotYet("#4263 MoE (aprender-cb)")),
 ];
 
