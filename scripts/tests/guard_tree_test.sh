@@ -641,6 +641,309 @@ else
 fi
 cp "$GUARD_TREE" "$sfix/scripts/guard_tree.sh"
 
+# ---------------------------------------------------------------------------
+# 28-31 (#4108). A run that executed nothing is not a pass. MEASURED on lambda:
+#     two concurrent `make gate` runs, guard_tree's scratch dir vanished, the
+#     tally loop read nothing from the missing plan, and the run printed
+#     "0 checks, 0 failed" and exited 0. The fixture reproduces the incident
+#     exactly -- a guard that deletes $GUARD_TREE_RUN_DIR (workers inherit it)
+#     -- and the mutant deletes the new check, so each assertion can fail.
+# ---------------------------------------------------------------------------
+vmutant_of() { # vmutant_of SRC DST -- guard_tree.sh with the #4108 vacuity block deleted; rc 1 if the edit is wrong
+    sed '/^# #4108 -- VACUITY IS A FAILURE\./,/^printf .dispatch: up to/{/^printf .dispatch: up to/!d;}' "$1" >"$2"
+    # The mutant must DIFFER from the source AND keep the summary tail. A drifted end anchor makes the sed range
+    # run to EOF, and a script truncated there also exits 0 -- a false PASS for rows 29/31 (review lane B).
+    ! cmp -s "$1" "$2" && grep -q '^printf .%d checks, %d failed' "$2" && ! grep -q '#4108 -- VACUITY' "$2"
+}
+vfix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $vfix"
+mkdir -p "$vfix/.empty-git-template" "$vfix/scripts"
+git -C "$vfix" init -q --template="$vfix/.empty-git-template"
+git -C "$vfix" config user.email test@example.invalid
+git -C "$vfix" config user.name guard_tree_test
+cp "$GUARD_TREE" "$vfix/scripts/guard_tree.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$vfix/scripts/check_v_good.sh"
+printf '#!/usr/bin/env bash\nrm -rf "${GUARD_TREE_RUN_DIR:?}"\nexit 0\n' >"$vfix/scripts/check_v_vanish.sh"
+git -C "$vfix" add -A
+git -C "$vfix" -c commit.gpgsign=false commit -q -m vfixture
+
+v_out="$(cd "$vfix" && bash scripts/guard_tree.sh 2>&1)"
+v_rc=$?
+if [ "$v_rc" -ne 0 ] && grep -q 'was lost or truncated mid-run' <<<"$v_out"; then
+    pass_row "28: a scratch dir lost mid-run fails with a named reason (rc=$v_rc), never '0 checks, 0 failed' exit 0"
+else
+    fail_row "28: a scratch dir lost mid-run" "rc=$v_rc; tail: $(tail -3 <<<"$v_out" | tr '\n' '|')"
+fi
+
+if ! vmutant_of "$GUARD_TREE" "$vfix/scripts/guard_tree.sh"; then
+    fail_row "29: mutant without the #4108 check" "vmutant_of did not produce the intended mutant (no-op or truncated)"
+else
+    vm_out="$(cd "$vfix" && bash scripts/guard_tree.sh 2>&1)"
+    vm_rc=$?
+    if [ "$vm_rc" -eq 0 ] && grep -q '^0 checks, 0 failed$' <<<"$vm_out"; then
+        pass_row "29: mutant without the #4108 check reproduces the incident (0 checks, 0 failed, exit 0) -- row 28 can fail"
+    else
+        fail_row "29: mutant without the #4108 check" "expected the vacuous exit 0; rc=$vm_rc"
+    fi
+fi
+
+# 30/31: an EMPTY guard universe -- nothing to run is a vacuous answer, not a green one
+efix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $efix"
+mkdir -p "$efix/.empty-git-template" "$efix/scripts"
+git -C "$efix" init -q --template="$efix/.empty-git-template"
+git -C "$efix" config user.email test@example.invalid
+git -C "$efix" config user.name guard_tree_test
+cp "$GUARD_TREE" "$efix/scripts/guard_tree.sh"
+git -C "$efix" add -A
+git -C "$efix" -c commit.gpgsign=false commit -q -m efixture
+
+e_out="$(cd "$efix" && bash scripts/guard_tree.sh 2>&1)"
+e_rc=$?
+if [ "$e_rc" -ne 0 ] && grep -q '0 checks executed' <<<"$e_out"; then
+    pass_row "30: an empty guard universe fails as vacuous (rc=$e_rc)"
+else
+    fail_row "30: an empty guard universe" "rc=$e_rc; tail: $(tail -3 <<<"$e_out" | tr '\n' '|')"
+fi
+if ! vmutant_of "$GUARD_TREE" "$efix/scripts/guard_tree.sh"; then
+    em_rc=-1
+    em_out="vmutant_of did not produce the intended mutant (no-op or truncated)"
+else
+    em_out="$(cd "$efix" && bash scripts/guard_tree.sh 2>&1)"
+    em_rc=$?
+fi
+if [ "$em_rc" -eq 0 ] && grep -q '^0 checks, 0 failed$' <<<"$em_out"; then
+    pass_row "31: mutant without the #4108 check passes the empty universe -- row 30 can fail"
+else
+    fail_row "31: mutant without the #4108 check" "expected the vacuous exit 0 on the empty universe; rc=$em_rc; $(tail -1 <<<"$em_out")"
+fi
+
+# 32 (review lane A): the plan TRUNCATED in place, dir intact -- the tally reads fewer lines than were planned
+tfix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $tfix"
+mkdir -p "$tfix/.empty-git-template" "$tfix/scripts"
+git -C "$tfix" init -q --template="$tfix/.empty-git-template"
+git -C "$tfix" config user.email test@example.invalid
+git -C "$tfix" config user.name guard_tree_test
+cp "$GUARD_TREE" "$tfix/scripts/guard_tree.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$tfix/scripts/check_t_good.sh"
+cat >"$tfix/scripts/check_t_truncate.sh" <<'SH'
+#!/usr/bin/env bash
+truncate -s 0 "${GUARD_TREE_RUN_DIR:?}/plan"
+exit 0
+SH
+git -C "$tfix" add -A
+git -C "$tfix" -c commit.gpgsign=false commit -q -m tfixture
+t_out="$(cd "$tfix" && bash scripts/guard_tree.sh 2>&1)"
+t_rc=$?
+if [ "$t_rc" -ne 0 ] && grep -q 'the plan held 2 guard(s) and 0 were accounted' <<<"$t_out"; then
+    pass_row "32: a plan truncated in place fails naming planned vs accounted (rc=$t_rc)"
+else
+    fail_row "32: a plan truncated in place" "rc=$t_rc; tail: $(tail -3 <<<"$t_out" | tr '\n' '|')"
+fi
+# 33 (gemini review lane 1): row 32's mutant -- without the #4108 check the truncated plan goes back to exit 0
+if ! vmutant_of "$GUARD_TREE" "$tfix/scripts/guard_tree.sh"; then
+    fail_row "33: mutant without the #4108 check" "vmutant_of did not produce the intended mutant (no-op or truncated)"
+else
+    tm_out="$(cd "$tfix" && bash scripts/guard_tree.sh 2>&1)"
+    tm_rc=$?
+    if [ "$tm_rc" -eq 0 ] && ! grep -q 'accounted' <<<"$tm_out"; then
+        pass_row "33: mutant without the #4108 check passes the truncated plan -- row 32 can fail"
+    else
+        fail_row "33: mutant without the #4108 check" "expected the vacuous exit 0; rc=$tm_rc"
+    fi
+fi
+cp "$GUARD_TREE" "$tfix/scripts/guard_tree.sh"
+
+# 34/35 (gemini review, lane 1): a guard tracked in git but MISSING from disk is dropped
+# silently by grep -L/-l in the --no-cargo / --cargo-only subsets (what CI runs; the
+# default `all` universe keeps it and fails it loudly), so it would never be planned. The run must refuse; the mutant
+# without the universe check runs the rest and exits 0 with the guard silently gone.
+ufix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $ufix"
+mkdir -p "$ufix/.empty-git-template" "$ufix/scripts"
+git -C "$ufix" init -q --template="$ufix/.empty-git-template"
+git -C "$ufix" config user.email test@example.invalid
+git -C "$ufix" config user.name guard_tree_test
+cp "$GUARD_TREE" "$ufix/scripts/guard_tree.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$ufix/scripts/check_u_good.sh"
+printf '#!/usr/bin/env bash\nexit 1\n' >"$ufix/scripts/check_u_gone.sh"
+git -C "$ufix" add -A
+git -C "$ufix" -c commit.gpgsign=false commit -q -m ufixture
+rm -f "$ufix/scripts/check_u_gone.sh"
+u_out="$(cd "$ufix" && bash scripts/guard_tree.sh --no-cargo 2>&1)"
+u_rc=$?
+if [ "$u_rc" -ne 0 ] && grep -q 'missing from disk or unreadable: scripts/check_u_gone.sh' <<<"$u_out"; then
+    pass_row "34: a tracked guard missing from disk fails the run by name (rc=$u_rc), never dropped unseen"
+else
+    fail_row "34: a tracked guard missing from disk" "rc=$u_rc; tail: $(tail -3 <<<"$u_out" | tr '\n' '|')"
+fi
+ud_out="$(cd "$ufix" && bash scripts/guard_tree.sh --dry-run --no-cargo 2>&1)"
+ud_rc=$?
+if [ "$ud_rc" -ne 0 ] && grep -q 'missing from disk or unreadable: scripts/check_u_gone.sh' <<<"$ud_out"; then
+    pass_row "34b: --dry-run refuses a tracked guard missing from disk too (rc=$ud_rc) -- the wiring meta-guard reads it"
+else
+    fail_row "34b: --dry-run refuses a tracked guard missing from disk" "rc=$ud_rc; tail: $(tail -2 <<<"$ud_out" | tr '\n' '|')"
+fi
+python3 - "$GUARD_TREE" "$ufix/scripts/guard_tree.sh" <<'PY2'
+import sys
+s = open(sys.argv[1]).read()
+a = s.index("# #4108 (gemini review, lane 1) -- THE UNIVERSE ITSELF")
+b = s.index('guards="$(universe_for_subset)"')
+open(sys.argv[2], "w").write(s[:a] + s[b:])
+PY2
+if cmp -s "$GUARD_TREE" "$ufix/scripts/guard_tree.sh"; then
+    fail_row "35: mutant without the universe check" "the edit did not apply -- the mutant is the original"
+else
+    um_out="$(cd "$ufix" && bash scripts/guard_tree.sh --no-cargo 2>&1)"
+    um_rc=$?
+    # grep's own "No such file" may name it on stderr; what matters is that no row RAN it
+    if [ "$um_rc" -eq 0 ] && ! grep -q 'check_u_gone\.sh \[run\]' <<<"$um_out"; then
+        pass_row "35: mutant without the universe check exits 0 with the missing guard silently gone -- row 34 can fail"
+    else
+        fail_row "35: mutant without the universe check" "expected a silent exit 0; rc=$um_rc"
+    fi
+fi
+
+# 36 (ph5 lane 1): an UNREADABLE tracked guard is refused like a missing one (grep -L
+# skips both). Skipped when running as root, where mode 000 is still readable.
+cp "$GUARD_TREE" "$ufix/scripts/guard_tree.sh"   # row 35 left its mutant here
+if [ "$(id -u)" -ne 0 ]; then
+    printf '#!/usr/bin/env bash\nexit 1\n' >"$ufix/scripts/check_u_gone.sh"
+    chmod 000 "$ufix/scripts/check_u_gone.sh"
+    r_out="$(cd "$ufix" && bash scripts/guard_tree.sh --no-cargo 2>&1)"
+    r_rc=$?
+    chmod 644 "$ufix/scripts/check_u_gone.sh"
+    if [ "$r_rc" -ne 0 ] && grep -q 'unreadable: scripts/check_u_gone.sh' <<<"$r_out"; then
+        pass_row "36: an unreadable tracked guard is refused by name (rc=$r_rc), never dropped unseen"
+    else
+        fail_row "36: an unreadable tracked guard" "rc=$r_rc; tail: $(tail -2 <<<"$r_out" | tr '\n' '|')"
+    fi
+fi
+# 37 (ph5 lane 1): --dry-run fails when it reads back fewer plan rows than it planned. A
+# guard's --help cannot run in a dry-run, so the plan is cut by a fake `sed` that eats it:
+# the plan is written by printf, read back by the while loop -- truncate it via PATH shim.
+dfix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $dfix"
+mkdir -p "$dfix/.empty-git-template" "$dfix/scripts" "$dfix/shim"
+git -C "$dfix" init -q --template="$dfix/.empty-git-template"
+git -C "$dfix" config user.email test@example.invalid
+git -C "$dfix" config user.name guard_tree_test
+printf '#!/usr/bin/env bash\nexit 0\n' >"$dfix/scripts/check_d_a.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$dfix/scripts/check_d_b.sh"
+python3 - "$GUARD_TREE" "$dfix/scripts/guard_tree.sh" <<'PY3'
+import sys
+s = open(sys.argv[1]).read()
+anchor = "TAB=\"$(printf '\\t')\"\n"
+assert s.count(anchor) == 1, "anchor"
+# test hook, applied to the FIXTURE copy only: empty the plan between write and read-back
+s = s.replace(anchor, anchor + ': > "$PLAN"\n')
+open(sys.argv[2], "w").write(s)
+PY3
+git -C "$dfix" add -A
+git -C "$dfix" -c commit.gpgsign=false commit -q -m dfixture
+d_out="$(cd "$dfix" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+d_rc=$?
+if [ "$d_rc" -ne 0 ] && grep -q 'the plan held 2 guard(s) and the dry-run recovered 0' <<<"$d_out"; then
+    pass_row "37: --dry-run refuses a plan it cannot recover whole (rc=$d_rc), never '0 to run, 0 skipped' exit 0"
+else
+    fail_row "37: --dry-run refuses a plan it cannot recover whole" "rc=$d_rc; out: $(tr '\n' '|' <<<"$d_out" | cut -c1-200)"
+fi
+
+# 37m: row 37's mutant -- the fixture hook kept, the dry-run's plan-recovery check deleted.
+python3 - "$dfix/scripts/guard_tree.sh" <<'PY4'
+import sys
+p = sys.argv[1]; s = open(p).read()
+a = s.index('    # #4108 (ph5 lane 1): the dry-run answers for the whole plan')
+b = s.index('    # #4108 (ph9 review, sonnet lane)')
+open(p, "w").write(s[:a] + s[b:])
+PY4
+dm_out="$(cd "$dfix" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+dm_rc=$?
+if [ "$dm_rc" -eq 0 ] && grep -q '^0 to run, 0 skipped$' <<<"$dm_out"; then
+    pass_row "37m: mutant without the plan-recovery check prints '0 to run, 0 skipped' exit 0 -- row 37 can fail"
+else
+    fail_row "37m: mutant without the plan-recovery check" "expected a silent exit 0; rc=$dm_rc"
+fi
+
+# 38 (#4108 ph9, sonnet lane): --dry-run over an EMPTY universe is vacuous and fails, as the
+# run path's "0 checks executed" does. 38m: the mutant without that check exits 0 on nothing.
+efix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $efix"
+mkdir -p "$efix/.empty-git-template" "$efix/scripts"
+git -C "$efix" init -q --template="$efix/.empty-git-template"
+git -C "$efix" config user.email test@example.invalid
+git -C "$efix" config user.name guard_tree_test
+cp "$GUARD_TREE" "$efix/scripts/guard_tree.sh"
+git -C "$efix" add -A
+git -C "$efix" -c commit.gpgsign=false commit -q -m efixture
+e_out="$(cd "$efix" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+e_rc=$?
+if [ "$e_rc" -ne 0 ] && grep -q 'guard_tree \[vacuous\] -- the dry-run planned 0' <<<"$e_out"; then
+    pass_row "38: --dry-run over an empty universe fails as vacuous (rc=$e_rc)"
+else
+    fail_row "38: --dry-run over an empty universe" "rc=$e_rc; out: $(tr '\n' '|' <<<"$e_out" | cut -c1-200)"
+fi
+python3 - "$GUARD_TREE" "$efix/scripts/guard_tree.sh" <<'PY5'
+import sys
+s = open(sys.argv[1]).read()
+a = s.index('    # #4108 (ph9 review, sonnet lane)')
+b = s.index('        exit 1\n    fi\n    exit 0\nfi\n', a) + len('        exit 1\n    fi\n')
+open(sys.argv[2], "w").write(s[:a] + s[b:])
+PY5
+em_out="$(cd "$efix" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+em_rc=$?
+if [ "$em_rc" -eq 0 ] && grep -q '^0 to run, 0 skipped$' <<<"$em_out"; then
+    pass_row "38m: mutant without the dry-run vacuity check exits 0 on an empty universe -- row 38 can fail"
+else
+    fail_row "38m: mutant without the dry-run vacuity check" "expected a silent exit 0; rc=$em_rc"
+fi
+
+# 39 (#4108 ph9, gemini lane): a subset listing that comes back SHORT fails the run. The
+# fixture's cargo-only listing is cut by one (a hook on the FIXTURE copy only: grep losing a
+# file it could not read); --cargo-only must refuse by the partition count. 39m: the mutant
+# without the partition check runs the short list and exits 0 with a cargo guard never run.
+pfix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $pfix"
+mkdir -p "$pfix/.empty-git-template" "$pfix/scripts"
+git -C "$pfix" init -q --template="$pfix/.empty-git-template"
+git -C "$pfix" config user.email test@example.invalid
+git -C "$pfix" config user.name guard_tree_test
+printf '#!/usr/bin/env bash\n# runs cargo test in CI\nexit 0\n' >"$pfix/scripts/check_p_a.sh"
+printf '#!/usr/bin/env bash\n# runs cargo test in CI\nexit 0\n' >"$pfix/scripts/check_p_b.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$pfix/scripts/check_p_free.sh"
+python3 - "$GUARD_TREE" "$pfix/scripts/guard_tree.sh" <<'PY6'
+import sys
+s = open(sys.argv[1]).read()
+a = 'guard_universe | xargs -r grep -lE "$CARGO_RE"\n'
+assert s.count(a) == 1, "anchor"
+s = s.replace(a, 'guard_universe | xargs -r grep -lE "$CARGO_RE" | head -n -1\n')
+open(sys.argv[2], "w").write(s)
+PY6
+git -C "$pfix" add -A
+git -C "$pfix" -c commit.gpgsign=false commit -q -m pfixture
+p_out="$(cd "$pfix" && bash scripts/guard_tree.sh --cargo-only 2>&1)"
+p_rc=$?
+if [ "$p_rc" -ne 0 ] && grep -q '3 tracked guard(s), but the cargo-free (1) and cargo-only (1) listings cover 2' <<<"$p_out"; then
+    pass_row "39: a subset listing one guard short fails the run by the partition count (rc=$p_rc)"
+else
+    fail_row "39: a subset listing one guard short" "rc=$p_rc; out: $(tr '\n' '|' <<<"$p_out" | cut -c1-240)"
+fi
+python3 - "$pfix/scripts/guard_tree.sh" <<'PY7'
+import sys
+p = sys.argv[1]; s = open(p).read()
+a = s.index('# #4108 (ph9 review, gemini lane)')
+b = s.index('RUN_DIR="$(mktemp -d)"')
+open(p, "w").write(s[:a] + s[b:])
+PY7
+pm_out="$(cd "$pfix" && bash scripts/guard_tree.sh --cargo-only 2>&1)"
+pm_rc=$?
+if [ "$pm_rc" -eq 0 ] && grep -q '^1 checks, 0 failed$' <<<"$pm_out"; then
+    pass_row "39m: mutant without the partition check runs 1 of 2 cargo guards and exits 0 -- row 39 can fail"
+else
+    fail_row "39m: mutant without the partition check" "expected a silent exit 0 on 1 check; rc=$pm_rc; tail: $(tail -2 <<<"$pm_out" | tr '\n' '|')"
+fi
+
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then
     exit 1
