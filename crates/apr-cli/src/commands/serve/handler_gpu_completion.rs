@@ -361,8 +361,8 @@ fn print_gpu_server_banner(bind_addr: &str) {
 /// Start GGUF model inference server with Ollama-parity performance
 ///
 /// Uses realizar's full inference API for text generation, streaming, and batch inference.
-/// Achieves Ollama-parity: 100+ tok/s CPU, 500+ tok/s GPU.
-/// With --gpu --batch flags: 800+ tok/s (2.8x Ollama) via batched GPU inference.
+/// `--gpu --batch` serves through batched GPU inference. What that measures against
+/// Ollama is on the beat scoreboard (docs/BEATS.md), not in this comment (#4085).
 #[cfg(feature = "inference")]
 fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
