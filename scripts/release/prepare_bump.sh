@@ -126,12 +126,34 @@ bash "$CLOSES_GUARD" --body "$AP/pr_body.md" > "$AP/r2.log" 2>&1 || die "the bum
 # measured until after the tag. This script does not PRODUCE them (scripts/model_ladder.sh, on each
 # required host, with an apr built from this tree): it refuses without them, judged by the SAME
 # judge the dogfood runs. `git add -A` below commits whatever the judge read, unless it is ignored.
+# #4117: FROM ladder.release_gate.from the full-ladder receipts are no longer the bump's precondition -- Phase 2
+# moved to the nightly (APR-RELEASE-001 §14). The gate is MOVED, not deleted: the bump requires an ADMISSIBLE
+# nightly for this candidate on every required host, by the judge's own admission (nightly_admission.py: GREEN
+# re-derived, within the contract's release_gate.nightly.max_age_h, at an ancestor), over both hosts' nights gathered into one root. The smoke on the release
+# binary is judged at T-1 (models) and T-4 (R7). ONE rule decides which applies (crux_smoke_scope.py `applies`).
+gw=$(python3 -B scripts/lib/crux_smoke_scope.py applies contracts/model-capability-ladder-v1.yaml "$V" 2>&1); grc=$?
+[ "$grc" -le 1 ] || die "which gate the bump for $V needs cannot be decided: $gw"
+if [ "$grc" = 0 ]; then
+  nt=$(mktemp -d) || die "mktemp failed"
+  hosts=$(python3 -c 'import sys, yaml; print(" ".join(h["id"] for h in yaml.safe_load(open(sys.argv[1]))["ladder"]["hosts"] if h.get("required")))' \
+          contracts/model-capability-ladder-v1.yaml) && [ -n "$hosts" ] || die "the required hosts cannot be read from the ladder contract"
+  set -- $hosts
+  bash scripts/release/gather_nightly.sh "$nt/root" "$1" "${2:-$1}" > "$AP/nightly-gather.log" 2>&1 \
+    || die "RELEASE GATE: the nightly could not be gathered from $hosts; nothing committed, pushed or opened ($AP/nightly-gather.log)"
+  # shellcheck disable=SC2086
+  python3 scripts/lib/nightly_admission.py "$nt/root" "$(git rev-parse HEAD)" "$nt/admitted" $hosts > "$AP/nightly-admission.log" 2>&1 || {
+    grep -E 'NIGHTLY|nightly' "$AP/nightly-admission.log" >&2
+    die "RELEASE GATE: no admissible nightly for this candidate on every required host ($hosts) -- the bump needs a GREEN night within ladder.release_gate.nightly.max_age_h at an ancestor (nightly_admission.py); nothing committed, pushed or opened ($AP/nightly-admission.log)"
+  }
+  printf 'RELEASE GATE: an admissible nightly for the candidate on %s (%s)\n' "$hosts" "$gw"
+else
 bash scripts/check_model_ladder.sh --version "$V" > "$AP/ladder.log" 2>&1 || {
   grep -E '^(FAIL|decline)' "$AP/ladder.log" >&2
   die "model-ladder receipts for $V are not green in the bump tree; nothing committed, pushed or opened ($AP/ladder.log)"
 }
 ignored=$(git ls-files --others --ignored --exclude-standard -- "evidence/dogfood/models/$V")
 [ -z "$ignored" ] || die "model-ladder receipts for $V are gitignored, so the bump would not commit them: $ignored"
+fi
 cargo_bin() { "${CARGO_HOME:-$HOME/.cargo}"/bin/cargo "$@"; }
 cargo_bin fmt --all -- --check > /dev/null 2>&1 || die "cargo fmt --check failed"
 cargo_bin deny check advisories > "$AP/deny.log" 2>&1 || die "cargo deny check advisories failed ($AP/deny.log)"

@@ -1,0 +1,427 @@
+{
+ "schema": "apr-model-ladder-receipt/v2",
+ "host": "gx10",
+ "version": "1.2.3",
+ "sha": "abc1234",
+ "gpu": "x",
+ "cc": "9.0",
+ "executed": 3,
+ "red": 0,
+ "rungs": [
+  {
+   "id": "ctrl-q4km",
+   "present": true,
+   "sha_ok": true,
+   "required": true,
+   "capability_match": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "golden_output": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "backends": {
+    "cpu": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0,
+     "verbs": {
+      "run": {
+       "ran": true,
+       "rc": 0
+      },
+      "chat": {
+       "ran": true,
+       "rc": 0
+      },
+      "code": {
+       "ran": true,
+       "rc": 0
+      },
+      "serve": {
+       "probed": true,
+       "routes": {
+        "/api/chat|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/api/chat|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        }
+       },
+       "teardown": "clean"
+      }
+     }
+    },
+    "cuda": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0,
+     "verbs": {
+      "run": {
+       "ran": true,
+       "rc": 0
+      },
+      "chat": {
+       "ran": true,
+       "rc": 0
+      },
+      "code": {
+       "ran": true,
+       "rc": 0
+      },
+      "serve": {
+       "probed": true,
+       "routes": {
+        "/api/chat|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/api/chat|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        }
+       },
+       "teardown": "clean"
+      }
+     }
+    }
+   },
+   "green": true,
+   "file": "c.gguf",
+   "qa_rc": 0,
+   "timing": [
+    {
+     "backend": null,
+     "verb": "qa",
+     "lock": "gpu",
+     "t_start": 1000.0,
+     "t_acquired": 1000.5,
+     "t_end": 1003.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    },
+    {
+     "backend": null,
+     "verb": "code",
+     "lock": "gpu",
+     "t_start": 1004.0,
+     "t_acquired": 1004.5,
+     "t_end": 1007.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    },
+    {
+     "backend": "cpu",
+     "verb": "run",
+     "lock": "gpu",
+     "t_start": 1008.0,
+     "t_acquired": 1008.5,
+     "t_end": 1011.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    },
+    {
+     "backend": "cpu",
+     "verb": "chat",
+     "lock": "gpu",
+     "t_start": 1012.0,
+     "t_acquired": 1012.5,
+     "t_end": 1015.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    },
+    {
+     "backend": "cpu",
+     "verb": "serve",
+     "lock": "gpu",
+     "t_start": 1016.0,
+     "t_acquired": 1016.5,
+     "t_end": 1019.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    },
+    {
+     "backend": "cuda",
+     "verb": "run",
+     "lock": "gpu",
+     "t_start": 1020.0,
+     "t_acquired": 1020.5,
+     "t_end": 1023.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    },
+    {
+     "backend": "cuda",
+     "verb": "chat",
+     "lock": "gpu",
+     "t_start": 1024.0,
+     "t_acquired": 1024.5,
+     "t_end": 1027.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    },
+    {
+     "backend": "cuda",
+     "verb": "serve",
+     "lock": "gpu",
+     "t_start": 1028.0,
+     "t_acquired": 1028.5,
+     "t_end": 1031.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    }
+   ]
+  },
+  {
+   "id": "q3-q4km",
+   "present": true,
+   "sha_ok": true,
+   "required": true,
+   "capability_match": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "golden_output": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "backends": {
+    "cpu": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0,
+     "verbs": {
+      "run": {
+       "ran": true,
+       "rc": 0
+      },
+      "chat": {
+       "ran": true,
+       "rc": 0
+      },
+      "code": {
+       "ran": true,
+       "rc": 0
+      },
+      "serve": {
+       "probed": true,
+       "routes": {
+        "/api/chat|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/api/chat|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        }
+       },
+       "teardown": "clean"
+      }
+     }
+    },
+    "cuda": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0,
+     "verbs": {
+      "run": {
+       "ran": true,
+       "rc": 0
+      },
+      "chat": {
+       "ran": true,
+       "rc": 0
+      },
+      "code": {
+       "ran": true,
+       "rc": 0
+      },
+      "serve": {
+       "probed": true,
+       "routes": {
+        "/api/chat|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/api/chat|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        }
+       },
+       "teardown": "clean"
+      }
+     }
+    }
+   },
+   "green": true,
+   "file": "q.gguf",
+   "qa_rc": 0,
+   "timing": [
+    {
+     "backend": null,
+     "verb": "qa",
+     "lock": "gpu",
+     "t_start": 1000.0,
+     "t_acquired": 1000.5,
+     "t_end": 1003.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    },
+    {
+     "backend": null,
+     "verb": "code",
+     "lock": "gpu",
+     "t_start": 1004.0,
+     "t_acquired": 1004.5,
+     "t_end": 1007.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    },
+    {
+     "backend": "cpu",
+     "verb": "run",
+     "lock": "gpu",
+     "t_start": 1008.0,
+     "t_acquired": 1008.5,
+     "t_end": 1011.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    },
+    {
+     "backend": "cpu",
+     "verb": "chat",
+     "lock": "gpu",
+     "t_start": 1012.0,
+     "t_acquired": 1012.5,
+     "t_end": 1015.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    },
+    {
+     "backend": "cpu",
+     "verb": "serve",
+     "lock": "gpu",
+     "t_start": 1016.0,
+     "t_acquired": 1016.5,
+     "t_end": 1019.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    },
+    {
+     "backend": "cuda",
+     "verb": "run",
+     "lock": "gpu",
+     "t_start": 1020.0,
+     "t_acquired": 1020.5,
+     "t_end": 1023.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    },
+    {
+     "backend": "cuda",
+     "verb": "chat",
+     "lock": "gpu",
+     "t_start": 1024.0,
+     "t_acquired": 1024.5,
+     "t_end": 1027.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    },
+    {
+     "backend": "cuda",
+     "verb": "serve",
+     "lock": "gpu",
+     "t_start": 1028.0,
+     "t_acquired": 1028.5,
+     "t_end": 1031.0,
+     "rc": 0,
+     "lock_wait_s": 0.5
+    }
+   ]
+  }
+ ],
+ "inventory": [
+  {
+   "file": "c.gguf",
+   "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+   "bytes": 1
+  },
+  {
+   "file": "q.gguf",
+   "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+   "bytes": 1
+  }
+ ],
+ "apr_sha": "ca5eca5eca5eca5eca5eca5eca5eca5eca5eca5e"
+}
