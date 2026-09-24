@@ -1,0 +1,199 @@
+{
+  "ticket": "PMAT-4048",
+  "base": "origin/chore/0.69.1-merge-back",
+  "base_resolved": "origin/chore/0.69.1-merge-back",
+  "base_note": "no origin/origin/chore/0.69.1-merge-back exists; judged against the local ref",
+  "head": "8644644fffc8caf7590955977c52fe85605ae248",
+  "diff_sha256": "1b71a2cf971c7a678f74b4bcc59aa3c4b73255749f9a595a4e923272066c866c",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 9994,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "NO-VERDICT",
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": [],
+      "raw_bytes": 1070,
+      "err_bytes": 19,
+      "envelope_status": "ERROR",
+      "transport_status": "ERROR",
+      "transport_error": "interrupted",
+      "salvageable": "/home/noah/.gemini/antigravity-cli/brain/6e5087a4-ab6d-4140-a20c-5d00dd1457d4 (82434 bytes)",
+      "carried_verdict": "",
+      "blind_reason": "",
+      "agy_exit": "",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": null,
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "other",
+            "reason": "interrupted"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "UNPARSABLE",
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": [],
+      "raw_bytes": 0,
+      "err_bytes": 62,
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": null,
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "other"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff satisfies PMAT-4048 completely with no refutations:\n1. Replaced compile-time `include_str!` and `include_bytes!` macros in `crates/aprender-serve/src/fusion_call_site_guard_3985.rs` and `crates/aprender-serve/src/tokenizer_tests_unk_3609.rs` with runtime file reads (`std::fs::read_to_string` and `std::fs::read`), resolving compilation failure during `cargo test` from published crates.io tarballs.\n2. In-tree vs out-of-tree gating is properly keyed on directory existence (`contracts` directory in workspace root and `tests/fixtures` in crate root): out of tree, tests skip by name with descriptive messages; in-tree, missing files panic and fail the tests as required.\n3. Live call site validation and stale call site rejection logic in #3985 remain intact and continue to guard fusion contracts in-tree.\n4. Added roadmap entries in `docs/roadmaps/entries/PMAT-4048.yaml` and `docs/roadmaps/roadmap.yaml` matching the ticket.\nNo out-of-scope changes or weakened gates detected.",
+      "findings": [],
+      "raw_bytes": 5980,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 1,
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": []
+    },
+    {
+      "lane": 2,
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": []
+    }
+  ],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (19 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 1: lane envelope status=ERROR transport_error=interrupted salvageable=/home/noah/.gemini/antigravity-cli/brain/6e5087a4-ab6d-4140-a20c-5d00dd1457d4 (82434 bytes) [UNREVIEWED CLAIM MATERIAL — never a PASS]",
+    "lane 2: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 2: lane file did not parse as JSON",
+    "lane 3: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}

@@ -1,0 +1,272 @@
+{
+  "ticket": "PMAT-4048",
+  "base": "origin/chore/0.69.1-merge-back",
+  "base_resolved": "origin/chore/0.69.1-merge-back",
+  "base_note": "no origin/origin/chore/0.69.1-merge-back exists; judged against the local ref",
+  "head": "8644644fffc8caf7590955977c52fe85605ae248",
+  "diff_sha256": "1b71a2cf971c7a678f74b4bcc59aa3c4b73255749f9a595a4e923272066c866c",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 9994,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements PMAT-4048. It replaces all 3 compile-time `include_*` macros with runtime reads. It correctly identifies out-of-tree execution by checking for the existence of the `contracts` and `tests/fixtures` directories respectively, and properly skips the tests (by name) out of tree. In tree, a missing file triggers a panic as required. The tests remain intact and will still fail correctly on invalid inputs in tree.",
+      "findings": [],
+      "raw_bytes": 2141,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "NO-VERDICT",
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": [],
+      "raw_bytes": 1175,
+      "err_bytes": 409,
+      "envelope_status": "ERROR",
+      "transport_status": "ERROR",
+      "transport_error": "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 1h3m27s.",
+      "salvageable": "/home/noah/.gemini/antigravity-cli/brain/05315419-19c5-42b8-8457-e3ed2156605b (1911757 bytes)",
+      "carried_verdict": "",
+      "blind_reason": "",
+      "agy_exit": "",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": null,
+        "exhausted": true,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "quota",
+            "reason": "RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 1h3m27s."
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini quota-exhausted (429, first seen on lane 2 on gemini-3.8-flash-high)"
+          },
+          {
+            "model": "gemini-3.7-flash-high",
+            "why": "family gemini quota-exhausted (429, first seen on lane 2 on gemini-3.8-flash-high)"
+          },
+          {
+            "model": "gpt-oss-120b-medium",
+            "why": "family openai quota-exhausted (429, first seen on the pre-check probe of gpt-oss-120b-medium)"
+          },
+          {
+            "model": "qwen3.5",
+            "why": "not-run: no quorum.local_lane in the config — the aprender lane has no model to load"
+          },
+          {
+            "model": "claude-opus-4-6-thinking",
+            "why": "family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)"
+          },
+          {
+            "model": "claude-sonnet-4-6",
+            "why": "family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)"
+          }
+        ]
+      }
+    },
+    {
+      "lane": 3,
+      "status": "NO-VERDICT",
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": [],
+      "raw_bytes": 1176,
+      "err_bytes": 409,
+      "envelope_status": "ERROR",
+      "transport_status": "ERROR",
+      "transport_error": "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 1h3m19s.",
+      "salvageable": "/home/noah/.gemini/antigravity-cli/brain/e348b2bc-7a28-46cb-8705-c8b395216fe7 (778220 bytes)",
+      "carried_verdict": "",
+      "blind_reason": "",
+      "agy_exit": "",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": null,
+        "exhausted": true,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "quota",
+            "reason": "RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 1h3m19s."
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini quota-exhausted (429, first seen on lane 2 on gemini-3.8-flash-high)"
+          },
+          {
+            "model": "gemini-3.8-flash-high",
+            "why": "family gemini quota-exhausted (429, first seen on lane 2 on gemini-3.8-flash-high)"
+          },
+          {
+            "model": "gpt-oss-120b-medium",
+            "why": "family openai quota-exhausted (429, first seen on the pre-check probe of gpt-oss-120b-medium)"
+          },
+          {
+            "model": "qwen3.5",
+            "why": "not-run: no quorum.local_lane in the config — the aprender lane has no model to load"
+          },
+          {
+            "model": "claude-opus-4-6-thinking",
+            "why": "same_family_width=1 already taken by lane 2 (R-15a: one author-family lane per round)"
+          },
+          {
+            "model": "claude-sonnet-4-6",
+            "why": "same_family_width=1 already taken by lane 2 (R-15a: one author-family lane per round)"
+          }
+        ]
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 2,
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": []
+    },
+    {
+      "lane": 3,
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": []
+    }
+  ],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 2: non-empty .err (409 bytes, 2 line(s) beyond agy-lane's workspace narration)",
+    "lane 2: lane envelope status=ERROR transport_error=Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 1h3m27s. salvageable=/home/noah/.gemini/antigravity-cli/brain/05315419-19c5-42b8-8457-e3ed2156605b (1911757 bytes) [UNREVIEWED CLAIM MATERIAL — never a PASS]",
+    "lane 3: non-empty .err (409 bytes, 2 line(s) beyond agy-lane's workspace narration)",
+    "lane 3: lane envelope status=ERROR transport_error=Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 1h3m19s. salvageable=/home/noah/.gemini/antigravity-cli/brain/e348b2bc-7a28-46cb-8705-c8b395216fe7 (778220 bytes) [UNREVIEWED CLAIM MATERIAL — never a PASS]",
+    "lane 2: fallback chain exhausted — gemini-3.8-flash-high (quota: RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 1h3m27s.); gemini-3.1-pro-high (skipped: family gemini quota-exhausted (429, first seen on lane 2 on gemini-3.8-flash-high)); gemini-3.7-flash-high (skipped: family gemini quota-exhausted (429, first seen on lane 2 on gemini-3.8-flash-high)); gpt-oss-120b-medium (skipped: family openai quota-exhausted (429, first seen on the pre-check probe of gpt-oss-120b-medium)); qwen3.5 (skipped: not-run: no quorum.local_lane in the config — the aprender lane has no model to load); claude-opus-4-6-thinking (skipped: family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)); claude-sonnet-4-6 (skipped: family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)). NO-VERDICT, never a pass (PMAT-321)",
+    "lane 3: fallback chain exhausted — gemini-3.7-flash-high (quota: RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 1h3m19s.); gemini-3.1-pro-high (skipped: family gemini quota-exhausted (429, first seen on lane 2 on gemini-3.8-flash-high)); gemini-3.8-flash-high (skipped: family gemini quota-exhausted (429, first seen on lane 2 on gemini-3.8-flash-high)); gpt-oss-120b-medium (skipped: family openai quota-exhausted (429, first seen on the pre-check probe of gpt-oss-120b-medium)); qwen3.5 (skipped: not-run: no quorum.local_lane in the config — the aprender lane has no model to load); claude-opus-4-6-thinking (skipped: same_family_width=1 already taken by lane 2 (R-15a: one author-family lane per round)); claude-sonnet-4-6 (skipped: same_family_width=1 already taken by lane 2 (R-15a: one author-family lane per round)). NO-VERDICT, never a pass (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 81h52m35s."
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 81h51m50s."
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}
