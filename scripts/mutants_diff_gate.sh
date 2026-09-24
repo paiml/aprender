@@ -128,6 +128,10 @@ STUB
     row unparseable-outcomes-is-red 1 "cannot parse" STUB_LIST='a\nb\n' STUB_OUTCOMES='{"total": 2}'
     row tested-count-mismatch-is-red 1 "tested 1 mutant(s) but listed 2" STUB_LIST='a\nb\n' \
         STUB_OUTCOMES='{"total_mutants": 1, "missed": 0, "caught": 1, "timeout": 0}'
+    # the REAL cargo-mutants 27 shape (captured from a run, trimmed): pretty-printed, "outcomes" FIRST with nested
+    # phase results, the summary keys AFTER it. The pre-#4142 inline parser read nothing out of this file.
+    row real-outcomes-shape-is-parsed 1 "judged 2 mutant(s): missed=1 timeout=0" STUB_LIST='a\nb\n' \
+        STUB_OUTCOMES="$(cat "$(dirname "$SELF")/mutants_diff_gate.real-outcomes.json")"
     : > "$T/empty.diff"
     GATE_DIFF="$T/empty.diff" row empty-diff-passes 0 "empty diff" STUB_LIST='a\n'
   }
@@ -150,6 +154,7 @@ no-workspace-on-run~workspace-on-list-and-run~"$cargo" mutants --workspace --no-
 list-rc-ignored~list-failure-is-red~  if [ "$rc" -ne 0 ]; then~  if false; then
 cap-ignored~over-cap-is-red~  if [ "$cap" -gt 0 ] && [ "$n" -gt "$cap" ]; then~  if false; then
 no-outcomes-passes~no-outcomes-is-red-even-at-rc-0~    echo "RED   cargo mutants exited $rc and wrote no outcomes.json although $n mutant(s) were listed: the run died"~    echo "RED   cargo mutants exited $rc and wrote no outcomes.json although $n mutant(s) were listed: the run died"; return 0
+compact-json-only-parser~real-outcomes-shape-is-parsed~  grep -oE "\"$2\": ?[0-9]+" "$1" | head -1 | grep -oE '[0-9]+$'~  grep -oE "\"$2\":[0-9]+" "$1" | head -1 | grep -oE '[0-9]+$'
 missing-field-is-zero~unparseable-outcomes-is-red~  if [ -z "$total" ] || [ -z "$missed" ] || [ -z "$timeout" ]; then~  total=${total:-2}; missed=${missed:-0}; timeout=${timeout:-0}; if false; then
 count-mismatch-ok~tested-count-mismatch-is-red~  if [ "$total" -ne "$n" ]; then~  if false; then
 timeout-not-counted~timeout-counts-as-uncaught~  if [ $((missed + timeout)) -gt "$max" ]; then~  if [ "$missed" -gt "$max" ]; then
