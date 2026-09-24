@@ -922,6 +922,46 @@ print("null" if v is None else ("true" if v else "false"))
     return $rc
 }
 
+# ── #4131: HASH EACH MODEL FILE ONCE, and cache it by the file's IDENTITY ──────────────────
+# Every run sha256'd every held model: 26 files, 109.1 GB on lambda, at a measured 0.23 GB/s, ≈473 s,
+# on `--only` runs too, and a rung's file a second time in the inventory loop. That was ~60% of a
+# --only 9B rung run (#4034 lambda A/B).
+#
+# The cache is keyed on the file's IDENTITY, never its path: (st_dev, st_ino, size, mtime_ns, ctime_ns)
+# through `stat -L`, so a symlink is keyed by its target. A hit returns the stored hash. ANY change to
+# the key re-hashes. ctime is the part a user cannot set: a same-size rewrite that restores the mtime
+# (touch -d, cp --preserve) still moves ctime, and so still re-hashes. The cache lives per host
+# ($LADDER_SHA_CACHE, default ~/.cache/apr-ladder/sha256-identity.tsv), appended under flock. Within
+# one run, LADDER_SHA_MEMO keeps a rung's file from being hashed twice.
+#
+# Prints "<sha256> <hashed|cache|memo>". The source goes into the receipt, so a cached attestation is
+# never presented as a fresh measurement.
+declare -A LADDER_SHA_MEMO=()
+ladder_sha256() { # <path>
+    local path="$1" key cache sha line k
+    key=$(stat -Lc '%d %i %s %.9Y %.9Z' "$path" 2>/dev/null) || { printf 'unreadable hashed'; return 1; }
+    if [ -n "${LADDER_SHA_MEMO[$key]:-}" ]; then printf '%s memo' "${LADDER_SHA_MEMO[$key]}"; return 0; fi
+    cache="${LADDER_SHA_CACHE:-$HOME/.cache/apr-ladder/sha256-identity.tsv}"
+    sha=""
+    if [ -f "$cache" ]; then
+        while IFS=$'\t' read -r k line; do
+            [ "$k" = "$key" ] && sha="$line"
+        done < "$cache"
+    fi
+    if [[ "$sha" =~ ^[0-9a-f]{64}$ ]]; then
+        LADDER_SHA_MEMO[$key]=$sha; printf '%s cache' "$sha"; return 0
+    fi
+    sha=$(sha256sum "$path" | cut -d' ' -f1)
+    [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || { printf 'unreadable hashed'; return 1; }
+    # The key is re-read AFTER hashing: a file that changed while being hashed is not cached.
+    if [ "$(stat -Lc '%d %i %s %.9Y %.9Z' "$path" 2>/dev/null)" = "$key" ]; then
+        mkdir -p "$(dirname "$cache")" 2>/dev/null
+        { flock -w 30 9 && printf '%s\t%s\n' "$key" "$sha" >&9; } 9>> "$cache" 2>/dev/null || :
+    fi
+    LADDER_SHA_MEMO[$key]=$sha
+    printf '%s hashed' "$sha"
+}
+
 find_model() { # find_model <basename> — the inventory's copy first, then the fleet's other model dirs
   local f="$1" d p
   p=$(awk -F'|' -v f="$f" '$1 == f { print $2; exit }' <<< "$INVENTORY")
@@ -1420,7 +1460,7 @@ while IFS='|' read -r -t 5 rid rfile rsha rbackends rreq rhosts; do
     [ "$rreq" = 1 ] && RED=$((RED + 1))
     continue
   }
-  got=$(sha256sum "$path" | cut -d' ' -f1)
+  ladder_sha256 "$path" > "$WORK/.sha" || :; read -r got got_src < "$WORK/.sha"   # #4131
   if [ "$got" != "$rsha" ]; then
     printf '  [FAIL  ] %-30s sha256 mismatch (%s… vs ladder %s…) — a different file is a different measurement\n' "$rid" "${got:0:12}" "${rsha:0:12}"
     ladder_append "$ROWS" "$(printf '{"id":"%s","file":"%s","present":true,"sha_ok":false,"sha256":"%s","required":%s}' "$rid" "$rfile" "$got" "$([ "$rreq" = 1 ] && echo true || echo false)")"
@@ -1450,8 +1490,8 @@ while IFS='|' read -r -t 5 ifile ipath; do
   #
   # `-L` follows, matching sha256sum. The hash is NOT the field to change: the
   # receipt's job is to identify the model, and a symlink's text is not the model.
-  isha=$(sha256sum "$ipath" | cut -d' ' -f1); ibytes=$(stat -Lc %s "$ipath" 2>/dev/null || echo 0)
-  ladder_append "$INV_ROWS" "$(printf '{"file":"%s","sha256":"%s","bytes":%s}' "$ifile" "$isha" "$ibytes")"
+  ladder_sha256 "$ipath" > "$WORK/.sha" || :; read -r isha isha_src < "$WORK/.sha"; ibytes=$(stat -Lc %s "$ipath" 2>/dev/null || echo 0)   # #4131
+  ladder_append "$INV_ROWS" "$(printf '{"file":"%s","sha256":"%s","sha_source":"%s","bytes":%s}' "$ifile" "$isha" "$isha_src" "$ibytes")"
   if grep -qxF -- "$ifile" <<< "$LADDER_FILES"; then continue; fi   # a rung measured it above
   # #3936: the inventory ROW above is recorded either way -- a targeted receipt still
   # states the host's holdings -- but only the selected model is measured.

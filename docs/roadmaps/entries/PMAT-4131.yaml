@@ -1,0 +1,23 @@
+- id: PMAT-4131
+  github_issue: 4131
+  item_type: task
+  title: 'ladder: every run sha256s the whole model inventory (109 GB on lambda); cache by file identity, hash each file once (#4131)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-36
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: scripts/model_ladder.sh
+  acceptance_criteria:
+  - 'ladder_sha256 keys its per-host cache on the file IDENTITY (st_dev, st_ino, size, mtime_ns, ctime_ns via stat -L), never the path; a hit returns the cached hash, and any change to the key re-hashes'
+  - 'a changed file under the same path and size is re-hashed, including a same-size rewrite that restores its mtime (the cop''s must-RED) and an inode swap'
+  - 'a file that changes while it is being hashed is not cached; a file is hashed at most once per run (the in-run memo), so a rung file is no longer hashed again in the inventory loop'
+  - 'each inventory row records sha_source (hashed|cache|memo), so a cached attestation is never presented as a fresh measurement'
+  - 'check_ladder_sha_cache.sh runs the shipped function against real files; --self-test plants a path-keyed cache and a key without ctime, and both are killed; check_ladder_provenance.sh still pins bytes and sha to the followed model'
+  - 'the saving is measured on lambda''s real inventory'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

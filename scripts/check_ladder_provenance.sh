@@ -52,12 +52,13 @@ done
 extract_line() {
   local src="$1" n
   [ -f "$src" ] || { echo "  cannot read $src" >&2; return 2; }
-  n=$(grep -c 'isha=\$(sha256sum' "$src" || true)
+  # #4131: the hash now goes through ladder_sha256 (identity-keyed cache), on ONE collection line.
+  n=$(grep -c 'read -r isha isha_src < "\$WORK/.sha"; ibytes=' "$src" || true)
   if [ "$n" != "1" ]; then
     echo "  expected exactly 1 collection line in $src, found $n — this check no longer knows what to evaluate" >&2
     return 2
   fi
-  grep -m1 'isha=\$(sha256sum' "$src"
+  grep -m1 'read -r isha isha_src < "\$WORK/.sha"; ibytes=' "$src"
 }
 
 # Plant a model and a symlink to it whose TARGET PATH LENGTH differs from the
@@ -100,7 +101,13 @@ run_case() {
   # SEC/DET/IDEM gate) fails on. That finding was invisible on the PR because
   # guard-cargo failed an EARLIER step and GitHub skipped this one -- one defect
   # standing in front of another.
-  printf '%s\n' "$line" > "$tmp/shipped-line.sh"
+  # #4131: the line calls ladder_sha256, so the SHIPPED function is lifted too, with a scratch cache.
+  awk '/^declare -A LADDER_SHA_MEMO=/{print} /^ladder_sha256\(\) \{/{f=1} f{print} f && /^\}$/{exit}' "$src" > "$tmp/shipped-fn.sh"
+  grep -q '^ladder_sha256() {' "$tmp/shipped-fn.sh" || { echo "  $src defines no ladder_sha256() -- this check no longer knows what to evaluate" >&2; return 2; }
+  local WORK="$tmp" LADDER_SHA_CACHE="$tmp/sha-cache.tsv"
+  # ONE file, sourced ONCE: run_case's RETURN trap also fires when a `.` returns, and would delete
+  # $tmp between two sources.
+  { cat "$tmp/shipped-fn.sh"; printf '%s\n' "$line"; } > "$tmp/shipped-line.sh"
   # shellcheck source=/dev/null
   . "$tmp/shipped-line.sh"
 
@@ -146,12 +153,13 @@ if [ "$SELF_TEST" = 1 ]; then
   # hashing the link, which would make both fields describe the symlink and this
   # check pass if it only compared them to each other. The receipt's job is to
   # identify the MODEL, so the sha is pinned to the followed file independently.
-  # The mutation must leave the `isha=$(sha256sum` prefix intact, or extract_line
+  # (#4131: the hash is computed inside ladder_sha256, so that is where the argument changes.)
+  # The mutation must leave the collection line intact, or extract_line
   # stops matching and the case goes red on the anti-vacuity guard instead of on
   # the sha assertion — red for the wrong reason, which proves nothing. (It did
   # exactly that on the first attempt.) So only the ARGUMENT changes.
   mutant_b=$(mktemp); trap 'rm -f "$mutant" "$mutant_b"' EXIT
-  sed 's|sha256sum "\$ipath"|sha256sum <(readlink "$ipath" \| tr -d "\\n")|' "$SCRIPT" > "$mutant_b"
+  sed 's|sha=\$(sha256sum "\$path"|sha=$(sha256sum <(readlink "$path" \| tr -d "\\n")|' "$SCRIPT" > "$mutant_b"
   if cmp -s "$SCRIPT" "$mutant_b"; then
     echo "SELF-TEST INCONCLUSIVE: mutant B changed nothing" >&2; exit 1
   fi
