@@ -225,7 +225,7 @@ fn try_wgpu_generate(
     // KV caches
     let max_seq = gen_config.max_tokens + input_tokens.len() + 16;
     let mut kv_caches: Vec<(Vec<f32>, Vec<f32>)> = (0..num_layers)
-        .map(|_| (vec![0.0f32; max_seq * kv_dim], vec![0.0f32; max_seq * kv_dim]))
+        .map(|_| (Vec::with_capacity(max_seq * kv_dim), Vec::with_capacity(max_seq * kv_dim)))
         .collect();
 
     // FALSIFY-CPU-GPU-006 (#1864): multi-step CPU vs wgpu parity gate.
@@ -257,7 +257,7 @@ fn try_wgpu_generate(
         let probe_max_seq = multi_step_probe + 1;
         let mut cpu_cache = crate::gguf::OwnedQuantizedKVCache::from_config(&config, probe_max_seq);
         let mut probe_kv_caches: Vec<(Vec<f32>, Vec<f32>)> = (0..num_layers)
-            .map(|_| (vec![0.0f32; probe_max_seq * kv_dim], vec![0.0f32; probe_max_seq * kv_dim]))
+            .map(|_| (Vec::with_capacity(probe_max_seq * kv_dim), Vec::with_capacity(probe_max_seq * kv_dim)))
             .collect();
         let mut probe_token = *input_tokens.first().unwrap_or(&0);
 
@@ -713,7 +713,7 @@ fn try_apr_wgpu_inference(
 
     let max_seq = gen_config.max_tokens + input_tokens.len() + 16;
     let mut kv_caches: Vec<(Vec<f32>, Vec<f32>)> = (0..num_layers)
-        .map(|_| (vec![0.0f32; max_seq * kv_dim], vec![0.0f32; max_seq * kv_dim]))
+        .map(|_| (Vec::with_capacity(max_seq * kv_dim), Vec::with_capacity(max_seq * kv_dim)))
         .collect();
 
     // FALSIFY-CPU-GPU-005 part b: wgpu cosine parity gate.
@@ -751,7 +751,7 @@ fn try_apr_wgpu_inference(
         let probe_max_seq = multi_step_probe + 1;
         let mut cpu_cache = crate::gguf::OwnedQuantizedKVCache::from_config(cfg, probe_max_seq);
         let mut probe_kv_caches: Vec<(Vec<f32>, Vec<f32>)> = (0..num_layers)
-            .map(|_| (vec![0.0f32; probe_max_seq * kv_dim], vec![0.0f32; probe_max_seq * kv_dim]))
+            .map(|_| (Vec::with_capacity(probe_max_seq * kv_dim), Vec::with_capacity(probe_max_seq * kv_dim)))
             .collect();
         let mut probe_token = *input_tokens.first().unwrap_or(&0);
 

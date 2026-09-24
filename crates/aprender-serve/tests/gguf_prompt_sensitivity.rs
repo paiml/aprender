@@ -75,8 +75,8 @@ fn falsify_gguf_prompt_sensitivity_distinct_prompts_distinct_outputs() {
          for two distinct prompts. P1=\"{p1}\" → {out_a:?}; P2=\"{p2}\" → {out_b:?}. \
          Pre-fix: structural prompt-insensitive bug (input tokens dropped, KV cache \
          poisoned, sampler locked, or model state fixed-init). Bisect via eprintln \
-         in `crates/aprender-serve/src/gguf/inference/fails.rs:228` (prefill loop \
-         token IDs) and `matmul_fused.rs:45` (embedding lookup token IDs). See \
+         in `generate_with_cache` (`gguf/inference/generate_quantized.rs`, prefill \
+         loop token IDs) and `matmul_fused.rs:45` (embedding lookup token IDs). See \
          contract `contracts/gguf-prompt-sensitivity-v1.yaml`."
     );
 }
