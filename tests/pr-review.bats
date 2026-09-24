@@ -2082,3 +2082,31 @@ guard_under_every_jq() {
   printf '\n' > "$d/findings.sarif"
   guard_under_every_jq "$d" "findings.sarif holds 0 JSON document/s"
 }
+
+# path_without_jq - a PATH directory holding every executable on $PATH except jq, so a
+# script's tool check can be run with jq ABSENT (rc 127 from a bare call). The caller
+# asserts `command -v jq` fails under it: a shim that still resolves jq proves nothing.
+path_without_jq() {
+  local d="$BATS_TEST_TMPDIR/nojq" p f IFS=:
+  mkdir -p "$d"
+  for p in $PATH; do
+    [ -d "$p" ] || continue
+    for f in "$p"/*; do
+      [ -x "$f" ] && [ ! -d "$f" ] || continue
+      case "${f##*/}" in jq|jq-*) continue ;; esac
+      [ -e "$d/${f##*/}" ] || ln -s "$f" "$d/${f##*/}"
+    done
+  done
+  printf '%s\n' "$d"
+}
+
+# --- #3594 done_when 4: jq ABSENT is a rejection (rc 1), never green -----------------
+@test "row tool-01 jq absent from PATH: FAIL naming jq, never green   RED  (#3594)" {
+  local nojq; nojq=$(path_without_jq)
+  run env PATH="$nojq" bash -c 'command -v jq'
+  [ "$status" -ne 0 ] || { echo "control: the shim still resolves jq at $output"; return 1; }
+  run env PATH="$nojq" bash "$GUARD" "$BATS_TEST_TMPDIR"
+  echo "rc=$status"; echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "FAIL - cannot run:".*" jq"( |\.|$) ]]
+}

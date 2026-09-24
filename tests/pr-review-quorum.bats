@@ -749,3 +749,34 @@ arm_under_every_jq() {
 @test "e-06 garbage is still unparseable under every jq (q-05, re-run per binary)" {
   arm_under_every_jq "$FIX/q-05-receipt-unparseable" Q1 "not parseable JSON"
 }
+
+# path_without_jq - a PATH directory holding every executable on $PATH except jq, so a
+# script's tool check can be run with jq ABSENT (rc 127 from a bare call). The caller
+# asserts `command -v jq` fails under it: a shim that still resolves jq proves nothing.
+path_without_jq() {
+  local d="$BATS_TEST_TMPDIR/nojq" p f IFS=:
+  mkdir -p "$d"
+  for p in $PATH; do
+    [ -d "$p" ] || continue
+    for f in "$p"/*; do
+      [ -x "$f" ] && [ ! -d "$f" ] || continue
+      case "${f##*/}" in jq|jq-*) continue ;; esac
+      [ -e "$d/${f##*/}" ] || ln -s "$f" "$d/${f##*/}"
+    done
+  done
+  printf '%s\n' "$d"
+}
+
+# --- #3594 done_when 4: jq ABSENT is Unknown{ToolAbsent} -> ENV (rc 2), never clean ----
+# A bare `jq ...` with jq missing is rc 127, which `|| true` and "non-zero means no
+# findings" both read as clean. The gate must stop at its tool check, before any receipt
+# is read, with the ENV exit - not arm, not skip, not refuse as if it had evaluated.
+@test "tool-01 jq absent from PATH: ENV exit 2 naming jq, before any receipt is read (#3594)" {
+  local nojq; nojq=$(path_without_jq)
+  run env PATH="$nojq" bash -c 'command -v jq'
+  [ "$status" -ne 0 ] || { echo "control: the shim still resolves jq at $output"; return 1; }
+  run env PATH="$nojq" bash "$ARM" --pr 1 --receipt-dir "$FIX/q-05-receipt-unparseable"
+  echo "rc=$status"; echo "$output"
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "ENV - cannot run:".*" jq"( |\.|$) ]]
+}
