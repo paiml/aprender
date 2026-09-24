@@ -322,7 +322,8 @@ fn decide_named_gate(
     shapes_opts: &ShapesOptions,
 ) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
     use provable_contracts::lint::{
-        evidence_gate::EvidenceOutcome, ratchet_gates::RatchetOutcome, relations_gate::RelationsOutcome, sigma_gate::SigmaOutcome,
+        evidence_gate::EvidenceOutcome, ratchet_gates::RatchetOutcome,
+        relations_gate::RelationsOutcome, sigma_gate::SigmaOutcome,
         valid_under_gate::ValidUnderOutcome, NamedGateOutcome, NAMED_GATES,
     };
 
