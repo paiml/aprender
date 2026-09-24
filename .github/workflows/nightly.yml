@@ -22,6 +22,8 @@
 #
 # Produces, per target: <bin>-{target}.tar.gz for EVERY workspace [[bin]] (+ .sha256; each holds
 # <bin>-{target}/<bin>) and nightly-manifest.json, on the "nightly" prerelease.
+# Plus apr-{target}-cuda.tar.gz (+ .sha256): apr built --features cuda, the name
+# binary-release.yml gives the same build, so GPU hosts can run the nightly (#4326).
 #
 # #3073 (operator rule 2026-09-10: "WE DO NOT USE HOSTED GITHUB RUNNERS"): every
 # job runs on the fleet. x86_64 builds on yoga and aarch64 natively on gx10, both
@@ -154,6 +156,36 @@ jobs:
             (cd dist && shasum -a 256 "$A.tar.gz" > "$A.tar.gz.sha256")
             echo "Packaged: dist/$A.tar.gz ($(du -h "dist/$A.tar.gz" | cut -f1))"
           done
+          # #4326: apr again with --features cuda, so a GPU host can run the nightly
+          # at all (the CPU apr over an rc would regress every GPU verb). Its own
+          # target dir: one cache, two feature sets, would rebuild both every night.
+          # The driver is dlopen'd at run time (aprender-gpu: dep:libloading), so
+          # the bullseye image needs no toolkit -- binary-release.yml's cuda lane.
+          # Record proves the feature took (libcuda.so in the executable).
+          APR_SHA=$(git rev-parse --short HEAD)
+          mkdir -p "$CACHE/target-cuda"
+          $DOCKER run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$CACHE/registry:/usr/local/cargo/registry" \
+            -v "$CACHE/target-cuda:/workspace/target-cuda" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target-cuda \
+            -e CARGO_INCREMENTAL=0 \
+            -e APR_GIT_SHA_OVERRIDE="$APR_SHA" \
+            -e T="$T" \
+            rust:1.93.0-bullseye \
+            sh -c 'set -e; cargo build --locked --release -p apr-cli --bin apr --features cuda --target "$T"'
+          mkdir -p "target/$T/release/cuda"
+          cp "$CACHE/target-cuda/$T/release/apr" "target/$T/release/cuda/apr"
+          A="apr-$T-cuda"
+          mkdir -p "$A"
+          cp "target/$T/release/cuda/apr" "$A/"
+          for f in README.md LICENSE LICENSE-MIT COPYING UNLICENSE; do
+            if [ -f "$f" ]; then cp "$f" "$A/"; fi
+          done
+          tar czf "dist/$A.tar.gz" "$A"
+          (cd dist && shasum -a 256 "$A.tar.gz" > "$A.tar.gz.sha256")
+          echo "Packaged: dist/$A.tar.gz ($(du -h "dist/$A.tar.gz" | cut -f1))"
 
       # Runs on failure too: a failed build is a verdict the manifest records.
       - name: Record (sha256 of tarball and executable, --version, build SHA)
@@ -170,6 +202,7 @@ jobs:
           # without reading --bins, so "none" is never probed as a bin.
           python3 scripts/nightly_manifest.py record --target "${{ matrix.target }}" --sha "$GITHUB_SHA" \
             --bins "${NIGHTLY_BINS:-none}" --bin-dir "target/${{ matrix.target }}/release" --dist dist \
+            --variants apr:cuda \
             --build-outcome "${{ steps.build.outcome }}" --version "$V" > "dist/fragment-${{ matrix.target }}.json"
           cat "dist/fragment-${{ matrix.target }}.json"
 

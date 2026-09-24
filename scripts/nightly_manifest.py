@@ -68,7 +68,12 @@ TARGETS = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
 VERSION_SHA = re.compile(r"\(([0-9a-f]{7,40})[\s),]")
 # A BUILD verdict on S means S has been handled. red-ci / ci-pending do not:
 # CI can be rerun green, and then S is work again.
-BUILD_VERDICTS = {"build-failed", "version-mismatch", "version-no-sha", "version-failed", "missing-artifact"}
+BUILD_VERDICTS = {"build-failed", "version-mismatch", "version-no-sha", "version-failed", "missing-artifact",
+                  "variant-feature-missing"}
+# The string a feature leaves in the executable. `libcuda.so` is the runtime
+# loader name, present only under --features cuda (1 vs 0 on 0.66.0; the same
+# proof binary-release.yml's cuda lane runs).
+VARIANT_MARKERS = {"cuda": b"libcuda.so"}
 
 
 class GateError(Exception):
@@ -176,7 +181,8 @@ def probe_version(exe):
     return p.returncode, (out[0] if out else "")
 
 
-def record(target, sha, bins, bin_dir, dist, build_outcome="success", probe=probe_version, version=None):
+def record(target, sha, bins, bin_dir, dist, build_outcome="success", probe=probe_version, version=None,
+           variants=()):
     if build_outcome != "success":
         # A cancelled build proved nothing about the code, so it is not a build
         # verdict: the gate retries the SHA instead of calling it handled.
@@ -185,13 +191,28 @@ def record(target, sha, bins, bin_dir, dist, build_outcome="success", probe=prob
                 "red": {"sha": sha, "reason": reason, "detail": f"build step: {build_outcome}"}}
     # dist=None is the release-commit smoke (`smoke`, #4189): the same verdicts
     # on the built executables, with no tarball to require or hash.
+    # A variant `bin:feature` (#4326: apr:cuda) is a second build of one bin with a
+    # cargo feature, at <bin_dir>/<feature>/<bin>, shipped as <bin>-<target>-<feature>
+    # -- the name binary-release.yml gives it, so a resolver asks one name of the
+    # nightly, an rc and a release. It is judged as every bin is, and must also
+    # carry the feature's marker: a cuda build that lost --features is a CPU apr
+    # under a cuda name, which would regress every GPU verb on the host installing it.
+    items = [(b, b, os.path.join(bin_dir, b), f"{b}-{target}.tar.gz", None) for b in bins]
+    for v in variants:
+        b, feat = v.split(":", 1)
+        items.append((f"{b}-{feat}", b, os.path.join(bin_dir, feat, b), f"{b}-{target}-{feat}.tar.gz",
+                       VARIANT_MARKERS.get(feat)))
     tools, red = {}, None
-    for b in bins:
-        exe = os.path.join(bin_dir, b)
-        tar = os.path.join(dist, f"{b}-{target}.tar.gz") if dist is not None else None
+    for key, b, exe, tar_name, marker in items:
+        tar = os.path.join(dist, tar_name) if dist is not None else None
         if not (os.path.isfile(exe) and (tar is None or os.path.isfile(tar))):
-            red = red or {"sha": sha, "reason": "missing-artifact", "detail": b}
+            red = red or {"sha": sha, "reason": "missing-artifact", "detail": key}
             continue
+        if marker is not None:
+            with open(exe, "rb") as f:
+                if marker not in f.read():
+                    red = red or {"sha": sha, "reason": "variant-feature-missing",
+                                  "detail": f"{key}: no {marker.decode()} in the executable"}
         rc, line = probe(exe)
         m = VERSION_SHA.search(line + " ")
         vsha = m.group(1) if m else None
@@ -208,7 +229,7 @@ def record(target, sha, bins, bin_dir, dist, build_outcome="success", probe=prob
         elif not vsha:
             red = red or {"sha": sha, "reason": "version-no-sha",
                           "detail": f"{b}: --version names no build SHA: {line}"}
-        tools[b] = {
+        tools[key] = {
             "asset": os.path.basename(tar) if tar else None,
             "sha256": sha256_file(tar) if tar else None,
             "bin_sha256": sha256_file(exe),
@@ -494,6 +515,45 @@ def self_test():
         check("smoke: a bin printing no SHA -> version-no-sha",
               (sv["status"], (sv["red"] or {}).get("reason")), ("red", "version-no-sha"))
 
+    print("record, variant (#4326: apr:cuda):")
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "cuda"))
+        cu_exe, cu_tar = os.path.join(d, "cuda", "apr"), os.path.join(d, f"apr-{T[0]}-cuda.tar.gz")
+        open(os.path.join(d, "apr"), "wb").write(b"exe-apr")
+        open(os.path.join(d, f"apr-{T[0]}.tar.gz"), "wb").write(b"tar-apr")
+        open(cu_exe, "wb").write(b"exe-apr\0libcuda.so\0")
+        open(cu_tar, "wb").write(b"tar-apr-cuda")
+        by_path = lambda out: (lambda exe: out.get(exe, (0, f"apr 0.69.0 ({S[:9]})")))  # noqa: E731
+        vg = record(T[0], S, ["apr"], d, d, probe=by_path({}), variants=["apr:cuda"])
+        check("a cuda variant carrying libcuda.so, printing S -> green",
+              (vg["status"], sorted(vg["tools"])), ("green", ["apr", "apr-cuda"]))
+        check("the variant ships under binary-release.yml's name, apr-<target>-cuda.tar.gz",
+              vg["tools"]["apr-cuda"]["asset"], f"apr-{T[0]}-cuda.tar.gz")
+        check("the variant's bin_sha256 is ITS executable, not the CPU apr",
+              vg["tools"]["apr-cuda"]["bin_sha256"], hashlib.sha256(b"exe-apr\0libcuda.so\0").hexdigest())
+        check("no variants asked -> the manifest is unchanged (no apr-cuda row)",
+              sorted(record(T[0], S, ["apr"], d, d, probe=by_path({}))["tools"]), ["apr"])
+        vm = record(T[0], S, ["apr"], d, d, probe=by_path({cu_exe: (0, f"apr 0.69.0 ({OLD[:9]})")}),
+                    variants=["apr:cuda"])
+        check("the variant printing ANOTHER SHA -> version-mismatch",
+              (vm["status"], (vm["red"] or {}).get("reason")), ("red", "version-mismatch"))
+        open(cu_exe, "wb").write(b"exe-apr-cpu-only")
+        vn = record(T[0], S, ["apr"], d, d, probe=by_path({}), variants=["apr:cuda"])
+        check("a 'cuda' build with no libcuda.so (lost --features) -> variant-feature-missing",
+              (vn["status"], (vn["red"] or {}).get("reason")), ("red", "variant-feature-missing"))
+        check("variant-feature-missing is a BUILD verdict (the gate does not rebuild S)",
+              "variant-feature-missing" in BUILD_VERDICTS, True)
+        os.remove(cu_tar)
+        vt = record(T[0], S, ["apr"], d, d, probe=by_path({}), variants=["apr:cuda"])
+        check("the variant's tarball missing -> missing-artifact, naming apr-cuda",
+              (vt["status"], (vt["red"] or {}).get("reason"), (vt["red"] or {}).get("detail")),
+              ("red", "missing-artifact", "apr-cuda"))
+        mv = {"run_id": 7, "targets": {T[0]: {"status": "green", "green_sha": S, "built_run_id": 7,
+                                              "tools": vg["tools"]}}}
+        names = {f"apr-{T[0]}{x}.tar.gz{y}" for x in ("", "-cuda") for y in ("", ".sha256")}
+        check("publish plan uploads the cuda tarball and its .sha256",
+              {f"apr-{T[0]}-cuda.tar.gz", f"apr-{T[0]}-cuda.tar.gz.sha256"} <= set(publish_plan(mv, S, names)), True)
+
     print("merge:")
     now = "2026-09-24T12:00:00Z"
     prev = {"targets": {t: {"status": "green", "green_sha": OLD, "tools": {"apr": {"asset": f"apr-{t}.tar.gz"}},
@@ -584,6 +644,7 @@ def main(argv):
         r.add_argument(a, required=True)
     r.add_argument("--build-outcome", default="success")
     r.add_argument("--version", help="the crate version every bin's --version must print")
+    r.add_argument("--variants", default="", help="bin:feature,.. built at <bin-dir>/<feature>/<bin> (#4326)")
     m = sub.add_parser("merge")
     m.add_argument("--prev")
     m.add_argument("--fragments", required=True)
@@ -618,7 +679,7 @@ def main(argv):
         return 0
     if a.cmd == "record":
         print(json.dumps(record(a.target, a.sha, a.bins.split(","), a.bin_dir, a.dist, a.build_outcome,
-                                version=a.version), indent=1))
+                                version=a.version, variants=[v for v in a.variants.split(",") if v]), indent=1))
         return 0
     if a.cmd == "merge":
         frags = {}
