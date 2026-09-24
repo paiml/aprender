@@ -27,6 +27,11 @@ concepts:
   Statement: {doc: "a Lean theorem in the in-tree Theorems tree; the focus node of extract:lean (ONT-4b2: ont:Statement with lean:sorryFree, lean:modelOf)"}
   Model: {doc: "a model file — an .apr container or a GGUF; the ladder's rungs are the ones the release measures (ONT-4c1: model:Model, model:RequiredModel, model:Receipt)"}
   Dataset: {doc: "a CSV or corpus file"}
+  Json: {doc: "a JSON document a tool emitted, read by extract:json through a vocabulary map"}
+  Repo: {doc: "a GitHub repository, as a tracked JSON snapshot of its API object pinned to its default-branch commit (ONT-4f: repo:full_name, repo:sha, repo:ref)"}
+  Issue: {doc: "a GitHub issue, as a tracked JSON snapshot of its API object pinned to its updated_at (ONT-4f: issue:number, issue:state, issue:milestone)"}
+  PullRequest: {doc: "a GitHub pull request, as a tracked JSON snapshot of its API object pinned to its updated_at (ONT-4f: pr:state, pr:merged_at, pr:baseRepo)"}
+  Milestone: {doc: "a GitHub milestone, as a tracked JSON snapshot of its API object pinned to its updated_at (ONT-4f: milestone:title, milestone:state)"}
 
 roles:
   binds:
@@ -147,6 +152,13 @@ entity_types:
   # aprender#3715: a release's receipts (per-host inventory + cells, kernel diffs, context rungs, the dogfood
   # receipt R5 judged), extracted ONLY when a release subject is given — an ordinary PR has no release.
   - {name: release-evidence, extractor: release_evidence, implemented: true}
+  # ONT-4f (aprender#4330): GitHub's own objects, read by extract:json from the tracked snapshots under
+  # evidence/github/<type>/<ref-slug>.json through the vocabulary each type declares here. The ref is the file name:
+  # `<owner>/<repo>@<sha>` for a repo, `<owner>/<repo>#<n>@<updated_at>` for the other three.
+  - {name: repo, extractor: json, implemented: true, vocabulary: {prefix: repo, root_class: "ont:Repo"}}
+  - {name: issue, extractor: json, implemented: true, vocabulary: {prefix: issue, root_class: "ont:Issue"}}
+  - {name: pull-request, extractor: json, implemented: true, vocabulary: {prefix: pr, root_class: "ont:PullRequest"}}
+  - {name: milestone, extractor: json, implemented: true, vocabulary: {prefix: milestone, root_class: "ont:Milestone"}}
 
 extractors:
   - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
@@ -183,6 +195,11 @@ not_expressible:
 subsumes:
   - {sub: Kernel, sup: Contract}
   - {sub: Symbol, sup: Code}
+  # ONT-4f: each is "… as a tracked JSON snapshot", which is a Json document ("a JSON document a tool emitted").
+  - {sub: Repo, sup: Json}
+  - {sub: Issue, sup: Json}
+  - {sub: PullRequest, sup: Json}
+  - {sub: Milestone, sup: Json}
 
 readers:
   concepts: ontology/sigma.rs
@@ -191,6 +208,6 @@ readers:
   symbols: lint/sigma_symbols.rs
   worlds: ontology/sigma.rs, lint/valid_under_gate.rs
   agents: ontology/sigma.rs
-  entity_types: lint/sigma_gate.rs
+  entity_types: lint/sigma_gate.rs, ontology/extract/json.rs
   extractors: ontology/sigma.rs
   not_expressible: ontology/sigma.rs

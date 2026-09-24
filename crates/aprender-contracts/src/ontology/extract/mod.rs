@@ -50,6 +50,8 @@ pub struct Extraction {
     pub release: Option<release_evidence::ReleaseStats>,
     /// ONT-4d: how many `rdf:type` triples the Σ closure added.
     pub type_closure_added: usize,
+    /// ONT-4f: the tracked GitHub snapshots (repo, issue, pull-request, milestone) and the joins between them.
+    pub github: json::GithubStats,
 }
 
 /// Σ from `<contract_dir>/ontology.yaml`, when it parses and is well-formed. A malformed Σ is the `sigma`
@@ -140,11 +142,17 @@ pub fn all_with(
     out.code = code::extract(contract_dir, &mut out.graph);
     out.lean = lean::extract(contract_dir, &mut out.graph);
     out.parity = parity_receipt::extract(root, &mut out.graph);
+    let sigma = sigma_of(contract_dir);
+    // ONT-4f: GitHub's own objects, read through the vocabulary Σ gives each type. Before the closure, so
+    // `ont:Repo ⊑ ont:Json` reaches them.
+    if let Some(s) = &sigma {
+        out.github = json::extract_github(&repo_root(contract_dir), s, &mut out.graph)
+            .map_err(ExtractFailure::Json)?;
+    }
     // ONT-4d (R-19): the rdf:type closure over Σ's `subsumes`, materialized AFTER every extractor has run, so a
     // focus node an extractor typed with a sub-concept is also an instance of every super-concept. This is
     // how a shape on a super-concept reaches it (shapes.rs selects focus nodes by rdf:type).
-    out.type_closure_added =
-        sigma_of(contract_dir).map_or(0, |s| materialize_type_closure(&mut out.graph, &s));
+    out.type_closure_added = sigma.map_or(0, |s| materialize_type_closure(&mut out.graph, &s));
     if let Some(subject) = release {
         out.release = Some(
             release_evidence::extract(&mut out.graph, contract_dir, subject)

@@ -43,6 +43,9 @@ pub enum ExtractError {
     VocabularyIncomplete { contract: String, what: String },
     /// A nested object (or array of objects) under `key` that `vocabulary.nested` does not name.
     Unmapped { contract: String, key: String },
+    /// ONT-4f: a GitHub snapshot the declaration cannot stand behind — a ref that disagrees with the snapshot's
+    /// own version, a merged pull request with no `merged_at`, a cross-type join with no tracked target.
+    Snapshot { file: String, why: String },
 }
 
 impl std::fmt::Display for ExtractError {
@@ -61,6 +64,7 @@ impl std::fmt::Display for ExtractError {
                 f,
                 "extract:json {contract}: nested key `{key}` is not in vocabulary.nested — name its class or drop it"
             ),
+            Self::Snapshot { file, why } => write!(f, "extract:json {file}: {why}"),
         }
     }
 }
@@ -364,6 +368,406 @@ fn literal(v: &serde_json::Value) -> Term {
     }
 }
 
+/// ONT-4f: where the tracked GitHub snapshots live — `evidence/github/<type>/<ref-slug>.json`, one file per object.
+pub const GITHUB_DIR: &str = "evidence/github";
+
+/// ONT-4f: the GitHub object types, in the order they are read. Repos and milestones come first so an issue's
+/// milestone and a pull request's base repo resolve against snapshots already read.
+pub const GITHUB_TYPES: [&str; 4] = ["repo", "milestone", "issue", "pull-request"];
+
+/// ONT-4f: what the GitHub snapshot walk read and joined.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GithubStats {
+    /// Focus nodes per entity type (`repo`, `issue`, `pull-request`, `milestone`).
+    pub by_type: std::collections::BTreeMap<String, usize>,
+    /// `issue:milestone` and `pr:baseRepo` edges resolved between tracked snapshots.
+    pub resolved: usize,
+}
+
+/// One tracked snapshot, as read: its entity type, its repo-relative path, and its text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Snapshot {
+    pub kind: String,
+    pub file: String,
+    pub text: String,
+}
+
+/// A snapshot the declaration cannot stand behind: the gate exits 3 naming the file and the field.
+fn refuse(file: &str, why: impl Into<String>) -> ExtractError {
+    ExtractError::Snapshot {
+        file: file.to_string(),
+        why: why.into(),
+    }
+}
+
+/// A ref as a file name: `/` → `__`, `#` → `--`, `:` → `-` (`paiml/aprender#4330@2026-09-24T18:44:14Z` →
+/// `paiml__aprender--4330@2026-09-24T18-44-14Z`). Applied to both sides of every comparison, so it never needs
+/// inverting.
+#[must_use]
+pub fn ref_slug(r: &str) -> String {
+    r.replace('/', "__").replace('#', "--").replace(':', "-")
+}
+
+fn str_field<'a>(
+    file: &str,
+    map: &'a serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Result<&'a str, ExtractError> {
+    map.get(key)
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| refuse(file, format!("no `{key}` string")))
+}
+
+/// `(id, version field, version)` of a snapshot: a repo is `<owner>/<repo>` pinned to its default-branch `sha`;
+/// an issue, pull request or milestone is `<owner>/<repo>#<n>` pinned to its `updated_at` (GitHub gives these
+/// three no content hash).
+fn identity(
+    kind: &str,
+    file: &str,
+    map: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(String, &'static str, String), ExtractError> {
+    if kind == "repo" {
+        let id = str_field(file, map, "full_name")?;
+        let sha = str_field(file, map, "sha")?;
+        return Ok((id.to_string(), "sha", sha.to_string()));
+    }
+    let repo = str_field(file, map, "repository")?;
+    let n = map
+        .get("number")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| refuse(file, "no `number` integer"))?;
+    let updated = str_field(file, map, "updated_at")?;
+    Ok((format!("{repo}#{n}"), "updated_at", updated.to_string()))
+}
+
+/// The file name is the ref: its id part must name the snapshot's object and its version part must equal the
+/// snapshot's own `sha` / `updated_at`. A disagreement is refused by name — a stale file under a fresh name is
+/// never accepted as a newer version of the same node.
+fn check_ref(file: &str, id: &str, field: &str, version: &str) -> Result<(), ExtractError> {
+    let name = Path::new(file)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(file);
+    let stem = name.strip_suffix(".json").unwrap_or(name);
+    let (file_id, file_ver) = stem
+        .rsplit_once('@')
+        .ok_or_else(|| refuse(file, "the file name carries no `@<version>` ref"))?;
+    if file_id != ref_slug(id) {
+        return Err(refuse(
+            file,
+            format!("the ref names `{file_id}` but the snapshot is `{id}`"),
+        ));
+    }
+    if file_ver != ref_slug(version) {
+        return Err(refuse(
+            file,
+            format!("the ref version `{file_ver}` disagrees with the snapshot's own {field} `{version}`"),
+        ));
+    }
+    Ok(())
+}
+
+/// A merged pull request carries its merge time: `state: merged` (or `merged: true`) with no `merged_at` is refused.
+fn check_merged(
+    file: &str,
+    map: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), ExtractError> {
+    let merged = map
+        .get("state")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|s| s.eq_ignore_ascii_case("merged"))
+        || map.get("merged").and_then(serde_json::Value::as_bool) == Some(true);
+    let at = ["merged_at", "mergedAt"].iter().any(|k| {
+        map.get(*k)
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|s| !s.is_empty())
+    });
+    if merged && !at {
+        return Err(refuse(file, "state is merged but `merged_at` is absent"));
+    }
+    Ok(())
+}
+
+/// ONT-4f `extract:json` over the tracked GitHub snapshots: for every type in [`GITHUB_TYPES`] that Σ declares
+/// with `extractor: json` and a `vocabulary`, every `evidence/github/<type>/*.json` under `root`. A type Σ does
+/// not declare is not read; one it declares without a vocabulary is the declaration's fault. No live API call —
+/// the snapshots are the input (R-15).
+pub fn extract_github(
+    root: &Path,
+    sigma: &crate::ontology::sigma::Sigma,
+    g: &mut Graph,
+) -> Result<GithubStats, ExtractError> {
+    let mut vocabs = Vec::new();
+    let mut snaps = Vec::new();
+    for kind in GITHUB_TYPES {
+        let Some(decl) = sigma
+            .entity_types
+            .iter()
+            .find(|e| e.name == kind && e.extractor == "json")
+        else {
+            continue;
+        };
+        let v = decl
+            .vocabulary
+            .as_ref()
+            .ok_or_else(|| ExtractError::VocabularyIncomplete {
+                contract: format!("ontology.yaml entity_types.{kind}"),
+                what: "no `vocabulary`".into(),
+            })?;
+        vocabs.push((
+            kind.to_string(),
+            Vocabulary {
+                prefix: v.prefix.clone(),
+                root_class: v.root_class.clone(),
+                nested: Vec::new(),
+            },
+        ));
+        let dir = root.join(GITHUB_DIR).join(kind);
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut files: Vec<_> = entries
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "json"))
+            .collect();
+        files.sort();
+        for p in files {
+            let file = format!(
+                "{GITHUB_DIR}/{kind}/{}",
+                p.file_name().and_then(|n| n.to_str()).unwrap_or_default()
+            );
+            let text = std::fs::read_to_string(&p).map_err(|e| ExtractError::RefUnreadable {
+                contract: file.clone(),
+                path: file.clone(),
+                why: e.to_string(),
+            })?;
+            snaps.push(Snapshot {
+                kind: kind.to_string(),
+                file,
+                text,
+            });
+        }
+    }
+    snapshots_into(g, &vocabs, &snaps)
+}
+
+/// A parsed snapshot on its way into the graph.
+struct Parsed<'a> {
+    snap: &'a Snapshot,
+    vocab: &'a Vocabulary,
+    map: serde_json::Map<String, serde_json::Value>,
+    id: String,
+}
+
+/// Everything after the read — shared by [`extract_github`] and [`github_positive_control`]. Nodes first, then
+/// the two cross-type joins (`issue:milestone`, `pr:baseRepo`) between the snapshots just read; a join that finds
+/// no tracked target is refused, never left for a shape to call `Unknown`.
+fn snapshots_into(
+    g: &mut Graph,
+    vocabs: &[(String, Vocabulary)],
+    snaps: &[Snapshot],
+) -> Result<GithubStats, ExtractError> {
+    let mut stats = GithubStats::default();
+    let mut read: Vec<Parsed<'_>> = Vec::new();
+    let mut staged = Graph::new();
+    for snap in snaps {
+        let Some((_, vocab)) = vocabs.iter().find(|(k, _)| *k == snap.kind) else {
+            continue;
+        };
+        let value: serde_json::Value =
+            serde_json::from_str(&snap.text).map_err(|e| ExtractError::NotJson {
+                contract: snap.file.clone(),
+                path: snap.file.clone(),
+                why: e.to_string(),
+            })?;
+        let serde_json::Value::Object(map) = value else {
+            return Err(refuse(&snap.file, "the snapshot is not a JSON object"));
+        };
+        let (id, field, version) = identity(&snap.kind, &snap.file, &map)?;
+        check_ref(&snap.file, &id, field, &version)?;
+        if snap.kind == "pull-request" {
+            check_merged(&snap.file, &map)?;
+        }
+        if let Some(prior) = read.iter().find(|r| r.snap.kind == snap.kind && r.id == id) {
+            return Err(refuse(
+                &snap.file,
+                format!(
+                    "`{id}` is already tracked as {} — keep one snapshot per object",
+                    prior.snap.file
+                ),
+            ));
+        }
+        node(
+            &mut staged,
+            &snap.file,
+            &id,
+            &vocab.root_class,
+            true,
+            &serde_json::Value::Object(map.clone()),
+            vocab,
+        )?;
+        staged.insert(
+            iri(&vocab.prefix, &id),
+            expand(&format!("{}:ref", vocab.prefix)),
+            Term::string(format!("{id}@{version}")),
+        );
+        *stats.by_type.entry(snap.kind.clone()).or_default() += 1;
+        read.push(Parsed {
+            snap,
+            vocab,
+            map,
+            id,
+        });
+    }
+    let target = |kind: &str, id: &str| {
+        read.iter()
+            .find(|r| r.snap.kind == kind && r.id == id)
+            .map(|r| iri(&r.vocab.prefix, &r.id))
+    };
+    let mut edges = Vec::new();
+    for r in &read {
+        let (key, pred, kind, want) = match r.snap.kind.as_str() {
+            "issue" => match r
+                .map
+                .get("milestone_number")
+                .and_then(serde_json::Value::as_u64)
+            {
+                Some(n) => {
+                    let repo = str_field(&r.snap.file, &r.map, "repository")?;
+                    (
+                        "milestone_number",
+                        "milestone",
+                        "milestone",
+                        format!("{repo}#{n}"),
+                    )
+                }
+                None => continue,
+            },
+            "pull-request" => {
+                let base = str_field(&r.snap.file, &r.map, "base_repo")?;
+                ("base_repo", "baseRepo", "repo", base.to_string())
+            }
+            _ => continue,
+        };
+        let to = target(kind, &want).ok_or_else(|| {
+            refuse(
+                &r.snap.file,
+                format!("`{key}` names {kind} `{want}`, and no tracked {kind} snapshot is it"),
+            )
+        })?;
+        edges.push((
+            iri(&r.vocab.prefix, &r.id),
+            expand(&format!("{}:{pred}", r.vocab.prefix)),
+            to,
+        ));
+    }
+    stats.resolved = edges.len();
+    for (s, p, o) in edges {
+        staged.insert(s, p, Term::iri(o));
+    }
+    g.extend(&staged);
+    Ok(stats)
+}
+
+/// The vocabulary Σ gives each GitHub type — restated for the in-memory control, which has no Σ to read.
+fn control_vocabs() -> Vec<(String, Vocabulary)> {
+    [
+        ("repo", "repo", "ont:Repo"),
+        ("milestone", "milestone", "ont:Milestone"),
+        ("issue", "issue", "ont:Issue"),
+        ("pull-request", "pr", "ont:PullRequest"),
+    ]
+    .into_iter()
+    .map(|(k, p, c)| {
+        (
+            k.to_string(),
+            Vocabulary {
+                prefix: p.into(),
+                root_class: c.into(),
+                nested: Vec::new(),
+            },
+        )
+    })
+    .collect()
+}
+
+/// Four snapshots that join: a repo, a milestone, an issue in it, a merged pull request into the repo.
+#[must_use]
+pub fn github_control_sample() -> Vec<Snapshot> {
+    let t = "2026-09-24T00:00:00Z";
+    let s = |kind: &str, file: &str, text: String| Snapshot {
+        kind: kind.into(),
+        file: format!("{GITHUB_DIR}/{kind}/{file}.json"),
+        text,
+    };
+    vec![
+        s(
+            "repo",
+            "o__r@abc",
+            r#"{"full_name":"o/r","sha":"abc"}"#.into(),
+        ),
+        s(
+            "milestone",
+            &ref_slug(&format!("o/r#1@{t}")),
+            format!(r#"{{"repository":"o/r","number":1,"updated_at":"{t}","title":"m"}}"#),
+        ),
+        s(
+            "issue",
+            &ref_slug(&format!("o/r#2@{t}")),
+            format!(r#"{{"repository":"o/r","number":2,"updated_at":"{t}","milestone_number":1}}"#),
+        ),
+        s(
+            "pull-request",
+            &ref_slug(&format!("o/r#3@{t}")),
+            format!(
+                r#"{{"repository":"o/r","number":3,"updated_at":"{t}","state":"merged","merged_at":"{t}","base_repo":"o/r"}}"#
+            ),
+        ),
+    ]
+}
+
+/// The positive control for one GitHub type (R-3), in memory every gate run, through [`snapshots_into`]: the
+/// joined sample must type a focus node of `kind`, and the planted defect for `kind` must be refused naming its
+/// field — repo: a ref `@sha` that disagrees with the snapshot's `sha`; milestone: an issue naming an untracked
+/// milestone; issue: a ref version that disagrees with `updated_at`; pull-request: merged with no `merged_at`.
+#[must_use]
+pub fn github_positive_control(kind: &str) -> bool {
+    let vocabs = control_vocabs();
+    let sample = github_control_sample();
+    let Some((_, vocab)) = vocabs.iter().find(|(k, _)| k == kind) else {
+        return false;
+    };
+    let mut g = Graph::new();
+    let typed = snapshots_into(&mut g, &vocabs, &sample).is_ok()
+        && !g.instances_of(&expand(&vocab.root_class)).is_empty();
+    let mut planted = sample;
+    let (i, needle) = match kind {
+        "repo" => (0, "sha"),
+        "milestone" => (2, "no tracked milestone"),
+        "issue" => (2, "updated_at"),
+        "pull-request" => (3, "merged_at"),
+        _ => return false,
+    };
+    let s = &mut planted[i];
+    match kind {
+        "repo" => s.file = s.file.replace("@abc", "@abd"),
+        "milestone" => {
+            s.text = s
+                .text
+                .replace(r#""milestone_number":1"#, r#""milestone_number":9"#)
+        }
+        "issue" => s.file = s.file.replace("T00-00-00Z", "T00-00-01Z"),
+        _ => s.text = s.text.replace(r#","merged_at":"2026-09-24T00:00:00Z""#, ""),
+    }
+    let refused = matches!(
+        snapshots_into(&mut Graph::new(), &vocabs, &planted),
+        Err(ExtractError::Snapshot { ref why, .. }) if why.contains(needle)
+    );
+    typed && refused
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -566,5 +970,201 @@ mod tests {
     fn the_positive_control_fires() {
         // PMAT-3704: drawn by the shapes gate every run as pc_extract.json.
         assert!(positive_control());
+    }
+
+    // ── ONT-4f: GitHub snapshots ─────────────────────────────────────────────────────────────────────────────
+
+    fn gh(snaps: &[Snapshot]) -> Result<(Graph, GithubStats), ExtractError> {
+        let mut g = Graph::new();
+        let st = snapshots_into(&mut g, &control_vocabs(), snaps)?;
+        Ok((g, st))
+    }
+
+    fn gh_why(snaps: &[Snapshot]) -> String {
+        match gh(snaps) {
+            Err(ExtractError::Snapshot { why, .. }) => why,
+            other => panic!("expected a Snapshot refusal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_joined_sample_types_four_nodes_and_resolves_both_joins() {
+        let (g, st) = gh(&github_control_sample()).unwrap();
+        for (k, class) in [
+            ("repo", "Repo"),
+            ("issue", "Issue"),
+            ("pull-request", "PullRequest"),
+            ("milestone", "Milestone"),
+        ] {
+            assert_eq!(st.by_type.get(k), Some(&1), "{k}");
+            assert_eq!(
+                g.instances_of(&expand(&format!("ont:{class}"))).len(),
+                1,
+                "{k}"
+            );
+        }
+        assert_eq!(st.resolved, 2);
+        let pr = iri("pr", "o/r#3");
+        let base = g.objects(&pr, &expand("pr:baseRepo"));
+        assert_eq!(base[0].as_iri(), Some(iri("repo", "o/r").as_str()));
+        let ms = g.objects(&iri("issue", "o/r#2"), &expand("issue:milestone"));
+        assert_eq!(ms[0].as_iri(), Some(iri("milestone", "o/r#1").as_str()));
+        let r = g.objects(&iri("repo", "o/r"), &expand("repo:ref"));
+        assert_eq!(r, [&Term::string("o/r@abc")]);
+    }
+
+    #[test]
+    fn a_repo_ref_whose_sha_disagrees_is_refused_naming_both() {
+        let mut s = github_control_sample();
+        s[0].file = s[0].file.replace("@abc", "@abd");
+        let why = gh_why(&s);
+        assert!(why.contains("`abd`") && why.contains("sha `abc`"), "{why}");
+    }
+
+    #[test]
+    fn an_issue_ref_one_second_off_its_updated_at_is_refused() {
+        let mut s = github_control_sample();
+        s[2].file = s[2].file.replace("T00-00-00Z", "T00-00-01Z");
+        assert!(gh_why(&s).contains("updated_at `2026-09-24T00:00:00Z`"));
+    }
+
+    #[test]
+    fn a_file_naming_another_object_is_refused() {
+        let mut s = github_control_sample();
+        s[2].file = s[2].file.replace("o__r--2@", "o__r--5@");
+        assert!(gh_why(&s).contains("names `o__r--5` but the snapshot is `o/r#2`"));
+        let mut s = github_control_sample();
+        s[0].file = format!("{GITHUB_DIR}/repo/o__r.json");
+        assert!(gh_why(&s).contains("no `@<version>`"));
+    }
+
+    #[test]
+    fn merged_without_merged_at_is_refused_and_open_without_it_is_not() {
+        let mut s = github_control_sample();
+        s[3].text = s[3]
+            .text
+            .replace(r#","merged_at":"2026-09-24T00:00:00Z""#, "");
+        assert!(gh_why(&s).contains("merged_at"));
+        s[3].text = s[3].text.replace(r#""state":"merged""#, r#""merged":true"#);
+        assert!(gh_why(&s).contains("merged_at"));
+        s[3].text = s[3].text.replace(r#""merged":true"#, r#""state":"open""#);
+        assert!(gh(&s).is_ok());
+        let mut s = github_control_sample();
+        s[3].text = s[3].text.replace("merged_at", "mergedAt");
+        assert!(gh(&s).is_ok(), "the camelCase field counts");
+    }
+
+    #[test]
+    fn a_join_with_no_tracked_target_is_refused() {
+        let mut s = github_control_sample();
+        s.remove(1);
+        assert!(gh_why(&s).contains("milestone `o/r#1`, and no tracked milestone"));
+        let mut s = github_control_sample();
+        s.remove(0);
+        assert!(gh_why(&s).contains("repo `o/r`, and no tracked repo"));
+        let mut s = github_control_sample();
+        s[3].text = s[3].text.replace(r#","base_repo":"o/r""#, "");
+        assert!(gh_why(&s).contains("no `base_repo`"));
+    }
+
+    #[test]
+    fn an_issue_without_a_milestone_has_no_edge_and_is_accepted() {
+        let mut s = github_control_sample();
+        s[2].text = s[2]
+            .text
+            .replace(r#","milestone_number":1"#, r#","milestone_number":null"#);
+        let (g, st) = gh(&s).unwrap();
+        assert_eq!(st.resolved, 1);
+        assert!(g
+            .objects(&iri("issue", "o/r#2"), &expand("issue:milestone"))
+            .is_empty());
+    }
+
+    #[test]
+    fn two_snapshots_of_one_object_are_refused() {
+        let mut s = github_control_sample();
+        let mut dup = s[2].clone();
+        dup.file = format!(
+            "{GITHUB_DIR}/issue/{}.json",
+            ref_slug("o/r#2@2026-09-24T00:00:00Z")
+        );
+        s.push(dup);
+        assert!(gh_why(&s).contains("already tracked"));
+    }
+
+    #[test]
+    fn a_snapshot_missing_its_identity_is_refused_by_field() {
+        let mut s = github_control_sample();
+        s[1].text = s[1].text.replace(r#""number":1,"#, "");
+        assert!(gh_why(&s).contains("no `number`"));
+        let mut s = github_control_sample();
+        s[0].text = r#"{"full_name":"o/r"}"#.into();
+        assert!(gh_why(&s).contains("no `sha`"));
+        let mut s = github_control_sample();
+        s[0].text = "[1]".into();
+        assert!(gh_why(&s).contains("not a JSON object"));
+    }
+
+    #[test]
+    fn every_github_positive_control_fires_and_an_unknown_kind_does_not() {
+        for k in GITHUB_TYPES {
+            assert!(github_positive_control(k), "{k}");
+        }
+        assert!(!github_positive_control("gist"));
+    }
+
+    #[test]
+    fn ref_slug_maps_the_three_separators() {
+        assert_eq!(
+            ref_slug("paiml/aprender#4330@2026-09-24T18:44:14Z"),
+            "paiml__aprender--4330@2026-09-24T18-44-14Z"
+        );
+    }
+
+    #[test]
+    fn extract_github_reads_sigma_declared_types_from_the_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        for s in github_control_sample() {
+            let p = dir.path().join(&s.file);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, &s.text).unwrap();
+        }
+        std::fs::write(dir.path().join(GITHUB_DIR).join("repo/README"), "not json").unwrap();
+        let sigma_yaml = |vocab: bool| {
+            let v = |p: &str, c: &str| {
+                if vocab {
+                    format!(", vocabulary: {{prefix: {p}, root_class: \"ont:{c}\"}}")
+                } else {
+                    String::new()
+                }
+            };
+            format!(
+                "entity_types:\n  - {{name: repo, extractor: json, implemented: true{}}}\n  - {{name: issue, extractor: json, implemented: true{}}}\n  - {{name: pull-request, extractor: json, implemented: true{}}}\n  - {{name: milestone, extractor: json, implemented: true{}}}\n",
+                v("repo", "Repo"),
+                v("issue", "Issue"),
+                v("pr", "PullRequest"),
+                v("milestone", "Milestone")
+            )
+        };
+        let sigma_of = |vocab: bool| {
+            crate::ontology::sigma::Sigma::from_yaml(&format!(
+                "schema: ont-sigma-v1\n{}",
+                sigma_yaml(vocab)
+            ))
+            .unwrap()
+        };
+        let mut g = Graph::new();
+        let st = extract_github(dir.path(), &sigma_of(true), &mut g).unwrap();
+        assert_eq!(st.by_type.values().sum::<usize>(), 4);
+        assert_eq!(st.resolved, 2);
+        let e = extract_github(dir.path(), &sigma_of(false), &mut Graph::new()).unwrap_err();
+        assert!(
+            matches!(e, ExtractError::VocabularyIncomplete { .. }),
+            "{e}"
+        );
+        // a type Σ does not declare is not read
+        let none = crate::ontology::sigma::Sigma::from_yaml("schema: ont-sigma-v1\n").unwrap();
+        let st = extract_github(dir.path(), &none, &mut Graph::new()).unwrap();
+        assert!(st.by_type.is_empty());
     }
 }

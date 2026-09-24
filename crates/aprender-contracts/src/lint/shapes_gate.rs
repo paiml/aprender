@@ -443,6 +443,10 @@ fn by_entity_type(extraction: &extract::Extraction) -> BTreeMap<String, usize> {
         ("lean", extraction.lean.statements),
     ]
     .into_iter()
+    .chain(
+        // ONT-4f: every GitHub type Σ reads through extract:json, counted even at zero — absent is not zero.
+        json::GITHUB_TYPES.map(|k| (k, extraction.github.by_type.get(k).copied().unwrap_or(0))),
+    )
     .map(|(k, v)| (k.to_string(), v))
     .collect()
 }
@@ -500,6 +504,8 @@ fn extract_controls() -> BTreeMap<String, String> {
         ("release-evidence", release_evidence::positive_control()),
     ]
     .into_iter()
+    // ONT-4f: one planted defect per GitHub type, each refused by the field it names
+    .chain(json::GITHUB_TYPES.map(|k| (k, json::github_positive_control(k))))
     .map(|(k, fired)| {
         (
             k.to_string(),

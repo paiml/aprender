@@ -118,6 +118,18 @@ pub struct EntityTypeDecl {
     #[serde(default)]
     pub extractor: String,
     pub implemented: bool,
+    /// ONT-4f: the vocabulary map `extract:json` reads a snapshot of this type through — the IRI prefix of its
+    /// focus nodes and their class. Only the GitHub object types (repo, issue, pull-request, milestone) carry one.
+    #[serde(default)]
+    pub vocabulary: Option<EntityVocabulary>,
+}
+
+/// ONT-4f: `{prefix, root_class}` for an entity type `extract:json` reads from tracked snapshot files.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct EntityVocabulary {
+    pub prefix: String,
+    pub root_class: String,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]

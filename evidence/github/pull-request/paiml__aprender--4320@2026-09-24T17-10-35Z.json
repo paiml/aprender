@@ -1,0 +1,12 @@
+{
+  "base_ref": "batch/b2-ci-infra",
+  "base_repo": "paiml/aprender",
+  "head_sha": "1385d345d58a5b426528e61191ef2ffb9142ce6d",
+  "html_url": "https://github.com/paiml/aprender/pull/4320",
+  "merged_at": "2026-09-24T17:10:32Z",
+  "number": 4320,
+  "repository": "paiml/aprender",
+  "state": "merged",
+  "title": "batch(bins): every workspace [[bin]] builds, smokes and ships nightly (#4189, #4219)",
+  "updated_at": "2026-09-24T17:10:35Z"
+}

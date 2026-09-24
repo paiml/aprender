@@ -1,0 +1,159 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# github-entities-v1 — GitHub's own objects as focus nodes (ONT-001 v4.16 §5 ONT-4f; issue #4330, PMAT-4330)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::ontology::extract::json — `extract_github`: every tracked snapshot under
+#                                                 evidence/github/<type>/<ref-slug>.json, for the four entity types
+#                                                 Σ declares with `extractor: json` and a `vocabulary`
+#                                                 (repo → repo:/ont:Repo, issue → issue:/ont:Issue,
+#                                                 pull-request → pr:/ont:PullRequest, milestone → milestone:/ont:Milestone).
+#                                                 No new extractor module: the snapshot is a JSON document read
+#                                                 through a vocabulary map, as extract:json already reads a tool's
+#                                                 `--json`. Σ subsumes each under ont:Json (ONT-4d closure).
+#   scripts/github_snapshot.sh                  — the one writer: `gh api` with every field picked by name.
+#
+# THE REF IS THE FILE NAME. `<owner>/<repo>@<sha>` for a repo (its default-branch commit, parity with code's
+# git_sha); `<owner>/<repo>#<n>@<updated_at>` for an issue, pull request or milestone (GitHub gives those no content
+# hash — updated_at is their only monotonic marker). A file name whose version disagrees with the snapshot's own
+# sha / updated_at is refused naming both, never taken for a fresher version of the same node.
+#
+# THE JOINS are between tracked files, never a live API call (R-15): `pr:baseRepo` must name a tracked repo
+# snapshot, and `issue:milestone` a tracked milestone snapshot; a join with no target is refused, not Unknown.
+#
+# THE PLANT. pc_extract.{repo,issue,pull-request,milestone}, drawn every run over an in-memory joined sample:
+# repo — a ref @sha that disagrees with `sha`; milestone — an issue naming an untracked milestone; issue — a ref
+# version that disagrees with `updated_at`; pull-request — `state: merged` with no `merged_at`. Each must be
+# refused naming its field.
+#
+# KIND: pattern. Vocabulary, extractor and shapes over a graph; the proof is the extractor's own case table.
+# ─────────────────────────────────────────────────────────────────────────────
+name: github-entities
+version: "1.0.0"
+scope: >
+  How a tracked GitHub snapshot (repo, issue, pull request, milestone) becomes a typed focus node, how its ref is
+  checked against its own version field, and how pull requests and issues are joined to the repo and milestone
+  snapshots they name. Out of scope: fetching (scripts/github_snapshot.sh and arbiter's `arbiter ask` write the
+  files; the extractor only reads them), comments, reviews, labels and any nested API object.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: PAIML Engineering
+  description: >
+    Repo, issue, pull-request and milestone snapshots under evidence/github/ are ont:Json focus nodes typed by the
+    vocabulary Σ gives each type; refs are checked against sha / updated_at; the base-repo and milestone joins are
+    resolved between tracked files.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md §5 ONT-4f (v4.16)'
+    - 'aprender#4330 (this row); ARBITER-001 §16 (`arbiter ask` sources[] cite these nodes)'
+    - 'crates/aprender-contracts/src/ontology/extract/json.rs, lint/shapes_gate.rs, contracts/ontology.yaml'
+
+entity:
+  type: repo
+
+relations:
+  depends_on: [ont-shapes-v1, ont-sigma-v1]
+
+shapes:
+  - id: github-repo
+    targetClass: ont:Repo
+    properties:
+      - {path: repo:full_name, minCount: 1, maxCount: 1, pattern: "^[^/]+/[^/]+$"}
+      - {path: repo:sha, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{40}$"}
+      - {path: repo:ref, minCount: 1, maxCount: 1}
+  - id: github-issue
+    targetClass: ont:Issue
+    properties:
+      - {path: issue:number, minCount: 1, maxCount: 1}
+      - {path: issue:state, minCount: 1, maxCount: 1, in: [open, closed]}
+      - {path: issue:updated_at, minCount: 1, maxCount: 1}
+      - {path: issue:milestone, maxCount: 1, nodeKind: IRI, class: ont:Milestone, resolves: milestone}
+  - id: github-pull-request
+    targetClass: ont:PullRequest
+    properties:
+      - {path: pr:number, minCount: 1, maxCount: 1}
+      - {path: pr:state, minCount: 1, maxCount: 1, in: [open, closed, merged]}
+      - {path: pr:updated_at, minCount: 1, maxCount: 1}
+      - {path: pr:baseRepo, minCount: 1, maxCount: 1, nodeKind: IRI, class: ont:Repo, resolves: repo}
+  - id: github-milestone
+    targetClass: ont:Milestone
+    properties:
+      - {path: milestone:number, minCount: 1, maxCount: 1}
+      - {path: milestone:title, minCount: 1, maxCount: 1}
+      - {path: milestone:updated_at, minCount: 1, maxCount: 1}
+
+equations:
+  ref:
+    formula: "accept(f) ⇔ slug(id(f)) = idpart(name(f)) ∧ slug(version(f)) = verpart(name(f))"
+    domain: "every *.json under evidence/github/<type>/ for a type Σ declares with extractor json and a vocabulary"
+    codomain: "a focus node <prefix>/<id> typed root_class, with <prefix>:ref = id@version — or exit 3 naming the file"
+    invariants:
+      - "version(f) is the snapshot's own sha (repo) or updated_at (issue, pull-request, milestone)"
+      - "two snapshots of one object are refused: one node, one version"
+    preconditions:
+      - "the snapshot is a JSON object whose keys are scalars (scripts/github_snapshot.sh picks every field by name)"
+    postconditions:
+      - "two extractions are byte-identical (R-15)"
+    lean_theorem: none — L4 not declared
+  join:
+    formula: "baseRepo(p) = r ⇔ base_repo(p) = id(r); milestone(i) = m ⇔ repository(i)#milestone_number(i) = id(m)"
+    domain: "every pull-request snapshot, every issue snapshot with a milestone_number"
+    codomain: "a pr:baseRepo / issue:milestone IRI edge to a tracked node — or exit 3 naming the missing target"
+    invariants:
+      - "a join never reaches the network: a target not tracked is refused, never fetched"
+    preconditions:
+      - "every pull-request snapshot carries base_repo"
+    postconditions:
+      - "github-pull-request's pr:baseRepo minCount 1 holds for every extracted pull request"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: GHE-INV-001
+    property: a ref whose version disagrees with the snapshot is refused
+    formal: 'slug(version(f)) ≠ verpart(name(f)) ⇒ exit = 3'
+    prose: false
+  - id: GHE-INV-002
+    property: a merged pull request carries its merge time
+    formal: 'state(p) = merged ∧ merged_at(p) = ⊥ ⇒ exit = 3'
+    prose: false
+  - id: GHE-INV-003
+    property: a join without a tracked target is refused
+    formal: 'milestone_number(i) ≠ ⊥ ∧ ¬∃m. id(m) = repository(i)#milestone_number(i) ⇒ exit = 3'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-GHE-001
+    rule: the ref is checked against the snapshot's own version
+    prediction: a repo file named @abd over a snapshot whose sha is abc is refused naming sha; an issue file one second off its updated_at is refused naming updated_at; a file naming another object is refused
+    test: cargo test -p aprender-contracts --lib ontology::extract::json
+    if_fails: a stale snapshot under a fresh name is accepted as a newer version of the node
+  - id: FALSIFY-GHE-002
+    rule: merged without merged_at
+    prediction: a pull-request snapshot with state merged and no merged_at is refused naming merged_at; an open one without it is accepted
+    test: cargo test -p aprender-contracts --lib ontology::extract::json
+    if_fails: a pull request is called merged with no evidence of when
+  - id: FALSIFY-GHE-003
+    rule: the cross-type joins
+    prediction: a joined sample gets one pr:baseRepo and one issue:milestone edge; an issue naming an untracked milestone and a pull request naming an untracked base repo are each refused
+    test: cargo test -p aprender-contracts --lib ontology::extract::json
+    if_fails: resolves degrades to Unknown, or a dangling reference is a focus node
+  - id: FALSIFY-GHE-004
+    rule: the extractor's positive controls
+    prediction: pc_extract.repo, .issue, .pull-request and .milestone fire every run
+    test: cargo test -p aprender-contracts --lib lint::shapes_gate::tests
+    if_fails: an extractor that accepted every snapshot would make every github shape a Pass
+
+qa_gate:
+  id: F-GHE-001
+  name: github-entities
+  description: 'Repo, issue, pull-request and milestone snapshots are typed focus nodes, ref-checked and joined (ONT-4f)'
+  checks:
+    - ref_matches_the_snapshot_version
+    - merged_carries_merged_at
+    - joins_resolve_between_tracked_files
+    - extractor_controls_fire
+  pass_criteria: All 4 falsification tests pass; `pv lint contracts/ --gate shapes` reports verdict Pass with by_entity_type.repo, .issue, ["pull-request"] and .milestone ≥ 1 and pc_extract fired for all four
+  falsification: 'rename a tracked issue snapshot one second later → exit 3 naming updated_at; drop merged_at from the tracked merged pull request → exit 3 naming merged_at; delete the milestone snapshot → exit 3 naming the issue''s milestone'
