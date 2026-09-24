@@ -143,26 +143,23 @@ fn level_tokens(low: &str) -> Vec<(usize, usize, u8)> {
 // libtest's filter is a substring of the full path, so under `levels::tests::` that accept
 // command ran ZERO tests and passed.
 
-/// The three copies of the ladder doc (PVL-001 EV-3 names exactly these).
+/// The three copies of the ladder doc (PVL-001 EV-3 names exactly these), relative to the
+/// workspace root. Read from disk, not `include_str!`: two live outside this crate, and an
+/// `include!` target outside the crate fails check_package_includes.sh even under `cfg(test)`.
 #[cfg(test)]
-const LADDER_COPIES: [(&str, &str); 3] = [
-    (
-        "crates/aprender-contracts-staging/docs/specifications/sub/verification-ladder.md",
-        include_str!(
-            "../../aprender-contracts-staging/docs/specifications/sub/verification-ladder.md"
-        ),
-    ),
-    (
-        "crates/aprender-contracts-staging/book/src/verification-ladder.md",
-        include_str!("../../aprender-contracts-staging/book/src/verification-ladder.md"),
-    ),
-    (
-        "docs/specifications/aprender-contracts-staging/sub/verification-ladder.md",
-        include_str!(
-            "../../../docs/specifications/aprender-contracts-staging/sub/verification-ladder.md"
-        ),
-    ),
+const LADDER_COPIES: [&str; 3] = [
+    "crates/aprender-contracts-staging/docs/specifications/sub/verification-ladder.md",
+    "crates/aprender-contracts-staging/book/src/verification-ladder.md",
+    "docs/specifications/aprender-contracts-staging/sub/verification-ladder.md",
 ];
+
+/// A ladder copy's text. A copy that cannot be read fails the test: "could not check" is never "matches".
+#[cfg(test)]
+fn ladder_copy(path: &str) -> String {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    std::fs::read_to_string(root.join(path))
+        .unwrap_or_else(|e| panic!("{path}: {e} (PVL-001 EV-3 reads all three copies)"))
+}
 
 /// PVL-001 EV-3's accept test: `levels::readme_and_ladder_docs_match_enum`.
 #[test]
@@ -185,7 +182,9 @@ fn readme_and_ladder_docs_match_enum() {
     assert!(ProofLevel::L5.method().contains("at least one binding"));
     // 2. Every ladder doc copy carries the generated block, byte for byte.
     let block = ladder_block();
-    for (path, text) in LADDER_COPIES {
+    for path in LADDER_COPIES {
+        let text = ladder_copy(path);
+        let text = text.as_str();
         let stale = stale_level_pairings(text);
         assert!(
             stale.is_empty(),
