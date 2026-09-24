@@ -4841,6 +4841,11 @@
 <https://ont.paiml.dev/v1alpha1/contract/apr-page-lib-regularization-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/apr-page-lib-regularization-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-page-lib-regularization-v1> <https://ont.paiml.dev/v1alpha1/id> "apr-page-lib-regularization-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-page-lib-regularization-v1> <https://ont.paiml.dev/v1alpha1/kind> "schema"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-page-lib-release_section-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-page-lib-release_section-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-page-lib-release_section-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/apr-page-lib-release_section-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-page-lib-release_section-v1> <https://ont.paiml.dev/v1alpha1/id> "apr-page-lib-release_section-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-page-lib-release_section-v1> <https://ont.paiml.dev/v1alpha1/kind> "schema"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-page-lib-scoring-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-page-lib-scoring-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-page-lib-scoring-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/apr-page-lib-scoring-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -8857,6 +8862,13 @@
 <https://ont.paiml.dev/v1alpha1/contract/qwen3-shapes-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/qwen3-shapes-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/qwen3-shapes-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/qwen3-shapes-v1> <https://ont.paiml.dev/v1alpha1/id> "qwen3-shapes-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/qwen35-batched-prefill-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/qwen35-batched-prefill-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/qwen35-batched-prefill-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/qwen35-batched-prefill-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/qwen35-batched-prefill-v1> <https://ont.paiml.dev/v1alpha1/id> "qwen35-batched-prefill-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/qwen35-batched-prefill-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/qwen35-batched-prefill-v1> <https://ont.paiml.dev/v1alpha1/name> "qwen35-batched-prefill"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/qwen35-batched-prefill-v1> <https://ont.paiml.dev/v1alpha1/version> "1.0.0"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/qwen35-e2e-verification-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/qwen35-e2e-verification-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/qwen35-e2e-verification-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/qwen35-e2e-verification-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -10394,7 +10406,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::chat_load_tokenizers::load_tokenizers> <https://ont.paiml.dev/v1alpha1/sym/module> "apr_cli::commands::chat_load_tokenizers"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::chat_load_tokenizers::load_tokenizers> <https://ont.paiml.dev/v1alpha1/sym/name> "load_tokenizers"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::chat_load_tokenizers::load_tokenizers> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::chat_load_tokenizers::load_tokenizers> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod chat_load_tokenizers` or `use … chat_load_tokenizers` in `crates/apr-cli/src/commands/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::chat_load_tokenizers::load_tokenizers> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod chat_load_tokenizers` or `use … chat_load_tokenizers` in `.claude/worktrees/lane-5af543540-1003753/crates/apr-cli/src/commands/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::chat_session::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::chat_session::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::chat_session::run> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -10404,7 +10416,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::chat_session::run> <https://ont.paiml.dev/v1alpha1/sym/module> "apr_cli::commands::chat_session"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::chat_session::run> <https://ont.paiml.dev/v1alpha1/sym/name> "run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::chat_session::run> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::chat_session::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod chat_session` or `use … chat_session` in `crates/apr-cli/src/commands/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::chat_session::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod chat_session` or `use … chat_session` in `.claude/worktrees/lane-5af543540-1003753/crates/apr-cli/src/commands/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::check::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::check::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::check::run> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -10429,7 +10441,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::data::run> <https://ont.paiml.dev/v1alpha1/sym/module> "apr_cli::commands::data"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::data::run> <https://ont.paiml.dev/v1alpha1/sym/name> "run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::data::run> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::data::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn run` (free or in an impl) in `crates/apr-cli/src/commands/data.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::data::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn run` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/apr-cli/src/commands/data.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::distill::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::distill::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::distill::run> <https://ont.paiml.dev/v1alpha1/sym/attribute> "allow"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -10454,7 +10466,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::encrypt::run> <https://ont.paiml.dev/v1alpha1/sym/module> "apr_cli::commands::encrypt"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::encrypt::run> <https://ont.paiml.dev/v1alpha1/sym/name> "run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::encrypt::run> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::encrypt::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod encrypt` or `use … encrypt` in `crates/apr-cli/src/commands/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::encrypt::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod encrypt` or `use … encrypt` in `.claude/worktrees/lane-5af543540-1003753/crates/apr-cli/src/commands/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::eval::inference::sample_token> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::eval::inference::sample_token> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::eval::inference::sample_token> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -10611,7 +10623,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::oracle::run> <https://ont.paiml.dev/v1alpha1/sym/module> "apr_cli::commands::oracle"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::oracle::run> <https://ont.paiml.dev/v1alpha1/sym/name> "run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::oracle::run> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::oracle::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn run` (free or in an impl) in `crates/apr-cli/src/commands/oracle.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::oracle::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn run` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/apr-cli/src/commands/oracle.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::parity::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::parity::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::parity::run> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -10621,7 +10633,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::parity::run> <https://ont.paiml.dev/v1alpha1/sym/module> "apr_cli::commands::parity"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::parity::run> <https://ont.paiml.dev/v1alpha1/sym/name> "run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::parity::run> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::parity::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn run` (free or in an impl) in `crates/apr-cli/src/commands/parity.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::parity::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn run` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/apr-cli/src/commands/parity.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::probar::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::probar::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::probar::run> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -10674,7 +10686,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::publish::run> <https://ont.paiml.dev/v1alpha1/sym/module> "apr_cli::commands::publish"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::publish::run> <https://ont.paiml.dev/v1alpha1/sym/name> "run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::publish::run> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::publish::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn run` (free or in an impl) in `crates/apr-cli/src/commands/publish.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::publish::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn run` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/apr-cli/src/commands/publish.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::pull::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::pull::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::pull::run> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -10728,7 +10740,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::rosetta::run> <https://ont.paiml.dev/v1alpha1/sym/module> "apr_cli::commands::rosetta"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::rosetta::run> <https://ont.paiml.dev/v1alpha1/sym/name> "run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::rosetta::run> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::rosetta::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn run` (free or in an impl) in `crates/apr-cli/src/commands/rosetta.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::rosetta::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn run` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/apr-cli/src/commands/rosetta.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::serve::routes::fallback_handler> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::serve::routes::fallback_handler> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::serve::routes::fallback_handler> <https://ont.paiml.dev/v1alpha1/sym/attribute> "cfg"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -10830,7 +10842,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::tokenize::run> <https://ont.paiml.dev/v1alpha1/sym/module> "apr_cli::commands::tokenize"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::tokenize::run> <https://ont.paiml.dev/v1alpha1/sym/name> "run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::tokenize::run> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::tokenize::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn run` (free or in an impl) in `crates/apr-cli/src/commands/tokenize.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::tokenize::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn run` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/apr-cli/src/commands/tokenize.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::train::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::train::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::train::run> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -10840,7 +10852,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::train::run> <https://ont.paiml.dev/v1alpha1/sym/module> "apr_cli::commands::train"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::train::run> <https://ont.paiml.dev/v1alpha1/sym/name> "run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::train::run> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::train::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn run` (free or in an impl) in `crates/apr-cli/src/commands/train.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::commands::train::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn run` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/apr-cli/src/commands/train.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_core_command> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_core_command> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_core_command> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -10854,7 +10866,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_core_command> <https://ont.paiml.dev/v1alpha1/sym/module> "apr_cli::dispatch"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_core_command> <https://ont.paiml.dev/v1alpha1/sym/name> "dispatch_core_command"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_core_command> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_core_command> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod dispatch` or `use … dispatch` in `crates/apr-cli/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_core_command> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod dispatch` or `use … dispatch` in `.claude/worktrees/lane-5af543540-1003753/crates/apr-cli/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_inspection_commands> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_inspection_commands> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_inspection_commands> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -10867,7 +10879,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_inspection_commands> <https://ont.paiml.dev/v1alpha1/sym/module> "apr_cli::dispatch"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_inspection_commands> <https://ont.paiml.dev/v1alpha1/sym/name> "dispatch_inspection_commands"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_inspection_commands> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_inspection_commands> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod dispatch` or `use … dispatch` in `crates/apr-cli/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_inspection_commands> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod dispatch` or `use … dispatch` in `.claude/worktrees/lane-5af543540-1003753/crates/apr-cli/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_model_commands> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_model_commands> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_model_commands> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -10878,7 +10890,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_model_commands> <https://ont.paiml.dev/v1alpha1/sym/module> "apr_cli::dispatch"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_model_commands> <https://ont.paiml.dev/v1alpha1/sym/name> "dispatch_model_commands"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_model_commands> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_model_commands> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod dispatch` or `use … dispatch` in `crates/apr-cli/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::dispatch_model_commands> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod dispatch` or `use … dispatch` in `.claude/worktrees/lane-5af543540-1003753/crates/apr-cli/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::execute_command> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::execute_command> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::execute_command> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -10888,7 +10900,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::execute_command> <https://ont.paiml.dev/v1alpha1/sym/module> "apr_cli::dispatch"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::execute_command> <https://ont.paiml.dev/v1alpha1/sym/name> "execute_command"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::execute_command> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::execute_command> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod dispatch` or `use … dispatch` in `crates/apr-cli/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch::execute_command> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod dispatch` or `use … dispatch` in `.claude/worktrees/lane-5af543540-1003753/crates/apr-cli/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch_analysis::dispatch_extended_command> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch_analysis::dispatch_extended_command> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch_analysis::dispatch_extended_command> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -10898,7 +10910,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch_analysis::dispatch_extended_command> <https://ont.paiml.dev/v1alpha1/sym/module> "apr_cli::dispatch_analysis"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch_analysis::dispatch_extended_command> <https://ont.paiml.dev/v1alpha1/sym/name> "dispatch_extended_command"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch_analysis::dispatch_extended_command> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch_analysis::dispatch_extended_command> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod dispatch_analysis` or `use … dispatch_analysis` in `crates/apr-cli/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/apr_cli::dispatch_analysis::dispatch_extended_command> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod dispatch_analysis` or `use … dispatch_analysis` in `.claude/worktrees/lane-5af543540-1003753/crates/apr-cli/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::error::exit_code> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::error::exit_code> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/apr_cli::error::exit_code> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11094,7 +11106,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::convert::run> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::convert"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::convert::run> <https://ont.paiml.dev/v1alpha1/sym/name> "run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::convert::run> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::convert::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod convert` or `use … convert` in `crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::convert::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod convert` or `use … convert` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::convert::save_model_tensors_with_gguf_config_and_tokenizer> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::convert::save_model_tensors_with_gguf_config_and_tokenizer> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::convert::save_model_tensors_with_gguf_config_and_tokenizer> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11104,7 +11116,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::convert::save_model_tensors_with_gguf_config_and_tokenizer> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::convert"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::convert::save_model_tensors_with_gguf_config_and_tokenizer> <https://ont.paiml.dev/v1alpha1/sym/name> "save_model_tensors_with_gguf_config_and_tokenizer"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::convert::save_model_tensors_with_gguf_config_and_tokenizer> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::convert::save_model_tensors_with_gguf_config_and_tokenizer> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod convert` or `use … convert` in `crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::convert::save_model_tensors_with_gguf_config_and_tokenizer> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod convert` or `use … convert` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::data::dataloader::DataLoader::next_batch> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::data::dataloader::DataLoader::next_batch> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::data::dataloader::DataLoader::next_batch> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11114,7 +11126,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::data::dataloader::DataLoader::next_batch> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::data::dataloader::DataLoader"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::data::dataloader::DataLoader::next_batch> <https://ont.paiml.dev/v1alpha1/sym/name> "next_batch"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::data::dataloader::DataLoader::next_batch> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::data::dataloader::DataLoader::next_batch> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod dataloader` or `use … dataloader` in `crates/aprender-core/src/data/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::data::dataloader::DataLoader::next_batch> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod dataloader` or `use … dataloader` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/data/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::export::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::export::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::export::run> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11124,7 +11136,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::export::run> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::export"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::export::run> <https://ont.paiml.dev/v1alpha1/sym/name> "run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::export::run> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::export::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod export` or `use … export` in `crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::export::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod export` or `use … export` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::map_tensor_name> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::map_tensor_name> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::map_tensor_name> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11134,7 +11146,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::map_tensor_name> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::format::converter"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::map_tensor_name> <https://ont.paiml.dev/v1alpha1/sym/name> "map_tensor_name"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::map_tensor_name> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::map_tensor_name> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn map_tensor_name` (free or in an impl) in `crates/aprender-core/src/format/converter/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::map_tensor_name> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn map_tensor_name` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/format/converter/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::tokenizer_loader::load_tokenizer_from_explicit_path> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::tokenizer_loader::load_tokenizer_from_explicit_path> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::tokenizer_loader::load_tokenizer_from_explicit_path> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11144,7 +11156,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::tokenizer_loader::load_tokenizer_from_explicit_path> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::format::converter::tokenizer_loader"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::tokenizer_loader::load_tokenizer_from_explicit_path> <https://ont.paiml.dev/v1alpha1/sym/name> "load_tokenizer_from_explicit_path"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::tokenizer_loader::load_tokenizer_from_explicit_path> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::tokenizer_loader::load_tokenizer_from_explicit_path> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod tokenizer_loader` or `use … tokenizer_loader` in `crates/aprender-core/src/format/converter/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::format::converter::tokenizer_loader::load_tokenizer_from_explicit_path> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod tokenizer_loader` or `use … tokenizer_loader` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/format/converter/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::core_io::parse_and_validate_header> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::core_io::parse_and_validate_header> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::core_io::parse_and_validate_header> <https://ont.paiml.dev/v1alpha1/sym/attribute> "cfg"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11168,7 +11180,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::gguf::api::GgufModelConfig::validate> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::format::gguf::api::GgufModelConfig"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::gguf::api::GgufModelConfig::validate> <https://ont.paiml.dev/v1alpha1/sym/name> "validate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::gguf::api::GgufModelConfig::validate> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::format::gguf::api::GgufModelConfig::validate> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod GgufModelConfig` or `use … GgufModelConfig` in `crates/aprender-core/src/format/gguf/api.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::format::gguf::api::GgufModelConfig::validate> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod GgufModelConfig` or `use … GgufModelConfig` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/format/gguf/api.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::gguf::reader::read_metadata_value> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::gguf::reader::read_metadata_value> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::gguf::reader::read_metadata_value> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11190,7 +11202,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout::swap_axes> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::format::layout"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout::swap_axes> <https://ont.paiml.dev/v1alpha1/sym/name> "swap_axes"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout::swap_axes> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout::swap_axes> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod layout` or `use … layout` in `crates/aprender-core/src/format/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout::swap_axes> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod layout` or `use … layout` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/format/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout::validate_element_count> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout::validate_element_count> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout::validate_element_count> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11200,7 +11212,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout::validate_element_count> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::format::layout"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout::validate_element_count> <https://ont.paiml.dev/v1alpha1/sym/name> "validate_element_count"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout::validate_element_count> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout::validate_element_count> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod layout` or `use … layout` in `crates/aprender-core/src/format/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout::validate_element_count> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod layout` or `use … layout` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/format/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::enforce_architecture_completeness> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::enforce_architecture_completeness> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::enforce_architecture_completeness> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11210,7 +11222,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::enforce_architecture_completeness> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::format::layout_contract"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::enforce_architecture_completeness> <https://ont.paiml.dev/v1alpha1/sym/name> "enforce_architecture_completeness"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::enforce_architecture_completeness> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::enforce_architecture_completeness> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn enforce_architecture_completeness` (free or in an impl) in `crates/aprender-core/src/format/layout_contract.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::enforce_architecture_completeness> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn enforce_architecture_completeness` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/format/layout_contract.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::should_transpose_gguf> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::should_transpose_gguf> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::should_transpose_gguf> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11220,7 +11232,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::should_transpose_gguf> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::format::layout_contract"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::should_transpose_gguf> <https://ont.paiml.dev/v1alpha1/sym/name> "should_transpose_gguf"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::should_transpose_gguf> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::should_transpose_gguf> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn should_transpose_gguf` (free or in an impl) in `crates/aprender-core/src/format/layout_contract.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::format::layout_contract::should_transpose_gguf> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn should_transpose_gguf` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/format/layout_contract.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::model_arithmetic::contract_composition> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::model_arithmetic::contract_composition> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::format::model_arithmetic::contract_composition> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11300,7 +11312,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::detect_format> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::gguf::reader"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::detect_format> <https://ont.paiml.dev/v1alpha1/sym/name> "detect_format"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::detect_format> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::detect_format> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod gguf` or `use … gguf` in `crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::detect_format> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod gguf` or `use … gguf` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::parse_metadata> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::parse_metadata> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::parse_metadata> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11310,7 +11322,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::parse_metadata> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::gguf::reader"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::parse_metadata> <https://ont.paiml.dev/v1alpha1/sym/name> "parse_metadata"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::parse_metadata> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::parse_metadata> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod gguf` or `use … gguf` in `crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::parse_metadata> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod gguf` or `use … gguf` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_header> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_header> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_header> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11320,7 +11332,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_header> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::gguf::reader"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_header> <https://ont.paiml.dev/v1alpha1/sym/name> "validate_header"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_header> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_header> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod gguf` or `use … gguf` in `crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_header> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod gguf` or `use … gguf` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_magic> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_magic> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_magic> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11330,7 +11342,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_magic> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::gguf::reader"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_magic> <https://ont.paiml.dev/v1alpha1/sym/name> "validate_magic"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_magic> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_magic> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod gguf` or `use … gguf` in `crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::gguf::reader::validate_magic> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod gguf` or `use … gguf` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::accumulate::global_max_pool> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::accumulate::global_max_pool> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::accumulate::global_max_pool> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11367,7 +11379,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::global_max_pool> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::gnn"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::global_max_pool> <https://ont.paiml.dev/v1alpha1/sym/name> "global_max_pool"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::global_max_pool> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::global_max_pool> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn global_max_pool` (free or in an impl) in `crates/aprender-core/src/gnn/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::global_max_pool> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn global_max_pool` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/gnn/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::global_mean_pool> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::global_mean_pool> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::global_mean_pool> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11377,7 +11389,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::global_mean_pool> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::gnn"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::global_mean_pool> <https://ont.paiml.dev/v1alpha1/sym/name> "global_mean_pool"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::global_mean_pool> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::global_mean_pool> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn global_mean_pool` (free or in an impl) in `crates/aprender-core/src/gnn/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::gnn::global_mean_pool> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn global_mean_pool` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/gnn/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::graph::pagerank> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::graph::pagerank> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::graph::pagerank> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11388,7 +11400,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::graph::pagerank> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::graph"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::graph::pagerank> <https://ont.paiml.dev/v1alpha1/sym/name> "pagerank"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::graph::pagerank> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::graph::pagerank> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn pagerank` (free or in an impl) in `crates/aprender-core/src/graph/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::graph::pagerank> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn pagerank` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/graph/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::import::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::import::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::import::run> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11398,7 +11410,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::import::run> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::import"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::import::run> <https://ont.paiml.dev/v1alpha1/sym/name> "run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::import::run> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::import::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod import` or `use … import` in `crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::import::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod import` or `use … import` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::forward::forward_pass> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::forward::forward_pass> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::forward::forward_pass> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11408,7 +11420,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::forward::forward_pass> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::inference::forward"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::forward::forward_pass> <https://ont.paiml.dev/v1alpha1/sym/name> "forward_pass"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::forward::forward_pass> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::forward::forward_pass> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod inference` or `use … inference` in `crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::forward::forward_pass> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod inference` or `use … inference` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::generate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::generate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::generate> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11420,7 +11432,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::generate> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::inference"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::generate> <https://ont.paiml.dev/v1alpha1/sym/name> "generate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::generate> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::generate> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod inference` or `use … inference` in `crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::inference::generate> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod inference` or `use … inference` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::metrics::classification::accuracy> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::metrics::classification::accuracy> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::metrics::classification::accuracy> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11445,7 +11457,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::metrics::classification::confusion_matrix> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::metrics::classification"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::metrics::classification::confusion_matrix> <https://ont.paiml.dev/v1alpha1/sym/name> "confusion_matrix"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::metrics::classification::confusion_matrix> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::metrics::classification::confusion_matrix> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn confusion_matrix` (free or in an impl) in `crates/aprender-core/src/metrics/classification.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::metrics::classification::confusion_matrix> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn confusion_matrix` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/metrics/classification.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::metrics::classification::f1_score> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::metrics::classification::f1_score> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::metrics::classification::f1_score> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11659,7 +11671,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::bert::cls_embedding> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::models::bert"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::bert::cls_embedding> <https://ont.paiml.dev/v1alpha1/sym/name> "cls_embedding"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::bert::cls_embedding> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::models::bert::cls_embedding> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn cls_embedding` (free or in an impl) in `crates/aprender-core/src/models/bert/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::models::bert::cls_embedding> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn cls_embedding` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/models/bert/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::bert::forward> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::bert::forward> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::bert::forward> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11669,7 +11681,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::bert::forward> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::models::bert"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::bert::forward> <https://ont.paiml.dev/v1alpha1/sym/name> "forward"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::bert::forward> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::models::bert::forward> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn forward` (free or in an impl) in `crates/aprender-core/src/models/bert/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::models::bert::forward> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn forward` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/models/bert/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::new> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::new> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::new> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11679,7 +11691,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::new> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::models::qwen2::constructors"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::new> <https://ont.paiml.dev/v1alpha1/sym/name> "new"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::new> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::new> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod constructors` or `use … constructors` in `crates/aprender-core/src/models/qwen2/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::new> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod constructors` or `use … constructors` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/models/qwen2/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::weight_names> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::weight_names> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::weight_names> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11689,7 +11701,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::weight_names> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::models::qwen2::constructors"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::weight_names> <https://ont.paiml.dev/v1alpha1/sym/name> "weight_names"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::weight_names> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::weight_names> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod constructors` or `use … constructors` in `crates/aprender-core/src/models/qwen2/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::constructors::weight_names> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod constructors` or `use … constructors` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/models/qwen2/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::weight> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::weight> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::models::qwen2::weight> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11790,7 +11802,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::rope::RotaryPositionEmbedding::validate_config> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::nn::rope::RotaryPositionEmbedding"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::rope::RotaryPositionEmbedding::validate_config> <https://ont.paiml.dev/v1alpha1/sym/name> "validate_config"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::rope::RotaryPositionEmbedding::validate_config> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::rope::RotaryPositionEmbedding::validate_config> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod rope` or `use … rope` in `crates/aprender-core/src/nn/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::rope::RotaryPositionEmbedding::validate_config> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod rope` or `use … rope` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/nn/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::transformer::bidirectional_attention> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::transformer::bidirectional_attention> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::transformer::bidirectional_attention> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11800,7 +11812,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::transformer::bidirectional_attention> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::nn::transformer"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::transformer::bidirectional_attention> <https://ont.paiml.dev/v1alpha1/sym/name> "bidirectional_attention"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::transformer::bidirectional_attention> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::transformer::bidirectional_attention> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn bidirectional_attention` (free or in an impl) in `crates/aprender-core/src/nn/transformer/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::transformer::bidirectional_attention> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn bidirectional_attention` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/nn/transformer/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::transformer::scaled_dot_product_attention> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::transformer::scaled_dot_product_attention> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::nn::transformer::scaled_dot_product_attention> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11856,7 +11868,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::quantize::quantize_tensor> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::quantize"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::quantize::quantize_tensor> <https://ont.paiml.dev/v1alpha1/sym/name> "quantize_tensor"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::quantize::quantize_tensor> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::quantize::quantize_tensor> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod quantize` or `use … quantize` in `crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::quantize::quantize_tensor> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod quantize` or `use … quantize` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::safetensors::reader::validate_header> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::safetensors::reader::validate_header> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::safetensors::reader::validate_header> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11866,7 +11878,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::safetensors::reader::validate_header> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::safetensors::reader"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::safetensors::reader::validate_header> <https://ont.paiml.dev/v1alpha1/sym/name> "validate_header"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::safetensors::reader::validate_header> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::safetensors::reader::validate_header> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod safetensors` or `use … safetensors` in `crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::safetensors::reader::validate_header> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod safetensors` or `use … safetensors` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::serve::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::serve::run> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::serve::run> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11876,7 +11888,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::serve::run> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::serve"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::serve::run> <https://ont.paiml.dev/v1alpha1/sym/name> "run"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::serve::run> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::serve::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod serve` or `use … serve` in `crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::serve::run> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod serve` or `use … serve` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::artifact::SetFitArtifactDoc> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::artifact::SetFitArtifactDoc> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::artifact::SetFitArtifactDoc> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -11886,7 +11898,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::artifact::SetFitArtifactDoc> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::setfit::artifact"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::artifact::SetFitArtifactDoc> <https://ont.paiml.dev/v1alpha1/sym/name> "SetFitArtifactDoc"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::artifact::SetFitArtifactDoc> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::artifact::SetFitArtifactDoc> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn SetFitArtifactDoc` (free or in an impl) in `crates/aprender-core/src/setfit/artifact.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::artifact::SetFitArtifactDoc> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn SetFitArtifactDoc` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/setfit/artifact.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::artifact::canonical_name_for_hf> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::artifact::canonical_name_for_hf> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::artifact::canonical_name_for_hf> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12004,7 +12016,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::classify::ClassifyResponse> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::setfit::classify"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::classify::ClassifyResponse> <https://ont.paiml.dev/v1alpha1/sym/name> "ClassifyResponse"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::classify::ClassifyResponse> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::classify::ClassifyResponse> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn ClassifyResponse` (free or in an impl) in `crates/aprender-core/src/setfit/classify.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::classify::ClassifyResponse> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn ClassifyResponse` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/setfit/classify.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::encoder::ExecutionBackend::identity> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::encoder::ExecutionBackend::identity> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::encoder::ExecutionBackend::identity> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12014,7 +12026,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::encoder::ExecutionBackend::identity> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::setfit::encoder::ExecutionBackend"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::encoder::ExecutionBackend::identity> <https://ont.paiml.dev/v1alpha1/sym/name> "identity"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::encoder::ExecutionBackend::identity> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::encoder::ExecutionBackend::identity> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod ExecutionBackend` or `use … ExecutionBackend` in `crates/aprender-core/src/setfit/encoder.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::setfit::encoder::ExecutionBackend::identity> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod ExecutionBackend` or `use … ExecutionBackend` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/setfit/encoder.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tokenizer::encode> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tokenizer::encode> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tokenizer::encode> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12026,7 +12038,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tokenizer::encode> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::tokenizer"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tokenizer::encode> <https://ont.paiml.dev/v1alpha1/sym/name> "encode"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tokenizer::encode> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::tokenizer::encode> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod tokenizer` or `use … tokenizer` in `crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::tokenizer::encode> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod tokenizer` or `use … tokenizer` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/lib.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::helpers::gini_impurity> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::helpers::gini_impurity> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::helpers::gini_impurity> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12062,7 +12074,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::helpers_part_02::compute_mse> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::tree::helpers_part_02"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::helpers_part_02::compute_mse> <https://ont.paiml.dev/v1alpha1/sym/name> "compute_mse"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::helpers_part_02::compute_mse> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::helpers_part_02::compute_mse> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod helpers_part_02` or `use … helpers_part_02` in `crates/aprender-core/src/tree/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::helpers_part_02::compute_mse> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod helpers_part_02` or `use … helpers_part_02` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/tree/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::regression_helpers::compute_mse> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::regression_helpers::compute_mse> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::regression_helpers::compute_mse> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12072,7 +12084,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::regression_helpers::compute_mse> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender::tree::regression_helpers"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::regression_helpers::compute_mse> <https://ont.paiml.dev/v1alpha1/sym/name> "compute_mse"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::regression_helpers::compute_mse> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::regression_helpers::compute_mse> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod regression_helpers` or `use … regression_helpers` in `crates/aprender-core/src/tree/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender::tree::regression_helpers::compute_mse> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod regression_helpers` or `use … regression_helpers` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-core/src/tree/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::attestation::PreparedDataset::%3CCanonical%3E::from_attested_bytes> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::attestation::PreparedDataset::%3CCanonical%3E::from_attested_bytes> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::attestation::PreparedDataset::%3CCanonical%3E::from_attested_bytes> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12082,7 +12094,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::attestation::PreparedDataset::%3CCanonical%3E::from_attested_bytes> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender_contrastive_data::attestation::PreparedDataset::<Canonical>"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::attestation::PreparedDataset::%3CCanonical%3E::from_attested_bytes> <https://ont.paiml.dev/v1alpha1/sym/name> "from_attested_bytes"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::attestation::PreparedDataset::%3CCanonical%3E::from_attested_bytes> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::attestation::PreparedDataset::%3CCanonical%3E::from_attested_bytes> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod PreparedDataset` or `use … PreparedDataset` in `crates/aprender-contrastive-data/src/prepared.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::attestation::PreparedDataset::%3CCanonical%3E::from_attested_bytes> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod PreparedDataset` or `use … PreparedDataset` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-contrastive-data/src/prepared.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::dedup::coalesced_exclusions> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::dedup::coalesced_exclusions> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::dedup::coalesced_exclusions> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12120,7 +12132,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::ledger::AccessLedger::to_canonical_bytes> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender_contrastive_data::ledger::AccessLedger"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::ledger::AccessLedger::to_canonical_bytes> <https://ont.paiml.dev/v1alpha1/sym/name> "to_canonical_bytes"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::ledger::AccessLedger::to_canonical_bytes> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::ledger::AccessLedger::to_canonical_bytes> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod AccessLedger` or `use … AccessLedger` in `crates/aprender-contrastive-data/src/ledger.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::ledger::AccessLedger::to_canonical_bytes> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod AccessLedger` or `use … AccessLedger` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-contrastive-data/src/ledger.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::PairReplayRecord::to_config> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::PairReplayRecord::to_config> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::PairReplayRecord::to_config> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12130,7 +12142,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::PairReplayRecord::to_config> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender_contrastive_data::manifest::PairReplayRecord"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::PairReplayRecord::to_config> <https://ont.paiml.dev/v1alpha1/sym/name> "to_config"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::PairReplayRecord::to_config> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::PairReplayRecord::to_config> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod PairReplayRecord` or `use … PairReplayRecord` in `crates/aprender-contrastive-data/src/manifest.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::PairReplayRecord::to_config> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod PairReplayRecord` or `use … PairReplayRecord` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-contrastive-data/src/manifest.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::SelectionPayload::to_canonical_bytes> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::SelectionPayload::to_canonical_bytes> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::SelectionPayload::to_canonical_bytes> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12140,7 +12152,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::SelectionPayload::to_canonical_bytes> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender_contrastive_data::manifest::SelectionPayload"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::SelectionPayload::to_canonical_bytes> <https://ont.paiml.dev/v1alpha1/sym/name> "to_canonical_bytes"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::SelectionPayload::to_canonical_bytes> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::SelectionPayload::to_canonical_bytes> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod SelectionPayload` or `use … SelectionPayload` in `crates/aprender-contrastive-data/src/manifest.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::SelectionPayload::to_canonical_bytes> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod SelectionPayload` or `use … SelectionPayload` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-contrastive-data/src/manifest.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::pair_manifest_hash> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::pair_manifest_hash> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::manifest::pair_manifest_hash> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12164,7 +12176,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::CanonicalPair::new> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender_contrastive_data::pairs::CanonicalPair"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::CanonicalPair::new> <https://ont.paiml.dev/v1alpha1/sym/name> "new"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::CanonicalPair::new> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::CanonicalPair::new> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod CanonicalPair` or `use … CanonicalPair` in `crates/aprender-contrastive-data/src/pairs.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::CanonicalPair::new> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod CanonicalPair` or `use … CanonicalPair` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-contrastive-data/src/pairs.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairLayout::raw_pair_at> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairLayout::raw_pair_at> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairLayout::raw_pair_at> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12174,7 +12186,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairLayout::raw_pair_at> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender_contrastive_data::pairs::PairLayout"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairLayout::raw_pair_at> <https://ont.paiml.dev/v1alpha1/sym/name> "raw_pair_at"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairLayout::raw_pair_at> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairLayout::raw_pair_at> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod PairLayout` or `use … PairLayout` in `crates/aprender-contrastive-data/src/pairs.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairLayout::raw_pair_at> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod PairLayout` or `use … PairLayout` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-contrastive-data/src/pairs.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairSampler::new> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairSampler::new> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairSampler::new> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12184,7 +12196,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairSampler::new> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender_contrastive_data::pairs::PairSampler"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairSampler::new> <https://ont.paiml.dev/v1alpha1/sym/name> "new"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairSampler::new> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairSampler::new> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod PairSampler` or `use … PairSampler` in `crates/aprender-contrastive-data/src/pairs.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::PairSampler::new> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod PairSampler` or `use … PairSampler` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-contrastive-data/src/pairs.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::classify_degenerate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::classify_degenerate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::pairs::classify_degenerate> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12279,7 +12291,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::prepared::PreparedDataset::%3CCanonical%3E::from_labeled_rows> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender_contrastive_data::prepared::PreparedDataset::<Canonical>"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::prepared::PreparedDataset::%3CCanonical%3E::from_labeled_rows> <https://ont.paiml.dev/v1alpha1/sym/name> "from_labeled_rows"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::prepared::PreparedDataset::%3CCanonical%3E::from_labeled_rows> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::prepared::PreparedDataset::%3CCanonical%3E::from_labeled_rows> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod PreparedDataset` or `use … PreparedDataset` in `crates/aprender-contrastive-data/src/prepared.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::prepared::PreparedDataset::%3CCanonical%3E::from_labeled_rows> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod PreparedDataset` or `use … PreparedDataset` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-contrastive-data/src/prepared.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::rng::bounded> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::rng::bounded> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::rng::bounded> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12331,7 +12343,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::select::FewShotSelector::select> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender_contrastive_data::select::FewShotSelector"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::select::FewShotSelector::select> <https://ont.paiml.dev/v1alpha1/sym/name> "select"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::select::FewShotSelector::select> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::select::FewShotSelector::select> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod FewShotSelector` or `use … FewShotSelector` in `crates/aprender-contrastive-data/src/select.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::select::FewShotSelector::select> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod FewShotSelector` or `use … FewShotSelector` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-contrastive-data/src/select.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::select::Selection::replay> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::select::Selection::replay> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::select::Selection::replay> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12341,7 +12353,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::select::Selection::replay> <https://ont.paiml.dev/v1alpha1/sym/module> "aprender_contrastive_data::select::Selection"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::select::Selection::replay> <https://ont.paiml.dev/v1alpha1/sym/name> "replay"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::select::Selection::replay> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::select::Selection::replay> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod Selection` or `use … Selection` in `crates/aprender-contrastive-data/src/select.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::select::Selection::replay> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod Selection` or `use … Selection` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-contrastive-data/src/select.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::split::validate_ingest_ladder> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::split::validate_ingest_ladder> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/aprender_contrastive_data::split::validate_ingest_ladder> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12365,7 +12377,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::autograd::matmul> <https://ont.paiml.dev/v1alpha1/sym/module> "entrenar::autograd"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::autograd::matmul> <https://ont.paiml.dev/v1alpha1/sym/name> "matmul"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::autograd::matmul> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/entrenar::autograd::matmul> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn matmul` (free or in an impl) in `crates/aprender-train/src/autograd/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/entrenar::autograd::matmul> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `fn matmul` (free or in an impl) in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-train/src/autograd/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::lora::layer::core::forward> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::lora::layer::core::forward> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::lora::layer::core::forward> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12401,7 +12413,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::apr_codec::deserialize> <https://ont.paiml.dev/v1alpha1/sym/module> "entrenar::train::setfit::apr_codec"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::apr_codec::deserialize> <https://ont.paiml.dev/v1alpha1/sym/name> "deserialize"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::apr_codec::deserialize> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::apr_codec::deserialize> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod setfit` or `use … setfit` in `crates/aprender-train/src/train/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::apr_codec::deserialize> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod setfit` or `use … setfit` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-train/src/train/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::baseline::fit> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::baseline::fit> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::baseline::fit> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12411,7 +12423,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::baseline::fit> <https://ont.paiml.dev/v1alpha1/sym/module> "entrenar::train::setfit::baseline"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::baseline::fit> <https://ont.paiml.dev/v1alpha1/sym/name> "fit"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::baseline::fit> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::baseline::fit> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod setfit` or `use … setfit` in `crates/aprender-train/src/train/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::baseline::fit> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod setfit` or `use … setfit` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-train/src/train/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::lock::mint_test_token> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::lock::mint_test_token> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::lock::mint_test_token> <https://ont.paiml.dev/v1alpha1/sym/bindingStatus> "implemented"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -12421,7 +12433,7 @@
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::lock::mint_test_token> <https://ont.paiml.dev/v1alpha1/sym/module> "entrenar::train::setfit::lock"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::lock::mint_test_token> <https://ont.paiml.dev/v1alpha1/sym/name> "mint_test_token"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::lock::mint_test_token> <https://ont.paiml.dev/v1alpha1/sym/resolved> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
-<https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::lock::mint_test_token> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod setfit` or `use … setfit` in `crates/aprender-train/src/train/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/symbol/entrenar::train::setfit::lock::mint_test_token> <https://ont.paiml.dev/v1alpha1/sym/unresolvedReason> "no `mod setfit` or `use … setfit` in `.claude/worktrees/lane-5af543540-1003753/crates/aprender-train/src/train/mod.rs`"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/symbol/realizar::harness_ir::from_anthropic> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/symbol/realizar::harness_ir::from_anthropic> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Symbol> .
 <https://ont.paiml.dev/v1alpha1/symbol/realizar::harness_ir::from_anthropic> <https://ont.paiml.dev/v1alpha1/sym/attribute> "doc"^^<http://www.w3.org/2001/XMLSchema#string> .
