@@ -235,6 +235,7 @@ impl CudaExecutor {
         output: &GpuBuffer<f32>,
         n: u32,
     ) -> Result<(), GpuError> {
+        self.q8_activation_written(output.as_ptr()); // #4258
         let kernel_type = KernelType::FusedSwiglu { n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("fused_swiglu_{}", n);
