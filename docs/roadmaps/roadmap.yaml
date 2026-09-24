@@ -18191,6 +18191,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-4191
+  github_issue: 4191
+  item_type: task
+  kind: code
+  title: 'aprender-orchestrate: test_resolve_project_root_nonexistent_falls_back is host-dependent (stray /tmp/Cargo.toml)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:00:00+00:00
+  updated: 2026-09-24T12:00:00+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  notes: null
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
