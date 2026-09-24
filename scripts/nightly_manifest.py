@@ -45,11 +45,13 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 
 SCHEMA = "aprender-nightly-manifest/v1"
 MANIFEST_ASSET = "nightly-manifest.json"
+STAGED = "staged."  # prefix of an upload not yet swapped in
 REQUIRED = ["ci / gate", "workspace-test"]
 TARGETS = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
 # A SHA printed in parentheses -- `apr 0.69.0 (aa7c6ef03)`. `pv 0.69.0
@@ -65,16 +67,25 @@ class GateError(Exception):
     pass
 
 
-def api(method, url, token=None, data=None, ctype="application/json"):
-    req = urllib.request.Request(url, method=method, data=data)
-    req.add_header("Accept", "application/vnd.github+json")
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
-    if data is not None:
-        req.add_header("Content-Type", ctype)
-    with urllib.request.urlopen(req, timeout=300) as r:
-        body = r.read()
-    return json.loads(body) if body else None
+def api(method, url, token=None, data=None, ctype="application/json", tries=3):
+    for attempt in range(1, tries + 1):
+        req = urllib.request.Request(url, method=method, data=data)
+        req.add_header("Accept", "application/vnd.github+json")
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
+        if data is not None:
+            req.add_header("Content-Type", ctype)
+        try:
+            with urllib.request.urlopen(req, timeout=300) as r:
+                body = r.read()
+            return json.loads(body) if body else None
+        except urllib.error.HTTPError as e:
+            if e.code < 500 or attempt == tries:
+                raise
+        except urllib.error.URLError:
+            if attempt == tries:
+                raise
+        time.sleep(5 * attempt)
 
 
 # ---------------------------------------------------------------- gate
@@ -195,8 +206,11 @@ def merge(prev, fragments, sha, decision, targets, run_id, run_url, now):
             out[t] = {"status": "green", "green_sha": sha, "built_at": now,
                       "built_run_id": run_id, "red": None, "tools": frag["tools"]}
         elif decision == "build":
-            # No fragment at all means the job died before recording: red, never old-green.
-            red = (frag or {}).get("red") or {"sha": sha, "reason": "build-failed", "detail": "no fragment"}
+            # No fragment: the runner died before recording, OR the download of a
+            # good one failed. Red, never old-green -- but `no-fragment` is not a
+            # BUILD verdict, so the gate retries this SHA on the next run.
+            red = (frag or {}).get("red") or {"sha": sha, "reason": "no-fragment",
+                                              "detail": "runner died or artifact download failed"}
             before.update(status="red", red=dict(red, run_url=run_url, ticket=None))
             out[t] = before  # the last good build stays served
         elif decision == "red-ci":
@@ -216,12 +230,14 @@ def merge(prev, fragments, sha, decision, targets, run_id, run_url, now):
 # ---------------------------------------------------------------- publish
 
 def publish_plan(manifest, sha, dist_files):
-    """Asset names to (re)upload, in order. Only targets built at THIS sha; the
-    manifest last, so a reader never sees a manifest ahead of its assets."""
+    """Asset names to (re)upload, in order. Only targets built at `sha` BY THIS
+    RUN -- a reused night is green at `sha` too, but its assets are already
+    published and its dist dir is empty. The manifest last, so a reader never
+    sees a manifest ahead of its assets."""
     names = []
     for t in sorted(manifest["targets"]):
         e = manifest["targets"][t]
-        if e["status"] != "green" or e["green_sha"] != sha:
+        if e["status"] != "green" or e["green_sha"] != sha or e.get("built_run_id") != manifest["run_id"]:
             continue
         for tool in sorted(e["tools"].values(), key=lambda x: x["asset"]):
             for n in (tool["asset"], tool["asset"] + ".sha256"):
@@ -254,13 +270,19 @@ def publish(manifest_path, dist, sha, repo, token):
             "tag_name": "nightly", "target_commitish": sha, "name": "Nightly Build",
             "prerelease": True, "make_latest": "false"}).encode())
     existing = {a["name"]: a["id"] for a in api("GET", f"{A}/releases/{rel['id']}/assets?per_page=100", token)}
+    for n, i in existing.items():  # a staged upload an earlier run died holding
+        if n.startswith(STAGED):
+            api("DELETE", f"{A}/releases/assets/{i}", token)
     for n in plan:
-        if n in existing:
-            api("DELETE", f"{A}/releases/assets/{existing[n]}", token)
+        # Upload under a staged name FIRST, and only then retire the old asset
+        # and rename: a failed upload leaves the published asset in place.
         src = manifest_path if n == MANIFEST_ASSET else os.path.join(dist, n)
         with open(src, "rb") as f:
-            api("POST", f"https://uploads.github.com/repos/{repo}/releases/{rel['id']}/assets?name={n}",
-                token, f.read(), "application/octet-stream")
+            new = api("POST", f"https://uploads.github.com/repos/{repo}/releases/{rel['id']}/assets?name={STAGED}{n}",
+                      token, f.read(), "application/octet-stream")
+        if n in existing:
+            api("DELETE", f"{A}/releases/assets/{existing[n]}", token)
+        api("PATCH", f"{A}/releases/assets/{new['id']}", token, json.dumps({"name": n}).encode())
         print(f"uploaded {n}")
     rows = "\n".join(
         f"| `{t}` | {e['status']} | `{(e['green_sha'] or '-')[:9]}` | {', '.join(sorted(e['tools'])) or '-'} | "
@@ -359,8 +381,12 @@ def self_test():
           (m["decision"], m["targets"][T[0]]["green_sha"], m["targets"][T[1]]["green_sha"], m["targets"][T[1]]["status"]),
           ("build-failed", S, OLD, "red"))
     check("the red target keeps serving its last green tools", list(m["targets"][T[1]]["tools"]), ["apr"])
-    check("a target with NO fragment (job died) is red, not silently old-green",
-          merge(prev, {T[0]: gfrag(T[0])}, S, "build", T, 7, "u", now)["targets"][T[1]]["red"]["reason"], "build-failed")
+    nf = merge(prev, {T[0]: gfrag(T[0])}, S, "build", T, 7, "u", now)
+    check("a target with NO fragment is red (no-fragment), not silently old-green",
+          (nf["targets"][T[1]]["status"], nf["targets"][T[1]]["red"]["reason"], nf["decision"]),
+          ("red", "no-fragment", "build-failed"))
+    check("...and the gate RETRIES it next run (a failed download is not a build verdict)",
+          gate(S, nf, T, green)[0], "build")
     check("a red fragment for ANOTHER sha does not count (fragments are keyed by sha upstream)",
           merge(prev, {}, S, "build", T, 7, "u", now)["decision"], "build-failed")
     m = merge(prev, {}, S, "red-ci", T, 7, "u", now)
@@ -381,6 +407,10 @@ def self_test():
                  MANIFEST_ASSET])
     check("red-ci uploads the manifest only", publish_plan(merge(prev, {}, S, "red-ci", T, 7, "u", now), S, files),
           [MANIFEST_ASSET])
+    both = merge(prev, {T[0]: gfrag(T[0]), T[1]: gfrag(T[1])}, S, "build", T, 7, "u", now)
+    check("the next night is reused, and reused uploads the manifest only (dist is empty)",
+          (gate(S, both, T, [])[0], publish_plan(merge(both, {}, S, "reused", T, 8, "u", now), S, set())),
+          ("reused", [MANIFEST_ASSET]))
     check("ci-pending: arches still green at an OLDER sha are not re-uploaded",
           publish_plan(merge(prev, {}, S, "ci-pending", T, 7, "u", now), S, files), [MANIFEST_ASSET])
     try:
