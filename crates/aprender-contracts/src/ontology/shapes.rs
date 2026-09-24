@@ -604,104 +604,134 @@ fn validate_focus(graph: &Graph, shape: &NodeShape, focus: &str, out: &mut Vec<V
         };
     for p in &shape.properties {
         let values = graph.objects(focus, &p.path);
-        if let Some(min) = p.min_count {
-            if values.len() < min {
-                push(
-                    p.severity,
-                    Some(&p.path),
-                    "minCount",
-                    format!(
-                        "has {} value(s) of {}, minCount is {min}",
-                        values.len(),
-                        short(&p.path)
-                    ),
-                );
-            }
-        }
-        if let Some(max) = p.max_count {
-            if values.len() > max {
-                // name the values (up to five): a `maxCount 0` on a materialized edge — `missingGreenHost`,
-                // `receiptHexMismatch` (ONT-4c1) — is only actionable when the message says WHICH host, WHICH file
-                let named: Vec<String> = values
-                    .iter()
-                    .take(5)
-                    .map(|v| match v {
-                        Term::Iri(i) => short(i),
-                        Term::Literal { value, .. } => value.clone(),
-                    })
-                    .collect();
-                push(
-                    p.severity,
-                    Some(&p.path),
-                    "maxCount",
-                    format!(
-                        "has {} value(s) of {}, maxCount is {max}: {}",
-                        values.len(),
-                        short(&p.path),
-                        named.join(", ")
-                    ),
-                );
-            }
-        }
+        check_counts(p, &values, &mut push);
         for v in &values {
             check_value(graph, p, v, &mut push);
         }
-        for (other, strict, component) in [
-            (p.less_than.as_deref(), true, "lessThan"),
-            (p.less_than_or_equals.as_deref(), false, "lessThanOrEquals"),
-        ] {
-            let Some(other) = other else { continue };
-            // SHACL §4.5.3/§4.5.4: one result per (value, other value) PAIR that is not ordered — the W3C case
-            // lessThan-002 expects four results from two values against two, so the pair is named in the message
-            // (which also keeps the pairs distinct through `validate`'s dedup). A pair that SPARQL `<` cannot
-            // compare (an IRI, a string against a number) is NOT ordered, so it is a result, never a skip.
-            let others = graph.objects(focus, other);
-            for v in &values {
-                for w in &others {
-                    let ordered = match compare_terms(v, w) {
-                        Some(std::cmp::Ordering::Less) => true,
-                        Some(std::cmp::Ordering::Equal) => !strict,
-                        _ => false,
-                    };
-                    if !ordered {
-                        push(
-                            p.severity,
-                            Some(&p.path),
-                            component,
-                            format!(
-                                "{}: {} is not {} {} of {}",
-                                short(&p.path),
-                                term_short(v),
-                                if strict { "<" } else { "<=" },
-                                term_short(w),
-                                short(other)
-                            ),
-                        );
-                    }
+        check_pairs(graph, focus, p, &values, &mut push);
+    }
+    if shape.closed {
+        check_closed(graph, shape, focus, &mut push);
+    }
+}
+
+/// `sh:minCount` / `sh:maxCount` on one property of one focus node.
+fn check_counts(
+    p: &PropertyShape,
+    values: &[&Term],
+    push: &mut impl FnMut(Severity, Option<&str>, &'static str, String),
+) {
+    if let Some(min) = p.min_count {
+        if values.len() < min {
+            push(
+                p.severity,
+                Some(&p.path),
+                "minCount",
+                format!(
+                    "has {} value(s) of {}, minCount is {min}",
+                    values.len(),
+                    short(&p.path)
+                ),
+            );
+        }
+    }
+    if let Some(max) = p.max_count {
+        if values.len() > max {
+            // name the values (up to five): a `maxCount 0` on a materialized edge — `missingGreenHost`,
+            // `receiptHexMismatch` (ONT-4c1) — is only actionable when the message says WHICH host, WHICH file
+            let named: Vec<String> = values
+                .iter()
+                .take(5)
+                .map(|v| match v {
+                    Term::Iri(i) => short(i),
+                    Term::Literal { value, .. } => value.clone(),
+                })
+                .collect();
+            push(
+                p.severity,
+                Some(&p.path),
+                "maxCount",
+                format!(
+                    "has {} value(s) of {}, maxCount is {max}: {}",
+                    values.len(),
+                    short(&p.path),
+                    named.join(", ")
+                ),
+            );
+        }
+    }
+}
+
+/// `sh:lessThan` / `sh:lessThanOrEquals` (SHACL §4.5.3/§4.5.4) on one property of one focus node.
+fn check_pairs(
+    graph: &Graph,
+    focus: &str,
+    p: &PropertyShape,
+    values: &[&Term],
+    push: &mut impl FnMut(Severity, Option<&str>, &'static str, String),
+) {
+    for (other, strict, component) in [
+        (p.less_than.as_deref(), true, "lessThan"),
+        (p.less_than_or_equals.as_deref(), false, "lessThanOrEquals"),
+    ] {
+        let Some(other) = other else { continue };
+        // SHACL §4.5.3/§4.5.4: one result per (value, other value) PAIR that is not ordered — the W3C case
+        // lessThan-002 expects four results from two values against two, so the pair is named in the message
+        // (which also keeps the pairs distinct through `validate`'s dedup). A pair that SPARQL `<` cannot
+        // compare (an IRI, a string against a number) is NOT ordered, so it is a result, never a skip.
+        let others = graph.objects(focus, other);
+        for v in values {
+            for w in &others {
+                let ordered = match compare_terms(v, w) {
+                    Some(std::cmp::Ordering::Less) => true,
+                    Some(std::cmp::Ordering::Equal) => !strict,
+                    _ => false,
+                };
+                if !ordered {
+                    push(
+                        p.severity,
+                        Some(&p.path),
+                        component,
+                        format!(
+                            "{}: {} is not {} {} of {}",
+                            short(&p.path),
+                            term_short(v),
+                            if strict { "<" } else { "<=" },
+                            term_short(w),
+                            short(other)
+                        ),
+                    );
                 }
             }
         }
     }
-    if shape.closed {
-        let allowed: BTreeSet<&str> = shape
-            .properties
-            .iter()
-            .map(|p| p.path.as_str())
-            .chain(shape.ignored_properties.iter().map(String::as_str))
-            .chain(std::iter::once(RDF_TYPE))
-            .collect();
-        for pred in graph.predicates_of(focus) {
-            if !allowed.contains(pred) {
-                push(
-                    Severity::Violation,
-                    Some(pred),
-                    "closed",
-                    format!(
-                        "carries {}, which the closed shape does not declare",
-                        short(pred)
-                    ),
-                );
-            }
+}
+
+/// `sh:closed`: every predicate the focus carries is declared, ignored, or `rdf:type`.
+fn check_closed(
+    graph: &Graph,
+    shape: &NodeShape,
+    focus: &str,
+    push: &mut impl FnMut(Severity, Option<&str>, &'static str, String),
+) {
+    let allowed: BTreeSet<&str> = shape
+        .properties
+        .iter()
+        .map(|p| p.path.as_str())
+        .chain(shape.ignored_properties.iter().map(String::as_str))
+        .chain(std::iter::once(RDF_TYPE))
+        .collect();
+    for pred in graph.predicates_of(focus) {
+        if !allowed.contains(pred) {
+            push(
+                Severity::Violation,
+                Some(pred),
+                "closed",
+                format!(
+                    "carries {}, which the closed shape does not declare",
+                    short(pred)
+                ),
+            );
         }
     }
 }
