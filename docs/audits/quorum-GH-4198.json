@@ -1,0 +1,47 @@
+{
+  "pr": "paiml/aprender#4230",
+  "ticket": "GH-4198",
+  "head": "54a27e0b9cc177f840aae93d92393f4067c2a8c2",
+  "base": "origin/main",
+  "base_resolved": "aa7c6ef03ee7b7f8d8dc09dc393e97619952d95f",
+  "diff_sha256": "5efcf0ae09520cb296b73bbf52ddc82e6d639a398b0ff8607597385b6aa014a2",
+  "brief_sha256": "2a458a90624518594d770b6797d3771731917cf2e6a0c8f125f95f854527a1c4",
+  "width": 3,
+  "executor": "claude-code",
+  "degraded": "same-family",
+  "why": "agy 429 on gemini and openai pre-check probes (quorum-review.sh lane 1 NO-VERDICT, round 3); operator fallback sonnet+haiku+opus, opus seat = second sonnet-5 sample because the author is claude-opus-5-5",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "model": "claude-sonnet-5",
+      "agent_id": "aa0d0e8be6b2d992b",
+      "verdict": "PASS",
+      "brief_sha256": "2a458a90624518594d770b6797d3771731917cf2e6a0c8f125f95f854527a1c4",
+      "findings": [],
+      "summary": "Diff matches the title (11 tests, only obligations.rs + cli/lib/mod wiring + ObligationsRejected + fixtures + ci fragment 460 + roadmap); round-3 guard measured: dup-key and >u64 proved_type contracts print the script's exact output from both the script and pv, rc 1; validate_artifact parses with the same serde_yaml so the guard cannot misfire."
+    },
+    {
+      "lane": 2,
+      "model": "claude-sonnet-5",
+      "agent_id": "a5412bc23ea8a330b",
+      "verdict": "PASS",
+      "brief_sha256": "2a458a90624518594d770b6797d3771731917cf2e6a0c8f125f95f854527a1c4",
+      "findings": [],
+      "summary": "Adversarial seat (opus seat, second sonnet-5 sample): traced SCHEMA-020/strict_yaml_error so any Value-parse failure fails pv validate; a nested duplicate key under an unmodeled block and a >64-bit proved_type both print only the validate line, 1 problem; declared differences spot-checked and correctly scoped."
+    },
+    {
+      "lane": 3,
+      "model": "claude-haiku-4-5",
+      "agent_id": "a61b596d5d2d237ac",
+      "verdict": "PASS",
+      "brief_sha256": "2a458a90624518594d770b6797d3771731917cf2e6a0c8f125f95f854527a1c4",
+      "findings": [],
+      "summary": "Load enum splits Parse from Other; the guard returns only validate problems on a parse refusal; new test covers dup key and >64-bit int; 11 golden tests pass; README and roadmap updated (11 tests, 17 mutations)."
+    }
+  ]
+}
