@@ -1224,10 +1224,7 @@ fn throughput_gguf(
         "qa_throughput_gguf_cpu",
         budget_us,
         config.verbose,
-        || {
-            qa_dense_generate(&mut session, &prompt_tokens, &gen_config, false)
-                .unwrap_or_default()
-        },
+        || qa_dense_generate(&mut session, &prompt_tokens, &gen_config, false).unwrap_or_default(),
     ))
 }
 

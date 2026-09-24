@@ -324,10 +324,7 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
         "qa_ollama_parity_cpu",
         budget_us,
         config.verbose,
-        || {
-            qa_dense_generate(&mut session, &prompt_tokens, &gen_config, false)
-                .unwrap_or_default()
-        },
+        || qa_dense_generate(&mut session, &prompt_tokens, &gen_config, false).unwrap_or_default(),
     );
     Ok(tps)
 }
@@ -441,10 +438,7 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> R
         "qa_gpu_speedup_cpu",
         budget_us,
         config.verbose,
-        || {
-            qa_dense_generate(&mut session, &prompt_tokens, &gen_config, false)
-                .unwrap_or_default()
-        },
+        || qa_dense_generate(&mut session, &prompt_tokens, &gen_config, false).unwrap_or_default(),
     );
 
     // GPU throughput — GH-284: fall back to 0.0 on capability mismatch
