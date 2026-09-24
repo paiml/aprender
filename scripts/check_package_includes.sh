@@ -366,6 +366,18 @@ if [ "${1:-}" = "--self-test" ]; then
   else
     printf 'FAIL  row 18 prerelease substitution: rc=%s\n%s\n' "$tb_rc" "$tb_out"; fails=1
   fi
+  # Row 19 (#4114/#4129/#4130): the tarballs' test surface may shrink only where the gate SAYS so. A
+  # dropped integration target (excluded tests/it.rs) and a run-time *_or_skip( site are both counted.
+  tb_fixture "$TD/tb-shrink" 'pub fn f() {}\n#[cfg(test)]\nfn fixture_or_skip(t: &str) -> Option<()> { let _ = t; None }\n#[cfg(test)]\nmod t { #[test] fn a() { let _ = super::fixture_or_skip("a"); } }\n'
+  printf '#[test]\nfn it() {}\n' > "$TD/tb-shrink/tests/it.rs"
+  tb_run "$TD/tb-shrink"
+  if [ "$tb_rc" = 0 ] && grep -q '^NOT SHIPPED  pti-fixture .* 1 integration test target(s): tests/it.rs' <<< "$tb_out" \
+     && grep -q '^SKIP SITES   pti-fixture-0.1.0 .* 1 run-time' <<< "$tb_out" \
+     && grep -q '^SHRINK: 1 integration test target(s) not shipped across 1 crate(s); 1 run-time skip site(s)' <<< "$tb_out"; then
+    printf 'ok    row 19 a dropped integration target and a run-time skip site are both counted, never silent\n'
+  else
+    printf 'FAIL  row 19 shrink report: rc=%s\n%s\n' "$tb_rc" "$tb_out"; fails=1
+  fi
   [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
   printf '\nSELF-TEST PASSED\n'
   exit 0

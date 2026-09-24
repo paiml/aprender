@@ -27,7 +27,10 @@
 #      still ships (cargo drops the targets whose files are excluded). That is what
 #      `cargo test --no-run` compiles, but `cargo test` has no --keep-going, and one crate's error must
 #      not hide the next crate's.
-#   4. scripts/lib/tarball_build_errors.py names every error by crate and file:line.
+#   4. scripts/lib/tarball_shrink_report.py prints what the tarballs do NOT test: integration targets
+#      cargo drops (its own "ignoring test" warning) and run-time `*_or_skip(` sites, per crate, with
+#      totals. A test surface may shrink only where this line shows it.
+#   5. scripts/lib/tarball_build_errors.py names every error by crate and file:line.
 #
 # OPTIONS
 #   --root DIR            the repository to package (default: this script's repo)
@@ -165,7 +168,13 @@ echo "building: cargo build --workspace --tests --keep-going (target $BUILD_TARG
 (cd "$T/ws" && CARGO_TARGET_DIR="$BUILD_TARGET" cargo build --workspace --tests --keep-going --message-format short > "$T/build.log" 2>&1)
 brc=$?
 
-# 4. the verdict, by crate
+# 4. what the tarballs do NOT test is printed, never silent (#4114/#4129/#4130): integration targets
+#    cargo dropped, and run-time *_or_skip( sites that SKIP out of tree. A missing report is not a pass.
+shrink="$(python3 "$SCRIPT_DIR/lib/tarball_shrink_report.py" "$T/package.log" "$T/ws")" \
+  || { echo "  cannot check: the shrink report could not be produced" >&2; exit 2; }
+printf '%s\n' "$shrink"
+
+# 5. the verdict, by crate
 report="$(python3 "$SCRIPT_DIR/lib/tarball_build_errors.py" "$T/build.log")"; erc=$?
 if [ "$brc" -eq 0 ] && [ "$erc" -eq 0 ]; then
   echo "PASS  all $n_crate published tarball(s) compile their tests (cargo build --tests)"; exit 0
