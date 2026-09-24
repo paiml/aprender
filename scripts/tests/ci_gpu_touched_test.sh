@@ -87,8 +87,18 @@ row 0 "cuda-unit runs on the disposable yoga runner, literally labelled" \
     jobq cuda-unit "job['runs-on']"
 row 0 "gpu-quick is capped at 15 minutes (row 67-C1)" \
     '^15$' jobq gpu-quick "job['timeout-minutes']"
-row 0 "cuda-unit is capped at 15 minutes (row 67-D1)" \
-    '^15$' jobq cuda-unit "job['timeout-minutes']"
+# 15 (row 67-D1) -> 35 (#3810, measured) -> 50 (#3636, the clippy step). Both
+# raises left this row at 15; it is not wired into CI, so nothing went red.
+row 0 "cuda-unit is capped at 50 minutes (67-D1, raised by #3810 and #3636)" \
+    '^50$' jobq cuda-unit "job['timeout-minutes']"
+# #4336: an apr-cli-only diff (cuda_lint=1, gpu_touched=0) starts cuda-unit for
+# the clippy step alone, so every OTHER cargo step must carry a gpu_touched if:.
+row 0 "cuda-unit also starts on cuda_lint=1 (apr-cli-only diff, #4336)" \
+    "^True$" jobq cuda-unit "'cuda_lint' in job.get('if','')"
+row 0 "every cuda-unit cargo TEST step is gated on gpu_touched — cuda_lint alone never runs them" \
+    "^True$" jobq cuda-unit "all('gpu_touched' in (s.get('if') or '') for s in job['steps'] if 'cargo test' in (s.get('run') or '') or 'cuda unit tests' in (s.get('name') or ''))"
+row 0 "the clippy --features cuda step has NO step if: — it runs whenever the job does" \
+    "^True$" jobq cuda-unit "any('check_clippy_cuda.sh' in (s.get('run') or '') and not s.get('if') for s in job['steps'])"
 
 for j in gpu-quick cuda-unit; do
     row 0 "$j runs ONLY on pull_request — never merge_group, never push (the queue stays under 20 min)" \
