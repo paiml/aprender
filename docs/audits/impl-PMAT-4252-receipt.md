@@ -3,6 +3,8 @@
 GGUF sha256 `00fe7986…11a4` (identical on lambda, intel and gx10). Prompts: `p_fr.txt` ("The capital of France is", 5 tok) and `p850.txt` (lqw p850, 839 tok). n=3, temp 0, max_tokens 64.
 Method: non-streaming two-request (TTFT = wall of max_tokens=1; decode = 63/(T64−T1)), because `/v1/completions` stream:true is buffered (#4272). `used_gpu` is read per request and `--expect-gpu` voids CPU answers.
 
+**Exploratory, not a canonical figure (PERF-009).** These rows came from a one-off client, `scripts/bench_serve_4252.py` at 0f83b9a7a..cf4a31c18. It was deleted before merge because it was a second throughput harness beside `scripts/perf_gate.sh`, which `check_no_competing_harnesses.sh` refuses. It is recoverable with `git show cf4a31c18:scripts/bench_serve_4252.py`. Any figure quoted beyond this receipt must be re-measured through `scripts/perf_gate.sh`.
+
 | tier | binary (v0.69.1 d8a6df53a) | backend proof | prompt | TTFT s | prefill tok/s | decode tok/s (range) |
 |---|---|---|---|---|---|---|
 | **gx10 CUDA** (GB10) | aarch64-cuda asset `49afbc26…fad8` | `Backend: GPU (CUDA, NVIDIA GB10…) [qwen35 hybrid forward, #3090]` + `gpu-layers: requested=all resolved=32 total=32 (backend=cuda)`; used_gpu true 12/12; server pid 443076 held GPU mem | 5 tok | 0.171 | 29.3 | **34.1** (33.9–34.2) |
