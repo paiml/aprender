@@ -166,7 +166,9 @@ extractors:
   - {name: release_evidence, reader: ontology/extract/release_evidence.rs, implemented: true}
 
 # v4.16 D-T1 (qd4c4): the class a shape with no `targetClass` targets, by `entity.type` (shapes.rs::default_target).
-# A type absent here has no default: its shape is malformed, exit 3, named.
+# A type absent here has no default: its shape is malformed, exit 3, named. The sigma gate cross-checks the map
+# against entity_types both ways: a key no entity_type declares is malformed, and so is an implemented type with
+# neither a class nor an explicit `~` (no default target: every shape on it names its own targetClass).
 entity_type_target_class:
   pv-contract: ont:Contract
   readme: readme:Readme
@@ -174,6 +176,11 @@ entity_type_target_class:
   csv: csv:Dataset
   apr-model: model:AprModel
   gguf: model:Model
+  json: ~
+  code: ~
+  lean: ~
+  parity-receipt: ~
+  release-evidence: ~
 
 # v4.16 D5b (qd4c3): which `## ` headings of an llm-context file satisfy each role. extract:llm-context emits
 # llm:purposeSection / rulesSection / commandsSection / layoutSection per match; an unlisted heading is no error.
