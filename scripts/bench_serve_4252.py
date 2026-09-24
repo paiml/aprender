@@ -78,7 +78,7 @@ def main():
                    "prompt_tokens": ptok, "ttft_s": t1,
                    "prefill_tok_s": ptok / t1 if ptok else None,
                    "tN_s": tn, "completion_tokens": ctok,
-                   "decode_tok_s": ((ctok or 1) - 1) / (tn - t1) if tn > t1 else None,
+                   "decode_tok_s": (ctok - 1) / (tn - t1) if ctok and tn > t1 else None,
                    "used_gpu": [g1, gn], "text": text}
             if a.expect_gpu and not (g1 is True and gn is True):
                 row["void"] = f"--expect-gpu but used_gpu={[g1, gn]}"

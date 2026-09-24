@@ -135,14 +135,19 @@ def need_signals(own_pid):
 
 def stop_server(st, reason):
     pid = st.get("pid")
-    if pid_alive(pid):
-        os.killpg(pid, signal.SIGTERM)
-        for _ in range(30):
-            if not pid_alive(pid):
-                break
-            time.sleep(1)
-        else:
-            os.killpg(pid, signal.SIGKILL)
+    # the server may exit between pid_alive and the kill; that is "already gone", never a
+    # crash of the watch loop (which would leave the lane down after the need clears)
+    try:
+        if pid_alive(pid):
+            os.killpg(pid, signal.SIGTERM)
+            for _ in range(30):
+                if not pid_alive(pid):
+                    break
+                time.sleep(1)
+            else:
+                os.killpg(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
     st.update({"serving": False, "pid": None, "stopped_at": time.time(),
                "stop_reason": reason})
     save_state(st)
@@ -264,6 +269,8 @@ def gx10_ask(messages, max_tokens, timeout):
 def cmd_ask(args):
     brief = open(args.brief).read() if args.brief else sys.stdin.read()
     messages = [{"role": "user", "content": brief}]
+    # signal.alarm(0) CANCELS the alarm: a zero or negative budget would mean no budget
+    args.timeout = max(1, args.timeout)
     rec = {"lane": "apr-dogfood-4252", "advisory": True, "counts": False,
            "timeout_s": args.timeout,
            "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "attempts": []}

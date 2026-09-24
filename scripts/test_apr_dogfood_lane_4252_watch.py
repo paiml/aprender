@@ -115,6 +115,15 @@ def main():
     st = lane.load_state()               # a mutant can leave a started server: stop it
     if lane.pid_alive(st.get("pid")):
         lane.stop_server(st, ["test teardown"])
+    # a server that exits between pid_alive and killpg is "already gone", not a crash
+    real_alive = lane.pid_alive
+    lane.pid_alive = lambda pid: True
+    try:
+        lane.stop_server({"pid": 2 ** 22 + 7}, ["race"])   # no such process group
+        row("killpg on a vanished pid -> no crash", True, "ProcessLookupError absorbed")
+    except ProcessLookupError as e:
+        row("killpg on a vanished pid -> no crash", False, repr(e))
+    lane.pid_alive = real_alive
     bad = [n for n, ok in rows if not ok]
     print("RESULT", "PASS" if not bad else f"FAIL {bad}")
     return 0 if not bad else 1

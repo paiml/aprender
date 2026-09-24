@@ -59,3 +59,13 @@ The quorum-round-1 finding (sonnet) said the budget was only shown on `--force-l
   2. PLANT on gx10: `flock /tmp/apr-gpu.lock sleep 100` → `11:53:23Z YIELD ['gpu lock held …']`. Pid 1431039 gone; compute-apps empty.
   3. `ask` during the hold (default 120 s budget) → gx10 `CURL_RC=7` → **served_by lambda-cpu**, rc 0, wall 22 s.
   4. Hold expired → `11:55:03Z START`; serve pid 1653471 serving.
+
+## Round-3 fixes (quorum R3 on 8f46a2be1: sonnet-A PASS, sonnet-B FAIL, haiku PASS)
+
+| Finding (sonnet-B / sonnet-A) | Fix | Mutant → row |
+|---|---|---|
+| `stop_server` race: pid dies between `pid_alive` and `killpg` → ProcessLookupError kills the watcher | `try/except ProcessLookupError` around the kill block | except→KeyError: watch row 8 "killpg on a vanished pid -> no crash" RED (`ProcessLookupError(3, 'No such process')`) |
+| `--timeout 0` → `signal.alarm(0)` CANCELS the budget | `args.timeout = max(1, args.timeout)` | line → `pass`: ask test "timeout 0" hangs (rc 124 under `timeout 30`). The first version of this row used a hung socket and stayed GREEN under the mutant (urlopen's per-read timeout bounded it) — replaced by a trickle server that sends one byte / 0.3 s so only the alarm can end the ask |
+| (sonnet-A, non-blocking) bench `decode_tok_s` fell back to 0.0 when tN<=t1 | `None` instead of a fabricated 0.0 | — |
+
+Real code: ask test 2/2 PASS (budget 6 s → 5.0 s; timeout 0 → 1.0 s), watch test 8/8 PASS.

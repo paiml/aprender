@@ -34,6 +34,32 @@ def hung_server():
     return f"http://127.0.0.1:{s.getsockname()[1]}"
 
 
+def trickle_server():
+    """Answers headers, then one body byte every 0.3 s forever: a per-read socket timeout
+    never fires, so only the lane's alarm can end the ask."""
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    s.listen(8)
+
+    def serve(conn):
+        try:
+            conn.recv(65536)
+            conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                         b"Content-Length: 100000000\r\n\r\n")
+            while True:
+                conn.sendall(b" ")
+                time.sleep(0.3)
+        except OSError:
+            pass
+
+    def accept():
+        while True:
+            conn, _ = s.accept()
+            threading.Thread(target=serve, args=(conn,), daemon=True).start()
+    threading.Thread(target=accept, daemon=True).start()
+    return f"http://127.0.0.1:{s.getsockname()[1]}"
+
+
 def main():
     budget = int(sys.argv[1]) if len(sys.argv) > 1 else 6
     url = hung_server()
@@ -59,7 +85,22 @@ def main():
     print(json.dumps({"rc": rc, "verdict": rec.get("verdict"), "attempts": hosts,
                       "wall_s": round(wall, 1), "budget_s": budget,
                       "result": "PASS" if ok else "FAIL"}))
-    return 0 if ok else 1
+    if not ok:
+        return 1
+    # --timeout 0 must still be a budget: signal.alarm(0) would cancel it. The trickle
+    # server defeats urlopen's per-read timeout, so this row sees the alarm alone.
+    lane.LAMBDA_URL = trickle_server()
+    open(brief, "w").write("Reply PASS.")
+    args = argparse.Namespace(brief=brief, max_tokens=8, timeout=0, force_lambda=False)
+    t0 = time.monotonic()
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc0 = lane.cmd_ask(args)
+    wall0 = time.monotonic() - t0
+    os.unlink(brief)
+    ok0 = rc0 == 2 and wall0 <= 4
+    print(json.dumps({"case": "timeout 0", "rc": rc0, "wall_s": round(wall0, 1),
+                      "result": "PASS" if ok0 else "FAIL"}))
+    return 0 if ok0 else 1
 
 
 if __name__ == "__main__":
