@@ -22,6 +22,9 @@
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
+# guard_tree.sh probes `--help` to decide whether to run a self-test. Answer it before any work:
+# a probe that fell through to the body ran this whole guard a second time, serially (#4046).
+case "${1:-}" in -h|--help) printf 'usage: bash scripts/check_crux_ollama_in_lock.sh (no arguments: runs its rows)\n'; exit 0 ;; esac
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
 PROG=check_crux_ollama_in_lock
