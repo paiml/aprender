@@ -22,9 +22,9 @@
 #          contradiction; verdict == construction, and every adversarial core
 #          or model is refused); `kani_ont_9_1_twin` (2048 samples of the
 #          harness body).
-#   * L3 — DECLARED, NOT EXECUTED. KANI-ONT-9-1 is a real #[kani::proof] in
-#          witness.rs. `cargo kani` has not been run on it (the host that
-#          wrote it is not cleared for Kani), so l3_kani_proved is 0 and
+#   * L3 — DECLARED, NO VERDICT. KANI-ONT-9-1 is a real #[kani::proof] in
+#          witness.rs. `cargo kani` ran 2026-09-24 and was cut off at 2400 s
+#          in CBMC symex (BTreeSet<String>), no verdict, so l3_kani_proved is 0 and
 #          proof.status is `declared`. The bound is 3 ids and cores of at most
 #          3 steps; nothing is claimed for 4 ids.
 #   * L4 — not declared. There is no Lean theorem.

@@ -1,6 +1,6 @@
 ---
 status: partial
-partial_reason: "L3 is DECLARED, NOT EXECUTED: KANI-ONT-9-1 (witness.rs, #[kani::proof] kani_ont_9_1) has never been run by `cargo kani` — the authoring host is not cleared for Kani. Everything else ONT-9 owes (contract, L2 tests, probe, mutations) is done and green. Flip to complete, and proof.status to proved with l3_kani_proved 1, only in the commit that records a passing `cargo kani --harness kani_ont_9_1` run."
+partial_reason: "L3 is DECLARED, NO VERDICT: KANI-ONT-9-1 (witness.rs, #[kani::proof] kani_ont_9_1) was run by `cargo kani` on 2026-09-24 and was cut off at the 2400 s cap in CBMC symex (BTreeSet<String> unwinding), with no VERIFICATION line. See the Kani section. Everything else ONT-9 owes (contract, L2 tests, probe, mutations) is done and green. Flip to complete, and proof.status to proved with l3_kani_proved 1, only in the commit that records a passing `cargo kani --harness kani_ont_9_1` run."
 ticket: PMAT-4078
 row: ONT-9
 issue: 4078
@@ -50,11 +50,17 @@ model: "claude-opus-5-5 (1M context), direct"
 | M7 | a falsifier names a ghost fn | `every_falsifier_names_a_test_function_that_exists` |
 | M8 | introduce a cycle in the corpus (ont-consistency-v1 supersedes ont-self-v1) | `a_cycle_in_the_corpus_turns_the_relations_gate_red` |
 
-## Kani (L3) — pending
-Not run (`cargo kani` is not cleared on this host). What was checked instead: the harness body, with the
-`#[kani::…]` attributes stripped and `kani::any`/`assume` stubbed, was compiled and executed as a unit test against
-the real `witness_small`/`check` (a scratch append, reverted), so the harness type-checks against the code it names.
-The L2 twin runs the identical body on 2048 samples every `cargo test`.
+## Kani (L3) — RUN, NO VERDICT (cut off)
+Run measured 2026-09-24 under the cop ruling (flock + nice -n19 + ionice -c3, target on /mnt/nvme-raid0):
+`timeout 2400 cargo kani -p aprender-contracts --lib --harness kani_ont_9_1` (Kani 0.67.0), started 19:40:14Z.
+The build finished in 21.66s and `Checking harness ontology::witness::kani_proofs::kani_ont_9_1...` started, then the
+2400 s cap killed it at about 20:20Z, still in CBMC symbolic execution. No `VERIFICATION:` line was printed, so there
+was neither SUCCESSFUL nor FAILED; this is **not** evidence either way. By the time it was killed the log held ~5000
+`Unwinding loop` lines, nearly all in `alloc::collections::btree` over `String` keys and `memcmp`: the harness reaches the checker
+through `SmallGraph::clause_set` → `BTreeSet<String>`, and CBMC unrolls the B-tree code for every symbolic clause
+combination. The bound was not widened, because 3 ids does not finish in 40 minutes.
+The earlier checks still stand: the harness body was stubbed and executed against the real `check` (scratch,
+reverted), and the L2 twin runs it on 2048 samples every `cargo test`.
 
 ## Checks
 `cargo fmt --all -- --check` · `cargo clippy -p aprender-contracts -p aprender-contracts-cli --all-targets -D warnings` ·
@@ -64,8 +70,8 @@ The L2 twin runs the identical body on 2048 samples every `cargo test`.
 `cargo deny check advisories` · `make contracts`.
 
 ## Residuals (named, not hidden)
-1. **L3 not executed** — see frontmatter. Until the run, proof.status stays `declared`; the CLI test enforces the pair.
-2. **The Kani bound is 3 ids** (cores ≤ 3 steps, complete at that bound); nothing is claimed for 4+. `ont_planted`
+1. **L3 has no verdict**: the run was cut off at 40 min in symex. The fix is a harness path that does not symex `BTreeSet<String>` (e.g. an index-backed clause set that `check` also accepts); that belongs to the #4078 keep-open. Until the run, proof.status stays `declared`; the CLI test enforces the pair.
+2. **The Kani bound is 3 ids** (cores ≤ 3 steps, complete at that bound) and was not widened, because 3 does not finish in 40 min; nothing is claimed for 4+. `ont_planted`
    (2–8 ids) is L2 evidence beyond it, not proof.
 3. **Spec-level common mode** (stated by the spec itself): checker, oracle and generators share the §3.5 Horn reading of
    the relations; a mistake in that reading is invisible to every rung.
