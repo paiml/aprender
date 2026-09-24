@@ -1655,6 +1655,10 @@ jobs:
             || echo "::warning::target-dir register failed; the release step still runs"
           printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
           printf 'cargo home: %s (registry/ .package-cache .package-cache-mutate travel together)\n' "$GUARD_CARGO_HOME"
+      - name: "PLANT #4102 — a deliberately FAILING job, to prove the always() release (REVERT ME)"
+        run: |
+          echo "planted failure: guard-cargo must still release and delete its run target"
+          exit 1
       # Poka-yoke: a beat that no workflow executes reads as enforcement, is
       # counted as enforcement, and proves nothing. The Pillar-4 marquee decode
       # beat sat in ZERO workflows while being quoted as an enforced win (#2319).
