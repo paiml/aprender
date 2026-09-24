@@ -246,11 +246,6 @@ fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Generate a response, update history, and print (fallback mode).
-#[cfg(not(feature = "inference"))]
-fn generate_and_print_fallback(_session: &mut ChatSession, _input: &str, _config: &ChatConfig) {
-    unreachable!("ChatSession::new always returns Err without inference feature")
-}
 
 enum CommandResult {
     Continue,
