@@ -21497,3 +21497,20 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4250
+  github_issue: 4250
+  item_type: task
+  title: '0.69.4 G0: serve-level test fails unless apr serve prefills Qwen3.5 batched (#4250)'
+  status: planned
+  priority: medium
+  assigned_to: aprender-ac
+  created: 2026-09-24T10:04:37Z
+  updated: 2026-09-24T10:04:37Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
