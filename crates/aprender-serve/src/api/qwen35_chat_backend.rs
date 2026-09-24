@@ -179,6 +179,7 @@ async fn try_qwen35_backend(
 /// The prompt token ids for the request: the MODEL's own chat template (#3723: in
 /// the request's thinking mode), encoded with the GGUF's tokenizer. An empty or
 /// unrenderable prompt is the client's error (400).
+#[allow(clippy::result_large_err)]
 fn qwen35_prompt_ids(
     state: &AppState,
     request: &ChatCompletionRequest,
@@ -205,6 +206,7 @@ fn qwen35_prompt_ids(
 
 /// What the context leaves for the reply — the budget the session will actually
 /// decode. A prompt the declared context cannot hold is refused whole (400).
+#[allow(clippy::result_large_err)]
 fn context_budget(
     state: &AppState,
     request: &ChatCompletionRequest,
@@ -227,6 +229,7 @@ fn context_budget(
 
 /// One non-streaming turn on the resident session, off the async runtime. A
 /// failed generate or a failed task is a 500, and counted as a failure.
+#[allow(clippy::result_large_err)]
 async fn blocking_turn(
     state: &AppState,
     session: Arc<crate::api::Qwen35Served>,

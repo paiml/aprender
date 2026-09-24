@@ -555,9 +555,9 @@ fn prepare_code_manifest(
 /// declared > project-default), matching the settings-ladder semantics.
 /// Missing .mcp.json is a non-error; malformed JSON is a hard error.
 #[cfg(feature = "agents-mcp")]
-fn merge_project_mcp_json(manifest: &mut AgentManifest) -> anyhow::Result<()> {
+fn merge_project_mcp_json(mut manifest: AgentManifest) -> anyhow::Result<AgentManifest> {
     let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    match crate::agent::mcp_json::load_and_merge(manifest, &project_root) {
+    match crate::agent::mcp_json::load_and_merge(&mut manifest, &project_root) {
         Ok(0) => {}
         Ok(n) => {
             eprintln!("✓ Loaded {n} MCP server(s) from .mcp.json");
@@ -566,7 +566,7 @@ fn merge_project_mcp_json(manifest: &mut AgentManifest) -> anyhow::Result<()> {
             anyhow::bail!("invalid .mcp.json: {e}");
         }
     }
-    Ok(())
+    Ok(manifest)
 }
 
 /// The session the REPL continues.
@@ -627,7 +627,7 @@ pub fn cmd_code_with(
 
     let resumed_store = resolve_resumed_store(resume.as_ref())?;
 
-    let mut manifest = prepare_code_manifest(manifest_path.as_ref(), model)?;
+    let manifest = prepare_code_manifest(manifest_path.as_ref(), model)?;
 
     // Contract: no_model_error — never silently use MockDriver
     if manifest.model.resolve_model_path().is_none() && manifest_path.is_none() {
@@ -642,7 +642,7 @@ pub fn cmd_code_with(
 
     // PMAT-CODE-MCP-JSON-LOADER-001: `.mcp.json` servers join BEFORE tool registration.
     #[cfg(feature = "agents-mcp")]
-    merge_project_mcp_json(&mut manifest)?;
+    let manifest = merge_project_mcp_json(manifest)?;
 
     // Build tool registry with coding tools
     let mut tools = build_code_tools(&manifest);
