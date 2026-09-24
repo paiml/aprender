@@ -54,6 +54,22 @@ ID_NAME = re.compile(r"(sha|hash|digest|revision)[a-z0-9_]*$|_id$", re.I)
 ANY_SLICE = re.compile(r"\[\s*-?[A-Za-z0-9_.]*\s*:\s*-?[A-Za-z0-9_.]*\s*\]")
 
 
+# THE COMPUTED-LOUD CLASS (#4046). The guard's own remedy is "say how much was dropped
+# (`... and N more chars`)". A line that does exactly that, with N COMPUTED on the same line
+# (`len(...)`), is not a silent truncation, and until now only a baseline row could say so.
+# The ratchet refuses new rows, so the class lives here too. Exempt ONLY when the drop marker
+# and a computed count sit on the SAME line as the slice:
+#   - a literal count ("... and 80 more chars") is still a finding (it can lie);
+#   - a marker on a different line is still a finding (the scan is per line on purpose).
+DROP_MARKER = re.compile(r"(more chars|earlier chars dropped|more error\(s\)|earlier lines dropped|more lines)")
+COMPUTED = re.compile(r"\blen\(")
+
+
+def loud_on_line(line):
+    """True iff the line's truncation announces a COMPUTED count of what it dropped."""
+    return bool(DROP_MARKER.search(line) and COMPUTED.search(line))
+
+
 def id_prefix_only(line):
     """True iff every slice on the line is an identifier prefix of literal width 1-16."""
     slices = list(ANY_SLICE.finditer(line))
@@ -96,7 +112,7 @@ def scan(root):
                 for n, line in enumerate(lines, 1):
                     if not SLICE.search(line) or not STRINGY.search(line):
                         continue
-                    if id_prefix_only(line):
+                    if id_prefix_only(line) or loud_on_line(line):
                         continue
                     text = normalize(line)
                     h = hashlib.sha1(text.encode()).hexdigest()[:8]

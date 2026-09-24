@@ -246,6 +246,13 @@ plant "$(printf 'print(f"model {model_sha%s40]}")' '[:')"
 row 1 "an id slice WIDER than 16 is prose, not a prefix: still a truncation" "$TD" "$TD/plain.txt"
 plant "$(printf 'print(f"{model_sha%s12]} {reason%s80]}")' '[:' '[:')"
 row 1 "an id prefix BESIDE a display slice: the display slice still counts" "$TD" "$TD/plain.txt"
+# THE COMPUTED-LOUD CLASS (#4046; truncation_scan.loud_on_line). Rows 14-16.
+plant "$(printf 'print(s if len(s) <= n else f"{s%sn]} … and {len(s) - n} more chars")' '[:')"
+row 0 "a slice beside a COMPUTED drop count on the same line is loud, not silent" "$TD" "$TD/plain.txt"
+plant "$(printf 'print(f"{why_text%s80]} … and 80 more chars")' '[:')"
+row 1 "a LITERAL drop count can lie: still a truncation" "$TD" "$TD/plain.txt"
+plant "$(printf 'n_more = len(s) - 80  # … and n more chars\nprint(f"{why_text%s80]}")' '[:')"
+row 1 "the marker on a DIFFERENT line does not make the slice loud" "$TD" "$TD/plain.txt"
 rm -f "$TD/scripts/planted_id.py"
 
 printf '%s/%s rows\n' "$((n - bad))" "$n"
