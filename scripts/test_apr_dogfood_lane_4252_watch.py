@@ -129,6 +129,33 @@ def main():
         row("killpg on a vanished pid -> no crash", True, "ProcessLookupError absorbed")
     except ProcessLookupError as e:
         row("killpg on a vanished pid -> no crash", False, repr(e))
+    # pid_alive turns False while the task is still EXITING (cmdline empties before it is
+    # a zombie). Seen live: row "yielded server reaped" read state=R under load. Made
+    # deterministic here: a child that takes 0.5 s to exit after SIGTERM, and a pid_alive
+    # that says "dead" right after the kill. A lone WNOHANG sweep finds nothing and the
+    # child becomes a zombie; stop_server must wait for it.
+    slow = subprocess.Popen([sys.executable, "-c",
+                             "import signal,sys,time\n"
+                             "signal.signal(signal.SIGTERM, lambda *a: (time.sleep(0.5), sys.exit(0)))\n"
+                             "time.sleep(60)"], start_new_session=True)
+    time.sleep(0.3)                      # let it install the handler
+    calls = {"n": 0}
+
+    def alive_once(pid):
+        calls["n"] += 1
+        return calls["n"] == 1
+    lane.pid_alive = alive_once
+    lane.stop_server({"pid": slow.pid}, ["exiting race"])
+    time.sleep(1.0)                      # past the child's exit
+    try:
+        state = open(f"/proc/{slow.pid}/stat").read().split(")")[-1].split()[0]
+    except OSError:
+        state = "gone"
+    row("server still exiting when pid_alive says dead -> reaped", state == "gone",
+        f"/proc/{slow.pid} state={state}")
+    if state != "gone":
+        slow.kill()
+        slow.wait()
     lane.pid_alive = real_alive
     bad = [n for n, ok in rows if not ok]
     print("RESULT", "PASS" if not bad else f"FAIL {bad}")

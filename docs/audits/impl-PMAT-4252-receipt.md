@@ -93,3 +93,13 @@ Real code: 3/3 rows PASS (budget 6 → 5.0 s; timeout 0 → 1.0 s; gx10-leg alar
 | (sonnet-A, non-blocking) under `--force-lambda`, the <1 s skip was mislabelled "spent on gx10" | message is now "< 1 s of the Ns lane budget left" | — |
 
 Real code: ask 5/5 PASS, watch 9/9 PASS.
+
+## Round-6 pre-fix (takeover by the dogfood worker, 2026-09-24): a flaky zombie row
+
+On f5c28b106 the watch test went RED once: `yielded server reaped, not a zombie: /proc/<pid> state=R`. The cause is that `pid_alive` returns False as soon as the exiting task's `/proc/<pid>/cmdline` empties, which happens BEFORE the task becomes a zombie. `reap_children()` (a single WNOHANG sweep) then ran inside that window, found nothing, and the zombie stayed behind. The race only shows under load: the mutant that deletes the fix stayed GREEN 0/8 under the old row, so that row could not protect the fix.
+
+| Fix | Mutant → row |
+|---|---|
+| `reap_pid(pid)`: a bounded (5 s) `waitpid(pid, WNOHANG)` loop on OUR killed server in `stop_server`. It returns at once on ChildProcessError (not our child, e.g. a restarted watcher) | `reap_pid(pid)` → `pass`: the new deterministic row "server still exiting when pid_alive says dead -> reaped" (a child that takes 0.5 s to exit after SIGTERM, with pid_alive answering "dead" right after the kill) went RED 4/4 (`state=Z`) |
+
+Real code: watch 10/10 PASS in 3 of 3 runs, plus 6 runs of the earlier 9 rows. ask 5/5 PASS.

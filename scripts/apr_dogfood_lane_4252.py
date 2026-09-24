@@ -145,6 +145,21 @@ def reap_children():
             return
 
 
+def reap_pid(pid, timeout=5.0):
+    """Wait (bounded) for OUR killed server to be reaped. pid_alive turns False as soon as
+    the exiting task's cmdline empties, which is BEFORE it becomes a zombie, so a single
+    WNOHANG sweep right after it can find nothing and leave the zombie behind."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            done, _ = os.waitpid(pid, os.WNOHANG)
+        except ChildProcessError:
+            return                       # not our child (a restarted watcher), or reaped
+        if done or time.monotonic() >= deadline:
+            return
+        time.sleep(0.05)
+
+
 def stop_server(st, reason):
     pid = st.get("pid")
     # the server may exit between pid_alive and the kill; that is "already gone", never a
@@ -160,6 +175,8 @@ def stop_server(st, reason):
                 os.killpg(pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
+    if pid:
+        reap_pid(pid)
     reap_children()
     st.update({"serving": False, "pid": None, "stopped_at": time.time(),
                "stop_reason": reason})
