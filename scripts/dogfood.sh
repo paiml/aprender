@@ -1194,7 +1194,7 @@ if [ "$DOGFOOD_PHASE" = post-publish ]; then
     RA_RC=$RUN_RC
     RA_MISS=$(grep -c '^MISSING ' "$WORKLOG/release-assets.log" 2>/dev/null || true)
     if [ "$RA_RC" -eq 0 ]; then
-      mark release-assets PASS "v$VERSION carries all 18 assets (4 apr {cuda,cpu}x{x86_64,aarch64} + darwin cpu, each + sha256, + 8 pv)"
+      mark release-assets PASS "v$VERSION carries all 16 assets (4 apr {cuda,cpu}x{x86_64,aarch64} + 4 sha256 + 8 pv)"
     elif [ "$RA_RC" -eq 2 ]; then
       # ENV is a FAIL here on purpose: "the release could not be read" is not
       # evidence that the release is complete.

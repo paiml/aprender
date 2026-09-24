@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check_release_assets.sh — a tagged release carries the EIGHTEEN assets it owes (#4292 added darwin),
+# check_release_assets.sh — a tagged release carries the SIXTEEN assets it owes,
 # or this exits non-zero (row 67-A1, PMAT-1098, issue #3082).
 #
 # WHY THIS EXISTS
@@ -46,7 +46,7 @@ usage: check_release_assets.sh <tag> [--assets-from FILE]
 USAGE
 }
 
-# expected_assets TAG — the eighteen names, derived from the two matrices, printed
+# expected_assets TAG — the sixteen names, derived from the two matrices, printed
 # one per line. The apr set is the operator's hard requirement; the pv set is what
 # the `build` lane of binary-release.yml has always produced.
 expected_assets() {
@@ -57,10 +57,6 @@ expected_assets() {
             printf 'apr-%s-%s-unknown-linux-gnu-%s.tar.gz.sha256\n' "$tag" "$arch" "$flavour"
         done
     done
-    # #4292: the Apple-silicon CPU asset (build-apr-darwin), so a mac installs
-    # from the release instead of building the tag from source.
-    printf 'apr-%s-aarch64-apple-darwin-cpu.tar.gz\n' "$tag"
-    printf 'apr-%s-aarch64-apple-darwin-cpu.tar.gz.sha256\n' "$tag"
     for arch in x86_64 aarch64; do
         for libc in musl gnu; do
             printf 'pv-%s-%s-unknown-linux-%s.tar.gz\n' "$tag" "$arch" "$libc"
@@ -123,7 +119,7 @@ check_tag() { # check_tag TAG -> 0 complete · 1 missing · 2 ENV
         fi
     done <<< "$(expected_assets "$tag")"
     if [ "$rc" -eq 0 ]; then
-        printf '%s: %s carries all 18 expected assets (5 apr + 5 sha256 + 8 pv)\n' "$PROG" "$tag"
+        printf '%s: %s carries all 16 expected assets (4 apr + 4 sha256 + 8 pv)\n' "$PROG" "$tag"
     else
         printf '%s: %s is MISSING %s expected asset(s) — a release without its four apr binaries is not done (operator rule 2026-09-10)\n' "$PROG" "$tag" "$miss" >&2
     fi
@@ -169,9 +165,9 @@ selftest() {
     out=$(bash "$0" "$tag" --assets-from "$work/mutant.txt" 2>&1)
     row 0 "the missing asset is named in the output" \
         grep -q "MISSING apr-$tag-aarch64-unknown-linux-gnu-cpu.tar.gz" <<< "$out"
-    # Eighteen, not "some": a table that expected four would pass the rows above.
-    row 0 "eighteen assets are expected, and five of them are apr tarballs (one darwin)" \
-        bash -c "[ \$(bash '$0' --list '$tag' | grep -c .) -eq 18 ] && [ \$(bash '$0' --list '$tag' | grep -c '^apr-.*tar.gz\$') -eq 5 ] && bash '$0' --list '$tag' | grep -qx 'apr-$tag-aarch64-apple-darwin-cpu.tar.gz'"
+    # Sixteen, not "some": a table that expected four would pass the rows above.
+    row 0 "sixteen assets are expected, and four of them are apr tarballs" \
+        bash -c "[ \$(bash '$0' --list '$tag' | grep -c .) -eq 16 ] && [ \$(bash '$0' --list '$tag' | grep -c '^apr-.*tar.gz\$') -eq 4 ]"
 
     printf '%s/%s rows\n' "$((n - red))" "$n"
     [ "$red" = 0 ] || return 1
