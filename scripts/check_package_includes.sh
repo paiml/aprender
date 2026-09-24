@@ -299,6 +299,44 @@ if [ "${1:-}" = "--self-test" ]; then
   else
     printf 'FAIL  row 13 cfg(all/any(test)) handling, got: %s\n' "$got"; fails=1
   fi
+  # Rows 14-16 (#4114): the SOURCE reader above cannot be the verdict. scripts/package_tarball_build.sh
+  # packages the crate, unpacks the .crate outside the tree and compiles its tests there. One-crate
+  # fixture, no dependencies, so this stays cheap enough for the PR path.
+  tb_fixture() { # dir, lib.rs body
+    mkdir -p "$1/src" "$1/tests/fixtures"
+    printf '[package]\nname = "pti-fixture"\nversion = "0.1.0"\nedition = "2021"\nlicense = "MIT"\ndescription = "x"\nexclude = ["/tests/"]\n' > "$1/Cargo.toml"
+    printf 'fixture bytes\n' > "$1/tests/fixtures/header.bin"
+    printf 'fixture bytes\n' > "$1/src/in_src.bin"
+    printf '%b' "$2" > "$1/src/lib.rs"
+  }
+  tb_run() { # root -> output; rc in tb_rc
+    tb_out="$(TARBALL_BUILD_TARGET_DIR="$TD/tb-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$1" 2>&1)"; tb_rc=$?
+  }
+  tb_fixture "$TD/tb-clean" 'pub fn f() {}\n#[cfg(test)]\nmod t { const B: &[u8] = include_bytes!("in_src.bin"); #[test] fn b() { assert!(!B.is_empty()); } }\n'
+  tb_run "$TD/tb-clean"
+  if [ "$tb_rc" = 0 ] && grep -q '^PASS  all 1 published tarball' <<< "$tb_out"; then
+    printf 'ok    row 14 a tarball whose test include ships compiles: PASS\n'
+  else
+    printf 'FAIL  row 14 clean tarball: rc=%s\n%s\n' "$tb_rc" "$tb_out"; fails=1
+  fi
+  # the #4048 shape: a #[cfg(test)] include of a file the package EXCLUDES
+  tb_fixture "$TD/tb-planted" 'pub fn f() {}\n#[cfg(test)]\nmod t { const B: &[u8] = include_bytes!("../tests/fixtures/header.bin"); #[test] fn b() { assert!(!B.is_empty()); } }\n'
+  # the source reader's blind spot, asserted rather than claimed: it does not list this include at all
+  reader_sees="$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/tb-planted" 2>/dev/null | grep -c 'header.bin' || true)"
+  tb_run "$TD/tb-planted"
+  if [ "$tb_rc" = 1 ] && grep -q 'RED   pti-fixture-0.1.0' <<< "$tb_out" \
+     && grep -q 'src/lib.rs:3:.*header.bin' <<< "$tb_out" && [ "$reader_sees" = 0 ]; then
+    printf 'ok    row 15 a #[cfg(test)] include of an excluded file: the source reader lists it 0 times, the tarball build is RED naming it\n'
+  else
+    printf 'FAIL  row 15 planted cfg(test) include: tarball rc=%s (want 1)\n%s\n' "$tb_rc" "$tb_out"; fails=1
+  fi
+  mkdir -p "$TD/tb-none"; printf '[workspace]\nmembers = []\n' > "$TD/tb-none/Cargo.toml"
+  tb_run "$TD/tb-none"
+  if [ "$tb_rc" = 2 ]; then
+    printf 'ok    row 16 no publishable crate is "could not check" (2), never a pass\n'
+  else
+    printf 'FAIL  row 16 an empty workspace returned rc=%s\n%s\n' "$tb_rc" "$tb_out"; fails=1
+  fi
   [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
   printf '\nSELF-TEST PASSED\n'
   exit 0
