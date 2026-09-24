@@ -1,12 +1,12 @@
-# measured 2026-09-24T23:31:17Z
+# measured 2026-09-24T23:46:19Z
 lambda-labs	apr	RED	no-sha (installed v0.69.3@ad5d07a, target v0.69.3@ad5d07a)
 lambda-labs	pv	RED	no-sha (installed v0.69.3@ad5d07a, target v0.69.3@ad5d07a)
 lambda-labs	forjar	RED	no-sha (installed v1.32.0@b12a839, target v1.32.0@b12a839)
-lambda-labs	bashrs	RED	version (installed nightly@ec19571, target nightly@ec19571)
+lambda-labs	bashrs	RED	no-sha (installed nightly@ec19571, target nightly@ec19571)
 lambda-labs	pmat	RED	behind (installed v3.41.1@516305e, target nightly@edc845e)
-lambda-labs	pzsh	RED	version (installed nightly@b42cbbc, target nightly@b42cbbc)
+lambda-labs	pzsh	RED	no-sha (installed nightly@b42cbbc, target nightly@b42cbbc)
 lambda-labs	copia	RED	no-sha (installed v0.3.0@b3a8dc0, target v0.3.0@b3a8dc0)
-lambda-labs	rmedia	RED	version (installed nightly@eafa272, target nightly@eafa272)
+lambda-labs	rmedia	RED	no-sha (installed nightly@eafa272, target nightly@eafa272)
 lambda-labs	ollama	RED	no-crux-drift-rc=2 (installed -, target -)
 lambda-labs	llama.cpp	RED	no-crux-drift-rc=2 (installed -, target -)
 gx10	apr	RED	no-sha (installed v0.69.3@ad5d07a, target v0.69.3@ad5d07a)
