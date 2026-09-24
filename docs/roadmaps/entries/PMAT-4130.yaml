@@ -1,0 +1,20 @@
+- id: PMAT-4130
+  github_issue: 4130
+  item_type: bug
+  title: 'Published tarballs of aprender-core, aprender-orchestrate, aprender-cbtop, aprender-test-showcase ship integration tests whose path-only dev-dependencies cargo package strips'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-dd
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/package_tarball_build.sh (#4114) no longer reports aprender-core, aprender-orchestrate, aprender-cbtop or aprender-test-showcase RED'
+  - 'no sibling dev-dependency is re-versioned (PMAT-955 / preflight R6)'
+  - 'what a tarball drops is printed and counted, never a silent shrink: excluded targets in the gate NOT SHIPPED list, lib-test reads via the agreed *_or_skip run-time pattern (SKIP by name out of tree, PANIC in tree)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
