@@ -168,6 +168,16 @@ fn tokens(n: usize, vocab: usize, seed: u32) -> Vec<u32> {
         .collect()
 }
 
+/// The f16 tensor-core projection GEMM (#4260): f16 weights and activations, f32
+/// accumulation. Every projection's inputs are rounded to f16, and the recurrence
+/// carries that rounding forward, so the budget is the flash path's order, NOT the
+/// f32 path's; the argmax must still be identical.
+const F16_GEMM_BUDGET: Budget = Budget {
+    cosine: 0.9999,
+    logits: 2e-2,
+    state: 5e-2,
+};
+
 fn batched_equals_per_token(model_path: &str, n: usize, attention: super::PrefillAttention) {
     batched_equals_per_token_rows(model_path, n, attention, None);
 }
@@ -178,10 +188,27 @@ fn batched_equals_per_token_rows(
     attention: super::PrefillAttention,
     chunk_rows: Option<usize>,
 ) {
+    batched_equals_per_token_with(
+        model_path,
+        n,
+        attention,
+        chunk_rows,
+        super::PrefillGemm::F32,
+    );
+}
+
+fn batched_equals_per_token_with(
+    model_path: &str,
+    n: usize,
+    attention: super::PrefillAttention,
+    chunk_rows: Option<usize>,
+    gemm: super::PrefillGemm,
+) {
     super::ATTENTION_OVERRIDE.with(|c| c.set(Some(attention)));
-    let b = match attention {
-        super::PrefillAttention::CublasF32 => F32_BUDGET,
-        super::PrefillAttention::FlashF16In => FLASH_BUDGET,
+    let b = match (gemm, attention) {
+        (super::PrefillGemm::F16TensorCore, _) => F16_GEMM_BUDGET,
+        (_, super::PrefillAttention::CublasF32) => F32_BUDGET,
+        (_, super::PrefillAttention::FlashF16In) => FLASH_BUDGET,
     };
     if !std::path::Path::new(model_path).exists() {
         eprintln!("SKIP: {model_path} is absent");
@@ -199,6 +226,8 @@ fn batched_equals_per_token_rows(
     // The path under test is the path that runs — never the default by accident.
     gpu.set_prefill_attention(attention);
     assert_eq!(gpu.prefill_attention_mode(), attention);
+    gpu.set_prefill_gemm(gemm);
+    assert_eq!(gpu.prefill_gemm_mode(), gemm);
     let vocab = base.config.vocab_size;
     let prompt = tokens(n, vocab, 0x3596_0100 ^ n as u32);
 
@@ -217,8 +246,9 @@ fn batched_equals_per_token_rows(
     let passes = super::attention_rows_for(gpu.dims, n, gpu.prefill_rows);
     let got = gpu.prefill(&prompt, &mut batched, 0).expect("prefill");
     let what = format!(
-        "{model_path} n={n} (chunk rows {rows}, attention {}, rows/pass {passes})",
-        attention.as_str()
+        "{model_path} n={n} (chunk rows {rows}, attention {}, gemm {}, rows/pass {passes})",
+        attention.as_str(),
+        gemm.as_str()
     );
     assert_logits_agree(&got, &want, &format!("{what} last logits"), b);
     assert_states_agree(&mut gpu, &batched, &per_token, &what, b);
@@ -397,5 +427,53 @@ fn qwen35_prefill_attention_prefers_f32_then_flash_and_the_environment_pins_one(
             want,
             "{forced:?}, flash supported {flash}"
         );
+    }
+}
+
+/// #4260: the f16 tensor-core projection leg lands where the per-token path does — the
+/// same argmax, and every state within [`F16_GEMM_BUDGET`] — at 64 positions and
+/// across a chunk boundary.
+#[test]
+#[serial_test::serial]
+fn qwen35_f16_gemm_prefill_equals_per_token_at_64_positions_0_8b() {
+    batched_equals_per_token_with(
+        MODEL_0_8B,
+        64,
+        super::PrefillAttention::CublasF32,
+        None,
+        super::PrefillGemm::F16TensorCore,
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn qwen35_f16_gemm_prefill_equals_per_token_across_a_chunk_boundary_0_8b() {
+    batched_equals_per_token_with(
+        MODEL_0_8B,
+        600,
+        super::PrefillAttention::CublasF32,
+        None,
+        super::PrefillGemm::F16TensorCore,
+    );
+}
+
+/// #4260: `APR_QWEN35_PREFILL_GEMM` opts in to f16 and nothing else does. Pure.
+#[test]
+fn qwen35_prefill_gemm_is_f32_unless_the_environment_says_f16() {
+    use super::{
+        gemm_choice,
+        PrefillGemm::{F16TensorCore, F32},
+    };
+    let rows = [
+        (None, F32),
+        (Some("f32"), F32),
+        (Some("f16"), F16TensorCore),
+        // An unrecognised value is printed and read as the default, never as f16.
+        (Some("F16"), F32),
+        (Some("fp16"), F32),
+        (Some(""), F32),
+    ];
+    for (forced, want) in rows {
+        assert_eq!(gemm_choice(forced), want, "{forced:?}");
     }
 }

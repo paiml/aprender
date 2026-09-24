@@ -158,6 +158,9 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         validate_device_ptr(x_ptr, "qwen35_project_rows x")?;
         validate_device_ptr(y_ptr, "qwen35_project_rows y")?;
+        if self.qwen35_prefill_gemm_f16 {
+            return self.qwen35_project_rows_f16(qtype, w_ptr, x_ptr, y_ptr, rows, n, k, ldc);
+        }
         let w_f32 = self.qwen35_dequant_f32(qtype, w_ptr, n, k)?;
         self.ensure_cublas()?;
         let handle = self.cublas_handle.as_ref().expect("cublas initialized");
@@ -172,6 +175,87 @@ impl CudaExecutor {
             w_f32,
             k as i32,
             x_ptr,
+            k as i32,
+            0.0,
+            y_ptr,
+            ldc as i32,
+        )
+    }
+
+    /// Run the Qwen3.5 prefill projections as f16-input tensor-core GEMMs (`true`) or
+    /// as f32 SGEMMs (`false`, the default) (#4260).
+    pub(crate) fn set_qwen35_prefill_gemm_f16(&mut self, on: bool) {
+        self.qwen35_prefill_gemm_f16 = on;
+    }
+
+    /// Whether [`Self::qwen35_project_rows`] runs its f16 tensor-core leg.
+    #[must_use]
+    pub(crate) fn qwen35_prefill_gemm_f16(&self) -> bool {
+        self.qwen35_prefill_gemm_f16
+    }
+
+    /// The f16 leg of [`Self::qwen35_project_rows`] (#4260): the weight is dequantized
+    /// to f32 and cast to f16, the activations are cast to f16, and `cublasGemmEx`
+    /// multiplies them on the tensor cores with f32 accumulation into the f32 `Y`.
+    ///
+    /// It runs on the executor's `cublas_f16_handle`, NOT the shared handle: that one is
+    /// `CUBLAS_PEDANTIC_MATH`, which disables every tensor-core path, so an f16 GemmEx
+    /// there would run the same SIMT pipes as the SGEMM it replaces.
+    #[allow(clippy::too_many_arguments)]
+    fn qwen35_project_rows_f16(
+        &mut self,
+        qtype: WeightQuantType,
+        w_ptr: u64,
+        x_ptr: u64,
+        y_ptr: u64,
+        rows: u32,
+        n: u32,
+        k: u32,
+        ldc: u32,
+    ) -> Result<(), GpuError> {
+        let w_f32 = self.qwen35_dequant_f32(qtype, w_ptr, n, k)?;
+        let w_elems = n as usize * k as usize;
+        if self
+            .fp16_dequant_temp
+            .as_ref()
+            .is_none_or(|b| b.len() < w_elems)
+        {
+            self.fp16_dequant_temp = Some(GpuBuffer::<u16>::new(&self.context, w_elems)?);
+        }
+        let w_f16 = self
+            .fp16_dequant_temp
+            .as_ref()
+            .expect("f16 weight temp allocated")
+            .as_ptr();
+        self.convert_f32_to_f16(w_f32, w_f16, n * k)?;
+        let x_elems = rows as usize * k as usize;
+        self.ensure_fp16_activation_scratch(x_elems)?;
+        let x_f16 = self
+            .fp16_activation_scratch
+            .as_ref()
+            .expect("f16 activation scratch allocated")
+            .as_ptr();
+        self.convert_f32_to_f16(x_ptr, x_f16, rows * k)?;
+        if self.cublas_f16_handle.is_none() {
+            let handle = trueno_gpu::driver::CublasHandle::new_with_tensor_cores(&self.context)?;
+            handle.set_stream(&self.stream)?;
+            self.cublas_f16_handle = Some(handle);
+        }
+        let handle = self
+            .cublas_f16_handle
+            .as_ref()
+            .expect("f16 cublas initialized");
+        // Same column-major view as the f32 leg.
+        handle.gemm_f16_to_f32(
+            trueno_gpu::driver::GemmOp::Trans,
+            trueno_gpu::driver::GemmOp::NoTrans,
+            n as i32,
+            rows as i32,
+            k as i32,
+            1.0,
+            w_f16,
+            k as i32,
+            x_f16,
             k as i32,
             0.0,
             y_ptr,

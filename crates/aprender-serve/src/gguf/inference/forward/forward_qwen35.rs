@@ -1684,11 +1684,12 @@ fn qwen35_gpu_decode(
     // without --verbose, or a per-token regression reads as a slow GPU.
     let attention = gpu.prefill_attention_mode();
     eprintln!(
-        "[qwen35] batched prefill: {} tokens in {prefill_ms:.0} ms ({:.0} tok/s, chunk {} rows, attention {})",
+        "[qwen35] batched prefill: {} tokens in {prefill_ms:.0} ms ({:.0} tok/s, chunk {} rows, attention {}, gemm {})",
         input_tokens.len(),
         input_tokens.len() as f64 * 1000.0 / prefill_ms.max(1e-9),
         gpu.prefill_chunk_rows(input_tokens.len()),
         attention.as_str(),
+        gpu.prefill_gemm_mode().as_str(),
     );
     let decode_start = std::time::Instant::now();
     let mut tokens = input_tokens.to_vec();

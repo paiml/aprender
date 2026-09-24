@@ -425,11 +425,12 @@ impl Qwen35Session {
         // The line `apr run` prints, plus the start position: a serve log must show
         // WHICH prefill it took, or a per-token regression reads as a slow GPU.
         eprintln!(
-            "[qwen35] batched prefill: {} tokens in {ms:.0} ms ({:.0} tok/s, chunk {} rows, attention {}, from position {pos0})",
+            "[qwen35] batched prefill: {} tokens in {ms:.0} ms ({:.0} tok/s, chunk {} rows, attention {}, gemm {}, from position {pos0})",
             new.len(),
             new.len() as f64 * 1000.0 / ms.max(1e-9),
             gpu.model.prefill_chunk_rows(end),
             gpu.model.prefill_attention_mode().as_str(),
+            gpu.model.prefill_gemm_mode().as_str(),
         );
         self.batched_prefills += 1;
         Ok(Some(logits))

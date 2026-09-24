@@ -197,6 +197,71 @@ pub(crate) fn default_prefill_attention(
         .unwrap_or(PrefillAttention::CublasF32)
 }
 
+/// How the batched prefill multiplies its projections (#4260).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrefillGemm {
+    /// Dequantize to f32, cuBLAS SGEMM on the `CUBLAS_PEDANTIC_MATH` handle: f32 in,
+    /// f32 out, no tensor cores. The default.
+    F32,
+    /// Dequantize to f32 and cast to f16, cast the activations to f16, `cublasGemmEx`
+    /// on a tensor-core handle with f32 accumulation and f32 output. Opt-in with
+    /// `APR_QWEN35_PREFILL_GEMM=f16` until it is measured token-identical: the hybrid
+    /// feeds these projections into a recurrence, which compounds input rounding.
+    F16TensorCore,
+}
+
+impl PrefillGemm {
+    /// How the choice reads in the stderr line.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::F32 => "f32 SGEMM",
+            Self::F16TensorCore => "f16 tensor-core GEMM (f32 accumulation)",
+        }
+    }
+}
+
+/// The environment variable that opts the projections into [`PrefillGemm::F16TensorCore`].
+pub const PREFILL_GEMM_ENV: &str = "APR_QWEN35_PREFILL_GEMM";
+
+/// The projection GEMM for a [`PREFILL_GEMM_ENV`] value: `f16` opts in, unset or `f32`
+/// is the default, and anything else is printed and read as the default — never
+/// silently as something else.
+#[must_use]
+pub fn gemm_choice(forced: Option<&str>) -> PrefillGemm {
+    match forced {
+        None | Some("f32") => PrefillGemm::F32,
+        Some("f16") => PrefillGemm::F16TensorCore,
+        Some(other) => {
+            eprintln!(
+                "warning: {PREFILL_GEMM_ENV}={other:?} is not one of \"f32\" / \"f16\"; using f32"
+            );
+            PrefillGemm::F32
+        },
+    }
+}
+
+/// [`gemm_choice`] for this process's environment.
+#[must_use]
+pub fn prefill_gemm_from_env() -> PrefillGemm {
+    gemm_choice(std::env::var(PREFILL_GEMM_ENV).ok().as_deref())
+}
+
+/// Device bytes the f16 leg adds on top of [`workspace_bytes_for`]: the f16 copy of the
+/// largest weight and of one chunk's widest activation input.
+fn f16_gemm_bytes(d: Qwen35CudaDims, largest_projection: usize, rows: usize) -> usize {
+    let widest_k = [
+        d.hidden_dim,
+        d.intermediate_dim,
+        d.v_dim,
+        d.num_heads * d.attn_head_dim,
+    ]
+    .into_iter()
+    .max()
+    .unwrap_or(0) as usize;
+    2 * (largest_projection + rows * widest_k)
+}
+
 /// Rows per chunk for a prompt ending at `total_positions` — one formula for the
 /// running prefill and the pre-load capacity plan.
 fn chunk_rows_for(max_rows: usize, total_positions: usize) -> usize {
@@ -295,13 +360,38 @@ impl Qwen35CudaModel<'_> {
     /// allocates on top of the weights and the state.
     #[must_use]
     pub fn prefill_workspace_bytes(&self, total_positions: usize) -> usize {
+        let largest = self.largest_projection_elems();
+        let f16 = match self.prefill_gemm_mode() {
+            PrefillGemm::F32 => 0,
+            PrefillGemm::F16TensorCore => f16_gemm_bytes(
+                self.dims,
+                largest,
+                chunk_rows_for(self.prefill_rows, total_positions),
+            ),
+        };
         workspace_bytes_for(
             self.dims,
-            self.largest_projection_elems(),
+            largest,
             total_positions,
             self.prefill_attention,
             self.prefill_rows,
-        )
+        ) + f16
+    }
+
+    /// Set how the projections multiply (the default is [`prefill_gemm_from_env`]).
+    pub fn set_prefill_gemm(&mut self, gemm: PrefillGemm) {
+        self.executor
+            .set_qwen35_prefill_gemm_f16(gemm == PrefillGemm::F16TensorCore);
+    }
+
+    /// How this model's [`Self::prefill`] multiplies its projections.
+    #[must_use]
+    pub fn prefill_gemm_mode(&self) -> PrefillGemm {
+        if self.executor.qwen35_prefill_gemm_f16() {
+            PrefillGemm::F16TensorCore
+        } else {
+            PrefillGemm::F32
+        }
     }
 
     /// The capacity-plan inputs for serving `model` on a device with `gpu_free` of
@@ -398,7 +488,14 @@ impl Qwen35CudaModel<'_> {
                 + 4 * d.intermediate_dim
                 + d.vocab_size,
         );
-        let workspace = workspace_bytes_for(d, largest, seq_len, attention, chunk_rows) as u64
+        let f16 = match prefill_gemm_from_env() {
+            PrefillGemm::F32 => 0,
+            PrefillGemm::F16TensorCore => {
+                f16_gemm_bytes(d, largest, chunk_rows_for(chunk_rows, seq_len))
+            },
+        };
+        let workspace = (workspace_bytes_for(d, largest, seq_len, attention, chunk_rows) + f16)
+            as u64
             + recurrent_per_state // the decode state's conv/ssm (its KV is the KV term)
             + own_state
             + per_token_scratch;

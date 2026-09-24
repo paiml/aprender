@@ -627,6 +627,9 @@ impl<'a> Qwen35CudaModel<'a> {
         let attn_scratch = Self::build_attn_scratch(&executor, dims)?;
         let out_normed = Self::zeros(&executor, dims.hidden_dim as usize)?;
         let logits_buf = Self::zeros(&executor, dims.vocab_size as usize)?;
+        executor.set_qwen35_prefill_gemm_f16(
+            prefill::prefill_gemm_from_env() == prefill::PrefillGemm::F16TensorCore,
+        );
         let prefill_attention = prefill::default_prefill_attention(&executor, dims);
         // #3596: the model's OWN state serves only the single-layer handles
         // (`forward_attention_layer`, `upload_attention_kv`, …), never a generation —
@@ -1629,8 +1632,8 @@ impl<'a> Qwen35CudaModel<'a> {
 #[path = "forward_qwen35_cuda_prefill.rs"]
 mod prefill;
 pub use prefill::{
-    PrefillAttention, PREFILL_ATTENTION_ENV, PREFILL_MAX_CHUNK_ROWS, PREFILL_SCORES_BUDGET_BYTES,
-    UNIFIED_PREFILL_CHUNK_ROWS,
+    PrefillAttention, PrefillGemm, PREFILL_ATTENTION_ENV, PREFILL_GEMM_ENV, PREFILL_MAX_CHUNK_ROWS,
+    PREFILL_SCORES_BUDGET_BYTES, UNIFIED_PREFILL_CHUNK_ROWS,
 };
 
 /// Per-layer CPU parity on the real Qwen3.5-0.8B file.
