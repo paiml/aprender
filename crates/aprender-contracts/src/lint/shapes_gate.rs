@@ -263,7 +263,7 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
 
     // #3610: the per-shape reach, computed BEFORE any verdict — did this shape grade anything at all?
     let focus_of = focus_of(graph, &shapes);
-    let (vacuous_any, armed_vacuity) = vacuities(&focus_of, &arming);
+    let (vacuous_any, armed_vacuity) = vacuities(&focus_of, &shapes, &arming);
     let (mut report, plant_violations) = validate_with_plant(graph, &shapes, &arming);
     if opts.only.is_some() {
         order_by_family(&mut report, &shapes);
@@ -421,14 +421,22 @@ fn focus_of(graph: &Graph, shapes: &[NodeShape]) -> Vec<(String, usize)> {
 /// TWO answers, because they are two questions and conflating them was the defect a quorum lane
 /// caught (#3610 round 1, two lanes independently). The list decides where a vacuity is REPORTED —
 /// `declines` only, never `not_armed_shapes`, or an unarmed vacuity is filed as a policy choice,
-/// which is how the original defect hid. The flag decides the VERDICT: only an armed shape fed it.
-fn vacuities(focus_of: &[(String, usize)], arming: &ArmedShapes) -> (Vec<String>, bool) {
+/// which is how the original defect hid. The flag decides the VERDICT: only an armed shape fed it, and a
+/// shape that declares `allowEmpty: "<why>"` (a target class empty by design) is named but does not refuse.
+fn vacuities(
+    focus_of: &[(String, usize)],
+    shapes: &[NodeShape],
+    arming: &ArmedShapes,
+) -> (Vec<String>, bool) {
     let vacuous: Vec<String> = focus_of
         .iter()
         .filter(|(_, n)| *n == 0)
         .map(|(id, _)| id.clone())
         .collect();
-    let armed = vacuous.iter().any(|id| arming.is_armed(id));
+    let may_be_empty = |id: &str| shapes.iter().any(|s| s.id == id && s.allow_empty.is_some());
+    let armed = vacuous
+        .iter()
+        .any(|id| arming.is_armed(id) && !may_be_empty(id));
     (vacuous, armed)
 }
 

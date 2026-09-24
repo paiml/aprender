@@ -190,10 +190,14 @@ fn the_green_release_passes_with_every_cell_named() {
         rel["tokenizer_cells"], 1,
         "one distinct model across both hosts (#3726)"
     );
+    // `--shape` arms the whole family of nine whatever armed_shapes says. The green release has no cell that
+    // fails to fit, so `.refusal` grades zero focus nodes: it declares `allowEmpty`, so the verdict stands, and
+    // like every vacuity it is named in `declines` and in neither shape list (#3610).
     let armed = v["armed_shapes"].as_array().expect("armed").len();
+    assert_eq!(armed, 8, "nine armed, less the one that measured nothing");
     assert_eq!(
-        armed, 9,
-        "--shape arms the whole family whatever armed_shapes says"
+        names(&v["declines"]),
+        vec!["release-readiness-v1.refusal"] as Vec<&str>
     );
 }
 
@@ -809,4 +813,11 @@ fn a_model_whose_template_always_opens_think_owes_only_the_on_cells() {
         v["cells"].as_array_mut().expect("cells").remove(i);
     });
     assert_red_naming(&gate(t.path(), &[]), &cell("gx10", "code", "on", "4k"));
+}
+
+/// A JSON array of strings as `Vec<&str>` (`json!` array literals expand to a disallowed `unwrap`).
+fn names(v: &serde_json::Value) -> Vec<&str> {
+    v.as_array()
+        .map(|a| a.iter().filter_map(serde_json::Value::as_str).collect())
+        .unwrap_or_default()
 }

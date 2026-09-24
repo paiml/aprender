@@ -94,8 +94,8 @@ fn a_complete_receipt_passes_with_one_focus_node() {
     assert!(r.stdout.contains("parity-receipt-complete"), "{}", r.all());
     let v: serde_json::Value = serde_json::from_str(&r.stdout).expect("json report");
     assert_eq!(
-        v["extra"]["declines"],
-        serde_json::json!(["parity-comparator-oracle"]),
+        names(&v["extra"]["declines"]),
+        vec!["parity-comparator-oracle"] as Vec<&str>,
         "the unarmed vacuity is still NAMED\n{}",
         r.all()
     );
@@ -250,4 +250,11 @@ fn the_committed_tree_agrees_with_its_own_denominator() {
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+/// A JSON array of strings as `Vec<&str>` (`json!` array literals expand to a disallowed `unwrap`).
+fn names(v: &serde_json::Value) -> Vec<&str> {
+    v.as_array()
+        .map(|a| a.iter().filter_map(serde_json::Value::as_str).collect())
+        .unwrap_or_default()
 }

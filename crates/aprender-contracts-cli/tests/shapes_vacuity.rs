@@ -19,6 +19,7 @@
 //! | `shapes-one-empty-unarmed` | same | no | **Pass**, `declines: ["empty-shape"]` |
 //! | `shapes-one-empty-and-violating` | `empty-shape=0`, `tool-status=1` (violating) | yes | **exit 1**, Fail, `declines: ["empty-shape"]` |
 //! | `json-ok` | `tool-status=1` | yes | Pass, `declines: []` |
+//! | `shapes-one-empty-allowed` | same, `allowEmpty: "<why>"` on `empty-shape` | yes | **Pass**, `declines: ["empty-shape"]` |
 //! | `shapes-all-empty` | `empty-shape=0` (the only shape) | yes | **exit 2** via the global path, no report yet (#4100) |
 //!
 //! The second row is what keeps the fix from being "refuse whenever anything is empty": an UNARMED
@@ -302,4 +303,40 @@ fn the_three_answers_remain_distinct() {
             r.all()
         );
     }
+}
+
+#[test]
+fn an_armed_shape_declared_allow_empty_is_named_but_does_not_refuse() {
+    // A target class that is empty BY DESIGN (a release:RefusalCell exists only when a cell does not fit)
+    // declares it, with its reason, in the artifact. The exemption is for the verdict only: the vacuity is
+    // still named, so a reader sees the gate looked at nothing for it.
+    let r = shapes_on("shapes-one-empty-allowed");
+    assert_eq!(
+        r.code,
+        0,
+        "an allowEmpty shape must not refuse\n{}",
+        r.all()
+    );
+    let extra = r.extra();
+    assert_eq!(
+        names(&extra["declines"]),
+        vec!["empty-shape"] as Vec<&str>,
+        "the vacuity is still NAMED\n{}",
+        r.all()
+    );
+    assert_eq!(
+        names(&extra["armed_shapes"]),
+        vec!["tool-status"] as Vec<&str>,
+        "{}",
+        r.all()
+    );
+    // The control: the SAME fixture without the declaration declines.
+    assert_eq!(shapes_on("shapes-one-empty").code, 2);
+}
+
+/// A JSON array of strings as `Vec<&str>` (`json!` array literals expand to a disallowed `unwrap`).
+fn names(v: &serde_json::Value) -> Vec<&str> {
+    v.as_array()
+        .map(|a| a.iter().filter_map(serde_json::Value::as_str).collect())
+        .unwrap_or_default()
 }
