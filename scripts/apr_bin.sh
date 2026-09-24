@@ -555,11 +555,16 @@ apr_bin_assert_fresh() {
 # The RULE travels with this file: it is loaded from beside it, not from the
 # cwd's checkout. Sourced by path from an older worktree's cwd, the cwd lookup
 # loaded THAT tree's weaker rule and accepted a denylisted binary (quorum round
-# 4). Only when this file cannot name itself (neither bash nor zsh) is the
-# cwd's checkout asked, and a rule without the current NIGHTLY_PIN_API refuses.
+# 4). The name comes from BASH_SOURCE in bash and %x in zsh, never zsh's $0:
+# for `. apr_bin.sh` found via PATH, $0 is the bare name, and the rule was
+# then looked up in the cwd (quorum round 5). Both give the full path for a
+# PATH hit and a bare name only when the file was found in the cwd, where a
+# cwd-relative rule IS beside it. Only when this file cannot name itself
+# (neither bash nor zsh) is the cwd's checkout asked, and a rule without the
+# current NIGHTLY_PIN_API refuses.
 APR_NP_RC=0
 APR_NP_SELF=""
-if [ -n "${BASH_VERSION:-}" ]; then APR_NP_SELF="${BASH_SOURCE[0]:-}"; elif [ -n "${ZSH_VERSION:-}" ]; then APR_NP_SELF="$0"; fi
+if [ -n "${BASH_VERSION:-}" ]; then APR_NP_SELF="${BASH_SOURCE[0]:-}"; elif [ -n "${ZSH_VERSION:-}" ]; then eval 'APR_NP_SELF=${(%):-%x}'; fi
 case "$APR_NP_SELF" in
     */apr_bin.sh) APR_NP_LIB="$(dirname "$APR_NP_SELF")/nightly_pin.sh" ;;
     apr_bin.sh) APR_NP_LIB="nightly_pin.sh" ;;
