@@ -1,0 +1,9 @@
+Qwen3.5-4B-Q4_K_M	nocache	passed=True	gate_ms=19737	wall_ms=24520	source=-	426 tensors passed all PMAT-235 contract gates
+Qwen3.5-4B-Q4_K_M	miss	passed=True	gate_ms=20130	wall_ms=28164	source=run	426 tensors passed all PMAT-235 contract gates
+Qwen3.5-4B-Q4_K_M	hit	passed=True	gate_ms=1794	wall_ms=6627	source=cache	426 tensors passed all PMAT-235 contract gates
+Qwen3.5-9B-Q4_K_M	nocache	passed=True	gate_ms=43692	wall_ms=57255	source=-	427 tensors passed all PMAT-235 contract gates
+Qwen3.5-9B-Q4_K_M	miss	passed=True	gate_ms=42004	wall_ms=55769	source=run	427 tensors passed all PMAT-235 contract gates
+Qwen3.5-9B-Q4_K_M	hit	passed=True	gate_ms=3560	wall_ms=16146	source=cache	427 tensors passed all PMAT-235 contract gates
+Qwen3.5-27B-Q4_K_M	nocache	passed=True	gate_ms=146847	wall_ms=184227	source=-	851 tensors passed all PMAT-235 contract gates
+Qwen3.5-27B-Q4_K_M	miss	passed=True	gate_ms=125809	wall_ms=166070	source=run	851 tensors passed all PMAT-235 contract gates
+Qwen3.5-27B-Q4_K_M	hit	passed=True	gate_ms=10028	wall_ms=39330	source=cache	851 tensors passed all PMAT-235 contract gates

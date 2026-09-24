@@ -1,0 +1,20 @@
+- id: PMAT-4087
+  github_issue: 4087
+  item_type: task
+  title: 'qa tensor_contract: cache keyed by model sha + checker-source hash (#4033 lever; 19–46% of qa)'
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-dd
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the tensor_contract verdict is cached under a key covering the model bytes AND the checker code; a hit is marked cache.source=cache with the key'
+  - 'must-RED: a changed checker, a changed model byte, and a corrupted entry each re-run the gate (the entry is refused, never trusted); mutants dropping a key part turn the case table RED'
+  - 'the saving is measured in minutes against the uncached gate'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
