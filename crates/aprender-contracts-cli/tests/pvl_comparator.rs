@@ -131,6 +131,23 @@ fn a_solution_of_a_weaker_statement_rejects() {
     assert!(r.1.contains(WEAKER) && r.1.contains(PINNED), "{}", r.1);
 }
 
+/// #4237 (cop ruling): differing hashes close iff the comparator measured the types defeq at `.instances`.
+#[test]
+fn differing_hashes_close_only_when_defeq_at_instances() {
+    for (d, rc, needle) in [
+        ("true", 0, format!("MATCH(instances) {NAME}")),
+        ("false", 1, format!("FAIL  MISMATCH {NAME}")),
+    ] {
+        let fx = Fx::new();
+        let r = row(&format!("\"{WEAKER}\""), "[\"propext\"]").replace(
+            ", \"axioms\"",
+            &format!(", \"defeq_instances\": {d}, \"axioms\""),
+        );
+        fx.stub_lake(0, &r);
+        assert_rc(&fx.check(), rc, &needle);
+    }
+}
+
 #[test]
 fn a_sorry_solution_rejects() {
     let fx = Fx::new();
@@ -195,6 +212,10 @@ fn the_committed_comparator_script_matches_the_row_shape() {
         "\\\"name\\\": ",
         "\\\"challenge_type_hash\\\": ",
         "\\\"solution_type_hash\\\": ",
+        "\\\"defeq_instances\\\": ",
+        "withTransparency .instances (Meta.isDefEq a b)",
+        "if c == s then pure none else some <$> defeqInstances",
+        "(`inst_a, `hyp, false), (`inst_a, `rhs, false)",
         "\\\"axioms\\\": ",
         &format!("`{CHALLENGE_NS}"),
         "def sha256 ",

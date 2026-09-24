@@ -9,11 +9,15 @@
 //! | row | verdict |
 //! |---|---|
 //! | `solution_type_hash: null` | FAIL `MISSING-ROOT` — the challenge pins a theorem that does not exist |
-//! | hashes differ | FAIL `MISMATCH` — the solution proves a different statement (a weakened one, say) |
+//! | hashes differ, `defeq_instances: true` | MATCH — the same statement through a different instance path |
+//! | hashes differ otherwise (`false` or absent) | FAIL `MISMATCH` — a different statement (a weakened one, say) |
 //! | `sorryAx` among the solution's axioms | FAIL `SORRY` — it closes nothing |
 //! | a name twice | FAIL `DUPLICATE` |
 //! | no `challenge_type_hash`, or a solution with no `axioms` | FAIL `MALFORMED` — unmeasured is never closed |
 //! | otherwise | closed |
+//!
+//! MATCH = hashes equal OR `isDefEq` at `.instances` transparency (cop ruling on #4237). The hash stays the
+//! fingerprint: `defeq_instances` is measured only when the hashes differ, and an absent one is `MISMATCH`.
 //!
 //! Zero rows is not a pass: [`judge_rows`] declines (rc 2).
 
@@ -54,6 +58,9 @@ pub struct Row {
     pub name: String,
     pub challenge_type_hash: Option<String>,
     pub solution_type_hash: Option<String>,
+    /// Measured only when the hashes differ: the two types are defeq at `.instances` transparency.
+    #[serde(default)]
+    pub defeq_instances: Option<bool>,
     /// The solution's axioms; `None` when there is no solution.
     pub axioms: Option<Vec<String>>,
 }
@@ -124,7 +131,7 @@ pub fn judge_rows(rows: &[Row], r: &mut Report) -> Closure {
             ));
             continue;
         };
-        if c != s {
+        if c != s && row.defeq_instances != Some(true) {
             r.fail(format!(
                 "MISMATCH {n} -- it proves a different statement than {ch} pins (challenge {c}, solution {s})"
             ));
@@ -135,6 +142,11 @@ pub fn judge_rows(rows: &[Row], r: &mut Report) -> Closure {
                 "SORRY {n} -- the solution rests on {SORRY_AXIOM}: it closes nothing"
             ));
             continue;
+        }
+        if c != s {
+            r.lines.push(format!(
+                "MATCH(instances) {n} -- defeq to {ch} at .instances transparency (challenge {c}, solution {s})"
+            ));
         }
         closed += 1;
     }

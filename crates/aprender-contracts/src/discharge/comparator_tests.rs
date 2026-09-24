@@ -10,6 +10,7 @@ fn row(name: &str, ch: Option<String>, sol: Option<String>, axioms: Option<&[&st
         name: name.to_string(),
         challenge_type_hash: ch,
         solution_type_hash: sol,
+        defeq_instances: None,
         axioms: axioms.map(|a| a.iter().map(|s| (*s).to_string()).collect()),
     }
 }
@@ -232,4 +233,52 @@ fn challenge_files_lists_only_lean_files_relative_and_sorted() {
             PathBuf::from("Challenge/z-v1.lean")
         ]
     );
+}
+
+fn with_defeq(mut r: Row, d: Option<bool>) -> Row {
+    r.defeq_instances = d;
+    r
+}
+
+/// #4237: `Zero ℤ` through `MulZeroClass` vs `NegZeroClass` — different hashes, defeq at `.instances`: closed,
+/// and the line names both hashes so the fingerprint difference stays visible.
+#[test]
+fn differing_hashes_defeq_at_instances_is_a_match() {
+    let (r, c) = judge(&[with_defeq(
+        row("A.f", Some(h(1)), Some(h(2)), Some(&["propext"])),
+        Some(true),
+    )]);
+    assert!(!r.reject, "{:?}", r.lines);
+    assert_eq!(c.closed, 1);
+    let m: Vec<_> = r
+        .lines
+        .iter()
+        .filter(|l| l.starts_with("MATCH(instances) A.f"))
+        .collect();
+    assert_eq!(m.len(), 1, "{:?}", r.lines);
+    assert!(m[0].contains(&h(1)) && m[0].contains(&h(2)), "{}", m[0]);
+}
+
+/// The two negative controls of the ruling (an added hypothesis, a changed right-hand side) measure
+/// `defeq_instances: false`; an absent measurement is not a pass either.
+#[test]
+fn differing_hashes_not_defeq_or_unmeasured_is_a_mismatch() {
+    for d in [Some(false), None] {
+        let (r, c) = judge(&[with_defeq(row("A.f", Some(h(1)), Some(h(2)), Some(&[])), d)]);
+        assert!(r.reject, "{d:?}");
+        assert_eq!(c.closed, 0, "{d:?}");
+        assert!(fails(&r)[0].starts_with("FAIL  MISMATCH A.f"), "{d:?}");
+    }
+}
+
+/// Defeq never launders a sorry: the SORRY check still runs after a defeq MATCH.
+#[test]
+fn a_defeq_match_on_sorry_closes_nothing() {
+    let (r, c) = judge(&[with_defeq(
+        row("A.f", Some(h(1)), Some(h(2)), Some(&[SORRY_AXIOM])),
+        Some(true),
+    )]);
+    assert!(r.reject);
+    assert_eq!(c.closed, 0);
+    assert!(fails(&r)[0].starts_with("FAIL  SORRY A.f"), "{:?}", r.lines);
 }

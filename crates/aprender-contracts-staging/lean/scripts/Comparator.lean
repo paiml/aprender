@@ -7,13 +7,19 @@ Each argument is one EV-7a Challenge file. It is elaborated here, against the BU
 `lake env` builds nothing), and every declaration it adds under `PvlChallenge` is one row. A Challenge file
 imports the solution modules it pins, so its solution is in the same environment. One NDJSON line per row:
 
-  {"name": F, "challenge_type_hash": H|null, "solution_type_hash": H|null, "axioms": [..]|null}
+  {"name": F, "challenge_type_hash": H|null, "solution_type_hash": H|null, "defeq_instances": B|null, "axioms": [..]|null}
 
 - `name` is the SOLUTION's full name F; the challenge is `PvlChallenge.F` (`solutionOf?`, the one naming rule;
   `pv`'s `discharge::comparator::challenge_decl` is its inverse and the two are tested against each other).
 - A hash is the sha256 of the type's canonical form (`canon`: binder names dropped, binder info kept),
   after the statement was elaborated in its own file. Equal hashes mean the solution proves the pinned statement; a weakened one
   (a strengthened hypothesis) proves a different type. `pv discharge check --comparator` judges, not this file.
+- `defeq_instances` is measured only when the two hashes DIFFER: `isDefEq` of the two types at `.instances`
+  transparency — `Zero ℤ` reached through `MulZeroClass` in one file and `NegZeroClass` in the other is the same
+  statement with a different instance path, and the syntactic hash cannot see that. Instances unfold; definitions,
+  theorems and hypotheses do not, so an added hypothesis or a changed right-hand side stays `false`. Any exception
+  (a heartbeat timeout, say) is `false`. MATCH = hashes equal OR this is `true`; the hash stays the fingerprint
+  (cop ruling on #4237). `null` when the hashes are equal or there is no solution.
 - `solution_type_hash: null` — no such constant: the challenge pins a theorem that does not exist.
 - `axioms` are the SOLUTION's (`collectAxioms`), sorted; `sorryAx` there means it closes nothing.
 
@@ -93,17 +99,27 @@ def typeHash (e : Expr) : String := sha256 (canon e).toUTF8
 
 def jStr (s : String) : String := (Json.str s).compress
 
-def row (name : Name) (ch : Option String) (sol : Option String) (ax : Option (Array Name)) : String :=
+def row (name : Name) (ch : Option String) (sol : Option String) (dq : Option Bool) (ax : Option (Array Name)) :
+    String :=
   let opt (o : Option String) := o.map jStr |>.getD "null"
   let axs := ax.map (fun a => "[" ++ ", ".intercalate (a.toList.map (jStr ∘ toString)) ++ "]") |>.getD "null"
   "{\"name\": " ++ jStr name.toString ++ ", \"challenge_type_hash\": " ++ opt ch ++
-    ", \"solution_type_hash\": " ++ opt sol ++ ", \"axioms\": " ++ axs ++ "}"
+    ", \"solution_type_hash\": " ++ opt sol ++ ", \"defeq_instances\": " ++ (dq.map toString |>.getD "null") ++
+    ", \"axioms\": " ++ axs ++ "}"
+
+/-- `a` and `b` are the same statement up to unfolding INSTANCES: `isDefEq` at `.instances` transparency, in
+`env`. Fail-closed: any exception is `false`. -/
+def defeqInstances (env : Environment) (a b : Expr) : IO Bool := do
+  let ctx : Core.Context := { fileName := "<comparator>", fileMap := default }
+  try
+    let (d, _) ← ((Meta.withTransparency .instances (Meta.isDefEq a b)).run' {} {}).toIO ctx { env }
+    return d
+  catch _ => return false
 
 /-- Elaborate one Challenge file. `none` when it did not elaborate cleanly (an error message), with the
 messages printed to stderr. `sorry` warnings are expected: every challenge is `:= sorry`. -/
-def elabFile (path : System.FilePath) : IO (Option Environment) := do
-  let input ← IO.FS.readFile path
-  let inputCtx := Parser.mkInputContext input path.toString
+def elabInput (input : String) (fileName : String) : IO (Option Environment) := do
+  let inputCtx := Parser.mkInputContext input fileName
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
   let opts := Options.empty.setBool `autoImplicit false
   let (env, messages) ← processHeader header opts messages inputCtx (trustLevel := 1024)
@@ -120,7 +136,10 @@ def elabFile (path : System.FilePath) : IO (Option Environment) := do
     IO.eprint (← m.toString (includeEndPos := true))
   if errs.isEmpty then return some s.commandState.env else return none
 
-def rowsOf (env : Environment) : Array String := Id.run do
+def elabFile (path : System.FilePath) : IO (Option Environment) := do
+  elabInput (← IO.FS.readFile path) path.toString
+
+def rowsOf (env : Environment) : IO (Array String) := do
   let mine := env.constants.map₂.toList.filterMap fun (n, ci) =>
     if (solutionOf? n).isSome && !n.isInternal then some (n, ci) else none
   let mine := mine.toArray.qsort (fun a b => a.1.toString < b.1.toString)
@@ -128,14 +147,41 @@ def rowsOf (env : Environment) : Array String := Id.run do
   for (n, ci) in mine do
     let some sol := solutionOf? n | continue
     match env.find? sol with
-    | none => out := out.push (row sol (some (typeHash ci.type)) none none)
+    | none => out := out.push (row sol (some (typeHash ci.type)) none none none)
     | some sci =>
       let (_, st) := ((CollectAxioms.collect sol).run env).run {}
       let axs := st.axioms.qsort (fun a b => a.toString < b.toString)
-      out := out.push (row sol (some (typeHash ci.type)) (some (typeHash sci.type)) (some axs))
+      let (c, s) := (typeHash ci.type, typeHash sci.type)
+      let dq ← if c == s then pure none else some <$> defeqInstances env ci.type sci.type
+      out := out.push (row sol (some c) (some s) dq (some axs))
   return out
 
-/-- FIPS 180-4 vectors: the empty string, "abc", and the two-block 448-bit message. -/
+/-- The `defeq_instances` controls, elaborated against core. `inst_*` state one fact through two instance paths
+(the `Zero ℤ` false reject of #4237, in miniature): they must be defeq. `hyp` adds a hypothesis and `rhs` changes
+the right-hand side (the two negative controls the cop ruling keeps): they must not be, even though every
+instance in them unfolds. -/
+def defeqControls : String := "
+theorem inst_a (xs : List Int) : @List.foldr Int Int (· + ·) (@OfNat.ofNat Int 0 _) xs = xs.foldr (· + ·) 0 := sorry
+theorem inst_b (xs : List Int) : @List.foldr Int Int (· + ·) (@OfNat.ofNat Int 0 ⟨Int.ofNat 0⟩) xs = xs.foldr (· + ·) 0 := sorry
+theorem hyp (xs : List Int) (h : xs ≠ []) : @List.foldr Int Int (· + ·) (@OfNat.ofNat Int 0 _) xs = xs.foldr (· + ·) 0 := sorry
+theorem rhs (xs : List Int) : @List.foldr Int Int (· + ·) (@OfNat.ofNat Int 0 _) xs = xs.reverse.foldr (· + ·) 0 := sorry
+"
+
+def selfTestDefeq : IO Nat := do
+  initSearchPath (← findSysroot)
+  let some env ← elabInput defeqControls "<self-test>" | IO.println "FAIL  the defeq controls did not elaborate"; return 1
+  let ty (n : Name) : Expr := (env.find? n).map (·.type) |>.getD (.sort 0)
+  let mut bad := 0
+  for (a, b, want) in [(`inst_a, `inst_b, true), (`inst_a, `hyp, false), (`inst_a, `rhs, false)] do
+    let hashEq := typeHash (ty a) == typeHash (ty b)
+    let got ← defeqInstances env (ty a) (ty b)
+    -- The positive control is only a control if the hashes DIFFER: else it would pass on the hash alone.
+    let ok := got == want && !hashEq
+    IO.println s!"{if ok then "ok  " else "FAIL"}  defeq_instances {a} {b} = {got} (want {want}, hashes differ: {!hashEq})"
+    if !ok then bad := bad + 1
+  return bad
+
+/-- FIPS 180-4 vectors: the empty string, "abc", and the two-block 448-bit message; then the defeq controls. -/
 def selfTest : IO UInt32 := do
   let cases := [("", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
     ("abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
@@ -146,6 +192,7 @@ def selfTest : IO UInt32 := do
     let got := sha256 i.toUTF8
     IO.println s!"{if got == want then "ok  " else "FAIL"}  sha256 {i.quote} = {got}"
     if got != want then bad := bad + 1
+  bad := bad + (← selfTestDefeq)
   return if bad == 0 then 0 else 1
 
 def main (args : List String) : IO UInt32 := do
@@ -161,5 +208,5 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln s!"comparator: {a} did not elaborate; its rows are withheld"
       rc := 1
     | some env =>
-      for r in rowsOf env do IO.println r
+      for r in ← rowsOf env do IO.println r
   return rc
