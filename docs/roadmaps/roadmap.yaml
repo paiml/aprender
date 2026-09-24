@@ -21514,6 +21514,77 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4127
+  github_issue: 4127
+  item_type: task
+  title: '#4127: drop unmaintained proc-macro-error/-error2 from published aprender (tabled 0.22, validator 0.21)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T04:51:52Z
+  updated: 2026-09-24T04:51:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4160
+  github_issue: 4160
+  item_type: task
+  title: 'pv-contract extractor: a class per entity type (ont:entity/<type>), so a SHACL shape can target one entity type (apex EV-19b)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-75
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'a contract with entity.type T is also typed rdf:type <ONT_BASE>entity/T, and `targetClass: entity:T` expands to exactly that IRI (pinned by a test)'
+  - 'accept-level (pv lint --gate shapes on a fixture): two entity types, two closed shapes scoped by entity class, Pass with no cross-firing'
+  - 'must-RED: the same two shapes scoped by ont:Contract cross-fire (the gap, measured); a planted wrong-type contract fails its type''s shape'
+  - 'apex: the study shape over all apex contracts passes and does not fire on the 18 claim contracts (acceptance run coordinated with apex-4c)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4234
+  github_issue: 4234
+  item_type: task
+  title: 'perf(serve): continuous batching for Qwen3.5 in apr serve — sibling sessions whose decode steps run as one batched forward (CRUX #4222 T2)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-v2b
+  created: 2026-09-24 09:14:57+00:00
+  updated: '2026-09-24T18:00:00Z'
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Qwen35CudaModel::forward_batch runs one decode step for B sequences layer-major, using the same kernels in the same per-sequence order, so each row is bitwise forward_single (witness: forward_qwen35_cuda_batch_tests). Qwen35Forward::sibling shares the host and device models and owns its state. SharedGpu::decode is a leader/follower batcher (one forward_batch per step). apr serve holds APR_QWEN35_SERVE_SLOTS sessions behind Qwen35Slots::lock (default 1). Witness: 16 sibling streams token-identical to each alone, widest step >= 2. Next: a batched GEMV (one weight read per step) measured against the bitwise baseline.'
+- id: PMAT-4242
+  github_issue: 4242
+  item_type: task
+  title: 'sovereign-update shared crate: update check + update subcommand'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T09:28:46Z
+  updated: 2026-09-24T09:28:46Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4250
   github_issue: 4250
   item_type: task
