@@ -463,6 +463,9 @@ pub struct CudaExecutor {
     // PAR-061: Device-side seq_len buffer for attention in graph replay
     // Updated alongside position_buf (seq_len = position + 1)
     seq_len_buf: Option<GpuBuffer<u32>>,
+    // aprender#4273: per-split partials of the split decode attention,
+    // `[acc | (max, sum)]`, grown on demand as the context grows.
+    decode_attn_partials: Option<GpuBuffer<f32>>,
     // PAR-119: Batched KV caches for true multi-sequence batching
     // Each layer has M separate KV caches (one per sequence in batch)
     // Size per cache: M x num_kv_heads x max_len x head_dim
