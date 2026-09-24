@@ -37,6 +37,12 @@ on:
   schedule:
     - cron: '0 23 * * *'
 
+
+# #3676: a newer push to the same PR cancels the superseded run
+# (scripts/check_pr_workflows_cancel_superseded.sh).
+concurrency:
+  group: install-script-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 
