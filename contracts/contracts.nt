@@ -6022,6 +6022,18 @@
 <https://ont.paiml.dev/v1alpha1/contract/claude-code-parity-apr-v1> <https://ont.paiml.dev/v1alpha1/name> "claude-code-parity-apr"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/claude-code-parity-apr-v1> <https://ont.paiml.dev/v1alpha1/status> "ACTIVE_RUNTIME"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/claude-code-parity-apr-v1> <https://ont.paiml.dev/v1alpha1/version> "1.32.0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/claude-md> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/claude-md> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/claude-md> <https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/contract/ont-shapes-v1> .
+<https://ont.paiml.dev/v1alpha1/contract/claude-md> <https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/contract/ont-sigma-v1> .
+<https://ont.paiml.dev/v1alpha1/contract/claude-md> <https://ont.paiml.dev/v1alpha1/entityRef> "CLAUDE.md"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/claude-md> <https://ont.paiml.dev/v1alpha1/entityType> "llm-context"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/claude-md> <https://ont.paiml.dev/v1alpha1/file> "contracts/claude-md.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/claude-md> <https://ont.paiml.dev/v1alpha1/id> "claude-md"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/claude-md> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/claude-md> <https://ont.paiml.dev/v1alpha1/name> "claude-md"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/claude-md> <https://ont.paiml.dev/v1alpha1/status> "active"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/claude-md> <https://ont.paiml.dev/v1alpha1/version> "1.0.0"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/clean-chat-output-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/clean-chat-output-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/clean-chat-output-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/clean-chat-output-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -7498,6 +7510,19 @@
 <https://ont.paiml.dev/v1alpha1/contract/crux-intake-metadata-domains-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/crux-intake-metadata-domains-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/crux-intake-metadata-domains-v1> <https://ont.paiml.dev/v1alpha1/id> "crux-intake-metadata-domains-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/crux-intake-metadata-domains-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/csv-train> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/csv-train> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/csv-train> <https://ont.paiml.dev/v1alpha1/csv/producer> "crates/aprender-train/prepare_data.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/csv-train> <https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/contract/ont-shapes-v1> .
+<https://ont.paiml.dev/v1alpha1/contract/csv-train> <https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/contract/ont-sigma-v1> .
+<https://ont.paiml.dev/v1alpha1/contract/csv-train> <https://ont.paiml.dev/v1alpha1/entityRef> "crates/aprender-train/data/train.csv"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/csv-train> <https://ont.paiml.dev/v1alpha1/entityType> "csv"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/csv-train> <https://ont.paiml.dev/v1alpha1/file> "contracts/csv-train.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/csv-train> <https://ont.paiml.dev/v1alpha1/id> "csv-train"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/csv-train> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/csv-train> <https://ont.paiml.dev/v1alpha1/name> "csv-train"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/csv-train> <https://ont.paiml.dev/v1alpha1/status> "active"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/csv-train> <https://ont.paiml.dev/v1alpha1/version> "1.0.0"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/cublas-fp8-7b-determinism-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/cublas-fp8-7b-determinism-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/cublas-fp8-7b-determinism-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/cublas-fp8-7b-determinism-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -8268,6 +8293,19 @@
 <https://ont.paiml.dev/v1alpha1/contract/model-qa-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/model-qa-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/apr-model-qa-playbook/model-qa-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/model-qa-v1> <https://ont.paiml.dev/v1alpha1/id> "model-qa-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/model-setfit-slice> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/model-setfit-slice> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/model-setfit-slice> <https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/contract/ont-model-receipts-v1> .
+<https://ont.paiml.dev/v1alpha1/contract/model-setfit-slice> <https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/contract/ont-shapes-v1> .
+<https://ont.paiml.dev/v1alpha1/contract/model-setfit-slice> <https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/contract/ont-sigma-v1> .
+<https://ont.paiml.dev/v1alpha1/contract/model-setfit-slice> <https://ont.paiml.dev/v1alpha1/entityRef> "crates/aprender-core/tests/fixtures/setfit/slice_model.apr"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/model-setfit-slice> <https://ont.paiml.dev/v1alpha1/entityType> "apr-model"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/model-setfit-slice> <https://ont.paiml.dev/v1alpha1/file> "contracts/model-setfit-slice.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/model-setfit-slice> <https://ont.paiml.dev/v1alpha1/id> "model-setfit-slice"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/model-setfit-slice> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/model-setfit-slice> <https://ont.paiml.dev/v1alpha1/name> "model-setfit-slice"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/model-setfit-slice> <https://ont.paiml.dev/v1alpha1/status> "active"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/model-setfit-slice> <https://ont.paiml.dev/v1alpha1/version> "1.0.0"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/moe-expert-dispatch-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/moe-expert-dispatch-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/moe-expert-dispatch-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/moe-expert-dispatch-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -8887,6 +8925,18 @@
 <https://ont.paiml.dev/v1alpha1/contract/readme-claims-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/readme-claims-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/readme-claims-v1> <https://ont.paiml.dev/v1alpha1/id> "readme-claims-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/readme-claims-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/readme-root> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/readme-root> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/readme-root> <https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/contract/ont-shapes-v1> .
+<https://ont.paiml.dev/v1alpha1/contract/readme-root> <https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/contract/ont-sigma-v1> .
+<https://ont.paiml.dev/v1alpha1/contract/readme-root> <https://ont.paiml.dev/v1alpha1/entityRef> "README.md"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/readme-root> <https://ont.paiml.dev/v1alpha1/entityType> "readme"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/readme-root> <https://ont.paiml.dev/v1alpha1/file> "contracts/readme-root.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/readme-root> <https://ont.paiml.dev/v1alpha1/id> "readme-root"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/readme-root> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/readme-root> <https://ont.paiml.dev/v1alpha1/name> "readme-root"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/readme-root> <https://ont.paiml.dev/v1alpha1/status> "active"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/readme-root> <https://ont.paiml.dev/v1alpha1/version> "1.0.0"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/recipe-determinism-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/recipe-determinism-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/recipe-determinism-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/forjar/recipe-determinism-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -9415,6 +9465,111 @@
 <https://ont.paiml.dev/v1alpha1/contract/yarn-rope-original-base-v1> <https://ont.paiml.dev/v1alpha1/id> "yarn-rope-original-base-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/yarn-rope-original-base-v1> <https://ont.paiml.dev/v1alpha1/name> "yarn-rope-original-base"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/yarn-rope-original-base-v1> <https://ont.paiml.dev/v1alpha1/version> "1.0.0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/csv/csv-train> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/csv/Dataset> .
+<https://ont.paiml.dev/v1alpha1/csv/csv-train> <https://ont.paiml.dev/v1alpha1/csv/column> "feature1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/csv/csv-train> <https://ont.paiml.dev/v1alpha1/csv/column> "feature2"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/csv/csv-train> <https://ont.paiml.dev/v1alpha1/csv/column> "label"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/csv/csv-train> <https://ont.paiml.dev/v1alpha1/csv/dtype> "int"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/csv/csv-train> <https://ont.paiml.dev/v1alpha1/csv/header> "feature1,feature2,label"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/csv/csv-train> <https://ont.paiml.dev/v1alpha1/csv/producer> "crates/aprender-train/prepare_data.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/csv/csv-train> <https://ont.paiml.dev/v1alpha1/csv/rows> "100"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/csv/csv-train> <https://ont.paiml.dev/v1alpha1/csv/sha256> "e92a2460d310818411a48fdb440336024818d1d8fac5f2da853427ba9888bd52"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/llm/LlmContext> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/command> "bash scripts/check_package_includes.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/commandsSection> "APR CLI (`cargo install aprender`)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/commandsSection> "Build Commands"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/commandsSection> "Debugging: Use apr Tools First (MANDATORY)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/declaredTool> "bashrs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/declaredTool> "cargo"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/declaredTool> "gh"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/declaredTool> "pmat"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/declaredTool> "pv"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/layoutSection> "Architecture"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/layoutSection> "CI/CD (`.github/workflows/`)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/layoutSection> "Key Files"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/layoutSection> "Modules"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/neverRule> "**Never:** work around `pv` with a shell script. The in-tree tool is the source of truth."^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/purposeSection> "Project Overview"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> ".cargo/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> ".github/workflows/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> ".github/workflows/ci.yml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> ".github/workflows/coverage-nightly.yml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "ci/explicit-test-commands.d/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "contracts/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "contracts/apr-cli-commands-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "contracts/beat-ollama-decode-throughput-speed-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "contracts/claude-md.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "contracts/tensor-layout-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/apr-cli/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/apr-cli/Cargo.toml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-compute"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-compute/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-contracts-cli/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-contracts-macros/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-contracts/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-contracts/src/schema/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-core/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-core/src/format/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-core/src/format/converter/mod.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-core/src/format/converter/write.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-core/src/format/layout_contract.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-core/src/lib.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-core/src/primitives/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-core/src/text/chat_template/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-core/src/traits.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-core/tests/readme_contract.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-serve/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-serve/Cargo.toml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-serve/src/gguf/inference/fused_matmul_into.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-serve/src/inference_trace/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-serve/src/inference_trace/mod.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-serve/src/quantize/fused_gate_up.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "crates/aprender-train/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "docs/BEATS.md"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "docs/specifications/aprender-monorepo-consolidation.md"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "scripts/apr_bin.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "scripts/bump-version.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "scripts/check_clippy_current_stable.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "scripts/check_msrv.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "scripts/check_sourced_libs_option_neutral.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "src/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "src/bin/"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "src/bin/apr.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/referencedPath> "src/lib.rs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/rulesSection> "Autonomous Operation Mode (DEFAULT)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/rulesSection> "CRITICAL: Code Search Policy"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/rulesSection> "CRITICAL: Realizar-First Architecture"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/rulesSection> "Contract Validation: DOGFOOD `pv`, NEVER bash"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/rulesSection> "Git Workflow (Branch Protection)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/rulesSection> "LAYOUT-001/002: Tensor Layout Safety"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/rulesSection> "Linting"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/rulesSection> "Publishing Safety (CB-510 Lesson)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/rulesSection> "Shell Scripts: Use bashrs (NOT shellcheck)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/rulesSection> "Verification Discipline (MANDATORY — read before reporting any result)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "APR CLI (`cargo install aprender`)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Architecture"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Autonomous Operation Mode (DEFAULT)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Build Commands"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "CI/CD (`.github/workflows/`)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "CRITICAL: Code Search Policy"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "CRITICAL: Realizar-First Architecture"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Contract Validation: DOGFOOD `pv`, NEVER bash"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Debugging: Use apr Tools First (MANDATORY)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Git Workflow (Branch Protection)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Key Files"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "LAYOUT-001/002: Tensor Layout Safety"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Linting"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Modules"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "PMAT Quality Analysis"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Project Overview"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Publishing Safety (CB-510 Lesson)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "SSC Training Infrastructure Status (snapshot 2026-03-22 — STALE, re-verify before acting)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Shell Scripts: Use bashrs (NOT shellcheck)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Stack Documentation Search"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Testing"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Verification Discipline (MANDATORY — read before reporting any result)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/model/00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/LadderRung> .
 <https://ont.paiml.dev/v1alpha1/model/00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/Model> .
 <https://ont.paiml.dev/v1alpha1/model/00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/RequiredModel> .
 <https://ont.paiml.dev/v1alpha1/model/00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4> <https://ont.paiml.dev/v1alpha1/model/arch> "qwen35"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -9432,6 +9587,7 @@
 <https://ont.paiml.dev/v1alpha1/model/00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4> <https://ont.paiml.dev/v1alpha1/model/parityReceipt> <https://ont.paiml.dev/v1alpha1/receipt/0.68.2%2Flambda%2Fqwen35-4b-q4km> .
 <https://ont.paiml.dev/v1alpha1/model/00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4> <https://ont.paiml.dev/v1alpha1/model/required> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
 <https://ont.paiml.dev/v1alpha1/model/00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4> <https://ont.paiml.dev/v1alpha1/model/sha256> "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/model/03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/LadderRung> .
 <https://ont.paiml.dev/v1alpha1/model/03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/Model> .
 <https://ont.paiml.dev/v1alpha1/model/03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/RequiredModel> .
 <https://ont.paiml.dev/v1alpha1/model/03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8> <https://ont.paiml.dev/v1alpha1/model/arch> "qwen35"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -9449,6 +9605,15 @@
 <https://ont.paiml.dev/v1alpha1/model/03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8> <https://ont.paiml.dev/v1alpha1/model/parityReceipt> <https://ont.paiml.dev/v1alpha1/receipt/0.68.2%2Flambda%2Fqwen35-9b-q4km> .
 <https://ont.paiml.dev/v1alpha1/model/03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8> <https://ont.paiml.dev/v1alpha1/model/required> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
 <https://ont.paiml.dev/v1alpha1/model/03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8> <https://ont.paiml.dev/v1alpha1/model/sha256> "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/AprModel> .
+<https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/Model> .
+<https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e> <https://ont.paiml.dev/v1alpha1/model/aprVersion> "2.0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e> <https://ont.paiml.dev/v1alpha1/model/contract> <https://ont.paiml.dev/v1alpha1/contract/model-setfit-slice> .
+<https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e> <https://ont.paiml.dev/v1alpha1/model/file> "crates/aprender-core/tests/fixtures/setfit/slice_model.apr"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e> <https://ont.paiml.dev/v1alpha1/model/format> "apr"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e> <https://ont.paiml.dev/v1alpha1/model/sha256> "4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/model/4a75ee8031b3fbe0b17e1706a248aabbf158420c06f082bc29a89e2103d4057e> <https://ont.paiml.dev/v1alpha1/model/tensorCount> "37"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/model/6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/LadderRung> .
 <https://ont.paiml.dev/v1alpha1/model/6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/Model> .
 <https://ont.paiml.dev/v1alpha1/model/6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/RequiredModel> .
 <https://ont.paiml.dev/v1alpha1/model/6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e> <https://ont.paiml.dev/v1alpha1/model/arch> "qwen2"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -9466,6 +9631,7 @@
 <https://ont.paiml.dev/v1alpha1/model/6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e> <https://ont.paiml.dev/v1alpha1/model/parityReceipt> <https://ont.paiml.dev/v1alpha1/receipt/0.68.2%2Flambda%2Fqwen2-1.5b-q4km> .
 <https://ont.paiml.dev/v1alpha1/model/6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e> <https://ont.paiml.dev/v1alpha1/model/required> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
 <https://ont.paiml.dev/v1alpha1/model/6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e> <https://ont.paiml.dev/v1alpha1/model/sha256> "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/model/84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/LadderRung> .
 <https://ont.paiml.dev/v1alpha1/model/84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/Model> .
 <https://ont.paiml.dev/v1alpha1/model/84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/RequiredModel> .
 <https://ont.paiml.dev/v1alpha1/model/84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806> <https://ont.paiml.dev/v1alpha1/model/arch> "qwen35"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -9483,6 +9649,7 @@
 <https://ont.paiml.dev/v1alpha1/model/84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806> <https://ont.paiml.dev/v1alpha1/model/parityReceipt> <https://ont.paiml.dev/v1alpha1/receipt/0.68.2%2Flambda%2Fqwen35-27b-q4km> .
 <https://ont.paiml.dev/v1alpha1/model/84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806> <https://ont.paiml.dev/v1alpha1/model/required> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
 <https://ont.paiml.dev/v1alpha1/model/84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806> <https://ont.paiml.dev/v1alpha1/model/sha256> "84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/model/aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/LadderRung> .
 <https://ont.paiml.dev/v1alpha1/model/aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/Model> .
 <https://ont.paiml.dev/v1alpha1/model/aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/RequiredModel> .
 <https://ont.paiml.dev/v1alpha1/model/aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223> <https://ont.paiml.dev/v1alpha1/model/arch> "qwen35"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -9500,6 +9667,7 @@
 <https://ont.paiml.dev/v1alpha1/model/aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223> <https://ont.paiml.dev/v1alpha1/model/parityReceipt> <https://ont.paiml.dev/v1alpha1/receipt/0.68.2%2Flambda%2Fqwen35-2b-q4km> .
 <https://ont.paiml.dev/v1alpha1/model/aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223> <https://ont.paiml.dev/v1alpha1/model/required> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
 <https://ont.paiml.dev/v1alpha1/model/aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223> <https://ont.paiml.dev/v1alpha1/model/sha256> "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/model/b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/LadderRung> .
 <https://ont.paiml.dev/v1alpha1/model/b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/Model> .
 <https://ont.paiml.dev/v1alpha1/model/b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/RequiredModel> .
 <https://ont.paiml.dev/v1alpha1/model/b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897> <https://ont.paiml.dev/v1alpha1/model/arch> "qwen3"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -9517,6 +9685,7 @@
 <https://ont.paiml.dev/v1alpha1/model/b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897> <https://ont.paiml.dev/v1alpha1/model/parityReceipt> <https://ont.paiml.dev/v1alpha1/receipt/0.68.2%2Flambda%2Fqwen3-1.7b-q4km> .
 <https://ont.paiml.dev/v1alpha1/model/b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897> <https://ont.paiml.dev/v1alpha1/model/required> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
 <https://ont.paiml.dev/v1alpha1/model/b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897> <https://ont.paiml.dev/v1alpha1/model/sha256> "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/model/bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/LadderRung> .
 <https://ont.paiml.dev/v1alpha1/model/bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/Model> .
 <https://ont.paiml.dev/v1alpha1/model/bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/RequiredModel> .
 <https://ont.paiml.dev/v1alpha1/model/bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517> <https://ont.paiml.dev/v1alpha1/model/arch> "qwen35"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -9534,6 +9703,7 @@
 <https://ont.paiml.dev/v1alpha1/model/bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517> <https://ont.paiml.dev/v1alpha1/model/parityReceipt> <https://ont.paiml.dev/v1alpha1/receipt/0.68.2%2Flambda%2Fqwen35-0.8b-q4km> .
 <https://ont.paiml.dev/v1alpha1/model/bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517> <https://ont.paiml.dev/v1alpha1/model/required> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
 <https://ont.paiml.dev/v1alpha1/model/bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517> <https://ont.paiml.dev/v1alpha1/model/sha256> "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/model/d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/LadderRung> .
 <https://ont.paiml.dev/v1alpha1/model/d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/Model> .
 <https://ont.paiml.dev/v1alpha1/model/d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785> <https://ont.paiml.dev/v1alpha1/model/arch> "qwen3"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/model/d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785> <https://ont.paiml.dev/v1alpha1/model/backend> "cpu"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -9657,6 +9827,35 @@
 <https://ont.paiml.dev/v1alpha1/parity-receipt/evidence%2Fparity%2Fl0-1b%2Fgx10%2Fqwen2.5-coder-7b-instruct-q4_k_m.json> <https://ont.paiml.dev/v1alpha1/parity/unmeasured> "model_sha256: NOT RECORDED at measurement time and deliberately not back-filled. Hashing the file on the host today would attach a claim about a different world to a receipt about 2026-09-09. Absent means no measurement, never a match (ONT-4c1)."^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/parity/OracleComparedReceipt> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <https://ont.paiml.dev/v1alpha1/parity/ParityReceipt> .
 <https://ont.paiml.dev/v1alpha1/parity/SelfComparedReceipt> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <https://ont.paiml.dev/v1alpha1/parity/ParityReceipt> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/readme/Readme> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/contractCount> "1833"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/entrypoint> "crates/aprender-contracts-cli"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/kind> "library"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/schemaVersion> "1.0"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "A Qwen story"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Architecture"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "At HEAD"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Beat 1 — Discover (Registry)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Beat 2 — Trust (QA gates)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Beat 3 — Explore (Inspection)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Beat 4 — Adapt (Model ops)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Beat 5 — Use (Inference)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Beat 6 — Serve (REST API)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Beat 7 — Operate (Profiling)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Beat 8 — Scale (MoE introspection)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Command surface"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Contributing"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Cookbook"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Install"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Library usage"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "License"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Migration from old crates"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Performance"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Provable contracts"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Publish (separate flow)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Quick Start"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "What is Aprender?"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/verifiedCommand> "bash scripts/check_readme_claims.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.68.1%2Fgx10%2Fqwen2-1.5b-q4km> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/Receipt> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.68.1%2Fgx10%2Fqwen2-1.5b-q4km> <https://ont.paiml.dev/v1alpha1/model/backendRan> "cpu=ok"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.68.1%2Fgx10%2Fqwen2-1.5b-q4km> <https://ont.paiml.dev/v1alpha1/model/backendRan> "cuda=ok"^^<http://www.w3.org/2001/XMLSchema#string> .

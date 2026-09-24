@@ -1,0 +1,78 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# csv-train — one tracked dataset as a graded entity (ONT-001 §5 ONT-4c, Appendix B.8; #3847, PMAT-3847)
+#
+# WHAT IS GRADED. `extract:csv` reads crates/aprender-train/data/train.csv: the header row, the column names, the
+# data-row count, one inferred dtype per column, the sha256 of the bytes, and the producer this contract names.
+# `csv:producer` is `resolves: path` (v4.16: measured 0 of 9 tracked CSVs are named by a workflow run: step) —
+# prepare_data.sh writes this file's header. A data row whose column count differs from the header's is refused
+# naming the file and the row.
+#
+# KIND: pattern. The edit that makes it fail: rename a header column, or add a fourth.
+# ─────────────────────────────────────────────────────────────────────────────
+name: csv-train
+version: "1.0.0"
+scope: >
+  crates/aprender-train/data/train.csv: its header, shape and dtypes, and the script that produces it. Out of
+  scope: the values' statistics.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: PAIML Engineering
+  description: >
+    The aprender-train training CSV becomes a csv:Dataset node with an exact header, three columns, typed
+    dtypes and a producer that exists.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.16 Appendix B.8'
+    - 'crates/aprender-contracts/src/ontology/extract/csv.rs'
+    - 'crates/aprender-train/prepare_data.sh (the producer)'
+
+entity:
+  type: csv
+  ref: crates/aprender-train/data/train.csv
+  properties:
+    producer: crates/aprender-train/prepare_data.sh
+
+relations:
+  depends_on: [ont-sigma-v1, ont-shapes-v1]
+
+shape:
+  closed: true
+  properties:
+    - {path: csv:column, minCount: 3, maxCount: 3}
+    - {path: csv:header, in: ["feature1,feature2,label"]}
+    - {path: csv:rows, minCount: 1, datatype: xsd:integer}
+    - {path: csv:dtype, in: [string, float, int]}
+    - {path: csv:sha256, minCount: 1, maxCount: 1}
+    - {path: csv:producer, minCount: 1, maxCount: 1, resolves: path}
+
+equations:
+  rectangular:
+    formula: "∀ row ∈ data(train.csv): |row| = |header(train.csv)| = 3"
+    domain: every non-empty line after the header
+    codomain: one csv:Dataset node, or a PV-ONT-012 refusal naming the file and the row
+    invariants:
+      - a ragged row is refused by name, never truncated or padded
+    preconditions:
+      - the file is UTF-8
+    postconditions:
+      - the header is exactly feature1,feature2,label
+    lean_theorem: "none — L4 not declared"
+
+invariants:
+  - id: CSVT-INV-001
+    property: every data row has the header's column count
+    formal: '∀ r ∈ rows(train.csv): |r| = 3'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-CSVT-001
+    rule: a ragged row is refused
+    prediction: >
+      appending a row with four fields makes extract:csv refuse the file naming the row, and the shapes gate
+      exits 1 with PV-ONT-012
+    test: cargo test -p aprender-contracts --lib ontology::extract::csv
+    if_fails: a malformed dataset trains a model silently
