@@ -9,6 +9,8 @@
 //!   resolve to: GREEN, `0 problem(s) over 35 contracts`, exit 0.
 //! - `broken/` — one planted defect per check, each on its own output line, beside a control
 //!   for every rule that must NOT fire: RED, 6 problems, exit 1.
+//! - `edge/` — YAML the script reads through PyYAML's semantics: a test merged in by `<<`, and
+//!   falsy values (`0`, `[]`, `{}`, `false`, `""`) that Python treats as absent: RED, 3 problems.
 //!
 //! DISCRIMINATION: the two goldens differ, so a pv that printed either for both fails one; the
 //! `pmat` denominator is counted from the fixture, not trusted from the golden; and without
@@ -151,8 +153,56 @@ fn broken_fixture_names_each_planted_defect_once() {
 }
 
 #[test]
-fn the_two_goldens_discriminate() {
-    assert_ne!(golden("pmat"), golden("broken"));
+fn edge_fixture_follows_pyyaml_and_python_truthiness_as_the_script_does() {
+    let run = assert_matches_script("edge");
+    assert_eq!(run.code, 1);
+    let (stdout, _) = golden("edge");
+    // Both merged-in tests are counted, F-2 through a merge that itself merges.
+    assert!(
+        stdout.contains("contracts/e-merge-v1.yaml: 2 test-bearing obligation(s)"),
+        "{stdout}"
+    );
+    // Falsy values are absent, not malformed: no shape problem for any of them.
+    for absent in [
+        "not a string",
+        "not a mapping",
+        "not a list",
+        "g-unused-type",
+    ] {
+        assert!(!stdout.contains(absent), "{absent}:\n{stdout}");
+    }
+}
+
+#[test]
+fn the_goldens_discriminate() {
+    let all = [golden("pmat"), golden("broken"), golden("edge")];
+    for (i, a) in all.iter().enumerate() {
+        for b in &all[i + 1..] {
+            assert_ne!(a, b);
+        }
+    }
+}
+
+/// `glob` + `open` follow a symlinked contract; so must pv.
+#[cfg(unix)]
+#[test]
+fn a_symlinked_contract_is_checked_like_its_target() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let broken = fixtures().join("broken");
+    std::fs::create_dir(root.path().join("contracts")).expect("contracts/");
+    std::os::unix::fs::symlink(
+        broken.join("contracts/b-hidden-v1.yaml"),
+        root.path().join("contracts/b-hidden-v1.yaml"),
+    )
+    .expect("symlink");
+    let run = obligations(root.path(), true);
+    assert_eq!(
+        run.stdout,
+        "::error::contracts/b-hidden-v1.yaml: 2 test-bearing obligation(s) under `falsification:`, \
+         which pv cannot read — use `falsification_tests:`\n\
+         pv obligation gate: 1 problem(s) over 1 contracts\n"
+    );
+    assert_eq!(run.code, 1, "{}", run.stderr);
 }
 
 #[test]
@@ -174,4 +224,32 @@ fn zero_contracts_is_a_decline_not_a_pass() {
         run.stderr
     );
     assert!(run.stdout.is_empty(), "{}", run.stdout);
+}
+
+/// Where the script would `re.escape` a non-string `proved_type` (and die), pv names it — but
+/// only there: `g-unused-type-v1.yaml` in `edge/` holds the same type unreached and silent.
+#[test]
+fn a_non_string_proved_type_is_named_where_a_bound_fn_reaches_it() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let edge = fixtures().join("edge");
+    let unused = std::fs::read_to_string(edge.join("contracts/g-unused-type-v1.yaml"))
+        .expect("g-unused-type-v1.yaml");
+    let reached = unused.replacen("applies_to: all", "applies_to: real_fn", 1);
+    assert_ne!(reached, unused, "the fixture binds `all`");
+    std::fs::create_dir_all(root.path().join("contracts")).expect("contracts/");
+    std::fs::create_dir_all(root.path().join("src")).expect("src/");
+    std::fs::write(root.path().join("contracts/g-v1.yaml"), reached).expect("contract");
+    std::fs::copy(
+        edge.join("src/real.rs.txt"),
+        root.path().join("src/real.rs.txt"),
+    )
+    .expect("src");
+    let run = obligations(root.path(), true);
+    assert_eq!(
+        run.stdout,
+        "::error::contracts/g-v1.yaml: applies_to 'real_fn' is proved against a \
+         metadata.proved_type that is not a string\n\
+         pv obligation gate: 1 problem(s) over 1 contracts\n"
+    );
+    assert_eq!(run.code, 1, "{}", run.stderr);
 }

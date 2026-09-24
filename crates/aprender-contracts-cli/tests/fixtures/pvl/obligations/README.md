@@ -8,6 +8,7 @@ never by pv.
 |---|---|---|
 | `pmat/` | pmat's 35 `contracts/*.yaml` + `binding.yaml`, verbatim, and the 10 `src/` files that `git grep -l -E "fn <name>\b" -- src/` returns for the 5 function-valued `applies_to` (all in `tdg-grade-order-v1.yaml`, `proved_type: Grade`) | 0 problems over 35, exit 0 |
 | `broken/` | one planted defect per check, plus a control for every rule that must stay silent | 6 problems over 4, exit 1 |
+| `edge/` | YAML the script reads through PyYAML and Python truthiness: merge keys and falsy values | 3 problems over 4, exit 1 |
 
 ## Provenance
 
@@ -40,6 +41,20 @@ problem (`['src/gate.rs.txt']` in `broken.stdout`).
   - `sub/nested-v1.yaml` (the walk is not recursive);
   - `notes.yml` (not `.yaml`).
 
+## `edge/`, line by line
+
+- `e-merge-v1.yaml`: two entries under `falsification:` have no `test:` of their own. `F-1`
+  merges one in with `<<: *hidden`, and `F-2` merges it through `chained`, a mapping that
+  merges in turn. PyYAML resolves both, so the script counts 2 (check 2). `F-0` holds the
+  templates one level down and is not counted.
+- `f-falsy-v1.yaml`: `proved_type: 0`, and `applies_to` set to `0`, `[]`, `{}`, `false` and `""`.
+  Python treats every one of them as absent, so the only problem is `pv validate` (check 1).
+  `real_fn` is bound and never checked against the falsy type.
+- `g-unused-type-v1.yaml`: `proved_type: 7`, which no function target reaches, so the script
+  never evaluates it and reports nothing.
+- `h-false-doc-v1.yaml`: the document is `false`. `yaml.safe_load(...) or {}` makes it `{}`, so
+  only `pv validate` fails.
+
 ## Re-recording
 
 The fixture must be tracked (`git add`) first, because the script's `git grep` only sees
@@ -48,7 +63,7 @@ tracked files.
 ```bash
 cargo build -p aprender-contracts-cli --bin pv
 S=~/src/paiml-mcp-agent-toolkit/scripts/pv-obligation-gate.py   # sha256 as above
-for fx in pmat broken; do
+for fx in pmat broken edge; do
   (cd crates/aprender-contracts-cli/tests/fixtures/pvl/obligations/$fx &&
    PATH="$PWD/../../../../../../../target/debug:$PATH" python3 "$S" > ../$fx.stdout; echo $? > ../$fx.rc)
 done
@@ -60,6 +75,8 @@ These are documented in `src/commands/obligations.rs`. No fixture here exercises
 script has no verdict to record:
 
 - zero contracts is `decline:` at exit 2 (PVL-1), where the script reports 0 over 0 at exit 0;
-- non-YAML input, a non-mapping file, or a non-string `applies_to`/`proved_type` is a named
-  problem, where the script dies with a traceback;
+- an input the script dies on with a traceback is a named problem. The module doc lists each
+  one, and `a_non_string_proved_type_is_named_where_a_bound_fn_reaches_it` tests one;
+- YAML 1.2 (`serde_yaml`) against PyYAML's YAML 1.1: a plain `no` is a string here, and a duplicate
+  key is a parse problem here (it also fails `pv validate`, so the verdict agrees);
 - `src/` is walked on disk, so untracked files count.

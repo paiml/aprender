@@ -10,7 +10,7 @@
 //!    `pv validate <file>` makes: any error-severity violation, or no verdict at all, fails).
 //! 2. No test-bearing entry (a mapping with a `test` key) hides under `falsification:`, the key
 //!    pv does not read. Entries without `test` are alert thresholds and are left alone.
-//! 3. Every `applies_to` other than `all`, empty, or an equation of the same contract names a
+//! 3. Every `applies_to` other than `all`, a falsy value, or an equation of the contract names a
 //!    `fn` under `src/`; where the contract declares `metadata.proved_type`, at least one file
 //!    defining that `fn` mentions the type as a word.
 //!
@@ -22,11 +22,24 @@
 //! **Where it deliberately differs from the script** (each is an input the script does not
 //! survive, or PVL-1):
 //! - zero contracts is `decline:` at exit 2 (PVL-1), where the script reports 0 over 0 at exit 0;
-//! - a file that is not YAML, not a mapping, or whose `applies_to`/`proved_type` is not a
-//!   string, or whose `proof_obligations` entry is not a mapping, is a named problem — the
-//!   script dies with a Python traceback on each;
+//! - an input the script dies on with a Python traceback is a named problem here: a file that
+//!   cannot be read or is not YAML; a truthy document that is not a mapping; a truthy
+//!   `equations`/`metadata` that is not a mapping, or `proof_obligations`/`falsification` that
+//!   is not a list (a `falsification` mapping or string counts 0, as the script's loop does);
+//!   a `proof_obligations` entry that is not a mapping; a truthy `applies_to` that is not a
+//!   string; a truthy `proved_type` that is not a string, where a bound `fn` would be searched
+//!   for it;
+//! - YAML is read by `serde_yaml` (YAML 1.2), the script's by PyYAML (YAML 1.1): a plain
+//!   `yes`/`no`/`on`/`off` is a string here and a boolean there, and a duplicate key is a
+//!   parse problem here where PyYAML keeps the last;
 //! - `src/` is walked on disk (symlinks not followed), where the script's `git grep` searches
-//!   tracked files only: an untracked file under `src/` counts here.
+//!   tracked files only: an untracked file under `src/` counts here;
+//! - a word character is `char::is_alphanumeric` or `_`; next to non-ASCII text this can differ
+//!   from Python's `re` and from `git grep`'s locale.
+//!
+//! **Where it deliberately agrees** (each held by `tests/fixtures/pvl/obligations/edge/`): merge
+//! keys (`<<`) are resolved as PyYAML resolves them, and falsy values follow Python truthiness —
+//! a falsy document is `{}`, a falsy `applies_to` is skipped, a falsy `proved_type` is none.
 //!
 //! Line-by-line mapping (script → here): `CONTRACTS` → [`contract_files`]; `_fn_files` →
 //! [`SrcTree::fn_files`]; `check_validate` → [`check_validate`]; `check_visible` →
@@ -79,15 +92,15 @@ pub fn run(root: &Path, gate: bool) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// `contracts/*.yaml` under `root`, relative and `/`-joined, sorted, `*binding.yaml` excluded.
-/// Hidden names are excluded as `glob`'s `*` excludes them.
+/// Hidden names are excluded as `glob`'s `*` excludes them. Like `glob`, the name alone decides:
+/// a symlink is followed when read, and an entry that cannot be read is a named problem.
 fn contract_files(root: &Path) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(root.join("contracts")) else {
         return Vec::new();
     };
     let mut out: Vec<String> = entries
         .filter_map(Result::ok)
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
-        .filter_map(|e| e.file_name().into_string().ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| !n.starts_with('.') && n.ends_with(".yaml") && !n.ends_with("binding.yaml"))
         .map(|n| format!("contracts/{n}"))
         .collect();
@@ -109,15 +122,45 @@ fn check_contract(root: &Path, rel: &str, src: &mut SrcTree) -> Vec<String> {
     problems
 }
 
-/// `yaml.safe_load(...) or {}`: an empty document is an empty mapping.
+/// `yaml.safe_load(...) or {}`: merge keys (`<<`) resolved as PyYAML resolves them, and a
+/// falsy document (empty, `false`, `0`, `[]`) is an empty mapping.
 fn load(path: &Path) -> Result<Mapping, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("cannot be read: {e}"))?;
-    match serde_yaml::from_str::<Value>(&text) {
-        Ok(Value::Mapping(m)) => Ok(m),
-        Ok(Value::Null) => Ok(Mapping::new()),
-        Ok(_) => Err("is not a YAML mapping".into()),
-        Err(e) => Err(format!("does not parse as YAML: {e}")),
+    let mut doc: Value =
+        serde_yaml::from_str(&text).map_err(|e| format!("does not parse as YAML: {e}"))?;
+    // One pass resolves one level; a merged mapping that itself merges needs another.
+    loop {
+        let before = doc.clone();
+        doc.apply_merge()
+            .map_err(|e| format!("has a merge key PyYAML refuses: {e}"))?;
+        if doc == before {
+            break;
+        }
     }
+    match doc {
+        Value::Mapping(m) => Ok(m),
+        v if !truthy(&v) => Ok(Mapping::new()),
+        _ => Err("is not a YAML mapping".into()),
+    }
+}
+
+/// Python's `bool(x)` over a YAML value — what the script's `x or {}`, `if not target` and
+/// `if proved` decide on.
+fn truthy(v: &Value) -> bool {
+    match v {
+        Value::Null => false,
+        Value::Bool(b) => *b,
+        Value::Number(n) => n.as_f64().is_none_or(|f| f != 0.0),
+        Value::String(s) => !s.is_empty(),
+        Value::Sequence(s) => !s.is_empty(),
+        Value::Mapping(m) => !m.is_empty(),
+        Value::Tagged(_) => true,
+    }
+}
+
+/// `m.get(key) or <empty>`: `None` when the key is absent or its value is falsy.
+fn get_truthy<'a>(m: &'a Mapping, key: &str) -> Option<&'a Value> {
+    m.get(key).filter(|v| truthy(v))
 }
 
 fn check_validate(root: &Path, rel: &str) -> Vec<String> {
@@ -131,12 +174,15 @@ fn check_validate(root: &Path, rel: &str) -> Vec<String> {
 }
 
 fn check_visible(rel: &str, doc: &Mapping) -> Vec<String> {
-    let hidden = match doc.get("falsification") {
+    let hidden = match get_truthy(doc, "falsification") {
+        None => 0,
         Some(Value::Sequence(entries)) => entries
             .iter()
             .filter(|e| e.as_mapping().is_some_and(|m| m.contains_key("test")))
             .count(),
-        _ => 0,
+        // Iterating a dict or a str yields keys or characters, never a dict.
+        Some(Value::Mapping(_) | Value::String(_)) => 0,
+        Some(_) => return vec![format!("{rel}: falsification is not a list")],
     };
     if hidden == 0 {
         return Vec::new();
@@ -147,20 +193,19 @@ fn check_visible(rel: &str, doc: &Mapping) -> Vec<String> {
     )]
 }
 
+/// `metadata.proved_type` as the script reads it: `(doc.get("metadata") or {}).get(...)`, then
+/// `if proved`. A truthy non-string is only an error where the script would `re.escape` it.
+#[derive(Clone, Copy)]
+enum Proved<'a> {
+    Absent,
+    Type(&'a str),
+    NotAString,
+}
+
 fn check_bindings(rel: &str, doc: &Mapping, src: &mut SrcTree) -> Vec<String> {
-    let equations: Vec<&str> = doc
-        .get("equations")
-        .and_then(Value::as_mapping)
-        .map(|m| m.keys().filter_map(Value::as_str).collect())
-        .unwrap_or_default();
-    let proved = match doc.get("metadata").and_then(|m| m.get("proved_type")) {
-        None | Some(Value::Null) => None,
-        Some(Value::String(s)) => Some(s.as_str()),
-        Some(_) => return vec![format!("{rel}: metadata.proved_type is not a string")],
-    };
-    let obligations = match doc.get("proof_obligations") {
-        Some(Value::Sequence(obs)) => obs.as_slice(),
-        _ => &[],
+    let (equations, proved, obligations) = match bindings_of(doc) {
+        Ok(parts) => parts,
+        Err(why) => return vec![format!("{rel}: {why}")],
     };
     let mut problems = Vec::new();
     for ob in obligations {
@@ -168,28 +213,50 @@ fn check_bindings(rel: &str, doc: &Mapping, src: &mut SrcTree) -> Vec<String> {
             problems.push(format!("{rel}: a proof_obligations entry is not a mapping"));
             continue;
         };
-        let target = match ob.get("applies_to") {
-            None | Some(Value::Null) => continue,
-            Some(Value::String(t)) => t.as_str(),
-            Some(_) => {
-                problems.push(format!("{rel}: an applies_to is not a string"));
-                continue;
-            }
+        // `if not target or target == "all" or target in equations: continue`
+        let Some(target) = get_truthy(ob, "applies_to") else {
+            continue;
         };
-        if target.is_empty() || target == "all" || equations.contains(&target) {
+        if equations.contains(&target) {
             continue;
         }
-        problems.extend(check_target(rel, target, proved, src));
+        let Some(target) = target.as_str() else {
+            problems.push(format!("{rel}: an applies_to is not a string"));
+            continue;
+        };
+        if target != "all" {
+            problems.extend(check_target(rel, target, proved, src));
+        }
     }
     problems
 }
 
-fn check_target(
-    rel: &str,
-    target: &str,
-    proved: Option<&str>,
-    src: &mut SrcTree,
-) -> Option<String> {
+/// The equation names, the proved type and the obligations, each read as the script reads
+/// them; a shape the script would die on is an error naming it.
+fn bindings_of(doc: &Mapping) -> Result<(Vec<&Value>, Proved<'_>, &[Value]), String> {
+    let equations = match get_truthy(doc, "equations") {
+        None => Vec::new(),
+        Some(Value::Mapping(m)) => m.keys().collect(),
+        Some(_) => return Err("equations is not a mapping".into()),
+    };
+    let proved = match get_truthy(doc, "metadata") {
+        None => Proved::Absent,
+        Some(Value::Mapping(m)) => match get_truthy(m, "proved_type") {
+            None => Proved::Absent,
+            Some(Value::String(s)) => Proved::Type(s),
+            Some(_) => Proved::NotAString,
+        },
+        Some(_) => return Err("metadata is not a mapping".into()),
+    };
+    let obligations = match get_truthy(doc, "proof_obligations") {
+        None => &[][..],
+        Some(Value::Sequence(obs)) => obs.as_slice(),
+        Some(_) => return Err("proof_obligations is not a list".into()),
+    };
+    Ok((equations, proved, obligations))
+}
+
+fn check_target(rel: &str, target: &str, proved: Proved<'_>, src: &mut SrcTree) -> Option<String> {
     let files = src.fn_files(target);
     if files.is_empty() {
         return Some(format!(
@@ -197,7 +264,16 @@ fn check_target(
             py_repr(target)
         ));
     }
-    let proved = proved?;
+    let proved = match proved {
+        Proved::Absent => return None,
+        Proved::Type(t) => t,
+        Proved::NotAString => {
+            return Some(format!(
+            "{rel}: applies_to {} is proved against a metadata.proved_type that is not a string",
+            py_repr(target)
+        ))
+        }
+    };
     if files.iter().any(|f| src.mentions(f, proved)) {
         return None;
     }

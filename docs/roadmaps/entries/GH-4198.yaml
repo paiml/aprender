@@ -1,7 +1,7 @@
 - id: GH-4198
   github_issue: 4198
   item_type: task
-  title: 'PVL-001 EV-10: pv obligations [ROOT] --gate (commands/obligations.rs, cli/lib/mod wiring, ObligationsRejected) byte-identical to pv-obligation-gate.py; 7 golden tests, pmat+broken fixtures, ci fragment 460. NO ci.yml, Makefile or pmat-side change'
+  title: 'PVL-001 EV-10: pv obligations [ROOT] --gate (commands/obligations.rs, cli/lib/mod wiring, ObligationsRejected) byte-identical to pv-obligation-gate.py; 10 golden tests, pmat+broken+edge fixtures, ci fragment 460. NO ci.yml, Makefile or pmat-side change'
   status: inprogress
   priority: medium
   assigned_to: null
@@ -9,9 +9,9 @@
   updated: 2026-09-24T08:50:11.471932980+00:00
   spec: null
   acceptance_criteria:
-  - 'cargo test -p aprender-contracts-cli --test pvl_obligations_golden: 7 passed. Goldens (pmat.stdout/rc, broken.stdout/rc) were written by running pmat''s scripts/pv-obligation-gate.py (sha256 e4fa9719, pmat d70a78f67) over each fixture, never by pv; pv matches stdout byte for byte and the exit code (pmat 0 problems over 35, rc 0; broken 6 problems over 4, rc 1).'
-  - 'Mutations in obligations.rs, each planted alone, restored sha-identical, 9/9 red: validate-always-passes, falsification-counts-every-entry, fn-match-ignores-word-boundary, type-mention leading and trailing boundary, binding-yaml-included, equation-targets-not-skipped (each reds broken_fixture_is_red_exactly_as_the_script_reports_it); gate-flag-ignored reds the same; empty-corpus-reported-as-pass reds zero_contracts_is_a_decline_not_a_pass.'
-  - 'Deliberate differences from the script, documented in the module doc: zero contracts is decline rc 2 (PVL-1), non-YAML/non-mapping/non-string input is a named problem not a traceback, src/ walked on disk. Largest function cog 24 / cyc 8.'
+  - 'cargo test -p aprender-contracts-cli --test pvl_obligations_golden: 10 passed. Goldens (pmat, broken, edge .stdout/.rc) were written by running pmat''s scripts/pv-obligation-gate.py (sha256 e4fa9719, pmat d70a78f67, PyYAML 6.0.3) over each fixture, never by pv; pv matches stdout byte for byte and the exit code (pmat 0 over 35 rc 0; broken 6 over 4 rc 1; edge 3 over 4 rc 1: merge keys incl. a chained merge, falsy applies_to/proved_type/document).'
+  - 'Mutations in obligations.rs, each planted alone, restored sha-identical, 16/16 red, each naming the test it reds: validate-always-passes, falsification-counts-every-entry, fn/type word boundary (3), binding-yaml-included, gate-flag-ignored, empty-corpus-reported-as-pass, equation-targets-not-skipped, merge-keys-not-resolved, merge-single-pass, everything-truthy, falsy-document-rejected, unused-bad-type-reported-eagerly (edge_fixture_follows_pyyaml_and_python_truthiness_as_the_script_does), symlinked-contracts-skipped (a_symlinked_contract_is_checked_like_its_target), reached-bad-type-silent (a_non_string_proved_type_is_named_where_a_bound_fn_reaches_it).'
+  - 'Deliberate differences from the script, documented in the module doc: zero contracts is decline rc 2 (PVL-1), non-YAML/non-mapping/non-string input is a named problem not a traceback, src/ walked on disk, YAML 1.2 vs PyYAML 1.1 plain booleans and duplicate keys, word chars next to non-ASCII. Largest function cog 17 / cyc 5.'
   phases: []
   subtasks: []
   estimated_effort: null
