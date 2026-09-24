@@ -2,9 +2,9 @@
   github_issue: 4219
   item_type: task
   title: every [[bin]] --version prints the build SHA (shared build-sha)
-  status: planned
+  status: inprogress
   priority: medium
-  assigned_to: null
+  assigned_to: aprender-88
   created: 2026-09-24T14:05:08Z
   updated: 2026-09-24T14:05:08Z
   spec: null
@@ -12,5 +12,6 @@
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
