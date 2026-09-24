@@ -145,6 +145,9 @@ pub mod f2_receipt;
 /// Qwen3.5 / Qwen3.8 hybrid (Gated `DeltaNet` + gated attention) CPU forward (#3091).
 #[path = "inference/forward/forward_qwen35.rs"]
 pub mod forward_qwen35;
+/// PMAT-4269 (M1): the Qwen3-MoE CPU forward behind the one engine.
+#[path = "inference/forward/moe_session.rs"]
+pub mod moe_session;
 /// The Qwen3.5 hybrid held resident across calls — one build, one F2 guard, a
 /// decode state that outlives the turn (#3595 `apr chat`, #3571 `apr serve`).
 #[path = "inference/forward/qwen35_session.rs"]

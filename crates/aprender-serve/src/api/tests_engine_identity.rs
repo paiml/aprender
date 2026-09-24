@@ -34,7 +34,7 @@ const ARCHES: &[(&str, Arch)] = &[
     // tests in apr_transformer/apr_cpu_forward.rs.
     ("apr-cpu", Arch::Session("AprCpuForward")),
     ("safetensors-cpu", Arch::Session("StCpuForward")),
-    ("qwen3_moe", Arch::NotYet("#4263 MoE (aprender-cb)")),
+    ("qwen3_moe", Arch::Session("Qwen3MoeForward")),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -268,6 +268,39 @@ fn apr_run_on_a_dense_gguf_enters_the_one_engine() {
         assert_eq!(entries[0].arch, *arch);
         assert_eq!(entries[0].kind, EntryKind::Generate);
     }
+}
+
+/// The MoE verb row (PMAT-4269 M1): `apr run --no-gpu` on a qwen3_moe GGUF
+/// enters the engine through `Qwen3MoeForward`. Skipped when the file is absent.
+const MOE_RUN_PATH: &str = "/home/noah/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf";
+
+#[test]
+fn apr_run_on_a_moe_gguf_enters_the_one_engine() {
+    assert!(
+        ARCHES.contains(&("qwen3_moe", Arch::Session("Qwen3MoeForward"))),
+        "qwen3_moe has a verb row but its ARCHES row is not Qwen3MoeForward"
+    );
+    if !std::path::Path::new(MOE_RUN_PATH).exists() {
+        eprintln!("SKIP: {MOE_RUN_PATH} is absent");
+        return;
+    }
+    // Ids no other test uses, so the witness answers for this call alone.
+    let prompt: Vec<u32> = (9_701..9_706).collect();
+    let mut config = crate::infer::InferenceConfig::new(MOE_RUN_PATH);
+    config.input_tokens = Some(prompt.clone());
+    config.max_tokens = 2;
+    config.temperature = 0.0;
+    config.top_k = 1;
+    config.no_gpu = true;
+    crate::infer::run_inference(&config).expect("apr run's inference");
+    let entries = entries_for(&prompt);
+    assert_eq!(
+        entries.len(),
+        1,
+        "apr run on {MOE_RUN_PATH} left {entries:?}: it decoded outside the session"
+    );
+    assert_eq!(entries[0].arch, "qwen3_moe");
+    assert_eq!(entries[0].kind, EntryKind::Generate);
 }
 
 /// Every `impl ArchForward for X` in production source is exactly the set of
