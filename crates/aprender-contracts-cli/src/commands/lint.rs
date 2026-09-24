@@ -292,9 +292,31 @@ fn decide_named_gate(
             Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
         NamedGateOutcome::Shapes(outcome) => decide_shapes_gate(outcome),
+        NamedGateOutcome::Consistency(outcome) => decide_consistency_gate(outcome),
         NamedGateOutcome::Sigma(SigmaOutcome::Ran { result, findings })
         | NamedGateOutcome::Relations(RelationsOutcome::Ran { result, findings })
         | NamedGateOutcome::Ran { result, findings } => Ok((result, findings)),
+    }
+}
+
+/// The `ont-consistency` gate's answers (ONT-5). Only `Ran` is a verdict; every decline prints WHY first — a stale
+/// witness names the command that regenerates it.
+fn decide_consistency_gate(
+    outcome: provable_contracts::lint::consistency_gate::ConsistencyOutcome,
+) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
+    use provable_contracts::lint::consistency_gate::{decline_reason, why, ConsistencyOutcome};
+
+    match outcome {
+        ConsistencyOutcome::Ran { result, findings } => Ok((result, findings)),
+        ConsistencyOutcome::Malformed(e) => {
+            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
+        other => {
+            eprintln!("ont-consistency: {}", why(&other));
+            let reason = decline_reason(&other)
+                .unwrap_or(provable_contracts::ontology::verdict::Reason::NoCheckable);
+            Err(LintDeclined { reason }.into())
+        }
     }
 }
 

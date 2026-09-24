@@ -6,6 +6,7 @@
 //! - [`shapes`] — the in-house SHACL-Core-subset validator and the Turtle export (§3.6; ONT-4b).
 //! - [`sigma`] — Σ, the ontology's own declaration (`contracts/ontology.yaml`; §4.1).
 //! - [`verdict`] — the one verdict lattice every `pv lint` gate reports into (§3.4).
+//! - [`witness`] — ONT-5: the Horn graph pv-sat reasons over, the witness it writes, and the checker (F-7: no reasoner).
 
 pub mod arming;
 pub mod extract;
@@ -15,3 +16,4 @@ pub mod shapes;
 pub mod sigma;
 pub mod verdict;
 pub mod w3c;
+pub mod witness;

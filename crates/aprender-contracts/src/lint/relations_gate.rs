@@ -59,13 +59,8 @@ pub enum RelationsOutcome {
     },
 }
 
-/// One typed edge, as read from a contract's `relations:` block.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct Edge {
-    from: String,
-    role: String,
-    to: String,
-}
+// One typed edge, as read from a contract's `relations:` block — the type ONT-5's witness hashes and encodes.
+use crate::ontology::witness::TypedEdge as Edge;
 
 /// Run the gate over `contract_dir`, reading Σ from `<contract_dir>/ontology.yaml`.
 #[must_use]
@@ -159,6 +154,46 @@ pub fn run_relations_gate(contract_dir: &Path) -> RelationsOutcome {
         result: Box::new(result),
         findings,
     }
+}
+
+/// ONT-5: the corpus as pv-sat and the `ont-consistency` gate read it. Only a Σ that parses and holds its own integrity
+/// yields a graph.
+#[derive(Debug)]
+pub enum TypedGraph {
+    /// No `ontology.yaml` under the corpus.
+    NoSigma,
+    /// Σ does not parse, or does not satisfy its own integrity rules.
+    Malformed(SigmaError),
+    /// Every contract id, and every typed edge that passes rules 1–4 (symmetric roles closed).
+    Read {
+        ids: BTreeSet<String>,
+        edges: BTreeSet<Edge>,
+    },
+}
+
+/// The well-formed typed edges and the id set. An edge the `relations` gate rejects is not an edge here: that
+/// gate reports it, and the consistency of a relation nobody could resolve is not a question.
+#[must_use]
+pub fn typed_graph(contract_dir: &Path) -> TypedGraph {
+    let sigma_path = contract_dir.join("ontology.yaml");
+    let Ok(text) = std::fs::read_to_string(&sigma_path) else {
+        return TypedGraph::NoSigma;
+    };
+    let sigma = match Sigma::from_yaml(&text) {
+        Ok(s) => s,
+        Err(e) => return TypedGraph::Malformed(e),
+    };
+    if let Err(e) = sigma.check_integrity() {
+        return TypedGraph::Malformed(e);
+    }
+    let (docs, stems) = read_corpus(contract_dir, &sigma_path);
+    let mut edges = BTreeSet::new();
+    for (stem, file, doc) in &docs {
+        if let Some(map) = doc.get("relations").and_then(serde_yaml::Value::as_mapping) {
+            let _ = check_block(&sigma, stem, file, map, &stems, &mut edges);
+        }
+    }
+    TypedGraph::Read { ids: stems, edges }
 }
 
 type Doc = (String, std::path::PathBuf, serde_yaml::Value);
