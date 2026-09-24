@@ -31,7 +31,7 @@
     "class": 5,
     "instance": 2
   },
-  "id_set_sha256": "801e51137e8974f3933db042812391733ee31670455e233b001d79bd1ea4f096",
+  "id_set_sha256": "8b1630fec2a10185da5faa4f0272744d2835c4f79d523944e3a68dce10bd653b",
   "declared_external": [
     {
       "name": "provable-contracts",

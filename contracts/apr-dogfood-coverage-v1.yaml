@@ -62,6 +62,13 @@ metadata:
     # crates/apr-cli/src/commands_enum.rs. All 64 citations of that file in 55 rows
     # were re-derived: 42 at lines >= 139 shifted by +4, 22 at <= 138 unchanged, and
     # every cited line's text was checked identical between 79a3af79d and the batch.
+    # PARTIAL RE-AUDIT, PVL-001 EV-2 / #4095 (G2.1). Same rule: `measured_commit` does not
+    # move. #4095 rewrites one doc comment in crates/aprender-contracts-cli/src/cli.rs
+    # line-for-line (4 for 4, no shift), but re-deriving the 76 `pv`/`apr pv` rows that
+    # cite it found 54 ALREADY stale on main (+6 from `Coverage` on, +12 from `Lint` on --
+    # variants inserted since 2026-08-22, never re-audited). Every row now cites the line of
+    # its own `Commands::<Variant>` declaration, checked by reading that line back; 22 were
+    # already exact. `pv census` and `pv extract` ship with no row at all -- not added here.
     ledger: docs/audits/surface_audit.csv
 
     overall:

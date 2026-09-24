@@ -1,0 +1,105 @@
+contract: pvl-2-ghost-binding-reject
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    PVL-2 (PMAT-4080; paiml/infra docs/specifications/PVL-001-pv-lean-gate.md
+    row EV-2): `pv proof-status --binding` RESOLVES every binding, and a ghost
+    binding (claimed `implemented`, function absent from source) is a REJECT.
+
+    MEASURED before this contract (origin/main 49fe19c28, 2026-09-23): given
+    tests/fixtures/pvl/ghost-binding.yaml (status implemented,
+    aprender::nonexistent::function_that_does_not_exist_xyz), `pv proof-status
+    --binding` printed its report and exited 0. It counted binding entries and
+    never resolved them (scripts/dogfood.sh:796 records the same), and
+    `--verify-bindings` downgraded ghosts silently, still exiting 0.
+
+    Now every `implemented` binding is looked up with the `pv verify-bindings`
+    resolver (scan_all_sources / derive_src_root, one shared short_name
+    normalization). A ghost is downgraded, listed under `GHOST BINDINGS (n)`
+    with its contract, equation and function, and the command exits 1.
+    `--verify-bindings` is a no-op alias. The resolver now sees every `fn` item
+    whatever its visibility or qualifiers: the old four-prefix scanner missed
+    `pub(super) fn compute_mse` (crates/aprender-core/src/tree/regression_helpers.rs:27)
+    and reported it a ghost, which under a reject gate is a false reject. It also
+    sees type items (struct/enum/type/trait): setfit-apr-v1 binds two real
+    `pub struct`s. And the source root no longer assumes the pre-monorepo layout
+    (`contracts/<repo>/binding.yaml` -> `../../<repo>/`, absent here): it falls back
+    to the binding's nearest ancestor holding `crates/` or `src/`, so the verdict
+    no longer depends on the caller's cwd. Measured with the final resolver:
+    contracts/binding.yaml 1 genuine ghost, contracts/aprender/binding.yaml 5
+    genuine ghosts (all filed on #4094).
+  references:
+    - "docs/specifications/PVL-001-pv-lean-gate.md (paiml/infra), row EV-2"
+    - "crates/aprender-contracts-cli/src/commands/proof_status.rs"
+    - "crates/aprender-contracts-cli/src/commands/verify_bindings.rs"
+    - "crates/aprender-contracts-cli/tests/pvl_ghost_binding.rs"
+    - "tests/fixtures/pvl/ghost-binding.yaml"
+
+equations:
+  ghost_is_rejected:
+    formula: >
+      forall b in bindings(B) . status(b) = implemented and short(function(b)) not in fns(src(B))
+        => exit_code(pv proof-status --binding B) = 1
+           and stdout contains "GHOST BINDINGS (" ++ |ghosts(B)| ++ ")"
+           and stdout names function(b)
+    domain: "B a binding registry file; src(B) the verify-bindings resolver's scan set"
+    codomain: "{1}"
+    invariants:
+      - "a ghost is downgraded before levels are computed, so no L5 is credited on a ghost"
+  resolved_is_accepted:
+    formula: >
+      forall b in bindings(B) . status(b) = implemented => short(function(b)) in fns(src(B))
+        => no GHOST BINDINGS line
+    domain: "B whose every implemented binding resolves"
+    codomain: "{0}"
+    invariants:
+      - "a read error of B is not the ghost verdict: it prints no GHOST BINDINGS line"
+
+proof_obligations:
+  - id: P2-INV-001
+    type: invariant
+    property: "An implemented binding whose function the resolver cannot find is rejected, counted and named"
+    formal: '∀ b ∈ bindings: implemented(b) ∧ short(b) ∉ fns(src) ⟹ exitCode ≡ 1 ∧ b ∈ ghostBlock'
+    applies_to: all
+  - id: P2-INV-002
+    type: invariant
+    property: "Every fn item declaration form is visible to the resolver"
+    formal: '∀ v ∈ visibilities: ∀ q ∈ qualifiers: fnItemName(v · q · fnDecl(n)) ≡ n'
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-PVL-2-001
+    rule: "PVL-2-GHOST-REJECTED"
+    prediction: >
+      Bypassing the resolver in proof_status::resolve_bindings (`unresolved =
+      false && …`) turns a_ghost_binding_is_a_reject and
+      verify_bindings_is_a_noop_alias RED, while the control and the
+      missing-file case stay GREEN.
+    test_harness: "cargo test -p aprender-contracts-cli --test pvl_ghost_binding"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-23: mutation engaged -> FAILED. 2 passed; 2 failed; RED:
+      verify_bindings_is_a_noop_alias a_ghost_binding_is_a_reject; restored -> ok.
+      4 passed; 0 failed.
+  - id: FALSIFY-PVL-2-002
+    rule: "PVL-2-EVERY-FN-FORM"
+    prediction: >
+      Dropping the `pub(...)` branch of fn_item_name turns the resolver case table
+      RED (pub(super) fn compute_mse reads as not-a-declaration).
+    test_harness: "cargo test -p aprender-contracts-cli --lib -- verify_bindings"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-23: mutation engaged -> FAILED. 0 passed; 1 failed (left: None);
+      restored -> ok. 1 passed; 0 failed.
+  - id: FALSIFY-PVL-2-003
+    rule: "PVL-2-GHOST-REJECTED"
+    prediction: >
+      The shipped proof-status (origin/main) accepts the ghost fixture: exit 0, no
+      GHOST BINDINGS line, so the accept test is RED there.
+    test_harness: "cargo test -p aprender-contracts-cli --test pvl_ghost_binding"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-23 on origin/main 49fe19c28 + the test: FAILED. 2 passed; 2
+      failed; RED: a_ghost_binding_is_a_reject verify_bindings_is_a_noop_alias (both
+      exit 0 with the report printed).

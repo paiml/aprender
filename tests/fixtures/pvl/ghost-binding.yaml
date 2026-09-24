@@ -1,0 +1,12 @@
+# PVL-001 EV-2 (PVL-2) fixture: ONE binding that claims `implemented` for a
+# function that exists nowhere in this tree. `pv proof-status --binding <this>`
+# must reject it: exit 1, `GHOST BINDINGS (1)`, and the symbol named.
+version: 1.0.0
+target_crate: aprender
+bindings:
+- contract: softmax-kernel-v1.yaml
+  equation: softmax
+  module_path: aprender::nonexistent
+  function: aprender::nonexistent::function_that_does_not_exist_xyz
+  signature: 'fn function_that_does_not_exist_xyz()'
+  status: implemented
