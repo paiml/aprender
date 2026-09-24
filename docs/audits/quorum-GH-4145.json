@@ -1,0 +1,216 @@
+{
+  "ticket": "GH-4145",
+  "base": "origin/fix/4117-release-scope-callers",
+  "base_resolved": "origin/fix/4117-release-scope-callers",
+  "base_note": "no origin/origin/fix/4117-release-scope-callers exists; judged against the local ref",
+  "head": "eadf658da5a91098140d4296960b1c4c1f3dfb37",
+  "diff_sha256": "a95608d60ce18e517e0df4620a7e7d3370de427492082bd6cf16cba08abc2b54",
+  "width": 2,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 13126,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly resolves GH-4145 by updating the remote leg in models_t1.sh to fetch the exact candidate SHA by id if fetching origin/main fails. This properly supports fetching candidates on release branches without altering the main branch flow. The changes correctly match the specifications in the receipt, testing both valid release branches and nonexistent SHAs, with appropriate mutation testing.",
+      "findings": [
+        {
+          "claim": "The leg tries origin/main first, then fetches the exact sha by id",
+          "file": "scripts/release/models_t1.sh",
+          "fix": "",
+          "grounding": "cited",
+          "line": 117
+        },
+        {
+          "claim": "candidate-on-release-branch: gx10 fetches it by sha and measures it",
+          "file": "scripts/check_release_models_t1.sh",
+          "fix": "",
+          "grounding": "cited",
+          "line": 402
+        },
+        {
+          "claim": "candidate-nowhere: a candidate never pushed is refused with FETCH-FAILED, and gx10 builds nothing",
+          "file": "scripts/check_release_models_t1.sh",
+          "fix": "",
+          "grounding": "cited",
+          "line": 410
+        },
+        {
+          "claim": "Mutant fetch-main-only is killed by candidate-on-release-branch",
+          "file": "scripts/check_release_models_t1.sh",
+          "fix": "",
+          "grounding": "cited",
+          "line": 535
+        }
+      ],
+      "raw_bytes": 4699,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PASS. The diff implements GH-4145 by updating models_t1.sh's gx10 remote leg to fetch the exact candidate sha by id when not reachable on origin/main, avoiding false FETCH-FAILED on release/* candidates. Test suite scripts/check_release_models_t1.sh was updated with candidate-on-release-branch, candidate-nowhere, and a mutant kill (fetch-main-only), with the vacuity floor bumped from 39 to 42. All 42 rows pass (measured), shift-left suite passes (measured), and bashrs lint reports 0 gating errors/warnings on changed files (measured).",
+      "findings": [],
+      "raw_bytes": 2359,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "scripts/check_release_models_t1.sh",
+      "line": 402,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "candidate-on-release-branch: gx10 fetches it by sha and measures it"
+      ]
+    },
+    {
+      "file": "scripts/check_release_models_t1.sh",
+      "line": 410,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "candidate-nowhere: a candidate never pushed is refused with FETCH-FAILED, and gx10 builds nothing"
+      ]
+    },
+    {
+      "file": "scripts/check_release_models_t1.sh",
+      "line": 535,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Mutant fetch-main-only is killed by candidate-on-release-branch"
+      ]
+    },
+    {
+      "file": "scripts/release/models_t1.sh",
+      "line": 117,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The leg tries origin/main first, then fetches the exact sha by id"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=2 author=claude-opus-5-5/claude"
+  }
+}

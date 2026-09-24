@@ -1,0 +1,42 @@
+{
+ "verdict": "PASS",
+ "model": "claude-haiku-4-5-20251001",
+ "family": "claude",
+ "executor": "claude-code-subagent",
+ "role": "operator-rule cheap Claude seat (2026-09-24: 2 agy + 1 haiku)",
+ "agent_id": "ad7e9dfe5035979ea",
+ "judged_head": "eadf658da5a91098140d4296960b1c4c1f3dfb37",
+ "summary": "Adds a fetch-by-sha fallback for release/* candidates: origin/main + cat-file, then fetch by exact sha + cat-file, then FETCH-FAILED. Heredoc escaping correct ($sha/$sha9 local, \\$repo remote). Rows candidate-on-release-branch and candidate-nowhere verify it; mutant fetch-main-only killed by candidate-on-release-branch; 42/42 rows; bashrs clean at --level error.",
+ "findings": [
+  {
+   "file": "scripts/release/models_t1.sh",
+   "line": 116,
+   "claim": "fetch chain precedence correct: main first, then by-sha, then fail",
+   "grounding": "measured"
+  },
+  {
+   "file": "scripts/release/models_t1.sh",
+   "line": 117,
+   "claim": "escaping correct: \\$repo remote, $sha local",
+   "grounding": "measured"
+  },
+  {
+   "file": "scripts/check_release_models_t1.sh",
+   "line": 408,
+   "claim": "candidate_branch verifies a release/*-only candidate is fetched by sha and measured on gx10",
+   "grounding": "measured"
+  },
+  {
+   "file": "scripts/check_release_models_t1.sh",
+   "line": 419,
+   "claim": "candidate_nowhere verifies FETCH-FAILED before any gx10 build",
+   "grounding": "measured"
+  },
+  {
+   "file": "scripts/check_release_models_t1.sh",
+   "line": 534,
+   "claim": "mutant fetch-main-only killed by candidate_branch",
+   "grounding": "measured"
+  }
+ ]
+}
