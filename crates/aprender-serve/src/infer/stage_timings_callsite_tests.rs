@@ -29,12 +29,17 @@ use crate::infer::stage_timings::StageTimings;
 use crate::infer::{run_inference, InferenceConfig};
 
 /// The plant. Far larger than this fixture's whole CPU run (single-digit ms), so a plant that
-/// lands is unmistakable and one that lands nowhere cannot hide in noise.
-const PLANT_MS: u64 = 250;
+/// lands is unmistakable and one that lands nowhere cannot hide in noise. It is large against
+/// [`TOL_MS`] too: a plant in the WRONG field moves that field by ~`PLANT_MS`, which is more than
+/// three tolerances away from any jitter.
+const PLANT_MS: u64 = 1000;
 /// How far any field OTHER than the planted one may move between the planted run and the clean
 /// baseline. Stated once, here: the falsifier's tolerance is a claim about attribution, never
 /// about arithmetic (the books close exactly by construction; see `StageTimings::close`).
-const TOL_MS: f64 = 100.0;
+/// Sized from a measurement: on the CUDA leg (lambda, RTX 4090, qwen2.5-coder-0.5b q4_k_m, release)
+/// `load_ms` alone varied by up to 113.7 ms between two clean runs (the mmap + prefault of a 400 MB
+/// file against the page cache), which failed an earlier 100 ms tolerance on noise alone.
+const TOL_MS: f64 = 300.0;
 
 /// Every attributable field, including the residual. A plant that lands in `unattributed_ms`
 /// failed to be attributed, and that is exactly the defect this file exists to catch.
@@ -93,7 +98,7 @@ fn plant_lands_in_its_stage(
             // Two readings of "moved by the plant". The field must CONTAIN the whole sleep, which
             // is exact: the sleep is inside the window or it is not. And against the baseline it must
             // move by the plant, less the same run-to-run jitter every other field is allowed
-            // (measured: 249.8 ms on a 250 ms plant, the unslept part of load varying by 0.2 ms).
+            // (measured: 249.8 ms on a then-250 ms plant, the unslept part of load varying by 0.2 ms).
             if p < PLANT_MS as f64 {
                 why.push(format!(
                     "{own} is {p:.1} ms, less than the {PLANT_MS} ms plant it must contain"
