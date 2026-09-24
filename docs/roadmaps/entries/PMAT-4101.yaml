@@ -1,0 +1,20 @@
+- id: PMAT-4101
+  github_issue: 4101
+  item_type: task
+  title: CB-200 back under its baseline, measured on every PR (#4101)
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T00:58:10Z
+  updated: 2026-09-24T00:58:10Z
+  spec: null
+  acceptance_criteria:
+  - 'paiml/aprender#4101: refactor the 0.69.1-cycle below-B definitions (CB-200 615 -> <=599 on the merge-back) and gate CB-200 per PR through a guard guard_tree.sh already runs'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - cb-200
+  - ratchet
+  notes: null
