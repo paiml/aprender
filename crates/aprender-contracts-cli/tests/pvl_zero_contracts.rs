@@ -105,8 +105,26 @@ fn assert_reported(run: &Run, what: &str, evidence_of_one: &str) {
     );
 }
 
-fn empty_dir() -> tempfile::TempDir {
-    tempfile::tempdir().expect("empty contract dir is creatable")
+/// A contract dir nested one level inside a private tempdir. `pv lint` reads the
+/// project root as the dir's PARENT (`scripts/contract_duplicate_stem_baseline.txt`),
+/// and a bare tempdir's parent is the shared `/tmp`, so a stray `/tmp/scripts/`
+/// failed these tests (#4207).
+struct Corpus {
+    _root: tempfile::TempDir,
+    dir: PathBuf,
+}
+
+impl Corpus {
+    fn path(&self) -> &Path {
+        &self.dir
+    }
+}
+
+fn empty_dir() -> Corpus {
+    let root = tempfile::tempdir().expect("empty contract dir is creatable");
+    let dir = root.path().join("contracts");
+    std::fs::create_dir(&dir).expect("nested contract dir is creatable");
+    Corpus { _root: root, dir }
 }
 
 /// A path that does not exist and is never created.
