@@ -533,6 +533,24 @@ drop_receipted() { # drop_receipted <root> < findings-on-stdin
     done
 }
 
+# #4113: count baseline entries that no longer match any hit, by EXACT `path:LINE`.
+# It was a substring test (`case " $all " in *"$loc"*`), so an entry `x.md:1` counted as
+# matching whenever a hit at `x.md:12` existed, and a stale entry could hide. Hits are
+# `path:LINE:content`; the location key is the same one the known/new check uses.
+count_stale() { # count_stale <baseline-file> <hits: one `path:LINE:content` per line>
+    local base="$1" hits="$2" locs n=0 loc
+    locs=$(printf '%s\n' "$hits" | grep -v '^$' | awk -F: '{print $1":"$2}')
+    while IFS= read -r loc; do
+        [ -n "$loc" ] || continue
+        case "$loc" in '#'*) continue ;; esac
+        # A HERE-STRING, never `printf | grep -q`: under pipefail, grep -q exits on its first
+        # match, the rest of printf's output gets SIGPIPE (141), and the pipeline "fails", so a
+        # PRESENT entry was counted stale (#4113 quorum lane 2: intermittent false REPORTs).
+        grep -qxF "$loc" <<< "$locs" || n=$((n + 1))
+    done < "$base"
+    printf '%s' "$n"
+}
+
 if [ "${1:-}" = "--selftest" ]; then
     t=0; f=0
     check() { # check <expect match|nomatch> <line>
@@ -1004,6 +1022,28 @@ if [ "${1:-}" = "--selftest" ]; then
     fi
     printf '  %s citation case(s), %s failure(s)\n' "$ct2" "$cf2"
 
+    # #4113: the stale count matches EXACT `path:LINE`, never a substring.
+    ST_TD=$(mktemp -d); trap 'rm -rf "${CAUSAL_TD:?}" "${TABLE_TD:?}" "${CITE_TD:?}" "${ST_TD:?}"' EXIT
+    printf 'x.md:1\n' > "$ST_TD/base"
+    for row in "stale|x.md:12:a figure|1" "stale|x.md:100:a figure|1" "stale|y.md:1:a figure|1" \
+               "exact|x.md:1:a figure|0" "exact|x.md:12:a|x.md:1:b|0"; do
+        IFS='|' read -r name h1 rest <<< "$row"
+        want="${row##*|}"
+        hits="$h1"; [ "$rest" = "$want" ] || hits=$(printf '%s\n%s' "$h1" "${rest%|*}")
+        got=$(count_stale "$ST_TD/base" "$hits")
+        t=$((t+1))
+        if [ "$got" = "$want" ]; then printf '  ok    stale-count %-5s %s -> %s\n' "$name" "$(printf '%s' "$hits" | tr '\n' ' ')" "$got"
+        else printf '  FAIL  stale-count %-5s want %s got %s (%s)\n' "$name" "$want" "$got" "$(printf '%s' "$hits" | tr '\n' ' ')"; f=$((f+1)); fi
+    done
+
+    # The SIGPIPE shape: a large hit list whose FIRST line is the baselined location. With a
+    # `printf | grep -q` pipeline under pipefail this reported the present entry as stale.
+    big=$(printf 'x.md:1:a figure\n'; printf 'z.md:%s:a figure\n' $(seq 2 200000))
+    got=$(count_stale "$ST_TD/base" "$big")
+    t=$((t+1))
+    if [ "$got" = "0" ]; then printf '  ok    stale-count large payload, early match -> 0 (no SIGPIPE false stale)\n'
+    else printf '  FAIL  stale-count large payload, early match: want 0 got %s (SIGPIPE under pipefail?)\n' "$got"; f=$((f+1)); fi
+
     printf '  %s case(s), %s failure(s)\n' "$t" "$f"
     [ "$f" -eq 0 ] && [ "$cf" -eq 0 ] && [ "$rf" -eq 0 ] && [ "$mf" -eq 0 ] \
         && [ "$tf" -eq 0 ] && [ "$cf2" -eq 0 ] || exit 1
@@ -1219,12 +1259,7 @@ printf 'known (baselined, must shrink): %s   new: %s\n' "$known" "$new"
 # THE RATCHET. A baseline that may grow is a permission slip. Entries must be
 # removed as claims are deleted or derived; a new one requires editing this file.
 if [ -f "$BASELINE" ]; then
-    stale=0
-    while IFS= read -r loc; do
-        [ -n "$loc" ] || continue
-        case "$loc" in '#'*) continue ;; esac
-        case " $all " in *"$loc"*) : ;; *) stale=$((stale + 1)) ;; esac
-    done < "$BASELINE"
+    stale=$(count_stale "$BASELINE" "$all")
     if [ "$stale" -gt 0 ]; then
         printf 'REPORT %s baseline entry(ies) no longer match — prune them so the\n' "$stale"
         printf '       ratchet cannot silently re-admit a claim at that location.\n'

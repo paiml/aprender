@@ -179,19 +179,15 @@ CLAUDE.md:218
 CLAUDE.md:222
 ROADMAP.md:55
 book/src/advanced-testing/popperian-falsification.md:44
-book/src/tools/apr-cli.md:996
 crates/apr-cli/src/commands/bench_safetensors.rs:123
 crates/apr-cli/src/commands/bench_safetensors.rs:124
 crates/apr-cli/src/commands/benchmark.rs:438
 crates/apr-cli/src/commands/gguf_generate_result.rs:371
 crates/apr-cli/src/commands/gguf_generate_result.rs:372
 crates/apr-cli/src/commands/qa.rs:147
-crates/apr-cli/src/commands/run_tests_layer_trace.rs:55
-crates/apr-cli/src/commands/run_tests_layer_trace.rs:56
 crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:362
 crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:363
 crates/apr-cli/src/commands/serve/handlers_include_01.rs:4
-crates/apr-cli/src/commands/serve/mod.rs:209
 crates/apr-cli/src/commands/speedup.rs:11
 crates/apr-cli/src/commands/test_llm.rs:14
 crates/apr-cli/src/commands/test_llm.rs:15
@@ -233,7 +229,6 @@ crates/aprender-serve/src/cuda/executor/tiled_gemv.rs:339
 crates/aprender-serve/src/cuda/gpu_profile.rs:330
 crates/aprender-serve/src/cuda/gpu_profile.rs:356
 crates/aprender-serve/src/cuda/gpu_profile.rs:410
-crates/aprender-serve/src/cuda/kernel_type.rs:236
 crates/aprender-serve/src/cuda/kernels.rs:9
 crates/aprender-serve/src/gguf/cuda/clone_layer_weights.rs:294
 crates/aprender-serve/src/gguf/cuda/cuda.rs:363

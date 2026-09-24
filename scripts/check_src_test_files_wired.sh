@@ -20,9 +20,11 @@
 #   * `mod <stem>` in a file that owns the directory: for D/stem.rs that is
 #     D/mod.rs, D/lib.rs, D/main.rs, or the non-mod-rs parent D.rs; for
 #     D/mod.rs it is the same set one level up, naming basename(D);
-#   * `#[path = "…/<file>.rs"]` or `include!("…/<file>.rs")` anywhere in the crate
-#     (matched on the file NAME — resolving `#[path]` relative to a nested inline
-#     module is not attempted, so a same-named file elsewhere can mask a miss);
+#   * `#[path = "…"]` or `include!("…")` that resolves to the file, relative to
+#     the declaring file's directory (a #[path] nested in an inline `mod {}` is
+#     resolved as if it were not — that errs toward reporting dark, never wired);
+#   * `mod <stem>` in a sibling that is itself #[path]/include!d (its items land
+#     in the directory's module);
 #   * a crate root: src/lib.rs, src/main.rs, src/bin/*.rs, src/bin/*/main.rs.
 # The check is one level deep, not transitive: a dark file WITHOUT tests that is
 # the only parent of a test file hides it. That is a known limit, not a pass.
@@ -48,7 +50,7 @@ BASELINE="$REPO_ROOT/scripts/src_test_files_unwired_baseline.txt"
 
 # Does file $1 (with `//` comments stripped) define a test?
 defines_test() {
-    grep -qE '#\[(tokio::)?test(\]|\()|#\[rstest|proptest! *\{' <<< "$(sed 's://.*$::' "$1")"
+    grep -qE '#\[(tokio::)?test(\]|\()|#\[test_case|#\[rstest|proptest! *\{' <<< "$(sed 's://.*$::' "$1")"
 }
 
 # Does file $1 declare module $2 (`mod x;`, `pub mod x;`, `pub(crate) mod x;`)?
@@ -59,13 +61,22 @@ declares_mod() {
         <<< "$(sed 's://.*$::' "$1")"
 }
 
-# The file NAMES that crate src dir $1 reaches through #[path] or include!,
-# comments stripped, one per line. Computed once per crate.
+# The files crate src dir $1 reaches through #[path] or include!, comments
+# stripped, one absolute path per line. Each target resolves against the
+# DECLARING file's directory, as rustc does for both (a #[path] inside an inline
+# `mod x { … }` block is the one form this gets wrong). Computed once per crate.
 named_files() {
     local src="$1"
-    find "$src" -name '*.rs' -type f -exec sed 's://.*$::' {} + \
-        | grep -oE '(#\[path[[:space:]]*=[[:space:]]*"|include!\([[:space:]]*")[^"]*"' \
-        | sed -E 's/.*"([^"]*)"$/\1/; s:.*/::' | sort -u
+    find "$src" -name '*.rs' -type f -exec awk '
+        { sub(/\/\/.*/, "") }
+        {
+            while (match($0, /(#\[path[ \t]*=[ \t]*"|include!\([ \t]*")[^"]*"/)) {
+                t = substr($0, RSTART, RLENGTH); $0 = substr($0, RSTART + RLENGTH)
+                sub(/"$/, "", t); sub(/.*"/, "", t)
+                d = FILENAME; sub(/\/[^\/]*$/, "", d)
+                if (t ~ /^\//) print t; else print d "/" t
+            }
+        }' {} + | xargs -r -d '\n' realpath -ms -- | sort -u
     return 0
 }
 
@@ -85,13 +96,13 @@ is_declared() {
     for owner in "$dir/mod.rs" "$dir/lib.rs" "$dir/main.rs" "$dir.rs"; do
         declares_mod "$owner" "$stem" && return 0
     done
-    grep -qxF "$(basename "$f")" <<< "$names" && return 0
+    grep -qxF "$f" <<< "$names" && return 0
     # A sibling that is itself include!d/#[path]ed into the directory's module
     # declares at that module's position: `mod x;` inside an include!d
     # D/hashing.rs resolves to D/x.rs (vectorize, brick/graph.rs, gpu/*).
     for owner in "$dir"/*.rs; do
         [ -f "$owner" ] || continue
-        grep -qxF "$(basename "$owner")" <<< "$names" || continue
+        grep -qxF "$owner" <<< "$names" || continue
         declares_mod "$owner" "$stem" && return 0
     done
     return 1
@@ -107,7 +118,7 @@ dark_in() {
             defines_test "$f" || continue
             is_declared "$f" "$src" "$names" || printf '%s\n' "${f#"$root"/}"
         # Raw grep -l is a superset prefilter; defines_test re-checks without comments.
-        done < <(grep -rlE --include='*.rs' '#\[(tokio::)?test(\]|\()|#\[rstest|proptest! *\{' "$src")
+        done < <(grep -rlE --include='*.rs' '#\[(tokio::)?test(\]|\()|#\[test_case|#\[rstest|proptest! *\{' "$src")
     done | sort -u
 }
 
@@ -141,6 +152,9 @@ self_test() {
     # a mod.rs directory module its parent declares, and one it does not.
     printf '#[test] fn s() {}\n' > "$s/serve/sub/mod.rs"
     printf '#[test] fn x() {}\n' > "$s/serve/lost/mod.rs"
+    # a same-NAMED file elsewhere is not wired by serve/'s #[path] (name masking).
+    printf '#[test] fn m() {}\n' > "$s/deep/inner/tests_pp14.rs"
+    printf '#[test_case(1)]\nfn tc(_x: u8) {}\n' > "$s/deep/inner/tc.rs"
     # an include!d sibling declares its neighbour; a NOT-included sibling cannot.
     printf 'include!("helpers.rs");\n' >> "$s/serve/mod.rs"
     printf 'mod via_inc;\n' > "$s/serve/helpers.rs"
@@ -148,7 +162,7 @@ self_test() {
     printf 'mod via_stray;\n' > "$s/serve/stray.rs"
     printf '#[test] fn w() {}\n' > "$s/serve/via_stray.rs"
     got=$(dark_in "$fx" | tr '\n' ' ')
-    want="crates/c/src/deep/inner/orphan.rs crates/c/src/serve/lost/mod.rs crates/c/src/serve/tests_commented.rs crates/c/src/serve/tests_dark.rs crates/c/src/serve/via_stray.rs "
+    want="crates/c/src/deep/inner/orphan.rs crates/c/src/deep/inner/tc.rs crates/c/src/deep/inner/tests_pp14.rs crates/c/src/serve/lost/mod.rs crates/c/src/serve/tests_commented.rs crates/c/src/serve/tests_dark.rs crates/c/src/serve/via_stray.rs "
     if [ "$got" != "$want" ]; then
         printf 'FAIL: fixture tree\n  want=<%s>\n  got =<%s>\n' "$want" "$got"
         fails=$((fails + 1))
