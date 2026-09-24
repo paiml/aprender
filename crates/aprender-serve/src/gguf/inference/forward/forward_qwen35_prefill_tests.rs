@@ -101,6 +101,34 @@ fn check_model(path: &str) {
     assert_eq!(a, b, "{path}: decode after batched prefill differs");
 }
 
+/// FALSIFY-4228-007: a prompt whose end falls inside a chunk past `max_seq_len` is refused
+/// with the state untouched, and an exact fit is accepted (quorum finding on #4228: the
+/// batched path appended past the cap where per-token stops).
+#[test]
+fn falsify_4228_007_prefill_refuses_kv_overflow_mid_chunk() {
+    let path = model_path("Qwen3.5-0.8B-Q4_K_M.gguf");
+    let Some(mapped) = load(&path) else { return };
+    let base = Qwen35Model::create_base_model(&mapped.model, mapped.data()).expect("base model");
+    let qwen = Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data())
+        .expect("hybrid layers");
+    let n = QWEN35_PREFILL_CHUNK + 3;
+    let toks = prompt(n, base.config.vocab_size);
+
+    let mut s = qwen.new_state(QWEN35_PREFILL_CHUNK + 1);
+    let err = qwen.forward_prefill_qwen35(&toks, &mut s, 0);
+    assert!(err.is_err(), "{path}: overflow mid-chunk must be refused");
+    assert_eq!(s.kv_cache.len(), 0, "refusal must not advance the cache");
+    assert!(
+        (0..base.config.num_layers).all(|l| s.kv_cache.get_k(l).is_empty()),
+        "refusal must not append to the cache"
+    );
+
+    let mut s = qwen.new_state(n);
+    qwen.forward_prefill_qwen35(&toks, &mut s, 0)
+        .expect("an exact fit is not an overflow");
+    assert_eq!(s.kv_cache.len(), n);
+}
+
 /// FALSIFY-4228-004: 0.8B (ratio-1 recurrence).
 #[test]
 fn falsify_4228_004_prefill_bit_identical_0_8b() {

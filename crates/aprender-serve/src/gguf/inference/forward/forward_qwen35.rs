@@ -1095,8 +1095,14 @@ impl<'a> Qwen35Model<'a> {
     /// run token by token in order. Bit-identical to calling [`Self::forward_single_qwen35`]
     /// once per token, which FALSIFY-4228-004 checks.
     ///
+    /// The whole prompt must fit the KV cache: `cache` length plus `tokens.len()` may not
+    /// exceed its `max_len`. Past that bound the per-token path stops appending and then
+    /// indexes past the cache, so a chunk that straddles it has no per-token behaviour to
+    /// match; the overflow is refused before any state is touched (FALSIFY-4228-007).
+    ///
     /// # Errors
-    /// An empty `tokens`, or a matmul or shape failure in any layer.
+    /// An empty `tokens`, a prompt that overflows the KV cache, or a matmul or shape
+    /// failure in any layer.
     pub fn forward_prefill_qwen35(
         &self,
         tokens: &[u32],
@@ -1106,6 +1112,15 @@ impl<'a> Qwen35Model<'a> {
         if tokens.is_empty() {
             return Err(crate::error::RealizarError::InvalidShape {
                 reason: "forward_prefill_qwen35: no tokens".to_string(),
+            });
+        }
+        let (used, cap) = (cache.kv_cache.len(), cache.kv_cache.max_len());
+        if used + tokens.len() > cap {
+            return Err(crate::error::RealizarError::InvalidShape {
+                reason: format!(
+                    "forward_prefill_qwen35: {} tokens at cache length {used} overflow max_seq_len {cap}",
+                    tokens.len()
+                ),
             });
         }
         let mut logits = Vec::new();
