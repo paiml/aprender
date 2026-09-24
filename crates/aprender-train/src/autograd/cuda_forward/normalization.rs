@@ -138,8 +138,7 @@ pub fn rms_norm_forward_with_eps(
 
     // Cache key MUST include eps bits — different eps values compile to
     // different PTX (the constant is baked into `mov.f32`).
-    let eps_bits = eps.to_bits();
-    let key = keys::batched_rmsnorm_fwd(hidden_size as u32, eps);
+    let key = keys::batched_rmsnorm_fwd(hidden_size, eps);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -344,8 +343,7 @@ pub fn batched_rope_neox_forward(
     // FALSIFY-CUDA-ROPE-THETA-CACHE-KEY-001: cache key MUST include
     // theta_bits (and seq_len, which is also baked in via grid sizing).
     // See `rope_neox_forward` rationale.
-    let theta_bits = theta.to_bits();
-    let key = keys::batched_rope_neox_fwd(num_heads as u32, head_dim as u32, seq_len as u32, theta);
+    let key = keys::batched_rope_neox_fwd(num_heads, head_dim, seq_len, theta);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -492,8 +490,7 @@ pub fn fused_residual_rmsnorm_forward(
         CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
     })?;
 
-    let eps_bits = eps.to_bits();
-    let key = keys::batched_fused_residual_rmsnorm(hidden_size as u32, eps);
+    let key = keys::batched_fused_residual_rmsnorm(hidden_size, eps);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {

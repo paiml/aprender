@@ -433,21 +433,17 @@ impl InstructPipeline {
         let embed_mb = embed_bytes / (1024 * 1024);
         let use_gpu_embed = vram_available_mb > (embed_mb + 256) as u64;
 
-        let (embed_original, embed_transposed) = if use_gpu_embed {
+        let embed_original = if use_gpu_embed {
             eprintln!(
                 "[CUDA] GPU-resident embeddings: {embed_mb}MB (VRAM free: {vram_available_mb}MB)"
             );
-            let orig = trainer
+            trainer
                 .upload(embed_slice)
                 .map_err(|e| eprintln!("[CUDA] embed_original upload failed: {e}"))
-                .ok()?;
-            let trans = trainer.zeros(1).ok()?;
-            (orig, trans)
+                .ok()?
         } else {
             eprintln!("[CUDA] Skipping GPU embeddings ({embed_mb}MB > {vram_available_mb}MB free)");
-            let orig = trainer.zeros(1).ok()?;
-            let trans = trainer.zeros(1).ok()?;
-            (orig, trans)
+            trainer.zeros(1).ok()?
         };
 
         // Logits scratch: [max_seq_len, vocab_size]
@@ -479,7 +475,6 @@ impl InstructPipeline {
             grad_buf_a,
             grad_buf_b,
             grad_final_norm_weight,
-            embed_transposed,
             embed_original,
             logits_buf,
             grad_hidden_buf,
