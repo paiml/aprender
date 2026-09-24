@@ -640,6 +640,22 @@ jobs:
           nice -n 19 cargo test -p aprender-serve --release \
             --test beat_ollama_decode_throughput_speed -- --ignored --nocapture
 
+      # #4179 (binary-debt #4057): F-QW3-MOE-C22214-001 spawns `apr run` on the
+      # 17 GB Qwen3-Coder-30B MoE GGUF (~157 s on lambda) -- huge, so nightly
+      # only, and gx10 holds the model at the test's canonical pacha path.
+      # APR_QW3_MOE_REQUIRE_MODEL=1 turns the test's no-model SKIP into a
+      # failure: in the lane that owns it, a skip would be a pass that measured
+      # nothing. LAST, and `!cancelled()`: it neither delays the measurements
+      # above nor hides behind their failures. Its non-cuda `apr` rebuild comes
+      # after the beat that measures the cuda one.
+      - name: F-QW3-MOE-C22214-001 - apr run emits on the Qwen3-Coder-30B MoE (aprender#4179)
+        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        run: |
+          set -euo pipefail
+          APR_QW3_MOE_REQUIRE_MODEL=1 \
+            APR_QW3_MOE_GGUF="${{ vars.APR_QW3_MOE_GGUF || '/home/noah/.cache/pacha/models/2b88b180a790988f.gguf' }}" \
+            nice -n 19 cargo test -p apr-cli --release --test qwen3_moe_apr_run_live_falsifier -- --nocapture
+
   # ── ada-yoga: the sm_89 leg, restored ─────────────────────────────────────
   #
   # RESTORING A DELETION, NOT INVENTING A LANE. #2740 removed the x86_64 leg

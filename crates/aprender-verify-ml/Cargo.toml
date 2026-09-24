@@ -65,6 +65,9 @@ tree-sitter-typescript = { version = "0.23", optional = true }
 pest = { version = "2.7", optional = true }
 pest_derive = { version = "2.7", optional = true }
 
+[build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
+
 [dev-dependencies]
 proptest = "1.6"
 criterion = { workspace = true }
