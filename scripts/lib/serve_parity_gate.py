@@ -138,9 +138,11 @@ def correctness_reasons(model, gate):
 def band_ratio(receipt, gate):
     """(point, lcb95, reason) of the gated band's decode ratio."""
     bands = (receipt or {}).get("bands") or []
-    band = next((b for b in bands if b.get("concurrency") == gate["band_concurrency"]), None)
-    if band is None:
-        return None, None, "no c=%d band in the receipt" % gate["band_concurrency"]
+    hits = [b for b in bands if b.get("concurrency") == gate["band_concurrency"]]
+    if len(hits) != 1:
+        return None, None, "%d c=%d bands in the receipt, need exactly 1" % (
+            len(hits), gate["band_concurrency"])
+    band = hits[0]
     if band.get("status") != "MEASURED":
         return None, None, "c=%d band status is %r, not MEASURED (%s)" % (
             gate["band_concurrency"], band.get("status"), band.get("status_reasons"))
@@ -452,6 +454,9 @@ def verdict_rows(gate, pin):
         ("NaN decode ratio is RED", _set(["models", 2, "receipt", "bands", 0, "ratios", "dec", "point"], float("nan")), 0.9, RED),
         ("NaN decode lcb95 is RED", _set(["models", 2, "receipt", "bands", 0, "ratios", "dec", "lcb95"], float("nan")), 0.9, RED),
         ("NaN baseline is RED", None, float("nan"), RED),
+        ("two c=1 bands is RED",
+         lambda r: (r["models"][0]["receipt"]["bands"].insert(0, _fx_receipt(0.95, pin)["bands"][0]),
+                    r["models"][0]["receipt"]["bands"][1]["ratios"]["dec"].update(point=0.5), r)[2], 0.9, RED),
         ("duplicate model size is RED",
          lambda r: (r["models"].insert(0, dict(r["models"][1], gguf_sha256="e" * 64)), r)[1], 0.9, RED),
         ("model on an unpinned comparator is RED",
@@ -560,6 +565,8 @@ MUTANTS = [
      ["model on an unpinned comparator is RED"]),
     ("control size not required gated", "if size not in pins or ", "if size in pins and ",
      ["control of an ungated size is RED"]),
+    ("first c=1 band taken", "if len(hits) != 1:", "if not hits:",
+     ["two c=1 bands is RED"]),
     ("lock not read", "if pre.get(\"gpu_lock\") != \"free\":", "if False:",
      ["busy GPU lock is NO-GO"]),
     ("foreign apps not read", "elif apps:", "elif False:",
