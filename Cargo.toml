@@ -642,6 +642,12 @@ gates = [
     # Release time only, like the entry above; the PR-time half (the helpers' case table) is
     # scripts/check_tokenizer_parity.sh, which guard_tree.sh dispatches.
     "scripts/tokenizer_parity.sh",
+    # #4114: every publishable crate's tests compile FROM ITS .crate (packaged, unpacked outside
+    # the tree, siblings patched to their tarballs). The source reader check_package_includes.sh
+    # skipped #[cfg(test)] modules and passed aprender-serve 0.69.1, whose tarball cannot compile
+    # its tests. Release time only: one workspace test build. The PR-time half is its case table,
+    # rows 14-16 of check_package_includes.sh --self-test (ci.yml guard-cargo).
+    "scripts/package_tarball_build.sh",
 ]
 
 # The interfaces this release SHIPS, each paired with the e2e target that proves
