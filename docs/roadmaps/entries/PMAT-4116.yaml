@@ -11,6 +11,7 @@
   acceptance_criteria:
   - 'f5 preflight tooling (fix/prepub-skip-cfg-test-includes @ 942437eca) lands: R4 cut-contained-in-main with --via; R7 --scope-tree / --crux DIR; r7_scope_judge.sh; the KNOWN-RED adjudicator. check_publish_preflight.sh --selftest passes.'
   - 'the crux-smoke judge skips the sweep''s *.meta.json merge meta by name; any other non-receipt still FAILs (f19a3ee6d). check_model_ladder.sh --self-test passes.'
+  - 'the same commit (f19a3ee6d, aprender-3a''s phase-3 finding) rewords the ok line when EVERY cell of a leg is a positive control: "every cell is a positive control (control-only smoke)" instead of "control GREEN". It is WORDING ONLY. The branch sits after the elif that FAILs a missing or non-GREEN control, so no check is bypassed. Mutant control-only-hidden kills it.'
   - 'apr capability has a book chapter, a page contract and a SUMMARY entry: FALSIFY-BOOK-CLI-PARITY-001 goes from 112/113 to 113/113.'
   - 'the bashrs, shell-lint, claim-literal, fabricated-baseline, perf-citation and tree-reader gates stay green; any suppression is per line, with its reason on the line above.'
   phases: []
