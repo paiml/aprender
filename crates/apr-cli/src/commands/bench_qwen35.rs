@@ -19,7 +19,11 @@ fn run_qwen35_session_benchmark(
     for notice in session.notices() {
         bench_log(config, notice);
     }
-    let device = if session.on_gpu() { " (qwen35 session, GPU)" } else { " (qwen35 session, CPU)" };
+    let device = if session.on_gpu() {
+        " (qwen35 session, GPU)"
+    } else {
+        " (qwen35 session, CPU)"
+    };
     bench_log_ready(config, start.elapsed(), device);
 
     bench_log(config, &"Running warmup...".yellow().to_string());

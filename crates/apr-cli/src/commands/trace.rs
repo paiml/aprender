@@ -579,7 +579,6 @@ fn report_generation(mapped: &realizar::gguf::MappedGGUFModel, generated: &[u32]
     } else {
         println!("{}", "✓ Output appears reasonable".green());
     }
-
 }
 
 /// #4270: trace a Qwen3.5 hybrid. `forward_traced` is the dense layer walk and has
@@ -602,7 +601,10 @@ fn run_traced_inference_qwen35(
     for notice in session.notices() {
         println!("{notice}");
     }
-    let test_tokens = mapped.model.encode(test_prompt).unwrap_or_else(|| vec![1u32]);
+    let test_tokens = mapped
+        .model
+        .encode(test_prompt)
+        .unwrap_or_else(|| vec![1u32]);
     println!("{}", format!("Test prompt: {:?}", test_prompt).cyan());
     println!("{}", format!("Encoded tokens: {:?}", test_tokens).cyan());
     println!();
@@ -611,7 +613,10 @@ fn run_traced_inference_qwen35(
         "FORWARD PASS: per-layer tracing is dense-only; not available for the hybrid".yellow()
     );
     println!();
-    println!("{}", "GENERATION (max 8 tokens, qwen35 session):".green().bold());
+    println!(
+        "{}",
+        "GENERATION (max 8 tokens, qwen35 session):".green().bold()
+    );
     let gen_config = QuantizedGenerateConfig {
         max_tokens: 8,
         temperature: 0.0,

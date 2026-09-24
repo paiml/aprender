@@ -136,7 +136,13 @@ fn run_qwen35_session_evaluation(
 ) -> Result<EvalResult> {
     use realizar::gguf::qwen35_session::Qwen35Session;
 
-    let say = |m: &str| if json { eprintln!("{m}") } else { println!("{m}") };
+    let say = |m: &str| {
+        if json {
+            eprintln!("{m}")
+        } else {
+            println!("{m}")
+        }
+    };
     let mut session = Qwen35Session::load(mapped, true)
         .map_err(|e| CliError::ValidationFailed(format!("Qwen3.5 hybrid: {e}")))?;
     for notice in session.notices() {
@@ -160,7 +166,11 @@ fn run_qwen35_session_evaluation(
             "Need at least 2 tokens for perplexity calculation".to_string(),
         ));
     }
-    say(&format!("Calculating perplexity on {} tokens...", tokens.len()).yellow().to_string());
+    say(
+        &format!("Calculating perplexity on {} tokens...", tokens.len())
+            .yellow()
+            .to_string(),
+    );
 
     let eval_start = Instant::now();
     let (perplexity, cross_entropy) = super::session_perplexity(&mut session, &tokens)?;
