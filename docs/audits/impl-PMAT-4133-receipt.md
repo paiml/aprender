@@ -8,5 +8,5 @@
   - from a non-interactive shell, setsid execs without forking (pid==pgid==sid), so a cancelled step still signals the guard itself;
   - before/after outputs of all 23 workflow-reading guards are identical, except a live runner count;
   - check_guards_are_wired, check_bashrs_gate, check_shell_lint_ratchet and check_explicit_test_commands PASS.
-- **Quorum:** 3/3 PASS at 517edff93, in the operator's 2 agy + 1 haiku shape: gemini-3.8-flash-high, gemini-3.7-flash-high, and claude-haiku-4-5 (read-only Claude Code lane). Record: `docs/audits/quorum-PMAT-4133.json`. The findings from the earlier ph2 round are folded in 517edff93.
+- **Quorum (ph4, 517edff93):** gemini-3.8 PASS (lane 1 VOIDED by cop ruling: a deleted foreign ref was attributed by inference only), gemini-3.7 PASS, haiku-4-5 PASS: 2/3 counted, not armable. A fresh full round follows. Record: `docs/audits/quorum-PMAT-4133.json`.
 - Workflow edit: covered by the cop's standing yes (quorum + green CI, no runner-host/secret changes). Not armed (batching).
