@@ -40,11 +40,12 @@
   }
  ],
  "agreed": false,
- "verdict": "2/3 counted \u2014 NOT armable; superseded by a fresh full round (no composed receipts)",
+ "verdict": "2/3 counted — NOT armable; superseded by a fresh full round (no composed receipts)",
  "receipt_lint_note": "single haiku seat recorded by hand; cop overrides receipt-lint's refusal until tooling lands",
  "prior_rounds": {
   "ph1": "3x NO-VERDICT (archived, not a review)",
   "ph2": "gemini-3.1-pro FAIL: (1) orphan on cancel -> measured: setsid from a non-interactive shell execs without forking (pid==pgid==sid), the guard itself receives SIGTERM; (2) .yaml + composite actions unscanned -> fixed 517edff93; (3) bare `run: scripts/check_x.sh` form missed -> fixed 517edff93 with 3 rows. 3.8/3.7 PASS",
-  "ph3": "3x NO-VERDICT (archived)"
+  "ph3": "3x NO-VERDICT (archived)",
+  "ph6": "head c5cf8d555, brief_sha256 314e5bfb, diff_sha256 8809ca38, shape sonnet-5 + 1 agy gemini-3.1-pro-high + haiku-4-5. sonnet-5 PASS with 1 major, measured: a bare guard chained after a wrapped one on the same line scanned clean; plus a minor on the runs-on note (mac-check). haiku-4-5 PASS. gemini-3.1-pro-high (conv 093614f1) VOID: agy-lane exit 3 (shared refs/config moved by other sessions; attribution is not clearance). 2/3 counted, not armable. The major was fixed in aa0f70283; the round is superseded and a fresh full round will run at the new head."
  }
 }
