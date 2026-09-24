@@ -27,6 +27,11 @@ fn planted() -> tempfile::TempDir {
     write(r, "crates/a/examples/plain.rs", "fn main() {}\n");
     write(
         r,
+        "crates/a/examples/parity.rs",
+        "//! ont:model-pinned: GGUF parity fixture is Qwen2-0.5B\n// qwen2\nfn main() {}\n",
+    );
+    write(
+        r,
         "crates/a/examples/multi/main.rs",
         "// llama.cpp parity, then TinyLlama\nfn main() {}\n",
     );
@@ -52,6 +57,7 @@ fn a_planted_workspace_yields_exactly_its_member_targets() {
         files,
         [
             "crates/a/examples/multi/main.rs",
+            "crates/a/examples/parity.rs",
             "crates/a/examples/plain.rs",
             "crates/a/examples/qwen.rs"
         ]
@@ -59,8 +65,10 @@ fn a_planted_workspace_yields_exactly_its_member_targets() {
     assert_eq!(ex[0].name, "multi");
     assert!(ex.iter().all(|e| e.krate == "a"));
     assert_eq!(stats.non_member_examples, 1, "crates/old is excluded");
-    assert_eq!((stats.packages, stats.examples), (1, 3));
-    assert_eq!((stats.naming_a_model, stats.naming_qwen35), (2, 1));
+    assert_eq!((stats.packages, stats.examples), (1, 4));
+    assert_eq!((stats.naming_a_model, stats.naming_qwen35), (3, 1));
+    // multi names TinyLlama only (stale); parity names qwen2 but is pinned; qwen names the current family.
+    assert_eq!((stats.stale, stats.pinned), (1, 1));
     assert_eq!(
         ex[0].families.iter().copied().collect::<Vec<_>>(),
         ["tinyllama"]
@@ -93,9 +101,9 @@ fn every_example_is_one_well_formed_node() {
         .filter(|t| t.predicate == RDF_TYPE && t.object == Term::iri(ont("Example")))
         .map(|t| t.subject.clone())
         .collect();
-    assert_eq!(nodes.len(), 3);
+    assert_eq!(nodes.len(), 4);
     for n in &nodes {
-        for p in ["file", "crate", "name", "namesQwen35"] {
+        for p in ["file", "crate", "name", "namesQwen35", "modelCurrent"] {
             let k = g.objects(n, &ex(p)).len();
             assert_eq!(k, 1, "{n} has {k} {p}");
         }
@@ -143,4 +151,68 @@ fn the_repo_examples_are_extracted() {
     );
     assert_eq!(ex.len(), stats.examples);
     assert!(stats.packages > 20, "{} packages", stats.packages);
+}
+
+#[test]
+fn a_pin_needs_the_marker_in_a_comment_and_a_reason() {
+    assert_eq!(
+        pin_reason("//! ont:model-pinned: parity fixture\n").as_deref(),
+        Some("parity fixture")
+    );
+    assert_eq!(
+        pin_reason("    // ont:model-pinned: tiny\n").as_deref(),
+        Some("tiny")
+    );
+    assert_eq!(
+        pin_reason("// ont:model-pinned:   \n"),
+        None,
+        "no reason, no pin"
+    );
+    assert_eq!(
+        pin_reason("let s = \"ont:model-pinned: x\";\n"),
+        None,
+        "not a comment"
+    );
+    let stale = Example {
+        file: "f".into(),
+        krate: "c".into(),
+        name: "n".into(),
+        families: ["qwen2.5"].into_iter().collect(),
+        pinned: None,
+    };
+    assert!(!stale.model_current());
+    assert!(Example {
+        pinned: Some("why".into()),
+        ..stale.clone()
+    }
+    .model_current());
+    assert!(Example {
+        families: BTreeSet::new(),
+        ..stale
+    }
+    .model_current());
+}
+
+/// R4's drift gate: the stale examples on this tree are pinned shrink-only. A new example on an old model raises the
+/// count and fails here; migrating or pinning one lowers it, and then the pin must be lowered with it.
+#[test]
+fn the_repo_stale_examples_are_pinned_shrink_only() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let (ex, stats) = walk(&root);
+    let stale: Vec<&str> = ex
+        .iter()
+        .filter(|e| !e.model_current())
+        .map(|e| e.file.as_str())
+        .collect();
+    assert!(
+        stats.stale <= STALE_EXAMPLES_PINNED,
+        "{} examples name a model other than {CURRENT_FAMILY} without `// {PIN_MARKER} <reason>` (pinned {STALE_EXAMPLES_PINNED}); \
+         migrate or pin the new one(s). Stale: {stale:#?}",
+        stats.stale
+    );
+    assert_eq!(
+        stats.stale, STALE_EXAMPLES_PINNED,
+        "the stale count fell to {}: lower STALE_EXAMPLES_PINNED to it (shrink-only)",
+        stats.stale
+    );
 }

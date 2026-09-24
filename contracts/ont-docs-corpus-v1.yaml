@@ -6,13 +6,16 @@
 #   workspace member (examples/*.rs, examples/*/main.rs) is an ont:Example with
 #   its file, crate, target name, and the model families its text names.
 # LATER ROWS (not claimed here): R2 book pages (after ONT-4c's readme reader),
-#   R3 apr-cookbook (its own repo), R4 the model-currency shape (an example that
-#   names a model family must name the current one, or say why not), R5 every
-#   example builds and runs.
+#   R3 apr-cookbook (its own repo), R5 every example builds and runs.
+# R4: the model-currency shape — an example that names a model family must name
+#   the current one (qwen3.5), or say why not.
 #
-# ARMING: `examples-well-formed` is REPORTED, not armed. It holds on this tree
-#   (every example has one file, one crate, one name); arming it is R4's call,
-#   together with the currency shape, so the gate changes once.
+# ARMING: both shapes are REPORTED, not armed. `examples-well-formed` holds on
+#   this tree. `examples-model-current` (R4) does not: 430 examples name an
+#   older model. R4's gate is the shrink-only pin, which CI's --lib run holds:
+#   a NEW stale example is RED today; the shape arms when the pin reaches 0.
+# PIN: an example that names an older model on purpose says so with
+#   `// ont:model-pinned: <reason>`; the reason is kept as example:modelPinned.
 # ─────────────────────────────────────────────────────────────────────────────
 metadata:
   version: "1.0.0"
@@ -48,6 +51,18 @@ equations:
     postconditions:
       - "at a [workspace] root, examples = 0 ⇒ one extractor error"
       - "two extractions of the same tree are byte-identical (R-15)"
+    lean_theorem: none — L4 not declared
+  model_current:
+    formula: "current(e) ⇔ namesModel(e) = ∅ ∨ qwen3.5 ∈ namesModel(e) ∨ pinned(e) ≠ ⊥ ; stale = |{e | ¬current(e)}| ≤ STALE_EXAMPLES_PINNED"
+    domain: "every extracted ont:Example"
+    codomain: "example:modelCurrent true|false, example:modelPinned the stated reason"
+    invariants:
+      - "a pin is a `//` comment carrying `ont:model-pinned:` and a non-empty reason; the marker in a string is not a pin"
+      - "the pin only shrinks: a count below it fails until the constant is lowered to it"
+    preconditions:
+      - "CURRENT_FAMILY names the family the project ships against (qwen3.5, #3560)"
+    postconditions:
+      - "a new example naming an older model without a pin fails CI's --lib run naming the file"
     lean_theorem: none — L4 not declared
 
 invariants:
@@ -90,6 +105,16 @@ falsification_tests:
     prediction: Σ lists example as an implemented entity type, the shapes gate counts it in by_entity_type and its pc_extract control fires
     test: cargo test -p aprender-contracts --lib lint::shapes_gate
     if_fails: the extractor runs and no gate knows, or its control is silent
+  - id: FALSIFY-DOCS-006
+    rule: currency and the pin marker
+    prediction: "an example naming only Qwen2.5 is stale; the same with a `// ont:model-pinned: why` line, or naming no model, is current; a marker in a string literal or with no reason is not a pin"
+    test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::a_pin_needs_the_marker_in_a_comment_and_a_reason
+    if_fails: a stale example passes as current, or a pin without a reason exempts it
+  - id: FALSIFY-DOCS-007
+    rule: the stale count is pinned shrink-only (R4's drift gate)
+    prediction: the repo's stale examples equal STALE_EXAMPLES_PINNED (430 on 2026-09-24)
+    test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::the_repo_stale_examples_are_pinned_shrink_only
+    if_fails: a new example on an older model landed (the message lists the stale files), or examples migrated and the pin was not lowered
 
 qa_gate:
   required_checks:
@@ -105,3 +130,10 @@ shapes:
       - {path: example:crate, minCount: 1, maxCount: 1}
       - {path: example:name, minCount: 1, maxCount: 1}
       - {path: example:namesQwen35, minCount: 1, maxCount: 1, in: [true, false]}
+      - {path: example:modelCurrent, minCount: 1, maxCount: 1, in: [true, false]}
+  # R4, REPORTED, not armed: 430 of the 432 examples that name a model name an older one. The drift gate is the
+  # shrink-only pin STALE_EXAMPLES_PINNED (FALSIFY-DOCS-007), not this shape; arm it when the pin reaches 0.
+  - id: examples-model-current
+    targetClass: ont:Example
+    properties:
+      - {path: example:modelCurrent, minCount: 1, maxCount: 1, in: [true]}

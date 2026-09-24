@@ -10,6 +10,11 @@
 //! `example:namesModel` per model family its text names (the [`FAMILIES`] table: a token scan, so `graphics` is not
 //! `phi` and `llama.cpp` is a runtime, not a model), and `example:namesQwen35`.
 //!
+//! Currency (R4): the current model family is [`CURRENT_FAMILY`]. An example is `example:modelCurrent` when it names no
+//! model family, names the current one, or carries a `// ont:model-pinned: <reason>` line saying why an older model is
+//! the point (a parity fixture, a tiny test model) — the reason is kept as `example:modelPinned`. The stale count is
+//! pinned shrink-only ([`STALE_EXAMPLES_PINNED`]): a new example on an old model is RED, a migrated one lowers the pin.
+//!
 //! Vacuity (the issue's acceptance 1): at a `[workspace]` root, reading ZERO examples is an extractor error — the
 //! shapes gate counts it as a violation (PV-ONT-012), never a green over an empty corpus. A fixture corpus with no
 //! workspace manifest is not measured and is not an error.
@@ -46,6 +51,31 @@ pub const FAMILIES: &[(&str, &[&str])] = &[
     ("deepseek", &["deepseek"]),
 ];
 
+/// The model family every example that names a model is expected to name (#3560).
+pub const CURRENT_FAMILY: &str = "qwen3.5";
+
+/// Examples on this tree that name a model family and neither name [`CURRENT_FAMILY`] nor declare a pin — measured
+/// 2026-09-24 on B3 (430 of the 432 that name a model). Shrink-only: lower it as examples migrate or pin; never raise it.
+pub const STALE_EXAMPLES_PINNED: usize = 430;
+
+/// The marker that pins an example to an older model, followed by the reason.
+pub const PIN_MARKER: &str = "ont:model-pinned:";
+
+/// The reason an example gives for naming an older model, if it gives one.
+#[must_use]
+pub fn pin_reason(text: &str) -> Option<String> {
+    text.lines()
+        .filter_map(|l| l.trim_start().strip_prefix("//"))
+        .filter_map(|l| {
+            l.trim_start_matches(['/', '!'])
+                .trim()
+                .strip_prefix(PIN_MARKER)
+        })
+        .map(str::trim)
+        .find(|r| !r.is_empty())
+        .map(str::to_string)
+}
+
 /// Tokens that start like a family and are not one: the llama.cpp runtime.
 const NOT_A_MODEL: &[&str] = &["llama.cpp", "llama_cpp", "llama-cpp", "llamacpp"];
 
@@ -76,6 +106,16 @@ pub struct Example {
     pub krate: String,
     pub name: String,
     pub families: BTreeSet<&'static str>,
+    /// The `ont:model-pinned:` reason, when the example gives one.
+    pub pinned: Option<String>,
+}
+
+impl Example {
+    /// Names no model, names the current one, or says why not.
+    #[must_use]
+    pub fn model_current(&self) -> bool {
+        self.families.is_empty() || self.families.contains(CURRENT_FAMILY) || self.pinned.is_some()
+    }
 }
 
 /// Counts reported beside the graph.
@@ -90,6 +130,10 @@ pub struct ExampleStats {
     pub non_member_examples: usize,
     pub naming_a_model: usize,
     pub naming_qwen35: usize,
+    /// Examples naming a model that is neither current nor pinned — the number [`STALE_EXAMPLES_PINNED`] bounds.
+    pub stale: usize,
+    /// Examples that declare `ont:model-pinned:`.
+    pub pinned: usize,
     /// `family -> examples naming it`.
     pub by_family: BTreeMap<String, usize>,
     pub errors: Vec<ExtractError>,
@@ -196,13 +240,16 @@ pub fn walk(root: &Path) -> (Vec<Example>, ExampleStats) {
                 krate: krate.clone(),
                 name: target_name(&file),
                 families: families_in(&text),
+                pinned: pin_reason(&text),
             });
         }
     }
     stats.examples = out.len();
     for e in &out {
         stats.naming_a_model += usize::from(!e.families.is_empty());
-        stats.naming_qwen35 += usize::from(e.families.contains("qwen3.5"));
+        stats.naming_qwen35 += usize::from(e.families.contains(CURRENT_FAMILY));
+        stats.stale += usize::from(!e.model_current());
+        stats.pinned += usize::from(e.pinned.is_some());
         for f in &e.families {
             *stats.by_family.entry((*f).to_string()).or_default() += 1;
         }
@@ -231,8 +278,16 @@ pub fn emit(g: &mut Graph, e: &Example) {
     g.insert(
         n.clone(),
         ex("namesQwen35"),
-        Term::boolean(e.families.contains("qwen3.5")),
+        Term::boolean(e.families.contains(CURRENT_FAMILY)),
     );
+    g.insert(
+        n.clone(),
+        ex("modelCurrent"),
+        Term::boolean(e.model_current()),
+    );
+    if let Some(r) = &e.pinned {
+        g.insert(n.clone(), ex("modelPinned"), Term::string(r));
+    }
 }
 
 /// The examples of the workspace under `contract_dir`'s parent, into `g`.
@@ -246,14 +301,22 @@ pub fn extract(contract_dir: &Path, g: &mut Graph) -> ExampleStats {
 }
 
 /// The scan tells a model from its look-alikes, this run: a Qwen3.5 size and a phi are named; the llama.cpp
-/// runtime and the word `graphics` are not.
+/// runtime and the word `graphics` are not; and an example on Qwen2.5 whose comment is not a pin is stale.
 #[must_use]
 pub fn positive_control() -> bool {
     let named = families_in("load Qwen3.5-4B, compare to phi-3 on graphics via llama.cpp");
     let expected: BTreeSet<&str> = ["qwen3.5", "phi"].into_iter().collect();
+    let old = Example {
+        file: String::new(),
+        krate: String::new(),
+        name: String::new(),
+        families: families_in("Qwen2.5-Coder"),
+        pinned: pin_reason("// qwen2.5 on purpose"),
+    };
     named == expected
         && families_in("Qwen3-8B").contains("qwen3")
         && !families_in("Qwen3-8B").contains("qwen3.5")
+        && !old.model_current()
 }
 
 #[cfg(test)]

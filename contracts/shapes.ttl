@@ -240,6 +240,22 @@
         sh:maxCount 1 ;
         sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
     ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/example/modelCurrent> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/examples-model-current> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/Example> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/example/modelCurrent> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
 .
 
 <https://ont.paiml.dev/v1alpha1/shape/ladder-measured> a sh:NodeShape ;

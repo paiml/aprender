@@ -233,11 +233,11 @@ fn the_tracked_repo_graph_is_fresh() {
     // 0.69 batch folded #3600 in and the count went 6 -> 9 with its three shapes. #3715 added the nine-shape
     // `release-readiness-v1` family (shapes_n=18, triples=15863, measured on its branch); it contributes no focus
     // node to a PR's graph — the release evidence is extracted only under `--release-*`. ONT-4f (#4330) adds
-    // `github-entities-v1`'s four armed shapes: 22. #3560 R1 adds `examples-well-formed` (reported, not armed): 23.
+    // `github-entities-v1`'s four armed shapes: 22. #3560 R1 adds `examples-well-formed` (reported, not armed): 23. R4 adds `examples-model-current` (reported): 24.
     assert_eq!(
         v["shapes_n"],
-        23,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + github-{{repo,issue,pull-request,milestone}} (#4330) + examples-well-formed (#3560 R1)\n{}",
+        24,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + github-{{repo,issue,pull-request,milestone}} (#4330) + examples-well-formed (#3560 R1) + examples-model-current (#3560 R4)\n{}",
         show(&r)
     );
 }
