@@ -1,0 +1,21 @@
+- id: PMAT-4201
+  github_issue: 4201
+  item_type: task
+  title: 'PVL-001 EV-7b: comparator -- the solution closes exactly the pinned statement'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-98
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'PVL-001 EV-7b: $LEAN/scripts/Comparator.lean (run via `lake env lean`) prints NDJSON {name, challenge_type_hash, solution_type_hash, axioms}; `pv discharge check --comparator`: hash mismatch rc 1, solution missing MISSING-ROOT rc 1, zero rows rc 2'
+  - '`status: proved` in contract YAML is derived output: `pv lint` gate `proved-is-derived`'
+  - 'probe (amended per cop ruling 2026-09-24): tests/pvl_comparator.rs wired through ci/explicit-test-commands.d, which ci.yml consumes; removing the .d entry turns the probe RED'
+  - 'mutation: strengthen a hypothesis of a solution theorem -> hash mismatch RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Stacked on EV-6b (feat/4199-pvl-6b-leanchecker @6fa49b14d, on EV-6a b536fd686); rebases onto EV-7a (#4200, aprender-dd) when it lands. Cop assignment (aprender-cf, 2026-09-24).'
