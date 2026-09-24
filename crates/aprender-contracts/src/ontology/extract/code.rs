@@ -432,7 +432,7 @@ impl<'a> Resolver<'a> {
         module
     }
 
-    /// Append `items` to `module`, replacing each `include!("p")` item by the items of `p` — resolved against the
+    /// Append `items` to `module`, replacing each `include!` item naming a path `p` by the items of `p` — resolved against the
     /// directory of the file the macro is written in, recursively. An include that is missing or does not parse
     /// contributes nothing, so what it would have defined stays unresolved (fail-closed).
     fn splice(&mut self, items: &[syn::Item], origin: &Path, depth: usize, module: &mut Module) {
@@ -695,7 +695,7 @@ fn join_path(target: &str, rest: &[&str]) -> String {
     }
 }
 
-/// The path of an `include!("…")` item (a string literal only — `concat!(env!("OUT_DIR"), …)` is a build
+/// The path an `include!` item names (a string literal only — `concat!(env!("OUT_DIR"), …)` is a build
 /// artifact the tree does not hold).
 fn include_path(item: &syn::Item) -> Option<String> {
     let syn::Item::Macro(m) = item else {
