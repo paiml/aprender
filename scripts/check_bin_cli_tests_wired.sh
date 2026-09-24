@@ -60,10 +60,17 @@ def _scalar(v):
 
 def load_minimal(man):
     """[package] name/autotests and [[test]] name/path -- all this guard reads."""
-    d = {"package": {}, "test": []}; cur = None
+    d = {"package": {}, "test": []}; cur = None; ml = None
     for line in open(man, encoding="utf-8"):
         s = line.strip()
+        if ml:  # inside a multi-line string: nothing here is a key or a header
+            if s.count(ml) % 2 == 1: ml = None
+            continue
         if not s or s.startswith("#"):
+            continue
+        for q in ('"""', "'''"):
+            if s.count(q) % 2 == 1: ml = q
+        if ml:
             continue
         if s.startswith("[[") :
             cur = {} if s.split("]]")[0].strip("[ ") == "test" else None
@@ -197,7 +204,11 @@ fn t() {}'
     mk crates/alpha/tests/prefix.rs 'fn t() { let _ = env!("CARGO_BIN_EXE_alpha"); }'
     mk crates/beta/Cargo.toml '[package]
 name = "beta"
-autotests = false'
+autotests = false
+description = """
+[package]
+autotests = true
+"""'
     mk crates/beta/tests/not_a_target.rs 'fn t() { let _ = env!("CARGO_BIN_EXE_beta"); }'
     local ct="carg""o test"   # spelled apart: guard_tree classifies a guard as needing the toolchain by its text
     mk ci/explicit-test-commands.d/010-alpha.cmd "$ct -p alpha --test wired_frag"
@@ -243,6 +254,8 @@ autotests = false'
         if [ "$(bash "$SELF" --print "$root" 2>&1)" = "$(APR_TOML_READER=minimal bash "$SELF" --print "$root" 2>&1)" ]; then
             echo "  ok    reader-parity    the fallback reader derives the tomllib set on this tree"
         else echo "  FAIL  reader-parity    the fallback reader differs from tomllib on this tree"; red=1; fi
+    else
+        echo "  skip  reader-parity    no tomllib on $(python3 --version 2>&1) -- nothing to compare against"
     fi
     # The ledger itself: equal passes, a missing line and a stale line both fail.
     printf '%s\n' "$want" > "$T/ledger"
