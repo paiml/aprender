@@ -1101,18 +1101,7 @@ fn run_apr_cpu_inference(
     };
     let input_token_count = input_tokens.len();
 
-    let gen_config = realizar::apr_transformer::GenerateConfig {
-        max_tokens,
-        temperature,
-        top_p: 0.9,
-        top_k: 0,
-        // #3760: the sampler draws now; no seed is plumbed from this caller.
-        seed: realizar::apr_transformer::DEFAULT_SEED,
-        repetition_penalty: 1.0,
-        trace: false,
-        stop_tokens: vec![],
-        cancel: realizar::generate::CancelToken::never(),
-    };
+    let gen_config = apr_cpu_generate_config(max_tokens, temperature, None, apr_cpu_stop_tokens(state));
 
     let gen_start = Instant::now();
     let output_tokens = {
@@ -1157,6 +1146,38 @@ fn run_apr_cpu_inference(
         finish_reason,
     })
 }
+
+/// #4265: the token ids that end an APR CPU generation.
+#[cfg(feature = "inference")]
+fn apr_cpu_stop_tokens(_state: &AprServerState) -> Vec<u32> {
+    Vec::new()
+}
+
+/// #4265: the one `GenerateConfig` every APR CPU path (blocking, SSE, NDJSON) builds.
+#[cfg(feature = "inference")]
+fn apr_cpu_generate_config(
+    max_tokens: usize,
+    temperature: f32,
+    _top_p: Option<f32>,
+    stop_tokens: Vec<u32>,
+) -> realizar::apr_transformer::GenerateConfig {
+    realizar::apr_transformer::GenerateConfig {
+        max_tokens,
+        temperature,
+        top_p: 0.9,
+        top_k: 0,
+        // #3760: the sampler draws now; no seed is plumbed from this caller.
+        seed: realizar::apr_transformer::DEFAULT_SEED,
+        repetition_penalty: 1.0,
+        trace: false,
+        stop_tokens,
+        cancel: realizar::generate::CancelToken::never(),
+    }
+}
+
+#[cfg(all(test, feature = "inference"))]
+#[path = "tests_apr_cpu_gen_config_4265.rs"]
+mod tests_apr_cpu_gen_config_4265;
 
 /// Load APR model, tokenizer, and transformer into shared server state.
 #[cfg(feature = "inference")]
