@@ -95,6 +95,16 @@ pub enum Error {
         /// The total number of refused elements found.
         count: usize,
     },
+
+    /// A `<metadata>` payload was not well-formed XML (APEX-001 EV-2e).
+    ///
+    /// See [`crate::output::SvgEncoder::metadata`]: the payload is refused, never emitted, so a
+    /// caller cannot break the document or close the wrapper early.
+    #[error("SVG <metadata> payload refused: not well-formed XML ({reason})")]
+    SvgMetadataRefused {
+        /// The parser's description of the first well-formedness error.
+        reason: String,
+    },
 }
 
 #[cfg(test)]
