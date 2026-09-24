@@ -1,0 +1,14 @@
+{
+ "schema": "crux-prompt-certification/v1",
+ "admitted_by_sha": {
+  "0000000000000000000000000000000000000000000000000000000000000000": [
+   "fixture-control"
+  ],
+  "1111111111111111111111111111111111111111111111111111111111111111": [
+   "fixture-control"
+  ],
+  "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": [
+   "fixture-control"
+  ]
+ }
+}
