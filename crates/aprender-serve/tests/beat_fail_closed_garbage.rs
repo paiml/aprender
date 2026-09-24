@@ -49,8 +49,8 @@ fn broken_weight_classes() -> Vec<(&'static str, Vec<f32>, usize, usize)> {
 
     // 90% zeros — wrong-offset signature, density gate (>80%)
     let mut mostly_zero = vec![0.0_f32; N];
-    for i in 0..(N / 10) {
-        mostly_zero[i] = 0.3;
+    for v in &mut mostly_zero[..N / 10] {
+        *v = 0.3;
     }
 
     let mut with_nan = healthy_weight();

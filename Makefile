@@ -165,6 +165,13 @@ lint:
 # unseen until someone's toolchain outruns the pin. This lints on current
 # stable instead, and refuses to pass vacuously. Mirror of `check_msrv.sh`,
 # which guards the floor.
+# #4152: `cargo clippy` with no -p lints the ROOT FACADE only. This lints EVERY workspace member as a
+# shrink-only ratchet (scripts/clippy_member_baseline.txt): a new finding, anywhere, fails.
+.PHONY: lint-members
+lint-members: ## Clippy over every workspace member, shrink-only (#4152)
+	@bash scripts/check_clippy_member_ratchet.sh --self-test
+	@bash scripts/check_clippy_member_ratchet.sh
+
 lint-current:
 	@bash scripts/check_clippy_current_stable.sh
 
@@ -244,6 +251,9 @@ tier3:
 	@echo "Running Tier 3: Full validation..."
 	@PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo test --all
 	@cargo clippy -- -D warnings
+	@echo "Clippy over EVERY workspace member, shrink-only (#4152; the line above lints the facade only)..."
+	@bash scripts/check_clippy_member_ratchet.sh --self-test
+	@bash scripts/check_clippy_member_ratchet.sh
 	@echo "Checking include!() files tracked by git..."
 	@bash scripts/check_include_files.sh
 	@echo "Checking publish safety (symlinks, companion lookups)..."

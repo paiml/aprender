@@ -226,6 +226,8 @@ fn simd_dot(a: &[f32], b: &[f32]) -> f32 {
     #[cfg(target_arch = "x86_64")]
     {
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // SAFETY: AVX2 and FMA were both detected just above: the whole
+            // `#[target_feature]` contract of `simd_dot_avx2`.
             return unsafe { simd_dot_avx2(a, b) };
         }
     }
@@ -245,6 +247,8 @@ unsafe fn simd_dot_avx2(a: &[f32], b: &[f32]) -> f32 {
     let mut i = 0;
 
     while i + 8 <= len {
+        // SAFETY: `i + 8 <= len <= min(a.len(), b.len())`, so both 8-lane loads read in bounds;
+        // `loadu` has no alignment requirement.
         unsafe {
             let va = _mm256_loadu_ps(a.as_ptr().add(i));
             let vb = _mm256_loadu_ps(b.as_ptr().add(i));
@@ -280,7 +284,11 @@ fn scalar_axpy(out: &mut [f32], weight: f32, val: &[f32]) {
 fn simd_axpy(out: &mut [f32], weight: f32, val: &[f32]) {
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") {
+        // #4152: this checked AVX2 only, but `simd_axpy_avx2` enables AVX2 AND FMA, so a CPU with
+        // AVX2 and no FMA would have executed an unsupported instruction (UB). Check both.
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // SAFETY: AVX2 and FMA were both detected just above: the whole `#[target_feature]`
+            // contract of `simd_axpy_avx2`.
             unsafe {
                 simd_axpy_avx2(out, weight, val);
             }
@@ -300,6 +308,9 @@ unsafe fn simd_axpy_avx2(out: &mut [f32], weight: f32, val: &[f32]) {
     let mut i = 0;
 
     while i + 8 <= len {
+        // SAFETY: `i + 8 <= len <= min(out.len(), val.len())`, so the two loads and the store stay
+        // in bounds; `out` is exclusively borrowed, so the store aliases nothing; `loadu`/`storeu`
+        // have no alignment requirement.
         unsafe {
             let v_out = _mm256_loadu_ps(out.as_ptr().add(i));
             let v_val = _mm256_loadu_ps(val.as_ptr().add(i));
