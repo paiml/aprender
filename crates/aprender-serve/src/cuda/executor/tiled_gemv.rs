@@ -337,6 +337,11 @@ impl CudaExecutor {
     /// Q8 activation cache already holds exactly that. The cache is keyed on the
     /// source buffer, so a GEMV over a different buffer quantizes its own input
     /// instead of reusing the last one (PMAT-027 keyed only on a bool).
+    ///
+    /// The executor only sees writes made by its own kernels, which invalidate
+    /// through [`Self::q8_activation_written`]. A host upload into a buffer, or a
+    /// freed buffer whose address is reallocated, is invisible to it: the caller
+    /// must clear `q8_activation_valid` before a DP4A GEMV reads such a buffer.
     pub(crate) fn ensure_q8_activation(
         &mut self,
         input: &GpuBuffer<f32>,
