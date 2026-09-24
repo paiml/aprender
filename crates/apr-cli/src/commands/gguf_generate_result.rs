@@ -517,7 +517,8 @@ fn print_payload_trace(result: &RunResult, max_tokens: usize) {
 /// one-off CUDA setup, so a low number is not evidence of a CPU bottleneck;
 /// the GPU arm never names the CPU and never recommends `--gpu`. A CPU run
 /// never claims tensor cores. `None` (backend not reported) keeps the
-/// throughput-only reading, which is all it can support.
+/// throughput-only tiers, but its top tier names no backend: only a run that
+/// reported `GPU used: yes` is told its tensor cores are engaged.
 fn classify_roofline(
     tok_per_sec: f64,
     used_gpu: Option<bool>,
@@ -551,8 +552,8 @@ fn classify_roofline(
             (
                 65,
                 35,
-                "Compute (GPU tensor cores engaged)",
-                "Efficient — GPU-accelerated path active",
+                "Compute (high throughput; backend not reported)",
+                "Efficient at this throughput",
             )
         };
     }

@@ -822,18 +822,37 @@ fn print_benchmark_results(
 
 /// The one throughput a benchmark run reports, and what it was measured over.
 ///
-/// #4211: the engine's own figure (generated tokens over the inference time,
-/// prefill + decode, model load excluded) is the number stderr's
-/// `Generated N tokens in X ms (Y tok/s)` line prints, so it is preferred. Only
-/// when the engine reports none does the run fall back to wall clock over the
-/// whole run, load included. Either way the basis is named.
+/// #4211: the engine's own figure is the number stderr's
+/// `Generated N tokens in X ms (Y tok/s)` line prints, so it is preferred, and
+/// its basis is read from what the backend MEASURED, never assumed (#3981):
+/// - `"generation"`: the backend marked where generation began
+///   (`usage.generation_ms` is `Some`), so it is prefill + decode, with weight
+///   upload and the F2 check excluded.
+/// - `"inference_incl_setup"`: the path did not mark it (the wgpu path, for
+///   one), so the figure still includes weight upload and the F2 check.
+/// - `"wall"`: the engine reported no figure; the whole run, load included.
 fn benchmark_throughput(result: &RunResult, tokens_generated: usize) -> (f64, &'static str) {
     match result.tok_per_sec {
-        Some(t) if t.is_finite() && t > 0.0 => (t, "inference"),
+        Some(t) if t.is_finite() && t > 0.0 => {
+            if result.usage.generation_ms.is_some() {
+                (t, "generation")
+            } else {
+                (t, "inference_incl_setup")
+            }
+        }
         _ if result.duration_secs > 0.0 => {
             (tokens_generated as f64 / result.duration_secs, "wall")
         }
         _ => (0.0, "wall"),
+    }
+}
+
+/// Human wording for a [`benchmark_throughput`] basis.
+fn benchmark_basis_label(basis: &str) -> &'static str {
+    match basis {
+        "generation" => "generation: prefill + decode, setup excluded",
+        "inference_incl_setup" => "inference incl. weight upload + F2 check",
+        _ => "wall clock, load included",
     }
 }
 
@@ -850,11 +869,7 @@ pub(crate) fn render_benchmark_results(
     let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
     let (tok_per_sec, basis) = benchmark_throughput(result, tokens_generated);
     let wall_ms = result.duration_secs * 1000.0;
-    let basis_label = if basis == "inference" {
-        "inference: prefill + decode, load excluded"
-    } else {
-        "wall clock, load included"
-    };
+    let basis_label = benchmark_basis_label(basis);
 
     let human = format!(
         "\n{}\ntok/s: {:.1} ({})\ntokens: {}\nlatency: {:.2}ms (wall clock, load included)\nmodel: {}\n\n",
@@ -873,6 +888,8 @@ pub(crate) fn render_benchmark_results(
             "tokens": tokens_generated,
             "latency_ms": (wall_ms * 100.0).round() / 100.0,
             "latency_basis": "wall",
+            "generation_ms": result.usage.generation_ms,
+            "setup_ms": result.usage.setup_ms,
         });
         (format!("{json}\n"), human)
     } else {

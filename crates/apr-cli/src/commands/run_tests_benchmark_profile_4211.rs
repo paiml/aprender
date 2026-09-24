@@ -36,12 +36,27 @@
         // Engine figure present: stdout reports it — the number stderr's
         // "Generated N tokens in X ms (Y tok/s)" line prints — not the wall-clock
         // 56 / 8.892 = 6.3. 9.7 is distinct from 6.3 so the two cannot alias.
-        let r = bench_result_4211(Some(9.7), Some(true));
-        let (stdout, _) = render_benchmark_results(&r, "m.gguf", "json", 32);
+        // The backend marked where generation began: setup is excluded.
+        let mut r = bench_result_4211(Some(9.7), Some(true));
+        r.usage.generation_ms = Some(5773);
+        r.usage.setup_ms = Some(3119);
+        let (stdout, stderr) = render_benchmark_results(&r, "m.gguf", "json", 32);
         let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
         assert_eq!(v["tok_s"].as_f64(), Some(9.7), "{v}");
-        assert_eq!(v["tok_s_basis"], "inference", "{v}");
+        assert_eq!(v["tok_s_basis"], "generation", "{v}");
+        assert_eq!(v["generation_ms"].as_u64(), Some(5773), "{v}");
         assert_eq!(v["latency_basis"], "wall", "{v}");
+        assert!(stderr.contains("setup excluded"), "stderr: {stderr:?}");
+
+        // The path did not mark it (wgpu, for one): the engine figure still
+        // includes weight upload + F2, and must not be called setup-excluded.
+        let r = bench_result_4211(Some(9.7), Some(true));
+        let (stdout, stderr) = render_benchmark_results(&r, "m.gguf", "json", 32);
+        let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
+        assert_eq!(v["tok_s"].as_f64(), Some(9.7), "{v}");
+        assert_eq!(v["tok_s_basis"], "inference_incl_setup", "{v}");
+        assert!(v["generation_ms"].is_null(), "{v}");
+        assert!(!stderr.contains("excluded"), "stderr: {stderr:?}");
 
         // No engine figure: wall clock, and labelled as such.
         let r = bench_result_4211(None, Some(false));
@@ -84,4 +99,14 @@
         // The CPU-bound readings the ticket saw on CUDA still apply to a CPU run.
         assert!(classify_roofline(6.3, Some(false)).3.contains("--gpu"));
         assert!(classify_roofline(4.1, Some(false)).2.contains("CPU"));
+    }
+
+    #[test]
+    fn roofline_with_unreported_backend_names_no_backend_4211() {
+        for tps in [0.0, 4.1, 6.3, 35.0, 50.1, 93.9, 250.0] {
+            let (_, _, bottleneck, rec) = classify_roofline(tps, None);
+            assert!(!bottleneck.contains("GPU"), "tps {tps}: {bottleneck}");
+            assert!(!bottleneck.contains("tensor cores"), "tps {tps}: {bottleneck}");
+            assert!(!rec.contains("GPU-accelerated"), "tps {tps}: {rec}");
+        }
     }
