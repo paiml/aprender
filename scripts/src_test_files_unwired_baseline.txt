@@ -6,6 +6,7 @@
 # Reason for all: pre-existing, unreviewed. Wiring each may surface compile errors or
 # stale assertions against code that moved on; that is follow-up work under #3809,
 # not something to fold into the guard PR. Wire or delete; never add.
+# tool_version=none (measured by scripts/check_src_test_files_wired.sh: grep/sed over tracked src .rs files for mod/#[path]/include! declarations; not a versioned analyser)
 crates/aprender-gpu/src/testing/integration_tests/mod.rs
 crates/aprender-present-terminal/src/widgets/battery_panel.rs
 crates/aprender-present-terminal/src/widgets/disk_panel.rs
