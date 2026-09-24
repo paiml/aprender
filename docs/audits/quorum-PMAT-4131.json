@@ -1,0 +1,144 @@
+{
+  "ticket": "PMAT-4131",
+  "base": "origin/fix/4126-timeout-policy",
+  "base_resolved": "origin/fix/4126-timeout-policy",
+  "base_note": "no origin/origin/fix/4126-timeout-policy exists; judged against the local ref",
+  "head": "bde52e507b47336596da2a4da98106df589dde96",
+  "diff_sha256": "54ba60104e58b96503c9c6e2131645c9db64c2bdfcab238d862d735d8f92fe6c",
+  "width": 2,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 23980,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have reviewed the diff against the acceptance criteria for PMAT-4131 and found no issues. The implementation perfectly satisfies all requirements:\n\n1. **Identity-Keyed Cache**: The cache correctly keys on `st_dev, st_ino, size, mtime_ns, ctime_ns` using `stat -Lc`. The TOCTOU check ensures that files modified during hashing are not cached.\n2. **In-Run Memoization**: By writing the hash and source to `$WORK/.sha` instead of using command substitution `$(ladder_sha256 ...)` that creates subshells, the script effectively mutates the `LADDER_SHA_MEMO` associative array in the current shell, preventing duplicate hashing within the same run.\n3. **Tests and Mutants**: The `check_ladder_sha_cache.sh` thoroughly verifies all cache invalidation scenarios (rewrite, mtime-restored, inode-swap, symlink targets). The updates to `check_ladder_provenance.sh` successfully extract the `ladder_sha256` logic on the fly for testing and correctly apply the `sed` mutations (Mutant B) to ensure the `sha` assertion continues to properly test the followed model's hash rather than the link text's hash.\n4. **JSON Updates**: `sha_source` (`hashed|cache|memo`) is correctly tracked and serialized into the inventory JSON. \n5. **Edge Cases**: The cache correctly falls back to `unreadable hashed` if a file cannot be read, which behaves functionally identically to the old unreadable behavior for validation.\n\nThe code is robust, well-tested, and achieves the exact intent specified by the ticket without regressing any assertions.",
+      "findings": [],
+      "raw_bytes": 4330,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for PMAT-4131 strictly implements all acceptance criteria and receipt claims without refutation:\n1. `ladder_sha256` keys its per-host cache strictly on file identity (`stat -Lc '%d %i %s %.9Y %.9Z'`) following symlinks via `-L` and never incorporating the path.\n2. In-place rewrites, mtime-restored rewrites (where ctime changes), and inode swaps force re-hashing, as verified by `scripts/check_ladder_sha_cache.sh` (which passes all real-file test cases and kills the planted mutants in `--self-test`).\n3. Mid-hash modification detection prevents caching files whose identity key shifts between before and after `sha256sum`.\n4. In-run memoization via `LADDER_SHA_MEMO` survives across rung and inventory loops by outputting to `$WORK/.sha` instead of subshells, and inventory rows record `sha_source` (`hashed`, `cache`, or `memo`).\n5. `scripts/check_ladder_provenance.sh` was maintained rather than weakened, lifting `ladder_sha256` and verifying that mutant B (hashing link text) remains RED.\n6. The bashrs gate confirms 0 new issues introduced by this diff (all 8 findings are pre-existing in the base branch).\nNo gates were weakened, no receipt claims were unsubstantiated, and no extraneous changes were introduced. Verdict is PASS.",
+      "findings": [],
+      "raw_bytes": 3786,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=2 author=claude-opus-5-5/claude"
+  }
+}

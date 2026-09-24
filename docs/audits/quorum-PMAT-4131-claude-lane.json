@@ -1,0 +1,11 @@
+{
+  "ticket": "PMAT-4131",
+  "head": "bde52e507",
+  "base": "origin/fix/4126-timeout-policy",
+  "lane": {"model": "claude-haiku-4-5-20251001", "model_source": "measured (Agent resolvedModel)", "family": "claude",
+           "role": "cheap-claude lane per operator rule (2 agy + 1 haiku)", "agent_id": "aca4afda500ad30ba",
+           "verdict": "PASS", "findings": [],
+           "summary": "All acceptance criteria met and verified. Guards pass (check_ladder_sha_cache.sh main test, self-test, check_ladder_provenance.sh updated and tested). Identity-keyed cache with ctime prevents staleness: a file changed under same path/size/mtime is re-hashed because ctime (immutable by users) changes. Key re-check after hash (line 959) prevents caching files modified during hash. In-run memo keyed by identity prevents duplicates. No edge case permits stale attestation: concurrent writes cause cache miss not staleness, corrupted entries rejected by sha regex, symlink races detected by ctime. Measured 1470x improvement (294.3s->0.2s) on lambda."},
+  "author": {"model": "claude-opus-5-5", "family": "claude"},
+  "note": "Same family as the author, so a width lane; the two agy lanes in quorum-PMAT-4131.json (gemini-3.1-pro-high, gemini-3.8-flash-high) are the independent votes. Combined: 3/3 PASS."
+}
