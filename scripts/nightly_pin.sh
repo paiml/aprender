@@ -19,10 +19,10 @@
 # Nothing here touches the network: this runs inside every gate.
 #
 # ACCEPT iff ALL hold (accept rule v1, agreed with aprender-48):
-#   - manifest present, parses, schema is v1, generated_at within max age
+#   - manifest present, parses, schema is v1, generated_at an ISO-8601 time within max age
 #     (APR_NIGHTLY_MAX_AGE_H, default 36) and not in the future
 #   - targets[<host triple>] exists with a 40-hex green_sha
-#   - the tool has a tools[] entry and is not denylisted
+#   - the tool has a tools[] entry and is not denylisted (denylist absent or an array)
 #   - sha256(binary) == tools[tool].bin_sha256            (always)
 #   - if tools[tool].version_sha is non-null: it equals green_sha AND the
 #     sha in the binary's `--version` is a prefix of green_sha
@@ -37,6 +37,9 @@
 # Failure is by return status only.
 
 NIGHTLY_PIN_SCHEMA='aprender-nightly-manifest/v1'
+# The resolvers refuse a nightly_pin.sh that does not set this: one that
+# predates it (or the rule it names) is an older, weaker rule, never a fallback.
+NIGHTLY_PIN_API=1
 
 nightly_pin_refuse() {
     {
@@ -76,6 +79,12 @@ nightly_pin_check() {
     [ "$np_schema" = "$NIGHTLY_PIN_SCHEMA" ] || { nightly_pin_refuse "$np_tool" "UNKNOWN SCHEMA '$np_schema' (want $NIGHTLY_PIN_SCHEMA)" "$np_var"; return 1; }
 
     np_gen=$(jq -r '.generated_at // empty' "$np_m" 2>/dev/null) || np_gen=""
+    # Shape first: GNU `date -d ""` is midnight TODAY, so a null or missing
+    # generated_at would parse as fresh on every run, forever (quorum round 4).
+    case "$np_gen" in
+        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]*) ;;
+        *) nightly_pin_refuse "$np_tool" "MALFORMED MANIFEST (generated_at '$np_gen' is not an ISO-8601 timestamp)" "$np_var"; return 1 ;;
+    esac
     np_gen_s=$(date -d "$np_gen" +%s 2>/dev/null) || np_gen_s=""  # bashrs disable-line=DET002
     case "$np_gen_s" in '' | *[!0-9]*) nightly_pin_refuse "$np_tool" "MALFORMED MANIFEST (generated_at '$np_gen')" "$np_var"; return 1 ;; esac
     np_now=$(date +%s)  # bashrs disable-line=DET002 (staleness is wall-clock by definition)
@@ -92,6 +101,9 @@ nightly_pin_check() {
     np_green=$(jq -r --arg t "$np_triple" '.targets[$t].green_sha // empty' "$np_m" 2>/dev/null) || np_green=""
     printf '%s' "$np_green" | grep -Eqx '[0-9a-f]{40}' || { nightly_pin_refuse "$np_tool" "NO GREEN NIGHTLY for $np_triple (green_sha '$np_green')" "$np_var"; return 1; }
 
+    # denylist: absent means empty; anything but an array is a malformed
+    # manifest, never an empty list (`.denylist[]?` would read "apr" as none).
+    jq -e '(.denylist // []) | type == "array"' "$np_m" >/dev/null 2>&1 || { nightly_pin_refuse "$np_tool" "MALFORMED MANIFEST (denylist is not an array)" "$np_var"; return 1; }
     # denylist entries: strings, or objects whose tool/bin/sha fields each name
     # a tool, a tools key (apr@cuda), a green commit sha, or an executable's
     # sha256 (bin_sha256). EVERY field of an object counts. Checked twice: here

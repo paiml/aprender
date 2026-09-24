@@ -552,18 +552,41 @@ apr_bin_assert_fresh() {
 # acceptable apr is the one the arbiter's nightly manifest names; HEAD
 # provenance below is for dev trees and PR CI. scripts/nightly_pin.sh holds the
 # rule and scripts/check_nightly_pin.sh its case table. Unknown mode -> refuse.
+# The RULE travels with this file: it is loaded from beside it, not from the
+# cwd's checkout. Sourced by path from an older worktree's cwd, the cwd lookup
+# loaded THAT tree's weaker rule and accepted a denylisted binary (quorum round
+# 4). Only when this file cannot name itself (neither bash nor zsh) is the
+# cwd's checkout asked, and a rule without the current NIGHTLY_PIN_API refuses.
 APR_NP_RC=0
-APR_NP_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || APR_NP_ROOT=""
-if [ -n "$APR_NP_ROOT" ] && [ -f "$APR_NP_ROOT/scripts/nightly_pin.sh" ]; then
-    . "$APR_NP_ROOT/scripts/nightly_pin.sh" || { printf 'NIGHTLY PIN REFUSED: cannot load %s/scripts/nightly_pin.sh\n' "$APR_NP_ROOT" >&2; return 1 2>/dev/null || exit 1; }
-    nightly_pin_mode APR_BIN_REQUIRE || APR_NP_RC=$?
+APR_NP_SELF=""
+if [ -n "${BASH_VERSION:-}" ]; then APR_NP_SELF="${BASH_SOURCE[0]:-}"; elif [ -n "${ZSH_VERSION:-}" ]; then APR_NP_SELF="$0"; fi
+case "$APR_NP_SELF" in
+    */apr_bin.sh) APR_NP_LIB="$(dirname "$APR_NP_SELF")/nightly_pin.sh" ;;
+    apr_bin.sh) APR_NP_LIB="nightly_pin.sh" ;;
+    *) APR_NP_LIB=$(git rev-parse --show-toplevel 2>/dev/null) && APR_NP_LIB="$APR_NP_LIB/scripts/nightly_pin.sh" || APR_NP_LIB="" ;;
+esac
+if [ -n "$APR_NP_LIB" ] && [ -f "$APR_NP_LIB" ]; then
+    unset NIGHTLY_PIN_API
+    . "$APR_NP_LIB" || { printf 'NIGHTLY PIN REFUSED: cannot load %s\n' "$APR_NP_LIB" >&2; return 1 2>/dev/null || exit 1; }
+    if [ "${NIGHTLY_PIN_API:-}" = "1" ]; then
+        nightly_pin_mode APR_BIN_REQUIRE || APR_NP_RC=$?
+    else
+        # An older rule is not a fallback. Refuse only if nightly mode could be
+        # meant; a dev tree with neither the knob nor the marker keeps HEAD mode.
+        if [ "${APR_BIN_REQUIRE:-}" = "head" ] || { [ -z "${APR_BIN_REQUIRE:-}" ] && [ ! -e "${APR_FLEET_MARKER:-$HOME/.config/aprender/fleet-nightly}" ]; }; then
+            APR_NP_RC=1
+        else
+            printf 'NIGHTLY PIN REFUSED: %s predates NIGHTLY_PIN_API=1 (an older rule is never a fallback)\n' "$APR_NP_LIB" >&2
+            return 1 2>/dev/null || exit 1
+        fi
+    fi
 elif { [ -n "${APR_BIN_REQUIRE:-}" ] && [ "${APR_BIN_REQUIRE}" != "head" ]; } \
     || { [ -z "${APR_BIN_REQUIRE:-}" ] \
         && [ -e "${APR_FLEET_MARKER:-$HOME/.config/aprender/fleet-nightly}" ]; }; then
     # nightly mode is asked for (explicitly, or by the fleet marker) and the rule
     # that enforces it is not here: refuse rather than fall back to HEAD. No
     # Actions exemption here on purpose: that rule lives only in nightly_pin_mode.
-    printf 'NIGHTLY PIN REFUSED: nightly mode (%s=%s, fleet marker) but scripts/nightly_pin.sh is not in this checkout\n' APR_BIN_REQUIRE "${APR_BIN_REQUIRE:-}" >&2
+    printf 'NIGHTLY PIN REFUSED: nightly mode (%s=%s, fleet marker) but nightly_pin.sh is not beside this resolver or in this checkout\n' APR_BIN_REQUIRE "${APR_BIN_REQUIRE:-}" >&2
     return 1 2>/dev/null || exit 1
 else
     APR_NP_RC=1

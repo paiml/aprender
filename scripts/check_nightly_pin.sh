@@ -84,6 +84,8 @@ manifest older than max age refused|.generated_at="$OLD"| |apr|$T/nightly/apr|re
 max age override widens only by env|.generated_at="$OLD"|APR_NIGHTLY_MAX_AGE_H=48|apr|$T/nightly/apr|accept|
 manifest from the future refused|.generated_at="$FUT"| |apr|$T/nightly/apr|refuse|FROM THE FUTURE
 unparseable generated_at refused|.generated_at="yesterday-ish"| |apr|$T/nightly/apr|refuse|MALFORMED MANIFEST (generated_at
+null generated_at refused (date -d "" is today)|.generated_at=null| |apr|$T/nightly/apr|refuse|MALFORMED MANIFEST (generated_at
+missing generated_at refused|del(.generated_at)| |apr|$T/nightly/apr|refuse|MALFORMED MANIFEST (generated_at
 no target for this host refused|del(.targets["$TRIPLE"])| |apr|$T/nightly/apr|refuse|NO GREEN NIGHTLY
 short green_sha refused|.targets["$TRIPLE"].green_sha="0123456"| |apr|$T/nightly/apr|refuse|NO GREEN NIGHTLY
 tool absent from manifest refused|del(.targets["$TRIPLE"].tools.pv)| |pv|$T/nightly/pv|refuse|no nightly 'pv'
@@ -94,6 +96,8 @@ binary denylisted by its sha256 (object .bin) refused|.denylist=[{"bin":"$HA"}]|
 binary denylisted by its sha256 (string) refused|.denylist=["$HA"]| |apr|$T/nightly/apr|refuse|DENYLISTED
 every field of a denylist object counts|.denylist=[{"tool":"nothing-here","sha":"$G"}]| |apr|$T/nightly/apr|refuse|DENYLISTED
 another binary's sha256 denylisted -> accept|.denylist=["$HC"]| |apr|$T/nightly/apr|accept|
+absent denylist is an empty one|del(.denylist)| |apr|$T/nightly/apr|accept|
+non-array denylist refused, never read as empty|.denylist="apr"| |apr|$T/nightly/apr|refuse|denylist is not an array
 hash matches but --version sha is not green refused|.| |apr|$T/liar/apr|refuse|is not green_sha
 version_sha set but binary prints none refused|.| |apr|$T/nosha/apr|refuse|carries no sha
 version_sha != green_sha refused|.targets["$TRIPLE"].tools.apr.version_sha="$S"| |apr|$T/nightly/apr|refuse|MALFORMED MANIFEST (tools
@@ -194,15 +198,50 @@ run_e2e() {
         env APR_FLEET_MARKER="$T/marker" PATH="$T/cratesio:$PATH" bash -c '. scripts/pv_bin.sh || exit 1; printf %s "$PV"'
     e2e "pv_bin.sh missing manifest refused" refuse "MISSING MANIFEST" \
         env PV_BIN_REQUIRE=nightly APR_NIGHTLY_MANIFEST="$T/none.json" PATH="$T/nightly:$PATH" bash -c '. scripts/pv_bin.sh || exit 1; printf %s "$PV"'
-    # Outside any checkout the rule itself is unreachable; with the fleet
-    # marker present that must refuse, not quietly fall back to HEAD mode.
-    rc=0
-    out=$(cd "$T" && env -u APR_BIN_REQUIRE -u GITHUB_ACTIONS APR_FLEET_MARKER="$T/marker" \
-        bash -c '. "$1" || exit 1; printf %s "$APR"' _ "$ROOT/scripts/apr_bin.sh" 2>&1) || rc=$?
-    v=FAIL
-    if [ "$rc" -ne 0 ]; then case "$out" in *"nightly_pin.sh is not in this checkout"*) v=ok ;; esac; fi
-    [ "$v" = ok ] || fails=$((fails + 1))
-    printf '  %-4s e2e: %-52s rc=%s\n' "$v" "fleet marker outside a checkout refused" "$rc"
+    # e2e_in DIR NAME EXPECT WANT CMD...: like e2e, but from cwd DIR.
+    e2e_in() {
+        local dir="$1" name="$2" expect="$3" want="$4"; shift 4
+        rc=0
+        out=$(cd "$dir" && env -u APR_BIN -u PV_BIN -u APR_BIN_REQUIRE -u PV_BIN_REQUIRE -u GITHUB_ACTIONS APR_NIGHTLY_MANIFEST="$m" "$@" 2>&1) || rc=$?
+        local v=FAIL
+        if [ "$expect" = accept ] && [ "$rc" -eq 0 ] && [ "$out" = "$want" ]; then v=ok; fi
+        if [ "$expect" = refuse ] && [ "$rc" -ne 0 ]; then case "$out" in *"$want"*) v=ok ;; esac; fi
+        case "$out" in *"FOREIGN RULE"*) v=FAIL ;; esac
+        [ "$v" = ok ] || fails=$((fails + 1))
+        printf '  %-4s e2e: %-52s rc=%s\n' "$v" "$name" "$rc"
+        [ "$v" = ok ] || printf '       out: %s\n' "$(printf '%s' "$out" | tail -n 2)"
+    }
+    # The rule travels with the resolver. A cwd inside ANOTHER checkout whose
+    # scripts/nightly_pin.sh is older or different must not be the rule used
+    # (quorum round 4): that checkout's rule here accepts everything.
+    mkdir -p "$T/foreign/scripts"
+    git -C "$T/foreign" init -q
+    printf '%s\n' 'NIGHTLY_PIN_API=1' \
+        'nightly_pin_mode() { echo "FOREIGN RULE" >&2; return 0; }' \
+        'nightly_pin_resolve() { echo "FOREIGN RULE" >&2; command -v "$1"; }' >"$T/foreign/scripts/nightly_pin.sh"
+    e2e_in "$T/foreign" "apr_bin.sh from a foreign checkout uses its own rule" refuse "NOT THE NIGHTLY" \
+        env APR_BIN_REQUIRE=nightly PATH="$T/stale:$PATH" bash -c '. "$1" || exit 1; printf %s "$APR"' _ "$ROOT/scripts/apr_bin.sh"
+    e2e_in "$T/foreign" "pv_bin.sh from a foreign checkout uses its own rule" refuse "NOT THE NIGHTLY" \
+        env PV_BIN_REQUIRE=nightly PATH="$T/cratesio:$PATH" bash -c '. "$1" || exit 1; printf %s "$PV"' _ "$ROOT/scripts/pv_bin.sh"
+    # A rule beside the resolver that predates NIGHTLY_PIN_API is refused, not run.
+    mkdir -p "$T/old"
+    cp "$ROOT/scripts/apr_bin.sh" "$ROOT/scripts/pv_bin.sh" "$T/old/"
+    grep -v '^NIGHTLY_PIN_API=' "$LIB_REAL" >"$T/old/nightly_pin.sh"
+    e2e_in "$T" "apr_bin.sh refuses a rule without NIGHTLY_PIN_API" refuse "predates NIGHTLY_PIN_API" \
+        env APR_BIN_REQUIRE=nightly PATH="$T/nightly:$PATH" bash -c '. "$1" || exit 1; printf %s "$APR"' _ "$T/old/apr_bin.sh"
+    e2e_in "$T" "pv_bin.sh refuses a rule without NIGHTLY_PIN_API" refuse "predates NIGHTLY_PIN_API" \
+        env APR_FLEET_MARKER="$T/marker" PATH="$T/nightly:$PATH" bash -c '. "$1" || exit 1; printf %s "$PV"' _ "$T/old/pv_bin.sh"
+    # A resolver with no rule beside it and none in the cwd's checkout: with the
+    # fleet marker present that must refuse, not quietly fall back to HEAD mode.
+    mkdir -p "$T/lone"
+    cp "$ROOT/scripts/apr_bin.sh" "$T/lone/"
+    e2e_in "$T" "fleet marker, no rule anywhere, refused" refuse "nightly_pin.sh is not beside this resolver" \
+        env APR_FLEET_MARKER="$T/marker" bash -c '. "$1" || exit 1; printf %s "$APR"' _ "$T/lone/apr_bin.sh"
+    # zsh names a sourced file by $0, not BASH_SOURCE: the rule is still found.
+    if command -v zsh >/dev/null 2>&1; then
+        e2e_in "$T/foreign" "zsh-sourced apr_bin.sh uses its own rule" refuse "NOT THE NIGHTLY" \
+            env APR_BIN_REQUIRE=nightly PATH="$T/stale:$PATH" zsh -fc '. "$1" || exit 1; printf %s "$APR"' _ "$ROOT/scripts/apr_bin.sh"
+    fi
     return "$fails"
 }
 
@@ -221,6 +260,8 @@ if [ "${1:-}" = "--self-test" ]; then
 accept any hash|s/and \.value\.bin_sha256 == \$h)/)/
 never stale|s/-gt \$((np_max_h \* 3600))/-gt 999999999/
 no future check|s/-gt \$((np_now + 300))/-gt \$((np_now + 999999999))/
+no generated_at shape check|s/\[0-9\]\[0-9\]\[0-9\]\[0-9\]-\[0-9\]\[0-9\]-\[0-9\]\[0-9\]T\[0-9\]\[0-9\]:\[0-9\]\[0-9\]\*) ;;/*) ;;/
+non-array denylist read as empty|s/(\.denylist \/\/ \[\]) | type == "array"/true/
 no missing-manifest check|s/\[ -f "\$np_m" \] \&\& \[ -r "\$np_m" \] ||/true ||/
 no schema check|s/\[ "\$np_schema" = "\$NIGHTLY_PIN_SCHEMA" \] ||/true ||/
 no tool/commit denylist check|s/\[ "\$np_denied" = "0" \] || { nightly_pin_refuse "\$np_tool" "DENYLISTED/true || { nightly_pin_refuse "$np_tool" "DENYLISTED/
