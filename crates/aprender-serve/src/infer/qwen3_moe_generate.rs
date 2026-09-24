@@ -46,9 +46,8 @@ use rand::{Rng, SeedableRng};
 /// - seeded RNG → deterministic across runs with same seed (V1_002)
 /// - seed differences produce different outputs (V1_003)
 ///
-/// Mirrors the dense path's `Self::sample_advanced` (in
-/// `gguf/inference/fails.rs:100`) but uses a seeded `StdRng`
-/// instead of `rand::rng()` for reproducibility.
+/// Mirrors the deleted dense `sample_advanced` (#4266) but uses a seeded
+/// `StdRng` instead of `rand::rng()` for reproducibility.
 pub(crate) fn sample_from_logits(
     logits: &[f32],
     config: &QuantizedGenerateConfig,
@@ -63,8 +62,8 @@ pub(crate) fn sample_from_logits(
 
     // Step 1: Repetition penalty (qwen3-moe-repetition-penalty-v1).
     // Apply BEFORE temperature scaling. Mirrors Candle's
-    // apply_repeat_penalty semantics (PMAT-383/384, dense-path
-    // sample_advanced in gguf/inference/fails.rs:100).
+    // apply_repeat_penalty semantics (PMAT-383/384; the
+    // dense `sample_advanced`, deleted with fails.rs in #4266).
     // No-op when repeat_penalty == 1.0 OR repeat_last_n == 0.
     let penalized: Vec<f32> =
         if config.repeat_penalty != 1.0 && config.repeat_last_n > 0 && !recent_tokens.is_empty() {
@@ -87,12 +86,7 @@ pub(crate) fn sample_from_logits(
 
     // Greedy fallback: temperature == 0 OR top_k == 1 (after repetition penalty)
     if config.temperature == 0.0 || config.top_k == 1 {
-        return Ok(penalized
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(i, _)| i as u32)
-            .expect("non-empty logits guaranteed above"));
+        return Ok(crate::sampling::argmax(&penalized));
     }
 
     // Temperature scaling
