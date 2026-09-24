@@ -52,6 +52,7 @@ mkbin "$T/cratesio/pv" "pv 0.69.1 (aprender provable-contracts verifier)"
 mkbin "$T/liar/apr" "apr 0.70.0 (${S:0:9})"
 mkbin "$T/nosha/apr" "apr 0.70.0 (v0.70.0+no-git)"
 h() { sha256sum "$1" | awk '{print $1}'; }
+HA=$(h "$T/nightly/apr"); HC=$(h "$T/cuda/apr")
 
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)  # bashrs disable-line=DET002 (fixture timestamps relative to now)
 OLD=$(date -u -d '40 hours ago' +%Y-%m-%dT%H:%M:%SZ)  # bashrs disable-line=DET002 (fixture timestamps relative to now)
@@ -89,6 +90,10 @@ tool absent from manifest refused|del(.targets["$TRIPLE"].tools.pv)| |pv|$T/nigh
 tool denylisted by name refused|.denylist=["pv"]| |pv|$T/nightly/pv|refuse|DENYLISTED
 green sha denylisted refused|.denylist=["$G"]| |apr|$T/nightly/apr|refuse|DENYLISTED
 variant denylisted by object refused|.denylist=[{"tool":"apr@cuda"}]| |apr|$T/cuda/apr|refuse|DENYLISTED
+binary denylisted by its sha256 (object .bin) refused|.denylist=[{"bin":"$HA"}]| |apr|$T/nightly/apr|refuse|DENYLISTED
+binary denylisted by its sha256 (string) refused|.denylist=["$HA"]| |apr|$T/nightly/apr|refuse|DENYLISTED
+every field of a denylist object counts|.denylist=[{"tool":"nothing-here","sha":"$G"}]| |apr|$T/nightly/apr|refuse|DENYLISTED
+another binary's sha256 denylisted -> accept|.denylist=["$HC"]| |apr|$T/nightly/apr|accept|
 hash matches but --version sha is not green refused|.| |apr|$T/liar/apr|refuse|is not green_sha
 version_sha set but binary prints none refused|.| |apr|$T/nosha/apr|refuse|carries no sha
 version_sha != green_sha refused|.targets["$TRIPLE"].tools.apr.version_sha="$S"| |apr|$T/nightly/apr|refuse|MALFORMED MANIFEST (tools
@@ -169,6 +174,8 @@ run_e2e() {
         env APR_BIN_REQUIRE=nightly PATH="$T/stale:$PATH" bash -c '. scripts/apr_bin.sh || exit 1; printf %s "$APR"'
     e2e "apr_bin.sh APR_BIN override is still checked" refuse "NOT THE NIGHTLY" \
         env APR_BIN_REQUIRE=nightly APR_BIN="$T/tagged/apr" bash -c '. scripts/apr_bin.sh || exit 1; printf %s "$APR"'
+    e2e "apr_bin.sh relative APR_BIN override refused" refuse "is not an absolute path" \
+        env APR_BIN_REQUIRE=nightly APR_BIN=scripts/apr_bin.sh bash -c '. scripts/apr_bin.sh || exit 1; printf %s "$APR"'
     e2e "apr_bin.sh typo mode refused" refuse "not a known mode" \
         env APR_BIN_REQUIRE=nighty bash -c '. scripts/apr_bin.sh || exit 1; printf %s "$APR"'
     e2e "apr_bin.sh fleet marker makes nightly the default" refuse "NOT THE NIGHTLY" \
@@ -216,7 +223,9 @@ never stale|s/-gt \$((np_max_h \* 3600))/-gt 999999999/
 no future check|s/-gt \$((np_now + 300))/-gt \$((np_now + 999999999))/
 no missing-manifest check|s/\[ -f "\$np_m" \] \&\& \[ -r "\$np_m" \] ||/true ||/
 no schema check|s/\[ "\$np_schema" = "\$NIGHTLY_PIN_SCHEMA" \] ||/true ||/
-no denylist check|s/\[ "\$np_denied" = "0" \] ||/true ||/
+no tool/commit denylist check|s/\[ "\$np_denied" = "0" \] || { nightly_pin_refuse "\$np_tool" "DENYLISTED/true || { nightly_pin_refuse "$np_tool" "DENYLISTED/
+no key/binary-hash denylist check|s/\[ "\$np_denied" = "0" \] || { nightly_pin_refuse "\$np_tool" "'\$np_key'/true || { nightly_pin_refuse "$np_tool" "'$np_key'/
+denylist object reads one field|s/(\.tool, \.bin, \.sha | select(\. != null))/(.tool \/\/ .bin \/\/ .sha \/\/ empty)/g
 no version-sha check|s/"\$np_bsha"\*) ;;/*) ;;/
 no version_sha==green check|s/\[ "\$np_vsha" = "\$np_green" \] ||/true ||/
 typo mode falls back to HEAD|s/return 2 ;;/return 1 ;;/

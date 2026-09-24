@@ -92,9 +92,12 @@ nightly_pin_check() {
     np_green=$(jq -r --arg t "$np_triple" '.targets[$t].green_sha // empty' "$np_m" 2>/dev/null) || np_green=""
     printf '%s' "$np_green" | grep -Eqx '[0-9a-f]{40}' || { nightly_pin_refuse "$np_tool" "NO GREEN NIGHTLY for $np_triple (green_sha '$np_green')" "$np_var"; return 1; }
 
-    # denylist entries may be tool names, shas, or objects naming either.
+    # denylist entries: strings, or objects whose tool/bin/sha fields each name
+    # a tool, a tools key (apr@cuda), a green commit sha, or an executable's
+    # sha256 (bin_sha256). EVERY field of an object counts. Checked twice: here
+    # by tool and commit, below by the resolved key and the binary's own hash.
     np_denied=$(jq -r --arg tool "$np_tool" --arg g "$np_green" '
-        [.denylist[]? | if type == "string" then . else (.tool // .bin // .sha // empty) end]
+        [.denylist[]? | if type == "string" then . else (.tool, .bin, .sha | select(. != null)) end]
         | map(select(. == $tool or . == $g)) | length' "$np_m" 2>/dev/null) || np_denied=""
     [ "$np_denied" = "0" ] || { nightly_pin_refuse "$np_tool" "DENYLISTED by the manifest (or denylist unreadable: '$np_denied')" "$np_var"; return 1; }
 
@@ -120,10 +123,10 @@ nightly_pin_check() {
         nightly_pin_refuse "$np_tool" "NOT THE NIGHTLY: $np_bin reports '$np_first' (sha256 $np_have_hash); the manifest's green $np_triple build is ${np_green} ($np_want)" "$np_var"
         return 1
     fi
-    np_denied=$(jq -r --arg k "$np_key" '
-        [.denylist[]? | if type == "string" then . else (.tool // .bin // .sha // empty) end]
-        | map(select(. == $k)) | length' "$np_m" 2>/dev/null) || np_denied=""
-    [ "$np_denied" = "0" ] || { nightly_pin_refuse "$np_tool" "'$np_key' is DENYLISTED by the manifest" "$np_var"; return 1; }
+    np_denied=$(jq -r --arg k "$np_key" --arg h "$np_have_hash" '
+        [.denylist[]? | if type == "string" then . else (.tool, .bin, .sha | select(. != null)) end]
+        | map(select(. == $k or . == $h)) | length' "$np_m" 2>/dev/null) || np_denied=""
+    [ "$np_denied" = "0" ] || { nightly_pin_refuse "$np_tool" "'$np_key' (sha256 $np_have_hash) is DENYLISTED by the manifest" "$np_var"; return 1; }
     np_vsha=$(jq -r --arg t "$np_triple" --arg k "$np_key" '.targets[$t].tools[$k].version_sha // empty' "$np_m" 2>/dev/null) || np_vsha=""
 
     if [ -n "$np_vsha" ]; then
@@ -150,6 +153,9 @@ nightly_pin_resolve() {
     np_r_var="$3"
     case "$np_r_override" in '' | *[!A-Za-z0-9_]*) nightly_pin_refuse "$np_r_tool" "bad override name '$np_r_override'" "$np_r_var"; return 1 ;; esac
     eval "np_r_bin=\${$np_r_override:-}"  # bashrs disable-line=SEC001 (name validated above; bash+zsh portable)
+    # An override is exported as-is, so it must be absolute: a relative one
+    # names a different file after the caller's next cd.
+    case "$np_r_bin" in '' | /*) ;; *) nightly_pin_refuse "$np_r_tool" "$np_r_override='$np_r_bin' is not an absolute path" "$np_r_var"; return 1 ;; esac
     if [ -z "$np_r_bin" ]; then
         np_r_bin=$(command -v "$np_r_tool" 2>/dev/null) || np_r_bin=""
         case "$np_r_bin" in /*) ;; *) np_r_bin="" ;; esac
