@@ -243,10 +243,18 @@ mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|OPEN> <note>
 # code and log; returns 1 when the row counts against the declared gates. A function so the
 # rule can be lifted and driven by a case table (scripts/check_dogfood_no_defer.sh).
 classify_declared() {
-  local name="$1" path="$2" rc="$3" log="$4" tail defer obl
+  local name="$1" path="$2" rc="$3" log="$4" tail defer obl scoped
   tail=$(tail -3 "$log" 2>/dev/null | strip_ansi | tr '\n' ' ')
   defer=$(grep -m1 '^DEFERRED: ' "$log" 2>/dev/null | strip_ansi)
   obl=$(grep -m1 '^OPEN-OBLIGATION: ' "$log" 2>/dev/null | strip_ansi)
+  # #4086: a gate that judged a RECORDED scope instead of its full subject says so on a `SCOPED:` line
+  # (check_model_ladder.sh under a release's emergency scope). The row carries it, green or red: a
+  # scoped pass that read `exit=0` would be indistinguishable from the full gate passing. Only the scope's
+  # NAME is carried (the line reads `SCOPED: <name> -- <why>`): mark() keeps 200 chars of a note, and a
+  # long prefix would push a red row's reason out of it.
+  scoped=$(grep -m1 '^SCOPED: ' "$log" 2>/dev/null | strip_ansi | cut -c1-120)
+  scoped=${scoped%% -- *}
+  scoped=${scoped:+ -- $scoped (a recorded scope, not the full gate)}
   if [ -n "$defer" ]; then
     # #3957 F1b: the DEFERRED: hatch is gone. A gate that still says it is a refusal to measure.
     mark "$name" FAIL "$path printed a DEFERRED: line -- DEFER is abolished (#3957 F1b): ${defer#DEFERRED: }"
@@ -256,9 +264,9 @@ classify_declared() {
     mark "$name" OPEN "$path: ${obl#OPEN-OBLIGATION: }"
     [ "${RESULTS[${#RESULTS[@]}-1]}" = OPEN ] || return 1
   elif [ "$rc" -eq 0 ]; then
-    mark "$name" PASS "$path exit=0"
+    mark "$name" PASS "$path exit=0$scoped"
   else
-    mark "$name" FAIL "$path exit=$rc — $tail"
+    mark "$name" FAIL "$path exit=$rc$scoped — $tail"
     return 1
   fi
   return 0
