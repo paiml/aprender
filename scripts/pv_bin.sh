@@ -732,16 +732,17 @@ if [ -n "$PV_NP_ROOT" ] && [ -f "$PV_NP_ROOT/scripts/nightly_pin.sh" ]; then
     . "$PV_NP_ROOT/scripts/nightly_pin.sh" || { printf 'NIGHTLY PIN REFUSED: cannot load %s/scripts/nightly_pin.sh\n' "$PV_NP_ROOT" >&2; return 1 2>/dev/null || exit 1; }
     nightly_pin_mode PV_BIN_REQUIRE || PV_NP_RC=$?
 elif { [ -n "${PV_BIN_REQUIRE:-}" ] && [ "${PV_BIN_REQUIRE}" != "head" ]; } \
-    || { [ -z "${PV_BIN_REQUIRE:-}" ] && [ "${GITHUB_ACTIONS:-}" != "true" ] \
+    || { [ -z "${PV_BIN_REQUIRE:-}" ] \
         && [ -e "${APR_FLEET_MARKER:-$HOME/.config/aprender/fleet-nightly}" ]; }; then
     # nightly mode is asked for (explicitly, or by the fleet marker) and the rule
-    # that enforces it is not here: refuse rather than fall back to HEAD.
+    # that enforces it is not here: refuse rather than fall back to HEAD. No
+    # Actions exemption here on purpose: that rule lives only in nightly_pin_mode.
     printf 'NIGHTLY PIN REFUSED: nightly mode (%s=%s, fleet marker) but scripts/nightly_pin.sh is not in this checkout\n' PV_BIN_REQUIRE "${PV_BIN_REQUIRE:-}" >&2
     return 1 2>/dev/null || exit 1
 else
     PV_NP_RC=1
 fi
-if [ "$PV_NP_RC" -eq 2 ]; then
+if [ "$PV_NP_RC" -ne 0 ] && [ "$PV_NP_RC" -ne 1 ]; then  # 2 = unknown mode; anything else is a broken rule
     return 1 2>/dev/null || exit 1
 fi
 if [ "$PV_NP_RC" -eq 0 ]; then

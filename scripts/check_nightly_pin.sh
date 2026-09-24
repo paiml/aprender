@@ -27,7 +27,7 @@ trap 'rm -rf -- "${T:?}"' EXIT
 # APR_BIN_REQUIRE=head, and a fleet host carries a real marker under $HOME;
 # either leaked into the "marker makes nightly the default" row and failed a
 # correct tree (PMAT-4186 quorum). The marker baseline points at nothing.
-unset APR_BIN PV_BIN APR_BIN_REQUIRE PV_BIN_REQUIRE APR_NIGHTLY_MANIFEST APR_NIGHTLY_MAX_AGE_H GITHUB_ACTIONS
+unset APR_BIN PV_BIN APR_BIN_REQUIRE PV_BIN_REQUIRE APR_NIGHTLY_MANIFEST APR_NIGHTLY_MAX_AGE_H GITHUB_ACTIONS GITHUB_RUN_ID
 export APR_FLEET_MARKER="$T/nomarker"
 
 case "$(uname -m)" in
@@ -82,7 +82,7 @@ unknown schema refused|.schema="aprender-nightly-manifest/v2"| |apr|$T/nightly/a
 manifest older than max age refused|.generated_at="$OLD"| |apr|$T/nightly/apr|refuse|STALE MANIFEST
 max age override widens only by env|.generated_at="$OLD"|APR_NIGHTLY_MAX_AGE_H=48|apr|$T/nightly/apr|accept|
 manifest from the future refused|.generated_at="$FUT"| |apr|$T/nightly/apr|refuse|FROM THE FUTURE
-unparseable generated_at refused|.generated_at="yesterday-ish"| |apr|$T/nightly/apr|refuse|generated_at
+unparseable generated_at refused|.generated_at="yesterday-ish"| |apr|$T/nightly/apr|refuse|MALFORMED MANIFEST (generated_at
 no target for this host refused|del(.targets["$TRIPLE"])| |apr|$T/nightly/apr|refuse|NO GREEN NIGHTLY
 short green_sha refused|.targets["$TRIPLE"].green_sha="0123456"| |apr|$T/nightly/apr|refuse|NO GREEN NIGHTLY
 tool absent from manifest refused|del(.targets["$TRIPLE"].tools.pv)| |pv|$T/nightly/pv|refuse|no nightly 'pv'
@@ -104,7 +104,9 @@ explicit nightly -> nightly|APR_BIN_REQUIRE=nightly APR_FLEET_MARKER=$T/nomarker
 typo mode refused, never guessed|APR_BIN_REQUIRE=nighty APR_FLEET_MARKER=$T/nomarker|2
 fleet marker, unset -> nightly (fleet default)|APR_FLEET_MARKER=$T/marker|0
 fleet marker, explicit head -> HEAD provenance|APR_BIN_REQUIRE=head APR_FLEET_MARKER=$T/marker|1
-fleet marker inside GitHub Actions -> HEAD provenance|GITHUB_ACTIONS=true APR_FLEET_MARKER=$T/marker|1
+fleet marker inside GitHub Actions -> HEAD provenance|GITHUB_ACTIONS=true GITHUB_RUN_ID=31631488466 APR_FLEET_MARKER=$T/marker|1
+fleet marker, bare GITHUB_ACTIONS=true (no run id) -> nightly|GITHUB_ACTIONS=true APR_FLEET_MARKER=$T/marker|0
+fleet marker, non-numeric run id -> nightly|GITHUB_ACTIONS=true GITHUB_RUN_ID=x APR_FLEET_MARKER=$T/marker|0
 fleet marker, nightly job in Actions -> nightly|GITHUB_ACTIONS=true APR_BIN_REQUIRE=nightly APR_FLEET_MARKER=$T/marker|0
 EOF
 )
@@ -175,6 +177,12 @@ run_e2e() {
         env PV_BIN_REQUIRE=nightly PATH="$T/nightly:$PATH" bash -c '. scripts/pv_bin.sh || exit 1; printf %s "$PV"'
     e2e "pv_bin.sh nightly mode refuses a crates.io pv" refuse "NOT THE NIGHTLY" \
         env PV_BIN_REQUIRE=nightly PATH="$T/cratesio:$PATH" bash -c '. scripts/pv_bin.sh || exit 1; printf %s "$PV"'
+    e2e "apr_bin.sh Actions skip of the marker is never silent" refuse "fleet marker ignored inside GitHub Actions" \
+        env GITHUB_ACTIONS=true GITHUB_RUN_ID=7 APR_FLEET_MARKER="$T/marker" APR_BIN="$T/stale/apr" bash -c '. scripts/apr_bin.sh || exit 1; printf %s "$APR"'
+    e2e "apr_bin.sh accepts under the caller's set -euo pipefail" accept "$T/nightly/apr" \
+        env APR_BIN_REQUIRE=nightly PATH="$T/nightly:$PATH" bash -c 'set -euo pipefail; . scripts/apr_bin.sh; printf %s "$APR"'
+    e2e "apr_bin.sh refuses under the caller's set -euo pipefail" refuse "NOT THE NIGHTLY" \
+        env APR_BIN_REQUIRE=nightly PATH="$T/stale:$PATH" bash -c 'set -euo pipefail; . scripts/apr_bin.sh; printf %s "$APR"'
     e2e "pv_bin.sh fleet marker makes nightly the default" refuse "NOT THE NIGHTLY" \
         env APR_FLEET_MARKER="$T/marker" PATH="$T/cratesio:$PATH" bash -c '. scripts/pv_bin.sh || exit 1; printf %s "$PV"'
     e2e "pv_bin.sh missing manifest refused" refuse "MISSING MANIFEST" \
@@ -212,7 +220,8 @@ no denylist check|s/\[ "\$np_denied" = "0" \] ||/true ||/
 no version-sha check|s/"\$np_bsha"\*) ;;/*) ;;/
 no version_sha==green check|s/\[ "\$np_vsha" = "\$np_green" \] ||/true ||/
 typo mode falls back to HEAD|s/return 2 ;;/return 1 ;;/
-marker honoured in Actions|s/!= "true" \]/!= "never" ]/
+marker honoured in Actions|s/\[ "\${GITHUB_ACTIONS:-}" = "true" \]/[ "${GITHUB_ACTIONS:-}" = "never" ]/
+bare GITHUB_ACTIONS=true qualifies|s/'' | \*\[!0-9\]\*) ;;/'' | *[!0-9]*) np_actions=1 ;;/
 marker ignored|s/np_mode=nightly$/np_mode=/
 EOF
 )

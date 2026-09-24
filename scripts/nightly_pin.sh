@@ -169,16 +169,26 @@ nightly_pin_resolve() {
 # exceptions, both explicit:
 #   - REQUIRE_VAR=head opts one invocation into HEAD provenance (a dev tree
 #     testing its own build);
-#   - inside GitHub Actions (GITHUB_ACTIONS=true) the marker is ignored: a PR
+#   - inside a GitHub Actions job (GITHUB_ACTIONS=true AND a numeric
+#     GITHUB_RUN_ID, both of which the runner sets) the marker is ignored: a PR
 #     job tests the PR's code, which is by construction never the nightly, and
 #     the self-hosted runners share the host user with the marker. A nightly
-#     job sets REQUIRE_VAR=nightly itself.
+#     job sets REQUIRE_VAR=nightly itself. A bare GITHUB_ACTIONS=true (exported
+#     while debugging) does not qualify, and the skip is never silent: it
+#     prints a notice, so a shell that inherited a runner's env says so.
 nightly_pin_mode() {
     case "$1" in '' | *[!A-Za-z0-9_]*) printf 'NIGHTLY PIN REFUSED: bad mode variable name %s\n' "$1" >&2; return 2 ;; esac
     eval "np_mode=\${$1:-}"  # bashrs disable-line=SEC001 (name validated above; bash+zsh portable)
-    if [ -z "$np_mode" ] && [ "${GITHUB_ACTIONS:-}" != "true" ] \
-        && [ -e "${APR_FLEET_MARKER:-$HOME/.config/aprender/fleet-nightly}" ]; then
-        np_mode=nightly
+    if [ -z "$np_mode" ] && [ -e "${APR_FLEET_MARKER:-$HOME/.config/aprender/fleet-nightly}" ]; then
+        np_actions=0
+        if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+            case "${GITHUB_RUN_ID:-}" in '' | *[!0-9]*) ;; *) np_actions=1 ;; esac
+        fi
+        if [ "$np_actions" = 1 ]; then
+            printf 'nightly pin: fleet marker ignored inside GitHub Actions run %s (HEAD provenance); set %s=nightly to pin\n' "$GITHUB_RUN_ID" "$1" >&2
+        else
+            np_mode=nightly
+        fi
     fi
     case "$np_mode" in
         '' | head) return 1 ;;
