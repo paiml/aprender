@@ -1129,8 +1129,12 @@ MUT
     selected=$(python3 -c 'import json,sys; print(" ".join(json.loads(sys.argv[1])["selected"]))' "$plan")
   fi
   # CRUX_MUTANTS_PLAN_ONLY=1: the table and its plan line, no mutant (check_crux_mutant_plan.sh drives the plan
-  # through this very script in fabricated push / merge_group repos)
-  [ -n "${CRUX_MUTANTS_PLAN_ONLY:-}" ] && selected=""
+  # through this very script in fabricated push / merge_group repos). It is NEVER a verdict: it says so and exits 3
+  # below, so a runner that set it cannot pass a table that ran no mutant (quorum round 3, lane 2, measured).
+  if [ -n "${CRUX_MUTANTS_PLAN_ONLY:-}" ]; then
+    printf '  F6 mutants: PLAN ONLY -- 0 run; this is not a verdict\n'
+    selected=""
+  fi
   # label|the row that MUST break (#3887: a kill for the wrong reason is no kill)|sed deleting the rule
   while IFS='|' read -r label must expr; do
     [ -n "$label" ] || continue
@@ -1145,4 +1149,5 @@ MUT
 fi
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"
+[ -z "${CRUX_MUTANTS_PLAN_ONLY:-}" ] || { printf '%s: CRUX_MUTANTS_PLAN_ONLY is set: no mutant ran, exit 3 (never a pass)\n' "$PROG"; exit 3; }
 [ "$FAIL" -eq 0 ]

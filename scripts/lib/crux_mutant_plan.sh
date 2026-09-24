@@ -13,7 +13,13 @@
 crux_mutant_changed() {
   local root=$1 out=$2
   if [ -n "${CRUX_MUTANT_DIFF_BASE:-}" ]; then
-    git -C "$root" diff --no-renames --name-only "$CRUX_MUTANT_DIFF_BASE...HEAD" > "$out" 2> /dev/null
+    # A base whose merge-base with HEAD is HEAD itself (HEAD, or anything ahead of it) diffs the tree against itself:
+    # empty, and read as "untouched". Refused like resolve_base refuses it (quorum round 3, lane 2, measured).
+    local mb head
+    mb=$(git -C "$root" merge-base "$CRUX_MUTANT_DIFF_BASE" HEAD 2> /dev/null) || return 1
+    head=$(git -C "$root" rev-parse HEAD 2> /dev/null) || return 1
+    [ "$mb" != "$head" ] || return 1
+    git -C "$root" diff --no-renames --name-only "$mb" HEAD > "$out" 2> /dev/null
     return
   fi
   # In a SUBSHELL: resolve_base needs REPO_ROOT and PROG, and setting them here clobbered the sourcing table's own

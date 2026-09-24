@@ -17,6 +17,8 @@
 #  11. the REAL table in fabricated repos: a push and a merge_group head that touch the judge → all 24;
 #      an untouched push samples with its diff READ (never 'could not be read'); the table still names itself
 #  12. the sourced diff lib leaves its caller's PROG and REPO_ROOT alone
+#  13. CRUX_MUTANTS_PLAN_ONLY is never a verdict: it says 0 ran and exits 3
+#  14. a self-referential CRUX_MUTANT_DIFF_BASE is an unreadable diff, never 'untouched'
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
@@ -145,6 +147,21 @@ case "$l1|$l2|$l3" in
     ok "the REAL table reads its diff on push and merge_group: the judge touched → all 24; an untouched push samples, diff read; the table still names itself" ;;
   *) broke "table-read diff: push '$l1' / merge_group '$l2' / untouched push '$l3'" ;;
 esac
+
+# Row 13: CRUX_MUTANTS_PLAN_ONLY is never a verdict: the plan line says 0 ran and the table exits 3, even when a
+# runner sets it on a full run (it once printed "all, 24 of 24" and exited 0 with no mutant run).
+out=$( cd "$P1" && CRUX_MUTANTS=all CRUX_MUTANTS_PLAN_ONLY=1 timeout 600 bash scripts/check_crux_inference_judge.sh 2>&1 ); rc=$?
+case "$rc:$out" in
+  3:*"PLAN ONLY -- 0 run"*"no mutant ran, exit 3"*) ok "a plan-only run says 0 ran and exits 3, never a pass" ;;
+  *) broke "plan-only run: rc $rc, $(printf '%s' "$out" | grep -E 'F6 mutants|exit 3|ok, ' | tr '\n' ' ')" ;;
+esac
+
+# Row 14: a self-referential CRUX_MUTANT_DIFF_BASE (HEAD) is an UNREADABLE diff, never "untouched" (it once diffed
+# the tree against itself and read "the diff touches none of the mutants' files").
+s14=$( . "$ROOT/scripts/lib/crux_mutant_plan.sh"; CRUX_MUTANT_DIFF_BASE=HEAD crux_mutant_changed "$P1" "$TMP/s14.txt"; echo $? )
+s14b=$( . "$ROOT/scripts/lib/crux_mutant_plan.sh"; CRUX_MUTANT_DIFF_BASE=HEAD~1 crux_mutant_changed "$P1" "$TMP/s14b.txt"; echo "$?:$(grep -c crux_inference_judge "$TMP/s14b.txt")" )
+[ "$s14|$s14b" = "1|0:1" ] && ok "CRUX_MUTANT_DIFF_BASE=HEAD is refused (unreadable); HEAD~1 reads the judge change" \
+  || broke "diff-base override: HEAD rc $s14 (want 1), HEAD~1 $s14b (want 0:1)"
 
 # Row 12: the sourced lib leaves its caller's globals alone (it once set PROG and REPO_ROOT in the caller's shell).
 g=$( PROG=caller-prog; REPO_ROOT=caller-root; . "$ROOT/scripts/lib/crux_mutant_plan.sh" \
