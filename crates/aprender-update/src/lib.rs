@@ -56,6 +56,8 @@ pub struct Product {
 
 /// Per request, for the background refresh child.
 const TIMEOUT: Duration = Duration::from_secs(10);
+/// The refresh child exits after this, whatever the network is doing.
+const REFRESH_DEADLINE: Duration = Duration::from_secs(60);
 /// Hidden `update` argument the startup check runs its refresh child with.
 const REFRESH_ARG: &str = "--refresh-cache";
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(120);
@@ -77,9 +79,23 @@ fn env(k: &str) -> Option<String> {
     std::env::var(k).ok()
 }
 
+/// This host's name: procfs, `/etc/hostname`, `$HOSTNAME`, then `uname -n`
+/// (macOS has neither file). Empty if all fail, which [`policy::installs`]
+/// treats as report-only.
 fn hostname() -> String {
-    std::fs::read_to_string("/proc/sys/kernel/hostname")
-        .or_else(|_| std::fs::read_to_string("/etc/hostname"))
+    let file = |p: &str| std::fs::read_to_string(p).ok();
+    let uname = || {
+        std::process::Command::new("uname")
+            .arg("-n")
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+    };
+    file("/proc/sys/kernel/hostname")
+        .or_else(|| file("/etc/hostname"))
+        .or_else(|| env("HOSTNAME"))
+        .or_else(uname)
         .map(|s| s.trim().to_string())
         .unwrap_or_default()
 }
@@ -138,6 +154,10 @@ pub fn refresh(net: &dyn Net, p: &Product, target: &str, path: &Path, now: u64) 
 
 /// Call at the top of `main`. Never blocks, never fails, never errors aloud.
 pub fn startup(p: &Product, args: &[String]) {
+    // `update` is unix-only (install.rs); never announce what it cannot do.
+    if !cfg!(unix) {
+        return;
+    }
     if policy::check_allowed(&env, std::io::stderr().is_terminal(), args).is_err() {
         return;
     }
@@ -258,6 +278,15 @@ pub fn update_with(
 /// `<bin> update [--check]` against the real network and the running exe.
 #[must_use]
 pub fn update_command(p: &Product, check_only: bool) -> i32 {
+    if !cfg!(unix) {
+        eprintln!(
+            "{}: self-update is unix-only; download from https://github.com/{}/releases",
+            p.bin, p.repo
+        );
+        return 1;
+    }
+    // Say what it is waiting on: DNS is not bounded by the request timeout.
+    eprintln!("{}: checking https://github.com/{} ...", p.bin, p.repo);
     let exe = match std::env::current_exe() {
         Ok(e) => e,
         Err(e) => {
@@ -330,6 +359,12 @@ pub fn update_main(p: &Product, args: &[String]) -> i32 {
             0
         }
         UpdateArgs::RefreshCache => {
+            // ureq's timeout does not bound DNS resolution; a hung resolver
+            // must not leave one stuck child per day. Hard deadline.
+            std::thread::spawn(|| {
+                std::thread::sleep(REFRESH_DEADLINE);
+                std::process::exit(0);
+            });
             if let Some(path) = cache::path(&env, p.bin) {
                 let net = fetch::Http::new(TIMEOUT, &user_agent(p));
                 refresh(&net, p, &host_target(), &path, now());

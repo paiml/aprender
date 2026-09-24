@@ -84,6 +84,10 @@ pub fn installs(hostname: &str, manifest: Option<&std::path::Path>) -> Installs 
     if let Some(m) = manifest {
         return Installs::Arbiter(format!("arbiter manifest {}", m.display()));
     }
+    if hostname.trim().is_empty() {
+        // Fail closed: an undetectable name could be a fleet host.
+        return Installs::Arbiter("hostname unknown".into());
+    }
     let h = hostname.to_ascii_lowercase();
     if let Some(f) = FLEET_HOSTS.iter().find(|f| h.contains(*f)) {
         return Installs::Arbiter(format!("fleet host {hostname} ({f})"));
@@ -182,6 +186,12 @@ mod tests {
     fn installs_case_table() {
         use std::path::{Path, PathBuf};
         assert_eq!(installs("laptop", None), Installs::User);
+        for h in ["", "  "] {
+            assert!(
+                matches!(installs(h, None), Installs::Arbiter(_)),
+                "unknown hostname {h:?} is report-only"
+            );
+        }
         assert!(matches!(
             installs("laptop", Some(Path::new("/h/m.json"))),
             Installs::Arbiter(_)
