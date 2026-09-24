@@ -3331,17 +3331,16 @@ jobs:
   # ADVISORY: NOT in `gate`'s `needs:` (cop ruling, 2026-09-24). Measured at 4a870daf5 on
   # lambda (4m21s, 1.4 GB RSS), the ladder is RED: 7 escape-allowlist.yaml entries are still
   # `confirmed_by: pending`, and only a person may confirm them (§5.3). Flip to required --
-  # add it to `gate.needs` and read its result there -- only when that is clear AND the
-  # proof toolchain is on every host this job can land on.
+  # add it to `gate.needs` and read its result there -- only when that is clear.
   #
-  # `intel`: infra-8d provisioned elan and /mnt/nvme-raid0/lean-cache on intel and yoga-build
-  # (2026-09-25). yoga-build3 carries the same labels as yoga-build but does not have the
-  # mount yet, so no label can select yoga-build alone. Widen to the clean-room X64 pool once
-  # build2 and build3 are verified. X64 is mandatory in any case: `ci / lint` once landed on
-  # aarch64 gx10 and failed on x86-only code. 90 min: under the merge queue's 180 min.
+  # The clean-room X64 pool is intel-clean-room-* plus yoga-build, yoga-build2 and yoga-build3,
+  # and infra-8d verified elan and a writable /mnt/nvme-raid0/lean-cache on every one of them
+  # (2026-09-25). A host added to the pool without them DECLINES here, never builds cold.
+  # X64 is mandatory: `ci / lint` once landed on aarch64 gx10 and failed on x86-only code.
+  # 90 min: under the merge queue's 180 min.
   # build.sh is ~6 min on a warm cache, and the leanchecker arm's own cap is 3600 s.
   provable-ladder:
-    runs-on: [self-hosted, Linux, clean-room, X64, intel]
+    runs-on: [self-hosted, Linux, clean-room, X64]
     timeout-minutes: 90
     env:
       LEAN: crates/aprender-contracts-staging/lean
@@ -3433,9 +3432,8 @@ jobs:
         run: |
           {
             echo "### provable-ladder (PVL-001 EV-9, #4083): ADVISORY, not in gate.needs"
-            echo "Job status: ${{ job.status }}. It becomes required only when both blockers are clear:"
+            echo "Job status: ${{ job.status }}. It becomes required only when this blocker is clear:"
             echo "1. escape-allowlist.yaml: 7 entries are \`confirmed_by: pending\`, and a person must confirm them or delete the axioms (PVL-001 §5.3)"
-            echo "2. proof toolchain: elan and $LEAN_CACHE_ROOT on every host the job can land on (live on intel and yoga-build; build2 and build3 pending)"
           } >> "$GITHUB_STEP_SUMMARY"
 
   gate:
