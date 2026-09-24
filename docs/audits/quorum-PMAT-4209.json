@@ -1,0 +1,184 @@
+{
+  "ticket": "PMAT-4209",
+  "base": "origin/chore/0.69.1-merge-back",
+  "base_resolved": "origin/chore/0.69.1-merge-back",
+  "base_note": "no origin/origin/chore/0.69.1-merge-back exists; judged against the local ref",
+  "head": "c385311a03235ab592434fe63c42550b5e2278b6",
+  "diff_sha256": "ecbb9247c091818bc4af52548fe2c91e21a6fc5527ef6e037d01f9788e6ba7a2",
+  "width": 3,
+  "executor": "claude-code x3 (sonnet-5, sonnet-5, haiku-4-5) on the brief quorum-review.sh built (patched copy, QR_KEEP_BRIEF); the agy lane was 429",
+  "prompt_mode": "inline",
+  "prompt_bytes": 10606,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "opus-seat (author is claude-opus-5-5: second sonnet-5 sample, per operator fallback)",
+      "verdict": "PASS",
+      "brief_sha256": "fc54c8121ebb7b17fe04d763557299b3f2920b645f08d30fc10150109c5db2c5",
+      "summary": "Runtime of the generated cell: trap installed before the llama-server start; %q quoting round-trips a path with a space (measured); teardown.state written and read at the same path; stale state removed first so it can never read clean; HAVE_LLAMA=0 writes clean (measured); CELL_WHY short-circuits crux_teardown_why; clean-path rows byte-identical. greedy 17/17, serve_code 68/68.",
+      "findings": [
+        {
+          "file": "scripts/lib/crux_cells_serve_code.sh",
+          "line": 108,
+          "claim": "pre-existing coverage gap: no table sends a real TERM to a cell to prove `trap 'exit 143' TERM INT` fires the EXIT trap; not introduced here",
+          "grounding": "asserted"
+        }
+      ],
+      "executor": "claude-code Agent lane a07a7c9c105a88ccc, read docs/audits/quorum-PMAT-4209.brief.md (sha checked)"
+    },
+    {
+      "lane": 2,
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "sonnet-seat",
+      "verdict": "PASS",
+      "brief_sha256": "fc54c8121ebb7b17fe04d763557299b3f2920b645f08d30fc10150109c5db2c5",
+      "summary": "Ran the table (17/17) and planted 3 mutants outside the repo (trap call removed; cell_fault propagation removed; old inline kill re-added): each caught by exactly its row, no collateral. Source order correct. inline-kill regex matches kill -TERM/-9, printf-embedded, pkill, killall, /usr/bin/kill; no false positives on the real libs. SIGKILL of the cell fails safe (absent state reads non-clean).",
+      "findings": [
+        {
+          "file": "scripts/check_crux_greedy_rows.sh",
+          "line": 109,
+          "claim": "case table does not list kill -TERM / kill -9 forms explicitly though the regex matches them (verified); completeness only",
+          "grounding": "measured",
+          "fix": "add them to the must-match list"
+        }
+      ],
+      "executor": "claude-code Agent lane a7426d1378f64e354, read docs/audits/quorum-PMAT-4209.brief.md (sha checked)"
+    },
+    {
+      "lane": 3,
+      "model": "claude-haiku-4-5-20251001",
+      "model_measured": "claude-haiku-4-5-20251001",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "cheap-claude-seat",
+      "verdict": "PASS",
+      "brief_sha256": "fc54c8121ebb7b17fe04d763557299b3f2920b645f08d30fc10150109c5db2c5",
+      "summary": "All acceptance criteria verified: trap over llama-server.pid; rows read crux_teardown_why and a non-clean teardown makes every greedy row RED (6/6); no inline kill in crux_cells_*.sh with a planted mutant caught; table 17/17.",
+      "findings": [],
+      "executor": "claude-code Agent lane ae51310390342ead4, read docs/audits/quorum-PMAT-4209.brief.md (sha checked)"
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "the agy lane (gemini-3.1-pro-high) was refused at pre-check with 429 (resets in 3h1m); openai and agy-claude buckets 429 too \u2014 see quorum-PMAT-4209.agy.json",
+    "all 3 lanes are hand-run Claude Code seats on the same brief file; receipt-lint refuses same-family lanes, so this is the operator's 429 fallback shape and the cop decides"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config \u2014 the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 3h1m16s."
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 73h50m20s."
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 73h49m30s."
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": null,
+    "output": "not run: receipt-lint refuses same-family lanes by design; operator fallback rule applies"
+  },
+  "brief_sha256": "fc54c8121ebb7b17fe04d763557299b3f2920b645f08d30fc10150109c5db2c5",
+  "brief_bytes": 10606,
+  "brief_path": "docs/audits/quorum-PMAT-4209.brief.md",
+  "degraded": "same-family (all 3 lanes)",
+  "operator_rule": "OPERATOR, verbatim via aprender-cf 2026-09-24: 'if gemini returns 429 I want fallback sonnet + haiku + opus5.5'. The author is claude-opus-5-5, so the opus seat is a second, independent claude-sonnet-5 sample. degraded: same-family.",
+  "gemini_429": {
+    "record": "docs/audits/quorum-PMAT-4209.agy.json",
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 3h1m16s."
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 73h50m20s."
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 73h49m30s."
+      }
+    ]
+  }
+}
