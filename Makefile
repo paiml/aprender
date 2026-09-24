@@ -582,6 +582,12 @@ ratchet-semantics-test: ## BSE-03: D2 ratchet polarity rows (--class readme)
 # enforces COV_FLOOR, so this is a name, not a new policy.
 coverage-check: coverage
 
+# PVL-001 EV-6a (#4139): the ONLY writer of the Lean label ratchet. `pv discharge check` never writes
+# unresolved-labels.json; this rewrites it DOWNWARD (a label that resolves now leaves; a new one is never added).
+.PHONY: label-ratchet
+label-ratchet:
+	@. scripts/pv_bin.sh && "$$PV" discharge label-ratchet crates/aprender-contracts-staging/lean --contracts contracts
+
 # Ditto for `contracts`. The provable-contract tier is a HARD release gate per
 # CLAUDE.md, and the dogfood protocol looked for a target that did not exist, so
 # it WARNed instead of checking. `pv lint` runs validate + audit + score across

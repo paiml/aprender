@@ -279,7 +279,11 @@ pub const ARMED_GATES_SHRANK_EXIT: i32 = 3;
 /// empty corpus or a declined lint meet, [`ARMED_GATES_SHRANK_EXIT`] for a shrunk
 /// armed set, 1 for everything else (a parse failure and a rejected meet included).
 pub fn exit_code_for(err: &(dyn std::error::Error + 'static)) -> i32 {
-    if err.downcast_ref::<ZeroContracts>().is_some() || err.downcast_ref::<LintDeclined>().is_some()
+    if err.downcast_ref::<ZeroContracts>().is_some()
+        || err.downcast_ref::<LintDeclined>().is_some()
+        || err
+            .downcast_ref::<crate::commands::discharge::DischargeDeclined>()
+            .is_some()
     {
         ZERO_CONTRACTS_EXIT
     } else if err.downcast_ref::<ArmedGatesShrank>().is_some()
@@ -300,13 +304,20 @@ pub fn exit_code_for(err: &(dyn std::error::Error + 'static)) -> i32 {
 /// ONT-1 asserts both halves of the line.
 #[must_use]
 pub fn verdict_for(err: &(dyn std::error::Error + 'static)) -> &'static str {
-    if err.downcast_ref::<ZeroContracts>().is_some() || err.downcast_ref::<LintDeclined>().is_some()
+    if err.downcast_ref::<ZeroContracts>().is_some()
+        || err.downcast_ref::<LintDeclined>().is_some()
+        || err
+            .downcast_ref::<crate::commands::discharge::DischargeDeclined>()
+            .is_some()
     {
         "decline"
     } else if err.downcast_ref::<ParseErrors>().is_some()
         || err.downcast_ref::<LintRejected>().is_some()
         || err.downcast_ref::<ObligationsRejected>().is_some()
         || err.downcast_ref::<GateRejected>().is_some()
+        || err
+            .downcast_ref::<crate::commands::discharge::DischargeRejected>()
+            .is_some()
     {
         "reject"
     } else {
