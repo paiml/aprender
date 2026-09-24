@@ -213,7 +213,7 @@ impl CudaExecutor {
                     hidden_size,
                     epsilon,
                 },
-                format!("rmsnorm_simple_{}_{}", hidden_size, Self::f32_bits_tag(epsilon)),
+                module_key!(self, "rmsnorm_simple_{}_b{:08x}", hidden_size, epsilon.to_bits()),
             )
         } else if use_precise {
             (
@@ -221,7 +221,7 @@ impl CudaExecutor {
                     hidden_size,
                     epsilon,
                 },
-                format!("rmsnorm_precise_{}_{}", hidden_size, Self::f32_bits_tag(epsilon)),
+                module_key!(self, "rmsnorm_precise_{}_b{:08x}", hidden_size, epsilon.to_bits()),
             )
         } else {
             (
@@ -229,24 +229,24 @@ impl CudaExecutor {
                     hidden_size,
                     epsilon,
                 },
-                format!("rmsnorm_vectorized_{}_{}", hidden_size, Self::f32_bits_tag(epsilon)),
+                module_key!(self, "rmsnorm_vectorized_{}_b{:08x}", hidden_size, epsilon.to_bits()),
             )
         };
 
         let kernel_name = self.kernels.kernel_name(&kernel_type);
 
-        if !self.modules.contains_key(&cache_key) {
+        if !self.modules.contains_key(&*cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
             if use_simple {
                 eprintln!("[GH-559] RmsNorm PTX ({} bytes)", ptx.len());
             }
             let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.modules.insert(cache_key.to_string(), module);
         }
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         // PAR-081: 256 threads for vectorized, 32 threads for simple
@@ -273,7 +273,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -316,13 +316,19 @@ impl CudaExecutor {
             epsilon,
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("per_head_rmsnorm_{}_{}_{}", head_dim, num_heads, Self::f32_bits_tag(epsilon));
+        let cache_key = module_key!(
+            self,
+            "per_head_rmsnorm_{}_{}_b{:08x}",
+            head_dim,
+            num_heads,
+            epsilon.to_bits()
+        );
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         // One warp (32 threads) per head, one block per head
@@ -352,7 +358,7 @@ impl CudaExecutor {
         // diverged at position 1 on sm_89 and GB10 alike (position 0 is immune:
         // attention over one key is V, and RoPE(0) is the identity).
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),

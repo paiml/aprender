@@ -51,6 +51,7 @@ impl CudaExecutor {
             modules: std::mem::ManuallyDrop::new(HashMap::new()),
             #[cfg(any(debug_assertions, test))]
             module_key_ledger: Default::default(),
+            module_keys: HashMap::new(),
             weight_cache: HashMap::new(),
             named_fp16_weight_cache: HashMap::new(), // GH-174: SafeTensors F16
             quantized_weight_cache: HashMap::new(),  // PAR-005: quantized weight cache

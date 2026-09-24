@@ -15,7 +15,7 @@ use crate::GpuError;
 // zeros when the CUDA context is not current on the calling thread
 // (see paiml/trueno#232).
 
-use super::buffer::GpuBuffer;
+use super::buffer::{record_device_to_host, GpuBuffer};
 
 // ============================================================================
 // Blocking host-to-device primitive
@@ -203,6 +203,7 @@ impl<T: Copy> GpuBuffer<T> {
         // SAFETY: data is valid for size bytes, ptr is valid device pointer
         let result =
             unsafe { (driver.cuMemcpyDtoH)(data.as_mut_ptr() as *mut c_void, self.ptr, size) };
+        record_device_to_host(size);
         CudaDriver::check(result).map_err(|e| GpuError::Transfer(e.to_string()))
     }
 
@@ -294,6 +295,7 @@ impl<T: Copy> GpuBuffer<T> {
                 stream.raw(),
             )
         };
+        record_device_to_host(size);
         CudaDriver::check(result).map_err(|e| GpuError::Transfer(e.to_string()))
     }
 
@@ -382,6 +384,7 @@ impl<T: Copy> GpuBuffer<T> {
         // SAFETY: bounds checked above, data and ptr are valid
         let result =
             unsafe { (driver.cuMemcpyDtoH)(data.as_mut_ptr() as *mut c_void, src_ptr, size) };
+        record_device_to_host(size);
         CudaDriver::check(result).map_err(|e| GpuError::Transfer(e.to_string()))
     }
 

@@ -278,13 +278,13 @@ impl CudaExecutor {
         self.q8_activation_written(output.as_ptr()); // #4258
         let kernel_type = KernelType::FusedSwiglu { n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("fused_swiglu_{}", n);
+        let cache_key = module_key!(self, "fused_swiglu_{}", n);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let threads = 256;
@@ -313,7 +313,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
