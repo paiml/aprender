@@ -1,0 +1,4 @@
+total duration:       1s
+prompt eval count:    3 token(s)
+eval count:           1 token(s)
+eval rate:            1.00 tokens/s

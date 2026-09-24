@@ -120,6 +120,7 @@ class H(BaseHTTPRequestHandler):
 
 HTTPServer(("127.0.0.1", port), H).serve_forever()
 PY
+cp "$ROOT/tests/fixtures/crux/ollama-verbose-stats.txt" "$BIN/" || exit 2
 cat > "$BIN/ollama" <<'SH'
 #!/usr/bin/env bash
 # stub ollama CLI: `run` is the one load-capable subcommand, and it logs whether the lock is held.
@@ -149,9 +150,9 @@ case "${1:-}" in
     if flock -n "$STUB_LOCK" true 2>/dev/null; then h=no; else h=yes; fi
     echo "LOAD cli-run held=$h keepalive=$ka" >> "$STUB_LOG"
     echo "4"
-    # bashrs SEC001: the word 'eval' here is a literal printf argument (ollama's 'eval count'/'eval rate' output), not an eval call.
-    # bashrs disable-next-line=SEC001
-    printf 'total duration:       1s\nprompt %s count:    3 token(s)\n%s count:           1 token(s)\n%s rate:            1.00 tokens/s\n' eval eval eval >&2 ;;
+    # ollama --verbose's timing block, from a fixture: bashrs SEC001 matches the word it
+    # contains even inside a quoted string (#4099), so it lives in a data file, not here.
+    cat "$(dirname "$0")/ollama-verbose-stats.txt" >&2 ;;
   *) echo "stub ollama: unhandled '$*'" >&2; exit 1 ;;
 esac
 SH

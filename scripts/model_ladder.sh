@@ -440,6 +440,7 @@ for p in m.get("packages", []):
 sys.exit(1)' 2>/dev/null) || VERSION=""
 [ -n "$VERSION" ] || { echo "decline: root crate version unresolved" >&2; exit 2; }
 [ -n "$OUT_DIR" ] || OUT_DIR="evidence/dogfood/models/$VERSION"
+case "$OUT_DIR" in *..*) echo "model_ladder: refusing --out with a '..' segment: $OUT_DIR" >&2; exit 2 ;; esac
 GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
 GPU_CC=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1)
 
@@ -1322,6 +1323,8 @@ if [ "$EXECUTED" -eq 0 ]; then
 fi
 RECEIPT_BASE="$HOST"
 [ -z "$ONLY" ] || RECEIPT_BASE="$HOST.only-${ONLY//[^A-Za-z0-9._-]/_}"
+# The receipt is moved to "$OUT_DIR/$RECEIPT_BASE.json": the host id must be one path segment (#4099).
+case "$RECEIPT_BASE" in ""|*/*|*..*) ladder_write_decline "refusing receipt name '$RECEIPT_BASE' (empty, or not one path segment)" || exit 2 ;; esac
 mkdir -p "$OUT_DIR"
 # The receipt names the binary by what it SAYS it is (`apr --version`, which
 # carries the built-from sha), never by its path: a path is machine-specific
@@ -1355,8 +1358,6 @@ then
     rm -f "$RECEIPT_TMP" 2>/dev/null
     ladder_write_decline "the receipt could not be written and verified (python rc=$receipt_rc)"
 fi
-# bashrs SEC010: $OUT_DIR is the operator's --out argument; RECEIPT_BASE is the host id from host_id.
-# bashrs disable-next-line=SEC010
 mv -f "$RECEIPT_TMP" "$OUT_DIR/$RECEIPT_BASE.json" 2>/dev/null || { rm -f "$RECEIPT_TMP"; ladder_write_decline "could not move the receipt into $OUT_DIR"; }
 printf 'receipt: %s/%s.json (executed=%s red=%s inventory=%s)\n' "$OUT_DIR" "$RECEIPT_BASE" "$EXECUTED" "$RED" "$(grep -c . "$INV_ROWS")"
 [ "$RED" -eq 0 ] && exit 0

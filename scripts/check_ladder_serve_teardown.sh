@@ -114,11 +114,18 @@ wait_health() { local port="$1" i; for i in $(seq 1 50); do curl -fsS --max-time
 wait_pidfile() { local f="$1" i; for i in $(seq 1 50); do [ -s "$f" ] && return 0; sleep 0.1; done; return 1; }
 alive() { kill -0 "$1" 2>/dev/null; }
 
-run_cases() { # <teardown-function-body> -> 0 if every case lands, 1 otherwise
-  local body="$1" fails=0 port pid spid td fpid
-  # bashrs SEC001: evals a function body extracted by awk from this repo's own scripts/model_ladder.sh, so the real function is under test; no external input.
-  # bashrs disable-next-line=SEC001
-  eval "$body"
+# Load code under test from a FILE this script wrote (under its own mktemp dir): the file
+# must parse before a single definition from it is taken, so a broken extraction or plant
+# fails as "does not parse", never as a half-defined function (#4099: this replaced an
+# `eval` of the same text, which bashrs SEC001 flagged and which gave no parse check).
+load_under_test() { # <file>
+  bash -n "$1" || { echo "  $1 does not parse: a syntax error is not a regression" >&2; return 2; }
+  . "$1"
+}
+
+run_cases() { # <teardown-function-file> -> 0 if every case lands, 1 otherwise
+  local fails=0 port pid spid td fpid
+  load_under_test "$1" || return 2
 
   # loading
   port=$(( 20000 + (RANDOM % 20000) ))
@@ -188,11 +195,9 @@ wait_case() { # <name> <mode> <secs> <stall> <ceiling> <want-verdict> <max-secon
   echo "  ok   $name: '$out'"
 }
 
-run_wait_cases() { # <wait-function-bodies> -> 0 if every case lands
-  local body="$1" fails=0
-  # bashrs SEC001: evals function bodies extracted by awk from this repo's own scripts/model_ladder.sh; no external input.
-  # bashrs disable-next-line=SEC001
-  eval "$body"
+run_wait_cases() { # <wait-function-file> -> 0 if every case lands
+  local fails=0
+  load_under_test "$1" || return 2
   wait_case slow-log slow-log 6 3 30 ready 10    || fails=1
   wait_case slow-cpu slow-cpu 6 3 30 ready 10    || fails=1
   wait_case hung     hung     60 3 30 stalled 6  || fails=1
@@ -203,13 +208,18 @@ run_wait_cases() { # <wait-function-bodies> -> 0 if every case lands
 
 body=$(extract_teardown "$SCRIPT") || exit 2
 wbody=$(extract_wait "$SCRIPT") || exit 2
+printf '%s\n' "$body" > "$TMP/teardown.sh"
+printf '%s\n' "$wbody" > "$TMP/wait.sh"
 
 if [ "$SELF_TEST" -eq 1 ]; then
   # Plant the regression: discard the tree right after it is resolved, which is the old
   # port-only behaviour. The `loading` case must catch it.
   planted=$(awk '{print} /^    frontier=\("\$pid"\)$/{p=1} p && /^    done$/ && !d{print "    tree=()  # PLANTED: self-test regression"; d=1}' <<< "$body")
   grep -q 'PLANTED' <<< "$planted" || { echo "  self-test: could not plant the regression — the anchor moved" >&2; exit 2; }
-  if run_cases "$planted"; then
+  printf '%s\n' "$planted" > "$TMP/teardown.planted.sh"
+  # run_cases returns non-zero on a parse failure too, which this `if` would read as "caught".
+  bash -n "$TMP/teardown.planted.sh" || { echo "  self-test: the planted teardown does not parse — a syntax error is not a regression" >&2; exit 2; }
+  if run_cases "$TMP/teardown.planted.sh"; then
     echo "SELF-TEST FAIL: the planted teardown regression passed — this check cannot see the defect"; exit 1
   fi
   # Second plant: progress judged by the LOG ONLY. A silent-but-busy load must then be
@@ -218,8 +228,9 @@ if [ "$SELF_TEST" -eq 1 ]; then
   grep -q 'PLANTED' <<< "$wplanted" || { echo "  self-test: could not plant the log-only regression — the anchor moved" >&2; exit 2; }
   # The plant must be VALID code, or a syntax error "turns this RED" for the wrong reason
   # (it did, on the first attempt: every case printed '' because nothing was defined).
-  bash -n <(printf '%s\n' "$wplanted") || { echo "  self-test: the planted regression does not parse — a syntax error is not a regression" >&2; exit 2; }
-  wout=$(run_wait_cases "$wplanted" 2>&1) || true
+  printf '%s\n' "$wplanted" > "$TMP/wait.planted.sh"
+  bash -n "$TMP/wait.planted.sh" || { echo "  self-test: the planted regression does not parse — a syntax error is not a regression" >&2; exit 2; }
+  wout=$(run_wait_cases "$TMP/wait.planted.sh" 2>&1) || true
   printf '%s\n' "$wout"
   if ! grep -q "FAIL slow-cpu" <<< "$wout" || [ "$(grep -c '^  FAIL' <<< "$wout")" -ne 1 ]; then
     echo "SELF-TEST FAIL: the log-only plant must turn EXACTLY slow-cpu red — anything else means the check is not measuring the CPU leg"; exit 1
@@ -228,7 +239,7 @@ if [ "$SELF_TEST" -eq 1 ]; then
 fi
 
 rc=0
-run_cases "$body" || rc=1
-run_wait_cases "$wbody" || rc=1
+run_cases "$TMP/teardown.sh" || rc=1
+run_wait_cases "$TMP/wait.sh" || rc=1
 if [ "$rc" -eq 0 ]; then echo "PASS: teardown never reports clean while a launched process lives; the health wait ends on the server's state, not a clock"; exit 0; fi
 echo "FAIL"; exit 1

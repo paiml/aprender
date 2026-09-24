@@ -35,6 +35,11 @@ while [ $# -gt 0 ]; do
     *) echo "check_moe_routes_through_one_dispatch: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
+# --root reaches `cd` and `cp -t` below: canonicalize it, so it is one existing directory with
+# no '..' left to resolve, and a missing one is refused here rather than mid-copy (#4099).
+root_arg=$ROOT
+ROOT=$(realpath -e -- "$root_arg") || { echo "check_moe_routes_through_one_dispatch: --root '$root_arg' does not exist" >&2; exit 2; }
+[ -d "$ROOT" ] || { echo "check_moe_routes_through_one_dispatch: --root '$root_arg' is not a directory" >&2; exit 2; }
 
 check() { # check <root> -> 0 ok
   python3 - "$1" <<'PY'
@@ -180,8 +185,6 @@ if [ "$SELF_TEST" = 1 ]; then
     esac
   }
   trap _rm EXIT
-  # bashrs SEC010: copies git-tracked sources into $T, a mktemp -d dir this script created and removes on EXIT.
-  # bashrs disable-next-line=SEC010
   git -C "$ROOT" ls-files -z crates/apr-cli/src crates/aprender-serve/src | (cd "$ROOT" && xargs -0 cp --parents -t "$T")
   git -C "$T" init -q && git -C "$T" add -A >/dev/null
   check "$T" > /dev/null || { echo "SELF-TEST FAILED: the shipped tree is already red" >&2; exit 1; }

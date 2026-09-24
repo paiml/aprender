@@ -51,8 +51,8 @@ case "$SCOPE" in controls|admitted) ;; *) die "--scope is controls or admitted" 
 [ -x "$APR_BIN" ] || die "--apr $APR_BIN is not executable"
 [ -f "$CERT" ] || die "certification receipt $CERT not found"
 [ "${#MODEL_DIRS[@]}" -gt 0 ] || MODEL_DIRS=("$HOME/models")
-# bashrs SEC010: $OUT is the operator's required --out argument; writing there is the script's contract.
-# bashrs disable-next-line=SEC010
+# --out, --host and --backend name every path this script writes (#4099): refuse a '..' segment.
+case "$OUT/$HOST-$BACKEND" in *..*) die "refusing --out/--host/--backend with a '..' segment: $OUT/$HOST-$BACKEND" ;; esac
 mkdir -p "$OUT/shards" || die "cannot create $OUT"
 PLAN="$OUT/$HOST-$BACKEND.plan.tsv"
 
