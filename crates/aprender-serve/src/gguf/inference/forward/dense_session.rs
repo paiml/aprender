@@ -484,6 +484,38 @@ impl crate::session::ArchForward for DenseForward {
     }
 }
 
+/// One dense turn the way the verbs that gave up their own loops need it: the
+/// prompt plus the reply WITHOUT the stop token that ended it (the old loops
+/// never kept it; the engine does), and whether the GPU served it to the end.
+///
+/// A prompt longer than the model's context keeps the error the old loops
+/// raised, [`RealizarError::ContextLimitExceeded`], so a caller matching on it
+/// still sees it.
+///
+/// # Errors
+/// The prompt does not fit the context, or a forward failure no fallback can
+/// recover from.
+pub fn dense_turn(
+    session: &mut DenseSession,
+    prompt: &[u32],
+    config: &crate::gguf::QuantizedGenerateConfig,
+) -> Result<(Vec<u32>, bool)> {
+    session
+        .engine()
+        .model()
+        .effective_max_tokens(prompt.len(), config.max_tokens)?;
+    let turn = session.generate(prompt, config, &mut |_| true)?;
+    let mut tokens = turn.tokens;
+    if tokens.len() > prompt.len()
+        && tokens
+            .last()
+            .is_some_and(|t| config.stop_tokens.contains(t))
+    {
+        tokens.pop();
+    }
+    Ok((tokens, turn.used_gpu))
+}
+
 #[cfg(test)]
 #[path = "dense_session_tests.rs"]
 mod tests;

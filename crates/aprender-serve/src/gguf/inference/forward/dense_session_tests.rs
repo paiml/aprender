@@ -168,3 +168,40 @@ fn prompt_the_context_cannot_hold_is_refused() {
     let prompt: Vec<u32> = (0..64).collect();
     assert!(session.generate(&prompt, &gen(4), &mut |_| true).is_err());
 }
+
+/// The engine keeps the stop token that ended a turn; the loops it replaces
+/// never did. `dense_turn` answers what `generate_with_cache` answered.
+#[test]
+fn dense_turn_drops_the_stop_token_like_generate_with_cache() {
+    let model = model();
+    let prompt = [2, 4, 6];
+    let first = model
+        .generate_with_cache(&prompt, &gen(1))
+        .expect("reference loop")[prompt.len()];
+    let cfg = QuantizedGenerateConfig {
+        stop_tokens: vec![first],
+        ..gen(8)
+    };
+    let want = model
+        .generate_with_cache(&prompt, &cfg)
+        .expect("reference loop");
+    assert_eq!(want, prompt, "the fixture's first token must be the stop");
+    let mut session = DenseSession::new(DenseForward::cpu(Arc::clone(&model)));
+    let (tokens, used_gpu) = dense_turn(&mut session, &prompt, &cfg).expect("dense turn");
+    assert_eq!(tokens, want);
+    assert!(!used_gpu);
+}
+
+#[test]
+fn dense_turn_keeps_the_old_context_error() {
+    let mut session = DenseSession::new(DenseForward::cpu(model()));
+    let prompt: Vec<u32> = (0..65).map(|t| t % 100).collect();
+    let err = dense_turn(&mut session, &prompt, &gen(4)).expect_err("over the context");
+    assert!(
+        matches!(
+            err,
+            crate::error::RealizarError::ContextLimitExceeded { .. }
+        ),
+        "{err:?}"
+    );
+}
