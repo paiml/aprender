@@ -389,6 +389,32 @@ if [ "${1:-}" = "--self-test" ]; then
   else
     printf 'FAIL  row 20 floor: rc=%s left=%s\n%s\n' "$fl_rc" "$left" "$fl_out"; fails=1
   fi
+  # Rows 21-22 (#4175): --run executes what the tarball compiled, with the environment `cargo test`
+  # gives it. The fixture's integration test reads CARGO_BIN_EXE_<bin>, CARGO_MANIFEST_DIR, the cwd and
+  # RUSTUP_TOOLCHAIN at RUN time, so a bare exe (the 0.69.1 false REDs B1/B3) fails it. It runs from
+  # $TD, never the manifest dir, so the cwd check is not satisfied by accident.
+  run_fixture() { # dir, extra test file body ('' for none)
+    mkdir -p "$1/src/bin" "$1/tests"
+    printf '[package]\nname = "ptr-fixture"\nversion = "0.1.0"\nedition = "2021"\nlicense = "MIT"\ndescription = "x"\n' > "$1/Cargo.toml"
+    printf 'pub fn two() -> u32 { 2 }\n' > "$1/src/lib.rs"
+    printf 'fn main() {}\n' > "$1/src/bin/ptr-tool.rs"
+    printf '#[test] fn env_as_cargo_test_gives_it() {\n  let exe = std::env::var("CARGO_BIN_EXE_ptr-tool").expect("CARGO_BIN_EXE at run time");\n  assert!(std::path::Path::new(&exe).exists());\n  let md = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");\n  assert_eq!(std::env::current_dir().unwrap(), std::path::PathBuf::from(&md));\n  assert!(std::env::var("RUSTUP_TOOLCHAIN").is_ok());\n  assert_eq!(ptr_fixture::two(), 2);\n}\n' > "$1/tests/env.rs"
+    [ -z "$2" ] || printf '%b' "$2" > "$1/tests/bad.rs"
+  }
+  run_fixture "$TD/tr-clean" ''
+  tr_out="$(cd "$TD" && TARBALL_BUILD_MIN_FREE_GB=1 TARBALL_BUILD_TARGET_DIR="$TD/tr-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$TD/tr-clean" --run 2>&1)"; tr_rc=$?
+  if [ "$tr_rc" = 0 ] && grep -q 'compile AND run' <<< "$tr_out"; then
+    printf 'ok    row 21 --run: a tarball test that needs the cargo-test environment passes when run\n'
+  else
+    printf 'FAIL  row 21 --run clean: rc=%s\n%s\n' "$tr_rc" "$tr_out"; fails=1
+  fi
+  run_fixture "$TD/tr-bad" '#[test] fn fails_on_purpose() { assert_eq!(ptr_fixture::two(), 3); }\n'
+  tr_out="$(cd "$TD" && TARBALL_BUILD_MIN_FREE_GB=1 TARBALL_BUILD_TARGET_DIR="$TD/tr-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$TD/tr-bad" --run 2>&1)"; tr_rc=$?
+  if [ "$tr_rc" = 1 ] && grep -q 'RUN FAIL  ptr-fixture-0.1.0 test bad .*fails_on_purpose' <<< "$tr_out" && ! grep -q 'test env ' <<< "$tr_out"; then
+    printf 'ok    row 22 --run: a failing tarball test is RED (1), named by binary and test; the passing one is not\n'
+  else
+    printf 'FAIL  row 22 --run planted failure: rc=%s (want 1)\n%s\n' "$tr_rc" "$tr_out"; fails=1
+  fi
   [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
   printf '\nSELF-TEST PASSED\n'
   exit 0

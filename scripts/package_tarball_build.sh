@@ -42,6 +42,14 @@
 #                         with --root at a v0.69.1 tree, and require RED naming the 3 includes above.
 #                         Exit 0 = the gate SEES the defect; 1 = it went green on a known-broken crate.
 #                         Needs the network and --root at a 0.69.1 checkout.
+#   --run                 ALSO run every compiled test binary, as `cargo test` would, from its unpacked
+#                         crate (scripts/lib/tarball_test_run.py: B1 CARGO_BIN_EXE_*, B2 sysroot and deps
+#                         on LD_LIBRARY_PATH, B3 RUSTUP_TOOLCHAIN + CARGO_TARGET_DIR, B4 bounded memory).
+#                         NIGHTLY only (#4175): it is hours and tens of GiB. The release gate is the build.
+#                         aprender-gpu and aprender-cuda-edge stay compile-only (they need a GPU toolchain).
+#   TARBALL_RUN_JOBS / TARBALL_RUN_TEST_THREADS / TARBALL_RUN_TIMEOUT   (2 / 4 / 1800 s per binary)
+#   TARBALL_RUN_MEM_MAX   with --run: cap the whole run's memory through `systemd-run --user --scope
+#                         -p MemoryMax=` (e.g. 48G). Unset = no cap beyond jobs x threads, and it says so.
 #   TARBALL_BUILD_TARGET_DIR  the build's target dir (default: cargo's target_directory for <root>, /tarball-build).
 #                             The work dir is created BESIDE it, never in /tmp.
 #   TARBALL_BUILD_MIN_FREE_GB refuse (2) below this many GB free on the target's filesystem (default 200).
@@ -56,7 +64,7 @@
 set -uo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-CRATE_FILES=(); NEG=0; DIRTY=()
+CRATE_FILES=(); NEG=0; DIRTY=(); RUN=0
 NEG_URL="https://static.crates.io/crates/aprender-serve/aprender-serve-0.69.1.crate"
 NEG_SHA="22a710f0bbce7c0e67a90f255e51cec37a4f0390ce9c2561fa3750a7c89e8d9a"
 NEG_NEEDLES=("kernel-fusion-v1.yaml" "gguf-header-slices" "fusion_call_site_guard_3985.rs" "tokenizer_tests_unk_3609.rs")
@@ -67,6 +75,7 @@ while [ $# -gt 0 ]; do
     --crate-file) CRATE_FILES+=("$2"); shift 2 ;;
     --allow-dirty) DIRTY=(--allow-dirty); shift ;;
     --negative-control) NEG=1; shift ;;
+    --run) RUN=1; shift ;;
     -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "unknown argument '$1'" >&2; exit 2 ;;
   esac
@@ -203,7 +212,36 @@ printf '%s\n' "$shrink"
 # 5. the verdict, by crate
 report="$(python3 "$SCRIPT_DIR/lib/tarball_build_errors.py" "$T/build.log")"; erc=$?
 if [ "$brc" -eq 0 ] && [ "$erc" -eq 0 ]; then
-  echo "PASS  all $n_crate published tarball(s) compile their tests (cargo build --tests)"; exit 0
+  echo "PASS  all $n_crate published tarball(s) compile their tests (cargo build --tests)"
+  [ "$RUN" = 1 ] || exit 0
+  # 6. --run (#4175, nightly): every compiled test binary runs from its unpacked crate. The same build
+  #    re-emitted as JSON (every unit is fresh, and cargo still names each artifact) lists them.
+  (cd "$T/ws" && CARGO_TARGET_DIR="$BUILD_TARGET" cargo build --workspace --tests --message-format json 2> "$T/build-json.err") > "$T/build.json" \
+    || { echo "  cannot check: the JSON re-emit of a green build failed:"; tail -n 5 "$T/build-json.err"; exit 2; }
+  # B3: the toolchain the workspace resolves (its copied rust-toolchain.toml), and ITS cargo and sysroot
+  run_cargo="$(cd "$T/ws" && rustup which cargo 2>/dev/null || command -v cargo)"
+  run_tc="$(cd "$T/ws" && rustup show active-toolchain 2>/dev/null | cut -d' ' -f1)"
+  run_sysroot="$(cd "$T/ws" && rustc --print sysroot 2>/dev/null)"
+  [ -n "$run_tc" ] && [ -x "$run_cargo" ] && [ -d "$run_sysroot" ] \
+    || { echo "  cannot check: no toolchain for the run (toolchain '$run_tc', cargo '$run_cargo', sysroot '$run_sysroot')" >&2; exit 2; }
+  cap=()
+  if [ -n "${TARBALL_RUN_MEM_MAX:-}" ]; then
+    command -v systemd-run > /dev/null || { echo "  cannot check: TARBALL_RUN_MEM_MAX is set and systemd-run is not on PATH" >&2; exit 2; }
+    cap=(systemd-run --user --scope --quiet -p "MemoryMax=$TARBALL_RUN_MEM_MAX" -p MemorySwapMax=0 --)
+    echo "run memory cap: MemoryMax=$TARBALL_RUN_MEM_MAX (systemd user scope)"
+  else
+    echo "run memory cap: none beyond jobs x test-threads (TARBALL_RUN_MEM_MAX unset)"
+  fi
+  "${cap[@]}" python3 "$SCRIPT_DIR/lib/tarball_test_run.py" "$T/build.json" "$BUILD_TARGET.run" \
+    --jobs "${TARBALL_RUN_JOBS:-2}" --test-threads "${TARBALL_RUN_TEST_THREADS:-4}" --timeout "${TARBALL_RUN_TIMEOUT:-1800}" \
+    --skip-crate aprender-gpu --skip-crate aprender-cuda-edge \
+    --cargo "$run_cargo" --toolchain "$run_tc" --sysroot "$run_sysroot" --target-dir "$BUILD_TARGET"
+  rrc=$?
+  case "$rrc" in
+    0) echo "PASS  all $n_crate published tarball(s) compile AND run their tests (logs: $BUILD_TARGET.run)"; exit 0 ;;
+    1) echo "FAIL  a published tarball's tests fail when run from the tarball (logs: $BUILD_TARGET.run)"; exit 1 ;;
+    *) echo "  cannot check: the run step returned $rrc (not a pass)"; exit 2 ;;
+  esac
 fi
 if [ "$erc" -eq 4 ]; then
   printf '%s\n' "$report"
