@@ -22,7 +22,7 @@ use trueno_db::storage::StorageEngine;
 
 /// trueno-db: GPU-first embedded analytics database server.
 #[derive(Parser)]
-#[command(name = "trueno-db", version, about)]
+#[command(name = "trueno-db", version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"), about)]
 struct Cli {
     /// Path to YAML configuration file.
     #[arg(long)]
