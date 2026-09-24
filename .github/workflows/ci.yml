@@ -1116,7 +1116,7 @@ jobs:
       # steward, the packing/history ledgers, the tier ledger and the roadmap resolve-dirty
       # runner each ship a hermetic --selftest; check_guards_are_wired.sh refuses a script
       # that carries one and is named by no workflow. Each runs in under five seconds.
-      - name: Fleet hygiene case tables (steward, history, utilization, tier ledger, resolve-dirty)
+      - name: Fleet hygiene case tables (steward, history, utilization, tier ledger, resolve-dirty, nightly manifest)
         run: |
           set -euo pipefail
           bash scripts/ci_queue_steward.sh --selftest
@@ -1125,6 +1125,7 @@ jobs:
           bash scripts/test_tier_ledger.sh --selftest
           bash scripts/ci_resolve_dirty.sh --selftest
           python3 scripts/lib/roadmap_merge.py --selftest
+          python3 scripts/nightly_manifest.py --self-test   # #4189 nightly gate/manifest/publish plan
       - name: "target-watch: before-cargo-install-bashrs"
         # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
         # Instrumentation, never a gate: the script always exits 0.
