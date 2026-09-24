@@ -27,6 +27,7 @@ apr-cli	--test	cli_commands
 apr-cli	--test	pixel_regression
 apr-cli	--test	registry_failure_catalogue
 apr-format	--lib	falsifiers
+aprender-build-sha	--lib	<root>
 aprender-cgp	--lib	analysis::contracts
 aprender-compute-xtask	--bins
 aprender-contracts	--lib	binding
@@ -77,6 +78,7 @@ aprender-contracts-cli	--test	ont_refusal_receipt
 aprender-contracts-cli	--test	ont_release_readiness
 aprender-contracts-cli	--test	pv_surface_gate
 aprender-contracts-cli	--test	pvl_zero_contracts
+aprender-contracts-cli	--test	shapes_vacuity
 aprender-core	--lib	format::metadata_bounds_contract_falsify
 aprender-core	--lib	format::model_family_loader
 aprender-core	--lib	format::ship_001

@@ -1,0 +1,16 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-20'
+  last_modified: '2026-09-20'
+  author: fixture
+  description: "#3610 fixture — a shape whose target class NOTHING instantiates, beside one that has focus nodes"
+name: empty-shape
+version: "1.0.0"
+scope: fixture
+status: active
+shape:
+  targetClass: ghost:Nothing
+  closed: true
+  properties:
+    - {path: ghost:must_exist, minCount: 1, maxCount: 1, datatype: xsd:string}

@@ -349,6 +349,15 @@ fn decide_shapes_gate(
             }
             .into())
         }
+        ShapesOutcome::HarnessBroken { causes } => {
+            for c in &causes {
+                eprintln!("shapes: CRUX harness broken — {c}");
+            }
+            Err(LintDeclined {
+                reason: Reason::NoCheckable,
+            }
+            .into())
+        }
         ShapesOutcome::PositiveControlFailed { which, .. } => {
             eprintln!("shapes: positive control {which} did not fire");
             Err(LintDeclined {

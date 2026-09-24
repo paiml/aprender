@@ -11,7 +11,7 @@ fn extract_extended_model_paths(command: &ExtendedCommands) -> Vec<PathBuf> {
         // active subcommand variant.
         ExtendedCommands::Test { command: probar_sub } => match probar_sub {
             TestSubcommand::Tensor { file, .. } => {
-                vec![file.clone()]
+                vec![file.to_path_buf()]
             },
             // `llm` measures an HTTP endpoint, not a local model file. Listed
             // explicitly so a future subcommand that DOES name a file has to
@@ -22,19 +22,19 @@ fn extract_extended_model_paths(command: &ExtendedCommands) -> Vec<PathBuf> {
         | ExtendedCommands::Chat { file, .. }
         | ExtendedCommands::Bench { file, .. }
         | ExtendedCommands::Eval { file, .. }
-        | ExtendedCommands::Profile { file, .. } => vec![file.clone()],
+        | ExtendedCommands::Profile { file, .. } => vec![file.to_path_buf()],
 
-        ExtendedCommands::Cbtop { model_path, .. } => model_path.iter().cloned().collect(),
+        ExtendedCommands::Cbtop { model_path, .. } => model_path.iter().map(|p| p.to_path_buf()).collect(),
 
         // Rosetta action subcommands
         ExtendedCommands::Tools(ToolCommands::Rosetta { action }) => match action {
             RosettaCommands::Convert { source, .. }
             | RosettaCommands::Chain { source, .. }
-            | RosettaCommands::Verify { source, .. } => vec![source.clone()],
+            | RosettaCommands::Verify { source, .. } => vec![source.to_path_buf()],
             RosettaCommands::CompareInference {
                 model_a, model_b, ..
             } => {
-                vec![model_a.clone(), model_b.clone()]
+                vec![model_a.to_path_buf(), model_b.to_path_buf()]
             }
             // Diagnostic rosetta commands — exempt
             _ => vec![],
@@ -64,7 +64,7 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
             }
         }
         Commands::Export { plan: true, .. } => vec![],
-        Commands::Export { file, .. } => file.iter().cloned().collect(),
+        Commands::Export { file, .. } => file.iter().map(|p| p.to_path_buf()).collect(),
         // GH-471: Serve is exempt from pre-dispatch contract validation.
         // The model loader itself fails fast on corrupt files.
         // Contract gate was loading 17 GB+ models just to check tensor counts —
@@ -72,22 +72,22 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
         Commands::Serve { .. } => vec![],
         Commands::Trace { file, .. }
         | Commands::Convert { file, .. }
-        | Commands::Check { file, .. } => vec![file.clone()],
+        | Commands::Check { file, .. } => vec![file.to_path_buf()],
 
         Commands::Merge { plan: true, .. } => vec![],
-        Commands::Merge { files, .. } => files.clone(),
+        Commands::Merge { files, .. } => files.iter().map(|p| p.to_path_buf()).collect(),
 
-        Commands::Quantize { file, .. } => vec![file.clone()],
-        Commands::ModelOps(ModelOpsCommands::Prune { file, .. }) => vec![file.clone()],
+        Commands::Quantize { file, .. } => vec![file.to_path_buf()],
+        Commands::ModelOps(ModelOpsCommands::Prune { file, .. }) => vec![file.to_path_buf()],
         Commands::ModelOps(ModelOpsCommands::Distill { teacher, .. }) => {
-            teacher.iter().cloned().collect()
+            teacher.iter().map(|p| p.to_path_buf()).collect()
         }
         #[cfg(feature = "training")]
         Commands::ModelOps(ModelOpsCommands::Finetune { file, .. }) => {
-            file.iter().cloned().collect()
+            file.iter().map(|p| p.to_path_buf()).collect()
         }
 
-        Commands::Tui { file, .. } => file.iter().cloned().collect(),
+        Commands::Tui { file, .. } => file.iter().map(|p| p.to_path_buf()).collect(),
         Commands::Import { source, .. } => {
             let path = PathBuf::from(source);
             if path.exists() {
