@@ -187,6 +187,9 @@ pub enum KernelType {
         num_warps: u32,
         m: u32,
     },
+    /// #4234: [`Q5KGemv`](Self::Q5KGemv) for `m` activation vectors in one launch,
+    /// bitwise the single-vector kernel per vector.
+    BatchedQ5KGemv { k: u32, n: u32, m: u32 },
     /// PAR-082-V4: Multi-warp DP4A Q4_K GEMV with Q8_1-quantized activations
     MwvDp4aQ4KGemv {
         k: u32,

@@ -272,8 +272,9 @@ impl Qwen35CudaModel<'_> {
     ///
     /// A Q4_K matrix, or a Q6_K one with `k % 256 == 0`, whose single-vector
     /// dispatch takes the float multi-warp (`Mwv`) kernel — what this model pins —
-    /// takes its batched twin: the weights are read once per launch, not once per
-    /// row. Every other case runs `gemv_dispatch` row by row.
+    /// and every Q5_K matrix (its one kernel) take their batched twins: the weights
+    /// are read once per launch, not once per row. Every other case runs
+    /// `gemv_dispatch` row by row.
     #[allow(clippy::too_many_arguments)]
     fn gemv_batched(
         &mut self,
@@ -292,6 +293,11 @@ impl Qwen35CudaModel<'_> {
                 return self
                     .executor
                     .batched_mwv_q4k_gemv_into(ptr, input, output, m, n, k);
+            },
+            WeightQuantType::Q5K => {
+                return self
+                    .executor
+                    .batched_q5k_gemv_into(ptr, input, output, m, n, k);
             },
             WeightQuantType::Q6K if profile.q6k == Q6kVariant::Mwv && k.is_multiple_of(256) => {
                 return self
