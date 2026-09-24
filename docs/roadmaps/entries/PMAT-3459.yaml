@@ -2,9 +2,9 @@
   github_issue: 3459
   item_type: task
   title: 'release train: move the release autopilot''s tag path into the repo; tag step calls check_milestone_cut.sh (#3459)'
-  status: planned
+  status: inprogress
   priority: critical
-  assigned_to: null
+  assigned_to: aprender-88
   created: 2026-09-17T15:29:02Z
   updated: 2026-09-17T15:29:02Z
   spec: null
