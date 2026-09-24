@@ -405,7 +405,17 @@ fn compare(lake: Lake<'_>, lean_dir: &Path, r: &mut Report) {
     match comparator::parse_rows(&stdout) {
         Ok(rows) => {
             r.lines.push(format!("ok    {what}"));
-            r.challenges = Some(comparator::judge_rows(&rows, r));
+            let mut c = comparator::judge_rows(&rows, r);
+            match comparator::expected_roots(lean_dir, &files) {
+                Ok(roots) => comparator::cross_check(&rows, &roots, &mut c, r),
+                Err(e) => {
+                    r.lines.push(format!(
+                        "FAIL  comparator: a Challenge file could not be read, its roots were never counted: {e}"
+                    ));
+                    r.reject = true;
+                }
+            }
+            r.challenges = Some(c);
         }
         Err(e) => {
             r.lines.push(format!("FAIL  {what}: {e}"));

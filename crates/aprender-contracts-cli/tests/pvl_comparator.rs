@@ -43,7 +43,10 @@ impl Fx {
             "contracts/gelu-v1.yaml",
             "equations:\n  e:\n    lean_theorem: Theorems.Gelu\n",
         );
-        fx.write("lean/Challenge/gelu-v1.lean", "-- EV-7a writes this\n");
+        fx.write(
+            "lean/Challenge/gelu-v1.lean",
+            &format!("-- EV-7a writes this\ntheorem _root_.{CHALLENGE_NS}.{NAME} (x : Nat) (h : 0 < x) : 0 < g x := sorry\n"),
+        );
         fx.write(
             &format!("lean/{COMPARATOR}"),
             "-- the real one is committed\n",
@@ -171,11 +174,59 @@ fn a_challenge_that_does_not_elaborate_rejects() {
     assert!(r.1.contains("stub comparator rc 1"), "{}", r.1);
 }
 
+/// Zero rows AND zero declared roots: nothing was compared, a decline.
 #[test]
 fn zero_rows_declines() {
     let fx = Fx::new();
+    fx.write("lean/Challenge/gelu-v1.lean", "-- EV-7a writes this\n");
     fx.stub_lake(0, "");
     assert_rc(&fx.check(), 2, "0 challenge rows");
+}
+
+/// #4240: `rowsOf` drops an `isInternal` root and it emits no row — the declared root is counted, rc 1.
+#[test]
+fn a_declared_root_with_no_row_rejects_as_missing_row() {
+    let fx = Fx::new();
+    let dropped = "ProvableContracts.Gelu._private_lemma";
+    fx.write(
+        "lean/Challenge/gelu-v1.lean",
+        &format!(
+            "theorem _root_.{CHALLENGE_NS}.{NAME} (x : Nat) (h : 0 < x) : 0 < g x := sorry\n\
+             theorem _root_.{CHALLENGE_NS}.{dropped} : True := sorry\n"
+        ),
+    );
+    fx.stub_lake(0, &row(&format!("\"{PINNED}\""), "[\"propext\"]"));
+    let r = fx.check();
+    assert_rc(&r, 1, &format!("FAIL  MISSING-ROW {dropped}"));
+    assert!(
+        r.1.contains("COMPARATOR 1/1"),
+        "judge_rows still sees one row: {}",
+        r.1
+    );
+    assert!(r.1.contains("1 row(s), 2 declared root(s)"), "{}", r.1);
+}
+
+/// Zero rows against a declared root is a missing row (rc 1), never the vacuity decline.
+#[test]
+fn zero_rows_against_a_declared_root_rejects() {
+    let fx = Fx::new();
+    fx.stub_lake(0, "");
+    assert_rc(&fx.check(), 1, &format!("FAIL  MISSING-ROW {NAME}"));
+}
+
+#[test]
+fn a_row_no_challenge_file_declares_rejects() {
+    let fx = Fx::new();
+    let ghost = row(&format!("\"{PINNED}\""), "[]").replace(NAME, "ProvableContracts.Gelu.ghost");
+    fx.stub_lake(
+        0,
+        &format!("{}{ghost}", row(&format!("\"{PINNED}\""), "[]")),
+    );
+    assert_rc(
+        &fx.check(),
+        1,
+        "FAIL  UNEXPECTED-ROW ProvableContracts.Gelu.ghost",
+    );
 }
 
 #[test]
