@@ -127,12 +127,9 @@ fn explicit_empty_armed_set_declines_r2() {
 
 #[test]
 fn a_failing_armed_gate_rejects_at_exit_1() {
-    let d = tempfile::tempdir().expect("corpus dir");
-    std::fs::copy(
-        repo_contracts().join("softmax-kernel-v1.yaml"),
-        d.path().join("softmax-kernel-v1.yaml"),
-    )
-    .expect("control copies");
+    // Through `corpus()`, not a bare tempdir: on a host with a stray `/tmp/scripts/`
+    // baseline, PV-DUP-002 would also reject, and this test could pass for the wrong reason.
+    let d = corpus(None);
     std::fs::write(
         d.path().join("broken-v1.yaml"),
         "metadata:\n  version: not-a-contract\n",
