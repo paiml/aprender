@@ -19550,22 +19550,6 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered from gh#3545 done_when; see paiml-mcp-agent-toolkit#1414). The shipped -cuda asset ran CUDA correctly and told every new user cuda unavailable reason=NotCompiled on the first screen they saw. Two flags decided one fact: apr-cli/cuda enabled realizar/cuda (so inference ran on the GPU) but NOT trueno/cuda — and trueno s backend registry is what devices reads, so default_factories() had no CudaFactory and the registry emitted missing_entry(Cuda) = Source::NotCompiled. Done when: the cuda feature includes trueno/cuda, and a test RED-turns if it is removed again. Falsifier is two-sided: a cuda build must not report not-compiled, AND a non-cuda build must STILL report not-compiled even where a GPU is physically present — a fix that made devices optimistic fails the second arm. NOTE: the issue s own query asks for compiled-in, which would be false even after a correct fix — Source::CompiledIn means linked into the binary, while the CUDA driver is reached via Source::Dlopen(path). The test asserts != not-compiled and the issue s query needs correcting rather than satisfying. Measured on lambda RTX 4090: before = unavailable/not-compiled, after = ready/dlopen.'
-- id: PMAT-3546
-  github_issue: 3546
-  item_type: task
-  title: 'install.sh: clean-container curl|bash e2e for stable+rc (sha256, version==tag+sha) as release gate + nightly'
-  status: inprogress
-  priority: medium
-  assigned_to: aprender-59
-  created: 2026-09-24T18:08:23Z
-  updated: 2026-09-24T18:08:23Z
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
 - id: PMAT-3556
   github_issue: 3556
   item_type: task
@@ -21695,20 +21679,3 @@ roadmap:
   labels:
   - kind:code
   notes: 'cuda_batch_scheduler generate_single_request (the m==1 fast path, shared with the iteration scheduler) runs one Session::generate over BorrowedCudaForward, a dense CUDA ArchForward over the scheduler''s borrowed model built on aprender-49''s cuda_reset/cuda_forward/cuda_forward_greedy. Stop tokens are filtered in the callback so none is sent (pre-port semantics). The m>1 batched path (batched_setup_and_prefill/batched_decode_step) is multi-slot and stays as is. Known delta: the per-request prefix cache (establish_prompt_kv/populate_prefix_cache) is not used on the ported path.'
-- id: PMAT-4346
-  github_issue: 4346
-  item_type: task
-  title: 'qwen-story-daily builds apr in place instead of cargo-installing into the gx10 host ~/.cargo/bin (fleet-bins clobber) (#4346)'
-  status: in_progress
-  priority: high
-  assigned_to: aprender-e6
-  created: 2026-09-25T02:51:16Z
-  updated: 2026-09-25T02:51:16Z
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
