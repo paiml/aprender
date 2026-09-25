@@ -956,7 +956,19 @@ def build(args):
              "lanes": lanes}
     if executor:
         _finalize_executor_block(block, args)
+    _carry_accel_absent(block, args.work)
     return block
+
+
+def _carry_accel_absent(block, work):
+    """parity_host_receipt.sh writes accel-absent.txt when the installed apr
+    resolved no accelerator (a crates.io build has no `cuda` feature). Carry the
+    reason into the block: the gate derives a host's required lanes from it, and
+    a fact left in $WORK is one no reader of the receipt can see (#3805)."""
+    path = os.path.join(work, "accel-absent.txt")
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as handle:
+            block["accel_absent"] = handle.read().strip() or "no-accelerator-resolved"
 
 
 def _build_argparser():
