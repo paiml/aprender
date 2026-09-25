@@ -165,6 +165,14 @@ include!("dispatch.rs");
 include!("dispatch_analysis.rs");
 include!("lib_07.rs");
 
+/// G0.5 (#2582): the heap profiler's allocator lives HERE, next to `cli_main`,
+/// so both `apr` bin targets (the root facade's `src/bin/apr.rs` and
+/// `crates/apr-cli/src/main.rs`) get it. It used to exist only in apr-cli's
+/// `main.rs`, one of the ways the two hand-copied entry points had diverged.
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 /// Full CLI entry point for `cargo install aprender`.
 ///
 /// This function encapsulates the complete `apr` binary logic so that
@@ -174,6 +182,8 @@ pub fn cli_main() -> std::process::ExitCode {
     // GH-667: Reset SIGPIPE to default so piping to head/less doesn't panic.
     #[cfg(unix)]
     #[allow(unsafe_code)]
+    // SAFETY: signal(SIGPIPE, SIG_DFL) is async-signal-safe per POSIX.
+    // Called once at program start before any threads are spawned.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
@@ -181,6 +191,8 @@ pub fn cli_main() -> std::process::ExitCode {
     // GH-646: Clear FPCR.FZ16 on aarch64 so f16 subnormals work.
     #[cfg(target_arch = "aarch64")]
     #[allow(unsafe_code)]
+    // SAFETY: Reading/writing FPCR only affects floating-point behavior for the
+    // current thread. Called once at program start before any FP operations.
     unsafe {
         let fpcr: u64;
         core::arch::asm!("mrs {}, fpcr", out(reg) fpcr);
@@ -189,6 +201,9 @@ pub fn cli_main() -> std::process::ExitCode {
             core::arch::asm!("msr fpcr, {}", in(reg) new_fpcr);
         }
     }
+
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
 
     // GH-662: Respect NO_COLOR env var and non-TTY output.
     let no_color = std::env::var("NO_COLOR").is_ok();
@@ -289,4 +304,65 @@ pub fn emit_version_json() {
         "{}",
         serde_json::to_string_pretty(&body).expect("build version json")
     );
+}
+
+/// G0.5 (#2582): both `apr` bin targets must BE `cli_main`, not copies of it.
+#[cfg(test)]
+mod entry_point_is_shared {
+    /// What a hand-copied prologue re-introduces. Any of these in a bin target
+    /// means the entry point is being duplicated again instead of shared.
+    const PROLOGUE_TOKENS: [&str; 7] = [
+        "Cli::parse",
+        "execute_command",
+        "emit_version_json",
+        "global_allocator",
+        "set_override",
+        "SIGPIPE",
+        "fpcr",
+    ];
+
+    /// The source with `//` comments removed, so a doc comment that NAMES a
+    /// token (as main.rs's header does) is not read as code.
+    fn code_of(rel: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(rel);
+        let src =
+            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        src.lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn violations(code: &str) -> Vec<&'static str> {
+        let mut v: Vec<&'static str> = PROLOGUE_TOKENS
+            .iter()
+            .copied()
+            .filter(|t| code.contains(t))
+            .collect();
+        if !code.contains("apr_cli::cli_main()") {
+            v.push("does not call apr_cli::cli_main()");
+        }
+        v
+    }
+
+    #[test]
+    fn both_apr_bins_delegate_to_cli_main() {
+        for rel in ["src/main.rs", "../../src/bin/apr.rs"] {
+            let v = violations(&code_of(rel));
+            assert!(v.is_empty(), "{rel}: {v:?}");
+        }
+    }
+
+    /// Case table: the detector must fire on the pre-#2582 main.rs shape and
+    /// stay quiet on a comment that only names the tokens.
+    #[test]
+    fn detector_case_table() {
+        let copied = "use apr_cli::{execute_command, Cli};\nfn main() { let cli = Cli::parse(); }";
+        assert!(violations(copied).contains(&"Cli::parse"));
+        assert!(violations(copied).contains(&"does not call apr_cli::cli_main()"));
+        let alloc = "static ALLOC: dhat::Alloc = dhat::Alloc; #[global_allocator]\nfn main() { apr_cli::cli_main() }";
+        assert_eq!(violations(alloc), vec!["global_allocator"]);
+        let clean = "fn main() -> std::process::ExitCode {\n    apr_cli::cli_main()\n}";
+        assert!(violations(clean).is_empty());
+    }
 }

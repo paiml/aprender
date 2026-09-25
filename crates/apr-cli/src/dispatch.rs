@@ -239,10 +239,10 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 `cuda` feature, so the CUDA backend does not exist in this binary. \
 Refusing to silently fall back to wgpu/CPU: that path is ~20x slower \
 (~20 tok/s vs ~400) and makes any throughput measurement taken through it \
-meaningless. Rebuild the ROOT facade with CUDA: `cargo build --release \
---features cuda` (build the root, not `-p apr-cli`: BOTH packages define a \
-binary named `apr`, and only the root's cuda = [\"cli\", \"apr-cli/cuda\"] \
-chain enables this path). To run on this build anyway, pass `--backend cpu` \
+meaningless. Rebuild with CUDA: `cargo build --release --features cuda` \
+(the root facade) or `cargo build --release -p apr-cli --features cuda` \
+(what the nightly CUDA asset builds). Both `apr` binaries run the same \
+`apr_cli::cli_main`. To run on this build anyway, pass `--backend cpu` \
 or drop `--backend`."
                         .to_string(),
                 )));
