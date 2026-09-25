@@ -1,0 +1,16 @@
+# #4160: one per-row claim contract (apex contracts/work/PMAT-*.yaml).
+name: PMAT-001
+version: "1.0.0"
+status: active
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: fixture
+  description: one roadmap row's claim
+entity:
+  type: claim
+  ref: PMAT-001
+  properties:
+    row: EV-19b

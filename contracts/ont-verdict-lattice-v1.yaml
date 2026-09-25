@@ -27,6 +27,10 @@ metadata:
   last_modified: '2026-09-17'
   author: PAIML Engineering
   kind: kernel
+  # ONT-7: the world this lattice's laws hold in. They are pure functions over an enum, so the one
+  # declared world, the committed tree, is the whole claim; no backend, host or feature qualifies it.
+  valid_under:
+    world: committed
   description: >
     ONT-001 verdict lattice — Fail < Unknown(Reason) < Pass with meet = min (Kleene K3 strong
     conjunction); only Pass arms; per-repo armed gates, monotone against the committed comparand

@@ -21479,6 +21479,26 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3837
+  github_issue: 3837
+  item_type: task
+  title: 'The --features cuda lint surface has never been gated: clippy -p apr-cli --lib --features cuda is RED'
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-dd
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo clippy -p apr-cli --lib --features cuda -- -D warnings exits 0'
+  - 'a gate that runs in a workflow lints the cuda axis, with flags passed literally and a planted RED proving it'
+  - 'other feature axes enumerated; any excluded one is named with a ticket'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-3839
   github_issue: 3839
   item_type: task
@@ -21649,6 +21669,61 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3998
+  github_issue: 3998
+  item_type: task
+  title: 'EPIC 0.70.0 Fast Train: concrete plan under docs/ + 3-lane quorum deciding the epic''s open questions'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-19
+  created: 2026-09-23T12:30:00Z
+  updated: 2026-09-23T12:30:00Z
+  spec: docs/specifications/release-0.70-fast-train-plan.md
+  acceptance_criteria:
+  - 'A plan under docs/ gives every must-carry row of #3998 an owner-free done_when, the measured baseline with its source, and a first-green proof (a command or artifact that can fail).'
+  - 'The plan includes 0.70''s debt-ratchet slice (#3997, slice 1 of 5).'
+  - 'A 3-lane quorum (paiml-implement kind=docs, agy delegate, gpt-oss fallback on quota, never NO-VERDICT-and-park) reviews the plan and decides the epic''s open questions; its receipt is committed beside the plan.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: 'Assigned by aprender-cf (planning/triage cop), 2026-09-23, relaying the operator: "quorum decide. now use quorum and claud plan for each epic". Scope: plan + quorum receipt + one summary comment on #3998. No child issues and no milestone moves until operator review.'
+- id: PMAT-4067
+  github_issue: 4067
+  item_type: task
+  title: 'APEX-2e: aprender-viz SvgEncoder::metadata(self, xml) -> Result<Self> — one <metadata> block, first child of <svg>, bytes = payload + fixed wrapping (no timestamp/encoder/version), second call replaces; roxmltree well-formedness refusal; error.rs Error::SvgMetadataRefused; Cargo.toml roxmltree 0.20 (+1 Cargo.lock edge, already in the lock via usvg); NEW tests/svg_metadata.rs (6 tests); roadmap entry; NO workflow, NO PNG (#4068), NO publish (apex APEX-001 row EV-2e)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T04:55:48Z
+  updated: 2026-09-24T04:55:48Z
+  spec: null
+  acceptance_criteria:
+  - 'RED (a) one block, placed first, bytes exactly <metadata>+payload+</metadata>; (b) two independently built encoders render byte-identical with the block present; (c) malformed payloads refused (unclosed, mismatched, bare & and <, a </metadata> breakout, DOCTYPE/entity, mid-document XML declaration). cd crates/aprender-viz && cargo test -p aprender-viz --test svg_metadata: 6 passed; RED before the implementation (rc 101, no method metadata, no variant SvgMetadataRefused).'
+  - 'Mutations, each planted alone and restored sha-identical: timestamp in the rendered block (the spec plant) and timestamp at build time each red exactly_one_metadata_block_placed_first + two_independent_builds_render_byte_identical_with_the_block_present + well_formed_payloads_of_other_shapes_are_accepted_verbatim; parse check removed reds a_malformed_payload_is_refused_not_emitted; block moved after the background reds exactly_one_metadata_block_placed_first. An allow_dtd:false option turned nothing red (the wrapper already makes a payload DTD a parse error) and was removed rather than kept as an untestable defence.'
+  labels:
+  - kind:code
+  - apex-upstream
+  notes: 'apex APEX-001 row EV-2e (spec v4.23, apex#136). Consumer: apex EV-23b embeds EV-23''s provenance payload through this API. The spec row proposed metadata(self, xml) -> Self; a builder returning Self cannot refuse a malformed payload, so the signature is -> Result<Self>, recorded as a row amendment in apex. Ends at STOP(PUBLISH: aprender-viz <version>); the cop folds it into the 0.70 batch, unarmed.'
+- id: PMAT-4076
+  github_issue: 4076
+  item_type: task
+  title: 'ONT-7: valid_under — kernel-kind contracts carry a world index'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-23T20:51:06Z
+  updated: 2026-09-23T20:51:06Z
+  spec: null
+  acceptance_criteria:
+  - paiml/infra docs/specifications/paiml-ontology.md v4.12 @948ae923 row ONT-7 (:656), probe (:657). depends_on ONT-1, ONT-6. K̂ 60. Cop (aprender-cf) assignment 2026-09-23.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4120
   github_issue: 4120
   item_type: task
@@ -21658,6 +21733,60 @@ roadmap:
   assigned_to: null
   created: 2026-09-24T00:32:40Z
   updated: 2026-09-24T00:32:40Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4127
+  github_issue: 4127
+  item_type: task
+  title: '#4127: drop unmaintained proc-macro-error/-error2 from published aprender (tabled 0.22, validator 0.21)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T04:51:52Z
+  updated: 2026-09-24T04:51:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4160
+  github_issue: 4160
+  item_type: task
+  title: 'pv-contract extractor: a class per entity type (ont:entity/<type>), so a SHACL shape can target one entity type (apex EV-19b)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-75
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'a contract with entity.type T is also typed rdf:type <ONT_BASE>entity/T, and `targetClass: entity:T` expands to exactly that IRI (pinned by a test)'
+  - 'accept-level (pv lint --gate shapes on a fixture): two entity types, two closed shapes scoped by entity class, Pass with no cross-firing'
+  - 'must-RED: the same two shapes scoped by ont:Contract cross-fire (the gap, measured); a planted wrong-type contract fails its type''s shape'
+  - 'apex: the study shape over all apex contracts passes and does not fire on the 18 claim contracts (acceptance run coordinated with apex-4c)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4242
+  github_issue: 4242
+  item_type: task
+  title: 'sovereign-update shared crate: update check + update subcommand'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T09:28:46Z
+  updated: 2026-09-24T09:28:46Z
   spec: null
   acceptance_criteria: []
   phases: []
