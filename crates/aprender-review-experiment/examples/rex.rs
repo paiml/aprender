@@ -5,7 +5,7 @@
 //!
 //! Commands:
 //! - `prereg`        print the prereg lock the tree implies
-//! - `"usage: rex <prereg|prereg-check|corpus-build|review|not-run|score> (see the example docs)"`  exit 1 unless the committed lock matches the tree
+//! - `prereg-check`  exit 1 unless the committed lock matches the tree
 //! - `corpus-build PRS_JSON CUTOFF ITEMS_DIR MUTANTS_JSON...`
 //!   build corpus v1 (REX-02): writes `ITEMS_DIR/<id>.diff`, and in the repo
 //!   `docs/audits/review-corpus/corpus-v1.jsonl` + `test-manifest-v1.txt`.
@@ -20,6 +20,11 @@
 //! - `score --receipts F --cell C --arm A --split dev|test [--rerun]
 //!   [--pubkey P]` the §2.3 metrics as JSON. Without `--pubkey` the result
 //!   is labelled `unsigned` (exploratory); with it, `minisign -V` must pass.
+//! - `admit --cell C|all --why NoDeclaredExecutor --model-id M --weights-sha W
+//!   --apr-tag T --apr-sha S --out FILE` append `NotRun` admission rows (REX-04);
+//!   `admit --cell C --removed-by R ...` appends a `Refused` row.
+//! - `admission-check --file F` every §2.1 cell resolved exactly once; prints the
+//!   summary JSON. Exit 1 if inadmissible, 10 if admissible but S-7 (no cell admitted).
 
 use aprender_review_experiment::build_corpus::{
     choose, g_candidates, is_green, p_candidates, r_candidates, seal, Mutant, Pr, PER_CLASS,
@@ -45,10 +50,12 @@ fn main() -> ExitCode {
     match args.first().map(String::as_str) {
         Some("prereg") => prereg_cmd(false),
         Some("prereg-check") => prereg_cmd(true),
-        Some(c @ ("review" | "not-run" | "score")) => {
+        Some("admission-check") => admission_check(&args[1..]),
+        Some(c @ ("review" | "not-run" | "score" | "admit")) => {
             match flags(&args[1..]).and_then(|f| match c {
                 "review" => review(&f),
                 "not-run" => not_run(&f),
+                "admit" => admit(&f),
                 _ => score_cmd(&f),
             }) {
                 Ok(()) => ExitCode::SUCCESS,
@@ -67,7 +74,7 @@ fn main() -> ExitCode {
         },
         _ => {
             eprintln!(
-                "usage: rex <prereg|prereg-check|corpus-build PRS CUTOFF ITEMS_DIR MUTANTS...>"
+                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check> (see the example docs)"
             );
             ExitCode::from(2)
         }
@@ -395,4 +402,90 @@ fn score_cmd(f: &Flags) -> Result<(), String> {
         eprintln!("rejected line {}: {}", r.line, r.reasons.join("; "));
     }
     Ok(())
+}
+
+/// REX-04: append admission rows for one cell or all six.
+fn admit(f: &Flags) -> Result<(), String> {
+    use aprender_review_experiment::admission::{Row, Status, CELLS, SCHEME};
+    let prereg_sha = prereg::locked_prereg_sha()
+        .ok_or("no locked prereg sha")?
+        .to_string();
+    let status = match f.get("removed-by") {
+        Some(r) => Status::Refused {
+            removed_by: r.clone(),
+        },
+        None => Status::NotRun {
+            reason: serde_json::from_value(serde_json::Value::String(need(f, "why")?.into()))
+                .map_err(|_| "--why NoDeclaredExecutor|ServeError|…")?,
+        },
+    };
+    let which = need(f, "cell")?;
+    let cells: Vec<_> = CELLS
+        .iter()
+        .filter(|c| which == "all" || c.cell == which)
+        .collect();
+    if cells.is_empty() {
+        return Err(format!("--cell {which}: not a §2.1 cell"));
+    }
+    let out = need(f, "out")?;
+    let at = utc_now();
+    let mut text = String::new();
+    for c in &cells {
+        let row = Row {
+            schema: SCHEME.into(),
+            cell: c.cell.into(),
+            host: c.host.into(),
+            backend: c.backend.into(),
+            apr_tag: need(f, "apr-tag")?.into(),
+            apr_sha256: need(f, "apr-sha")?.into(),
+            model_id: need(f, "model-id")?.into(),
+            weights_sha256: need(f, "weights-sha")?.into(),
+            prereg_sha: prereg_sha.clone(),
+            at: at.clone(),
+            status: status.clone(),
+        };
+        text += &(serde_json::to_string(&row).map_err(|e| e.to_string())? + "\n");
+    }
+    use std::io::Write;
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(out)
+        .and_then(|mut h| h.write_all(text.as_bytes()))
+        .map_err(|e| e.to_string())?;
+    println!("admit {} row(s)", cells.len());
+    Ok(())
+}
+
+/// REX-04: resolve an admission file. Exit 10 (an alarm, never a crash code)
+/// when it is admissible but no cell is admitted (S-7).
+fn admission_check(a: &[String]) -> ExitCode {
+    let run = || -> Result<aprender_review_experiment::admission::Summary, Vec<String>> {
+        let f = flags(a).map_err(|e| vec![e])?;
+        let path = need(&f, "file").map_err(|e| vec![e])?;
+        let text = std::fs::read_to_string(path).map_err(|e| vec![e.to_string()])?;
+        let lock =
+            prereg::locked_prereg_sha().ok_or_else(|| vec!["no locked prereg sha".into()])?;
+        aprender_review_experiment::admission::check(&text, lock)
+    };
+    match run() {
+        Ok(s) => {
+            match serde_json::to_string(&s) {
+                Ok(j) => println!("{j}"),
+                Err(e) => eprintln!("rex admission-check: {e}"),
+            }
+            if s.s7 {
+                eprintln!("S-7: no cell is admitted — no admissible cell for (A)");
+                ExitCode::from(10)
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Err(es) => {
+            for e in es {
+                eprintln!("rex admission-check: {e}");
+            }
+            ExitCode::from(1)
+        }
+    }
 }

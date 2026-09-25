@@ -177,7 +177,7 @@ pub struct Expect<'a> {
     pub corpus_version: &'a str,
 }
 
-fn is_hex64(s: &str) -> bool {
+pub(crate) fn is_hex64(s: &str) -> bool {
     s.len() == 64
         && s.bytes()
             .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())

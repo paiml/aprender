@@ -9,7 +9,9 @@
 //!   (`review-experiment-receipt-v1`).
 //! - [`score`]: the REX-03 scorer (§2.3 metrics, §3 hypothesis inputs).
 //! - [`harness`]: the REX-03 client that drives a resident `apr serve`.
+//! - [`admission`]: the REX-04 per-cell admission file (`rex-cell-admission-v1`).
 
+pub mod admission;
 pub mod build_corpus;
 pub mod contamination;
 pub mod corpus;
