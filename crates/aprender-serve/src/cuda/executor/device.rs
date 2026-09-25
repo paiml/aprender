@@ -32,11 +32,7 @@ impl CudaExecutor {
         let cache_key = format!("q4_1_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -109,11 +105,7 @@ impl CudaExecutor {
         let cache_key = format!("q5k_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules

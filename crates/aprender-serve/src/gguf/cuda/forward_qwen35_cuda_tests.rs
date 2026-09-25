@@ -283,7 +283,7 @@ fn load_cpu_model(mapped: &crate::gguf::MappedGGUFModel) -> crate::gguf::OwnedQu
 fn qwen35_cuda_deltanet_layers_match_cpu_on_the_real_file() {
     let executor = qwen35_cuda_fixture_or_skip!();
 
-    // Load exactly as run_qwen35_generate does.
+    // Load exactly as qwen35_reference_generate does.
     let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
     let base = load_cpu_model(&mapped);
     let qwen =
@@ -1774,4 +1774,24 @@ fn qwen35_cuda_residual_pointer_is_stable_across_tokens_and_refusals() {
             "pos {pos}: a past-the-cache refusal lost or moved the residual"
         );
     }
+}
+
+/// #3595 done_when 3: the upload refusal names the tensor, the dtype BY NAME,
+/// and the build that would upload — one message with the actionable half.
+/// Pure: no device, no model file.
+#[test]
+fn qwen35_cuda_refusal_names_the_tensor_the_dtype_and_the_eligible_build() {
+    let msg = super::no_gemv_kernel_reason("qwen35.blk.0.ssm_alpha.weight", 1);
+    assert!(msg.contains("'qwen35.blk.0.ssm_alpha.weight'"), "{msg}");
+    assert!(
+        msg.contains("is F16 (GGML type 1)"),
+        "the dtype by name: {msg}"
+    );
+    assert!(msg.contains("Q4_K_M"), "what to use instead: {msg}");
+    // An id no ggml table knows is not given a plausible name.
+    let unknown = super::no_gemv_kernel_reason("t", 9999);
+    assert!(
+        unknown.contains("is an unknown type (GGML type 9999)"),
+        "{unknown}"
+    );
 }

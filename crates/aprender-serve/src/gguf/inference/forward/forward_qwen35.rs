@@ -3,6 +3,10 @@ use crate::gguf::quantized::{OwnedQuantizedTensor, QuantizedTensorRef};
 use crate::gguf::{GGUFConfig, GGUFModel, OwnedQuantizedModel};
 use std::f32::consts::E;
 
+/// 0.69.1 load-time warning for Qwen3.5-0.8B (#4032, known issue #4030).
+#[path = "qwen35_known_issue.rs"]
+pub mod qwen35_known_issue;
+
 /// SiLU activation function
 pub fn silu(x: f32) -> f32 {
     x / (1.0 + (-x as f32).exp())
@@ -459,6 +463,20 @@ impl Qwen35State {
             ),
         }
     }
+
+    /// Return the state to position 0 in place (#3595): every conv window and
+    /// recurrent state zeroed and the KV cache emptied — what
+    /// [`Qwen35Model::new_state`] starts from, without reallocating it.
+    pub fn reset(&mut self) {
+        for v in self
+            .conv_states
+            .iter_mut()
+            .chain(self.ssm_states.iter_mut())
+        {
+            v.fill(0.0);
+        }
+        self.kv_cache.reset();
+    }
 }
 
 pub(crate) struct Qwen35OwnedDeltaNetLayer {
@@ -776,6 +794,8 @@ impl<'a> Qwen35Model<'a> {
         model: &crate::gguf::GGUFModel,
         data: &[u8],
     ) -> crate::error::Result<crate::gguf::OwnedQuantizedModel> {
+        // #4032: Qwen3.5-0.8B is a known RED in 0.69.1 (#4030): warn, never refuse.
+        qwen35_known_issue::warn_if_known_issue(model);
         let config = crate::gguf::config::ValidatedModelConfig::from_gguf(model)?.into_inner();
 
         let token_embedding = model.get_tensor_f32("token_embd.weight", data)?;
@@ -1244,14 +1264,20 @@ impl<'a> Qwen35Model<'a> {
     }
 }
 
-/// Prefill `input_tokens` through the Qwen3.5 CPU forward, then decode up to
-/// `gen_config.max_tokens` more with the dense path's token choice (argmax at temperature 0 or
-/// `top_k` 1, else seeded top-k/top-p). Returns the prompt followed by the new tokens. `apr run`
-/// and `apr chat` dispatch `qwen35` GGUFs here (#3091).
+/// The per-token CPU REFERENCE the one engine is tested against: prefill
+/// `input_tokens` one position at a time through the Qwen3.5 CPU forward, then
+/// decode up to `gen_config.max_tokens` more with the dense path's token choice.
+/// Returns the prompt followed by the new tokens.
+///
+/// Test-only since #4263: every production verb generates through
+/// `realizar::session`, and this loop is kept as the independent oracle it is
+/// compared with — it shares no loop, no state sizing and no batched prefill
+/// with the engine.
 ///
 /// # Errors
 /// An empty prompt, a layer the Qwen3.5 loader cannot read, or a forward-pass failure.
-pub fn run_qwen35_generate(
+#[cfg(test)]
+pub(crate) fn qwen35_reference_generate(
     mapped: &crate::gguf::MappedGGUFModel,
     base: &OwnedQuantizedModel,
     input_tokens: &[u32],
@@ -1260,9 +1286,10 @@ pub fn run_qwen35_generate(
     use rand::SeedableRng;
     if input_tokens.is_empty() {
         return Err(crate::error::RealizarError::InvalidShape {
-            reason: "run_qwen35_generate: prompt cannot be empty".to_string(),
+            reason: "qwen35_reference_generate: prompt cannot be empty".to_string(),
         });
     }
+    qwen35_check_context(input_tokens.len(), base.config.context_length)?;
     let qwen = Qwen35Model::from_model_and_layers(base, &mapped.model, mapped.data())?;
     let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
     let mut state = qwen.new_state(max_seq_len);
@@ -1331,6 +1358,23 @@ pub fn qwen35_route(no_gpu: bool, cuda_backend: bool) -> Qwen35Route {
     }
 }
 
+/// The bound every other generate path checks (GH-167), which the Qwen3.5 dispatch
+/// skipped: #3596's 262k rung prefilled 263,089 positions into a model that declares
+/// 262,144, on both the GPU and the CPU route, and nothing refused it.
+///
+/// # Errors
+/// [`crate::error::RealizarError::ContextLimitExceeded`] when the prompt is longer
+/// than the model's declared `context_length`.
+pub fn qwen35_check_context(prompt_len: usize, context_length: usize) -> Result<()> {
+    if prompt_len > context_length {
+        return Err(crate::error::RealizarError::ContextLimitExceeded {
+            provided: prompt_len,
+            maximum: context_length,
+        });
+    }
+    Ok(())
+}
+
 /// The one-line notice a route owes the user, or `None` when it owes none.
 ///
 /// #3477: the GPU case used to print `[qwen35: Gated DeltaNet runs on the CPU;
@@ -1352,140 +1396,10 @@ pub fn qwen35_route_notice(route: Qwen35Route) -> Option<&'static str> {
 /// The prefix of the loud, never-silent CPU fallback for the hybrid GPU path.
 pub const QWEN35_GPU_FALLBACK_PREFIX: &str = "warning: GPU (CUDA) qwen35 path rejected";
 
-/// Generate with the Qwen3.5 hybrid on the backend the caller asked for,
-/// returning `(tokens, used_gpu)` (#3090/#3091).
-///
-/// The GPU is attempted whenever it was requested and this build has a CUDA
-/// backend; a failure to build the model, a failure inside the forward, or a
-/// rejection by the F2 CPU-parity guard falls back to the CPU forward **with the
-/// reason printed** — an unannounced backend downgrade is the defect class
-/// `QWEN35_GPU_FALLBACK_PREFIX` exists to make impossible.
-///
-/// # Errors
-/// Only a CPU-forward failure: the GPU path never propagates its error, it falls
-/// back.
-pub fn run_qwen35_generate_dispatch(
-    mapped: &crate::gguf::MappedGGUFModel,
-    base: &OwnedQuantizedModel,
-    input_tokens: &[u32],
-    gen_config: &crate::gguf::QuantizedGenerateConfig,
-    no_gpu: bool,
-) -> Result<(Vec<u32>, bool)> {
-    let route = qwen35_route(no_gpu, cfg!(feature = "cuda"));
-    if let Some(notice) = qwen35_route_notice(route) {
-        eprintln!("{notice}");
-    }
-    #[cfg(feature = "cuda")]
-    if route == Qwen35Route::Gpu {
-        match run_qwen35_generate_gpu(mapped, base, input_tokens, gen_config) {
-            Ok(tokens) => return Ok((tokens, true)),
-            Err(reason) => {
-                eprintln!("{QWEN35_GPU_FALLBACK_PREFIX}, falling back to CPU: {reason}");
-            },
-        }
-    }
-    let tokens = run_qwen35_generate(mapped, base, input_tokens, gen_config)?;
-    Ok((tokens, false))
-}
-
 /// Positions the F2 hybrid guard forwards on both backends before it will let
 /// the GPU serve a token. Same cap as the dense guard's `gpu_probe`.
 #[cfg(feature = "cuda")]
-const QWEN35_F2_PROBE_MAX: usize = 64;
-
-/// The GPU twin of [`run_qwen35_generate`]: build the hybrid on CUDA, prove it
-/// against its own CPU forward, then decode.
-///
-/// `Err` is a fallback reason, never a user-visible failure — the caller prints
-/// it and runs the CPU forward.
-#[cfg(feature = "cuda")]
-fn run_qwen35_generate_gpu(
-    mapped: &crate::gguf::MappedGGUFModel,
-    base: &OwnedQuantizedModel,
-    input_tokens: &[u32],
-    gen_config: &crate::gguf::QuantizedGenerateConfig,
-) -> std::result::Result<Vec<u32>, String> {
-    if input_tokens.is_empty() {
-        return Err("the prompt is empty".to_string());
-    }
-    let qwen = Qwen35Model::from_model_and_layers(base, &mapped.model, mapped.data())
-        .map_err(|e| format!("the hybrid layers would not load: {e}"))?;
-
-    let mut executor = crate::cuda::CudaExecutor::new(0)
-        .map_err(|e| format!("CUDA initialization failed: {e}"))?;
-    let device_name = executor
-        .device_name()
-        .unwrap_or_else(|_| "Unknown GPU".to_string());
-    let vram_mb = executor.memory_info().unwrap_or((0, 0)).1 / (1024 * 1024);
-
-    let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
-    let mut gpu =
-        crate::gguf::cuda::Qwen35CudaModel::with_max_seq_len(&qwen, executor, max_seq_len)
-            .map_err(|e| format!("the CUDA model would not build: {e}"))?;
-
-    // Unconditional, like every other backend-selection line on this path: the
-    // user must be able to tell a GPU run from a CPU one without --verbose.
-    eprintln!(
-        "Backend: GPU (CUDA, {device_name}, {vram_mb} MB VRAM) [qwen35 hybrid forward, #3090]"
-    );
-
-    // #3604: the guard runs once per (model sha256, apr version, device) and
-    // leaves a receipt; a later run whose triple matches reads it instead of
-    // re-deriving a 64-position CPU forward that was 67 % of a 14 s TTFT.
-    let f2 =
-        f2_validate_qwen35_receipted(&mut gpu, &qwen, input_tokens, mapped.data(), &device_name);
-    if !f2.accepted {
-        return Err("the F2 CPU-parity guard rejected the GPU path".to_string());
-    }
-    qwen35_gpu_decode(&mut gpu, input_tokens, gen_config)
-}
-
-/// Prefill + decode on the GPU, with the token choice
-/// [`run_qwen35_generate`] makes, from a state that has never seen the guard's
-/// probe.
-#[cfg(feature = "cuda")]
-fn qwen35_gpu_decode(
-    gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
-    input_tokens: &[u32],
-    gen_config: &crate::gguf::QuantizedGenerateConfig,
-) -> std::result::Result<Vec<u32>, String> {
-    use rand::SeedableRng;
-    let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
-    let mut state = gpu
-        .new_state()
-        .map_err(|e| format!("the decode state would not allocate: {e}"))?;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(gen_config.seed);
-
-    let mut logits = Vec::new();
-    for (pos, &token) in input_tokens.iter().enumerate() {
-        logits = gpu
-            .forward_single(token, &mut state, pos)
-            .map_err(|e| format!("the GPU forward failed at prompt position {pos}: {e}"))?;
-    }
-    let mut tokens = input_tokens.to_vec();
-    for _ in 0..gen_config.max_tokens {
-        let next = if gen_config.temperature == 0.0 || gen_config.top_k == 1 {
-            crate::gguf::ops::argmax(&logits)
-        } else {
-            OwnedQuantizedModel::sample_topk_seeded(
-                &logits,
-                gen_config.temperature,
-                gen_config.top_k,
-                gen_config.top_p,
-                &mut rng,
-            )
-        };
-        tokens.push(next);
-        if gen_config.stop_tokens.contains(&next) || tokens.len() >= max_seq_len {
-            break;
-        }
-        let pos = tokens.len() - 1;
-        logits = gpu
-            .forward_single(next, &mut state, pos)
-            .map_err(|e| format!("the GPU forward failed at decode position {pos}: {e}"))?;
-    }
-    Ok(tokens)
-}
+pub(crate) const QWEN35_F2_PROBE_MAX: usize = 64;
 
 /// The F2 runtime guard for the hybrid: forward the real prompt through BOTH
 /// backends and accept the GPU only if every real position agrees.
@@ -1495,9 +1409,8 @@ fn qwen35_gpu_decode(
 /// of which exists for this architecture. The decision itself is shared:
 /// `f2_multi_position_report` with its floors (0.95 / 0.98 / 0.90), so the
 /// hybrid is judged by the same rule as every other GPU path. The probe path is
-/// [`F2ProbePath::Serial`] because there is no batched prefill for the hybrid —
-/// `qwen35_gpu_decode` prefills token by token, so the serial probe IS the path
-/// the run takes.
+/// [`F2ProbePath::Batched`] (#3596): `qwen35_gpu_decode` prefills the prompt with the
+/// batched prefill and decodes from there, so the probe does exactly that.
 ///
 /// Both states are throwaway: the guard allocates its own, and the generation
 /// that follows allocates another.
@@ -1568,7 +1481,7 @@ fn f2_validate_qwen35(
     } else {
         eprintln!(
             "{}",
-            crate::infer::f2_divergence_msg(&report, crate::infer::F2ProbePath::Serial)
+            crate::infer::f2_divergence_msg(&report, crate::infer::F2ProbePath::Batched)
         );
         F2Verdict::Rejected
     }
@@ -1614,20 +1527,59 @@ fn f2_validate_qwen35_receipted(
     model_bytes: &[u8],
     device_name: &str,
 ) -> F2Outcome {
+    let hash = Qwen35ModelHash::of(model_bytes);
+    f2_validate_qwen35_receipted_hashed(gpu, cpu, probe_context, &hash, device_name)
+}
+
+/// The receipt key's model half, hashed once (#3595).
+///
+/// [`f2_validate_qwen35_receipted`] hashes the whole file on every call — 8 s
+/// on the 27B. A caller that keeps the model resident across calls hashes it
+/// once, when it loads, and hands this to
+/// [`f2_validate_qwen35_receipted_hashed`].
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone)]
+pub(crate) struct Qwen35ModelHash {
+    /// Hex sha256 of the model file's bytes.
+    pub(crate) sha256: String,
+    /// Wall time the hash took, reported in the guard's line.
+    pub(crate) sha256_ms: f64,
+}
+
+#[cfg(feature = "cuda")]
+impl Qwen35ModelHash {
+    pub(crate) fn of(model_bytes: &[u8]) -> Self {
+        let start = std::time::Instant::now();
+        let sha256 = crate::gguf::f2_receipt::model_sha256(model_bytes);
+        Self {
+            sha256,
+            sha256_ms: start.elapsed().as_secs_f64() * 1000.0,
+        }
+    }
+}
+
+/// [`f2_validate_qwen35_receipted`] with the model already hashed.
+#[cfg(feature = "cuda")]
+pub(crate) fn f2_validate_qwen35_receipted_hashed(
+    gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
+    cpu: &Qwen35Model<'_>,
+    probe_context: &[u32],
+    hash: &Qwen35ModelHash,
+    device_name: &str,
+) -> F2Outcome {
     use crate::gguf::f2_receipt::{
         apr_version, build_id, decide, model_sha256, read_receipt, receipt_dir, receipt_path,
         revalidate_requested, unix_now, write_receipt, F2Decision, F2Receipt, F2ReceiptKey,
         F2_RECEIPT_SCHEMA,
     };
 
-    let hash_start = std::time::Instant::now();
     let key = F2ReceiptKey {
-        model_sha256: model_sha256(model_bytes),
+        model_sha256: hash.sha256.clone(),
         apr_version: apr_version(),
         build_id: build_id(),
         device: device_name.to_string(),
     };
-    let sha256_ms = hash_start.elapsed().as_secs_f64() * 1000.0;
+    let sha256_ms = hash.sha256_ms;
 
     let path = receipt_dir().map(|d| receipt_path(&d, &key.model_sha256));
     let found = match path.as_deref() {
@@ -1738,27 +1690,59 @@ fn f2_qwen35_gpu_logits(
     decode_token: u32,
 ) -> std::result::Result<Vec<Vec<f32>>, String> {
     let steps = probe.len() + 1;
+    // #3596: the probe takes the path a real run takes — the batched prefill over the
+    // probe, then one decode step — in a state sized for exactly those `steps`
+    // positions, not the request's whole KV.
     let mut state = gpu
-        .new_state()
+        .new_state_with_len(steps)
         .map_err(|e| format!("F2 qwen35 probe: the device state would not allocate: {e}"))?;
-    let mut per_pos: Vec<Vec<f32>> = Vec::with_capacity(steps);
-    for (pos, tok) in probe
-        .iter()
-        .copied()
-        .chain(std::iter::once(decode_token))
-        .enumerate()
-    {
-        match gpu.forward_single(tok, &mut state, pos) {
-            Ok(logits) => per_pos.push(logits),
-            Err(e) => return Err(crate::infer::gpu_forward_failure_msg(pos, steps, &e)),
-        }
+    let every_position: Vec<usize> = (0..probe.len()).collect();
+    let mut per_pos = gpu
+        .prefill_logits_at(probe, &mut state, 0, &every_position)
+        .map_err(|e| crate::infer::gpu_forward_failure_msg(0, steps, &e))?;
+    match gpu.forward_single(decode_token, &mut state, probe.len()) {
+        Ok(logits) => per_pos.push(logits),
+        Err(e) => {
+            return Err(crate::infer::gpu_forward_failure_msg(
+                probe.len(),
+                steps,
+                &e,
+            ))
+        },
     }
     Ok(per_pos)
 }
 
 #[cfg(test)]
 mod qwen35_route_tests {
-    use super::{qwen35_route, qwen35_route_notice, Qwen35CpuReason, Qwen35Route};
+    use super::{
+        qwen35_check_context, qwen35_route, qwen35_route_notice, Qwen35CpuReason, Qwen35Route,
+    };
+
+    // #3596: the 262k rung's 263,089-position prompt ran on a 262,144-position model.
+    // The boundary is inclusive (a prompt of exactly `context_length` is served), as
+    // on every other generate path (GH-167).
+    #[test]
+    fn a_prompt_past_the_declared_context_is_refused_with_both_numbers() {
+        const CTX: usize = 262_144;
+        for (len, ok) in [
+            (1, true),
+            (CTX - 1, true),
+            (CTX, true),
+            (CTX + 1, false),
+            (263_089, false),
+        ] {
+            let got = qwen35_check_context(len, CTX);
+            assert_eq!(got.is_ok(), ok, "prompt of {len} against {CTX}: {got:?}");
+            if let Err(e) = got {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains(&len.to_string()) && msg.contains(&CTX.to_string()),
+                    "{msg}"
+                );
+            }
+        }
+    }
 
     // #3090/#3477: with a CUDA build and no --no-gpu, the hybrid goes to the GPU.
     // This is the whole point of the ticket; if it ever reads Cpu again, `apr run

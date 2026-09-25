@@ -349,3 +349,162 @@ qa_gate:
     - "Cross-format isolation holds"
   pass_criteria: "All 5 FALSIFY tests pass"
   falsification: "Introduce a sign error in nibble extraction — gate must catch it"
+
+equations:
+  identity:
+    formula: f(x) = x
+    preconditions:
+    - input.len() > 0
+    - scale > 0.0
+    lean_theorem: Theorems.Identity
+  simd_scalar_equivalence:
+    formula: |
+      equiv: (SimdKernel, ScalarKernel, Data) -> bool
+        simd_result = simd_kernel(data)
+        scalar_result = scalar_kernel(data)
+        |simd_result - scalar_result| <= ULP_TOLERANCE * f32::EPSILON
+    domain: Quantized weight data and f32 activation vector
+    codomain: bool (true iff SIMD matches scalar within tolerance)
+    invariants:
+    - ULP tolerance is format-specific (2 for Q8_0, 4 for Q4_0, 8 for K-quants)
+    - Scalar kernel is the reference implementation
+    - Every SIMD variant must satisfy this equivalence
+    preconditions:
+    - data.len() % SUPERBLOCK_BYTES == 0
+    - activations.len() >= num_superblocks * ELEMENTS_PER_SUPERBLOCK
+    lean_theorem: Theorems.SimdScalarEquivalence
+  format_isolation:
+    formula: |
+      isolation: (Data_F1, Kernel_F2) -> bool
+        result = kernel_f2(data_f1)
+        |result - correct_result| > 100 * |correct_result|
+    domain: Quantized data in format F1, kernel for format F2 (F1 != F2)
+    codomain: bool (true iff cross-format produces garbage)
+    invariants:
+    - Cross-format dispatch always produces garbage
+    - Formats are not accidentally compatible
+    preconditions:
+    - F1 != F2
+    - data is valid for format F1
+    lean_theorem: Theorems.FormatIsolation
+  bsum_decomposition:
+    formula: |
+      bsum_equiv: (Activations, SubBlockBounds) -> bool
+        precomputed = precompute_bsums(activations, sub_block_bounds)
+        inline = compute_bsums_inline(activations, sub_block_bounds)
+        precomputed == inline  (exact integer equality)
+    domain: f32 activations quantized to Q8 sub-block sums
+    codomain: bool (true iff precomputed matches inline)
+    invariants:
+    - Bsums depend only on activations, not on weights
+    - Integer arithmetic ensures exact equality
+    - Precomputation is valid across all weight rows
+    preconditions:
+    - activations.len() is multiple of ELEMENTS_PER_SUBBLOCK
+    lean_theorem: Theorems.BsumDecomposition
+
+proof_obligations:
+# CLASS (b) GENUINELY-NOT-APPLICABLE: this compares two *implementations* of the
+# SAME quantized computation (vectorized vs. scalar) at runtime, in f32, within a
+# format-specific ULP tolerance. There is no universal algebraic identity to prove
+# — it is a "matches-reference bit/ULP" runtime property (like GPU-matches-CPU),
+# discharged empirically by FALSIFY-QDOT-001 + KANI-QDOT-001, not by Lean.
+- id: QDP-POST-001
+  type: postcondition
+  property: SIMD-scalar numerical equivalence
+  formal: for all formats F and data D, |simd_F(D) - scalar_F(D)| <= ULP_TOLERANCE_F * f32::EPSILON
+  tolerance: 1e-6
+  applies_to: all
+  lean:
+    theorem: 'n/a: runtime SIMD-vs-scalar f32 ULP equivalence'
+    status: not-applicable
+    notes: >-
+      Runtime/empirical property — a per-kernel float comparison of two
+      implementations of the same computation within a ULP band. No algebraic
+      statement (universally false outside the tolerance band); discharged by
+      FALSIFY-QDOT-001 (proptest) and KANI-QDOT-001, not amenable to Lean.
+# CLASS (b) GENUINELY-NOT-APPLICABLE: "wrong-format kernel produces garbage" is an
+# empirical claim about typical byte reinterpretation with a 100x threshold. It is
+# NOT universally true (adversarial data could collide), so there is no theorem to
+# prove — discharged empirically by FALSIFY-QDOT-002 + KANI-QDOT-002.
+- id: QDP-INV-002
+  type: invariant
+  property: Format isolation — cross-format dispatch produces garbage
+  formal: for all F1 != F2, |kernel_F2(data_F1) - correct| > 100 * |correct|
+  applies_to: all
+  lean:
+    theorem: 'n/a: empirical cross-format garbage (100x) threshold'
+    status: not-applicable
+    notes: >-
+      Runtime/empirical property with no universal algebraic statement (false for
+      adversarial inputs that happen to collide). The 100x-divergence claim is a
+      data-dependent observation discharged by FALSIFY-QDOT-002 and KANI-QDOT-002,
+      not amenable to Lean.
+# CLASS (a) ANALYTIC-PROVABLE: precomputing per-sub-block activation sums vs.
+# computing them inline is an exact integer sum-partition identity (order/timing
+# independent). Proved in Lean.
+- id: QDP-POST-003
+  type: postcondition
+  property: Bsum precomputation equivalence
+  formal: precompute_bsums(act) == inline_bsums(act) (exact integer equality)
+  applies_to: all
+  requires: format.has_dmin == true
+  lean:
+    theorem: QuantizedDotProduct.bsum_decomposition_total
+    module: ProvableContracts.QuantizedDotProduct
+    status: proved
+    depends_on:
+    - List.sum_append
+    - List.flatten_cons
+    mathlib_imports:
+    - Mathlib.Algebra.BigOperators.Group.List.Basic
+    notes: >-
+      Two Lean theorems in Theorems/QuantizedDotProduct/BsumDecomposition.lean:
+      bsum_precompute_eq_inline (the literal per-sub-block precompute==inline
+      identity, via List.getElem_map) and bsum_decomposition_total (summing the
+      precomputed bsums equals summing the flattened activations — decomposition
+      soundness). Exact integer arithmetic, no rounding.
+# CLASS (a) ANALYTIC-PROVABLE: the central correctness bound of a quantized dot
+# product — dequantized-weight dot product deviates from the exact dot product by
+# at most (scale/2)*||y||_1. Triangle inequality + per-element round-trip bound.
+- id: QDP-BND-004
+  type: bound
+  property: Quantized dot-product error bound
+  formal: '|<dequant(quant(x)), y> - <x, y>| <= (scale/2) * sum_i |y_i|'
+  applies_to: all
+  lean:
+    theorem: QuantizedDotProduct.quant_dot_error_bound
+    module: ProvableContracts.QuantizedDotProduct
+    status: proved
+    depends_on:
+    - ProvableContracts.Quantization.roundtrip_bound
+    - Finset.abs_sum_le_sum_abs
+    - Finset.mul_sum
+    mathlib_imports:
+    - Mathlib.Algebra.Order.BigOperators.Group.Finset
+    notes: >-
+      Theorems/QuantizedDotProduct/ErrorBound.lean. Reuses the proved
+      roundtrip_bound (|dequant(quant(x))-x| <= scale/2) per element, then folds
+      via linearity, the finite-sum triangle inequality, and factoring the
+      constant. This is the analytic foundation underlying the runtime
+      SIMD/scalar equivalence obligation above.
+
+kani_harnesses:
+- id: KANI-QDOT-001
+  obligation: SIMD-scalar numerical equivalence
+  property: '|simd - scalar| <= ULP_TOLERANCE * epsilon'
+  bound: 16
+  strategy: stub_float
+  harness: verify_simd_scalar_equivalence
+- id: KANI-QDOT-002
+  obligation: "Format isolation \u2014 cross-format dispatch produces garbage"
+  property: Cross-format dispatch produces divergent output
+  bound: 8
+  strategy: exhaustive
+  harness: verify_format_isolation
+- id: KANI-QDOT-003
+  obligation: Bsum precomputation equivalence
+  property: precompute_bsums(act) == inline_bsums(act) (exact integer equality)
+  bound: 8
+  strategy: exhaustive
+  harness: verify_bsum_precomputation

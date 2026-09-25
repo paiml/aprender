@@ -47,7 +47,22 @@ judge() { # judge <root> -> 0 all links hold, 1 a link broke, 2 ENV
     if [[ $dry == *"llvm-cov"* ]]; then printf 'ok    R1 make -n coverage-check reaches llvm-cov (the release producer measures, it reads nothing from CI)\n'
     else printf 'FAIL  R1 make -n coverage-check does not reach llvm-cov -- the dogfood coverage gate would measure nothing\n'; bad=1; fi
 
-    if grep -qE '^[[:space:]]*gate[[:space:]]+coverage[[:space:]]+make[[:space:]].*coverage-check' "$df"; then
+    # WIDENED (#3844): R2 asks "does the release still CHECK coverage", and it used to
+    # test for one INVOCATION SHAPE -- `gate coverage make ... coverage-check`. When the
+    # coverage row moved off the `gate` helper to a `mark` row (so a miss could be an
+    # owed DEFER carrying its measured percentage rather than a NO-GO, #3839), coverage
+    # was still run by the very next line and this rule reported "nothing checks
+    # coverage at the release". A guard that names a helper cannot answer a question
+    # about a behaviour.
+    #
+    # The new pattern requires an UNCOMMENTED line that invokes `make ... coverage-check`,
+    # whatever wraps it. The `[^#[:space:]]` is load-bearing: it keeps the m_r2_comment
+    # mutant RED, which a bare `.*` would have admitted. Case table, measured:
+    #     gate coverage make -C … coverage-check          MATCH
+    #     cov_out=$(make -C … coverage-check 2>&1); …      MATCH
+    #   # gate coverage make -C x coverage-check           no
+    #      # cov_out=$(make -C x coverage-check)           no
+    if grep -qE '^[[:space:]]*[^#[:space:]].*make[[:space:]].*coverage-check' "$df"; then
         printf 'ok    R2 scripts/dogfood.sh runs make ... coverage-check (the release consumer exists)\n'
     else printf 'FAIL  R2 scripts/dogfood.sh no longer runs coverage-check -- nothing checks coverage at the release\n'; bad=1; fi
 

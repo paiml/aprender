@@ -86,9 +86,60 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         hardcoded_path_shipped_baseline.txt)     printf 'count\n' ;;
         lockfile_registry_siblings_baseline.txt) printf 'set\n' ;;
         perf_claim_citation_baseline.txt)        printf 'set-aperture\tscripts/check_perf_claims_cite_receipts.sh\n' ;;
+        # aprender#3686, scripts/check_unwired_capabilities.sh. Three files, three
+        # DIFFERENT contracts -- classified by what each one actually does, which
+        # is not the same answer for all three.
+        #
+        # A shrink-only integer: rule 1's site count. `--update` REFUSES to raise
+        # it ("--update may only lower the rule-1 baseline"), so `count` is exact.
+        unwired_doc_assert_baseline.txt)         printf 'count\n' ;;
+        # NOT a ratchet. This is a derived registry: every RequiredOp variant must
+        # appear exactly once, and the guard FAILS with "MAP INCOMPLETE" when the
+        # enum grows past it (case rows W1/W2, proven by planting a variant). It
+        # MUST grow when the enum grows, so freezing it against main would forbid
+        # adding an op. Enforced one way today -- a missing variant fails, a row
+        # naming a variant that no longer exists is dead data nothing consults.
+        capability_op_impl_map.txt)
+            printf 'none\tderived registry of op -> implementing symbol; exact-match against the RequiredOp enum, a missing variant FAILS as MAP INCOMPLETE (scripts/check_unwired_capabilities.sh)\n' ;;
+        # NOT a ratchet, and it must not become one. This is a SUPPRESSION LEDGER:
+        # each row names an unwired capability and the OPEN ISSUE that excuses it,
+        # and every row is printed on every run so a suppression cannot go quiet.
+        # Adding a row is a reviewed decision (it costs an issue number), and
+        # REMOVING a row is mandatory when its issue closes -- a row that outlives
+        # its defect silently exempts the next instance of that op. Freezing it
+        # against main would forbid acknowledging a newly-found capability; a
+        # count would say nothing about whether the rows are still true.
+        unwired_capabilities_acknowledged.txt)
+            printf 'none\tsuppression ledger; each row names an open issue and is printed every run, and a row MUST be deleted when its issue closes or it exempts the next instance (scripts/check_unwired_capabilities.sh)\n' ;;
+        # NOT a ratchet. The exact test paths `make coverage` excludes (`--exact --skip <line>`,
+        # #3839): each row is a reviewed exclusion with its reason in the file's own comments, and
+        # the set must be free to grow when a new flaky or host-bound test is excluded.
+        coverage-skips.txt)
+            printf 'none\tcoverage exclusion list, one exact test path per line with its reason (Makefile coverage target, #3839); not a ratchet\n' ;;
         pipe_grep_q_baseline.txt)                printf 'count\n' ;;   # `producer | grep -q` sites under pipefail (scripts/check_no_pipe_into_grep_q.sh)
         pathonly_devdeps_baseline.txt)           printf 'set\n' ;;   # (manifest,alias) pairs whose src/ uses a publish-stripped dev-dep (scripts/check_pathonly_devdeps_unused_in_src.sh, #3305/#3306)
         roadmap_uncited_completion_baseline.txt) printf 'set\n' ;;
+        # #3904's surface. Rows are <class>TAB<file>|<hash>|<idx>TAB<text>, and the
+        # KEY already carries a content hash, so a text edit produces a new entry
+        # rather than a moved one -- which is what `set` wants.
+        #
+        # CLASSIFIED `set` DELIBERATELY, AND CONSERVATIVELY. Its own header states
+        # the laundering vector it exists to close: "a baseline regenerated to clear
+        # churn takes any genuine new truncation in the same commit with it", which
+        # is why it has no `--update` and "deliberately will not get one". `set`
+        # refuses every addition, so it cannot open that vector. The header also
+        # says "Add a row by hand, with its class and a reason" -- under `set` such
+        # an addition is REFUSED against origin/main, and that friction is the
+        # intended cost: a new silent truncation should be argued, not appended.
+        #
+        # If hand-additions must be admitted, the upgrade is `set-aperture` with
+        # scripts/check_no_silent_truncation.sh as the owning guard, NOT a loosening
+        # of this arm -- and it needs the (a1)/(a2) aperture argument in
+        # lib_baseline_ratchet.sh's header, since from the working tree an aperture
+        # reveal and a fresh violation look identical. Erring toward the kind that
+        # refuses more is the safe direction for a release gate: a wrong `set` costs
+        # an author one conversation, a wrong `set-aperture` costs a hole.
+        silent_truncation_baseline.txt)          printf 'set\n' ;;
         shell_lint_baseline.txt)                 printf 'count\n' ;;
         cb200_baseline.txt)                      printf 'count\n' ;;   # mirrors .pmat-gates.toml [tdg] baseline (PMAT-937)
         test_fixture_path_baseline.txt)          printf 'count\n' ;;

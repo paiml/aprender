@@ -1,0 +1,24 @@
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  APR Import Pipeline
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╭────────┬────────────────────────────────────────────────────╮
+│ Source │ /home/noah/models/Qwen2.5-0.5B-Instruct-IQ3_M.gguf │
+│ Output │ r2/iq3m.apr                                        │
+╰────────┴────────────────────────────────────────────────────╯
+
+╭──────────────┬───────╮
+│ Architecture │ Auto  │
+│   Validation │ Basic │
+╰──────────────┴───────╯
+
+  ◉ Importing
+[PMAT-232] Tokenizer validated: 151936 vocab tokens, 151387 merge rules
+[PMAT-222] Auto-detected architecture: Qwen2 (tensor names will be mapped)
+[CONTRACT-ENFORCED] 290 tensors transformed via tensor-layout-v1.yaml (vocab=151936, hidden=896)
+[GH-202] Synthesizing lm_head.weight from model.embed_tokens.weight (tied embeddings)
+[GH-185] Embedding 151387 BPE merge rules into APR metadata
+[GH-375] Raw import failed (Invalid model format: GGUF tensor 'lm_head.weight' uses Q8_0 quantization which APR cannot represent exactly. Import requires exact format preservation. Use `apr convert --quantize q6_k` to convert to a supported format.), falling back to dequant→requant path
+
+  ✗ Import failed
+error: Validation failed: Invalid model format: GGUF tensor 'blk.0.ffn_gate.weight' is IQ4_NL (ggml type 20): aprender-core decodes it for inspection only and does not convert IQ models to F32 (#3947)

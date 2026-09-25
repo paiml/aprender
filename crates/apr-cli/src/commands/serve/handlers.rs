@@ -1048,7 +1048,12 @@ fn start_safetensors_server_with_fallback(model_path: &Path, config: &ServerConf
 #[cfg(feature = "inference")]
 #[derive(Clone)]
 struct AprServerState {
-    transformer: Option<Arc<std::sync::Mutex<realizar::apr_transformer::AprTransformer>>>,
+    /// PMAT-4269: the APR CPU decode loop, driven through
+    /// `realizar::session::Session` (the one engine, #4263) — never
+    /// `AprTransformer::generate_with_cache*` directly.
+    transformer: Option<
+        Arc<std::sync::Mutex<realizar::session::Session<realizar::apr_transformer::AprCpuForward>>>,
+    >,
     model_type: String,
     architecture: String,
     is_transformer: bool,
@@ -1090,7 +1095,7 @@ fn run_apr_cpu_inference(
     temperature: f32,
     top_p: Option<f32>,
 ) -> std::result::Result<AprInferenceOutput, String> {
-    let transformer = state
+    let session = state
         .transformer
         .as_ref()
         .ok_or("Transformer not loaded, inference not supported")?;
@@ -1110,10 +1115,11 @@ fn run_apr_cpu_inference(
 
     let gen_start = Instant::now();
     let output_tokens = {
-        let t = transformer.lock().map_err(|_| {
+        let mut s = session.lock().map_err(|_| {
             "Transformer state corrupted (lock poisoned). Please restart the server.".to_string()
         })?;
-        t.generate_with_cache(&input_tokens, &gen_config)
+        s.generate(&input_tokens, &gen_config, &mut |_| true)
+            .map(|turn| turn.tokens)
             .map_err(|e| format!("Generate failed: {e}"))?
     };
     let gen_duration = gen_start.elapsed();
@@ -1213,18 +1219,19 @@ pub(crate) fn tokenizer_info_stop_tokens(tok: &SafeTensorsTokenizerInfo) -> Vec<
     stop
 }
 
-/// #4334: the reply tokens of a `generate_with_cache` result: everything past the
-/// prompt, minus the stop id the loop ended on (its stop set is
-/// `gen_config.stop_tokens` plus token 0).
+/// #4334: the reply tokens of a generation result: everything past the prompt,
+/// minus the stop id the loop ended on (`gen_config.stop_tokens`, which
+/// `apr_cpu_generate_config` makes include token 0).
 #[cfg(feature = "inference")]
 pub(crate) fn generated_reply_tokens<'a>(
     output_ids: &'a [u32],
     prompt_len: usize,
-    gen_config: &realizar::apr_transformer::GenerateConfig,
+    gen_config: &realizar::gguf::QuantizedGenerateConfig,
 ) -> &'a [u32] {
-    let mut stop_ids = gen_config.stop_tokens.clone();
-    stop_ids.push(0);
-    apr_cpu_reply_tokens(output_ids.get(prompt_len..).unwrap_or(&[]), &stop_ids)
+    apr_cpu_reply_tokens(
+        output_ids.get(prompt_len..).unwrap_or(&[]),
+        &gen_config.stop_tokens,
+    )
 }
 
 /// The reply text's tokens: `new_tokens` without the stop id the loop ended on.
@@ -1238,24 +1245,31 @@ fn apr_cpu_reply_tokens<'a>(new_tokens: &'a [u32], stop_ids: &[u32]) -> &'a [u32
     }
 }
 
-/// #4265: the one `GenerateConfig` every APR CPU path (blocking, SSE, NDJSON) builds.
+/// #4265: the one config every APR CPU path (blocking, SSE, NDJSON) builds.
+/// PMAT-4269: it drives `Session::generate`, which has no implicit token-0 rule
+/// of its own, so 0 is added to the stop set here to keep the old
+/// `is_eos_token` contract (token 0 is always EOS).
 #[cfg(feature = "inference")]
 pub(crate) fn apr_cpu_generate_config(
     max_tokens: usize,
     temperature: f32,
     top_p: Option<f32>,
-    stop_tokens: Vec<u32>,
-) -> realizar::apr_transformer::GenerateConfig {
-    realizar::apr_transformer::GenerateConfig {
+    mut stop_tokens: Vec<u32>,
+) -> realizar::gguf::QuantizedGenerateConfig {
+    if !stop_tokens.contains(&0) {
+        stop_tokens.push(0);
+    }
+    realizar::gguf::QuantizedGenerateConfig {
         max_tokens,
         temperature,
         // The same default every other serve backend applies when the request is silent.
         top_p: top_p.unwrap_or(realizar::gguf::QuantizedGenerateConfig::default().top_p),
         top_k: 0,
-        repetition_penalty: 1.0,
-        trace: false,
+        // #3760: the sampler draws now; no seed is plumbed from this caller.
+        seed: realizar::apr_transformer::DEFAULT_SEED,
         stop_tokens,
         cancel: realizar::generate::CancelToken::never(),
+        ..Default::default()
     }
 }
 
@@ -1354,7 +1368,9 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
                     )
                     .cyan()
                 );
-                Some(Arc::new(std::sync::Mutex::new(t)))
+                let forward = realizar::apr_transformer::AprCpuForward::new(t);
+                let session = realizar::session::Session::new(forward);
+                Some(Arc::new(std::sync::Mutex::new(session)))
             }
             Err(e) => {
                 println!(
@@ -1615,8 +1631,10 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
     let state_for_ollama_chat = state_for_chat.clone();
     let state_for_ollama_generate = state_for_chat.clone();
 
-    let router = Router::new()
+    // #3979: every route is mounted AND recorded; GET / and the 404 come from the record.
+    let router = super::route_index::Indexed::new()
         .route(
+            "GET",
             "/health",
             get(move || {
                 let s = state_for_health.clone();
@@ -1632,6 +1650,7 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
             }),
         )
         .route(
+            "POST",
             "/v1/completions",
             post(move |Json(req): Json<AprCompletionRequest>| {
                 let state = state_for_completions.clone();
@@ -1639,6 +1658,7 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
             }),
         )
         .route(
+            "POST",
             "/v1/chat/completions",
             post(
                 move |headers: axum::http::HeaderMap, Json(req): Json<serde_json::Value>| {
@@ -1651,6 +1671,7 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
         // client. `stream != false` (Ollama default) ⇒ NDJSON token stream;
         // `stream:false` ⇒ coalesced single object.
         .route(
+            "POST",
             "/api/chat",
             post(move |Json(req): Json<super::ollama::OllamaChatRequest>| {
                 let state = state_for_ollama_chat.clone();
@@ -1659,6 +1680,7 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
         )
         // PMAT-923/928: Ollama native single-prompt generate endpoint.
         .route(
+            "POST",
             "/api/generate",
             post(move |Json(req): Json<super::ollama::OllamaGenerateRequest>| {
                 let state = state_for_ollama_generate.clone();
@@ -1667,29 +1689,15 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
         )
         // PMAT-923: Ollama model-list — clients enumerate models before chatting.
         .route(
+            "GET",
             "/api/tags",
             get(move || {
                 let model = model_name_for_tags.clone();
                 async move { Json(super::ollama::ollama_tags_body(&model)) }
             }),
         )
-        .route(
-            "/",
-            get(|| async {
-                "APR v2 Inference Server - POST /v1/completions, /v1/chat/completions, /api/chat, /api/generate"
-            }),
-        )
-        // GH-672: Return JSON error body for unmatched routes (not empty 404)
-        .fallback(|| async {
-            (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "not_found",
-                    "message": "Route not found. Available: /health, /v1/completions, /v1/chat/completions, /api/chat, /api/generate, /api/tags"
-                })),
-            )
-        });
-    let router = super::ollama::add_ollama_stubs(router);
+        .routes(super::ollama::ollama_stub_table())
+        .finish();
     super::auth::layer(auth_gate, router)
 }
 

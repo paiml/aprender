@@ -87,26 +87,61 @@ pub struct AprMcpServer {
     /// `default_worker_dispatch_is_the_real_tool_dispatcher` asserts it
     /// directly.
     #[cfg(feature = "native")]
-    worker_dispatch: crate::tools::DispatchFn,
+    worker_dispatch: WorkerDispatchFn,
+    /// The tools this server serves (PMAT-3954). apr's own set from `inventory` for
+    /// [`Self::new`]; a caller's set for [`Self::with_tools`]. Every `tools/*` path —
+    /// the sync one and the worker threads — dispatches through THIS index, never a global.
+    index: Arc<crate::tools::ToolIndex>,
+    /// `serverInfo.name` / `serverInfo.version` answered by `initialize`.
+    server_name: String,
+    server_version: String,
 }
 
+/// The worker seam's signature: [`crate::tools::DispatchFn`] plus the index to dispatch
+/// through, so a worker thread serves the server's OWN tools (PMAT-3954).
+#[cfg(feature = "native")]
+type WorkerDispatchFn = fn(
+    &crate::tools::ToolIndex,
+    &serde_json::Value,
+    &mpsc::Receiver<()>,
+    Option<&NotificationSink>,
+    Option<serde_json::Value>,
+) -> ToolCallResult;
+
+#[cfg(feature = "apr-tools")]
 impl Default for AprMcpServer {
     fn default() -> Self {
+        Self::with_tools(crate::SERVER_NAME, env!("CARGO_PKG_VERSION"), tool_index())
+    }
+}
+
+impl AprMcpServer {
+    /// Construct apr's server: every tool registered through `inventory`.
+    #[cfg(feature = "apr-tools")]
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Construct a server for a CALLER's tool set (PMAT-3954): `initialize` answers
+    /// `name`/`version`, `tools/list` is exactly `index`, and `tools/call` dispatches
+    /// through it — on the sync path and in every worker thread. No apr tool is served.
+    #[must_use]
+    pub fn with_tools(
+        name: impl Into<String>,
+        version: impl Into<String>,
+        index: Arc<crate::tools::ToolIndex>,
+    ) -> Self {
         Self {
             in_flight: InFlight::default(),
             #[cfg(feature = "native")]
             workers: Vec::new(),
             #[cfg(feature = "native")]
             worker_dispatch: dispatch_tool_call_with_sink,
+            index,
+            server_name: name.into(),
+            server_version: version.into(),
         }
-    }
-}
-
-impl AprMcpServer {
-    /// Construct a new server.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
     }
 
     /// Dispatch a single JSON-RPC request synchronously.
@@ -177,8 +212,8 @@ impl AprMcpServer {
                     "tools": { "listChanged": false }
                 },
                 "serverInfo": {
-                    "name": crate::SERVER_NAME,
-                    "version": env!("CARGO_PKG_VERSION"),
+                    "name": self.server_name,
+                    "version": self.server_version,
                 },
             }),
         )
@@ -195,7 +230,7 @@ impl AprMcpServer {
     /// emitted from this path.
     fn handle_tools_call_sync(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
         let (_tx, rx) = mpsc::channel::<()>();
-        let result = dispatch_tool_call(&request.params, &rx, None);
+        let result = dispatch_tool_call(&self.index, &request.params, &rx, None);
         JsonRpcResponse::success(
             request.id.clone(),
             serde_json::to_value(result).unwrap_or_else(|_| serde_json::json!({})),
@@ -243,8 +278,13 @@ impl AprMcpServer {
         let progress_token = extract_progress_token(&request.params);
         let (_tx, rx) = mpsc::channel::<()>();
         let sink_for_dispatch = progress_token.as_ref().map(|_| sink);
-        let result =
-            dispatch_tool_call_with_sink(&request.params, &rx, sink_for_dispatch, progress_token);
+        let result = dispatch_tool_call_with_sink(
+            &self.index,
+            &request.params,
+            &rx,
+            sink_for_dispatch,
+            progress_token,
+        );
         Some(JsonRpcResponse::success(
             request.id.clone(),
             serde_json::to_value(result).unwrap_or_else(|_| serde_json::json!({})),
@@ -261,7 +301,7 @@ impl AprMcpServer {
     /// edit here.
     #[must_use]
     pub fn tool_definitions(&self) -> Vec<ToolDefinition> {
-        tool_index().definitions().to_vec()
+        self.index.definitions().to_vec()
     }
 
     /// Register a new in-flight request and return its cancel receiver.
@@ -317,7 +357,7 @@ impl AprMcpServer {
     /// # Errors
     /// Returns an error if stdin/stdout I/O fails.
     #[cfg(feature = "native")]
-    pub fn run_stdio(&mut self) -> anyhow::Result<()> {
+    pub fn run_stdio(&mut self) -> std::io::Result<()> {
         let stdin = std::io::stdin();
         let reader = stdin.lock();
         self.serve_stream(reader, Arc::new(Mutex::new(std::io::stdout())))
@@ -360,7 +400,7 @@ impl AprMcpServer {
     /// reported only AFTER the drain, so a failed session still delivers the
     /// answers it already owes.
     #[cfg(feature = "native")]
-    pub fn serve_stream<R, W>(&mut self, reader: R, out: Arc<Mutex<W>>) -> anyhow::Result<()>
+    pub fn serve_stream<R, W>(&mut self, reader: R, out: Arc<Mutex<W>>) -> std::io::Result<()>
     where
         R: std::io::BufRead,
         W: std::io::Write + Send + 'static,
@@ -378,7 +418,7 @@ impl AprMcpServer {
     /// The read loop proper. Separated from [`Self::serve_stream`] so that the
     /// worker drain wraps it, rather than sitting on one of its exits.
     #[cfg(feature = "native")]
-    fn read_loop<R, W>(&mut self, mut reader: R, out: &Arc<Mutex<W>>) -> anyhow::Result<()>
+    fn read_loop<R, W>(&mut self, mut reader: R, out: &Arc<Mutex<W>>) -> std::io::Result<()>
     where
         R: std::io::BufRead,
         W: std::io::Write + Send + 'static,
@@ -488,7 +528,7 @@ impl AprMcpServer {
         &mut self,
         req: JsonRpcRequest,
         stdout: &Arc<Mutex<W>>,
-    ) -> anyhow::Result<()>
+    ) -> std::io::Result<()>
     where
         W: std::io::Write + Send + 'static,
     {
@@ -543,7 +583,7 @@ impl AprMcpServer {
         &mut self,
         req: JsonRpcRequest,
         stdout: &Arc<Mutex<W>>,
-    ) -> anyhow::Result<()>
+    ) -> std::io::Result<()>
     where
         W: std::io::Write + Send + 'static,
     {
@@ -577,6 +617,7 @@ impl AprMcpServer {
         // error rather than unwrapping so we stay in the "no panics" lane.
         let builder = std::thread::Builder::new().name(format!("apr-mcp-call-{id}"));
         let dispatch = self.worker_dispatch;
+        let index = Arc::clone(&self.index);
         let spawn_result = builder.spawn(move || {
             // FALSIFY-MCP-DRAIN-002/005: dispatch runs INSIDE worker_response,
             // never beside it. Calling `dispatch(...)` directly here and
@@ -585,7 +626,7 @@ impl AprMcpServer {
             // turn red.
             let resp = Self::worker_response(&id_for_worker, || {
                 let sink_ref = progress_token.as_ref().map(|_| &sink);
-                dispatch(&params, &cancel_rx, sink_ref, progress_token)
+                dispatch(&index, &params, &cancel_rx, sink_ref, progress_token)
             });
             // Best-effort: a broken stdout means the client disconnected,
             // which we can't recover from anyway.
@@ -628,11 +669,12 @@ impl AprMcpServer {
 /// the [`dispatch_tool_call_with_sink`] variant exposes the
 /// FALSIFY-MCP-PROGRESS-001 path.
 fn dispatch_tool_call(
+    index: &crate::tools::ToolIndex,
     params: &serde_json::Value,
     cancel_rx: &mpsc::Receiver<()>,
     sink: Option<&NotificationSink>,
 ) -> ToolCallResult {
-    dispatch_tool_call_with_sink(params, cancel_rx, sink, None)
+    dispatch_tool_call_with_sink(index, params, cancel_rx, sink, None)
 }
 
 /// Full dispatch variant with optional `NotificationSink` + `progressToken`.
@@ -644,6 +686,7 @@ fn dispatch_tool_call(
 /// `ToolCallResult`. Tools that don't support streaming ignore the sink and
 /// run synchronously.
 fn dispatch_tool_call_with_sink(
+    index: &crate::tools::ToolIndex,
     params: &serde_json::Value,
     cancel_rx: &mpsc::Receiver<()>,
     sink: Option<&NotificationSink>,
@@ -664,7 +707,7 @@ fn dispatch_tool_call_with_sink(
     let Some(name) = name else {
         return ToolCallResult::error("Missing tool name");
     };
-    match tool_index().dispatch_for(name) {
+    match index.dispatch_for(name) {
         Some(dispatch_fn) => dispatch_fn(&arguments, cancel_rx, sink, progress_token),
         None => ToolCallResult::error(format!("Unknown tool: {name}")),
     }
@@ -675,9 +718,10 @@ fn dispatch_tool_call_with_sink(
 /// (FALSIFY-INVENTORY-002) if two tools advertise the same name, so a
 /// duplicate-registration regression fails every test that hits the
 /// dispatcher rather than silently shadowing one entry.
-fn tool_index() -> &'static crate::tools::ToolIndex {
-    static INDEX: std::sync::OnceLock<crate::tools::ToolIndex> = std::sync::OnceLock::new();
-    INDEX.get_or_init(crate::tools::ToolIndex::from_inventory)
+#[cfg(feature = "apr-tools")]
+fn tool_index() -> Arc<crate::tools::ToolIndex> {
+    static INDEX: std::sync::OnceLock<Arc<crate::tools::ToolIndex>> = std::sync::OnceLock::new();
+    Arc::clone(INDEX.get_or_init(|| Arc::new(crate::tools::ToolIndex::from_inventory())))
 }
 
 /// Pull `params._meta.progressToken` out of a `tools/call` request. Returns
@@ -823,11 +867,11 @@ fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
 fn write_response<W: std::io::Write>(
     stdout: &Arc<Mutex<W>>,
     resp: &JsonRpcResponse,
-) -> anyhow::Result<()> {
+) -> std::io::Result<()> {
     let json = serde_json::to_string(resp)?;
     let mut guard = stdout
         .lock()
-        .map_err(|e| anyhow::anyhow!("stdout mutex poisoned: {e}"))?;
+        .map_err(|e| std::io::Error::other(format!("stdout mutex poisoned: {e}")))?;
     writeln!(&mut *guard, "{json}")?;
     guard.flush()?;
     Ok(())
@@ -841,17 +885,17 @@ fn write_response<W: std::io::Write>(
 fn write_notification<W: std::io::Write>(
     stdout: &Arc<Mutex<W>>,
     notif: &JsonRpcNotification,
-) -> anyhow::Result<()> {
+) -> std::io::Result<()> {
     let json = notif.to_json_line()?;
     let mut guard = stdout
         .lock()
-        .map_err(|e| anyhow::anyhow!("stdout mutex poisoned: {e}"))?;
+        .map_err(|e| std::io::Error::other(format!("stdout mutex poisoned: {e}")))?;
     writeln!(&mut *guard, "{json}")?;
     guard.flush()?;
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "apr-tools"))] // drives apr's own tools; the caller-set path is tests/falsify_toolset_generic.rs
 #[allow(clippy::disallowed_methods)] // serde_json::json! expands to code that hits unwrap()
 mod tests {
     use super::*;
@@ -1513,6 +1557,7 @@ mod tests {
     /// by some other error the server might produce for id=2.
     #[cfg(feature = "native")]
     fn panicking_dispatch(
+        _index: &crate::tools::ToolIndex,
         _args: &serde_json::Value,
         _cancel_rx: &mpsc::Receiver<()>,
         _sink: Option<&NotificationSink>,
@@ -1611,6 +1656,7 @@ mod tests {
         let (_cancel_tx, cancel_rx) = mpsc::channel();
 
         let result = (server.worker_dispatch)(
+            &server.index,
             &serde_json::json!({ "name": "apr.version", "arguments": {} }),
             &cancel_rx,
             None,

@@ -32,9 +32,8 @@ pub(crate) async fn safetensors_generate_handler(
         prompt.chars().map(|c| c as u32).collect()
     };
 
-    // PMAT-103 FIX: Use generate_with_cache for O(n) generation
-    // Previous code used generate() which calls forward() on ALL tokens each step = O(n²)
-    // generate_with_cache() uses KV cache for incremental generation = O(n)
+    // #4269: generation goes through `st_cpu_generate` (safetensors.rs), the
+    // engine's Session over the KV-cached StCpuForward — O(n), as PMAT-103 required.
     let start = Instant::now();
     let temperature = request
         .get("temperature")
@@ -67,7 +66,7 @@ pub(crate) async fn safetensors_generate_handler(
                     .into_response();
             }
         };
-        match t.generate_with_cache(&input_ids, &gen_config) {
+        match st_cpu_generate(&t, &input_ids, &gen_config) {
             Ok(ids) => ids,
             Err(e) => {
                 return (

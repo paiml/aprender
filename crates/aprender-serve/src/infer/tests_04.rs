@@ -321,6 +321,7 @@ mod tests {
     #[test]
     fn test_inference_result_clone() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "output text".to_string(),
             tokens: vec![1, 2, 3],
             input_token_count: 1,
@@ -330,6 +331,7 @@ mod tests {
             load_ms: 10.0,
             format: "GGUF".to_string(),
             used_gpu: true,
+            gpu_attempted: true,
         };
 
         let cloned = result.clone();
@@ -347,6 +349,7 @@ mod tests {
     #[test]
     fn test_inference_result_debug() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -356,6 +359,7 @@ mod tests {
             load_ms: 1.0,
             format: "Mock".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
 
         let debug_str = format!("{:?}", result);

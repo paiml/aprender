@@ -20,6 +20,92 @@ use super::{CompletionRequest, CompletionResponse, LlmDriver, Message, ToolCall}
 use crate::agent::result::{AgentError, DriverError, StopReason, TokenUsage};
 use crate::serve::backends::PrivacyTier;
 
+/// Which device `apr serve` is told to use (#3978).
+///
+/// `apr code` used to hardcode `--gpu`, so it could not be put on the CPU at
+/// all: every CPU-lane `code` cell of the CRUX dogfood was a refusal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ServeBackend {
+    /// `apr serve run --gpu` (the long-standing default, PMAT-181).
+    #[default]
+    Gpu,
+    /// `apr serve run --no-gpu`.
+    Cpu,
+}
+
+/// How `apr code` launches and talks to its `apr serve` child (#3978).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ServeLaunchOptions {
+    /// The device flag passed to `apr serve run`.
+    pub backend: ServeBackend,
+    /// `apr code --max-tokens`: when set, EVERY request asks for exactly this
+    /// many tokens. It replaces the manifest value AND the
+    /// `APR_AGENT_MAX_TOKENS_CAP` cap, because a caller that pins generation
+    /// length (CRUX parity, quorum Q5) must get the length it asked for.
+    pub max_tokens: Option<u32>,
+    /// `apr code --thinking on|off` (#3723): sent on EVERY request as
+    /// `chat_template_kwargs.enable_thinking`, which `apr serve` renders through the model's
+    /// own chat template. `None` sends nothing (the server's default, thinking OFF).
+    pub think: Option<bool>,
+}
+
+/// #3723: put the thinking mode on an OpenAI request body, in the vLLM/SGLang spelling
+/// `apr serve` accepts. `None` leaves the body untouched.
+pub(crate) fn apply_thinking(body: &mut serde_json::Value, think: Option<bool>) {
+    if let Some(t) = think {
+        body["chat_template_kwargs"] = serde_json::json!({ "enable_thinking": t });
+    }
+}
+
+/// The `apr serve run` argv for one launch. Split out so the flag set is
+/// testable without spawning anything.
+fn serve_args(model_path: &std::path::Path, port: u16, opts: &ServeLaunchOptions) -> Vec<String> {
+    vec![
+        "serve".into(),
+        "run".into(),
+        model_path.to_string_lossy().into_owned(),
+        "--port".into(),
+        port.to_string(),
+        "--host".into(),
+        "127.0.0.1".into(),
+        match opts.backend {
+            ServeBackend::Gpu => "--gpu".into(),
+            ServeBackend::Cpu => "--no-gpu".into(),
+        },
+    ]
+}
+
+/// A free loopback port, chosen by the OS (#3978).
+///
+/// The port used to be `19384 + pid % 1000`, so two `apr code` processes whose
+/// pids agreed mod 1000 asked for the same port and the second child failed to
+/// bind (or, worse, the second DRIVER connected to the first one's server).
+/// Binding port 0 makes the kernel pick a port no listener holds. The listener
+/// is dropped just before the child binds, which leaves a small window;
+/// [`is_addr_in_use`] makes losing that race a relaunch, not a failure.
+fn reserve_port() -> std::io::Result<u16> {
+    let l = std::net::TcpListener::bind(("127.0.0.1", 0))?;
+    Ok(l.local_addr()?.port())
+}
+
+/// Did a startup failure come from the port being taken?
+fn is_addr_in_use(msg: &str) -> bool {
+    let m = msg.to_ascii_lowercase();
+    m.contains("address already in use") || m.contains("addrinuse") || m.contains("address in use")
+}
+
+/// The `max_tokens` one request asks for. An explicit `apr code --max-tokens`
+/// (#3978) is the length asked for, uncapped. Otherwise it is the manifest's value
+/// under the `APR_AGENT_MAX_TOKENS_CAP` cap (default 1024, PMAT-170).
+fn effective_max_tokens(override_: Option<u32>, requested: u32, cap_env: Option<&str>) -> u32 {
+    override_.unwrap_or_else(|| {
+        requested.min(cap_env.and_then(|v| v.parse::<u32>().ok()).unwrap_or(1024))
+    })
+}
+
+/// How many times a launch is retried after losing the port race.
+const PORT_ATTEMPTS: usize = 3;
+
 /// Driver that uses `apr serve` subprocess for inference.
 pub struct AprServeDriver {
     /// Base URL for the local server (e.g., `http://127.0.0.1:19384`)
@@ -33,6 +119,10 @@ pub struct AprServeDriver {
     /// Model file size in bytes (used to scale the startup-ready timeout
     /// for large MoE GGUFs). `None` if stat failed at launch time.
     model_size_bytes: Option<u64>,
+    /// `apr code --max-tokens` (#3978); see [`ServeLaunchOptions::max_tokens`].
+    max_tokens_override: Option<u32>,
+    /// `apr code --thinking` (#3723); see [`ServeLaunchOptions::think`].
+    think: Option<bool>,
 }
 
 impl Drop for AprServeDriver {
@@ -69,16 +159,47 @@ impl Drop for AprServeDriver {
 }
 
 impl AprServeDriver {
-    /// Launch `apr serve run` and wait for readiness.
-    ///
-    /// Picks a random port, spawns the subprocess, polls the health
-    /// endpoint until ready (max 30s). Returns error if `apr` not
-    /// found or server fails to start.
+    /// Launch `apr serve run` on the GPU and wait for readiness.
     pub fn launch(model_path: PathBuf, context_window: Option<usize>) -> Result<Self, AgentError> {
-        let apr_path = find_apr_binary()?;
+        Self::launch_with(model_path, context_window, &ServeLaunchOptions::default())
+    }
 
-        // Pick a random high port to avoid conflicts
-        let port = 19384 + (std::process::id() % 1000) as u16;
+    /// Launch `apr serve run` with explicit options (#3978) and wait for readiness.
+    ///
+    /// The port is picked by the OS ([`reserve_port`]). A launch whose child
+    /// lost the port race is retried on a fresh port, up to [`PORT_ATTEMPTS`]
+    /// times. Returns error if `apr` is not found or the server fails to start.
+    pub fn launch_with(
+        model_path: PathBuf,
+        context_window: Option<usize>,
+        opts: &ServeLaunchOptions,
+    ) -> Result<Self, AgentError> {
+        let mut last = None;
+        for _ in 0..PORT_ATTEMPTS {
+            let port = reserve_port().map_err(|e| {
+                AgentError::Driver(DriverError::InferenceFailed(format!(
+                    "could not reserve a loopback port for apr serve: {e}"
+                )))
+            })?;
+            match Self::launch_on_port(&model_path, context_window, opts, port) {
+                Err(e) if is_addr_in_use(&e.to_string()) => last = Some(e),
+                other => return other,
+            }
+        }
+        Err(last.unwrap_or_else(|| {
+            AgentError::Driver(DriverError::InferenceFailed(
+                "apr serve: no launch attempted".into(),
+            ))
+        }))
+    }
+
+    fn launch_on_port(
+        model_path: &std::path::Path,
+        context_window: Option<usize>,
+        opts: &ServeLaunchOptions,
+        port: u16,
+    ) -> Result<Self, AgentError> {
+        let apr_path = find_apr_binary()?;
         let base_url = format!("http://127.0.0.1:{port}");
 
         let model_name = model_path
@@ -91,19 +212,10 @@ impl AprServeDriver {
         // Q4K/Q6K GEMV kernels which produce correct output. BATCHED_PREFILL=0 disables
         // the FP8 path while keeping CUDA acceleration for decode tokens.
         let mut cmd = Command::new(&apr_path);
-        cmd.args([
-            "serve",
-            "run",
-            &model_path.to_string_lossy(),
-            "--port",
-            &port.to_string(),
-            "--host",
-            "127.0.0.1",
-            "--gpu",
-        ])
-        .env("BATCHED_PREFILL", "0")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        cmd.args(serve_args(model_path, port, opts))
+            .env("BATCHED_PREFILL", "0")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
         // Issue #1712: kernel-enforced reaping. Drop on AprServeDriver only fires
         // for graceful Rust exit — if `apr code` is killed by `timeout`, SIGTERM,
@@ -118,9 +230,16 @@ impl AprServeDriver {
             )))
         })?;
 
-        eprintln!("Launched apr serve on port {port} (pid {})", child.id());
+        eprintln!(
+            "Launched apr serve on port {port} (pid {}, {})",
+            child.id(),
+            match opts.backend {
+                ServeBackend::Gpu => "--gpu",
+                ServeBackend::Cpu => "--no-gpu",
+            }
+        );
 
-        let model_size_bytes = std::fs::metadata(&model_path).ok().map(|m| m.len());
+        let model_size_bytes = std::fs::metadata(model_path).ok().map(|m| m.len());
 
         let mut driver = Self {
             base_url,
@@ -128,6 +247,8 @@ impl AprServeDriver {
             _child: child,
             context_window_size: context_window.unwrap_or(4096),
             model_size_bytes,
+            max_tokens_override: opts.max_tokens,
+            think: opts.think,
         };
 
         // Wait for server to be ready
@@ -286,11 +407,11 @@ impl AprServeDriver {
         // without KV cache. At ~0.5 tok/s (30B-MoE-no-KV), 1024 tokens
         // takes ~34 min — exceeds reasonable per-turn budgets. Allow the
         // operator (or bench harness) to dial down for slow models.
-        let max_tokens_cap = std::env::var("APR_AGENT_MAX_TOKENS_CAP")
-            .ok()
-            .and_then(|v| v.parse::<u32>().ok())
-            .unwrap_or(1024);
-        let max_tokens = request.max_tokens.min(max_tokens_cap);
+        let max_tokens = effective_max_tokens(
+            self.max_tokens_override,
+            request.max_tokens,
+            std::env::var("APR_AGENT_MAX_TOKENS_CAP").ok().as_deref(),
+        );
 
         // 3-knob toolkit (qwen3-moe-sampling-v1 + qwen3-moe-repetition-penalty-v1):
         // operator env-var overrides for sampling parameters. When set, these
@@ -333,6 +454,7 @@ impl AprServeDriver {
         if let Some(v) = seed {
             body["seed"] = serde_json::json!(v);
         }
+        apply_thinking(&mut body, self.think);
         body
     }
 }

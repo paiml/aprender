@@ -112,7 +112,6 @@ performance:
 # =============================================================================
 
 falsification:
-  tests_file: "tests/contracts/rope_contract.rs"
 
   FALSIFY-ROPE-001:
     name: "Norm preservation"
@@ -157,3 +156,151 @@ qa_gate:
     - "Performance >= reference at all sizes"
     - "All FALSIFY tests pass"
   pass_criteria: "All checks pass"
+
+proof_obligations:
+- id: RP-PRE-001
+  type: precondition
+  property: Input dimension is even, position non-negative
+  formal: 'd mod 2 = 0 ∧ d > 0 ∧ m ≥ 0 ∧ ∀i: isFinite(x_i)'
+- id: RP-POST-002
+  type: postcondition
+  property: Output has same dimension as input, all elements finite
+  formal: 'len(out) = len(x) ∧ ∀i: isFinite(out_i)'
+  requires: ROPE-PRE-001
+  lean:
+    theorem: ProvableContracts.Rope.ropeList_length
+    module: ProvableContracts.Theorems.Rope
+    status: proved
+    notes: 'Length preservation proved over ℝ (RoPE maps ℝ^d → ℝ^d via a per-pair
+      map, so len(out)=len(x)); real-valued outputs are always finite, so the
+      analytic content is discharged. The f32/IEEE isFinite(out_i) check is a
+      runtime concern.'
+- id: RP-FRM-003
+  type: frame
+  property: Input vector and position unchanged
+  formal: modifies(output) ∧ preserves(x, m, θ)
+- id: RP-INV-004
+  type: invariant
+  property: Norm preservation
+  formal: '|‖RoPE(x, m)‖ - ‖x‖| < ε'
+  tolerance: 1.0e-05
+  applies_to: all
+  lean:
+    theorem: ProvableContracts.Rope.ropePairs_normSq
+    module: ProvableContracts.Theorems.Rope
+    status: proved
+    depends_on:
+    - Real.sin_sq_add_cos_sq
+    notes: 'Whole-vector norm preservation ‖RoPE(x,m)‖ = ‖x‖ (equivalently on the
+      squared norm), reduced pairwise to rope_norm_sq, which uses sin²+cos²=1.'
+- id: RP-INV-005
+  type: invariant
+  property: Relative position encoding
+  formal: ⟨RoPE(q, m), RoPE(k, n)⟩ = f(q, k, m-n)
+  applies_to: all
+  lean:
+    theorem: ProvableContracts.Rope.rope_relative
+    module: ProvableContracts.Theorems.Rope
+    status: proved
+    depends_on:
+    - Real.cos_sub
+    - Real.sin_sub
+    notes: '⟨R(a)q, R(b)k⟩ = ⟨q, R(b−a)k⟩, so with a=mθ, b=nθ the inner product
+      depends only on n−m. Pure polynomial identity after cos_sub/sin_sub.'
+- id: RP-EQ-006
+  type: equivalence
+  property: SIMD matches scalar
+  tolerance: 4.0
+  applies_to: simd
+- id: RP-BND-007
+  type: bound
+  property: Output bounded by input norm
+  formal: ‖RoPE(x, m)‖ ≤ ‖x‖ + ε
+  applies_to: all
+  lean:
+    theorem: ProvableContracts.Rope.ropePairs_norm_le
+    module: ProvableContracts.Theorems.Rope
+    status: proved
+    depends_on:
+    - ProvableContracts.Rope.ropePairs_normSq
+    notes: 'Immediate from norm equality: ‖RoPE(x,m)‖ = ‖x‖ ≤ ‖x‖ + ε for ε ≥ 0.'
+
+kani_harnesses:
+- id: KANI-RP-001
+  obligation: RP-INV-001
+  property: Norm preservation for small vectors
+  bound: 4
+  strategy: stub_float
+  harness: verify_rope_norm_preservation
+- id: KANI-ROPE_K-002
+  obligation: Input dimension is even, position non-negative
+  property: Input dimension is even, position non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_K-003
+  obligation: Output has same dimension as input, all elements finite
+  property: Output has same dimension as input, all elements finite
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_K-004
+  obligation: Input vector and position unchanged
+  property: Input vector and position unchanged
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_K-005
+  obligation: Norm preservation
+  property: Norm preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_K-006
+  obligation: Relative position encoding
+  property: Relative position encoding
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_K-007
+  obligation: SIMD matches scalar
+  property: SIMD matches scalar
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_K-008
+  obligation: Output bounded by input norm
+  property: Output bounded by input norm
+  bound: 8
+  strategy: stub_float
+
+falsification_tests:
+- id: FALSIFY-RP-001
+  rule: Norm preservation
+  prediction: ‖RoPE(x, m)‖ ≈ ‖x‖ for random x, m
+  test: proptest with random vectors and positions
+  if_fails: sin/cos computation error or pair indexing bug
+- id: FALSIFY-RP-002
+  rule: Relative position
+  prediction: dot(RoPE(q,m), RoPE(k,n)) = dot(RoPE(q,0), RoPE(k,n-m))
+  test: proptest verifying translation invariance of inner product
+  if_fails: Incorrect frequency computation
+- id: FALSIFY-RP-003
+  rule: SIMD equivalence
+  prediction: '|rope_avx2(x) - rope_scalar(x)| < 4 ULP'
+  test: proptest comparing implementations
+  if_fails: SIMD sincos approximation differs
+- id: FALSIFY-RP-004
+  rule: Zero position
+  prediction: RoPE(x, 0) = x (identity at position 0)
+  test: direct test with m=0
+  if_fails: Off-by-one in position indexing
+- id: FALSIFY-RP-005
+  rule: Precondition - odd dimension
+  prediction: RoPE with odd d panics or returns Err
+  test: 'proptest: random odd-dimension vectors'
+  if_fails: Missing even-dimension validation
+- id: FALSIFY-RP-006
+  rule: Frame condition
+  prediction: Input vector unchanged after RoPE application
+  test: 'proptest: clone input, apply RoPE, assert clone == original'
+  if_fails: RoPE modifies input buffer
+- id: FALSIFY-RP-007
+  rule: Postcondition - output length
+  prediction: len(RoPE(x, m)) = len(x)
+  test: 'proptest: random inputs, verify length'
+  if_fails: Output allocation mismatch

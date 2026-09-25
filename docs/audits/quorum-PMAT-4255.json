@@ -1,0 +1,44 @@
+{
+  "ticket": "PMAT-4255",
+  "issue": 4255,
+  "pr": 4276,
+  "kind": "diff-review",
+  "head_reviewed": "0d99e732c1cd3ba8c31dd8ccff9af7f3262f0734",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "shape": {
+    "lanes": [
+      "claude-sonnet-5",
+      "claude-sonnet-5",
+      "claude-haiku-4-5"
+    ],
+    "degraded": "same-family",
+    "substitution": "agy gemini-3.1-pro-high 429; sonnet+agy+haiku -> sonnet+sonnet+haiku; no lane shares the author id"
+  },
+  "brief_sha256": "f50999eb198707e958a2a8ffbca0cd4c63deac4f930f8024fa25838e8e66b56c",
+  "diff_sha256": "c2a5a65c3505bc38c47189c50db259e09ca35b3b4fbd239d4b336ce17317ed78",
+  "diff_range": "origin/release/0.69.3 (7ff50ec2a)..0d99e732c1cd3ba8c31dd8ccff9af7f3262f0734",
+  "round": 1,
+  "lanes": [
+    {
+      "lane": "sonnet-A",
+      "model": "claude-sonnet-5",
+      "verdict": "PASS"
+    },
+    {
+      "lane": "sonnet-B",
+      "model": "claude-sonnet-5",
+      "verdict": "PASS",
+      "notes": "re-set after choose is redundant but idempotent"
+    },
+    {
+      "lane": "haiku",
+      "model": "claude-haiku-4-5",
+      "verdict": "PASS"
+    }
+  ],
+  "agreed": true,
+  "verdict": "PASS"
+}

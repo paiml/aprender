@@ -20,9 +20,10 @@ use axum::{
 use futures::stream::Stream;
 
 use super::{
-    build_trace_data, clean_chat_output, format_chat_messages, AppState, ChatChoice,
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ErrorResponse,
-    FinishReason, OpenAIModel, OpenAIModelsResponse, StreamMode, Usage,
+    build_trace_data, clean_chat_output, format_chat_messages,
+    format_chat_messages_for_state_thinking, AppState, ChatChoice, ChatCompletionChunk,
+    ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ErrorResponse, FinishReason,
+    OpenAIModel, OpenAIModelsResponse, StreamMode, Usage,
 };
 use crate::generate::{CancelToken, GenerationConfig, SamplingStrategy};
 use crate::tokenizer::BPETokenizer;
@@ -69,9 +70,14 @@ fn tokenize_chat_prompt(
     tokenizer: &BPETokenizer,
     messages: &[ChatMessage],
     model_hint: Option<&str>,
+    thinking: Option<bool>,
     state: &AppState,
 ) -> Result<Vec<u32>, Response> {
-    let prompt_text = format_chat_messages(messages, model_hint);
+    // #3723: the request's thinking mode; an ON the model's template cannot express is the
+    // client's error, answered by name.
+    let prompt_text =
+        format_chat_messages_for_state_thinking(state, messages, model_hint, thinking)
+            .map_err(|e| fail_response(state, StatusCode::BAD_REQUEST, e.to_string()))?;
     let ids = tokenizer.encode(&prompt_text);
     if ids.is_empty() {
         return Err(fail_response(
@@ -165,11 +171,8 @@ fn reject_unsupported_ignore_eos(
 /// previously hardcoded `if temperature == 0.0 { 1 } else { 40 }`, silently DROPPING
 /// request.top_k — drift from batch.rs, which honors it.
 fn resolve_chat_top_k(temperature: f32, requested: Option<usize>) -> usize {
-    if temperature == 0.0 {
-        1
-    } else {
-        requested.unwrap_or(40)
-    }
+    // #3754: one declaration of the sampling default, shared with `apr run`/`apr chat`.
+    crate::infer::sampling_top_k(temperature, requested)
 }
 
 #[cfg(test)]
@@ -451,6 +454,8 @@ mod pmat821_chat_handler_threading_tests {
             user: None,
             tools: None,
             tool_choice: None,
+            chat_template_kwargs: None,
+            think: None,
             stream_options: None,
         }
     }
@@ -670,6 +675,7 @@ pub(crate) fn build_chat_response(
     tools: Option<&[super::OpenAiTool]>,
     tool_choice: Option<crate::grammar::ToolChoice>,
     timings: Option<super::Timings>,
+    used_gpu: Option<bool>,
 ) -> Response {
     let (brick_trace, step_trace, layer_trace) = build_trace_data(
         trace_level,
@@ -696,6 +702,7 @@ pub(crate) fn build_chat_response(
     };
 
     Json(ChatCompletionResponse {
+        used_gpu,
         id: request_id,
         object: "chat.completion".to_string(),
         created: unix_timestamp(),
@@ -725,7 +732,7 @@ fn sse_event(value: &impl serde::Serialize) -> Option<Result<Event, Infallible>>
         .map(|data| Ok(Event::default().data(data)))
 }
 
-/// Decode a single streamed token, returning the text if non-empty.
+/// Live-stream deltas: decoded RAW, and never split inside a character.
 ///
 /// The decode is deliberately RAW. `clean_chat_output()` must never be applied
 /// per token: it opens with `text.trim_start()` and closes with `.trim()`, so
@@ -739,12 +746,49 @@ fn sse_event(value: &impl serde::Serialize) -> Option<Result<Event, Infallible>>
 /// non-streaming path, which already does it.
 ///
 /// This mirrors the same removal PMAT-759 made on `pregenerated_sse_response`.
-fn decode_token(tokenizer: &BPETokenizer, token_id: u32) -> Option<String> {
-    let text = tokenizer.decode(&[token_id]).ok()?;
-    if text.is_empty() {
-        None
-    } else {
-        Some(text)
+///
+/// Char-safe (#3987): the per-token `decode_token` this replaced decoded each
+/// token by itself, and a byte-level BPE token
+/// can be ONE byte of a multi-byte character, so an accented letter, CJK or emoji
+/// that spans two tokens streamed as two U+FFFD. `streaming_text_deltas` fixed
+/// that for the replayed path (PMAT-758) by holding a delta back while it ends in
+/// U+FFFD; this is the same rule for tokens that have not all arrived yet. The
+/// pending window is decoded as one slice, and is flushed as-is after
+/// [`Self::MAX_PENDING`] tokens or at end of stream, so a token that never
+/// completes a character still reaches the client rather than vanishing.
+pub(crate) struct LiveUtf8Deltas {
+    pending: Vec<u32>,
+}
+
+impl LiveUtf8Deltas {
+    /// A UTF-8 character is at most 4 bytes, so 4 byte-tokens always complete one.
+    const MAX_PENDING: usize = 4;
+
+    pub(crate) fn new() -> Self {
+        Self {
+            pending: Vec::new(),
+        }
+    }
+
+    /// Accept one token; the text that is now safe to send, if any.
+    pub(crate) fn push(&mut self, tokenizer: &BPETokenizer, token_id: u32) -> Option<String> {
+        self.pending.push(token_id);
+        let text = tokenizer.decode(&self.pending).ok()?;
+        if text.ends_with('\u{FFFD}') && self.pending.len() < Self::MAX_PENDING {
+            return None;
+        }
+        self.pending.clear();
+        (!text.is_empty()).then_some(text)
+    }
+
+    /// Whatever is still held back when the stream ends.
+    pub(crate) fn finish(&mut self, tokenizer: &BPETokenizer) -> Option<String> {
+        if self.pending.is_empty() {
+            return None;
+        }
+        let text = tokenizer.decode(&self.pending).ok();
+        self.pending.clear();
+        text.filter(|t| !t.is_empty())
     }
 }
 
@@ -848,7 +892,7 @@ pub(crate) fn streaming_token_sink(
 
 /// Build a true-streaming SSE response with keep-alive (tokens arrive via channel).
 ///
-/// Deltas are raw per-token decodes — see `decode_token`. The `clean` parameter
+/// Deltas are raw, char-safe decodes — see `LiveUtf8Deltas`. The `clean` parameter
 /// this function used to take is gone on purpose: two of its three call sites
 /// passed `true`, and per-token cleaning silently deleted every space and
 /// newline from the stream.
@@ -887,11 +931,12 @@ pub(crate) fn true_streaming_sse_response(
         }
 
         tokio::pin!(token_stream);
+        let mut utf8 = LiveUtf8Deltas::new();
         while let Some(result) = token_stream.next().await {
             match result {
                 Ok(token_id) => {
                     completion_tokens += 1;
-                    if let Some(text) = decode_token(&tokenizer, token_id) {
+                    if let Some(text) = utf8.push(&tokenizer, token_id) {
                         let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
                         if let Some(evt) = sse_event(&chunk) {
                             yield evt;
@@ -904,6 +949,12 @@ pub(crate) fn true_streaming_sse_response(
                     }
                     break;
                 }
+            }
+        }
+        if let Some(text) = utf8.finish(&tokenizer) {
+            let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
+            if let Some(evt) = sse_event(&chunk) {
+                yield evt;
             }
         }
 
@@ -970,11 +1021,16 @@ fn try_gpu_backend(
     };
     // GH-319: Use actual model architecture for chat template detection
     let arch_hint = state.model_architecture();
-    let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
-            Ok(ids) => ids,
-            Err(r) => return Some(r),
-        };
+    let prompt_ids = match tokenize_chat_prompt(
+        &tokenizer,
+        &request.messages,
+        arch_hint.as_deref(),
+        request.thinking(),
+        state,
+    ) {
+        Ok(ids) => ids,
+        Err(r) => return Some(r),
+    };
     let prompt_tokens = prompt_ids.len();
     let prompt_usize: Vec<usize> = prompt_ids.iter().map(|&x| x as usize).collect();
     let (max_tokens, temperature, eos_token_id) =
@@ -984,6 +1040,8 @@ fn try_gpu_backend(
         max_tokens,
         temperature,
         top_k: resolve_chat_top_k(temperature, request.top_k),
+        // #3760: the OpenAI `seed` reaches the GpuModel sampler, as it does the others.
+        seed: request.seed.unwrap_or(crate::sampling::DEFAULT_SEED),
         stop_tokens: chat_stop_tokens(request, eos_token_id)
             .into_iter()
             .map(|t| t as usize)
@@ -1051,6 +1109,7 @@ fn try_gpu_backend(
         // This backend does not separate prefill from decode; §3 timings are
         // absent rather than zero.
         None,
+        None,
     ))
 }
 
@@ -1073,11 +1132,16 @@ fn try_cached_backend(
     };
     // GH-319: Use actual model architecture for chat template detection
     let arch_hint = state.model_architecture();
-    let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
-            Ok(ids) => ids,
-            Err(r) => return Some(r),
-        };
+    let prompt_ids = match tokenize_chat_prompt(
+        &tokenizer,
+        &request.messages,
+        arch_hint.as_deref(),
+        request.thinking(),
+        state,
+    ) {
+        Ok(ids) => ids,
+        Err(r) => return Some(r),
+    };
     let prompt_tokens = prompt_ids.len();
     let (max_tokens, temperature, eos_token_id) =
         chat_gen_params(request, &tokenizer, state.model_eos_token_id());
@@ -1140,6 +1204,7 @@ fn try_cached_backend(
         request_tool_choice(request),
         // This backend does not separate prefill from decode; §3 timings are
         // absent rather than zero.
+        None,
         None,
     ))
 }
@@ -1411,4 +1476,194 @@ mod pmat801_tool_calling_tests {
 }
 
 include!("cuda_chat_backend.rs");
+include!("qwen35_chat_backend.rs");
 include!("chat_completions_stream.rs");
+
+/// #3990 WIRING: the OpenAI chat path tokenizes the GGUF's OWN template when the server
+/// retained one -- not the hand-coded family template. Without this, the helper could be
+/// correct and the handler still call the legacy formatter.
+#[cfg(test)]
+mod chat_template_wiring_3990 {
+    use super::*;
+
+    #[test]
+    fn the_openai_chat_path_tokenizes_the_ggufs_own_template_3990() {
+        let path = "/home/noah/models/qwen2.5-1.5b-instruct-q4_k_m.gguf";
+        if !std::path::Path::new(path).exists() {
+            eprintln!("SKIP: {path} not on this host -- the wiring check did NOT run");
+            return;
+        }
+        let mapped =
+            std::sync::Arc::new(crate::gguf::MappedGGUFModel::from_path(path).expect("map"));
+        let state = AppState::demo()
+            .expect("demo state")
+            .with_mapped_gguf_model(mapped.clone());
+        let tokenizer = require_tokenizer(&state).expect("demo tokenizer");
+        let msgs = [ChatMessage {
+            role: "user".to_string(),
+            content: "Hi".to_string(),
+            ..Default::default()
+        }];
+        let official =
+            super::super::format_chat_messages_official(Some(&mapped.model), &msgs, None);
+        let legacy = format_chat_messages(&msgs, None);
+        // Qwen2.5's own template injects its default system turn; the legacy ChatML does not.
+        assert_ne!(
+            official, legacy,
+            "the probe must distinguish the two renders"
+        );
+        let got = tokenize_chat_prompt(&tokenizer, &msgs, None, None, &state).expect("tokenizes");
+        assert_eq!(
+            got,
+            tokenizer.encode(&official),
+            "the handler did not tokenize the GGUF's own template"
+        );
+    }
+
+    /// #4007: the client's `"model"` string must not choose the template. `"m"` and `"gpt-4"`
+    /// name nothing apr knows; before #3990 they got a plain, marker-less prompt and the reply
+    /// ran on into a fabricated `Human:` turn. The GGUF's own template is rendered regardless.
+    #[test]
+    fn the_clients_model_string_does_not_pick_the_template_4007() {
+        let path = "/home/noah/models/qwen2.5-1.5b-instruct-q4_k_m.gguf";
+        if !std::path::Path::new(path).exists() {
+            eprintln!("SKIP: {path} not on this host -- the #4007 check did NOT run");
+            return;
+        }
+        let mapped =
+            std::sync::Arc::new(crate::gguf::MappedGGUFModel::from_path(path).expect("map"));
+        let state = AppState::demo()
+            .expect("demo state")
+            .with_mapped_gguf_model(mapped.clone());
+        let tokenizer = require_tokenizer(&state).expect("demo tokenizer");
+        let msgs = [ChatMessage {
+            role: "user".to_string(),
+            content: "What is the capital of France?".to_string(),
+            ..Default::default()
+        }];
+        let official =
+            super::super::format_chat_messages_official(Some(&mapped.model), &msgs, None);
+        assert!(
+            official.contains("<|im_start|>assistant\n"),
+            "the official render has ChatML turn markers: {official:?}"
+        );
+        for client_model in ["m", "gpt-4", "default", "apr"] {
+            assert_ne!(
+                format_chat_messages(&msgs, Some(client_model)),
+                official,
+                "the probe must distinguish ({client_model})"
+            );
+            let got = tokenize_chat_prompt(&tokenizer, &msgs, Some(client_model), None, &state)
+                .expect("tokenizes");
+            assert_eq!(
+                got,
+                tokenizer.encode(&official),
+                "\"model\":\"{client_model}\" chose the template (#4007)"
+            );
+        }
+    }
+}
+
+/// #3987: the live stream must not split a character across two deltas.
+/// Measured on gx10: qwen3moe `stream=true` answered 200 with U+FFFD 2/33.
+#[cfg(test)]
+mod live_utf8_deltas_3987_tests {
+    use super::LiveUtf8Deltas;
+    use crate::tokenizer::BPETokenizer;
+
+    /// ids: 0 <unk>, 1 "caf", 2 <0xC3>, 3 <0xA9> ("é" = C3 A9), 4 "Ġquick".
+    fn tok() -> BPETokenizer {
+        let vocab = ["<unk>", "caf", "<0xC3>", "<0xA9>", "Ġquick"];
+        BPETokenizer::new(
+            vocab.iter().map(|s| (*s).to_string()).collect(),
+            vec![],
+            "<unk>",
+        )
+        .expect("test tokenizer")
+    }
+
+    fn stream(ids: &[u32]) -> Vec<String> {
+        let t = tok();
+        let mut d = LiveUtf8Deltas::new();
+        let mut out: Vec<String> = ids.iter().filter_map(|&id| d.push(&t, id)).collect();
+        out.extend(d.finish(&t));
+        out
+    }
+
+    #[test]
+    fn a_two_token_character_arrives_whole() {
+        let deltas = stream(&[1, 2, 3, 4]);
+        assert_eq!(deltas.concat(), "café quick", "deltas: {deltas:?}");
+        assert!(
+            deltas.iter().all(|d| !d.contains('\u{FFFD}')),
+            "deltas: {deltas:?}"
+        );
+    }
+
+    #[test]
+    fn the_leading_space_a_token_carries_survives() {
+        assert_eq!(stream(&[4, 4]), vec![" quick", " quick"]);
+    }
+
+    #[test]
+    fn an_unfinished_character_at_end_of_stream_is_flushed_not_dropped() {
+        let deltas = stream(&[1, 2]);
+        assert_eq!(deltas.concat(), "caf\u{FFFD}", "deltas: {deltas:?}");
+    }
+
+    #[test]
+    fn bytes_that_never_complete_are_released_after_max_pending() {
+        let t = tok();
+        let mut d = LiveUtf8Deltas::new();
+        let got: Vec<Option<String>> = (0..LiveUtf8Deltas::MAX_PENDING)
+            .map(|_| d.push(&t, 3))
+            .collect();
+        assert!(
+            got[..LiveUtf8Deltas::MAX_PENDING - 1]
+                .iter()
+                .all(Option::is_none),
+            "{got:?}"
+        );
+        assert!(
+            got[LiveUtf8Deltas::MAX_PENDING - 1].is_some(),
+            "held forever: {got:?}"
+        );
+    }
+}
+
+/// #3723: `--thinking on` against a template with NO thinking mode is the client's error,
+/// named -- never an OFF answer passed off as ON.
+#[cfg(test)]
+mod thinking_on_refusal_3723 {
+    use super::*;
+
+    #[test]
+    fn thinking_on_is_refused_by_name_when_the_template_has_no_thinking_mode_3723() {
+        let path = "/home/noah/models/qwen2.5-1.5b-instruct-q4_k_m.gguf";
+        if !std::path::Path::new(path).exists() {
+            eprintln!("SKIP: {path} not on this host -- the refusal check did NOT run");
+            return;
+        }
+        let mapped =
+            std::sync::Arc::new(crate::gguf::MappedGGUFModel::from_path(path).expect("map"));
+        let state = AppState::demo()
+            .expect("demo state")
+            .with_mapped_gguf_model(mapped);
+        let tokenizer = require_tokenizer(&state).expect("demo tokenizer");
+        let msgs = [ChatMessage {
+            role: "user".to_string(),
+            content: "Hi".to_string(),
+            ..Default::default()
+        }];
+        assert!(tokenize_chat_prompt(&tokenizer, &msgs, None, Some(false), &state).is_ok());
+        let refused = tokenize_chat_prompt(&tokenizer, &msgs, None, Some(true), &state);
+        assert!(
+            refused.is_err(),
+            "Qwen2.5's template renders ON == OFF; ON must be refused"
+        );
+        assert_eq!(
+            refused.err().map(|r| r.status()),
+            Some(StatusCode::BAD_REQUEST)
+        );
+    }
+}

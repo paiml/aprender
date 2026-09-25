@@ -167,13 +167,24 @@ fn test_is_legacy_gguf_quant() {
     assert!(!is_legacy_gguf_quant(14)); // Q6_K
 
     // No GPU kernel → MUST be gated to CPU (else silent Q4_K garbage):
-    assert!(is_legacy_gguf_quant(1)); // F16 (no GGUF f16 GEMV here)
-    assert!(is_legacy_gguf_quant(7)); // Q5_1 — no GPU kernel
+    // #3477 wrote the GGUF F16 GEMV this comment said did not exist, and
+    // measured it 217/217 exact at `88d25d265`. BF16(30) below is still gated
+    // and still carries the property this test is about.
+    assert!(!is_legacy_gguf_quant(1)); // F16 — GGUF f16 GEMV now exists
+    // #3869/#3884/#3885: IQ4_NL(20), IQ3_S(21) and Q5_1(7) likewise moved to the
+    // GPU-eligible side once each had a kernel measured EXACT against the CPU
+    // decoder on device, with planted faults proven RED first.
+    assert!(!is_legacy_gguf_quant(7)); // Q5_1 — #3885 GEMV kernel
+    assert!(!is_legacy_gguf_quant(20)); // IQ4_NL — #3869 GEMV kernel
+    assert!(!is_legacy_gguf_quant(21)); // IQ3_S — #3884 GEMV kernel
+    assert!(!is_legacy_gguf_quant(16)); // IQ2_XXS — #3950 GEMV kernel, 95/95 measured
+    assert!(!is_legacy_gguf_quant(18)); // IQ3_XXS — #3963 GEMV kernel, 24/24 measured
+    assert!(!is_legacy_gguf_quant(22)); // IQ2_S — #3953 GEMV kernel, 5/5 measured
     assert!(is_legacy_gguf_quant(9)); // Q8_1
-    assert!(is_legacy_gguf_quant(10)); // Q2_K
+    assert!(!is_legacy_gguf_quant(10)); // Q2_K — #3960 GEMV kernel, 3/3 measured
     assert!(is_legacy_gguf_quant(11)); // Q3_K
     assert!(is_legacy_gguf_quant(15)); // Q8_K
-    assert!(is_legacy_gguf_quant(30)); // BF16
+    assert!(!is_legacy_gguf_quant(30)); // BF16 — #3908 GEMV kernel, 0 ULP
     assert!(is_legacy_gguf_quant(100)); // Unknown / IQ* families
 }
 
@@ -212,14 +223,15 @@ fn test_model_has_legacy_quant_checks_qkv_and_gate() {
         "all-Q4K model must be GPU-eligible"
     );
 
-    // Q2_K (type 10) hidden ONLY in the fused QKV tensor must still gate to CPU.
+    // A type with no kernel hidden ONLY in the fused QKV tensor must still gate to
+    // CPU. Was Q2_K(10) until #3960 measured Q2_K's kernel; re-aimed at IQ1_S(19).
     let mut qkv_model = create_test_model_with_config(&config);
     if let OwnedQKVWeights::Fused(t) = &mut qkv_model.layers[0].qkv_weight {
-        t.qtype = 10; // Q2_K — no GPU kernel
+        t.qtype = 19; // IQ1_S — no GPU kernel
     }
     assert!(
         model_has_legacy_quant(&qkv_model),
-        "Q2_K in QKV must force CPU"
+        "IQ1_S in QKV must force CPU"
     );
 
     // Q3_K (type 11) hidden ONLY in the FFN gate must still gate to CPU.
@@ -491,6 +503,7 @@ fn test_clean_model_output_complex_markers() {
 #[test]
 fn test_inference_result_fields() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "Hello".to_string(),
         tokens: vec![1, 2, 3],
         input_token_count: 1,
@@ -500,6 +513,7 @@ fn test_inference_result_fields() {
         load_ms: 50.0,
         format: "GGUF".to_string(),
         used_gpu: false,
+        gpu_attempted: false,
     };
     assert_eq!(result.text, "Hello");
     assert_eq!(result.tokens.len(), 3);

@@ -90,6 +90,16 @@ proof_obligations:
   property: Fit-predict consistency
   formal: Trained classifier predicts only observed classes
   applies_to: all
+- id: DT-INV-008
+  type: invariant
+  property: Split search is rescan-equivalent
+  formal: '∀ x ∀ y: len(x) ≡ len(y) ⇒ splitFast(x, y) ≡ splitRescan(x, y)'
+  applies_to: all
+- id: DT-BND-009
+  type: bound
+  property: Split search is sub-quadratic
+  formal: '∀ n: T_split(2·n) ≤ 3 · T_split(n) ∧ T_split(200000) ≤ 60'
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-DT-001
   rule: Gini bounded
@@ -126,6 +136,25 @@ falsification_tests:
   prediction: Classifier predictions ⊆ training classes
   test: proptest with random training data, check prediction set
   if_fails: Leaf prediction uses incorrect class label
+- id: FALSIFY-DT-008
+  rule: Split search is rescan-equivalent
+  test_harness: cargo test -p aprender-core --lib -- tree::classifier::tests_dt_contract::falsify_dt_008_split_search_matches_rescan_bit_for_bit --exact
+  prediction: find_best_split_for_feature returns the same raw f32 bits, for threshold
+    and gain, as the pre-#3815 rescan on every column
+  test: tree::classifier::tests_dt_contract::falsify_dt_008_split_search_matches_rescan_bit_for_bit
+    — 506 structured and randomised columns compared bit-for-bit against
+    find_best_split_for_feature_rescan, the retained previous implementation
+  if_fails: The candidate scan, its running class counts or its tie-breaking diverged
+    from the rescan — the fitted tree is a different classifier, not a faster one
+- id: FALSIFY-DT-009
+  rule: Split search is sub-quadratic
+  test_harness: cargo test -p aprender-core --lib -- tree::classifier::tests_dt_contract::falsify_dt_009_root_split_search_is_subquadratic --exact
+  prediction: one root split over 200k rows completes far inside 60s
+  test: tree::classifier::tests_dt_contract::falsify_dt_009_root_split_search_is_subquadratic
+    — max_depth=1 fit on a 200k-row continuous column with the wall clock asserted;
+    both sides of the budget measured, 0.25s single-pass against ~1713s rescan
+  if_fails: Each candidate threshold rescans all n samples again — quadratic in rows,
+    which is what blocked fitting past ~100k
 enforcement:
   bounded:
     description: Gini impurity must be in [0, 1)
@@ -197,5 +226,7 @@ qa_gate:
   - mse_constant_zero
   - prediction_deterministic
   - fit_predict_class_range
-  pass_criteria: All 7 falsification tests pass + Kani harnesses verify
+  - split_search_rescan_equivalent
+  - split_search_subquadratic
+  pass_criteria: All 9 falsification tests pass + Kani harnesses verify
   falsification: Use entropy instead of Gini or omit class count normalization

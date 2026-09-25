@@ -1,0 +1,108 @@
+{
+  "model": "$HOME/models/Qwen2.5-0.5B-Instruct-IQ3_M.gguf",
+  "passed": false,
+  "gates": [
+    {
+      "name": "capability_match",
+      "passed": true,
+      "message": "Skipped: Skipped by --skip-capability",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "tensor_contract",
+      "passed": false,
+      "message": "117 contract violations in 117 tensors: blk.0.ffn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_gate.weight' is IQ4_NL (ggml type 20): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; blk.0.ffn_up.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_up.weight' is IQ4_NL (ggml type 20): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; blk.0.attn_k.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.attn_k.weight' is IQ4_NL (ggml type 20): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; ... and 114 more",
+      "value": 117.0,
+      "threshold": 0.0,
+      "duration_ms": 2061,
+      "skipped": false
+    },
+    {
+      "name": "metadata_plausibility",
+      "passed": true,
+      "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)",
+      "value": 4.0,
+      "threshold": 0.0,
+      "duration_ms": 502,
+      "skipped": false
+    },
+    {
+      "name": "classifier_head",
+      "passed": true,
+      "message": "Skipped: Not requested (use --assert-classifier-head)",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "golden_output",
+      "passed": true,
+      "message": "3 golden test cases passed (GPU leg SKIPPED: this build has no cuda feature)",
+      "value": 3.0,
+      "threshold": 3.0,
+      "duration_ms": 186362,
+      "skipped": false
+    },
+    {
+      "name": "throughput",
+      "passed": true,
+      "message": "Skipped: Skipped by --skip-throughput",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "ollama_parity",
+      "passed": true,
+      "message": "Skipped: Skipped by --skip-ollama",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "gpu_speedup",
+      "passed": true,
+      "message": "Skipped: Skipped by --skip-gpu-speedup",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "format_parity",
+      "passed": true,
+      "message": "Skipped: Skipped by --skip-format-parity",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "ptx_parity",
+      "passed": true,
+      "message": "Skipped: Skipped by --skip-ptx-parity",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "gpu_state_isolation",
+      "passed": true,
+      "message": "Skipped: Skipped by --skip-gpu-state",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "performance_regression",
+      "passed": true,
+      "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen2.5-0.5B-Instruct-IQ3_M.json",
+      "value": 0.0,
+      "threshold": 0.1,
+      "duration_ms": 0,
+      "skipped": false
+    }
+  ],
+  "gates_executed": 4,
+  "gates_skipped": 8,
+  "total_duration_ms": 189930,
+  "timestamp": "2026-09-23T07:05:13.606703227+00:00",
+  "summary": "Failed gates: tensor_contract",
+  "system_info": {
+    "cpu_model": "AMD Ryzen Threadripper 7960X 24-Cores",
+    "gpu_model": "NVIDIA GeForce RTX 4090",
+    "gpu_driver": "580.119.02"
+  }
+}

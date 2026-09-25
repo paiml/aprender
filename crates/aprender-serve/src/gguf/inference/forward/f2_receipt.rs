@@ -82,9 +82,14 @@ pub struct F2Receipt {
 
 /// The current receipt schema. Bump it and every old receipt re-validates.
 ///
-/// 2 (#4290): the key gained `build_id`; every schema-1 receipt was keyed on
+/// 2 (#3596): the GPU half of the qwen35 guard is now the batched prefill plus one
+/// decode step. A schema-1 receipt vouched for the per-token path, which a run no
+/// longer takes, so it must not let the batched path skip validation.
+/// 2 (#4290, on the 0.69.4 line): the key gained `build_id`; every schema-1 receipt was keyed on
 /// the version string alone and re-validates.
-pub const F2_RECEIPT_SCHEMA: u32 = 2;
+/// 3: both 2s above meet here. A 0.69.3 schema-2 receipt has no `build_id`, and a
+/// 0.69.4 schema-2 receipt vouched for the per-token path; neither may skip validation.
+pub const F2_RECEIPT_SCHEMA: u32 = 3;
 
 /// Why a run is validating instead of reading the receipt.
 #[derive(Debug, Clone, PartialEq, Eq)]

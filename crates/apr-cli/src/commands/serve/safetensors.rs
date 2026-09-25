@@ -153,50 +153,8 @@ pub(crate) fn start_safetensors_server(model_path: &Path, config: &ServerConfig)
             model_path: model_path_str.clone(),
         };
 
-        // Build base routes (no state required)
-        let base_routes = Router::new()
-            .route(
-                "/health",
-                get({
-                    let inference = inference_enabled;
-                    move || async move {
-                        Json(serde_json::json!({
-                            "status": "healthy",
-                            "inference_enabled": inference
-                        }))
-                    }
-                }),
-            )
-            .route("/tensors", get(move || async move { Json(info.clone()) }));
-
-        // Build inference routes with state (PAR-301)
-        // PMAT-923: Ollama `/api/chat` + `/api/generate` + `/api/tags` reuse the
-        // SAME generation backend as `/v1/chat/completions` so `apr serve` is a
-        // drop-in Ollama HTTP replacement (non-streaming coalesced bodies today).
-        let tags_model = model_path_str.clone();
-        let inference_routes: Router = if inference_enabled {
-            let r = Router::new()
-                .route(
-                    "/v1/chat/completions",
-                    post(safetensors_chat_completions_handler),
-                )
-                .route("/generate", post(safetensors_generate_handler))
-                .route("/api/chat", post(safetensors_ollama_chat_handler))
-                .route("/api/generate", post(safetensors_ollama_generate_handler))
-                .route(
-                    "/api/tags",
-                    get(move || {
-                        let model = tags_model.clone();
-                        async move { Json(super::ollama::ollama_tags_body(&model)) }
-                    }),
-                );
-            super::ollama::add_ollama_stubs(r).with_state(state)
-        } else {
-            Router::new()
-        };
-
-        // Merge all routes into final app
-        let app = base_routes.merge(inference_routes);
+        // #3979: one assembly for both server shapes, so the index cannot drift between them.
+        let app = safetensors_app(info, inference_enabled, state, model_path_str.clone());
 
         let listener = tokio::net::TcpListener::bind(&bind_addr)
             .await
@@ -356,47 +314,8 @@ pub(crate) fn start_sharded_safetensors_server(
             model_path: model_path_str.clone(),
         };
 
-        // Build base routes
-        let base_routes = Router::new()
-            .route(
-                "/health",
-                get({
-                    let inference = inference_enabled;
-                    move || async move {
-                        Json(serde_json::json!({
-                            "status": "healthy",
-                            "inference_enabled": inference
-                        }))
-                    }
-                }),
-            )
-            .route("/tensors", get(move || async move { Json(info.clone()) }));
-
-        // Build inference routes with state (same handlers as single-file)
-        // PMAT-923: Ollama endpoints reuse the same backend (drop-in Ollama).
-        let tags_model = model_path_str.clone();
-        let inference_routes: Router = if inference_enabled {
-            let r = Router::new()
-                .route(
-                    "/v1/chat/completions",
-                    post(safetensors_chat_completions_handler),
-                )
-                .route("/generate", post(safetensors_generate_handler))
-                .route("/api/chat", post(safetensors_ollama_chat_handler))
-                .route("/api/generate", post(safetensors_ollama_generate_handler))
-                .route(
-                    "/api/tags",
-                    get(move || {
-                        let model = tags_model.clone();
-                        async move { Json(super::ollama::ollama_tags_body(&model)) }
-                    }),
-                );
-            super::ollama::add_ollama_stubs(r).with_state(state)
-        } else {
-            Router::new()
-        };
-
-        let app = base_routes.merge(inference_routes);
+        // #3979: one assembly for both server shapes, so the index cannot drift between them.
+        let app = safetensors_app(info, inference_enabled, state, model_path_str.clone());
 
         let listener = tokio::net::TcpListener::bind(&bind_addr)
             .await
@@ -464,3 +383,96 @@ include!("simple.rs");
 #[cfg(all(test, feature = "inference"))]
 #[path = "tests_safetensors_stop_4334.rs"]
 mod tests_safetensors_stop_4334;
+/// #4269 (workstream M of #4263): the ONE SafeTensors CPU generate both serve
+/// handlers (`/v1/chat/completions` in chat.rs, `/generate` in simple.rs) call,
+/// driven through the engine's `realizar::session::Session<StCpuForward>`
+/// instead of `AprTransformer::generate_with_cache`'s own decode loop.
+/// Returns the prompt followed by the generated tokens, as that loop did.
+/// #4334: the stop set and top_p come from the handler's `gen_config`
+/// (`handlers::apr_cpu_generate_config`): the tokenizer's EOS / chat-turn end,
+/// plus token 0, which `apr_transformer::generation::is_eos_token` (GH-330)
+/// stopped on unconditionally and Session has no builtin for.
+#[cfg(feature = "inference")]
+fn st_cpu_generate(
+    model: &realizar::apr_transformer::AprTransformer,
+    input_ids: &[u32],
+    gen_config: &realizar::gguf::QuantizedGenerateConfig,
+) -> std::result::Result<Vec<u32>, String> {
+    use realizar::safetensors_infer::StCpuForward;
+    use realizar::session::Session;
+    Session::new(StCpuForward::new(model))
+        .generate(input_ids, gen_config, &mut |_tok| true)
+        .map(|turn| turn.tokens)
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(all(test, feature = "inference"))]
+#[path = "tests_st_serve_session_4269.rs"]
+mod tests_st_serve_session_4269;
+
+/// #3979: the SafeTensors HTTP surface, in ONE place. It was assembled inline twice
+/// (single-file and sharded), differing only in the `/tensors` payload. Every route is
+/// mounted AND recorded, so `GET /` and the 404 list exactly what is served; the
+/// inspection-only shape (`inference_enabled == false`) serves `/health` and `/tensors`.
+#[cfg(feature = "inference")]
+pub(crate) fn safetensors_app<I>(
+    info: I,
+    inference_enabled: bool,
+    state: SafeTensorsState,
+    tags_model: String,
+) -> axum::Router
+where
+    I: serde::Serialize + Clone + Send + Sync + 'static,
+{
+    use axum::{
+        routing::{get, post},
+        Json,
+    };
+    let base_routes = super::route_index::Indexed::new()
+        .route(
+            "GET",
+            "/health",
+            get(move || async move {
+                Json(serde_json::json!({
+                    "status": "healthy",
+                    "inference_enabled": inference_enabled
+                }))
+            }),
+        )
+        .route(
+            "GET",
+            "/tensors",
+            get(move || async move { Json(info.clone()) }),
+        );
+
+    // PMAT-923: Ollama `/api/chat` + `/api/generate` + `/api/tags` reuse the SAME
+    // generation backend as `/v1/chat/completions`.
+    let inference_routes: super::route_index::Indexed = if inference_enabled {
+        super::route_index::Indexed::new()
+            .route(
+                "POST",
+                "/v1/chat/completions",
+                post(safetensors_chat_completions_handler),
+            )
+            .route("POST", "/generate", post(safetensors_generate_handler))
+            .route("POST", "/api/chat", post(safetensors_ollama_chat_handler))
+            .route(
+                "POST",
+                "/api/generate",
+                post(safetensors_ollama_generate_handler),
+            )
+            .route(
+                "GET",
+                "/api/tags",
+                get(move || {
+                    let model = tags_model.clone();
+                    async move { Json(super::ollama::ollama_tags_body(&model)) }
+                }),
+            )
+            .routes(super::ollama::ollama_stub_table())
+            .with_state(state)
+    } else {
+        super::route_index::Indexed::new()
+    };
+    base_routes.merge(inference_routes).finish()
+}
