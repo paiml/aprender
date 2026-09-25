@@ -1,0 +1,16 @@
+- id: PMAT-4362
+  github_issue: 4362
+  item_type: task
+  title: 'REX-07: day-0 shadow lane: 4B lane as non-voting 4th quorum lane on gx10, writes review-ledger-v1 (#4362) — Ask 2: the gx10 endpoint receipt names the served weights sha256 (model, model_sha256 in provenance)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-60
+  created: 2026-09-25T15:40:00Z
+  updated: 2026-09-25T15:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Ask 2 (paiml/paiml-implement#411 comment 5830891580): record the served weights sha256 in .advisory_lane next to apr; the endpoint half is the gx10 watcher hashing the model file before apr serve loads it and carrying model + model_sha256 into the receipt provenance'
+  - 'The hash is withdrawn (null + why) when the file changed before /health answered; it is never guessed'
+  phases: []
+  subtasks: []
+  estimated_effort: null
