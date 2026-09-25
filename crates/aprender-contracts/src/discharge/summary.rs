@@ -10,7 +10,7 @@
 //! when a GREEN summary lists its theorem. The summary is a claim until EV-9's job regenerates it and diffs
 //! (summary-fresh); a hand edit toward pass is caught there, not here.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -214,6 +214,10 @@ pub struct Discharged {
     pub theorems: BTreeSet<String>,
     /// `None` when the summary grants; otherwise why it grants nothing (`stale discharge`, `lake_exit 1`, …).
     pub withheld: Option<String>,
+    /// Discharged theorems ONT-3b (#4073) dropped because no L4 model covers their module.
+    pub unrefined: BTreeSet<String>,
+    /// Every theorem the summary lists, by the module that proves it.
+    pub module_of: BTreeMap<String, String>,
 }
 
 impl Discharged {
@@ -222,6 +226,20 @@ impl Discharged {
     pub fn grants(&self, theorem: &str) -> bool {
         let t = theorem.trim().trim_matches('"');
         self.theorems.contains(t) || self.theorems.contains(&format!("ProvableContracts.{t}"))
+    }
+
+    /// ONT-3b (#4073): keep only the theorems whose module an L4 model covers (`extraction`/`simulation`, resolving
+    /// `model_of`). The rest move to `unrefined`: discharged, but nothing ties the statement to the Rust.
+    pub fn require_refinement(&mut self, l4_modules: &BTreeSet<String>) {
+        let (kept, dropped) = std::mem::take(&mut self.theorems)
+            .into_iter()
+            .partition(|t| {
+                self.module_of
+                    .get(t)
+                    .is_some_and(|m| l4_modules.contains(m))
+            });
+        self.theorems = kept;
+        self.unrefined = dropped;
     }
 }
 
@@ -262,7 +280,17 @@ pub fn discharged(s: &Summary, current_tree_sha: Option<&str>) -> Discharged {
     } else {
         BTreeSet::new()
     };
-    Discharged { theorems, withheld }
+    let module_of = s
+        .modules
+        .iter()
+        .flat_map(|m| m.theorems.iter().map(|t| (t.clone(), m.path.clone())))
+        .collect();
+    Discharged {
+        theorems,
+        withheld,
+        unrefined: BTreeSet::new(),
+        module_of,
+    }
 }
 
 /// `git rev-parse HEAD:./` in `lean_dir`: the tree a fresh summary must name. `None` outside a git checkout, or

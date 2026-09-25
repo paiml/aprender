@@ -536,13 +536,14 @@ fn grounding() -> &'static Grounding {
             if !dir.is_dir() || !path.is_file() {
                 continue;
             }
-            let discharged = match summary::load(&path) {
+            let mut discharged = match summary::load(&path) {
                 Ok(s) => summary::discharged(&s, summary::current_tree_sha(dir).as_deref()),
                 Err(why) => Discharged {
                     withheld: Some(why),
                     ..Discharged::default()
                 },
             };
+            refine(dir, &mut discharged);
             return Grounding {
                 source: L4Source::Discharge,
                 discharged,
@@ -553,6 +554,42 @@ fn grounding() -> &'static Grounding {
             discharged: Discharged::default(),
         }
     })
+}
+
+/// ONT-3b (#4073): a discharged theorem stays L4 only when an `extraction`/`simulation` model whose `model_of`
+/// resolves covers its module. The workspace walk runs only when the discharge grants something.
+fn refine(lean_dir: &std::path::Path, discharged: &mut Discharged) {
+    use crate::discharge::refinement;
+    if discharged.theorems.is_empty() {
+        return;
+    }
+    let l4 = match refinement::load(lean_dir) {
+        Ok(rec) => {
+            let modules = discharged.module_of.values().cloned().collect();
+            let root = workspace_root(lean_dir);
+            refinement::l4_modules(&refinement::judge(
+                &rec.models,
+                &modules,
+                refinement::workspace_resolver(&root),
+            ))
+        }
+        Err(_) => std::collections::BTreeSet::new(),
+    };
+    discharged.require_refinement(&l4);
+}
+
+/// The nearest ancestor of `dir` whose Cargo.toml has a `[workspace]` table, else `.`.
+fn workspace_root(dir: &std::path::Path) -> std::path::PathBuf {
+    let abs = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    abs.ancestors()
+        .find(|a| {
+            std::fs::read_to_string(a.join("Cargo.toml"))
+                .is_ok_and(|t| t.lines().any(|l| l.trim() == "[workspace]"))
+        })
+        .map_or_else(
+            || std::path::PathBuf::from("."),
+            std::path::Path::to_path_buf,
+        )
 }
 
 /// The discharge summary's grant as this process read it: empty when there is no summary, or it is withheld.
