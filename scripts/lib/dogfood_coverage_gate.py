@@ -151,6 +151,15 @@ def apply_renames(base, head, renames, findings):
             "G2.2 renames FAIL: declared bin rename(s) not applied to the working "
             "ledger (old name still present): " + ", ".join(stale))
         return base, False
+    # A rename must land on a bin the working ledger has: a row pointing at a
+    # typo, or at an unrelated bin, would launder a real deletion (lane a).
+    head_bins = {r["binary"] for r in head}
+    nowhere = sorted(f"{o} -> {n}" for o, n in renames.items() if n not in head_bins)
+    if nowhere:
+        findings.append(
+            "G2.2 renames FAIL: declared rename target(s) not in the working "
+            "ledger: " + ", ".join(nowhere))
+        return base, False
     # A feature string usually leads with the bin name ("alimentar convert");
     # it moves with the rename unless the working ledger kept the old text.
     head_keys = {key(r) for r in head}

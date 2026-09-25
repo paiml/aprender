@@ -381,6 +381,10 @@ selftest_build_repo() {
   cp "$SELF" "$td/scripts/check_dogfood_coverage.sh"
   cp "$REPO_ROOT/$GATE_PY" "$td/$GATE_PY"
   cp "$REPO_ROOT/$IDGUARD" "$td/$IDGUARD"
+  # cp keeps the source mode: from a read-only checkout (a review snapshot) the
+  # later restore-after-mutant `cp` would fail and leak the mutant into every
+  # following row (#4430 lanes).
+  chmod u+w "$td/scripts/check_dogfood_coverage.sh" "$td/$GATE_PY" "$td/$IDGUARD"
 
   for i in 1 2 3; do printf 'fn f%s() {}\n' "$i" > "$td/crates/demo/src/m$i.rs"; done
 
@@ -811,6 +815,10 @@ if [ "${1:-}" = "--self-test" ]; then
   selftest_run "$TD" "bin renamed, rename declared" "GREEN" || FAILED=1
   git -C "$TD" checkout -q -- "$LEDGER"
   selftest_run "$TD" "rename declared, ledger not renamed" "RED" || FAILED=1
+  sed -i 's/^demo,/demo2,/' "$TD/$LEDGER"
+  printf 'demo nosuch\n' > "$TD/$RENAMES"
+  selftest_run "$TD" "rename to a bin not in the ledger" "RED" || FAILED=1
+  git -C "$TD" checkout -q -- "$LEDGER"
   rm -f "${TD:?}/${RENAMES:?}"
   selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
   printf '\n'
