@@ -878,7 +878,7 @@ jobs:
           rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
             | python3 -c 'import json,sys; t=sys.argv[1]; r=next((r for r in json.load(sys.stdin) if r["tag_name"]==t), None); r or sys.exit(f"no release (draft or published) for {t}: the rc tagger must create it as a draft first (#4327)"); print(json.dumps(r))' "$TAG")
           for f in "apr-${TAG}-${T}-cuda.tar.gz" "apr-${TAG}-${T}-cuda.tar.gz.sha256"; do
-            aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next(a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n))' "$f")
+            aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; a=next((a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n), None); a or sys.exit(f"release has no asset {n}"); print(a)' "$f")
             curl -sSfL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" -o "$f" "$API/releases/assets/$aid"
           done
           sha256sum -c "apr-${TAG}-${T}-cuda.tar.gz.sha256"
@@ -956,7 +956,7 @@ jobs:
           rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
             | python3 -c 'import json,sys; t=sys.argv[1]; r=next((r for r in json.load(sys.stdin) if r["tag_name"]==t), None); r or sys.exit(f"no release (draft or published) for {t}: the rc tagger must create it as a draft first (#4327)"); print(json.dumps(r))' "$TAG")
           for f in "apr-${TAG}-${T}-cpu.tar.gz" "apr-${TAG}-${T}-cpu.tar.gz.sha256"; do
-            aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next(a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n))' "$f")
+            aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; a=next((a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n), None); a or sys.exit(f"release has no asset {n}"); print(a)' "$f")
             curl -sSfL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" -o "$f" "$API/releases/assets/$aid"
           done
           sha256sum -c "apr-${TAG}-${T}-cpu.tar.gz.sha256"
