@@ -82,17 +82,21 @@ def load_toml(text):
                 raise FallbackUnreadable("line %d: %r" % (n, line.strip()))
             ed = m.group(1) if m.group(1) is not None else m.group(2)
             cur["edition"] = ed if ed is not None else {"workspace": True}
-        # A multi-line string opens only as `key = """` / `key = '''`. A triple quote anywhere else (a
-        # comment, inside a one-line string) is refused rather than guessed at: guessing wrong skips the
-        # real edition line with no error (#4315 quorum round 2).
-        for delim in ML_DELIMS:
-            if delim in line:
-                m = ML_OPEN.match(line)
-                if not m or m.group(1) != delim:
-                    raise FallbackUnreadable("line %d: a %s outside `key = %s`: %r" % (n, delim, delim, line.strip()))
-                if line.count(delim) % 2 == 1:
-                    in_ml = delim
-                break
+        # A multi-line string opens only as `key = """` / `key = '''`, and only the opener's own
+        # delimiter can close it. A triple quote anywhere else (a comment, a one-line string, after
+        # the close) is refused rather than guessed at: guessing wrong skips the real edition line
+        # with no error (#4315 quorum rounds 2-4).
+        m = ML_OPEN.match(line)
+        if m:
+            delim, rest = m.group(1), line[m.end():]
+            if delim not in rest:
+                in_ml = delim
+            else:
+                body, after = rest.split(delim, 1)
+                if body.endswith("\\") or any(d in after for d in ML_DELIMS):
+                    raise FallbackUnreadable("line %d: an ambiguous one-line %s string: %r" % (n, delim, line.strip()))
+        elif any(d in line for d in ML_DELIMS):
+            raise FallbackUnreadable("line %d: a triple quote outside `key = <triple quote>`: %r" % (n, line.strip()))
     return doc
 
 
@@ -110,6 +114,9 @@ SELF_TEST = [
     ('[package]\nedition = "2021"\ndescription = ' + Q3 + '\nedition = "2018"\n' + Q3 + '\n', "2021", None),
     ('[package]\nedition = "2021"\nreadme = ' + Q3 + 'one line, closed' + Q3 + '\nname = "x"\n', "2021", None),
     ('[package]\n# a stray ' + Q3 + ' in a comment\nedition = "2021"\n', "RAISE", None),
+    ("[package]\nreadme = " + A3 + "see " + Q3 + "ex" + Q3 + " here" + A3 + "\nedition = '2021'\n", "2021", None),
+    ("[package]\nreadme = " + A3 + "a " + Q3 + " b\n" + Q3 + "\n" + A3 + "\nedition = '2021'\n", "2021", None),
+    ('[package]\nreadme = ' + Q3 + 'a' + Q3 + ' # ' + Q3 + '\nedition = "2021"\n', "RAISE", None),
     ('[package]\ndescription = ' + Q3 + '\nend' + Q3 + ' # ' + Q3 + '\nedition = "2021"\n', "RAISE", None),
     ('[package]\ndescription = ' + Q3 + '\nsaid \\' + Q3 + '\nedition = "2021"\n', "RAISE", None),
     ("[package]\ndescription = '" + Q3 + "'\nedition = \"2021\"\n", "RAISE", None),
