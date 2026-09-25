@@ -1,7 +1,7 @@
 {
   "_spec": "APR-RELEASE-001 §11.2 — moves only through `make ont-ratchet` (ONT R-6)",
   "armed_gates": ["validate", "audit", "score", "verify", "enforce", "enforcement-level", "duplicate-stems", "composition", "sigma", "relations", "shapes"],
-  "armed_shapes": ["ont-shapes-v1", "ladder-measured", "ladder-green"],
+  "armed_shapes": ["ont-shapes-v1", "ladder-measured", "ladder-green", "readme-root", "claude-md", "model-setfit-slice", "csv-train"],
   "readme": {"verified_commands":["bash scripts/check_readme_claims.sh"],"withdrawn":[]},
   "claude_md": {"verified_commands":["bash scripts/check_package_includes.sh"],"withdrawn":[]},
   "ont": {
@@ -14,6 +14,6 @@
     "unanchored_but_bindable": 297,
     "formal_prose": 1464,
     "legacy_unresolved_depends_on": 8,
-    "shapes_unarmed": 19
+    "shapes_unarmed": 15
   }
 }
