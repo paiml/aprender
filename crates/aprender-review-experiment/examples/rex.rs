@@ -39,10 +39,20 @@
 //!   the same items). A tag with no timings is refused: it did not run.
 //! - `ratchet check --file F` the andon JSON (arming/green/red). Exit 10 on RED:
 //!   a paired Harrell–Davis p95 rise over the best earlier tag, or a violation.
+//! - `challenge --ledger F --test-version V --id ID --tier B1a --weights-sha W
+//!   --prompt-sha P [--adapter-sha A] --initial-weights-sha W0 --initial-prompt-sha P0
+//!   --cell C --pubkey K --challenger-receipts R --challenger-arm A
+//!   --champion-receipts R --champion-arm A [--h1 holds|fails] [--h2 holds|fails]
+//!   [--contamination-hits N] [--p95-s X] [--budget-p95-s Y]` REX-11: the §5.4
+//!   decision on the sealed test split, appended to the
+//!   `review-champion-challenger-v1` ledger. Both receipt files must verify under
+//!   `--pubkey` (unsigned data cannot promote, R-1); an omitted gate fails.
+//!   Exit 0 promoted, 10 rejected, 11 refused (no evaluation spent).
 
 use aprender_review_experiment::build_corpus::{
     choose, g_candidates, is_green, p_candidates, r_candidates, seal, Mutant, Pr, PER_CLASS,
 };
+use aprender_review_experiment::champion;
 use aprender_review_experiment::corpus::{
     assign_splits, corpus_version, render_manifest, sha256_hex, Item, Split,
 };
@@ -53,7 +63,7 @@ use aprender_review_experiment::pilot::{project, Projection};
 use aprender_review_experiment::prereg;
 use aprender_review_experiment::ratchet;
 use aprender_review_experiment::receipt::{admissible, Arm, Expect, NotRun, Receipt};
-use aprender_review_experiment::score::{collect, score};
+use aprender_review_experiment::score::{collect, score, Scored};
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 
@@ -70,6 +80,7 @@ fn main() -> ExitCode {
         Some("ledger") => ledger_cmd(&args[1..]),
         Some("ladder") => ladder_cmd(&args[1..]),
         Some("ratchet") => ratchet_cmd(&args[1..]),
+        Some("challenge") => challenge_cmd(&args[1..]),
         Some(c @ ("review" | "not-run" | "score" | "admit")) => {
             match flags(&args[1..]).and_then(|f| match c {
                 "review" => review(&f),
@@ -93,7 +104,7 @@ fn main() -> ExitCode {
         },
         _ => {
             eprintln!(
-                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder|ratchet> (see the example docs)"
+                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder|ratchet|challenge> (see the example docs)"
             );
             ExitCode::from(2)
         }
@@ -372,14 +383,7 @@ fn score_cmd(f: &Flags) -> Result<(), String> {
     let path = need(f, "receipts")?;
     let signed = match f.get("pubkey") {
         Some(pk) => {
-            let ok = std::process::Command::new("minisign")
-                .args(["-Vqm", path, "-p", pk])
-                .status()
-                .map_err(|e| format!("minisign: {e}"))?
-                .success();
-            if !ok {
-                return Err(format!("{path}: signature does not verify under {pk}"));
-            }
+            verify_signed(path, pk)?;
             "signed"
         }
         None => "unsigned (exploratory)",
@@ -712,6 +716,138 @@ fn ratchet_cmd(a: &[String]) -> ExitCode {
         _ => {
             eprintln!("usage: rex ratchet record|check --file F ... (see the example docs)");
             ExitCode::from(2)
+        }
+    }
+}
+
+/// `minisign -V` must pass on `path` under `pk`.
+fn verify_signed(path: &str, pk: &str) -> Result<(), String> {
+    let ok = std::process::Command::new("minisign")
+        .args(["-Vqm", path, "-p", pk])
+        .status()
+        .map_err(|e| format!("minisign: {e}"))?
+        .success();
+    if ok {
+        Ok(())
+    } else {
+        Err(format!("{path}: signature does not verify under {pk}"))
+    }
+}
+
+/// One lane's scored rows on the sealed test split (first runs only).
+fn test_rows(path: &str, pk: &str, cell: &str, arm: Arm) -> Result<Vec<Scored>, String> {
+    verify_signed(path, pk)?;
+    let (items, prereg_sha, cv) = corpus()?;
+    let lines = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+    let root = std::path::Path::new(path)
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_default();
+    let expect = Expect {
+        prereg_sha: &prereg_sha,
+        corpus_version: &cv,
+    };
+    let (rows, rejected) = collect(
+        &lines,
+        expect,
+        &ordered(&items, Split::Test, false),
+        |r| r.cell == cell && r.arm == arm && !r.rerun,
+        |p| std::fs::read_to_string(root.join(p)).ok(),
+    );
+    if !rejected.is_empty() {
+        eprintln!("{path}: {} rejected rows", rejected.len());
+    }
+    Ok(rows)
+}
+
+fn opt_bool(f: &Flags, k: &str) -> Result<Option<bool>, String> {
+    match f.get(k).map(String::as_str) {
+        None => Ok(None),
+        Some("holds") => Ok(Some(true)),
+        Some("fails") => Ok(Some(false)),
+        Some(v) => Err(format!("--{k} {v}: holds|fails")),
+    }
+}
+
+fn opt_num<T: std::str::FromStr>(f: &Flags, k: &str) -> Result<Option<T>, String> {
+    f.get(k)
+        .map(|v| v.parse().map_err(|_| format!("--{k} {v}: not a number")))
+        .transpose()
+}
+
+fn challenge(f: &Flags) -> Result<champion::Outcome, String> {
+    let file = need(f, "ledger")?;
+    let ledger: Vec<champion::Decision> = match std::fs::read_to_string(file) {
+        Ok(t) => t
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| serde_json::from_str(l).map_err(|e| format!("{file}: {e}")))
+            .collect::<Result<_, _>>()?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(format!("{file}: {e}")),
+    };
+    let pin = |w: &str, p: &str, a: &str| -> Result<champion::Pin, String> {
+        Ok(champion::Pin {
+            weights_sha256: need(f, w)?.into(),
+            prompt_sha256: need(f, p)?.into(),
+            adapter_sha256: f.get(a).cloned(),
+        })
+    };
+    let initial = pin(
+        "initial-weights-sha",
+        "initial-prompt-sha",
+        "initial-adapter-sha",
+    )?;
+    let (pk, cell) = (need(f, "pubkey")?, need(f, "cell")?);
+    let ch = test_rows(
+        need(f, "challenger-receipts")?,
+        pk,
+        cell,
+        arm_of(need(f, "challenger-arm")?)?,
+    )?;
+    let cm = test_rows(
+        need(f, "champion-receipts")?,
+        pk,
+        cell,
+        arm_of(need(f, "champion-arm")?)?,
+    )?;
+    let e = champion::Evidence {
+        id: need(f, "id")?,
+        tier: need(f, "tier")?,
+        pin: pin("weights-sha", "prompt-sha", "adapter-sha")?,
+        test_version: need(f, "test-version")?,
+        challenger: &ch,
+        champion: &cm,
+        h1_holds: opt_bool(f, "h1")?,
+        h2_holds: opt_bool(f, "h2")?,
+        contamination_hits: opt_num(f, "contamination-hits")?,
+        p95_s: opt_num(f, "p95-s")?,
+        queue_budget_p95_s: opt_num(f, "budget-p95-s")?,
+    };
+    let d = champion::decide(&ledger, &initial, &e);
+    let line = serde_json::to_string(&d).map_err(|e| e.to_string())?;
+    let mut out = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file)
+        .map_err(|e| format!("{file}: {e}"))?;
+    std::io::Write::write_all(&mut out, format!("{line}\n").as_bytes())
+        .map_err(|e| e.to_string())?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&d).map_err(|e| e.to_string())?
+    );
+    Ok(d.outcome)
+}
+
+fn challenge_cmd(a: &[String]) -> ExitCode {
+    match flags(a).and_then(|f| challenge(&f)) {
+        Ok(champion::Outcome::Promoted) => ExitCode::SUCCESS,
+        Ok(champion::Outcome::Rejected) => ExitCode::from(10),
+        Ok(champion::Outcome::Refused) => ExitCode::from(11),
+        Err(e) => {
+            eprintln!("rex challenge: {e}");
+            ExitCode::from(1)
         }
     }
 }

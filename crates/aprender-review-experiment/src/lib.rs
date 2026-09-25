@@ -14,11 +14,15 @@
 //! - [`ledger`]: the REX-07 shadow-lane `review-ledger-v1` rows and coverage.
 //! - [`ladder`]: the REX-09 shadow → tripwire → vote promotion gates (H4/H5).
 //! - [`ratchet`]: the REX-10 `review-lane-perf-ratchet-v1` p95 ratchet (§5.1).
+//! - [`champion`]: the REX-11 §5.4 champion/challenger promotion gate.
+//! - [`fewshot`]: the REX-11 B1 challengers: prompt versions and leak-proof retrieval few-shot.
 
 pub mod admission;
 pub mod build_corpus;
+pub mod champion;
 pub mod contamination;
 pub mod corpus;
+pub mod fewshot;
 pub mod harness;
 pub mod ladder;
 pub mod ledger;
