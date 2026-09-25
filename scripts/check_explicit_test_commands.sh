@@ -178,6 +178,49 @@ self_test() {
     row 2 "REFUSE a shard that selects zero commands (more shards than commands)" 'selects 0 of 3' bash "$R" --run "$td/p" --shard 4/4
     row 2 "REFUSE a malformed --shard" 'must look like N/M' bash "$R" --run "$td/p" --shard x
     row 2 "REFUSE an unknown --run option" 'usage' bash "$R" --run "$td/p" --bogus
+    # ── Y2: weighted LPT plan (--weights/--preload); Σ: every command on exactly ONE shard ──
+    frags "$td/w" '010-a.cmd=echo a\n' '020-b.cmd=echo b\n' '030-c.cmd=echo c\n' '040-d.cmd=echo d\n' '050-e.cmd=echo e\n'
+    printf '# comment\n\n010-a.cmd\t50\n020-b.cmd\t40\n030-c.cmd\t30\n040-d.cmd\t20\n050-e.cmd\t10\n' > "$td/w.tsv"
+    # 2 shards, no preload: a->1 (50) b->2 (40) c->2 (70) d->1 (70) e->2? no: 70 = 70 ties to the LOWER index -> e->1
+    fact "--plan 2 shards: a,d,e on 1 and b,c on 2 (heaviest first, least-loaded shard, tie -> lower index)" \
+        test "$(bash "$R" --plan "$td/w" --shards 2 --weights "$td/w.tsv" | grep -v '^[LR]' | cut -f1 | tr -d '\n')" = "12211"
+    fact "  ...and the loads are 80 / 70" \
+        test "$(bash "$R" --plan "$td/w" --shards 2 --weights "$td/w.tsv" | grep '^LOAD' | cut -d' ' -f3 | tr '\n' ' ')" = "80 70 "
+    # preload 0,100 (shard 2 already carries a 100 s step): a->1 b->1 c->1 (90<100) d->2 e->1 (120=120, lower index)
+    fact "--preload 0,100 moves work off the preloaded shard: only d on 2" \
+        test "$(bash "$R" --plan "$td/w" --shards 2 --weights "$td/w.tsv" --preload 0,100 | grep -v '^[LR]' | cut -f1 | tr -d '\n')" = "11121"
+    local mm sh got
+    for mm in 2 3 4 5; do
+        got=""
+        for ((sh = 1; sh <= mm; sh++)); do
+            got+=$(bash "$R" --run "$td/w" --shard "$sh/$mm" --weights "$td/w.tsv" --preload "$(printf '0%.0s,' $(seq 2 "$mm"))7" 2>/dev/null | grep -xE '[a-e]')
+            got+=$'\n'
+        done
+        fact "  Σ over $mm weighted shards: every command ran exactly once (a..e, no duplicate, none missing)" \
+            test "$(printf '%s' "$got" | grep -xE '[a-e]' | LC_ALL=C sort | tr -d '\n')" = "abcde"
+    done
+    fact "--run --weights runs exactly the shard --plan assigned (b,c on 2/2)" \
+        test "$(bash "$R" --run "$td/w" --shard 2/2 --weights "$td/w.tsv" 2>/dev/null | grep -xE '[a-e]' | tr -d '\n')" = "bc"
+    grep -v '^050-e' "$td/w.tsv" > "$td/w4.tsv"
+    fact "an unweighted fragment is planned at the MEDIAN weight (e = 30 of 20/30/40/50), not 0" \
+        test "$(bash "$R" --plan "$td/w" --shards 2 --weights "$td/w4.tsv" | grep '050-e.cmd' | cut -f2)" = "30"
+    printf '010-a.cmd\t50\n999-gone.cmd\t5\n' > "$td/stale.tsv"
+    row 0 "a weight naming no fragment is STALE on stderr, not a refusal" 'STALE' bash "$R" --plan "$td/w" --shards 2 --weights "$td/stale.tsv"
+    printf '010-a.cmd 50\n' > "$td/bad.tsv"
+    row 2 "REFUSE a weight line without a TAB" 'malformed weight line' bash "$R" --plan "$td/w" --shards 2 --weights "$td/bad.tsv"
+    printf '010-a.cmd\t5.5\n' > "$td/bad.tsv"
+    row 2 "REFUSE a non-integer weight" 'malformed weight line' bash "$R" --plan "$td/w" --shards 2 --weights "$td/bad.tsv"
+    printf '010-a.cmd\t5\n010-a.cmd\t6\n' > "$td/bad.tsv"
+    row 2 "REFUSE a fragment weighted twice" 'weighted twice' bash "$R" --plan "$td/w" --shards 2 --weights "$td/bad.tsv"
+    printf '# nothing measured\n999-gone.cmd\t5\n' > "$td/bad.tsv"
+    row 2 "REFUSE weights that apply to no fragment (a plan from zero measurements)" 'weights none of the 5' bash "$R" --run "$td/w" --shard 1/2 --weights "$td/bad.tsv"
+    row 2 "REFUSE a missing weights file" 'no such file' bash "$R" --run "$td/w" --shard 1/2 --weights "$td/absent.tsv"
+    row 2 "REFUSE --preload with the wrong count" 'has 3 value' bash "$R" --run "$td/w" --shard 1/2 --weights "$td/w.tsv" --preload 1,2,3
+    row 2 "REFUSE a negative/non-integer --preload" 'not a non-negative integer' bash "$R" --run "$td/w" --shard 1/2 --weights "$td/w.tsv" --preload 1,-2
+    row 2 "REFUSE --preload without --weights (round-robin would silently ignore it)" 'without --weights' bash "$R" --run "$td/w" --shard 1/2 --preload 1,2
+    row 2 "REFUSE --plan without --shards" 'usage' bash "$R" --plan "$td/w" --weights "$td/w.tsv"
+    fact "the in-tree weights plan the in-tree fragments with no REFUSE (rc 0)" \
+        bash "$R" --plan "$HERE/../ci/explicit-test-commands.d" --shards 3 --weights "$HERE/../ci/explicit-test-weights.tsv" > /dev/null
     # ── refusals: filename shape (must-match / must-not-match, rule 7) ───
     local bad
     for bad in '10-a.cmd' '0100-a.cmd' '010-A.cmd' '010-a_b.cmd' '010-.cmd' '010-a.txt' '010a.cmd' 'README.md' '.gitkeep' '010-a.cmd.orig'; do
