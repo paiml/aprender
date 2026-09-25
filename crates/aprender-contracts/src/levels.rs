@@ -204,7 +204,7 @@ fn readme_and_ladder_docs_match_enum() {
 /// (#4106). They carry no generated block; they only must not pair a level with the
 /// wrong tool. `legacy/` and PP-066 are records of the old numbering and stay out.
 #[cfg(test)]
-const LADDER_CITING_DOCS: [&str; 12] = [
+const LADDER_CITING_DOCS: [&str; 23] = [
     "crates/aprender-contracts-staging/docs/specifications/sub/eiffel-dbc-explain.md",
     "docs/specifications/aprender-contracts-staging/sub/eiffel-dbc-explain.md",
     "crates/aprender-contracts-staging/docs/specifications/sub/lean-kani-composition.md",
@@ -217,6 +217,17 @@ const LADDER_CITING_DOCS: [&str; 12] = [
     "crates/aprender-contracts-staging/book/src/examples.md",
     "crates/aprender-contracts-staging/book/src/integration.md",
     "docs/specifications/components/cli-silent-failure-enforcement.md",
+    "crates/aprender-contracts-staging/book/src/expression-languages.md",
+    "crates/aprender-contracts-staging/docs/specifications/sub/eiffel-dbc.md",
+    "docs/specifications/aprender-contracts-staging/sub/eiffel-dbc.md",
+    "crates/aprender-contracts-staging/docs/specifications/sub/eiffel-dbc-type-invariants.md",
+    "docs/specifications/aprender-contracts-staging/sub/eiffel-dbc-type-invariants.md",
+    "crates/aprender-contracts-staging/docs/specifications/sub/escape-proof-enforcement.md",
+    "docs/specifications/aprender-contracts-staging/sub/escape-proof-enforcement.md",
+    "crates/aprender-contracts-staging/docs/specifications/sub/two-tier-architecture.md",
+    "docs/specifications/aprender-contracts-staging/sub/two-tier-architecture.md",
+    "crates/aprender-contracts-staging/docs/specifications/sub/lint-2.md",
+    "docs/specifications/aprender-contracts-staging/sub/lint-2.md",
 ];
 
 #[test]

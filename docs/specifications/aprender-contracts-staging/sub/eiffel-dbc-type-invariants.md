@@ -132,8 +132,8 @@ The six-stage pipeline extends naturally:
 
 ## 7. Coq Integration
 
-The current verification ladder has Lean 4 at L5 (unbounded proof) and
-Kani at L4 (bounded model checking). Adding Coq provides a second
+The current verification ladder has Lean 4 at L4 (unbounded proof) and
+Kani at L3 (bounded model checking). Adding Coq provides a second
 path to unbounded proofs with different strengths:
 
 | Prover | Strengths | Ecosystem |
@@ -216,10 +216,10 @@ Full Coq proofs require mathematician time. The practical approach
 (CompCert, seL4, Fiat Cryptography) is tiered:
 
 ```
-Tier 1: Kani (automated, bounded)      <- current, L4
-Tier 2: Lean 4 (semi-automated, R)     <- current, L5
+Tier 1: Kani (automated, bounded)      <- current, L3
+Tier 2: Lean 4 (semi-automated, R)     <- current, L4
 Tier 3: Coq stubs (generated, admit)   <- new: pv coq
-Tier 4: Coq proofs (human-verified)    <- manual, L5+
+Tier 4: Coq proofs (human-verified)    <- manual, L4+
 Tier 5: coq-of-rust (implementation)   <- automated translation
 ```
 
@@ -229,8 +229,8 @@ Tier 5: coq-of-rust (implementation)   <- automated translation
 
 | Status | Meaning |
 |---|---|
-| `kani_only` | Bounded verification (L4), no proof |
-| `lean_proved` | Lean theorem over R (L5) |
+| `kani_only` | Bounded verification (L3), no proof |
+| `lean_proved` | Lean theorem over R (L4) |
 | `coq_stub` | Coq theorem generated but unproved (`admit`) |
 | `coq_proved` | Coq theorem fully discharged |
 | `coq_of_rust` | Implementation translated and verified |

@@ -96,9 +96,10 @@ This is a category error in the contract taxonomy:
 - **E1 (build.rs)**: Verifies function exists ✓
 - **E2 (traits)**: Verifies function has right signature ✓
 - **E1+E2 (build.rs + traits)**: Both ✓
+- **E3 (`#[contract]`)**: Pre/postconditions checked at runtime in debug builds ✓
 - **E4 (Kani)**: Bounded model checking on function body ✓
 - **E5 (Lean)**: Unbounded proof ✓
-- **MISSING**: **L-flow**: Data flow from CLI parse to execution — **no enforcement level covers this**
+- **MISSING**: **E-flow**: Data flow from CLI parse to execution — **no enforcement level covers this**
 
 ---
 
@@ -321,10 +322,11 @@ ExtendedCommands::Train { .. } => {
 | E0 | Paper-only | Nothing | Everything |
 | E1 | build.rs | Function exists | Signature, behavior |
 | E2 | Traits | Function exists + signature | Behavior, data flow |
-| E3 | build.rs + traits | Function + signature + build | Behavior, data flow |
+| E1+E2 | build.rs + traits | Function + signature + build | Behavior, data flow |
+| E3 | `#[contract]` debug_assert | Pre/postconditions on executed inputs | Release builds, data flow |
 | E4 | Kani | Function body bounded check | Cross-function flow |
 | E5 | Lean | Unbounded proof | Implementation binding |
-| **L-flow** | **MISSING** | — | **CLI parse → dispatch → execute data flow** |
+| **E-flow** | **MISSING** | — | **CLI parse → dispatch → execute data flow** |
 
 ---
 
@@ -347,7 +349,7 @@ ExtendedCommands::Train { .. } => {
 ### Phase 3: Cross-Repo Verification (Week 3)
 
 9. Enable `pv lint --binding --crate-dir` (Gate 7) in CI
-10. Add L-flow verification: AST-based parameter tracing from Commands struct to run()
+10. Add E-flow verification: AST-based parameter tracing from Commands struct to run()
 11. Cross-validate against `apr-model-qa-playbook` falsification protocol
 12. Run `pmat comply check` across all 5 stack repos
 
@@ -417,7 +419,7 @@ live `apr` binary execution. Results:
 | **SF-001**: lib_parse_rosetta.rs blocks compilation | `cargo test -p apr-cli --lib` fails with E0063 (2 errors) | **CONFIRMED → FIXED** (5c46243e) |
 | **SF-002**: 7 sampling params dropped in `apr run` | `RunOptions` struct (run.rs:126-157) has NO sampling fields. `dispatch_run()` signature (dispatch_run.rs:4-26) omits all 7. `dispatch.rs:57-62` destructures but never passes them. | **CONFIRMED → FIXED** (8c5078af, b14f2e06) |
 | SF-002 batch path uses temp/top_k | `run_batch()` (run_entry.rs:276-284) takes temperature and top_k | **CONFIRMED** — batch path partial, main path total drop |
-| Five-whys root cause (L-flow gap) | Provable contracts verify E1-E5 (existence, signature, body) but nothing verifies CLI param → execution data flow | **CONFIRMED** |
+| Five-whys root cause (E-flow gap) | Provable contracts verify E1-E5 (existence, signature, body) but nothing verifies CLI param → execution data flow | **CONFIRMED** |
 
 ### 9.2 Claims Falsified (WRONG)
 
@@ -533,7 +535,7 @@ After falsification, the verified ground truth is:
    and verify output changes with different parameter values
 
 **Contract gap (confirmed):**
-The L-flow gap is real. No enforcement level covers data flow from CLI
+The E-flow gap is real. No enforcement level covers data flow from CLI
 parse → struct → dispatch → options → execution. The fix requires either:
 - (a) Compile-time: derive RunOptions from Commands::Run (share fields)
 - (b) Runtime: behavioral regression tests in CI

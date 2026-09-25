@@ -50,7 +50,7 @@ complementary layers:
 | Layer | Where | What | Verified by |
 |---|---|---|---|
 | Equation pre/post | `equations.<name>.preconditions` | Rust expressions | `debug_assert!` (runtime, debug) |
-| Obligation pre/post | `proof_obligations[].type: precondition` | Formal predicates | Kani (L4), Lean (L5), probar (L3) |
+| Obligation pre/post | `proof_obligations[].type: precondition` | Formal predicates | Kani (L3), Lean (L4), probar (L2) |
 
 The equation-level pre/postconditions are *enforcement*. The obligation-
 level pre/postconditions are *specification*. Meyer's framework requires
