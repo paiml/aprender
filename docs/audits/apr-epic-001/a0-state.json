@@ -1,0 +1,1471 @@
+{
+ "spec": "APR-EPIC-001",
+ "row": "A0",
+ "ticket": "aprender#4432",
+ "session": "aprender-d1",
+ "fetched_at_utc": "2026-09-25T14:51:23Z",
+ "tree": {
+  "origin_main": "a5efa14433b52138bc80bed7faead845123f18d5"
+ },
+ "snapshot": {
+  "source": "~/Desktop/aprender-triage-report.json",
+  "fetched_at_utc": "2026-09-25T14:16:45+00:00"
+ },
+ "facts": [
+  {
+   "fact": "open_issues",
+   "cmd": "gh issue list -R paiml/aprender --state open --limit 2000 --json number | jq length",
+   "value": 827,
+   "snapshot": 824,
+   "delta": 3,
+   "mark": "M"
+  },
+  {
+   "fact": "open_epics",
+   "cmd": "label epic | subIssuesSummary.total>0 | title ^EPIC (analyze.py, same as [S])",
+   "value": 42,
+   "snapshot": 41,
+   "delta": 1,
+   "mark": "M"
+  },
+  {
+   "fact": "no_epic_link_strict",
+   "cmd": "GraphQL parent==null and no #<open epic> body ref, epics excluded",
+   "value": 486,
+   "snapshot": 509,
+   "delta": -23,
+   "mark": "M"
+  },
+  {
+   "fact": "parent_null",
+   "cmd": "GraphQL parent==null, epics excluded (rule 1: a body ref does not count)",
+   "value": 638,
+   "snapshot": null,
+   "delta": null,
+   "mark": "M"
+  },
+  {
+   "fact": "no_milestone",
+   "cmd": "gh issue list --search no:milestone",
+   "value": [
+    4337,
+    4350,
+    4377,
+    4422
+   ],
+   "snapshot": [
+    4337,
+    4350,
+    4377,
+    4422
+   ],
+   "delta": null,
+   "mark": "M"
+  },
+  {
+   "fact": "status",
+   "cmd": "analyze.py (same generator as [S])",
+   "value": {
+    "in-PR": 160,
+    "stale": 246,
+    "unclaimed": 240,
+    "branch-only": 161,
+    "claimed": 20
+   },
+   "snapshot": {
+    "in-PR": 67,
+    "branch-only": 223,
+    "claimed": 33,
+    "unclaimed": 253,
+    "stale": 248
+   },
+   "delta": null,
+   "mark": "M"
+  },
+  {
+   "fact": "done_on_main_candidates",
+   "cmd": "git log origin/main --grep '#N' (analyze.py)",
+   "value": {
+    "strong": 6,
+    "medium": 27
+   },
+   "snapshot": {
+    "strong": 6,
+    "medium": 35
+   },
+   "delta": null,
+   "mark": "M"
+  },
+  {
+   "fact": "close_candidates",
+   "cmd": "idle>7d and no claim (analyze.py)",
+   "value": 24,
+   "snapshot": 25,
+   "delta": -1,
+   "mark": "M"
+  },
+  {
+   "fact": "p_unknown_over_24h",
+   "cmd": "open non-epic issues with no P0-P3 label, created >24h ago",
+   "value": 420,
+   "snapshot": null,
+   "delta": null,
+   "mark": "M"
+  },
+  {
+   "fact": "train_0.70.0",
+   "cmd": "gh api repos/paiml/aprender/milestones + closed.json",
+   "value": {
+    "due_on": "2026-09-26",
+    "open": 85,
+    "closed": 82,
+    "closes_7d": 34,
+    "closes_per_day_7d": 4.9
+   },
+   "snapshot": {
+    "due_on": "2026-09-26",
+    "open": 81,
+    "closes_per_day_7d": 4.9
+   },
+   "delta": null,
+   "mark": "M"
+  },
+  {
+   "fact": "train_0.71.0",
+   "cmd": "milestone API",
+   "value": {
+    "due_on": "2026-09-29",
+    "open": 168,
+    "closed": 47,
+    "closes_7d": 27,
+    "closes_per_day_7d": 3.9
+   },
+   "snapshot": {
+    "due_on": "2026-09-29"
+   },
+   "delta": null,
+   "mark": "M"
+  },
+  {
+   "fact": "train_0.72.0",
+   "cmd": "milestone API",
+   "value": {
+    "due_on": "2026-10-02",
+    "open": 74,
+    "closed": 12,
+    "closes_7d": 11,
+    "closes_per_day_7d": 1.6
+   },
+   "snapshot": {
+    "due_on": "2026-10-02"
+   },
+   "delta": null,
+   "mark": "M"
+  },
+  {
+   "fact": "trains_0.73-0.76_due",
+   "cmd": "milestone API",
+   "value": {
+    "0.73.0": null,
+    "0.74.0": null,
+    "0.75.0": null,
+    "0.76.0": null
+   },
+   "snapshot": "none",
+   "delta": null,
+   "mark": "M"
+  },
+  {
+   "fact": "throughput_per_train",
+   "cmd": "SPEC CMD IS VACUOUS: `gh pr list --state merged --search milestone:X` returns 11/0/0/1 for 0.69.0-0.69.3 because PRs carry no milestone. Substitutes: closed issues per shipped train (milestone API) and merged PRs/day (gh pr list --search merged:>=2026-09-18)",
+   "value": {
+    "closed_issues_per_shipped_train": {
+     "0.67.0": 50,
+     "0.68.0": 99,
+     "0.69.0": 48,
+     "0.69.1": 38
+    },
+    "median_closed_issues_per_train": 49.0,
+    "merged_prs_7d": 81,
+    "merged_prs_per_day_7d": 11.6,
+    "merged_prs_by_day": {
+     "2026-09-18": 9,
+     "2026-09-19": 19,
+     "2026-09-20": 11,
+     "2026-09-21": 16,
+     "2026-09-22": 1,
+     "2026-09-23": 6,
+     "2026-09-24": 16,
+     "2026-09-25": 3
+    }
+   },
+   "snapshot": 29,
+   "delta": null,
+   "mark": "M; [S] was [U]"
+  }
+ ],
+ "churn_since_snapshot": {
+  "opened": [
+   4430,
+   4432,
+   4433
+  ],
+  "closed_or_gone": [],
+  "milestone_changed": []
+ },
+ "never_park_floor": {
+  "rule": "rule 6: open PR linked (closingIssuesReferences, or #N in PR title / number in head branch) | claim by a session live in ListAgents | P0 on 0.70.0-0.72.0 | assignee noahgift active <24h",
+  "count": 151,
+  "count_if_body_mentions_count": 217,
+  "s2_check": {
+   "floor_plus_13_epics": 164,
+   "cap": 100,
+   "stop": true,
+   "broad_floor_plus_13": 230,
+   "broad_stop": true,
+   "floor_excluding_claim_only": 93,
+   "floor_excluding_claim_only_plus_13": 106,
+   "verdict": "S-2 STOP: the rule-6 floor alone exceeds the 100 cap under every reading (strict 151+13=164; without claim-only rows 93+13=106). A3/A5 cannot reach <=100 without an operator ruling on rule 6 or the cap."
+  },
+  "by_reason": {
+   "P0": 52,
+   "open PR linked": 37,
+   "live claim": 87,
+   "assignee noahgift active <24h": 7
+  },
+  "issues": {
+   "2378": [
+    "P0 on 0.72.0"
+   ],
+   "2477": [
+    "live claim ['aprender-57']"
+   ],
+   "2614": [
+    "live claim ['aprender-57']"
+   ],
+   "2615": [
+    "live claim ['aprender-57']"
+   ],
+   "2616": [
+    "live claim ['aprender-57']"
+   ],
+   "2653": [
+    "live claim ['aprender-57']"
+   ],
+   "2661": [
+    "P0 on 0.72.0"
+   ],
+   "2701": [
+    "P0 on 0.70.1"
+   ],
+   "2731": [
+    "live claim ['aprender-57']"
+   ],
+   "2790": [
+    "P0 on 0.72.0"
+   ],
+   "2798": [
+    "live claim ['aprender-57']"
+   ],
+   "2815": [
+    "P0 on 0.72.0"
+   ],
+   "2817": [
+    "P0 on 0.72.0"
+   ],
+   "2853": [
+    "live claim ['aprender-57']",
+    "P0 on 0.72.0"
+   ],
+   "3111": [
+    "P0 on 0.72.0"
+   ],
+   "3142": [
+    "live claim ['aprender-cb']"
+   ],
+   "3177": [
+    "open PR linked [4317, 4431]"
+   ],
+   "3204": [
+    "P0 on 0.70.1"
+   ],
+   "3252": [
+    "P0 on 0.72.0"
+   ],
+   "3459": [
+    "live claim ['aprender-88']",
+    "P0 on 0.70.0"
+   ],
+   "3513": [
+    "live claim ['aprender-6b']"
+   ],
+   "3522": [
+    "P0 on 0.70.1"
+   ],
+   "3543": [
+    "live claim ['aprender-59']",
+    "P0 on 0.70.1"
+   ],
+   "3544": [
+    "P0 on 0.70.1"
+   ],
+   "3558": [
+    "P0 on 0.71.0"
+   ],
+   "3559": [
+    "live claim ['aprender-d1']",
+    "P0 on 0.70.0"
+   ],
+   "3560": [
+    "live claim ['aprender-fb']",
+    "P0 on 0.70.0"
+   ],
+   "3568": [
+    "P0 on 0.72.0"
+   ],
+   "3574": [
+    "P0 on 0.72.0"
+   ],
+   "3576": [
+    "P0 on 0.71.0"
+   ],
+   "3594": [
+    "P0 on 0.70.1"
+   ],
+   "3602": [
+    "P0 on 0.71.0"
+   ],
+   "3611": [
+    "live claim ['aprender-59']"
+   ],
+   "3646": [
+    "live claim ['aprender-59']"
+   ],
+   "3668": [
+    "P0 on 0.70.1"
+   ],
+   "3676": [
+    "P0 on 0.70.1"
+   ],
+   "3679": [
+    "P0 on 0.70.0"
+   ],
+   "3693": [
+    "P0 on 0.71.0"
+   ],
+   "3708": [
+    "live claim ['aprender-59']",
+    "P0 on 0.70.1"
+   ],
+   "3712": [
+    "live claim ['aprender-e6']",
+    "P0 on 0.70.1"
+   ],
+   "3714": [
+    "P0 on 0.70.1"
+   ],
+   "3715": [
+    "live claim ['aprender-e6']",
+    "P0 on 0.70.0"
+   ],
+   "3716": [
+    "P0 on 0.72.0"
+   ],
+   "3717": [
+    "live claim ['aprender-59']",
+    "P0 on 0.70.1"
+   ],
+   "3719": [
+    "P0 on 0.72.0"
+   ],
+   "3720": [
+    "P0 on 0.72.0"
+   ],
+   "3739": [
+    "live claim ['aprender-1c', 'aprender-76']",
+    "P0 on 0.70.1"
+   ],
+   "3741": [
+    "live claim ['aprender-1c']"
+   ],
+   "3759": [
+    "P0 on 0.71.0"
+   ],
+   "3774": [
+    "live claim ['aprender-1c', 'aprender-76']",
+    "P0 on 0.70.1"
+   ],
+   "3780": [
+    "P0 on 0.71.0"
+   ],
+   "3795": [
+    "live claim ['aprender-76', 'aprender-d1']",
+    "P0 on 0.70.1"
+   ],
+   "3797": [
+    "live claim ['aprender-76']",
+    "P0 on 0.70.1"
+   ],
+   "3805": [
+    "live claim ['aprender-59']"
+   ],
+   "3819": [
+    "P0 on 0.72.0"
+   ],
+   "3821": [
+    "live claim ['aprender-e6']"
+   ],
+   "3839": [
+    "live claim ['aprender-d1']"
+   ],
+   "3844": [
+    "live claim ['aprender-a2']",
+    "P0 on 0.70.0"
+   ],
+   "3846": [
+    "P0 on 0.71.0"
+   ],
+   "3850": [
+    "live claim ['aprender-ea']",
+    "P0 on 0.71.0"
+   ],
+   "3873": [
+    "P0 on 0.71.0"
+   ],
+   "3890": [
+    "P0 on 0.71.0"
+   ],
+   "3936": [
+    "live claim ['aprender-a2']"
+   ],
+   "3937": [
+    "live claim ['aprender-d1']"
+   ],
+   "3943": [
+    "live claim ['aprender-a2']"
+   ],
+   "4016": [
+    "open PR linked [4315, 4427]"
+   ],
+   "4020": [
+    "open PR linked [4372]"
+   ],
+   "4059": [
+    "open PR linked [4315, 4427]"
+   ],
+   "4062": [
+    "open PR linked [4372]"
+   ],
+   "4071": [
+    "open PR linked [4317, 4431]"
+   ],
+   "4072": [
+    "live claim ['aprender-e6']"
+   ],
+   "4074": [
+    "open PR linked [4317, 4431]"
+   ],
+   "4075": [
+    "open PR linked [4317, 4431]"
+   ],
+   "4077": [
+    "assignee noahgift active <24h"
+   ],
+   "4078": [
+    "live claim ['aprender-fb']"
+   ],
+   "4079": [
+    "live claim ['aprender-ea']"
+   ],
+   "4080": [
+    "open PR linked [4317, 4431]"
+   ],
+   "4081": [
+    "open PR linked [4317, 4431]"
+   ],
+   "4084": [
+    "live claim ['aprender-ea']"
+   ],
+   "4085": [
+    "live claim ['aprender-1c']"
+   ],
+   "4094": [
+    "live claim ['aprender-d1']"
+   ],
+   "4096": [
+    "live claim ['aprender-59']"
+   ],
+   "4097": [
+    "live claim ['aprender-d1']"
+   ],
+   "4099": [
+    "live claim ['aprender-6b']"
+   ],
+   "4105": [
+    "live claim ['aprender-6b']"
+   ],
+   "4108": [
+    "open PR linked [4317, 4431]"
+   ],
+   "4112": [
+    "open PR linked [4317, 4431]"
+   ],
+   "4114": [
+    "live claim ['aprender-6b']"
+   ],
+   "4117": [
+    "live claim ['aprender-1c']"
+   ],
+   "4122": [
+    "open PR linked [4317, 4431]"
+   ],
+   "4124": [
+    "live claim ['aprender-60']"
+   ],
+   "4125": [
+    "live claim ['aprender-60']"
+   ],
+   "4129": [
+    "live claim ['aprender-6b']"
+   ],
+   "4130": [
+    "live claim ['aprender-ea']"
+   ],
+   "4133": [
+    "open PR linked [4315, 4427]"
+   ],
+   "4142": [
+    "open PR linked [4315, 4427]"
+   ],
+   "4144": [
+    "live claim ['aprender-d1']"
+   ],
+   "4152": [
+    "open PR linked [4311]",
+    "live claim ['aprender-a2']"
+   ],
+   "4153": [
+    "live claim ['aprender-a2']"
+   ],
+   "4162": [
+    "P0 on 0.70.0"
+   ],
+   "4166": [
+    "live claim ['aprender-1c']"
+   ],
+   "4168": [
+    "open PR linked [4315, 4427]"
+   ],
+   "4173": [
+    "live claim ['aprender-d1']"
+   ],
+   "4175": [
+    "live claim ['aprender-1c']"
+   ],
+   "4176": [
+    "live claim ['aprender-d1']"
+   ],
+   "4179": [
+    "live claim ['aprender-cb']"
+   ],
+   "4186": [
+    "open PR linked [4315, 4427]",
+    "live claim ['aprender-cb']",
+    "P0 on 0.70.0"
+   ],
+   "4191": [
+    "open PR linked [4317, 4431]"
+   ],
+   "4192": [
+    "live claim ['aprender-a2']"
+   ],
+   "4193": [
+    "open PR linked [4311]",
+    "live claim ['aprender-6b']"
+   ],
+   "4197": [
+    "live claim ['aprender-60']",
+    "assignee noahgift active <24h"
+   ],
+   "4198": [
+    "open PR linked [4317, 4431]",
+    "live claim ['aprender-6b']",
+    "assignee noahgift active <24h"
+   ],
+   "4199": [
+    "open PR linked [4317, 4431]",
+    "live claim ['aprender-a2']"
+   ],
+   "4200": [
+    "live claim ['aprender-1c']"
+   ],
+   "4207": [
+    "open PR linked [4317, 4431]"
+   ],
+   "4214": [
+    "live claim ['aprender-60']"
+   ],
+   "4215": [
+    "open PR linked [4332]",
+    "live claim ['xpile-74']"
+   ],
+   "4219": [
+    "live claim ['aprender-ea']"
+   ],
+   "4238": [
+    "open PR linked [4317, 4431]"
+   ],
+   "4239": [
+    "live claim ['aprender-59']"
+   ],
+   "4240": [
+    "live claim ['aprender-ea']"
+   ],
+   "4256": [
+    "open PR linked [4315, 4427]"
+   ],
+   "4258": [
+    "open PR linked [4322]",
+    "live claim ['xpile-74']"
+   ],
+   "4259": [
+    "open PR linked [4311]",
+    "live claim ['xpile-74']"
+   ],
+   "4273": [
+    "open PR linked [4311]",
+    "live claim ['aprender-e6']"
+   ],
+   "4275": [
+    "open PR linked [4314]"
+   ],
+   "4280": [
+    "live claim ['aprender-98']"
+   ],
+   "4283": [
+    "open PR linked [4315, 4427]"
+   ],
+   "4285": [
+    "open PR linked [4314]"
+   ],
+   "4286": [
+    "open PR linked [4314]"
+   ],
+   "4290": [
+    "open PR linked [4318]"
+   ],
+   "4313": [
+    "open PR linked [4318]",
+    "live claim ['aprender-cb']"
+   ],
+   "4326": [
+    "live claim ['aprender-59']"
+   ],
+   "4328": [
+    "P0 on 0.70.0",
+    "assignee noahgift active <24h"
+   ],
+   "4339": [
+    "assignee noahgift active <24h"
+   ],
+   "4346": [
+    "live claim ['aprender-e6']"
+   ],
+   "4347": [
+    "live claim ['aprender-a2']"
+   ],
+   "4348": [
+    "live claim ['aprender-59']",
+    "P0 on 0.70.0"
+   ],
+   "4351": [
+    "live claim ['aprender-a2']"
+   ],
+   "4352": [
+    "open PR linked [4372]"
+   ],
+   "4362": [
+    "live claim ['aprender-60']"
+   ],
+   "4369": [
+    "live claim ['aprender-e6']"
+   ],
+   "4379": [
+    "live claim ['aprender-e6']"
+   ],
+   "4380": [
+    "live claim ['aprender-e6']"
+   ],
+   "4415": [
+    "live claim ['aprender-88']",
+    "assignee noahgift active <24h"
+   ],
+   "4416": [
+    "assignee noahgift active <24h"
+   ],
+   "4418": [
+    "live claim ['aprender-ea']"
+   ],
+   "4420": [
+    "live claim ['aprender-e6']"
+   ],
+   "4421": [
+    "open PR linked [4426]",
+    "live claim ['aprender-5d']"
+   ],
+   "4430": [
+    "P0 on 0.70.0"
+   ],
+   "4433": [
+    "P0 on 0.70.0"
+   ]
+  }
+ },
+ "epic_set_live": {
+  "E0": {
+   "reuse": {
+    "n": 3269,
+    "state": "open",
+    "is_epic": true,
+    "milestone": "0.70.0",
+    "children_open": 0
+   },
+   "absorbs": [
+    {
+     "n": 4071,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4072,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4073,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 3847,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4069,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 3972,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4047,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4070,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4075,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4330,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4074,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4077,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4078,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4079,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 3715,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 3856,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 3559,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 3560,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4319,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "backlog",
+     "children_open": 0
+    },
+    {
+     "n": 4379,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4420,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "backlog",
+     "children_open": 0
+    },
+    {
+     "n": 3610,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 3611,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 3624,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4100,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "backlog",
+     "children_open": 0
+    }
+   ]
+  },
+  "E1": {
+   "reuse": {
+    "n": 3998,
+    "state": "open",
+    "is_epic": true,
+    "milestone": "0.70.1",
+    "children_open": 0
+   },
+   "absorbs": [
+    {
+     "n": 4033,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.70.1",
+     "children_open": 0
+    },
+    {
+     "n": 4288,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.70.1",
+     "children_open": 0
+    },
+    {
+     "n": 4232,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.70.1",
+     "children_open": 0
+    },
+    {
+     "n": 3081,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 3058,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "backlog",
+     "children_open": 0
+    }
+   ]
+  },
+  "E2": {
+   "reuse": {
+    "n": 3598,
+    "state": "open",
+    "is_epic": true,
+    "milestone": "0.72.0",
+    "children_open": 0
+   },
+   "absorbs": [
+    {
+     "n": 4249,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.69.5",
+     "children_open": 0
+    }
+   ]
+  },
+  "E3": {
+   "reuse": {
+    "n": 3994,
+    "state": "open",
+    "is_epic": true,
+    "milestone": "0.71.0",
+    "children_open": 0
+   },
+   "absorbs": [
+    {
+     "n": 3062,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.71.0",
+     "children_open": 0
+    },
+    {
+     "n": 3597,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.70.1",
+     "children_open": 0
+    }
+   ]
+  },
+  "E4": {
+   "reuse": {
+    "n": 4381,
+    "state": "open",
+    "is_epic": true,
+    "milestone": "0.71.0",
+    "children_open": 0
+   },
+   "absorbs": [
+    {
+     "n": 4354,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.70.1",
+     "children_open": 13
+    },
+    {
+     "n": 4252,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.70.1",
+     "children_open": 0
+    }
+   ]
+  },
+  "E5": {
+   "reuse": {
+    "n": 4000,
+    "state": "open",
+    "is_epic": true,
+    "milestone": "0.72.0",
+    "children_open": 0
+   },
+   "absorbs": []
+  },
+  "E6": {
+   "reuse": {
+    "n": 3999,
+    "state": "open",
+    "is_epic": true,
+    "milestone": "0.73.0",
+    "children_open": 0
+   },
+   "absorbs": [
+    {
+     "n": 2728,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.73.0",
+     "children_open": 0
+    },
+    {
+     "n": 2880,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.73.0",
+     "children_open": 0
+    },
+    {
+     "n": 3144,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.70.1",
+     "children_open": 0
+    }
+   ]
+  },
+  "E7": {
+   "reuse": {
+    "n": 4001,
+    "state": "open",
+    "is_epic": true,
+    "milestone": "0.74.0",
+    "children_open": 0
+   },
+   "absorbs": [
+    {
+     "n": 3421,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.74.0",
+     "children_open": 0
+    },
+    {
+     "n": 3423,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.74.0",
+     "children_open": 0
+    },
+    {
+     "n": 3428,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.74.0",
+     "children_open": 0
+    }
+   ]
+  },
+  "E8": {
+   "reuse": {
+    "n": 4002,
+    "state": "open",
+    "is_epic": true,
+    "milestone": "0.75.0",
+    "children_open": 0
+   },
+   "absorbs": []
+  },
+  "E9": {
+   "reuse": {
+    "n": 4164,
+    "state": "open",
+    "is_epic": true,
+    "milestone": "0.76.0",
+    "children_open": 0
+   },
+   "absorbs": [
+    {
+     "n": 3146,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.76.0",
+     "children_open": 0
+    },
+    {
+     "n": 3370,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.76.0",
+     "children_open": 0
+    }
+   ]
+  },
+  "S1": {
+   "reuse": {
+    "n": 3863,
+    "state": "open",
+    "is_epic": true,
+    "milestone": "0.71.0",
+    "children_open": 0
+   },
+   "absorbs": [
+    {
+     "n": 2876,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.72.0",
+     "children_open": 2
+    },
+    {
+     "n": 2877,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "backlog",
+     "children_open": 5
+    },
+    {
+     "n": 2878,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "backlog",
+     "children_open": 5
+    },
+    {
+     "n": 2879,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.72.0",
+     "children_open": 6
+    },
+    {
+     "n": 2503,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "backlog",
+     "children_open": 1
+    }
+   ]
+  },
+  "S2": {
+   "reuse": {
+    "n": 2870,
+    "state": "open",
+    "is_epic": true,
+    "milestone": "0.72.0",
+    "children_open": 7
+   },
+   "absorbs": [
+    {
+     "n": 2556,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "backlog",
+     "children_open": 2
+    },
+    {
+     "n": 4080,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4081,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4082,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4083,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4084,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.1",
+     "children_open": 0
+    },
+    {
+     "n": 4122,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4139,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4166,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.1",
+     "children_open": 0
+    },
+    {
+     "n": 4168,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4197,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.1",
+     "children_open": 0
+    },
+    {
+     "n": 4198,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.1",
+     "children_open": 0
+    },
+    {
+     "n": 4199,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4200,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4201,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4202,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4238,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.1",
+     "children_open": 0
+    },
+    {
+     "n": 4239,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.1",
+     "children_open": 0
+    },
+    {
+     "n": 4240,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.1",
+     "children_open": 0
+    },
+    {
+     "n": 4241,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "backlog",
+     "children_open": 0
+    },
+    {
+     "n": 4244,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4347,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.0",
+     "children_open": 0
+    },
+    {
+     "n": 4351,
+     "state": "open",
+     "is_epic": false,
+     "milestone": "0.70.1",
+     "children_open": 0
+    }
+   ]
+  },
+  "S3": {
+   "reuse": {
+    "n": 3997,
+    "state": "open",
+    "is_epic": true,
+    "milestone": "0.70.1",
+    "children_open": 0
+   },
+   "absorbs": [
+    {
+     "n": 4057,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.70.1",
+     "children_open": 0
+    },
+    {
+     "n": 2814,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "backlog",
+     "children_open": 11
+    },
+    {
+     "n": 2582,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.72.0",
+     "children_open": 5
+    },
+    {
+     "n": 2373,
+     "state": "open",
+     "is_epic": true,
+     "milestone": "0.70.1",
+     "children_open": 0
+    }
+   ]
+  }
+ },
+ "epic_set_refs_not_open": [],
+ "open_epics_not_named_in_spec": [
+  {
+   "n": 4432,
+   "title": "APR-EPIC-001 A0: re-derive live issue state (read-only receipt)",
+   "milestone": "0.70.0"
+  }
+ ],
+ "live_sessions_listagents": [
+  "apex-37",
+  "aprender-0d",
+  "aprender-1c",
+  "aprender-2e",
+  "aprender-36",
+  "aprender-3d",
+  "aprender-57",
+  "aprender-59",
+  "aprender-5d",
+  "aprender-60",
+  "aprender-6b",
+  "aprender-76",
+  "aprender-77",
+  "aprender-79",
+  "aprender-7a",
+  "aprender-84",
+  "aprender-88",
+  "aprender-98",
+  "aprender-a2",
+  "aprender-cb",
+  "aprender-d1",
+  "aprender-df",
+  "aprender-e6",
+  "aprender-ea",
+  "aprender-fb",
+  "infra-27",
+  "infra-33",
+  "infra-64",
+  "infra-83",
+  "infra-8b",
+  "infra-8d",
+  "infra-c2",
+  "infra-e8",
+  "manzana-b8",
+  "noah-77",
+  "paiml-implement-21",
+  "paiml-mcp-agent-toolkit-24",
+  "rmedia-2e",
+  "rmedia-41",
+  "rmedia-de",
+  "ruchy-55",
+  "ruchy-fb",
+  "xpile-74"
+ ],
+ "open_prs": 14,
+ "notes": [
+  "#4432 (this row's own ticket) matches the EPIC title regex; it is not an epic \u2014 the true open-epic count is 41, unchanged from [S].",
+  "The spec's throughput command is vacuous (PRs carry no milestone); substitutes are recorded in facts.throughput_per_train.",
+  "in-PR jumped 67->160 because batch PRs (#4431, #4317: 14 closing refs each) now name many issues; rule 6 uses GitHub links + title/branch, not body mentions (body-mention floor reported separately)."
+ ],
+ "section9": {
+  "spec": "APR-EPIC-001",
+  "row": "A0",
+  "ticket": "aprender#4432",
+  "outcome": "DONE",
+  "stop": "S-2",
+  "live_state": {
+   "open_total": 827,
+   "open_epics": 41,
+   "orphans": 486,
+   "p_unknown_over_24h": 420,
+   "milestone_mismatch": null,
+   "never_park_floor": 151
+  },
+  "actions": [],
+  "receipts": [
+   "docs/audits/apr-epic-001/a0-state.json"
+  ],
+  "next_row": "A1 (blocked on S-2 ruling for A3/A5; A1 skeleton itself is unaffected)"
+ }
+}
