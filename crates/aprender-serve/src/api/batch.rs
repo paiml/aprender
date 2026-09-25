@@ -126,6 +126,27 @@ fn quantized_config(
     config
 }
 
+/// Decode `prompt ++ generated` for a native route's `text`, cut at the first
+/// special-token marker the COMPLETION spells out (aprender#4344). Before
+/// this, a model that wrote `<|im_end|>` as ordinary tokens returned
+/// `"<answer>7</answer><|im_end|>"` on `/generate` and `/batch/generate`.
+fn decode_generated(
+    tokenizer: &BPETokenizer,
+    token_ids: &[u32],
+    prompt_tokens: usize,
+) -> Result<String, ApiErr> {
+    let text = tokenizer
+        .decode(token_ids)
+        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let prompt_text = tokenizer
+        .decode(&token_ids[..prompt_tokens.min(token_ids.len())])
+        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(crate::api::realize_handlers::cut_completion_at_marker(
+        text,
+        &prompt_text,
+    ))
+}
+
 fn try_quantized_generate(
     state: &AppState,
     request: &GenerateRequest,
@@ -162,9 +183,7 @@ fn try_quantized_generate(
     let generated = quantized_model
         .generate_with_cache(&prompt_ids, &q_config)
         .map_err(|e| generation_err(&e))?;
-    let text = tokenizer
-        .decode(&generated)
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let text = decode_generated(&tokenizer, &generated, prompt_tokens)?;
 
     Ok(Some(GenerateResponse {
         num_generated: generated.len().saturating_sub(prompt_tokens),
@@ -232,9 +251,7 @@ async fn try_apr_q4k_generate(
     // Build full token sequence (prompt + generated) and decode
     let mut all_tokens = prompt_ids_copy;
     all_tokens.extend_from_slice(&resp.output_tokens);
-    let text = tokenizer
-        .decode(&all_tokens)
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let text = decode_generated(&tokenizer, &all_tokens, all_tokens.len() - resp.output_tokens.len())?;
 
     Ok(Some(GenerateResponse {
         num_generated: resp.tokens_generated,
@@ -273,9 +290,7 @@ fn try_apr_generate(
                 format!("APR generation failed: {e}"),
             )
         })?;
-    let text = tokenizer
-        .decode(&generated)
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let text = decode_generated(&tokenizer, &generated, prompt_tokens)?;
 
     Ok(Some(GenerateResponse {
         num_generated: generated.len().saturating_sub(prompt_tokens),
@@ -332,9 +347,7 @@ fn registry_generate(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let text = tokenizer
-        .decode(&token_ids)
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let text = decode_generated(&tokenizer, &token_ids, prompt.len())?;
 
     Ok(GenerateResponse {
         num_generated: generated.len() - prompt.len(),
@@ -499,9 +512,7 @@ fn try_cuda_batch_generate(
                     format!("CUDA generation failed: {e}"),
                 )
             })?;
-        let text = tokenizer
-            .decode(&generated)
-            .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        let text = decode_generated(&tokenizer, &generated, prompt_tokens)?;
         results.push(GenerateResponse {
             num_generated: generated.len().saturating_sub(prompt_tokens),
             token_ids: generated,
@@ -554,9 +565,7 @@ fn try_quantized_batch_generate(
         let generated = quantized_model
             .generate_with_cache(&prompt_ids, &q_config)
             .map_err(|e| generation_err(&e))?;
-        let text = tokenizer
-            .decode(&generated)
-            .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        let text = decode_generated(&tokenizer, &generated, prompt_tokens)?;
         results.push(GenerateResponse {
             num_generated: generated.len().saturating_sub(prompt_tokens),
             token_ids: generated,
@@ -606,9 +615,7 @@ fn try_apr_batch_generate(
                     format!("APR generation failed: {e}"),
                 )
             })?;
-        let text = tokenizer
-            .decode(&generated)
-            .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        let text = decode_generated(&tokenizer, &generated, prompt_tokens)?;
         results.push(GenerateResponse {
             num_generated: generated.len().saturating_sub(prompt_tokens),
             token_ids: generated,
@@ -674,9 +681,7 @@ fn registry_batch_generate(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let text = tokenizer
-            .decode(&token_ids)
-            .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        let text = decode_generated(&tokenizer, &token_ids, prompt.len())?;
         results.push(GenerateResponse {
             num_generated: generated.len() - prompt.len(),
             token_ids,

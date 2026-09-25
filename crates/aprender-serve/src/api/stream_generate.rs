@@ -150,6 +150,38 @@ fn try_apr_stream_tokens(
     Ok(Some((generated, prompt_len, tokenizer)))
 }
 
+/// Cut a pregenerated token stream at the first special-token marker the
+/// completion spells out (aprender#4344), keeping one event per token.
+///
+/// Every token before the marker is kept as is. The token the marker starts in
+/// is kept with its text cut at the marker, or dropped if nothing precedes the
+/// marker in it. Everything after is dropped. `/stream/generate` and
+/// `/realize/generate` streamed `"<answer>7</answer><|im_end|>"` before this.
+fn cut_pieces_at_marker(pieces: Vec<(u32, String)>) -> Vec<(u32, String)> {
+    let full: String = pieces.iter().map(|(_, t)| t.as_str()).collect();
+    let Some(cut) = crate::api::realize_handlers::first_special_marker(&full) else {
+        return pieces;
+    };
+    let mut out = Vec::new();
+    let mut offset = 0usize;
+    for (id, mut text) in pieces {
+        if offset >= cut {
+            break;
+        }
+        let end = offset + text.len();
+        if end > cut {
+            text.truncate(cut - offset);
+            if !text.is_empty() {
+                out.push((id, text));
+            }
+            break;
+        }
+        offset = end;
+        out.push((id, text));
+    }
+    out
+}
+
 /// Stream generate handler — generates tokens one by one via Server-Sent Events.
 ///
 /// Tries the quantized backend first (the `apr serve run model.gguf` path), then
@@ -183,13 +215,11 @@ pub async fn stream_generate_handler(
         // on the first sampled token returns the prompt alone, so clamp rather
         // than slice past the end.
         let generated_start = prompt_len.min(token_ids.len());
-        for &token_id in &token_ids[generated_start..] {
-            // Decode single token
-            let text = match tokenizer_clone.decode(&[token_id]) {
-                Ok(t) => t,
-                Err(_) => String::from("<error>"),
-            };
-
+        let pieces: Vec<(u32, String)> = token_ids[generated_start..]
+            .iter()
+            .map(|&id| (id, tokenizer_clone.decode(&[id]).unwrap_or_else(|_| String::from("<error>"))))
+            .collect();
+        for (token_id, text) in cut_pieces_at_marker(pieces) {
             let event = StreamTokenEvent { token_id, text };
             // Serialization of simple struct should not fail, but handle gracefully
             let data = serde_json::to_string(&event)
