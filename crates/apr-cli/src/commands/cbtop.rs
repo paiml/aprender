@@ -132,6 +132,10 @@ pub struct HeadlessReport {
     pub falsification: FalsificationSummary,
     pub status: String,
     pub ci_result: String,
+    /// #2731: the two parameters that decide what was measured. Without them a
+    /// cold-start (zero-warmup) receipt reads byte-identical to a steady-state one.
+    pub warmup: usize,
+    pub iterations: usize,
 }
 
 /// PMAT quality scores per spec section 7.0.1
@@ -401,6 +405,15 @@ pub fn run(config: CbtopConfig) -> Result<()> {
         return Err(CliError::ValidationFailed(
             "cbtop requires at least 1 measurement iteration (--iterations 0 measures nothing: \
              every brick would report 0.0µs and score a perfect 100/A)"
+                .to_string(),
+        ));
+    }
+
+    // #2731: zero warmup measures the cold start and reports it as steady state.
+    if config.warmup == 0 {
+        return Err(CliError::ValidationFailed(
+            "cbtop requires at least 1 warmup iteration (--warmup 0 measures the cold start: \
+             allocation, context creation and kernel JIT reported as steady state)"
                 .to_string(),
         ));
     }

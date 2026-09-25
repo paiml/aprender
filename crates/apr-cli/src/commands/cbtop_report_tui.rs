@@ -114,7 +114,9 @@ fn format_report_as_json(report: &HeadlessReport) -> String {
     "blocked": {}
   }},
   "status": "{}",
-  "ci_result": "{}"
+  "ci_result": "{}",
+  "warmup": {},
+  "iterations": {}
 }}"#,
         report.model,
         report.timestamp,
@@ -138,6 +140,8 @@ fn format_report_as_json(report: &HeadlessReport) -> String {
         report.falsification.blocked,
         report.status,
         report.ci_result,
+        report.warmup,
+        report.iterations,
     )
 }
 

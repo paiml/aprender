@@ -39,6 +39,8 @@
             },
             status: "FAIL".to_string(),
             ci_result: "red".to_string(),
+            warmup: 10,
+            iterations: 100,
         };
 
         let json = format_report_as_json(&report);
@@ -80,6 +82,8 @@
             },
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            warmup: 10,
+            iterations: 100,
         };
 
         let json = format_report_as_json(&report);
@@ -141,6 +145,8 @@
             },
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            warmup: 10,
+            iterations: 100,
         };
 
         // Should not panic, exercises the pass branch
@@ -187,6 +193,8 @@
             },
             status: "FAIL".to_string(),
             ci_result: "red".to_string(),
+            warmup: 10,
+            iterations: 100,
         };
 
         // Should not panic, exercises the fail branch
@@ -385,6 +393,8 @@
             },
             status: "X".to_string(),
             ci_result: "X".to_string(),
+            warmup: 10,
+            iterations: 100,
         };
         let debug_str = format!("{report:?}");
         assert!(debug_str.contains("HeadlessReport"));

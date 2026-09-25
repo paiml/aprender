@@ -83,7 +83,7 @@ fn weighted_brick_score(brick_scores: &[BrickScore]) -> u32 {
 fn generate_headless_report_simulated(
     model_name: &str,
     pipeline: &PipelineState,
-    _config: &CbtopConfig,
+    config: &CbtopConfig,
 ) -> HeadlessReport {
     // The date must be the real UTC date. A string-literal date with a
     // computed time-of-day stamped every report ever written — including
@@ -142,6 +142,8 @@ fn generate_headless_report_simulated(
         // GH-425 B18: Status from brick pass/fail only — no hardcoded target.
         status: if all_pass { "PASS" } else { "FAIL" }.to_string(),
         ci_result: if all_pass { "green" } else { "red" }.to_string(),
+        warmup: config.warmup,
+        iterations: config.iterations,
     }
 }
 

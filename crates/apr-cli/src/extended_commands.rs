@@ -517,8 +517,8 @@ pub enum ExtendedCommands {
         /// Minimum brick score threshold 0-100 (for --ci)
         #[arg(long, value_name = "SCORE")]
         brick_score: Option<u32>,
-        /// Number of warmup iterations before measurement
-        #[arg(long, default_value = "10")]
+        /// Number of warmup iterations before measurement (must be >= 1)
+        #[arg(long, default_value = "10", value_parser = parse_cbtop_warmup)]
         warmup: usize,
         /// Number of measurement iterations (must be >= 1)
         #[arg(long, default_value = "100", value_parser = parse_cbtop_iterations)]
@@ -1997,6 +1997,26 @@ fn parse_cbtop_iterations(s: &str) -> std::result::Result<usize, String> {
         return Err(
             "must be at least 1 — a zero-iteration run measures nothing and would report every \
              brick as a perfect 100/A from zero samples"
+                .to_string(),
+        );
+    }
+    Ok(n)
+}
+
+/// Parse `apr cbtop --warmup`, rejecting 0 (#2731).
+///
+/// With zero warmup the first measured iterations are the cold ones —
+/// allocation, CUDA context, kernel JIT, cache-cold weights — and the report
+/// presents that cold start as the steady-state number. Same rule as
+/// `parse_cbtop_iterations`: reject it where the user typed it.
+fn parse_cbtop_warmup(s: &str) -> std::result::Result<usize, String> {
+    let n: usize = s
+        .parse()
+        .map_err(|_| format!("`{s}` is not a valid warmup count"))?;
+    if n == 0 {
+        return Err(
+            "must be at least 1 — a zero-warmup run measures the cold start (allocation, \
+             context creation, kernel JIT) and reports it as the steady-state number"
                 .to_string(),
         );
     }

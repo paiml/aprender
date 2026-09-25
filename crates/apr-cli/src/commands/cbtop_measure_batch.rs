@@ -390,6 +390,8 @@ fn build_and_output_report(
         },
         status: status.to_string(),
         ci_result: ci_result.to_string(),
+        warmup: config.warmup,
+        iterations: config.iterations,
     };
 
     let ci_passed = check_ci_thresholds(&report, config);

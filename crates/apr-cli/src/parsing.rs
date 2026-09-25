@@ -342,6 +342,29 @@
         }
     }
 
+    /// #2731: `--warmup 0` is rejected where it is typed, like `--iterations 0`;
+    /// `--warmup 1` and the default of 10 still parse.
+    #[test]
+    fn test_parse_cbtop_rejects_zero_warmup_2731() {
+        let zero = vec!["apr", "cbtop", "--headless", "--simulated", "--warmup", "0"];
+        assert!(
+            parse_cli(zero).is_err(),
+            "cbtop accepted --warmup 0 at parse time"
+        );
+        for (args, want) in [
+            (vec!["apr", "cbtop", "--headless", "--warmup", "1"], 1),
+            (vec!["apr", "cbtop", "--headless"], 10),
+        ] {
+            let cli = parse_cli(args).expect("a nonzero warmup must parse");
+            match *cli.command {
+                Commands::Extended(ExtendedCommands::Cbtop { warmup, .. }) => {
+                    assert_eq!(warmup, want);
+                }
+                _ => panic!("Expected Cbtop command"),
+            }
+        }
+    }
+
     /// #2397 finding 4: `--json` and `--output` document "requires --headless",
     /// so the parser must enforce it. Without the constraint the flag was
     /// silently dropped and cbtop entered the interactive TUI instead.

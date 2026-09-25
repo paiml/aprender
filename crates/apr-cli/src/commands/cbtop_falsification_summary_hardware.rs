@@ -242,6 +242,8 @@
             },
             status: "X".to_string(),
             ci_result: "X".to_string(),
+            warmup: 10,
+            iterations: 100,
         };
 
         let json = format_report_as_json(&report);
@@ -288,6 +290,8 @@
             },
             status: "X".to_string(),
             ci_result: "X".to_string(),
+            warmup: 10,
+            iterations: 100,
         };
 
         let json = format_report_as_json(&report);
@@ -467,6 +471,8 @@
             },
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            warmup: 10,
+            iterations: 100,
         }
     }
 
@@ -535,4 +541,45 @@
             ..Default::default()
         };
         run(config).expect("cbtop rejected the smallest honest run, --iterations 1");
+    }
+
+    /// #2731: `--warmup 0` is refused at run time too, for configs built in code.
+    #[test]
+    fn test_run_rejects_zero_warmup_2731() {
+        let config = CbtopConfig {
+            headless: true,
+            simulated: true,
+            warmup: 0,
+            ..Default::default()
+        };
+        let err = run(config).expect_err("cbtop accepted --warmup 0");
+        assert!(err.to_string().contains("warmup"), "unexpected rejection: {err}");
+    }
+
+    /// #2731: the JSON receipt records the warmup and iteration counts it was
+    /// measured with, as numbers, so a stored receipt says which regime it is.
+    #[test]
+    fn test_json_receipt_records_warmup_and_iterations_2731() {
+        let mut report = green_report();
+        report.warmup = 3;
+        report.iterations = 47;
+        let json: serde_json::Value =
+            serde_json::from_str(&format_report_as_json(&report)).expect("receipt is valid JSON");
+        assert_eq!(json["warmup"], 3, "warmup missing from the receipt: {json}");
+        assert_eq!(json["iterations"], 47, "iterations missing from the receipt: {json}");
+    }
+
+    /// #2731: the simulated producer stamps the config's values, not constants.
+    #[test]
+    fn test_simulated_report_carries_config_warmup_and_iterations_2731() {
+        let config = CbtopConfig {
+            headless: true,
+            simulated: true,
+            warmup: 2,
+            iterations: 5,
+            ..Default::default()
+        };
+        let pipeline = PipelineState::new();
+        let report = generate_headless_report_simulated("m", &pipeline, &config);
+        assert_eq!((report.warmup, report.iterations), (2, 5));
     }

@@ -173,6 +173,8 @@
             },
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            warmup: 10,
+            iterations: 100,
         };
 
         let config = CbtopConfig {
@@ -218,6 +220,8 @@
             },
             status: "FAIL".to_string(),
             ci_result: "red".to_string(),
+            warmup: 10,
+            iterations: 100,
         };
 
         let config = CbtopConfig {
@@ -269,6 +273,8 @@
             },
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            warmup: 10,
+            iterations: 100,
         };
 
         let json = format_report_as_json(&report);
