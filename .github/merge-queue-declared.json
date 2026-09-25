@@ -1,0 +1,30 @@
+{
+  "_doc": "The DECLARED main merge queue (#4435; FLOW-001 R-2/R-4). scripts/check_merge_queue_ruleset.sh fails when the live ruleset drifts from this, or when B, K or the rollback rule drift from the ruling. Edit this only with a ruling; the check re-derives B from p.",
+  "ruling": "OPERATOR 2026-09-25 16:58 Madrid: \"Merge queue starts at B=8 the moment FLOW-04 merges and verifies on a real merge_group; K = all full runner sets; auto-rollback to B=1 if split rate > 2p or any unverified merge.\"",
+  "ruleset_id": 17836320,
+  "state": "active",
+  "p": {
+    "failures": 5,
+    "runs": 48,
+    "source": "last 100 merge_group runs of paiml/aprender, workflow CI, completed and not cancelled/skipped",
+    "window": "2026-09-19T20:50:12Z..2026-09-25T09:23:32Z",
+    "measured_at": "2026-09-25T15:28Z"
+  },
+  "B_cap": 8,
+  "B": 8,
+  "runner_sets": [
+    "intel",
+    "yoga",
+    "gx10",
+    "mini"
+  ],
+  "K": 4,
+  "grouping_strategy": "ALLGREEN",
+  "merge_method": "SQUASH",
+  "rollback": {
+    "to_B": 1,
+    "split_rate_factor_of_p": 2,
+    "on_unverified_merge": true,
+    "window_runs": 50
+  }
+}
