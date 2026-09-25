@@ -19,9 +19,12 @@
 #   - the run's head repository is THIS repository. A fork can name its branch
 #     release/9.9.9, so this check is required.
 #   - the branch is exactly release/X.Y.Z.
-#   - both required checks, `ci / gate` and `workspace-test`, concluded success on
-#     THIS run. The run's overall conclusion is not read: it also covers jobs that
-#     branch protection does not require.
+#   - `ci / gate` concluded success on THIS run. The run's overall conclusion is not
+#     read: it also covers jobs that the cut does not wait for. workspace-test is NOT
+#     waited for (Y3, operator ruling 2026-09-25): an rc is cheap and reaches the
+#     fleet the moment the gate is green. Promotion (promote_rc.sh) and crates.io
+#     (cascade-publish.sh) refuse unless workspace-test and clean-room are green on
+#     the rc's exact commit -- scripts/release/same_sha_gate.sh.
 #   - head_sha is still the branch tip. A run for a superseded push cuts nothing,
 #     because the newer push has its own run.
 #   - no vX.Y.Z-rc.* tag already points at head_sha. A re-run cuts nothing.
@@ -46,7 +49,7 @@
 #   2  ENV/usage: the run or the refs could not be read. This is never a skip.
 set -uo pipefail
 PROG=rc_cut
-REQUIRED_CHECKS=("ci / gate" "workspace-test")
+REQUIRED_CHECKS=("ci / gate")
 PER_PAGE=100   # the jobs API's maximum page size
 
 # rc_version_of_branch BRANCH -> prints X.Y.Z; returns 1 if BRANCH is not release/X.Y.Z.
@@ -112,8 +115,9 @@ self_test() {
     base; D_BRANCH=release/0.70; expect 'skip branch release/0.70 is not release/X.Y.Z' 'two-part version refused'
     base; D_HEAD_REPO=someone/aprender; expect 'skip head repository someone/aprender is not paiml/aprender' 'fork PR with a release/X.Y.Z head refused'
     base; D_JOBS=$'ci / gate\tfailure\nworkspace-test\tsuccess'; expect 'skip required check "ci / gate" concluded failure' 'red ci / gate cuts nothing'
-    base; D_JOBS=$'ci / gate\tsuccess\nworkspace-test\tcancelled'; expect 'skip required check "workspace-test" concluded cancelled' 'cancelled workspace-test cuts nothing'
-    base; D_JOBS=$'ci / gate\tsuccess'; expect 'skip required check "workspace-test" is absent from the run' 'a missing required check is not green'
+    base; D_JOBS=$'ci / gate\tsuccess\nworkspace-test\tfailure'; expect 'cut v0.70.0-rc.1' 'a red workspace-test does not hold the rc (same_sha_gate.sh holds promotion)'
+    base; D_JOBS=$'ci / gate\tsuccess\nworkspace-test\tin_progress'; expect 'cut v0.70.0-rc.1' 'an unfinished workspace-test does not hold the rc'
+    base; D_JOBS=$'workspace-test\tsuccess'; expect 'skip required check "ci / gate" is absent from the run' 'a missing ci / gate is not green'
     base; D_JOBS=$'ci / gate\tsuccess\nci / gate\tfailure\nworkspace-test\tsuccess'; expect 'skip required check "ci / gate" concluded success,failure' 'every job of the name must pass'
     base; D_JOBS=$'ci / gate\tskipped\nworkspace-test\tsuccess'; expect 'skip required check "ci / gate" concluded skipped' 'skipped is not success'
     base; D_TIP_SHA=$B; expect "skip $A is no longer the tip of release/0.70.0 (tip $B)" 'superseded push cuts nothing'
@@ -231,7 +235,7 @@ for ref in json.load(sys.stdin):
     notes="Release candidate of ${v}, cut by CI (#4285). Not on crates.io.
 
 Commit \`$D_HEAD_SHA\` on \`release/$v\`, merged $merged_at.
-Gated by CI run https://github.com/$GITHUB_REPOSITORY/actions/runs/$run_id (\`ci / gate\` and \`workspace-test\` green).
+Gated by CI run https://github.com/$GITHUB_REPOSITORY/actions/runs/$run_id (\`ci / gate\` green; workspace-test and clean-room are checked on this commit at promotion by scripts/release/same_sha_gate.sh).
 Cut at $(date -u +%Y-%m-%dT%H:%M:%SZ). binary-release.yml attaches the apr and pv assets to this DRAFT;
 scripts/release/rc_fleet_stage.sh publishes it only after every reachable fleet host runs it (#4327).
 

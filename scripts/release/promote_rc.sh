@@ -10,7 +10,8 @@
 # only the name changes:
 #
 #   1. read the rc release: a prerelease, carrying all eighteen assets
-#      (scripts/check_release_assets.sh), its tag resolved to a commit
+#      (scripts/check_release_assets.sh), its tag resolved to a commit on which
+#      workspace-test and clean-room are green (scripts/release/same_sha_gate.sh)
 #   2. download every asset and verify each tarball against its .sha256; a missing
 #      .sha256 or a mismatch refuses
 #   3. stage each tarball under its final name (`-vX.Y.Z-rc.N-` -> `-vX.Y.Z-`), with
@@ -217,6 +218,15 @@ promote() {
     fi
     echo "$PROG: $rc is commit $commit"
     bash "$ROOT/scripts/check_release_assets.sh" "$rc" || die "refuse: $rc does not carry every asset"
+    # rc_cut.sh cuts on `ci / gate` alone, so the heavy suites are checked here, on
+    # this exact commit, before anything is staged (a --dry-run checks it too).
+    local g=0
+    bash "$ROOT/scripts/release/same_sha_gate.sh" "$rc" --sha "$commit" || g=$?
+    case "$g" in
+        0) ;;
+        2) env_die "same_sha_gate could not read $rc's CI or clean-room state" ;;
+        *) die "refuse: $rc's commit $commit has not passed workspace-test and clean-room (same_sha_gate.sh)" ;;
+    esac
 
     # 2 + 3. download, verify, stage
     mkdir -p "$work/rc" "$work/final" "$work/back" || env_die "cannot create $work"

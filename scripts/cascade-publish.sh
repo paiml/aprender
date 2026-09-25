@@ -611,6 +611,12 @@ case "$MODE" in
       echo "⛔ clean-room gate refused (clean-room.yml is not green on exactly the v$TARGET_VERSION commit); nothing was published." >&2
       exit 1
     fi
+    # An rc is cut on `ci / gate` alone (rc_cut.sh), so workspace-test is checked
+    # here, on exactly the tagged commit, and that commit must be this HEAD (Y3).
+    if ! bash "$REPO_ROOT/scripts/release/same_sha_gate.sh" "v$TARGET_VERSION" --head; then
+      echo "⛔ same_sha_gate refused (workspace-test and clean-room must be green on the v$TARGET_VERSION commit, and HEAD must be that commit); nothing was published." >&2
+      exit 1
+    fi
     if ! bash "$REPO_ROOT/scripts/check_publish_preflight.sh"; then
       echo "⛔ check_publish_preflight.sh refused; nothing was published." >&2
       exit 1

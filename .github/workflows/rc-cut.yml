@@ -9,7 +9,7 @@ name: RC Cut
 # head_sha = the branch tip. `workflow_run` fires when any CI run completes. The
 # `branches` filter matches the run's HEAD branch, so a release PR's runs arrive
 # here and a feature PR's do not. rc_cut.sh then requires, on that run:
-# `ci / gate` and `workspace-test` success, head repository = this repository
+# `ci / gate` success (workspace-test is checked at promotion, same_sha_gate.sh), head repository = this repository
 # (fork PRs can name a branch release/X.Y.Z), head_sha still the tip, and no rc
 # tag already on that commit. Anything else is a logged skip, not a failure.
 #
@@ -66,6 +66,7 @@ jobs:
         run: |
           bash scripts/release/rc_cut.sh --self-test
           bash scripts/release/rc_publish_gate.sh --self-test
+          bash scripts/release/same_sha_gate.sh --self-test
       - name: Decide (writes nothing)
         id: decide
         env:
