@@ -1,0 +1,111 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-model-capability-shapes-v1 — the capability registry's ROWS as focus nodes, under SHACL (#3856)
+#
+# WHAT IT GOVERNS
+#   contracts/apr-model-capability-v1.yaml `ops:` and `quant_types:` — every row a typed node, read by the
+#   existing `extract:json` through this contract's vocabulary. No new extractor and no new Σ entity type: the
+#   registry is YAML, and YAML's maps, sequences and scalars are JSON's data model, so `extract:json` reads a
+#   `.yaml` ref as it reads a `.json` one. `entity.select` keeps only the two row blocks; the registry's prose
+#   (metadata, equations, falsification_conditions, …) is dropped before any node is built, never mapped.
+#
+# WHY A SEPARATE CONTRACT. The registry is itself a pv-contract (one `ont:Contract` node, graded by the
+#   contract shapes); pv_contract emits one node per file and no rows ("no path expressions at v1alpha1"). The
+#   rows need an `entity: {type: json}` declaration, and a file has one entity.
+#
+# REPORTED, NOT ARMED. Neither shape is listed in lint-baseline.json `armed_shapes`, so `pv lint --gate shapes`
+#   computes both, reports their violations under not_armed_shapes, and keeps them out of the verdict. Arming is
+#   its own follow-up (#3856 done_when).
+#
+# RESIDUAL, NAMED. "gpu_supported: false ⇒ a non-empty reason" is conditional, and §3.6's subset has no sh:or /
+#   qualified shapes. Here `reason` is optional and non-empty when present; the conditional is held by
+#   aprender-serve `capability::gpu_support_doc::every_missing_op_in_the_doc_carries_a_reason` (#3077 row) and by
+#   the registry's own binding tests.
+#
+# KIND: pattern. Vocabulary + shapes over a graph; the proof is the extractor's case table and the gate run.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-model-capability-shapes
+version: "1.0.0"
+scope: >
+  The rows of the model-capability registry (`ops:`, `quant_types:`) as typed focus nodes, and the closed shapes
+  each row must satisfy. Out of scope: whether a fact is TRUE (the registry's binding tests against
+  capability.rs), and the conditional "unsupported carries a reason" (named residual above).
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-25'
+  last_modified: '2026-09-25'
+  author: PAIML Engineering
+  description: >
+    Every ops row names one op and one boolean gpu_supported; every quant_types row names one type, one integer
+    ggml_type and one boolean gpu_supported; no row carries a key the shape does not name. Reported, not armed.
+  references:
+    - 'aprender#3856 (SHACL row, done_when 2); contracts/apr-model-capability-v1.yaml (the rows)'
+    - 'crates/aprender-contracts/src/ontology/extract/json.rs (YAML ref + entity.select), lint/shapes_gate.rs'
+
+entity:
+  type: json
+  ref: contracts/apr-model-capability-v1.yaml
+  select: [ops, quant_types]
+
+vocabulary:
+  prefix: cap
+  root_class: cap:CapabilityRegistry
+  nested:
+    ops: cap:CapabilityOp
+    quant_types: cap:QuantType
+
+relations:
+  depends_on: [apr-model-capability-v1, ont-shapes-v1]
+
+shapes:
+  - id: capability-op-row
+    targetClass: cap:CapabilityOp
+    closed: true
+    ignoredProperties: []
+    properties:
+      - {path: cap:op, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^[A-Z][A-Za-z0-9]*$"}
+      - {path: cap:gpu_supported, minCount: 1, maxCount: 1, datatype: xsd:boolean}
+      - {path: cap:reason, maxCount: 1, datatype: xsd:string, minLength: 1}
+      - {path: cap:note, maxCount: 1, datatype: xsd:string, minLength: 1}
+      - {path: cap:citation, maxCount: 1, datatype: xsd:string, minLength: 1}
+  - id: capability-quant-row
+    targetClass: cap:QuantType
+    closed: true
+    ignoredProperties: []
+    properties:
+      - {path: cap:name, minCount: 1, maxCount: 1, datatype: xsd:string, minLength: 1}
+      - {path: cap:ggml_type, minCount: 1, maxCount: 1, datatype: xsd:integer}
+      - {path: cap:gpu_supported, minCount: 1, maxCount: 1, datatype: xsd:boolean}
+      - {path: cap:reason, maxCount: 1, datatype: xsd:string, minLength: 1}
+      - {path: cap:note, maxCount: 1, datatype: xsd:string, minLength: 1}
+      - {path: cap:refs, datatype: xsd:string, minLength: 1}
+
+falsification_tests:
+  - id: FALSIFY-CAPSH-001
+    rule: the registry's rows are focus nodes, typed and literal-typed
+    prediction: a YAML ref restricted by select yields one cap:Op node per row with gpu_supported an xsd:boolean and ggml_type an xsd:integer; an unselected block emits nothing
+    test: cargo test -p aprender-contracts --lib ontology::extract::json
+    if_fails: the rows never reach a shape, and every capability shape is vacuously a Pass
+  - id: FALSIFY-CAPSH-002
+    rule: select is closed-world
+    prediction: without select the registry's prose block is refused naming it; a select naming a key the registry lacks is refused naming the key
+    test: cargo test -p aprender-contracts --lib ontology::extract::json
+    if_fails: a renamed row block silently extracts zero rows
+  - id: FALSIFY-CAPSH-003
+    rule: the shapes grade the real rows and are reported, not armed
+    prediction: pv lint contracts/ --gate shapes lists capability-op-row and capability-quant-row in neither armed_shapes nor declines, with zero violations on the committed registry; a row with gpu_supported "no" or an unknown key is a violation reported under not_armed_shapes
+    test: cargo test -p aprender-contracts --lib lint::shapes_gate::tests::the_capability_row_shapes
+    if_fails: the shapes are declared and grade nothing, or a malformed row passes
+
+qa_gate:
+  id: F-CAPSH-001
+  name: apr-model-capability-shapes
+  description: 'The capability registry rows are SHACL focus nodes under closed shapes, reported not armed (#3856)'
+  checks:
+    - rows_are_typed_focus_nodes
+    - select_is_closed_world
+    - shapes_grade_the_real_rows
+  pass_criteria: All 3 falsification tests pass; the committed registry has zero violations of either shape
+  falsification: 'set one ops row gpu_supported to "no" → a capability-op-row violation naming cap:gpu_supported; add a key `extra: 1` to one quant row → a closed-shape violation naming cap:extra'

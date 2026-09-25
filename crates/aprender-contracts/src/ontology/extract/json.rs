@@ -43,6 +43,8 @@ pub enum ExtractError {
     VocabularyIncomplete { contract: String, what: String },
     /// A nested object (or array of objects) under `key` that `vocabulary.nested` does not name.
     Unmapped { contract: String, key: String },
+    /// `entity.select` names a top-level key the document does not carry (#3856).
+    SelectMissing { contract: String, key: String },
 }
 
 impl std::fmt::Display for ExtractError {
@@ -60,6 +62,10 @@ impl std::fmt::Display for ExtractError {
             Self::Unmapped { contract, key } => write!(
                 f,
                 "extract:json {contract}: nested key `{key}` is not in vocabulary.nested — name its class or drop it"
+            ),
+            Self::SelectMissing { contract, key } => write!(
+                f,
+                "extract:json {contract}: entity.select names `{key}`, which the document does not carry"
             ),
         }
     }
@@ -93,6 +99,9 @@ struct Vocabulary {
     prefix: String,
     root_class: String,
     nested: Vec<(String, String)>,
+    /// `entity.select`: the top-level keys to extract, all others dropped before any node is built. Empty = every
+    /// key. #3856: a YAML registry whose rows are the entities carries prose blocks no vocabulary should map.
+    select: Vec<String>,
 }
 
 fn scalar(v: Option<&serde_yaml::Value>) -> Option<String> {
@@ -131,10 +140,20 @@ fn vocabulary(stem: &str, doc: &serde_yaml::Value) -> Result<Vocabulary, Extract
             nested.push((k, class));
         }
     }
+    let mut select = Vec::new();
+    if let Some(sel) = doc.get("entity").and_then(|e| e.get("select")) {
+        let items = sel
+            .as_sequence()
+            .ok_or_else(|| need("`entity.select` must be a list of keys"))?;
+        for item in items {
+            select.push(scalar(Some(item)).ok_or_else(|| need("`entity.select` must list keys"))?);
+        }
+    }
     Ok(Vocabulary {
         prefix,
         root_class,
         nested,
+        select,
     })
 }
 
@@ -175,14 +194,44 @@ fn extract_text(
     if path.ends_with(".jsonl") {
         return extract_jsonl(g, stem, path, text, vocab);
     }
-    let value: serde_json::Value =
-        serde_json::from_str(text).map_err(|e| ExtractError::NotJson {
-            contract: stem.to_string(),
-            path: path.to_string(),
-            why: e.to_string(),
-        })?;
+    let not_json = |why: String| ExtractError::NotJson {
+        contract: stem.to_string(),
+        path: path.to_string(),
+        why,
+    };
+    // #3856: a YAML ref is read as the same data model — YAML's scalars, maps and sequences are JSON's.
+    let value: serde_json::Value = if path.ends_with(".yaml") || path.ends_with(".yml") {
+        serde_yaml::from_str(text).map_err(|e| not_json(e.to_string()))?
+    } else {
+        serde_json::from_str(text).map_err(|e| not_json(e.to_string()))?
+    };
+    let value = selected(stem, value, &vocab.select)?;
     node(g, stem, stem, &vocab.root_class, true, &value, vocab)?;
     Ok(Vec::new())
+}
+
+/// The document restricted to `select`'s top-level keys, in `select`'s order. A named key the document lacks is
+/// the declaration's fault; an empty `select` keeps the document whole.
+fn selected(
+    stem: &str,
+    value: serde_json::Value,
+    select: &[String],
+) -> Result<serde_json::Value, ExtractError> {
+    if select.is_empty() {
+        return Ok(value);
+    }
+    let serde_json::Value::Object(mut map) = value else {
+        return Ok(value);
+    };
+    let mut kept = serde_json::Map::new();
+    for key in select {
+        let v = map.remove(key).ok_or_else(|| ExtractError::SelectMissing {
+            contract: stem.to_string(),
+            key: key.clone(),
+        })?;
+        kept.insert(key.clone(), v);
+    }
+    Ok(serde_json::Value::Object(kept))
 }
 
 /// The positive control (R-3, PMAT-3704), in memory every gate run: a document whose nested key the vocabulary
@@ -194,6 +243,7 @@ pub fn positive_control() -> bool {
         prefix: "pc".into(),
         root_class: "pc:Root".into(),
         nested: vec![("child".into(), "pc:Child".into())],
+        select: Vec::new(),
     };
     let mut g = Graph::new();
     let mapped = extract_text(
@@ -550,6 +600,66 @@ mod tests {
         let err = extract_into(&mut g, "l", &c, &d).unwrap_err();
         assert!(matches!(err, ExtractError::NotJson { .. }), "{err}");
         assert!(err.to_string().contains("no line parses; line 1"), "{err}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    const YAML_DOC: &str = "metadata: {author: x}\nops:\n  - {op: RmsNorm, gpu_supported: true}\n  - {op: LayerNorm, gpu_supported: false, reason: cpu path}\nquant_types:\n  - {name: Q4_K, ggml_type: 12, gpu_supported: true}\n";
+
+    fn yaml_contract(select: &str) -> serde_yaml::Value {
+        serde_yaml::from_str(&format!(
+            "name: c\nentity: {{type: json, ref: reg.yaml, select: {select}}}\nvocabulary:\n  prefix: cap\n  root_class: cap:Registry\n  nested:\n    ops: cap:Op\n    quant_types: cap:Quant\n"
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_yaml_ref_restricted_by_select_yields_only_the_selected_rows() {
+        let d = tmp("yaml-select");
+        std::fs::write(d.join("reg.yaml"), YAML_DOC).unwrap();
+        let mut g = Graph::new();
+        extract_into(&mut g, "c", &yaml_contract("[ops, quant_types]"), &d).unwrap();
+        let op1 = iri("cap", "c.ops.1");
+        assert!(g
+            .objects(&op1, RDF_TYPE)
+            .iter()
+            .any(|t| t.as_iri() == Some(expand("cap:Op").as_str())));
+        assert_eq!(
+            g.objects(&op1, &expand("cap:gpu_supported")),
+            vec![&Term::boolean(false)],
+            "a YAML bool is an xsd:boolean, not a string"
+        );
+        assert_eq!(
+            g.objects(&iri("cap", "c.quant_types.0"), &expand("cap:ggml_type")),
+            vec![&Term::integer(12)]
+        );
+        assert!(
+            g.objects(&iri("cap", "c"), &expand("cap:metadata"))
+                .is_empty(),
+            "an unselected block emits nothing"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn without_select_the_unmapped_prose_block_is_refused_and_a_missing_select_key_is_named() {
+        let d = tmp("yaml-noselect");
+        std::fs::write(d.join("reg.yaml"), YAML_DOC).unwrap();
+        let mut g = Graph::new();
+        let err = extract_into(&mut g, "c", &yaml_contract("[]"), &d).unwrap_err();
+        assert!(
+            matches!(err, ExtractError::Unmapped { ref key, .. } if key == "metadata"),
+            "{err}"
+        );
+        let err = extract_into(&mut g, "c", &yaml_contract("[ops, cells]"), &d).unwrap_err();
+        assert!(
+            matches!(err, ExtractError::SelectMissing { ref key, .. } if key == "cells"),
+            "{err}"
+        );
+        let err = extract_into(&mut g, "c", &yaml_contract("ops"), &d).unwrap_err();
+        assert!(
+            matches!(err, ExtractError::VocabularyIncomplete { .. }),
+            "{err}"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
