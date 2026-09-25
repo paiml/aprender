@@ -12,13 +12,15 @@
 # claim was false (RMSNorm finiteness with unbounded gamma), and one was refuted by
 # its own nondeterministic exp stub. A harness that no gate runs can say anything.
 #
+# NOT LISTED: verify_softmax_normalization, which ran past 45 min under -j 8 and
+# past 15 min alone.
 # NOT LISTED: verify_swiglu_fused_equivalence. Fixed, it asks CBMC to prove two
 # symbolic f32 division circuits bit-identical, and it timed out at 600 s on 2 and
 # on 4 elements. The same property is FALSIFY-SG-002 (proptest,
 # crates/aprender-contracts/tests/includes/falsify_actgate_swi_ce_rope.rs).
 #
-# The list is the decode-path kernels: RMSNorm, softmax, SiLU/SwiGLU and the
-# quantized dot. It is NAMED, not globbed, so a renamed or deleted harness is a
+# The list is the decode-path kernels: RMSNorm, softmax, SiLU/SwiGLU, the
+# quantized dot, RoPE, attention and GQA. It is NAMED, not globbed, so a renamed or deleted harness is a
 # failure (Kani matches nothing) rather than a silently shorter run.
 #
 #   bash scripts/kani_parity_chain.sh             # 0 all verified · 1 a harness failed · 2 ENV
@@ -49,6 +51,15 @@ HARNESSES=(
     verify_swiglu_zero_preservation
     verify_swiglu_silu_lower_bound
     verify_quantized_dot_bounded
+    # Attention and RoPE (aprender-cb, #3140). They needed stub_exp(0) = 1,
+    # stub_sqrt bracketed in [min(x,1), max(x,1)] and ACT_BOUND inputs.
+    verify_softmax_bounded
+    verify_log_softmax_upper_bound
+    verify_rope_norm_preservation
+    verify_attention_weights_normalize
+    verify_gqa_convex_bound
+    verify_gqa_mha_equivalence
+    verify_gqa_weight_normalization
 )
 
 if [ "${1:-}" = "--list" ]; then

@@ -161,7 +161,7 @@ fn verify_cross_entropy_non_negative() {
 fn verify_log_softmax_upper_bound() {
     const N: usize = 8;
     let logits: [f32; N] = kani::any();
-    kani::assume(logits.iter().all(|x| x.is_finite()));
+    kani::assume(logits.iter().all(|x| act_bounded(*x)));
 
     let mut output = [0.0f32; N];
     cross_entropy::log_softmax_scalar(&logits, &mut output);
@@ -208,7 +208,7 @@ fn verify_cross_entropy_finite() {
 fn verify_rope_norm_preservation() {
     const D: usize = 4;
     let x: [f32; D] = kani::any();
-    kani::assume(x.iter().all(|v| v.is_finite()));
+    kani::assume(x.iter().all(|v| act_bounded(*v)));
 
     let position: u32 = kani::any();
     kani::assume(position < 1024);
@@ -285,9 +285,9 @@ fn verify_attention_weights_normalize() {
     let q: [f32; N * DK] = kani::any();
     let k: [f32; M * DK] = kani::any();
     let v: [f32; M * DV] = kani::any();
-    kani::assume(q.iter().all(|x| x.is_finite()));
-    kani::assume(k.iter().all(|x| x.is_finite()));
-    kani::assume(v.iter().all(|x| x.is_finite()));
+    kani::assume(q.iter().all(|x| act_bounded(*x)));
+    kani::assume(k.iter().all(|x| act_bounded(*x)));
+    kani::assume(v.iter().all(|x| act_bounded(*x)));
 
     let mut output = [0.0f32; N * DV];
     attention::attention_scalar(&q, &k, &v, N, M, DK, DV, &mut output);
@@ -306,7 +306,7 @@ fn verify_attention_weights_normalize() {
 /// Strategy: stub_float
 /// Bound: seq_len=2, d_k=2, d_v=2, 2 heads, 2 kv_heads
 #[kani::proof]
-#[kani::unwind(5)]
+#[kani::unwind(9)]
 #[kani::stub(f32::exp, stub_exp)]
 #[kani::stub(f32::sqrt, stub_sqrt)]
 fn verify_gqa_weight_normalization() {
@@ -319,9 +319,9 @@ fn verify_gqa_weight_normalization() {
     let q: [f32; HEADS * SEQ * DK] = kani::any();
     let k: [f32; KV_HEADS * SEQ * DK] = kani::any();
     let v: [f32; KV_HEADS * SEQ * DV] = kani::any();
-    kani::assume(q.iter().all(|x| x.is_finite()));
-    kani::assume(k.iter().all(|x| x.is_finite()));
-    kani::assume(v.iter().all(|x| x.is_finite()));
+    kani::assume(q.iter().all(|x| act_bounded(*x)));
+    kani::assume(k.iter().all(|x| act_bounded(*x)));
+    kani::assume(v.iter().all(|x| act_bounded(*x)));
 
     let mut output = [0.0f32; HEADS * SEQ * DV];
     gqa::gqa_scalar(&q, &k, &v, SEQ, DK, DV, HEADS, KV_HEADS, &mut output);
@@ -340,7 +340,7 @@ fn verify_gqa_weight_normalization() {
 /// Strategy: stub_float
 /// Bound: seq_len=2, d_k=2, d_v=2, 2 heads, 2 kv_heads
 #[kani::proof]
-#[kani::unwind(5)]
+#[kani::unwind(9)]
 #[kani::stub(f32::exp, stub_exp)]
 #[kani::stub(f32::sqrt, stub_sqrt)]
 fn verify_gqa_mha_equivalence() {
@@ -352,9 +352,9 @@ fn verify_gqa_mha_equivalence() {
     let q: [f32; HEADS * SEQ * DK] = kani::any();
     let k: [f32; HEADS * SEQ * DK] = kani::any();
     let v: [f32; HEADS * SEQ * DV] = kani::any();
-    kani::assume(q.iter().all(|x| x.is_finite()));
-    kani::assume(k.iter().all(|x| x.is_finite()));
-    kani::assume(v.iter().all(|x| x.is_finite()));
+    kani::assume(q.iter().all(|x| act_bounded(*x)));
+    kani::assume(k.iter().all(|x| act_bounded(*x)));
+    kani::assume(v.iter().all(|x| act_bounded(*x)));
 
     // GQA with kv_heads = num_heads is standard MHA
     let mut output_gqa = [0.0f32; HEADS * SEQ * DV];
@@ -377,7 +377,7 @@ fn verify_gqa_mha_equivalence() {
 /// Strategy: stub_float
 /// Bound: seq_len=2, d_k=2, d_v=2, 2 heads, 2 kv_heads
 #[kani::proof]
-#[kani::unwind(5)]
+#[kani::unwind(9)]
 #[kani::stub(f32::exp, stub_exp)]
 #[kani::stub(f32::sqrt, stub_sqrt)]
 fn verify_gqa_convex_bound() {
@@ -390,9 +390,9 @@ fn verify_gqa_convex_bound() {
     let q: [f32; HEADS * SEQ * DK] = kani::any();
     let k: [f32; KV_HEADS * SEQ * DK] = kani::any();
     let v: [f32; KV_HEADS * SEQ * DV] = kani::any();
-    kani::assume(q.iter().all(|x| x.is_finite()));
-    kani::assume(k.iter().all(|x| x.is_finite()));
-    kani::assume(v.iter().all(|x| x.is_finite()));
+    kani::assume(q.iter().all(|x| act_bounded(*x)));
+    kani::assume(k.iter().all(|x| act_bounded(*x)));
+    kani::assume(v.iter().all(|x| act_bounded(*x)));
 
     let mut output = [0.0f32; HEADS * SEQ * DV];
     gqa::gqa_scalar(&q, &k, &v, SEQ, DK, DV, HEADS, KV_HEADS, &mut output);
