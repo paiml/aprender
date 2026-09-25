@@ -2788,7 +2788,7 @@ jobs:
       # mutation-verified as independently load-bearing; the script's header records
       # which two are diagnostics rather than enforcement, so "8 rows" is not read as
       # "8 rules".
-      - name: "Signer case table: 8 rows on a throwaway keypair"
+      - name: "Signer case table: 14 rows on a throwaway keypair"
         shell: bash
         run: bash scripts/pr_review_sign_receipt.sh --self-test
 
