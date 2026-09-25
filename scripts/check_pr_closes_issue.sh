@@ -63,22 +63,35 @@ CLOSE_RE='(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:spac
 REF_RE='#[0-9]+'
 
 # prose_lines < body > the lines GitHub renders as prose, each as written: a
-# line-state pass, so an UNCLOSED ``` / ~~~ fence or <!-- runs to the end of the
-# body exactly as GitHub renders it (a closing fence is the opening character,
-# at least as long). Rule 18 then accepts only a WHOLE LINE at column 0 in one
-# strict form, so indented code, blockquotes, inline code of any backtick count
-# and mid-sentence keywords never discharge anything: they cannot be at column 0
-# with nothing else on the line. This replaces a regex race against a Markdown
-# parser (agy quorum @afc250626 and @1d16e6caa).
+# line-state pass, so an UNCLOSED block runs to the end of the body exactly as
+# GitHub renders it. Dropped: ``` / ~~~ fences (closed by the opening
+# character, at least as long; a backtick fence whose info string holds a
+# backtick is not a fence), every line that touches a <!-- --> comment, HTML
+# blocks (<pre|script|style|textarea> to the closing tag, <? to ?>, <![CDATA[
+# to ]]>, <!X to >, any other tag line to the next blank line), blockquote
+# lines and their lazy continuations. Rule 18 then accepts only a WHOLE LINE at
+# column 0 in one strict form, so indented code, inline code of any backtick
+# count and mid-sentence keywords never discharge anything. This replaces a
+# regex race against a Markdown parser (agy quorum @afc250626, @1d16e6caa,
+# @4fe1eb7b1). Where it is unsure it drops the line: a false RED is a reworded
+# PR body, a false GREEN is a PR that closes nothing.
 prose_lines() {
     perl -ne '
-        BEGIN { $fence = 0; $comment = 0 }
+        BEGIN { $end = ""; $quote = 0 }
         s/\r?\n\z//;
-        if ($fence) { $fence = 0 if /^ {0,3}(\Q$fc\E{$fl,})[ \t]*$/; next }
-        if ($comment) { if (s/^.*?-->//) { $comment = 0 } else { next } }
-        s/<!--.*?-->//g;
-        $comment = 1 if s/<!--.*\z//;
-        if (/^ {0,3}(`{3,}|~{3,})/) { $fc = substr($1, 0, 1); $fl = length($1); $fence = 1; next }
+        if ($end ne "") { $end = "" if ($end eq "BLANK" ? /^[ \t]*$/ : /$end/); next }
+        if (/^[ \t]*$/) { $quote = 0; print "\n"; next }
+        if (/^ {0,3}(`{3,})[^`]*$/ || /^ {0,3}(~{3,})/) {
+            $end = "^ {0,3}" . quotemeta(substr($1, 0, 1)) . "{" . length($1) . ",}[ \t]*\$"; $quote = 0; next }
+        if (/<!--/) { $end = "-->" if /<!--(?!.*-->)/; next }
+        if (/^ {0,3}<(pre|script|style|textarea)(?:[\s>]|$)/i) {
+            $end = "(?i)</(?:pre|script|style|textarea)>" unless /<\/(?:pre|script|style|textarea)>/i; $quote = 0; next }
+        if (/^ {0,3}<\?/)         { $end = "\\?>" unless /\?>/;     $quote = 0; next }
+        if (/^ {0,3}<!\[CDATA\[/) { $end = "\\]\\]>" unless /\]\]>/; $quote = 0; next }
+        if (/^ {0,3}<![A-Za-z]/)   { $end = ">" unless /^ {0,3}<![A-Za-z][^>]*>/; $quote = 0; next }
+        if (/^ {0,3}<\/?[A-Za-z]/) { $end = "BLANK"; $quote = 0; next }
+        if (/^ {0,3}>/) { $quote = 1; next }
+        next if $quote;
         print "$_\n";'
 }
 # The three discharge forms, each a whole line at column 0 (trailing period allowed):
@@ -285,7 +298,7 @@ check_require_close() {
         if ! pbody="$(issue_body "$p")"; then
             printf '  #%s row %s: parent body UNREADABLE\n' "$p" "$id"; unverified=$((unverified + 1)); continue
         fi
-        if printf '%s\n' "$pbody" | sed -nE 's/^[[:space:]]*[-*][[:space:]]+\[ \][[:space:]]+([^:[:space:]]+):.*/\1/p' | grep -qxF -- "$id"; then
+        if printf '%s\n' "$pbody" | prose_lines | sed -nE 's/^[[:space:]]*[-*][[:space:]]+\[ \][[:space:]]+([^:[:space:]]+):.*/\1/p' | grep -qxF -- "$id"; then
             printf '  discharges #%s row %s (open checklist line)\n' "$p" "$id"; open=$((open + 1))
         else
             printf '  #%s row %s: no unticked `- [ ] %s:` line in #%s (does not discharge)\n' "$p" "$id" "$id" "$p"
@@ -304,7 +317,8 @@ check_require_close() {
         printf 'PASS: discharges %s open issue(s) (rule 18).\n' "$open"
         return 0
     fi
-    no_issue_reason="$(printf '%s\n' "$body" | grep -iE '^no-issue:' | sed -E 's/^[Nn][Oo]-[Ii][Ss][Ss][Uu][Ee]:[[:space:]]*//' | tr -d '[:space:]' || true)"
+    # an ASCII visible character is required: U+00A0 and friends are not a reason
+    no_issue_reason="$(printf '%s\n' "$body" | grep -iE '^no-issue:' | sed -E 's/^[Nn][Oo]-[Ii][Ss][Ss][Uu][Ee]:[[:space:]]*//' | LC_ALL=C tr -cd '!-~' || true)"
     if [ -n "$no_issue_reason" ]; then
         printf 'PASS: no-issue reason given (rule 18).\n'
         return 0
@@ -349,12 +363,13 @@ esac
 STUB
     chmod +x "${tmp}/kindstub.sh"
     # Parent bodies for rule-20 row refs: 9002 lists row A8 open and A7 ticked;
-    # 9006 is an open issue whose body cannot be read; every other body is empty.
+    # 9006 is an open issue whose body cannot be read; 9007 shows a row only in a fence; every other body is empty.
     cat > "${tmp}/bodystub.sh" <<'STUB'
 #!/usr/bin/env bash
 case "${1:-}" in
   9002) printf '## Collapsed rows\n- [ ] A8: findings ledger (#4455)\n- [x] A7: done (#4454)\n- [ ] A8b.1: sub row\n' ;;
   9006) exit 1 ;;
+  9007) printf '```\n- [ ] F1: an example row in a code block\n```\n' ;;
   *)    printf '' ;;
 esac
 STUB
@@ -483,6 +498,22 @@ STUB
     run_rc_case "rc-comment-opened-in-fence" $'```\n<!--\n```\nCloses #9002'       0 "PASS: discharges 1"
     run_rc_case "rc-crlf-fence-closes" $'```\r\nx\r\n```\r\nCloses #9002\r\n'      0 "PASS: discharges 1"
     run_rc_case "rc-close-after-inline-comment" $'<!-- note -->\nCloses #9002'     0 "PASS: discharges 1"
+    # agy round 3 (@4fe1eb7b1): HTML blocks, same-line comments, lazy quotes, NBSP, fenced parent rows
+    run_rc_case "rc-close-in-pre"      $'<pre>\nCloses #9002\n</pre>'                 1 "FAIL no-close"
+    run_rc_case "rc-close-after-comment-same-line" $'<!-- -->Closes #9002'           1 "FAIL no-close"
+    run_rc_case "rc-close-in-html-block" $'<div>\nCloses #9002'                      1 "FAIL no-close"
+    run_rc_case "rc-close-in-pi"       $'<?x\n\nCloses #9002\n?>'                     1 "FAIL no-close"
+    run_rc_case "rc-close-lazy-quote"  $'> quote\nCloses #9002'                       1 "FAIL no-close"
+    run_rc_case "rc-fence-after-quote" $'> q\n```\nCloses #9002\n```'                 1 "FAIL no-close"
+    run_rc_case "rc-no-issue-nbsp"     $'no-issue: \xc2\xa0'                          1 "FAIL no-close"
+    run_rc_case "rc-row-ref-parent-fenced" $'Refs #9007 row F1\nkeep-open: parent' 1 "FAIL no-close"
+    run_rc_case "rc-close-after-pre"   $'<pre>\nx\n</pre>\nCloses #9002'              0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-html-blank" $'<details>\n<summary>s</summary>\n\nCloses #9002' 0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-quote-blank" $'> quote\n\nCloses #9002'              0 "PASS: discharges 1"
+    run_rc_case "rc-close-in-cdata"    $'<![CDATA[\n\nCloses #9002\n]]>'             1 "FAIL no-close"
+    run_rc_case "rc-close-in-declaration" $'<!X\n\nCloses #9002\n>'                  1 "FAIL no-close"
+    run_rc_case "rc-close-after-quote-then-fence" $'> q\n```\nx\n```\nCloses #9002'  0 "PASS: discharges 1"
+    run_rc_case "rc-backtick-info-not-fence" $'``` a`b\nCloses #9002'               0 "PASS: discharges 1"
     run_rc_case "rc-no-issue-code-reason" $'no-issue: `docs/` only'                 0 "PASS: no-issue"
     run_rc_case "rc-no-issue-indented" $'  no-issue: docs'                          1 "FAIL no-close"
     run_rc_case "rc-close-after-fence" $'```\nexample\n```\nCloses #9002'           0 "PASS: discharges 1"
