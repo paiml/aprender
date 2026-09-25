@@ -48,7 +48,7 @@ impl Case {
     fn run(&self, threshold: f64, basis: &str) -> Result<()> {
         run(
             &self.path("ref.bin"),
-            &self.path("sub.bin"),
+            Subject::File(&self.path("sub.bin")),
             threshold,
             basis,
             DEFAULT_MIN_POSITIONS,
@@ -128,6 +128,7 @@ fn rec() -> InputRecord {
     InputRecord {
         path: "x".into(),
         sha256: "0".into(),
+        producer: None,
     }
 }
 
@@ -221,4 +222,111 @@ fn oracle_commit_is_the_llama_pin_build_commit() {
         .and_then(|l| l.strip_suffix('"'))
         .expect("build_commit line");
     assert_eq!(ORACLE, format!("llama.cpp@{commit}"));
+}
+
+/// A fake forward: row `pos` of the fixture, so a produced subject must equal it.
+fn replay(f: &RawLogits) -> impl FnMut(u32, usize) -> Result<Vec<f32>> + '_ {
+    move |token, pos| {
+        assert_eq!(
+            i64::from(token),
+            i64::from(f.token_ids[pos]),
+            "fed the reference's id"
+        );
+        Ok(f.row(pos).to_vec())
+    }
+}
+
+#[test]
+fn produce_subject_feeds_the_reference_ids_in_order_and_keeps_every_row() {
+    let f = fixture();
+    let produced = produce_subject(&f.token_ids, 2000, replay(&f)).expect("produce");
+    assert_eq!(
+        produced, f,
+        "every position's row, in order, under the reference's ids"
+    );
+    // Through the judge: the produced subject is the reference, so GREEN at 1 - 1e-9.
+    let r = judge(&f, &produced, 1.0 - 1e-9, BASIS, (rec(), rec()));
+    assert_eq!(r.verdict, "GREEN");
+}
+
+#[test]
+fn produce_subject_refuses_an_id_outside_the_vocab_before_the_forward_sees_it() {
+    let f = fixture();
+    let mut calls = 0;
+    let mut forward = |_: u32, _: usize| -> Result<Vec<f32>> {
+        calls += 1;
+        Ok(vec![0.5; N_VOCAB])
+    };
+    // Ids are 1000..1064: a vocab of 1030 makes position 30 the first bad one.
+    let err = produce_subject(&f.token_ids, 1030, &mut forward).expect_err("id 1030 >= vocab");
+    assert_eq!(err.exit_code_value(), 4);
+    assert!(err.to_string().contains("position 30"), "{err}");
+    assert_eq!(calls, 30, "the out-of-vocab id never reached the forward");
+    let neg = produce_subject(&[-1], 10, |_, _| Ok(vec![0.5; 4])).expect_err("negative id");
+    assert!(neg.to_string().contains("id -1"), "{neg}");
+}
+
+#[test]
+fn produce_subject_refuses_ragged_or_empty_rows_and_propagates_forward_errors() {
+    let ragged = produce_subject(&[1, 2], 10, |_, pos| Ok(vec![0.5; 4 + pos]));
+    assert!(ragged
+        .expect_err("ragged")
+        .to_string()
+        .contains("5 logits at position 1"));
+    assert!(
+        produce_subject(&[1], 10, |_, _| Ok(Vec::new())).is_err(),
+        "zero-width row"
+    );
+    let failing = produce_subject(&[1, 2], 10, |_, pos| {
+        if pos == 1 {
+            Err(CliError::ValidationFailed("boom".into()))
+        } else {
+            Ok(vec![0.5; 4])
+        }
+    });
+    assert_eq!(failing.expect_err("forward error").exit_code_value(), 5);
+}
+
+/// `--model` refuses too few positions BEFORE opening the model: the path does not
+/// exist, so reaching the load would be exit 4, not 5.
+#[test]
+fn model_mode_checks_min_positions_before_touching_the_model() {
+    let mut f = fixture();
+    f.token_ids.truncate(8);
+    f.logits.truncate(8 * N_VOCAB);
+    let c = Case::new(&f, &f);
+    let r = run(
+        &c.path("ref.bin"),
+        Subject::Model {
+            model: &c.path("no-such-model.gguf"),
+            save: None,
+        },
+        0.99,
+        BASIS,
+        DEFAULT_MIN_POSITIONS,
+        &c.path("receipt.json"),
+        true,
+    );
+    assert_eq!(exit(r), 5);
+}
+
+#[test]
+fn model_mode_with_a_missing_model_is_refused_and_writes_nothing() {
+    let f = fixture();
+    let c = Case::new(&f, &f);
+    let r = run(
+        &c.path("ref.bin"),
+        Subject::Model {
+            model: &c.path("no-such-model.gguf"),
+            save: Some(&c.path("subject.bin")),
+        },
+        0.99,
+        BASIS,
+        DEFAULT_MIN_POSITIONS,
+        &c.path("receipt.json"),
+        true,
+    );
+    assert_eq!(exit(r), 4);
+    assert!(!c.path("receipt.json").exists());
+    assert!(!c.path("subject.bin").exists());
 }

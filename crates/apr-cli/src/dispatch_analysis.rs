@@ -324,13 +324,23 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         ExtendedCommands::ParityOracle {
             reference,
             subject,
+            model,
+            subject_out,
             threshold,
             threshold_basis,
             min_positions,
             output,
         } => commands::parity_oracle::run(
             reference,
-            subject,
+            match (subject, model) {
+                (Some(file), _) => commands::parity_oracle::Subject::File(file),
+                (None, Some(model)) => commands::parity_oracle::Subject::Model {
+                    model,
+                    save: subject_out.as_deref(),
+                },
+                // clap: `--subject` is required unless `--model` is present.
+                (None, None) => unreachable!("clap requires --subject or --model"),
+            },
             *threshold,
             threshold_basis,
             *min_positions,

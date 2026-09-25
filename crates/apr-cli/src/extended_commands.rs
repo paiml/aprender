@@ -1038,9 +1038,15 @@ pub enum ExtendedCommands {
         /// (evidence/parity/l0-1/intel/qwen35-cpu-reference/producer/apr_raw_logits.cpp)
         #[arg(long, value_name = "FILE")]
         reference: InputFile,
-        /// APRRAWLG logits from apr over the SAME token ids
+        /// APRRAWLG logits from apr over the SAME token ids (or --model)
+        #[arg(long, value_name = "FILE", required_unless_present = "model", conflicts_with = "model")]
+        subject: Option<InputFile>,
+        /// Qwen3.5 GGUF: apr produces the subject in-process over the reference's own ids
         #[arg(long, value_name = "FILE")]
-        subject: InputFile,
+        model: Option<InputFile>,
+        /// With --model: also write the produced subject APRRAWLG here
+        #[arg(long, value_name = "FILE", requires = "model")]
+        subject_out: Option<OutputPath>,
         /// Min per-position cosine for GREEN. No default: it needs a measured basis
         #[arg(long, value_name = "F", value_parser = commands::threshold_arg::parse_cosine)]
         threshold: f64,
