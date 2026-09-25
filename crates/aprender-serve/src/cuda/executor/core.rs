@@ -153,6 +153,7 @@ impl CudaExecutor {
             // PMAT-024: cuBLAS handle for prefill GEMM (lazy init on first prefill)
             cublas_handle: None,
             cublas_f16_handle: None,
+            qwen35_prefill_f16: false,
             // PMAT-063: cuBLAS workspace for graph capture (lazy init)
             cublas_workspace: None,
             // PMAT-053: cuBLASLt handle for FP8 GEMM (lazy init on first FP8 prefill)
