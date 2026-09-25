@@ -108,7 +108,7 @@ uncommented() { grep -vE '^[[:space:]]*#' || true; }
 SCRIPT_RE='scripts/[A-Za-z0-9_./-]+'
 PREFIX_RE='"?((\$\{?[A-Za-z_]+\}?|\.)/)?'
 scripts_run_in() {
-    uncommented | grep -oE "((^|[;&|(\`]|run:)[[:space:]]*[@-]*[[:space:]]*|(^|[^A-Za-z0-9_./-])(bash|sh|zsh|python3?|source|exec|\.)[[:space:]]+(-[A-Za-z]+[[:space:]]+)*)$PREFIX_RE$SCRIPT_RE" \
+    uncommented | grep -oE "((^|[;&|(\`]|run:)[[:space:]]*[@-]*[[:space:]]*|(^|[^A-Za-z0-9_./-])(bash|sh|zsh|python3?|source|exec|\.)[[:space:]]+(--?[A-Za-z-]*[[:space:]]+)*)$PREFIX_RE$SCRIPT_RE" \
         | grep -oE "$SCRIPT_RE\$" | sort -u || true
 }
 
@@ -264,13 +264,19 @@ gate_no_publish_in_ci() {
 
 # ── no-registry-secret ────────────────────────────────────────────────────────
 
+# Registry-credential secret names in a `gh secret list` listing on stdin (first column), space-joined.
+registry_secrets_in() {
+    # substring, as ruchy's: a renamed CARGO_REGISTRY_TOKEN_OLD is still a registry credential
+    awk '{ print $1 }' | grep -Eo 'CARGO_REGISTRY_TOKEN|CRATES_TOKEN|CARGO_TOKEN|CRATES_IO_TOKEN' | sort -u | tr '\n' ' ' || true
+}
+
 gate_no_registry_secret() {
     local gate="no-registry-secret" listing found
     require_tool "$gate" gh || return 1
     gh auth status >/dev/null 2>&1 || { fail "$gate" "gh not authenticated"; return 1; }
     listing=$(cd "$ROOT" && gh secret list 2>/dev/null) || { fail "$gate" "gh secret list failed (no admin read on the repository secrets)"; return 1; }
     listing+=$'\n'$(gh secret list --org paiml 2>/dev/null || true)
-    found=$(printf '%s\n' "$listing" | grep -Eo 'CARGO_REGISTRY_TOKEN|CRATES_TOKEN|CARGO_TOKEN|CRATES_IO_TOKEN' | sort -u | tr '\n' ' ' || true)
+    found=$(printf '%s\n' "$listing" | registry_secrets_in)
     [ -z "$found" ] || { fail "$gate" "a registry credential is still configured: $found"; return 1; }
     pass "$gate"
 }
@@ -362,6 +368,11 @@ self_test() {
     fx echothenreal .github/workflows/r.yml "$WF      - run: echo go && cargo publish -p x\n"
     fx pydry .github/workflows/r.yml "$WF      - run: python3 scripts/p.py\n"
     fx pydry scripts/p.py 'import subprocess\nsubprocess.run(["cargo", "publish", "--dry-run"])\nsubprocess.run(["cargo", "publish"]); note = "--dry-run"\n'
+    fx dashdash .github/workflows/r.yml "$WF      - run: bash -- scripts/p.sh\n      - run: bash --noprofile --norc -e scripts/q.sh\n"
+    fx dashdash scripts/p.sh '#!/bin/sh\ntrue\n'
+    fx dashdash scripts/q.sh '#!/bin/sh\ncargo publish -p x\n'
+    fx dashdash2 .github/workflows/r.yml "$WF      - run: bash -- scripts/p.sh\n"
+    fx dashdash2 scripts/p.sh '#!/bin/sh\ncargo publish -p x\n'
     mkdir -p "$d/empty"
     row() {  # row <want PASS|FAIL> <label> <cmd...>
         local want=$1 label=$2; shift 2
@@ -402,6 +413,18 @@ self_test() {
     row FAIL 'python: a real argv publish next to an unrelated "--dry-run" string' gate_no_publish_in_ci "$d/pydry"
     row FAIL 'no workflow files: a gate over nothing' gate_no_publish_in_ci "$d/empty"
     row FAIL 'a missing root' gate_no_publish_in_ci "$d/no-such-dir"
+    row FAIL 'bash --noprofile --norc -e scripts/q.sh' gate_no_publish_in_ci "$d/dashdash"
+    row FAIL 'bash -- scripts/p.sh' gate_no_publish_in_ci "$d/dashdash2"
+    local sec
+    sec=$(printf 'CODECOV_TOKEN\tUpdated 2026-01-01\nCARGO_REGISTRY_TOKEN\tUpdated 2026-02-02\n' | registry_secrets_in)
+    if [ "$sec" = "CARGO_REGISTRY_TOKEN " ]; then echo "  ok   no-registry-secret: CARGO_REGISTRY_TOKEN in a listing is found           FAIL"
+    else echo "  FAIL no-registry-secret: a listing with CARGO_REGISTRY_TOKEN gave '$sec'"; rc=1; fi
+    sec=$(printf 'CARGO_REGISTRY_TOKEN_OLD\tUpdated\n' | registry_secrets_in)
+    if [ -n "$sec" ]; then echo "  ok   no-registry-secret: a renamed CARGO_REGISTRY_TOKEN_OLD is found           FAIL"
+    else echo "  FAIL no-registry-secret: CARGO_REGISTRY_TOKEN_OLD was not reported"; rc=1; fi
+    sec=$(printf 'CODECOV_TOKEN\tUpdated\nGITHUB_PAT\tUpdated\n' | registry_secrets_in)
+    if [ -z "$sec" ]; then echo "  ok   no-registry-secret: unrelated secret names are clean                 PASS"
+    else echo "  FAIL no-registry-secret: unrelated names reported as '$sec'"; rc=1; fi
     row FAIL 'no-registry-secret on a missing tool' require_tool no-registry-secret gh-does-not-exist
     local S=deadbeef
     if [ -z "$(printf 'clean-room-%s.log\ndogfood-receipt-%s.json\nfresh-container-%s.log\n' $S $S $S | missing_receipts $S)" ]; then
