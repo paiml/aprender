@@ -1,3 +1,4 @@
+#![cfg(feature = "apr-tools")] // apr's own tools (PMAT-3954: they exist only under this feature)
 //! FALSIFY-MCP-PROGRESS-001 — MCP `notifications/progress` for `apr.finetune`.
 //!
 //! Spec: `docs/specifications/apr-mcp-server-spec.md` M3 milestone line 156

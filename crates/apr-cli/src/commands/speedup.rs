@@ -46,16 +46,16 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
         #[cfg(not(feature = "cuda"))]
         let cuda_available = false;
 
-        let model_bytes = std::fs::read(path)
+        // #3750: the format from the 8-byte magic, never the whole model
+        let magic = super::model_header::read_prefix(path, 8)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
 
-        let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
+        let format = detect_format(&magic)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
 
         let prompt = "Write a hello world program in Python:";
         let Some((tps, _measurement_duration)) = throughput_for_format(
             path,
-            &model_bytes,
             format,
             prompt,
             config,
@@ -245,10 +245,10 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
         GGUFModel, MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig,
     };
 
-    let model_bytes = std::fs::read(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-    let gguf = GGUFModel::from_bytes(&model_bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+    // #3750: one map; the tokenizer comes from its header, not from a whole-file read
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let gguf = &mapped.model;
 
     let prompt = "Write a function to check if a number is prime:";
     let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
@@ -270,8 +270,6 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
     #[cfg(not(feature = "cuda"))]
     let cuda_available = false;
 
-    let mapped = MappedGGUFModel::from_path(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
 
@@ -280,7 +278,8 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
     if cuda_available {
         use realizar::gguf::OwnedQuantizedModelCuda;
         match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
-            Ok(mut cuda_model) => {
+            Ok(cuda_model) => {
+                let mut session = qa_dense_cuda(cuda_model);
                 let (tps, _) = measure_generate_throughput(
                     config.warmup,
                     config.iterations,
@@ -290,8 +289,7 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
                     budget_us,
                     config.verbose,
                     || {
-                        cuda_model
-                            .generate_gpu_resident(&prompt_tokens, &gen_config)
+                        qa_dense_generate(&mut session, &prompt_tokens, &gen_config, true)
                             .unwrap_or_default()
                     },
                 );
@@ -299,7 +297,7 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
             }
             Err(e) => {
                 // Recover the model for CPU fallback (CudaInitError preserves the model)
-                let model = e.into_model();
+                let mut session = qa_dense_cpu(e.into_model());
                 let (tps, _) = measure_generate_throughput(
                     config.warmup,
                     config.iterations,
@@ -309,8 +307,7 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
                     budget_us,
                     config.verbose,
                     || {
-                        model
-                            .generate_with_cache(&prompt_tokens, &gen_config)
+                        qa_dense_generate(&mut session, &prompt_tokens, &gen_config, false)
                             .unwrap_or_default()
                     },
                 );
@@ -318,6 +315,7 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
             }
         }
     }
+    let mut session = qa_dense_cpu(model);
     let (tps, _) = measure_generate_throughput(
         config.warmup,
         config.iterations,
@@ -326,11 +324,7 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
         "qa_ollama_parity_cpu",
         budget_us,
         config.verbose,
-        || {
-            model
-                .generate_with_cache(&prompt_tokens, &gen_config)
-                .unwrap_or_default()
-        },
+        || qa_dense_generate(&mut session, &prompt_tokens, &gen_config, false).unwrap_or_default(),
     );
     Ok(tps)
 }
@@ -416,10 +410,10 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> R
         QuantizedGenerateConfig,
     };
 
-    let model_bytes = std::fs::read(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-    let gguf = GGUFModel::from_bytes(&model_bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+    // #3750: one map; the tokenizer comes from its header, not from a whole-file read
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let gguf = &mapped.model;
 
     let prompt = "Write a function to calculate factorial:";
     let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
@@ -433,10 +427,9 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> R
     let budget_us = config.max_tokens as u64 * config.iterations as u64 * 100_000;
 
     // CPU throughput
-    let mapped = MappedGGUFModel::from_path(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+    let mut session = qa_dense_cpu(model);
     let (cpu_tps, _) = measure_generate_throughput(
         config.warmup,
         config.iterations,
@@ -445,11 +438,7 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> R
         "qa_gpu_speedup_cpu",
         budget_us,
         config.verbose,
-        || {
-            model
-                .generate_with_cache(&prompt_tokens, &gen_config)
-                .unwrap_or_default()
-        },
+        || qa_dense_generate(&mut session, &prompt_tokens, &gen_config, false).unwrap_or_default(),
     );
 
     // GPU throughput — GH-284: fall back to 0.0 on capability mismatch
@@ -458,7 +447,8 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> R
     let model2 = OwnedQuantizedModel::from_mapped(&mapped2)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
     let gpu_tps = match OwnedQuantizedModelCuda::with_max_seq_len(model2, 0, 2048) {
-        Ok(mut cuda_model) => {
+        Ok(cuda_model) => {
+            let mut session = qa_dense_cuda(cuda_model);
             let (tps, _) = measure_generate_throughput(
                 config.warmup,
                 config.iterations,
@@ -468,8 +458,7 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> R
                 budget_us,
                 config.verbose,
                 || {
-                    cuda_model
-                        .generate_gpu_resident(&prompt_tokens, &gen_config)
+                    qa_dense_generate(&mut session, &prompt_tokens, &gen_config, true)
                         .unwrap_or_default()
                 },
             );
@@ -501,9 +490,10 @@ fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             ));
         }
 
-        let model_bytes = std::fs::read(path)
+        // #3750: the format from the 8-byte magic, never the whole model
+        let magic = super::model_header::read_prefix(path, 8)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-        let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
+        let format = detect_format(&magic)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
         if format != ModelFormat::Gguf {
             return Ok(GateResult::skipped(

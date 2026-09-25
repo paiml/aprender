@@ -182,6 +182,7 @@ fn test_chat_completion_request_traits() {
 #[test]
 fn test_chat_completion_response_traits() {
     let response = ChatCompletionResponse {
+        used_gpu: None,
         id: "test".to_string(),
         object: "chat.completion".to_string(),
         created: 1000,

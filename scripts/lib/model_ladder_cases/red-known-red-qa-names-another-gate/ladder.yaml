@@ -1,0 +1,45 @@
+ladder:
+  hosts:
+  - cc: sm_89
+    gpu: RTX 4090
+    id: lambda
+    required: true
+  - cc: sm_121
+    gpu: GB10
+    id: gx10
+    required: true
+  inventory:
+    backends:
+    - cuda
+    dirs:
+    - ~/models
+    patterns:
+    - '*q4_k*.gguf'
+    - '*q4k*.apr'
+    - '*q4_k*.apr'
+  rungs:
+  - arch: qwen2
+    backends:
+    - cpu
+    - cuda
+    gguf: c.gguf
+    id: ctrl-q4km
+    required: true
+    sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+  - arch: qwen3
+    backends:
+    - cpu
+    - cuda
+    gguf: q.gguf
+    id: q3-q4km
+    required: true
+    sha256: '1111111111111111111111111111111111111111111111111111111111111111'
+  known_red:
+  - rung: q3-q4km
+    sha256: '1111111111111111111111111111111111111111111111111111111111111111'
+    ticket: '#3907'
+    clause:
+    - '^golden_output FAIL: golden_output_thinking_on: think block unclosed within
+      2048 tokens\b'
+    - '^apr qa exited \d+ — gates_failed: golden_output \(#3898\)$'
+    ruling: 'operator 2026-09-23 via aprender-cf: ships with ticket'

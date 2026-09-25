@@ -1,0 +1,9 @@
+- id: PMAT-4263
+  github_issue: 4263
+  item_type: task
+  title: "one engine (0.69.3): every Qwen3.5 verb through realizar::session::Session"
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-ac
+  labels:
+  - kind:code

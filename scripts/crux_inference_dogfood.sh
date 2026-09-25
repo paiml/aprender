@@ -1,0 +1,828 @@
+#!/usr/bin/env bash
+# crux_inference_dogfood.sh: the CRUX inference dogfood (#3739). The SAME GGUF
+# and the SAME prompts go through apr, llama.cpp at the pin and ollama, and one
+# rule judges them: a cell a comparator answers correctly and apr does not is RED.
+#
+# WHY. Every apr gate compared apr to apr, and so missed a tokenizer that never
+# did real BPE (#3726) and a chat template applied twice (#3672): both sides of
+# every comparison shared the defect. A competitor on the same file is the
+# external oracle. Operator, verbatim: "same prompts/verbs on llama.cpp and say
+# ollama for same model: chat/serve/run/code, etc".
+#
+# Usage: bash scripts/crux_inference_dogfood.sh <version> --model <gguf> [--model <gguf>]...
+#          [--host <id>] [--backend gpu|cpu] [--engines apr,llama.cpp,ollama,hf,llamafile,vllm]
+#          [--verbs run,chat,serve,code] [--out <dir>] [--prompts <file>] [--timeout <s>]
+#          [--keep-ollama-models] [--keep-work]
+#   <version>  the apr version under test; `apr --version` must report it, or
+#              the run declines (a dogfood that measured another version is #3708)
+#   --backend  the lane, applied to ALL three engines (default gpu): apr --gpu,
+#              llama.cpp -ngl 999, ollama's default; cpu = --no-gpu, -ngl 0, num_gpu 0.
+#              An apr that falls back from the lane's backend did not answer the cell.
+#   --out      receipt dir (default evidence/crux/<version>); writes <host>-<backend>.{json,md}
+#   --prompts  default scripts/crux_inference_prompts.v2.json when present (#3962), else v1
+#   --certification  the prompt-certification receipt handed to the judge (default
+#              evidence/crux/<version>/prompt-certification.json, when the judge takes one)
+#
+# Exit: 0 no RED, no UNJUDGED cell, every model's positive control measured and
+# not ALL_WRONG · 1 any RED · 2 decline (a cell no comparator answered, a broken
+# or missing control, apr unpinned or the wrong version, a verb this slice
+# cannot drive). ALL_WRONG elsewhere is named and counted per model.
+#
+# WHAT "SAME" MEANS, and how each engine is resolved:
+#   model   one file by path. ollama IMPORTS that file through a Modelfile
+#           (`FROM <path>`); a registry pull is a different file. The receipt
+#           records the input's sha256 and the blob digest ollama stored, which
+#           newer ollama versions do not keep byte-identical to the input.
+#   prompts scripts/crux_inference_prompts.json, as chat MESSAGES. Every engine
+#           applies the template it reads from the GGUF; that is under test too.
+#   apr     scripts/apr_bin.sh (HEAD-built), or DOGFOOD_ALLOW_UNPINNED=1 plus $APR
+#           for a published binary, as model_ladder.sh does.
+#   llama   scripts/llama_bin.sh ONLY ($LLAMA_BENCH_PATH names the pinned build).
+#   ollama  $OLLAMA_BIN, else the forjar-declared $HOME/.local/bin/ollama, else
+#           /usr/local/bin/ollama; the SERVER's /api/version is what is recorded.
+#   hf, llamafile, vllm  (the 19:03Z / 19:04Z amendments; vllm #3952) are PLUGIN engines: the
+#           engine worker's scripts/crux_engine_<e>.{sh,py} (row contract v1,
+#           #3739 issuecomment-5765991210) with `probe` and `gen` subcommands. It
+#           appends its own rows to $CRUX_MANIFEST. An absent script, a failing
+#           probe or a gen that appends no row is a REFUSED row naming why, never
+#           an absence.
+#   sampling temperature, seed and context come from scripts/llama_pin.toml
+#           [protocol], the declaration the parity gates already read.
+#
+# NO RATE IS COMPUTED HERE. The judge (scripts/lib/crux_inference_judge.py)
+# copies the token counts and rates each engine prints about itself into the
+# receipt, labelled by engine, and judges none of them. Nothing in this file
+# reads a clock. A throughput CLAIM goes through scripts/perf_gate.sh (PERF-009).
+#
+# GPU sharing (the cop's rule, /mnt/nvme-raid0/agent-wt/gpu-lock-rule.txt, rev 5):
+# on the gpu lane each cell (one prompt, every engine) runs as ONE command through
+# gpu-q (priority queue in front of /tmp/apr-gpu.lock; CRUX_GPU_PRIO, default 3),
+# falling back to a bounded flock recorded as "may have jumped the queue". Every
+# engine runs under `choom -n 1000`, so a measurement is the OOM victim, never a
+# CI runner, and ollama must leave VRAM before the cell ends.
+#
+# Every status is captured as `cmd; rc=$?`, never through a pipe (#2336, #2360).
+set -uo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
+cd "$ROOT" || exit 2
+
+decline() { printf 'decline: %s\n' "$*" >&2; exit 2; }
+
+VERSION=""
+HOST_ID=""
+BACKEND="gpu"
+ENGINES="apr,llama.cpp,ollama,hf,llamafile,vllm"
+VERBS="run"
+OUT_DIR=""
+# v2 (#3962) is the prompt set once it is in the tree; v1 only until then.
+PROMPTS="scripts/crux_inference_prompts.v2.json"
+[ -f "$PROMPTS" ] || PROMPTS="scripts/crux_inference_prompts.json"
+CERT=""
+HF_SOURCES="${CRUX_HF_SOURCES:-evidence/crux/hf-sources.yaml}"
+TMO=600
+LOCK_WAIT=3600
+KEEP_OLLAMA=0
+KEEP_WORK=0
+# --greedy (#3957 F9, aprender-36): also write kind=greedy rows — apr and llama.cpp greedy ids on the identical
+# GGUF, thinking ON and OFF (scripts/lib/crux_cells_greedy.sh). Prompts default to the positive control.
+GREEDY=0
+# --thinking-modes (#3962 final sweep): which modes a THINKING-CAPABLE model is judged in; a model without a
+# thinking template is judged OFF only. Default both.
+THINK_MODES="off,on"
+# --only-prompts a,b,c (#3962 final sweep): run only these prompt ids FROM the certified file. The file itself is
+# never rewritten — its sha256 is what the certification receipt binds (a subset file would be uncertified and
+# the judge would decline it). An id the file does not hold declines the run by name.
+ONLY_PROMPTS=""
+GREEDY_PIDS=""
+GREEDY_MAXTOK=256
+MODELS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --model)   [ $# -ge 2 ] || decline "--model needs a value"; MODELS+=("$2"); shift 2 ;;
+    --host)    [ $# -ge 2 ] || decline "--host needs a value"; HOST_ID="$2"; shift 2 ;;
+    --backend) [ $# -ge 2 ] || decline "--backend needs a value"; BACKEND="$2"; shift 2 ;;
+    --engines) [ $# -ge 2 ] || decline "--engines needs a value"; ENGINES="$2"; shift 2 ;;
+    --verbs)   [ $# -ge 2 ] || decline "--verbs needs a value"; VERBS="$2"; shift 2 ;;
+    --out)     [ $# -ge 2 ] || decline "--out needs a value"; OUT_DIR="$2"; shift 2 ;;
+    --prompts) [ $# -ge 2 ] || decline "--prompts needs a value"; PROMPTS="$2"; shift 2 ;;
+    --certification) [ $# -ge 2 ] || decline "--certification needs a value"; CERT="$2"; shift 2 ;;
+    --timeout) [ $# -ge 2 ] || decline "--timeout needs a value"; TMO="$2"; shift 2 ;;
+    --keep-ollama-models) KEEP_OLLAMA=1; shift ;;
+    --keep-work) KEEP_WORK=1; shift ;;
+    --thinking-modes) [ $# -ge 2 ] || decline "--thinking-modes needs a value"; THINK_MODES="$2"; shift 2 ;;
+    --only-prompts) [ $# -ge 2 ] || decline "--only-prompts needs a value"; ONLY_PROMPTS="$2"; shift 2 ;;
+    --greedy) GREEDY=1; shift ;;
+    --greedy-prompts) [ $# -ge 2 ] || decline "--greedy-prompts needs a value"; GREEDY_PIDS="${2//,/ }"; shift 2 ;;
+    --greedy-max-tokens) [ $# -ge 2 ] || decline "--greedy-max-tokens needs a value"; GREEDY_MAXTOK="$2"; shift 2 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
+    -*) decline "unknown argument '$1'" ;;
+    *) [ -z "$VERSION" ] || decline "one version, got '$VERSION' and '$1'"; VERSION="$1"; shift ;;
+  esac
+done
+[ -n "$VERSION" ] || decline "usage: $0 <version> --model <gguf> ..."
+[ "${#MODELS[@]}" -gt 0 ] || decline "no --model given; this slice takes models by path"
+case "$BACKEND" in gpu|cpu) ;; *) decline "--backend is gpu or cpu, got '$BACKEND'" ;; esac
+# Verbs: run (always: the positive control lives there), chat, serve (verb keys
+# `serve run` and `serve stream`, over EVERY route apr serve mounts) and code
+# (`apr code -p`), the last two from scripts/lib/crux_cells_serve_code.sh (#3962).
+case ",$VERBS," in *,run,*) ;; *) decline "verbs '$VERBS': run must be included, because the positive control lives in the run verb" ;; esac
+for tm in ${THINK_MODES//,/ }; do
+  case "$tm" in off|on) ;; *) decline "--thinking-modes takes off and/or on, got '$tm'" ;; esac
+done
+for v in ${VERBS//,/ }; do
+  case "$v" in run|chat|serve|code) ;; *) decline "verb '$v': this driver runs run, chat, serve and code" ;; esac
+done
+want() { case ",$ENGINES," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
+want apr || decline "apr is the subject; --engines must include it"
+[ -f "$PROMPTS" ] || decline "prompt set $PROMPTS not found"
+
+# ---- apr: pinned, and the version asked for ------------------------------------
+if [ "${DOGFOOD_ALLOW_UNPINNED:-0}" = "1" ] && [ -n "${APR:-}" ]; then
+  : # published-binary mode: the caller pinned $APR deliberately
+else
+  # shellcheck disable=SC1091
+  . scripts/apr_bin.sh || decline "scripts/apr_bin.sh could not pin a HEAD-built apr"
+fi
+[ -x "${APR:-}" ] || decline "\$APR is not executable: '${APR:-}'"
+APR_VERSION_LINE=$("$APR" --version 2>/dev/null | head -1)
+APR_GOT=$(printf '%s\n' "$APR_VERSION_LINE" | sed -n 's/^apr \([0-9][0-9A-Za-z.+-]*\).*/\1/p')
+[ "$APR_GOT" = "$VERSION" ] || decline "apr under test reports '$APR_VERSION_LINE'; this dogfood was asked for $VERSION"
+
+host_id() {
+  if [ -n "$HOST_ID" ]; then printf '%s' "$HOST_ID"; return; fi
+  local h; h=$(hostname 2>/dev/null || echo unknown)
+  case "$h" in
+    gx10*) printf 'gx10' ;;
+    *[Ll]ambda*) printf 'lambda' ;;
+    *) printf '%s' "$h" ;;
+  esac
+}
+HOST=$(host_id)
+[ -n "$OUT_DIR" ] || OUT_DIR="evidence/crux/$VERSION"
+
+# ---- llama.cpp: the pin, through the one resolver ---------------------------------
+# shellcheck disable=SC1091
+. scripts/llama_bin.sh >/dev/null 2>&1
+LLAMA_RC=$?
+TEMP=$(llama_pin_get_raw temperature 2>/dev/null)
+SEED=$(llama_pin_get_raw seed 2>/dev/null)
+CTX=$(llama_pin_get_raw context_length 2>/dev/null)
+[ -n "$TEMP" ] && [ -n "$SEED" ] && [ -n "$CTX" ] || decline "scripts/llama_pin.toml [protocol] temperature/seed/context_length unreadable"
+HAVE_LLAMA=0
+LLAMA_WHY=""
+if want llama.cpp; then
+  if [ "$LLAMA_RC" -ne 0 ]; then
+    LLAMA_WHY="llama.cpp unresolved: ${LLAMA_PIN_REASON:-unknown} (llama_bin rc $LLAMA_RC)"
+  elif [ -z "${LLAMA_CLI:-}" ] || [ -z "${LLAMA_SERVER:-}" ]; then
+    LLAMA_WHY="the pinned build has no chat CLI or no server binary beside it"
+  else
+    HAVE_LLAMA=1
+  fi
+fi
+
+# ---- ollama: resolved by declaration, recorded by what the server says ----------
+OLLAMA=""
+HAVE_OLLAMA=0
+OLLAMA_WHY=""
+OLLAMA_CLIENT=""
+OLLAMA_SERVER=""
+OLLAMA_HOST_URL="http://${OLLAMA_HOST:-127.0.0.1:11434}"
+if want ollama; then
+  for cand in "${OLLAMA_BIN:-}" "$HOME/.local/bin/ollama" /usr/local/bin/ollama; do
+    [ -n "$cand" ] && [ -f "$cand" ] && [ -x "$cand" ] && { OLLAMA="$cand"; break; }
+  done
+  if [ -z "$OLLAMA" ]; then
+    OLLAMA_WHY="no ollama binary at \$OLLAMA_BIN, ~/.local/bin or /usr/local/bin"
+  else
+    OLLAMA_CLIENT=$("$OLLAMA" --version 2>&1 | sed -n 's/.*client version is \([0-9.]*\).*/\1/p;s/^ollama version is \([0-9.]*\).*/\1/p' | head -1)
+    OLLAMA_SERVER=$(curl -sf "$OLLAMA_HOST_URL/api/version" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))' 2>/dev/null)
+    if [ -z "$OLLAMA_SERVER" ]; then
+      OLLAMA_WHY="the ollama server at $OLLAMA_HOST_URL did not answer /api/version"
+    else
+      HAVE_OLLAMA=1
+    fi
+  fi
+fi
+# ---- plugin engines (hf, llamafile, vllm): resolved by script, recorded by their probe --
+# One list, so a new engine is one word here and not a hunt through every loop (#3952).
+PLUGIN_ENGINES=(hf llamafile vllm)
+# The engines that cannot load the GGUF and run its SOURCE weights instead, from the
+# evidence/crux/hf-sources.yaml sidecar: hf by design, vllm because 0.30.0 cannot read a
+# local GGUF (#3952). A model with no declared source is a refused row for each of them.
+source_engine() { case "$1" in hf|vllm) return 0 ;; *) return 1 ;; esac; }
+declare -A EXT_OK EXT_WHY EXT_SCRIPT EXT_PROBE
+for eng in "${PLUGIN_ENGINES[@]}"; do
+  want "$eng" || continue
+  EXT_OK[$eng]=0
+  for f in "scripts/crux_engine_$eng.sh" "scripts/crux_engine_$eng.py"; do
+    if [ -f "$f" ]; then
+      EXT_SCRIPT[$eng]="$f"
+      break
+    fi
+  done
+  if [ -z "${EXT_SCRIPT[$eng]:-}" ]; then
+    EXT_WHY[$eng]="engine driver scripts/crux_engine_$eng.{sh,py} is not present (the engine worker's row, #3739)"
+    continue
+  fi
+  case "${EXT_SCRIPT[$eng]}" in *.py) ext_run=(python3) ;; *) ext_run=(bash) ;; esac
+  probe_out=$("${ext_run[@]}" "${EXT_SCRIPT[$eng]}" probe 2> /tmp/crux-probe-$$-$eng.err)
+  prc=$?
+  if [ "$prc" -eq 0 ] && [ -n "$probe_out" ]; then
+    EXT_OK[$eng]=1
+    EXT_PROBE[$eng]=$(printf '%s\n' "$probe_out" | head -1)
+  else
+    EXT_WHY[$eng]="probe exit $prc: $(head -c 300 /tmp/crux-probe-$$-$eng.err 2>/dev/null | tr '\n' ' ')"
+  fi
+  rm -f /tmp/crux-probe-$$-$eng.err
+done
+GPUQ="${GPUQ_BIN:-$HOME/.local/bin/gpu-q}"
+GPUQ_OK=0
+# gpu-q priority classes (the cop, 2026-09-21): CRUX development runs = 3, the
+# release train's own T-1 run = 1 (its autopilot passes CRUX_GPU_PRIO=1).
+GPU_PRIO="${CRUX_GPU_PRIO:-3}"
+# The lock file is overridable ONLY so scripts/check_crux_ollama_in_lock.sh can prove, hermetically, that every
+# model-loading call runs while it is held (#3964); a real run uses the one lock every GPU user takes.
+GPU_LOCK="${CRUX_GPU_LOCK:-/tmp/apr-gpu.lock}"
+LOCK_VIA="flock $GPU_LOCK (no gpu-q with \`wait\` on this host: may have jumped the queue)"
+if [ -x "$GPUQ" ]; then
+  gpuq_caps=$("$GPUQ" --caps 2>/dev/null)
+  case "$gpuq_caps" in *wait*) GPUQ_OK=1; LOCK_VIA="gpu-q --prio $GPU_PRIO (GPUQ_WAIT bound)" ;; esac
+fi
+[ "$BACKEND" = gpu ] || LOCK_VIA="none (cpu lane, the rule's clause 2)"
+EXT_ANY=0
+for eng in "${!EXT_OK[@]}"; do [ "${EXT_OK[$eng]}" = 1 ] && EXT_ANY=1; done
+
+[ "$HAVE_LLAMA" = 1 ] || [ "$HAVE_OLLAMA" = 1 ] || [ "$EXT_ANY" = 1 ] || decline "no comparator: llama.cpp (${LLAMA_WHY:-not requested}); ollama (${OLLAMA_WHY:-not requested})"
+
+# ---- work dir -------------------------------------------------------------------
+WORK=$(mktemp -d) || decline "mktemp failed"
+SRV_PID=""
+# The delete is guarded (SEC011): only a path under a temp root is removed.
+OL_NAME=""
+# ollama_rm_own — remove ONLY a model this harness created.
+#
+# `ollama rm` deletes from the operator's real ollama store, where a model may be an
+# 18 GB download someone waited on. The name is derived here as `crux-<sha12>-<backend>-<pid>`
+# (see OL_NAME= below), never taken from input, so the harness can prove ownership before
+# deleting: refuse an empty name, and refuse any name that is not one of ours. An unguarded
+# call was reachable at the end-of-model cleanup while the EXIT trap guarded its own, so the
+# two paths disagreed about whether emptiness was possible; they now share this one.
+ollama_rm_own() {
+  local n="${1:-}"
+  case "$n" in
+    crux-?*) ;;
+    *) [ -n "$n" ] && printf 'refusing to remove ollama model %s: not created by this harness\n' "$n" >&2
+       return 0 ;;
+  esac
+  "$OLLAMA" rm "$n" > /dev/null 2>&1 || :
+}
+_cleanup() {
+  [ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null
+  # A run killed mid-model leaves its ollama import behind unless removed here.
+  if [ "$HAVE_OLLAMA" = 1 ] && [ "$KEEP_OLLAMA" = 0 ]; then
+    ollama_rm_own "$OL_NAME"
+  fi
+  [ "$KEEP_WORK" = 1 ] && { printf 'work kept: %s\n' "$WORK" >&2; return 0; }
+  local v="${WORK:-}"
+  case "$v" in
+    /tmp/?*|/var/folders/?*) if [ -n "$v" ] && [ "$v" != "/" ]; then rm -rf -- "$v" || :; fi ;;
+    *) return 0 ;;
+  esac
+}
+trap _cleanup EXIT
+MANIFEST="$WORK/manifest.jsonl"; : > "$MANIFEST"
+# The plugin engines append their own rows here (row contract v1).
+export CRUX_MANIFEST="$MANIFEST" CRUX_WORK="$WORK"
+MODELS_JSONL="$WORK/models.jsonl"; : > "$MODELS_JSONL"
+
+# One file per prompt: its id list, and each prompt's last user message.
+# v1: a prompt belongs to one verb ("verb", default run) and max_tokens is global.
+# v2 (#3962, crux-inference-prompts/v2): "verb" is a LIST of run / chat / code /
+# "serve run" / "serve stream", and max_tokens is per prompt, {off, on}. A v1 run
+# prompt is also a serve prompt in both modes, because the serve cell always drove
+# the run prompts. A chat prompt's messages are the USER turns of one conversation,
+# and it is judged on the final turn.
+PIDS_ALL=$(python3 - "$PROMPTS" "$WORK" "$ONLY_PROMPTS" 2> "$WORK/prompts.err" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+w = sys.argv[2]
+only = [x for x in sys.argv[3].split(",") if x]
+unknown = sorted(set(only) - {p["id"] for p in d["prompts"]})
+if unknown:
+    sys.stderr.write("--only-prompts names ids the prompt set does not hold: %s\n" % ", ".join(unknown))
+    sys.exit(3)
+if only:
+    d["prompts"] = [p for p in d["prompts"] if p["id"] in only]
+glob_mt = d.get("max_tokens")
+serve, code = open("%s/serve-prompts.jsonl" % w, "w"), open("%s/code-prompts.txt" % w, "w")
+for p in d["prompts"]:
+    open("%s/prompt-%s.txt" % (w, p["id"]), "w").write(p["messages"][-1]["content"])
+    json.dump(p, open("%s/prompt-%s.json" % (w, p["id"]), "w"))
+    json.dump({"messages": p["messages"]}, open("%s/messages-%s.json" % (w, p["id"]), "w"))
+    users = [m["content"] for m in p["messages"] if m.get("role") == "user"]
+    json.dump(users, open("%s/turns-%s.json" % (w, p["id"]), "w"))
+    open("%s/turns-%s.txt" % (w, p["id"]), "w").write("".join(u + "\n" for u in users))
+    mt = p.get("max_tokens", glob_mt)
+    # Per thinking mode (#3962 v2: {off, on}); maxtok-<id>.txt is re-pointed at the current mode by the
+    # thinking loop below, which is what the serve/code lib reads.
+    for th in ("off", "on"):
+        open("%s/maxtok-%s-%s.txt" % (w, p["id"], th), "w").write(str(int(mt[th] if isinstance(mt, dict) else mt)))
+    open("%s/maxtok-%s.txt" % (w, p["id"]), "w").write(str(int(mt["off"] if isinstance(mt, dict) else mt)))
+    v = p.get("verb", "run")
+    verbs = v if isinstance(v, list) else [v] + (["serve run", "serve stream"] if v == "run" else [])
+    sv = [x for x in verbs if x in ("serve run", "serve stream")]
+    if sv:
+        serve.write(json.dumps([p["id"], sv]) + "\n")
+    if "code" in verbs:
+        code.write(p["id"] + "\n")
+    for x in verbs:
+        if x in ("run", "chat"):
+            print("%s %s" % (x, p["id"]))
+PY
+) || decline "prompt set $PROMPTS: $(tr '\n' ' ' < "$WORK/prompts.err" 2>/dev/null | cut -c1-300)"
+pids_for() { printf '%s\n' "$PIDS_ALL" | sed -n "s/^$1 //p" | tr '\n' ' '; }
+PIDS=$(pids_for run)
+# The global cap for the run/chat cells: v1's `max_tokens`, else the largest per-prompt `off` budget.
+MAXTOK=$(python3 -c 'import json,sys
+d = json.load(open(sys.argv[1]))
+m = d.get("max_tokens")
+print(int(m) if m is not None else max(int(p["max_tokens"]["off"]) for p in d["prompts"]))' "$PROMPTS") || decline "max_tokens unreadable"
+[ -z "$PIDS_ALL" ] && decline "no prompt selected (--only-prompts '$ONLY_PROMPTS' matched nothing runnable)"
+# The same cap in thinking-ON mode: v1's global, else the largest per-prompt `on` budget.
+MAXTOK_ON=$(python3 -c 'import json,sys
+d = json.load(open(sys.argv[1]))
+m = d.get("max_tokens")
+print(int(m) if m is not None else max(int(p["max_tokens"]["on"]) for p in d["prompts"]))' "$PROMPTS") || decline "max_tokens unreadable"
+MAXTOK_OFF=$MAXTOK
+# The serve and code cells (#3962). Sourced and option-neutral; it fails by return status.
+# shellcheck source=scripts/lib/crux_cells_serve_code.sh
+. scripts/lib/crux_cells_serve_code.sh || decline "scripts/lib/crux_cells_serve_code.sh could not be sourced"
+if [ "$GREEDY" = 1 ]; then
+  case "$GREEDY_MAXTOK" in ''|*[!0-9]*) decline "--greedy-max-tokens must be a positive integer, got '$GREEDY_MAXTOK'" ;; esac
+  if [ -z "$GREEDY_PIDS" ]; then
+    GREEDY_PIDS=$(python3 -c 'import json,sys; print(" ".join(p["id"] for p in json.load(open(sys.argv[1]))["prompts"] if p.get("control")))' "$PROMPTS") \
+      || decline "cannot read the control prompt for --greedy"
+  fi
+  [ -n "$GREEDY_PIDS" ] || decline "--greedy: no prompt given and the prompt set declares no control"
+  for gp in $GREEDY_PIDS; do [ -f "$WORK/messages-$gp.json" ] || decline "--greedy prompt '$gp' is not in $PROMPTS"; done
+  # shellcheck disable=SC1091
+  . scripts/lib/crux_cells_greedy.sh || decline "scripts/lib/crux_cells_greedy.sh could not be sourced"
+fi
+
+# ONE CELL = ONE COMMAND UNDER THE GPU LOCK (the cop's rule rev 5, #3739). A cell is
+# one prompt through every engine. Its engine commands are written into one
+# script and that script runs as ONE command: `GPUQ_WAIT=<bound> gpu-q --prio P
+# -- bash <cell>` when this host's gpu-q advertises `wait`, else the bounded
+# `flock -w ... -E 75 /tmp/apr-gpu.lock choom -n 1000 -- bash <cell>`, recorded
+# as "may have jumped the queue". gpu-q serves (priority, arrival) in front of
+# the same flock; a bare flock is not FIFO and starved a P0 head for 113 min.
+# ollama runs with keep_alive 0 and the cell waits for `ollama ps` to drop the
+# model BEFORE the script exits, so VRAM is free when the lock is released. The
+# cpu lane touches no GPU compute and runs the same script with no lock (the
+# rule's clause 2), under choom. Exit 75 from either tool means the lock was not
+# had within the bound: every engine of that cell is a refused row, never skipped.
+cell_add() { # cell_add <cell script> <prefix> cmd... — one engine line: out, err, rc files
+  local cell="$1" prefix="$2"; shift 2
+  { printf 'timeout %q ' "$TMO"; printf '%q ' "$@"
+    printf '> %q 2> %q < /dev/null; echo $? > %q\n' "$prefix.out" "$prefix.err" "$prefix.rc"; } >> "$cell"
+}
+cell_add_ollama_unload() { # cell_add_ollama_unload <cell> <prefix> <model name>
+  { printf '%q stop %q > /dev/null 2>&1; u=false\n' "$OLLAMA" "$3"
+    printf 'for i in $(seq 1 30); do l=$(%q ps 2> /dev/null); case "$l" in *%q*) sleep 1 ;; *) u=true; break ;; esac; done\n' "$OLLAMA" "$3"
+    printf 'echo "$u" > %q\n' "$2.unloaded"; } >> "$1"
+}
+run_cell() { # run_cell <cell script>; sets CELL_WHY when the lock was not had
+  local rc
+  CELL_WHY=""
+  if [ "$BACKEND" != gpu ]; then
+    choom -n 1000 -- bash "$1"
+    return $?
+  fi
+  if [ "$GPUQ_OK" = 1 ]; then
+    GPUQ_LOCK="$GPU_LOCK" GPUQ_WAIT="$LOCK_WAIT" "$GPUQ" --prio "$GPU_PRIO" -- bash "$1" 2> "$1.lock.err"
+    rc=$?
+  else
+    flock -w "$LOCK_WAIT" -E 75 "$GPU_LOCK" choom -n 1000 -- bash "$1" 2> "$1.lock.err"
+    rc=$?
+  fi
+  if [ "$rc" -ne 0 ]; then
+    CELL_WHY="the GPU lock was not had ($LOCK_VIA, rc $rc, bound ${LOCK_WAIT}s): $(tail -c 200 "$1.lock.err" 2>/dev/null | tr '\n' ' ')"
+  fi
+  return "$rc"
+}
+cell_result() { # cell_result <engine> <prompt id> <prefix> [stdout file] [mode] — the engine's row from its cell files
+  local rc unl=""
+  if [ -n "$CELL_WHY" ]; then emit_gen "$1" "$2" "" "" "" "$CELL_WHY" "" "${5:-}"; return; fi
+  if [ ! -f "$3.rc" ]; then emit_gen "$1" "$2" "" "" "" "the cell ran but this engine's line never finished" "" "${5:-}"; return; fi
+  rc=$(cat "$3.rc")
+  [ -f "$3.unloaded" ] && unl=$(cat "$3.unloaded")
+  emit_gen "$1" "$2" "$rc" "${4:-$3.out}" "$3.err" "" "$unl" "${5:-}"
+}
+cell_add_stdin() { # cell_add_stdin <cell> <prefix> <stdin file> cmd... — like cell_add, fed a file
+  local cell="$1" prefix="$2" input="$3"; shift 3
+  { printf 'timeout %q ' "$TMO"; printf '%q ' "$@"
+    printf '> %q 2> %q < %q; echo $? > %q\n' "$prefix.out" "$prefix.err" "$input" "$prefix.rc"; } >> "$cell"
+}
+
+emit_gen() { # emit_gen <engine> <prompt_id> <rc> <stdout> <stderr> <refused> [ollama_unloaded] [mode]
+  python3 - "$MANIFEST" "$1" "$2" "$3" "$4" "$5" "$6" "${7:-}" "$SHA" "$HOST" "${VERB_KEY:-$VERB}" "$THINK" "$BACKEND" "${8:-}" <<'PY'
+import json, sys
+m, eng, pid, rc, o, e, ref, unl, sha, host, verb, think, be, mode = sys.argv[1:15]
+row = {"kind": "gen", "engine": eng, "prompt_id": pid,
+       "rc": int(rc) if rc.lstrip("-").isdigit() else None,
+       "stdout": o or None, "stderr": e or None, "refused": ref or None,
+       "model_sha256": sha, "host": host, "verb": verb, "thinking": think, "backend": be}
+if unl:
+    row["ollama_unloaded"] = unl == "true"
+if mode:
+    row["mode"] = mode
+open(m, "a").write(json.dumps(row) + "\n")
+PY
+}
+
+rows_for() { # rows_for <engine> <prompt_id>: how many gen rows that engine has for the prompt in this verb
+  python3 - "$MANIFEST" "$1" "$2" "$SHA" "${VERB_KEY:-$VERB}" <<'PY'
+import json, sys
+m, eng, pid, sha, verb = sys.argv[1:6]
+n = 0
+for line in open(m):
+    if line.strip():
+        r = json.loads(line)
+        n += (r.get("kind") == "gen" and r.get("engine") == eng and r.get("prompt_id") == pid
+              and r.get("model_sha256") == sha and r.get("verb") == verb)
+print(n)
+PY
+}
+
+free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
+
+# llama.cpp's OWN rendering and tokenization of each prompt: the reference apr's
+# prompt ids are compared against. The server runs on the CPU (-ngl 0), only
+# long enough to answer /props, /apply-template and /tokenize.
+llama_tokenize_prompts() { # sets THINKING_CAPABLE; writes tok rows
+  local port d="$WORK/$SHA12/tok" pid ok=0 i
+  mkdir -p "$d"
+  port=$(free_port) || return 1
+  # -dev none: this server runs OUTSIDE the GPU lock, so it must not even create a
+  # CUDA context. -ngl 0 alone still initialises the device and shows in nvidia-smi.
+  choom -n 1000 -- "$LLAMA_SERVER" -m "$M" -ngl 0 -dev none -c 512 --no-warmup --host 127.0.0.1 --port "$port" \
+    > "$d/server.log" 2>&1 < /dev/null &
+  SRV_PID=$!
+  for i in $(seq 1 180); do
+    curl -sf "http://127.0.0.1:$port/health" > /dev/null 2>&1 && { ok=1; break; }
+    kill -0 "$SRV_PID" 2>/dev/null || break
+    sleep 1
+  done
+  if [ "$ok" = 1 ]; then
+    curl -sf "http://127.0.0.1:$port/props" > "$d/props.json" 2>/dev/null
+    THINKING_CAPABLE=$(python3 -c 'import json,sys
+t = json.load(open(sys.argv[1])).get("chat_template") or ""
+print("true" if ("enable_thinking" in t or "<think>" in t) else "false")' "$d/props.json" 2>/dev/null || echo unknown)
+    for pid in $PIDS; do
+      curl -sf -X POST "http://127.0.0.1:$port/apply-template" -H 'Content-Type: application/json' \
+        --data-binary @"$WORK/messages-$pid.json" > "$d/rendered-$pid.json" 2>/dev/null
+      python3 -c 'import json,sys
+r = json.load(open(sys.argv[1]))
+json.dump({"content": r["prompt"], "add_special": True, "parse_special": True}, open(sys.argv[2], "w"))' \
+        "$d/rendered-$pid.json" "$d/tokreq-$pid.json" 2>/dev/null || continue
+      curl -sf -X POST "http://127.0.0.1:$port/tokenize" -H 'Content-Type: application/json' \
+        --data-binary @"$d/tokreq-$pid.json" > "$d/ids-$pid.json" 2>/dev/null || continue
+      python3 - "$MANIFEST" "$SHA" "$pid" "$d/rendered-$pid.json" "$d/ids-$pid.json" <<'PY'
+import json, sys
+m, sha, pid, rendered, ids = sys.argv[1:6]
+open(m, "a").write(json.dumps({"kind": "tok", "engine": "llama.cpp", "model_sha256": sha,
+                               "prompt_id": pid, "rendered": rendered, "ids": ids}) + "\n")
+PY
+    done
+  fi
+  kill "$SRV_PID" 2>/dev/null; wait "$SRV_PID" 2>/dev/null; SRV_PID=""
+  [ "$ok" = 1 ]
+}
+
+# ---- the serve and code verbs: ONE cell per model each ------------------------------
+# serve_routes_cell and code_cell live in scripts/lib/crux_cells_serve_code.sh (#3962).
+# serve drives EVERY route in apr serve's own `GET /` index, not just the one OpenAI
+# route the old cell asked: a hand-picked route is how /api/chat went unprobed (#3715).
+serve_wait_line() { # serve_wait_line <cell> <port> <health path> <server pid file>
+  printf 'for i in $(seq 1 %q); do curl -sf http://127.0.0.1:%q%s > /dev/null 2>&1 && break; kill -0 "$(cat %q)" 2>/dev/null || break; sleep 1; done\n' \
+    "$TMO" "$2" "$3" "$4" >> "$1"
+}
+# ---- the run ---------------------------------------------------------------------
+printf -- '--- CRUX inference dogfood %s on %s (%s lane) ---\n' "$VERSION" "$HOST" "$BACKEND"
+printf '  apr       %s\n' "$APR_VERSION_LINE"
+printf '  llama.cpp %s\n' "$( [ "$HAVE_LLAMA" = 1 ] && printf '%s' "${LLAMA_BUILD:-?}" || printf 'UNAVAILABLE: %s' "${LLAMA_WHY:-not requested}")"
+printf '  ollama    %s\n' "$( [ "$HAVE_OLLAMA" = 1 ] && printf 'server %s (client %s)' "$OLLAMA_SERVER" "${OLLAMA_CLIENT:-?}" || printf 'UNAVAILABLE: %s' "${OLLAMA_WHY:-not requested}")"
+
+# -dev none keeps the cpu lane's llama.cpp off every device, op-offload included;
+# -ngl 0 alone still offloads large host ops to the GPU by default.
+case "$BACKEND" in
+  gpu) APR_BE="--gpu"; NGL=999; LLAMA_DEV=() ;;
+  cpu) APR_BE="--no-gpu"; NGL=0; LLAMA_DEV=(-dev none) ;;
+esac
+# The device the chat cells' pty-driven comparators were TOLD to use: their own
+# flags, recorded in the row (these engines are not held to a measured device).
+case "$BACKEND" in
+  gpu) LLAMA_DEVICE="cuda (-ngl 999)"; OL_DEVICE="gpu (ollama's default placement)" ;;
+  cpu) LLAMA_DEVICE="cpu (-ngl 0 -dev none)"; OL_DEVICE="cpu (PARAMETER num_gpu 0)" ;;
+esac
+VERB=run
+for M_IN in "${MODELS[@]}"; do
+  M=$(readlink -f "$M_IN" 2>/dev/null) || M=""
+  [ -n "$M" ] && [ -f "$M" ] || decline "model not found: $M_IN"
+  SHA=$(sha256sum "$M" | cut -d' ' -f1)
+  SHA12=${SHA:0:12}
+  NAME=$(basename "$M")
+  mkdir -p "$WORK/$SHA12"
+  printf '  model %s  sha256 %s\n' "$NAME" "$SHA"
+
+  # hf runs the SOURCE weights of this GGUF, declared by sha256 in
+  # evidence/crux/hf-sources.yaml at a pinned revision; no entry = a refused hf row.
+  HF_SRC=()
+  HF_MODEL_WHY=""
+  src_wanted=0
+  for eng in "${PLUGIN_ENGINES[@]}"; do
+    source_engine "$eng" && want "$eng" && [ "${EXT_OK[$eng]:-0}" = 1 ] && src_wanted=1
+  done
+  if [ "$src_wanted" = 1 ]; then
+    hf_line=$(python3 - "$HF_SOURCES" "$SHA" <<'PY'
+import sys, yaml
+try:
+    src = (yaml.safe_load(open(sys.argv[1])) or {}).get("sources", {}).get(sys.argv[2], {}).get("hf") or {}
+except OSError:
+    src = {}
+if src.get("repo") and src.get("revision"):
+    print("%s\t%s\t%s" % (src["repo"], src["revision"], src.get("dtype", "bfloat16")))
+PY
+)
+    if [ -n "$hf_line" ]; then
+      IFS=$'\t' read -r hf_repo hf_rev hf_dtype <<< "$hf_line"
+      HF_SRC=(--source-repo "$hf_repo" --source-revision "$hf_rev" --dtype "$hf_dtype")
+    else
+      HF_MODEL_WHY="no HF source declared for this GGUF (sha256 ${SHA:0:12}…) in $HF_SOURCES"
+    fi
+  fi
+
+  THINKING_CAPABLE=unknown
+  TOK_WHY=""
+  if [ "$HAVE_LLAMA" = 1 ]; then
+    llama_tokenize_prompts || TOK_WHY="llama.cpp server did not come up for tokenization (see its log)"
+  fi
+
+  # ollama: import THIS file, then read back what ollama made of it. The name is
+  # per run: two lanes on one host must not `ollama rm` each other's import.
+  OL_NAME="crux-$SHA12-$BACKEND-$$"
+  OL_REFUSED=""
+  OL_BLOB=""
+  OL_TEMPLATE_SHA=""
+  if [ "$HAVE_OLLAMA" = 1 ]; then
+    {
+      printf 'FROM %s\n' "$M"
+      printf 'PARAMETER temperature %s\nPARAMETER seed %s\nPARAMETER num_predict %s\nPARAMETER num_ctx %s\n' "$TEMP" "$SEED" "$MAXTOK" "$CTX"
+      [ "$BACKEND" = cpu ] && printf 'PARAMETER num_gpu 0\n'
+    } > "$WORK/$SHA12/Modelfile"
+    "$OLLAMA" create "$OL_NAME" -f "$WORK/$SHA12/Modelfile" > "$WORK/$SHA12/ollama-create.log" 2>&1
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+      OL_REFUSED="ollama create failed (rc $rc): $(tail -1 "$WORK/$SHA12/ollama-create.log" | tr -d '\r' | cut -c1-160)"
+    else
+      "$OLLAMA" show "$OL_NAME" --template > "$WORK/$SHA12/ollama-template.txt" 2>/dev/null
+      "$OLLAMA" show "$OL_NAME" --modelfile > "$WORK/$SHA12/ollama-modelfile.txt" 2>/dev/null
+      OL_BLOB=$(sed -n 's/^FROM .*sha256[-:]\([0-9a-f]\{64\}\).*/\1/p' "$WORK/$SHA12/ollama-modelfile.txt" | head -1)
+      OL_TEMPLATE_SHA=$(sha256sum "$WORK/$SHA12/ollama-template.txt" | cut -d' ' -f1)
+      # ollama 0.5.7 imports a GGUF with TEMPLATE {{ .Prompt }}: no chat template
+      # at all, so it would complete the raw prompt while the others chat. That is
+      # not an answer to the same question, and it is refused by name.
+      if [ "$(tr -d ' \n' < "$WORK/$SHA12/ollama-template.txt")" = "{{.Prompt}}" ]; then
+        OL_REFUSED="ollama $OLLAMA_SERVER imported the GGUF with no chat template (TEMPLATE {{ .Prompt }}), so it would complete the raw text rather than chat"
+      fi
+    fi
+  fi
+
+  python3 - "$MODELS_JSONL" "$NAME" "$SHA" "$THINKING_CAPABLE" "$OL_BLOB" "$OL_TEMPLATE_SHA" "$OL_REFUSED" "$TOK_WHY" <<'PY'
+import json, sys
+f, name, sha, think, blob, tsha, oref, twhy = sys.argv[1:9]
+open(f, "a").write(json.dumps({"name": name, "sha256": sha,
+    "thinking_capable": {"true": True, "false": False}.get(think),
+    "ollama": {"blob_sha256": blob or None, "blob_is_input": (blob == sha) if blob else None,
+               "template_sha256": tsha or None, "refused": oref or None},
+    "tokenization": {"refused": twhy or None}}) + "\n")
+PY
+
+  # THINKING MODES (#3962 final sweep). A thinking-capable model runs every verb in each requested mode; one
+  # without a thinking template runs OFF only. Every engine is told the mode EXPLICITLY (the comparators otherwise
+  # default to thinking): apr `--thinking` (#3723/#3990), llama.cpp `--reasoning`, ollama `--think`, the plugin
+  # drivers and the serve/code lib through $THINK. An apr without `--thinking` cannot run ON, and asking it to is a
+  # refusal of the whole run BY NAME — never OFF rows recorded as ON.
+  modes="off"
+  [ "$THINKING_CAPABLE" = true ] && modes="${THINK_MODES//,/ }"
+  apr_think_flag=0
+  grep -q -- '--thinking' <<< "$("$APR" run --help 2>/dev/null)" && apr_think_flag=1
+  ol_help=""
+  [ "$HAVE_OLLAMA" = 1 ] && ol_help=$("$OLLAMA" run --help 2>&1)
+  SHA12_MODEL=$SHA12
+  for THINK in $modes; do
+  # every cell dir of this mode lives under <sha12>/<mode>: ON and OFF cells of one prompt must not overwrite each
+  # other's artifacts (the run/chat cells here and the serve/code lib all build $WORK/$SHA12/<verb>/...)
+  SHA12="$SHA12_MODEL/$THINK"
+  # bashrs SEC010: $WORK is this script's own mktemp -d dir; the rest of the path is a sha12 and a thinking mode.
+  # bashrs disable-next-line=SEC010
+  mkdir -p "$WORK/$SHA12" || decline "cannot create $WORK/$SHA12"
+  if [ "$THINK" = on ] && [ "$apr_think_flag" = 0 ]; then
+    decline "thinking ON was asked for $NAME, but this apr has no \`run --thinking\` (#3723): pass --thinking-modes off, or use an apr that has it"
+  fi
+  LLAMA_THINK=()
+  OLLAMA_THINK=()
+  APR_THINK=()
+  if [ "$THINKING_CAPABLE" = true ]; then
+    LLAMA_THINK=(--reasoning "$THINK")
+    case "$ol_help" in *--think*) OLLAMA_THINK=(--think="$([ "$THINK" = on ] && echo true || echo false)") ;; esac
+    [ "$apr_think_flag" = 1 ] && APR_THINK=(--thinking "$THINK")
+  fi
+  if [ "$THINK" = on ]; then MAXTOK=$MAXTOK_ON; else MAXTOK=$MAXTOK_OFF; fi
+  for f in "$WORK"/maxtok-*-"$THINK".txt; do
+    [ -f "$f" ] || continue
+    base=${f%-"$THINK".txt}
+    cp -- "$f" "$base.txt"
+  done
+
+  for VERB in ${VERBS//,/ }; do
+  VERB_KEY=$VERB
+  if [ "$VERB" = serve ]; then
+    serve_routes_cell || decline "the serve cell could not be built for $NAME"
+    continue
+  fi
+  if [ "$VERB" = code ]; then
+    VERB_KEY=code
+    code_cell || decline "the code cell could not be built for $NAME"
+    continue
+  fi
+  for pid in $(pids_for "$VERB"); do
+    content=$(cat "$WORK/prompt-$pid.txt")
+    # $VERB reaches here from `--verbs`, so the cell dir is input-derived and a `..`
+    # segment would escape $WORK, which `mkdir -p` would then happily create. The verb
+    # set is already whitelisted at parse time (see the run|chat|serve case above), so
+    # the leaf is written as a LITERAL per verb rather than interpolated: the directory
+    # is then provably inside the mktemp root no matter what arrived on the command
+    # line. Adding a verb means adding it in both places -- the `*)` arm fails loudly
+    # rather than silently producing an unexpected directory.
+    case "$VERB" in
+      run)   d="$WORK/$SHA12/run" ;;
+      chat)  d="$WORK/$SHA12/chat" ;;
+      serve) d="$WORK/$SHA12/serve" ;;
+      *) decline "unknown verb '$VERB' for the cell dir (add it here and at the --verbs whitelist)" ;;
+    esac
+    # bashrs SEC010: $d is under $WORK, this script's own mktemp -d dir, with a whitelisted verb.
+    # bashrs disable-next-line=SEC010
+    mkdir -p "$d" || decline "cannot create cell dir $d"
+    cell="$d/cell-$pid.sh"
+    printf '#!/usr/bin/env bash\n# one CRUX cell: %s prompt %s through every engine, one hold of the GPU lock\n' "$VERB" "$pid" > "$cell"
+
+    if [ "$VERB" = chat ]; then
+      # apr chat reads one user turn per stdin line. The competitors' chat CLIs
+      # do not take turns from a pipe (measured: llama.cpp loops on empty
+      # prompts, ollama reads the pipe as ONE prompt), so scripts/lib/
+      # crux_pty_chat.py drives them through a pseudo-terminal, one turn at a
+      # time, and writes the row-contract JSON the judge reads.
+      cell_add_stdin "$cell" "$d/apr-$pid" "$WORK/turns-$pid.txt" "$APR" chat "$M" \
+        --temperature "$TEMP" --max-tokens "$MAXTOK" "$APR_BE" "${APR_THINK[@]}"
+      [ "$HAVE_LLAMA" = 1 ] && cell_add "$cell" "$d/llama-$pid" python3 scripts/lib/crux_pty_chat.py \
+        --marker '(?m)^> $' --turns "$WORK/turns-$pid.json" --out "$d/llama-$pid.json" --exit-line /exit \
+        --device "$LLAMA_DEVICE" --turn-timeout "$TMO" --start-timeout "$TMO" --strip '\[ Prompt:[^]]*\]' -- \
+        "$LLAMA_CLI" -m "$M" -n "$MAXTOK" --temp "$TEMP" --seed "$SEED" -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}" "${LLAMA_THINK[@]}"
+      if [ "$HAVE_OLLAMA" = 1 ] && [ -z "$OL_REFUSED" ]; then
+        cell_add "$cell" "$d/ollama-$pid" python3 scripts/lib/crux_pty_chat.py \
+          --marker '>>> ' --answer-after '^[.][.][.].*$' --turns "$WORK/turns-$pid.json" --out "$d/ollama-$pid.json" \
+          --exit-line /bye --device "$OL_DEVICE" --turn-timeout "$TMO" --start-timeout "$TMO" -- \
+          "$OLLAMA" run "$OL_NAME" --keepalive 0 --nowordwrap "${OLLAMA_THINK[@]}"
+        cell_add_ollama_unload "$cell" "$d/ollama-$pid" "$OL_NAME"
+      fi
+    else
+      cell_add "$cell" "$d/apr-$pid" "$APR" run "$M" --prompt "$content" --max-tokens "$MAXTOK" \
+        --temperature "$TEMP" --seed "$SEED" --format json -v "$APR_BE" "${APR_THINK[@]}"
+      [ "$HAVE_LLAMA" = 1 ] && cell_add "$cell" "$d/llama-$pid" "$LLAMA_CLI" -m "$M" -p "$content" -st -n "$MAXTOK" \
+        --temp "$TEMP" --seed "$SEED" -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}" "${LLAMA_THINK[@]}"
+      if [ "$HAVE_OLLAMA" = 1 ] && [ -z "$OL_REFUSED" ]; then
+        cell_add "$cell" "$d/ollama-$pid" "$OLLAMA" run "$OL_NAME" "$content" --verbose --nowordwrap \
+          --keepalive 0 "${OLLAMA_THINK[@]}"
+        cell_add_ollama_unload "$cell" "$d/ollama-$pid" "$OL_NAME"
+      fi
+    fi
+    for eng in "${PLUGIN_ENGINES[@]}"; do
+      want "$eng" && [ "${EXT_OK[$eng]}" = 1 ] || continue
+      source_engine "$eng" && [ -n "$HF_MODEL_WHY" ] && continue
+      case "${EXT_SCRIPT[$eng]}" in *.py) ext_run=(python3) ;; *) ext_run=(bash) ;; esac
+      # llamafile's `--cli` ignores the thinking switch and does not bound output
+      # with -n (infra-3c, measured on 0.10.6); its server honours both.
+      ext_extra=()
+      [ "$eng" = llamafile ] && ext_extra=(--interface server)
+      source_engine "$eng" && ext_extra=("${HF_SRC[@]}")
+      cell_add "$cell" "$d/$eng-$pid.driver" "${ext_run[@]}" "${EXT_SCRIPT[$eng]}" gen \
+        --model "$M" --model-sha256 "$SHA" --verb "$VERB" --prompt-id "$pid" \
+        --messages "$WORK/messages-$pid.json" --prompt-file "$WORK/prompt-$pid.txt" \
+        --thinking "$THINK" --backend "$BACKEND" --host "$HOST" \
+        --max-tokens "$MAXTOK" --seed "$SEED" --temperature "$TEMP" --context "$CTX" "${ext_extra[@]}"
+    done
+    printf 'exit 0\n' >> "$cell"
+
+    declare -A before_run=()
+    for eng in "${PLUGIN_ENGINES[@]}"; do before_run[$eng]=$(rows_for "$eng" "$pid"); done
+    run_cell "$cell"
+
+    pty_out=""; [ "$VERB" = chat ] && pty_out=json
+    cell_result apr "$pid" "$d/apr-$pid"
+    if [ "$HAVE_LLAMA" = 1 ]; then cell_result llama.cpp "$pid" "$d/llama-$pid" "${pty_out:+$d/llama-$pid.json}"
+    elif want llama.cpp; then emit_gen llama.cpp "$pid" "" "" "" "$LLAMA_WHY"; fi
+    if [ "$HAVE_OLLAMA" = 1 ] && [ -z "$OL_REFUSED" ]; then cell_result ollama "$pid" "$d/ollama-$pid" "${pty_out:+$d/ollama-$pid.json}"
+    elif want ollama; then emit_gen ollama "$pid" "" "" "" "${OL_REFUSED:-$OLLAMA_WHY}"; fi
+    for eng in "${PLUGIN_ENGINES[@]}"; do
+      want "$eng" || continue
+      if [ "${EXT_OK[$eng]}" != 1 ]; then emit_gen "$eng" "$pid" "" "" "" "${EXT_WHY[$eng]}"; continue; fi
+      if source_engine "$eng" && [ -n "$HF_MODEL_WHY" ]; then emit_gen "$eng" "$pid" "" "" "" "$HF_MODEL_WHY"; continue; fi
+      before=${before_run[$eng]}
+      if [ -n "$CELL_WHY" ]; then emit_gen "$eng" "$pid" "" "" "" "$CELL_WHY"
+      elif [ "$(rows_for "$eng" "$pid")" -le "$before" ]; then
+        emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen exited $(cat "$d/$eng-$pid.driver.rc" 2>/dev/null || echo '?') without appending a row: $(tail -c 200 "$d/$eng-$pid.driver.err" 2>/dev/null | tr '\n' ' ')"
+      fi
+    done
+  done
+  done
+  done  # thinking modes
+  SHA12=$SHA12_MODEL
+
+  [ "$GREEDY" = 1 ] && greedy_cells
+
+  if [ "$HAVE_OLLAMA" = 1 ] && [ "$KEEP_OLLAMA" = 0 ]; then
+    ollama_rm_own "$OL_NAME"
+  fi
+done
+
+# ---- judge --------------------------------------------------------------------------
+GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
+HARNESS_SHA=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null) || HARNESS_SHA=""
+EXT_META="$WORK/ext-engines.json"
+ext_args=()
+for eng in "${PLUGIN_ENGINES[@]}"; do ext_args+=("$eng" "${EXT_PROBE[$eng]:-}" "${EXT_WHY[$eng]:-}"); done
+python3 - "$EXT_META" "${ext_args[@]}" <<'PY'
+import json, sys
+out, rest = sys.argv[1], sys.argv[2:]
+json.dump({rest[i]: {"probe": rest[i + 1] or None, "unavailable": rest[i + 2] or None}
+           for i in range(0, len(rest), 3)}, open(out, "w"))
+PY
+python3 - "$WORK/meta.json" "$MODELS_JSONL" "$VERSION" "$HOST" "$BACKEND" "$ENGINES" "$VERBS" \
+  "$APR_VERSION_LINE" "${LLAMA_BUILD:-}" "$(llama_pin_get build_commit 2>/dev/null)" "$LLAMA_WHY" \
+  "$OLLAMA_SERVER" "$OLLAMA_CLIENT" "$OLLAMA_WHY" "$TEMP" "$SEED" "$CTX" "$MAXTOK" "${GPU_NAME:-}" "$HARNESS_SHA" "$EXT_META" "$LOCK_VIA" <<'PY'
+import json, platform, sys
+(out, models, version, host, backend, engines, verbs, apr_line, lbuild, lpin, lwhy,
+ osrv, ocli, owhy, temp, seed, ctx, maxtok, gpu, hsha, ext, lockvia) = sys.argv[1:23]
+meta = {
+    "version": version, "host": host, "backend": backend, "isa": platform.machine(), "gpu": gpu or None,
+    "engines": engines.split(","), "verbs": verbs.split(","), "thinking": ["off"],
+    "sampling": {"temperature": float(temp), "seed": int(seed), "context": int(ctx), "max_tokens": int(maxtok),
+                 "source": "scripts/llama_pin.toml [protocol]"},
+    "apr": {"version_line": apr_line},
+    "harness": {"sha": hsha or None, "driver": "scripts/crux_inference_dogfood.sh", "gpu_lock": lockvia},
+    "llama_cpp": {"build": lbuild or None, "pin": lpin or None, "unavailable": lwhy or None},
+    "ollama": {"server_version": osrv or None, "client_version": ocli or None, "unavailable": owhy or None},
+    **json.load(open(ext)),
+    "models": [json.loads(l) for l in open(models) if l.strip()],
+    "not_covered": [
+        "verbs not run here: " + ", ".join(v for v in ("chat", "serve", "code") if v not in verbs.split(",")),
+        *(["apr serve's backend is unverified: its responses report none"] if "serve" in verbs.split(",") else []),
+        *(["apr serve reads no per-request thinking toggle; the comparators are told enable_thinking explicitly"]
+          if "serve" in verbs.split(",") else []),
+        *(["apr code has no backend, max-tokens or thinking control: it spawns `apr serve --gpu`, "
+           "so its rows are judged by executing the code, and it is refused on the cpu lane"]
+          if "code" in verbs.split(",") else []),
+        *(["apr chat's backend is unverified: apr chat reports none (#3794)"] if "chat" in verbs.split(",") else []),
+        "thinking ON until #3723 adds an apr toggle",
+        "consumer-brief context rungs (#3716) and each engine's max accepted context",
+        "TTFT and decode rate: the serve verb's measurement goes through `apr test llm bench` (PERF-009), the next increment",
+    ],
+}
+json.dump(meta, open(out, "w"), indent=2)
+PY
+# $OUT_DIR reaches here from `--out` (default evidence/crux/$VERSION). A receipt dir may
+# legitimately be absolute -- operators point it at /mnt -- so absoluteness is allowed and
+# only a `..` segment, which walks out of wherever the caller meant, is refused.
+case "$OUT_DIR" in
+  ""|*..*) decline "refusing --out path '$OUT_DIR' (empty, or contains a '..' segment)" ;;
+esac
+# Canonicalised (-m: the dir need not exist yet) so the receipt path is one unambiguous
+# location rather than whatever the caller's cwd made it mean. The `..` arm above already
+# refused the traversal shape; this removes any remaining relative indirection.
+OUT_DIR=$(realpath -m -- "$OUT_DIR") || decline "cannot resolve --out path"
+mkdir -p "$OUT_DIR" || decline "cannot create $OUT_DIR"
+# The prompt-certification receipt (#3962 Q1): default evidence/crux/<version>/prompt-certification.json.
+# It is passed whenever the judge takes it. A missing receipt is the judge's to refuse, never skipped here.
+CERT_ARGS=()
+if grep -q -- '--certification' scripts/lib/crux_inference_judge.py; then
+  CERT_ARGS=(--certification "${CERT:-evidence/crux/$VERSION/prompt-certification.json}")
+elif [ -n "$CERT" ]; then
+  decline "--certification given, but this tree's judge does not take one"
+fi
+python3 scripts/lib/crux_inference_judge.py collect --manifest "$MANIFEST" --prompts "$PROMPTS" "${CERT_ARGS[@]}" \
+  --meta "$WORK/meta.json" --out-json "$OUT_DIR/$HOST-$BACKEND.json" --out-md "$OUT_DIR/$HOST-$BACKEND.md"
+rc=$?
+printf 'receipt: %s/%s-%s.json (judge rc %s)\n' "$OUT_DIR" "$HOST" "$BACKEND" "$rc"
+exit "$rc"

@@ -7,6 +7,215 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.69.3] - 2026-09-24
+
+0.69.3 is an emergency early release, authorized by the operator: "we need near parity apr serve
+for qwen 3.5 ASAP". It is 0.69.1 plus one thing, **batched CUDA prefill for the Qwen3.5 hybrid**
+(#3596). Until now the hybrid prefilled one token at a time on the GPU, so 0.69.1's
+time-to-first-token on Qwen3.5-4B Q4_K_M (RTX 4090) was several times llama.cpp's on the same box
+(the measured rungs are in `docs/audits/impl-PMAT-3596-receipt.md`).
+
+### Qwen3.5 on CUDA: batched prefill (#3596)
+- The Qwen3.5 hybrid prefills in chunks of rows on the GPU instead of one token at a time. The
+  Gated DeltaNet layers run a sequence causal-conv1d and delta-rule scan; the attention layers run
+  batched GEMMs. Prefill is token-identical to the one-token path at temperature 0 (the
+  `qwen35-batched-prefill-v1` contract, five falsifiers).
+- Prefill attention defaults to cuBLAS f32 while it fits, and uses a fused flash-attention kernel
+  for the 256-wide heads (no materialised scores) only when flash alone fits (C-QBP-005).
+- A context the GPU cannot hold is refused BEFORE the model loads, with the arithmetic. A prompt
+  past the model's declared context is refused (GH-167 bound). On unified-memory hosts (GB10) the
+  plan uses MemAvailable less a headroom, not `cuMemGetInfo` (#3714), and GEMM chunks grow to 2048
+  rows.
+- When a prefill plan falls back to the one-token path, it says so on stderr. It is never silent.
+
+## [0.69.1] - 2026-09-22
+
+0.69.1 is the stoppers train for 0.69.0 (#3080), assembled as one integration batch:
+87 commits, one CI run, one queue slot. Its theme is not a feature. It is **gates that
+could not fail** — and the reason that is the theme is that 0.69.0 shipped a model
+emitting empty output on CUDA as a *note* rather than a failure, because one contract
+key said the rung was optional.
+
+Four release gates in this tree turned out to be one defect wearing four faces
+(`contracts`, `pv lint`, `check_model_ladder`, and the clean-room contract test), all
+resolving to a single missing green witness. That is the good case: one cause, one fix.
+The bad cases are below, and they are the ones worth reading, because each was **green
+while being wrong**.
+
+### Gates that could not fail
+- **A Q4_K rung can no longer be optional.** `qwen3-8b-q4km` was `required: false`, which
+  is exactly how 0.69.0 shipped an empty-output CUDA model as a note. No Q4_K model is
+  optional (#3712); the key is now refused rather than tolerated, and arming it surfaced
+  the defect it had been masking since 0.69.0.
+- **The golden-output gate scored degenerate output as correct.** The greeting case
+  accepted a bare `"!"` by substring match — and `"!"` is token id 0 in the Qwen vocab,
+  i.e. precisely what a model with dead logits emits. Measured on the pre-fix gate,
+  `"!"`-repeated **passed at lengths 1..=11** and was caught only at 12+, because the
+  existing guard tested `bytes.len() >= 12`. So the gate was blind exactly where the real
+  failure lives: short degenerate output. A new `gibberish_dominant_character` check (8+
+  non-space characters, 90%+ identical) now runs *before* the answer check, so it covers
+  cases added later, and it reuses CRUX's own threshold so the two judges cannot disagree
+  about what "degenerate" means. (#3782, #3774)
+- **`make contracts` printed its verdict and did not enforce it.** The command was
+  `"$PV" lint contracts/ | tail -5`, so the recipe took **`tail`'s** exit status. The
+  armed-meet verdict was displayed on every run and could never fail the build. (#2336,
+  #2360 are the same idiom shipping twice before; this is the third.)
+- **The release ladder measured one verb while the contract declared four.** The release
+  matrix claims `{run, chat, serve, code}`; the ladder proved `run`. The receipt now
+  carries a `verbs` object, `serve` is probed against routes **derived from the router's
+  own source literals** rather than a hand-written list, and the judge refuses by name a
+  receipt that omits a verb, reports no routes, or probes `serve` without `/api/chat`.
+  The anti-shrink floor also gained a way to admit a *reasoned* removal instead of only
+  refusing every shrink. (#3828)
+- **A NO-GO release run destroyed the evidence it cited.** The dogfood worklog was removed
+  unconditionally, so the one verdict whose reasoning you need was the one with no
+  artifact left. It is now kept on any non-GO.
+- **Pre-publish dogfood could never reach GO.** Its declared gates resolved a stale debug
+  binary and refused, before anything built `target/release/apr`.
+- **A gate reported RED about a rung that passes every one of its gates.** On
+  `qwen35-27b-q4km` — a *required* rung — `apr qa` exited **0** with `"passed": true`,
+  `capability_match` PASS and `golden_output` PASS ("3 golden test cases passed …
+  served by GPU"), and the ladder marked the rung red because its own row builder
+  crashed on a malformed field. Every other defect in this release hunts a false
+  GREEN; this is the inverse, and it is the one that would have made us **hold a good
+  release** and go looking for a fault in a model that did not have one. The field is
+  now validated where it is assembled, with the backend still in scope. (#3849)
+- **`apr qa --json` could exit having written zero bytes.** `run_qa(…)?` returned past
+  the `if json` block, so any error produced no document at all. Measured on gx10: 78
+  seconds of GPU work, its own stderr recording `F2 guard: passed in 78442 ms on 20
+  positions`, and then nothing on stdout. The ladder appended the empty result as an
+  empty line, the receipt assembler dropped it, and a **red required rung vanished from
+  its own receipt** while a separate counter still reported it — `red: 3` with two reds
+  in the rows. A second zero-byte path sat beside it: `unwrap_or_default()` turned a
+  serialization failure into an empty string, which is worse, because it *looks* like
+  output. The document is now emitted on both paths and the error still returned, so
+  exit codes are unchanged. The coverage that existed drove this exact path and asserted
+  only `result.is_err()` — **the test named for the output never looked at the
+  output**. (#3842)
+- **The `code` verb had never been measured. 48 of 48 cells, both hosts.** The ladder
+  hard-coded one backend flag and passed it to all four verbs, whose CLI surfaces
+  differ: `apr code` has no backend selector, so clap exited 2 on a usage error and the
+  receipt recorded `ran: false` — a **harness defect wearing the costume of a model
+  result**, indistinguishable from a model that genuinely failed. Its siblings in the
+  same run returned meaningful codes (12 NotImplemented, 14 BackendUnavailable); 2 is
+  clap. The flag is now derived from `apr <verb> --help` rather than a table, which
+  immediately caught a second case: the flags live on the **subcommand**, so
+  `apr serve --help` lists none while `apr serve run --help` does. `code` is measured
+  once per rung and labelled `backend: "inherited-from-spawned-serve"`, because it
+  spawns its own server and "code on cpu" is not expressible today (#3845). (#3843)
+- **The ladder's serve probe hung forever on teardown.** `kill "$pid"` targeted the
+  `flock`/`choom` **wrapper**, not `apr serve`, which survived, kept its port and was
+  re-parented away. Every bound the probe declared was holding — the 90 s health wait,
+  all six `curl --max-time 60`; the unbounded step was the one assumed instantaneous.
+  Rung 1 of 8 hung 13+ minutes on both hosts. Teardown now resolves the listener by
+  port, proves `/proc/PID/cwd` is this tree before signalling, and records
+  `teardown: clean|escalated|failed` in the cell. Measured across a full run:
+  **48 escalated, 0 clean** — the wrapper kill has never once worked. (#3828, #3838)
+- **The model universe was a glob, so 10 of 28 held models were invisible.**
+  `*q4_k*.gguf` and friends missed `Q4_0`, `IQ2_XXS`, `IQ3_M`, `IQ4_XS`, `f16` and two
+  `.apr` files by filename — including a 35B Qwen3.5 MoE no gate had ever loaded. #3712
+  replaced a hand-picked list with a glob, which has the same omission property: a
+  decision moved from a human to a string match nobody reviews. Widened to every Qwen
+  2.5/3.5 file the host holds, regardless of quant. (#3846)
+
+### Qwen on CUDA — correctness
+- **APR Q4_K GPU serve no longer emits garbage.** (#3791, with #3571 units 1–2 and #3595)
+- **One template detector.** `apr chat` stopped routing Qwen3 through ChatML; `apr code`'s
+  embedded fallback now takes the production detector instead of guessing from a filename.
+  (#3801)
+- **The three spellings of a chat prompt now reach realizar identically.** A pre-templated
+  prompt was templated a second time, and `sanitize_special_tokens` inserted U+200B,
+  producing `<unk>` tokens and a token count that disagreed with llama.cpp's. (#3743)
+- **The golden gate asks the model the way production asks it.** It previously sent ChatML
+  to every architecture, which left `qwen3` in thinking mode — a mode no production path
+  uses — and on one host its greedy reasoning for "2+2" overran the token budget, so the
+  gate reported "Empty output" for a model that answers correctly through `apr serve`.
+  The GPU leg is now typed and can say `Errored`, `Unclosed` and `NotRun` distinctly.
+  (#3724)
+- **The ollama wire's delegation is asserted, not assumed.** (#3715, reported by Alfredo)
+- **FP8 prefill scaled per tensor, so one outlier collapsed a whole projection.**
+  E4M3 batched prefill used a per-**tensor** absmax (`448/absmax`), so a single outlier
+  in `ffn_down` drove the rest of the tensor toward zero — near-orthogonal output, not
+  precision drift. Now scaled per token **and** per channel. Measured after the fix on
+  lambda (sm_89, FP8 still ON): `qwen2.5-coder-0.5b` answers correctly on both
+  `apr run --gpu` and `apr qa`'s golden GPU leg, and `qwen2.5-coder-7b` no longer needs
+  its FP16 retry. (#3804)
+
+### CLI honesty
+- `apr chat --no-gpu` no longer uploads the model to CUDA, and `--json` names the backend
+  it actually used. (#3794)
+- A bare `apr run` no longer pays 1.7 GB to initialise a backend it then rejects. (#3757)
+- `apr code --output-format json` writes exactly one JSON document on every exit path,
+  including failures. (#3775)
+- A sampling flag given alone now samples, instead of being silently ignored because the
+  other half of the pair was absent (`DEFAULT_TOP_K`). (#3754)
+- Seeded sampling is honoured on `run` over SafeTensors (#3760) and on `serve` for APR
+  Q4_K GPU chat (#3786).
+
+### Documentation accuracy
+- The README claimed **110** CLI commands and cited `apr --help` as its source of truth —
+  a command that prints **112**, because it lists `help` itself. The registry says **111**
+  and `grep -c '^  - name:'` says **117**. Three mechanisms answer the question and the
+  published number matched none of them. Now 111, sourced from the registry, with both
+  wrong counts named inline. The guard had been *passing while printing this finding*,
+  which is why nobody had to act on it.
+- Contract census regenerated: **1830**.
+
+### The comparators, and what a CRUX cell now has to say
+- **A CRUX cell states its own coverage.** A verdict read weeks later collapses to a
+  colour, so each cell now carries `quorum` (how many engines answered, and which), a
+  `version` per engine, and a `subject` record naming the model and apr version under
+  test. A cell where only apr answered is `UNJUDGED` and can never be GREEN. The floor is
+  deliberately **asymmetric**: RED needs one comparator, because "a comparator answered
+  correctly and apr did not" is a complete claim and every way apr fails to answer is by
+  construction a one-engine cell. A symmetric floor was tried first and suppressed
+  **seven legitimate REDs**, among them "a missing apr row where llama.cpp is right is
+  RED" — the rule CRUX exists to enforce — and "apr's degenerate `!!!!` is no answer:
+  RED where llama.cpp answered", which is the same dead-logit output #3782 taught the
+  golden gate to stop scoring as correct. The two fixes are one story: a model emitting
+  `!` must fail the gate that reads it *and* must not be excused by the gate that
+  compares it. The fixtures caught the floor in one run; the rule was fixed, not the
+  fixtures. (#3832, #3782)
+- **"Not found" was two different facts wearing one string.** An engine that did not run
+  now records a classified reason, and `not_on_PATH` is distinct from
+  `binary_not_found_at_path`. The live case: `ssh lambda-labs llama-cli --version` reports
+  `command not found` while `~/.local/bin/llama-cli --version` prints the pinned
+  `0.4.1-dev (build 10987, commit d1d3c3396)` — lambda's non-interactive PATH has no
+  `~/.local/bin` and gx10's does. CRUX runs cross-host over ssh, so one string for both
+  blames the comparator for the harness's mistake. Enforced by a mutant that collapses
+  the two reasons and is detected.
+
+  The classifier's own case table then caught **a guard that could not fail, inside the
+  guard written to catch guards that cannot fail**: two of its patterns shipped with
+  `PATH` capitalised while the haystack is lowercased, so they could never match. No
+  reading would have found it; running the table found it on the first run. That is the
+  release's theme in miniature — re-run the table, do not re-read the pattern.
+  (#3832, #3831)
+- **The comparator was four releases behind, and its version gate could not fail.**
+  ollama moved 0.33.2 → 0.34.2 on both hosts (paiml/infra#911). This is not hygiene:
+  0.34.1 changed GGUF creation from safetensors, which is exactly the
+  `Modelfile FROM <path>` mechanism CRUX uses to feed every engine the same file.
+  Moving the pin exposed two gates that could not fail — one **inverted**, where
+  `ollama --version` reports the *daemon* and names the client only in a mismatch
+  warning, so grepping the output for the pin was satisfied *by* the upgrade being
+  incomplete; and one **blind**, where the service check discarded `/api/version`'s body,
+  so the pin could never make the daemon drift. Verified after: ollama 0.34.2 imports and
+  generates `qwen3` and `qwen35` GGUFs. (#3833, #3739)
+- **`llama.cpp` was never broken on either host.** A dead symlink into an unpinned
+  checkout shadowed a working pinned build on lambda, and gx10's pinned build was
+  reported "in progress" when it had been built and working the whole time. Both
+  readings came from a PATH lookup mistaken for an install. (#3831)
+
+### Known limitation, stated by name
+- **`qwen3moe` is not supported on CUDA.** `apr run --gpu` on a mixture-of-experts
+  Q4_K_M model (`Qwen3-30B-A3B-Instruct-2507`, `Qwen3-Coder-30B-A3B-Instruct`)
+  now **refuses before loading**, names the architecture, cites #3714 and exits 12.
+  It previously loaded 18 GB, generated on the CPU and exited 14 after the fact,
+  which told a user who asked for the GPU the wrong thing about their hardware.
+  `apr run` without `--gpu` is unchanged and still runs these models on the CPU.
+  `apr qa` on such a file now emits its gates with reasons instead of exiting 5
+  with an empty JSON document. The MoE GPU forward is #3714, in 0.70.0. (#3817)
+
 ## [0.69.0] - 2026-09-21
 
 0.69.0 folds every remaining 0.68.x row into one train (EPIC #3080). The headline goal is Qwen models usable on pure CUDA. This release makes the CUDA path honest and routable:

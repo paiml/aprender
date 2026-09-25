@@ -1,0 +1,98 @@
+metadata:
+  id: C-THINKING-BUDGETS
+  version: "1.0.0"
+  created: "2026-09-23"
+  author: PAIML Engineering
+  kind: pattern
+  status: enforced
+  description: |
+    The token budget the golden gate's THINKING-ON leg gives a model to close its
+    `<think>` block, per model, each with the measurement it came from.
+
+    WHY THIS EXISTS. The budget was `const THINKING_ON_BUDGET: usize = 2048`, measured
+    on ONE model — qwen3-8b-q4km on lambda, where the three golden questions produce
+    blocks of 545 / 114 / 126 tokens — and applied to EVERY model the detector routes
+    to a no-think template, including a 0.8B. `Qwen3.5-0.8B-IQ4_XS.gguf` then generated
+    8,901 characters without closing, roughly 4x the longest block that 8B produced on
+    the same question, and the gate reported it as a model failure.
+
+    It cannot be one: with one model's basis behind the number, the gate cannot tell
+    "a 0.8B reasoning model loops on `What is 2+2?`" — a plausible property of the
+    model — from "the budget is wrong for this architecture". THAT INABILITY IS THE
+    DEFECT, whichever is true here. An unbasis'd threshold is a property of the
+    harness, not of the model.
+
+    THE SHAPE IS `evidence/parity/thresholds.yaml`'s, which already got this right for
+    cosine and is copied rather than reinvented:
+      - every entry carries the measurement it came from, in band;
+      - `default` does NOT apply to a model listed here: a listed model with no
+        `budget` is FAIL-CLOSED, never silently given the default;
+      - a budget without a basis is not a budget.
+
+    AND IT IS DATA. The `const` had no env seam, so probing it meant a
+    `--features cuda,inference` rebuild. A threshold you cannot vary without rebuilding
+    is a threshold nobody will ever re-measure. `APR_THINKING_ON_BUDGET` overrides it
+    for a probe; the override is announced in the failure text so a probed number can
+    never be mistaken for a measured one.
+
+    Related: aprender#3861 (`gpu_speedup`'s floor is a ratio measured on one pair and
+    applied everywhere) is the same class of number, unresolved, and may share this fix.
+  references:
+    - crates/apr-cli/src/commands/golden_output.rs
+    - evidence/parity/thresholds.yaml
+  depends_on: []
+
+schema: apr/thinking-budgets/v1
+
+# Applies ONLY to models absent from `models:` below.
+default:
+  budget: 2048
+  basis: |
+    qwen3-8b-q4km on lambda (RTX 4090, sm_89), greedy: the three golden questions
+    produce think blocks of 545 / 114 / 126 tokens and every block closes. 512 — the
+    production leg's budget — is not enough for the first on x86, which is the defect
+    #3724 fixed. This basis is ONE model of 8B; it is the default because it is the
+    only measurement we have, not because it generalises.
+
+# A listed model takes its entry and NEVER falls back to `default`.
+# An entry with no `budget` is FAIL-CLOSED: the gate refuses rather than guessing.
+models:
+  "Qwen3.5-0.8B-IQ4_XS.gguf":
+    # NO `budget` KEY ON PURPOSE. This is the model that exposed the defect, and the
+    # honest state is that we do not know its budget yet. Refusing names that, where
+    # inheriting 2048 would republish an 8B's number as this model's measurement.
+    why_unmeasured: |
+      Generated 8,901 chars without closing at 2048 on lambda. Whether a larger budget
+      closes it, or this model genuinely loops on `What is 2+2?`, is UNMEASURED. The
+      measurement must be on lambda: d8 measured that tinyllama-1.1b's CPU and GPU legs
+      diverge at token 143 of 192 while Qwen3-1.7B does not, so a greedy token-level
+      number is not host-portable and a yoga figure could not be used for lambda's gate.
+    owed_by: "aprender#3907 (the measurement is queued behind aprender#3899, d8's Rule A blocker, for the lambda slot)"
+  "Qwen3.5-0.8B-Q4_K_M.gguf":
+    # #3948 quorum item 3: recorded explicitly, so a failure on this model cites ITS measurement
+    # and never the 8B-measured `default`. The budget is not what fails here.
+    budget: 2048
+    basis: |
+      Measured on lambda (RTX 4090, cuda), #3948 receipt @ 5103e07de: on apr's thinking-ON prompt the
+      `<think>` block closes EMPTY at budgets 16, 64 and 2048 alike, so no budget change makes this
+      leg pass on that prompt. ATTRIBUTION IS OPEN, NOT "the model": apr's ON prompt ends
+      `assistant\n` (without_thinking_prefill), while the official Qwen3.5 template ends
+      `assistant\n<think>\n`; on the official prompt this model no longer emits the instant empty
+      block (aprender-36, cop heads-up 2026-09-23). Until the golden ON leg renders the official
+      template (#3990), an empty-think result here is NOT a RED-MODEL verdict (#3957 F9). Caveat:
+      a foreign GPU process was resident during the #3948 measurement; re-run on an empty card.
+
+# #4046 merge-back: the contract-integrity ratchet requires every contract to state its
+# equations. This is the resolution rule the golden gate's thinking_on_budget_for applies.
+equations:
+  budget_resolution:
+    formula: >
+      budget(m) = models[m].budget        if m in models and models[m].budget is set;
+                  FAIL-CLOSED              if m in models and models[m].budget is unset;
+                  default.budget           if m not in models and default is set;
+                  FAIL-CLOSED              otherwise
+    domain: "m = the model file name the golden gate's thinking-ON leg is judging"
+    codomain: "a token count with its basis, or a refusal"
+    invariants:
+      - "a listed model never inherits the default"
+      - "a budget without a basis is not a budget"

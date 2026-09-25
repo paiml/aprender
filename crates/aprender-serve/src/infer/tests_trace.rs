@@ -312,6 +312,7 @@
     #[test]
     fn test_result_empty_text() {
         let result = InferenceResult {
+            generation_ms: None,
             text: String::new(),
             tokens: vec![],
             input_token_count: 0,
@@ -321,6 +322,7 @@
             load_ms: 0.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert!(result.text.is_empty());
         assert!(result.tokens.is_empty());
@@ -330,6 +332,7 @@
     fn test_result_very_long_text() {
         let long_text = "a".repeat(100_000);
         let result = InferenceResult {
+            generation_ms: None,
             text: long_text.clone(),
             tokens: vec![1; 10000],
             input_token_count: 100,
@@ -339,6 +342,7 @@
             load_ms: 500.0,
             format: "APR".to_string(),
             used_gpu: true,
+            gpu_attempted: true,
         };
         assert_eq!(result.text.len(), 100_000);
         assert_eq!(result.tokens.len(), 10000);
@@ -348,6 +352,7 @@
     fn test_result_mismatched_counts() {
         // token counts don't have to match tokens vec length
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1, 2, 3],
             input_token_count: 100, // Doesn't match tokens.len()
@@ -357,6 +362,7 @@
             load_ms: 1.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         // Fields are just stored, not validated
         assert_eq!(result.input_token_count, 100);

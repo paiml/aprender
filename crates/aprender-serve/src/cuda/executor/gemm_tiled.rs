@@ -1,6 +1,12 @@
 impl CudaExecutor {
 
-    /// Execute a tiled GEMM kernel: C = A @ B
+    /// Execute a tiled GEMM kernel: C = A @ B, with B stored `[k, n]` row-major.
+    ///
+    /// For a weight stored `[out, in]` (= `[n, k]`, the APR/GGUF contract) use
+    /// [`Self::gemm_bt`]. The two layouts are separate entry points so a caller
+    /// has to NAME the one it holds (#3975): this function used to switch to the
+    /// `Gemv` kernel at `m == 1`, which reads B as `[n, k]`, so a `[k, n]` caller
+    /// was wrong at m = 1 and an `[n, k]` caller was wrong at m > 1.
     ///
     /// # Arguments
     ///
@@ -23,7 +29,44 @@ impl CudaExecutor {
         n: u32,
         k: u32,
     ) -> Result<(), GpuError> {
-        // Validate sizes
+        self.f32_gemm(F32GemmPath::TiledKn, a, b, c, m, n, k)
+    }
+
+    /// Execute C = A @ B^T, with B stored `[n, k]` row-major — a weight in the
+    /// `[out, in]` layout APR/GGUF use, passed as-is (no transpose on the host).
+    ///
+    /// m = 1 uses the warp-reduce `Gemv` kernel, which reads exactly this layout;
+    /// m > 1 uses a tiled A @ B^T kernel (trueno `GemmBackwardAKernel`, whose
+    /// `grad_c @ B^T` is the same product). #3975.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if sizes disagree or kernel execution fails.
+    pub fn gemm_bt(
+        &mut self,
+        a: &[f32],
+        b: &[f32],
+        c: &mut [f32],
+        m: u32,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        let path = if m == 1 { F32GemmPath::GemvNk } else { F32GemmPath::TiledNk };
+        self.f32_gemm(path, a, b, c, m, n, k)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn f32_gemm(
+        &mut self,
+        path: F32GemmPath,
+        a: &[f32],
+        b: &[f32],
+        c: &mut [f32],
+        m: u32,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        // Validate sizes (B has k*n elements in either layout)
         let expected_a = (m * k) as usize;
         let expected_b = (k * n) as usize;
         let expected_c = (m * n) as usize;
@@ -40,13 +83,11 @@ impl CudaExecutor {
             )));
         }
 
-        // Generate PTX for this configuration
-        // PARITY-003: Enable simpler Gemv (warp-reduce) for M=1 operations
-        let use_gemv = m == 1;
-        let (kernel_type, cache_key) = if use_gemv {
-            (KernelType::Gemv { k, n }, format!("gemv_{}_{}", k, n))
-        } else {
-            (
+        const BT_TILE: u32 = 16;
+        let (kernel_type, cache_key) = match path {
+            // PARITY-003: warp-reduce Gemv for M=1; it reads W as [n, k].
+            F32GemmPath::GemvNk => (KernelType::Gemv { k, n }, format!("gemv_{}_{}", k, n)),
+            F32GemmPath::TiledKn => (
                 KernelType::GemmTiled {
                     m,
                     n,
@@ -54,7 +95,16 @@ impl CudaExecutor {
                     tile_size: 32,
                 },
                 format!("gemm_{}_{}_{}_{}", m, n, k, 32),
-            )
+            ),
+            F32GemmPath::TiledNk => (
+                KernelType::GemmBtTiled {
+                    m,
+                    n,
+                    k,
+                    tile_size: BT_TILE,
+                },
+                format!("gemm_bt_{}_{}_{}_{}", m, n, k, BT_TILE),
+            ),
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
 
@@ -77,70 +127,85 @@ impl CudaExecutor {
         let c_zeros = vec![0.0f32; expected_c];
         let buf_c = GpuBuffer::from_host(&self.context, &c_zeros)?;
 
-        // Launch configuration differs for Gemv vs GEMM
-        // PARITY-003: Enable simpler Gemv with correct config
-        let config = if use_gemv {
+        let config = match path {
             // Simple Gemv: 32 threads (one warp) per block, N blocks
             // Each block computes one output element y[block_id]
-            LaunchConfig::grid_2d(n, 1, 32, 1)
-        } else {
+            F32GemmPath::GemvNk => LaunchConfig::grid_2d(n, 1, 32, 1),
             // GEMM: 2D grid of 32x32 tiles
             // PARITY-114 FIX: Grid X is for columns (N), Grid Y is for rows (M)
-            LaunchConfig::grid_2d(
-                (n + 31) / 32, // Grid X - columns (N dimension)
-                (m + 31) / 32, // Grid Y - rows (M dimension)
-                32,            // Block X
-                32,            // Block Y
-            )
+            F32GemmPath::TiledKn => LaunchConfig::grid_2d((n + 31) / 32, (m + 31) / 32, 32, 32),
+            // A @ B^T: grid X over output columns (N), grid Y over rows (M)
+            F32GemmPath::TiledNk => LaunchConfig::grid_2d(
+                n.div_ceil(BT_TILE),
+                m.div_ceil(BT_TILE),
+                BT_TILE,
+                BT_TILE,
+            ),
         };
 
         // Get raw pointers for kernel args
         let mut ptr_a = buf_a.as_ptr();
         let mut ptr_b = buf_b.as_ptr();
         let mut ptr_c = buf_c.as_ptr();
-        let mut k_val = k;
+        // GH-282: Keep as u32 to match kernel .param .u32 declarations
+        let mut m_val = m;
         let mut n_val = n;
+        let mut k_val = k;
 
-        // Launch kernel
-        // SAFETY: Buffers are valid, config matches kernel expectations
-        // PARITY-003: Enable GEMV for M=1 operations
-        // SAFETY: Memory safety ensured by bounds checking and alignment
+        // SAFETY: Buffers are valid and sized above; each argument list matches
+        // the `.param` declarations of the kernel it launches.
         unsafe {
-            if use_gemv {
-                // GEMV kernel: y = B * x where x is A (1×K row as K vector), B is K×N, y is C (1×N as N vector)
-                // Args: y_ptr, a_ptr (matrix), x_ptr, k_dim, n_dim
-                self.stream.launch_kernel(
-                    module,
-                    kernel_name,
-                    &config,
-                    &mut [
-                        std::ptr::from_mut(&mut ptr_c) as *mut std::ffi::c_void, // y_ptr (output)
-                        std::ptr::from_mut(&mut ptr_b) as *mut std::ffi::c_void, // a_ptr (K×N matrix)
-                        std::ptr::from_mut(&mut ptr_a) as *mut std::ffi::c_void, // x_ptr (K input vector)
-                        std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void, // k_dim
-                        std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void, // n_dim
-                    ],
-                )?;
-            } else {
-                // GEMM kernel: C = A × B
-                // Args: a_ptr, b_ptr, c_ptr, m, n, k
-                // GH-282: Keep as u32 to match kernel .param .u32 declarations
-                let mut m_val = m;
-                let mut n_val_i32 = n;
-                let mut k_val_i32 = k;
-                self.stream.launch_kernel(
-                    module,
-                    kernel_name,
-                    &config,
-                    &mut [
-                        std::ptr::from_mut(&mut ptr_a) as *mut std::ffi::c_void,
-                        std::ptr::from_mut(&mut ptr_b) as *mut std::ffi::c_void,
-                        std::ptr::from_mut(&mut ptr_c) as *mut std::ffi::c_void,
-                        std::ptr::from_mut(&mut m_val) as *mut std::ffi::c_void,
-                        std::ptr::from_mut(&mut n_val_i32) as *mut std::ffi::c_void,
-                        std::ptr::from_mut(&mut k_val_i32) as *mut std::ffi::c_void,
-                    ],
-                )?;
+            match path {
+                F32GemmPath::GemvNk => {
+                    // GEMV kernel: y[n] = W[n, k] @ x[k]
+                    // Args: y_ptr, w_ptr, x_ptr, k_dim, n_dim
+                    self.stream.launch_kernel(
+                        module,
+                        kernel_name,
+                        &config,
+                        &mut [
+                            std::ptr::from_mut(&mut ptr_c) as *mut std::ffi::c_void, // y_ptr (output)
+                            std::ptr::from_mut(&mut ptr_b) as *mut std::ffi::c_void, // w_ptr ([n, k] matrix)
+                            std::ptr::from_mut(&mut ptr_a) as *mut std::ffi::c_void, // x_ptr (K input vector)
+                            std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void, // k_dim
+                            std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void, // n_dim
+                        ],
+                    )?;
+                },
+                F32GemmPath::TiledKn => {
+                    // GEMM kernel: C = A × B. Args: a_ptr, b_ptr, c_ptr, m, n, k
+                    self.stream.launch_kernel(
+                        module,
+                        kernel_name,
+                        &config,
+                        &mut [
+                            std::ptr::from_mut(&mut ptr_a) as *mut std::ffi::c_void,
+                            std::ptr::from_mut(&mut ptr_b) as *mut std::ffi::c_void,
+                            std::ptr::from_mut(&mut ptr_c) as *mut std::ffi::c_void,
+                            std::ptr::from_mut(&mut m_val) as *mut std::ffi::c_void,
+                            std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                            std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                        ],
+                    )?;
+                },
+                F32GemmPath::TiledNk => {
+                    // GemmBackwardAKernel computes grad_a[M, K] = grad_c[M, N] @ B[K, N]^T.
+                    // Bound as (M, N, K) = (m, k, n): grad_c = A, B = W[n, k], grad_a = C.
+                    // Args: grad_c_ptr, b_ptr, grad_a_ptr, m, n, k
+                    self.stream.launch_kernel(
+                        module,
+                        kernel_name,
+                        &config,
+                        &mut [
+                            std::ptr::from_mut(&mut ptr_a) as *mut std::ffi::c_void,
+                            std::ptr::from_mut(&mut ptr_b) as *mut std::ffi::c_void,
+                            std::ptr::from_mut(&mut ptr_c) as *mut std::ffi::c_void,
+                            std::ptr::from_mut(&mut m_val) as *mut std::ffi::c_void,
+                            std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void, // kernel `n` = reduction
+                            std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void, // kernel `k` = out cols
+                        ],
+                    )?;
+                },
             }
         }
 
@@ -151,7 +216,7 @@ impl CudaExecutor {
         Ok(())
     }
 
-    /// Execute GEMV using cached weight matrix (PARITY-120: 10x speedup)
+    /// Execute GEMV using cached weight matrix (PARITY-120)
     ///
     /// This is the fast path for single-token generation (M=1).
     /// The weight matrix must be pre-loaded via `load_weights()`.
@@ -237,7 +302,7 @@ impl CudaExecutor {
                 &config,
                 &mut [
                     std::ptr::from_mut(&mut ptr_y) as *mut std::ffi::c_void, // y_ptr (output)
-                    std::ptr::from_mut(&mut ptr_w) as *mut std::ffi::c_void, // w_ptr (K×N matrix, CACHED)
+                    std::ptr::from_mut(&mut ptr_w) as *mut std::ffi::c_void, // w_ptr ([n, k] row-major, CACHED; #3975)
                     std::ptr::from_mut(&mut ptr_x) as *mut std::ffi::c_void, // x_ptr (K input vector)
                     std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void, // k_dim
                     std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void, // n_dim
@@ -371,4 +436,15 @@ impl CudaExecutor {
 
         Ok(())
     }
+}
+
+/// Which kernel `CudaExecutor::f32_gemm` runs, named by the B layout it reads (#3975).
+#[derive(Clone, Copy)]
+enum F32GemmPath {
+    /// `Gemv`: m = 1, B is `[n, k]`.
+    GemvNk,
+    /// `GemmTiled`: any m, B is `[k, n]`.
+    TiledKn,
+    /// `GemmBtTiled`: m > 1, B is `[n, k]`.
+    TiledNk,
 }

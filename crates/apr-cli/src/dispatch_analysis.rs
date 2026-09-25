@@ -488,6 +488,7 @@ fn dispatch_analysis_commands_rest(cli: &Cli) -> Option<Result<(), CliError>> {
         // file because dispatch.rs's runtime dispatcher carries pre-existing
         // complexity debt the pre-commit gate refuses to let any edit ride on.
         #[cfg(feature = "inference")]
+        ExtendedCommands::Capability { json } => commands::capability::run(*json || cli.json),
         ExtendedCommands::Devices { json } => commands::devices::run(*json || cli.json),
         ExtendedCommands::OtlpLint {
             otlp_file,
@@ -1667,6 +1668,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             trace_level,
             profile,
             backend: BackendArg { backend },
+            thinking,
         } => {
             if let Some(ref b) = backend {
                 eprintln!("Backend override: {b}");
@@ -1690,6 +1692,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
                 system.as_deref(),
                 *inspect,
                 effective_no_gpu,
+                run_accelerator_forced(*gpu, *no_gpu, backend.as_deref()),
                 *trace,
                 trace_steps.as_deref(),
                 *trace_verbose,
@@ -1697,6 +1700,8 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
                 trace_level.as_str(),
                 *profile,
                 cli.offline,
+                cli.json,
+                thinking.mode(),
             )
         }
 

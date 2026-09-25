@@ -39,7 +39,7 @@ use trueno_gpu::driver::{CudaStream, GpuBuffer};
 use crate::autograd::cuda_backward::{gemm_backward_a, gemm_backward_b, rms_norm_backward};
 #[cfg(feature = "cuda")]
 use crate::autograd::cuda_forward::{
-    gemm_forward, pre_warm_forward_kernels, rms_norm_forward, rms_norm_forward_with_eps,
+    gemm_forward, pre_warm_forward_kernels, rms_norm_forward_with_eps,
 };
 #[cfg(feature = "cuda")]
 use crate::autograd::cuda_optim::{

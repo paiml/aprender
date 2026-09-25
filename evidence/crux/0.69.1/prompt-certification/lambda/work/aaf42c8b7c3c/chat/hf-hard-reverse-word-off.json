@@ -1,0 +1,1 @@
+{"text": "<answer>tnipal</answer>", "turns": ["<answer>tnipal</answer>"], "reported": {"interface": "generate", "thinking_requested": "off", "thinking_emitted": false, "prompt_tokens": 32, "completion_tokens": 12, "device": "cuda:0 NVIDIA GeForce RTX 4090"}}

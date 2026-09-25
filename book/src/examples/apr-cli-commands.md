@@ -28,7 +28,7 @@ cargo build -p apr-cli
 # Inspect model metadata
 ./target/debug/apr inspect model.apr --json
 
-# Validate integrity (100-point QA)
+# Validate integrity (structural QA checks)
 ./target/debug/apr validate model.apr --quality
 
 # Quantize model
@@ -96,11 +96,13 @@ Provides detailed tensor inspection for debugging.
 
 ```bash
 apr validate model.apr             # Basic validation
-apr validate model.apr --quality   # 100-point QA checklist
+apr validate model.apr --quality   # structural QA checklist
 apr validate model.apr --strict    # Strict mode
 ```
 
-Runs the 100-point quality assessment with grades A+ to F.
+Runs the structural quality assessment. The score's denominator is the
+checks that ran, not the number declared: most of the checklist is still
+unimplemented, so a grade here is evidence about those checks and nothing more.
 
 #### 6. LINT - Best Practices Check
 
@@ -469,7 +471,7 @@ apr debug model.apr --drama
 | Comprehensive | 29+ commands cover full lifecycle |
 | Scriptable | JSON output for automation |
 | Debuggable | Deep inspection with drama mode |
-| Validatable | 100-point QA with grades |
+| Validatable | structural QA with grades |
 | Transformable | Quantization and format conversion |
 | Testable | Canary regression testing |
 | Inference | Run predictions and serve REST APIs |

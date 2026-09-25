@@ -1,0 +1,7 @@
+[package]
+name = "coredec"
+version = "0.0.0"
+edition = "2021"
+[dependencies]
+aprender-core = { path = "$HOME/src/aprender-wt-3947/crates/aprender-core", default-features = false }
+[workspace]

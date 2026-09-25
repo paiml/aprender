@@ -1,6 +1,6 @@
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // Layer trace honesty (gguf_generate_result.rs::render_layer_trace)
+    // Layer trace honesty (run_trace_print.rs::render_layer_trace)
     //
     // `apr run --trace --trace-level layer` printed a table headed `Time` whose
     // per-step values were `wall_ms / tokens * <fixed share>` — the same
@@ -18,6 +18,7 @@
             tokens_generated: Some(tokens),
             tok_per_sec: Some(tokens as f64 / duration_secs),
             used_gpu: Some(false),
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),

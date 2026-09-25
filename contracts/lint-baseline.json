@@ -4,10 +4,10 @@
   "armed_shapes": ["ont-shapes-v1", "ladder-measured", "ladder-green"],
   "ont": {
     "consumer_present": true,
-    "contracts_total": 1882,
+    "contracts_total": 1889,
     "entity_types_registered": 11,
     "extractors_implemented": 8,
-    "contracts_anchored": 7,
+    "contracts_anchored": 8,
     "contracts_shaped": 6,
     "unanchored_but_bindable": 297,
     "formal_prose": 1464,

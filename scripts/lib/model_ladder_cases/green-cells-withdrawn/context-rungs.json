@@ -1,0 +1,38 @@
+{
+ "schema": "apr-release-context-rungs/v1",
+ "rungs": [
+  {
+   "id": "4k",
+   "tokens": 4096
+  },
+  {
+   "id": "60k",
+   "tokens": 61440,
+   "long": true
+  },
+  {
+   "id": "consumer-max",
+   "long": true
+  },
+  {
+   "id": "declared",
+   "long": true
+  }
+ ],
+ "consumers": [
+  {
+   "name": "rah",
+   "max_prompt_tokens": 148000,
+   "derived_from": [
+    "https://github.com/paiml/paiml-implement/issues/322"
+   ]
+  },
+  {
+   "name": "arbiter",
+   "max_prompt_tokens": 60000,
+   "derived_from": [
+    "https://github.com/paiml/aprender/issues/3716"
+   ]
+  }
+ ]
+}

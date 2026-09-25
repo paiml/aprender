@@ -177,20 +177,12 @@ impl CudaExecutor {
         // Load first-pass kernel module (cached after first use)
         let argmax_kernel_type = KernelType::ArgMax { length: vocab_size };
         let argmax_key = format!("argmax_{}", vocab_size);
-        if !self.modules.contains_key(&argmax_key) {
-            let ptx = self.kernels.generate_ptx(&argmax_kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(argmax_key.clone(), module);
-        }
+        self.ensure_kernel_module(&argmax_key, &argmax_kernel_type)?;
 
         // Load second-pass kernel module (cached after first use)
         let final_kernel_type = KernelType::ArgMaxFinal { num_blocks };
         let final_key = format!("argmax_final_{}", num_blocks);
-        if !self.modules.contains_key(&final_key) {
-            let ptx = self.kernels.generate_ptx(&final_kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(final_key.clone(), module);
-        }
+        self.ensure_kernel_module(&final_key, &final_kernel_type)?;
 
         // Prepare kernel arguments
         let kernel_name = self.kernels.kernel_name(&argmax_kernel_type);
@@ -274,7 +266,7 @@ impl CudaExecutor {
 
     /// PMAT-045: Batched GPU argmax — process M logit vectors with ONE sync.
     ///
-    /// Five-Whys root cause: c=4 decode regression (140→50 tok/s per request).
+    // Five-Whys root cause: c=4 decode regression (140→50 tok/s per request).
     /// Why? Sequential `gpu_argmax` calls: M syncs × ~0.3ms = 1.2ms/token at c=4.
     /// Why? Each `gpu_argmax` calls `stream.synchronize()` + `copy_to_host`.
     /// Why? API designed for single-sequence M=1 path.
@@ -318,18 +310,10 @@ impl CudaExecutor {
         // Ensure kernels are compiled (cached after first use)
         let argmax_kernel_type = KernelType::ArgMax { length: vocab_size };
         let argmax_key = format!("argmax_{}", vocab_size);
-        if !self.modules.contains_key(&argmax_key) {
-            let ptx = self.kernels.generate_ptx(&argmax_kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(argmax_key.clone(), module);
-        }
+        self.ensure_kernel_module(&argmax_key, &argmax_kernel_type)?;
         let final_kernel_type = KernelType::ArgMaxFinal { num_blocks };
         let final_key = format!("argmax_final_{}", num_blocks);
-        if !self.modules.contains_key(&final_key) {
-            let ptx = self.kernels.generate_ptx(&final_kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(final_key.clone(), module);
-        }
+        self.ensure_kernel_module(&final_key, &final_kernel_type)?;
 
         let kernel_name = self.kernels.kernel_name(&argmax_kernel_type);
         let final_kernel_name = self.kernels.kernel_name(&final_kernel_type);
