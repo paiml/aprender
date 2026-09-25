@@ -60,6 +60,9 @@ version_lt "$previous_pin" "$V" || missing+=("pin_below: crates.io already serve
 grep -qx "$CRATE" scripts/release/publish-order.txt || missing+=("in_order: $CRATE is not in scripts/release/publish-order.txt")
 [ -s "$AP/dryrun-receipt-commit" ] || missing+=("dryrun_receipt: no $AP/dryrun-receipt-commit (T-4)")
 [ -s "$AP/cleanroom-run-id" ] || missing+=("cleanroom: no $AP/cleanroom-run-id (rule 7)")
+# RP-001 no-publish-in-ci (ONT-10: "RP-001 no-publish-in-ci green"): measured on this tree, every run
+rp001=$(bash scripts/release-policy.sh --only no-publish-in-ci 2>&1); rp001_rc=$?
+[ "$rp001_rc" = 0 ] || missing+=("no_publish_in_ci: ${rp001:-release-policy.sh printed nothing (rc $rp001_rc)}")
 oracle_commit=$(cat "$AP/oracle-check-commit" 2>/dev/null || true)
 [ "$oracle_commit" = "$HEAD_SHA" ] || missing+=("oracle: make oracle-check not recorded green at $HEAD_SHA (--run-oracle)")
 
