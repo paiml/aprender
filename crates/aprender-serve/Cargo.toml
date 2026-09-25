@@ -105,6 +105,8 @@ reqwest = { version = "0.12", features = ["json", "blocking"], optional = true }
 # Serialization (for REST API, not ML code)
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# aprender#3856 row 3: `GET /v1/capability` parses the embedded capability contract.
+serde_yaml_ng = { version = "0.10", optional = true }
 # #3604: the F2 guard receipt is keyed on the model file's sha256.
 sha2 = { workspace = true }
 
@@ -237,7 +239,7 @@ kv-cache = ["dep:trueno-db"]  # KV cache for attention optimization
 apr-compression = ["dep:lz4_flex", "dep:zstd"]  # LZ4/ZSTD decompression for APR v2 (GH-35)
 
 # Optional components
-server = ["dep:axum", "dep:tokio", "dep:tokio-stream", "dep:tower", "dep:tower-http", "dep:futures", "dep:async-stream", "dep:arc-swap"]  # HTTP server support
+server = ["dep:axum", "dep:tokio", "dep:tokio-stream", "dep:tower", "dep:tower-http", "dep:futures", "dep:async-stream", "dep:arc-swap", "dep:serde_yaml_ng"]  # HTTP server support
 cli = ["dep:clap", "dep:presentar-terminal", "server"]  # CLI binary (requires server, with Ollama-style progress)
 aprender-serve = ["dep:aprender", "server"]  # Aprender ML model serving (requires server)
 lambda = ["dep:ureq"]  # AWS Lambda handler (lightweight HTTP runtime)

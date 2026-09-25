@@ -101,6 +101,9 @@ pub use effective_config::{
     OffloadReport, SchedulerReport, ServerClock, ServerReport, ADMISSION_POLICY,
 };
 pub(crate) use effective_config::{effective_config_handler, EffectiveConfigState};
+mod capability_route;
+pub(crate) use capability_route::capability_handler;
+pub use capability_route::capability_report;
 mod gpu_handlers;
 pub(crate) use gpu_handlers::{
     batch_generate_handler, batch_tokenize_handler, generate_handler,

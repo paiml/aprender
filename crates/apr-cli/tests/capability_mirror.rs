@@ -34,6 +34,9 @@ fn repo_path(rel: &str) -> PathBuf {
 
 const SOURCE: &str = "contracts/apr-model-capability-v1.yaml";
 const MIRROR: &str = "crates/apr-cli/contracts/apr-model-capability-v1.yaml";
+/// The HTTP surface's copy (aprender#3856 row 3): `GET /v1/capability` is served by
+/// aprender-serve, which cannot `include_str!` apr-cli's mirror either.
+const SERVE_MIRROR: &str = "crates/aprender-serve/contracts/apr-model-capability-v1.yaml";
 
 fn read(rel: &str) -> Vec<u8> {
     let p = repo_path(rel);
@@ -45,8 +48,17 @@ fn read(rel: &str) -> Vec<u8> {
 /// which lives in a comment.
 #[test]
 fn the_mirror_is_byte_identical_to_the_source() {
+    assert_identical(MIRROR);
+}
+
+#[test]
+fn the_serve_mirror_is_byte_identical_to_the_source() {
+    assert_identical(SERVE_MIRROR);
+}
+
+fn assert_identical(mirror_rel: &str) {
     let source = read(SOURCE);
-    let mirror = read(MIRROR);
+    let mirror = read(mirror_rel);
 
     assert!(
         !source.is_empty(),
@@ -69,9 +81,9 @@ fn the_mirror_is_byte_identical_to_the_source() {
         panic!(
             "the packaged mirror has drifted from its source.\n  \
              SOURCE (edit this one, it is linted): {SOURCE} — {} bytes\n  \
-             MIRROR (generated, do not edit):      {MIRROR} — {} bytes\n  \
+             MIRROR (generated, do not edit):      {mirror_rel} — {} bytes\n  \
              first difference at byte {at}, line {line}\n  \
-             fix: cp {SOURCE} {MIRROR}",
+             fix: cp {SOURCE} {mirror_rel}",
             source.len(),
             mirror.len(),
         );
@@ -87,16 +99,22 @@ fn the_mirror_is_byte_identical_to_the_source() {
 #[test]
 fn the_equality_test_reads_two_distinct_files() {
     assert_ne!(SOURCE, MIRROR, "the two paths must be different files");
-    for rel in [SOURCE, MIRROR] {
+    assert_ne!(
+        SOURCE, SERVE_MIRROR,
+        "the two paths must be different files"
+    );
+    for rel in [SOURCE, MIRROR, SERVE_MIRROR] {
         let p = repo_path(rel);
         assert!(p.is_file(), "{} does not exist", p.display());
     }
-    assert_ne!(
-        repo_path(SOURCE).canonicalize().expect("source resolves"),
-        repo_path(MIRROR).canonicalize().expect("mirror resolves"),
-        "SOURCE and MIRROR resolve to the same inode — a mirror that IS the source \
-         proves nothing, and a symlink here would make the equality test vacuous"
-    );
+    for mirror in [MIRROR, SERVE_MIRROR] {
+        assert_ne!(
+            repo_path(SOURCE).canonicalize().expect("source resolves"),
+            repo_path(mirror).canonicalize().expect("mirror resolves"),
+            "SOURCE and {mirror} resolve to the same inode — a mirror that IS the source \
+             proves nothing, and a symlink here would make the equality test vacuous"
+        );
+    }
 }
 
 /// The mirror is the copy that ships, so its presence in the package is the property
@@ -114,5 +132,23 @@ fn the_mirror_is_inside_the_crate_that_packages_it() {
          directory at package time, so a mirror outside it does not ship",
         mirror.display(),
         crate_root.display()
+    );
+}
+
+/// The serve mirror is what `GET /v1/capability` embeds, so it must sit inside
+/// aprender-serve for the same package-time reason.
+#[test]
+fn the_serve_mirror_is_inside_aprender_serve() {
+    let serve_root = repo_path("crates/aprender-serve")
+        .canonicalize()
+        .expect("aprender-serve resolves");
+    let mirror = repo_path(SERVE_MIRROR)
+        .canonicalize()
+        .expect("serve mirror resolves");
+    assert!(
+        mirror.starts_with(&serve_root),
+        "the serve mirror at {} is outside {}",
+        mirror.display(),
+        serve_root.display()
     );
 }

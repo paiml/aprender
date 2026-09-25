@@ -57,7 +57,10 @@ const CODEGEN_CONSTANTS: &[(&str, &str)] = &[
     ("apr.run", aprender_mcp::schemas::APR_RUN_SCHEMA),
     ("apr.serve", aprender_mcp::schemas::APR_SERVE_SCHEMA),
     ("apr.finetune", aprender_mcp::schemas::APR_FINETUNE_SCHEMA),
-    ("apr.capability", aprender_mcp::schemas::APR_CAPABILITY_SCHEMA),
+    (
+        "apr.capability",
+        aprender_mcp::schemas::APR_CAPABILITY_SCHEMA,
+    ),
 ];
 
 /// Per-tool codegen DESCRIPTION constants (PMAT-514). Verifies the build-time
@@ -84,7 +87,8 @@ const CODEGEN_DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "apr.finetune",
         aprender_mcp::schemas::APR_FINETUNE_DESCRIPTION,
-    ),    (
+    ),
+    (
         "apr.capability",
         aprender_mcp::schemas::APR_CAPABILITY_DESCRIPTION,
     ),

@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # apr-model-capability-v1 — the model-capability facts, as DATA
 #
-# TWO COPIES, ONE SOURCE. This file exists at two paths and they are BYTE-IDENTICAL:
+# THREE COPIES, ONE SOURCE. This file exists at three paths, all BYTE-IDENTICAL:
 #
 #   SOURCE  contracts/apr-model-capability-v1.yaml
 #           The one to edit. Linted by `pv lint contracts/` (Makefile:587,
@@ -13,15 +13,20 @@
 #           only embed a file inside `apr-cli`. The workspace-root `contracts/`
 #           is not in any crate's package.
 #
-# This provenance block is in BOTH copies deliberately: byte-equality is the
+#   MIRROR  crates/aprender-serve/contracts/apr-model-capability-v1.yaml
+#           Generated — do NOT edit. The same `include_str!` constraint, for the
+#           HTTP surface: `GET /v1/capability` (aprender#3856 row 3) is served by
+#           aprender-serve, which does not depend on apr-cli.
+#
+# This provenance block is in EVERY copy deliberately: byte-equality is the
 # guarantee, so the mirror cannot carry a header the source lacks. Whichever path
-# you opened, the two names above tell you which one you are looking at — a
+# you opened, the names above tell you which one you are looking at — a
 # shadowed artifact is worse than a missing one, and two files with the same bytes
 # are a shadow unless the file itself says which is real (CLAUDE.md #8).
 #
-# `apr_model_capability_mirror::the_mirror_is_byte_identical_to_the_source`
-# enforces it, and is proven in BOTH directions: editing the source turns it RED,
-# and so does editing the mirror. A test comparing A to B can be written to read
+# `capability_mirror::the_mirror_is_byte_identical_to_the_source` (and its
+# `..._serve_mirror_...` twin) enforces it, proven in BOTH directions: editing the
+# source turns it RED, and so does editing a mirror. A test comparing A to B can be written to read
 # only one side and pass forever; one direction green is an anecdote.
 #
 # Operator, verbatim (2026-09-22): "capability.rs need deep pv SHACL support and

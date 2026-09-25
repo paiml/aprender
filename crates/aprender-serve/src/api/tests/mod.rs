@@ -66,6 +66,7 @@ mod batch_completions_tokenizer_2465; // aprender#2465(3): /v1/batch/completions
 mod chat_stream_route_2375; // aprender#2375(4): POST /v1/chat/completions/stream is mounted — it must serve, and answer 503 (not 404) with no model
 mod apr_model_routes_2609; // aprender#2609: routed endpoints on an AprTransformer server; one condition, one status
 mod effective_config_route_pp2; // PP-LLAMA-001 §12 row 6 / PP-2 / PP-13 / PP-14 / PP-24 / PP-30: GET /v1/effective-config reports residency, not cfg!
+mod capability_route_3856; // aprender#3856 row 3: GET /v1/capability serves the embedded apr-model-capability-v1 contract
 mod stream_mode_pp27; // PP-LLAMA-001 PP-27 / §3: an SSE stream declares live vs replayed, and the terminal chunk carries usage + measured timings
 #[cfg(feature = "gpu")] // create_test_quantized_model is gpu-gated
 mod usage_finish_3718; // aprender#3718: a context-clamped cut is "length", an unfittable prompt is 400

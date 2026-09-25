@@ -189,6 +189,10 @@ fn openai_routes(caps: RouteCapabilities) -> Vec<Route> {
         // CUDA block. Unconditional: a harness must be able to ask a CPU server
         // what it is, and get `compute_class: "cpu"` rather than a 404.
         ("GET", "/v1/effective-config", get(effective_config_handler)),
+        // aprender#3856 row 3: what this build can and cannot run on the GPU, and
+        // why — the embedded apr-model-capability-v1 contract, the same sections
+        // `apr capability --json` and the `apr.capability` MCP tool report.
+        ("GET", "/v1/capability", get(capability_handler)),
         // PMAT-923: Ollama-native HTTP API (/api/* prefix) — makes `apr serve` a
         // drop-in Ollama HTTP replacement. Both delegate to the OpenAI chat
         // generation path. Discharges OBLIG-OLLAMA-API-CHAT-GENERATE-ROUTED.
