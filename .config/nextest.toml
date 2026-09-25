@@ -14,6 +14,10 @@
 # 45 minutes inside nextest, killed by the JOB's `timeout-minutes: 85`, naming
 # no test; the queue entry was evicted 31 seconds later. `check_nextest_config_keys.sh`
 # now fails on any key nextest ignores.
+# Setup scripts (the EXT-02 home isolation at the bottom of this file) are still behind this flag in
+# nextest 0.9.132; without it nextest refuses to parse the file.
+experimental = ["setup-scripts"]
+
 [profile.ci]
 retries = 2
 # false, not true (PMAT-3587). fail-fast is a verdict-discarding default: on the first
@@ -149,3 +153,18 @@ threads-required = "num-test-threads"
 filter = "test(/test_oom_resilience/) | test(/test_cuda_stress_memory_pressure/) | test(/test_alloc_oversize_100gb/) | test(/env_override_managed_forced/) | test(/env_override_device_only/) | test(/test_context_synchronize/) | test(/test_cuda_graph_capture_and_replay/) | test(/test_cuda_graph_capture_modes/) | test(/test_cuda_graph_with_kernel/)"
 test-group = "gpu-exclusive"
 threads-required = "num-test-threads"
+
+# EXT-001 EXT-02 (#4384): no test may write the developer's real registries. Every home-rooted store
+# (~/.entrenar/experiments.db, ~/.pacha/registry.db, apr-cli's run/monitor defaults) resolves through
+# $HOME, so the setup script points HOME, ENTRENAR_HOME, APR_HOME and XDG_* at a fresh temp dir for the
+# whole run. It is bound on `default` ONLY, because every profile inherits default's setup scripts:
+# measured on nextest 0.9.132, `--profile ci` ran SETUP ext-isolate-home with no ci binding at all, and a
+# second `[[profile.ci.scripts]]` block changed nothing (deleting it kept the test green, so it guarded
+# nothing). The falsifier is crates/aprender-train/src/ext_isolation_tests.rs (FALSIFY-EXT-001). Delete
+# the binding below and it turns RED under both `default` and `ci`.
+[scripts.setup.ext-isolate-home]
+command = "bash scripts/nextest/isolate_home.sh"
+
+[[profile.default.scripts]]
+filter = "all()"
+setup = "ext-isolate-home"

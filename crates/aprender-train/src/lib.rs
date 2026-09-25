@@ -138,3 +138,6 @@ pub mod error;
 // Re-export commonly used types
 pub use autograd::{backward, Context, Tensor};
 pub use error::{Error, Result};
+
+#[cfg(test)]
+mod ext_isolation_tests;
