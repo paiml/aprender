@@ -284,6 +284,10 @@ falsification_tests: []
     #[path = "validator_tests_top_level.rs"]
     mod top_level;
 
+    /// EXT-01 (aprender#4383): the dogfood lifecycle contract's citations resolve.
+    #[path = "validator_tests_dogfood_lifecycle.rs"]
+    mod dogfood_lifecycle;
+
     /// PMAT-3091: `applies_to: not_applicable` + `na_reason`/`na_owner` (SCHEMA-021..023).
     #[path = "validator_tests_na.rs"]
     mod na;
