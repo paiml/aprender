@@ -53,7 +53,7 @@ COPY --from=builder /app/target/release/aprender-simulate /usr/local/bin/
 WORKDIR /home/simular
 
 # Default command
-ENTRYPOINT ["simular"]
+ENTRYPOINT ["aprender-simulate"]
 CMD ["--help"]
 
 # WASM build stage

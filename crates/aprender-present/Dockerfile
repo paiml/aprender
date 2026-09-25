@@ -51,7 +51,7 @@ RUN apt-get update && apt-get install -y \
 
 COPY --from=builder /app/target/release/aprender-ptop /usr/local/bin/
 
-ENTRYPOINT ["ptop"]
+ENTRYPOINT ["aprender-ptop"]
 
 # Development image
 FROM builder AS development
