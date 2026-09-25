@@ -1,0 +1,69 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PRA-001 T14 (spec §2.11): the dataset card for one snapshot of the agent-trace-v1 index.
+    aprender_review_experiment::datacard reads every index/agent-trace-v1/YYYY/MM/DD.jsonl under
+    the traces root, in path order. It binds them with a sha256sum manifest, and the snapshot id
+    is the first 16 hex of the manifest's sha256. For that snapshot it generates a Croissant 1.0
+    + RAI 1.0 JSON-LD card and a Datasheet (motivation, composition, collection, preprocessing,
+    uses, distribution, maintenance) under datacard/<snapshot>/, regenerated per snapshot and
+    never hand-edited.
+    The official validator (mlcroissant) is Python, which S-PY forbids, so datacard::validate is a
+    structural Croissant 1.0 + RAI checker in Rust. It checks the context, sc:Dataset,
+    conformsTo, the resources and their sha256, the record set, dataTypes, @id uniqueness,
+    reference resolution, jsonPath and the ten RAI fields. write_snapshot refuses to write a
+    card that fails it.
+    The card carries aggregate counts only. HF publication is gold AND provider local AND
+    secret-scan clean; provider anthropic and google rows are never public-eligible.
+  references:
+    - "docs/specifications/research-design-pr-agent-qwen-3.5.md"
+    - "http://mlcommons.org/croissant/1.0"
+    - "http://mlcommons.org/croissant/RAI/1.0"
+    - "https://github.com/paiml/aprender/issues/4354"
+
+equations:
+  snapshot:
+    formula: "id = sha256(manifest)[0..16];  manifest = ⊕_{f ∈ sort(index files)} sha256(bytes(f)) ‖ '  ' ‖ path(f)"
+  public:
+    formula: "eligible(row) ⇔ label_tier = gold ∧ provider = local ∧ secret_scan.status = clean"
+  card:
+    formula: "write(card) ⇒ validate(card) = ∅;  exists(dir/f) ∧ bytes(dir/f) ≠ regen(f) ⇒ refuse"
+
+falsification_tests:
+  - id: FALSIFY-TDC-001
+    name: the_generated_card_passes_croissant_validation
+    prediction: "the generated card validates clean. Each planted defect (no conformsTo, empty name, wrong @type, FileObject with no sha256, source naming an unknown resource, duplicate @id, unknown dataType, missing rai:dataLimitations, @context missing rai) is refused with an error that names it"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tdc_001"
+    expected_output: "exit 0"
+    if_fails: "A card that is not Croissant 1.0 + RAI could be published, or the validator passes anything."
+  - id: FALSIFY-TDC-002
+    name: a_snapshot_is_deterministic_and_bound_to_the_index_bytes
+    prediction: "the same index gives the same snapshot id, card bytes and datasheet; every manifest line's sha equals the file's sha256; the card's manifest sha equals sha256(manifest); one appended day gives a new snapshot id and sha"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tdc_002"
+    expected_output: "exit 0"
+    if_fails: "A card would not identify which index bytes it describes, or would not change when the index does."
+  - id: FALSIFY-TDC-003
+    name: only_gold_local_rows_are_public_eligible
+    prediction: "gold anthropic, gold google, silver local and pending rows are not public-eligible, nor is a gold local row with a secret-scan hit; composition counts per provider, label_tier and split are exact"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tdc_003"
+    expected_output: "exit 0"
+    if_fails: "The card would count provider anthropic/google rows or unscanned rows as releasable (§2.11)."
+  - id: FALSIFY-TDC-004
+    name: a_hand_edited_card_is_refused_and_regeneration_is_idempotent
+    prediction: "write_snapshot writes croissant.json, datasheet.md and manifest.sha256 under datacard/<id>/; a second run on the same index is a no-op; after a hand edit the next run errors with 'hand-edited' and leaves the edited bytes in place"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tdc_004"
+    expected_output: "exit 0"
+    if_fails: "A hand-edited card would be silently kept or silently clobbered."
+  - id: FALSIFY-TDC-005
+    name: no_row_content_reaches_the_card
+    prediction: "a sentinel finding text, a diff sha and an output sha planted in the fixture rows appear in neither the card nor the datasheet"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tdc_005"
+    expected_output: "exit 0"
+    if_fails: "Trace content would leak into a card (PRIVATE, §6)."
+  - id: FALSIFY-TDC-006
+    name: a_malformed_index_is_refused_not_skipped
+    prediction: "a bad JSON line errors with its file:line; a row whose schema is not agent-trace-v1 errors with its schema; an empty index errors 'no index'"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tdc_006"
+    expected_output: "exit 0"
+    if_fails: "A card would describe an index with rows silently dropped."

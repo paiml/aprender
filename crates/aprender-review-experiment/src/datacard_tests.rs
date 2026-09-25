@@ -1,3 +1,6 @@
+// `json!` expands to an `unwrap` of an infallible `to_value`.
+#![allow(clippy::disallowed_methods)]
+
 use super::*;
 
 use std::fs;
@@ -126,9 +129,13 @@ fn falsify_tdc_001_the_generated_card_passes_croissant_validation() {
                 .expect("arr")
                 .push(f);
         }),
-        ("dataType", |c| c["recordSet"][0]["field"][0]["dataType"] = json!("sc:Banana")),
+        ("dataType", |c| {
+            c["recordSet"][0]["field"][0]["dataType"] = json!("sc:Banana")
+        }),
         ("rai:dataLimitations", |c| {
-            c.as_object_mut().expect("obj").remove("rai:dataLimitations");
+            c.as_object_mut()
+                .expect("obj")
+                .remove("rai:dataLimitations");
         }),
         ("@context", |c| {
             c["@context"].as_object_mut().expect("obj").remove("rai");
@@ -152,7 +159,10 @@ fn falsify_tdc_002_a_snapshot_is_deterministic_and_bound_to_the_index_bytes() {
     let (s2, c2) = card_of(&r.0);
     assert_eq!(s1.id, s2.id);
     assert_eq!(render(&c1), render(&c2), "same index, same bytes");
-    assert_eq!(datasheet(&s1, &CardMeta::default()), datasheet(&s2, &CardMeta::default()));
+    assert_eq!(
+        datasheet(&s1, &CardMeta::default()),
+        datasheet(&s2, &CardMeta::default())
+    );
 
     // The root digest is over every index file's bytes.
     let manifest = s1.manifest();
@@ -162,13 +172,23 @@ fn falsify_tdc_002_a_snapshot_is_deterministic_and_bound_to_the_index_bytes() {
         let bytes = fs::read(r.0.join(rel)).expect("read");
         assert_eq!(sha, sha256_hex(&bytes), "{rel}");
     }
-    assert_eq!(c1["distribution"][0]["sha256"], json!(sha256_hex(manifest.as_bytes())));
+    assert_eq!(
+        c1["distribution"][0]["sha256"],
+        json!(sha256_hex(manifest.as_bytes()))
+    );
 
     // One appended row is a new snapshot.
-    day(&r.0, ("2026", "09", "26"), &[row("t6", "sonnet", "anthropic", "silver", "test")]);
+    day(
+        &r.0,
+        ("2026", "09", "26"),
+        &[row("t6", "sonnet", "anthropic", "silver", "test")],
+    );
     let (s3, c3) = card_of(&r.0);
     assert_ne!(s1.id, s3.id);
-    assert_ne!(c1["distribution"][0]["sha256"], c3["distribution"][0]["sha256"]);
+    assert_ne!(
+        c1["distribution"][0]["sha256"],
+        c3["distribution"][0]["sha256"]
+    );
     assert_eq!(s3.rows, 6);
 }
 
@@ -185,15 +205,18 @@ fn falsify_tdc_003_only_gold_local_rows_are_public_eligible() {
     assert_eq!(s.count("label_tier", "gold"), 3);
     assert_eq!(s.count("split", "val"), 1);
     let sheet = datasheet(&s, &CardMeta::default());
-    assert!(sheet.contains("public-eligible (gold, provider local): 1"), "{sheet}");
+    assert!(
+        sheet.contains("public-eligible (gold, provider local): 1"),
+        "{sheet}"
+    );
     assert!(c["rai:personalSensitiveInformation"]
         .as_str()
         .expect("str")
         .contains("quarantine"));
 
     // A secret-hit gold local row is never eligible.
-    let mut hit: Value = serde_json::from_str(&row("t7", "qwen-shadow", "local", "gold", "train"))
-        .expect("json");
+    let mut hit: Value =
+        serde_json::from_str(&row("t7", "qwen-shadow", "local", "gold", "train")).expect("json");
     hit["secret_scan"] = json!({"status": "hit", "hits": 1});
     day(&r.0, ("2026", "09", "27"), &[hit.to_string()]);
     let s = Snapshot::read(&r.0).expect("snapshot");
@@ -210,15 +233,24 @@ fn falsify_tdc_004_a_hand_edited_card_is_refused_and_regeneration_is_idempotent(
     assert_eq!(out.parent().expect("parent"), r.0.join(DATACARD_DIR));
 
     // Regenerating the same snapshot is a no-op, not an error.
-    assert_eq!(write_snapshot(&r.0, &CardMeta::default()).expect("again"), out);
+    assert_eq!(
+        write_snapshot(&r.0, &CardMeta::default()).expect("again"),
+        out
+    );
 
     // A hand edit is refused on the next regeneration, never overwritten.
     let p = out.join("croissant.json");
-    let edited = fs::read_to_string(&p).expect("read").replace("agent-trace", "agent-trice");
+    let edited = fs::read_to_string(&p)
+        .expect("read")
+        .replace("agent-trace", "agent-trice");
     fs::write(&p, &edited).expect("edit");
     let e = write_snapshot(&r.0, &CardMeta::default()).expect_err("hand edit refused");
     assert!(e.contains("hand-edited"), "{e}");
-    assert_eq!(fs::read_to_string(&p).expect("read"), edited, "never overwritten");
+    assert_eq!(
+        fs::read_to_string(&p).expect("read"),
+        edited,
+        "never overwritten"
+    );
 }
 
 #[test]
@@ -226,9 +258,18 @@ fn falsify_tdc_005_no_row_content_reaches_the_card() {
     let r = fixture("priv");
     let (s, c) = card_of(&r.0);
     let text = format!("{}\n{}", render(&c), datasheet(&s, &CardMeta::default()));
-    assert!(!text.contains(SECRET_TEXT), "a finding's text leaked into the card");
-    assert!(!text.contains(SECRET_DIFF), "a diff sha leaked into the card");
-    assert!(!text.contains(&"c".repeat(64)), "an output sha leaked into the card");
+    assert!(
+        !text.contains(SECRET_TEXT),
+        "a finding's text leaked into the card"
+    );
+    assert!(
+        !text.contains(SECRET_DIFF),
+        "a diff sha leaked into the card"
+    );
+    assert!(
+        !text.contains(&"c".repeat(64)),
+        "an output sha leaked into the card"
+    );
 }
 
 #[test]
@@ -239,7 +280,8 @@ fn falsify_tdc_006_a_malformed_index_is_refused_not_skipped() {
     assert!(e.contains("2026/09/28.jsonl:1"), "{e}");
 
     let r = fixture("schema");
-    let foreign = row("t9", "sonnet", "anthropic", "gold", "train").replace("agent-trace-v1", "agent-trace-v2");
+    let foreign = row("t9", "sonnet", "anthropic", "gold", "train")
+        .replace("agent-trace-v1", "agent-trace-v2");
     day(&r.0, ("2026", "09", "28"), &[foreign]);
     let e = Snapshot::read(&r.0).expect_err("unknown major refused");
     assert!(e.contains("agent-trace-v2"), "{e}");
