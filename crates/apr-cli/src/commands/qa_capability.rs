@@ -70,25 +70,19 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
 
     // Only check GGUF files — APR/SafeTensors don't carry arch constraints yet
     if magic.as_slice() != b"GGUF" {
-        let duration = start.elapsed();
-        return Ok(GateResult::passed(
+        // #3873: nothing was checked — a skip, never a pass
+        return Ok(GateResult::skipped(
             "capability_match",
-            "Non-GGUF format — capability check not applicable",
-            None,
-            None,
-            duration,
+            "non-GGUF format carries no architecture constraints to check",
         ));
     }
 
     // Parse GGUF to get architecture string and tensor (name, GGML type) pairs
     let Some((arch, tensors)) = super::model_header::gguf_arch_and_tensors(path) else {
-        let duration = start.elapsed();
-        return Ok(GateResult::passed(
+        // #3873: nothing was checked — a skip, never a pass
+        return Ok(GateResult::skipped(
             "capability_match",
-            "GGUF missing architecture metadata — skipping capability check",
-            None,
-            None,
-            duration,
+            "GGUF missing architecture metadata",
         ));
     };
 
@@ -187,13 +181,10 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
     #[cfg(not(feature = "inference"))]
     {
         let _ = arch;
-        let duration = start.elapsed();
-        Ok(GateResult::passed(
+        // #3873: nothing was checked — a skip, never a pass
+        Ok(GateResult::skipped(
             "capability_match",
-            "Capability check requires inference feature",
-            None,
-            None,
-            duration,
+            "capability check requires the inference feature",
         ))
     }
 }
@@ -754,5 +745,37 @@ mod moe_loader_architecture_tests {
             return;
         };
         assert!(moe_loader_architecture(std::path::Path::new(&path)));
+    }
+}
+
+#[cfg(test)]
+mod a_skip_is_not_a_pass_3873 {
+    use super::*;
+    use std::io::Write;
+
+    fn gate_on(bytes: &[u8]) -> GateResult {
+        let mut tmp = tempfile::NamedTempFile::new().expect("tmp");
+        tmp.write_all(bytes).expect("write");
+        tmp.flush().expect("flush");
+        run_capability_gate(tmp.path(), &QaConfig::default()).expect("gate runs")
+    }
+
+    #[test]
+    fn a_non_gguf_file_is_skipped_not_passed() {
+        let gate = gate_on(b"APRN\0\0\0\0\0\0\0\0");
+        assert!(gate.skipped, "{}", gate.message);
+        assert!(!gate.passed, "nothing was checked: {}", gate.message);
+    }
+
+    #[test]
+    fn a_gguf_without_architecture_is_skipped_not_passed() {
+        // GGUF v3, zero tensors, zero metadata keys: no general.architecture.
+        let mut b = b"GGUF".to_vec();
+        b.extend_from_slice(&3u32.to_le_bytes());
+        b.extend_from_slice(&0u64.to_le_bytes());
+        b.extend_from_slice(&0u64.to_le_bytes());
+        let gate = gate_on(&b);
+        assert!(gate.skipped, "{}", gate.message);
+        assert!(!gate.passed, "nothing was checked: {}", gate.message);
     }
 }
