@@ -587,6 +587,9 @@ pub struct CudaExecutor {
     // #4313: tensor-op handle for the Qwen3.5 f16 prefill GEMM. `cublas_handle` is
     // PEDANTIC, which confines f16 GemmEx to the legacy s1688 kernel.
     cublas_f16_handle: Option<trueno_gpu::driver::CublasHandle>,
+    // #4313: true once every Qwen3.5 prefill projection is resident as fp16. The f16
+    // prefill GEMM runs only then; otherwise the f32 path runs (no VRAM, or a failure).
+    qwen35_prefill_f16: bool,
     // PMAT-063: Pre-allocated cuBLAS workspace for CUDA graph capture
     // Without this, cuBLAS falls back to workspace-free algorithms (7x slower)
     cublas_workspace: Option<GpuBuffer<u8>>,

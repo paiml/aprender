@@ -657,7 +657,7 @@ impl<'a> Qwen35CudaModel<'a> {
             prefill_attention,
             batch_io: None,
         };
-        m.warm_prefill_weights()?;
+        m.warm_prefill_weights();
         Ok(m)
     }
 

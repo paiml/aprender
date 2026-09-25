@@ -24,7 +24,9 @@
 //! would leave it, so decode continues from it unchanged.
 
 use super::super::{RealizarError, Result};
-use super::{gpu_err, CudaLayer, CudaQuantWeight, Qwen35CudaDims, Qwen35CudaModel, Qwen35CudaState};
+use super::{
+    gpu_err, CudaLayer, CudaQuantWeight, Qwen35CudaDims, Qwen35CudaModel, Qwen35CudaState,
+};
 use crate::cuda::types::WeightQuantType;
 use crate::gguf::forward_qwen35::{Qwen35Model, Qwen35OwnedLayer};
 use trueno_gpu::driver::GpuBuffer;
@@ -132,6 +134,12 @@ impl PrefillAttention {
 
 /// The environment variable that forces the f32 attention path for diagnosis.
 pub const PREFILL_ATTENTION_ENV: &str = "APR_QWEN35_PREFILL_ATTENTION";
+
+/// #4313: whether `bytes` of fp16 weights fit in `free` device memory with 1 GiB
+/// left for the prefill buffers, the KV cache and cuBLAS workspaces.
+pub(crate) fn f16_prewarm_fits(bytes: usize, free: usize) -> bool {
+    bytes.saturating_add(1 << 30) <= free
+}
 
 #[cfg(test)]
 thread_local! {
@@ -472,35 +480,56 @@ impl Qwen35CudaModel<'_> {
     }
 
     /// #4313: fill the fp16 weight cache for every prefill projection at load, so the
-    /// first prompt does not pay a dequant + convert per weight. Only in `f16` mode,
-    /// and only when the whole set fits in free VRAM with 1 GiB to spare — otherwise
-    /// the cache fills lazily on first use, exactly as before. Returns the bytes
-    /// cached (0 when skipped).
-    pub(crate) fn warm_prefill_weights(&mut self) -> Result<usize> {
+    /// first prompt does not pay a dequant + convert per weight, and arm the f16
+    /// prefill GEMM on this executor. It never fails the load: when the set does not
+    /// fit (see [`f16_prewarm_fits`]) or a weight fails to convert, the partial set is
+    /// dropped and prefill stays on the f32 path. Returns the bytes cached (0 = f32).
+    pub(crate) fn warm_prefill_weights(&mut self) -> usize {
         use crate::cuda::{qwen35_prefill_gemm_mode, Qwen35PrefillGemm};
+        self.executor.set_qwen35_prefill_f16(false);
         if qwen35_prefill_gemm_mode() != Qwen35PrefillGemm::F16 {
-            return Ok(0);
+            return 0;
         }
         let weights: Vec<(WeightQuantType, u64, u32, u32)> = self
             .projection_weights()
             .iter()
             .map(|w| (w.qtype, w.ptr, w.n, w.k))
             .collect();
-        let bytes: usize = weights.iter().map(|w| w.2 as usize * w.3 as usize * 2).sum();
-        let (free, _) = self
-            .executor
-            .context()
-            .memory_info()
-            .map_err(|e| gpu_err("qwen35_cuda_prefill_warm", &e))?;
-        if bytes + (1 << 30) > free {
-            return Ok(0);
+        let bytes: usize = weights
+            .iter()
+            .map(|w| w.2 as usize * w.3 as usize * 2)
+            .sum();
+        let free = match self.executor.context().memory_info() {
+            Ok((free, _)) => free,
+            Err(e) => {
+                eprintln!("[qwen35] fp16 prefill weights NOT prewarmed ({e}); prefill uses f32");
+                return 0;
+            },
+        };
+        if !f16_prewarm_fits(bytes, free) {
+            eprintln!(
+                "[qwen35] fp16 prefill weights NOT prewarmed: {} MiB needed, {} MiB free; prefill uses f32",
+                bytes >> 20,
+                free >> 20
+            );
+            return 0;
         }
-        for (qtype, ptr, n, k) in weights {
-            self.executor
-                .qwen35_fp16_weight(qtype, ptr, n, k)
-                .map_err(|e| gpu_err("qwen35_cuda_prefill_warm", &e))?;
+        let t0 = std::time::Instant::now();
+        for &(qtype, ptr, n, k) in &weights {
+            if let Err(e) = self.executor.qwen35_fp16_weight(qtype, ptr, n, k) {
+                let ptrs: Vec<u64> = weights.iter().map(|w| w.1).collect();
+                self.executor.drop_fp16_weights(&ptrs);
+                eprintln!("[qwen35] fp16 prefill prewarm failed ({e}); prefill uses f32");
+                return 0;
+            }
         }
-        Ok(bytes)
+        self.executor.set_qwen35_prefill_f16(true);
+        eprintln!(
+            "[qwen35] fp16 prefill weights prewarmed: {} MiB in {} ms (#4313)",
+            bytes >> 20,
+            t0.elapsed().as_millis()
+        );
+        bytes
     }
 
     fn alloc_prefill(&self, rows: usize, total_positions: usize) -> Result<PrefillBuffers> {
