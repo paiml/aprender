@@ -864,6 +864,28 @@ def uses_upload(sec: Section, w, ev):
     return True, {}
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def fetch_artifact_zip(url: str, token: str, out: Path, timeout: int = 300):
+    """The artifact API answers 302 to a pre-signed blob URL. urllib's own redirect
+    carries the Authorization header along, and the blob store rejects a request that
+    has one (401, measured on run 36157991647) -- so follow the hop ourselves, bare."""
+    opener = urllib.request.build_opener(_NoRedirect)
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    try:
+        r = opener.open(req, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        loc = e.headers.get("Location") if e.code in (301, 302, 303, 307, 308) else None
+        if not loc:
+            raise
+        r = urllib.request.urlopen(urllib.request.Request(loc), timeout=timeout)
+    with r, open(out, "wb") as f:
+        shutil.copyfileobj(r, f)
+
+
 def uses_download(sec: Section, w, ev):
     """Poll this run's artifacts (the X64 half is uploaded by another job)."""
     pattern = w.get("pattern") or w.get("name")
@@ -885,10 +907,7 @@ def uses_download(sec: Section, w, ev):
         time.sleep(20)
     for a in hits:
         z = sec.temp / f"{a['name']}.zip"
-        req = urllib.request.Request(a["archive_download_url"],
-                                     headers={"Authorization": f"Bearer {sec.ctx.token}"})
-        with urllib.request.urlopen(req, timeout=300) as r, open(z, "wb") as f:
-            shutil.copyfileobj(r, f)
+        fetch_artifact_zip(a["archive_download_url"], sec.ctx.token, z)
         out = dest if w.get("merge-multiple") else dest / a["name"]
         with zipfile.ZipFile(z) as zf:
             zf.extractall(out)
@@ -1230,6 +1249,37 @@ def cmd_self_test(a):
     row("a bracketed name resolves to itself only", resolve_section_names(cat, "determinism[X64]"),
         ["determinism[X64]"])
     row("sov.* globs", resolve_section_names(cat, "sov.*"), ["sov.test", "sov.gate"])
+    import http.server
+    import threading
+
+    class Blob(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path.startswith("/api"):
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/blob")
+                self.end_headers()
+            elif self.headers.get("Authorization"):
+                self.send_response(401)
+                self.end_headers()
+            else:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"zipbytes")
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), Blob)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    with tempfile.TemporaryDirectory() as td:
+        z = Path(td) / "a.zip"
+        try:
+            fetch_artifact_zip(f"http://127.0.0.1:{srv.server_port}/api/x/zip", "tok", z)
+            got = z.read_bytes()
+        except Exception as e:  # noqa: BLE001 -- the row reports it
+            got = repr(e)
+        row("artifact download drops Authorization on the blob redirect", got, b"zipbytes")
+    srv.shutdown()
     with tempfile.TemporaryDirectory() as td:
         f = Path(td) / "out"
         f.write_text("a=1\nb<<EOF\nx\ny=z\nEOF\nc=3\n")
