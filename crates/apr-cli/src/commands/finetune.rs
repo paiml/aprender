@@ -1469,8 +1469,7 @@ fn run_finetune_training(
     // EXT-05: record to pacha by default; `--no-track` opts out.
     super::track::tracked(
         "finetune",
-        Some(mp),
-        Some(data),
+        &[(mp, "base"), (data, "dataset")],
         Some(out),
         no_track,
         || {

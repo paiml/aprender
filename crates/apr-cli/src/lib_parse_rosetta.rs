@@ -350,6 +350,7 @@
             density: 0.2,
             seed: 42,
             plan: false,
+            no_track: true,
                 force: true,
             };
         let paths = extract_model_paths(&cmd);

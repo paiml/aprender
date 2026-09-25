@@ -986,16 +986,27 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             batch,
             plan,
             force,
+            no_track,
         } => crate::error::resolve_model_path(file).and_then(|r| {
-            quantize::run(
-                &r,
-                scheme,
+            // EXT-06: a batch writes several outputs; only a single one is recorded.
+            let untracked = *no_track || *plan || batch.is_some();
+            commands::track::tracked(
+                "quantize",
+                &[(r.as_path(), "quantized_from")],
                 output.as_deref(),
-                format.as_deref(),
-                batch.as_deref(),
-                *plan,
-                *force,
-                cli.json,
+                untracked,
+                || {
+                    quantize::run(
+                        &r,
+                        scheme,
+                        output.as_deref(),
+                        format.as_deref(),
+                        batch.as_deref(),
+                        *plan,
+                        *force,
+                        cli.json,
+                    )
+                },
             )
         }),
 
@@ -1010,6 +1021,43 @@ fn require_dataset_repo(repo: Option<&str>) -> Result<&str, CliError> {
     })
 }
 
+/// EXT-06 lineage edges for `apr merge`: one `merged_from` per parent; a TIES/DARE base is `base`.
+fn merge_inputs<'a>(
+    parents: &'a [PathBuf],
+    base: Option<&'a Path>,
+) -> Vec<commands::track::Input<'a>> {
+    parents
+        .iter()
+        .map(|p| (p.as_path(), "merged_from"))
+        .chain(base.map(|p| (p, "base")))
+        .collect()
+}
+
+/// EXT-06 lineage edges for `apr prune`: the pruned model, then its calibration data.
+fn prune_inputs<'a>(
+    model: &'a Path,
+    calibration: Option<&'a Path>,
+) -> Vec<commands::track::Input<'a>> {
+    std::iter::once((model, "pruned_from"))
+        .chain(calibration.map(|p| (p, "dataset")))
+        .collect()
+}
+
+/// EXT-06 lineage edges for `apr distill`: the teacher is the parent; the student is the base.
+fn distill_inputs<'a>(
+    teacher: Option<&'a Path>,
+    student: Option<&'a Path>,
+    data: Option<&'a Path>,
+    dataset: Option<&'a Path>,
+) -> Vec<commands::track::Input<'a>> {
+    teacher
+        .map(|p| (p, "distilled_from"))
+        .into_iter()
+        .chain(student.map(|p| (p, "base")))
+        .chain(data.into_iter().chain(dataset).map(|p| (p, "dataset")))
+        .collect()
+}
+
 /// Dispatch model management commands: merge, finetune, prune, distill, pull, list, rm, tui.
 #[provable_contracts_macros::contract(
     "apr-cli-operations-v1",
@@ -1019,39 +1067,6 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     contract_pre_output_path_validation!();
     contract_pre_rm_confirmation_gate!();
     Some(match cli.command.as_ref() {
-        Commands::Merge {
-            files,
-            strategy,
-            output,
-            weights,
-            base_model,
-            drop_rate,
-            density,
-            seed,
-            plan,
-            force,
-        } => {
-            let resolved: std::result::Result<Vec<std::path::PathBuf>, _> = files
-                .iter()
-                .map(|f| crate::error::resolve_model_path(f))
-                .collect();
-            match resolved {
-                Ok(r) => merge::run(
-                    &r,
-                    strategy,
-                    output.as_deref(),
-                    weights.clone(),
-                    base_model.as_deref().map(Path::to_path_buf),
-                    *drop_rate,
-                    *density,
-                    *seed,
-                    cli.json,
-                    *plan,
-                    *force,
-                ),
-                Err(e) => Err(e),
-            }
-        }
         #[cfg(feature = "training")]
         Commands::Gpu { json } => gpu::run(*json || cli.json),
         #[cfg(feature = "training")]
@@ -1128,66 +1143,6 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 *no_track,
             )
         }
-        Commands::ModelOps(ModelOpsCommands::Prune {
-            file,
-            method,
-            target_ratio,
-            sparsity,
-            output,
-            remove_layers,
-            analyze,
-            plan,
-            calibration,
-        }) => crate::error::resolve_model_path(file).and_then(|r| {
-            prune::run(
-                &r,
-                method,
-                *target_ratio,
-                *sparsity,
-                output.as_deref(),
-                remove_layers.as_deref(),
-                *analyze,
-                *plan,
-                calibration.as_deref(),
-                cli.json,
-            )
-        }),
-        Commands::ModelOps(ModelOpsCommands::Distill {
-            teacher,
-            student,
-            data,
-            output,
-            strategy,
-            temperature,
-            alpha,
-            epochs,
-            plan,
-            config,
-            stage,
-            backend,
-            dataset,
-        }) => {
-            #[cfg(feature = "training")]
-            if let Err(e) = commands::runs::enforce_training_perimeter(output.as_deref()) {
-                return Some(Err(e));
-            }
-            distill::run(
-            teacher.as_deref(),
-            student.as_deref(),
-            data.as_deref(),
-            output.as_deref(),
-            strategy,
-            *temperature,
-            *alpha,
-            *epochs,
-            *plan,
-            config.as_deref(),
-            stage.as_deref(),
-            backend.as_str(),
-            dataset.as_deref(),
-            cli.json,
-        )
-        }
         Commands::Pull {
             model_ref,
             repo,
@@ -1245,6 +1200,145 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         Commands::Tui { file } => tui::run(file.as_deref().map(Path::to_path_buf)),
         Commands::Mcp {} => mcp::run(),
 
+        _ => return dispatch_lineage_commands(cli),
+    })
+}
+
+/// Dispatch the model ops that record EXT-06 lineage edges: merge, prune, distill.
+/// Reached through `dispatch_model_commands`' fall-through, so it is the same dispatch
+/// step as before; split out to keep both under the pre-commit cognitive limit.
+fn dispatch_lineage_commands(cli: &Cli) -> Option<Result<(), CliError>> {
+    Some(match cli.command.as_ref() {
+        Commands::Merge {
+            files,
+            strategy,
+            output,
+            weights,
+            base_model,
+            drop_rate,
+            density,
+            seed,
+            plan,
+            force,
+            no_track,
+        } => {
+            let resolved: std::result::Result<Vec<std::path::PathBuf>, _> = files
+                .iter()
+                .map(|f| crate::error::resolve_model_path(f))
+                .collect();
+            match resolved {
+                Ok(r) => {
+                    let inputs = merge_inputs(&r, base_model.as_deref());
+                    commands::track::tracked(
+                        "merge",
+                        &inputs,
+                        output.as_deref(),
+                        *no_track || *plan,
+                        || {
+                            merge::run(
+                                &r,
+                                strategy,
+                                output.as_deref(),
+                                weights.clone(),
+                                base_model.as_deref().map(Path::to_path_buf),
+                                *drop_rate,
+                                *density,
+                                *seed,
+                                cli.json,
+                                *plan,
+                                *force,
+                            )
+                        },
+                    )
+                }
+                Err(e) => Err(e),
+            }
+        }
+        Commands::ModelOps(ModelOpsCommands::Prune {
+            file,
+            method,
+            target_ratio,
+            sparsity,
+            output,
+            remove_layers,
+            analyze,
+            plan,
+            calibration,
+            no_track,
+        }) => crate::error::resolve_model_path(file).and_then(|r| {
+            let inputs = prune_inputs(&r, calibration.as_deref());
+            commands::track::tracked(
+                "prune",
+                &inputs,
+                output.as_deref(),
+                *no_track || *plan || *analyze,
+                || {
+                    prune::run(
+                        &r,
+                        method,
+                        *target_ratio,
+                        *sparsity,
+                        output.as_deref(),
+                        remove_layers.as_deref(),
+                        *analyze,
+                        *plan,
+                        calibration.as_deref(),
+                        cli.json,
+                    )
+                },
+            )
+        }),
+        Commands::ModelOps(ModelOpsCommands::Distill {
+            teacher,
+            student,
+            data,
+            output,
+            strategy,
+            temperature,
+            alpha,
+            epochs,
+            plan,
+            config,
+            stage,
+            backend,
+            dataset,
+            no_track,
+        }) => {
+            #[cfg(feature = "training")]
+            if let Err(e) = commands::runs::enforce_training_perimeter(output.as_deref()) {
+                return Some(Err(e));
+            }
+            let inputs = distill_inputs(
+                teacher.as_deref(),
+                student.as_deref(),
+                data.as_deref(),
+                dataset.as_deref(),
+            );
+            commands::track::tracked(
+                "distill",
+                &inputs,
+                output.as_deref(),
+                *no_track || *plan,
+                || {
+                    distill::run(
+                        teacher.as_deref(),
+                        student.as_deref(),
+                        data.as_deref(),
+                        output.as_deref(),
+                        strategy,
+                        *temperature,
+                        *alpha,
+                        *epochs,
+                        *plan,
+                        config.as_deref(),
+                        stage.as_deref(),
+                        backend.as_str(),
+                        dataset.as_deref(),
+                        cli.json,
+                    )
+                },
+            )
+        }
         _ => return None,
     })
 }
