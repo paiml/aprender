@@ -33,8 +33,11 @@
 #      changes no field still counts as changed — check_roadmap_diff_additive.sh
 #      already refuses that shape, so this gate must not be the one place it
 #      reads as "nothing happened".
-#   2. THE AGGREGATE MUST BE REGENERATED. Whenever either side of the pair
-#      changes, head's roadmap.yaml must equal aggregate(head's entries/).
+#   2. AN AGGREGATE THE DIFF WRITES MUST BE REGENERATED. When the diff writes
+#      roadmap.yaml, head's roadmap.yaml must equal aggregate(head's entries/).
+#      A diff that changes only fragments may leave the aggregate LAGGING: under
+#      operator doctrine P4 (#4417) no PR writes the aggregate, main regenerates
+#      it, and check_pr_generated_write_set.sh refuses every other writer.
 #      That placement rule is NOT restated here: it is
 #      `roadmap_fragments.py aggregate --check`, the same function `make
 #      roadmap-aggregate` writes with, so the guard and the generator cannot
@@ -214,11 +217,23 @@ judge() {
         fi
     done < <(printf '%s\n' "$out")
 
-    # --- RULE 2: the aggregate at head is REGENERATED, not drifting ----------
-    out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
-    rc=$?
-    rm -rf -- "${td:?}"
-    if [ "$rc" = 0 ]; then
+    # --- RULE 2: an aggregate this diff WRITES is regenerated, not drifting ---
+    # P4 (#4417): a PR writes its fragment and main regenerates the aggregate, so
+    # in PR shape the aggregate may LAG its fragments. Exactness binds the diff that
+    # writes roadmap.yaml, which is the single-writer regen
+    # (check_pr_generated_write_set.sh refuses every other writer).
+    if [ "$roadmap_changed" = 0 ]; then
+        rm -rf -- "${td:?}"
+        printf 'ok    %s not written by this diff: the aggregate may lag its fragments until main regenerates it (P4, #4417)\n' "$ROADMAP_FILE"
+        rc=0; out=""
+    else
+        out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
+        rc=$?
+        rm -rf -- "${td:?}"
+    fi
+    if [ "$roadmap_changed" = 0 ]; then
+        :
+    elif [ "$rc" = 0 ]; then
         printf 'ok    %s == aggregate(%s/) at head\n' "$ROADMAP_FILE" "$ENTRIES_DIR"
     else
         violations=$((violations + 1))
@@ -324,9 +339,17 @@ self_test() {
         python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
         commit_all "$1"
     }
-    # A fragment with no `make roadmap-aggregate`.
+    # A fragment with no `make roadmap-aggregate`: the P4 shape (#4417).
     b_fragment_no_regen() {
         printf -- '- id: PMAT-200\n  title: fragment only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+    }
+    # A fragment WITH an aggregate written by hand to something else: rule 1 is
+    # satisfied (the fragment is in the diff), so only rule 2 can see it.
+    b_fragment_bad_regen() {
+        printf -- '- id: PMAT-200\n  title: from the fragment\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" --entries "$1/$ENTRIES_DIR" >/dev/null 2>&1 || return 1
+        sed -i 's/title: from the fragment/title: written by hand/' "$1/$ROADMAP_FILE"
         commit_all "$1"
     }
     b_unrelated() {
@@ -406,8 +429,10 @@ PY
         1 'ADDED    PMAT-200 in docs/roadmaps/roadmap.yaml with NO change' b_monolith_only
     row 'fragment + regenerated aggregate, in sync -> PASS' \
         0 'ok    ADDED    PMAT-200 — docs/roadmaps/entries/PMAT-200.yaml changes in the same diff' b_fragment_and_aggregate
-    row 'fragment added, aggregate NOT regenerated -> REFUSE, naming the drift' \
-        1 'FAIL  DRIFT' b_fragment_no_regen
+    row 'fragment added, aggregate NOT regenerated -> PASS, the aggregate lags until main regenerates it (P4, #4417)' \
+        0 'may lag its fragments' b_fragment_no_regen
+    row 'fragment + an aggregate WRITTEN but not regenerated -> REFUSE, naming the drift' \
+        1 'FAIL  DRIFT' b_fragment_bad_regen
     row 'a docs-only diff touching neither side -> PASS (no false positive)' \
         0 'nothing to judge' b_unrelated
     row 'the aggregate RE-SERIALISED with no content change -> REFUSE' \
