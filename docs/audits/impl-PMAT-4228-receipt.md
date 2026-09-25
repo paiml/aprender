@@ -116,3 +116,20 @@ new 18.6/26.9/25.2 at 850, and base 8.5/8.9/10.8 vs new 22.9/26.8/51.5 at 4096.
 - My earlier duplicate branch `feat/4228-qwen35-cpu-prefill` (pushed WIP on
   `rc/0.69.3-rc.2`) is superseded by aprender-88's commits and this branch. It
   needs no PR.
+
+## Quorum
+
+The round judged `origin/batch/0.70.0...HEAD` at `e03f0ea27`. That merge of
+the batch tip into this branch left the forward files unchanged; the tests were
+re-run after it: 48 passed.
+
+| lane | model | verdict |
+|---|---|---|
+| 1 | gemini-3.1-pro-high (agy, measured) | PASS; 4 cited findings, none blocking. Artifact: `docs/audits/quorum-PMAT-4228.json` |
+| 2 | claude-sonnet-5 (Claude Code lane, read-only whitelist) | PASS, no findings |
+| 3 | claude-haiku-4-5 (Claude Code lane, read-only whitelist) | PASS, no findings |
+
+The round is marked `degraded: same-family`: the author is claude-opus-5-5, and
+lanes 2 and 3 are Claude. In the script's artifact, lanes 1 and 3 read
+NO-VERDICT, because it cannot launch claude-* ids as agy lanes; lanes 2 and 3
+above were therefore run as Claude Code subagents.
