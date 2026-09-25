@@ -940,6 +940,12 @@ pub enum Commands {
     #[command(subcommand)]
     Cgp(cgp::cli::Commands),
 
+    /// PTX falsification analysis and FKR test generation: analyze, gen-fkr
+    /// (was the `aprender-ptx-debug` binary; pure Rust, so unlike `apr ptx`
+    /// it needs no build feature)
+    #[command(subcommand, name = "ptx-debug")]
+    PtxDebug(trueno_ptx_debug::cli::Command),
+
     /// Provable-contracts: validate, lint, score, kani, proof-status
     /// (the `pv` binary keeps shipping under its own name; this is the
     /// in-apr route to the same commands)

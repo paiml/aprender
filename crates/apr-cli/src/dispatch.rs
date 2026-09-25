@@ -91,6 +91,9 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cgp::cli::dispatch(command.clone(), cli.json)
                 .map_err(|e| CliError::ValidationFailed(format!("cgp: {e}"))),
         ),
+        Commands::PtxDebug(command) => Some(ptx_debug_result(
+            trueno_ptx_debug::run::run(command.clone()),
+        )),
         Commands::Pv(command) => Some(
             aprender_contracts_cli::dispatch(command.clone())
                 .map_err(|e| CliError::ValidationFailed(format!("pv: {e}"))),
@@ -105,6 +108,24 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 /// signatures that #3606 is changing at the same time; the flag is still a flag to the user, and
 /// the guard prints `--revalidate` as its reason when it fires. (Extracted from
 /// `dispatch_runtime_commands` unchanged, to keep it under the complexity ratchet.)
+/// Map an `apr ptx-debug` outcome onto apr's error type (#4062).
+///
+/// The standalone binary exits 1/2/3 for its analysis verdict (score < 90,
+/// score < `--min-score`, critical bugs). apr has one exit-code convention, so
+/// every non-zero verdict becomes a validation failure (exit 5) whose message
+/// names the verdict — a failing analysis must never exit 0.
+fn ptx_debug_result(outcome: Result<i32, String>) -> Result<(), CliError> {
+    let verdict = match outcome {
+        Ok(0) => return Ok(()),
+        Ok(1) => "score below 90",
+        Ok(2) => "score below --min-score",
+        Ok(3) => "critical bugs present",
+        Ok(_) => "analysis failed",
+        Err(e) => return Err(CliError::ValidationFailed(format!("ptx-debug: {e}"))),
+    };
+    Err(CliError::ValidationFailed(format!("ptx-debug: {verdict}")))
+}
+
 fn request_f2_revalidate(revalidate: bool) {
     if revalidate {
         // SAFETY-BY-ORDER: set before any inference thread exists; the

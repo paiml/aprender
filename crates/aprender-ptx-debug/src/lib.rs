@@ -48,6 +48,7 @@ pub mod cli;
 pub mod falsification;
 pub mod output;
 pub mod parser;
+pub mod run;
 
 // Re-export key types
 pub use analyzer::{AddressSpaceValidator, ControlFlowAnalyzer, DataFlowAnalyzer, TypeChecker};

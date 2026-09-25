@@ -369,7 +369,7 @@ pub enum ExtendedCommands {
         not(feature = "trueno-explain"),
         command(
             name = "ptx",
-            about = "PTX analysis and bug detection [unavailable in this build: cargo install aprender --features ptx]"
+            about = "PTX analysis and bug detection [unavailable in this build: cargo install aprender --features ptx; `apr ptx-debug` is always built]"
         )
     )]
     Ptx {
