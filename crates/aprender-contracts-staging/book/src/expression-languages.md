@@ -19,7 +19,7 @@ postconditions:
 
 **Codegen:** `pv codegen` emits `debug_assert!` macros.
 
-**Verification chain:** `debug_assert!` (L3) -> Kani bounded check (L4) -> Lean theorem (L5)
+**Verification chain:** `debug_assert!` (E3) -> Kani bounded check (E4) -> Lean theorem (E5)
 
 ## 2. Regex Patterns
 
@@ -50,9 +50,9 @@ regex_invariants:
 
 ### Verification Chain
 
-- **L3:** `debug_assert!(Regex::new(pattern).unwrap().is_match(&target))`
-- **L4:** Kani bounded regex — exhaustively verify for all inputs up to bound
-- **L5:** Lean language containment proof: `forall x, P(x) -> output(x) in L(regex)`
+- **E3:** `debug_assert!(Regex::new(pattern).unwrap().is_match(&target))`
+- **E4:** Kani bounded regex — exhaustively verify for all inputs up to bound
+- **E5:** Lean language containment proof: `forall x, P(x) -> output(x) in L(regex)`
 
 ## 3. Refinement Types (Haskell/F# Style)
 
@@ -93,10 +93,10 @@ type_class_contracts:
 
 ### Verification Chain
 
-- **L2:** Rust compiler (private inner field + Result constructor)
-- **L3:** `debug_assert!` on refinement predicate in constructor
-- **L4:** Kani proof that constructor rejects all invalid values
-- **L5:** Lean theorem for type class laws and refinement soundness
+- **E2:** Rust compiler (private inner field + Result constructor)
+- **E3:** `debug_assert!` on refinement predicate in constructor
+- **E4:** Kani proof that constructor rejects all invalid values
+- **E5:** Lean theorem for type class laws and refinement soundness
 
 ## Dual Expressions
 

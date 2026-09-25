@@ -231,7 +231,7 @@ Lean and Kani are NOT interchangeable — they prove different things
 about the same obligation. Full design in
 **[lean-kani-composition.md](lean-kani-composition.md)**.
 
-| | Lean 4 (L5) | Kani (L4) |
+| | Lean 4 (L4) | Kani (L3) |
 |---|---|---|
 | **Proves** | Algorithm correctness over ℝ | Rust code correctness over f32 |
 | **Catches** | Wrong formula, missing invariant | Overflow, NaN, precision loss, code paths |

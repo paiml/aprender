@@ -217,7 +217,7 @@ All `pv lint` rules follow the pattern `PV-<CATEGORY>-NNN`.
 | PV-PRV-001 | error | Kernel contract without Kani harnesses |
 | PV-PRV-002 | error | Kernel contract without falsification tests |
 | PV-PRV-003 | warning | Kani harness count < obligation count |
-| PV-PRV-004 | info | No Lean theorems (L5 not attempted) |
+| PV-PRV-004 | info | No Lean theorems (L4 not attempted) |
 
 ### Trend Rules (PV-TRD)
 

@@ -310,7 +310,7 @@ CLI implement these equations as contract-derived performance ceilings.
 **Rust Verification Landscape.** Le Blanc & Lam (2024) survey
 Rust verification tools including Kani (bounded model checking),
 Creusot (deductive verification with prophecies), and Flux
-(refinement types). Our stack uses Kani for L4 and Lean 4 for L5.
+(refinement types). Our stack uses Kani for L3 and Lean 4 for L4.
 
 > "Bounded model checking is a good choice for Rust verification."
 > — arXiv:2410.01981
