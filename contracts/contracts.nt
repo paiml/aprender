@@ -8380,6 +8380,7 @@
 <https://ont.paiml.dev/v1alpha1/contract/online-softmax-v1> <https://ont.paiml.dev/v1alpha1/id> "online-softmax-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/ont-capability-cells-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/ont-capability-cells-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/ont-capability-cells-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/entity/gguf> .
 <https://ont.paiml.dev/v1alpha1/contract/ont-capability-cells-v1> <https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/contract/model-capability-ladder-v1> .
 <https://ont.paiml.dev/v1alpha1/contract/ont-capability-cells-v1> <https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/contract/ont-model-receipts-v1> .
 <https://ont.paiml.dev/v1alpha1/contract/ont-capability-cells-v1> <https://ont.paiml.dev/v1alpha1/depends_on> <https://ont.paiml.dev/v1alpha1/contract/ont-shapes-v1> .
