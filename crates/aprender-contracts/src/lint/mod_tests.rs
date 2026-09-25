@@ -26,8 +26,13 @@ fn lint_score_gate_fails_with_high_threshold() {
 
 #[test]
 fn lint_empty_dir() {
+    // The duplicate-stems gate reads its baseline from the contract dir's PARENT. A bare tempdir's parent is the
+    // host's /tmp, where a stray scripts/contract_duplicate_stem_baseline.txt turned this test red (2026-09-25).
+    // Nest the dir so the parent is ours and empty.
     let tmp = tempfile::tempdir().unwrap();
-    let config = LintConfig::new(tmp.path(), None, 0.0);
+    let dir = tmp.path().join("contracts");
+    std::fs::create_dir(&dir).unwrap();
+    let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
     assert!(report.passed);
 }
