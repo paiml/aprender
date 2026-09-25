@@ -157,7 +157,8 @@ falsification_tests:
   obligation: EXT-INV-006
   rule: Reaper spares live runs
   prediction: apr runs gc leaves the planted live pid and the planted reused-pid run alone
-  if_fails: 'liveness keyed on pid alone instead of (host, boot_id, pid, proc_start_time) (owed EXT-03 #4385; planned: cargo test -p apr-cli --test ext_runs_gc falsify_ext_002_gc_spares_live_and_reused_pid)'
+  test: cargo test -p aprender-train --lib falsify_ext_002_gc_spares_live_and_reused_pid
+  if_fails: liveness keyed on pid alone instead of (host, boot_id, pid, proc_start_time), so the reused-pid run survives or the live run holding that pid is reaped
 - id: FALSIFY-EXT-003
   obligation: EXT-INV-006
   rule: PachaBackend round-trips and fsck sees dangling pointers

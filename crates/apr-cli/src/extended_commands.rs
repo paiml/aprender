@@ -1576,6 +1576,29 @@ pub enum RunsCommands {
         #[arg(long)]
         json: bool,
     },
+    /// Reap garbage runs: `.tmp*` test experiments and orphaned `running` rows (EXT-03)
+    ///
+    /// Dry-run by default: prints the plan and writes nothing. `--yes` first
+    /// writes a backup (`VACUUM INTO`) and prints its sha256, then deletes the
+    /// `.tmp*` runs and marks orphans `failed`. A run is live only when its
+    /// recorded (host, boot_id, pid, proc_start_time) matches a process now.
+    Gc {
+        /// Directory containing experiment DB
+        #[arg(long, value_name = "DIR")]
+        dir: Option<PathBuf>,
+        /// Operate on the global registry (~/.entrenar/experiments.db)
+        #[arg(long)]
+        global: bool,
+        /// Print the plan only (the default; accepted for explicitness)
+        #[arg(long, conflicts_with = "yes")]
+        dry_run: bool,
+        /// Apply the plan, after writing a sha256-receipted backup
+        #[arg(long)]
+        yes: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[cfg(feature = "training")]

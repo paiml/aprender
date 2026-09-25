@@ -911,6 +911,13 @@ fn dispatch_runs_command(command: &RunsCommands, cli: &Cli) -> std::result::Resu
             global,
             json,
         } => commands::runs::run_diff(run_a, run_b, dir, *global, *json || cli.json),
+        RunsCommands::Gc {
+            dir,
+            global,
+            dry_run: _,
+            yes,
+            json,
+        } => commands::runs::run_gc(dir, *global, *yes, *json || cli.json),
     }
 }
 

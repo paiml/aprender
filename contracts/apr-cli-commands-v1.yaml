@@ -430,10 +430,11 @@ commands:
 
   - name: runs
     category: ui
-    description: "List, show, and compare training experiment runs"
+    description: "List, show, compare, and garbage-collect training experiment runs"
     requires_model: false
-    side_effects: []
-    subcommands: [diff, ls, show]
+    # gc (EXT-03, aprender#4385) writes a backup and, with --yes, the store.
+    side_effects: [filesystem]
+    subcommands: [diff, gc, ls, show]
 
   - name: experiment
     category: ui
