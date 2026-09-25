@@ -62,6 +62,7 @@ header_line() { # header_line <ERE> -> the single matching line, or die
 }
 recipe() { # recipe <target> -> the target line and its tab-indented body
     out=$(awk -v t="$1:" 'index($0, t) == 1 { f = 1; print; next }
+                         f && /^#/ { next }
                          f && /^\t/ { print; next }
                          f { exit }' "$MAKEFILE")
     if [ -z "$out" ] || [ "$(printf '%s\n' "$out" | wc -l)" -lt 3 ]; then
@@ -208,9 +209,14 @@ m=$(mutant no-exit-on-lint '/lint contracts\//s/ \|\| exit$//') || exit 2
 expect_stop "$m" contracts none 1 '== census' "$TMP/bin/stale-pv"
 went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: the lint line without || exit -> the stale-PV_BIN row goes RED" $?
 
+m=$(mutant lint-exits-always '/lint contracts\//s/\[ \$\$rc -eq 0 \] \|\| exit \$\$rc;/exit $$rc;/') || exit 2
+run "$m" contracts none
+{ [ "$RC" -eq 0 ] && grep -qF 'test result: ok' <<<"$OUT"; }
+went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: the lint line exits unconditionally (.ONESHELL) -> the every-step-passes row goes RED" $?
+
 m=$(mutant no-pipefail 's/-o pipefail //') || exit 2
-expect_stop "$m" contracts lint 7 '== census'
-went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: .SHELLFLAGS without pipefail -> the pv lint row goes RED" $?
+expect_stop "$m" contracts cargo 101 '@@unreachable@@'
+went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: .SHELLFLAGS without pipefail -> the engine-tests (grep | tail) row goes RED" $?
 
 m=$(mutant no-accumulator 's/ \|\| rc=\$\$\?;/;/') || exit 2
 expect_stop "$m" contract-audit audit-first 7 'Binding audit complete'

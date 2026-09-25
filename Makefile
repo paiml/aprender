@@ -627,7 +627,10 @@ contracts:
 # contracts-exit-integrity does not catch it -- it looks for `|| true` and bare for-loops,
 # not for a pipe. The output is kept to a tail for readability by writing it to a file and
 # tailing THAT, so the exit status belongs to pv and nothing else.
-	@. scripts/pv_bin.sh && { "$$PV" lint contracts/ > /tmp/pv-lint-contracts.$$$$.log 2>&1; rc=$$?; tail -5 /tmp/pv-lint-contracts.$$$$.log; rm -f /tmp/pv-lint-contracts.$$$$.log; exit $$rc; }
+# .ONESHELL: the whole recipe is ONE shell, so an unconditional `exit $$rc` here ended the
+# recipe green after lint -- census, graph, README, provenance and the engine tests never ran.
+# Exit only on failure (#4315, caught by scripts/tests/make_contracts_propagates.sh).
+	@. scripts/pv_bin.sh && { "$$PV" lint contracts/ > /tmp/pv-lint-contracts.$$$$.log 2>&1; rc=$$?; tail -5 /tmp/pv-lint-contracts.$$$$.log; rm -f /tmp/pv-lint-contracts.$$$$.log; [ $$rc -eq 0 ] || exit $$rc; } || exit
 	@echo "== census: tracked contracts/census.json == a fresh one (ONT-001 ONT-1, F-1) =="
 	@git ls-files --error-unmatch contracts/census.json >/dev/null || { echo "FAIL: contracts/census.json is not tracked, so diffing it proves nothing"; exit 1; }
 	@. scripts/pv_bin.sh && "$$PV" census contracts --format json > contracts/census.json || exit
