@@ -37,7 +37,7 @@ impl KMeans {
         self
     }
 
-    /// Sets the number of seeded restarts (sklearn's `n_init`, default 10).
+    /// Sets the number of seeded restarts (sklearn's `n_init`, default 1).
     ///
     /// Restart 0 starts from the same row a single-init fit uses, and a later
     /// restart replaces it only with a strictly lower inertia, so the fitted

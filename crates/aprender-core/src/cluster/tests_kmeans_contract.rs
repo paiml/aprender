@@ -226,7 +226,11 @@ fn falsify_km_009_n_init_reproducible() {
     let b = km_fit(&x, 5, 10);
     assert_eq!(a.inertia().to_bits(), b.inertia().to_bits());
     assert_eq!(a.predict(&x), b.predict(&x));
-    assert_eq!(KMeans::new(3).n_init(), 10, "sklearn default n_init");
+    assert_eq!(
+        KMeans::new(3).n_init(),
+        1,
+        "sklearn >=1.4 n_init=\"auto\" for k-means++-family seeding"
+    );
     assert_eq!(KMeans::new(3).with_n_init(0).n_init(), 1);
 }
 
