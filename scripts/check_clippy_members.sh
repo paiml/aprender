@@ -121,7 +121,9 @@ $(git -C "$ROOT" diff --name-only HEAD)"
         || die2 "cargo metadata failed"
     [ -n "$pkgs" ] || die2 "cargo metadata listed no packages"
     # Longest package-dir prefix wins: the root facade's dir is a prefix of every crate's.
-    grep -E '(\.rs|Cargo\.toml)$' <<<"$files" | awk -F'\t' -v root="$ROOT/" '
+    # `|| true`: a diff with no .rs/Cargo.toml path is "nothing to lint", not a
+    # pipefail death before gate() can say so.
+    { grep -E '(\.rs|Cargo\.toml)$' <<<"$files" || true; } | awk -F'\t' -v root="$ROOT/" '
         FILENAME == ARGV[1] { d = $2 "/"; if (d == root) d = ""; else if (index(d, root) == 1) d = substr(d, length(root) + 1); dir[$1] = d; next }
         $0 != "" { best = ""; bl = -1
           for (p in dir) if (index($0, dir[p]) == 1 && length(dir[p]) > bl) { best = p; bl = length(dir[p]) }
@@ -197,8 +199,11 @@ self_test() {
     # Scoped to the smallest member lib (one dependency): the property under test
     # is the key/compare path, and it must stay cheap on a cold CI target dir.
     measure "$base" -p aprender-build-sha --lib
-    if ! compare "$base" "$base" >/dev/null 2>&1; then
-        echo "SELF-TEST FAILED: an unchanged tree compared RED against itself" >&2
+    # A SECOND measurement, not `compare "$base" "$base"`: one path passed twice
+    # is ARGV[1] on both reads, so compare() would never reach its row logic.
+    measure "$cur" -p aprender-build-sha --lib
+    if ! compare "$base" "$cur" >/dev/null 2>&1; then
+        echo "SELF-TEST FAILED: an unchanged tree compared RED against a re-measurement of itself" >&2
         return 1
     fi
     cp "$target" "$backup"
