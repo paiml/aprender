@@ -1242,8 +1242,9 @@ fn qwen35_cuda_a_fresh_model_pins_the_float_gemv_variants() {
 /// all 6 positions broke (cosine down to -0.77); after it, argmax matches at all
 /// 6 with worst cosine 0.9974 (floor 0.996).
 ///
-/// Deleting any `invalidate_q8_activation()` before a `gemv_dispatch` in
-/// `forward_qwen35_cuda.rs` turns this RED.
+/// Mutation-proven: deleting the 15 in-layer `invalidate_q8_activation()`
+/// calls in `forward_qwen35_cuda.rs` turns this RED at 6/6 positions (cosine
+/// down to -0.25). A single missing call is not individually proven.
 #[test]
 #[serial_test::serial]
 fn qwen35_cuda_dp4a_gemv_matches_cpu_when_each_gemv_quantizes_its_own_input() {
