@@ -10,6 +10,7 @@
 //! With [`Index::with_sketches`], a re-spaced, renamed or lightly edited copy
 //! is a `cluster` hit too (PRA-001 T7, [`crate::cluster`]).
 
+use crate::cluster::{containment, shingles, CONTAINMENT};
 use crate::corpus::{hunk_fingerprints, Sealed};
 use std::collections::BTreeMap;
 
@@ -76,6 +77,15 @@ impl Index {
         for fp in hunk_fingerprints(text) {
             if let Some(id) = self.hunks.get(&fp) {
                 hits.push(hit(id, file, "hunk"));
+            }
+        }
+        if self.sketches.is_empty() {
+            return;
+        }
+        let set = shingles(text);
+        for (id, s) in &self.sketches {
+            if containment(s, &set) >= CONTAINMENT {
+                hits.push(hit(id, file, "cluster"));
             }
         }
     }
