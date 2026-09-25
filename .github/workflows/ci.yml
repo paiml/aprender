@@ -51,6 +51,12 @@ jobs:
   #    runs all parts to completion on the biggest runner in its class, nextest
   #    full-core, sccache warm. Same test set as today (Σ executed unchanged)."
   #
+  # The five, by job id: x86-main, gx10, yoga, determinism, and mac-check -- the
+  # ruling's "mac-refusal": the macOS lane, whose one expected failure is the
+  # Linux-only profiler's compile_error! refusal (excluded by name below). It
+  # keeps its context name `mac-check` and, as on main before #4433, is NOT in
+  # `gate`'s needs (its own comment: first-green proof before it may block).
+  #
   # The job BODIES did not change: they moved, verbatim, to ci/sections.yml
   # (and the pinned sovereign-ci reusable workflow to ci/vendor/). Each fat job
   # below runs a set of them as SECTIONS on one runner through
