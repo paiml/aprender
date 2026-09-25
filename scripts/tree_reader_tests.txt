@@ -98,8 +98,8 @@ aprender-contracts-cli	--test	ont5_consistency_gate
 aprender-contracts-cli	--test	ont6_lint_verdict
 aprender-contracts-cli	--test	ont6b_kind_default
 aprender-contracts-cli	--test	ont7_valid_under_gate
-aprender-contracts-cli	--test	ont9_self_contract
 aprender-contracts-cli	--test	ont8_evidence_gate
+aprender-contracts-cli	--test	ont9_self_contract
 aprender-contracts-cli	--test	ont_entity_properties
 aprender-contracts-cli	--test	ont_extract_json
 aprender-contracts-cli	--test	ont_refusal_receipt
@@ -160,6 +160,8 @@ aprender-profile	--lib	cluster::registry
 aprender-qa-certify	--lib	<root>
 aprender-rag	--lib	loader::text
 aprender-rag-cli	--lib	<root>
+aprender-review-experiment	--lib	contamination
+aprender-review-experiment	--lib	prereg
 aprender-serve	--lib	capability
 aprender-serve	--lib	cli::cli_tests
 aprender-serve	--lib	infer
