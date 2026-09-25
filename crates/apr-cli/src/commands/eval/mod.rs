@@ -151,6 +151,21 @@ pub(crate) fn run(
     // Run evaluation
     let result = perplexity::run_evaluation(path, &config, json)?;
 
+    // EXT-09 (#4391): attach the result to the file in pacha, pass or fail. The suite
+    // manifest is the text that was scored, so two runs on different text never share one.
+    let suite = format!("perplexity/{:?}", config.dataset).to_lowercase();
+    if let Ok(text) = get_eval_text(&config) {
+        super::eval_attach::attach(
+            path,
+            &super::eval_attach::EvalOutcome {
+                suite: &suite,
+                suite_manifest_sha: super::eval_attach::bytes_sha256(text.as_bytes()),
+                score: f64::from(result.perplexity),
+                n: result.tokens_evaluated as u64,
+            },
+        );
+    }
+
     // GH-248: JSON output mode
     if json {
         return print_json_results(path, &config, &result, device);

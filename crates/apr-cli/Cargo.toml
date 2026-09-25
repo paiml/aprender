@@ -178,6 +178,7 @@ tabled = "0.22"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
+hostname = "0.4.2"
 aprender-update = { workspace = true }
 # HELIX-IDEA-009: constant-time SHA-256 digest comparison for `apr serve`
 # bearer-token auth. See contracts/apr-serve-api-key-auth-v1.yaml gate

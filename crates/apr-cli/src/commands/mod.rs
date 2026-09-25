@@ -61,6 +61,7 @@ pub(crate) mod embed_viz_lint;
 pub(crate) mod embeddings_classifier;
 pub(crate) mod embeddings_lint;
 pub(crate) mod eval;
+pub(crate) mod eval_attach;
 #[cfg(feature = "training")]
 pub(crate) mod experiment;
 pub(crate) mod explain;
