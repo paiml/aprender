@@ -15,7 +15,7 @@ bindings:
 - contract: configuration-v1.yaml
   equation: transpile
   function: cmd_transpile
-  module_path: batuta::cli::pipeline_cmds_transpile
+  module_path: batuta::cli::pipeline_cmds
   status: implemented
 - contract: configuration-v1.yaml
   equation: transpile

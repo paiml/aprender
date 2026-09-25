@@ -148,6 +148,10 @@ pub fn bound_of(registry: &BindingRegistry) -> Vec<Bound> {
 pub struct Workspace {
     pub root: PathBuf,
     pub crates: BTreeMap<String, Vec<PathBuf>>,
+    /// The binary roots of the same packages, keyed like `crates`: `src/main.rs` when it exists, then each
+    /// `[[bin]] path`. A module declared only by a bin (`batuta`'s `mod cli;` in `main.rs`) is compiled code,
+    /// so the walk falls back to these after every lib root refused (#4420).
+    pub bins: BTreeMap<String, Vec<PathBuf>>,
     /// `root/Cargo.toml` has a `[workspace]` table. When it does, only its `members` (globs honoured) minus its
     /// `exclude` are crates — a stray manifest under the root (a test fixture, an excluded canary) is not a
     /// workspace member and a binding into it does not resolve (ONT-3a).
@@ -165,6 +169,7 @@ impl Workspace {
         let mut ws = Self {
             root: root.to_path_buf(),
             crates: BTreeMap::new(),
+            bins: BTreeMap::new(),
             is_workspace_root: membership.is_some(),
         };
         let mut stack = vec![root.to_path_buf()];
@@ -204,10 +209,24 @@ impl Workspace {
         let lib_path = m
             .lib_path
             .map_or_else(|| dir.join("src/lib.rs"), |p| dir.join(p));
+        let main = dir.join("src/main.rs");
+        let bin_paths: Vec<PathBuf> = main
+            .is_file()
+            .then_some(main)
+            .into_iter()
+            .chain(m.bin_paths.iter().map(|p| dir.join(p)))
+            .collect();
         for name in [m.package, m.lib].into_iter().flatten() {
-            let roots = self.crates.entry(name.replace('-', "_")).or_default();
+            let key = name.replace('-', "_");
+            let roots = self.crates.entry(key.clone()).or_default();
             if !roots.contains(&lib_path) {
                 roots.push(lib_path.clone());
+            }
+            for bin in &bin_paths {
+                let bins = self.bins.entry(key.clone()).or_default();
+                if !bins.contains(bin) {
+                    bins.push(bin.clone());
+                }
             }
         }
     }
@@ -324,6 +343,7 @@ pub(crate) struct ManifestNames {
     pub(crate) package: Option<String>,
     lib: Option<String>,
     lib_path: Option<String>,
+    bin_paths: Vec<String>,
 }
 
 /// `[package] name`, `[lib] name` and `[lib] path` by a section-aware line scan — the two keys this walk needs,
@@ -346,6 +366,7 @@ pub(crate) fn manifest_names(text: &str) -> ManifestNames {
             ("package", "name") => out.package = Some(v),
             ("lib", "name") => out.lib = Some(v),
             ("lib", "path") => out.lib_path = Some(v),
+            ("bin", "path") => out.bin_paths.push(v),
             _ => {}
         }
     }
@@ -453,9 +474,13 @@ impl<'a> Resolver<'a> {
     /// contributes nothing, so what it would have defined stays unresolved (fail-closed).
     fn splice(&mut self, items: &[syn::Item], origin: &Path, depth: usize, module: &mut Module) {
         for item in items {
-            match include_path(item) {
-                Some(rel) if depth < INCLUDE_DEPTH => {
-                    let file = origin.parent().unwrap_or(origin).join(rel);
+            let target = match include_path(item) {
+                Some(Include::Literal(rel)) => Some(origin.parent().unwrap_or(origin).join(rel)),
+                Some(Include::OutDir(name)) => build_fallback(origin, &name),
+                None => None,
+            };
+            match target {
+                Some(file) if depth < INCLUDE_DEPTH => {
                     if let Some(ast) = self.parse(&file) {
                         self.splice(&ast.items, &file, depth + 1, module);
                     }
@@ -507,6 +532,19 @@ impl<'a> Resolver<'a> {
             match self.resolve_in_root(&root, &segs, function, depth) {
                 Ok(r) => return Ok(r),
                 Err(e) => last = e,
+            }
+        }
+        // Bin-only modules are compiled too. A bin that refuses as well leaves the LIB's reason standing: that
+        // is the target a binding normally names.
+        let bins = self
+            .ws
+            .bins
+            .get(&krate.replace('-', "_"))
+            .cloned()
+            .unwrap_or_default();
+        for root in bins {
+            if let Ok(r) = self.resolve_in_root(&root, &segs, function, depth) {
+                return Ok(r);
             }
         }
         Err(last)
@@ -711,8 +749,16 @@ impl<'a> Resolver<'a> {
             inner.file = module.file.clone();
             return Some(Ok(Step::Module(inner)));
         }
+        // `#[path]` on a mod at the top of a non-`mod.rs` file (`a/b.rs`) is relative to that file's own dir
+        // (`a/`), not to its child dir (`a/b/`), as in rustc; in `mod.rs`/`lib.rs` the two agree, and inside an
+        // inline `mod` the child dir is the rustc base.
+        let path_base = if module.child_dir == module.file.with_extension("") {
+            module.file.parent().unwrap_or(&module.file).to_path_buf()
+        } else {
+            module.child_dir.clone()
+        };
         Some(
-            child_file(&module.child_dir, seg, &m.attrs)
+            child_file(&module.child_dir, &path_base, seg, &m.attrs)
                 .and_then(|(file, child_dir)| self.file_module(&file, child_dir).map(Step::Module)),
         )
     }
@@ -743,18 +789,77 @@ fn join_path(target: &str, rest: &[&str]) -> String {
     }
 }
 
-/// The path an `include!` item names (a string literal only — `concat!(env!("OUT_DIR"), …)` is a build
-/// artifact the tree does not hold).
-fn include_path(item: &syn::Item) -> Option<String> {
+/// What an `include!` item names.
+#[derive(Debug, PartialEq, Eq)]
+enum Include {
+    /// `include!("x.rs")`, relative to the including file.
+    Literal(String),
+    /// `include!(concat!(env!("OUT_DIR"), "/x_generated.rs"))`: the file name, a build artifact the tree does
+    /// not hold.
+    OutDir(String),
+}
+
+fn include_path(item: &syn::Item) -> Option<Include> {
     let syn::Item::Macro(m) = item else {
         return None;
     };
     if !m.mac.path.is_ident("include") {
         return None;
     }
-    syn::parse2::<syn::LitStr>(m.mac.tokens.clone())
-        .ok()
-        .map(|l| l.value())
+    if let Ok(l) = syn::parse2::<syn::LitStr>(m.mac.tokens.clone()) {
+        return Some(Include::Literal(l.value()));
+    }
+    let concat = syn::parse2::<syn::Macro>(m.mac.tokens.clone()).ok()?;
+    if !concat.path.is_ident("concat") {
+        return None;
+    }
+    let args = concat
+        .parse_body_with(syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated)
+        .ok()?;
+    let mut args = args.into_iter();
+    let syn::Expr::Macro(env) = args.next()? else {
+        return None;
+    };
+    let var = env.mac.parse_body::<syn::LitStr>().ok()?;
+    if !env.mac.path.is_ident("env") || var.value() != "OUT_DIR" {
+        return None;
+    }
+    let syn::Expr::Lit(syn::ExprLit {
+        lit: syn::Lit::Str(name),
+        ..
+    }) = args.next()?
+    else {
+        return None;
+    };
+    if args.next().is_some() {
+        return None;
+    }
+    Some(Include::OutDir(
+        name.value().trim_start_matches('/').to_string(),
+    ))
+}
+
+/// The in-tree source a build script copies to `OUT_DIR/<stem>_generated.rs`: the crate's `build.rs` must
+/// name `<stem>_generated.rs` AND `include_str!` a file called `<stem>_fallback.rs`, which is then that file
+/// (relative to the crate dir). No build script, no such pair, or a name of another shape → `None`, so what the
+/// include defines stays unresolved (fail-closed). The fallback is what an offline build compiles; a
+/// generated file that drifts from it is the build script's own defect (#4380), not a binding's.
+fn build_fallback(origin: &Path, name: &str) -> Option<PathBuf> {
+    let stem = name.strip_suffix("_generated.rs")?;
+    let fallback = format!("{stem}_fallback.rs");
+    let krate = origin
+        .ancestors()
+        .skip(1)
+        .find(|d| d.join("Cargo.toml").is_file())?;
+    let build = std::fs::read_to_string(krate.join("build.rs")).ok()?;
+    if !build.contains(&format!("\"{name}\"")) {
+        return None;
+    }
+    build.match_indices("include_str!(\"").find_map(|(i, pat)| {
+        let rest = &build[i + pat.len()..];
+        let rel = &rest[..rest.find('"')?];
+        (Path::new(rel).file_name()? == fallback.as_str()).then(|| krate.join(rel))
+    })
 }
 
 /// A struct, enum, union, trait or type alias named `name`, or an `impl` for it, among `items`.
@@ -848,6 +953,7 @@ fn glob_paths(tree: &syn::UseTree, prefix: &str, out: &mut Vec<String>) {
 /// the new module is `<dir>/seg/` either way.
 fn child_file(
     child_dir: &Path,
+    path_base: &Path,
     seg: &str,
     attrs: &[syn::Attribute],
 ) -> Result<(PathBuf, PathBuf), Unresolved> {
@@ -859,7 +965,7 @@ fn child_file(
                     ..
                 }) = &nv.value
                 {
-                    let f = child_dir.join(s.value());
+                    let f = path_base.join(s.value());
                     return Ok((f.clone(), f.parent().unwrap_or(&f).to_path_buf()));
                 }
             }
@@ -1322,6 +1428,190 @@ mod tests {
         assert!(!m.admits(root, Path::new("/r/crates/skip")));
         assert!(m.admits(root, Path::new("/r")));
         assert!(workspace_membership("[package]\nname = \"x\"\n").is_none());
+    }
+
+    /// #4420: a module declared only by the bin (`mod cli;` in `src/main.rs`, or a `[[bin]] path`) resolves; a
+    /// ghost in it is still refused, with the LIB's reason, and a crate with no bin gains nothing.
+    #[test]
+    fn a_bin_only_module_resolves_and_a_ghost_keeps_the_lib_reason() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = tmp.path();
+        std::fs::write(
+            w.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"k\", \"j\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(w.join("k/src/cli")).unwrap();
+        std::fs::write(
+            w.join("k/Cargo.toml"),
+            "[package]\nname = \"k-pkg\"\n[lib]\nname = \"k\"\n[[bin]]\nname = \"x\"\npath = \"tools/x.rs\"\n",
+        )
+        .unwrap();
+        std::fs::write(w.join("k/src/lib.rs"), "pub mod core;\n").unwrap();
+        std::fs::write(w.join("k/src/core.rs"), "pub fn c() {}\n").unwrap();
+        std::fs::write(w.join("k/src/main.rs"), "mod cli;\nfn main() {}\n").unwrap();
+        std::fs::write(
+            w.join("k/src/cli/mod.rs"),
+            "pub mod run;\npub fn args() {}\n",
+        )
+        .unwrap();
+        std::fs::write(w.join("k/src/cli/run.rs"), "pub fn cmd_run() {}\n").unwrap();
+        std::fs::create_dir_all(w.join("k/tools")).unwrap();
+        std::fs::write(
+            w.join("k/tools/x.rs"),
+            "mod extra { pub fn e() {} }\nfn main() {}\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(w.join("j/src")).unwrap();
+        std::fs::write(w.join("j/Cargo.toml"), "[package]\nname = \"j\"\n").unwrap();
+        std::fs::write(w.join("j/src/lib.rs"), "pub fn f() {}\n").unwrap();
+        let ws = Workspace::scan(w);
+        assert_eq!(ws.bins["k"].len(), 2, "{:?}", ws.bins);
+        assert!(!ws.bins.contains_key("j"), "no main.rs, no [[bin]]");
+        let mut r = Resolver::new(&ws);
+        assert_eq!(
+            r.resolve("k::cli", "args").expect("main.rs mod").file,
+            "k/src/cli/mod.rs"
+        );
+        assert_eq!(
+            r.resolve("k::cli::run", "cmd_run").expect("nested").file,
+            "k/src/cli/run.rs"
+        );
+        assert_eq!(
+            r.resolve("k_pkg::extra", "e").expect("[[bin]] path").file,
+            "k/tools/x.rs"
+        );
+        assert!(r.resolve("k::core", "c").is_ok(), "the lib still wins");
+        let ghost = r.resolve("k::cli", "no_such").unwrap_err();
+        assert!(
+            ghost.reason.contains("no `mod cli`"),
+            "the lib's reason: {}",
+            ghost.reason
+        );
+        assert!(r.resolve("j::cli", "args").is_err());
+    }
+
+    /// #4420: `include!(concat!(env!("OUT_DIR"), "/x_generated.rs"))` splices the `x_fallback.rs` the build script
+    /// itself `include_str!`s; the same include with no such build.rs pair splices nothing (fail-closed).
+    #[test]
+    fn an_out_dir_include_reads_the_fallback_its_build_script_names_and_nothing_else() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = tmp.path();
+        std::fs::write(
+            w.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"k\", \"u\"]\n",
+        )
+        .unwrap();
+        for c in ["k", "u"] {
+            std::fs::create_dir_all(w.join(c).join("src/gen")).unwrap();
+            std::fs::write(
+                w.join(c).join("Cargo.toml"),
+                format!("[package]\nname = \"{c}\"\n"),
+            )
+            .unwrap();
+            std::fs::write(w.join(c).join("src/lib.rs"), "pub mod roles;\n").unwrap();
+            std::fs::write(
+                w.join(c).join("src/roles.rs"),
+                "include!(concat!(env!(\"OUT_DIR\"), \"/roles_generated.rs\"));\n",
+            )
+            .unwrap();
+            std::fs::write(
+                w.join(c).join("src/gen/roles_fallback.rs"),
+                "pub enum Role { A }\nimpl Role { pub fn name(&self) {} }\npub fn required() {}\n",
+            )
+            .unwrap();
+        }
+        std::fs::write(
+            w.join("k/build.rs"),
+            "fn main() { let p = out.join(\"roles_generated.rs\"); write(p, include_str!(\"src/gen/roles_fallback.rs\")); }\n",
+        )
+        .unwrap();
+        // `u` writes the file but names no fallback: nothing to read.
+        std::fs::write(
+            w.join("u/build.rs"),
+            "fn main() { out.join(\"roles_generated.rs\"); }\n",
+        )
+        .unwrap();
+        let ws = Workspace::scan(w);
+        let mut r = Resolver::new(&ws);
+        let req = r.resolve("k::roles", "required").expect("fallback spliced");
+        assert_eq!(req.file, "k/src/gen/roles_fallback.rs");
+        assert_eq!(
+            r.resolve("k::roles::Role", "name").expect("impl").kind,
+            "method"
+        );
+        assert!(r.resolve("k::roles", "ghost").is_err());
+        assert!(
+            r.resolve("u::roles", "required").is_err(),
+            "no build.rs pair"
+        );
+    }
+
+    /// `#[path]` resolves like rustc: from `a/b.rs` against `a/`, from `a/mod.rs` against `a/`, from an inline
+    /// `mod i { … }` in `lib.rs` against `i/` — the `batuta` `pipeline_cmds.rs` → `pipeline_cmds_transpile.rs` shape.
+    #[test]
+    fn a_path_attribute_resolves_against_the_rustc_base() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = tmp.path();
+        std::fs::write(w.join("Cargo.toml"), "[workspace]\nmembers = [\"k\"]\n").unwrap();
+        std::fs::create_dir_all(w.join("k/src/a")).unwrap();
+        std::fs::create_dir_all(w.join("k/src/m")).unwrap();
+        std::fs::create_dir_all(w.join("k/src/i")).unwrap();
+        std::fs::write(w.join("k/Cargo.toml"), "[package]\nname = \"k\"\n").unwrap();
+        std::fs::write(
+            w.join("k/src/lib.rs"),
+            "pub mod a;\npub mod m;\npub mod i { #[path = \"x.rs\"] pub mod p; }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            w.join("k/src/a.rs"),
+            "#[path = \"a_t.rs\"]\nmod t;\npub use t::f;\n",
+        )
+        .unwrap();
+        std::fs::write(w.join("k/src/a_t.rs"), "pub fn f() {}\n").unwrap();
+        std::fs::write(w.join("k/src/m/mod.rs"), "#[path = \"y.rs\"]\npub mod q;\n").unwrap();
+        std::fs::write(w.join("k/src/m/y.rs"), "pub fn g() {}\n").unwrap();
+        std::fs::write(w.join("k/src/i/x.rs"), "pub fn h() {}\n").unwrap();
+        let ws = Workspace::scan(w);
+        let mut r = Resolver::new(&ws);
+        assert_eq!(
+            r.resolve("k::a", "f").expect("non-mod.rs base").file,
+            "k/src/a_t.rs"
+        );
+        assert_eq!(
+            r.resolve("k::m::q", "g").expect("mod.rs base").file,
+            "k/src/m/y.rs"
+        );
+        assert_eq!(
+            r.resolve("k::i::p", "h").expect("inline base").file,
+            "k/src/i/x.rs"
+        );
+        assert!(r.resolve("k::a", "nope").is_err());
+    }
+
+    /// The `include!` forms: literal, `OUT_DIR` concat (leading `/` dropped), and every near miss refused.
+    #[test]
+    fn include_path_case_table() {
+        let case = |src: &str| include_path(&syn::parse_str::<syn::Item>(src).unwrap());
+        assert_eq!(
+            case(r#"include!("a.rs");"#),
+            Some(Include::Literal("a.rs".into()))
+        );
+        assert_eq!(
+            case(r#"include!(concat!(env!("OUT_DIR"), "/x_generated.rs"));"#),
+            Some(Include::OutDir("x_generated.rs".into()))
+        );
+        assert_eq!(case(r#"include!(concat!(env!("HOME"), "/x.rs"));"#), None);
+        assert_eq!(
+            case(r#"include!(concat!(env!("OUT_DIR"), "/x", ".rs"));"#),
+            None
+        );
+        assert_eq!(
+            case(r#"include!(stringify!(env!("OUT_DIR"), "/x.rs"));"#),
+            None
+        );
+        assert_eq!(case(r#"include_str!("a.rs");"#), None);
+        assert_eq!(case(r#"include!(concat!("/x.rs"));"#), None);
     }
 
     #[test]

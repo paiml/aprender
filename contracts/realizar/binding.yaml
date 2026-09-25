@@ -419,14 +419,14 @@ bindings:
   notes: 'PMAT-414: Checks all required roles present for arch. Returns missing list'
 - contract: architecture-requirements-v1.yaml
   equation: role_mapping
-  module_path: realizar::arch_requirements_fallback
+  module_path: realizar::arch_requirements
   function: WeightRole::field_name
   signature: 'pub const fn field_name(&self) -> &''static str'
   status: implemented
   notes: 'PMAT-414: Injective mapping WeightRole → IndexedLayerWeights field name'
 - contract: architecture-requirements-v1.yaml
   equation: constraint_matrix_exhaustiveness
-  module_path: realizar::arch_requirements_fallback
+  module_path: realizar::arch_requirements
   function: required_roles
   signature: 'pub fn required_roles(arch: &ArchConstraints) -> &''static [WeightRole]'
   status: implemented

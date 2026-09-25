@@ -4,31 +4,6 @@
       "symbol": "aprender::inference::forward::forward_pass",
       "reason": "ghost: no `mod inference` or `use \u2026 inference` in `crates/aprender-core/src/lib.rs`",
       "ticket": "#4094"
-    },
-    {
-      "symbol": "batuta::cli::build_transpiler_args",
-      "reason": "resolver limit (bin-only module, the walk reads lib targets): no `mod cli` or `use \u2026 cli` in `crates/aprender-orchestrate/src/lib.rs`",
-      "ticket": "#4420"
-    },
-    {
-      "symbol": "batuta::cli::pipeline_cmds_transpile::cmd_transpile",
-      "reason": "resolver limit (bin-only module, the walk reads lib targets): no `mod cli` or `use \u2026 cli` in `crates/aprender-orchestrate/src/lib.rs`",
-      "ticket": "#4420"
-    },
-    {
-      "symbol": "batuta::cli::pipeline_cmds::cmd_analyze",
-      "reason": "resolver limit (bin-only module, the walk reads lib targets): no `mod cli` or `use \u2026 cli` in `crates/aprender-orchestrate/src/lib.rs`",
-      "ticket": "#4420"
-    },
-    {
-      "symbol": "realizar::arch_requirements_fallback::WeightRole::field_name",
-      "reason": "resolver limit (OUT_DIR-generated, include!(concat!(env!)) is declined by the walk): no `mod arch_requirements_fallback` or `use \u2026 arch_requirements_fallback` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4420"
-    },
-    {
-      "symbol": "realizar::arch_requirements_fallback::required_roles",
-      "reason": "resolver limit (OUT_DIR-generated, include!(concat!(env!)) is declined by the walk): no `mod arch_requirements_fallback` or `use \u2026 arch_requirements_fallback` in `crates/aprender-serve/src/arch_requirements.rs`",
-      "ticket": "#4420"
     }
   ]
 }
