@@ -2182,4 +2182,54 @@ mod pp_llama_band_surface_tests {
             );
         }
     }
+
+    /// #4222 (6b's finding, E2 #3598): the legacy bench REFUSES a comparator flag.
+    ///
+    /// Without `--band`, `apr test llm bench` runs the legacy mode, and that mode
+    /// has no comparator lane. It accepted `--comparator-url`, sent the comparator
+    /// 0 bench requests, wrote a subject-only report and exited 0. That is the
+    /// silent flag drop that `--band` already refuses in the other direction.
+    ///
+    ///  argv (no --band)                           | must | why
+    ///  -------------------------------------------|------|---------------------
+    ///  --url U --comparator-url C                 | ERR  | 6b's repro, names --band
+    ///  --url U --comparator-<each> V              | ERR  | every lane flag
+    ///  --url U                        [BOUNDARY]  | OK   | legacy still parses
+    #[test]
+    fn legacy_bench_refuses_every_comparator_flag() {
+        let legacy = |extra: &[&str]| {
+            let mut argv = vec!["llm", "bench", "--url", "http://127.0.0.1:18411"];
+            argv.extend_from_slice(extra);
+            super::LlmSubcommand::augment_subcommands(clap::Command::new("llm"))
+                .try_get_matches_from(argv)
+        };
+        legacy(&[]).unwrap_or_else(|e| panic!("the legacy argv must still parse: {e}"));
+        let e = legacy(&["--comparator-url", "http://127.0.0.1:18412"])
+            .err()
+            .unwrap_or_else(|| panic!("--comparator-url without --band must be refused"))
+            .to_string();
+        assert!(e.contains("--band"), "the refusal must name --band: {e}");
+        for (flag, value) in [
+            ("--comparator-owner", "other"),
+            ("--comparator-url", "http://127.0.0.1:18412"),
+            ("--comparator-model", "qwen35-2b"),
+            ("--comparator-commit", COMMIT),
+            ("--comparator-cmake", "cmake -DGGML_CUDA=ON"),
+            ("--comparator-sha256", &"a".repeat(64)),
+            ("--comparator-pin-expiry", "2026-12-31T00:00:00.000Z"),
+            ("--comparator-n-batch", "2048"),
+            ("--comparator-n-ctx-slot", "4096"),
+            ("--comparator-fa", "on"),
+            ("--comparator-kv-type", "f16"),
+        ] {
+            // the KIND matters: a rejected value would also be an error, and
+            // would pass this row for the wrong reason
+            let kind = legacy(&[flag, value]).err().map(|e| e.kind());
+            assert_eq!(
+                kind,
+                Some(clap::error::ErrorKind::MissingRequiredArgument),
+                "{flag} without --band must be refused for the missing --band: the legacy mode has no comparator lane"
+            );
+        }
+    }
 }
