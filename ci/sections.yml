@@ -444,6 +444,15 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             "$IMAGE" \
             cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --partition "hash:${SHARD}/${SHARDS}"
+      - name: "Σ-executed: keep the workspace lib junit (the next nextest run overwrites it)"
+        if: steps.tier.outputs.tier == 'full'
+        # #4433: nextest writes <target>/nextest/ci/junit.xml and every invocation
+        # overwrites it, so each run's report is copied out before the next one.
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sigma"
+          cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/lib.junit.xml"
       - name: "GPU crates on their default features (per-package resolve, no device needed)"
         if: steps.tier.outputs.tier == 'full' && matrix.shard == 1
         # aprender-gpu + aprender-cuda-edge, un-darked from the required check (T0 of the
@@ -468,6 +477,15 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             "$IMAGE" \
             cargo nextest run --profile ci -p aprender-gpu -p aprender-cuda-edge --lib
+      - name: "Σ-executed: keep the GPU crates junit (the next nextest run overwrites it)"
+        if: steps.tier.outputs.tier == 'full' && matrix.shard == 1
+        # #4433: nextest writes <target>/nextest/ci/junit.xml and every invocation
+        # overwrites it, so each run's report is copied out before the next one.
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sigma"
+          cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/gpu.junit.xml"
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
         if: steps.tier.outputs.tier == 'full' && matrix.shard == 1
         run: |
@@ -559,6 +577,47 @@ jobs:
             -e SHARD -e SHARDS \
             "$IMAGE" \
             bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d --shard "${SHARD}/${SHARDS}"
+      - name: "Σ-executed: the tests this job ran are exactly the tests it owes (#4433)"
+        if: steps.tier.outputs.tier == 'full' && matrix.shard == 1 && matrix.shards == 1
+        # #4433, the cop's condition on the 5-fat-job PR: "The test-id set across
+        # the 5 jobs must equal today's set (by id, not by count), and a mutation
+        # that drops one test must turn it RED." The UNIVERSE is listed HERE, with
+        # the filters of today's jobs written out again, never read back from the
+        # step that ran the tests -- so an added --exclude, a --partition or a
+        # dropped fragment in a run step cannot narrow its own yardstick.
+        # Only on the unsharded full tier: a shard owes a partition, not the set.
+        shell: bash
+        run: |
+          set -euo pipefail
+          sig="$RUNNER_TEMP/sigma"
+          python3 scripts/ci/sigma_executed.py --self-test
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -v "${sig}:/sigma" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            "$IMAGE" \
+            bash -c 'set -euo pipefail
+              cargo nextest list --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --message-format json > /sigma/lib.list.json
+              cargo nextest list --profile ci -p aprender-gpu -p aprender-cuda-edge --lib --message-format json > /sigma/gpu.list.json
+              cargo test -p aprender-compute --lib -- --list > /sigma/compute.list.txt
+              cargo test -p aprender-compute --lib -- --list --ignored > /sigma/compute.ignored.txt'
+          bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.d > "$sig/explicit.list.txt"
+          rc=0
+          python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib" --junit "$sig/lib.junit.xml" --list-json "$sig/lib.list.json" || rc=1
+          python3 scripts/ci/sigma_executed.py nextest --kind "nextest gpu" --junit "$sig/gpu.junit.xml" --list-json "$sig/gpu.list.json" || rc=1
+          python3 scripts/ci/sigma_executed.py cargo --kind "compute" --log "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" --step "Compute tests" --list "$sig/compute.list.txt" --ignored "$sig/compute.ignored.txt" || rc=1
+          python3 scripts/ci/sigma_executed.py explicit --kind "explicit" --log "$FAT_SECTION_LOG" --step "Integration tests" --list "$sig/explicit.list.txt" || rc=1
+          exit "$rc"
       # PACK-001: the examples build used to be fragment 350 of the explicit
       # list. Measured on the first sharded full-tier run (35361149112, shard 1
       # on yoga): 489 s of that shard's 794 s integration phase was this ONE
