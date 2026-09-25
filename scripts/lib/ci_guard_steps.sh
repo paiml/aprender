@@ -327,6 +327,10 @@ cmd_run() {
             done < <(jqj -j --arg j "$job" '(.[$j].env // {}) | to_entries[] | "\(.key)\u0000\(.value | tostring)\u0000"')
         fi
         [ "$ci" = true ] || job_steps_ok "$job"
+        # jq writes the records to a file first: a jq that dies mid-stream behind <(...)
+        # would end the loop early with no error, and the unread steps would vanish.
+        jqd -j --arg job "$job" --argjson ci "$ci" "$JQDEFS steps_for(\$job; \$ci)[] | step_record" \
+            > "$scratch/steps.$job" || die "cannot read the steps of $job in $WORKFLOW (jq rc=$?)"
         while IFS= read -r -u 3 -d '' idx && IFS= read -r -u 3 -d '' name \
             && IFS= read -r -u 3 -d '' run && IFS= read -r -u 3 -d '' cond \
             && IFS= read -r -u 3 -d '' has_uses && IFS= read -r -u 3 -d '' has_run \
@@ -398,7 +402,7 @@ cmd_run() {
                 if [ "$stream" = 1 ]; then detail="$name  [rc=$rc]"; else detail="$name  [rc=$rc, log $log]"; fi
             fi
             emit "$job" "$idx" "$status" "$(awk -v a="$t0" -v b="$t1" 'BEGIN { printf "%.3f", b - a }')" "$detail"
-        done 3< <(jqd -j --arg job "$job" --argjson ci "$ci" "$JQDEFS steps_for(\$job; \$ci)[] | step_record")
+        done 3< "$scratch/steps.$job"
     done
 
     local failed=0 ran=0 skipped=0 row

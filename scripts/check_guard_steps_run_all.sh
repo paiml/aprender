@@ -235,6 +235,17 @@ manifest_rows() {
     n=$((n + 1))
     if [ $((t1 - t0)) -lt 15 ]; then printf 'ok   %-58s %ss\n' "timeout returned promptly" $((t1 - t0))
     else printf 'FAIL %-58s %ss\n' "timeout returned promptly" $((t1 - t0)); bad=1; fi
+    # A jq that dies mid-stream must stop the run with rc 2, not end the step loop early
+    # and report the steps it never read as nothing (the loop reads jq's records from fd 3).
+    mkdir -p "$d/mutlib/lib"
+    cp "$LIB" "$d/mutlib/lib/" && cp "$(dirname "$LIB")/ci_guard_yaml.awk" "$d/mutlib/lib/" \
+        && cp "$(dirname "$LIB")/../ci_guards.sh" "$d/mutlib/"
+    sed 's/^def step_record:$/def step_record: if (.idx == "m1" or .idx == "1") then error("injected jq death") else . end |/' \
+        "$(dirname "$LIB")/ci_guard_steps.jq" > "$d/mutlib/lib/ci_guard_steps.jq"
+    mfixture "$repo/.github/workflows/ci.yml" good "true" "true" "true"
+    if grep -q 'injected jq death' "$d/mutlib/lib/ci_guard_steps.jq"; then
+        LIB="$d/mutlib/lib/$(basename "$LIB")" mrun "CI: a jq that dies mid-stream stops the run (rc 2)" 2 'cannot read the steps of guard-x'
+    else n=$((n + 1)); printf 'FAIL %-58s\n' "jq-death mutant: the sed did not apply"; bad=1; fi
     n=$((n + 1))
     if [ "$(cd "$repo" && bash "$LIB" sha guard-x)" = "$(cd "$repo" && GITHUB_ACTIONS=true bash "$LIB" sha guard-x)" ] \
         && grep -q '^ci_guards: sha256 [0-9a-f]\{16\} manifest [0-9a-f]\{16\}' "$d/out"; then
