@@ -60,6 +60,7 @@ aprender-contracts	--lib	ontology::sigma
 aprender-contracts	--lib	ontology::w3c
 aprender-contracts	--lib	ontology::witness
 aprender-contracts	--lib	pipeline
+aprender-contracts	--lib	proof_status
 aprender-contracts	--lib	query
 aprender-contracts	--lib	query::index
 aprender-contracts	--lib	query::persist
