@@ -65,8 +65,7 @@ mod gpu_leg_comparability_tests {
     #[test]
     fn the_two_legs_agree_exactly_when_the_argmax_margin_is_wide() {
         use crate::gguf::{
-            MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
-            QuantizedGenerateConfig,
+            MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig,
         };
 
         let Some(path) = model_path() else {
@@ -136,12 +135,17 @@ mod gpu_leg_comparability_tests {
     #[test]
     fn zz_probe_arch_conditional() {
         use crate::gguf::{
-            MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
-            QuantizedGenerateConfig,
+            MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig,
         };
         let models = [
-            ("tinyllama/LLAMA", "/home/noah/.apr/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"),
-            ("qwen3-1.7B/QWEN", "/mnt/nvme-raid0/cache/apr-home/models/Qwen3-1.7B-Q4_K_M.gguf"),
+            (
+                "tinyllama/LLAMA",
+                "/home/noah/.apr/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+            ),
+            (
+                "qwen3-1.7B/QWEN",
+                "/mnt/nvme-raid0/cache/apr-home/models/Qwen3-1.7B-Q4_K_M.gguf",
+            ),
         ];
         for (label, path) in models {
             let p = std::path::PathBuf::from(path);
@@ -167,12 +171,16 @@ mod gpu_leg_comparability_tests {
                 stop_tokens: vec![eos],
                 ..Default::default()
             };
-            let Ok(cm) = OwnedQuantizedModel::from_mapped(&mapped) else { continue };
+            let Ok(cm) = OwnedQuantizedModel::from_mapped(&mapped) else {
+                continue;
+            };
             let Ok(cpu) = cm.generate_with_cache(&prompt, &config) else {
                 eprintln!("ARCH {label:18} SKIP: cpu generate failed");
                 continue;
             };
-            let Ok(gm) = OwnedQuantizedModel::from_mapped(&mapped) else { continue };
+            let Ok(gm) = OwnedQuantizedModel::from_mapped(&mapped) else {
+                continue;
+            };
             let Ok(mut cuda) = OwnedQuantizedModelCuda::new(gm, 0) else {
                 eprintln!("ARCH {label:18} SKIP: cuda init failed");
                 continue;
