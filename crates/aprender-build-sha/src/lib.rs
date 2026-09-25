@@ -99,19 +99,33 @@ fn run_git(args: &[&str]) -> Option<String> {
 }
 
 fn resolve_git_sha() -> String {
+    resolve_git_sha_with(
+        |k| std::env::var(k).ok(),
+        run_git,
+        |p| std::fs::read_to_string(p).ok(),
+    )
+}
+
+/// [`resolve_git_sha`] over injected sources, so a test can drive every branch
+/// without touching the process environment.
+fn resolve_git_sha_with(
+    env: impl Fn(&str) -> Option<String>,
+    git: impl Fn(&[&str]) -> Option<String>,
+    read: impl Fn(&str) -> Option<String>,
+) -> String {
     // Sources are consulted lazily and in order, as the original apr-cli
     // build.rs did: git is not run when the override is set, and `.git-sha`
     // is not read when git answers.
-    let override_env = std::env::var("APR_GIT_SHA_OVERRIDE").ok();
+    let override_env = env("APR_GIT_SHA_OVERRIDE");
     if let Some(s) = nonblank(override_env.as_deref()) {
         return s.to_string();
     }
-    let git_head = run_git(&["rev-parse", "--short", "HEAD"]);
+    let git_head = git(&["rev-parse", "--short", "HEAD"]);
     let sha_file = match git_head {
         Some(_) => None,
-        None => std::fs::read_to_string(".git-sha").ok(),
+        None => read(".git-sha"),
     };
-    let version = std::env::var("CARGO_PKG_VERSION").ok();
+    let version = env("CARGO_PKG_VERSION");
     resolve(
         None,
         git_head.as_deref(),
@@ -122,7 +136,7 @@ fn resolve_git_sha() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{git_rerun_triggers, resolve, resolve_git_sha, run_git};
+    use super::{git_rerun_triggers, resolve, resolve_git_sha, resolve_git_sha_with, run_git};
 
     #[test]
     fn override_wins_over_everything() {
@@ -206,19 +220,87 @@ mod tests {
         }
     }
 
+    /// A fake source: records whether it was consulted, answers from a table.
+    fn fake<'a>(
+        table: &'a [(&'a str, &'a str)],
+        hit: &'a std::cell::Cell<bool>,
+    ) -> impl Fn(&str) -> Option<String> + 'a {
+        move |k| {
+            hit.set(true);
+            table
+                .iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| (*v).to_string())
+        }
+    }
+
     #[test]
-    fn resolve_git_sha_agrees_with_resolve_over_the_live_sources() {
-        let override_env = std::env::var("APR_GIT_SHA_OVERRIDE").ok();
-        let git_head = run_git(&["rev-parse", "--short", "HEAD"]);
-        let sha_file = std::fs::read_to_string(".git-sha").ok();
-        let version = std::env::var("CARGO_PKG_VERSION").ok();
-        let want = resolve(
-            override_env.as_deref(),
-            git_head.as_deref(),
-            sha_file.as_deref(),
-            version.as_deref(),
+    fn override_wins_and_neither_git_nor_the_file_is_consulted() {
+        let (g, f, e) = Default::default();
+        let git_hit: &std::cell::Cell<bool> = &g;
+        let got = resolve_git_sha_with(
+            fake(&[("APR_GIT_SHA_OVERRIDE", " rel123 \n")], &e),
+            |_: &[&str]| {
+                git_hit.set(true);
+                Some("gitsha".into())
+            },
+            fake(&[(".git-sha", "filesha")], &f),
         );
-        assert!(!want.is_empty());
-        assert_eq!(resolve_git_sha(), want);
+        assert_eq!(got, "rel123");
+        assert!(!g.get(), "git ran although the override was set");
+        assert!(!f.get(), ".git-sha was read although the override was set");
+    }
+
+    #[test]
+    fn git_answers_and_the_file_is_not_read() {
+        let (f, e) = Default::default();
+        let got = resolve_git_sha_with(
+            fake(&[("APR_GIT_SHA_OVERRIDE", "  ")], &e),
+            |a: &[&str]| (a == ["rev-parse", "--short", "HEAD"]).then(|| "abc1234".to_string()),
+            fake(&[(".git-sha", "filesha")], &f),
+        );
+        assert_eq!(got, "abc1234");
+        assert!(!f.get(), ".git-sha was read although git answered");
+    }
+
+    #[test]
+    fn without_git_the_file_then_the_version_is_used() {
+        let (f, e) = Default::default();
+        let no_git = |_: &[&str]| None;
+        let got = resolve_git_sha_with(
+            fake(&[("CARGO_PKG_VERSION", "1.2.3")], &e),
+            no_git,
+            fake(&[(".git-sha", "0123456789\n")], &f),
+        );
+        assert_eq!(got, "0123456789");
+        assert!(f.get());
+        let (f2, e2) = Default::default();
+        let got = resolve_git_sha_with(
+            fake(&[("CARGO_PKG_VERSION", "1.2.3")], &e2),
+            no_git,
+            fake(&[], &f2),
+        );
+        assert_eq!(got, "v1.2.3+no-git");
+    }
+
+    #[test]
+    fn resolve_git_sha_reads_the_live_sources() {
+        // An oracle independent of `resolve`: in a checkout with no override set,
+        // the live value is exactly git's short HEAD.
+        let got = resolve_git_sha();
+        assert!(!got.is_empty());
+        if let Some(o) = std::env::var("APR_GIT_SHA_OVERRIDE")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+        {
+            assert_eq!(got, o.trim());
+        } else if let Some(head) = run_git(&["rev-parse", "--short", "HEAD"]) {
+            assert_eq!(got, head);
+        } else {
+            assert!(
+                got.ends_with("+no-git") || std::path::Path::new(".git-sha").exists(),
+                "{got}"
+            );
+        }
     }
 }
