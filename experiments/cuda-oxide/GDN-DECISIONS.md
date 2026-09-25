@@ -11,11 +11,11 @@ that is neither a manifest nor a receipt (WrongCorpus).
 The set is every `impl Kernel` under `crates/aprender-gpu/src/kernels/gdn/`, measured at 7af9e6637, except
 `HelperProbe`, which is a test helper. `layernorm/` and `conv1d.rs` are outside the GDN set.
 
-## Decided (4 of 15)
+## Decided (5 of 15)
 
 The thresholds are cos ≥ 0.9999, max|Δ| < 1e-3 against f64, and oxide/hand ≤ 1.2, taking the worst ratio
 over the timed shapes (heads 16/32/48 for the per-head kernels, n = 2048/4096/6144 for the elementwise ones,
-channels = 2048/4096/6144 with K = 4 for the conv).
+channels = 2048/4096/6144 with K = 4 for the convs, and t_count = 64 for the sequence conv).
 
 **Timing method: CUDA-graph replay** (`time_graph_us`: 100 launches captured on a created stream, median of
 5 replays). The first receipts timed eager back-to-back launches on the legacy null stream. At ~2 µs per
@@ -30,6 +30,7 @@ A receipt whose `timing` has no `"method":"cuda-graph-100"` is an eager one.
 | `PerHeadL2NormKernel` | `kernels/gdn/l2_norm.rs` | **oxide** (`rsqrt`) | 0.839 | 0.860 | 0.834 |
 | `SigmoidGateKernel` | `kernels/gdn/sigmoid_gate.rs` | **oxide** (`ex2`), within budget, not a win | 1.058 | 1.076 | 1.089 |
 | `CausalConv1dSiluKernel` | `kernels/gdn/causal_conv1d.rs` | **oxide** (`ex2`), within budget, not a win | 1.080 | 1.091 | 1.139 |
+| `CausalConv1dSiluSeqKernel` | `kernels/gdn/causal_conv1d_seq.rs` | **oxide** (`ex2`), at parity | 1.003 | 1.002 | 0.984 |
 
 **`GatedRmsNormKernel`**
 - Receipts: `evidence/kernels/gdn_gated_rmsnorm/{noah-Lambda-Vector,yoga,gx10-a5b5}.json`, 2 entries per
@@ -108,7 +109,62 @@ A receipt whose `timing` has no `"method":"cuda-graph-100"` is an eager one.
 - Runs: yoga and gx10 ran 3 times each, and the committed receipt is run 3. Every run on both hosts was GO
   (yoga ≤ 1.092, gx10 ≤ 1.144). Lambda ran once.
 
-## Undecided: RED, no receipt (11 of 15)
+**`CausalConv1dSiluSeqKernel`**
+- Port: `experiments/cuda-oxide/causal-conv1d-seq/`, two entries, out of place. One thread per channel walks
+  `t_count` tokens down a strided input column. It is the first GDN port with a strided-column write, and
+  the safe form needs a 2-D launch contract (`domain = 2`, `block = (256,1,1)`). The input column is read
+  through `MatrixView32::new(input, stride).col(c, rows)`. Output goes through
+  `DisjointSlice<f32, RuntimeRowMajorTiles<T_TILE, 1>>`, and the host binds the row width with
+  `RowWidth::new`. The shifted state goes to `state_out` with `RuntimeRowMajorTiles<1, 3>`.
+- **Port constraint:** the tile height is a const generic, so the port fixes `T_TILE = 64` and clamps
+  `t_count` to it. A shipping port needs one monomorphisation per chunk size, or a clipped 2-D run type,
+  which this cuda-oxide rev does not have. This decision covers chunks of ≤ 64 tokens only.
+- `channels`, `K` and the strides are baked into the hand PTX, so there is one golden baseline per timed
+  width (`gdn_conv1d_seq_ptx_golden`, stride = channels).
+- Parity cases include stride ≠ channels (1000/1024), a partial tile (t = 23) and a single token. Parity on
+  every host: cos 1.0, max|Δ| ≤ 2.4e-7 (output and state).
+- **Findings from writing the port:**
+  - The first form read `w[i]` inside the token loop. LLVM cannot prove that the weight slice and the
+    output do not alias, so it reloaded the weights from global memory on every step. Hoisting them into
+    locals (`k0..k3`) fixed that.
+  - LLVM contracts `sum += a*b` into `fma.rn.f32`. The hand PTX uses mul + add. Parity is unaffected.
+    The per-token conv's header comment claimed otherwise and has been corrected: its PTX has 13 `fma.rn.f32`.
+- Registers: oxide 30 (lambda), 29/32 (yoga, exp/ex2) and 28/31 (gx10), against 26 for the hand PTX on
+  sm_89 and 29 on sm_121.
+- **Timing harness fix: the first harness was biased against oxide on yoga.**
+  - yoga's per-launch time steps between two levels during a run, about 15.2–15.5 µs and 11.4–11.7 µs,
+    for both kernels. It looks like a clock-state change.
+  - The first harness always timed oxide first and then the hand PTX. When the step fell inside a row,
+    oxide took the slow reading and the hand PTX the fast one. At 888c736c3 that happened on 2 of 6 yoga
+    runs: `ex2` at c = 2048 read 15.483/11.510 = 1.345, and `ex2` at c = 4096 read 14.920/11.590 = 1.287.
+    The eager ratios for those same rows, timed after the step, were 0.993.
+  - f5345368d times each row in 3 rounds, alternating which kernel goes first, and keeps the round with
+    the median ratio. A step can land in only one round, and the median drops that round.
+  - Under the fixed harness, all 3 yoga runs are GO with a worst ratio of 1.004. In several rows both
+    kernels read the slow level, and the ratio was still 0.98.
+  - The earlier harnesses (sigmoid gate, per-token conv) have the same fixed order. That may explain the
+    sigmoid gate's yoga run-2 NO-GO row, but it has not been re-measured.
+- **Oxide is at parity with the hand PTX:** within ±0.5% for `ex2` and about 1.5% faster for `exp` on
+  every host. The table shows `ex2`, the hand PTX's form. `exp` gives 0.993 / 0.984 / 0.984.
+- **Phantom GPU contexts:** from 2026-09-25, lambda's `nvidia-smi --query-compute-apps` has listed
+  pid 3650689 (936 MiB, name `[Not Found]`). That pid is not in `/proc`, even as root, so it is a context
+  the driver kept after its process died. Nothing is left to launch work on it. The `kernel-timing` shape
+  fails any receipt with a non-empty `foreign_gpu_procs`, so that context blocked every lambda receipt
+  until a GPU reset, and a reset is not ours to do on the operator's desktop.
+  - From 11af9a79c, `receipt.sh` checks each row's pid against `/proc`.
+  - A row whose pid is missing is written to `phantom_gpu_ctx` instead of `foreign_gpu_procs`.
+  - A live process, including one in a container (host `/proc` lists those), stays foreign.
+  - A pid that does not parse stays foreign, so the check fails closed.
+  - Only this experiment's `receipt.sh` has the split so far.
+- Receipts: `evidence/kernels/gdn_causal_conv1d_silu_seq/{noah-Lambda-Vector,yoga,gx10-a5b5}.json`, all at
+  11af9a79c on a clean tree.
+  - yoga and gx10 ran 3 times each at both f5345368d and 11af9a79c, 12 runs in all. Every run is GO, and
+    the worst ratio is 1.004.
+  - The committed receipt is run 3 at 11af9a79c, with no foreign GPU process. gx10's run 1 listed
+    `apr.cur` both times.
+  - Lambda ran with no live foreign process. Its only entry is the phantom context above.
+
+## Undecided: RED, no receipt (10 of 15)
 
 Each row needs an O-1-style port: an oxide `#[kernel]` beside the hand PTX, an f64 CPU reference, a
 `receipt.sh` run on lambda, yoga and gx10, and a manifest under `evidence/kernels/`, with
@@ -116,7 +172,6 @@ Each row needs an O-1-style port: an oxide `#[kernel]` beside the hand PTX, an f
 
 | kernel | shipped PTX |
 |---|---|
-| `CausalConv1dSiluSeqKernel` | `kernels/gdn/causal_conv1d_seq.rs` |
 | `GdnGatesKernel` | `kernels/gdn/gdn_gates.rs` |
 | `GdnGatesRowsKernel` | `kernels/gdn/rows.rs` |
 | `PerHeadL2NormRowsKernel` | `kernels/gdn/rows.rs` |
