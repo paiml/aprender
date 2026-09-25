@@ -138,7 +138,7 @@ pub const PREFILL_ATTENTION_ENV: &str = "APR_QWEN35_PREFILL_ATTENTION";
 /// #4313: whether `bytes` of fp16 weights fit in `free` device memory with 1 GiB
 /// left for the prefill buffers, the KV cache and cuBLAS workspaces.
 pub(crate) fn f16_prewarm_fits(bytes: usize, free: usize) -> bool {
-    bytes.saturating_add(1 << 30) <= free
+    bytes.checked_add(1 << 30).is_some_and(|need| need <= free)
 }
 
 #[cfg(test)]
