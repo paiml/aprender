@@ -245,7 +245,8 @@ falsification_tests:
   obligation: EXT-INV-008,EXT-INV-013
   rule: Post-publish verification
   prediction: a planted post-publish sha or file-set mismatch (incl. a missing LICENSE) triggers yank + STOP; a yanked tag stays fetchable
-  if_fails: 'a published revision can differ from its pack or drop the license (owed EXT-15 #4397; planned: cargo test -p apr-cli --test ext_publish falsify_ext_017_post_publish_mismatch_yanks)'
+  if_fails: a published revision can differ from its pack or drop the license (EXT-15 #4397)
+  test: cargo test -p apr-cli --lib falsify_ext_017_post_publish_mismatch_yanks
 - id: FALSIFY-EXT-018
   obligation: EXT-INV-010
   rule: Card numbers are receipted

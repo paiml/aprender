@@ -910,6 +910,28 @@ fn dispatch_model_command(command: &ModelCommands, cli: &Cli) -> std::result::Re
             out: out.as_deref(),
             json: *json || cli.json,
         }),
+        ModelCommands::Confirm {
+            dir,
+            fetched,
+            source,
+            state,
+            json,
+        } => commands::model_confirm::run_confirm(dir, fetched, source, state, *json || cli.json),
+        ModelCommands::Yank {
+            version,
+            dir,
+            reason,
+            receipt,
+            state,
+            json,
+        } => commands::model_confirm::run_yank(
+            dir,
+            version,
+            reason,
+            receipt,
+            state,
+            *json || cli.json,
+        ),
         ModelCommands::Pack {
             model,
             line,

@@ -100,6 +100,8 @@ pub(crate) mod lint_error;
 // EXT-26 comparator harness; its consumers are the EXT-27/28 competitor arms.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod comparator;
+#[cfg(feature = "training")]
+pub(crate) mod model_confirm;
 pub(crate) mod model_gate;
 #[cfg(feature = "training")]
 pub(crate) mod model_gate_cli;

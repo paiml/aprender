@@ -1555,6 +1555,45 @@ pub enum ModelCommands {
         #[arg(long)]
         json: bool,
     },
+    /// M7: compare a fetched published revision with its release; a mismatch yanks and STOPs
+    Confirm {
+        /// Release directory holding model-release-v1.json (as packed)
+        #[arg(value_name = "DIR")]
+        dir: PathBuf,
+        /// Directory the publisher's fetch of the tag wrote
+        #[arg(long, value_name = "DIR")]
+        fetched: PathBuf,
+        /// Where the fetch came from, e.g. hf:paiml/line@v0.1.0
+        #[arg(long)]
+        source: String,
+        /// Line state directory: <version>/ receipt, yanked.json, YANKED.md
+        #[arg(long, value_name = "DIR")]
+        state: PathBuf,
+        /// Print the receipt as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Yank a version: write yanked.json and the card banner; nothing is deleted
+    Yank {
+        /// Version to yank (must be the manifest's)
+        #[arg(value_name = "VERSION")]
+        version: String,
+        /// Release directory holding model-release-v1.json
+        #[arg(long, value_name = "DIR")]
+        dir: PathBuf,
+        /// Why the version is yanked
+        #[arg(long)]
+        reason: String,
+        /// Receipt id that justifies the yank
+        #[arg(long)]
+        receipt: String,
+        /// Line state directory: <version>/yanked.json, YANKED.md
+        #[arg(long, value_name = "DIR")]
+        state: PathBuf,
+        /// Print the record as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Build a release dir plus model-release-v1.json from pacha lineage (deterministic)
     Pack {
         /// Registered model: id, content hash, recorded sha256 or model file
