@@ -191,6 +191,7 @@ async fn try_cuda_backend(
             max_tokens,
             prompt_tokens,
             Some(timing_rx),
+            request.stop.as_deref(),
         ));
     }
 
@@ -361,6 +362,7 @@ fn try_quantized_backend(
             // The CPU quantized decode loop does not separate prefill from
             // decode, so §3 timings are absent rather than zero.
             None,
+            request.stop.as_deref(),
         ));
     }
 
@@ -1084,6 +1086,7 @@ fn try_qwen3_moe_backend(
             prompt_token_count,
             // The MoE generator reports no phase split; §3 timings are absent.
             None,
+            request.stop.as_deref(),
         ));
     }
 
