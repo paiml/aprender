@@ -1,0 +1,63 @@
+{
+  "pr": 4318,
+  "batch": "batch/0.69.4-epic-4249",
+  "reviewed_head": "c13a233a3",
+  "base": "3c4e19242 (last quorumed, .quorum/0694-batch1/receipt.json)",
+  "author_model": "claude-opus-5-5 (fold captain aprender-59); fix author aprender-0d",
+  "degraded": false,
+  "round_1": {
+    "head": "d1bb4d9f4",
+    "range": "3c4e19242..d1bb4d9f4",
+    "diff_sha256": "8f79bb1c8f91446a250a9f3c42ece2f051f0698377b2c1790afc536e8b2843f3",
+    "lanes": [
+      {
+        "lane": 1,
+        "model": "claude-sonnet-5",
+        "verdict": "PASS"
+      },
+      {
+        "lane": 2,
+        "model": "claude-haiku-4-5-20251001",
+        "verdict": "PASS"
+      },
+      {
+        "lane": 3,
+        "model": "gemini-3.1-pro-high",
+        "model_self_report": "Gemini 3.1 Pro",
+        "verdict": "FAIL",
+        "finding": "qwen35_session_tests.rs:575/606 test grown_capacity and allocate_with_exact_retry only; ensure_capacity (qwen35_session.rs ~620-668), their caller, is driven by no test, so reverting its call site stays green"
+      }
+    ]
+  },
+  "fix": {
+    "commit": "c13a233a3",
+    "author": "aprender-0d",
+    "what": "CPU test drives ensure_capacity through reserve(); GPU test with a cfg(test) alloc ceiling + control; mutant reverting the grown_capacity call site is RED (20 vs 32)"
+  },
+  "round_2_on_fix": {
+    "head": "c13a233a3",
+    "range": "d1bb4d9f4..c13a233a3",
+    "diff_sha256": "ad23badb311c012c14302379da3d432fcd0b6fa7954edc0e8ff7fef691c52761",
+    "lanes": [
+      {
+        "lane": 1,
+        "model": "claude-sonnet-5",
+        "verdict": "PASS"
+      },
+      {
+        "lane": 2,
+        "model": "claude-haiku-4-5-20251001",
+        "verdict": "PASS"
+      },
+      {
+        "lane": 3,
+        "model": "gemini-3.1-pro-high",
+        "model_self_report": "Gemini 3.1 Pro (High)",
+        "verdict": "PASS",
+        "agy_status": "SUCCESS",
+        "agy_conversation": "7bba17fe-c966-445c-ad5b-c8be7b969847"
+      }
+    ]
+  },
+  "result": "PASS 3/3 at c13a233a3 (round 1 FAIL resolved by c13a233a3)"
+}
