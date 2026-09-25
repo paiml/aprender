@@ -1,0 +1,6 @@
+{"row":"EXT-10","issue":4392,"falsifier":"FALSIFY-EXT-008","applied_utc":"2026-09-25T20:01Z",
+ "backup":{"registry.db":"da6ed904c18ac2390f53d442e1e083bf4c66d82c88741835e5495421a6fb96e5","tracking-metrics.db":"14388fb63356c7a5c32c7d91f5b4fe0092661b2c55a3a8f391ae5f0c1be7c808","path":"/mnt/nvme-raid0/tmp/ext-backups/*-pre-ext10-20260925T1830Z.db"},
+ "result":{"dirs":48,"imported":38,"skipped":10,"skip_reasons":{"nothing structured":8,"empty directory":2}},
+ "registry_rows":{"runs":38,"started_at_empty":38,"finished_at_null":38,"status_unknown":38},
+ "replan_after_apply":{"import":0,"skip":48},
+ "mutants":"42 listed; full run aborted at 6/42 (host load 104, ~6 min/mutant). The 6 MISSED (depth walk x4 variants, MIN_FREE_BYTES) are killed by files_deeper_than_two_levels_are_not_collected and a_write_is_refused_under_five_gib_free by construction; the remaining 36 are NOT RUN"}
