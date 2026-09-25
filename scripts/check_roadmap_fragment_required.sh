@@ -138,7 +138,7 @@ remedy() {
 judge() {
     local repo=$1 base=$2 head=$3
     local td roadmap_changed=0 frag_paths names name verdict eid line
-    local violations=0 checked=0 out rc
+    local violations=0 checked=0 out rc lag=0
 
     git -C "$repo" rev-parse --verify -q "$base^{commit}" >/dev/null || {
         printf 'ENV   %s: base ref %s is not a commit here — refusing to judge (never a pass)\n' "$PROG" "$base" >&2
@@ -224,7 +224,7 @@ judge() {
     # fragment-only diff leaves the aggregate LAGGING by design, and that lag
     # is not drift. Only a diff that does write roadmap.yaml (the regen PR, or
     # an allowlisted in-flight batch) must leave it == aggregate(fragments).
-    local lag=0
+    lag=0
     if [ "$roadmap_changed" = 0 ]; then
         lag=1 out="" rc=0
     else
