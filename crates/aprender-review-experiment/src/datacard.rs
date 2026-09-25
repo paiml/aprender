@@ -137,6 +137,17 @@ pub struct Snapshot {
     pub public_eligible: u64,
     pub files: Vec<IndexFile>,
     counts: BTreeMap<(String, String), u64>,
+    /// Per index day: the G15 yield inputs. Shas only, never row content.
+    days: BTreeMap<String, DayYield>,
+}
+
+/// One index day's yield: rows, distinct quorums, index bytes, blob shas.
+#[derive(Debug, Default)]
+struct DayYield {
+    rows: u64,
+    quorums: BTreeSet<String>,
+    index_bytes: u64,
+    blobs: BTreeSet<String>,
 }
 
 impl Snapshot {
@@ -158,6 +169,7 @@ impl Snapshot {
             public_eligible: 0,
             files: Vec::new(),
             counts: BTreeMap::new(),
+            days: BTreeMap::new(),
         };
         for p in paths {
             snap.add_file(root, &p)?;
@@ -172,7 +184,7 @@ impl Snapshot {
             .map_err(|e| format!("{}: {e}", p.display()))?
             .to_string_lossy()
             .into_owned();
-        day_of(&rel)?;
+        let day = day_of(&rel)?;
         let bytes = fs::read(p).map_err(|e| format!("{rel}: {e}"))?;
         let text = std::str::from_utf8(&bytes).map_err(|e| format!("{rel}: not utf-8: {e}"))?;
         let mut rows = 0;
@@ -193,8 +205,10 @@ impl Snapshot {
                 ));
             }
             self.add_row(&row);
+            self.add_yield(&day, &row);
             rows += 1;
         }
+        self.days.entry(day).or_default().index_bytes += bytes.len() as u64;
         self.files.push(IndexFile {
             rel,
             sha256: sha256_hex(&bytes),
@@ -216,6 +230,19 @@ impl Snapshot {
         }
         if public_eligible(row) {
             self.public_eligible += 1;
+        }
+    }
+
+    fn add_yield(&mut self, day: &str, row: &Value) {
+        let d = self.days.entry(day.to_string()).or_default();
+        d.rows += 1;
+        if let Some(q) = row.get("quorum_id").and_then(Value::as_str) {
+            d.quorums.insert(q.to_string());
+        }
+        for k in BLOB_SHAS {
+            if let Some(h) = row.get(k).and_then(Value::as_str).filter(|h| is_sha256(h)) {
+                d.blobs.insert(h.to_string());
+            }
         }
     }
 
@@ -255,6 +282,13 @@ impl Snapshot {
             days.last().cloned().unwrap_or_default(),
         )
     }
+}
+
+/// Row columns that address a CAS blob (`blobs/sha256/ab/cd/<sha>.zst`).
+const BLOB_SHAS: [&str; 3] = ["input_sha", "output_sha", "logits_sha"];
+
+fn is_sha256(h: &str) -> bool {
+    h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// §2.11: HF publication is gold-and-local-only; anthropic/google rows never,
@@ -694,6 +728,166 @@ fn check_field(f: &Value, ids: &BTreeSet<String>, errs: &mut Vec<String>) {
     }
 }
 
+pub const WEEKLY_SCHEME: &str = "trace-weekly-receipt-v1";
+/// G15 `[O]`: 50–200 quorums/day and at most ~0.45 TB/yr raw. The operator's
+/// band, not ours; the receipt turns G15 `[U]` into `[V]` or names what is missing.
+pub const G15_QUORUMS_PER_DAY: (u64, u64) = (50, 200);
+pub const G15_RAW_TB_PER_YEAR: f64 = 0.45;
+
+/// `YYYY-MM-DD` -> ISO 8601 week `YYYY-Www` (the year of the week's Thursday).
+pub fn iso_week(day: &str) -> Result<String, String> {
+    let p: Vec<i64> = day
+        .split('-')
+        .map(str::parse)
+        .collect::<Result<_, _>>()
+        .map_err(|e| format!("{day}: {e}"))?;
+    let [y, m, d] = p[..] else {
+        return Err(format!("{day}: want YYYY-MM-DD"));
+    };
+    let n = days_from_civil(y, m, d);
+    let thursday = n - (n + 3).rem_euclid(7) + 3;
+    let year = (y - 1..=y + 1)
+        .rev()
+        .find(|&yy| days_from_civil(yy, 1, 1) <= thursday)
+        .unwrap_or(y);
+    let week = (thursday - days_from_civil(year, 1, 1)) / 7 + 1;
+    Ok(format!("{year:04}-W{week:02}"))
+}
+
+/// Days since 1970-01-01 (proleptic Gregorian; H. Hinnant's algorithm).
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
+    era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719_468
+}
+
+/// The uncompressed size a zstd frame header declares (RFC 8878 §3.1.1.1),
+/// or None when the header does not carry it. Reads the first frame only;
+/// the blob store writes one frame per blob.
+pub fn zstd_content_size(head: &[u8]) -> Option<u64> {
+    if head.get(..4)? != [0x28, 0xB5, 0x2F, 0xFD] {
+        return None;
+    }
+    let fhd = *head.get(4)?;
+    let single = fhd & 0x20 != 0;
+    let at = 5 + usize::from(!single) + [0, 1, 2, 4][usize::from(fhd & 3)];
+    let n = match (fhd >> 6, single) {
+        (0, true) => 1,
+        (0, false) => return None,
+        (1, _) => 2,
+        (2, _) => 4,
+        _ => 8,
+    };
+    let v = head
+        .get(at..at + n)?
+        .iter()
+        .rev()
+        .fold(0u64, |a, b| (a << 8) | u64::from(*b));
+    Some(if n == 2 { v + 256 } else { v })
+}
+
+/// One blob's (stored bytes, declared raw bytes); None when it is absent.
+fn blob_size(root: &Path, sha: &str) -> Option<(u64, Option<u64>)> {
+    use std::io::Read as _;
+    let p = root
+        .join("blobs/sha256")
+        .join(&sha[..2])
+        .join(&sha[2..4])
+        .join(format!("{sha}.zst"));
+    let mut f = fs::File::open(p).ok()?;
+    let stored = f.metadata().ok()?.len();
+    let mut head = [0u8; 18];
+    let got = f.read(&mut head).ok()?;
+    Some((stored, zstd_content_size(&head[..got])))
+}
+
+#[derive(Default)]
+struct WeekYield {
+    days: Vec<u64>,
+    rows: u64,
+    index_bytes: u64,
+    blobs: BTreeSet<String>,
+}
+
+/// The weekly yield/bytes receipt (PRM-C14, G15): per ISO week, quorums/day,
+/// rows, index bytes and the CAS blobs the rows address, stored and raw.
+/// A week with a missing blob, or a blob whose raw size is undeclared, reads
+/// `unmeasured` — never `within`.
+#[allow(clippy::disallowed_methods)] // `json!` over numbers and strings
+pub fn weekly(s: &Snapshot, root: &Path) -> Result<Value, String> {
+    let mut weeks: BTreeMap<String, WeekYield> = BTreeMap::new();
+    for (day, d) in &s.days {
+        let w = weeks.entry(iso_week(day)?).or_default();
+        w.days.push(d.quorums.len() as u64);
+        w.rows += d.rows;
+        w.index_bytes += d.index_bytes;
+        w.blobs.extend(d.blobs.iter().cloned());
+    }
+    let rows: Vec<Value> = weeks.iter().map(|(k, w)| week_row(root, k, w)).collect();
+    Ok(json!({
+        "schema": WEEKLY_SCHEME,
+        "snapshot": s.id,
+        "g15": {
+            "quorums_per_day": [G15_QUORUMS_PER_DAY.0, G15_QUORUMS_PER_DAY.1],
+            "raw_tb_per_year_max": G15_RAW_TB_PER_YEAR,
+            "provenance": "[O] PRM-001 G15",
+        },
+        "weeks": rows,
+    }))
+}
+
+#[allow(clippy::disallowed_methods)] // `json!` over numbers and strings
+fn week_row(root: &Path, week: &str, w: &WeekYield) -> Value {
+    let (mut stored, mut raw, mut missing, mut undeclared) = (0u64, 0u64, 0u64, 0u64);
+    for sha in &w.blobs {
+        match blob_size(root, sha) {
+            None => missing += 1,
+            Some((st, r)) => {
+                stored += st;
+                match r {
+                    Some(r) => raw += r,
+                    None => undeclared += 1,
+                }
+            }
+        }
+    }
+    let n = w.days.len() as u64;
+    let (lo, hi) = (
+        w.days.iter().copied().min().unwrap_or(0),
+        w.days.iter().copied().max().unwrap_or(0),
+    );
+    let raw_total = w.index_bytes + raw;
+    let tb_year = raw_total as f64 / n.max(1) as f64 * 365.0 / 1e12;
+    let verdict = if missing + undeclared > 0 {
+        "unmeasured"
+    } else if lo >= G15_QUORUMS_PER_DAY.0
+        && hi <= G15_QUORUMS_PER_DAY.1
+        && tb_year <= G15_RAW_TB_PER_YEAR
+    {
+        "within"
+    } else {
+        "outside"
+    };
+    json!({
+        "week": week,
+        "days_with_rows": n,
+        "rows": w.rows,
+        "quorums": w.days.iter().sum::<u64>(),
+        "quorums_per_day_min": lo,
+        "quorums_per_day_max": hi,
+        "index_bytes": w.index_bytes,
+        "blobs": w.blobs.len(),
+        "blobs_missing": missing,
+        "blobs_raw_undeclared": undeclared,
+        "blob_bytes_stored": stored,
+        "blob_bytes_raw": raw,
+        "raw_tb_per_year": tb_year,
+        "g15": verdict,
+    })
+}
+
 /// Deterministic JSON bytes for a card.
 pub fn render(card: &Value) -> String {
     let mut s = serde_json::to_string_pretty(card).unwrap_or_default();
@@ -739,7 +933,7 @@ pub fn datasheet(s: &Snapshot, m: &CardMeta) -> String {
     o
 }
 
-/// Write `datacard/<snapshot>/{croissant.json, datasheet.md, manifest.sha256}`.
+/// Write `datacard/<snapshot>/{croissant.json, datasheet.md, manifest.sha256, weekly.json}`.
 /// Regenerating an unchanged snapshot is a no-op; a card that differs from its
 /// regeneration is refused as hand-edited and never overwritten.
 pub fn write_snapshot(root: &Path, m: &CardMeta) -> Result<PathBuf, String> {
@@ -757,6 +951,7 @@ pub fn write_snapshot(root: &Path, m: &CardMeta) -> Result<PathBuf, String> {
         ("croissant.json", render(&card)),
         ("datasheet.md", datasheet(&s, m)),
         ("manifest.sha256", s.manifest()),
+        ("weekly.json", render(&weekly(&s, root)?)),
     ];
     for (name, body) in &files {
         let p = dir.join(name);

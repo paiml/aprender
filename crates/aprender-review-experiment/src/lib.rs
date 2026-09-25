@@ -17,7 +17,8 @@
 //! - [`champion`]: the REX-11 §5.4 champion/challenger promotion gate.
 //! - [`fewshot`]: the REX-11 B1 challengers: prompt versions and leak-proof retrieval few-shot.
 //! - [`b2`]: the REX-12 B2 loop: verb-gated row status and the teacher-logit dataset receipt.
-//! - [`datacard`]: the PRA-001 T14 Croissant + Datasheet card over the agent-trace index (`trace-datacard-v1`).
+//! - [`datacard`]: PRM-C14 (was PRA T14): the Croissant + RAI card, Datasheet and G15 weekly
+//!   yield/bytes receipt over the agent-trace index (`trace-datacard-v1`).
 
 pub mod admission;
 pub mod b2;

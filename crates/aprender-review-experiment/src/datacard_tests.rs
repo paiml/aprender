@@ -230,6 +230,7 @@ fn falsify_tdc_004_a_hand_edited_card_is_refused_and_regeneration_is_idempotent(
     assert!(out.join("croissant.json").is_file());
     assert!(out.join("datasheet.md").is_file());
     assert!(out.join("manifest.sha256").is_file());
+    assert!(out.join("weekly.json").is_file());
     assert_eq!(out.parent().expect("parent"), r.0.join(DATACARD_DIR));
 
     // Regenerating the same snapshot is a no-op, not an error.
@@ -277,7 +278,10 @@ fn falsify_tdc_006_a_malformed_index_is_refused_not_skipped() {
     let r = fixture("bad");
     day(&r.0, ("2026", "09", "28"), &["{not json".to_string()]);
     let e = Snapshot::read(&r.0).expect_err("bad json refused");
-    assert!(e.contains("2026/09/28.jsonl:1"), "{e}");
+    assert!(
+        e.contains("2026/09/28.jsonl:1") && e.contains("bad json"),
+        "{e}"
+    );
 
     let r = fixture("schema");
     let foreign = row("t9", "sonnet", "anthropic", "gold", "train")
@@ -289,4 +293,143 @@ fn falsify_tdc_006_a_malformed_index_is_refused_not_skipped() {
     let empty = Root::new("empty");
     let e = Snapshot::read(&empty.0).expect_err("an empty index is not a dataset");
     assert!(e.contains("no index"), "{e}");
+}
+
+fn rowq(id: &str, quorum: &str) -> String {
+    let mut v: Value =
+        serde_json::from_str(&row(id, "sonnet", "anthropic", "silver", "train")).expect("json");
+    v["quorum_id"] = json!(quorum);
+    v.to_string()
+}
+
+/// A zstd frame header declaring `raw` bytes (single segment, 4-byte FCS).
+fn blob(root: &Path, sha: &str, head: &[u8]) {
+    let d = root.join("blobs/sha256").join(&sha[..2]).join(&sha[2..4]);
+    fs::create_dir_all(&d).expect("mkdir blob");
+    let mut b = head.to_vec();
+    b.extend_from_slice(&[0u8; 10]);
+    fs::write(d.join(format!("{sha}.zst")), b).expect("write blob");
+}
+
+const ZSTD: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
+
+fn declared(raw: u32) -> Vec<u8> {
+    let mut h = ZSTD.to_vec();
+    h.push(0xA0);
+    h.extend_from_slice(&raw.to_le_bytes());
+    h
+}
+
+#[test]
+fn falsify_tdc_007_the_weekly_receipt_measures_g15_or_says_unmeasured() {
+    let r = Root::new("weekly");
+    let (b, c) = ("b".repeat(64), "c".repeat(64));
+    day(
+        &r.0,
+        ("2026", "09", "24"),
+        &[rowq("t1", "q1"), rowq("t2", "q1"), rowq("t3", "q2")],
+    );
+    day(&r.0, ("2026", "09", "25"), &[rowq("t4", "q3")]);
+    day(&r.0, ("2026", "09", "28"), &[rowq("t5", "q4")]);
+    blob(&r.0, &b, &declared(1000));
+
+    let s = Snapshot::read(&r.0).expect("snapshot");
+    let w = weekly(&s, &r.0).expect("weekly");
+    assert_eq!(w["schema"], json!(WEEKLY_SCHEME));
+    let w39 = &w["weeks"][0];
+    assert_eq!(w39["week"], json!("2026-W39"));
+    assert_eq!(w39["days_with_rows"], json!(2));
+    assert_eq!(w39["rows"], json!(4));
+    assert_eq!(w39["quorums"], json!(3));
+    assert_eq!(w39["quorums_per_day_min"], json!(1));
+    assert_eq!(w39["quorums_per_day_max"], json!(2));
+    let idx: u64 = s.files[..2].iter().map(|f| f.bytes).sum();
+    assert_eq!(w39["index_bytes"], json!(idx));
+    assert_eq!(w39["blobs"], json!(2));
+    assert_eq!(w39["blobs_missing"], json!(1));
+    assert_eq!(w39["blob_bytes_stored"], json!(19));
+    assert_eq!(w39["blob_bytes_raw"], json!(1000));
+    assert_eq!(
+        w39["g15"],
+        json!("unmeasured"),
+        "a missing blob is not a measurement"
+    );
+    assert_eq!(w["weeks"][1]["week"], json!("2026-W40"));
+
+    // A blob whose header does not declare its size is still unmeasured.
+    blob(&r.0, &c, &[ZSTD[0], ZSTD[1], ZSTD[2], ZSTD[3], 0x00, 0x00]);
+    let w = weekly(&s, &r.0).expect("weekly");
+    assert_eq!(w["weeks"][0]["blobs_raw_undeclared"], json!(1));
+    assert_eq!(w["weeks"][0]["g15"], json!("unmeasured"));
+
+    // Every blob measured: 1–2 quorums/day is outside the [O] 50–200 band.
+    blob(&r.0, &c, &declared(500));
+    let w = weekly(&s, &r.0).expect("weekly");
+    assert_eq!(w["weeks"][0]["blob_bytes_raw"], json!(1500));
+    assert_eq!(w["weeks"][0]["g15"], json!("outside"));
+    let text = render(&w);
+    assert!(
+        !text.contains(&b) && !text.contains(SECRET_TEXT),
+        "no sha or row text"
+    );
+
+    // 50 quorums on one day, every blob measured and tiny: within.
+    let r = Root::new("weekly-in");
+    let rows: Vec<String> = (0..50)
+        .map(|i| rowq(&format!("t{i}"), &format!("q{i}")))
+        .collect();
+    day(&r.0, ("2026", "09", "24"), &rows);
+    blob(&r.0, &b, &declared(1000));
+    blob(&r.0, &c, &declared(1000));
+    let s = Snapshot::read(&r.0).expect("snapshot");
+    assert_eq!(
+        weekly(&s, &r.0).expect("weekly")["weeks"][0]["g15"],
+        json!("within")
+    );
+
+    // In the quorum band but ~4.29 GB/day raw ≈ 1.57 TB/yr: outside the 0.45 TB cap.
+    blob(&r.0, &c, &declared(u32::MAX));
+    let w = weekly(&s, &r.0).expect("weekly");
+    assert!(w["weeks"][0]["raw_tb_per_year"].as_f64().expect("f64") > G15_RAW_TB_PER_YEAR);
+    assert_eq!(w["weeks"][0]["g15"], json!("outside"));
+}
+
+#[test]
+fn falsify_tdc_008_iso_weeks_and_zstd_sizes_match_their_standards() {
+    for (day, want) in [
+        ("2026-09-24", "2026-W39"),
+        ("2026-09-28", "2026-W40"),
+        ("2026-01-01", "2026-W01"),
+        ("2027-01-01", "2026-W53"),
+        ("2021-01-03", "2020-W53"),
+        ("2024-12-30", "2025-W01"),
+        ("2020-02-29", "2020-W09"),
+    ] {
+        assert_eq!(iso_week(day).expect("day"), want, "{day}");
+    }
+    assert!(iso_week("2026-9").is_err());
+
+    let z = |tail: &[u8]| [&ZSTD[..], tail].concat();
+    assert_eq!(
+        zstd_content_size(&z(&[0x20, 5])),
+        Some(5),
+        "single segment, 1-byte FCS"
+    );
+    assert_eq!(
+        zstd_content_size(&z(&[0x40, 0x58, 0, 1])),
+        Some(512),
+        "2-byte FCS is +256"
+    );
+    assert_eq!(
+        zstd_content_size(&z(&[0xA1, 7, 0x10, 0, 0, 0])),
+        Some(16),
+        "dict id skipped"
+    );
+    assert_eq!(
+        zstd_content_size(&z(&[0x00, 0x58])),
+        None,
+        "no FCS declared"
+    );
+    assert_eq!(zstd_content_size(&[0, 1, 2, 3, 0x20, 5]), None, "not zstd");
+    assert_eq!(zstd_content_size(&z(&[0x80, 1, 2])), None, "truncated");
 }
