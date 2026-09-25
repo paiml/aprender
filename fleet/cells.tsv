@@ -1,4 +1,4 @@
-# measured 2026-09-25T09:31:50Z
+# measured 2026-09-25T10:46:50Z
 lambda-labs	apr	RED	no-sha (installed v0.69.3@ad5d07a, target v0.69.3@ad5d07a)
 lambda-labs	pv	RED	no-sha (installed v0.69.3@ad5d07a, target v0.69.3@ad5d07a)
 lambda-labs	forjar	RED	no-sha (installed v1.32.0@b12a839, target v1.32.0@b12a839)
@@ -28,7 +28,7 @@ yoga	pmat	GREEN	ok (installed nightly@edc845e, target nightly@edc845e)
 yoga	pzsh	RED	no-sha (installed nightly@b42cbbc, target nightly@b42cbbc)
 yoga	copia	RED	behind (installed nightly@2c0a3c8, target v0.3.0@b3a8dc0)
 yoga	apex	RED	mirror-unreachable (installed v-apex-0.1.0-rc.2@f2e20b6, target -)
-intel	apr	RED	no-sha (installed v0.69.3@ad5d07a, target v0.69.3@ad5d07a)
+intel	apr	GREEN	ok (installed v0.69.3@f56b899, target v0.69.3@f56b899)
 intel	apex	RED	mirror-unreachable (installed -, target -)
 intel	ollama	GREEN	ok (installed 0.34.4, target v0.34.4)
 mini	fleet-bins	RED	no-drift-rows-rc=127 (installed -, target -)
