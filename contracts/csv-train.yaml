@@ -40,6 +40,7 @@ relations:
   depends_on: [ont-sigma-v1, ont-shapes-v1]
 
 shape:
+  targetClass: csv:Dataset
   closed: true
   properties:
     - {path: csv:column, minCount: 3, maxCount: 3}
