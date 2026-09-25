@@ -218,8 +218,18 @@ manifest_rows() {
     RUNNER_TEMP="$d/rt" mrun "CI: a hung step TIMES OUT and goes red" 1 'TIMEOUT' --step-timeout 1
     t1=$SECONDS
     n=$((n + 1))
-    sleep 0.2
-    if [ -s "$d/rt/child.pid" ] && ! kill -0 "$(cat "$d/rt/child.pid")" 2> /dev/null; then
+    # A killed child whose reaper has not collected it yet is a zombie, and kill -0 still
+    # answers for a zombie: read its state instead, and give the reaper up to 2 s.
+    child_dead=0
+    if [ -s "$d/rt/child.pid" ]; then
+        cpid="$(cat "$d/rt/child.pid")"
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            cstat="$(ps -o stat= -p "$cpid" 2> /dev/null || true)"
+            case "$cstat" in "" | Z*) child_dead=1; break ;; esac
+            sleep 0.2
+        done
+    fi
+    if [ "$child_dead" = 1 ]; then
         printf 'ok   %-58s\n' "the timed-out step's background child is dead too"
     else printf 'FAIL %-58s\n' "the timed-out step's background child is dead too"; bad=1; fi
     n=$((n + 1))
