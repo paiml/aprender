@@ -184,10 +184,20 @@ binaries:
 YML
 }
 
+# SEC011: guarded delete, the repo idiom (check_cascade_converges.sh::_rm). A
+# global, not a local: the EXIT trap runs after self_test's scope is gone.
+BD_TD=
+_rm_td() {
+    local v="${BD_TD:-}"
+    case "$v" in */binary-debt-selftest.?*) ;; *) return 0 ;; esac
+    [ -n "$v" ] && [ "$v" != "/" ] && rm -rf -- "$v" || :
+}
+
 self_test() {
     local td fails=0 rows=0 ws rc out
     td=$(mktemp -d "${TMPDIR:-/tmp}/binary-debt-selftest.XXXXXX")
-    trap 'rm -rf "$td"' RETURN
+    BD_TD=$td
+    trap _rm_td EXIT
     py_fleet_state check_binary_debt yaml tomllib || { rc=$?; [ "$rc" -eq 3 ] && return 0; return "$rc"; }
     # row <want 0|1> <must-print-or-empty> <label> <mutation...>
     row() {
