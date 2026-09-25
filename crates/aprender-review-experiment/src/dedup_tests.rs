@@ -12,11 +12,6 @@ fn a_perturbed() -> String {
         .replace("row", "entry")
 }
 
-/// `A` with a line added at the end: the chain's middle link.
-fn a_extended() -> String {
-    format!("{A}+    pub fn floor(&self) -> u64 {{\n+        self.floor.max(1)\n+    }}\n")
-}
-
 fn item<'a>(id: &'a str, at: &'a str, diff: &'a str) -> Item<'a> {
     Item { id, at, diff }
 }
@@ -30,6 +25,15 @@ fn falsify_tdd_001_a_perturbed_copy_joins_its_original_and_an_unrelated_diff_doe
         item("p", "2026-09-03T00:00:00Z", &p),
     ];
     assert_eq!(clusters(&items), ["a", "b", "a"]);
+    // A diff embedded in a later, larger one: either arrival order.
+    let big = format!("{A}{}", segs(1, 5));
+    let early = [
+        item("a", "2026-09-01T00:00:00Z", A),
+        item("g", "2026-09-02T00:00:00Z", &big),
+    ];
+    assert_eq!(clusters(&early), ["a", "a"]);
+    let late = [early[1], early[0]];
+    assert_eq!(clusters(&late), ["a", "a"]);
 }
 
 #[test]
@@ -52,17 +56,37 @@ fn falsify_tdd_002_the_cluster_id_is_the_earliest_member_whatever_the_order() {
     assert_eq!(clusters(&tie), ["y", "y"]);
 }
 
+/// Segments `from..to` of a synthetic diff; each segment's literals are its own.
+fn segs(from: u32, to: u32) -> String {
+    (from..to)
+        .flat_map(|k| {
+            (0..4).map(move |j| {
+                format!("+    let v = w.get({k}).map(|x| x * {k}{j}).unwrap_or({j});\n")
+            })
+        })
+        .collect()
+}
+
 #[test]
 fn falsify_tdd_003_near_dup_chains_close_transitively() {
-    let x = a_extended();
-    let p = a_perturbed();
-    let items = [
-        item("p", "2026-09-01T00:00:00Z", &p),
-        item("b", "2026-09-02T00:00:00Z", B),
-        item("x", "2026-09-03T00:00:00Z", &x),
-        item("a", "2026-09-04T00:00:00Z", A),
+    // X~Y and Y~Z share 8 of 10 segments; X and Z share only 6.
+    let (x, y, z) = (segs(1, 11), segs(3, 13), segs(5, 15));
+    let xz = [
+        item("x", "2026-09-01T00:00:00Z", &x),
+        item("z", "2026-09-03T00:00:00Z", &z),
     ];
-    assert_eq!(clusters(&items), ["p", "b", "p", "p"]);
+    assert_eq!(
+        clusters(&xz),
+        ["x", "z"],
+        "premise: X and Z alone are not near-dups"
+    );
+    let chain = [
+        item("z", "2026-09-03T00:00:00Z", &z),
+        item("x", "2026-09-01T00:00:00Z", &x),
+        item("b", "2026-09-02T00:00:00Z", B),
+        item("y", "2026-09-04T00:00:00Z", &y),
+    ];
+    assert_eq!(clusters(&chain), ["x", "x", "b", "x"]);
 }
 
 #[test]
