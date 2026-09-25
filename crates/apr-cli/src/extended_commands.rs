@@ -1030,6 +1030,30 @@ pub enum ExtendedCommands {
               value_parser = commands::threshold_arg::parse_cosine)]
         tol_cos: f64,
     },
+    /// Per-position logit parity against llama.cpp@d1d3c3396 — the rex-cell-admission
+    /// `parity.oracle` (aprender#4444). Exit 13 = RED, 4 = incomparable input
+    #[command(name = "parity-oracle")]
+    ParityOracle {
+        /// APRRAWLG logits from the pinned llama.cpp producer
+        /// (evidence/parity/l0-1/intel/qwen35-cpu-reference/producer/apr_raw_logits.cpp)
+        #[arg(long, value_name = "FILE")]
+        reference: InputFile,
+        /// APRRAWLG logits from apr over the SAME token ids
+        #[arg(long, value_name = "FILE")]
+        subject: InputFile,
+        /// Min per-position cosine for GREEN. No default: it needs a measured basis
+        #[arg(long, value_name = "F", value_parser = commands::threshold_arg::parse_cosine)]
+        threshold: f64,
+        /// Where the threshold comes from (e.g. an evidence/parity/thresholds.yaml row)
+        #[arg(long, value_name = "TEXT")]
+        threshold_basis: String,
+        /// Fewest positions a verdict may rest on (thresholds.yaml min_positions)
+        #[arg(long, value_name = "N", default_value_t = commands::parity_oracle::DEFAULT_MIN_POSITIONS)]
+        min_positions: usize,
+        /// Receipt JSON path; its sha256 is the cell's parity.receipt_sha256
+        #[arg(short, long, value_name = "FILE")]
+        output: OutputPath,
+    },
     /// Lint an externally captured attention dump (CRUX-F-17 — no apr producer yet)
     AttnVizLint {
         /// Path to attention dump in JSON form (4-D [layers][heads][rows][cols] floats)

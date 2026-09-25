@@ -321,6 +321,23 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cli.json,
         ),
 
+        ExtendedCommands::ParityOracle {
+            reference,
+            subject,
+            threshold,
+            threshold_basis,
+            min_positions,
+            output,
+        } => commands::parity_oracle::run(
+            reference,
+            subject,
+            *threshold,
+            threshold_basis,
+            *min_positions,
+            output,
+            cli.json,
+        ),
+
         ExtendedCommands::AttnVizLint {
             attn_file,
             html_file,

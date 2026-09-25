@@ -83,6 +83,7 @@ fn registered_commands() -> Vec<&'static str> {
         "canary",
         "compare-hf",
         "parity",
+        "parity-oracle",
         "gpu",
         "profile",
         "ptx",

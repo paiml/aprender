@@ -695,6 +695,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: parity-oracle
+    category: inspection
+    description: "Per-position logit parity of apr against llama.cpp@d1d3c3396 (aprender#4444, PRM-001 v2 item 3a): two APRRAWLG files over the same token ids, min cosine vs a required --threshold + --threshold-basis; the receipt sha256 + {oracle, cosine, threshold, threshold_basis} are the rex-cell-admission-v1 parity block. Exit 13 RED, 4 incomparable input"
+    requires_model: false
+    side_effects: [filesystem]
+
   - name: rerank
     category: inference
     description: "Score a (query, passage) pair with a BERT cross-encoder loaded from an APR file (GH-326 Phase 3 + 3b). Two input modes: (1) pre-tokenised `--input-ids` + `--token-type-ids` u32 lists; (2) Phase 3b text mode — `--query` + `--passage` + `--vocab <vocab.txt>` invokes in-process WordPiece tokenisation that builds `[CLS] query [SEP] passage [SEP]` with `token_type_ids = 0` for the query side and `1` for the passage side. Emits sigmoid-mapped relevance ∈ [0,1] by default or `--raw-logit` for the raw classifier logit. Supports `--json` output."

@@ -44,6 +44,7 @@ pub(crate) mod distill;
 #[cfg(all(feature = "cuda", feature = "training", feature = "inference"))]
 pub(crate) mod distill_q4k_teacher;
 pub mod modelfile;
+pub(crate) mod parity_oracle;
 pub(crate) mod rm_gc_lint;
 
 pub(crate) mod data;
