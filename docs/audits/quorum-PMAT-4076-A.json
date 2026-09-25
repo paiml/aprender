@@ -1,0 +1,149 @@
+{
+  "ticket": "PMAT-4076",
+  "round": "A",
+  "head": "e6cf9f10b791431daf613510827b18f6c5246acd",
+  "base": "49fe19c28",
+  "rule": "operator verbatim 2026-09-24: \"one must always be a CHEAP claude code...perhaps haiku\" — 2 agy non-Claude lanes + 1 Claude Code lane on claude-haiku-4-5; the cop overrides receipt-lint on the single haiku seat",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "agy": {
+    "ticket": "PMAT-4076",
+    "base": "49fe19c28",
+    "base_resolved": "49fe19c28",
+    "base_note": "no origin/49fe19c28 exists; judged against the local ref",
+    "head": "e6cf9f10b791431daf613510827b18f6c5246acd",
+    "diff_sha256": "b189ad60036c4b6fbf536469598c915f6038c51774bc6f888a27f4265d8597ed",
+    "width": 2,
+    "executor": "agy",
+    "prompt_mode": "file",
+    "prompt_bytes": 187303,
+    "author": {
+      "model": "claude-opus-5-5",
+      "family": "claude",
+      "source": "flag"
+    },
+    "agreed": true,
+    "lanes": [
+      {
+        "lane": 1,
+        "status": "SUCCESS",
+        "verdict": "PASS",
+        "summary": "The PR accurately implements the `valid_under` gate (ONT-7) for kernel-kind contracts, validating the closed key set, `world` index resolution against `ontology.yaml`, and qualifier syntax. The PR appropriately introduces the shrink-only `contracts_without_valid_under` ratchet (PV-ONT-016), securely modifies `scripts/check_ont_ratchet.sh` to preserve the top-level debt count, and correctly updates the baseline with `386`. Tests are comprehensive and prove the correctness of the rules as demanded. There is no evidence of a weakened gate or unjustified behavior.",
+        "findings": [],
+        "raw_bytes": 2507,
+        "err_bytes": 0,
+        "envelope_status": "SUCCESS",
+        "verdict_source": "structured_output",
+        "grounding_check": "parity",
+        "model": "gemini-3.1-pro-high",
+        "model_measured": "gemini-3.1-pro-high",
+        "model_source": "measured",
+        "family": "gemini",
+        "role": "independent",
+        "fallback": {
+          "judged_by": "gemini-3.1-pro-high",
+          "exhausted": false,
+          "attempts": [
+            {
+              "model": "gemini-3.1-pro-high",
+              "family": "gemini",
+              "outcome": "answered"
+            }
+          ],
+          "skipped": []
+        }
+      },
+      {
+        "lane": 2,
+        "status": "SUCCESS",
+        "verdict": "PASS",
+        "summary": "PMAT-4076 (ONT-7) is verified and PASSES review with zero refuting findings.\n\n1. Ticket adherence:\n- Implements `metadata.valid_under` for kernel-kind contracts with the closed set of 5 keys: `world`, `toolchain`, `host_class`, `backend`, `features` (PV-ONT-013).\n- Resolves `world` against Σ's declared `worlds:`, defaulting an omitted `world` to `DEFAULT_WORLD = \"committed\"` (declared in contracts/ontology.yaml), thereby admitting the spec's Appendix B example verbatim (PV-ONT-014).\n- Validates qualifier schemas: `toolchain` must be a non-empty mapping of non-empty string pairs; `host_class`, `backend`, `features` must be non-empty sequences of non-empty strings (PV-ONT-015).\n- Enforces the shrink-only debt ratchet on `contracts_without_valid_under` (currently 386) against the top-level key of `contracts/lint-baseline.json` (PV-ONT-016).\n- Follows R-2 (zero is a decline, never an accept) when neither kernel contracts nor valid_under are present, or when Σ is missing, while rejecting malformed `valid_under` on non-kernel contracts.\n- Follows R-8: `valid-under` is computed as gate 13 in `run_lint` in every run, and exposed as named gate `pv lint --gate valid-under`.\n\n2. Baseline and regression checks:\n- Verified `scripts/check_ont_ratchet.sh --self-test` passes (27/27 ok), correctly testing that `foreign_top_keys` preserves `contracts_without_valid_under` during `measure()` and `--write`.\n- Verified `scripts/check_ont_ratchet.sh --check` returns PASS.\n- Verified `scripts/check_readme_claims.sh --claim contract_count` returns PASS (1830 contracts, matching census.json and README.md).\n- Confirmed provable contract `contracts/ont-valid-under-v1.yaml` is added, census is updated, and first live witness `contracts/ont-verdict-lattice-v1.yaml` carries `valid_under: world: committed`.\n\n3. Scope and hygiene:\n- No scope creep detected. All changes directly support the ONT-7 specification and test coverage.\n- No gates were weakened.\n- All receipt claims are backed by the diff.",
+        "findings": [],
+        "raw_bytes": 5353,
+        "err_bytes": 0,
+        "envelope_status": "SUCCESS",
+        "verdict_source": "structured_output",
+        "grounding_check": "parity",
+        "model": "gemini-3.8-flash-high",
+        "model_measured": "gemini-3.8-flash-high",
+        "model_source": "measured",
+        "family": "gemini",
+        "role": "independent",
+        "fallback": {
+          "judged_by": "gemini-3.8-flash-high",
+          "exhausted": false,
+          "attempts": [
+            {
+              "model": "gemini-3.8-flash-high",
+              "family": "gemini",
+              "outcome": "answered"
+            }
+          ],
+          "skipped": []
+        }
+      }
+    ],
+    "dissent": [],
+    "dedup": [],
+    "uncovered": [],
+    "coverage_source": "lanes",
+    "partial": false,
+    "partial_reasons": [],
+    "fallback": {
+      "same_family_width": 1,
+      "chain": [
+        {
+          "model": "gemini-3.1-pro-high",
+          "family": "gemini",
+          "disposition": "configured"
+        },
+        {
+          "model": "gemini-3.8-flash-high",
+          "family": "gemini",
+          "disposition": "configured"
+        },
+        {
+          "model": "gpt-oss-120b-medium",
+          "family": "openai",
+          "disposition": "fallback"
+        }
+      ],
+      "precheck": [
+        {
+          "family": "gemini",
+          "model": "gemini-3.1-pro-high",
+          "probe": 1,
+          "outcome": "live"
+        }
+      ],
+      "prah": {
+        "source": "install-receipt",
+        "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+      }
+    },
+    "auto_merge": {
+      "checked": false,
+      "was_armed": false,
+      "disarmed": false,
+      "note": "no --pr given: nothing to disarm"
+    },
+    "lint": {
+      "ok": true,
+      "output": "receipt complete: kind=artifact lanes=2 author=claude-opus-5-5/claude"
+    }
+  },
+  "claude_seat": {
+    "model": "claude-haiku-4-5",
+    "model_measured": [
+      "claude-haiku-4-5"
+    ],
+    "session_id": "2501b4b0-5294-4f49-90fb-335a1700b554",
+    "turns": 25,
+    "verdict": "PASS",
+    "summary": "PMAT-4076 (ONT-7) implements kernel-kind contracts carrying a world index via `metadata.valid_under`, correctly integrating gate 13 into the lint pipeline. The implementation validates four rules (PV-ONT-013/014/015/016), includes the critical Round 2 fix that non-kernel contracts with bad valid_under are rejected (not declined), and has tests positioned to catch three major code inversions. The gate is computed in every run, armed per repository, and the Appendix B example is admitted. All three required non-verdict outcomes (no Σ, malformed Σ, no kernels) properly decline with stderr messaging. Data updated: contracts count 1829→1830, ratchet baseline recorded at 386.",
+    "findings": []
+  },
+  "agreed": true
+}

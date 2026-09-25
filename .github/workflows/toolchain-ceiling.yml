@@ -86,3 +86,27 @@ jobs:
           # the script's own exit status is the verdict — do not tee it.
           export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
           setsid --wait bash scripts/check_clippy_current_stable.sh
+
+  # THE FEATURE AXIS (#3837). The ceiling above varies the TOOLCHAIN; this varies the FEATURES. `ci / lint` runs
+  # clippy without `--features cuda` and the cuda jobs run tests, never clippy, so nothing had ever linted code
+  # behind `--features cuda`: 62 findings accumulated in aprender-train/-compute, #2370's mechanism on a different
+  # axis. No CUDA toolkit is needed (the driver is dlopen'd), so any clean-room host runs it.
+  #
+  # The self-test runs FIRST and must pass before the verdict counts: it plants a cuda-only finding and requires
+  # exactly the cuda axis to go red, which proves the flags reach cargo as separate words (#3837's zsh trap made
+  # a flag string one argument and read as a lint failure).
+  clippy-feature-matrix:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          clean: false
+      - name: Self-test — an unreached feature is refused, and a planted cuda-only finding reddens only the cuda-reaching axes
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          setsid --wait bash scripts/check_clippy_feature_matrix.sh --self-test
+      - name: Strict clippy on every feature axis — the axis table must reach every apr-cli feature (derived)
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          setsid --wait bash scripts/check_clippy_feature_matrix.sh

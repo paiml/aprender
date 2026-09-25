@@ -10,10 +10,12 @@
 //! 1. an `entity_types` entry naming no extractor, or naming one `extractors[]` does not declare;
 //! 2. a Σ key no declared reader claims — an anchor nothing reads is decoration, the defect ONT-1 refused;
 //! 3. a `not_expressible` entry without a `reader`;
-//! 4. an `extractors[]` entry without a `reader`.
+//! 4. an `extractors[]` entry without a `reader`;
 //! 5. an `entity_type_target_class` key that no `entity_types` entry declares;
 //! 6. an `implemented: true` entity type with neither a class nor an explicit `~` in `entity_type_target_class`
-//!    (v4.16 D-T1: the map is cross-checked against `entity_types`, never a hand-kept list nothing reads back).
+//!    (v4.16 D-T1: the map is cross-checked against `entity_types`, never a hand-kept list nothing reads back);
+//! 7. an `entity_types` entry named `entity` — the reserved name: entity classes live at `<ONT_BASE>entity/<type>`
+//!    (#4160), so that type's property predicates `<ONT_BASE>entity/<key>` would share the classes' namespace.
 //!
 //! A `reader` is a DECLARED NAME carried beside `implemented: true|false`, not a path that must resolve today
 //! (plan v2 ruling 3): §4.1 gives `entity_types[{name, extractor, implemented}]` and ONT-4c marks four of them
@@ -165,7 +167,14 @@ pub enum SigmaError {
     TargetClassForUndeclaredType { entity_type: String },
     /// An `implemented: true` entity type with neither a class nor an explicit `~` in `entity_type_target_class`.
     ImplementedTypeWithoutTargetClass { entity_type: String },
+    /// An `entity_types` entry named [`RESERVED_ENTITY_TYPE`].
+    ReservedEntityType { entity_type: String },
 }
+
+/// The one entity-type name Σ refuses. A contract of type `t` is an instance of `<ONT_BASE>entity/<t>` and carries
+/// its properties as `<ONT_BASE><t>/<key>` (`extract::pv_contract::{entity_class, entity_predicate}`); for
+/// `t = entity` the predicate `entity/study` IS the class of every `study` contract (quorum PMAT-4160, agy lane 1).
+pub const RESERVED_ENTITY_TYPE: &str = "entity";
 
 impl fmt::Display for SigmaError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -190,6 +199,10 @@ impl fmt::Display for SigmaError {
                     "Σ key `{key}` has no reader — a key nothing reads is decoration"
                 )
             }
+            Self::ReservedEntityType { entity_type } => write!(
+                f,
+                "entity_type `{entity_type}` is reserved — `<ONT_BASE>entity/` holds the entity classes, so its properties would collide with them"
+            ),
             Self::NotExpressibleWithoutReader { key } => {
                 write!(f, "not_expressible `{key}` has no reader")
             }
@@ -247,6 +260,15 @@ impl Sigma {
 
     /// Class 1: every `entity_types` entry names an extractor `extractors[]` declares.
     fn check_entity_types(&self) -> Result<(), SigmaError> {
+        if let Some(et) = self
+            .entity_types
+            .iter()
+            .find(|et| et.name == RESERVED_ENTITY_TYPE)
+        {
+            return Err(SigmaError::ReservedEntityType {
+                entity_type: et.name.clone(),
+            });
+        }
         let declared: BTreeSet<&str> = self.extractors.iter().map(|e| e.name.as_str()).collect();
         match self
             .entity_types
@@ -533,6 +555,35 @@ readers:
                 entity_type: "pv-contract".into(),
                 extractor: String::new()
             })
+        );
+    }
+
+    #[test]
+    fn an_entity_type_named_entity_is_reserved() {
+        let y = good().replace(
+            "  - {name: pv-contract, extractor: pv_contract, implemented: false}",
+            "  - {name: pv-contract, extractor: pv_contract, implemented: false}\n  - {name: entity, extractor: pv_contract, implemented: false}",
+        );
+        let s = Sigma::from_yaml(&y).expect("parses");
+        let err = s.check_integrity().expect_err("`entity` is reserved");
+        assert_eq!(
+            err,
+            SigmaError::ReservedEntityType {
+                entity_type: "entity".into()
+            }
+        );
+        assert!(err.to_string().contains("reserved"), "{err}");
+        // The collision the rule exists for, so the rule and its reason cannot drift apart.
+        use crate::ontology::extract::pv_contract::{entity_class, entity_predicate};
+        assert_eq!(
+            entity_predicate(RESERVED_ENTITY_TYPE, "study"),
+            entity_class("study")
+        );
+        // A name merely containing it is not the reserved name.
+        let ok = good().replace("{name: pv-contract,", "{name: entity-ish,");
+        assert_eq!(
+            Sigma::from_yaml(&ok).expect("parses").check_integrity(),
+            Ok(())
         );
     }
 

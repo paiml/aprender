@@ -19,6 +19,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sha2 = { workspace = true }
+aprender-update = { workspace = true }
 
 [build-dependencies]
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version

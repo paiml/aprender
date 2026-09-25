@@ -4,9 +4,10 @@
   "armed_shapes": ["ont-shapes-v1", "ladder-measured", "ladder-green", "readme-root", "claude-md", "model-setfit-slice", "csv-train"],
   "readme": {"verified_commands":["setsid --wait bash scripts/check_readme_claims.sh"],"withdrawn":[]},
   "claude_md": {"verified_commands":["setsid --wait bash scripts/check_package_includes.sh"],"withdrawn":[]},
+  "contracts_without_valid_under": 386,
   "ont": {
     "consumer_present": true,
-    "contracts_total": 1893,
+    "contracts_total": 1894,
     "entity_types_registered": 11,
     "extractors_implemented": 11,
     "contracts_anchored": 12,

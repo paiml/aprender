@@ -207,7 +207,7 @@ readers:
   concepts: ontology/sigma.rs
   roles: lint/sigma_gate.rs, lint/relations_gate.rs
   symbols: lint/sigma_symbols.rs
-  worlds: ontology/sigma.rs
+  worlds: ontology/sigma.rs, lint/valid_under_gate.rs
   agents: ontology/sigma.rs
   entity_types: lint/sigma_gate.rs
   extractors: ontology/sigma.rs

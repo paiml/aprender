@@ -1,0 +1,27 @@
+[package]
+name = "aprender-update"
+description = "Update check and self-update for sovereign binaries: newer of release and green nightly, sha256-verified, atomic swap"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "sovereign_update"
+
+[dependencies]
+flate2 = "1.1"
+semver = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tar = "0.4"
+ureq = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

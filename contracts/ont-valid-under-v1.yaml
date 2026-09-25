@@ -1,0 +1,119 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-valid-under-v1 — kernel-kind contracts carry a world index (ONT-7)
+# (ONT-001 §4.2 `metadata.valid_under{}`, §5 ONT-7; issue #4076; ticket PMAT-4076)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::lint::valid_under_gate — PV-ONT-013..016, the census,
+#   the `contracts_without_valid_under` ratchet; `pv lint --gate valid-under`
+#   and gate 13 of the full run (R-8: computed everywhere, armed per repo).
+#
+# THE SCHEMA IS THIS ROW'S DESIGN. The spec names the key and gives one
+# example (Appendix B: qualifiers, no `world`); it pins no schema. `world`
+# indexes Σ's `worlds:`; omitted, it reads `committed`, which Σ documents as
+# "the world every contract is read in unless it says otherwise" — so the
+# spec's own example is admitted as written.
+# ─────────────────────────────────────────────────────────────────────────────
+name: ont-valid-under
+version: "1.0.0"
+scope: >
+  Where a kernel-kind contract's claim holds: the world it names in Σ, and the toolchain, host class, backend and
+  feature set that qualify it. Out of scope: whether a qualifier's VALUE is a real toolchain or backend (no
+  vocabulary is declared for them yet), and what a world means to pv-sat (ONT-5).
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: PAIML Engineering
+  description: >
+    A contract may say where its claim holds with `metadata.valid_under`; the valid-under gate refuses a block that
+    is not a mapping, is empty, carries an undeclared key, names a world Σ does not declare, or has a malformed
+    qualifier, and refuses a rise in the kernel-kind contracts that carry none.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md §4.2 (metadata.valid_under), §5 ONT-7, Appendix B, R-2, R-8'
+    - 'crates/aprender-contracts/src/lint/valid_under_gate.rs — PV-ONT-013..016'
+    - 'contracts/ontology.yaml — worlds (committed), readers ontology/sigma.rs and lint/valid_under_gate.rs'
+
+relations:
+  depends_on: [ont-sigma-v1, ont-verdict-lattice-v1]
+
+equations:
+  valid_under_admission:
+    formula: "admits(corpus) ⇔ ∀ c ∈ corpus: valid_under(c) = ∅ ∨ (keys(valid_under(c)) ⊆ K ∧ world(c) ∈ Σ.worlds ∧ wellformed(c)) ∧ without(corpus) ≤ baseline"
+    domain: "a contract corpus and the Σ that declares its worlds"
+    codomain: "Pass | Fail | Unknown"
+    invariants:
+      - "a corpus whose every valid_under resolves its world and whose debt did not rise is admitted"
+      - "a corpus with no kernel-kind contract and no valid_under is Unknown, never Pass"
+    preconditions:
+      - "Σ parses and satisfies its own integrity rules"
+    postconditions:
+      - "verdict ∈ {Pass, Fail, Unknown}"
+      - "contracts_without_valid_under ≤ baseline(contracts_without_valid_under)"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: VU-INV-001
+    property: a valid_under block carries only the five declared keys
+    formal: 'k ∈ keys(valid_under) ⇒ k ∈ K'
+    prose: false
+  - id: VU-INV-002
+    property: the world index resolves into Σ, an omitted world reading committed
+    formal: 'world(c) ∈ Σ.worlds'
+    prose: false
+  - id: VU-INV-003
+    property: a valid_under block is never empty
+    formal: 'valid_under(c) ≠ ⊥ ⇒ len(keys(valid_under(c))) ≥ 1'
+    prose: false
+  - id: VU-INV-004
+    property: the kernel-kind debt is shrink-only
+    formal: 'without(corpus) ≤ baseline'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-VU-001
+    rule: every rule fires on its own fixture, and only its own
+    prediction: the nine valid-under fixtures draw exactly PV-ONT-013/014/015/016 as tabled, and the two well-formed ones pass
+    test: cargo test -p aprender-contracts --lib lint::valid_under_gate::tests::every_fixture_draws_exactly_its_rule
+    if_fails: a rule is dead, or fires on the wrong input
+  - id: FALSIFY-VU-002
+    rule: the spec's own example is admitted
+    prediction: Appendix B's qualifiers with no world pass and are counted as committed
+    test: cargo test -p aprender-contracts --lib lint::valid_under_gate::tests::an_omitted_world_reads_committed_so_appendix_b_is_admitted
+    if_fails: the gate refuses the instance the spec gives as the shape of the key
+  - id: FALSIFY-VU-003
+    rule: an undeclared world
+    prediction: "world: mars is PV-ONT-014 naming the worlds Σ declares"
+    test: cargo test -p aprender-contracts --lib lint::valid_under_gate::tests::an_undeclared_world_is_pv_ont_014
+    if_fails: the world index indexes nothing
+  - id: FALSIFY-VU-004
+    rule: the debt ratchet
+    prediction: a rise above the baseline is PV-ONT-016; equal or lower passes; no baseline is reported, never judged
+    test: cargo test -p aprender-contracts --lib lint::valid_under_gate::tests::the_ratchet_rejects_a_rise_only
+    if_fails: a kernel contract with no world can be added unrecorded
+  - id: FALSIFY-VU-005
+    rule: zero is a decline, a bad block is still a reject
+    prediction: "no kernel and no valid_under declines; a bad valid_under on a non-kernel contract with no kernel in sight rejects"
+    test: cargo test -p aprender-contracts-cli --test ont7_valid_under_gate
+    if_fails: a decline and a reject become indistinguishable to a caller
+  - id: FALSIFY-VU-006
+    rule: R-8
+    prediction: the full `pv lint` run computes valid-under, reported and not armed
+    test: cargo test -p aprender-contracts --lib lint::tests
+    if_fails: armed_gates could name a gate no run computes
+
+qa_gate:
+  id: F-VU-001
+  name: world index
+  description: A kernel-kind contract's claim names the world it holds in (ONT-7)
+  checks:
+    - closed_key_set
+    - world_resolves_in_sigma
+    - not_empty
+    - qualifiers_wellformed
+    - debt_ratchet
+    - computed_in_every_run
+  pass_criteria: All 6 falsification tests pass; `pv lint contracts/ --gate valid-under` is Pass on the real corpus
+  falsification: 'set `world: mars` in ont-verdict-lattice-v1 → PV-ONT-014 naming `committed`; add a kernel contract with no valid_under → PV-ONT-016 (both measured on fixtures 2026-09-24)'
