@@ -1,7 +1,7 @@
 # Guard scripts that ci.yml runs OUTSIDE the guard-* jobs, so
 # `scripts/ci_guards.sh` (#4416) cannot reach them. One row each:
 #   <job> <script>  # why it is not in a guard job
-# `python3 scripts/lib/ci_guard_steps.py check-coverage` fails on a guard script
+# `bash scripts/ci_guards.sh --check-coverage` fails on a guard script
 # in a non-guard job that has no row here, and on a row whose job no longer
 # runs that script. This list should only shrink.
 workspace-test-shard check_build_rs_paths.sh  # runs against the shard's built tree

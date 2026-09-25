@@ -5,7 +5,7 @@
 # guard-tree jobs each run `bash scripts/ci_guards.sh <job>` as a single step,
 # and `make guards-local` and the pre-push hook run this same file. The steps
 # are the `<job>-steps` manifest jobs in ci.yml (`if: false`, never run by
-# GitHub), executed by scripts/lib/ci_guard_steps.py. Both places print
+# GitHub), executed by scripts/lib/ci_guard_steps.sh (bash + awk + jq). Both places print
 #   ci_guards: sha256 <runner sha> manifest <steps sha> (<jobs>)
 # so "CI and my machine ran the same guards" is a line comparison.
 #
@@ -23,15 +23,15 @@
 # Exit: 0 all ran steps passed, 1 a step failed or timed out, 2 usage / nothing ran.
 set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIB="${REPO_ROOT}/scripts/lib/ci_guard_steps.py"
-command -v python3 > /dev/null 2>&1 || { echo "ci_guards: python3 missing" >&2; exit 2; }
+LIB="${REPO_ROOT}/scripts/lib/ci_guard_steps.sh"
+command -v jq > /dev/null 2>&1 || { echo "ci_guards: jq missing" >&2; exit 2; }
 cd "$REPO_ROOT" || exit 2
 
 case "${1:-}" in
     --help|-h) sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    --list) shift; exec python3 "$LIB" list "$@" ;;
-    --sha) shift; exec python3 "$LIB" sha "$@" ;;
-    --check-coverage) shift; exec python3 "$LIB" check-coverage "$@" ;;
+    --list) shift; exec bash "$LIB" list "$@" ;;
+    --sha) shift; exec bash "$LIB" sha "$@" ;;
+    --check-coverage) shift; exec bash "$LIB" check-coverage "$@" ;;
 esac
 args=()
 while [ "$#" -gt 0 ]; do
@@ -44,4 +44,4 @@ while [ "$#" -gt 0 ]; do
         *) args+=("$1"); shift ;;
     esac
 done
-exec python3 "$LIB" run "${args[@]}"
+exec bash "$LIB" run "${args[@]}"
