@@ -91,6 +91,9 @@ crates/apr-cli/trace-*.json
 .pv/cache/
 **/.pv/cache/
 .claude/scheduled_tasks.lock
+# #2614: agent worktrees (26 GB, ~81k .rs files once) — tree-walkers (find, rg, IDE
+# indexers, backups) honour .gitignore, not one box's .git/info/exclude.
+/.claude/worktrees/
 contracts/.pv/
 per-layer-trace/
 
