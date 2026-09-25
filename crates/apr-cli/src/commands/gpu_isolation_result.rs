@@ -328,10 +328,17 @@ fn run_performance_regression_gate(
         ("ollama_parity", threshold),
         ("gpu_speedup", threshold),
     ];
+    let mut compared: Vec<&str> = Vec::new();
+    let mut not_compared: Vec<&str> = Vec::new();
     for (gate_name, gate_threshold) in &comparable_gates {
         let prev_gate = prev_report.gates.iter().find(|g| g.name == *gate_name);
         let curr_gate = current_gates.iter().find(|g| g.name == *gate_name);
 
+        if both_measured(prev_gate, curr_gate) {
+            compared.push(gate_name);
+        } else {
+            not_compared.push(gate_name);
+        }
         if let Some(msg) = detect_regression(prev_gate, curr_gate, gate_name, *gate_threshold) {
             regressions.push(msg);
         }
@@ -339,11 +346,29 @@ fn run_performance_regression_gate(
 
     let duration = start.elapsed();
 
+    // #3873: "No regressions" is a claim about comparisons that were MADE. With none
+    // made it is a skip, and the gates that could not be compared are named.
+    if regressions.is_empty() && compared.is_empty() {
+        return Ok(GateResult::skipped(
+            "performance_regression",
+            &format!(
+                "no gate measured in both runs (not compared: {}) vs {}",
+                not_compared.join(", "),
+                prev_path.display()
+            ),
+        ));
+    }
     if regressions.is_empty() {
+        let unchecked = if not_compared.is_empty() {
+            String::new()
+        } else {
+            format!("; not compared: {}", not_compared.join(", "))
+        };
         Ok(GateResult::passed(
             "performance_regression",
             &format!(
-                "No regressions (ratios >{:.0}%, throughput >{:.0}%) vs {}",
+                "No regressions in {} (ratios >{:.0}%, throughput >{:.0}%){unchecked} vs {}",
+                compared.join(", "),
                 threshold * 100.0,
                 throughput_threshold * 100.0,
                 prev_path.display()
@@ -369,6 +394,16 @@ fn run_performance_regression_gate(
 /// throughput regressions without false-failing on run-to-run GPU noise. PMAT-748.
 fn throughput_regression_threshold(base: f64) -> f64 {
     (base * 2.5).max(0.25)
+}
+
+/// #3873: the precondition under which [`detect_regression`] compares at all.
+fn both_measured(prev: Option<&GateResult>, curr: Option<&GateResult>) -> bool {
+    match (prev, curr) {
+        (Some(p), Some(c)) => {
+            !p.skipped && !c.skipped && c.value.is_some() && p.value.is_some_and(|v| v > 0.0)
+        }
+        _ => false,
+    }
 }
 
 /// Compare a single gate's value between previous and current reports for regression.
@@ -443,5 +478,60 @@ mod pmat748_perf_regression_gate_tests {
             detect_regression(Some(&prev), Some(&curr), "ollama_parity", 0.10).is_some(),
             "a real ratio regression must still be caught at the tight threshold"
         );
+    }
+}
+
+#[cfg(test)]
+mod no_regressions_needs_a_comparison_3873 {
+    use super::*;
+    use crate::commands::qa::{QaConfig, QaReport};
+    use std::time::Duration;
+
+    fn gate(name: &str, value: f64) -> GateResult {
+        GateResult::passed(name, "", Some(value), None, Duration::default())
+    }
+
+    fn run(prev: Vec<GateResult>, curr: &[GateResult]) -> GateResult {
+        let report = QaReport {
+            model: "m.gguf".to_string(),
+            passed: true,
+            gates: prev,
+            total_duration_ms: 0,
+            timestamp: "2026-09-25T00:00:00Z".to_string(),
+            summary: String::new(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            gates_registered: Vec::new(),
+            system_info: None,
+        };
+        let tmp = tempfile::NamedTempFile::new().expect("tmp");
+        std::fs::write(tmp.path(), serde_json::to_string(&report).expect("json")).expect("write");
+        let config = QaConfig {
+            previous_report: Some(tmp.path().to_path_buf()),
+            ..QaConfig::default()
+        };
+        run_performance_regression_gate(curr, &config).expect("gate runs")
+    }
+
+    #[test]
+    fn zero_comparisons_is_a_skip_not_no_regressions() {
+        let g = run(vec![], &[gate("throughput", 100.0)]);
+        assert!(g.skipped && !g.passed, "{}", g.message);
+        assert!(!g.message.contains("No regressions"), "{}", g.message);
+        assert!(g.message.contains("throughput"), "{}", g.message);
+    }
+
+    #[test]
+    fn a_pass_names_what_was_compared_and_what_was_not() {
+        let g = run(vec![gate("throughput", 100.0)], &[gate("throughput", 99.0)]);
+        assert!(g.passed, "{}", g.message);
+        assert!(g.message.contains("No regressions in throughput"), "{}", g.message);
+        assert!(g.message.contains("not compared: ollama_parity, gpu_speedup"), "{}", g.message);
+    }
+
+    #[test]
+    fn a_real_regression_still_fails() {
+        let g = run(vec![gate("gpu_speedup", 4.0)], &[gate("gpu_speedup", 1.0)]);
+        assert!(!g.passed && !g.skipped, "{}", g.message);
     }
 }
