@@ -1,0 +1,20 @@
+# pr_generated_write_allowlist.tsv — in-flight PRs that already wrote a generated
+# file when P4 (#4417) landed. Read by scripts/check_pr_generated_write_set.sh.
+#
+# Cop ruling 2026-09-25: exactly these 8 branches, each bound to its PR number, each
+# expiring at 2026-09-26T12:00:00Z (the Y4 24h batch limit) or when its PR merges.
+# A merged PR never runs again, and a NEW PR on the same branch has a new number,
+# so the PR binding is what makes "expires on merge" hold. Nothing may be ADDED:
+# the guard's self-test refuses an entry that expires after the cap or a table
+# holding more than 8 rows. Owners drop their roadmap/census edits the next time
+# they touch the branch; when they do, delete that row.
+#
+# branch	pr	expires_utc	reason
+batch/0.70.0	4372	2026-09-26T12:00:00Z	in flight at P4 (#4417): roadmap.yaml + README census
+fold/b3-contracts-ont-docs	4317	2026-09-26T12:00:00Z	in flight at P4 (#4417): roadmap.yaml + README census
+batch/b2-ci-infra	4315	2026-09-26T12:00:00Z	in flight at P4 (#4417): roadmap.yaml + README census
+batch/b1-serve-perf-runtime	4311	2026-09-26T12:00:00Z	in flight at P4 (#4417): roadmap.yaml + README census
+batch/0.69.4-epic-4249	4318	2026-09-26T12:00:00Z	in flight at P4 (#4417): roadmap.yaml (RC; cop: never red)
+PMAT-4285-rc-cut	4314	2026-09-26T12:00:00Z	in flight at P4 (#4417): roadmap.yaml
+perf/qwen35-decode-4215	4332	2026-09-26T12:00:00Z	in flight at P4 (#4417): roadmap.yaml
+perf/0694-qwen35-persistent-embed	4322	2026-09-26T12:00:00Z	in flight at P4 (#4417): roadmap.yaml
