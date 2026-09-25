@@ -786,7 +786,24 @@ def uses_checkout(sec: Section, w, ev):
             return False, {}
         rc = sec.spawn(g + ["checkout", "-q", "-B", ref, f"origin/{ref}"], None, None, 120)
         return rc == 0, {}
-    sec.log.write(f"checkout: section clone at {sec.ctx.head} (full history)\n")
+    # The fat job checks out with full history so every section can have what its
+    # own checkout asked for; a section that asked for less must not see more. A
+    # depth-1 checkout has no parents and no tags, and guards depend on that: the
+    # guard-tree ratchets fall back to the origin/main TIP when the merge-base is
+    # unreachable. `.git/shallow` naming HEAD is exactly git's depth-1 state.
+    depth = int(to_str(w.get("fetch-depth", 1)) or 1)
+    g = ["git", "-C", str(sec.workspace)]
+    if depth == 1:
+        tags = subprocess.run(g + ["tag", "-l"], capture_output=True, text=True, check=True).stdout.split()
+        if tags:
+            subprocess.run(g + ["tag", "-d", *tags], capture_output=True, check=True)
+        gitdir = subprocess.run(g + ["rev-parse", "--absolute-git-dir"], capture_output=True,
+                                text=True, check=True).stdout.strip()
+        Path(gitdir, "shallow").write_text(sec.ctx.head + "\n")
+    elif depth != 0:
+        sec.log.write(f"::error::checkout: fetch-depth {depth} is not emulated (only 0 and 1)\n")
+        return False, {}
+    sec.log.write(f"checkout: section clone at {sec.ctx.head} (fetch-depth {depth})\n")
     return True, {}
 
 
@@ -1060,8 +1077,14 @@ def emit_results_output(res: dict) -> None:
         return
     compact = {n: {"result": r["result"], "continue_on_error": r.get("continue_on_error", False)}
                for n, r in res.items()}
+    # The actions a section staged for the fat job's own steps (codecov, attest).
+    kinds = set()
+    dpath = Path(os.environ.get("RUNNER_TEMP", "/tmp")) / "fat" / "deferred.jsonl"
+    if dpath.exists():
+        kinds = {json.loads(l)["action"] for l in dpath.read_text().splitlines() if l.strip()}
     with open(out, "a") as f:
         f.write(f"results={json.dumps(compact, separators=(',', ':'))}\n")
+        f.write(f"deferred={','.join(sorted(kinds))}\n")
 
 
 def on_signal(signum, frame):
