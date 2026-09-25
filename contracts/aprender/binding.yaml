@@ -145,6 +145,18 @@ bindings:
   function: mse_loss
   status: implemented
   notes: '#4369: #[contract] site at crates/aprender-core/src/autograd/ops/similarity.rs:196 had no binding row; row added when the binding moved in-tree'
+- contract: setfit-encoder-conformance-v1.yaml
+  equation: pair_cosine_mse
+  module_path: aprender::setfit::loss
+  function: pair_cosine_mse
+  status: implemented
+  notes: '#4368: #[contract] site at crates/aprender-core/src/setfit/loss.rs:69 (feature setfit) had no binding row, so --features setfit failed to compile under the contract registry sentinel'
+- contract: setfit-encoder-conformance-v1.yaml
+  equation: setfit_encoder_forward
+  module_path: aprender::setfit::encoder
+  function: BertSentenceEncoder::forward_tokens
+  status: implemented
+  notes: '#4368: #[contract] site at crates/aprender-core/src/setfit/encoder.rs:843 (feature setfit) had no binding row, so --features setfit failed to compile under the contract registry sentinel'
 - contract: silu-kernel-v1.yaml
   equation: sigmoid
   module_path: aprender::nn::functional
