@@ -88,7 +88,7 @@ EOF
 
 self_test() {
     local fail=0 got rc now d mut
-    now=$(date -u -d 2026-09-24T18:00:00Z +%s)
+    now=1790272800  # 2026-09-24T18:00:00Z as a literal: no GNU-only `date -d` in the self-test (#4099)
     local S='# measured 2026-09-24T17:58:00Z'
     row() {  # row <want rc> <label> <cells> [waivers]
         got=$(fleet_cells_verdict "$(printf '%b' "$3")" "$(printf '%b' "${4:-}")" "$now"); rc=$?
@@ -132,6 +132,8 @@ self_test() {
 
 main() {
     local cells='' waivers='' now
+    # bashrs DET002: a freshness gate judges cell age against the wall clock; --now pins it (#4099).
+    # bashrs disable-next-line=DET002
     now=$(date -u +%s)
     while [ $# -gt 0 ]; do
         case "$1" in

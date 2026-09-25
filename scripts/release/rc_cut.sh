@@ -232,7 +232,7 @@ for ref in json.load(sys.stdin):
 
 Commit \`$D_HEAD_SHA\` on \`release/$v\`, merged $merged_at.
 Gated by CI run https://github.com/$GITHUB_REPOSITORY/actions/runs/$run_id (\`ci / gate\` and \`workspace-test\` green).
-Cut at $(date -u +%Y-%m-%dT%H:%M:%SZ). binary-release.yml attaches the apr and pv assets to this DRAFT;
+binary-release.yml attaches the apr and pv assets to this DRAFT;
 scripts/release/rc_fleet_stage.sh publishes it only after every reachable fleet host runs it (#4327).
 
 Install: \`install.sh --version $tag\`, or \`install.sh --channel rc\` for the newest rc."

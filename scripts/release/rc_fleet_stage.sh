@@ -72,6 +72,10 @@ stage_verdict() {
 # args: <dir, relative to $HOME> <bin> <asset>. Prints one line: INSTALLED <path> | <REASON> <detail>.
 INSTALL_SH='set -u
 d=$HOME/$1 bin=$2 asset=$3
+# The dir is relative to $HOME and the asset one file name in it: refuse anything else (#4099).
+case "$1" in ""|/*) echo "BAD-DIR $1"; exit 1 ;; esac
+case "$d" in *..*) echo "BAD-DIR $1"; exit 1 ;; esac
+case "$asset" in ""|*/*|*..*) echo "BAD-ASSET $asset"; exit 1 ;; esac
 cd "$d" || { echo "NO-DIR $d"; exit 1; }
 want=$(cut -d" " -f1 "$asset.sha256" 2>/dev/null)
 if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum "$asset" | cut -d" " -f1); else got=$(shasum -a 256 "$asset" | cut -d" " -f1); fi
@@ -221,11 +225,26 @@ self_test() {
     mutant 'fail arm is a no-op' 's/fail) why+="\$host failed; " ;;/fail) ;;/' 'lambda\tpass\ngx10\tfail\n'
     mutant 'unreachable counts as pass' 's/^            unreachable)$/            unreachable) continue ;; x)/' 'lambda\tpass\nintel\tunreachable\n'
 
+    # The remote install refuses a dir or asset that could leave $HOME/<dir> (#4099): it
+    # answers BAD-* before it cd's, hashes or untars anything.
+    inst() {  # inst <want first word> <label> <dir> <asset>
+        got=$(HOME=/nonexistent-4099 bash -s -- "$3" apr "$4" <<< "$INSTALL_SH" 2>/dev/null | head -n 1)
+        if [ "${got%% *}" = "$1" ]; then echo "  ok   $2"; else printf '  FAIL %s\n       want: %s\n       got:  %s\n' "$2" "$1" "$got"; fail=1; fi
+    }
+    inst BAD-DIR 'install refuses a dir with a .. segment' '../escape' a.tar.gz
+    inst BAD-DIR 'install refuses an absolute dir' /etc a.tar.gz
+    inst BAD-DIR 'install refuses an empty dir' '' a.tar.gz
+    inst BAD-ASSET 'install refuses an asset with a path' rc ../a.tar.gz
+    inst NO-DIR 'a clean dir and asset get past the guards (control)' rc a.tar.gz
+
     # A FAKE FLEET, end to end: three hosts behind a fake ssh/scp/gh. The operator's
     # acceptance (#4327): "a cut where one host fails verify does NOT publish".
     d=$(mktemp -d) || return 2
+    case "$d" in ""|*..*) return 2 ;; esac
     local tag=v9.9.9-rc.3 sha=1234567890abcdef1234567890abcdef12345678 h
     mkdir -p "$d/bin" "$d/assets" "$d/pkg"
+    # bashrs SEC010: $d is this self-test's own mktemp -d and $h a literal host name (#4099).
+    # bashrs disable-next-line=SEC010
     for h in good1 good2 bad; do mkdir -p "$d/hosts/$h/.cargo/bin"; done
     fake_bin() {  # fake_bin <name> <version line> -> a tarball + .sha256 in $d/assets
         local n=$1 a
@@ -251,7 +270,7 @@ while [ "\${1:-}" = -o ]; do shift 2; done
 h=\$1; shift
 [ -d "$d/hosts/\$h" ] || { echo "ssh: connect to host \$h: No route to host" >&2; exit 255; }
 export HOME="$d/hosts/\$h"; export PATH="\$HOME/shadow:\$HOME/.cargo/bin:/usr/bin:/bin"
-cd "\$HOME" && eval "\$*"
+cd "\$HOME" && bash -c "\$*"  # a remote shell runs the command string as a script (#4099)
 EOF
     cat > "$d/bin/scp" <<EOF
 #!/usr/bin/env bash
