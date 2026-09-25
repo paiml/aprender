@@ -266,7 +266,8 @@ fn decide_named_gate(
     shapes_opts: &ShapesOptions,
 ) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
     use provable_contracts::lint::{
-        relations_gate::RelationsOutcome, sigma_gate::SigmaOutcome, NamedGateOutcome, NAMED_GATES,
+        relations_gate::RelationsOutcome, sigma_gate::SigmaOutcome,
+        valid_under_gate::ValidUnderOutcome, NamedGateOutcome, NAMED_GATES,
     };
 
     match provable_contracts::lint::run_named_gate_with(contract_dir, name, shapes_opts) {
@@ -292,8 +293,25 @@ fn decide_named_gate(
             Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
         NamedGateOutcome::Shapes(outcome) => decide_shapes_gate(outcome),
+        NamedGateOutcome::ValidUnder(ValidUnderOutcome::NoSigma) => Err(LintDeclined {
+            reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+        }
+        .into()),
+        NamedGateOutcome::ValidUnder(ValidUnderOutcome::NoKernels { contracts_checked }) => {
+            eprintln!(
+                "valid-under: no kernel-kind contract and no valid_under in {contracts_checked} contract(s) — nothing was measured"
+            );
+            Err(LintDeclined {
+                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+            }
+            .into())
+        }
+        NamedGateOutcome::ValidUnder(ValidUnderOutcome::Malformed(e)) => {
+            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
         NamedGateOutcome::Sigma(SigmaOutcome::Ran { result, findings })
         | NamedGateOutcome::Relations(RelationsOutcome::Ran { result, findings })
+        | NamedGateOutcome::ValidUnder(ValidUnderOutcome::Ran { result, findings })
         | NamedGateOutcome::Ran { result, findings } => Ok((result, findings)),
     }
 }
