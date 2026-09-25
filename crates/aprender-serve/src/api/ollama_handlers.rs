@@ -98,13 +98,17 @@ pub struct OllamaFunctionCall {
 
 impl From<ResponseToolCall> for OllamaToolCall {
     /// Re-shape an OpenAI-style tool call (`arguments` as a JSON string) into
-    /// Ollama's shape (`arguments` as a JSON object). A string that fails to
-    /// parse as JSON (the model emitted malformed arguments) degrades to an
-    /// empty object rather than dropping the call outright — the caller still
-    /// needs the tool NAME to know a call was attempted.
+    /// Ollama's shape (`arguments` as a JSON object). Arguments that are not
+    /// a JSON object (malformed JSON, or valid JSON of another type) are kept
+    /// verbatim as `{"_raw": "<string>"}` rather than dropped or replaced by
+    /// `{}` — the caller still needs the tool NAME to know a call was
+    /// attempted, and an empty object would hide what the model emitted
+    /// (aprender#4182).
     fn from(tc: ResponseToolCall) -> Self {
-        let arguments = serde_json::from_str(&tc.function.arguments)
-            .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+        let arguments = match serde_json::from_str::<serde_json::Value>(&tc.function.arguments) {
+            Ok(v @ serde_json::Value::Object(_)) => v,
+            _ => serde_json::json!({ "_raw": tc.function.arguments }),
+        };
         Self {
             function: OllamaFunctionCall {
                 name: tc.function.name,
@@ -527,6 +531,9 @@ fn chat_stream_objects(
     // aprender#3708: a tool call has no incremental text to fragment, so it
     // rides on the terminal chunk alone — same place OpenAI's streaming path
     // puts `finish_reason: "tool_calls"` on the last SSE delta.
+    // An empty list is no tool call (aprender#4182): normalise it to `None`
+    // so it neither reports `tool_calls` nor serialises `"tool_calls": []`.
+    let tool_calls = tool_calls.filter(|calls| !calls.is_empty());
     let done_reason = if tool_calls.is_some() {
         "tool_calls"
     } else {
@@ -1061,6 +1068,119 @@ mod tests {
         assert_eq!(calls[0].function.name, "bash");
         assert_eq!(calls[0].function.arguments["command"], "ls");
         assert_eq!(calls[0].function.arguments["description"], "list");
+    }
+
+    fn response_call(arguments: &str) -> ResponseToolCall {
+        ResponseToolCall {
+            id: "call_0".to_string(),
+            call_type: "function".to_string(),
+            function: ResponseFunctionCall {
+                name: "bash".to_string(),
+                arguments: arguments.to_string(),
+            },
+        }
+    }
+
+    /// aprender#4182: arguments that are not a JSON object keep the model's
+    /// text verbatim under `_raw` — never `{}`, never a non-object value.
+    #[test]
+    fn tool_call_non_object_arguments_are_kept_raw() {
+        for raw in ["{\"command\": \"ls\"", "[1,2]", "\"ls\"", "42", ""] {
+            let call = OllamaToolCall::from(response_call(raw));
+            assert_eq!(call.function.name, "bash");
+            assert_eq!(
+                call.function.arguments,
+                serde_json::json!({ "_raw": raw }),
+                "arguments {raw:?} must survive verbatim"
+            );
+        }
+        let ok = OllamaToolCall::from(response_call("{\"command\":\"ls\"}"));
+        assert_eq!(ok.function.arguments, serde_json::json!({"command": "ls"}));
+    }
+
+    /// aprender#4182: an assistant turn carrying Ollama tool_calls (arguments
+    /// as an OBJECT) is re-encoded to the OpenAI shape (arguments as a JSON
+    /// STRING) so a multi-turn tool conversation reaches the model intact.
+    #[test]
+    fn to_chat_request_reencodes_tool_call_arguments_as_string() {
+        let msgs = vec![OllamaMessage {
+            role: "assistant".to_string(),
+            content: String::new(),
+            tool_calls: Some(vec![
+                OllamaToolCall {
+                    function: OllamaFunctionCall {
+                        name: "bash".to_string(),
+                        arguments: serde_json::json!({"command": "ls"}),
+                    },
+                },
+                OllamaToolCall {
+                    function: OllamaFunctionCall {
+                        name: "read".to_string(),
+                        arguments: serde_json::json!({"path": "a.txt"}),
+                    },
+                },
+            ]),
+        }];
+        let req = to_chat_request("m", msgs, &None, None, None);
+        let calls = req.messages[0]
+            .tool_calls
+            .as_ref()
+            .expect("tool_calls must be forwarded");
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].id, "call_0");
+        assert_eq!(calls[1].id, "call_1");
+        assert_eq!(calls[0].call_type, "function");
+        assert_eq!(calls[0].function.name, "bash");
+        let args: serde_json::Value =
+            serde_json::from_str(&calls[0].function.arguments).expect("arguments is a JSON string");
+        assert_eq!(args, serde_json::json!({"command": "ls"}));
+    }
+
+    /// aprender#4182: a message without tool calls must not serialise a
+    /// `tool_calls` key at all — Ollama clients treat its presence as a call.
+    #[test]
+    fn absent_tool_calls_are_omitted_from_json() {
+        let msg = OllamaMessage {
+            role: "assistant".to_string(),
+            content: "hi".to_string(),
+            tool_calls: None,
+        };
+        let v = serde_json::to_value(&msg).expect("serialize");
+        assert!(v.get("tool_calls").is_none(), "got {v}");
+    }
+
+    /// aprender#4182: a streamed tool call rides on the terminal chunk only,
+    /// with `done_reason: "tool_calls"`; content chunks carry no tool_calls.
+    #[test]
+    fn chat_stream_puts_tool_calls_on_the_terminal_chunk() {
+        let call = OllamaToolCall::from(response_call("{\"command\":\"ls\"}"));
+        let objs = chat_stream_objects("apr", "running ls now", Some(vec![call]), 5, 3);
+        let (last, rest) = objs.split_last().expect("non-empty");
+        assert!(!rest.is_empty(), "content must still stream");
+        for chunk in rest {
+            assert!(chunk.message.tool_calls.is_none());
+            let v = serde_json::to_value(chunk).expect("serialize");
+            assert!(v["message"].get("tool_calls").is_none(), "got {v}");
+        }
+        assert!(last.done);
+        assert_eq!(last.done_reason.as_deref(), Some("tool_calls"));
+        let v = serde_json::to_value(last).expect("serialize");
+        assert_eq!(v["message"]["tool_calls"][0]["function"]["name"], "bash");
+        assert_eq!(
+            v["message"]["tool_calls"][0]["function"]["arguments"]["command"],
+            "ls"
+        );
+    }
+
+    /// aprender#4182: an EMPTY tool-call list is no tool call — `stop`, and no
+    /// `tool_calls` key on the wire.
+    #[test]
+    fn chat_stream_empty_tool_calls_reads_as_stop() {
+        let objs = chat_stream_objects("apr", "hi", Some(vec![]), 1, 1);
+        let last = objs.last().expect("non-empty");
+        assert_eq!(last.done_reason.as_deref(), Some("stop"));
+        let v = serde_json::to_value(last).expect("serialize");
+        assert!(v["message"].get("tool_calls").is_none(), "got {v}");
     }
 
     #[test]
