@@ -482,7 +482,7 @@ fn in_backend_group(arg: &clap::Arg, cmd: &clap::Command) -> bool {
 /// [`ForeignScan::problems`], which the marker guard requires to be empty for
 /// the real `apr` tree, so a stale entry cannot sit in the list unnoticed.
 fn foreign_mounts(root: &clap::Command) -> ForeignScan {
-    let probes: [(&str, clap::Command); 6] = [
+    let probes: [(&str, clap::Command); 7] = [
         (
             "aprender_contracts_cli::cli::Commands",
             probe::<aprender_contracts_cli::cli::Commands>(),
@@ -501,6 +501,11 @@ fn foreign_mounts(root: &clap::Command) -> ForeignScan {
             probe::<aprender_zram_cli::Commands>(),
         ),
         ("cgp::cli::Commands", probe::<cgp::cli::Commands>()),
+        // `apr ptx-debug` mounts the former `aprender-ptx-debug` binary's enum (#4062).
+        (
+            "trueno_ptx_debug::cli::Command",
+            probe::<trueno_ptx_debug::cli::Command>(),
+        ),
     ];
     let mut scan = ForeignScan::default();
     for (ty, p) in &probes {
