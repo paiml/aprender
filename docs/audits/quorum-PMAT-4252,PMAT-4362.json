@@ -1,0 +1,358 @@
+{
+  "ticket": "PMAT-4252,PMAT-4362",
+  "base": "origin/batch/0.70.0",
+  "base_resolved": "origin/batch/0.70.0",
+  "base_note": "no origin/origin/batch/0.70.0 exists; judged against the local ref",
+  "head": "88af902e4614535f663bdb6297944ab7ff58f792",
+  "diff_sha256": "0a9463c61b0fc0d2b3f4081de6f08f59b3007a23b21a86d4b4e459fb87d24c27",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 31664,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I reviewed the changes and verified that all claims in the receipt regarding REX-07 Ask 2 and the PMAT-4252/PMAT-4362 criteria are properly fulfilled. `weights_identity` correctly hashes the file in 1MB chunks and tracks file size and mtime_ns, `weights_still` validates these before /health is answered, and `parse_gx10` accurately carries `model` and `model_sha256` into the receipt's provenance. Comprehensive tests were added to `test_apr_dogfood_lane_4252_parse.py` to cover these behaviors. I found no evidence refuting the receipt claims, and no regression or weakening of existing constraints. Note: `paiml-lane-witness` file was not found in the workspace git dir, so a missing value is provided.",
+      "findings": [
+        {
+          "claim": "weights_identity(path, prev) hashes the model file in 1 MiB chunks... and records {model, size, mtime_ns, model_sha256}",
+          "file": "scripts/apr_dogfood_lane_4252.py",
+          "grounding": "cited",
+          "line": 190
+        },
+        {
+          "claim": "weights_still(ident) runs when /health answers... withdraws the hash if size or mtime_ns moved",
+          "file": "scripts/apr_dogfood_lane_4252.py",
+          "grounding": "cited",
+          "line": 230
+        },
+        {
+          "claim": "parse_gx10 carries model and model_sha256 from state.json into the receipt's provenance",
+          "file": "scripts/apr_dogfood_lane_4252.py",
+          "grounding": "cited",
+          "line": 358
+        },
+        {
+          "claim": "Measured: the three lane test files are GREEN... The new rows cover: from state, absent -> null, the sha equals hashlib's...",
+          "file": "scripts/test_apr_dogfood_lane_4252_parse.py",
+          "grounding": "cited",
+          "line": 61
+        }
+      ],
+      "raw_bytes": 4358,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Review of diff for PMAT-4252 and PMAT-4362 (REX-07 Ask 2). The diff implements model weight sha256 hashing prior to server startup, stat-based cache reuse, invalidation/withdrawal upon file changes prior to /health, and carries model and model_sha256 in gx10 receipt provenance. All receipt claims are backed by the diff and tests assert the required behavior without weakening gates or expanding scope beyond the tickets.",
+      "findings": [
+        {
+          "claim": "weights_identity hashes the model file in 1 MiB chunks before apr serve starts and records model, size, mtime_ns, model_sha256, reusing previous hash on stat match",
+          "file": "scripts/apr_dogfood_lane_4252.py",
+          "grounding": "cited",
+          "line": 189
+        },
+        {
+          "claim": "weights_still withdraws the hash (null + why) if the model file size or mtime_ns changed before /health answers",
+          "file": "scripts/apr_dogfood_lane_4252.py",
+          "grounding": "cited",
+          "line": 213
+        },
+        {
+          "claim": "start_server invokes weights_identity before subprocess launch and weights_still upon /health success",
+          "file": "scripts/apr_dogfood_lane_4252.py",
+          "grounding": "cited",
+          "line": 230
+        },
+        {
+          "claim": "parse_gx10 populates model and model_sha256 into receipt provenance from watcher state, defaulting to None if absent",
+          "file": "scripts/apr_dogfood_lane_4252.py",
+          "grounding": "cited",
+          "line": 356
+        },
+        {
+          "claim": "test_apr_dogfood_lane_4252_parse.py exercises parse_gx10 extraction, null fallback, stat caching, withdrawal on change, re-hashing on update, and missing file error handling",
+          "file": "scripts/test_apr_dogfood_lane_4252_parse.py",
+          "grounding": "cited",
+          "line": 61
+        },
+        {
+          "claim": "PMAT-4252 and PMAT-4362 tasks and criteria for REX-07 Ask 2 are registered in roadmap entries and aggregated in roadmap.yaml",
+          "file": "docs/roadmaps/roadmap.yaml",
+          "grounding": "cited",
+          "line": 21503
+        }
+      ],
+      "raw_bytes": 4834,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fully implements PMAT-4252 and PMAT-4362 (REX-07 Ask 2): hashing served model weights before startup, verifying file integrity after /health responds, and propagating model path and sha256 to gx10 provenance with comprehensive test coverage. No regressions or gates weakened.",
+      "findings": [
+        {
+          "claim": "weights_identity computes sha256 of the model file prior to server start and caches the hash against path, size, and mtime_ns",
+          "file": "scripts/apr_dogfood_lane_4252.py",
+          "grounding": "cited",
+          "line": 189
+        },
+        {
+          "claim": "weights_still verifies file stat unchanged once /health responds and withdraws model_sha256 (setting None with explanation) if modified during startup",
+          "file": "scripts/apr_dogfood_lane_4252.py",
+          "grounding": "cited",
+          "line": 213
+        },
+        {
+          "claim": "parse_gx10 extracts model and model_sha256 from state and injects them into gx10 receipt provenance",
+          "file": "scripts/apr_dogfood_lane_4252.py",
+          "grounding": "cited",
+          "line": 356
+        },
+        {
+          "claim": "test_apr_dogfood_lane_4252_parse.py validates sha256 computation, caching behavior, hash withdrawal on modification, and graceful missing-file handling",
+          "file": "scripts/test_apr_dogfood_lane_4252_parse.py",
+          "grounding": "cited",
+          "line": 61
+        }
+      ],
+      "raw_bytes": 3695,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "docs/roadmaps/roadmap.yaml",
+      "line": 21503,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "PMAT-4252 and PMAT-4362 tasks and criteria for REX-07 Ask 2 are registered in roadmap entries and aggregated in roadmap.yaml"
+      ]
+    },
+    {
+      "file": "scripts/apr_dogfood_lane_4252.py",
+      "line": 189,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "weights_identity computes sha256 of the model file prior to server start and caches the hash against path, size, and mtime_ns",
+        "weights_identity hashes the model file in 1 MiB chunks before apr serve starts and records model, size, mtime_ns, model_sha256, reusing previous hash on stat match"
+      ]
+    },
+    {
+      "file": "scripts/apr_dogfood_lane_4252.py",
+      "line": 190,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "weights_identity(path, prev) hashes the model file in 1 MiB chunks... and records {model, size, mtime_ns, model_sha256}"
+      ]
+    },
+    {
+      "file": "scripts/apr_dogfood_lane_4252.py",
+      "line": 213,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "weights_still verifies file stat unchanged once /health responds and withdraws model_sha256 (setting None with explanation) if modified during startup",
+        "weights_still withdraws the hash (null + why) if the model file size or mtime_ns changed before /health answers"
+      ]
+    },
+    {
+      "file": "scripts/apr_dogfood_lane_4252.py",
+      "line": 230,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "start_server invokes weights_identity before subprocess launch and weights_still upon /health success",
+        "weights_still(ident) runs when /health answers... withdraws the hash if size or mtime_ns moved"
+      ]
+    },
+    {
+      "file": "scripts/apr_dogfood_lane_4252.py",
+      "line": 356,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "parse_gx10 extracts model and model_sha256 from state and injects them into gx10 receipt provenance",
+        "parse_gx10 populates model and model_sha256 into receipt provenance from watcher state, defaulting to None if absent"
+      ]
+    },
+    {
+      "file": "scripts/apr_dogfood_lane_4252.py",
+      "line": 358,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "parse_gx10 carries model and model_sha256 from state.json into the receipt's provenance"
+      ]
+    },
+    {
+      "file": "scripts/test_apr_dogfood_lane_4252_parse.py",
+      "line": 61,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "Measured: the three lane test files are GREEN... The new rows cover: from state, absent -> null, the sha equals hashlib's...",
+        "test_apr_dogfood_lane_4252_parse.py exercises parse_gx10 extraction, null fallback, stat caching, withdrawal on change, re-hashing on update, and missing file error handling",
+        "test_apr_dogfood_lane_4252_parse.py validates sha256 computation, caching behavior, hash withdrawal on modification, and graceful missing-file handling"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}
