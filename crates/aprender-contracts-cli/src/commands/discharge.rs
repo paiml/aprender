@@ -62,6 +62,10 @@ pub fn run(action: DischargeAction) -> Res {
             leanchecker,
             leanchecker_timeout,
             leanchecker_ulimit_v,
+            leanchecker_threads,
+            leanchecker_memory_max_gib,
+            leanchecker_cpu_quota_pct,
+            leanchecker_unscoped,
             comparator,
             lake_timeout,
         } => {
@@ -70,10 +74,14 @@ pub fn run(action: DischargeAction) -> Res {
                 validate_formalization,
             };
             let r = discharge::check(&lean_dir, &contracts, opts);
-            let lc = leanchecker.then_some(Leanchecker {
-                timeout_s: leanchecker_timeout,
-                ulimit_v_kib: leanchecker_ulimit_v,
-            });
+            let lc = leanchecker.then_some(Leanchecker::from_flags(
+                leanchecker_timeout,
+                leanchecker_ulimit_v,
+                leanchecker_threads,
+                leanchecker_memory_max_gib,
+                leanchecker_cpu_quota_pct,
+                leanchecker_unscoped,
+            ));
             finish_with(
                 Lake::new(lake_timeout),
                 r,
@@ -88,16 +96,24 @@ pub fn run(action: DischargeAction) -> Res {
             contracts,
             leanchecker_timeout,
             leanchecker_ulimit_v,
+            leanchecker_threads,
+            leanchecker_memory_max_gib,
+            leanchecker_cpu_quota_pct,
+            leanchecker_unscoped,
             lake_timeout,
         } => run_all(
             Lake::new(lake_timeout),
             "build.sh",
             &lean_dir,
             &contracts,
-            Leanchecker {
-                timeout_s: leanchecker_timeout,
-                ulimit_v_kib: leanchecker_ulimit_v,
-            },
+            Leanchecker::from_flags(
+                leanchecker_timeout,
+                leanchecker_ulimit_v,
+                leanchecker_threads,
+                leanchecker_memory_max_gib,
+                leanchecker_cpu_quota_pct,
+                leanchecker_unscoped,
+            ),
         ),
         DischargeAction::LabelRatchet {
             lean_dir,
@@ -140,11 +156,94 @@ fn gen_axioms(lean_dir: &Path, contracts: &Path, check: bool) -> Res {
     Ok(())
 }
 
-/// How `--leanchecker` runs (PVL-001 EV-6b, #4199).
+/// How `--leanchecker` runs (PVL-001 EV-6b, #4199; the caps #4348).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Leanchecker {
     pub timeout_s: u64,
     pub ulimit_v_kib: Option<u64>,
+    /// `LEAN_NUM_THREADS`: leanchecker replays one full environment (Mathlib included) per concurrent module
+    /// task, so its memory is threads x environment. Uncapped it took 51 threads and 58-67 GB on lambda (#4348).
+    pub threads: u32,
+    /// `None` = no systemd scope (`--leanchecker-unscoped`).
+    pub scope: Option<Scope>,
+}
+
+impl Leanchecker {
+    /// The `--leanchecker-*` flags, shared by `check` and `run`.
+    fn from_flags(
+        timeout_s: u64,
+        ulimit_v_kib: Option<u64>,
+        threads: u32,
+        memory_max_gib: u32,
+        cpu_quota_pct: u32,
+        unscoped: bool,
+    ) -> Self {
+        Self {
+            timeout_s,
+            ulimit_v_kib,
+            threads,
+            scope: (!unscoped).then_some(Scope {
+                memory_max_gib,
+                cpu_quota_pct,
+            }),
+        }
+    }
+}
+
+/// `systemd-run --user --scope -p MemoryMax=<G>G -p CPUQuota=<Q>%` around leanchecker (#4348, operator: "this
+/// host must be able to do other work, so never let it get overloaded").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Scope {
+    pub memory_max_gib: u32,
+    pub cpu_quota_pct: u32,
+}
+
+/// The defaults the cop ruled for lambda (#4348): <= 8 Lean threads, 24G, 800%.
+pub const LEANCHECKER_THREADS: u32 = 8;
+pub const LEANCHECKER_MEMORY_MAX_GIB: u32 = 24;
+pub const LEANCHECKER_CPU_QUOTA_PCT: u32 = 800;
+
+/// The slice the scope is created under. lambda's `agent-slice-sweep` adopts any lean/lake process OUTSIDE it into
+/// it -- measured 2026-09-25: a leanchecker in a 24G `run-*.scope` in app.slice was moved to agent.slice (96G) and
+/// grew to 71G. A scope nested in agent.slice is left alone and its own, tighter MemoryMax still binds. On a host
+/// without that slice systemd creates it as a plain transient slice.
+const AGENT_SLICE: &str = "agent.slice";
+
+/// The script `sh -c` runs; `$1` ulimit, `$2` timeout, `$3` lake.
+const RECHECK_SH: &str = r#"if [ -n "$1" ]; then ulimit -v "$1" || exit 125; fi; exec timeout -k 30 "$2" "$3" env leanchecker ProvableContracts"#;
+
+/// The argv of the leanchecker arm: `[systemd-run --user --scope -q -p MemoryMax=.. -p CPUQuota=.. --] sh -c ..`.
+/// `LEAN_NUM_THREADS` is set on the command, which a `--scope` unit inherits (it runs in the caller's process).
+fn recheck_argv(lake_bin: &str, lc: Leanchecker) -> Vec<String> {
+    let mut v: Vec<String> = Vec::new();
+    if let Some(s) = lc.scope {
+        v.extend(
+            [
+                "systemd-run".to_string(),
+                "--user".into(),
+                "--scope".into(),
+                format!("--slice={AGENT_SLICE}"),
+                "-q".into(),
+                "-p".into(),
+                format!("MemoryMax={}G", s.memory_max_gib),
+                "-p".into(),
+                format!("CPUQuota={}%", s.cpu_quota_pct),
+                "--".into(),
+            ]
+            .into_iter(),
+        );
+    }
+    let limit = lc.ulimit_v_kib.map(|k| k.to_string()).unwrap_or_default();
+    v.extend([
+        "sh".to_string(),
+        "-c".into(),
+        RECHECK_SH.into(),
+        "pv-leanchecker".into(),
+        limit,
+        lc.timeout_s.to_string(),
+        lake_bin.into(),
+    ]);
+    v
 }
 
 /// The Lean steps run only on a tree nothing else has already failed or declined: a 60-minute re-check of a tree
@@ -695,21 +794,41 @@ fn recheck(lake: Lake<'_>, lean_dir: &Path, lc: Leanchecker, r: &mut Report) {
         ));
         return;
     }
-    let limit = lc.ulimit_v_kib.map(|k| k.to_string()).unwrap_or_default();
-    let out = Command::new("sh")
-        .args([
-            "-c",
-            r#"if [ -n "$1" ]; then ulimit -v "$1" || exit 125; fi; exec timeout -k 30 "$2" "$3" env leanchecker ProvableContracts"#,
-            "pv-leanchecker",
-            &limit,
-            &lc.timeout_s.to_string(),
-            lake.bin,
-        ])
+    // A scope that cannot be created would otherwise read as leanchecker's own non-zero exit: probe it first.
+    if lc.scope.is_some() {
+        let probe = Command::new("systemd-run")
+            .args([
+                "--user",
+                "--scope",
+                &format!("--slice={AGENT_SLICE}"),
+                "-q",
+                "--",
+                "true",
+            ])
+            .output();
+        if !matches!(&probe, Ok(o) if o.status.success()) {
+            r.decline = Some(
+                "`systemd-run --user --scope` is unavailable here: leanchecker did not run (pass \
+                 --leanchecker-unscoped only on a host where an uncapped run cannot starve other work, #4348)"
+                    .to_string(),
+            );
+            return;
+        }
+    }
+    let argv = recheck_argv(lake.bin, lc);
+    let out = Command::new(&argv[0])
+        .args(&argv[1..])
+        .env("LEAN_NUM_THREADS", lc.threads.to_string())
         .current_dir(lean_dir)
         .output();
     let what = format!(
-        "lake env leanchecker ProvableContracts (timeout {}s)",
-        lc.timeout_s
+        "lake env leanchecker ProvableContracts (timeout {}s, {} threads, {})",
+        lc.timeout_s,
+        lc.threads,
+        lc.scope.map_or("unscoped".to_string(), |s| format!(
+            "scope MemoryMax={}G CPUQuota={}%",
+            s.memory_max_gib, s.cpu_quota_pct
+        ))
     );
     match out {
         Err(e) => {
@@ -805,6 +924,10 @@ mod tests {
             leanchecker: false,
             leanchecker_timeout: 3600,
             leanchecker_ulimit_v: None,
+            leanchecker_threads: LEANCHECKER_THREADS,
+            leanchecker_memory_max_gib: LEANCHECKER_MEMORY_MAX_GIB,
+            leanchecker_cpu_quota_pct: LEANCHECKER_CPU_QUOTA_PCT,
+            leanchecker_unscoped: false,
             comparator: false,
             lake_timeout: LAKE_TIMEOUT_S,
         })
@@ -988,6 +1111,8 @@ mod tests {
     const LC: Option<Leanchecker> = Some(Leanchecker {
         timeout_s: 60,
         ulimit_v_kib: None,
+        threads: 8,
+        scope: None,
     });
 
     /// PVL-001 EV-6b: leanchecker's rc decides; an ABSENT leanchecker declines and is never read as a failure.
@@ -1052,6 +1177,8 @@ mod tests {
         let t1 = Some(Leanchecker {
             timeout_s: 1,
             ulimit_v_kib: None,
+            threads: 8,
+            scope: None,
         });
         assert!(
             is_reject(&finish_with(
@@ -1077,6 +1204,8 @@ mod tests {
             Leanchecker {
                 timeout_s: 60,
                 ulimit_v_kib: Some(4_194_304),
+                threads: 8,
+                scope: None,
             },
             &mut r,
         );
@@ -1086,6 +1215,119 @@ mod tests {
             "{:?}",
             r.lines
         );
+    }
+
+    /// #4348: the thread cap reaches the checker -- a stub that prints its own `LEAN_NUM_THREADS` and fails shows it.
+    #[test]
+    fn the_thread_cap_reaches_the_checker() {
+        let (d, lean, _) = tree();
+        let shows = checker_lake(d.path(), true, 1, "x");
+        let body = std::fs::read_to_string(&shows)
+            .expect("r")
+            .replace("echo 'x'", "echo \"threads=$LEAN_NUM_THREADS\"");
+        std::fs::write(&shows, body).expect("w");
+        let mut r = Report::default();
+        let lc = Leanchecker {
+            threads: 3,
+            ..LC.expect("LC")
+        };
+        recheck(lk(&shows), &lean, lc, &mut r);
+        assert!(r.reject, "{:?}", r.lines);
+        assert!(
+            r.lines.iter().any(|l| l.contains("threads=3")),
+            "{:?}",
+            r.lines
+        );
+    }
+
+    /// #4348: scoped, the arm is `systemd-run --user --scope` with the memory and CPU caps around the same `sh -c`;
+    /// unscoped it is the bare `sh -c`.
+    #[test]
+    fn the_scope_wraps_the_checker_with_both_caps() {
+        let scoped = recheck_argv(
+            "lake",
+            Leanchecker {
+                scope: Some(Scope {
+                    memory_max_gib: 24,
+                    cpu_quota_pct: 800,
+                }),
+                ..LC.expect("LC")
+            },
+        );
+        assert_eq!(
+            scoped[..10],
+            [
+                "systemd-run",
+                "--user",
+                "--scope",
+                "--slice=agent.slice",
+                "-q",
+                "-p",
+                "MemoryMax=24G",
+                "-p",
+                "CPUQuota=800%",
+                "--"
+            ]
+        );
+        let bare = recheck_argv("lake", LC.expect("LC"));
+        assert_eq!(bare[..2], ["sh", "-c"]);
+        assert_eq!(scoped[10..], bare[..]);
+    }
+
+    /// #4348: the DEFAULT `--leanchecker` is capped -- 8 threads inside a 24G/800% scope -- on `check` and `run`
+    /// alike; only an explicit `--leanchecker-unscoped` drops the scope.
+    #[test]
+    fn the_default_leanchecker_is_capped() {
+        #[derive(clap::Parser)]
+        struct T {
+            #[command(subcommand)]
+            a: crate::cli::DischargeAction,
+        }
+        let parse = |args: &[&str]| {
+            <T as clap::Parser>::try_parse_from(std::iter::once("t").chain(args.iter().copied()))
+                .expect("parses")
+                .a
+        };
+        for a in [
+            parse(&["check", "L", "--leanchecker"]),
+            parse(&["run", "L"]),
+        ] {
+            let (t, g, q, u) = match a {
+                DischargeAction::Check {
+                    leanchecker_threads: t,
+                    leanchecker_memory_max_gib: g,
+                    leanchecker_cpu_quota_pct: q,
+                    leanchecker_unscoped: u,
+                    ..
+                }
+                | DischargeAction::Run {
+                    leanchecker_threads: t,
+                    leanchecker_memory_max_gib: g,
+                    leanchecker_cpu_quota_pct: q,
+                    leanchecker_unscoped: u,
+                    ..
+                } => (t, g, q, u),
+                _ => unreachable!(),
+            };
+            let lc = Leanchecker::from_flags(3600, None, t, g, q, u);
+            assert_eq!(
+                (lc.threads, lc.scope),
+                (
+                    8,
+                    Some(Scope {
+                        memory_max_gib: 24,
+                        cpu_quota_pct: 800
+                    })
+                )
+            );
+        }
+        match parse(&["check", "L", "--leanchecker", "--leanchecker-unscoped"]) {
+            DischargeAction::Check {
+                leanchecker_unscoped,
+                ..
+            } => assert!(leanchecker_unscoped),
+            _ => unreachable!(),
+        }
     }
 
     /// EV-8a reads the raw exits: `Some(n)` for a step that ran (124 on a timeout), `None` for one that never ran.
@@ -1121,6 +1363,8 @@ mod tests {
         let t1 = Some(Leanchecker {
             timeout_s: 1,
             ulimit_v_kib: None,
+            threads: 8,
+            scope: None,
         });
         assert_eq!(exits(&slow, true, t1), (None, Some(124)), "timeout");
     }
