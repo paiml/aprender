@@ -624,7 +624,10 @@ jobs:
         run: |
           rustup target add "$TARGET"
           rustc --version
-          cargo build --release -p apr-cli --bin apr --target "$TARGET" --locked
+          # The same sha stamp the linux lanes pass (#4110): without it build.rs may fall back to
+          # `vX.Y.Z+no-git`, which asset_version_check.sh refuses below.
+          APR_GIT_SHA_OVERRIDE="$(git rev-parse --short=9 HEAD)" \
+            cargo build --release -p apr-cli --bin apr --target "$TARGET" --locked
           {
             echo "### apr (cpu) $TARGET built on the mini"
             echo "- toolchain: $(rustc --version)"
