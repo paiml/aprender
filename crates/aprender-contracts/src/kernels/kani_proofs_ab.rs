@@ -195,9 +195,11 @@ fn verify_softmax_bounded() {
 /// Strategy: exhaustive
 /// Bound: 16 elements
 ///
-/// The gamma bound is a real precondition, not a solver convenience (PMAT-3140):
-/// the normalized value reaches sqrt(n) = 4 here, so gamma = f32::MAX overflows
-/// to inf. Kani refuted the unbounded claim with gamma = -5e31.
+/// Both bounds are real preconditions (PMAT-3140). The unbounded harness failed on
+/// the input side: Kani flagged "NaN on division" at `1.0 / rms` with |x| ~ 1.9e36,
+/// where sum(x^2) overflows. The gamma side is arithmetic, not a Kani finding: the
+/// normalized value reaches sqrt(n) = 4, so |gamma| > f32::MAX / 4 ~ 8.5e37 is inf.
+/// 1e30 is a conservative bound under that.
 #[kani::proof]
 #[kani::unwind(17)]
 fn verify_rmsnorm_finiteness() {
