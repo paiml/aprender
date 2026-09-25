@@ -59,6 +59,12 @@ rpg_verdict() {
     fi
 }
 
+# Pure: `cargo metadata` JSON on stdin -> every member whose `publish` is not `[]`, sorted,
+# one per line; one empty line when there is none. jq, not python3 (#4352).
+rpg_publishable() {
+    jq -r '[.packages[] | select(.publish != []) | .name] | sort | if . == [] then "" else .[] end'
+}
+
 self_test() {
     local fail=0 got want args why
     echo "$PROG self-test: case table"
@@ -76,6 +82,12 @@ red|1 2 0|a defect found outranks a check that could not run
 env|0 0 101|an unexpected exit code is not a pass
 env|0 0|a missing check is not a pass
 EOF
+    got=$(echo '{"packages":[{"name":"z","publish":null},{"name":"a","publish":["crates-io"]},{"name":"m","publish":[]}]}' | rpg_publishable | tr '\n' ,)
+    if [ "$got" = "a,z," ]; then echo "  ok   publishable: publish=[] dropped, the rest sorted"
+    else echo "  FAIL publishable: wanted a,z, got $got"; fail=1; fi
+    got=$(echo '{"packages":[{"name":"m","publish":[]}]}' | rpg_publishable | wc -l)
+    if [ "$got" = 1 ]; then echo "  ok   publishable: none -> one empty line (package_walk reads it as ENV)"
+    else echo "  FAIL publishable: none gave $got lines"; fail=1; fi
     # MECHANISM: a fake cargo records what package_walk asked for. --verify must drop
     # --no-verify (else the "dry-run" compiles nothing), and the default must keep it.
     local d; d=$(mktemp -d) || return 1
@@ -104,7 +116,7 @@ package_walk() {
     [ "${2:-}" = --verify ] && mode=''
     local -a sel=()
     mapfile -t sel < <(cargo metadata --no-deps --offline --format-version 1 --manifest-path "$root/Cargo.toml" 2>/dev/null \
-        | python3 -c 'import json,sys; print("\n".join(sorted(map(lambda p: p["name"], filter(lambda p: p.get("publish") != [], json.load(sys.stdin)["packages"])))))')
+        | rpg_publishable)
     n=${#sel[@]}
     if [ "$n" -eq 0 ] || [ -z "${sel[0]}" ]; then
         echo "ENV   package: cargo metadata names no publishable member in $root"
