@@ -149,24 +149,33 @@ fn emit_pre_post(
 }
 
 fn enforce_provable_binding() {
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("provable-contracts/contracts/simular/binding.yaml");
+    let binding_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/simular/binding.yaml");
 
     println!("cargo:rerun-if-changed={}", binding_path.display());
 
-    if !binding_path.exists() {
-        return;
+    // #4369: in the monorepo the registry is in-tree, so a missing one is a
+    // defect, never a crates.io build. Only a packaged crate (no workspace
+    // `contracts/` beside it) may fall back to CONTRACT_BINDING_SOURCE=none.
+    if !binding_path.exists()
+        && Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts")
+            .is_dir()
+    {
+        panic!(
+            "contract binding registry missing: {} -- restore it or fix the path (#4369)",
+            binding_path.display()
+        );
     }
-    let Ok(yaml) = std::fs::read_to_string(&binding_path) else {
+
+    let Some(bf) = std::fs::read_to_string(&binding_path)
+        .ok()
+        .and_then(|yaml| serde_yaml::from_str::<BindingFile>(&yaml).ok())
+    else {
+        println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=none");
         return;
     };
-    let Ok(bf) = serde_yaml::from_str::<BindingFile>(&yaml) else {
-        return;
-    };
+    println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=binding.yaml");
 
     let gaps = emit_binding_vars(&bf);
     let total = u32::try_from(bf.bindings.len()).unwrap_or(u32::MAX);

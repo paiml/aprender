@@ -50,13 +50,21 @@ struct Binding {
 ///
 /// "softmax-kernel-v1.yaml" + "softmax" -> "CONTRACT_SOFTMAX_KERNEL_V1_SOFTMAX"
 fn binding_env_var_name(contract: &str, equation: &str) -> String {
-    let stem = contract
-        .trim_end_matches(".yaml")
-        .trim_end_matches(".yml")
-        .to_uppercase()
-        .replace('-', "_");
+    let stem = contract_stem(contract).to_uppercase().replace('-', "_");
     let eq = equation.to_uppercase().replace('-', "_");
     format!("CONTRACT_{stem}_{eq}")
+}
+
+/// "../format-parity-v1.yaml" -> "format-parity-v1". A registry row may name
+/// its contract by a relative path; the key is built from the file stem only
+/// (#4369: `CONTRACT_../FORMAT_PARITY_V1_*` could never match a site).
+fn contract_stem(contract: &str) -> &str {
+    contract
+        .rsplit('/')
+        .next()
+        .unwrap_or(contract)
+        .trim_end_matches(".yaml")
+        .trim_end_matches(".yml")
 }
 
 /// Contracts allowed to remain `not_implemented` without failing the build.
@@ -67,6 +75,21 @@ const ALLOWED_GAPS: &[(&str, &str)] = &[
     ("ssm-kernel-v1", "ssm_discretize"),
     ("ssm-kernel-v1", "ssm_scan"),
     ("ssm-kernel-v1", "selective_gate"),
+    // #4369: recorded `not_implemented` in contracts/aprender/binding.yaml
+    // while this build script read a path that no longer existed, so the
+    // policy never saw them. Listed as found; each is an open gap under #4369.
+    ("apr-cli-operations-v1", "inference_determinism"),
+    ("apr-data-pipeline-v1", "streaming_data_loader"),
+    ("apr-format-safety-v1", "header_integrity"),
+    ("apr-format-safety-v1", "magic_byte_validation"),
+    ("apr-gpu-backend-v1", "generation_temperature_zero"),
+    ("bidirectional-attention-v1", "bidirectional_attention"),
+    ("encoder-forward-v1", "cls_pooling"),
+    ("format-parity-v1", "element_count"),
+    ("format-parity-v1", "transpose_involution"),
+    ("linear-probe-classifier-v1", "linear_probe"),
+    ("setfit-apr-v1", "doc_bundle_bijection"),
+    ("setfit-apr-v1", "selection_lock_lifecycle"),
 ];
 
 /// Returns true if the new status is dominated by what we already have.
@@ -101,12 +124,8 @@ fn dedup_bindings(
         }
 
         seen.insert(var_name.clone(), binding.status.clone());
-        let contract_stem = binding
-            .contract
-            .trim_end_matches(".yaml")
-            .trim_end_matches(".yml")
-            .to_string();
-        seen_raw.insert(var_name, (contract_stem, binding.equation.clone()));
+        let stem = contract_stem(&binding.contract).to_string();
+        seen_raw.insert(var_name, (stem, binding.equation.clone()));
     }
 
     (seen, seen_raw)
@@ -143,17 +162,25 @@ fn enforce_all_implemented(unallowed_gaps: &[String]) {
 /// `ALLOWED_GAPS` fails the build. This ensures all algorithm contracts
 /// have working implementations before code compiles.
 fn emit_provable_contract_bindings() {
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("aprender")
-        .join("binding.yaml");
+    let binding_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/aprender/binding.yaml");
 
     // Always tell Cargo to re-run if the file appears or changes
     println!("cargo:rerun-if-changed={}", binding_path.display());
+
+    // #4369: in the monorepo the registry is in-tree, so a missing one is a
+    // defect, never a crates.io build. Only a packaged crate (no workspace
+    // `contracts/` beside it) may fall back to CONTRACT_BINDING_SOURCE=none.
+    if !binding_path.exists()
+        && Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts")
+            .is_dir()
+    {
+        panic!(
+            "contract binding registry missing: {} -- restore it or fix the path (#4369)",
+            binding_path.display()
+        );
+    }
 
     if !binding_path.exists() {
         // Graceful fallback: CI/crates.io builds won't have the sibling repo.
