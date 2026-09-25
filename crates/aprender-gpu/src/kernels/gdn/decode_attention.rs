@@ -390,6 +390,41 @@ mod ptx_tests {
         let refused_gqa = std::panic::catch_unwind(|| DecodeAttention256Kernel::new(16, 5, 256));
         assert!(refused_gqa.is_err(), "num_kv_heads must divide num_heads");
     }
+
+    /// #3522 OXIDE-001: the cuda-oxide port of [`DecodeAttention256Kernel`] times
+    /// itself against the hand PTX committed under
+    /// `experiments/cuda-oxide/decode-attention/baseline-ptx/`. The head counts are
+    /// baked into the PTX, so there is one baseline per Qwen3.5 attention shape
+    /// (16/2, 16/4, 24/4 query/KV heads, head_dim 256) per target, at the default
+    /// 4096-position pass.
+    ///
+    /// Regenerate: `APR_BLESS_PTX=1 cargo test -p aprender-gpu --features cuda --lib gdn_decode_attention_ptx_golden`
+    #[test]
+    fn gdn_decode_attention_ptx_golden() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../experiments/cuda-oxide/decode-attention/baseline-ptx");
+        let bless = std::env::var_os("APR_BLESS_PTX").is_some();
+        for (nh, nkv) in [(16u32, 2u32), (16, 4), (24, 4)] {
+            let kernel = DecodeAttention256Kernel::new(nh, nkv, 256);
+            for target in ["sm_89", "sm_121"] {
+                let path = dir.join(format!("gdn_decode_attention.h{nh}kv{nkv}.{target}.ptx"));
+                let ptx = kernel.emit_ptx_for_target(target);
+                if bless {
+                    std::fs::create_dir_all(&dir).expect("baseline dir");
+                    std::fs::write(&path, &ptx).expect("write baseline");
+                    continue;
+                }
+                let golden = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+                    panic!("{}: {e} (bless with APR_BLESS_PTX=1)", path.display())
+                });
+                assert!(
+                    golden == ptx,
+                    "{} drifted from the emitter; re-bless and re-run the #3522 receipts",
+                    path.display()
+                );
+            }
+        }
+    }
 }
 
 /// Device parity against a verbatim port of `forward_attention`'s attention block.
