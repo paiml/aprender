@@ -41,7 +41,7 @@ KEYS = ("id", "title", "evidence", "repro", "suspected_epic", "severity", "found
 d = pathlib.Path(sys.argv[1])
 bad, seen, rows = [], {}, 0
 for f in sorted(d.glob("*.jsonl")):
-    for n, raw in enumerate(f.read_text().splitlines(), 1):
+    for n, raw in enumerate(f.read_text().split("\n"), 1):  # not splitlines(): U+2028 is valid inside a JSON string
         if not raw.strip():
             continue
         rows += 1
@@ -132,6 +132,8 @@ self_test() {
     case_ bad-id 1 'characters outside' "${good/F-1/F 1}"
     case_ duplicate-key 1 'key(s) given twice severity' "${good/\"severity\":\"P1\"/\"severity\":\"P9\",\"severity\":\"P1\"}"
     case_ duplicate-id 1 "duplicate id 'F-1'" "$good" "$good"
+    # a raw U+2028 inside a string is valid JSON; the row splitter must not break on it
+    case_ raw-u2028 0 '1 row(s)' "${good/\"title\":\"t\"/\"title\":\"t$(printf '\342\200\250')u\"}"
     # a duplicate across two FILES is still a duplicate
     mkdir -p "$tmp/dup-files"
     printf '%s\n' "$good" > "$tmp/dup-files/a.jsonl"
