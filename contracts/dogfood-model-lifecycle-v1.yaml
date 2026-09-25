@@ -1,0 +1,280 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-25'
+  author: PAIML Engineering
+  registry: true
+  description: >
+    EXT-001 dogfood model lifecycle. Every model apr trains, distills, merges,
+    quantizes or prunes is recorded in the pacha registry with its run, its
+    parents and its evals. Release candidates are promoted only on external
+    evidence, and published revisions are immutable and carry their upstream
+    license. The obligations are the spec's invariants I-1..I-14, and each
+    FALSIFY-EXT-NNN names the test that discharges it and the row that owes it.
+    A falsifier whose test does not exist yet is OWED, not evaluated: an
+    `#[ignore]` stub counts as zero.
+  references:
+  - 'paiml/infra docs/specifications/EXT-001-dogfood-model-lifecycle.md §4 (invariants), §9 (falsifiers)'
+  - 'paiml/aprender#4381 — EXT-001 epic (rows EXT-00..31 = #4382..#4413)'
+  - 'evidence/ext-001/EXT-00/ext-bind-receipt.json — ground truth bound at a5efa144'
+  - 'contracts/apr-model-lifecycle-v1.yaml — format-level lifecycle (pull/import/export)'
+  depends_on:
+  - apr-model-lifecycle-v1
+
+equations:
+  run_records_model:
+    formula: |
+      verb(inputs) -> (run, model)  for verb in {train, finetune, distill, merge, quantize, prune}
+        runs'    = runs    ∪ {run}
+        models'  = models  ∪ {model},  model.content_hash = sha256(file(model))
+        lineage' = lineage ∪ {(p, model, edge(verb)) | p ∈ parents(verb, inputs)}
+                           ∪ {(run, model, produced)}
+    domain: a lifecycle verb invoked without --no-track on an identified engine build
+    codomain: one runs row, one models row, and the verb's lineage edges
+    invariants:
+    - every model row created by a verb has an inbound produced edge
+    - content_hash is the sha256 of the file at registration
+    - lineage is acyclic
+    preconditions:
+    - engine identity (apr_version, git_sha | crates_io_tarball_sha) is known and clean
+    postconditions:
+    - fsck reports 0 dangling pointers
+
+  promotion_is_external:
+    formula: |
+      promote(candidate, incumbent) = released
+        iff  ∀ g ∈ {M-CR, M0..M6}: g(candidate) = green
+        ∧    evidence(candidate) ∩ verdicts_by(candidate) = ∅
+        ∧    manifest(train(candidate)) ∩ sealed_eval_hashes = ∅
+    domain: a release candidate with ≥1 evals row per sealed suite
+    codomain: released | rejected | underpowered(n_required)
+    invariants:
+    - the candidate never judges itself
+    - the sealed manifest sha is fixed in the contract
+    preconditions:
+    - candidate has an evals row per suite
+    postconditions:
+    - promotion without an eval row is refused
+
+  publish_is_immutable:
+    formula: |
+      publish(model, version) -> revision
+        files(revision) = files(pack(model)) ∪ {LICENSE, NOTICE?}
+        ∀ t > publish_time: files(tag(version), t) = files(tag(version), publish_time)
+    domain: a promoted model and a version never published before
+    codomain: an HF revision and a GHCR digest
+    invariants:
+    - pack is byte-deterministic
+    - a yank never deletes; a fix is a new version
+    preconditions:
+    - the upstream license is present in the pack
+    postconditions:
+    - the post-publish re-download sha equals the pack sha
+
+proof_obligations:
+- id: EXT-INV-001
+  type: invariant
+  property: No orphan model
+  formal: '∀ m ∈ models created by a verb, ∃ r ∈ runs, (r, m, produced) ∈ lineage'
+  applies_to: run_records_model
+- id: EXT-INV-002
+  type: invariant
+  property: Hash truth
+  formal: '∀ m ∈ models: m.content_hash ≡ sha256(file(m)) at registration; rehash(m) ≠ m.content_hash ⇒ RED'
+  applies_to: run_records_model
+- id: EXT-INV-003
+  type: classification
+  property: Provenance honesty
+  formal: 'provenance ∈ {recorded, backfilled, imported}; backfilled never feeds a recorded claim, card or ledger column unlabeled'
+  applies_to: run_records_model
+- id: EXT-INV-004
+  type: independence
+  property: Test isolation
+  formal: '∀ p ∈ test_processes: opened(p) ∩ {$HOME/.entrenar, $HOME/.pacha} ≡ ∅'
+  applies_to: run_records_model
+- id: EXT-INV-005
+  type: soundness
+  property: Engine identity
+  formal: '∀ r ∈ runs: identity(r) ≡ (apr_version, git_sha ∨ crates_io_tarball_sha); dirty(build) ∨ unknown(build) ⇒ start_run refused ∧ message ∋ "--no-track"'
+  applies_to: run_records_model
+- id: EXT-INV-006
+  type: invariant
+  property: Referential integrity
+  formal: '∀ r ∈ runs: resolves(r.run_json.metrics_db) ∧ r.run_json.run_id ∈ runs(r.run_json.metrics_db)'
+  applies_to: run_records_model
+- id: EXT-INV-007
+  type: determinism
+  property: Export determinism
+  formal: 'unchanged(host) ⇒ bytes(export₁(host)) ≡ bytes(export₂(host))'
+  applies_to: run_records_model
+- id: EXT-INV-008
+  type: invariant
+  property: Release immutability
+  formal: '∀ t ≥ t_publish: files(tag, t) ≡ files(tag, t_publish); yank(tag) ⇒ fetchable(tag)'
+  applies_to: publish_is_immutable
+- id: EXT-INV-009
+  type: independence
+  property: External judge
+  formal: 'evidence(c) ∩ verdicts_by(c) ≡ ∅ ∧ sha(sealed_manifest) ≡ contract.sealed_manifest_sha'
+  applies_to: promotion_is_external
+- id: EXT-INV-010
+  type: soundness
+  property: Card truth
+  formal: '∀ n ∈ numbers(card): ∃ r ∈ receipts, maps(n, r)'
+  applies_to: publish_is_immutable
+- id: EXT-INV-011
+  type: independence
+  property: No contamination
+  formal: 'manifest(training) ∩ sealed_eval_hashes == ∅'
+  applies_to: promotion_is_external
+- id: EXT-INV-012
+  type: independence
+  property: Recusal
+  formal: '∀ pr: paths(pr) ∩ dogfood_gate_paths ≠ ∅ ⇒ apr_lane ∉ voters(pr)'
+  applies_to: promotion_is_external
+- id: EXT-INV-013
+  type: completeness
+  property: License carry
+  formal: '∀ rev ∈ published: LICENSE ∈ files(rev) ∧ (NOTICE ∈ files(upstream) ⇒ NOTICE ∈ files(rev))'
+  applies_to: publish_is_immutable
+- id: EXT-INV-014
+  type: soundness
+  property: Self-generated data needs an external label
+  formal: '∀ row ∈ dataset: row.origin ≡ self_generated ⇒ external_label(row) ≠ ⊥'
+  applies_to: run_records_model
+
+# An OWED falsifier carries no `test:` binding: its test does not exist yet,
+# and strict-test-binding refuses a citation of a test that no `cargo test`
+# can run (baseline 0). `if_fails` names the owing row and the planned test
+# ("owed EXT-NN #issue; planned: cargo test ..."). The row that writes the test
+# adds `test:` and drops "owed". An `#[ignore]` stub counts as zero.
+falsification_tests:
+- id: FALSIFY-EXT-001
+  obligation: EXT-INV-004
+  rule: Test isolation
+  prediction: the canary DB sha at the real-home path is unchanged after the workspace nextest run
+  if_fails: 'a test writer resolved $HOME/.entrenar or $HOME/.pacha; removing the env override must turn this RED (owed EXT-02 #4384; planned: cargo test -p aprender-train --test ext_isolation falsify_ext_001_canary_unchanged)'
+- id: FALSIFY-EXT-002
+  obligation: EXT-INV-006
+  rule: Reaper spares live runs
+  prediction: apr runs gc leaves the planted live pid and the planted reused-pid run alone
+  if_fails: 'liveness keyed on pid alone instead of (host, boot_id, pid, proc_start_time) (owed EXT-03 #4385; planned: cargo test -p apr-cli --test ext_runs_gc falsify_ext_002_gc_spares_live_and_reused_pid)'
+- id: FALSIFY-EXT-003
+  obligation: EXT-INV-006
+  rule: PachaBackend round-trips and fsck sees dangling pointers
+  prediction: round-trip preserves every run; a planted dangling metrics_db pointer makes apr runs fsck exit non-zero
+  if_fails: 'fsck does not resolve the pointer join (owed EXT-04 #4386; planned: cargo test -p aprender-train --test ext_pacha_backend falsify_ext_003_fsck_dangling_pointer)'
+- id: FALSIFY-EXT-004
+  obligation: EXT-INV-001,EXT-INV-002
+  rule: Train verbs record by default
+  prediction: finetune on a tmp pacha home gives runs +1, lineage +3 (base, dataset, produced), models +1, output sha matches
+  if_fails: 'a verb skips a lineage edge or registers a hash of the wrong bytes (owed EXT-05 #4387; planned: cargo test -p apr-cli --test ext_train_verbs falsify_ext_004_train_delta)'
+- id: FALSIFY-EXT-005
+  obligation: EXT-INV-001
+  rule: Edge type and parent count per verb
+  prediction: distill/merge(N)/quantize/prune each write the case-table edge type with the case-table parent count
+  if_fails: 'a verb records the wrong edge type or drops a merge parent (owed EXT-06 #4388; planned: cargo test -p apr-cli --test ext_train_verbs falsify_ext_005_edge_case_table)'
+- id: FALSIFY-EXT-006
+  obligation: EXT-INV-001
+  rule: Lineage is acyclic
+  prediction: a 3-hop fixture gives 3 nodes and 2 edges; a cycle fixture is refused
+  if_fails: 'lineage traversal loops or accepts a cycle (owed EXT-07 #4389; planned: cargo test -p apr-cli --test ext_lineage falsify_ext_006_cycle_refused)'
+- id: FALSIFY-EXT-007
+  obligation: EXT-INV-009
+  rule: Promotion needs an eval row
+  prediction: promote without an evals row for the candidate is refused
+  if_fails: 'promotion reads absent evidence as passing (owed EXT-12 #4394; planned: cargo test -p apr-cli --test ext_promote falsify_ext_007_promote_without_eval_refused)'
+- id: FALSIFY-EXT-008
+  obligation: EXT-INV-003
+  rule: Backfill never fabricates
+  prediction: apr runs import writes NULL for every unknown field and provenance=backfilled
+  if_fails: 'backfill invents a hash, time or metric it could not read (owed EXT-10 #4392; planned: cargo test -p apr-cli --test ext_backfill falsify_ext_008_backfill_never_fabricates)'
+- id: FALSIFY-EXT-009
+  obligation: EXT-INV-005
+  rule: Engine identity at start_run
+  prediction: a dirty or unidentifiable engine build is refused at start_run and the message names --no-track
+  if_fails: 'a run is recorded against an engine nobody can rebuild (owed EXT-05 #4387; planned: cargo test -p aprender-train --test ext_pacha_backend falsify_ext_009_dirty_engine_refused)'
+- id: FALSIFY-EXT-010
+  obligation: EXT-INV-007
+  rule: Export feeds the ledger
+  prediction: deleting one export row turns the ledger test RED; re-export of an unchanged host is byte-identical
+  if_fails: 'the ledger does not check the export it cites (owed EXT-22 #4404; planned: cargo test -p apr-cli --test ext_export falsify_ext_010_deleted_export_row_red)'
+- id: FALSIFY-EXT-011
+  obligation: EXT-INV-009
+  rule: Training write perimeter
+  prediction: a training process cannot read the publish token nor write the sealed manifest or promotion contract
+  if_fails: 'the candidate can influence its own promotion evidence (owed EXT-04 #4386; planned: cargo test -p aprender-train --test ext_perimeter falsify_ext_011_train_cannot_reach_token_or_manifest)'
+- id: FALSIFY-EXT-012
+  obligation: EXT-INV-011
+  rule: No contamination at dataset registration
+  prediction: a planted sealed-item hash in a training manifest is refused at registration
+  if_fails: 'sealed eval items can reach training (owed EXT-08 #4390; planned: cargo test -p apr-cli --test ext_datasets falsify_ext_012_sealed_leak_refused)'
+- id: FALSIFY-EXT-013
+  obligation: EXT-INV-014
+  rule: Self-generated data is labeled
+  prediction: a planted unlabeled self_generated row is refused at registration
+  if_fails: 'collapse controls are bypassable (owed EXT-08 #4390; planned: cargo test -p apr-cli --test ext_datasets falsify_ext_013_unlabeled_self_generated_refused)'
+- id: FALSIFY-EXT-014
+  obligation: EXT-INV-008
+  rule: Pack is deterministic
+  prediction: two apr model pack runs over the same model are byte-identical
+  if_fails: 'pack embeds a timestamp, ordering or host detail (owed EXT-11 #4393; planned: cargo test -p apr-cli --test ext_model_pack falsify_ext_014_pack_byte_identical)'
+- id: FALSIFY-EXT-015
+  obligation: EXT-INV-009
+  rule: Model gates fire
+  prediction: each gate M0..M6 turns RED on its plant; an underpowered M2 refuses promotion
+  if_fails: 'a gate cannot fail (owed EXT-12 #4394; planned: cargo test -p apr-cli --test ext_promote falsify_ext_015_gates_red_on_plant)'
+- id: FALSIFY-EXT-016
+  obligation: EXT-INV-002
+  rule: Clean-room gate sees corruption
+  prediction: a one-byte corruption of the rc artifact fails M-CR
+  if_fails: 'M-CR checks a name, not bytes (owed EXT-13 #4395; planned: cargo test -p apr-cli --test ext_promote falsify_ext_016_rc_corruption_fails_mcr)'
+- id: FALSIFY-EXT-017
+  obligation: EXT-INV-008,EXT-INV-013
+  rule: Post-publish verification
+  prediction: a planted post-publish sha or file-set mismatch (incl. a missing LICENSE) triggers yank + STOP; a yanked tag stays fetchable
+  if_fails: 'a published revision can differ from its pack or drop the license (owed EXT-15 #4397; planned: cargo test -p apr-cli --test ext_publish falsify_ext_017_post_publish_mismatch_yanks)'
+- id: FALSIFY-EXT-018
+  obligation: EXT-INV-010
+  rule: Card numbers are receipted
+  prediction: a hand-typed number on a model card fails the card lint
+  if_fails: 'the card can claim a number no receipt backs (owed EXT-16 #4398; planned: cargo test -p apr-cli --test ext_card_lint falsify_ext_018_hand_typed_number_fails)'
+- id: FALSIFY-EXT-019
+  obligation: EXT-INV-012
+  rule: Every EXT surface has a CRUX contract
+  prediction: an EXT surface without a CRUX contract turns ci / gate RED; deleting one contract turns it RED
+  if_fails: 'a new surface ships ungated (owed EXT-25 #4407; planned: cargo test -p aprender-core --test ext_crux_coverage falsify_ext_019_surface_without_contract_red)'
+- id: FALSIFY-EXT-020
+  obligation: EXT-INV-010
+  rule: Comparator arms are complete
+  prediction: an arm missing any of command, version, env_sha256, artifact_sha256, log_path blocks
+  if_fails: 'a competitor number is unreproducible (owed EXT-26 #4408; planned: cargo test -p apr-cli --test ext_comparator falsify_ext_020_incomplete_arm_blocks)'
+- id: FALSIFY-EXT-021
+  obligation: EXT-INV-009
+  rule: Artifact-quality gate
+  prediction: one tensor re-quantized to Q2_K widens the gap vs the reference quant and turns the gate RED
+  if_fails: 'the quality gate cannot see a degraded artifact (owed EXT-27 #4409; planned: cargo test -p apr-cli --test ext_quality_gate falsify_ext_021_degraded_quant_red)'
+- id: FALSIFY-EXT-022
+  obligation: EXT-INV-009
+  rule: Speed ratchet
+  prediction: a planted sleep in the decode loop widens the gap vs the llama.cpp d1d3c3396 arm and is RED at release phase
+  if_fails: 'the ratchet measures noise, not the engine (owed EXT-28 #4410; planned: cargo test -p apr-cli --test ext_speed_ratchet falsify_ext_022_planted_sleep_red)'
+- id: FALSIFY-EXT-023
+  obligation: EXT-INV-009
+  rule: Stock-baseline gate
+  prediction: a candidate planted below upstream stock on one sealed suite is refused promotion
+  if_fails: 'a finetune that regresses the base model can ship (owed EXT-30 #4412; planned: cargo test -p apr-cli --test ext_promote falsify_ext_023_below_stock_refused)'
+- id: FALSIFY-EXT-024
+  obligation: EXT-INV-010
+  rule: No competitor ratio on a card
+  prediction: the card lint rejects a ratio token adjacent to a competitor name
+  if_fails: 'the card makes an unreceipted comparative claim (owed EXT-16 #4398; planned: cargo test -p apr-cli --test ext_card_lint falsify_ext_024_ratio_next_to_competitor_rejected)'
+
+qa_gate:
+  id: F-EXT-GATE
+  name: Dogfood Model Lifecycle Contract
+  description: Gate for the EXT-001 record/promote/publish loop
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 24 falsification tests exist, are not ignored, and pass
+  falsification: FALSIFY-EXT-001 through FALSIFY-EXT-024
