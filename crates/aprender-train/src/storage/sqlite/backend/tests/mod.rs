@@ -8,6 +8,7 @@ mod concurrency_tests;
 mod edge_cases_tests;
 mod experiment_tests;
 mod filter_ops_tests;
+mod gc_tests;
 mod metrics_tests;
 mod param_matches_tests;
 mod parameter_tests;

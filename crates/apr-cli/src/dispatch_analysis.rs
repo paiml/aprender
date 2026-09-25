@@ -936,6 +936,18 @@ fn dispatch_runs_command(command: &RunsCommands, cli: &Cli) -> std::result::Resu
             *global,
             *json || cli.json,
         ),
+        RunsCommands::Gc {
+            dir,
+            global,
+            dry_run: _,
+            yes,
+            json,
+        } => commands::runs::run_gc(
+            &dir.as_deref().map(Path::to_path_buf),
+            *global,
+            *yes,
+            *json || cli.json,
+        ),
     }
 }
 

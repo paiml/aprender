@@ -22,6 +22,7 @@ pub fn init_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
     )?;
 
     conn.execute_batch(SCHEMA_SQL)?;
+    ensure_liveness_columns(conn)?;
 
     // Insert schema version if not present
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM schema_version", [], |row| row.get(0))?;
@@ -29,6 +30,29 @@ pub fn init_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
         conn.execute("INSERT INTO schema_version (version) VALUES (?1)", [CURRENT_VERSION])?;
     }
 
+    Ok(())
+}
+
+/// Liveness columns on `runs` (EXT-03, aprender#4385).
+///
+/// Premise recorded at HEAD b474a64a: `runs` carried no pid, host, boot id or
+/// process start time, so a crashed trainer left its row `running` forever and
+/// nothing could tell it from a live one. The identity is the 4-tuple
+/// `(host, boot_id, pid, proc_start_time)`: a pid alone is reused after a
+/// reboot or a wrap, and a pid + start time alone collides across hosts.
+/// Added by `ALTER TABLE` so databases created before EXT-03 upgrade in place;
+/// their rows keep NULLs, which the reaper reads as "identity unrecorded".
+pub(crate) const LIVENESS_COLUMNS: [(&str, &str); 4] =
+    [("host", "TEXT"), ("boot_id", "TEXT"), ("pid", "INTEGER"), ("proc_start_time", "INTEGER")];
+
+fn ensure_liveness_columns(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let mut stmt = conn.prepare("SELECT name FROM pragma_table_info('runs')")?;
+    let present: Vec<String> = stmt.query_map([], |row| row.get(0))?.collect::<Result<_, _>>()?;
+    for (name, ty) in LIVENESS_COLUMNS {
+        if !present.iter().any(|p| p == name) {
+            conn.execute_batch(&format!("ALTER TABLE runs ADD COLUMN {name} {ty};"))?;
+        }
+    }
     Ok(())
 }
 

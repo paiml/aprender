@@ -27,9 +27,12 @@
 
 mod artifacts;
 mod backend;
+mod gc;
+pub mod liveness;
 mod metrics;
 mod queries;
 mod types;
 
 pub use backend::SqliteBackend;
+pub use gc::{GcPlan, GcReport, RecordedIdentity};
 pub use types::{ArtifactRef, Experiment, FilterOp, ParamFilter, ParameterValue, Run};

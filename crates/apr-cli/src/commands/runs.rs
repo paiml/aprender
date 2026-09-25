@@ -357,6 +357,112 @@ pub(crate) fn run_diff(
     Ok(())
 }
 
+// ─── gc (EXT-03, aprender#4385) ─────────────────────────────────────────────
+
+/// `apr runs gc`: plan by default, apply with `--yes` after a receipted backup.
+pub(crate) fn run_gc(dir: &Option<PathBuf>, global: bool, yes: bool, json: bool) -> Result<()> {
+    let store = open_store(dir, global)?;
+    let plan = store
+        .gc_plan()
+        .map_err(|e| CliError::ValidationFailed(format!("gc plan failed: {e}")))?;
+    let backup = if yes && !plan.union().is_empty() {
+        Some(write_gc_backup(&store)?)
+    } else {
+        None
+    };
+    let report = match &backup {
+        Some(_) => Some(
+            store
+                .gc_apply(&plan)
+                .map_err(|e| CliError::ValidationFailed(format!("gc apply failed: {e}")))?,
+        ),
+        None => None,
+    };
+    if json {
+        println!(
+            "{}",
+            gc_json(store.path(), &plan, backup.as_ref(), report.as_ref())
+        );
+    } else {
+        print_gc_text(store.path(), &plan, backup.as_ref(), report.as_ref(), yes);
+    }
+    Ok(())
+}
+
+/// `(path, bytes, sha256)` of the pre-gc backup.
+type GcBackup = (PathBuf, u64, String);
+
+fn write_gc_backup(store: &SqliteBackend) -> Result<GcBackup> {
+    let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+    let dest = PathBuf::from(format!("{}.gc-backup-{stamp}.db", store.path()));
+    store.backup_into(&dest).map_err(|e| {
+        CliError::ValidationFailed(format!("gc backup failed, nothing changed: {e}"))
+    })?;
+    let (bytes, sha) = crate::commands::manifest::sha256_of_file(&dest)?;
+    Ok((dest, bytes, sha))
+}
+
+fn gc_json(
+    db: &str,
+    plan: &entrenar::storage::sqlite::GcPlan,
+    backup: Option<&GcBackup>,
+    report: Option<&entrenar::storage::sqlite::GcReport>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "db": db,
+        "applied": report.is_some(),
+        "tmp_runs": plan.tmp_runs.len(),
+        "orphan_runs": plan.orphan_runs.len(),
+        "union": plan.union().len(),
+        "tmp_experiments": plan.tmp_experiments.len(),
+        "spared_live": plan.spared_live.len(),
+        "spared_foreign": plan.spared_foreign.len(),
+        "backup": backup.map(|(p, n, sha)| serde_json::json!({
+            "path": p.display().to_string(), "bytes": n, "sha256": sha,
+        })),
+        "report": report.map(|r| serde_json::json!({
+            "runs_deleted": r.runs_deleted,
+            "runs_failed": r.runs_failed,
+            "experiments_deleted": r.experiments_deleted,
+        })),
+    })
+}
+
+fn print_gc_text(
+    db: &str,
+    plan: &entrenar::storage::sqlite::GcPlan,
+    backup: Option<&GcBackup>,
+    report: Option<&entrenar::storage::sqlite::GcReport>,
+    yes: bool,
+) {
+    let both = plan.tmp_runs.len() + plan.orphan_runs.len() - plan.union().len();
+    println!("db: {db}");
+    println!(
+        "tmp runs {} + orphan runs {} − in both {} = {} runs to reap",
+        plan.tmp_runs.len(),
+        plan.orphan_runs.len(),
+        both,
+        plan.union().len()
+    );
+    println!("tmp experiments to delete: {}", plan.tmp_experiments.len());
+    println!(
+        "spared: {} live, {} on another host",
+        plan.spared_live.len(),
+        plan.spared_foreign.len()
+    );
+    match (backup, report) {
+        (Some((path, bytes, sha)), Some(r)) => {
+            println!("backup: {} ({bytes} bytes) sha256={sha}", path.display());
+            println!(
+                "applied: {} runs deleted, {} marked failed, {} experiments deleted",
+                r.runs_deleted, r.runs_failed, r.experiments_deleted
+            );
+        }
+        _ if yes => println!("nothing to reap; no backup written"),
+        _ => println!("dry run: nothing changed (pass --yes to apply)"),
+    }
+}
+
 // ─── Store ──────────────────────────────────────────────────────────────────
 
 fn open_store(dir: &Option<PathBuf>, global: bool) -> Result<SqliteBackend> {
@@ -1026,6 +1132,64 @@ fn param_display(pv: &entrenar::storage::ParameterValue) -> String {
 #[cfg(test)]
 mod runs_tests {
     use super::*;
+
+    // ─── gc (EXT-03, aprender#4385) ──────────────────────────────────────
+
+    /// A project store with one `.tmp*` run to reap and one live run (started
+    /// by this test process) that must survive.
+    fn gc_fixture() -> (tempfile::TempDir, PathBuf, String) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut store = SqliteBackend::open_project(dir.path()).expect("open");
+        let tmp = store.create_experiment(".tmpQ1w2e3", None).expect("exp");
+        store.create_run(&tmp).expect("run");
+        let exp = store.create_experiment("real", None).expect("exp");
+        let live = store.create_run(&exp).expect("run");
+        store.start_run(&live).expect("start");
+        let db = dir.path().join(".entrenar").join("experiments.db");
+        (dir, db, live)
+    }
+
+    #[test]
+    fn gc_dry_run_is_the_default_and_writes_nothing() {
+        let (dir, db, _live) = gc_fixture();
+        run_gc(&Some(dir.path().to_path_buf()), false, false, true).expect("dry run");
+        let store = SqliteBackend::open(&db).expect("reopen");
+        assert_eq!(
+            store.gc_plan().expect("plan").tmp_runs.len(),
+            1,
+            "nothing was reaped"
+        );
+        let backups = std::fs::read_dir(db.parent().expect("parent"))
+            .expect("ls")
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().contains(".gc-backup-"))
+            .count();
+        assert_eq!(backups, 0, "a dry run writes no backup");
+    }
+
+    #[test]
+    fn gc_yes_writes_a_sha_receipted_backup_before_reaping() {
+        let (dir, db, live) = gc_fixture();
+        run_gc(&Some(dir.path().to_path_buf()), false, true, true).expect("apply");
+        let backups: Vec<PathBuf> = std::fs::read_dir(db.parent().expect("parent"))
+            .expect("ls")
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.to_string_lossy().contains(".gc-backup-"))
+            .collect();
+        assert_eq!(backups.len(), 1, "exactly one backup: {backups:?}");
+        let old = SqliteBackend::open(&backups[0]).expect("backup opens");
+        assert_eq!(
+            old.gc_plan().expect("plan").tmp_runs.len(),
+            1,
+            "backup is pre-gc"
+        );
+        let store = SqliteBackend::open(&db).expect("reopen");
+        assert!(store.gc_plan().expect("plan").union().is_empty(), "reaped");
+        assert_eq!(
+            store.get_run_status(&live).expect("live run kept"),
+            entrenar::storage::RunStatus::Running
+        );
+    }
 
     // ─── --status filtering (dogfood 0.63.0, issue #2374 finding 8) ─────────
     //

@@ -98,9 +98,19 @@ impl ExperimentStorage for SqliteBackend {
         }
 
         let now = Utc::now().to_rfc3339();
+        // EXT-03: the process that starts a run is the one whose death orphans it.
+        let me = super::liveness::ProcIdentity::current();
         conn.execute(
-            "UPDATE runs SET status = 'running', start_time = ?1 WHERE id = ?2",
-            params![now, run_id],
+            "UPDATE runs SET status = 'running', start_time = ?1, host = ?2, boot_id = ?3, \
+             pid = ?4, proc_start_time = ?5 WHERE id = ?6",
+            params![
+                now,
+                me.as_ref().map(|m| m.host.as_str()),
+                me.as_ref().map(|m| m.boot_id.as_str()),
+                me.as_ref().map(|m| i64::from(m.pid)),
+                me.as_ref().and_then(|m| i64::try_from(m.start_ticks).ok()),
+                run_id
+            ],
         )
         .map_err(|e| StorageError::Backend(format!("Failed to start run: {e}")))?;
 
