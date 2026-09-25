@@ -158,6 +158,13 @@ pub mod error;
 /// entirety): the policy is pure, so its case table runs in the required check.
 pub mod launch_budget;
 
+/// GH-480 sm_121 backward-branch rewriter. A pure string transform, so it lives
+/// here and not under `driver` (#4096): there it was cuda-gated, its tests never
+/// ran in the required check, and a `.reg` written into a `.global` initializer
+/// shipped. Only `driver::module` calls it, hence the non-cuda allow.
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+pub(crate) mod ptx_patch;
+
 /// E2E visual testing framework for GPU kernels
 pub mod testing;
 

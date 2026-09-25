@@ -32,11 +32,11 @@ use std::os::raw::c_uint;
 
 use super::context::{get_driver, CudaContext};
 use super::ptx_cache::{load_cached_cubin, ptx_cache_dir, ptx_cache_key, save_cached_cubin};
-use super::ptx_patch::patch_backward_branches_sm121;
 use super::sys::{
     CUfunction, CUmodule, CudaDriver, CU_JIT_ERROR_LOG_BUFFER, CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES,
     CU_JIT_INPUT_PTX, CU_JIT_TARGET,
 };
+use crate::ptx_patch::patch_backward_branches_sm121;
 use crate::GpuError;
 
 /// CU_JIT_INFO_LOG_BUFFER - Pointer to buffer for info log
