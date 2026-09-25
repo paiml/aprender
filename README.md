@@ -67,6 +67,18 @@ Output:
 2 + 2 equals 4.
 
 Completed in 4.82s (cached)
+
+apr run /home/*/.cache/pacha/models/*.safetensors "can you help me summarize quick sort algorithm, in less than 100 words"
+=== APR Run ===
+
+Source: /home/*/.cache/pacha/models/*.safetensors
+[GH-189] Loaded tokenizer from /home/*/.cache/pacha/models/*.tokenizer.json: 22 special tokens
+
+Output:
+Quick sort is a divide-and-conquer algorithm that sorts an array of elements. It works by selecting a 'pivot' element from the array and partitioning the
+
+Completed in 7.03s (cached)
+brody@brody-Precision-5540:~/workspace/github/paiml/aprender$ 
 ```
 
 </details>
