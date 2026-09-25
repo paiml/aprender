@@ -217,3 +217,78 @@ fn falsify_km_009_n_init_reproducible() {
     assert_eq!(KMeans::new(3).n_init(), 10, "sklearn default n_init");
     assert_eq!(KMeans::new(3).with_n_init(0).n_init(), 1);
 }
+
+/// Written by the pre-`n_init` code (d868ec946^, `KMeans::new(2).with_random_state(7)`
+/// fitted on these six points). Regenerating them with the current code would
+/// make the test vacuous: they must stay the OLD bytes.
+const LEGACY_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/kmeans");
+
+fn legacy_points() -> Matrix<f32> {
+    Matrix::from_vec(
+        6,
+        2,
+        vec![0.0, 0.0, 0.1, 0.2, 0.2, 0.1, 5.0, 5.0, 5.1, 5.2, 5.2, 5.1],
+    )
+    .expect("6x2")
+}
+
+fn assert_legacy_model(km: &KMeans) {
+    assert_eq!(
+        km.n_init(),
+        1,
+        "a pre-n_init model was fitted from one start"
+    );
+    assert_eq!(km.random_state(), Some(7));
+    let c = km.centroids();
+    let got: Vec<f32> = (0..2)
+        .flat_map(|i| (0..2).map(move |j| (i, j)))
+        .map(|(i, j)| c.get(i, j))
+        .collect();
+    for (g, w) in got.iter().zip([0.1_f32, 0.1, 5.1, 5.1]) {
+        assert!((g - w).abs() < 1e-5, "centroids {got:?}");
+    }
+    assert_eq!(km.predict(&legacy_points()), vec![0, 0, 0, 1, 1, 1]);
+}
+
+#[test]
+fn falsify_km_010_pre_n_init_bincode_loads() {
+    let km = KMeans::load(format!("{LEGACY_DIR}/kmeans_pre_n_init.bincode"))
+        .expect("a model saved before n_init existed must still load");
+    assert_legacy_model(&km);
+}
+
+#[test]
+fn falsify_km_010_pre_n_init_safetensors_loads() {
+    let km = KMeans::load_safetensors(format!("{LEGACY_DIR}/kmeans_pre_n_init.st-fixture"))
+        .expect("a safetensors model saved before n_init existed must still load");
+    assert_legacy_model(&km);
+}
+
+#[test]
+fn falsify_km_010_current_bincode_round_trips_n_init() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let p = dir.path().join("km.bin");
+    let mut km = KMeans::new(2).with_random_state(7).with_n_init(4);
+    km.fit(&legacy_points()).expect("fit");
+    km.save(&p).expect("save");
+    let back = KMeans::load(&p).expect("load");
+    assert_eq!(
+        back.n_init(),
+        4,
+        "a current file must not be read as legacy"
+    );
+    assert_eq!(back.predict(&legacy_points()), km.predict(&legacy_points()));
+}
+
+#[test]
+fn falsify_km_010_layout_is_legacy_plus_trailing_n_init() {
+    // n_init must be the LAST bincode field: a current n_init=1 fit of the
+    // fixture's data is the old file's exact bytes followed by 1u64. A field
+    // anywhere else shifts old bytes under the current decode.
+    let legacy = std::fs::read(format!("{LEGACY_DIR}/kmeans_pre_n_init.bincode")).expect("fixture");
+    let mut km = KMeans::new(2).with_random_state(7).with_n_init(1);
+    km.fit(&legacy_points()).expect("fit");
+    let mut want = legacy;
+    want.extend_from_slice(&1u64.to_le_bytes());
+    assert_eq!(bincode::serialize(&km).expect("ser"), want);
+}

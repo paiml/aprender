@@ -58,9 +58,6 @@ pub struct KMeans {
     tol: f32,
     /// Random seed for initialization.
     random_state: Option<u64>,
-    /// Number of seeded restarts; the lowest-inertia run is kept.
-    #[serde(default = "default_n_init")]
-    n_init: usize,
     /// Cluster centroids after fitting.
     centroids: Option<Matrix<f32>>,
     /// Labels for training data.
@@ -68,6 +65,28 @@ pub struct KMeans {
     /// Sum of squared distances (inertia).
     inertia: f32,
     /// Number of iterations run.
+    n_iter: usize,
+    /// Number of seeded restarts; the lowest-inertia run is kept.
+    ///
+    /// LAST on purpose: bincode is positional, so a file saved before this
+    /// field existed ends exactly where it would start. `KMeans::load` reads
+    /// such a file through [`LegacyKMeans`] with `n_init = 1`, the single
+    /// start it was fitted with.
+    #[serde(default = "default_n_init")]
+    n_init: usize,
+}
+
+/// The on-disk bincode layout of `KMeans` before `n_init` existed (#3146).
+/// Field order must never change: it IS the old file format.
+#[derive(Deserialize)]
+struct LegacyKMeans {
+    n_clusters: usize,
+    max_iter: usize,
+    tol: f32,
+    random_state: Option<u64>,
+    centroids: Option<Matrix<f32>>,
+    labels: Option<Vec<usize>>,
+    inertia: f32,
     n_iter: usize,
 }
 
