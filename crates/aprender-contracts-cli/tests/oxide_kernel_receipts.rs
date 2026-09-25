@@ -36,18 +36,41 @@ fn copy_in(dst: &Path, rel: &str) {
     std::fs::copy(repo_root().join(rel), &to).unwrap_or_else(|e| panic!("copy {rel}: {e}"));
 }
 
-/// The committed kernel tree, in a tempdir laid out like the repo.
+/// The number of manifests the committed tree declares.
+fn expected_kernels() -> usize {
+    let text = std::fs::read_to_string(repo_root().join("evidence/kernels/EXPECTED_KERNELS"))
+        .expect("read");
+    text.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with('#'))
+        .and_then(|l| l.parse().ok())
+        .expect("a count")
+}
+
+/// The committed kernel tree, in a tempdir laid out like the repo: EVERY kernel directory and the source
+/// each manifest names, so the copy agrees with EXPECTED_KERNELS. The planted edits all go to
+/// `gdn_gated_rmsnorm`; the other kernels ride along untouched.
 fn committed_copy() -> tempfile::TempDir {
     let d = tempfile::tempdir().expect("tempdir");
     copy_in(d.path(), "contracts/kernel-receipt-v1.yaml");
     copy_in(d.path(), "evidence/kernels/EXPECTED_KERNELS");
-    copy_in(d.path(), SOURCE);
-    for e in std::fs::read_dir(repo_root().join(KERNEL_DIR)).expect("kernel dir") {
-        let name = e.expect("entry").file_name();
-        copy_in(
-            d.path(),
-            &format!("{KERNEL_DIR}/{}", name.to_string_lossy()),
+    for k in std::fs::read_dir(repo_root().join("evidence/kernels")).expect("evidence/kernels") {
+        let k = k.expect("entry").path();
+        let manifest = k.join("kernel.json");
+        if !manifest.is_file() {
+            continue;
+        }
+        let rel = format!(
+            "evidence/kernels/{}",
+            k.file_name().expect("name").to_string_lossy()
         );
+        for e in std::fs::read_dir(&k).expect("kernel dir") {
+            let name = e.expect("entry").file_name();
+            copy_in(d.path(), &format!("{rel}/{}", name.to_string_lossy()));
+        }
+        let m: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&manifest).expect("read")).expect("json");
+        copy_in(d.path(), m["source"].as_str().expect("source"));
     }
     d
 }
@@ -128,7 +151,7 @@ fn the_committed_kernel_tree_passes_every_armed_kernel_shape() {
     assert_eq!(v["extra"]["violations"], 0, "{}", r.all());
     assert_eq!(
         v["extra"]["by_entity_type"]["kernel-receipt"],
-        1,
+        expected_kernels(),
         "{}",
         r.all()
     );
@@ -220,7 +243,11 @@ fn a_foreign_file_under_evidence_kernels_declines_naming_it() {
 #[test]
 fn a_kernel_added_without_bumping_the_denominator_declines() {
     let d = committed_copy();
-    std::fs::write(d.path().join("evidence/kernels/EXPECTED_KERNELS"), "2\n").expect("write");
+    std::fs::write(
+        d.path().join("evidence/kernels/EXPECTED_KERNELS"),
+        format!("{}\n", expected_kernels() + 1),
+    )
+    .expect("write");
     let r = shapes_on(d.path());
     assert_eq!(r.code, 2, "{}", r.all());
 }
@@ -233,13 +260,5 @@ fn the_committed_tree_agrees_with_its_own_denominator() {
         .filter_map(Result::ok)
         .filter(|e| e.path().join("kernel.json").is_file())
         .count();
-    let text = std::fs::read_to_string(repo_root().join("evidence/kernels/EXPECTED_KERNELS"))
-        .expect("read");
-    let expected: usize = text
-        .lines()
-        .map(str::trim)
-        .find(|l| !l.is_empty() && !l.starts_with('#'))
-        .and_then(|l| l.parse().ok())
-        .expect("a count");
-    assert_eq!(manifests, expected);
+    assert_eq!(manifests, expected_kernels());
 }
