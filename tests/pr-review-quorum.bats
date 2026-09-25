@@ -263,6 +263,10 @@ arm_row() {
   arm_row q-32-duplication-surface-unsearched REFUSE Q2 "could not search [shell]"
 }
 
+@test "q-71 an S3.A analysis surface recorded as none (#2798)" {
+  arm_row q-71-analysis-surface-unmeasured REFUSE Q2 "could not search [tdg_delta.shell]"
+}
+
 @test "q-33 a horizon region recorded as none" {
   arm_row q-33-horizon-region-unswept REFUSE Q2 "records no refspec for"
 }
@@ -670,5 +674,5 @@ arm_row() {
   # 58 cgp tests, and with tests/pr-review.bats itself before PRREV-006 wired it.
   local n
   n=$(find "$FIX" -maxdepth 1 -type d -name 'q-*' | wc -l)
-  [ "$n" -eq 69 ] || { echo "expected 69 q-* fixture directories (q-02..q-70; q-01 is a path that must NOT exist), found $n"; false; }
+  [ "$n" -eq 70 ] || { echo "expected 70 q-* fixture directories (q-02..q-71; q-01 is a path that must NOT exist), found $n"; false; }
 }

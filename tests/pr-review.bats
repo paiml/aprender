@@ -1199,6 +1199,101 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
   [[ "$output" == *"ACCEPT"* ]]
 }
 
+# --- #2798: analysis_coverage for the other three S3.A arrays ------------------
+# row 07 is the base throughout: a docs-only diff (docs/note.md -> surface `docs`) under a
+# PASS, so the none-under-PASS rule is tested against a verdict it can actually flip.
+# Every probe sets skill_version 2.2.0 unless it is testing the version gate itself.
+
+AC_DOCS='{"complexity_delta":{"docs":"measured"},"tdg_delta":{"docs":"measured"},"satd_introduced":{"docs":"measured"}}'
+
+@test "probe 2.2.0 receipt with NO analysis_coverage                   RED  B1  [#2798]" {
+  # The issue's falsifier, on the fixture's surface: tdg_delta [] and no coverage entry
+  # for a touched surface. All three arrays are named, each against the touched surface.
+  assert_probe acov-absent row-07-honest-docs-only-pmat-consulted B1 \
+    "analysis_coverage records no verdict for: complexity_delta.docs, tdg_delta.docs, satd_introduced.docs" \
+    '.predicate.skill_version = "2.2.0"'
+}
+
+@test "probe analysis_coverage covering an UNTOUCHED surface only      RED  B1  [#2798]" {
+  # A map that answers for shell when the diff touched docs is the fabrication shape: it
+  # looks complete and says nothing about what changed.
+  assert_probe acov-wrong-surface row-07-honest-docs-only-pmat-consulted B1 \
+    "analysis_coverage records no verdict for: tdg_delta.docs" \
+    '.predicate.skill_version = "2.2.0"
+     | .predicate.consultations.pmat.analysis_coverage = ('"$AC_DOCS"' | .tdg_delta = {"shell":"measured"})'
+}
+
+@test "probe analysis_coverage for exactly the touched surfaces      GREEN     [#2798 discrimination]" {
+  # Untouched surfaces are NOT owed. Without this arm the rule could demand all six and
+  # force the receipt to self-assert about files the PR never changed.
+  local d
+  d=$(make_probe acov-touched-only row-07-honest-docs-only-pmat-consulted \
+      '.predicate.skill_version = "2.2.0" | .predicate.consultations.pmat.analysis_coverage = '"$AC_DOCS")
+  run "$GUARD" "$d"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  [[ "$output" == *"ACCEPT"* ]]
+}
+
+@test "probe analysis_coverage with a verdict outside the vocabulary   RED  B1  [#2798]" {
+  assert_probe acov-bad-value row-07-honest-docs-only-pmat-consulted B1 \
+    "analysis_coverage holds a verdict outside { measured, none }: tdg_delta.docs=yes" \
+    '.predicate.skill_version = "2.2.0"
+     | .predicate.consultations.pmat.analysis_coverage = ('"$AC_DOCS"' | .tdg_delta.docs = "yes")'
+}
+
+@test "probe analysis_coverage none under a PASS                       RED  B1  [#2798]" {
+  assert_probe acov-none-pass row-07-honest-docs-only-pmat-consulted B1 \
+    "analysis_coverage could not measure [tdg_delta.docs] and the verdict is PASS" \
+    '.predicate.skill_version = "2.2.0"
+     | .predicate.consultations.pmat.analysis_coverage = ('"$AC_DOCS"' | .tdg_delta.docs = "none")'
+}
+
+@test "probe analysis_coverage none under DEGRADED                    GREEN     [#2798 discrimination]" {
+  # The honest receipt for PR #2795's shape: pmat cannot grade the surface, says so, and
+  # gives up the PASS. It must stay open, or the field learns to lie.
+  local d
+  d=$(make_probe acov-none-degraded row-07-honest-docs-only-pmat-consulted \
+      '.predicate.skill_version = "2.2.0"
+       | .predicate.consultations.pmat.analysis_coverage = ('"$AC_DOCS"' | .tdg_delta.docs = "none")
+       | .predicate.verdict = "DEGRADED"')
+  run "$GUARD" "$d"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  [[ "$output" == *"ACCEPT"* ]]
+}
+
+@test "probe 2.1.0 receipt that CARRIES a bad analysis_coverage       RED  B1  [#2798]" {
+  # The version gate spares an honest historical receipt; it does not open an unchecked
+  # field. Same rule as S3.E's arm_e_present.
+  assert_probe acov-legacy-carries-bad row-07-honest-docs-only-pmat-consulted B1 \
+    "analysis_coverage holds a verdict outside { measured, none }: satd_introduced.docs=maybe" \
+    '.predicate.consultations.pmat.analysis_coverage = ('"$AC_DOCS"' | .satd_introduced.docs = "maybe")'
+}
+
+@test "surface_of classifies changed files onto the coverage surfaces    [#2798 case table]" {
+  # Guard patterns ship a case table (CLAUDE.md, Verification Discipline 7). The shell
+  # row is the issue's own surface: PR #2795's 8 ungraded scripts.
+  eval "$(sed -n '/^surface_of() {/,/^}/p' "$GUARD")"
+  local row path want got
+  while IFS='|' read -r path want; do
+    got=$(surface_of "$path")
+    [ "$got" = "$want" ] || { echo "surface_of $path: want $want, got $got"; return 1; }
+  done <<'TABLE'
+crates/apr-cli/src/lib.rs|rust
+scripts/check_pr_review_receipt.sh|shell
+Makefile|shell
+crates/x/Makefile|shell
+make/rules.mk|shell
+tools/gen.py|python
+Cargo.toml|config
+contracts/pr-review-skill-v2.yaml|config
+.github/workflows/ci.yml|config
+evidence/x/findings.json|config
+docs/note.md|docs
+src/cuda/kernel.cu|other
+Makefile.bak|other
+TABLE
+}
+
 @test "probe duplication_horizon naming only two of its three regions  RED  B1" {
   # F7's other half. The horizon used to be built from the METHOD, so a region that was
   # not swept was simply ABSENT — and the pre-F7 receipt read

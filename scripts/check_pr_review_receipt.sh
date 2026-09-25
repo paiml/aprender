@@ -375,6 +375,24 @@ PREDICATE_TYPE='https://paiml.dev/attestations/pr-review/v2'
 # one with an unstated closure.
 ARM_E_MIN_VERSION=2.1.0
 
+# #2798: skill_version 2.2.0 owes a per-surface analysis_coverage map for the three S3.A
+# arrays duplication_coverage never covered. Same bypass shape as ARM_E_MIN_VERSION: a
+# receipt written before the rule existed is judged by its own version's rules.
+ANALYSIS_COV_MIN_VERSION=2.2.0
+
+# surface_of <path> - the S3.A coverage surface a changed file belongs to. The same six
+# language keys duplication_coverage uses, so one vocabulary covers all four arrays.
+surface_of() {
+  case "$1" in
+    *.rs) printf 'rust\n' ;;
+    *.sh|*.bash|*.mk|Makefile|*/Makefile) printf 'shell\n' ;;
+    *.py) printf 'python\n' ;;
+    *.toml|*.yaml|*.yml|*.json) printf 'config\n' ;;
+    *.md) printf 'docs\n' ;;
+    *) printf 'other\n' ;;
+  esac
+}
+
 # version_ge A B - 0 when A >= B under version ordering.
 #
 # `sed -n 1p`, NOT `head -1`: head exits after the first line, hands sort SIGPIPE, and
@@ -758,6 +776,37 @@ validate_receipt() {
         | join(", ")' "$rcpt")
     [ -z "$pmat_missing" ] \
       || reject B1 "pmat.status is consulted but these S3.A outputs are absent or are not arrays: $pmat_missing; an absent field is 'did not look', which S3.0 requires to be distinguishable from an empty one" || return 1
+
+    # #2798: an EMPTY array is only "measured and clean" if the analyzer could see the
+    # surface. pmat grades no .sh (PR #2795: all 8 changed scripts ungraded, 0 .rs), so
+    # `tdg_delta: []` there meant "could not look" and read as "looked, found nothing".
+    # analysis_coverage records, per array, a verdict for every surface the DIFF touches -
+    # derived here from changed_files, never self-declared - in { measured, none }, and
+    # `none` costs the receipt its PASS, exactly as duplication_coverage's does. Owed from
+    # ANALYSIS_COV_MIN_VERSION; an older receipt that carries the map is checked in full.
+    if version_ge "$skill_ver" "$ANALYSIS_COV_MIN_VERSION" \
+       || jq -e '.predicate.consultations.pmat | has("analysis_coverage")' "$rcpt" >/dev/null 2>&1; then
+      local touched acov_missing acov_bad acov_none f
+      touched=$(while IFS= read -r f; do [ -n "$f" ] && surface_of "$f"; done <<<"$changed_files" \
+                | sort -u | jq -R . | jq -sc .)
+      acov_missing=$(jq -r --argjson t "$touched" '
+          (.predicate.consultations.pmat.analysis_coverage // {}) as $c
+          | [ ("complexity_delta","tdg_delta","satd_introduced") as $a | $t[] as $s
+              | select((($c | getpath([$a]) | type) != "object") or (($c | getpath([$a]) | has($s)) | not))
+              | $a + "." + $s ] | join(", ")' "$rcpt")
+      [ -z "$acov_missing" ] \
+        || reject B1 "analysis_coverage records no verdict for: $acov_missing; an empty S3.A array with no coverage entry for a surface the diff touches cannot be told from one the analyzer never saw (#2798, S3.0)" || return 1
+      acov_bad=$(jq -r '[ (.predicate.consultations.pmat.analysis_coverage // {} | objects) | to_entries[] | .key as $a
+                          | .value | objects | to_entries[] | select(.value as $v | (["measured","none"] | index($v | tostring)) == null)
+                          | $a + "." + .key + "=" + (.value | tostring) ] | join(", ")' "$rcpt")
+      [ -z "$acov_bad" ] \
+        || reject B1 "analysis_coverage holds a verdict outside { measured, none }: $acov_bad" || return 1
+      acov_none=$(jq -r '[ (.predicate.consultations.pmat.analysis_coverage // {} | objects) | to_entries[] | .key as $a
+                           | .value | objects | to_entries[] | select(.value == "none") | $a + "." + .key ] | join(", ")' "$rcpt")
+      if [ -n "$acov_none" ] && [ "$verdict" = "PASS" ]; then
+        reject B1 "analysis_coverage could not measure [$acov_none] and the verdict is PASS; a surface the analyzer cannot see must read DEGRADED, as duplication_coverage's none does (#2798, S3.0)" || return 1
+      fi
+    fi
   fi
 
   # --- B1: cuda consulted must have ASKED something. -----------------------

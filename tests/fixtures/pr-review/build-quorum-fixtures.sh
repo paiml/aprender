@@ -330,6 +330,9 @@ emit q-30-vacuous-zero-symbols        '.predicate.consultations.pmat.symbols_sea
 emit q-31-mutation-survivor           '.predicate.consultations.mutation = { "status": "consulted", "scope": "in-diff", "attempted": 37, "killed": 36, "survivors": [ { "mutant": "reject-31-drop", "file": "scripts/check_pr_review_receipt.sh", "line": 501, "killed": false } ] }' "$ID" sarif_clean
 emit q-32-duplication-surface-unsearched '.predicate.consultations.pmat.duplication_coverage.shell = "none"' "$ID" sarif_clean
 emit q-33-horizon-region-unswept      '.predicate.consultations.pmat.duplication_horizon = [ "head=HEAD", "siblings=none", "merge_base_to_main=none" ]' "$ID" sarif_clean
+# #2798: analysis_coverage `none` joins duplication_coverage's list at the SAME refusal
+# site; this row is what shows the jq union actually reaches it.
+emit q-71-analysis-surface-unmeasured '.predicate.consultations.pmat.analysis_coverage = { "complexity_delta": { "shell": "measured" }, "tdg_delta": { "shell": "none" }, "satd_introduced": { "shell": "measured" } }' "$ID" sarif_clean
 
 # ===========================================================================
 # Q8 / Q9 / Q10 - the human surfaces, eligibility, and the mechanical checks.

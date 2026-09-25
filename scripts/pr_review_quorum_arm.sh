@@ -464,8 +464,13 @@ phase_a() {
   # A surface the run could not search must not sit under an unattended merge.
   # Same rule S3.0 applies to an unreachable consultation, one field down.
   local cov_none horizon_none
-  cov_none=$(jq -r '[ .predicate.consultations.pmat.duplication_coverage // {} | to_entries[]
-                      | select(.value == "none") | .key ] | join(", ")' "$rcpt")
+  # #2798: analysis_coverage's `none` (complexity/tdg/satd, keyed array.surface) joins the
+  # same list - one rule, one refusal site, so no new mutant is owed for it.
+  cov_none=$(jq -r '[ ( .predicate.consultations.pmat.duplication_coverage // {} | to_entries[]
+                        | select(.value == "none") | .key ),
+                      ( .predicate.consultations.pmat.analysis_coverage // {} | objects | to_entries[]
+                        | .key as $a | .value | objects | to_entries[]
+                        | select(.value == "none") | $a + "." + .key ) ] | join(", ")' "$rcpt")
   [ -z "$cov_none" ] \
     || refuse Q2 "duplication_coverage could not search [$cov_none]; an unsearched surface is DEGRADED, and S13.3 does not merge DEGRADED" || return 1
   horizon_none=$(jq -r '[ .predicate.consultations.pmat.duplication_horizon[]?
