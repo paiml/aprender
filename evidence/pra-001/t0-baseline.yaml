@@ -1,0 +1,43 @@
+# PRA-001 T0 — baseline freeze (§1 G1–G14), report-only. Owner aprender-60, 2026-09-25 17:06Z, host lambda-labs.
+# For aprender-a2's §9 report (evidence/pra-001/report.yaml `baseline:`).
+# Finding that applies to all rows: NONE of the §1 "Verify command (T0)" commands exists as written.
+#   - make targets trace-yield, trace-served-by-audit, trace-outcome-join, trace-bytes, trace-secret-scan-backfill,
+#     teacher-logit-smoke, transcript-retention-audit: 0 of 7 in aprender origin/main Makefile
+#   - `pmat quorum lanes`: no `quorum` subcommand; `forjar inventory almacen`: no such argument form;
+#     `pv check`: no `check` subcommand; ledger.rs is on origin/rex/001 only, not main;
+#     `apr finetune --model-arch`: no such flag in apr 0.69.3.
+# Where a fact could be measured another way it is [V] with that command; otherwise STOP S-BASE, not guessed.
+apr_tag: v0.69.3   # x86_64 cpu asset, sha256 of tarball verified; apr binary a83d8c8e0829c9fa…580f6
+baseline:
+  - {id: G1, mark: U-pending-instrument, ticket: T1, ruling: "cop 2026-09-25: missing instrument, not a contradiction", value: null,
+     evidence: "quorum artifacts carry no timestamp (keys: agreed,author,…,head,lanes,ticket,width); file mtimes are checkout-contaminated (581 of 640 dated today); make trace-yield absent"}
+  - {id: G2, mark: STOP, code: S-BASE, scope: "paiml-implement#436 (T1)", value: "installed ~/.claude/skills/paiml-implement/config.json quorum.lane_models = [gemini-3.1-pro-high, gemini-3.8-flash-high, gemini-3.7-flash-high]; quorum.advisory_lane = null; quorum.local_lane = null",
+     command: "jq '.quorum' ~/.claude/skills/paiml-implement/config.json",
+     evidence: "DRIFT vs [A]: counted lanes sonnet-5+haiku-4-5+agy are passed per-round via --lane-model, not the rail config; the Qwen shadow is not wired in the installed rail at all"}
+  - {id: G3, mark: V, value: "NotRun{NoExecutor|Busy|Timeout|ContextOverflow|TrainActive} + Verdict + Refused",
+     command: "git grep -n 'enum NotRun' origin/rex/001 -- crates/aprender-review-experiment/src/ledger.rs",
+     note: "matches [A]; lives on origin/rex/001 (not main). receipt.rs has a different NotRun (NoDeclaredExecutor|ContextOverflow|Refused|ServeError|Inadmissible)"}
+  - {id: G4, mark: STOP, code: S-BASE, scope: "paiml-implement#436 R-9", value: "ledger row schema records cell+backend (gx10-cuda, intel-wgpu in tests); no ladder dispatcher exists",
+     evidence: "no gx10-cuda→lambda-cuda→intel-wgpu→mini-metal→intel-cpu dispatcher in paiml-implement origin/main or aprender origin/main; the only deployed executor is the gx10 watcher apr_dogfood_lane_4252.py (availability ≤60.8%, aprender evidence/4252-promotion.md)"}
+  - {id: G5, mark: V, value: "LaneRow {family, model, verdict, findings: usize}",
+     command: "git show origin/rex/001:crates/aprender-review-experiment/src/ledger.rs | grep -n findings",
+     note: "matches [A]; file is on origin/rex/001, not main"}
+  - {id: G6, mark: A, value: "operator ruling S-6", note: "a ruling, not measurable (spec: n/a)"}
+  - {id: G7, mark: U-pending-instrument, ticket: T10, ruling: "cop 2026-09-25: missing instrument, not a contradiction", value: null,
+     evidence: "make trace-outcome-join absent; no merged/reverted≤14d/regression outcome join found in infra origin/main arbiter sources"}
+  - {id: G8, mark: V, value: "Test split 105 items, 70 defects (35 P + 35 R + 35 G); Dev 45; corpus 150",
+     command: "git show origin/rex/001:docs/audits/review-corpus/corpus-v1.jsonl | jq -r '[.split,.class,((.defect|length)>0)]|@tsv' | sort | uniq -c",
+     note: "matches [A]; pv check absent, measured by count; corpus on origin/rex/001 only"}
+  - {id: G9, mark: V-partial, value: "32 TB usable (df: 31.98e12 B, 4.3T used, 15%)",
+     command: "df -B1 /mnt/unas   # //192.168.1.156/media, cifs",
+     evidence: "S-BASE for the unverifiable sub-claims: RAID 5, 3×16 TB, 10G link are not visible from a client and no forjar inventory entry states them (stack-architecture.yaml: 'UNAS Pro storage' only)"}
+  - {id: G10, mark: U-pending-instrument, ticket: T1, ruling: "cop 2026-09-25: missing instrument, not a contradiction", value: null, evidence: "make trace-bytes absent; no capture exists yet to measure — stays [U] until T1 captures a week"}
+  - {id: G11, mark: U-pending-instrument, ticket: T6, ruling: "cop 2026-09-25: missing instrument, not a contradiction", value: null,
+     evidence: "make trace-secret-scan-backfill absent; no incident record found (gh search 'AWS key' → only pmat#1129, an AWS-key-SHAPED literal the scanner missed, not a landed real key). Not re-scanned here: T6 owns the scanner"}
+  - {id: G12, mark: STOP, code: S-BASE, note_cop: "verify command wrong: apr has no --model-arch; see spec §1.1", value: "apr 0.69.3: finetune/distill/merge reject --model-arch (usage, rc=2); `apr finetune Qwen3.5-4B-Q4_K_M.gguf --plan` rc=0 (no refusal in plan mode); quantize present; `apr run --help` has no --json-schema",
+     evidence: "the refusal on a real qwen35 finetune was NOT probed: running one is training work (§8 S-APR before 0.71). Verify command needs rewriting"}
+  - {id: G13, mark: U-pending-instrument, ticket: T16, ruling: "cop 2026-09-25: missing instrument, not a contradiction", value: null, evidence: "make teacher-logit-smoke absent; 27B teacher on gx10 needs infra#1132"}
+  - {id: G14, mark: V-host, value: "this host: cleanupPeriodDays = 36500 (default 30 overridden); oldest transcript 2026-08-13",
+     command: "jq .cleanupPeriodDays ~/.claude/settings.json; find ~/.claude/projects -name '*.jsonl' -printf '%T@\\n' | sort -n | head -1",
+     note: "the docs claim stays [X]; other hosts not audited (infra-27 T4 reports retention done 5/5, infra#1135)"}
+summary: {V: [G3, G5, G8], V_partial: [G9, G14], A_ruling: [G6], STOP_S_BASE: [G1, G2, G4, G7, G10, G11, G12, G13]}
