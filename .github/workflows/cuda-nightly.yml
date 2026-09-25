@@ -660,6 +660,34 @@ jobs:
             APR_QW3_MOE_GGUF="${APR_QW3_MOE_GGUF_VAR:-$HOME/.cache/pacha/models/2b88b180a790988f.gguf}" \
             nice -n 19 cargo test -p apr-cli --release --test qwen3_moe_apr_run_live_falsifier -- --nocapture
 
+      # #4250 (G0, #3596): apr serve prefills a Qwen3.5 prompt through ONE batched
+      # prefill on every route. ci.yml's cuda-unit runs this test on yoga-eph, which
+      # has no models, so there it SKIPs as model-absent and is allowed: dark. gx10
+      # holds the model at the test's MODEL_PATH, so this lane refuses the skip.
+      # The per-token run is the RED control, and it is ASSERTED to fail *on the
+      # batched-prefill assert*: a build error or a skip there is not a pass.
+      - name: G0 - serve routes prefill through the batched prefill (aprender#4250)
+        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        run: |
+          set -uo pipefail
+          t=api::openai_handlers::qwen35_serve_tests::gpu_every_serve_route_prefills_through_the_batched_prefill
+          model="$HOME/models/Qwen3.5-0.8B-Q4_K_M.gguf"
+          [ -f "$model" ] || { echo "::error::#4250 UNMEASURABLE on ${{ matrix.name }} (provisioning): $model is absent"; exit 1; }
+          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release --no-run || exit 1
+          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release -- \
+            "$t" --exact --test-threads 1 --nocapture > g0-green.log 2>&1; g=$?
+          tail -n 20 g0-green.log
+          if [ "$g" -ne 0 ] || grep -q 'is absent' g0-green.log || ! grep -q '^test result: ok. 1 passed' g0-green.log; then
+            echo "::error::#4250 GREEN arm failed or skipped (rc=$g)"; exit 1
+          fi
+          APR_QWEN35_SESSION_PREFILL=per-token nice -n 19 cargo test -p aprender-serve --features cuda --lib --release -- \
+            "$t" --exact --test-threads 1 --nocapture > g0-red.log 2>&1; r=$?
+          tail -n 20 g0-red.log
+          if [ "$r" -eq 0 ] || ! grep -q 'prefilled its prompt one token at a time' g0-red.log; then
+            echo "::error::#4250 RED control did not fail on the batched-prefill assert (rc=$r): the test cannot see per-token prefill"; exit 1
+          fi
+          echo "#4250 G0: GREEN passed, per-token RED control failed as required (rc=$r)"
+
   # ── ada-yoga: the sm_89 leg, restored ─────────────────────────────────────
   #
   # RESTORING A DELETION, NOT INVENTING A LANE. #2740 removed the x86_64 leg
