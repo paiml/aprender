@@ -19,8 +19,8 @@ struct Binding {
 }
 
 fn main() {
-    let binding_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../contracts/trueno-rag/binding.yaml");
+    let binding_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/trueno-rag/binding.yaml");
 
     println!("cargo:rerun-if-changed={}", binding_path.display());
 

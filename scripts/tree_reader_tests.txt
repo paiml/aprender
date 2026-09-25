@@ -7,6 +7,7 @@
 #   derivation said so on stderr (WARN unresolved-include).
 # Also: crate<TAB>--test<TAB>name (integration binary) and crate<TAB>--bins.
 apr-cli	--lib
+apr-cli	--lib	<root>
 apr-cli	--lib	commands
 apr-cli	--lib	commands::aliases
 apr-cli	--lib	commands::capability
