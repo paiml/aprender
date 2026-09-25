@@ -367,7 +367,7 @@ def publish(manifest_path, dist, sha, repo, token):
         api("PATCH", f"{A}/releases/assets/{staged[n]}", token, json.dumps({"name": n}).encode())
         print(f"published {n}")
     rows = "\n".join(
-        f"| `{t}` | {e['status']} | `{(e['green_sha'] or '-')[:9]}` | {', '.join(sorted(e['tools'])) or '-'} | "
+        f"| `{t}` | {e['status']} | `{e['green_sha'][:9] if e['green_sha'] else '-'}` | {', '.join(sorted(e['tools'])) or '-'} | "
         f"{(e.get('red') or {}).get('reason', '')} |" for t, e in sorted(man["targets"].items()))
     body = ("Automated nightly build of `main`, one arch independent of the other (#4189).\n\n"
             f"Decision for `{sha[:9]}`: **{man['decision']}** ({man['run_url']})\n\n"
@@ -389,6 +389,7 @@ def self_test():
             fails.append(name)
 
     S, OLD, T = "a" * 40, "b" * 40, TARGETS
+    head_sha, old_sha = S, OLD  # id names: the guard reads `sha[:9]` as an id prefix (#3904)
     run = lambda n, s, c, i=1: {"name": n, "status": s, "conclusion": c, "id": i}  # noqa: E731
     green = [run("ci / gate", "completed", "success"), run("workspace-test", "completed", "success")]
     man = lambda tg: {"targets": tg}  # noqa: E731
@@ -470,7 +471,7 @@ def self_test():
             open(os.path.join(d, b), "wb").write(b"exe-" + b.encode())
             open(os.path.join(d, f"{b}-{T[0]}.tar.gz"), "wb").write(b"tar-" + b.encode())
         fake = lambda out: (lambda exe: out[os.path.basename(exe)])  # noqa: E731
-        good = {"apr": (0, f"apr 0.69.0 ({S[:9]})"), "pv": (0, f"pv 0.69.0 ({S[:9]}) (aprender provable-contracts verifier)")}
+        good = {"apr": (0, f"apr 0.69.0 ({head_sha[:9]})"), "pv": (0, f"pv 0.69.0 ({head_sha[:9]}) (aprender provable-contracts verifier)")}
         ok = record(T[0], S, ["apr", "pv"], d, d, probe=fake(good))
         check("every bin runs and prints its build SHA -> green", ok["status"], "green")
         check("pv's short SHA is recorded as the full build SHA", ok["tools"]["pv"]["version_sha"], S)
@@ -481,7 +482,7 @@ def self_test():
         check("apr's short SHA is recorded as the full build SHA", ok["tools"]["apr"]["version_sha"], S)
         check("bin_sha256 hashes the EXECUTABLE, not the tarball",
               ok["tools"]["pv"]["bin_sha256"], hashlib.sha256(b"exe-pv").hexdigest())
-        mm = record(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, apr=(0, f"apr 0.69.0 ({OLD[:9]})"))))
+        mm = record(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, apr=(0, f"apr 0.69.0 ({old_sha[:9]})"))))
         check("a binary printing ANOTHER SHA -> version-mismatch", (mm["status"], mm["red"]["reason"]),
               ("red", "version-mismatch"))
         ng = record(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, apr=(0, "apr 0.69.1 (v0.69.1+no-git)"))))
@@ -523,7 +524,7 @@ def self_test():
         open(os.path.join(d, f"apr-{T[0]}.tar.gz"), "wb").write(b"tar-apr")
         open(cu_exe, "wb").write(b"exe-apr\0libcuda.so\0")
         open(cu_tar, "wb").write(b"tar-apr-cuda")
-        by_path = lambda out: (lambda exe: out.get(exe, (0, f"apr 0.69.0 ({S[:9]})")))  # noqa: E731
+        by_path = lambda out: (lambda exe: out.get(exe, (0, f"apr 0.69.0 ({head_sha[:9]})")))  # noqa: E731
         vg = record(T[0], S, ["apr"], d, d, probe=by_path({}), variants=["apr:cuda"])
         check("a cuda variant carrying libcuda.so, printing S -> green",
               (vg["status"], sorted(vg["tools"])), ("green", ["apr", "apr-cuda"]))
@@ -533,7 +534,7 @@ def self_test():
               vg["tools"]["apr-cuda"]["bin_sha256"], hashlib.sha256(b"exe-apr\0libcuda.so\0").hexdigest())
         check("no variants asked -> the manifest is unchanged (no apr-cuda row)",
               sorted(record(T[0], S, ["apr"], d, d, probe=by_path({}))["tools"]), ["apr"])
-        vm = record(T[0], S, ["apr"], d, d, probe=by_path({cu_exe: (0, f"apr 0.69.0 ({OLD[:9]})")}),
+        vm = record(T[0], S, ["apr"], d, d, probe=by_path({cu_exe: (0, f"apr 0.69.0 ({old_sha[:9]})")}),
                     variants=["apr:cuda"])
         check("the variant printing ANOTHER SHA -> version-mismatch",
               (vm["status"], (vm["red"] or {}).get("reason")), ("red", "version-mismatch"))
