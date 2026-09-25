@@ -14,15 +14,18 @@
         assert!(err_msg.contains("empty"));
     }
 
+    /// #4266: `AprV2Model::generate` was a greedy loop with no KV cache (full
+    /// recompute per token) that no production path called; every caller was a
+    /// test of the loop itself. APR generation goes through the engine
+    /// (AprTransformer / the CUDA and Q4K schedulers), so the loop must not
+    /// come back as a second, divergent sampler.
     #[test]
-    fn test_apr_v2_model_generate_max_tokens_zero() {
-        let data = create_mini_transformer_apr();
-        let model = AprV2Model::from_bytes(data).expect("APR operation failed");
-        let result = model.generate(&[1, 2], 0, None);
-        // Should succeed with empty generation
-        assert!(result.is_ok());
-        let tokens = result.expect("APR operation failed");
-        assert_eq!(tokens.len(), 2); // Just input, no generation
+    fn test_apr_v2_model_has_no_standalone_generate_loop_4266() {
+        let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/apr/forward.rs"));
+        assert!(
+            !src.contains("pub fn generate("),
+            "apr/forward.rs defines AprV2Model::generate again (#4266): route APR generation through the engine"
+        );
     }
 
     // =========================================================================

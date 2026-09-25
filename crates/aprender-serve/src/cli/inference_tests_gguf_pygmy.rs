@@ -115,16 +115,6 @@ mod active_pygmy_inference {
     }
 
     #[test]
-    fn test_apr_pygmy_generate_in_memory() {
-        let data = build_executable_pygmy_apr();
-        let model = AprV2Model::from_bytes(data).expect("model");
-
-        let tokens = model.generate(&[1], 3, None);
-        assert!(tokens.is_ok(), "Generate failed: {:?}", tokens.err());
-        assert!(!tokens.expect("tokens").is_empty());
-    }
-
-    #[test]
     fn test_apr_pygmy_all_tokens() {
         let data = build_executable_pygmy_apr();
         let model = AprV2Model::from_bytes(data).expect("model");

@@ -371,21 +371,6 @@ fn test_active_apr_pygmy_edge_tokens() {
 }
 
 #[test]
-fn test_active_apr_pygmy_generate() {
-    let data = build_executable_pygmy_apr();
-    let model = AprV2Model::from_bytes(data).expect("Should parse");
-
-    // Test generate with small max_tokens
-    let result = model.generate(&[1], 3, None);
-
-    assert!(result.is_ok(), "generate() failed: {:?}", result.err());
-
-    let tokens = result.unwrap();
-    // Should have at least the original token plus some generated
-    assert!(!tokens.is_empty());
-}
-
-#[test]
 fn test_active_apr_pygmy_size() {
     let data = build_executable_pygmy_apr();
 

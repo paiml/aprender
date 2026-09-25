@@ -907,14 +907,6 @@ fn test_apr_v2_model_forward_empty_tokens() {
 }
 
 #[test]
-fn test_apr_v2_model_generate_empty_input() {
-    let data = create_minimal_apr_model();
-    let model = AprV2Model::from_bytes(data).expect("should load");
-    let result = model.generate(&[], 10, None);
-    assert!(result.is_err());
-}
-
-#[test]
 fn test_apr_v2_model_decode_tokens() {
     let vocab = vec!["hello".to_string(), " ".to_string(), "world".to_string()];
     let result = AprV2Model::decode_tokens(&vocab, &[0, 1, 2]);
@@ -2619,17 +2611,6 @@ fn test_apr_v2_model_get_tensor_f32_out_of_bounds() {
 }
 
 #[test]
-fn test_apr_v2_model_generate_max_tokens_zero() {
-    let data = create_minimal_apr_model();
-    let model = AprV2Model::from_bytes(data).expect("should load");
-    let result = model.generate(&[1], 0, None);
-    // With max_tokens=0, should return just the prompt
-    assert!(result.is_ok());
-    let tokens = result.unwrap();
-    assert_eq!(tokens, vec![1]);
-}
-
-#[test]
 fn test_apr_header_exactly_64_bytes() {
     // Exactly 64 bytes should work
     let mut data = vec![0u8; 64];
@@ -3304,20 +3285,6 @@ fn test_apr_v2_model_forward_not_transformer() {
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
     assert!(err_msg.contains("transformer") || err_msg.contains("missing"));
-}
-
-// ============================================================================
-// AprV2Model::generate() Error Paths - PMAT-802
-// ============================================================================
-
-#[test]
-fn test_apr_v2_model_generate_with_eos_token() {
-    let data = create_minimal_apr_model();
-    let model = AprV2Model::from_bytes(data).expect("should load");
-    // Generation with eos_token that won't be hit (model isn't real transformer)
-    let result = model.generate(&[1], 5, Some(999));
-    // Should return error since not a transformer
-    assert!(result.is_err());
 }
 
 // ============================================================================
