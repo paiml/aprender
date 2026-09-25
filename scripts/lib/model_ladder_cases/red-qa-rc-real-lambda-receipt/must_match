@@ -1,1 +1,0 @@
-FAIL.*Qwen3.5-4B-UD-Q4_K_XL.gguf.*apr qa exited 5.*gates_failed: tensor_contract

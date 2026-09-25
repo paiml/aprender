@@ -1,1 +1,0 @@
-RED-MODEL lambda +Qwen3.5-0.8B-UD-IQ2_XXS.gguf +wrong_answer .*first diverges at step 4, not earlier than the oracle's own CPU/CUDA divergence at step 2

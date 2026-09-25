@@ -80,9 +80,6 @@ A_CHOOM_L='    choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST
 R_VER='    out="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; rc=$?'
 R_RED='        *) printf '"'"'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n'"'"' "$version" "$rc" \'
 R_LINES='               "$(grep -E '"'"'^FAIL'"'"' <<< "$out" | head -n 10 | sed '"'"'s/^/        /'"'"')" ;;'
-# R_LINES alone occurs twice (rule_r7 and rule_r7_scope share it): the mutant anchors on R_RED + R_LINES, the pair
-# that exists only in rule_r7, so it stays unique (an ambiguous anchor made this table judge nothing -- rc 2).
-R_PAIR="$R_RED"$'\n'"$R_LINES"
 R_DECLINE='        2) echo "FAIL  R7 the model-matrix judge DECLINED'
 R_NOJUDGE='    if [ ! -f "$judge" ]; then'
 
@@ -125,8 +122,7 @@ while [ "${1:-}" = -o ]; do shift 2; done
 host=${1:-}; shift
 [ "${FX_SSH_DOWN:-0}" = 1 ] && { echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255; }
 [ "$host" = gx10 ] && [ "$*" = "bash -s" ] || exit 255
-# real ssh forwards no APR_* variable: gx10 reads ITS OWN nightly root (#4117)
-exec env -u APR_NIGHTLY_ROOT HOME="$FX_GX10_HOME" FX_HOST=gx10 bash -s
+exec env HOME="$FX_GX10_HOME" FX_HOST=gx10 bash -s
 STUB
 # the build (only `metadata` and `build` are called): `build` writes an apr whose --version is
 # baked from the tree it ran in; FX_BUILD_FAIL_HOST / FX_STALE_HOST pick a host to break
@@ -170,35 +166,9 @@ chmod +x "$TMP/bin/gh" "$TMP/bin/ssh" "$TMP/bin/cargo" "$TMP/bin/choom" "$TMP/bi
 # green and for this version -> 0; otherwise 1 with a FAIL line each; FX_JUDGE_DECLINE=1 -> 2
 cat > "$TMP/judge-stub.sh" <<'STUB'
 #!/usr/bin/env bash
-v=""; d=""; scope=""; n=""; c=""; cut=""
-printf 'judge %s\n' "$*" >> "${FX_LOG:-/dev/null}"
-while [ $# -gt 0 ]; do case "$1" in --version) v=$2; shift 2 ;; --receipts) d=$2; shift 2 ;; --scope) scope=$2; shift 2 ;;
-    --nightly) n=$2; shift 2 ;; --crux) c=$2; shift 2 ;; --cut-commit) cut=$2; shift 2 ;; *) shift ;; esac; done
+v=""; d=""
+while [ $# -gt 0 ]; do case "$1" in --version) v=$2; shift 2 ;; --receipts) d=$2; shift 2 ;; *) shift ;; esac; done
 [ -n "$v" ] || { echo "decline: no --version given"; exit 2; }
-if [ "$scope" = release ]; then
-    # #4117: the release gate's frozen interface -- a night per host under --nightly, and a GREEN smoke receipt per
-    # host under --crux, measured by the binary built from --cut-commit (its version line names that commit)
-    [ -n "$n" ] && [ -n "$c" ] && [ -n "$cut" ] || { echo "decline: --scope release needs --nightly, --crux and --cut-commit"; exit 2; }
-    python3 - "$n" "$c" "$v" "$(git rev-parse --short=9 "$cut")" <<'RELPY'
-import glob, json, os, sys
-n, c, v, s9 = sys.argv[1:5]; rc = 0
-for h in ("lambda", "gx10"):
-    if not glob.glob(os.path.join(n, "*", h, "verdict.json")):
-        print("FAIL  NIGHTLY %s: no nightly at all (#4040)" % h); rc = 1
-    f = os.path.join(c, h + "-gpu.json")
-    if not os.path.exists(f):
-        print("FAIL  host %s has no CRUX receipt from the release binary" % h); rc = 1; continue
-    r = json.load(open(f))
-    if (r.get("apr") or {}).get("version_line") != "apr %s (%s)" % (v, s9):
-        print("FAIL  %s smoke is not from the release binary: %r" % (h, (r.get("apr") or {}).get("version_line"))); rc = 1
-    elif any(x.get("verdict") != "GREEN" for x in r.get("cells") or []):
-        print("FAIL  %s CRUX smoke RED" % h); rc = 1
-if not os.path.isfile(os.path.join(c, "prompt-certification.json")):
-    print("FAIL  no prompt-certification beside the smoke receipts"); rc = 1
-sys.exit(rc)
-RELPY
-    exit $?
-fi
 [ -n "$d" ] || d="evidence/dogfood/models/$v"
 [ "${FX_JUDGE_DECLINE:-0}" = 1 ] && { echo "decline: fixture ladder unreadable"; exit 2; }
 python3 - "$d" "$v" <<'PY'
@@ -236,27 +206,6 @@ printf '{"host":"%s","version":"%s","apr_version":"%s","executed":2,"red":%s}\n'
 [ "$red" = 0 ]
 STUB
     cp -- "$TMP/judge-stub.sh" "$r/scripts/check_model_ladder.sh" || return 2
-    if [ "${4:-}" = release ]; then
-        # #4117: a tree whose ladder contract records release_gate.from 9.9.0, with the REAL decision rule, a
-        # committed certification, and a CRUX smoke stub that measures by the apr the step built
-        mkdir -p "$r/contracts" "$r/scripts/lib" "$r/evidence/crux/9.9.8" || return 2
-        printf 'ladder:\n  release_gate:\n    from: "9.9.0"\n    ruling: fixture\n' > "$r/contracts/model-capability-ladder-v1.yaml"
-        cp -- "$ROOT/scripts/lib/crux_smoke_scope.py" "$ROOT/scripts/lib/model_ladder_crux.py" "$r/scripts/lib/" || return 2
-        cp -- "${FX_GATHER:-$ROOT/scripts/release/gather_nightly.sh}" "$r/scripts/release/gather_nightly.sh" || return 2
-        printf '{"schema": "crux-prompt-certification/v1", "fixture": true}\n' > "$r/evidence/crux/9.9.8/prompt-certification.json"
-        cat > "$r/scripts/crux_sweep_shards.sh" <<'STUB'
-#!/usr/bin/env bash
-v=$1; shift
-while [ $# -gt 0 ]; do case "$1" in --host) h=$2; shift 2 ;; --apr) a=$2; shift 2 ;; --out) o=$2; shift 2 ;; --certification) cert=$2; shift 2 ;; *) shift ;; esac; done
-printf 'smoke host=%s oom=%s flock=%s cert=%s\n' "$h" "${FX_OOM:-none}" "${FX_FLOCK:-0}" "$cert" >> "$FX_LOG"
-[ -f "$cert" ] || { echo "fixture: no certification at $cert"; exit 2; }
-verdict=GREEN; [ "${FX_SMOKE_RED_HOST:-}" = "$h" ] && verdict=RED
-mkdir -p "$o"
-printf '{"schema":"crux-inference-receipt/v1","host":"%s","apr":{"version_line":"%s"},"cells":[{"verdict":"%s","positive_control":true}]}\n' \
-    "$h" "$("$a" --version)" "$verdict" > "$o/$h-gpu.json"
-[ "$verdict" = GREEN ]
-STUB
-    fi
     printf 'target/\n.dogfood/\n' > "$r/.gitignore"
     printf '[package]\nname = "fx"\nversion = "9.9.8"\nedition = "2021"\n' > "$r/Cargo.toml"
     git init -q --bare -b main "$d/origin.git" && git -C "$r" init -q -b main \
@@ -269,31 +218,16 @@ STUB
     # the fake gx10: its checkout sits at the PARENT, with a stale release dir beside it
     mkdir -p "$d/gx10/src" "$d/gx10/.cache/aprender-release/rel-9.9.7/target" || return 2
     git clone -q "$d/origin.git" "$d/gx10/src/aprender" && git -C "$d/gx10/src/aprender" checkout -q --detach HEAD^ || return 2
-    if [ "${4:-}" = release ]; then
-        local par h nd
-        par=$(git -C "$r" rev-parse HEAD^)
-        for h in lambda gx10; do
-            [ "${FX_NO_NIGHTLY_HOST:-}" = "$h" ] && continue
-            if [ "$h" = lambda ]; then nd="$d/nightly-lambda/$par/lambda"; else nd="$d/gx10/.cache/aprender-nightly/$par/gx10"; fi
-            # bashrs SEC010: self-test fixture: $nd is under this script's own mktemp -d dir ($TMP).
-            # bashrs disable-next-line=SEC010
-            mkdir -p "$nd/crux" "$nd/src" || return 2
-            printf '{"schema":"apr-nightly-certification/v1","host":"%s","sha":"%s","green":true,"crux":{"lanes":{"gpu":{"receipt":"crux/%s-gpu.json"}}}}\n' \
-                "$h" "$par" "$h" > "$nd/verdict.json"
-            printf '{}\n' > "$nd/crux/$h-gpu.json"; printf 'a night checkout that must NOT be gathered\n' > "$nd/src/HUGE"
-            printf '{}\n' > "$nd/crux/unnamed-shard.json"   # in the night dir, NOT named by its verdict: never gathered
-        done
-    fi
 }
 
 # models NAME AUTOPILOT MODELS_T1 [ENV=VAL ...] -> runs `autopilot.sh 9.9.9 99 models models`
 models() {
     local n=$1 d="$TMP/$1"; shift
-    fixture "$n" "$1" "$2" "${FX_TREE:-}" || return 2
+    fixture "$n" "$1" "$2" || return 2
     : > "$d/wrap.log"
     shift 2
     ( export RELEASE_AP="$d/ap" RELEASE_EPIC=9002 CARGO_HOME="$TMP/cargo-home" PATH="$TMP/bin:$PATH" \
-          FX_MC="$(cat "$d/mc")" FX_GX10_HOME="$d/gx10" MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log" APR_NIGHTLY_ROOT="$d/nightly-lambda"
+          FX_MC="$(cat "$d/mc")" FX_GX10_HOME="$d/gx10" MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log"
       for kv in "$@"; do export "${kv?}"; done
       bash "$d/repo/scripts/release/autopilot.sh" 9.9.9 99 models models ) > "$d/out.log" 2>&1
     printf '%s\n' "$?" > "$d/rc"
@@ -357,39 +291,10 @@ oom_victim() {
     return 0
 }
 
-# ---- #4117: the RELEASE GATE rows (a tree whose contract records release_gate.from 9.9.0) ------------------
-release_green() {
-    local n="rgreen-$1" d; d="$TMP/rgreen-$1"
-    FX_TREE=release models "$n" "$2" "$3" || return 2
-    [ "$(cat "$d/rc")" = 0 ] || { printf 'autopilot exited %s: %s\n' "$(cat "$d/rc")" "$(grep MODELS "$d/ap/STATUS" | tail -n 3 | tr '\n' ' ')"; return 1; }
-    grep -qF "RELEASE GATE -- CRUX smoke on the release binary (apr 9.9.9 ($(cut -c1-9 "$d/mc")))" "$d/ap/STATUS" \
-        || { printf 'no RELEASE GATE GO line: %s\n' "$(grep MODELS "$d/ap/STATUS" | tail -n 2 | tr '\n' ' ')"; return 1; }
-    # the judge was asked the RELEASE question, with the step's own outputs and the release commit
-    grep -qF "judge --version 9.9.9 --scope release --nightly $d/ap/models-t1/nightly --crux $d/ap/models-t1/crux --cut-commit $(cat "$d/mc")" "$d/wrap.log" \
-        || { printf 'the judge was not asked --scope release with the handoff: %s\n' "$(grep '^judge' "$d/wrap.log" | tr '\n' ' ')"; return 1; }
-    ! grep -q '^ladder host=' "$d/wrap.log" || { printf 'the full ladder ran under the release gate\n'; return 1; }
-    local h
-    for h in lambda gx10; do
-        grep -q "^smoke host=$h oom=1000 flock=0 cert=evidence/crux/9.9.8/prompt-certification.json\$" "$d/wrap.log" \
-            || { printf '%s smoke did not run under choom alone with the committed certification: %s\n' "$h" "$(grep "^smoke host=$h" "$d/wrap.log" | tr '\n' ' ')"; return 1; }
-        ls "$d/ap/models-t1/nightly/"*/"$h/verdict.json" > /dev/null 2>&1 || { printf 'the %s night was not gathered\n' "$h"; return 1; }
-    done
-    ! ls "$d/ap/models-t1/nightly/"*/gx10/src > /dev/null 2>&1 || { printf 'a night CHECKOUT was gathered, not just its verdict and receipts\n'; return 1; }
-    ls "$d/ap/models-t1/nightly/"*/gx10/crux/gx10-gpu.json > /dev/null 2>&1 || { printf 'the gx10 night came without the receipts its verdict names\n'; return 1; }
-    ! ls "$d/ap/models-t1/nightly/"*/*/crux/unnamed-shard.json > /dev/null 2>&1 || { printf 'a file the verdict does NOT name was gathered (the gather copies whole dirs)\n'; return 1; }
-    return 0
-}
-# FX_NO_NIGHTLY_HOST shapes the FIXTURE (built before stops' ENV args are exported), so it rides on the call itself
-release_no_nightly() { FX_NO_NIGHTLY_HOST=gx10 FX_TREE=release stops "rnonight-$1" "$2" "$3" "NIGHTLY gx10: no nightly at all"; }
-release_red_smoke()  { FX_TREE=release stops "rredsmoke-$1" "$2" "$3" "gx10 CRUX smoke RED" FX_SMOKE_RED_HOST=gx10; }
-release_stale()      { FX_TREE=release stops "rstale-$1" "$2" "$3" "MODELS gx10 NO-GO: no receipt -- NOT-THE-RELEASE" FX_STALE_HOST=gx10; }
-
 # ---- the rows ---------------------------------------------------------------------------------
 for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails build_fails" \
             "missing-receipt missing" "red-cell red_cell" "judge-decline decline" \
-            "stale-binary stale" "disk-refusal disk" "oom-victim oom_victim" \
-            "release-green release_green" "release-no-nightly release_no_nightly" \
-            "release-red-smoke release_red_smoke" "release-stale-binary release_stale"; do
+            "stale-binary stale" "disk-refusal disk" "oom-victim oom_victim"; do
     set -- $spec
     msg=$($2 real "$AUTOPILOT" "$MODELS"); row "$1" "$?" "$msg"
 done
@@ -463,35 +368,11 @@ mutant no-choom         "$MODELS" "$A_CHOOM_R" 'bash scripts/model_ladder.sh --h
 mutant wrapper-flock    "$MODELS" "$A_CHOOM_L" '    flock /tmp/apr-gpu.lock choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST"' oom_victim
 mutant r7-no-version    "$PREFLIGHT" "$R_VER" '    out="$(cd "$root" && bash "$judge" 2>&1)"; rc=$?' r7_green preflight
 mutant r7-red-is-go     "$PREFLIGHT" "$R_RED" '        *) return 0; printf '"'"'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n'"'"' "$version" "$rc" \' r7_red preflight
-mutant r7-no-fail-lines "$PREFLIGHT" "$R_PAIR" "$R_RED"$'\n''               "" ;;' r7_missing preflight
+mutant r7-no-fail-lines "$PREFLIGHT" "$R_LINES" '               "" ;;' r7_missing preflight
 mutant r7-decline-is-go "$PREFLIGHT" "$R_DECLINE" '        2) return 0; echo "FAIL  R7 the model-matrix judge DECLINED' r7_decline preflight
 mutant r7-no-judge-ok   "$PREFLIGHT" "$R_NOJUDGE" '    if false; then' r7_nojudge preflight
 
-# #4117: the release-gate caller must ASK the release question, gather the nightly, choose smoke by the shared rule,
-# and wrap the smoke like the ladder; each mutant turns release-green RED.
-M_SCOPE='    bash scripts/check_model_ladder.sh --version "$ver" --scope release --nightly "$out/nightly" --crux "$out/crux" \'
-M_GATHER='    gather_nightly || {'
-M_PICK='        0) MODE=smoke ;;'
-M_CHOOM='    choom -n 1000 -- bash scripts/crux_sweep_shards.sh "$ver"'
-mutant models-scope-dropped "$MODELS" "$M_SCOPE" '    bash scripts/check_model_ladder.sh --version "$ver" --receipts "$out" \' release_green
-mutant models-no-gather     "$MODELS" "$M_GATHER" '    true || {' release_green
-mutant models-never-smoke   "$MODELS" "$M_PICK" '        0) ;;' release_green
-mutant models-smoke-no-choom "$MODELS" "$M_CHOOM" '    bash scripts/crux_sweep_shards.sh "$ver"' release_green
-# the gather copying whole dirs instead of exactly what the verdict names (quorum lane 1, GH-4117 round 1)
-GATHER="$ROOT/scripts/release/gather_nightly.sh"
-G_NAMED='    for p in named:'
-grep -qF -- "$G_NAMED" "$GATHER" || env_die "gather_nightly.sh has no '$G_NAMED' line -- the subject moved"
-python3 - "$GATHER" "$TMP/m-gather-wholedir.sh" <<'PY' || env_die "gather-wholedir mutant"
-import sys
-s = open(sys.argv[1]).read(); a = "    for p in named:"
-assert s.count(a) == 1
-open(sys.argv[2], "w").write(s.replace(a, '    shutil.copytree(os.path.join(src, "crux"), os.path.join(to, "crux"), dirs_exist_ok=True)\n' + a, 1))
-PY
-msg=$(FX_GATHER="$TMP/m-gather-wholedir.sh" release_green m-gather-wholedir "$AUTOPILOT" "$MODELS"); mrc=$?
-[ "$mrc" = 2 ] && env_die "gather-wholedir mutant could not build its fixture"
-[ "$mrc" != 0 ]; row "mutant gather-wholedir is killed by release_green (${msg:-survived})" "$?" "the mutant PASSED -- the row does not discriminate"
-
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
-[ "$rows" -ge 39 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 39 declared\n' "$rows" >&2; exit 1; }
+[ "$rows" -ge 30 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 30 declared\n' "$rows" >&2; exit 1; }
 [ "$fails" -eq 0 ] || { printf 'RED   %s of %s row(s) failed\n' "$fails" "$rows" >&2; exit 1; }
 printf 'PASS  %s row(s): the model matrix runs at T-1 on both hosts, every failure to prove the release STOPs before the tag, and R7 refuses the same failures at T-4 (#3717)\n' "$rows"

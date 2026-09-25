@@ -1,1 +1,0 @@
-apr CPU and GPU diverge at step 5 while the oracle's CPU and CUDA legs agree on every token

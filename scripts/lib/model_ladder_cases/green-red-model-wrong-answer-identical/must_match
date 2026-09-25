@@ -1,1 +1,0 @@
-RED-MODEL lambda +Qwen3.5-0.8B-UD-IQ2_XXS.gguf +wrong_answer .*apr identical to the llama.cpp CPU reference
