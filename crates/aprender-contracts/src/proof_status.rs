@@ -530,30 +530,42 @@ fn grounding() -> &'static Grounding {
     use std::sync::OnceLock;
     static CACHE: OnceLock<Grounding> = OnceLock::new();
     CACHE.get_or_init(|| {
-        for base in LEAN_THEOREM_BASES {
-            let dir = std::path::Path::new(base);
-            let path = summary::summary_path(dir);
-            if !dir.is_dir() || !path.is_file() {
-                continue;
-            }
-            let mut discharged = match summary::load(&path) {
-                Ok(s) => summary::discharged(&s, summary::current_tree_sha(dir).as_deref()),
-                Err(why) => Discharged {
-                    withheld: Some(why),
-                    ..Discharged::default()
-                },
-            };
-            refine(dir, &mut discharged);
-            return Grounding {
-                source: L4Source::Discharge,
-                discharged,
-            };
-        }
-        Grounding {
-            source: L4Source::SelfDeclared,
-            discharged: Discharged::default(),
-        }
+        let bases: Vec<&std::path::Path> = LEAN_THEOREM_BASES
+            .iter()
+            .map(std::path::Path::new)
+            .collect();
+        grounding_from(&bases, summary::current_tree_sha)
     })
+}
+
+/// `grounding()` without the cache, over explicit bases and a tree-sha source, so a test can drive the whole
+/// discharge → refinement path. The first base with a summary wins.
+fn grounding_from(
+    bases: &[&std::path::Path],
+    tree_sha: impl Fn(&std::path::Path) -> Option<String>,
+) -> Grounding {
+    for &dir in bases {
+        let path = summary::summary_path(dir);
+        if !dir.is_dir() || !path.is_file() {
+            continue;
+        }
+        let mut discharged = match summary::load(&path) {
+            Ok(s) => summary::discharged(&s, tree_sha(dir).as_deref()),
+            Err(why) => Discharged {
+                withheld: Some(why),
+                ..Discharged::default()
+            },
+        };
+        refine(dir, &mut discharged);
+        return Grounding {
+            source: L4Source::Discharge,
+            discharged,
+        };
+    }
+    Grounding {
+        source: L4Source::SelfDeclared,
+        discharged: Discharged::default(),
+    }
 }
 
 /// ONT-3b (#4073): a discharged theorem stays L4 only when an `extraction`/`simulation` model whose `model_of`

@@ -1246,3 +1246,49 @@ fn workspace_root_is_the_nearest_workspace_manifest() {
     let got = super::workspace_root(&inner);
     assert_eq!(got, std::fs::canonicalize(&ws).expect("canon"));
 }
+
+/// ONT-3b (#4073) falsifier for the call site: a green, fresh, closed discharge beside a Lean dir that has no
+/// formalization record must reach the caller with NOTHING granted. If `grounding_from` skipped `refine`, the
+/// summary's theorem would come back as L4 credit.
+#[test]
+fn grounding_applies_refinement_to_a_green_discharge() {
+    use crate::discharge::summary::{Module, Summary, SUMMARY_FILE};
+    let root = tempfile::tempdir().expect("tempdir");
+    let lean = root.path().join("lean");
+    std::fs::create_dir_all(&lean).expect("mkdir");
+    let s = Summary {
+        tree_sha: Some("t".into()),
+        build_exit: Some(0),
+        lake_exit: Some(0),
+        leanchecker_exit: Some(0),
+        axioms_ok: true,
+        escapes_ok: true,
+        challenges_closed: Some("1/1".into()),
+        modules: vec![Module {
+            path: "ProvableContracts/Softmax.lean".into(),
+            blake3: "b".into(),
+            theorems: vec!["ProvableContracts.Softmax.sum_one".into()],
+        }],
+        ..Summary::default()
+    };
+    std::fs::write(
+        root.path().join(SUMMARY_FILE),
+        serde_json::to_string(&s).expect("json"),
+    )
+    .expect("write summary");
+    let g = super::grounding_from(&[lean.as_path()], |_| Some("t".into()));
+    assert!(matches!(g.source, super::L4Source::Discharge));
+    assert!(
+        g.discharged.withheld.is_none(),
+        "fixture must be a granting discharge, else the test proves nothing: {:?}",
+        g.discharged.withheld
+    );
+    assert!(
+        !g.discharged.grants("ProvableContracts.Softmax.sum_one"),
+        "no model covers the module, so the call site must drop its credit"
+    );
+    assert!(g
+        .discharged
+        .unrefined
+        .contains("ProvableContracts.Softmax.sum_one"));
+}
