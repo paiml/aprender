@@ -62,6 +62,8 @@ REGEN_RE='^regen/'
 #     fleet-wide (pin owner infra-8d), and a scratch `pmat work add` diff excludes roadmap.yaml;
 #   * check_readme_claims.sh FALSIFY-README-002 lets the CONTRACT_COUNT block LAG the merge tree on a PR
 #     (today it is an EQUALITY, so every contract-adding PR must edit the census and would deadlock here).
+#   * the regen/* exemption binds to the regen job's actor, not the branch NAME alone (sonnet quorum lane:
+#     any author can name a branch regen/x; its content is still judged by the two content guards).
 # OPERATOR A2 binds in BOTH modes: an allowlist row past its expiry FAILS.
 STRICT=0
 
