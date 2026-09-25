@@ -79,6 +79,8 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         ),
 
         #[cfg(feature = "training")]
+        ExtendedCommands::Model { command } => dispatch_model_command(command, cli),
+        #[cfg(feature = "training")]
         ExtendedCommands::Runs { command } => dispatch_runs_command(command, cli),
         #[cfg(feature = "training")]
         ExtendedCommands::Experiment { command } => dispatch_experiment_command(command, cli),
@@ -884,6 +886,30 @@ fn dispatch_unshard(
         Err(e) => Err(CliError::ValidationFailed(format!(
             "apr unshard failed: {e}"
         ))),
+    }
+}
+
+#[cfg(feature = "training")]
+/// Dispatch `apr model` subcommands (EXT-001).
+fn dispatch_model_command(command: &ModelCommands, cli: &Cli) -> std::result::Result<(), CliError> {
+    match command {
+        ModelCommands::Gate {
+            dir,
+            evidence,
+            sealed,
+            engine_tarball,
+            pacha_home,
+            out,
+            json,
+        } => commands::model_gate_cli::run_gate(&commands::model_gate_cli::GateArgs {
+            dir,
+            evidence,
+            sealed,
+            engine_tarball: engine_tarball.as_deref(),
+            pacha_home: pacha_home.as_deref(),
+            out: out.as_deref(),
+            json: *json || cli.json,
+        }),
     }
 }
 

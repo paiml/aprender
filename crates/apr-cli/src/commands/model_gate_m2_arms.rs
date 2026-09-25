@@ -12,11 +12,11 @@
 
 use super::{apply_holm, m2, suite_report, validate, M2Prereg, M2Report, ReleaseClass, Suite};
 use super::{SuiteData, SuiteReport, Verdict};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// What an arm is, as the receipt records it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum ArmIdentity {
     /// A hermetic artifact run locally (stock via llama.cpp, the 9B control).
     Artifact { name: String, sha256: String },
@@ -25,7 +25,7 @@ pub(crate) enum ArmIdentity {
 }
 
 /// Whether an arm can refuse promotion.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ArmRole {
     Blocking,
@@ -33,7 +33,8 @@ pub(crate) enum ArmRole {
 }
 
 /// One comparison arm: the candidate paired against this arm on every sealed suite.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Arm {
     pub identity: ArmIdentity,
     pub role: ArmRole,

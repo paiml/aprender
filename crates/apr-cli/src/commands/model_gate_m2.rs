@@ -18,10 +18,7 @@
 //!
 //! The baseline is any paired arm — the incumbent for M2, upstream stock for EXT-30.
 
-// Consumed by `apr model gate`, the rest of EXT-12; until then only tests call it.
-#![cfg_attr(not(test), allow(dead_code))]
-
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// The pre-registered constants M2 decides with.
@@ -52,7 +49,8 @@ impl M2Prereg {
 }
 
 /// One sealed suite's per-item results. Items are paired by index.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum SuiteData {
     /// Pass/fail per item: McNemar exact.
     Binary {
@@ -72,14 +70,15 @@ pub(crate) enum SuiteData {
 }
 
 /// A sealed suite.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Suite {
     pub name: String,
     pub data: SuiteData,
 }
 
 /// §3.6 release classes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ReleaseClass {
     /// Must be significantly better on at least one suite.

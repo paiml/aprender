@@ -97,6 +97,9 @@ pub(crate) mod kv_timeline_classifier;
 pub(crate) mod kv_timeline_lint;
 pub(crate) mod lint;
 pub(crate) mod lint_error;
+pub(crate) mod model_gate;
+#[cfg(feature = "training")]
+pub(crate) mod model_gate_cli;
 pub(crate) mod model_gate_m2;
 // Poka-yoke for the *-lint family error surface (#2377-8/-9): scans the family's
 // own source so the class cannot be reintroduced by the next copy-paste.

@@ -94,6 +94,7 @@ fn registered_commands() -> Vec<&'static str> {
         "tui",
         "monitor",
         "runs",
+        "model",
         "experiment",
         "showcase",
         // Renamed from "probar" (#2525). `apr probar` survives as a HIDDEN
