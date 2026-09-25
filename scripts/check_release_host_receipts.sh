@@ -187,13 +187,13 @@ PY
 }
 M="$TMP/mutants"; mkdir -p "$M"
 mutate "$HOST_RECEIPT" "$M/hr-drop-accel-line.sh" \
-    'unmeasured.append("accel lane: the crates.io build carries no `cuda` feature (apr-cli default features), so no CUDA lane is measured in this receipt; the CUDA binary is the release asset, which the train'"'"'s hosts step runs")' 'pass'
+    'printf '"'"'%s\n'"'"' "accel lane: the crates.io build carries no' ': "accel lane: the crates.io build carries no'
 mutate "$HOST_RECEIPT" "$M/hr-parity-nested.sh" \
     '    receipt_set parity "$W/parity.block.json"' '    receipt_set parity "$W/parity.json"'
 mutate "$HOST_RECEIPT" "$M/hr-nvsmi-any-rc.sh" \
-    '    return p.stdout.strip() if p.returncode == 0 else ""' '    return p.stdout.strip()'
+    '  out=$(hr_timeout 120 "$@" 2> /dev/null) || return 0' '  out=$(hr_timeout 120 "$@" 2> /dev/null)'
 mutate "$HOST_RECEIPT" "$M/hr-drop-fallback.sh" \
-    '        r.setdefault("unmeasured", []).append(f"generate: apr'"'"'s accelerated path was not used: {fallback[:200]}")' '        pass'
+    '| if $fb then .unmeasured' '| if false then .unmeasured'
 mutate "$HOST_RECEIPT" "$M/hr-no-gpu-wrap.sh" \
     '      WRAP="gpu-q --prio $gpu_prio --"' '      WRAP=""'
 mutate "$HOST_RECEIPT" "$M/hr-gpuq-not-preferred.sh" \
@@ -203,13 +203,13 @@ mutate "$HOST_RECEIPT" "$M/hr-os-literal.sh" \
 mutate "$HOST_RECEIPT" "$M/hr-drop-attempt.sh" \
     'attempt parity "$T_RC" "$W/parity.log"; ' ''
 mutate "$HOST_RECEIPT" "$M/hr-sane-always.sh" \
-    '"output_sane": bool(re.search(r"\b4\b", str(out.get("text", "")))),' '"output_sane": True,'
+    'output_sane: (($out | if has("text") then .text else "" end) | pystr | test("\\b4\\b")),' 'output_sane: true,'
 mutate "$HOST_RECEIPT" "$M/hr-merge-hashes.sh" \
-    'r["sha256_measured"] = sha256(cache[0]) if cache else None' 'r["sha256_measured"] = r["sha256_published"]'
+    'sha256_measured: $measured}' 'sha256_measured: (if $pub.ok then $pub.c else null end)}'
 mutate "$HOST_RECEIPT" "$M/hr-no-version-check.sh" \
     '[[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {' 'true || {'
 mutate "$HOST_RECEIPT" "$M/hr-version-key.sh" \
-    '"version_tested": ver,' '"version": ver,'
+    'version_tested: $ver,' 'version: $ver,'
 mutate "$AUTOPILOT" "$M/ap-steps-reordered.sh" \
     'install hosts postpub ledger close)' 'install postpub hosts ledger close)'
 mutate "$AUTOPILOT" "$M/ap-no-receipts-env.sh" \

@@ -13,8 +13,9 @@
 # and its whole scripts/ tree to a scratch dir on the host (gx10's own checkout was 24 days stale; the
 # producers source helpers beside them, so a hand-kept file list drifts). It is bash-3.2
 # safe, because mini runs macOS /bin/bash: no associative arrays, no mapfile, no `${x,,}`; the
-# clock, the hashes and the JSON are python3 (present on all four hosts, measured 2026-09-21),
-# because BSD date has no %N and macOS has no /proc.
+# clock, the hashes and the JSON are shell + jq (jq 1.8.2 on all four hosts, measured 2026-09-25;
+# python3 left the release path in #4352): the clock falls back to perl because BSD date has no %N,
+# and macOS has no /proc and no timeout(1).
 #
 # THE GPU RULE (cop, 2026-09-21, rule rev 5): on lambda and gx10 every apr/llama measurement runs
 # through the ORDERED queue `gpu-q --prio N --`, which serves (priority, arrival) and then runs
@@ -40,7 +41,7 @@
 # writes evidence/dogfood/<version>/<host>.json under the kit root and prints it between
 #   ---RECEIPT <host>--- / ---END RECEIPT--- on stdout
 # exit: 0 a receipt was written (its content says what passed and what did not)
-#       2 usage/ENV: no receipt (no cargo, no python3, a bad argument)
+#       2 usage/ENV: no receipt (no cargo, no jq/curl/iconv/sha256, a bad argument)
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 KIT=$(pwd)
@@ -63,7 +64,79 @@ done
 [[ $gpu_prio =~ ^[0-9]$ ]] || { echo "host_receipt: --gpu-prio must be 0-9, not '$gpu_prio'" >&2; exit 2; }
 [[ $gpu_wait =~ ^[0-9]+$ ]] || { echo "host_receipt: --gpu-wait must be whole seconds, not '$gpu_wait'" >&2; exit 2; }
 export GPUQ_WAIT="$gpu_wait"
-command -v python3 > /dev/null 2>&1 || { echo "host_receipt: ENV no python3 on $host" >&2; exit 2; }
+# ---- the clock, the hashes and the JSON: shell + jq (#4352: python3 is out of the release path) ----
+# Each replaces a python3 block of the same name, case for case (parity table in #4352). bash-3.2
+# safe: no EPOCHREALTIME without a fallback, no mapfile, no associative arrays.
+# HR_JQ: python's str() of a scalar, str.splitlines() and str.strip() -- the receipt's text fields
+# are built from lines python split and stripped, so the twin splits and strips the same way.
+HR_JQ='def pystr: if . == null then "None" elif . == true then "True" elif . == false then "False"
+    elif type == "string" then . else tojson end;
+def pylines: [splits("\r\n|[\n\r\u000b\u000c\u001c\u001d\u001e\u0085  ]")]
+    | if length > 0 and .[-1] == "" then .[:-1] else . end;
+def strip: sub("^\\s+"; "") | sub("\\s+$"; "");
+def nonblank: [pylines[] | select(strip != "")];
+def one: input as $d | if ([inputs] | length) > 0 then error("extra data") else $d end;'
+# hr_now_ms -> wall-clock milliseconds: bash 5's EPOCHREALTIME, GNU date's %N, else perl (macOS
+# /bin/bash is 3.2 and BSD date has no %N).
+hr_now_ms() {
+  local t
+  if [ -n "${EPOCHREALTIME:-}" ]; then t=${EPOCHREALTIME//[.,]/}; echo $(( 10#$t / 1000 )); return 0; fi
+  t=$(date +%s%N 2> /dev/null)
+  case $t in
+    '' | *[!0-9]*) perl -MTime::HiRes=time -e 'printf "%d\n", time * 1000' ;;
+    *) echo $(( t / 1000000 )) ;;
+  esac
+}
+# hr_timeout SECS CMD... -> CMD bounded like subprocess.run(timeout=): timeout(1), else perl's alarm
+# (macOS has no timeout(1)).
+hr_timeout() {
+  local s=$1; shift
+  if command -v timeout > /dev/null 2>&1; then timeout "$s" "$@"
+  else perl -e '$s = shift; alarm $s; exec { $ARGV[0] } @ARGV or exit 127' "$s" "$@"; fi
+}
+# hr_strip TEXT -> TEXT without leading/trailing whitespace (str.strip()).
+hr_strip() {
+  local x=$1
+  x="${x#"${x%%[![:space:]]*}"}"; x="${x%"${x##*[![:space:]]}"}"
+  printf '%s' "$x"
+}
+# hr_sh CMD... -> stripped stdout only when CMD is present and SUCCEEDED: nvidia-smi on a host whose
+# driver is gone prints its failure text on stdout and exits 9, and that text became intel's
+# "accelerator" (measured, 0.68.2 first-green run, 2026-09-21).
+hr_sh() {
+  local out
+  command -v "$1" > /dev/null 2>&1 || return 0
+  out=$(hr_timeout 120 "$@" 2> /dev/null) || return 0
+  hr_strip "$out"
+}
+# hr_sh_fail CMD... -> `<rc> <first non-blank output line, 160 chars>` for a command that is present
+# and failed; nothing when it is absent or green.
+hr_sh_fail() {
+  local rc
+  command -v "$1" > /dev/null 2>&1 || return 0
+  hr_timeout 120 "$@" > "$W/.sh_fail.out" 2> "$W/.sh_fail.err"; rc=$?
+  [ "$rc" -ne 0 ] || return 0
+  printf '%s ' "$rc"
+  cat "$W/.sh_fail.out" "$W/.sh_fail.err" | jq -Rrs "$HR_JQ"'(nonblank | first // "") | strip | .[:160]'
+}
+# hr_sha256 FILE -> hex digest
+hr_sha256() {
+  local h
+  if command -v sha256sum > /dev/null 2>&1; then h=$(sha256sum < "$1") || return 1
+  else h=$(shasum -a 256 < "$1") || return 1; fi
+  printf '%s\n' "${h%% *}"
+}
+# hr_rewrite FILTER [jq args...] -> the receipt, rewritten through FILTER (json.dump indent=2, ASCII)
+hr_rewrite() {
+  jq -a "${@:2}" "$HR_JQ$1" "$RECEIPT" > "$RECEIPT.tmp" && mv -- "$RECEIPT.tmp" "$RECEIPT"
+}
+# ---- end shell + jq ----
+for t in jq curl iconv; do
+  command -v "$t" > /dev/null 2>&1 || { echo "host_receipt: ENV no $t on $host" >&2; exit 2; }
+done
+command -v sha256sum > /dev/null 2>&1 || command -v shasum > /dev/null 2>&1 \
+  || { echo "host_receipt: ENV no sha256sum or shasum on $host" >&2; exit 2; }
+case $(hr_now_ms) in '' | *[!0-9]*) echo "host_receipt: ENV no millisecond clock on $host (no bash 5, GNU date or perl)" >&2; exit 2 ;; esac
 CARGO="${CARGO_HOME:-$HOME/.cargo}/bin/cargo"
 [ -x "$CARGO" ] || { echo "host_receipt: ENV no cargo at $CARGO on $host" >&2; exit 2; }
 
@@ -85,22 +158,17 @@ case "$host" in
     fi ;;
 esac
 
-# timed NAME CMD... -> runs CMD with stdout+stderr to $W/<name>.log; sets T_RC and T_MS (python3 clock).
+# timed NAME CMD... -> runs CMD with stdout+stderr to $W/<name>.log; sets T_RC and T_MS (hr_now_ms).
 # With TIMED_SPLIT=1, stderr goes to $W/<name>.err instead, so a JSON stdout stays parseable.
 timed() {
-  local name=$1; shift
-  python3 - "$W/$name.log" "$W/$name.rc" "${TIMED_SPLIT:-0}" "$W/$name.err" "$@" <<'PY'
-import subprocess, sys, time
-log, rcf, split, errf, cmd = sys.argv[1], sys.argv[2], sys.argv[3] == "1", sys.argv[4], sys.argv[5:]
-t0 = time.monotonic()
-err = open(errf, "wb") if split else subprocess.STDOUT
-with open(log, "wb") as out:
-    try:
-        rc = subprocess.call(cmd, stdout=out, stderr=err)
-    except OSError as e:
-        out.write(f"exec failed: {e}\n".encode()); rc = 127
-open(rcf, "w").write(f"{rc} {int((time.monotonic() - t0) * 1000)}\n")
-PY
+  local name=$1 t0 rc; shift
+  t0=$(hr_now_ms)
+  if [ "${TIMED_SPLIT:-0}" = 1 ]; then
+    ( "$@" ) > "$W/$name.log" 2> "$W/$name.err"; rc=$?
+  else
+    ( "$@" ) > "$W/$name.log" 2>&1; rc=$?
+  fi
+  printf '%s %s\n' "$rc" "$(( $(hr_now_ms) - t0 ))" > "$W/$name.rc"
   read -r T_RC T_MS < "$W/$name.rc"
 }
 
@@ -113,7 +181,7 @@ install_rc=$T_RC; install_ms=$T_MS
 APR="$ROOT/bin/apr"
 [ "$install_rc" -eq 0 ] && [ -x "$APR" ] || { unmeasured "install: cargo install aprender --version =$ver --locked exited $install_rc"; APR=""; }
 
-# ---- 2. assemble the base receipt (python3: portable, and the JSON is built, not printed) ------
+# ---- 2. assemble the base receipt (shell + jq: portable, and the JSON is built, not printed) ----
 RECEIPT_DIR="$KIT/evidence/dogfood/$ver"
 case "$RECEIPT_DIR" in *..*) echo "host_receipt: ENV bad receipt dir" >&2; exit 2 ;; esac
 mkdir -p "$RECEIPT_DIR" || exit 2
@@ -124,118 +192,119 @@ RECEIPT="$RECEIPT_DIR/$host.json"
 os_name=$(uname -s); os_rel=$(uname -r); os_arch=$(uname -m)
 # The crates.io sparse-index record for aprender; the case table points it at a file:// fixture.
 INDEX_URL="${HOST_RECEIPT_INDEX_URL:-https://index.crates.io/ap/re/aprender}"
-python3 - "$RECEIPT" "$ver" "$host" "$install_rc" "$install_ms" "$APR" "$ROOT" "$W" "$os_name" "$os_rel" "$os_arch" "$INDEX_URL" <<'PY'
-import datetime, glob, hashlib, json, os, subprocess, sys, urllib.request
-receipt, ver, host, install_rc, install_ms, apr, root, work, os_name, os_rel, os_arch, index_url = sys.argv[1:13]
-def sh(cmd):
-    # stdout only when the command SUCCEEDED: nvidia-smi on a host whose driver is gone prints its
-    # failure text on stdout and exits 9, and that text became intel's "accelerator" (measured,
-    # 0.68.2 first-green run, 2026-09-21)
-    try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-    except Exception:
-        return ""
-    return p.stdout.strip() if p.returncode == 0 else ""
-def sh_fail(cmd):
-    # (rc, first output line) for a command that is present and failed; None when absent or green
-    try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-    except Exception:
-        return None
-    if p.returncode == 0: return None
-    first = next((l.strip() for l in (p.stdout + p.stderr).splitlines() if l.strip()), "")
-    return p.returncode, first
-def sha256(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for b in iter(lambda: f.read(1 << 20), b""): h.update(b)
-    return h.hexdigest()
-unmeasured = [l for l in open(os.path.join(work, "unmeasured.txt")).read().splitlines() if l]
-darwin = os_name == "Darwin"
-if darwin:
-    cpu = sh(["sysctl", "-n", "machdep.cpu.brand_string"]); nproc = sh(["sysctl", "-n", "hw.ncpu"])
-else:
-    cpu = next((l.split(":", 1)[1].strip() for l in sh(["lscpu"]).splitlines() if l.startswith("Model name")), "")
-    nproc = sh(["nproc"])
-NVQ = ["nvidia-smi", "--query-gpu=name,compute_cap,driver_version", "--format=csv,noheader"]
-nv = [l for l in sh(NVQ).splitlines() if len(l.split(",")) == 3]
-nv_failed = sh_fail(NVQ)
-if nv_failed:
-    unmeasured.append(f"accelerator: nvidia-smi is present but failed (rc {nv_failed[0]}): {nv_failed[1][:160]}")
-if nv:
-    name, cc, drv = (x.strip() for x in (nv[0].split(",") + ["", "", ""])[:3])
-    accelerator, driver = f"{name} sm_{cc.replace('.', '')}", drv
-elif darwin:
-    accelerator, driver = f"{cpu} (Metal)", "n/a (macOS)"
-else:
-    accelerator, driver = "none", "n/a"
-log = open(os.path.join(work, "install.log"), errors="replace").read()
-r = {
-    "host": host, "arch": os_arch, "os": f"{os_name} {os_rel}",
-    "cpu": cpu or "unknown", "nproc": int(nproc) if nproc.isdigit() else None,
-    "accelerator": accelerator, "driver": driver,
-    "version_tested": ver, "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d"),
-    "produced_by": "scripts/release/host_receipt.sh (the release train, #3731)",
-    "provenance": "crates.io", "asset": f"aprender-{ver}.crate",
-    "install_command": f"cargo install aprender --version ={ver} --locked --root <scratch>",
-    "install_rc": int(install_rc), "install_wall_seconds": round(int(install_ms) / 1000),
-    "crates_compiled": sum(1 for l in log.splitlines() if l.strip().startswith("Compiling ")),
+# The base receipt, built in shell + jq; the JSON is built by jq, never printed by hand.
+hr_base_receipt() {
+  local cpu nproc nv name cc drv nvf accelerator driver ms secs rem compiled idx crc pub why cache f
+  local measured bin_sha bin_ver dv u="$W/.base.unmeasured"
+  # unmeasured.txt's non-empty lines, then this step's own
+  jq -Rrs "$HR_JQ"'pylines[] | select(. != "")' < "$W/unmeasured.txt" > "$u" || return 1
+  if [ "$os_name" = Darwin ]; then
+    cpu=$(hr_sh sysctl -n machdep.cpu.brand_string); nproc=$(hr_sh sysctl -n hw.ncpu)
+  else
+    cpu=$(hr_sh lscpu | awk '/^Model name/ { sub(/^[^:]*:/, ""); gsub(/^[ \t]+|[ \t]+$/, ""); print; exit }')
+    nproc=$(hr_sh nproc)
+  fi
+  nv=$(hr_sh nvidia-smi --query-gpu=name,compute_cap,driver_version --format=csv,noheader | awk -F, 'NF == 3 { print; exit }')
+  nvf=$(hr_sh_fail nvidia-smi --query-gpu=name,compute_cap,driver_version --format=csv,noheader)
+  [ -z "$nvf" ] || printf 'accelerator: nvidia-smi is present but failed (rc %s): %s\n' "${nvf%% *}" "${nvf#* }" >> "$u"
+  if [ -n "$nv" ]; then
+    IFS=, read -r name cc drv <<< "$nv"
+    name=$(hr_strip "$name"); cc=$(hr_strip "$cc"); drv=$(hr_strip "$drv")
+    accelerator="$name sm_${cc//./}"; driver=$drv
+  elif [ "$os_name" = Darwin ]; then
+    accelerator="$cpu (Metal)"; driver="n/a (macOS)"
+  else
+    accelerator=none; driver=n/a
+  fi
+  case $nproc in '' | *[!0-9]*) nproc=null ;; *) nproc=$(( 10#$nproc )) ;; esac
+  # round(ms / 1000), as python rounds: half to even
+  ms=$install_ms; secs=$(( ms / 1000 )); rem=$(( ms % 1000 ))
+  if [ "$rem" -gt 500 ] || { [ "$rem" -eq 500 ] && [ $(( secs % 2 )) -eq 1 ]; }; then secs=$(( secs + 1 )); fi
+  compiled=$(jq -Rrs "$HR_JQ"'[pylines[] | select(strip | startswith("Compiling "))] | length' < "$W/install.log") || return 1
+  # sha256_published: crates.io's own cksum for the .crate (the sparse index record);
+  # sha256_measured: the .crate cargo actually downloaded, hashed here. Two fields, never merged.
+  idx=$(curl -fsSL --max-time 30 -A aprender-release-train -- "$INDEX_URL" 2> /dev/null); crc=$?
+  if [ "$crc" -ne 0 ]; then
+    case $crc in 22) why=HTTPError ;; 28) why=TimeoutError ;; *) why=URLError ;; esac
+    pub='{"ok":false,"why":"'$why'"}'
+  elif ! printf '%s' "$idx" | iconv -f UTF-8 -t UTF-8 > /dev/null 2>&1; then
+    pub='{"ok":false,"why":"UnicodeDecodeError"}'
+  else
+    # python parses every line first, then walks them lazily to the first vers match
+    pub=$(printf '%s' "$idx" | jq -Rcs --arg v "$ver" "$HR_JQ"'
+        try ([nonblank[] | try fromjson catch error("JSONDecodeError")]
+             | reduce .[] as $x ({done: false, c: null};
+                 if .done then .
+                 elif ($x | type) != "object" then error("AttributeError")
+                 elif $x.vers == $v then
+                   (if $x | has("cksum") then {done: true, c: $x.cksum} else error("KeyError") end)
+                 else . end)
+             | {ok: true, c})
+        catch {ok: false, why: .}') || return 1
+  fi
+  jq -rn --argjson p "$pub" '$p | select(.ok | not) | "sha256_published: the crates.io index was not read (\(.why))"' >> "$u"
+  if [ "$(jq -rn --argjson p "$pub" '$p.ok and $p.c == null')" = true ] && ! grep -q '^sha256_published' "$u"; then
+    printf 'sha256_published: aprender %s is not in the crates.io index\n' "$ver" >> "$u"
+  fi
+  cache=""
+  for f in "${CARGO_HOME-$HOME/.cargo}"/registry/cache/*/"aprender-$ver.crate"; do
+    [ -e "$f" ] && cache="$cache$f"$'\n'
+  done
+  cache=$(printf '%s' "$cache" | LC_ALL=C sort | head -n 1)
+  measured=null
+  if [ -n "$cache" ]; then measured="\"$(hr_sha256 "$cache")\"" || return 1
+  else printf 'sha256_measured: no downloaded aprender-%s.crate in the cargo registry cache\n' "$ver" >> "$u"; fi
+  bin_sha=""; bin_ver=""
+  printf 'null\n' > "$W/.devices.json"
+  if [ -n "$APR" ]; then
+    bin_sha=$(hr_sha256 "$APR") || return 1
+    bin_ver=$(hr_sh "$APR" --version); bin_ver=${bin_ver%%$'\n'*}
+    dv=$(hr_sh "$APR" devices --json)
+    if ! printf '%s' "$dv" | jq -an "$HR_JQ"'one' > "$W/.devices.json" 2> /dev/null; then
+      printf 'null\n' > "$W/.devices.json"
+      printf 'devices: `apr devices --json` did not print JSON\n' >> "$u"
+    fi
+  fi
+  printf '%s\n' "accel lane: the crates.io build carries no \`cuda\` feature (apr-cli default features), so no CUDA lane is measured in this receipt; the CUDA binary is the release asset, which the train's hosts step runs" >> "$u"
+  jq -an --arg host "$host" --arg arch "$os_arch" --arg os "$os_name $os_rel" --arg cpu "$cpu" \
+      --argjson nproc "$nproc" --arg accelerator "$accelerator" --arg driver "$driver" \
+      --arg ver "$ver" --arg date "$(date -u +%Y-%m-%d)" --argjson install_rc "$install_rc" \
+      --argjson secs "$secs" --argjson compiled "$compiled" --argjson pub "$pub" \
+      --argjson measured "$measured" --arg apr "$APR" --arg bin_sha "$bin_sha" --arg bin_ver "$bin_ver" \
+      --slurpfile devices "$W/.devices.json" --rawfile unmeasured "$u" "$HR_JQ"'
+    {host: $host, arch: $arch, os: $os,
+     cpu: (if $cpu == "" then "unknown" else $cpu end), nproc: $nproc,
+     accelerator: $accelerator, driver: $driver,
+     version_tested: $ver, date: $date,
+     produced_by: "scripts/release/host_receipt.sh (the release train, #3731)",
+     provenance: "crates.io", asset: "aprender-\($ver).crate",
+     install_command: "cargo install aprender --version =\($ver) --locked --root <scratch>",
+     install_rc: $install_rc, install_wall_seconds: $secs, crates_compiled: $compiled,
+     sha256_published: (if $pub.ok then $pub.c else null end), sha256_measured: $measured}
+    + (if $apr != "" then {binary_path: $apr, binary_sha256: $bin_sha, binary_version_output: $bin_ver,
+                           devices: ($devices | .[0])}
+       else {binary_path: null, devices: null} end)
+    + {unmeasured: ($unmeasured | pylines)}' > "$RECEIPT.tmp" && mv -- "$RECEIPT.tmp" "$RECEIPT"
 }
-# sha256_published: crates.io's own cksum for the .crate (the sparse index record);
-# sha256_measured: the .crate cargo actually downloaded, hashed here. Two fields, never merged.
-try:
-    req = urllib.request.Request(index_url, headers={"User-Agent": "aprender-release-train"})
-    rec = [json.loads(l) for l in urllib.request.urlopen(req, timeout=30).read().decode().splitlines() if l.strip()]
-    r["sha256_published"] = next((x["cksum"] for x in rec if x.get("vers") == ver), None)
-except Exception as e:
-    r["sha256_published"] = None; unmeasured.append(f"sha256_published: the crates.io index was not read ({type(e).__name__})")
-if r["sha256_published"] is None and not any(u.startswith("sha256_published") for u in unmeasured):
-    unmeasured.append(f"sha256_published: aprender {ver} is not in the crates.io index")
-cache = sorted(glob.glob(os.path.join(os.environ.get("CARGO_HOME", os.path.expanduser("~/.cargo")), "registry", "cache", "*", f"aprender-{ver}.crate")))
-r["sha256_measured"] = sha256(cache[0]) if cache else None
-if not cache: unmeasured.append(f"sha256_measured: no downloaded aprender-{ver}.crate in the cargo registry cache")
-if apr:
-    r["binary_path"] = apr; r["binary_sha256"] = sha256(apr)
-    r["binary_version_output"] = sh([apr, "--version"]).splitlines()[0] if sh([apr, "--version"]) else ""
-    dv = sh([apr, "devices", "--json"])
-    try: r["devices"] = json.loads(dv)
-    except Exception:
-        r["devices"] = None; unmeasured.append("devices: `apr devices --json` did not print JSON")
-else:
-    r["binary_path"] = None; r["devices"] = None
-unmeasured.append("accel lane: the crates.io build carries no `cuda` feature (apr-cli default features), so no CUDA lane is measured in this receipt; the CUDA binary is the release asset, which the train's hosts step runs")
-r["unmeasured"] = unmeasured
-json.dump(r, open(receipt, "w"), indent=2); open(receipt, "a").write("\n")
-PY
+hr_base_receipt
 [ -s "$RECEIPT" ] || { echo "host_receipt: ENV the base receipt was not written" >&2; exit 2; }
 
 # receipt_set KEY JSON-FILE|null -> sets receipt[KEY] from a JSON file (or null)
 receipt_set() {
-  python3 - "$RECEIPT" "$1" "${2:-}" <<'PY'
-import json, sys
-p, key, src = sys.argv[1:4]
-r = json.load(open(p))
-r[key] = json.load(open(src)) if src else None
-json.dump(r, open(p, "w"), indent=2); open(p, "a").write("\n")
-PY
+  if [ -n "${2:-}" ]; then
+    jq -n "$HR_JQ"'one' < "$2" > "$W/.set.json" 2> /dev/null || return 1
+    hr_rewrite '.[$k] = ($v | .[0])' --arg k "$1" --slurpfile v "$W/.set.json"
+  else
+    hr_rewrite '.[$k] = null' --arg k "$1"
+  fi
 }
-note() { printf '%s\n' "$*" >> "$W/unmeasured.txt"; python3 - "$RECEIPT" "$*" <<'PY'
-import json, sys
-p, u = sys.argv[1:3]
-r = json.load(open(p)); r.setdefault("unmeasured", []).append(u)
-json.dump(r, open(p, "w"), indent=2); open(p, "a").write("\n")
-PY
-}
+note() { printf '%s\n' "$*" >> "$W/unmeasured.txt"; hr_rewrite '.unmeasured = ((.unmeasured // []) + [$u])' --arg u "$*"; }
 # attempt NAME RC LOG -> receipt[NAME_attempt] = {status: refused, rc, reason: last lines}
 attempt() {
-  python3 - "$RECEIPT" "$1" "$2" "$3" <<'PY'
-import json, sys
-p, name, rc, log = sys.argv[1:5]
-try: tail = [l for l in open(log, errors="replace").read().splitlines() if l.strip()][-3:]
-except OSError: tail = []
-r = json.load(open(p)); r[name + "_attempt"] = {"status": "refused", "rc": int(rc), "reason": " | ".join(tail)[:400]}
-json.dump(r, open(p, "w"), indent=2); open(p, "a").write("\n")
-PY
+  local tail='[]'
+  if [ -r "$3" ]; then tail=$(jq -Rcs "$HR_JQ"'nonblank | .[-3:]' < "$3") || tail='[]'; fi
+  hr_rewrite '.[$n + "_attempt"] = {status: "refused", rc: ($rc | tonumber), reason: ($tail | join(" | ") | .[:400])}' \
+    --arg n "$1" --arg rc "$2" --argjson tail "$tail"
 }
 
 # ---- 3. generate: one short, checkable answer from the installed binary -----------------------
@@ -246,37 +315,29 @@ if [ -n "$APR" ] && [ -f "$model" ]; then
   # (The text output prints no token count: 0.68.2's first-green run recorded tokens=null.)
   # shellcheck disable=SC2086
   TIMED_SPLIT=1 timed generate $WRAP "$APR" run "$model" --prompt "What is 2+2? Answer with just the number." --max-tokens 16 --format json
-  python3 - "$RECEIPT" "$model" "$W/generate.log" "$W/generate.err" "$T_RC" "$T_MS" <<'PY'
-import hashlib, json, re, sys
-p, model, log, errf, rc, ms = sys.argv[1:7]
-err = [l.strip() for l in open(errf, errors="replace").read().splitlines() if l.strip()]
-h = hashlib.sha256()
-with open(model, "rb") as f:
-    for b in iter(lambda: f.read(1 << 20), b""): h.update(b)
-r = json.load(open(p))
-try:
-    out = json.load(open(log))
-except ValueError:
-    out = None
-if int(rc) != 0 or not isinstance(out, dict):
-    r["generate"] = None
-    why = f"exited {rc}" if int(rc) != 0 else "printed no JSON record on stdout"
-    r.setdefault("unmeasured", []).append(f"generate: `apr run --format json` {why}: {(err[-1] if err else '')[:160]}")
-else:
-    fallback = next((l for l in err if re.search(r"fallback|rejected", l, re.I)), None)
-    r["generate"] = {"model": model.rsplit("/", 1)[-1], "model_sha256": h.hexdigest(),
-                     "backend_line_verbatim": next((l for l in err if l.startswith("Backend:")), "")[:300],
-                     "fallback_line_verbatim": fallback[:300] if fallback else None,
-                     "used_gpu": out.get("used_gpu"),
-                     "tokens": out.get("tokens_generated"), "wall_ms": int(ms),
-                     "output_sane": bool(re.search(r"\b4\b", str(out.get("text", "")))),
-                     "prompt": "What is 2+2? Answer with just the number."}
-    if not r["generate"]["output_sane"]:
-        r.setdefault("unmeasured", []).append("generate: the answer to 2+2 did not contain 4")
-    if fallback:
-        r.setdefault("unmeasured", []).append(f"generate: apr's accelerated path was not used: {fallback[:200]}")
-json.dump(r, open(p, "w"), indent=2); open(p, "a").write("\n")
-PY
+  model_sha=$(hr_sha256 "$model") || model_sha=""
+  # the record is ONE JSON document on stdout, valid UTF-8 (python's json.load refused anything else)
+  if iconv -f UTF-8 -t UTF-8 < "$W/generate.log" > /dev/null 2>&1 \
+      && jq -n "$HR_JQ"'one' < "$W/generate.log" > "$W/.generate.json" 2> /dev/null; then :
+  else printf 'null\n' > "$W/.generate.json"; fi
+  hr_rewrite '
+    ($errs | nonblank | map(strip)) as $e | (($doc | .[0])) as $out
+    | if ($rc | tonumber) != 0 or ($out | type) != "object" then
+        .generate = null
+        | .unmeasured = ((.unmeasured // []) + ["generate: `apr run --format json` \(if ($rc | tonumber) != 0 then "exited \($rc)" else "printed no JSON record on stdout" end): \((($e | .[-1]) // "")[:160])"])
+      else
+        (first(($e | .[]) | select(test("fallback|rejected"; "i"))) // null) as $fb
+        | .generate = {model: ($model | split("/") | .[-1]), model_sha256: $sha,
+                       backend_line_verbatim: ((first(($e | .[]) | select(startswith("Backend:"))) // "")[:300]),
+                       fallback_line_verbatim: (if $fb then ($fb | .[:300]) else null end),
+                       used_gpu: $out.used_gpu,
+                       tokens: $out.tokens_generated, wall_ms: ($ms | tonumber),
+                       output_sane: (($out | if has("text") then .text else "" end) | pystr | test("\\b4\\b")),
+                       prompt: "What is 2+2? Answer with just the number."}
+        | if .generate.output_sane then . else .unmeasured = ((.unmeasured // []) + ["generate: the answer to 2+2 did not contain 4"]) end
+        | if $fb then .unmeasured = ((.unmeasured // []) + ["generate: apr'"'"'s accelerated path was not used: \(($fb | .[:200]))"]) else . end
+      end' --arg model "$model" --arg sha "$model_sha" --arg rc "$T_RC" --arg ms "$T_MS" \
+      --rawfile errs "$W/generate.err" --slurpfile doc "$W/.generate.json"
 else
   receipt_set generate
   note "generate: no installed apr or no model at $model"
@@ -302,14 +363,13 @@ if [ "$do_parity" -eq 1 ] && [ -n "$APR" ] && [ -f "$model" ]; then
   # parity_block.py writes {"parity": <block>}: the BLOCK is what the receipt holds. Stored whole, it
   # nested as parity.parity and the gate read a block with no instrument and no lanes (measured on the
   # 0.68.2 first-green run, lambda). Any other shape is a refusal, never a block.
-  if [ "$T_RC" -eq 0 ] && [ -s "$W/parity.json" ] && python3 - "$W/parity.json" "$W/parity.block.json" >> "$W/parity.log" 2>&1 <<'PY'
-import json, sys
-doc = json.load(open(sys.argv[1]))
-if not (isinstance(doc, dict) and list(doc) == ["parity"] and isinstance(doc["parity"], dict)):
-    print("parity_host_receipt.sh --out is not {\"parity\": <block>}: keys %s" % (sorted(doc) if isinstance(doc, dict) else type(doc).__name__))
-    sys.exit(1)
-json.dump(doc["parity"], open(sys.argv[2], "w"))
-PY
+  if [ "$T_RC" -eq 0 ] && [ -s "$W/parity.json" ] && jq -n "$HR_JQ"'
+      def pytype: if type == "array" then "list" elif type == "string" then "str" elif type == "boolean" then "bool"
+        elif type == "null" then "NoneType" elif (tostring | test("[.eEn]")) then "float" else "int" end;
+      one
+      | if type == "object" and keys_unsorted == ["parity"] and (.parity | type) == "object" then .parity
+        else "parity_host_receipt.sh --out is not {\"parity\": <block>}: keys \(if type == "object" then "[" + (keys | map("'"'"'" + . + "'"'"'") | join(", ")) + "]" else pytype end)\n" | halt_error(1)
+        end' < "$W/parity.json" > "$W/parity.block.json" 2>> "$W/parity.log"
   then
     receipt_set parity "$W/parity.block.json"
   else
