@@ -10,7 +10,8 @@
 //! the runner-owned checkout, and git refuses it ("dubious ownership"); row `foreign-owner`.
 //! `planted_regressions_turn_red` re-runs the table on three planted copies of `lib.rs` — the vcs
 //! rung removed (the pre-#4110 script), the vcs rung behind `git rev-parse`, and the safe.directory
-//! retry removed — and requires each to fail, so the table cannot pass vacuously.
+//! retry removed — and requires each to fail, so the table cannot pass vacuously. The `no-git-*` rows
+//! (#4254) run with an empty PATH, the release container's case, and a fourth plant drops the `.git` read.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -175,6 +176,58 @@ fn table(build_rs: &str, label: &str) -> Vec<String> {
         "cannot simulate a checkout owned by another user: this git ignores GIT_TEST_ASSUME_DIFFERENT_OWNER"
     );
     expect("foreign-owner", run(&bin, &dev, None, &other_owner), &head);
+    // #4254: no git binary at all (the release build container) -> HEAD read from `.git` itself,
+    // 9 hex digits. Loose ref, packed ref, detached HEAD, and a linked worktree (`.git` a file)
+    let empty = root.join("empty-path");
+    std::fs::create_dir_all(&empty).expect("mkdir empty PATH");
+    let no_git = [("PATH", empty.to_str().expect("utf-8 tempdir"))];
+    let nine = |dir: &Path| git(dir, &["rev-parse", "HEAD"])[..9].to_string();
+    expect(
+        "no-git-loose-ref",
+        run(&bin, &dev, None, &no_git),
+        &nine(&dev),
+    );
+    let packed = package(&pkgs, "packed", None);
+    git(&packed, &["init", "-q"]);
+    git(&packed, &["commit", "-q", "--allow-empty", "-m", "packed"]);
+    git(&packed, &["pack-refs", "--all"]);
+    assert!(
+        std::fs::read_dir(packed.join(".git/refs/heads"))
+            .expect("refs/heads")
+            .next()
+            .is_none(),
+        "pack-refs left a loose ref: the packed row would test the loose path"
+    );
+    expect(
+        "no-git-packed-ref",
+        run(&bin, &packed, None, &no_git),
+        &nine(&packed),
+    );
+    let wt = pkgs.join("wt");
+    git(
+        &dev,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "wt",
+            wt.to_str().expect("utf-8"),
+        ],
+    );
+    git(&wt, &["commit", "-q", "--allow-empty", "-m", "wt"]);
+    assert!(
+        wt.join(".git").is_file(),
+        "a linked worktree's .git is a file"
+    );
+    expect("no-git-worktree", run(&bin, &wt, None, &no_git), &nine(&wt));
+    git(&dev, &["checkout", "-q", "--detach"]);
+    git(&dev, &["commit", "-q", "--allow-empty", "-m", "detached"]);
+    expect(
+        "no-git-detached",
+        run(&bin, &dev, None, &no_git),
+        &nine(&dev),
+    );
     wrong
 }
 
@@ -205,17 +258,35 @@ fn planted_regressions_turn_red() {
         w1.iter().any(|r| r.starts_with("packaged:")),
         "no-vcs-rung plant survived: {w1:#?}"
     );
-    let retry = "run_git(&head).or_else(|| trusted_git_retry(&head))";
+    let retry = ".or_else(|| trusted_git_retry(&head))";
     assert_eq!(
         shipped.matches(retry).count(),
         1,
         "the git retry call site moved; re-anchor the plant"
     );
-    let w3 = table(&shipped.replace(retry, "run_git(&head)"), "plant_no_retry");
+    let w3 = table(&shipped.replace(retry, ""), "plant_no_retry");
     assert!(
         w3.iter().any(|r| r.starts_with("foreign-owner:")),
         "no-retry plant survived: {w3:#?}"
     );
+    let dot_git = ".or_else(read_head_sha_from_dot_git)";
+    assert_eq!(
+        shipped.matches(dot_git).count(),
+        1,
+        "the .git-read call site moved; re-anchor the plant"
+    );
+    let w4 = table(&shipped.replace(dot_git, ""), "plant_no_dot_git");
+    for row in [
+        "no-git-loose-ref",
+        "no-git-packed-ref",
+        "no-git-worktree",
+        "no-git-detached",
+    ] {
+        assert!(
+            w4.iter().any(|r| r.starts_with(&format!("{row}:"))),
+            "no-.git-read plant survived row {row}: {w4:#?}"
+        );
+    }
     let w2 = table(&git_first, "plant_git_first");
     assert!(
         w2.iter().any(|r| r.starts_with("foreign-repo:")),
