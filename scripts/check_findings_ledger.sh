@@ -16,8 +16,8 @@
 #    "suspected_epic": "...", "severity": "P0|P1|P2|P3",
 #    "found_at_sha": "<7-40 hex>"}
 #
-# A row must have all seven keys as non-empty strings (no extras, so a typo
-# such as `severty` cannot slip through). severity is one of P0..P3,
+# A row must have all seven keys as non-empty strings, each given once (no
+# extras, so a typo such as `severty` cannot slip through). severity is one of P0..P3,
 # found_at_sha is 7-40 lowercase hex, and id matches [A-Za-z0-9._-]+ and is
 # unique across every ledger file. A ledger with zero rows is RED (vacuous),
 # never a pass.
@@ -46,14 +46,24 @@ for f in sorted(d.glob("*.jsonl")):
             continue
         rows += 1
         where = f"{f.name}:{n}"
+        dup_keys = []
+        def pairs(kv):
+            seen_k = set()
+            for k, _ in kv:
+                if k in seen_k:
+                    dup_keys.append(k)
+                seen_k.add(k)
+            return dict(kv)
         try:
-            r = json.loads(raw)
+            r = json.loads(raw, object_pairs_hook=pairs)
         except json.JSONDecodeError as e:
             bad.append(f"{where}: not JSON ({e.msg})")
             continue
         if not isinstance(r, dict):
             bad.append(f"{where}: not a JSON object")
             continue
+        if dup_keys:
+            bad.append(f"{where}: key(s) given twice {','.join(sorted(set(dup_keys)))} (json keeps only the last)")
         missing = [k for k in KEYS if not (isinstance(r.get(k), str) and r[k].strip())]
         extra = sorted(set(r) - set(KEYS))
         if missing:
@@ -119,6 +129,7 @@ self_test() {
     case_ bad-sha 1 'not 7-40 lowercase hex' "${good/00058476c/HEAD}"
     case_ short-sha 1 'not 7-40 lowercase hex' "${good/00058476c/000584}"
     case_ bad-id 1 'characters outside' "${good/F-1/F 1}"
+    case_ duplicate-key 1 'key(s) given twice severity' "${good/\"severity\":\"P1\"/\"severity\":\"P9\",\"severity\":\"P1\"}"
     case_ duplicate-id 1 "duplicate id 'F-1'" "$good" "$good"
     # a duplicate across two FILES is still a duplicate
     mkdir -p "$tmp/dup-files"

@@ -53,7 +53,7 @@ set -euo pipefail
 SELF_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 
 usage() {
-    printf 'usage: %s [--list-owed] (--body FILE | < body-on-stdin) | --self-test\n' "$(basename "$0")" >&2
+    printf 'usage: %s [--list-owed | --require-close [--author LOGIN]] (--body FILE | < body-on-stdin) | --self-test\n' "$(basename "$0")" >&2
     exit 2
 }
 
@@ -372,13 +372,13 @@ STUB
     # --- --require-close: every PR discharges an issue (rule 18, #4455) -----
     # Each RED row is a body R-2 alone PASSES, so a row going green under a
     # mutant proves the rule-18 predicate, not R-2, is what refused it.
-    run_rc_case() { # run_rc_case NAME BODY WANT [MARKER the output must carry]
-        name="$1"; body="$2"; want="$3"; marker="${4:-}"
+    run_rc_case() { # run_rc_case NAME BODY WANT [MARKER the output must carry] [AUTHOR]
+        name="$1"; body="$2"; want="$3"; marker="${4:-}"; author="${5:-}"
         printf '%s' "$body" > "${tmp}/${name}.txt"
         got=0
         cases=$((cases + 1))
         PR_CLOSES_REF_KIND_CMD="${tmp}/kindstub.sh" \
-            bash "$SELF_PATH" --require-close --body "${tmp}/${name}.txt" > "${tmp}/${name}.out" 2>&1 || got=$?
+            bash "$SELF_PATH" --require-close ${author:+--author "$author"} --body "${tmp}/${name}.txt" > "${tmp}/${name}.out" 2>&1 || got=$?
         if [ "$got" -ne "$want" ]; then
             printf 'FAIL case %s: expected exit %s, got %s\n' "$name" "$want" "$got" >&2
             fails=$((fails + 1))
@@ -404,6 +404,13 @@ STUB
     run_rc_case "rc-unresolvable"     "Closes #9003"                                 1 "FAIL close-target-unverified"
     # R-2 still runs first under the flag: a discharge does not excuse an un-closed citation.
     run_rc_case "rc-r2-still-applies" $'Closes #9002\nsee #9005'                     1 "non-closing ref"
+    # A GitHub App (login ending in `[bot]`: dependabot, renovate) cannot write a
+    # trailer, so rule 18 exempts it. R-2 still applies, and a human login that
+    # merely looks like a bot is not exempt.
+    run_rc_case "rc-bot-exempt"       "Bumps serde from 1.0.1 to 1.0.2."             0 "exempt: bot author" "dependabot[bot]"
+    run_rc_case "rc-bot-lookalike"    "Bumps serde from 1.0.1 to 1.0.2."             1 "FAIL no-close"      "dependabot"
+    run_rc_case "rc-bot-r2-applies"   "Bumps serde; see #9005"                       1 "non-closing ref"    "dependabot[bot]"
+    run_rc_case "rc-human-author"     "Closes #9002"                                 0 "PASS: discharges 1" "noahgift"
 
     # THE DEFAULT PATH, not the seam. Every row above pins the stub, which
     # proves the DECISION and says nothing about the resolver. This one takes
@@ -504,6 +511,7 @@ main() {
     body_file=""
     list_owed=0
     require_close=0
+    author=""
     while [ $# -gt 0 ]; do
         case "$1" in
             --require-close)
@@ -512,6 +520,10 @@ main() {
                 ;;
             --body)
                 body_file="${2:-}"
+                shift 2
+                ;;
+            --author)
+                author="${2:-}"
                 shift 2
                 ;;
             --list-owed)
@@ -556,6 +568,12 @@ main() {
     out="$(check_body_text "$body")" || rc=$?
     printf '%s\n' "$out"
     if [ "$rc" -eq 0 ] && [ "$require_close" -eq 1 ]; then
+        case "$author" in
+            *'[bot]')
+                printf 'PASS: rule 18 exempt: bot author %s cannot write a trailer\n' "$author"
+                exit 0
+                ;;
+        esac
         out="$(check_require_close "$body")" || rc=$?
         printf '%s\n' "$out"
     fi

@@ -1422,11 +1422,13 @@ jobs:
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
           GH_TOKEN: ${{ github.token }}
+          # A `[bot]` login (dependabot) cannot write a trailer; rule 18 exempts it, R-2 does not.
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
           bash scripts/check_pr_closes_issue.sh --self-test
           printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.txt"
-          bash scripts/check_pr_closes_issue.sh --require-close --body "$RUNNER_TEMP/pr-body.txt"
+          bash scripts/check_pr_closes_issue.sh --require-close --author "$PR_AUTHOR" --body "$RUNNER_TEMP/pr-body.txt"
       # APR-RELEASE-001 §11.1, WIRED. The section shipped as prose in #3268 and
       # nothing read it: `grep -rl ont-delta scripts/ .github/ Makefile` returned
       # NOTHING, while §11.1's own text says "Absent is a PR-body lint failure,
