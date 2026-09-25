@@ -21,10 +21,25 @@ use crate::api::{create_router, AppState};
 
 const BUDGET: usize = 12;
 
+/// The three model backends that answer `/v1/completions` on a GGUF server:
+/// `try_quantized_completions`, `try_cached_completions`, and the batch scheduler
+/// `try_cached_completions` hands off to when `apr serve` wired one in (it runs
+/// its own decode loop in `batch_processing.rs`, with its own config).
+#[derive(Clone, Copy)]
+enum Backend {
+    Quantized,
+    Cached,
+    CachedBatch,
+}
+
 /// A quantized-only server whose vocabulary puts `token0` at id 0 and declares
 /// `eos` as the model's EOS. The rest of the vocabulary is printable ASCII, so the
 /// prompt encodes to real ids.
 fn state_with(token0: &str, eos: Option<u32>) -> AppState {
+    backend_state(Backend::Quantized, token0, eos)
+}
+
+fn backend_state(backend: Backend, token0: &str, eos: Option<u32>) -> AppState {
     use crate::api::test_helpers::create_test_quantized_model;
     use crate::gguf::{ArchConstraints, GGUFConfig};
 
@@ -49,8 +64,25 @@ fn state_with(token0: &str, eos: Option<u32>) -> AppState {
         bos_token_id: None,
         eos_token_id: eos,
     };
-    AppState::with_quantized_model_and_vocab(create_test_quantized_model(&config), vocab)
-        .expect("build quantized AppState")
+    let model = create_test_quantized_model(&config);
+    match backend {
+        Backend::Quantized => AppState::with_quantized_model_and_vocab(model, vocab)
+            .expect("build quantized AppState"),
+        Backend::Cached | Backend::CachedBatch => {
+            let cached = crate::gguf::OwnedQuantizedModelCachedSync::new(model);
+            let state = AppState::with_cached_model_and_vocab(cached, vocab)
+                .expect("build cached AppState");
+            if matches!(backend, Backend::Cached) {
+                return state;
+            }
+            // What `apr serve` does (apr-cli serve/server.rs): spawn the processor
+            // on the state's own model and hand the state its sender.
+            let model = state.cached_model().expect("cached model").clone();
+            let config = crate::api::gpu_handlers::BatchConfig::default();
+            let tx = crate::api::gpu_handlers::spawn_batch_processor(model, config.clone());
+            state.with_batch_config(tx, config)
+        },
+    }
 }
 
 async fn complete(state: AppState, stream: bool) -> (StatusCode, String) {
@@ -145,4 +177,39 @@ fn stop_set_is_eos_plus_every_eog_marker_in_the_vocabulary_once() {
     assert_eq!(completion_stop_tokens(&tok, Some(3)), vec![3, 1, 4]);
     assert_eq!(completion_stop_tokens(&tok, Some(2)), vec![2, 3, 1, 4]);
     assert_eq!(completion_stop_tokens(&tok, None), vec![3, 1, 4]);
+}
+
+/// Every backend: the control runs to its budget, and `<|endoftext|>` (not the
+/// declared EOS) stops at once. The batch scheduler built its own config with
+/// `stop_tokens: Vec::new()` — fixing the two handler call sites left it running
+/// to `max_tokens` on every `apr serve` whose batch processor was wired in.
+async fn assert_backend_stops_on_eog(backend: Backend, name: &str) {
+    let (status, body) = complete(backend_state(backend, "tokenZ", Some(7)), false).await;
+    assert_eq!(status, StatusCode::OK, "{name}: {body}");
+    let v = json(&body);
+    assert_eq!(
+        v["usage"]["completion_tokens"], BUDGET,
+        "{name} control: an ordinary token must run to the budget: {body}"
+    );
+    assert_eq!(v["choices"][0]["finish_reason"], "length", "{name}: {body}");
+
+    let (status, body) = complete(backend_state(backend, "<|endoftext|>", Some(7)), false).await;
+    assert_eq!(status, StatusCode::OK, "{name}: {body}");
+    let v = json(&body);
+    assert_eq!(
+        v["usage"]["completion_tokens"], 0,
+        "#4339 {name}: the completion ran past <|endoftext|>: {body}"
+    );
+    assert_eq!(v["choices"][0]["finish_reason"], "stop", "{name}: {body}");
+    assert_eq!(v["choices"][0]["text"], "", "{name}: {body}");
+}
+
+#[tokio::test]
+async fn the_cached_backend_stops_on_an_eog_marker() {
+    assert_backend_stops_on_eog(Backend::Cached, "cached").await;
+}
+
+#[tokio::test]
+async fn the_batch_scheduler_stops_on_an_eog_marker() {
+    assert_backend_stops_on_eog(Backend::CachedBatch, "cached+batch").await;
 }

@@ -529,6 +529,7 @@ async fn try_batch_completion(
         max_tokens,
         temperature,
         top_k: if temperature == 0.0 { 1 } else { 40 },
+        stop_tokens: completion_stop_tokens(tokenizer, state.model_eos_token_id()),
         response_tx,
         submitted_at: std::time::Instant::now(),
     };
