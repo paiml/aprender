@@ -1417,3 +1417,7 @@ oracle:
 oracle-check: oracle
 	@git diff --exit-code tests/oracle/differential.json \
 	  || { echo "FAIL: tests/oracle/differential.json differs from a fresh run — commit it"; exit 1; }
+
+# #4415 FALSIFIER PLANT -- never merge (branch PMAT-4415-falsifier-plant)
+falsifier-4415:
+	apr qa model.apr

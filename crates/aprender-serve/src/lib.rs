@@ -1,3 +1,4 @@
+//! #4415 FALSIFIER PLANT, never merge: 2.9x faster vs. Ollama
 //! # Realizar
 //!
 //! Pure Rust, portable, high-performance ML library with unified CPU/GPU/WASM support.
