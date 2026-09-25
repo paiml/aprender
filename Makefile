@@ -1422,3 +1422,13 @@ oracle-check: oracle
 transcript-retention-audit:
 	@bash scripts/transcript_retention_audit.sh
 .PHONY: transcript-retention-audit
+
+# PRM-C13 (was PRA T13), lane-independence-v1: κ_err scoreboard of the shadow lane vs every
+# counted lane on matured gold SPLIT rows. With MANIFEST and CANDIDATE it gates (exit 12 = S-14).
+SPLIT ?= val
+MIN_N ?= 30
+lane-kappa:
+	@test -n "$(ROWS)" || { echo "usage: make lane-kappa ROWS=trace.jsonl [SPLIT=val] [MIN_N=30 | MANIFEST=m.json CANDIDATE=c.jsonl]"; exit 2; }
+	cargo run -q -p aprender-review-experiment --example rex -- lane-kappa "$(ROWS)" --split "$(SPLIT)" \
+	  $(if $(MANIFEST),--manifest "$(MANIFEST)" --candidate "$(CANDIDATE)",--min-n "$(MIN_N)")
+.PHONY: lane-kappa

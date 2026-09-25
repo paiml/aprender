@@ -54,6 +54,13 @@
 //!   Exit 11 while any row is NotRun.
 //! - `b2 teacher-receipt --logits F --teacher-sha W --k K` the teacher-logit
 //!   dataset receipt (sha, count, 0 test hashes) or every reason it is refused.
+//! - `lane-kappa ROWS --split val [--shadow qwen-shadow] (--min-n N | --manifest M
+//!   --candidate ROWS2)` PRM-C13 (was PRA-001 T13) (contract lane-independence-v1): κ_err of the
+//!   shadow lane against every counted lane on matured gold rows of the split, as
+//!   JSON; a thin pair prints `insufficient`, never a number. With `--candidate`
+//!   the gate runs: δ and min_n come only from the manifest's `lane_independence`
+//!   block. Exit 12 (andon, S-14) on a refused candidate, an unusable manifest,
+//!   or `--candidate` without `--manifest`.
 
 use aprender_review_experiment::b2;
 use aprender_review_experiment::build_corpus::{
@@ -91,6 +98,7 @@ fn main() -> ExitCode {
         Some("ratchet") => ratchet_cmd(&args[1..]),
         Some("challenge") => challenge_cmd(&args[1..]),
         Some("b2") => b2_cmd(&args[1..]),
+        Some("lane-kappa") => lane_kappa_cmd(&args[1..]),
         Some(c @ ("review" | "not-run" | "score" | "admit")) => {
             match flags(&args[1..]).and_then(|f| match c {
                 "review" => review(&f),
@@ -114,7 +122,7 @@ fn main() -> ExitCode {
         },
         _ => {
             eprintln!(
-                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder|ratchet|challenge|b2> (see the example docs)"
+                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder|ratchet|challenge|b2|lane-kappa> (see the example docs)"
             );
             ExitCode::from(2)
         }
@@ -632,6 +640,88 @@ fn ladder_cmd(a: &[String]) -> ExitCode {
         Err(e) => eprintln!("rex ladder: {e}"),
     }
     ExitCode::SUCCESS
+}
+
+/// Exit code for a lane-independence andon (S-14).
+const ANDON_KAPPA: u8 = 12;
+
+fn lane_kappa_cmd(a: &[String]) -> ExitCode {
+    use aprender_review_experiment::kappa_probe::{gate, parse_manifest, parse_rows, probe};
+    const USAGE: &str = "usage: rex lane-kappa ROWS --split val [--shadow L] (--min-n N | --manifest M --candidate ROWS2)";
+    let (Some(path), Ok(f)) = (a.first(), flags(a.get(1..).unwrap_or_default())) else {
+        eprintln!("{USAGE}");
+        return ExitCode::from(2);
+    };
+    let Some(split) = f.get("split") else {
+        eprintln!("{USAGE}");
+        return ExitCode::from(2);
+    };
+    let shadow = f.get("shadow").map_or("qwen-shadow", String::as_str);
+    let load = |p: &str| {
+        std::fs::read_to_string(p)
+            .map_err(|e| format!("{p}: {e}"))
+            .and_then(|t| parse_rows(&t).map_err(|e| format!("{p}: {e}")))
+    };
+    let andon = |why: String| {
+        eprintln!("rex lane-kappa: ANDON {why}");
+        ExitCode::from(ANDON_KAPPA)
+    };
+    let manifest = match f.get("manifest").map(|m| {
+        std::fs::read_to_string(m)
+            .map_err(|e| format!("{m}: {e}"))
+            .and_then(|t| parse_manifest(&t))
+    }) {
+        None => None,
+        Some(Ok(m)) => Some(m),
+        Some(Err(e)) => return andon(format!("S-14 manifest: {e}")),
+    };
+    if f.contains_key("candidate") && manifest.is_none() {
+        return andon("S-14 --candidate needs --manifest: δ is not pre-registered".into());
+    }
+    let min_n = match (&manifest, f.get("min-n").map(|n| n.parse::<usize>())) {
+        (Some(m), _) => m.min_n,
+        (None, Some(Ok(n))) if n > 0 => n,
+        _ => {
+            eprintln!("{USAGE}");
+            return ExitCode::from(2);
+        }
+    };
+    let baseline = match load(path) {
+        Ok(r) => probe(&r, split, shadow, min_n),
+        Err(e) => {
+            eprintln!("rex lane-kappa: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    let mut out = serde_json::Map::new();
+    out.insert("baseline".into(), to_json(&baseline));
+    let mut code = ExitCode::SUCCESS;
+    if let (Some(m), Some(c)) = (&manifest, f.get("candidate")) {
+        let candidate = match load(c) {
+            Ok(r) => probe(&r, split, shadow, min_n),
+            Err(e) => {
+                eprintln!("rex lane-kappa: {e}");
+                return ExitCode::from(1);
+            }
+        };
+        let v = match gate(&baseline, &candidate, m) {
+            Ok(v) => v,
+            Err(e) => return andon(e),
+        };
+        if !v.pass {
+            eprintln!("rex lane-kappa: ANDON {}", v.refusals.join("; "));
+            code = ExitCode::from(ANDON_KAPPA);
+        }
+        out.insert("candidate".into(), to_json(&candidate));
+        out.insert("manifest".into(), to_json(m));
+        out.insert("gate".into(), to_json(&v));
+    }
+    println!("{}", serde_json::Value::Object(out));
+    code
+}
+
+fn to_json<T: serde::Serialize>(x: &T) -> serde_json::Value {
+    serde_json::to_value(x).unwrap_or(serde_json::Value::Null)
 }
 
 /// Warm, non-rerun, admissible timings of one cell (and tag, when given).

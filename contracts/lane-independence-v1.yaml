@@ -1,0 +1,51 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PRM-C13 (was PRA-001 T13) (PRM-001 v2 "PROMETHEUS" H7 §5.4, S-14; row 2 of §7, was research-design-pr-agent-qwen-3.5 §5 M4).
+    `make lane-kappa SPLIT=val ROWS=F [MANIFEST=M CANDIDATE=F2]` = `rex lane-kappa ROWS --split val (--min-n N | --manifest M --candidate ROWS2)` (crates/aprender-review-experiment: kappa_probe.rs, examples/rex.rs)
+    measures κ_err, Cohen's κ on binary per-item error indicators against GOLD, for every
+    (qwen, counted-lane) pair on matured gold val rows, reusing stats::error_kappa (PRM-001 v2 §3 error
+    overlap). An error is a parsed verdict that disagrees with the gold outcome; unparsed items and
+    silver, pending or quarantined rows are excluded, never counted as errors. A pair with fewer than
+    `min_n` shared items, or with κ undefined, reports `insufficient` (S-14), never a number.
+    The gate refuses a shadow-lane candidate when κ_err(candidate, any counted lane) > baseline + δ.
+    δ must come from the run manifest, pre-registered before training; the probe never defaults or
+    widens it. Refusal is an andon (non-zero exit), not a warning.
+  references:
+    - "docs/specifications/PRM-001-prometheus.md"
+    - "docs/specifications/review-experiment-protocol.md"
+
+equations:
+  error_indicator:
+    formula: "err(lane, i) = parsed(lane, i) ∧ verdict(lane, i) ≠ gold(i)"
+  kappa_err:
+    formula: "κ_err(a, b) = (p_o − p_e) / (1 − p_e) over items i with gold(i) ∧ matured(i) ∧ split(i) = val ∧ parsed(a, i) ∧ parsed(b, i)"
+  gate:
+    formula: "refuse(candidate) ⇔ ∃ counted lane L: κ_err(candidate, L) > baseline(qwen, L) + δ, with δ from the run manifest"
+
+falsification_tests:
+  - id: FALSIFY-LIND-001
+    name: only_matured_gold_val_rows_are_scored
+    prediction: "silver, pending, quarantined, train/test-split and immature rows in the planted fixture leave κ_err unchanged"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_lind_001"
+    expected_output: "exit 0"
+    if_fails: "The baseline would mix silver labels into gold and measure agreement with the voters, not error overlap."
+  - id: FALSIFY-LIND-002
+    name: thin_or_undefined_pairs_are_insufficient_never_a_number
+    prediction: "a pair below min_n shared items, or with a constant error vector, reports insufficient (S-14) and exits non-zero under --gate"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_lind_002"
+    expected_output: "exit 0"
+    if_fails: "A gate could pass on too few rows, which is exactly the §10 risk that matured gold is scarce."
+  - id: FALSIFY-LIND-003
+    name: a_kappa_rise_past_delta_refuses_the_candidate
+    prediction: "a candidate whose κ_err with any counted lane exceeds baseline + δ is refused (andon exit); baseline + δ exactly passes"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_lind_003"
+    expected_output: "exit 0"
+    if_fails: "A silver-trained Qwen that copies the voters' blind spots could occupy the dissent lane (R13, PRA-H1)."
+  - id: FALSIFY-LIND-004
+    name: delta_must_be_pre_registered
+    prediction: "the gate with no manifest, a manifest without delta, a negative or non-finite delta, or a delta dated after the candidate's training start refuses"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_lind_004"
+    expected_output: "exit 0"
+    if_fails: "The runner could pick δ after seeing κ, which §8 S-14 forbids (the runner never widens δ)."

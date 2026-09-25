@@ -27,6 +27,7 @@ pub mod contamination;
 pub mod corpus;
 pub mod fewshot;
 pub mod harness;
+pub mod kappa_probe;
 pub mod ladder;
 pub mod ledger;
 pub mod pilot;
