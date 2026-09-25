@@ -227,6 +227,15 @@ impl<F: ArchForward> Session<F> {
         self.processed.len()
     }
 
+    /// Drop every prefix the session could resume from — the held positions
+    /// and the #4214 checkpoint — so the next turn prefills its whole prompt
+    /// (`Turn::reused == 0`). `apr bench` needs this: it times the same prompt
+    /// repeatedly, and a resumed prefix would report decode as prefill (#4445).
+    pub fn forget_prefix(&mut self) {
+        self.processed.clear();
+        self.checkpoint = None;
+    }
+
     /// `tokens` strictly extends what the state holds.
     fn extends(&self, tokens: &[u32]) -> bool {
         !self.processed.is_empty()
