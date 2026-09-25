@@ -29,9 +29,13 @@
 # job runs on the fleet. x86_64 builds on yoga and aarch64 natively on gx10, both
 # inside rust:1.93.0-bullseye (binary-release.yml's CPU-lane pattern), so the
 # nightly's glibc floor is 2.31; the ubuntu-latest build needed GLIBC_2.39 and did
-# not run on lambda's 22.04. The macOS and Windows targets are gone: no self-hosted
-# macOS or Windows runner is registered in the org, and there is no hosted
-# fallback. They come back when a box for them does.
+# not run on lambda's 22.04. Windows is gone: no self-hosted Windows runner is
+# registered in the org, and there is no hosted fallback.
+#
+# #4292: aarch64-apple-darwin is back, host-native on mini-m4 (build-darwin, apr
+# only). It is an ADVISORY target in nightly_manifest.py: recorded and published
+# like the others, but a red or absent darwin never fails this run and never
+# makes the gate rebuild -- mini is one 16 GB box and is sometimes offline.
 
 name: Nightly
 
@@ -214,9 +218,75 @@ jobs:
           path: dist/*
           if-no-files-found: warn
 
+  # ── Build apr: macOS aarch64 natively on mini-m4 (#4292, advisory) ──
+  # Host-native: no docker on macOS and no glibc floor to pin, so the toolchain
+  # is rust-toolchain.toml via the runner's rustup. A LITERAL runs-on list, not
+  # fromJSON, so check_runner_labels.sh sees the apple-silicon label. mini's
+  # python3 is 3.9 (Xcode CLT); nightly_manifest.py is stdlib-only and its
+  # --self-test passes under 3.9. apr only: 16 GB will not hold every [[bin]].
+  build-darwin:
+    needs: gate
+    if: needs.gate.outputs.decision == 'build'
+    name: aarch64-apple-darwin on mini (advisory)
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_TERM_COLOR: never
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      T: aarch64-apple-darwin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build apr (host-native, pinned toolchain)
+        id: build
+        run: |
+          set -euo pipefail
+          rustup show active-toolchain
+          APR_GIT_SHA_OVERRIDE="$(git rev-parse --short HEAD)" \
+            cargo build --release --locked -p apr-cli --bin apr --target "$T"
+          BIN="target/$T/release/apr"
+          # The linux cpu lanes' discriminator, plus the arch (#4292).
+          n=$(grep -ac 'libcuda.so' "$BIN" || true)
+          if [ "$n" -ne 0 ]; then echo "::error::$BIN carries $n libcuda.so string(s)"; exit 1; fi
+          file "$BIN" | grep -q 'arm64' || { echo "::error::$BIN is not arm64: $(file "$BIN")"; exit 1; }
+          A="apr-$T"
+          rm -rf "$A" dist && mkdir -p "$A" dist
+          cp "$BIN" "$A/"
+          for f in README.md LICENSE LICENSE-MIT COPYING UNLICENSE; do
+            if [ -f "$f" ]; then cp "$f" "$A/"; fi
+          done
+          tar czf "dist/$A.tar.gz" "$A"
+          (cd dist && shasum -a 256 "$A.tar.gz" > "$A.tar.gz.sha256")
+          echo "Packaged: dist/$A.tar.gz ($(du -h "dist/$A.tar.gz" | cut -f1))"
+
+      # Runs on failure too: a failed build is a verdict the manifest records.
+      - name: Record (sha256 of tarball and executable, --version, build SHA)
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          V=$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p&&/^version *=/{gsub(/"/,"",$3);print $3;exit}' Cargo.toml)
+          if [ -z "$V" ]; then echo "::error::no [workspace.package] version in Cargo.toml"; exit 1; fi
+          python3 scripts/nightly_manifest.py record --target "$T" --sha "$GITHUB_SHA" \
+            --bins apr --bin-dir "target/$T/release" --dist dist \
+            --build-outcome "${{ steps.build.outcome }}" --version "$V" > "dist/fragment-$T.json"
+          cat "dist/fragment-$T.json"
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightly-aarch64-apple-darwin
+          path: dist/*
+          if-no-files-found: warn
+
   # ── Publish per arch, then the manifest ──────────────────
+  # build-darwin is in `needs` so its fragment is downloaded when it exists;
+  # merge treats darwin as advisory (nightly_manifest.py ADVISORY_TARGETS).
   publish:
-    needs: [gate, build]
+    needs: [gate, build, build-darwin]
     if: always() && needs.gate.result == 'success'
     runs-on: [self-hosted, Linux, X64, clean-room]
     steps:

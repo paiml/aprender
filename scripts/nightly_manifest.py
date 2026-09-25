@@ -62,6 +62,12 @@ MANIFEST_ASSET = "nightly-manifest.json"
 STAGED = "staged."  # prefix of an upload not yet swapped in
 REQUIRED = ["ci / gate", "workspace-test"]
 TARGETS = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+# Recorded and published like TARGETS, but never part of the verdict (#4292):
+# darwin builds on mini, one 16 GB box that is sometimes offline. Its red or
+# missing fragment must not fail the Linux nightly, and must not stop the gate
+# from answering `reused` (a missing fragment is not a build verdict, so a
+# required target would be rebuilt every run while mini is down).
+ADVISORY_TARGETS = ["aarch64-apple-darwin"]
 # A SHA printed in parentheses -- `apr 0.69.0 (aa7c6ef03)`. `pv 0.69.0
 # (aprender provable-contracts verifier)` prints none, and neither does a
 # tarball build's `(v0.69.1+no-git)`.
@@ -275,10 +281,10 @@ def cargo_args(bins):
 
 # ---------------------------------------------------------------- merge
 
-def merge(prev, fragments, sha, decision, targets, run_id, run_url, now):
+def merge(prev, fragments, sha, decision, targets, run_id, run_url, now, advisory=()):
     old = (prev or {}).get("targets", {})
     out = {}
-    for t in targets:
+    for t in list(targets) + [x for x in advisory if x not in targets]:
         before = dict(old.get(t) or {"status": "red", "green_sha": None, "built_at": None,
                                      "built_run_id": None, "red": None, "tools": {}})
         frag = fragments.get(t)
@@ -585,6 +591,36 @@ def self_test():
     m = merge(prev, {}, S, "reused", T, 7, "u", now)
     check("reused: targets untouched, generated_at refreshed", (m["targets"] == prev["targets"], m["generated_at"]),
           (True, now))
+    D = ADVISORY_TARGETS[0]
+    check("darwin is advisory, not a required target", (ADVISORY_TARGETS, D in T), (["aarch64-apple-darwin"], False))
+    tg = lambda m: m["targets"].get(D) or {}  # noqa: E731 -- absent reads as a FAIL row, not a crash
+    both = {T[0]: gfrag(T[0]), T[1]: gfrag(T[1])}
+    m = merge(prev, dict(both, **{D: gfrag(D)}), S, "build", T, 7, "u", now, advisory=[D])
+    check("advisory green -> recorded green at S, decision built",
+          (m["decision"], tg(m).get("status"), tg(m).get("green_sha")), ("built", "green", S))
+    m = merge(prev, both, S, "build", T, 7, "u", now, advisory=[D])
+    check("advisory with NO fragment (mini offline) -> red no-fragment, decision STILL built",
+          (m["decision"], tg(m).get("status"), (tg(m).get("red") or {}).get("reason")), ("built", "red", "no-fragment"))
+    check("...and the gate answers reused next run: a down mini does not force a rebuild",
+          gate(S, m, T, [])[0], "reused")
+    pd = dict(prev, targets=dict(prev["targets"], **{D: {"status": "green", "green_sha": OLD, "red": None,
+                                                       "tools": {"apr": {"asset": f"apr-{D}.tar.gz"}}}}))
+    m = merge(pd, dict(both, **{D: rfrag(D)}), S, "build", T, 7, "u", now, advisory=[D])
+    check("advisory red -> decision built, darwin keeps serving its last green",
+          (m["decision"], tg(m).get("green_sha"), list(tg(m).get("tools") or {})), ("built", OLD, ["apr"]))
+    m = merge(prev, dict(both, **{D: gfrag(D)}), S, "build", T, 7, "u", now, advisory=[D])
+    dfiles = {f"{b}-{t}.tar.gz{x}" for b in ("apr", "pv") for t in T + [D] for x in ("", ".sha256")}
+    check("publish plan uploads the green darwin tarball",
+          f"apr-{D}.tar.gz" in publish_plan(m, S, dfiles), True)
+    with tempfile.TemporaryDirectory() as d:  # the CLI the workflow calls: --advisory defaults to darwin
+        for t in T + [D]:
+            with open(os.path.join(d, f"fragment-{t}.json"), "w") as f:
+                json.dump(dict(gfrag(t), sha=S), f)
+        p = subprocess.run([sys.executable, os.path.abspath(__file__), "merge", "--fragments", d, "--sha", S,
+                            "--decision", "build", "--now", now], capture_output=True, text=True)
+        cli = json.loads(p.stdout) if p.returncode == 0 else {"targets": {}}
+        check("CLI merge records darwin by default, decision from the required targets",
+              (cli.get("decision"), tg(cli).get("green_sha")), ("built", S))
 
     print("publish plan:")
     m = merge(prev, {T[0]: gfrag(T[0]), T[1]: rfrag(T[1])}, S, "build", T, 7, "u", now)
@@ -651,6 +687,7 @@ def main(argv):
     m.add_argument("--sha", required=True)
     m.add_argument("--decision", required=True, choices=["build", "reused", "red-ci", "ci-pending"])
     m.add_argument("--targets", default=",".join(TARGETS))
+    m.add_argument("--advisory", default=",".join(ADVISORY_TARGETS), help="recorded, never in the decision (#4292)")
     m.add_argument("--run-id", type=int, default=0)
     m.add_argument("--run-url", default="")
     m.add_argument("--now")
@@ -689,7 +726,8 @@ def main(argv):
                 if fr and fr.get("sha") == a.sha:
                     frags[fr["target"]] = fr
         now = a.now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        out = merge(load_manifest(a.prev), frags, a.sha, a.decision, a.targets.split(","), a.run_id, a.run_url, now)
+        out = merge(load_manifest(a.prev), frags, a.sha, a.decision, a.targets.split(","), a.run_id, a.run_url, now,
+                    advisory=[x for x in a.advisory.split(",") if x])
         print(json.dumps(out, indent=1, sort_keys=True))
         return 0
     if a.cmd == "bins":
