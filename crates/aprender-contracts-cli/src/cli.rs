@@ -544,16 +544,16 @@ pub enum DischargeAction {
         /// `--leanchecker` under `ulimit -v <KIB>` (virtual memory, KiB); unset = no limit
         #[arg(long, requires = "leanchecker")]
         leanchecker_ulimit_v: Option<u64>,
-        /// `--leanchecker` with at most N Lean worker threads (`LEAN_NUM_THREADS`). leanchecker replays one full
+        /// `--leanchecker` with at most N Lean worker threads (`LEAN_NUM_THREADS`), 1..=8: the default is also the ceiling. leanchecker replays one full
         /// environment per concurrent module task, so memory scales with this: 51 threads took 58-67 GB (#4348)
-        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_THREADS, requires = "leanchecker")]
+        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_THREADS, value_parser = clap::value_parser!(u32).range(1..=i64::from(crate::commands::discharge::LEANCHECKER_THREADS)), requires = "leanchecker")]
         leanchecker_threads: u32,
         /// `--leanchecker` inside `systemd-run --user --scope -p MemoryMax=<N>G -p CPUQuota=<Q>%`: this memory cap,
-        /// GiB (#4348: the host must stay usable)
-        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_MEMORY_MAX_GIB, requires = "leanchecker")]
+        /// GiB, 1..=24: a caller may lower it, never raise it (#4348: the host must stay usable)
+        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_MEMORY_MAX_GIB, value_parser = clap::value_parser!(u32).range(1..=i64::from(crate::commands::discharge::LEANCHECKER_MEMORY_MAX_GIB)), requires = "leanchecker")]
         leanchecker_memory_max_gib: u32,
-        /// `--leanchecker`'s scope CPU quota, percent of one core
-        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_CPU_QUOTA_PCT, requires = "leanchecker")]
+        /// `--leanchecker`'s scope CPU quota, percent of one core, 1..=800
+        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_CPU_QUOTA_PCT, value_parser = clap::value_parser!(u32).range(1..=i64::from(crate::commands::discharge::LEANCHECKER_CPU_QUOTA_PCT)), requires = "leanchecker")]
         leanchecker_cpu_quota_pct: u32,
         /// Run `--leanchecker` WITHOUT the systemd scope (a host with no user systemd). The thread cap still applies
         #[arg(long, requires = "leanchecker")]
@@ -581,16 +581,16 @@ pub enum DischargeAction {
         /// The leanchecker arm under `ulimit -v <KIB>` (virtual memory, KiB); unset = no limit
         #[arg(long)]
         leanchecker_ulimit_v: Option<u64>,
-        /// the leanchecker arm with at most N Lean worker threads (`LEAN_NUM_THREADS`). leanchecker replays one full
+        /// the leanchecker arm with at most N Lean worker threads (`LEAN_NUM_THREADS`), 1..=8: the default is also the ceiling. leanchecker replays one full
         /// environment per concurrent module task, so memory scales with this: 51 threads took 58-67 GB (#4348)
-        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_THREADS)]
+        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_THREADS, value_parser = clap::value_parser!(u32).range(1..=i64::from(crate::commands::discharge::LEANCHECKER_THREADS)))]
         leanchecker_threads: u32,
         /// the leanchecker arm inside `systemd-run --user --scope -p MemoryMax=<N>G -p CPUQuota=<Q>%`: this memory cap,
-        /// GiB (#4348: the host must stay usable)
-        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_MEMORY_MAX_GIB)]
+        /// GiB, 1..=24: a caller may lower it, never raise it (#4348: the host must stay usable)
+        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_MEMORY_MAX_GIB, value_parser = clap::value_parser!(u32).range(1..=i64::from(crate::commands::discharge::LEANCHECKER_MEMORY_MAX_GIB)))]
         leanchecker_memory_max_gib: u32,
-        /// the leanchecker arm's scope CPU quota, percent of one core
-        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_CPU_QUOTA_PCT)]
+        /// the leanchecker arm's scope CPU quota, percent of one core, 1..=800
+        #[arg(long, default_value_t = crate::commands::discharge::LEANCHECKER_CPU_QUOTA_PCT, value_parser = clap::value_parser!(u32).range(1..=i64::from(crate::commands::discharge::LEANCHECKER_CPU_QUOTA_PCT)))]
         leanchecker_cpu_quota_pct: u32,
         /// Run the leanchecker arm WITHOUT the systemd scope (a host with no user systemd). The thread cap still applies
         #[arg(long)]

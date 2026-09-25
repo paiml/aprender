@@ -1330,6 +1330,44 @@ mod tests {
         }
     }
 
+    /// The defaults are also the ceilings: a caller may lower a cap, never raise it (51 threads took 58-67 GB).
+    #[test]
+    fn a_leanchecker_cap_can_be_lowered_never_raised() {
+        #[derive(clap::Parser)]
+        struct T {
+            #[command(subcommand)]
+            a: crate::cli::DischargeAction,
+        }
+        let parses = |args: &[&str]| {
+            <T as clap::Parser>::try_parse_from(std::iter::once("t").chain(args.iter().copied()))
+                .is_ok()
+        };
+        for (flag, max) in [
+            ("--leanchecker-threads", LEANCHECKER_THREADS),
+            ("--leanchecker-memory-max-gib", LEANCHECKER_MEMORY_MAX_GIB),
+            ("--leanchecker-cpu-quota-pct", LEANCHECKER_CPU_QUOTA_PCT),
+        ] {
+            for base in [&["check", "L", "--leanchecker"][..], &["run", "L"][..]] {
+                let with = |v: u32| {
+                    let v = v.to_string();
+                    let mut a = base.to_vec();
+                    a.extend([flag, v.as_str()]);
+                    parses(&a)
+                };
+                assert!(
+                    with(1) && with(max),
+                    "{flag} {base:?}: 1 and {max} must parse"
+                );
+                assert!(
+                    !with(max + 1),
+                    "{flag} {base:?}: {} must be refused",
+                    max + 1
+                );
+                assert!(!with(0), "{flag} {base:?}: 0 must be refused");
+            }
+        }
+    }
+
     /// EV-8a reads the raw exits: `Some(n)` for a step that ran (124 on a timeout), `None` for one that never ran.
     #[test]
     fn the_lean_steps_record_their_raw_exits_and_none_when_they_did_not_run() {
