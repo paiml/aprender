@@ -245,8 +245,18 @@ impl ArchForward for DeviceGreedy {
     fn forward(&mut self, tokens: &[u32], start: usize) -> Result<Vec<f32>> {
         self.inner.forward(tokens, start)
     }
+    fn checkpoint_at(&self, prompt: &[u32]) -> Option<usize> {
+        self.inner.checkpoint_at(prompt)
+    }
+    fn save_checkpoint(&mut self) -> Result<()> {
+        self.inner.save_checkpoint()
+    }
+    fn restore_checkpoint(&mut self) -> Result<bool> {
+        self.inner.restore_checkpoint()
+    }
     fn forward_greedy(&mut self, tokens: &[u32], start: usize) -> Result<Option<u32>> {
         self.inner.calls.push((tokens.len(), start));
+        self.inner.held = tokens.len();
         self.greedy_calls += 1;
         Ok(Some(self.greedy_answer))
     }
@@ -292,16 +302,15 @@ const MARK: u32 = 7;
 fn an_identical_prompt_again_restores_the_checkpoint_before_its_last_marker() {
     let mut s = Session::new(Scripted::checkpointing(3, 100, MARK));
     let prompt = [7801, 7802, MARK, 7803];
-    let t1 = s
-        .generate(&prompt, &greedy(1), &mut |_| true)
-        .expect("t1");
+    let t1 = s.generate(&prompt, &greedy(1), &mut |_| true).expect("t1");
     assert_eq!(t1.reused, 0);
     // Prefilled in two spans: up to the checkpoint, then the rest.
     assert_eq!(s.engine().calls, vec![(2, 0), (4, 2)]);
-    let t2 = s
-        .generate(&prompt, &greedy(1), &mut |_| true)
-        .expect("t2");
-    assert_eq!(t2.reused, 2, "the repeat prefilled only from the checkpoint");
+    let t2 = s.generate(&prompt, &greedy(1), &mut |_| true).expect("t2");
+    assert_eq!(
+        t2.reused, 2,
+        "the repeat prefilled only from the checkpoint"
+    );
     assert_eq!(t2.tokens, t1.tokens);
     assert_eq!(s.engine().calls.last(), Some(&(4, 2)));
     assert_eq!(s.engine().restores, 1);
@@ -361,7 +370,11 @@ fn a_checkpoint_the_forward_lost_is_not_reused() {
     s.generate(&prompt, &greedy(1), &mut |_| true).expect("t1");
     let t2 = s.generate(&prompt, &greedy(1), &mut |_| true).expect("t2");
     assert_eq!(t2.reused, 0);
-    assert_eq!(s.engine().calls.last(), Some(&(4, 2)), "re-checkpointed from 0");
+    assert_eq!(
+        s.engine().calls.last(),
+        Some(&(4, 2)),
+        "re-checkpointed from 0"
+    );
     assert_eq!(s.engine().calls[s.engine().calls.len() - 2], (2, 0));
 }
 
@@ -372,6 +385,30 @@ fn scoring_rewrites_the_state_so_the_checkpoint_is_dropped() {
     s.generate(&prompt, &greedy(1), &mut |_| true).expect("t1");
     s.score(&[7859, 7858], &mut |_, _| true).expect("score");
     let t2 = s.generate(&prompt, &greedy(1), &mut |_| true).expect("t2");
-    assert_eq!(t2.reused, 0, "the positions under the checkpoint were rewritten");
+    assert_eq!(
+        t2.reused, 0,
+        "the positions under the checkpoint were rewritten"
+    );
     assert_eq!(s.engine().restores, 0);
+}
+
+#[test]
+fn a_device_argmax_from_below_the_checkpoint_drops_it() {
+    // The device-argmax path rewrites positions too: a prompt it prefills from
+    // under the checkpoint leaves a copy whose KV rows no longer match.
+    let mut s = Session::new(DeviceGreedy {
+        inner: Scripted::checkpointing(3, 100, MARK),
+        greedy_answer: 5,
+        greedy_calls: 0,
+    });
+    let prompt = [7861, 7862, MARK, 7863];
+    s.generate(&prompt, &greedy(1), &mut |_| true).expect("t1");
+    s.generate(&[7869], &greedy(1), &mut |_| true).expect("t2");
+    assert!(s.engine().greedy_calls > 0, "t2 took the device argmax");
+    let t3 = s.generate(&prompt, &greedy(1), &mut |_| true).expect("t3");
+    assert_eq!(
+        t3.reused, 0,
+        "position 0 was rewritten under the checkpoint"
+    );
+    assert_eq!(s.engine().inner.restores, 0);
 }
