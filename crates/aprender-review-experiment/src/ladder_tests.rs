@@ -245,7 +245,9 @@ fn falsify_rxg_006_lambda_primary_is_refused_above_tripwire() {
     assert_eq!(rung(&none), Mode::Tripwire);
     let n = evidence(&none.to_string(), PREREG);
     assert!(
-        n.reasons.iter().any(|r| r.contains("primary cell (unnamed) is")),
+        n.reasons
+            .iter()
+            .any(|r| r.contains("primary cell (unnamed) is")),
         "{:?}",
         n.reasons
     );
