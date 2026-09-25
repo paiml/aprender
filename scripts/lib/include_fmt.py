@@ -57,7 +57,12 @@ def load_toml(text):
     doc, cur, in_ml = {}, None, None
     for n, line in enumerate(text.splitlines(), 1):
         if in_ml:  # inside a multi-line string: nothing here is a key
-            if line.count(in_ml) % 2 == 1:
+            if in_ml in line:
+                # The first delimiter closes it. Anything after that could reopen it or hide an
+                # escaped quote; the fallback refuses rather than track it.
+                rest = line.split(in_ml, 1)[1]
+                if any(d in rest for d in ML_DELIMS) or "\\" in line.split(in_ml, 1)[0][-1:]:
+                    raise FallbackUnreadable("line %d: an ambiguous multi-line string end: %r" % (n, line.strip()))
                 in_ml = None
             continue
         if line.lstrip().startswith("["):  # every header, [[bin]] included, leaves the section
@@ -105,6 +110,8 @@ SELF_TEST = [
     ('[package]\nedition = "2021"\ndescription = ' + Q3 + '\nedition = "2018"\n' + Q3 + '\n', "2021", None),
     ('[package]\nedition = "2021"\nreadme = ' + Q3 + 'one line, closed' + Q3 + '\nname = "x"\n', "2021", None),
     ('[package]\n# a stray ' + Q3 + ' in a comment\nedition = "2021"\n', "RAISE", None),
+    ('[package]\ndescription = ' + Q3 + '\nend' + Q3 + ' # ' + Q3 + '\nedition = "2021"\n', "RAISE", None),
+    ('[package]\ndescription = ' + Q3 + '\nsaid \\' + Q3 + '\nedition = "2021"\n', "RAISE", None),
     ("[package]\ndescription = '" + Q3 + "'\nedition = \"2021\"\n", "RAISE", None),
     ("[package]\ndescription = " + A3 + "\nedition = '2018'\n" + A3 + "\n", None, None),
     ('[package.metadata]\nedition = "2015"\n[package]\nedition = "2021"\n', "2021", None),
