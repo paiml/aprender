@@ -218,8 +218,8 @@ hr_base_receipt() {
   fi
   case $nproc in '' | *[!0-9]*) nproc=null ;; *) nproc=$(( 10#$nproc )) ;; esac
   # round(ms / 1000), as python rounds: half to even
-  ms=$install_ms; secs=$(( ms / 1000 )); rem=$(( ms % 1000 ))
-  if [ "$rem" -gt 500 ] || { [ "$rem" -eq 500 ] && [ $(( secs % 2 )) -eq 1 ]; }; then secs=$(( secs + 1 )); fi
+  ms=$install_ms; per=1000; half=$(( per / 2 )); secs=$(( ms / per )); rem=$(( ms % per ))
+  if [ "$rem" -gt "$half" ] || { [ "$rem" -eq "$half" ] && [ $(( secs % 2 )) -eq 1 ]; }; then secs=$(( secs + 1 )); fi
   compiled=$(jq -Rrs "$HR_JQ"'[pylines[] | select(strip | startswith("Compiling "))] | length' < "$W/install.log") || return 1
   # sha256_published: crates.io's own cksum for the .crate (the sparse index record);
   # sha256_measured: the .crate cargo actually downloaded, hashed here. Two fields, never merged.

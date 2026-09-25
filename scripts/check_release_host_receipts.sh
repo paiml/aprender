@@ -152,7 +152,7 @@ PARAMS="$ROOT/scripts/release/lib_release_params.sh"
 GATE="$ROOT/scripts/check_multiplatform_dogfood.sh"
 VALIDATOR="$ROOT/scripts/lib/bench_receipt.py"
 PIN="$ROOT/scripts/llama_pin.toml"
-LEDGER="$ROOT/scripts/release/ledger.py"
+LEDGER="$ROOT/scripts/release/ledger.sh"
 BANDLOCK="$ROOT/scripts/lib/gpu_band_lock.sh"
 PARITY="$ROOT/scripts/parity_host_receipt.sh"
 TWIN="$ROOT/scripts/lib/yaml_twin.py"
@@ -607,7 +607,7 @@ fixture() {
     kit_files "$r" "$3" || return 2
     cp -- "$2" "$r/scripts/release/autopilot.sh" && cp -- "$PARAMS" "$r/scripts/release/lib_release_params.sh" \
         && cp -- "$GATE" "$r/scripts/check_multiplatform_dogfood.sh" && cp -- "$TMP/cargo-stub" "$d/pkg/bin/cargo" \
-        && cp -- "$LEDGER" "$r/scripts/release/ledger.py" || return 2
+        && cp -- "$LEDGER" "$r/scripts/release/ledger.sh" || return 2
     if [ -n "${4:-}" ]; then
         python3 - "$r/scripts/check_multiplatform_dogfood.sh" "$4" <<'PY' || return 2
 import re, sys

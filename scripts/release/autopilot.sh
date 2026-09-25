@@ -23,7 +23,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || { echo "cannot resolve the r
 # against them: a host visited but not demanded, or demanded but not visited, is RED.
 ASSET_HOSTS="gx10 aarch64-unknown-linux-gnu|yoga x86_64-unknown-linux-gnu"   # the CUDA release asset runs here
 INSTALLER_HOSTS="intel --cpu|gx10 --cpu"                                        # install.sh at the tag runs here
-TRAIN_HOST="${RELEASE_TRAIN_HOST:-lambda}"  # the host this train runs on (APR-RELEASE-001; ledger.py: host_class lambda)
+TRAIN_HOST="${RELEASE_TRAIN_HOST:-lambda}"  # the host this train runs on (APR-RELEASE-001; ledger.sh: host_class lambda)
 matrix_hosts() { sed -n 's/^HOSTS="\(.*\)"$/\1/p' "$REPO_ROOT/scripts/check_multiplatform_dogfood.sh" | head -n 1; }
 if [ "${1:-}" = "--visited" ]; then
   # no gh, no network, nothing run: one line per (host, how) the hosts step would reach
@@ -41,6 +41,82 @@ PR="${2:?usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]}"; FROM="
 STEPS=(wait deep dogfood models tag cleanroom assets preflight dryrun cascade install hosts postpub ledger close)
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATUS" >> "$LOG"; }
 die() { say "STOP $*"; exit 1; }
+
+# ---- JSON reads, in jq (#4352: python3 is out of the release path) -------------------------------
+# The same reads the python did, the same lines, the same refusals: pystr prints a value as python's
+# str() would, pylines is str.splitlines, truthy is python truthiness, one refuses extra data. Never
+# jq's exit-status flag (#3554: jq 1.6 passes an absent receipt with it); every verdict is a value
+# the shell tests. Deltas: a list inside a printed field is JSON (["x"]) where python printed
+# ['x'], a parse refusal names no python exception text, and the copied receipt spells a number as
+# jq does (1E+5 for python's 100000.0: the same value; NaN/Infinity, which JSON has no word for, null).
+AP_JQ='def pystr: if . == null then "None" elif . == true then "True" elif . == false then "False"
+    elif type == "string" then . else tojson end;
+def pylines: [splits("\r\n|[\n\r\u000b\u000c\u001c\u001d\u001e\u0085\u2028\u2029]")]
+    | if length > 0 and .[-1] == "" then .[:-1] else . end;
+def truthy: . != null and . != false and . != 0 and . != "" and . != [] and . != {};
+def one: input as $d | if ([inputs] | length) > 0 then error("extra data") else $d end;'
+ap_utf8_json() { # FILE -> 0 when it is valid UTF-8 without a BOM (python's utf-8 open + json refuse both)
+    [ -f "$1" ] && iconv -f UTF-8 -t UTF-8 < "$1" > /dev/null 2>&1 \
+        && [ "$(head -c 3 "$1" | od -An -tx1 | tr -d ' \n')" != efbbbf ]
+}
+# ap_receipt_line OUT HOST VERSION DST -> the ---RECEIPT HOST--- block of OUT, parsed (never grepped),
+# must be one JSON object naming HOST and VERSION; it is written to DST and summarised in one line.
+# rc 3 (and the reason on stdout) when the block is absent, does not parse or names another train.
+ap_receipt_line() {
+    local s no
+    [ -r "$1" ] || { printf 'cannot read %s\n' "$1"; return 3; }
+    s=$(jq -Rsc --arg h "$2" --arg out "$1" "$AP_JQ"'
+        pylines as $l | ($l | index("---RECEIPT \($h)---")) as $a
+        | (if $a == null then null else ($l | .[$a:] | index("---END RECEIPT---")) end) as $b
+        | if $b == null then {no: "no receipt block in \($out) (last line: \(($l | .[-1] // "<empty>") | .[:160]))"}
+          else {text: ($l | .[$a + 1:$a + $b] | join("\n"))} end' < "$1") \
+        || { printf 'cannot read %s\n' "$1"; return 3; }
+    no=$(printf '%s' "$s" | jq -r '.no // empty') || return 3
+    [ -z "$no" ] || { printf '%s\n' "$no"; return 3; }
+    printf '%s' "$s" | jq -r '.text' > "$4.block" || return 3
+    if ! jq -n "$AP_JQ"'one' < "$4.block" > "$4.parsed" 2> /dev/null; then
+        rm -f -- "$4.block" "$4.parsed"; printf 'the receipt block does not parse: not one JSON document\n'; return 3
+    fi
+    rm -f -- "$4.block"
+    no=$(jq -r --arg h "$2" --arg v "$3" "$AP_JQ"'
+        if type != "object" or .host != $h or .version_tested != $v then
+          "the receipt names host=\(if type == "object" then .host | pystr else "?" end) version=\(if type == "object" then .version_tested | pystr else "?" end), not \($h) \($v)"
+        else empty end' < "$4.parsed") || { rm -f -- "$4.parsed"; return 3; }
+    [ -z "$no" ] || { rm -f -- "$4.parsed"; printf '%s\n' "$no"; return 3; }
+    jq -a . < "$4.parsed" > "$4" || { rm -f -- "$4.parsed"; return 3; }
+    rm -f -- "$4.parsed"
+    jq -r "$AP_JQ"'
+        def blk($k): if (.[$k] | truthy) then "yes" elif (.[$k + "_attempt"] | truthy) then "refused" else "none" end;
+        "install_rc=\(.install_rc | pystr) generate=\(if ((.generate | if truthy then . else {} end) | .output_sane | truthy) then "sane" elif (.generate | truthy) then "present" else "null" end) "
+        + "bench=\(blk("bench")) parity=\(blk("parity")) unmeasured=\(.unmeasured | if truthy then (if type == "string" or type == "array" or type == "object" then length else error("len") end) else 0 end)"' \
+        < "$4" || return 3
+}
+# ap_postpub_line DIR MC -> the name of the newest post-publish receipt for MC under DIR; rc 1 (and the
+# reason) unless it is GO and defers nothing. An unreadable receipt is skipped, as json.load's
+# ValueError was; one that parses to a non-object fails, as r.get() did.
+ap_postpub_line() {
+    local p last="" r
+    while IFS= read -r p; do
+        [ -f "$p" ] || { printf '%s is not a file\n' "$p"; return 1; }
+        ap_utf8_json "$p" && r=$(jq -c -n "$AP_JQ"'one' < "$p" 2> /dev/null) || continue
+        r=$(printf '%s' "$r" | jq -r --arg mc "$2" \
+            'if type != "object" then error("not an object") elif .phase == "post-publish" and .commit == $mc then "y" else "n" end') \
+            || { printf '%s is not a JSON object\n' "$p"; return 1; }
+        [ "$r" != y ] || last=$p
+    done < <(for p in "$1"/receipt-*.json; do [ -e "$p" ] && printf '%s\n' "$p"; done | LC_ALL=C sort)
+    [ -n "$last" ] || { printf 'no post-publish receipt for %s under %s\n' "$2" "$1"; return 1; }
+    r=$(jq -r --arg b "${last##*/}" "$AP_JQ"'
+        if .verdict != "GO" then "\($b) verdict=\(.verdict | pystr)"
+        elif (.deferred | truthy) then "\($b) still DEFERS \(.deferred
+            | if type == "string" then (explode | map([.] | implode))
+              elif type == "array" then (if all(type == "string") then . else error("join") end)
+              elif type == "object" then keys_unsorted else error("join") end | join(", ")) after the publish"
+        else "OK" end' < "$last") || return 1
+    [ "$r" = OK ] || { printf '%s\n' "$r"; return 1; }
+    printf '%s\n' "${last##*/}"
+}
+# ---- end JSON reads ----
+
 run_step() { # run_step <name>: true when <name> is at or after FROM and at or before TO
     local s seen=0 past=0
     for s in "${STEPS[@]}"; do
@@ -83,7 +159,7 @@ if [ ! -d "$WT" ] || [ "$(git -C "$WT" rev-parse HEAD 2>/dev/null)" != "$MC" ]; 
   git worktree add --detach "$WT" "$MC" >> "$LOG" 2>&1 || die "worktree add failed"
 fi
 cd "$WT" || die "cd $WT"
-v=$(cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')
+v=$(cargo metadata --no-deps --format-version 1 2>/dev/null | jq -r '.packages[0].version')
 [ "$v" = "$V" ] || die "release commit carries version $v, not $V"
 bash scripts/bump-version.sh --check >> "$LOG" 2>&1 || die "bump-version.sh --check: the workspaces disagree on the version"
 export CARGO_TARGET_DIR="$REPO_ROOT/target"
@@ -390,27 +466,8 @@ HOST
     h=${hp%%:*}; wait "${hp#*:}"; rc=$?
     if [ "$rc" -eq "$SSH_FAILED" ] && [ "$h" != "$train_host" ]; then infra="$infra receipt-$h(ssh-255)"; say "INFRA $h unreachable: ssh rc=255, no receipt -- not a host verdict"; continue; fi
     # parsed, never grepped: the ---RECEIPT--- block must be JSON naming this host and this version
-    # (python, never jq: with its exit-status flag, jq 1.6 passes an absent receipt, #3554)
-    line=$(python3 - "$RDIR/dogfood/$h.out" "$h" "$V" "$RDIR/dogfood/$h.json" <<'PY'
-import json, sys
-out, h, v, dst = sys.argv[1:5]
-lines = open(out, errors="replace").read().splitlines()
-try:
-    a = lines.index(f"---RECEIPT {h}---"); b = lines.index("---END RECEIPT---", a)
-except ValueError:
-    print(f"no receipt block in {out} (last line: {(lines[-1] if lines else '<empty>')[:160]})"); sys.exit(3)
-try:
-    r = json.loads("\n".join(lines[a + 1:b]))
-except ValueError as e:
-    print(f"the receipt block does not parse: {e}"); sys.exit(3)
-if not isinstance(r, dict) or r.get("host") != h or r.get("version_tested") != v:
-    print(f"the receipt names host={r.get('host') if isinstance(r, dict) else '?'} version={r.get('version_tested') if isinstance(r, dict) else '?'}, not {h} {v}"); sys.exit(3)
-json.dump(r, open(dst, "w"), indent=2); open(dst, "a").write("\n")
-blk = lambda k: "yes" if r.get(k) else ("refused" if r.get(k + "_attempt") else "none")
-print(f"install_rc={r.get('install_rc')} generate={'sane' if (r.get('generate') or {}).get('output_sane') else ('present' if r.get('generate') else 'null')} "
-      f"bench={blk('bench')} parity={blk('parity')} unmeasured={len(r.get('unmeasured') or [])}")
-PY
-    ); prc=$?
+    # (jq values tested by the shell, never jq's exit-status flag: jq 1.6 passes an absent receipt with it, #3554)
+    line=$(ap_receipt_line "$RDIR/dogfood/$h.out" "$h" "$V" "$RDIR/dogfood/$h.json"); prc=$?
     if [ $prc -ne 0 ]; then infra="$infra receipt-$h"; say "INFRA $h returned no receipt (host_receipt rc=$rc): $line -- not a host verdict"; continue; fi
     say "HOST-RECEIPT $h $line ($RDIR/dogfood/$h.json)"
   done
@@ -427,20 +484,7 @@ if run_step postpub; then
   DOGFOOD_RECEIPTS_DIR="$AP/receipts/dogfood" bash scripts/dogfood.sh --phase post-publish > "$AP/dogfood-post-publish.log" 2>&1; rc=$?
   grep -E 'VERDICT' "$AP/dogfood-post-publish.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "post-publish dogfood NO-GO rc=$rc ($AP/dogfood-post-publish.log)"
-  line=$(python3 - "$PWD/.dogfood" "$MC" <<'PY'
-import glob, json, os, sys
-d, mc = sys.argv[1:3]
-rs = []
-for p in sorted(glob.glob(os.path.join(d, "receipt-*.json"))):
-    try: r = json.load(open(p))
-    except ValueError: continue
-    if r.get("phase") == "post-publish" and r.get("commit") == mc: rs.append((p, r))
-if not rs: print(f"no post-publish receipt for {mc} under {d}"); sys.exit(1)
-p, r = rs[-1]
-if r.get("verdict") != "GO": print(f"{os.path.basename(p)} verdict={r.get('verdict')}"); sys.exit(1)
-if r.get("deferred"): print(f"{os.path.basename(p)} still DEFERS {', '.join(r['deferred'])} after the publish"); sys.exit(1)
-print(os.path.basename(p))
-PY
+  line=$(ap_postpub_line "$PWD/.dogfood" "$MC"
   ) || die "post-publish dogfood refused on its receipt: $line"
   say "DOGFOOD post-publish GO at $MC ($line; host receipts $AP/receipts/dogfood)"
   # A block that runs as REPORT is named in the release notes, never only in a log (cop ruling on
@@ -468,7 +512,7 @@ if run_step ledger; then
   nrec=0; for f in "$AP"/receipts/dogfood/*.json; do [ -f "$f" ] && nrec=$((nrec + 1)); done
   [ "$nrec" -gt 0 ] || die "INFRA no host receipts under $AP/receipts/dogfood -- the hosts step has not run, so there is nothing to ledger"
   day=$(date -u +%F)  # bashrs disable-line=DET002
-  python3 "$REPO_ROOT/scripts/release/ledger.py" "$AP" "$MC" "$T" "$V" "$STATUS" >> "$LOG" 2>&1 || die "ledger.py wrote no ledger record ($LOG)"
+  bash "$REPO_ROOT/scripts/release/ledger.sh" "$AP" "$MC" "$T" "$V" "$STATUS" >> "$LOG" 2>&1 || die "ledger.sh wrote no ledger record ($LOG)"
   rec="$AP/${MC:0:9}-lambda-vector-train.json"
   [ -s "$rec" ] || die "no ledger record at $rec"
   lb="ledger/$V"; lw="$AP/ledger-wt"; lbase=origin/main

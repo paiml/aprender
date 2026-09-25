@@ -1,6 +1,6 @@
 """release_wall_time.py -- release-night wall time, MEASURED from the systems of record (#4045 M7, #4033).
 
-The ledger (scripts/release/ledger.py) carries `t4_wall_minutes` under "unmeasured", and 0.69.1 ran by hand, so no
+The ledger (scripts/release/ledger.sh) carries `t4_wall_minutes` under "unmeasured", and 0.69.1 ran by hand, so no
 autopilot STATUS exists to derive it from. This reads the anchors that exist for EVERY release, whoever drove it:
   freeze      the freeze commit's committer time (--freeze <sha>: the first candidate the train measured)
   cut         the tagged commit's committer time
