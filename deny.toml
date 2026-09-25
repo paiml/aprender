@@ -15,8 +15,6 @@ ignore = [
     { id = "RUSTSEC-2024-0436", reason = "paste: transitive via simba/nalgebra/parquet, use pastey when upstream migrates" },
     { id = "RUSTSEC-2025-0119", reason = "number_prefix: transitive via indicatif, no replacement available" },
     { id = "RUSTSEC-2025-0141", reason = "bincode: transitive, widely used, no drop-in replacement" },
-    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: transitive via tabled_derive, no safe upgrade available" },
-    { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2: unmaintained, transitive via validator_derive; awaiting validator upstream migration" },
     # rustls-pemfile 1.x exemption removed: the reqwest 0.11 -> 0.12 bump in
     # aprender-serve dropped its last consumer, so the advisory is no longer
     # reachable and the entry was dead. Deliberately not naming the id here --

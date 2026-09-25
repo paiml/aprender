@@ -1,0 +1,5 @@
+{
+  "armed_gates": ["validate"],
+  "armed_shapes": ["claim-shape-v1", "study-shape-v1"],
+  "ont": {}
+}

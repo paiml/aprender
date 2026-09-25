@@ -108,6 +108,7 @@ impl ForwardKernelCache {
     }
 
     /// JIT compiles seen since construction or the last reset (R-3).
+    #[cfg(test)]
     pub(super) fn jit_compiles(&self) -> usize {
         self.jit_compiles
     }
@@ -122,6 +123,7 @@ impl ForwardKernelCache {
     /// warmed, or was warmed under a key the pass does not use — which is
     /// exactly the cascade's root cause and its Lesson-3 sequel (pre-warm and
     /// runtime building keys with separate format! calls that drifted apart).
+    #[cfg(test)]
     pub(super) fn reset_jit_counter(&mut self) {
         self.jit_compiles = 0;
     }
@@ -681,7 +683,7 @@ pub fn set_forward_cublas_stream(stream: &CudaStream) -> Result<()> {
 ///
 /// See `reset_forward_jit_counter` for why this is asserted AFTER a reset and
 /// not against zero directly.
-#[cfg(feature = "cuda")]
+#[cfg(all(test, feature = "cuda"))]
 pub fn forward_jit_compiles() -> Result<usize> {
     let cache = FORWARD_KERNEL_CACHE.get().ok_or(CudaTensorError::DeviceNotInitialized)?;
     let cache = cache.lock().map_err(|_err| {
@@ -708,7 +710,7 @@ pub fn forward_jit_compiles() -> Result<usize> {
 /// differences change cache keys (cuBLAS on sm_121 vs PTX GEMM on sm_89 IS
 /// cascade defect #1804), and yoga vs gx10 also differs in CUDA toolkit. This
 /// invariant is local, needs one machine, and has no such confound.
-#[cfg(feature = "cuda")]
+#[cfg(all(test, feature = "cuda"))]
 pub fn reset_forward_jit_counter() -> Result<()> {
     let cache = FORWARD_KERNEL_CACHE.get().ok_or(CudaTensorError::DeviceNotInitialized)?;
     let mut cache = cache.lock().map_err(|_err| {
