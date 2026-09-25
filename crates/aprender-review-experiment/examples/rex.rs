@@ -33,6 +33,12 @@
 //! - `ladder REPORT_JSON` REX-09: the lane's rung (shadow/tripwire/vote) from a
 //!   `rex-001-report-v1` report, with every reason it stopped below vote. Exit 0
 //!   whatever the rung; the gates read `.mode`.
+//! - `ratchet record --file F --tag T --cell C --receipts R [--llama-receipts L
+//!   --llama-cell LC]` REX-10: append one `review-lane-perf-ratchet-v1` entry
+//!   from the tag's warm, non-rerun receipts on the cell (and llama.cpp's p95 on
+//!   the same items). A tag with no timings is refused: it did not run.
+//! - `ratchet check --file F` the andon JSON (arming/green/red). Exit 10 on RED:
+//!   a paired Harrell–Davis p95 rise over the best earlier tag, or a violation.
 
 use aprender_review_experiment::build_corpus::{
     choose, g_candidates, is_green, p_candidates, r_candidates, seal, Mutant, Pr, PER_CLASS,
@@ -45,6 +51,7 @@ use aprender_review_experiment::harness::{
 };
 use aprender_review_experiment::pilot::{project, Projection};
 use aprender_review_experiment::prereg;
+use aprender_review_experiment::ratchet;
 use aprender_review_experiment::receipt::{admissible, Arm, Expect, NotRun, Receipt};
 use aprender_review_experiment::score::{collect, score};
 use std::collections::BTreeMap;
@@ -62,6 +69,7 @@ fn main() -> ExitCode {
         Some("admission-check") => admission_check(&args[1..]),
         Some("ledger") => ledger_cmd(&args[1..]),
         Some("ladder") => ladder_cmd(&args[1..]),
+        Some("ratchet") => ratchet_cmd(&args[1..]),
         Some(c @ ("review" | "not-run" | "score" | "admit")) => {
             match flags(&args[1..]).and_then(|f| match c {
                 "review" => review(&f),
@@ -85,7 +93,7 @@ fn main() -> ExitCode {
         },
         _ => {
             eprintln!(
-                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder> (see the example docs)"
+                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder|ratchet> (see the example docs)"
             );
             ExitCode::from(2)
         }
@@ -600,4 +608,110 @@ fn ladder_cmd(a: &[String]) -> ExitCode {
         Err(e) => eprintln!("rex ladder: {e}"),
     }
     ExitCode::SUCCESS
+}
+
+/// Warm, non-rerun, admissible timings of one cell (and tag, when given).
+fn warm_timings(
+    path: &str,
+    cell: &str,
+    tag: Option<&str>,
+) -> Result<(Vec<Receipt>, String), String> {
+    let (_, prereg_sha, cv) = corpus()?;
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+    let expect = Expect {
+        prereg_sha: &prereg_sha,
+        corpus_version: &cv,
+    };
+    let rows = text
+        .lines()
+        .filter_map(|l| admissible(l, expect).ok())
+        .filter(|r| {
+            r.cell == cell
+                && tag.is_none_or(|t| r.apr_tag == t)
+                && !r.cold
+                && !r.rerun
+                && r.timings.is_some()
+        })
+        .collect();
+    Ok((rows, sha256_hex(text.as_bytes())))
+}
+
+fn samples(rows: &[Receipt]) -> Vec<ratchet::Sample<'_>> {
+    rows.iter()
+        .filter_map(|r| {
+            r.timings.map(|t| ratchet::Sample {
+                item_id: &r.item_id,
+                apr_sha256: &r.apr_sha256,
+                wall_ms: t.wall_ms,
+            })
+        })
+        .collect()
+}
+
+fn ratchet_entries(file: &str) -> Result<Vec<ratchet::Entry>, String> {
+    match std::fs::read_to_string(file) {
+        Ok(t) => t
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| serde_json::from_str(l).map_err(|e| format!("{file}: {e}")))
+            .collect(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(format!("{file}: {e}")),
+    }
+}
+
+fn ratchet_record(f: &Flags) -> Result<(), String> {
+    let (file, tag, cell) = (need(f, "file")?, need(f, "tag")?, need(f, "cell")?);
+    let (rows, sha) = warm_timings(need(f, "receipts")?, cell, Some(tag))?;
+    let llama = match f.get("llama-receipts") {
+        Some(p) => warm_timings(p, need(f, "llama-cell")?, None)?.0,
+        None => Vec::new(),
+    };
+    let entry = ratchet::record(tag, cell, &samples(&rows), &samples(&llama), &sha)?;
+    let mut all = ratchet_entries(file)?;
+    all.push(entry.clone());
+    let line = serde_json::to_string(&entry).map_err(|e| e.to_string())?;
+    let mut out = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file)
+        .map_err(|e| format!("{file}: {e}"))?;
+    std::io::Write::write_all(&mut out, format!("{line}\n").as_bytes())
+        .map_err(|e| e.to_string())?;
+    println!(
+        "recorded {tag} on {cell}: {} items, p95 {:.0} ms; andon {:?}",
+        entry.items.len(),
+        entry.p95_ms,
+        ratchet::check(&all).andon
+    );
+    Ok(())
+}
+
+fn ratchet_cmd(a: &[String]) -> ExitCode {
+    let run = |sub: &str| -> Result<ExitCode, String> {
+        let f = flags(&a[1..])?;
+        if sub == "record" {
+            return ratchet_record(&f).map(|()| ExitCode::SUCCESS);
+        }
+        let v = ratchet::check(&ratchet_entries(need(&f, "file")?)?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?
+        );
+        Ok(if v.andon == ratchet::Andon::Red {
+            ExitCode::from(10)
+        } else {
+            ExitCode::SUCCESS
+        })
+    };
+    match a.first().map(String::as_str) {
+        Some(s @ ("record" | "check")) => run(s).unwrap_or_else(|e| {
+            eprintln!("rex ratchet {s}: {e}");
+            ExitCode::from(1)
+        }),
+        _ => {
+            eprintln!("usage: rex ratchet record|check --file F ... (see the example docs)");
+            ExitCode::from(2)
+        }
+    }
 }

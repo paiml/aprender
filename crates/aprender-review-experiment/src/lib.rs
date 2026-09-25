@@ -13,6 +13,7 @@
 //! - [`pilot`]: the REX-05 pilot projection and the §2.2 sample-size rule.
 //! - [`ledger`]: the REX-07 shadow-lane `review-ledger-v1` rows and coverage.
 //! - [`ladder`]: the REX-09 shadow → tripwire → vote promotion gates (H4/H5).
+//! - [`ratchet`]: the REX-10 `review-lane-perf-ratchet-v1` p95 ratchet (§5.1).
 
 pub mod admission;
 pub mod build_corpus;
@@ -23,6 +24,7 @@ pub mod ladder;
 pub mod ledger;
 pub mod pilot;
 pub mod prereg;
+pub mod ratchet;
 pub mod receipt;
 pub mod score;
 pub mod stats;
