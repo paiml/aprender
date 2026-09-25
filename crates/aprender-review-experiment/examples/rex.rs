@@ -61,6 +61,11 @@
 //!   the gate runs H7 (δ-free, `stats::h7_holds`) on the candidate rows: the
 //!   voters and min_n come only from the manifest's `lane_independence` block. Exit 12 (andon, S-14) on a refused candidate, an unusable manifest,
 //!   or `--candidate` without `--manifest`.
+//! - `workload ROWS --min-n N` PRM-S2 (contract workload-profile-v1): per-lane
+//!   input/output token p50/p95 over agent-trace-v1 rows, §0.2 decided per lane
+//!   and the replay strata weights over distinct diffs, as the receipt's
+//!   `workload` block. A falsified §0.2 is a measured result (exit 0); an
+//!   undecided one (no lane at min_n) is exit 13 (andon, S-14).
 
 use aprender_review_experiment::b2;
 use aprender_review_experiment::build_corpus::{
@@ -99,6 +104,7 @@ fn main() -> ExitCode {
         Some("challenge") => challenge_cmd(&args[1..]),
         Some("b2") => b2_cmd(&args[1..]),
         Some("lane-kappa") => lane_kappa_cmd(&args[1..]),
+        Some("workload") => workload_cmd(&args[1..]),
         Some(c @ ("review" | "not-run" | "score" | "admit")) => {
             match flags(&args[1..]).and_then(|f| match c {
                 "review" => review(&f),
@@ -122,7 +128,7 @@ fn main() -> ExitCode {
         },
         _ => {
             eprintln!(
-                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder|ratchet|challenge|b2|lane-kappa> (see the example docs)"
+                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder|ratchet|challenge|b2|lane-kappa|workload> (see the example docs)"
             );
             ExitCode::from(2)
         }
@@ -1034,4 +1040,37 @@ fn challenge_cmd(a: &[String]) -> ExitCode {
             ExitCode::from(1)
         }
     }
+}
+
+const ANDON_WORKLOAD: u8 = 13;
+
+fn workload_cmd(a: &[String]) -> ExitCode {
+    use aprender_review_experiment::workload::{profile, render};
+    const USAGE: &str = "usage: rex workload ROWS --min-n N";
+    let (Some(path), Ok(f)) = (a.first(), flags(a.get(1..).unwrap_or_default())) else {
+        eprintln!("{USAGE}");
+        return ExitCode::from(2);
+    };
+    let Some(Ok(min_n)) = f.get("min-n").map(|n| n.parse::<usize>()) else {
+        eprintln!("{USAGE}");
+        return ExitCode::from(2);
+    };
+    if min_n == 0 {
+        eprintln!("{USAGE}");
+        return ExitCode::from(2);
+    }
+    let rows = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("rex workload: {path}: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    let p = profile(&rows, min_n);
+    println!("{}", render(&p));
+    if p.claim.is_none() {
+        eprintln!("rex workload: ANDON {}", p.refusals.join("; "));
+        return ExitCode::from(ANDON_WORKLOAD);
+    }
+    ExitCode::SUCCESS
 }
