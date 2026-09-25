@@ -567,3 +567,34 @@ fn successful_batched_prefill_returns_its_logits_unchanged() {
         Err(Step::Fatal(e)) => panic!("an Ok prefill became a fatal error: {e}"),
     }
 }
+
+/// #4274: a turn past MIN_CAPACITY must leave headroom for the next turn,
+/// or that turn reallocates and re-prefills from position 0. Rows are
+/// (positions, current, min, context) -> capacity.
+#[test]
+fn a_state_that_outgrows_min_capacity_leaves_headroom_for_the_next_turn() {
+    let cases = [
+        // the #4274 repro: turn 1 at 4197 of an 8192 context
+        ((4197, 0, MIN_CAPACITY, 8192), 8192),
+        ((850, 0, MIN_CAPACITY, 8192), MIN_CAPACITY),
+        ((MIN_CAPACITY, 0, MIN_CAPACITY, 8192), MIN_CAPACITY),
+        ((5000, MIN_CAPACITY, MIN_CAPACITY, 32768), 8192),
+        ((9000, 8192, MIN_CAPACITY, 32768), 16384),
+        ((20000, 0, MIN_CAPACITY, 32768), 32768),
+        // clamped to the context, never below the turn
+        ((4197, 0, MIN_CAPACITY, 6000), 6000),
+        ((100, 0, MIN_CAPACITY, 64), 100),
+        // a one-call state is sized to the call
+        ((4197, 0, 0, 8192), 4197),
+    ];
+    for ((positions, current, min, context), want) in cases {
+        assert_eq!(
+            grown_capacity(positions, current, min, context),
+            want,
+            "grown_capacity({positions}, {current}, {min}, {context})"
+        );
+    }
+    // The e2e shape: turn 2 (4279 positions) fits what turn 1 allocated.
+    let first = grown_capacity(4197, 0, MIN_CAPACITY, 8192);
+    assert!(4279 <= first, "turn 2 would reallocate from {first}");
+}
