@@ -158,7 +158,7 @@ jobs:
       # #4110/#4290: an rc asset's crate version IS its tag. The rc commit's Cargo.toml says
       # X.Y.Z, so without this every vX.Y.Z-rc.N asset printed bare `X.Y.Z` (v0.69.3-rc.2:
       # `apr 0.69.3 (v0.69.3+no-git)`). The stamper comes from THIS workflow's commit, not the
-      # tag's tree, which an rc cut from release/X.Y.Z predates. A final tag stamps nothing.
+      # tag's tree, which may predate it. A final tag stamps nothing.
       # verify-apr-assets then requires `apr --version` to equal the tag exactly.
       - name: Stamp the rc version into the tag tree (#4110)
         env:
@@ -268,7 +268,7 @@ jobs:
           # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
           # and releases/tags/ never returns a draft
           rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
-            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
+            | python3 -c 'import json,sys; t=sys.argv[1]; r=next((r for r in json.load(sys.stdin) if r["tag_name"]==t), None); r or sys.exit(f"no release (draft or published) for {t}: the rc tagger must create it as a draft first (#4327)"); print(json.dumps(r))' "$TAG")
           rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
           for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
             # --clobber semantics: delete an asset of the same name first
@@ -314,7 +314,7 @@ jobs:
       # #4110/#4290: an rc asset's crate version IS its tag. The rc commit's Cargo.toml says
       # X.Y.Z, so without this every vX.Y.Z-rc.N asset printed bare `X.Y.Z` (v0.69.3-rc.2:
       # `apr 0.69.3 (v0.69.3+no-git)`). The stamper comes from THIS workflow's commit, not the
-      # tag's tree, which an rc cut from release/X.Y.Z predates. A final tag stamps nothing.
+      # tag's tree, which may predate it. A final tag stamps nothing.
       # verify-apr-assets then requires `apr --version` to equal the tag exactly.
       - name: Stamp the rc version into the tag tree (#4110)
         env:
@@ -416,7 +416,7 @@ jobs:
           # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
           # and releases/tags/ never returns a draft
           rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
-            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
+            | python3 -c 'import json,sys; t=sys.argv[1]; r=next((r for r in json.load(sys.stdin) if r["tag_name"]==t), None); r or sys.exit(f"no release (draft or published) for {t}: the rc tagger must create it as a draft first (#4327)"); print(json.dumps(r))' "$TAG")
           rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
           for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
             # --clobber semantics: delete an asset of the same name first
@@ -492,7 +492,7 @@ jobs:
       # #4110/#4290: an rc asset's crate version IS its tag. The rc commit's Cargo.toml says
       # X.Y.Z, so without this every vX.Y.Z-rc.N asset printed bare `X.Y.Z` (v0.69.3-rc.2:
       # `apr 0.69.3 (v0.69.3+no-git)`). The stamper comes from THIS workflow's commit, not the
-      # tag's tree, which an rc cut from release/X.Y.Z predates. A final tag stamps nothing.
+      # tag's tree, which may predate it. A final tag stamps nothing.
       # verify-apr-assets then requires `apr --version` to equal the tag exactly.
       - name: Stamp the rc version into the tag tree (#4110)
         env:
@@ -634,7 +634,7 @@ jobs:
           # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
           # and releases/tags/ never returns a draft
           rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
-            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
+            | python3 -c 'import json,sys; t=sys.argv[1]; r=next((r for r in json.load(sys.stdin) if r["tag_name"]==t), None); r or sys.exit(f"no release (draft or published) for {t}: the rc tagger must create it as a draft first (#4327)"); print(json.dumps(r))' "$TAG")
           rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
           for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
             # --clobber semantics: delete an asset of the same name first
@@ -711,7 +711,7 @@ jobs:
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
           # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327)
           rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
-            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
+            | python3 -c 'import json,sys; t=sys.argv[1]; r=next((r for r in json.load(sys.stdin) if r["tag_name"]==t), None); r or sys.exit(f"no release (draft or published) for {t}: the rc tagger must create it as a draft first (#4327)"); print(json.dumps(r))' "$TAG")
           rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
           for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
             aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next((a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n), ""))' "$f")
@@ -782,7 +782,7 @@ jobs:
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
           # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327)
           rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
-            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
+            | python3 -c 'import json,sys; t=sys.argv[1]; r=next((r for r in json.load(sys.stdin) if r["tag_name"]==t), None); r or sys.exit(f"no release (draft or published) for {t}: the rc tagger must create it as a draft first (#4327)"); print(json.dumps(r))' "$TAG")
           rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
           for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
             aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next((a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n), ""))' "$f")
@@ -876,7 +876,7 @@ jobs:
           # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
           # and releases/tags/ never returns a draft
           rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
-            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
+            | python3 -c 'import json,sys; t=sys.argv[1]; r=next((r for r in json.load(sys.stdin) if r["tag_name"]==t), None); r or sys.exit(f"no release (draft or published) for {t}: the rc tagger must create it as a draft first (#4327)"); print(json.dumps(r))' "$TAG")
           for f in "apr-${TAG}-${T}-cuda.tar.gz" "apr-${TAG}-${T}-cuda.tar.gz.sha256"; do
             aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next(a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n))' "$f")
             curl -sSfL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" -o "$f" "$API/releases/assets/$aid"
@@ -954,7 +954,7 @@ jobs:
           # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
           # and releases/tags/ never returns a draft
           rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
-            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
+            | python3 -c 'import json,sys; t=sys.argv[1]; r=next((r for r in json.load(sys.stdin) if r["tag_name"]==t), None); r or sys.exit(f"no release (draft or published) for {t}: the rc tagger must create it as a draft first (#4327)"); print(json.dumps(r))' "$TAG")
           for f in "apr-${TAG}-${T}-cpu.tar.gz" "apr-${TAG}-${T}-cpu.tar.gz.sha256"; do
             aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next(a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n))' "$f")
             curl -sSfL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" -o "$f" "$API/releases/assets/$aid"

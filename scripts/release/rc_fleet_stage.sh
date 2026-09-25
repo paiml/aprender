@@ -10,7 +10,8 @@
 # lambda still ran rc.1, intel ran an older apr, and mini had no darwin asset to install: the
 # fleet install ran on an hourly timer that nothing tied to the cut.
 #
-# THE NEW ORDER. rc_cut.sh creates the rc as a DRAFT and binary-release.yml attaches the
+# THE NEW ORDER. The rc tagger creates the rc as a DRAFT release (rc_cut.sh did, until #4314
+# was superseded by rc = tag on a queue-green main; the tagger now owns that step) and binary-release.yml attaches the
 # assets to it (a draft is invisible to install.sh and to the fleet poller). This script then,
 # for every host in the fleet (lambda, gx10, yoga, intel, mini; jetson is retired, #4328 C7):
 #   1. copies the host's apr asset (+ .sha256), and pv's on linux, onto the host;
