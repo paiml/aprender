@@ -12,12 +12,14 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+half = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 regex = { workspace = true }
 toml = { workspace = true }
 sha2 = { workspace = true }
 ureq = { workspace = true }
+zstd = { workspace = true }
 
 [lints]
 workspace = true

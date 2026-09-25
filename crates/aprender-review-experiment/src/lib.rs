@@ -36,4 +36,5 @@ pub mod ratchet;
 pub mod receipt;
 pub mod score;
 pub mod secret;
+pub mod sparse_logits;
 pub mod stats;

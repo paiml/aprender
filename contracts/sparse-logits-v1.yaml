@@ -1,0 +1,50 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PRA-001 T11 (spec §2.7): the `sparse-logits-v1` teacher-logit blob written beside apr serve
+    rows (crates/aprender-review-experiment: sparse_logits.rs). Per token it stores the sampled
+    id, the top-k ids (u32) with log-softmax at T = 1.0 before any sampling filter (f16), the
+    full-vocab logsumexp (f32), and the retained mass M = Σexp(logprobs) (f16) so that 1 − M is
+    the true tail mass a sparse forward-KL correction needs. Header (closed JSON): schema, mode
+    (topk | rs-sample), model_sha256, tokenizer_sha256, apr_tag, backend (served_by),
+    temperature_of_record, k, n_tokens. Body: one zstd frame of LE columns. Raw column size is
+    n·(10 + 6k) bytes = 130 B/token at k = 20. Frontier lanes carry no blob (logits_sha = null).
+    Encoder and decoder share one validator: a blob that exists is a blob that reads.
+  references:
+    - "/mnt/nvme-raid0/cop-inbox/handoff/brief-pra.md §2.7 (private)"
+    - "https://github.com/paiml/aprender/issues/4026"
+
+equations:
+  logprob:
+    formula: "lp_i = z_i − logsumexp(z), z at T = 1.0, lp_i ≤ 0"
+  mass:
+    formula: "M = Σ_{i ∈ topk} exp(lp_i) ∈ [0, 1], |M − Σexp(f16(lp_i))| ≤ 2^-8; residual = 1 − M"
+  raw_bytes:
+    formula: "raw(n, k) = n · (4 + 6k + 4 + 2)"
+
+falsification_tests:
+  - id: FALSIFY-SPL-001
+    name: round_trip_is_exact
+    prediction: "header and every column (incl. ids > 65535) decode bit-identical to what was encoded"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_spl_001"
+    expected_output: "exit 0"
+    if_fails: "Stored teacher distributions would differ from the served ones; Qwen ids above u16 would alias."
+  - id: FALSIFY-SPL-002
+    name: residual_mass_is_the_true_tail
+    prediction: "1 − M equals the full-softmax mass outside the top-k within 1e-3, and survives the round trip"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_spl_002"
+    expected_output: "exit 0"
+    if_fails: "A top-k cache without its tail mass is a biased teacher estimate (§2.7)."
+  - id: FALSIFY-SPL-003
+    name: inconsistent_mass_is_refused
+    prediction: "a mass disagreeing with its own logprobs is refused by encode AND by decode of a forged blob"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_spl_003"
+    expected_output: "exit 0"
+    if_fails: "A producer defect (post-filter mass, wrong temperature) would enter the cache silently."
+  - id: FALSIFY-SPL-004
+    name: decoder_is_strict
+    prediction: "an unknown header key, an n_tokens that mismatches the columns, any truncation, a trailing byte or a bad magic is an error"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_spl_004"
+    expected_output: "exit 0"
+    if_fails: "A malformed blob would decode to a plausible but wrong distribution."
