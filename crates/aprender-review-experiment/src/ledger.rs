@@ -7,7 +7,9 @@
 //! and holds it to §7 REX-07:
 //! - every quorum after activation carries a shadow row (a receipt with no
 //!   `advisory_lane` is **missing**, never silently skipped);
-//! - a lane that did not answer is `Unknown{LaneUnavailable}`, not a verdict;
+//! - the apr row is one typed value, `Verdict | NotRun | Refused` (the
+//!   paiml-implement#436 wire form, one spelling with receipt-lint); an
+//!   unknown key or value fails to parse, so free text is never a reason;
 //! - the shadow is never counted, and the quorum width is the counted lanes
 //!   alone, so a gx10-down round keeps its width.
 
@@ -31,17 +33,16 @@ struct Lane {
 struct Advisory {
     #[serde(default)]
     state: Option<String>,
+    /// The typed apr row. Absent on an `off` lane; absent otherwise is a violation.
     #[serde(default)]
-    verdict: Option<String>,
-    #[serde(default)]
-    served_by: Option<String>,
+    row: Option<serde_json::Value>,
     #[serde(default)]
     apr: Option<String>,
+    #[serde(default)]
+    weights_sha256: Option<String>,
     /// The rail's uncounted flag (`counted` there is the counted round's verdict).
     #[serde(default)]
     counts: Option<bool>,
-    #[serde(default)]
-    why: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,18 +72,50 @@ pub struct LaneRow {
     pub findings: usize,
 }
 
-/// Why the shadow lane has no verdict.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Unknown {
-    LaneUnavailable { why: Option<String> },
+/// The apr lane's verdict.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Verdict {
+    #[serde(rename = "PASS")]
+    Pass,
+    #[serde(rename = "FAIL")]
+    Fail,
 }
 
-/// The shadow lane's result on one quorum.
+/// Why the apr lane did not run. Closed: a new reason is a schema change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NotRun {
+    NoExecutor,
+    Busy,
+    Timeout,
+    ContextOverflow,
+    TrainActive,
+}
+
+/// What removed a cell from the ladder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RemovedBy {
+    Ladder,
+    GpuProof,
+    Parse,
+}
+
+/// The apr lane's result on one quorum — the paiml-implement#436 wire form:
+/// `{"Verdict":{"verdict":"PASS","cell":"gx10-cuda","backend":"cuda"}}`,
+/// `{"NotRun":"Busy"}`, `{"Refused":{"cell":"gx10-cuda","removed_by":"gpu-proof"}}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "state")]
+#[serde(deny_unknown_fields)]
 pub enum Shadow {
-    Answered { verdict: String, served_by: String },
-    Unknown { reason: Unknown },
+    Verdict {
+        verdict: Verdict,
+        cell: String,
+        backend: String,
+    },
+    NotRun(NotRun),
+    Refused {
+        cell: String,
+        removed_by: RemovedBy,
+    },
 }
 
 /// One `review-ledger-v1` row (§5.2).
@@ -99,7 +132,7 @@ pub struct Row {
     pub lanes: Vec<LaneRow>,
     pub shadow: Shadow,
     pub apr_tag: Option<String>,
-    /// The rail does not record it yet; a row without it is an identity gap.
+    /// From the receipt; a row without it is an identity gap.
     pub weights_sha256: Option<String>,
     /// Joined later (merged / reverted ≤ 14 d / escape); `pending` until then.
     pub outcome: String,
@@ -119,24 +152,14 @@ pub struct Coverage {
 }
 
 impl Coverage {
-    /// §7 REX-07 acceptance: every quorum carries a shadow row, none counted.
+    /// §7 REX-07 acceptance: every quorum carries a shadow row, none counted,
+    /// and every row names its apr tag and weights sha (PRM v2 item 5).
     #[must_use]
     pub fn holds(&self) -> bool {
-        self.quorums > 0 && self.missing.is_empty() && self.violations.is_empty()
-    }
-}
-
-fn shadow(a: &Advisory) -> Shadow {
-    match (a.state.as_deref(), &a.verdict, &a.served_by) {
-        (Some("answered"), Some(v), Some(s)) => Shadow::Answered {
-            verdict: v.clone(),
-            served_by: s.clone(),
-        },
-        _ => Shadow::Unknown {
-            reason: Unknown::LaneUnavailable {
-                why: a.why.clone().or_else(|| a.state.clone()),
-            },
-        },
+        self.quorums > 0
+            && self.missing.is_empty()
+            && self.violations.is_empty()
+            && self.identity_gaps == 0
     }
 }
 
@@ -165,6 +188,17 @@ pub fn build(receipts: &[(String, String)], repo: &str) -> (Vec<Row>, Coverage) 
         else {
             c.missing.push(name.clone());
             continue;
+        };
+        let shadow = match a.row.clone().map(serde_json::from_value::<Shadow>) {
+            Some(Ok(s)) => s,
+            Some(Err(e)) => {
+                c.violations.push(format!("{name}: apr row: {e}"));
+                continue;
+            }
+            None => {
+                c.violations.push(format!("{name}: no typed apr row"));
+                continue;
+            }
         };
         c.carried += 1;
         if a.counts != Some(false) {
@@ -197,9 +231,9 @@ pub fn build(receipts: &[(String, String)], repo: &str) -> (Vec<Row>, Coverage) 
                     findings: l.findings.as_ref().map_or(0, Vec::len),
                 })
                 .collect(),
-            shadow: shadow(a),
+            shadow,
             apr_tag: a.apr.clone(),
-            weights_sha256: None,
+            weights_sha256: a.weights_sha256.clone(),
             outcome: "pending".into(),
         };
         if row.apr_tag.is_none() || row.weights_sha256.is_none() {

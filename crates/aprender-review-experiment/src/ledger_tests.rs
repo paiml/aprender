@@ -10,8 +10,8 @@ fn receipt(advisory: Option<&str>, width: u64) -> String {
     )
 }
 
-const ANSWERED: &str = r#"{"state":"answered","verdict":"PASS","served_by":"gx10-cuda","apr":"0.69.3","counted":"PASS","counts":false}"#;
-const DOWN: &str = r#"{"state":"unavailable","verdict":null,"served_by":null,"apr":null,"counted":"PASS","counts":false,"why":"gx10 connect refused"}"#;
+const ANSWERED: &str = r#"{"state":"answered","row":{"Verdict":{"verdict":"PASS","cell":"gx10-cuda","backend":"cuda"}},"apr":"0.69.3","weights_sha256":"w4b","counted":"PASS","counts":false}"#;
+const DOWN: &str = r#"{"state":"unavailable","row":{"NotRun":"NoExecutor"},"apr":"0.69.3","weights_sha256":"w4b","counted":"PASS","counts":false}"#;
 
 fn one(text: String) -> (Vec<Row>, Coverage) {
     build(&[("quorum-PMAT-1.json".into(), text)], "paiml/aprender")
@@ -27,14 +27,15 @@ fn an_answered_shadow_becomes_a_ledger_row() {
     assert_eq!(r.lanes[1].findings, 1);
     assert_eq!(
         r.shadow,
-        Shadow::Answered {
-            verdict: "PASS".into(),
-            served_by: "gx10-cuda".into()
+        Shadow::Verdict {
+            verdict: Verdict::Pass,
+            cell: "gx10-cuda".into(),
+            backend: "cuda".into()
         }
     );
+    assert_eq!(r.weights_sha256.as_deref(), Some("w4b"));
     assert_eq!(r.outcome, "pending");
-    // The rail records no weights sha yet: counted, not hidden.
-    assert_eq!(c.identity_gaps, 1);
+    assert_eq!(c.identity_gaps, 0);
 }
 
 #[test]
@@ -63,20 +64,10 @@ fn falsify_rxl_002_gx10_down_is_unknown_and_keeps_the_width() {
     let (rows, c) = one(receipt(Some(DOWN), 3));
     assert!(c.holds(), "{c:?}");
     assert_eq!(rows[0].width, 3);
-    assert_eq!(
-        rows[0].shadow,
-        Shadow::Unknown {
-            reason: Unknown::LaneUnavailable {
-                why: Some("gx10 connect refused".into())
-            }
-        }
-    );
-    // An "answered" state without a verdict is not a verdict.
-    let half = r#"{"state":"answered","verdict":null,"served_by":"gx10-cuda","counted":"PASS","counts":false}"#;
-    assert!(matches!(
-        one(receipt(Some(half), 3)).0[0].shadow,
-        Shadow::Unknown { .. }
-    ));
+    assert_eq!(rows[0].shadow, Shadow::NotRun(NotRun::NoExecutor));
+    // A verdict without its cell is not a verdict.
+    let half = ANSWERED.replace(r#","cell":"gx10-cuda""#, "");
+    assert!(!one(receipt(Some(&half), 3)).1.holds(), "no cell");
 }
 
 #[test]
@@ -90,4 +81,54 @@ fn falsify_rxl_003_a_counted_or_width_changing_shadow_is_a_violation() {
     );
     assert!(!one(receipt(Some(ANSWERED), 4)).1.holds(), "width 4");
     assert!(!one(receipt(Some(DOWN), 2)).1.holds(), "width 2");
+}
+
+#[test]
+fn every_wire_form_round_trips() {
+    for row in [
+        r#"{"Verdict":{"verdict":"FAIL","cell":"intel-wgpu","backend":"wgpu"}}"#,
+        r#"{"NotRun":"NoExecutor"}"#,
+        r#"{"NotRun":"Busy"}"#,
+        r#"{"NotRun":"Timeout"}"#,
+        r#"{"NotRun":"ContextOverflow"}"#,
+        r#"{"NotRun":"TrainActive"}"#,
+        r#"{"Refused":{"cell":"gx10-cuda","removed_by":"ladder"}}"#,
+        r#"{"Refused":{"cell":"gx10-cuda","removed_by":"gpu-proof"}}"#,
+        r#"{"Refused":{"cell":"gx10-cuda","removed_by":"parse"}}"#,
+    ] {
+        let s: Shadow = serde_json::from_str(row).expect(row);
+        assert_eq!(serde_json::to_string(&s).expect("ser"), row);
+    }
+}
+
+#[test]
+fn falsify_rxl_004_a_receipt_without_a_weights_sha_does_not_hold() {
+    let bare = ANSWERED.replace(r#","weights_sha256":"w4b""#, "");
+    let (rows, c) = one(receipt(Some(&bare), 3));
+    assert_eq!(rows.len(), 1, "the row is kept");
+    assert_eq!(c.identity_gaps, 1);
+    assert!(!c.holds(), "an identity gap fails holds()");
+    let untagged = ANSWERED.replace(r#""apr":"0.69.3""#, r#""apr":null"#);
+    assert!(!one(receipt(Some(&untagged), 3)).1.holds(), "no apr tag");
+}
+
+#[test]
+fn falsify_rxl_005_a_free_text_reason_fails_to_parse() {
+    for row in [
+        r#"{"NotRun":"gx10 connect refused"}"#,
+        r#"{"LaneUnavailable":{"why":"gx10 connect refused"}}"#,
+        r#"{"Refused":{"cell":"gx10-cuda","removed_by":"aprender#9999: refuses qwen35"}}"#,
+        r#"{"Verdict":{"verdict":"LGTM","cell":"gx10-cuda","backend":"cuda"}}"#,
+        r#"{"Verdict":{"verdict":"PASS","cell":"gx10-cuda","backend":"cuda","why":"x"}}"#,
+    ] {
+        assert!(serde_json::from_str::<Shadow>(row).is_err(), "{row}");
+        let adv = ANSWERED.replace(
+            r#"{"Verdict":{"verdict":"PASS","cell":"gx10-cuda","backend":"cuda"}}"#,
+            row,
+        );
+        let (rows, c) = one(receipt(Some(&adv), 3));
+        assert!(rows.is_empty() && !c.holds(), "{row} is a violation");
+    }
+    let untyped = r#"{"state":"answered","apr":"0.69.3","weights_sha256":"w","counts":false}"#;
+    assert!(!one(receipt(Some(untyped), 3)).1.holds(), "no typed row");
 }
