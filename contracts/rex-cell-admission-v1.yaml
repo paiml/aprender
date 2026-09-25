@@ -53,7 +53,7 @@ falsification_tests:
     if_fails: "An Admitted row would carry a hand-typed cosine or the receipt's self-chosen threshold instead of the measured worst position."
   - id: FALSIFY-RCA-005
     name: a_short_or_failing_receipt_does_not_admit
-    prediction: "fewer than min_positions (64, evidence/parity/thresholds.yaml, I8/CF-4 #1864) positions, exit ≠ 0, a non-passing verdict, failed > 0, any position below threshold, a missing or non-finite cosine, an undeclared oracle, an empty basis or a non-finite threshold is refused with the reason named"
+    prediction: "fewer than min_positions (64, evidence/parity/thresholds.yaml, I8/CF-4 #1864) positions, exit ≠ 0, a non-passing verdict, failed > 0, any position below threshold, a missing or non-numeric cosine (JSON carries no NaN), an undeclared oracle, an empty basis or a non-finite threshold is refused with the reason named"
     test_harness: "cargo test -p aprender-review-experiment --lib falsify_rca_005"
     expected_output: "exit 0"
     if_fails: "A 7-position smoke check would admit a cell to the hardware ruling that parity evidence requires 64 positions for."

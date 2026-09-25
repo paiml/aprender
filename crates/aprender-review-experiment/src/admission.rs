@@ -312,8 +312,9 @@ pub fn parity_from_receipt(receipt: &[u8], x: &Expect<'_>) -> Result<Parity, Vec
     let mut min = f64::INFINITY;
     for (i, c) in cos.iter().enumerate() {
         match c {
-            Some(c) if c.is_finite() => min = min.min(*c),
-            _ => e.push(format!("position {i}: no finite cosine")),
+            // JSON carries no NaN or infinity: a number is finite
+            Some(c) => min = min.min(*c),
+            None => e.push(format!("position {i}: no numeric cosine")),
         }
     }
     if min < x.threshold {

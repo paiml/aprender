@@ -14,7 +14,7 @@ C4 has a passing declared-oneshot parity receipt, but it measured 7 positions, a
   - It refuses on any of these:
     - fewer than `min_positions` positions;
     - exit ≠ 0, a verdict that is not passing, or failed > 0;
-    - any position below the threshold, or a missing or non-finite cosine;
+    - any position below the threshold, or a missing or non-numeric cosine;
     - an undeclared oracle, an empty basis, or a non-finite threshold;
     - a binary or weights sha that differs from the row's.
 - `rex admit --cell C --parity-receipt R --threshold T --threshold-basis B --min-positions N` appends the row. It admits one cell at a time, never `all`. When the receipt does not admit, it writes nothing, exits 1 and names the reason.
@@ -60,4 +60,4 @@ The prereg lock the tool reads today is `f0b4e4ac…`, while the REX-04 rows car
 - `cargo test -p aprender-review-experiment --lib`: 167 passed.
 - `cargo clippy -p aprender-review-experiment --all-targets -D warnings`: clean.
 - `pv validate contracts/rex-cell-admission-v1.yaml`: valid.
-- `cargo mutants` on `admission.rs`: see the commit message.
+- `cargo mutants --re parity_from_receipt`: 21 caught, 1 unviable, 1 missed. The missed mutant was an unreachable `is_finite` guard, which was removed because JSON carries no NaN or ∞.
