@@ -44,35 +44,13 @@ tcg_decide() {
 find_run() {
     "$GH" run list --repo "$REPO" --workflow ci.yml --event push --branch "$1" --limit 20 \
         --json databaseId,headSha,status 2>/dev/null \
-    | python3 -c '
-import json, sys
-sha = sys.argv[1]
-try:
-    runs = json.load(sys.stdin)
-except ValueError:
-    sys.exit(0)
-for r in runs:
-    if r.get("headSha") == sha:
-        print(r["databaseId"], r["status"])
-        break
-' "$2"
+    | jq -r --arg sha "$2" 'first(.[] | select(.headSha == $sha)) | "\(.databaseId) \(.status)"' 2>/dev/null || true
 }
 
 # job_state RUN_ID -> "<status> <conclusion>" of the coverage job, or ''.
 job_state() {
     "$GH" api "repos/$REPO/actions/runs/$1/jobs?per_page=100" 2>/dev/null \
-    | python3 -c '
-import json, sys
-name = sys.argv[1]
-try:
-    jobs = json.load(sys.stdin).get("jobs", [])
-except ValueError:
-    sys.exit(0)
-for j in jobs:
-    if j.get("name") == name:
-        print(j["status"], j.get("conclusion") or "")
-        break
-' "$JOB"
+    | jq -r --arg name "$JOB" 'first((.jobs // [])[] | select(.name == $name)) | "\(.status) \(.conclusion // "")"' 2>/dev/null || true
 }
 
 gate() {
