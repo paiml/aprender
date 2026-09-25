@@ -6,6 +6,13 @@ import ProvableContracts.Theorems.MatMul.CooperativeTiling
 section
 namespace ProvableContracts.CooperativeMatrix
 open Matrix
+theorem _root_.PvlChallenge.ProvableContracts.CooperativeMatrix.f16_input_rounding_error_bound {k : ℕ} {fl : ℝ → ℝ} {u : ℝ} (hu : 0 ≤ u) (hfl : RoundingModel fl u) (a b : Fin k → ℝ) (maxA maxB : ℝ) (hA : ∀ i, |a i| ≤ maxA) (hB : ∀ i, |b i| ≤ maxB) : |∑ i, fl (a i) * fl (b i) - ∑ i, a i * b i| ≤ k * (2 * u + u ^ 2) * maxA * maxB := sorry
+end ProvableContracts.CooperativeMatrix
+end
+
+section
+namespace ProvableContracts.CooperativeMatrix
+open Matrix
 theorem _root_.PvlChallenge.ProvableContracts.CooperativeMatrix.matmul_block_sum {m k n : ℕ} (A : Matrix (Fin m) (Fin k) ℝ) (B : Matrix (Fin k) (Fin n) ℝ) : A * B = A * B := sorry
 end ProvableContracts.CooperativeMatrix
 end
