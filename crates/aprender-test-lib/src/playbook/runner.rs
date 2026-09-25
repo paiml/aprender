@@ -1,7 +1,13 @@
-//! Playbook runner with full setup/steps/teardown execution.
+//! Playbook runner: setup/steps/teardown lifecycle over an [`ActionExecutor`].
 //!
 //! Implements:
-//! - Setup/teardown lifecycle (teardown runs even on failure)
+//! - Step transitions executed through [`PlaybookExecutor`]: each transition's
+//!   exit/transition/entry actions reach the executor and its assertions are
+//!   checked (#2473 — before this, a step only appended to the state path and
+//!   the executor was never called, so any playbook "ran" green)
+//! - Setup/teardown lifecycle (teardown runs even on failure). Setup/teardown
+//!   actions are WASM calls, which a browser executor cannot run, so they are
+//!   refused rather than skipped
 //! - Variable capture and substitution
 //! - Forbidden transition checking
 //! - Path and output assertions
@@ -60,7 +66,6 @@ pub struct AssertionCheckResult {
 /// Playbook runner that manages the full execution lifecycle.
 pub struct PlaybookRunner<E: ActionExecutor> {
     playbook: Playbook,
-    #[allow(dead_code)] // Will be used when action execution is implemented
     executor: PlaybookExecutor<E>,
     variables: HashMap<String, String>,
     state_path: Vec<String>,
@@ -180,10 +185,19 @@ impl<E: ActionExecutor> PlaybookRunner<E> {
         None
     }
 
-    /// Run a single action.
-    fn run_action(&self, _action: &PlaybookAction) -> Result<(), ExecutorError> {
-        // Deferred (PMAT-760): Execute WASM action via executor
-        Ok(())
+    /// Run a single setup/teardown action.
+    ///
+    /// These are WASM calls (`ActionSpec::wasm`). No executor here can run one,
+    /// so this refuses instead of returning `Ok(())` for work it never did
+    /// (PMAT-760). An `ignore_errors` teardown action still lets the run pass.
+    fn run_action(&self, action: &PlaybookAction) -> Result<(), ExecutorError> {
+        Err(ExecutorError::ScriptError {
+            message: format!(
+                "setup/teardown action {:?} is a WASM call; this runner drives an \
+                 ActionExecutor and cannot execute it (PMAT-760)",
+                action.action.wasm.as_deref().unwrap_or("<none>")
+            ),
+        })
     }
 
     /// Run a single step.
@@ -201,21 +215,49 @@ impl<E: ActionExecutor> PlaybookRunner<E> {
                 .iter()
                 .find(|t| &t.id == transition_id);
 
-            if let Some(t) = transition {
-                // Check if this is a forbidden transition
-                if let Some(err) = self.check_forbidden(&t.from, &t.to) {
-                    return Ok(StepResult {
-                        name: step.name.clone(),
-                        passed: false,
-                        duration: start.elapsed(),
-                        captured,
-                        error: Some(err),
-                    });
-                }
+            let Some(t) = transition else {
+                return Ok(StepResult {
+                    name: step.name.clone(),
+                    passed: false,
+                    duration: start.elapsed(),
+                    captured,
+                    error: Some(format!("unknown transition id '{transition_id}'")),
+                });
+            };
 
-                // Record state path
-                self.state_path.push(t.to.clone());
+            // Check if this is a forbidden transition
+            if let Some(err) = self.check_forbidden(&t.from, &t.to) {
+                return Ok(StepResult {
+                    name: step.name.clone(),
+                    passed: false,
+                    duration: start.elapsed(),
+                    captured,
+                    error: Some(err),
+                });
             }
+
+            // Execute it: the actions reach the executor, the assertions are checked.
+            let executed = self.executor.execute(&[t.event.as_str()]);
+            if !executed.success {
+                let mut why: Vec<String> = executed
+                    .assertion_failures
+                    .iter()
+                    .map(|f| format!("{}: {}", f.assertion_description, f.error))
+                    .collect();
+                if why.is_empty() {
+                    why.push("complexity budget violated".to_string());
+                }
+                return Ok(StepResult {
+                    name: step.name.clone(),
+                    passed: false,
+                    duration: start.elapsed(),
+                    captured,
+                    error: Some(format!("transition '{transition_id}': {}", why.join("; "))),
+                });
+            }
+
+            // Record state path
+            self.state_path.push(t.to.clone());
         }
 
         // Capture variables
@@ -508,6 +550,179 @@ pub fn to_svg(playbook: &Playbook) -> String {
 mod tests {
     use super::*;
     use crate::playbook::schema::Playbook;
+
+    /// Records every call and reports `#missing` as absent, so a test can tell
+    /// an executed playbook from one that only walked the state machine (#2473).
+    #[derive(Clone, Default)]
+    struct RecordingExecutor {
+        calls: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    }
+
+    impl RecordingExecutor {
+        fn log(&self, call: String) {
+            self.calls.borrow_mut().push(call);
+        }
+    }
+
+    impl ActionExecutor for RecordingExecutor {
+        fn click(&mut self, s: &str) -> Result<(), ExecutorError> {
+            self.log(format!("click {s}"));
+            Ok(())
+        }
+        fn type_text(&mut self, s: &str, t: &str) -> Result<(), ExecutorError> {
+            self.log(format!("type {s} {t}"));
+            Ok(())
+        }
+        fn wait(
+            &mut self,
+            _: &crate::playbook::schema::WaitCondition,
+        ) -> Result<(), ExecutorError> {
+            self.log("wait".to_string());
+            Ok(())
+        }
+        fn navigate(&mut self, u: &str) -> Result<(), ExecutorError> {
+            self.log(format!("navigate {u}"));
+            Ok(())
+        }
+        fn execute_script(&mut self, c: &str) -> Result<String, ExecutorError> {
+            self.log(format!("script {c}"));
+            Ok(String::new())
+        }
+        fn screenshot(&mut self, n: &str) -> Result<(), ExecutorError> {
+            self.log(format!("screenshot {n}"));
+            Ok(())
+        }
+        fn element_exists(&self, s: &str) -> Result<bool, ExecutorError> {
+            self.log(format!("exists {s}"));
+            Ok(s != "#missing")
+        }
+        fn get_text(&self, _: &str) -> Result<String, ExecutorError> {
+            Ok(String::new())
+        }
+        fn get_attribute(&self, _: &str, _: &str) -> Result<String, ExecutorError> {
+            Ok(String::new())
+        }
+        fn get_url(&self) -> Result<String, ExecutorError> {
+            Ok(String::new())
+        }
+        fn evaluate(&self, _: &str) -> Result<bool, ExecutorError> {
+            Ok(true)
+        }
+    }
+
+    fn executing_playbook(selector: &str) -> Playbook {
+        let yaml = format!(
+            r##"
+version: "1.0"
+machine:
+  id: "exec"
+  initial: "start"
+  states:
+    start:
+      id: "start"
+    loaded:
+      id: "loaded"
+      on_entry:
+        - type: "screenshot"
+          name: "loaded"
+    done:
+      id: "done"
+      final_state: true
+  transitions:
+    - id: "t_load"
+      from: "start"
+      to: "loaded"
+      event: "load"
+      actions:
+        - type: "navigate"
+          url: "https://example.test/"
+    - id: "t_click"
+      from: "loaded"
+      to: "done"
+      event: "click"
+      actions:
+        - type: "click"
+          selector: "#go"
+      assertions:
+        - type: "element_exists"
+          selector: "{selector}"
+playbook:
+  steps:
+    - name: "load"
+      transitions: ["t_load"]
+    - name: "click"
+      transitions: ["t_click"]
+"##
+        );
+        Playbook::from_yaml(&yaml).expect("parse")
+    }
+
+    /// #2473: a step's transition reaches the executor: its actions, the target
+    /// state's entry actions, and its assertions, in order.
+    #[test]
+    fn a_step_executes_its_transition_through_the_executor() {
+        let exec = RecordingExecutor::default();
+        let calls = exec.calls.clone();
+        let mut runner = PlaybookRunner::new(executing_playbook("#ok"), exec);
+        let result = runner.run();
+
+        assert!(result.passed, "{:?}", result.error);
+        assert_eq!(
+            *calls.borrow(),
+            [
+                "navigate https://example.test/",
+                "screenshot loaded",
+                "click #go",
+                "exists #ok"
+            ]
+        );
+        assert_eq!(result.state_path, ["start", "loaded", "done"]);
+    }
+
+    /// #2473: a transition assertion that fails in the executor fails the step
+    /// and the run, and the state path stops before it.
+    #[test]
+    fn a_failing_transition_assertion_fails_the_run() {
+        let mut runner =
+            PlaybookRunner::new(executing_playbook("#missing"), RecordingExecutor::default());
+        let result = runner.run();
+
+        assert!(!result.passed);
+        assert_eq!(result.step_results.len(), 2);
+        assert!(result.step_results[0].passed);
+        let err = result.step_results[1].error.as_deref().unwrap_or_default();
+        assert!(err.contains("t_click") && err.contains("#missing"), "{err}");
+        assert_eq!(result.state_path, ["start", "loaded"]);
+    }
+
+    /// Setup actions are WASM calls no executor can run: refused, not skipped.
+    #[test]
+    fn a_wasm_setup_action_is_refused_not_skipped() {
+        let mut pb = executing_playbook("#ok");
+        let steps = pb.playbook.get_or_insert_with(Default::default);
+        steps.setup = vec![PlaybookAction {
+            action: crate::playbook::schema::ActionSpec {
+                wasm: Some("init".to_string()),
+                args: vec![],
+            },
+            description: String::new(),
+            ignore_errors: false,
+        }];
+        let exec = RecordingExecutor::default();
+        let calls = exec.calls.clone();
+        let result = PlaybookRunner::new(pb, exec).run();
+
+        assert!(!result.passed);
+        let err = result.error.unwrap_or_default();
+        assert!(
+            err.contains("Setup failed") && err.contains("init"),
+            "{err}"
+        );
+        assert!(
+            calls.borrow().is_empty(),
+            "no step may run after a refused setup"
+        );
+    }
 
     struct MockExecutor;
 
@@ -1340,8 +1555,11 @@ playbook:
         let mut runner = PlaybookRunner::new(playbook, MockExecutor);
         let result = runner.run();
 
-        // Should still pass, just no state change
-        assert!(result.passed);
+        // #2473: a step naming a transition that does not exist ran nothing, and
+        // used to pass. It fails now.
+        assert!(!result.passed);
+        let err = result.step_results[0].error.as_deref().unwrap_or_default();
+        assert!(err.contains("unknown transition id 'nonexistent'"), "{err}");
     }
 
     #[test]

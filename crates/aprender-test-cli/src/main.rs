@@ -986,7 +986,7 @@ fn run_playbook(config: &CliConfig, args: &probador::PlaybookArgs) -> CliResult<
         Ok(())
     } else {
         Err(probador::CliError::test_execution(
-            "One or more playbooks failed validation".to_string(),
+            "One or more playbooks failed validation or execution".to_string(),
         ))
     }
 }
@@ -1029,7 +1029,61 @@ fn process_single_playbook(
         ));
     }
 
+    // #2473: without --validate/--export/--mutate the playbook is RUN. Before,
+    // this path validated and printed `Valid: yes`, and no step ever executed.
+    let runs = args.export.is_none() && !args.mutate;
+    if runs && validation_result.is_valid {
+        return execute_playbook(config, args, playbook);
+    }
+
     Ok(validation_result.is_valid)
+}
+
+/// Run a validated playbook in a real browser. Returns true if every step and
+/// assertion passed.
+#[cfg(feature = "browser")]
+fn execute_playbook(
+    config: &CliConfig,
+    args: &probador::PlaybookArgs,
+    playbook: jugar_probar::playbook::Playbook,
+) -> CliResult<bool> {
+    use jugar_probar::playbook::{ChromiumExecutor, PlaybookRunner};
+    use jugar_probar::DriverConfig;
+
+    let executor =
+        ChromiumExecutor::launch(DriverConfig::default(), args.output.join("screenshots"))
+            .map_err(|e| probador::CliError::test_execution(format!("playbook not run: {e}")))?;
+    let result = PlaybookRunner::new(playbook, executor).run();
+
+    if config.verbosity != Verbosity::Quiet {
+        for step in &result.step_results {
+            let mark = if step.passed { "PASS" } else { "FAIL" };
+            println!("  [{mark}] step {}", step.name);
+            if let Some(e) = &step.error {
+                println!("         {e}");
+            }
+        }
+        println!("  State path: {}", result.state_path.join(" -> "));
+    }
+    if let Some(e) = &result.error {
+        eprintln!("  Run failed: {e}");
+    }
+    Ok(result.passed)
+}
+
+/// Without the `browser` feature nothing can execute a playbook, so the run
+/// mode refuses instead of reporting a validation as a run.
+#[cfg(not(feature = "browser"))]
+fn execute_playbook(
+    _config: &CliConfig,
+    _args: &probador::PlaybookArgs,
+    _playbook: jugar_probar::playbook::Playbook,
+) -> CliResult<bool> {
+    Err(probador::CliError::test_execution(
+        "running a playbook needs a browser: rebuild with --features browser, \
+         or pass --validate to only validate it"
+            .to_string(),
+    ))
 }
 
 fn load_playbook(file: &std::path::Path) -> CliResult<jugar_probar::playbook::Playbook> {
