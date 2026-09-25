@@ -22352,3 +22352,20 @@ roadmap:
   labels:
   - kind:code
   notes: 'DPO x3 by pvl-b; NF4 x3 and f16 by aprender-57. The old dpo_gradient_formula axiom was false for beta < 0; now a HasDerivAt theorem plus dpo_gradient_scale_nonpos (0 <= beta).'
+- id: PMAT-4438
+  github_issue: 4438
+  item_type: task
+  title: 'APR-EPIC-001: themed epics and issue cap — A1 epic skeleton, A3 issue-to-epic map, triage-apply'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-d1
+  created: 2026-09-25T16:20:00Z
+  updated: 2026-09-25T16:20:00Z
+  spec: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:triage
+  notes: null
