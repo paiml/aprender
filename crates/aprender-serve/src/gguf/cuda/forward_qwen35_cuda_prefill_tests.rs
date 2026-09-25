@@ -55,6 +55,15 @@ const FLASH_BUDGET: Budget = Budget {
     state: 5e-3,
 };
 
+/// #4313: the f16 projection GEMMs (fp16 weights and activations, fp32 accumulate)
+/// with f32 attention. Budgets start at the flash path's and are replaced by the
+/// measured reading x10.
+const F16_GEMM_BUDGET: Budget = Budget {
+    cosine: 0.9999,
+    logits: 2e-2,
+    state: 5e-2,
+};
+
 fn cosine(a: &[f32], b: &[f32]) -> f64 {
     let (mut ab, mut aa, mut bb) = (0.0f64, 0.0f64, 0.0f64);
     for (x, y) in a.iter().zip(b) {
@@ -179,9 +188,17 @@ fn batched_equals_per_token_rows(
     chunk_rows: Option<usize>,
 ) {
     super::ATTENTION_OVERRIDE.with(|c| c.set(Some(attention)));
-    let b = match attention {
-        super::PrefillAttention::CublasF32 => F32_BUDGET,
-        super::PrefillAttention::FlashF16In => FLASH_BUDGET,
+    // Unpinned callers test the f32 GEMM; the f16 default is pinned by its own tests.
+    let gemm = crate::cuda::QWEN35_PREFILL_GEMM_OVERRIDE.with(|c| {
+        c.set(Some(c.get().unwrap_or(crate::cuda::Qwen35PrefillGemm::F32)));
+        c.get()
+    });
+    let fallback = F16_FALLBACK.with(std::cell::Cell::get);
+    let f16 = gemm == Some(crate::cuda::Qwen35PrefillGemm::F16) && !fallback;
+    let b = match (attention, f16) {
+        (_, true) => F16_GEMM_BUDGET,
+        (super::PrefillAttention::CublasF32, _) => F32_BUDGET,
+        (super::PrefillAttention::FlashF16In, _) => FLASH_BUDGET,
     };
     if !std::path::Path::new(model_path).exists() {
         eprintln!("SKIP: {model_path} is absent");
@@ -196,6 +213,16 @@ fn batched_equals_per_token_rows(
     if let Some(rows) = chunk_rows {
         gpu.set_prefill_chunk_rows(rows);
     }
+    // #4313: the GEMM under test is the one that runs — the prewarm armed f16, or
+    // the fallback disarmed it, before any comparison is read.
+    if fallback {
+        gpu.executor.set_qwen35_prefill_f16(false);
+    }
+    assert_eq!(
+        gpu.executor.qwen35_prefill_f16(),
+        f16,
+        "f16 prefill GEMM armed"
+    );
     // The path under test is the path that runs — never the default by accident.
     gpu.set_prefill_attention(attention);
     assert_eq!(gpu.prefill_attention_mode(), attention);
@@ -270,6 +297,49 @@ fn qwen35_flash_prefill_equals_per_token_at_64_positions_0_8b() {
 #[serial_test::serial]
 fn qwen35_flash_prefill_equals_per_token_across_a_chunk_boundary_0_8b() {
     batched_equals_per_token(MODEL_0_8B, 600, super::PrefillAttention::FlashF16In);
+}
+
+std::thread_local! {
+    /// #4313: disarm the f16 GEMM after load, as a failed or skipped prewarm does.
+    static F16_FALLBACK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[test]
+fn f16_prewarm_fits_only_with_a_gib_to_spare() {
+    const GIB: usize = 1 << 30;
+    assert!(super::f16_prewarm_fits(7 * GIB, 8 * GIB));
+    assert!(!super::f16_prewarm_fits(7 * GIB + 1, 8 * GIB));
+    assert!(!super::f16_prewarm_fits(0, GIB - 1));
+    assert!(!super::f16_prewarm_fits(usize::MAX, usize::MAX));
+}
+
+/// A host where f16 cannot be armed keeps working: the f16 mode with the GEMM
+/// disarmed runs the f32 path and meets the f32 budget.
+#[test]
+#[serial_test::serial]
+fn qwen35_f16_mode_falls_back_to_f32_when_the_prewarm_is_not_armed_0_8b() {
+    F16_FALLBACK.with(|c| c.set(true));
+    f16_gemm_batched_equals_per_token(64);
+    F16_FALLBACK.with(|c| c.set(false));
+}
+
+fn f16_gemm_batched_equals_per_token(n: usize) {
+    crate::cuda::QWEN35_PREFILL_GEMM_OVERRIDE
+        .with(|c| c.set(Some(crate::cuda::Qwen35PrefillGemm::F16)));
+    batched_equals_per_token(MODEL_0_8B, n, super::PrefillAttention::CublasF32);
+    crate::cuda::QWEN35_PREFILL_GEMM_OVERRIDE.with(|c| c.set(None));
+}
+
+#[test]
+#[serial_test::serial]
+fn qwen35_f16_gemm_prefill_equals_per_token_at_64_positions_0_8b() {
+    f16_gemm_batched_equals_per_token(64);
+}
+
+#[test]
+#[serial_test::serial]
+fn qwen35_f16_gemm_prefill_equals_per_token_across_a_chunk_boundary_0_8b() {
+    f16_gemm_batched_equals_per_token(600);
 }
 
 #[test]
