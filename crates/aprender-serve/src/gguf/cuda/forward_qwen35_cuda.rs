@@ -582,8 +582,9 @@ impl<'a> Qwen35CudaModel<'a> {
         // second float run and inside the layer budget against the CPU; with
         // `HwDp4a` the DeltaNet-only path lands **1.656 relative** away, and the
         // end-to-end argmax is garbage — a wrong token at position 0, not a
-        // rounding difference. The falsifier lives in the tests file
-        // (`qwen35_cuda_dp4a_gemv_is_catastrophic_through_the_recurrence`).
+        // rounding difference. #4378 found the cause: a stale Q8_1 activation
+        // cache, not int8 error; with it keyed on its input the DP4A path matches
+        // the CPU (`qwen35_cuda_dp4a_gemv_matches_the_cpu_through_the_recurrence`).
         //
         // Recovering the DP4A throughput for this architecture (a higher-
         // precision activation quantization, or DP4A only on the layers that do

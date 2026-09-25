@@ -384,8 +384,21 @@ mod tests {
         if setup_executor_harness(&mut exec, &config).is_err() {
             return;
         }
+        // The harness weights are all zero, so every GEMV returned zeros and
+        // the assert_ne! below fired on the fix AND the mutant. One non-zero
+        // Q4K super-block per row: d = 1.0, sub-block scales 1, mins 0.
         let dim = config.hidden_dim;
-        let w = exec.indexed_layer_weights[0].attn_q_ptr;
+        assert_eq!(dim % 256, 0, "one Q4K super-block per 256 columns");
+        let mut bytes = Vec::with_capacity(dim * (dim / 256) * 144);
+        for r in 0..dim {
+            for _ in 0..dim / 256 {
+                bytes.extend_from_slice(&[0x00, 0x3C, 0x00, 0x00]);
+                bytes.extend_from_slice(&[1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1]);
+                bytes.extend((0..128).map(|j| ((r * 7 + j * 3) % 256) as u8));
+            }
+        }
+        exec.load_quantized_weights("t4378.w", &bytes).expect("load q4k");
+        let w = exec.get_quantized_weight_ptr("t4378.w").expect("q4k ptr");
         let a_host = vec![0.1f32; dim];
         let b_host: Vec<f32> = (0..dim).map(|i| ((i % 17) as f32 - 8.0) * 0.05).collect();
         let a = GpuBuffer::from_host(&exec.context, &a_host).expect("a");
