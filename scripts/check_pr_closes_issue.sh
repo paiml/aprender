@@ -78,22 +78,23 @@ REF_RE='#[0-9]+'
 # PR body, a false GREEN is a PR that closes nothing.
 prose_lines() {
     perl -ne '
-        BEGIN { $end = ""; $quote = 0; $tick = 0; $tag = 0; $lrd = 0 }
+        BEGIN { $end = ""; $quote = 0; $tick = 0; $tag = 0; $tq = ""; $lrd = 0 }
         s/\r?\n\z//;
         if ($end ne "") { $end = "" if ($end eq "BLANK" ? /^[ \t]*$/ : /$end/); next }
-        if (/^[ \t]*$/) { $quote = $tick = $tag = $lrd = 0; print "\n"; next }
+        if (/^[ \t]*$/) { $quote = $tick = $tag = $lrd = 0; $tq = ""; print "\n"; next }
         if (/^ {0,3}(`{3,})[^`]*$/ || /^ {0,3}(~{3,})/) {
             $end = "^ {0,3}" . quotemeta(substr($1, 0, 1)) . "{" . length($1) . ",}[ \t]*\$"; $quote = 0; next }
         # inline state across the lines of one paragraph: an open code span (a
-        # backtick run closes only on one of equal length), an open tag, or a
-        # link reference definition. A line that starts inside one is not prose.
+        # backtick run closes only on one of equal length), an open tag (a > in
+        # a quoted attribute value does not close it), or a link reference
+        # definition. A line that starts inside one is not prose.
         $drop = $tick || $tag || $lrd;
         $lrd = 1 if /^ {0,3}\[[^\]]+\]:/;
-        for $t (/(`+|<[A-Za-z\/]|>)/g) {
+        for $t (/(`+|<[A-Za-z\/]|>|"|\x27)/g) {
             if ($tick) { $tick = 0 if substr($t, 0, 1) eq "`" && length($t) == $tick }
-            elsif ($tag) { $tag = 0 if $t eq ">" }
+            elsif ($tag) { if ($tq ne "") { $tq = "" if $t eq $tq } elsif ($t eq "\"" || $t eq "\x27") { $tq = $t } elsif ($t eq ">") { $tag = 0 } }
             elsif (substr($t, 0, 1) eq "`") { $tick = length($t) }
-            elsif ($t ne ">") { $tag = 1 }
+            elsif (substr($t, 0, 1) eq "<") { $tag = 1 }
         }
         next if $drop;
         if (/<!--/) { $end = "-->" if /<!--(?!.*-->)/; next }
@@ -534,6 +535,12 @@ STUB
     run_rc_case "rc-close-after-balanced-code" $'Fix `a` and ``b`c``\nCloses #9002' 0 "PASS: discharges 1"
     run_rc_case "rc-close-after-closed-tag" $'See <b>this</b>\nCloses #9002'        0 "PASS: discharges 1"
     run_rc_case "rc-close-after-open-code-para" $'`open\n\nCloses #9002'            0 "PASS: discharges 1"
+    # agy round 5 (@25b0cb80d): a > inside a quoted attribute does not close the tag
+    run_rc_case "rc-close-in-tag-quoted-gt" $'Text <a title=">"\nCloses #9002\n>'   1 "FAIL no-close"
+    run_rc_case "rc-close-in-tag-squoted-gt" $'Text <a title=\'>\'\nCloses #9002\n>' 1 "FAIL no-close"
+    run_rc_case "rc-close-after-tag-quoted-gt" $'See <a title=">">x</a>\nCloses #9002' 0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-tag-quote-new-para" $'x <a title="\n\nx <b>\nCloses #9002' 0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-quote-char-prose" $'It\'s "quoted"\nCloses #9002'     0 "PASS: discharges 1"
     run_rc_case "rc-backtick-info-not-fence" $'``` a`b\n\nCloses #9002'               0 "PASS: discharges 1"
     run_rc_case "rc-no-issue-code-reason" $'no-issue: `docs/` only'                 0 "PASS: no-issue"
     run_rc_case "rc-no-issue-indented" $'  no-issue: docs'                          1 "FAIL no-close"
