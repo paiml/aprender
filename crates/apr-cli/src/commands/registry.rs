@@ -78,6 +78,14 @@ pub(crate) fn lineage_in(home: &Path, target: &str) -> Result<Ancestry> {
     Ok(ancestry)
 }
 
+/// The registered model `target` names, if any (EXT-11 `apr model pack`).
+pub(crate) fn resolve_model(registry: &Registry, target: &str) -> Result<Option<String>> {
+    Ok(match resolve(registry, target)? {
+        (id, true) => Some(id),
+        (_, false) => None,
+    })
+}
+
 /// The lineage node `target` names, and whether it is a registered model.
 fn resolve(registry: &Registry, target: &str) -> Result<(String, bool)> {
     if let Ok(id) = target.parse::<pacha::model::ModelId>() {

@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "model-release-v1.schema.json",
+  "title": "model-release-v1.json (EXT-001 §3.4; written by apr model pack, EXT-11)",
+  "type": "object",
+  "required": [
+    "schema",
+    "line",
+    "version",
+    "channel",
+    "files",
+    "base",
+    "lineage",
+    "datasets",
+    "engine",
+    "gates",
+    "license"
+  ],
+  "additionalProperties": false,
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "nonempty": { "type": "string", "pattern": "\\S" }
+  },
+  "properties": {
+    "schema": { "const": "model-release-v1" },
+    "line": { "$ref": "#/definitions/nonempty" },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-rc\\.(0|[1-9][0-9]*))?$"
+    },
+    "channel": { "enum": ["rc", "released", "yanked"] },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "format", "bytes", "sha256"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "pattern": "^[^/\\\\]+$", "not": { "enum": [".", ".."] } },
+          "format": { "$ref": "#/definitions/nonempty" },
+          "quant": { "type": ["string", "null"] },
+          "bytes": { "type": "integer", "minimum": 0 },
+          "sha256": { "$ref": "#/definitions/sha256" }
+        }
+      }
+    },
+    "base": {
+      "type": "object",
+      "required": ["hf_id", "revision", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "hf_id": { "$ref": "#/definitions/nonempty" },
+        "revision": { "$ref": "#/definitions/nonempty" },
+        "sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "lineage": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/definitions/nonempty" }
+    },
+    "datasets": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/definitions/sha256" }
+    },
+    "engine": {
+      "type": "object",
+      "required": ["apr_version", "crate_tarball_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "apr_version": { "$ref": "#/definitions/nonempty" },
+        "crate_tarball_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "propertyNames": { "enum": ["M-CR", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7"] },
+      "additionalProperties": { "$ref": "#/definitions/nonempty" }
+    },
+    "license": {
+      "type": "object",
+      "required": ["spdx_or_name", "upstream_notice_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "spdx_or_name": { "$ref": "#/definitions/nonempty" },
+        "upstream_notice_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "recipe": {
+      "type": "object",
+      "required": ["prompt_sha256", "decoding"],
+      "properties": {
+        "prompt_sha256": { "$ref": "#/definitions/sha256" },
+        "decoding": { "type": "object" }
+      }
+    }
+  }
+}

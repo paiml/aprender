@@ -1555,6 +1555,54 @@ pub enum ModelCommands {
         #[arg(long)]
         json: bool,
     },
+    /// Build a release dir plus model-release-v1.json from pacha lineage (deterministic)
+    Pack {
+        /// Registered model: id, content hash, recorded sha256 or model file
+        #[arg(value_name = "MODEL")]
+        model: String,
+        /// Model line, e.g. paiml/qwen3.5-4b-apr
+        #[arg(long)]
+        line: String,
+        /// X.Y.Z (released) or X.Y.Z-rc.N (rc)
+        #[arg(long)]
+        version: String,
+        /// rc or released
+        #[arg(long, default_value = "rc")]
+        channel: String,
+        /// Upstream base model id on the Hub
+        #[arg(long)]
+        base_hf_id: String,
+        /// Upstream base revision
+        #[arg(long)]
+        base_revision: String,
+        /// sha256 of the upstream base weights (checked against pacha when recorded)
+        #[arg(long)]
+        base_sha256: String,
+        /// Canonical sha256 of a registered dataset manifest the model trained on (repeatable)
+        #[arg(long = "dataset", value_name = "SHA256")]
+        datasets: Vec<String>,
+        /// The released apr crate tarball of the producing engine
+        #[arg(long, value_name = "FILE")]
+        engine_tarball: PathBuf,
+        /// SPDX id or license name
+        #[arg(long)]
+        license: String,
+        /// Upstream LICENSE file, shipped as LICENSE
+        #[arg(long, value_name = "FILE")]
+        license_file: PathBuf,
+        /// Upstream NOTICE file, shipped as NOTICE
+        #[arg(long, value_name = "FILE")]
+        notice_file: PathBuf,
+        /// Extra file shipped as-is, e.g. a GGUF export or the card (repeatable)
+        #[arg(long = "file", value_name = "FILE")]
+        files: Vec<PathBuf>,
+        /// Pacha home (default: ~/.pacha)
+        #[arg(long, value_name = "DIR")]
+        pacha_home: Option<PathBuf>,
+        /// Release directory to create; must be absent or empty
+        #[arg(long, value_name = "DIR")]
+        out: PathBuf,
+    },
 }
 
 #[cfg(feature = "training")]

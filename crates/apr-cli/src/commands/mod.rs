@@ -104,6 +104,8 @@ pub(crate) mod model_gate;
 #[cfg(feature = "training")]
 pub(crate) mod model_gate_cli;
 pub(crate) mod model_gate_m2;
+#[cfg(feature = "training")]
+pub(crate) mod model_pack;
 // Poka-yoke for the *-lint family error surface (#2377-8/-9): scans the family's
 // own source so the class cannot be reintroduced by the next copy-paste.
 #[cfg(test)]

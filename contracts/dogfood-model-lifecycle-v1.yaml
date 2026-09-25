@@ -228,7 +228,8 @@ falsification_tests:
   obligation: EXT-INV-008
   rule: Pack is deterministic
   prediction: two apr model pack runs over the same model are byte-identical
-  if_fails: 'pack embeds a timestamp, ordering or host detail (owed EXT-11 #4393; planned: cargo test -p apr-cli --test ext_model_pack falsify_ext_014_pack_byte_identical)'
+  if_fails: pack embeds a timestamp, ordering or host detail (EXT-11 #4393)
+  test: cargo test -p apr-cli --lib falsify_ext_014_pack_byte_identical
 - id: FALSIFY-EXT-015
   obligation: EXT-INV-009
   rule: Model gates fire

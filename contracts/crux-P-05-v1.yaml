@@ -31,6 +31,7 @@ metadata:
   verbs:
   - publish
   - pull
+  - model
   crux_coverage: covered
   gap_effect: none
   gap_note: 'unmeasured: competitor behaviours recorded as [X] from pinned revisions in EXT-31'

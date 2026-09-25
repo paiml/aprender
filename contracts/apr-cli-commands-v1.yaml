@@ -340,11 +340,12 @@ commands:
 
   - name: model
     category: evaluation
-    description: "Model release gates M0..M6 (EXT-001 §3.6, EXT-12)"
+    description: "Model releases: pack (EXT-11) and gates M0..M6 (EXT-001 §3.6, EXT-12)"
     requires_model: false
+    # pack writes a release dir + model-release-v1.json from pacha lineage;
     # gate writes model-gate-receipt-v1.json into the release dir (or --out).
     side_effects: [filesystem]
-    subcommands: [gate]
+    subcommands: [gate, pack]
 
   - name: canary
     category: evaluation
