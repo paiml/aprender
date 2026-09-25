@@ -1308,6 +1308,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender-review-experiment"
+version = "0.69.3"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "ureq 2.12.1",
+]
+
+[[package]]
 name = "aprender-serve"
 version = "0.69.3"
 dependencies = [

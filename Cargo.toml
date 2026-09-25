@@ -77,6 +77,8 @@ members = [
     "crates/aprender-zram-adaptive",
     "crates/aprender-zram-cli",
     "crates/aprender-zram-generator",
+    # --- REX-001 (#4354): review-lane experiment harness + frozen analysis ---
+    "crates/aprender-review-experiment",
     # --- APR-MONO Phase 3b: presentar sub-crates (enabled) ---
     "crates/aprender-present-core",
     "crates/aprender-present-terminal",
