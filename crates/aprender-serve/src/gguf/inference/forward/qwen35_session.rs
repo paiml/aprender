@@ -211,6 +211,47 @@ fn plan_capacity(
     }
 }
 
+/// What the F2 guard concluded for this session (#4374) — the record
+/// `GET /v1/effective-config` reports as `parity`, so the serve that decodes is
+/// the one that carries its own CPU-parity cosine.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Qwen35F2Parity {
+    /// `PASS` (accepted), `FAIL` (rejected: the session moved to the CPU) or
+    /// `not-run` (nothing was compared).
+    pub status: &'static str,
+    /// `fresh` (the forward ran), `receipt` (skipped on a matching receipt)
+    /// or `not-judged`.
+    pub source: &'static str,
+    /// The lowest real-position cosine this run measured; `None` on a receipt.
+    pub cosine: Option<f32>,
+    /// Positions compared — this run's, or the receipt's.
+    pub positions: usize,
+}
+
+impl Qwen35F2Parity {
+    /// The record of one guard run. A rejection is `FAIL` whatever its source;
+    /// an acceptance that compared nothing is `not-run`, never `PASS`.
+    #[must_use]
+    pub fn judged(
+        accepted: bool,
+        source: &'static str,
+        cosine: Option<f32>,
+        positions: usize,
+    ) -> Self {
+        let status = match (accepted, source) {
+            (false, _) => "FAIL",
+            (true, "not-judged") => "not-run",
+            (true, _) => "PASS",
+        };
+        Self {
+            status,
+            source,
+            cosine,
+            positions,
+        }
+    }
+}
+
 /// Where a session runs its forward.
 enum Backend {
     #[cfg(feature = "cuda")]
@@ -261,6 +302,13 @@ impl crate::session::Session<Qwen35Forward> {
     pub fn num_layers(&self) -> usize {
         self.engine().qwen.layers.len()
     }
+
+    /// The F2 guard's record (#4374); `None` until the GPU has seen a prompt,
+    /// and always `None` for a session that never ran on the GPU.
+    #[must_use]
+    pub fn f2_parity(&self) -> Option<Qwen35F2Parity> {
+        self.engine().f2.clone()
+    }
 }
 
 /// The Qwen3.5 hybrid's forward: the only Qwen3.5 code a verb reaches, and
@@ -295,6 +343,8 @@ pub struct Qwen35Forward {
     /// Prompts the GPU prefilled in one batched call — the evidence that `apr
     /// serve` took the batched path, not a speed that merely looks like it.
     batched_prefills: usize,
+    /// The F2 guard's record; `None` until the GPU sees its first prompt.
+    f2: Option<Qwen35F2Parity>,
 }
 
 impl Qwen35Forward {
@@ -416,6 +466,7 @@ impl Qwen35Forward {
             notices,
             per_token_prefill,
             batched_prefills: 0,
+            f2: None,
         })
     }
 
@@ -516,6 +567,12 @@ impl Qwen35Forward {
             &gpu.hash,
             &gpu.device_name,
         );
+        self.f2 = Some(Qwen35F2Parity::judged(
+            outcome.accepted,
+            outcome.source,
+            outcome.min_cosine,
+            outcome.positions_judged,
+        ));
         if !outcome.accepted {
             return Err(Step::Gpu(
                 "the F2 CPU-parity guard rejected the GPU path".to_string(),

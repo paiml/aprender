@@ -836,3 +836,45 @@ async fn a_streamed_completion_arrives_token_by_token_and_ends_with_usage() {
     let usage = usage.expect("the terminal chunk carries usage (#4272)");
     assert_eq!(usage, plain["usage"], "the stream's usage is the body's");
 }
+
+/// #4374: a Qwen3.5 server holds no dense model, so residency used to read
+/// `unknown` with nothing loaded. A CPU session is `cpu`, and its parity block
+/// says why no GPU gate ran.
+#[test]
+fn falsify_4374_a_cpu_qwen35_session_reports_cpu_residency() {
+    let Some((state, _)) = state_or_skip(true) else {
+        return;
+    };
+    let body = crate::api::effective_config::effective_config(&state);
+    assert_eq!(body.backend_loaded, vec!["cpu"]);
+    assert_eq!(body.compute_class, "cpu");
+    assert_eq!(body.parity.status, "not-run");
+}
+
+/// #4374 on the GPU: after one served prompt the F2 guard has run, and the
+/// endpoint carries its cosine — the C4 receipt comes from the serve itself.
+#[cfg(feature = "cuda")]
+#[tokio::test(flavor = "multi_thread")]
+async fn falsify_4374_a_gpu_qwen35_serve_reports_cuda_and_its_f2_cosine() {
+    let Some((state, _)) = state_or_skip(false) else {
+        return;
+    };
+    let (status, body) = post(
+        create_router(state.clone()),
+        "/v1/chat/completions",
+        chat_body(false, 4),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let ec = crate::api::effective_config::effective_config(&state);
+    assert_eq!(ec.backend_loaded, vec!["cuda"]);
+    assert_eq!(ec.compute_class, "cuda");
+    if ec.parity.basis.contains("source=receipt") {
+        assert_eq!((ec.parity.status.as_str(), ec.parity.cosine), ("PASS", None));
+    } else {
+        assert_eq!(ec.parity.status, "PASS", "{:?}", ec.parity);
+        let cosine = ec.parity.cosine.expect("a fresh F2 run carries its cosine");
+        assert!(cosine >= ec.parity.threshold, "{:?}", ec.parity);
+        assert!(ec.parity.positions >= 2, "{:?}", ec.parity);
+    }
+}

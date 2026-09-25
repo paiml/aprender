@@ -1424,15 +1424,18 @@ pub(crate) const QWEN35_F2_PROBE_MAX: usize = 64;
 /// prompt "validate" the (model, apr, device) triple for every prompt after it.
 /// So the wrapper writes a receipt on `Accepted` only.
 #[cfg(feature = "cuda")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum F2Verdict {
     /// CPU and GPU agreed on `positions_judged` positions.
     Accepted {
         /// Probe positions plus the one greedy decode step.
         positions_judged: usize,
+        /// The lowest cosine over the REAL positions (#4374: the C4 receipt).
+        min_cosine: f32,
     },
-    /// They disagreed, or the GPU probe failed: fail closed.
-    Rejected,
+    /// They disagreed (with the cosine that failed), or the GPU probe
+    /// failed (no cosine): fail closed.
+    Rejected { min_cosine: Option<f32> },
     /// Nothing was compared. The GPU may serve, but nothing was proved.
     NotJudged,
 }
@@ -1440,7 +1443,7 @@ enum F2Verdict {
 #[cfg(feature = "cuda")]
 impl F2Verdict {
     const fn lets_the_gpu_serve(self) -> bool {
-        !matches!(self, Self::Rejected)
+        !matches!(self, Self::Rejected { .. })
     }
 }
 
@@ -1470,20 +1473,23 @@ fn f2_validate_qwen35(
         Ok(v) => v,
         Err(msg) => {
             eprintln!("{msg}");
-            return F2Verdict::Rejected; // fail closed.
+            return F2Verdict::Rejected { min_cosine: None }; // fail closed.
         },
     };
     let report = crate::infer::f2_multi_position_report(&cpu_per_pos, &gpu_per_pos);
     if report.accepted {
         F2Verdict::Accepted {
             positions_judged: cpu_per_pos.len(),
+            min_cosine: report.min_cosine_real,
         }
     } else {
         eprintln!(
             "{}",
             crate::infer::f2_divergence_msg(&report, crate::infer::F2ProbePath::Batched)
         );
-        F2Verdict::Rejected
+        F2Verdict::Rejected {
+            min_cosine: Some(report.min_cosine_real),
+        }
     }
 }
 
@@ -1506,6 +1512,12 @@ pub struct F2Outcome {
     pub sha256_ms: f64,
     /// Where the receipt was read from or written to, if a cache dir exists.
     pub receipt_path: Option<std::path::PathBuf>,
+    /// Positions the guard compared: this run's, or the receipt's on a hit.
+    pub positions_judged: usize,
+    /// The lowest real-position cosine THIS run measured. `None` on a receipt
+    /// hit (the receipt keeps no cosine; `APR_F2_REVALIDATE=1` re-measures),
+    /// when nothing was compared, and when the GPU probe itself failed.
+    pub min_cosine: Option<f32>,
 }
 
 /// [`f2_validate_qwen35`] behind its receipt (#3604).
@@ -1603,6 +1615,8 @@ pub(crate) fn f2_validate_qwen35_receipted_hashed(
                 validate_ms: 0.0,
                 sha256_ms,
                 receipt_path: path,
+                positions_judged: receipt.positions_judged,
+                min_cosine: None,
             };
         },
         F2Decision::Validate(reason) => {
@@ -1615,7 +1629,9 @@ pub(crate) fn f2_validate_qwen35_receipted_hashed(
     let validate_ms = start.elapsed().as_secs_f64() * 1000.0;
 
     let source = match verdict {
-        F2Verdict::Accepted { positions_judged } => {
+        F2Verdict::Accepted {
+            positions_judged, ..
+        } => {
             match path.as_deref() {
                 Some(p) => {
                     let receipt = F2Receipt {
@@ -1646,7 +1662,7 @@ pub(crate) fn f2_validate_qwen35_receipted_hashed(
             );
             "not-judged"
         },
-        F2Verdict::Rejected => "fresh",
+        F2Verdict::Rejected { .. } => "fresh",
     };
 
     F2Outcome {
@@ -1655,6 +1671,17 @@ pub(crate) fn f2_validate_qwen35_receipted_hashed(
         validate_ms,
         sha256_ms,
         receipt_path: path,
+        positions_judged: match verdict {
+            F2Verdict::Accepted {
+                positions_judged, ..
+            } => positions_judged,
+            F2Verdict::Rejected { .. } | F2Verdict::NotJudged => 0,
+        },
+        min_cosine: match verdict {
+            F2Verdict::Accepted { min_cosine, .. } => Some(min_cosine),
+            F2Verdict::Rejected { min_cosine } => min_cosine,
+            F2Verdict::NotJudged => None,
+        },
     }
 }
 

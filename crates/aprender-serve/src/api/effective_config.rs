@@ -580,6 +580,15 @@ pub fn backend_loaded(state: &AppState) -> Vec<&'static str> {
     if state.quantized_model().is_some() || state.apr_transformer().is_some() {
         loaded.push("cpu");
     }
+    // #4374: the Qwen3.5 hybrid holds no dense model, so every predicate above
+    // misses it; its session says where it serves, refreshed after each turn.
+    if let Some(served) = state.qwen35_session() {
+        let on_gpu = served.on_gpu.load(std::sync::atomic::Ordering::Relaxed);
+        let class = if on_gpu { "cuda" } else { "cpu" };
+        if !loaded.contains(&class) {
+            loaded.push(class);
+        }
+    }
     loaded
 }
 
@@ -630,6 +639,9 @@ impl ParityReport {
 #[cfg(feature = "cuda")]
 fn parity_report(state: &AppState) -> ParityReport {
     let Some(model) = state.cuda_model() else {
+        if let Some(served) = state.qwen35_session() {
+            return qwen35_parity_report(&served);
+        }
         return ParityReport::not_run("no GPU model loaded (cpu residency)");
     };
     match model.try_read() {
@@ -643,6 +655,63 @@ fn parity_report(state: &AppState) -> ParityReport {
         Err(_) => {
             ParityReport::not_run("the GPU model lock is contended; the record is on the model")
         },
+    }
+}
+
+/// Basis of the hybrid's record: its guard is F2, not the dense one-token gate.
+const QWEN35_F2_BASIS: &str = "qwen35 F2 guard: the first prompt (<= 64 positions + 1 decode step) on CPU and GPU, min cosine over real positions (crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs)";
+
+/// The Qwen3.5 session's F2 record (#4374), or `not-run` with the reason.
+#[cfg(feature = "cuda")]
+fn qwen35_parity_report(served: &super::Qwen35Served) -> ParityReport {
+    let Ok(session) = served.session.try_lock() else {
+        return ParityReport {
+            threshold: crate::infer::F2_GATE_COSINE_MIN,
+            ..ParityReport::not_run(
+                "the qwen35 session is generating; the record is on the session",
+            )
+        };
+    };
+    qwen35_parity(
+        session.f2_parity().as_ref(),
+        served.on_gpu.load(std::sync::atomic::Ordering::Relaxed),
+    )
+}
+
+/// The `parity` block for a Qwen3.5 session, from its F2 record and where it
+/// serves now. Pure, so a CPU-only build falsifies it (#4374).
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+fn qwen35_parity(
+    f2: Option<&crate::gguf::qwen35_session::Qwen35F2Parity>,
+    on_gpu: bool,
+) -> ParityReport {
+    let threshold = crate::infer::F2_GATE_COSINE_MIN;
+    let Some(f2) = f2 else {
+        let why = if on_gpu {
+            "qwen35: the F2 guard runs on the first prompt; none has been served yet"
+        } else {
+            "qwen35 serves from the CPU: no GPU path to judge"
+        };
+        return ParityReport {
+            threshold,
+            ..ParityReport::not_run(why)
+        };
+    };
+    let mut basis = format!("{QWEN35_F2_BASIS}; source={}", f2.source);
+    if f2.source == "receipt" {
+        basis.push_str(
+            " — validated on an earlier run, cosine not re-measured (APR_F2_REVALIDATE=1 re-measures)",
+        );
+    }
+    if f2.status == "PASS" && !on_gpu {
+        basis.push_str("; the session has since moved to the CPU");
+    }
+    ParityReport {
+        status: f2.status.into(),
+        cosine: f2.cosine,
+        positions: f2.positions,
+        threshold,
+        basis,
     }
 }
 
@@ -1074,3 +1143,7 @@ mod effective_config_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "effective_config_qwen35_tests.rs"]
+mod qwen35_tests;
