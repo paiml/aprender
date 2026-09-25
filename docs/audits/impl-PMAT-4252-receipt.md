@@ -57,7 +57,7 @@ The quorum-round-1 finding (sonnet) said the budget was only shown on `--force-l
 - **Live, on v0.69.3-rc.1** (asset sha256 a4b3e456…8197, verified against the release's .sha256), watcher on script 62eee9cda:
   1. `ask` → **served_by gx10-cuda**, serve pid 1431039. cuBLAS trace for that request: a `[qwen35] batched prefill` line (51 tokens in one chunk, attention cuBLAS f32, from position 0; timing withheld until a committed receipt carries it, #4085). utilization.gpu `0 … 10 11 94 94 96 96 96 0`. used_gpu probe true.
   2. PLANT on gx10: `flock /tmp/apr-gpu.lock sleep 100` → `11:53:23Z YIELD ['gpu lock held …']`. Pid 1431039 gone; compute-apps empty.
-  3. `ask` during the hold (default 120 s budget) → gx10 `CURL_RC=7` → **served_by lambda-cpu**, rc 0, wall 22 s.
+  3. `ask` during the hold (default 120 s budget; measured 2026-09-24, BEFORE round 7 made lambda opt-in — today the same ask is `unavailable`, see Round 7) → gx10 `CURL_RC=7` → **served_by lambda-cpu**, rc 0, wall 22 s.
   4. Hold expired → `11:55:03Z START`; serve pid 1653471 serving.
 
 ## Round-3 fixes (quorum R3 on 8f46a2be1: sonnet-A PASS, sonnet-B FAIL, haiku PASS)
@@ -124,4 +124,18 @@ amended in `docs/roadmaps/roadmap.yaml` to match. The lambda serve (`apr-dogfood
   |---|---|
   | M1: opt-in check changed to `if False:` | "default: lambda off" RED (rc 1) |
   | M2: `>=` changed to `>` | "--force-lambda at load1 24" RED (rc 1) |
+
+### Round 7 live proof on a real hold (2026-09-25, lane at `983aa5eac`)
+
+The hold was not planted. At 10:24:51Z the gx10 watcher (pid 3854882) stopped its serve with
+`stop_reason: ['gpu lock held (/tmp/apr-gpu.lock)']`. The holder was a foreign `apr.cur serve run --port 8091
+--gpu-layers all` (pid 3552632, per `fuser`; `flock -n` = held). At 11:02:30Z a default `ask` from lambda
+(load1 7.8) returned **rc 2, verdict `unavailable`, served_by null**, wall < 1 s, with two attempts:
+gx10 `CURL_RC=7` (state serving:false) and lambda `not tried: lambda CPU fallback is off by default (operator
+2026-09-25, fans); pass --allow-lambda`. The receipt JSON sha256 prefix is `bf5b871338d81673`.
+
+The opted-in live leg (`--allow-lambda` at load1 < 24 → served_by lambda-cpu) is **not run live**. It would
+require restarting the lambda serve, which is a new lambda-CPU apr run, and the directive says "Do not start new
+lambda-CPU apr runs." It is proven only by the stub positive control above (one POST, served_by lambda-cpu), and
+M1/M2 show the gate is what decides.
 
