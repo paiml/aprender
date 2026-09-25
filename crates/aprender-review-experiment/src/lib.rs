@@ -44,3 +44,4 @@ pub mod secret;
 pub mod sparse_logits;
 pub mod stats;
 pub mod terms;
+pub mod workload;
