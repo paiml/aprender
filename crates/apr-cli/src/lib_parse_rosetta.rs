@@ -268,6 +268,7 @@
                 context_length: 4096,
                 no_fp8_cache: false,
                 ollama_compat: false,
+                drain_timeout: 30,
             },
         };
         let paths = extract_model_paths(&serve_cmd);

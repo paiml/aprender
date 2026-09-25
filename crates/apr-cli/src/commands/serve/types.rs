@@ -82,6 +82,10 @@ pub struct ServerConfig {
     /// measure size/format from this file. Before it existed they reported
     /// constants — `size_bytes: 0`, `format: "gguf"` — for every model.
     pub model_path: Option<std::path::PathBuf>,
+    /// #4449: seconds to wait for in-flight requests to finish, after
+    /// SIGTERM/SIGINT, before the accept loop stops. Also the value sent in
+    /// `Retry-After` while draining.
+    pub drain_timeout_secs: u64,
 }
 
 impl Default for ServerConfig {
@@ -108,9 +112,13 @@ impl Default for ServerConfig {
             no_fp8_cache: false,
             ollama_compat: false,
             model_path: None,
+            drain_timeout_secs: DEFAULT_DRAIN_TIMEOUT_SECS,
         }
     }
 }
+
+/// `--drain-timeout` default, in seconds, when the flag is not given (#4449).
+pub const DEFAULT_DRAIN_TIMEOUT_SECS: u64 = 30;
 
 /// KV-cache context length a server uses when `--context-length` is not given.
 ///

@@ -5,6 +5,10 @@
 
 // Submodules (PMAT-200: split from 4351-line serve.rs)
 pub mod auth;
+// #4449: shared drain-on-signal, used by every axum::serve site in `handlers`
+// (via `include!`) and in `safetensors`.
+#[cfg(feature = "inference")]
+pub(crate) mod drain;
 #[cfg(feature = "inference")]
 pub mod handlers;
 #[cfg(feature = "inference")]

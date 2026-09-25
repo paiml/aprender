@@ -723,7 +723,7 @@ fn start_gguf_server_cuda(
             let state = state.with_verbose(config.verbose);
 
             let app = create_router_with_config(state, config.router_config());
-            run_server_async(app, &config.bind_addr(), "CUDA-optimized")
+            run_server_async(app, &config.bind_addr(), "CUDA-optimized", config.drain_timeout_secs)
         }
         Err(e) => {
             // #4089: an explicit request does not fall back.

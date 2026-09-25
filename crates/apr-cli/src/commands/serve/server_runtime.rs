@@ -1,8 +1,13 @@
-/// Run an axum server with graceful shutdown and standard banner.
+/// Run an axum server with drain-on-signal shutdown (#4449) and standard banner.
 /// GH-172-FIX: 16MB thread stack for worker threads — GPU forward pass with
 /// large-vocab models (151K × 4B = 608KB logits) overflows the default 2MB stack.
 #[cfg(feature = "inference")]
-fn run_server_async(app: axum::Router, bind_addr: &str, label: &str) -> Result<()> {
+fn run_server_async(
+    app: axum::Router,
+    bind_addr: &str,
+    label: &str,
+    drain_timeout_secs: u64,
+) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_stack_size(64 * 1024 * 1024) // 64 MB — GPU handler async state machines are huge
@@ -34,8 +39,11 @@ fn run_server_async(app: axum::Router, bind_addr: &str, label: &str) -> Result<(
         println!();
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
+        let drain = super::drain::DrainHandle::new(drain_timeout_secs);
+        let app = super::drain::layer(drain.clone(), app);
+
         axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown_signal())
+            .with_graceful_shutdown(super::drain::shutdown_after_drain(drain))
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;
 

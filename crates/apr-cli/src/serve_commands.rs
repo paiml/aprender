@@ -117,5 +117,10 @@ pub enum ServeCommands {
         /// Enable Ollama compatibility mode (port 11434, added endpoints)
         #[arg(long)]
         ollama_compat: bool,
+        /// #4449: seconds to let in-flight requests finish after SIGTERM/SIGINT
+        /// before the server exits. New requests get 503 + Retry-After for the
+        /// whole drain window; the listener stays open until it ends.
+        #[arg(long, default_value = "30")]
+        drain_timeout: u64,
     },
 }

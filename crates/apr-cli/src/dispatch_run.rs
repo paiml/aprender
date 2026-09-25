@@ -122,6 +122,7 @@ fn dispatch_serve(
     context_length: usize,
     no_fp8_cache: bool,
     ollama_compat: bool,
+    drain_timeout_secs: u64,
 ) -> Result<(), CliError> {
     if let Some(ref endpoint) = otlp_endpoint {
         eprintln!("OTLP tracing enabled → {endpoint}");
@@ -153,6 +154,7 @@ fn dispatch_serve(
         context_length,
         no_fp8_cache,
         ollama_compat,
+        drain_timeout_secs,
         ..Default::default()
     };
     serve::run(file, &config)
@@ -194,6 +196,7 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
             context_length,
             no_fp8_cache,
             ollama_compat,
+            drain_timeout,
         } => {
             // PERF-021: answer "what can this BUILD dispatch to" without needing
             // a model or a port — the question a user hitting #2696 had no way
@@ -228,6 +231,7 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
                 *context_length,
                 *no_fp8_cache,
                 *ollama_compat,
+                *drain_timeout,
             )
         })
         },
