@@ -344,11 +344,38 @@ def load_yaml(p: Path) -> dict:
         return yaml.safe_load(f)
 
 
+SOV_TOKEN = "@SCCACHE_HOST_DIR@"
+
+
+def sccache_host_dir(sec: dict) -> str:
+    """The fleet's sccache mount, spelled ONCE (ci/sections.yml, the shard job's env):
+    the machine-specific-path ratchet counts literals, and the vendored copy would
+    otherwise add four more."""
+    return sec["jobs"]["workspace-test-shard"]["env"]["SCCACHE_HOST_DIR"]
+
+
+def resolve_vendored(text: str, host_dir: str) -> str:
+    """The vendored sovereign-ci.yml with its one declared substitution undone.
+    Refuses (SystemExit) unless the body -- everything after the header's first
+    blank line -- hashes to the upstream sha256 the header records: a hand edit, a
+    second substitution or a stale re-vendor never runs."""
+    head, sep, body = text.partition("\n\n")
+    m = re.search(r"^# sha256 of the upstream file: ([0-9a-f]{64})$", head, re.M)
+    if not sep or not m:
+        raise SystemExit(f"fat_driver: {SOV_FILE.relative_to(ROOT)} has no header sha256 line")
+    body = body.replace(SOV_TOKEN, host_dir)
+    got = hashlib.sha256(body.encode()).hexdigest()
+    if got != m.group(1):
+        raise SystemExit(f"fat_driver: {SOV_FILE.relative_to(ROOT)} body sha256 {got} != upstream "
+                         f"{m.group(1)} -- re-vendor from the pin; do not edit it by hand")
+    return body
+
+
 def section_catalogue() -> dict:
     """name -> {job, source, inputs, matrix, needs_map}. The ONE plan."""
     ci = load_yaml(CI_FILE)
     sec = load_yaml(SECTIONS_FILE)
-    sov = load_yaml(SOV_FILE)
+    sov = yaml.safe_load(resolve_vendored(SOV_FILE.read_text(), sccache_host_dir(sec)))
     wf_env = sov.get("env") or {}
     sov_call = sec["sovereign-ci"]
     sov_inputs = {}
@@ -1254,6 +1281,25 @@ def cmd_self_test(a):
                 "steps": {"tier": {"outputs": {"tier": "full"}}}, "env": {}}
         base.update(ctx)
         return Evaluator(base, make_funcs(lambda: failed, lambda: Path(".")))
+
+    real = SOV_FILE.read_text()
+    hd = sccache_host_dir(load_yaml(SECTIONS_FILE))
+
+    def vend_rc(text):
+        try:
+            resolve_vendored(text, hd)
+            return 0
+        except SystemExit:
+            return 1
+    row("vendored sov: token restored, body == upstream sha256", vend_rc(real), 0)
+    row("vendored sov: resolved volumes name the one sccache dir",
+        resolve_vendored(real, hd).count(f"- {hd}:/sccache"), 4)
+    row("vendored sov: MUTANT hand edit of the body is refused",
+        vend_rc(real.replace("runs-on:", "runs-on: ", 1)), 1)
+    row("vendored sov: MUTANT unresolved token (wrong host dir) is refused",
+        vend_rc(real.replace(f"- {SOV_TOKEN}:", "- /elsewhere:", 1)), 1)
+    row("vendored sov: MUTANT header without sha256 is refused",
+        vend_rc(real.replace("# sha256 of the upstream file:", "# sha:", 1)), 1)
 
     e = ev()
     row("event == 'pull_request'", truthy(e.eval("github.event_name == 'pull_request'")), True)

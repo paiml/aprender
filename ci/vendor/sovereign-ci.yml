@@ -3,6 +3,9 @@
 # Not a workflow here: scripts/ci/fat_driver.py runs its jobs as sections sov.<job> of
 # the x86-main fat job. Do not edit by hand -- re-vendor from a new pin, and move the
 # pin in ci/sections.yml (sovereign-ci.uses) in the same commit.
+# ONE declared substitution (#4433): each container volume `/home/noah/data/sccache` reads
+# @SCCACHE_HOST_DIR@; fat_driver.py resolves it from ci/sections.yml's single definition
+# and refuses to run unless the body, token restored, hashes to the sha256 above.
 
 # Sovereign CI — reusable per-repo test/lint/coverage/security workflow
 #
@@ -153,7 +156,7 @@ jobs:
       # Mounted unconditionally (no-op when enable_sccache=false). Self-hosted
       # runners are on intel; paths are forjar-managed host dirs.
       volumes:
-        - /home/noah/data/sccache:/sccache
+        - @SCCACHE_HOST_DIR@:/sccache
         - /var/log/ci-metrics:/var/log/ci-metrics
         # paiml/infra#75 (2026-04-23): per-PR CARGO_TARGET_DIR isolation.
         # Default /__w/<repo>/<repo>/target/ is shared across concurrent PR
@@ -428,7 +431,7 @@ jobs:
       # Mounted unconditionally (no-op when enable_sccache=false). Self-hosted
       # runners are on intel; paths are forjar-managed host dirs.
       volumes:
-        - /home/noah/data/sccache:/sccache
+        - @SCCACHE_HOST_DIR@:/sccache
         - /var/log/ci-metrics:/var/log/ci-metrics
         # paiml/infra#75: per-PR CARGO_TARGET_DIR isolation — see test job.
         - /mnt/nvme-raid0/targets/sovereign-ci-${{ inputs.repo }}/${{ github.event.pull_request.number || github.ref_name }}:/workspace/target
@@ -683,7 +686,7 @@ jobs:
       # Mounted unconditionally (no-op when enable_sccache=false). Self-hosted
       # runners are on intel; paths are forjar-managed host dirs.
       volumes:
-        - /home/noah/data/sccache:/sccache
+        - @SCCACHE_HOST_DIR@:/sccache
         - /var/log/ci-metrics:/var/log/ci-metrics
         # paiml/infra#75: per-PR CARGO_TARGET_DIR isolation — see test job.
         - /mnt/nvme-raid0/targets/sovereign-ci-${{ inputs.repo }}/${{ github.event.pull_request.number || github.ref_name }}:/workspace/target
@@ -978,7 +981,7 @@ jobs:
       image: localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36
       # Phase 3 §5.3 — sccache volumes (see test job for rationale).
       volumes:
-        - /home/noah/data/sccache:/sccache
+        - @SCCACHE_HOST_DIR@:/sccache
         - /var/log/ci-metrics:/var/log/ci-metrics
         # paiml/infra#75: per-PR CARGO_TARGET_DIR isolation — see test job.
         - /mnt/nvme-raid0/targets/sovereign-ci-${{ inputs.repo }}/${{ github.event.pull_request.number || github.ref_name }}:/workspace/target
