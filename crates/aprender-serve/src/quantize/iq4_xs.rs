@@ -97,6 +97,9 @@ mod tests {
     ];
 
     /// `dequantize_row_iq4_xs` of IQ4_XS_BLOCK, from ggml-quants.c.
+    // `%.9e` dumps of the ggml reference output, kept byte-for-byte so they diff
+    // against it; the values are exact in f32, only the digit count trips the lint.
+    #[allow(clippy::excessive_precision)]
     #[rustfmt::skip]
     const IQ4_XS_EXPECTED: [f32; IQ4_XS_BLOCK_ELEMS] = [
         -4.167187500e+01, 4.265625000e+00, 2.920312500e+01, -4.167187500e+01, 2.920312500e+01, -2.723437500e+01,
