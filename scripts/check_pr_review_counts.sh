@@ -246,7 +246,7 @@ quorum_bats_tests|.claude/skills/pr-review/SKILL.md|2|@N@ rows
 quorum_rows|tests/pr-review-quorum.bats|1|-eq @N@ ]
 quorum_rows|tests/pr-review-quorum.bats|1|expected @N@ q-*
 falsification_tests|contracts/pr-review-skill-v2.yaml|1|All @N@ falsification tests
-shadow_rows|.github/workflows/ci.yml|1|case table: @N@ rows
+shadow_rows|.github/workflows/ci.yml|1|Shadow recorder case table: @N@ rows
 publish_rows|.github/workflows/ci.yml|1|Publisher case table: @N@ rows
 arm4_rows|.github/workflows/pr-review-quorum.yml|1|Arm 4 case table: @N@ rows
 signer_rows|.github/workflows/ci.yml|1|Signer case table: @N@ rows
