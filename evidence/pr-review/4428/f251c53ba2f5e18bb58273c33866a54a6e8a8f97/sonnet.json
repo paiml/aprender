@@ -1,0 +1,1 @@
+{"verdict": "PASS", "summary": "split classify_roofline behaviour-identical to #4229 ORIGINAL for all (tok_per_sec, used_gpu) incl. boundaries 50/20/5 and None/Some(false)/Some(true); Throughput suffix present.", "findings": []}
