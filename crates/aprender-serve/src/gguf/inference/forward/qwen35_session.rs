@@ -309,6 +309,10 @@ pub struct Qwen35Forward {
     /// The `<|im_start|>` token, when the vocabulary has one: a chat prompt's
     /// checkpoint goes just before its last one (the generation header).
     im_start: Option<u32>,
+    /// #4443: the largest GPU decode state a test lets allocate, so the
+    /// exact-size retry in `ensure_capacity` runs without filling a real GPU.
+    #[cfg(test)]
+    gpu_alloc_ceiling: Option<usize>,
 }
 
 impl Qwen35Forward {
@@ -437,6 +441,8 @@ impl Qwen35Forward {
             batched_prefills: 0,
             checkpoint: None,
             im_start,
+            #[cfg(test)]
+            gpu_alloc_ceiling: None,
         })
     }
 
@@ -641,7 +647,16 @@ impl Qwen35Forward {
             Backend::Gpu(gpu) => {
                 // Free the old state before asking for the larger one.
                 gpu.state = None;
+                #[cfg(test)]
+                let ceiling = self.gpu_alloc_ceiling;
                 let (state, got) = allocate_with_exact_retry(capacity, positions, |c| {
+                    #[cfg(test)]
+                    if ceiling.is_some_and(|max| c > max) {
+                        return Err(RealizarError::UnsupportedOperation {
+                            operation: "qwen35_session".to_string(),
+                            reason: format!("test ceiling: {c} positions is over the limit"),
+                        });
+                    }
                     gpu.model.new_state_with_capacity(c)
                 })
                 .map_err(|(c, e)| {
