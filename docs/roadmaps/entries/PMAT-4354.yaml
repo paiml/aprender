@@ -3,7 +3,7 @@
   item_type: task
   kind: code
   title: 'PRM-L: land PRM-001 v3 (PROMETHEUS) + rex/001 to main'
-  status: inprogress
+  status: in_progress
   priority: high
   assigned_to: aprender-84
   created: 2026-09-25T18:38:33Z
