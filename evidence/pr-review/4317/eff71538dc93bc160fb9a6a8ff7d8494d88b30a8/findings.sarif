@@ -1,0 +1,186 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "n/a (index build failed before any query could run)",
+          "informationUri": "https://github.com/paiml/paiml-mcp-agent-toolkit",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "pmat query \"x\" was launched in the background (PID 411429, nohup) to build .pmat/context.db in this review worktree. It never finished: the log ends with 'Error: Failed to open index DB: unable to open database file: ./.pmat/context.db'. Root cause, corroborated: this review worktree (/mnt/nvme-raid0/agent-wt/aprender-98-review) is checked out read-only (every tracked script observed in this review is mode 555; `touch .pmat/testwrite` fails with 'No such file or directory' because .pmat/ itself was never created). The same read-only-worktree condition also caused 8/51 rows of scripts/tests/guard_tree_test.sh's self-test to fail (see the mutation run's note). This is an environment limitation of the review sandbox, not a defect in the reviewed diff. Per S3.0 row 3 this is `unreachable`, never a silent `consulted, found nothing`."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": ["pmat", "query", "x"],
+                "exit_code": 1,
+                "stdout_sha256": "71d60ec33beeb2ec6280a78ee046b1d4e6d7a942f217b6b519e33acdb5215cd1"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Prior receipt (7af7cc17b) built a working index in this same worktree lineage 97.2s earlier in that review's session, before the tree was made read-only for this delta review. No usable index_commit that is both an ancestor of eff71538d and built after it exists, so no cached index could be substituted either."
+              },
+              "properties": {
+                "grounding": "asserted",
+                "rationale": "Explaining why no fallback to a cached index was attempted, without claiming a probe that was not run.",
+                "precision_class": "advisory"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants (via scripts/mutate*.sh)",
+          "version": "n/a (no mutation-kill set exists for the changed guard scripts)",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "S3.D trigger fires: this delta modifies scripts/check_guards_are_wired.sh and scripts/tests/guard_tree_test.sh (both guard-class). grep over scripts/mutate*.sh (mutate-guard.sh, mutate_pr_review_wiring_guard.sh, mutate_quorum_arm.sh, mutate_spec_conformance.sh, mutate_vendored_schemas_guard.sh) for either filename returns zero matches: no committed mutation-kill set covers either file. This review's host rules forbid an unbounded/unscoped cargo-mutants sweep as a substitute (and the worktree is read-only, so mutants could not write mutated copies anyway). attempted=0. Partially compensated by direct execution: `bash scripts/check_guards_are_wired.sh --self-test` ran clean (14/14, including the renumbered #4108 row) and its real-mode run against the actual repo (184 guards scanned, 3 unnamed, PASS/ratcheted). `timeout 240 bash scripts/tests/guard_tree_test.sh` ran and returned rc=1, 43/51 rows passed, 8/51 rows failed — every one of the 8 with an identical 'Permission denied' signature on a `cp`'d mutation-testing copy of scripts/guard_tree.sh (mode 555, git-tracked as 100755), i.e. the same read-only-worktree condition as the pmat run, not a semantic mismatch. No chmod was attempted (HARD RULES prohibit it). This falls short of the commit message's claimed '51/51' and that gap is recorded here rather than silently accepted."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": ["bash", "-c", "grep -rl 'check_guards_are_wired\\|guard_tree_test' scripts/mutate*.sh"],
+                "exit_code": 1,
+                "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "check_guards_are_wired.sh --self-test: SELF-TEST PASSED (14/14)."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": ["bash", "scripts/check_guards_are_wired.sh", "--self-test"],
+                "exit_code": 0,
+                "stdout_sha256": null
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "guard_tree_test.sh: 51 checks, 43 passed, 8 failed, rc=1. All 8 failures are the identical read-only-worktree Permission denied signature described above; none shows a content/assertion mismatch against the merged logic."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": ["timeout", "240", "bash", "scripts/tests/guard_tree_test.sh"],
+                "exit_code": 1,
+                "stdout_sha256": null
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.2.11",
+          "informationUri": "https://github.com/paiml/agy",
+          "rules": [
+            { "id": "ont10-empty-array-set-u", "name": "PortabilityBashEmptyArrayUnderSetU" }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "agy -p <prompt+diff files, not inline args> --model gemini-3.1-pro-high --output-format json --dangerously-skip-permissions, run in a disposable `git archive eff71538d | tar -x` copy under $TMPDIR (no .git). Scoped diff: full content of commit 30ec9f3c5, plus the git-show --cc combined diff for the 6 substantive conflict-resolved files, plus diffstat + verification notes for the 2 large regenerated-data files (census.json, contracts.nt) — not the 552-file base..head diff. Launched as a background process (nohup, PID recorded) after a 2-minute inline timeout; the single blocking wait used the harness's own timeout parameter, not a sleep-poll loop. Completed status: SUCCESS. Process exit code was not captured directly (background launch); corroborated by the response's own `status: SUCCESS` field and by the stdout file parsing as well-formed JSON."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": ["agy", "-p", "<prompt file contents, not inline>", "--model", "gemini-3.1-pro-high", "--output-format", "json", "--dangerously-skip-permissions"],
+                "exit_code": 0,
+                "stdout_sha256": "705e1d61bc623e53bfca645e6bc3d405bccf9f742e2cb0acf1c4bb58d5f2afe3"
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "ont10-empty-array-set-u",
+          "level": "warning",
+          "message": {
+            "text": "scripts/release/ont10_readiness.sh:69 — `python3 - ... \"${missing[@]}\" <<'PY'` bare-expands the `missing` array under `set -uo pipefail`. On the success path (all 6 gates pass), `missing` is empty. On bash <4.4 (e.g. macOS's stock /bin/bash 3.2.57, still what `#!/usr/bin/env bash` resolves to on a Mac with no newer bash earlier in PATH), a bare `\"${arr[@]}\"` expansion of an empty array raises 'unbound variable' under `set -u`, crashing the script on exactly the all-clear/READY path instead of printing STOP(PUBLISH...) and exiting 0. Reverified against the actual source (not agy's cited line 63, which is `${#missing[@]}` — the count form, unaffected by this bug in any bash version; the affected line is 69). Empirically confirmed NOT to fail on this host's bash 5.1.16 (Linux CI is unaffected); the failure mode is real only on bash <4.4."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "scripts/release/ont10_readiness.sh" },
+                "region": { "startLine": 69 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "outcome": "confirmed-refined",
+            "severity_assessed": "medium",
+            "failure_scenario": "An operator or CI runner invokes `scripts/release/ont10_readiness.sh <version>` on a shell where `env bash` resolves to bash <4.4 (stock macOS /bin/bash 3.2.57 is the realistic case; this repo's fleet includes mbps per CLAUDE.md), the release is fully ready (all 6 `missing` checks pass, the important/common case), and the script aborts with 'unbound variable: missing[@]' instead of printing the STOP(PUBLISH...) line and exiting 0 — the operator sees a crash on the happy path of a publish-readiness gate.",
+            "command": ["bash", "-c", "set -uo pipefail; missing=(); python3 -c 'import sys; print(sys.argv[1:])' \"${missing[@]}\""],
+            "exit_code": 0,
+            "note": "This exact command exits 0 on bash 5.1.16 (this host / Linux CI); the bug requires bash <4.4 to manifest, which was not available to execute directly in this sandbox — recorded as a grounded-but-platform-conditional finding rather than a directly-reproduced crash."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "claude-haiku-4-5-20251001",
+          "version": "n/a",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "claude -p --model claude-haiku-4-5-20251001 --output-format json --allowedTools Read,Grep,Glob --permission-mode plan, run in the same disposable git-archive copy as the antigravity lane, over the same scoped prompt+diff (diff supplied as a file to Read, not inline, per the same ARG_MAX discipline). Result: is_error=false, stop_reason=end_turn, result='```json\\n[]\\n```' — 0 findings."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": ["claude", "-p", "<prompt>", "--model", "claude-haiku-4-5-20251001", "--output-format", "json", "--allowedTools", "Read,Grep,Glob", "--permission-mode", "plan"],
+                "exit_code": 0,
+                "stdout_sha256": "40f41b3cac510f09d18300c112a9326639d9270fdfcd292fbfbae27119e7bfbd"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}
