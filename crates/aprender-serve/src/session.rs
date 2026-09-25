@@ -394,23 +394,8 @@ impl<F: ArchForward> Session<F> {
             digest: prompt_digest(prompt),
             on_gpu: self.on_gpu(),
         });
-        let arch = self.arch();
         let context_length = self.context_length();
-        if prompt.is_empty() {
-            return Err(RealizarError::InvalidShape {
-                reason: format!("{arch} session: the prompt is empty"),
-            });
-        }
-        if prompt.len() >= context_length {
-            return Err(RealizarError::InvalidShape {
-                reason: format!(
-                    "{arch} session: the prompt is {} tokens and this model declares a context of \
-                     {context_length} (context_length in the GGUF) — it cannot fit with room to \
-                     answer, so it was refused whole rather than truncated",
-                    prompt.len(),
-                ),
-            });
-        }
+        self.admit_prompt(prompt, context_length)?;
         // Every position the turn can reach, reserved up front so the state
         // never grows (and never re-prefills) mid-generation.
         let (budget, context_limited) =
@@ -448,6 +433,29 @@ impl<F: ArchForward> Session<F> {
             used_gpu: self.on_gpu(),
             context_capped,
         })
+    }
+
+    /// Refuse a prompt `generate` cannot serve: an empty one, or one the
+    /// declared context cannot hold with room to answer (refused whole, never
+    /// truncated).
+    fn admit_prompt(&self, prompt: &[u32], context_length: usize) -> Result<()> {
+        let arch = self.arch();
+        if prompt.is_empty() {
+            return Err(RealizarError::InvalidShape {
+                reason: format!("{arch} session: the prompt is empty"),
+            });
+        }
+        if prompt.len() >= context_length {
+            return Err(RealizarError::InvalidShape {
+                reason: format!(
+                    "{arch} session: the prompt is {} tokens and this model declares a context of \
+                     {context_length} (context_length in the GGUF) — it cannot fit with room to \
+                     answer, so it was refused whole rather than truncated",
+                    prompt.len(),
+                ),
+            });
+        }
+        Ok(())
     }
 
     /// Teacher-forced scoring, for perplexity: forward `tokens` one position
