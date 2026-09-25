@@ -1,23 +1,5 @@
 # PVL-001 EV-6a (#4139): every compiler/logic escape in ProvableContracts/** that `pv discharge check` allows.
 # {file, decl, kind, reason, ticket, confirmed_by}. `confirmed_by: pending` is PENDING: `pv discharge check --strict`
 # (the EV-9 gate) stays RED until a person confirms the entry or the axiom is proved/deleted. The scanner and its
-# exemptions are never confirmed by the same run (PVL-001 §5.3): these 7 were DRAFTED from each axiom's own doc
-# comment and are not confirmed. #4347 (2026-09-25): the 4 NF4 + f16 entries were removed by proof; the 3 left are DPO (aprender-0d).
-- file: ProvableContracts/Theorems/DPO.lean
-  decl: ProvableContracts.DPO.sigmoid_bounded
-  kind: axiom
-  reason: "Sigmoid is bounded in (0, 1). The file's comment: 'Status: axiom (positivity + bound argument)' -- provable from Real.exp_pos, not yet proved."
-  ticket: "#4139"
-  confirmed_by: pending
-- file: ProvableContracts/Theorems/DPO.lean
-  decl: ProvableContracts.DPO.dpo_loss_zero_at_strong_preference
-  kind: axiom
-  reason: "DPO loss -> 0 as the preference margin grows. The file's comment: 'Status: axiom (requires limit theory)'."
-  ticket: "#4139"
-  confirmed_by: pending
-- file: ProvableContracts/Theorems/DPO.lean
-  decl: ProvableContracts.DPO.dpo_gradient_formula
-  kind: axiom
-  reason: "The DPO gradient formula. The file's comment: 'Status: axiom (gradient formula from Rafailov et al.)'."
-  ticket: "#4139"
-  confirmed_by: pending
+# exemptions are never confirmed by the same run (PVL-001 §5.3). #4347 (2026-09-25): all 7 DRAFTED entries were
+# removed by proof -- NF4 + f16 (aprender-57) and DPO (pvl-b). The list is empty; a new escape must be added here.

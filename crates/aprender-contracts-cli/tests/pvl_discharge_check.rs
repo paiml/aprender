@@ -423,8 +423,10 @@ fn the_real_lean_tree_passes_the_ev_6a_probe() {
         "is its regeneration",
     );
     let r = run(&["discharge", "check", lean, "--no-lake"]);
-    assert_rc(&r, 0, "PENDING (7)");
-    assert!(r.stdout.contains("ok    discharge"), "{}", r.show());
+    assert_rc(&r, 0, "ok    discharge");
+    // #4347 proved all 7 drafted escapes, so the real tree has none pending. A new escape needs a proof, or an
+    // allowlist entry AND this ratchet loosened in the same diff.
+    assert!(!r.stdout.contains("PENDING ("), "{}", r.show());
     assert_eq!(
         std::fs::read(&labels).expect("label set"),
         before,
