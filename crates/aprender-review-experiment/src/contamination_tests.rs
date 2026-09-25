@@ -1,3 +1,6 @@
+// `json!` expands to an `unwrap` of an infallible `to_value`.
+#![allow(clippy::disallowed_methods)]
+
 use super::*;
 use crate::corpus::{hunk_fingerprints, parse_manifest, sha256_hex, Sealed};
 use std::path::{Path, PathBuf};

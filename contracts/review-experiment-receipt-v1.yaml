@@ -1,0 +1,54 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PROMETHEUS (PRM-001, was REX-001) receipt, spec §2.3/§2.4. One JSONL row per
+    (item, cell, arm) written by the REX-03 harness (crates/aprender-review-experiment:
+    harness.rs) against a resident `apr serve`. A row is admissible only if it
+    deserializes with every required field (no unknown fields), carries no empty or
+    `unknown` identity field, carries 64-hex shas for the item, prompt, request, prereg,
+    apr binary and weights (hosted arms say `hosted`), names the locked prereg sha and
+    the corpus version under analysis, is greedy, and, when it ran, carries token
+    counts, timings, raw-output path+sha and a load snapshot. The scorer (score.rs)
+    scores the EXPECTED item set: an item without exactly one admissible row whose raw
+    output exists with the recorded sha and re-parses to the recorded verdict is
+    NotRun{Inadmissible}. Unparsed and NotRun are never correct and never a FAIL (R-6).
+    Signed receipts are verified with minisign; unsigned results are labelled
+    exploratory.
+  references:
+    - "docs/specifications/review-experiment-protocol.md"
+    - "docs/audits/rex-001/analysis-plan.md"
+    - "docs/audits/rex-001/rex-03-receipt.md"
+    - "https://github.com/paiml/aprender/issues/4358"
+
+equations:
+  correct:
+    formula: "correct(item) = (verdict == FAIL and class in {P,R}) or (verdict == PASS and class == G)"
+  recall:
+    formula: "|FAIL on P∪R| / |P∪R expected|  (NotRun and Unparsed stay in the denominator)"
+  precision:
+    formula: "|FAIL on P∪R| / |FAIL|"
+  false_refute:
+    formula: "|FAIL on G| / |G expected|"
+  parse_rate:
+    formula: "|PASS ∪ FAIL| / |executed|"
+
+falsification_tests:
+  - id: FALSIFY-RXR-001
+    name: missing_model_sha_is_inadmissible
+    prediction: "a receipt without weights_sha256 (or with `unknown`, or a sha prefix) is inadmissible"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxr_001"
+    expected_output: "exit 0"
+    if_fails: "Receipts can no longer be tied to the weights that produced them; every cross-cell and cross-model comparison is unanchored."
+  - id: FALSIFY-RXR-002
+    name: not_run_is_never_correct
+    prediction: "NotRun (any reason, including a missing receipt) is never correct and never a FAIL; it stays in the recall and correctness denominators"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxr_002"
+    expected_output: "exit 0"
+    if_fails: "A cell that cannot run, or a dropped receipt, would raise a score (R-6)."
+  - id: FALSIFY-RXR-003
+    name: unparsed_is_never_a_pass
+    prediction: "Unparsed is never correct on a G item, never a FAIL on a defect, and never enters a paired rate"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxr_003"
+    expected_output: "exit 0"
+    if_fails: "A model that answers garbage would score as a clean reviewer on good diffs."
