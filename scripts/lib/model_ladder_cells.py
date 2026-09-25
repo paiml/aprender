@@ -77,6 +77,25 @@ def fits(item, total, tokens):
     return need <= int(total), need
 
 
+def owed_rungs(item, rungs, long_for, consumer_max):
+    """Yield (rung id, tokens) for every rung one inventory item OWES; tokens None = owed but unsizable.
+
+    ONE enumeration, shared by the judge below and by the producer (model_ladder_cells_produce.py), so
+    the set the producer measures cannot drift from the set the judge demands (#3712). A long rung is
+    skipped unless owes_long says so; a rung above the model's own declared context is not owed."""
+    long_ids = {r["id"] for r in rungs if r.get("long")}
+    lo, _ = owes_long(item, long_for)
+    ctx = item.get("context_length")
+    for rung in rungs:
+        rid = rung["id"]
+        if rid in long_ids and not lo:
+            continue
+        tok = _tokens(rung, ctx, consumer_max)
+        if tok is not None and ctx is not None and tok > int(ctx):
+            continue  # above the model's own declared context: not owed
+        yield rid, tok
+
+
 def load_rungs(doc, out):
     """-> (rungs, consumer_max, rc). A file that sizes nothing is a named FAIL, never an empty universe."""
     if doc is None:
@@ -149,7 +168,6 @@ def judge(L, receipts, rungs_doc, out, rungs_main=None):
             gone = {x.get(name) for x in rungs_main.get(key) or []} - {x.get(name) for x in (rungs_doc or {}).get(key) or []}
             if gone:
                 out(f"FAIL  context rungs {what} DROPPED vs origin/main: {sorted(map(str, gone))} -- the token bar may rise, never fall"); rc = 1
-    long_ids = {r["id"] for r in rungs if r.get("long")}
     if not verbs:
         out("FAIL  the ladder's cells block names no verbs -- it owes nothing, which is not a pass")
         return 1
@@ -183,17 +201,10 @@ def judge(L, receipts, rungs_doc, out, rungs_main=None):
                 fails.append(f"thinking_modes {sorted(modes)} disagrees with its template evidence (markers {item.get('thinking_markers')}) which derives {sorted(want)}")
             if want is not None:
                 modes = want  # the evidence decides what is owed, not the producer's own claim
-            lo, why_long = owes_long(item, long_for)
-            for rung in rungs:
-                rid = rung["id"]
-                if rid in long_ids and not lo:
-                    continue
-                tok = _tokens(rung, ctx, consumer_max)
+            for rid, tok in owed_rungs(item, rungs, long_for, consumer_max):
                 if tok is None:
                     fails.append(f"rung {rid} has no token count ({'consumer-max is not derived' if rid == 'consumer-max' else 'no context_length'}) -- owed, unmeasurable")
                     continue
-                if ctx is not None and tok > int(ctx):
-                    continue  # above the model's own declared context: not owed
                 fit, need = fits(item, total, tok)
                 for verb in verbs:
                     for mode in sorted(modes):
