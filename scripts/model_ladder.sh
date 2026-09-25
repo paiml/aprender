@@ -1003,6 +1003,20 @@ except Exception: print("unknown")' "$arch_json")
     # thing. Judge the text the run already captured.
     chat_bad=""
     if [ $chat_rc -eq 0 ]; then chat_bad=$(judge_reply "$chat_out" chat); fi
+    # #3937: chat prints `{"backend":{"requested","ran","fell_back"}}` under --json and
+    # the cell kept only rc, so a CUDA chat that ran on CPU was stored as a CUDA pass.
+    # Keep the object verbatim (null when chat printed none — it exited before the report).
+    chat_backend_json=$(printf '%s\n' "$chat_out" | python3 -c '
+import json, sys
+last = "null"
+for line in sys.stdin:
+    line = line.strip()
+    if line.startswith("{\"backend\""):
+        try:
+            last = json.dumps(json.loads(line)["backend"])
+        except (ValueError, KeyError, TypeError):
+            pass
+print(last)')
 
     # code: measured once per rung, above this loop — see #3843.
 
@@ -1024,7 +1038,7 @@ except Exception: print("unknown")' "$arch_json")
     # about what the verb produced; the rc beside it is only about whether it ran.
     chat_bad_json=$(printf '%s' "${chat_bad:-}" | json_str_or_null)
     code_bad_json=$(printf '%s' "${code_bad:-}" | json_str_or_null)
-    be_json="$be_json,\"chat\":{\"ran\":$chat_ran,\"rc\":$chat_rc,\"output_bad\":$chat_bad_json}"
+    be_json="$be_json,\"chat\":{\"ran\":$chat_ran,\"rc\":$chat_rc,\"output_bad\":$chat_bad_json,\"backend\":$chat_backend_json}"
     be_json="$be_json,\"code\":{\"ran\":$code_ran,\"rc\":$code_rc,\"backend\":\"inherited-from-spawned-serve\",\"output_bad\":$code_bad_json}"
     # #3847: an EMPTY `serve_json` yields `"serve":}}` — invalid JSON that only
     # surfaces three steps later as "the row could not be built", with the backend
@@ -1119,6 +1133,10 @@ def verb_ok(v, name):
     # PRODUCED. A verb returning 0 while emitting "zombie zombie zombie" was
     # recorded as working on both hosts, on a row the release called green.
     if x.get("output_bad"):
+        return False
+    # #3937: chat's own `{"backend":{..,"fell_back":true}}` line — a forced
+    # accelerator that CPU answered is not a pass for the accelerator's column.
+    if isinstance(x.get("backend"), dict) and x["backend"].get("fell_back"):
         return False
     return bool(x.get("ran")) and (x.get("rc") or 0) == 0
 

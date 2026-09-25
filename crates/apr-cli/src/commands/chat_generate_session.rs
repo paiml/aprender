@@ -129,7 +129,31 @@ fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
     }
     // #3367: the session's verdict, not the loop's. Every turn was printed as it
     // happened; this is only the exit code catching up with what was printed.
-    session_exit_result(session.had_generate_error())
+    session_exit_result(session.had_generate_error())?;
+    // #3937: `apr run --gpu` refuses a forced accelerator that fell to CPU (exit 14);
+    // chat accepted `--gpu` and never reached that reconciliation, so the same model
+    // exited 0 here. After the JSON line, like `run`'s machine surface: the report
+    // carries `fell_back:true` beside the refusal.
+    forced_backend_result(config, session.answered_turn(), session.generated_on_gpu())
+}
+
+/// #3937: the chat half of R-0b — the one reconciliation `apr run` already does.
+///
+/// A session that forced an accelerator, answered at least one turn, and answered
+/// it on CPU is `BackendUnavailable` (exit 14), through the same
+/// [`crate::registry::after_generation`] `run` uses. Not forced ⇒ no refusal (the
+/// `--json` report's `fell_back` is the default selection's record). Nothing
+/// answered ⇒ nothing ran, so there is nothing to reconcile.
+#[cfg_attr(not(feature = "inference"), allow(dead_code))]
+fn forced_backend_result(
+    config: &ChatConfig,
+    answered_turn: bool,
+    generated_on_gpu: bool,
+) -> Result<(), CliError> {
+    if !config.accel_forced || config.force_cpu || !answered_turn {
+        return Ok(());
+    }
+    crate::registry::after_generation(true, Some("gpu"), Some(generated_on_gpu)).map(|_| ())
 }
 
 /// #3794: the machine-readable backend line, mirroring `apr run --format json`'s
@@ -409,5 +433,50 @@ mod pmat3794_chat_backend_report {
                 "#3794: force_cpu={f} generated_on_gpu={g} is not a fallback"
             );
         }
+    }
+}
+
+/// #3937: the case table for `forced_backend_result` — `apr chat --gpu` on a model
+/// the GPU cannot serve must exit 14 the way `apr run --gpu` does.
+///
+/// The mutation these are written against: drop the `forced_backend_result` call
+/// from `run_repl`, or return `Ok(())` from it — the refusal row turns green.
+#[cfg(all(test, feature = "inference"))]
+mod pmat3937_chat_refuses_forced_fallback {
+    use super::{forced_backend_result, ChatConfig};
+    use crate::error::CliError;
+
+    /// `(accel_forced, force_cpu, answered_turn, generated_on_gpu, refuse, what)`
+    const CASES: &[(bool, bool, bool, bool, bool, &str)] = &[
+        (true, false, true, false, true, "`--gpu`, a turn answered on CPU: the #3937 refusal"),
+        (true, false, true, true, false, "`--gpu`, the GPU answered"),
+        (true, false, false, false, false, "`--gpu`, nothing answered: nothing ran to reconcile"),
+        (false, false, true, false, false, "default selection fell to CPU: reported, not refused"),
+        (false, true, true, false, false, "`--no-gpu` ran on CPU as asked"),
+    ];
+
+    #[test]
+    fn the_whole_refusal_table_holds() {
+        let wrong: Vec<String> = CASES
+            .iter()
+            .filter_map(|&(forced, cpu, answered, on_gpu, refuse, why)| {
+                let config = ChatConfig { accel_forced: forced, force_cpu: cpu, ..Default::default() };
+                let got = forced_backend_result(&config, answered, on_gpu);
+                let ok = match (&got, refuse) {
+                    (Err(CliError::BackendUnavailable(_)), true) | (Ok(()), false) => true,
+                    _ => false,
+                };
+                (!ok).then(|| format!("\n  - {why}: want refuse={refuse}, got {got:?}"))
+            })
+            .collect();
+        assert!(wrong.is_empty(), "#3937 refusal table:{}", wrong.join(""));
+    }
+
+    /// The refusal is exit 14, the code `apr run --gpu` exits with on the same model.
+    #[test]
+    fn the_refusal_is_run_s_exit_code() {
+        let config = ChatConfig { accel_forced: true, ..Default::default() };
+        let err = forced_backend_result(&config, true, false).expect_err("forced ⇒ refuse");
+        assert_eq!(err.exit_code_value(), 14, "{err}");
     }
 }

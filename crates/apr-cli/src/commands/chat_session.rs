@@ -64,6 +64,10 @@ mod realizar_chat {
         /// reports `{requested, ran, fell_back}` and `apr chat` reported nothing,
         /// so a harness could not hold chat to its lane the way it holds run.
         generated_on_gpu: bool,
+        /// #3937: set when any turn produced an answer. A forced `--gpu` session is
+        /// only refused for running on CPU if something actually ran; a session that
+        /// generated nothing has no backend to reconcile.
+        answered_turn: bool,
     }
 
 include!("chat_load_tokenizers.rs");

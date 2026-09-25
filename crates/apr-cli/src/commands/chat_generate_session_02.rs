@@ -73,6 +73,7 @@ impl ChatSession {
 
             match result {
                 Ok(output_tokens) => {
+                    self.answered_turn = true;
                     let new_tokens = Self::strip_prompt_tokens(&output_tokens, &prompt_tokens);
                     self.print_token_stats(new_tokens, gen_time);
                     self.debug_inspect_tokens(new_tokens, config);
@@ -152,6 +153,7 @@ impl ChatSession {
         ) -> String {
             match self.generate_gguf_with_prompt(formatted_prompt, config) {
                 Ok(response) => {
+                    self.answered_turn = true;
                     let gen_time = start.elapsed();
                     let approx_tokens = response.split_whitespace().count().max(1) * 4 / 3;
                     let tps = approx_tokens as f32 / gen_time.as_secs_f32();

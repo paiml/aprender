@@ -265,6 +265,7 @@ impl ChatSession {
                 cuda_init_failed,
                 had_generate_error: false,
                 generated_on_gpu: false,
+                answered_turn: false,
             };
             contract_post_session_persistence!(&());
             Ok(session)

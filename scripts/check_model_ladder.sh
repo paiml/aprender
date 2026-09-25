@@ -192,6 +192,12 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
                 # producer read.
                 if r is not None and r.get("output_bad"):
                     why.append(f"{b}: verb `{verb}` produced bad output: {_disp(r.get('output_bad'))} (#3957 F4a)")
+                # #3937: `apr chat --gpu` reports {requested, ran, fell_back} and the receipt
+                # kept only rc, so a CUDA chat cell that ran on CPU read as a CUDA pass. The
+                # producer's verb_ok refuses the same record; the judge reads what it read.
+                cb = (r or {}).get("backend") if verb == "chat" else None
+                if isinstance(cb, dict) and cb.get("fell_back"):
+                    why.append(f"{b}: verb `chat` exited {r.get('rc')} but FELL BACK to {cb.get('ran')} (requested {cb.get('requested')}) (#3937)")
             sv = vb.get("serve")
             if sv is None:
                 why.append(f"{b}: verb `serve` is MISSING from the receipt — no rung has ever asked apr serve to load a model (#3571, #3828)")
@@ -680,6 +686,7 @@ if [ "$SELF_TEST" = 1 ]; then
     mutant sha-drift-key      red-ladder-apr-sha-drift-key 's/^if "apr_sha_drift" in (L.get("inventory") or {}) or "apr_sha_drift" in L:/if False:/'
     mutant verb-output-bad    red-chat-output-bad-rc0     's/if r is not None and r.get("output_bad"):/if False:/'
     mutant verb-output-bad-code red-code-output-bad-rc0   's/if r is not None and r.get("output_bad"):/if False:/'
+    mutant chat-fell-back     red-chat-fell-back-rc0      's/if isinstance(cb, dict) and cb.get("fell_back"):/if False:/'
     mutant route-output-bad   red-serve-route-output-bad  's/if rv.get("output_bad"): why.append/if False: why.append/'
     # AND THE CROSS-CHECK THAT MAKES THE MUTANT MEAN SOMETHING (#3898).
     # A mutant killed by its own case only proves the case reads the rule. It does NOT

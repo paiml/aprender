@@ -112,6 +112,11 @@ impl ChatSession {
             self.had_generate_error
         }
 
+        /// #3937: did any turn this session produce an answer?
+        pub(super) fn answered_turn(&self) -> bool {
+            self.answered_turn
+        }
+
         /// #3794: did an accelerator actually answer any turn this session?
         pub(super) fn generated_on_gpu(&self) -> bool {
             self.generated_on_gpu
