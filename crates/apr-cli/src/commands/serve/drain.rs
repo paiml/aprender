@@ -205,6 +205,18 @@ mod tests {
         started.notified().await;
         // The signal fires while the request is still inside the handler.
         drain.begin_drain();
+
+        // Shutdown must NOT resolve while the request is in flight: this is
+        // what keeps axum from dropping the connection mid-handler.
+        let waiter = drain.clone();
+        let mut idle = tokio::spawn(async move { waiter.wait_for_idle().await });
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut idle)
+                .await
+                .is_err(),
+            "drain completed while a request was still in flight"
+        );
+
         release.notify_one();
 
         let resp = call
@@ -212,6 +224,10 @@ mod tests {
             .expect("task joins")
             .expect("service is infallible");
         assert_eq!(resp.status(), StatusCode::OK);
+        assert!(
+            idle.await.expect("task joins"),
+            "drain timed out instead of going idle"
+        );
     }
 
     /// Falsifier 2: a request made after drain begins gets 503 with
