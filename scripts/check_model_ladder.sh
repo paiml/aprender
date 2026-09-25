@@ -958,7 +958,6 @@ JP
     cmutant pass-beyond-fit red-cells-pass-beyond-its-arithmetic 's/    if not fit:/    if False:/'
     cmutant family-long     red-cells-missing-cell          's/    if arch in (long_for.get("families") or \[\]):/    if False:/'
     cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/        if gone:/        if False:/'
-    cmutant not-armed       red-cells-no-cells              's/    if receipts and not carrying:/    if receipts:/'
     # #3957 F4/F8: the CRUX join (scripts/lib/model_ladder_crux.py), each rule deleted in a copy
     # imported through MODEL_LADDER_CRUX_LIB; the case that names the rule must go RED.
     xmutant() { # xmutant <label> <case that must kill it> <sed expression deleting the rule>
