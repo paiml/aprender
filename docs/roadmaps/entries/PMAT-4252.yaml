@@ -4,9 +4,9 @@
   title: 'Mandatory apr dogfood: apr serve Qwen3.5-4B as an advisory 4th quorum lane (gx10 CUDA primary, yields on any need for the box; lambda CPU fallback opt-in and only at load1 < 24) (#4252)'
   status: inprogress
   priority: high
-  assigned_to: aprender-6c
+  assigned_to: aprender-60
   created: 2026-09-24T11:30:00Z
-  updated: 2026-09-25T12:00:00Z
+  updated: 2026-09-25T15:45:00Z
   spec: null
   acceptance_criteria:
   - 'gx10 serve runs --backend cuda --gpu-layers all; an answer is labelled gx10-cuda only with used_gpu true and the server pid holding GPU memory (#4089)'
@@ -15,6 +15,7 @@
   - 'Mutation proof: planted hold -> watcher YIELD -> the ask is unavailable by default, or lambda answers when opted in at load1 < 24 -> watcher resumes'
   - 'The lane never hangs a quorum: one hard budget per ask, verdict unavailable on expiry; advisory, counts=false'
   - 'Every serve failure is filed under #4252'
+  - 'REX-07 Ask 2 (#4362, paiml-implement#411): the gx10 receipt provenance names the served model and its sha256, hashed before apr serve loads it and withdrawn (null + why) if the file changed before /health answered'
   phases: []
   subtasks: []
   estimated_effort: null
