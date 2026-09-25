@@ -1,0 +1,54 @@
+- id: PMAT-3817
+  github_issue: 3817
+  item_type: task
+  title: apr run --gpu on qwen3moe refuses pre-load by name
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-c7
+  created: 2026-09-22 07:05:04+00:00
+  updated: 2026-09-22 07:05:04+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3817 done_when 1, verbatim: "`apr run --gpu` on both qwen3moe Q4_K_M files **refuses pre-load,
+    by name**, naming the architecture (`qwen3moe`), citing #3714, and stating that CUDA support is 0.70.0.
+    It **never** runs on CPU under `--gpu`. Exit code is a refusal code, not 14-after-fallback."'
+  - 'Issue #3817 done_when 2, verbatim: "`apr run` **without** `--gpu` is unchanged and still works on
+    CPU (the CPU MoE path shipped in #3367, closed 0.69.0). A refusal that also breaks the working path
+    is a regression, not a fix."'
+  - 'Issue #3817 done_when 3, verbatim: "`apr qa` on a qwen3moe file emits its gates **as refusals with
+    reasons**, not as an empty JSON with `capability_match` and `golden_output` absent. Absence is the
+    bug; a named refusal is the fix."'
+  - 'Issue #3817 done_when 4, verbatim: "Every OTHER architecture''s `--gpu` behaviour is byte-identical.
+    Prove it with a case table, not by inspection: at minimum one dense Q4_K (qwen2.5-coder), one Qwen3.5
+    rung, and one non-qwen model."'
+  - 'Issue #3817 done_when 5, verbatim: "**A planted mutant that removes the refusal turns a test RED**,
+    and the test names what it caught. Restoring the CPU fallback under `--gpu` must fail."'
+  - 'Issue #3817 done_when 6, verbatim: "The qwen3moe files are removed from lambda''s and gx10''s 0.69.1
+    host inventory, and the release notes plus README state by name that 0.69.1 does not support qwen3moe
+    on CUDA, with a pointer to #3714. Landing the refusal without the inventory and the note leaves the
+    gate still owing the cell."'
+  - 'Issue #3817 done_when 7, verbatim: "Measured and recorded, because it decides how much of the above
+    is even needed: whether 30B-A3B at Q4_K_M **fits** the 4090 at the short rungs (4k/8k/20k), read from
+    the host receipt''s measured GPU memory — weights + KV-per-token x rung + workspace. If it does not
+    fit, those cells become legitimate RefusalCells and the inventory change shrinks accordingly."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ONE predicate: realizar::capability::no_cuda_forward_reason(arch) says why this build has no
+    CUDA forward, normalising every spelling the loader accepts (qwen3moe, qwen3_moe, Qwen3MoeForCausalLM,
+    Qwen3CoderForCausalLM, qwen3_5_moe). Its only arm is qwen3_moe because infer/inference_result.rs dispatches
+    that architecture to the CPU-only MoE generator and returns used_gpu=false unconditionally; deleting
+    the arm when #3714 lands is what turns the refusal off, so refusal and routing cannot drift. apr run
+    consults it BEFORE any print or load, refusing with NotImplemented = exit 12 (''this build cannot
+    do that''), deliberately NOT 14 (''it tried and fell back''). Reading a GGUF header is an mmap, so
+    the refusal does not touch the 18 GB behind it. apr qa: three changes. dispatch_gate turns a gate
+    that cannot RUN into a FAILED gate carrying the error, so no gate can empty the report again (before:
+    zero bytes of JSON, rc 5, capability_match and golden_output ABSENT). is_cpu_only_architecture admits
+    an architecture whose CUDA forward was never built, routing golden and throughput through the same
+    runtime entry point apr run uses. capability_match refuses by name instead of reporting ''all ops
+    supported by GPU'', which is true and misleading: no kernel is missing, the path was not built. MEASURED
+    on lambda, apr 0.69.0 (9f8836c71) BEFORE: apr run --gpu rc 14 after an 18 GB load and a CPU generation;
+    apr qa rc 5 with an EMPTY json and ''Validation failed: CPU generation failed: matmul weight has EMPTY
+    data buffer ... a MoE parent FFN tensor''; apr run --no-gpu rc 0, ''2 + 2 = 4.'' in 8.00s.'

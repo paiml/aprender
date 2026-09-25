@@ -166,6 +166,7 @@
     #[test]
     fn test_inference_result_default() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1, 2, 3],
             input_token_count: 1,
@@ -175,6 +176,7 @@
             load_ms: 50.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert_eq!(result.text, "test");
         assert_eq!(result.tokens, vec![1, 2, 3]);
@@ -184,6 +186,7 @@
     #[test]
     fn test_inference_result_clone() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "hello".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -193,6 +196,7 @@
             load_ms: 5.0,
             format: "APR".to_string(),
             used_gpu: true,
+            gpu_attempted: true,
         };
         let cloned = result.clone();
         assert_eq!(result.text, cloned.text);
@@ -282,6 +286,7 @@
     #[test]
     fn test_inference_result_debug() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -291,6 +296,7 @@
             load_ms: 5.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         let debug_str = format!("{:?}", result);
         assert!(debug_str.contains("text"));

@@ -57,10 +57,12 @@ pub use cancel_scope::request_cancel_token;
 // PMAT-802: Extracted handlers
 //
 // aprender#2465(1): NOT `#[cfg(feature = "cuda")]` on the module. Every
-// CUDA-dependent item inside is individually gated; the decode loop
-// (`q4k_decode`) and its cancellation falsifiers are not, so they compile and
-// run under the default feature set. Gating the whole module put the only
-// cancellation-free decode loop in the crate outside every CI test job.
+// CUDA-dependent item inside is individually gated; the session config
+// (`q4k_generate_config`), the forward over it (`apr_q4k_forward`) and their
+// cancellation falsifiers are not, so they compile and run under the default
+// feature set. Gating the whole module put the only cancellation-free decode
+// loop in the crate outside every CI test job.
+pub mod apr_q4k_forward;
 pub mod apr_q4k_scheduler;
 // PERF-041: NOT `#[cfg(feature = "cuda")]`, on purpose. It holds the admission
 // predicate of contracts/batch-admission-v1.yaml and its exhaustive table test,
@@ -73,6 +75,7 @@ pub mod cuda_batch_scheduler;
 #[cfg(feature = "cuda")]
 pub mod iteration_scheduler;
 mod openai_handlers;
+pub(crate) use openai_handlers::LiveUtf8Deltas;
 pub(crate) use openai_handlers::{
     openai_chat_completions_handler, openai_chat_completions_stream_handler, openai_models_handler,
 };
@@ -118,7 +121,9 @@ pub use gpu_handlers::{
 pub use gpu_handlers::{spawn_batch_processor, BatchConfig};
 mod realize_handlers;
 pub(crate) use realize_handlers::{
-    clean_chat_output, format_chat_messages, openai_completions_handler, openai_embeddings_handler,
+    clean_chat_output, format_chat_messages, format_chat_messages_for_state,
+    format_chat_messages_for_state_thinking, format_chat_messages_official,
+    format_chat_messages_official_thinking, openai_completions_handler, openai_embeddings_handler,
     realize_embed_handler, realize_model_handler, realize_reload_handler,
 };
 #[cfg(feature = "cuda")]
@@ -216,6 +221,18 @@ pub struct AppState {
     /// and any future streaming/batch backends.
     /// See `contracts/qwen3-moe-serve-dispatch-v1.yaml` (V1_001, V1_003).
     mapped_gguf_model: Option<Arc<crate::gguf::MappedGGUFModel>>,
+    /// #3987: whether qwen3moe generation must stay on the CPU. `true` for every
+    /// constructor, which is exactly the pre-#3987 behaviour (the serve MoE backend
+    /// called the CPU-only generator). Only a CUDA server opts in, via
+    /// `with_moe_gpu()`, and then the MoE backend goes through the ONE dispatch
+    /// `apr run` uses (`run_qwen3_moe_generate_dispatch`), proven by #3714's parity tests.
+    moe_no_gpu: bool,
+    /// #3571: the Qwen3.5 hybrid, resident for the server's lifetime. Its
+    /// Gated-DeltaNet and attention layers live here, not in
+    /// `quantized_model` — the hybrid has no dense layers — so a Qwen3.5
+    /// request is served from this session or refused, never decoded through
+    /// the base (embeddings, norm, `lm_head`) alone.
+    qwen35_session: Option<Arc<Qwen35Served>>,
     /// GH-330: Cached EOS token ID (avoids RwLock in hot path)
     cached_eos_token_id: Option<u32>,
     /// GH-152: Enable verbose request/response logging
@@ -361,6 +378,11 @@ pub(crate) fn generation_error_status(err: &RealizarError) -> StatusCode {
 }
 
 include!("mod_app_state_gpu.rs");
+include!("mod_app_state_qwen35.rs");
 include!("mod_create_demo.rs");
 include!("router.rs");
 include!("dispatch_metrics.rs");
+
+#[cfg(test)]
+#[path = "tests_engine_identity.rs"]
+mod tests_engine_identity;

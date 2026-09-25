@@ -220,9 +220,20 @@ async fn test_multi_model_generate_with_model_id() {
         .expect("test");
     let generate_response: GenerateResponse = serde_json::from_slice(&body).expect("test");
 
-    // Verify generation occurred
-    assert!(!generate_response.text.is_empty());
+    // Verify generation occurred. Since #3991 `text` is the completion only, and this
+    // untrained model's greedy completion may be `<unk>` (decodes to ""), so text can
+    // legitimately be empty — assert on the ids, and that the prompt is not echoed.
     assert!(generate_response.num_generated > 0);
+    assert_eq!(
+        generate_response.token_ids.len(),
+        1 + generate_response.num_generated,
+        "token_ids = prompt (1 id) + completion"
+    );
+    assert!(
+        !generate_response.text.contains("token1"),
+        "text must be the completion only (#3991): {:?}",
+        generate_response.text
+    );
 }
 
 #[tokio::test]

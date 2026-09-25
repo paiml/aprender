@@ -415,3 +415,63 @@ fn p119_apr_embedded_tokenizer_metadata() {
 
     let _ = std::fs::remove_file(path);
 }
+
+// An all-zero tensor in an APR v2 file fails validation on the DEFAULT path.
+//
+// WHY THIS TEST EXISTS, AND WHAT IT CORRECTS. Two sessions independently concluded that
+// `apr validate --quality` could not fail on `.apr` tensor data -- first "it does no
+// per-tensor checking at all", then "it checks, finds the zeros, and reads the finding
+// only under `--strict`". Both were read from source. Neither was measured, because the
+// model that prompted the question (sha 4f5abd4f, all-zero v_proj/down_proj) had already
+// been regenerated: the `rc=0` both of us reasoned from was observed on a REPLACED file
+// that had no zeros left to find. A correct instrument, a clean input, and a conclusion
+// about the instrument.
+//
+// So this plants the tensor rather than waiting for a broken model to reappear, and the
+// measurement refuted both readings. `compute_tensor_validation` pushes all-zero into
+// `failures`; `tv.is_valid` goes false; `failed_count` rises; `ValidationReport::is_valid`
+// is false -- so `gate_apr_content` returns `Err` and `apr validate` exits non-zero with
+// NO `--strict`. `strict_blocking_issues` is an ADDITIONAL strict-only check over the same
+// finding, not its only reader.
+//
+// Pinned here so the next person reads a measurement instead of re-deriving it from the
+// strict branch and inferring, as I did, that nothing else reads the finding.
+#[test]
+fn all_zero_apr_tensor_fails_validation_without_strict() {
+    use crate::format::v2::{AprV2Metadata, AprV2Writer};
+    let path = unique_temp_path("test_planted_zero", "apr");
+    let mut writer = AprV2Writer::new(AprV2Metadata::new("test"));
+    // `.bias` for both, to bypass the strict WEIGHT validation on write -- the all-zero
+    // gate is name-independent, so the suffix does not weaken what is being tested.
+    writer.add_f32_tensor("healthy.bias", vec![4], &[0.01, -0.02, 0.03, -0.01]);
+    writer.add_f32_tensor("planted_zero.bias", vec![4], &[0.0, 0.0, 0.0, 0.0]);
+    let mut file = std::fs::File::create(&path).expect("Create temp APR file");
+    writer.write_to(&mut file).expect("Write APR");
+
+    let report = RosettaStone::new().validate(&path).expect("validate APR");
+
+    assert!(
+        report
+            .all_zero_tensors
+            .iter()
+            .any(|n| n == "planted_zero.bias"),
+        "the all-zero check did not find an entirely-zero tensor; all_zero_tensors = {:?}",
+        report.all_zero_tensors
+    );
+    // MEASURED, and it refutes the source reading that produced this test. An all-zero
+    // tensor DOES fail the ordinary (non-`--strict`) path: `compute_tensor_validation`
+    // pushes it into `failures`, `tv.is_valid` goes false, `failed_count` rises, and
+    // `ValidationReport::is_valid` is false. `strict_blocking_issues` is an ADDITIONAL
+    // strict-only check over the same finding, not the only reader of it.
+    assert!(
+        !report.is_valid,
+        "an all-zero tensor must make the report invalid on the DEFAULT path"
+    );
+    assert!(
+        report.failed_tensor_count >= 1,
+        "the all-zero tensor must be counted: failed_tensor_count = {}",
+        report.failed_tensor_count
+    );
+
+    let _ = std::fs::remove_file(path);
+}

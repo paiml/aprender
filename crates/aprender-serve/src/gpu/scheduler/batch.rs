@@ -102,7 +102,7 @@ pub fn forward_single_token(model: &mut GpuModel, tokens: &[usize]) -> Result<Ve
         // Uses parallel dot products with perfect cache behavior
         cpu_matmul_transposed_simd(
             &hidden,
-            &model.lm_head_weight_t,
+            &model.lm_head_weight, // [vocab, hidden] = the [n, k] these CPU paths read (#3975)
             &model.lm_head_bias,
             hidden_dim,
             vocab_size,
@@ -110,8 +110,9 @@ pub fn forward_single_token(model: &mut GpuModel, tokens: &[usize]) -> Result<Ve
     } else {
         // GPU path for smaller vocab
         // Phase 44: Use do_matmul() to enable MockExecutor testing
-        let lm_head_weight = model.lm_head_weight.clone();
-        let logits = model.do_matmul(&hidden, &lm_head_weight, 1, hidden_dim, vocab_size)?;
+        // do_matmul is [k, n]: the [hidden, vocab] form (#3975).
+        let lm_head_weight_t = model.lm_head_weight_t.clone();
+        let logits = model.do_matmul(&hidden, &lm_head_weight_t, 1, hidden_dim, vocab_size)?;
         // Add bias
         logits
             .iter()
@@ -166,7 +167,7 @@ pub fn forward_single_token_greedy(model: &mut GpuModel, tokens: &[usize]) -> Re
         // CPU path with transposed weights: perfect cache behavior
         Ok(optimized_lm_head_argmax_transposed(
             &hidden,
-            &model.lm_head_weight_t,
+            &model.lm_head_weight, // [vocab, hidden] = the [n, k] these CPU paths read (#3975)
             &model.lm_head_bias,
             hidden_dim,
             vocab_size,
@@ -174,8 +175,9 @@ pub fn forward_single_token_greedy(model: &mut GpuModel, tokens: &[usize]) -> Re
     } else {
         // GPU/small vocab path
         // Phase 44: Use do_matmul() to enable MockExecutor testing
-        let lm_head_weight = model.lm_head_weight.clone();
-        let logits = model.do_matmul(&hidden, &lm_head_weight, 1, hidden_dim, vocab_size)?;
+        // do_matmul is [k, n]: the [hidden, vocab] form (#3975).
+        let lm_head_weight_t = model.lm_head_weight_t.clone();
+        let logits = model.do_matmul(&hidden, &lm_head_weight_t, 1, hidden_dim, vocab_size)?;
         let output: Vec<f32> = logits
             .iter()
             .zip(model.lm_head_bias.iter())

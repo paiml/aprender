@@ -212,9 +212,21 @@ fi
 # check_contract_test_binding.sh's `case "${1:-}" in ... *) die "usage: $0
 # [--self-test | --update-baseline]" ;; esac`). Either way this call's
 # output is captured and never executed a second time for detection alone.
+#
+# BOUNDED (#4046). A guard that ignores --help runs its WHOLE body here, and that
+# doubled the slowest guard's worker (the CRUX judge: ~11 min probe + ~11 min run)
+# until guard-tree hit its 30-min job timeout. The probe now gets
+# GUARD_TREE_HELP_TIMEOUT seconds (default 10). A timeout counts as "does not
+# advertise --self-test" and is REPORTED BY NAME in the guard's rows, so the next
+# guard that ignores --help is visible instead of silently costing a second run.
 advertises_self_test() {
     g="$1"
-    help_out="$(bash "$g" --help 2>&1)"
+    help_out="$(timeout "${GUARD_TREE_HELP_TIMEOUT:-10}" bash "$g" --help 2>&1)"
+    if [ "$?" = 124 ]; then
+        printf 'PROBE-TIMEOUT %s: --help ran past %ss (the guard ignores --help and ran its body); treated as no --self-test\n' \
+            "$g" "${GUARD_TREE_HELP_TIMEOUT:-10}" >> "${w_rows:-/dev/stderr}"
+        return 1
+    fi
     n="$(grep -c -- 'self-test' <<<"$help_out")"
     [ "${n:-0}" -gt 0 ]
 }
@@ -537,12 +549,23 @@ fi
 #    The index is the guard's LINE NUMBER IN THE PLAN, so a worker's files are
 #    addressable by the parent without any communication back from the pool.
 WORKLIST="$RUN_DIR/worklist"
+SERIAL_LIST="$RUN_DIR/serial"
 : > "$WORKLIST"
+: > "$SERIAL_LIST"
 idx=0
 while IFS="$TAB" read -r kind g reason; do
     idx=$((idx + 1))
     [ "$kind" = RUN ] || continue
-    printf '%d:%s\n' "$idx" "$g" >> "$WORKLIST"
+    # THE SERIAL LANE (#4046). A guard carrying the line `# guard-tree: serial` asserts
+    # wall-clock windows (a server must be ready within N s) that do not hold while seven
+    # other guards share the CPU; on CI's clean-room runners check_ladder_serve_teardown
+    # failed only under the pool. It runs AFTER the pool, one at a time, so nothing overlaps it.
+    # This does not change what the guard asserts, only what runs beside it.
+    if grep -qx '# guard-tree: serial' "$g" 2>/dev/null; then
+        printf '%d:%s\n' "$idx" "$g" >> "$SERIAL_LIST"
+    else
+        printf '%d:%s\n' "$idx" "$g" >> "$WORKLIST"
+    fi
 done < "$PLAN"
 
 if [ -s "$WORKLIST" ]; then
@@ -555,6 +578,10 @@ if [ -s "$WORKLIST" ]; then
     GUARD_TREE_RUN_DIR="$RUN_DIR" xargs -a "$WORKLIST" -r -I{} -P "$GUARD_TREE_JOBS" \
         bash "$SELF" "--internal-run-one={}" || true
 fi
+while IFS= read -r spec; do
+    [ -n "$spec" ] || continue
+    GUARD_TREE_RUN_DIR="$RUN_DIR" bash "$SELF" "--internal-run-one=$spec" || true
+done < "$SERIAL_LIST"
 
 # ---------------------------------------------------------------------------
 # 3. THE OUTPUT -- plan order, one guard's rows at a time, never interleaved.

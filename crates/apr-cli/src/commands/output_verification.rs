@@ -15,11 +15,11 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
         );
     }
 
-    // Extract metadata from the model file
-    let data = std::fs::read(path)
+    // #3750: the 4-byte magic here, and that format's header below, never the whole model
+    let magic = super::model_header::read_prefix(path, 4)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
 
-    if data.len() < 4 {
+    if magic.len() < 4 {
         let duration = start.elapsed();
         return Ok(GateResult::failed(
             "metadata_plausibility",
@@ -30,7 +30,7 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
         ));
     }
 
-    let (architecture, rope_theta, max_pos, rms_norm_eps) = extract_model_metadata(&data, path)?;
+    let (architecture, rope_theta, max_pos, rms_norm_eps) = extract_model_metadata(&magic, path)?;
 
     let mut violations: Vec<String> = Vec::new();
     let mut checks_passed = 0usize;
@@ -38,7 +38,7 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
     check_rope_theta(
         architecture.as_deref(),
         rope_theta,
-        &data,
+        &magic,
         &mut violations,
         &mut checks_passed,
     );
@@ -188,13 +188,16 @@ fn check_arch_theta_cross_validation(
 /// Metadata extracted from model file for plausibility validation.
 type ModelMetadata = (Option<String>, Option<f32>, Option<usize>, Option<f32>);
 
-/// Extract model metadata from file bytes (GGUF, APR, or SafeTensors format).
-fn extract_model_metadata(data: &[u8], path: &Path) -> Result<ModelMetadata> {
-    let magic = &data[0..4];
+/// Extract model metadata (GGUF, APR, or SafeTensors format) given the file's magic.
+///
+/// #3750: each format is read to the end of its header and no further: the GGUF header
+/// prefix, the APR header + metadata + tensor index, or SafeTensors' sibling config.json.
+fn extract_model_metadata(magic: &[u8], path: &Path) -> Result<ModelMetadata> {
+    let magic = &magic[0..4];
 
     if magic == b"GGUF" {
-        // GGUF format: use GgufReader
-        let reader = aprender::format::gguf::reader::GgufReader::from_bytes(data.to_vec())
+        // GGUF format: use GgufReader, over the header prefix
+        let reader = super::model_header::gguf_header(path)
             .map_err(|e| CliError::ValidationFailed(format!("GGUF parse failed: {e}")))?;
         let arch = reader.architecture();
         let rope_theta = reader.rope_theta();
@@ -204,7 +207,9 @@ fn extract_model_metadata(data: &[u8], path: &Path) -> Result<ModelMetadata> {
     } else if &magic[0..3] == b"APR" || magic == b"APRN" {
         // APR format: parse v2 header + JSON metadata
         use aprender::format::v2::AprV2Reader;
-        let reader = AprV2Reader::from_bytes(data)
+        let prefix = super::model_header::apr_header_prefix(path)
+            .map_err(|e| CliError::ValidationFailed(format!("APR parse failed: {e}")))?;
+        let reader = AprV2Reader::from_bytes(&prefix)
             .map_err(|e| CliError::ValidationFailed(format!("APR parse failed: {e}")))?;
         let meta = reader.metadata();
         let _ = path;
@@ -317,6 +322,50 @@ fn detect_gibberish(output: &str, test_id: &str) -> Option<String> {
     gibberish_non_ascii_saturation(output, test_id)
         .or_else(|| gibberish_repeated_fragment(output, test_id))
         .or_else(|| gibberish_replacement_density(output, test_id))
+        .or_else(|| gibberish_dominant_character(output, test_id))
+}
+
+/// Signal 4 (#3782): a degenerate completion — 8+ non-space characters, 90%+ of
+/// them the SAME character.
+///
+/// Signal 2 only examines an output once it is 12 bytes long and only in 4-byte
+/// fragments, so everything from 1 to 11 characters of a single repeated
+/// character reached the answer check untouched. That matters because two golden
+/// patterns are a SINGLE character: the greeting case lists `"!"`, and the
+/// arithmetic case's whole expected answer is `"4"`. Substring-any then scores
+/// a dead-logit loop as correct:
+///
+/// * `"!!!!!!!!"` satisfies the greeting case — `!` is token id 0 in the Qwen
+///   vocab, which is exactly what a model with dead logits emits, and #3726's
+///   non-ASCII-to-id-0 shape lands here too.
+/// * `"44444444"` satisfies the ARITHMETIC case, which the issue does not
+///   mention and which is the flagship golden test.
+///
+/// Dropping `"!"` fixes the first and cannot fix the second: `"4"` is the
+/// legitimate answer to 2+2 and has to stay. So the check belongs here, ahead of
+/// the answer check, where it covers every case including ones added later.
+///
+/// The threshold is CRUX's (#3774), deliberately, so the two judges cannot
+/// disagree about what "degenerate" means on the same completion.
+fn gibberish_dominant_character(output: &str, test_id: &str) -> Option<String> {
+    let chars: Vec<char> = output.chars().filter(|c| !c.is_whitespace()).collect();
+    if chars.len() < 8 {
+        return None;
+    }
+    let mut counts: std::collections::HashMap<char, usize> = std::collections::HashMap::new();
+    for c in &chars {
+        *counts.entry(*c).or_insert(0) += 1;
+    }
+    let (dominant, hits) = counts.into_iter().max_by_key(|&(_, n)| n)?;
+    let ratio = hits as f64 / chars.len() as f64;
+    if ratio >= 0.9 {
+        return Some(format!(
+            "{test_id}: degenerate output ({hits}/{} non-space characters are {dominant:?}, {:.0}% >= 90%)",
+            chars.len(),
+            ratio * 100.0
+        ));
+    }
+    None
 }
 
 /// Signal 1: non-ASCII saturation (> 60% of a 16+ char completion).
@@ -381,6 +430,32 @@ fn gibberish_replacement_density(output: &str, test_id: &str) -> Option<String> 
 /// 2. No garbage patterns (BEFORE checking answer)
 /// 3. No BPE artifacts
 /// 4. Contains expected answer
+
+/// Truncate so the reader can TELL (#3904).
+///
+/// This one cost a diagnosis. The golden gate's failure reason is the string a human
+/// reads — hours later, out of a qa receipt, on a machine that cannot re-run the model —
+/// and it was cut at 100 characters with nothing said. On #3914 the receipt read
+///
+///   got: '<s>[INST] What is the capital of France? [/INST]\n\n[S][INST] France is the
+///        capital of France.\n\n[S][IN'
+///
+/// and the `[S]` could not be explained from it, because the explanation was in the
+/// characters the gate had already produced and thrown away. Generation had to be
+/// reproduced locally to read a string this message once held.
+///
+/// NOTE FOR ANYONE CHECKING COVERAGE: `check_no_silent_truncation.sh` did NOT catch this
+/// and cannot. Its scan matches `[:N]` slice syntax, which is Python; Rust truncates with
+/// `.chars().take(N)`. That gap is its own enumeration, not a patch to this fix.
+fn loudly_truncated(s: &str, n: usize) -> String {
+    let kept: String = s.chars().take(n).collect();
+    let dropped = s.chars().count().saturating_sub(n);
+    if dropped == 0 {
+        kept
+    } else {
+        format!("{kept} ... and {dropped} more chars")
+    }
+}
 pub fn verify_output(
     output: &str,
     test_id: &str,
@@ -430,7 +505,7 @@ pub fn verify_output(
                 reason: format!(
                     "{test_id}: Expected one of {:?}, got: '{}'",
                     expected_patterns,
-                    output.chars().take(100).collect::<String>()
+                    loudly_truncated(output, 100)
                 ),
             };
         }
@@ -439,19 +514,38 @@ pub fn verify_output(
     OutputVerification::Pass
 }
 
-/// GH-279-4: Strip `<think>...</think>` blocks from model output.
+/// What the generated text held once complete `<think>...</think>` blocks were
+/// removed: an answer, or a block that never closed.
 ///
-/// Qwen3 thinking mode generates chain-of-thought reasoning inside `<think>` tags
-/// before the actual answer. The golden output gate validates the ANSWER, not the
-/// reasoning. This function strips thinking blocks so `verify_output()` sees only
-/// the final answer.
+/// #3724: the previous shape returned a `String` and, on an unclosed `<think>`,
+/// truncated at it — so a model that was still reasoning when the budget ran out
+/// produced `""`, which `verify_output` then reported as **"Empty output"**. On
+/// lambda that is exactly what qwen3-8b-q4km did: 527 tokens, 15 of prompt plus
+/// the entire 512-token budget, opening with `<think>` and still reasoning at the
+/// cut. The gate reported an empty answer for a model that had answered nothing
+/// *yet*. Those are different failures and the gate must not collapse them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ThinkingSplit {
+    /// Every `<think>` block closed (or there were none). This is the answer to judge.
+    Answer(String),
+    /// A `<think>` opened and no `</think>` followed: the budget ended inside the
+    /// reasoning. Everything after the tag is chain-of-thought, never an answer,
+    /// and the caller must say so by name rather than judge the empty remainder.
+    Unclosed,
+}
+
+/// GH-279-4 / #3724: split model output into the answer and the reasoning.
+///
+/// Qwen3 thinking mode generates chain-of-thought inside `<think>` tags before the
+/// actual answer. The golden output gate validates the ANSWER, not the reasoning.
 ///
 /// Behavior:
-/// - No `<think>` tags → passthrough (no-op for non-thinking models)
-/// - Complete `<think>...</think>` → stripped, answer preserved
-/// - Unclosed `<think>` (tokens exhausted during reasoning) → truncated at `<think>`
-/// - Multiple blocks → all stripped
-pub fn strip_thinking_blocks(output: &str) -> String {
+/// - No `<think>` tags → `Answer`, passthrough (no-op for non-thinking models)
+/// - Complete `<think>...</think>` → `Answer`, blocks removed
+/// - Multiple blocks → `Answer`, all removed
+/// - Unclosed `<think>` (budget exhausted during reasoning) → `Unclosed`
+#[must_use]
+pub fn split_thinking_blocks(output: &str) -> ThinkingSplit {
     let mut result = output.to_string();
     // Strip all complete <think>...</think> blocks
     while let (Some(start), Some(end)) = (result.find("<think>"), result.find("</think>")) {
@@ -461,11 +555,35 @@ pub fn strip_thinking_blocks(output: &str) -> String {
             break;
         }
     }
-    // Handle unclosed <think> (model ran out of tokens during reasoning)
-    if let Some(start) = result.find("<think>") {
-        result.truncate(start);
+    // An opening tag with no closer: the budget ended mid-reasoning (#3724).
+    if result.contains("<think>") {
+        return ThinkingSplit::Unclosed;
     }
-    result.trim().to_string()
+    ThinkingSplit::Answer(result.trim().to_string())
+}
+
+/// The reason a gate reports when generation ended inside a `<think>` block.
+///
+/// #3724 requires the budget to be named: "think block unclosed within N tokens"
+/// tells the reader the model was still reasoning, which "Empty output" did not.
+///
+/// #3907: the closing clause used to read "check that the prompt is the one production
+/// sends for this architecture". That was #3724's own suspect and #3724 REMOVED it —
+/// `golden_prompt_for()` and `apr serve` both call `format_messages(.., Some(arch))`,
+/// one rendering with nothing to diverge from. A reader who followed the hint spent an
+/// hour proving a fixed defect stayed fixed. A DIAGNOSTIC THAT OUTLIVES THE DEFECT IT
+/// NAMES SENDS EVERY FUTURE READER DOWN A DEAD PATH, so it now names the question that
+/// is actually open: whether this model has a measured budget at all.
+#[must_use]
+pub fn unclosed_think_reason(leg: &str, budget: usize, generated_chars: usize) -> String {
+    format!(
+        "{leg}: think block unclosed within {budget} tokens \
+         (the model was still reasoning at the budget; {generated_chars} chars generated, \
+         no answer was reached). This is not an empty answer. Before treating it as a model \
+         defect, check whether {budget} is MEASURED for this model in \
+         contracts/thinking-budgets-v1.yaml or inherited from `default` — the default's basis \
+         is one 8B model (#3907)."
+    )
 }
 
 /// #3711: what the GPU half of one golden case came to.
@@ -477,6 +595,55 @@ pub fn strip_thinking_blocks(output: &str) -> String {
 /// was absence scored as conformance, on the one gate that has to prove every
 /// Q4_K model works on CUDA. Only a leg that never STARTED is not run, and it
 /// says why.
+/// #3870: the CPU leg's verdict, computed BEFORE the GPU message is composed.
+///
+/// It exists so `GpuGoldenLeg::failure_given_cpu` cannot claim anything about
+/// the CPU leg that was not measured. The variants mirror the CPU path's own
+/// outcomes exactly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CpuGoldenVerdict {
+    /// The CPU answer matched the golden patterns.
+    Passed,
+    /// The CPU answer is wrong, and why.
+    WrongAnswer(String),
+    /// Still inside an unclosed `<think>` at the budget, so the CPU leg reached
+    /// no verdict. Not a pass and not a wrong answer.
+    Unclosed {
+        /// The token budget the generation was given.
+        budget: usize,
+        /// How much text it produced without reaching an answer.
+        generated_chars: usize,
+    },
+}
+
+impl CpuGoldenVerdict {
+    /// Judge the CPU leg's text with the same split-then-verify shape
+    /// `GpuGoldenLeg::judge` uses for the GPU's, so the two legs cannot drift
+    /// apart in how they decide.
+    pub(crate) fn judge(
+        output_text: &str,
+        prompt: &str,
+        expected_patterns: &[&str],
+        budget: usize,
+    ) -> Self {
+        // GH-279-4: generate_with_cache returns prompt + generated tokens.
+        let generated = output_text.strip_prefix(prompt).unwrap_or(output_text);
+        let answer = match split_thinking_blocks(generated) {
+            ThinkingSplit::Unclosed => {
+                return Self::Unclosed {
+                    budget,
+                    generated_chars: generated.len(),
+                }
+            }
+            ThinkingSplit::Answer(a) => a,
+        };
+        match verify_output(&answer, "golden_output", expected_patterns) {
+            OutputVerification::Pass => Self::Passed,
+            OutputVerification::Fail { reason } => Self::WrongAnswer(reason),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum GpuGoldenLeg {
     /// Generated on the device, and the answer matches the golden patterns.
@@ -485,6 +652,17 @@ pub(crate) enum GpuGoldenLeg {
     WrongAnswer(String),
     /// CUDA init or generation ERRORED on a cuda build with a device.
     Errored(String),
+    /// Generated on the device and was STILL REASONING when the budget ran out:
+    /// a `<think>` block that never closed. #3724: this used to be truncated away
+    /// and judged as an empty answer, so "the model answered nothing" and "the
+    /// model had not finished thinking" were the same report. It is neither a
+    /// wrong answer nor an error, and it is certainly not a skip.
+    Unclosed {
+        /// The token budget the generation was given.
+        budget: usize,
+        /// How much text it produced without reaching an answer.
+        generated_chars: usize,
+    },
     /// Never started, and why: no cuda feature, no device, not a GGUF, or judged
     /// by the runtime rung.
     NotRun(&'static str),
@@ -495,28 +673,77 @@ impl GpuGoldenLeg {
     pub(crate) fn judge(
         generated: std::result::Result<String, String>,
         expected_patterns: &[&str],
+        budget: usize,
     ) -> Self {
-        match generated {
-            Err(e) => Self::Errored(e),
-            Ok(text) => match verify_output(
-                &strip_thinking_blocks(&text), // GH-279-4
-                "golden_output_gpu",
-                expected_patterns,
-            ) {
-                OutputVerification::Pass => Self::Passed,
-                OutputVerification::Fail { reason } => Self::WrongAnswer(reason),
-            },
+        let text = match generated {
+            Err(e) => return Self::Errored(e),
+            Ok(text) => text,
+        };
+        // GH-279-4 / #3724: split before judging. A block that never closed is its
+        // own outcome; judging the remainder would report "Empty output" for a
+        // model that had not finished reasoning.
+        let answer = match split_thinking_blocks(&text) {
+            ThinkingSplit::Unclosed => {
+                return Self::Unclosed {
+                    budget,
+                    generated_chars: text.len(),
+                }
+            }
+            ThinkingSplit::Answer(answer) => answer,
+        };
+        match verify_output(&answer, "golden_output_gpu", expected_patterns) {
+            OutputVerification::Pass => Self::Passed,
+            OutputVerification::Fail { reason } => Self::WrongAnswer(reason),
         }
     }
 
     /// `Some(reason)` fails the golden gate: a wrong answer, or an error.
-    pub(crate) fn failure(&self) -> Option<String> {
+    /// #3870: the GPU leg's failure message, composed WITH the CPU leg's verdict
+    /// in hand.
+    ///
+    /// This used to be `failure(&self)` and it hardcoded "(CPU passed)" into the
+    /// `WrongAnswer` arm. Nothing measured that. Worse, `validate_golden_test_case`
+    /// returned on a GPU failure BEFORE the CPU pattern check ran, so the claim
+    /// was made about a leg that had not been judged at all.
+    ///
+    /// That inverted a release verdict: `tinyllama-1.1b-chat-v1.0.Q4_K_M` was
+    /// reported as a CUDA correctness defect blocking the tag under the
+    /// all-Q4_K-on-CUDA rule, when it fails IDENTICALLY on CPU — the same
+    /// `[S][INST]` loop, no "Paris", on both backends. One measurement and one
+    /// string, read as two measurements.
+    ///
+    /// Taking the CPU verdict by argument is the point: the claim cannot be
+    /// composed without it, so the ordering defect cannot return by someone
+    /// reintroducing an early return.
+    pub(crate) fn failure_given_cpu(&self, cpu: &CpuGoldenVerdict) -> Option<String> {
         match self {
             Self::Passed | Self::NotRun(_) => None,
-            Self::WrongAnswer(reason) => Some(format!("GPU output failed (CPU passed): {reason}")),
+            Self::WrongAnswer(reason) => Some(match cpu {
+                // The #3477 signature, and now actually measured: GPU wrong,
+                // CPU right. That discrimination is the reason this gate exists,
+                // so it keeps its exact wording.
+                CpuGoldenVerdict::Passed => format!("GPU output failed (CPU passed): {reason}"),
+                CpuGoldenVerdict::WrongAnswer(cpu_reason) => format!(
+                    "GPU output failed AND CPU failed too, so this is not a GPU-specific \
+                     defect — CPU: {cpu_reason} — GPU: {reason}"
+                ),
+                CpuGoldenVerdict::Unclosed { budget, .. } => format!(
+                    "GPU output failed and the CPU leg was still reasoning at its \
+                     {budget}-token budget, so there is no CPU verdict to compare \
+                     against — GPU: {reason}"
+                ),
+            }),
             Self::Errored(e) => Some(format!(
                 "GPU golden generation ERRORED on a cuda build with a CUDA device: a broken \
                  GPU, not a skip (#3711): {e}"
+            )),
+            Self::Unclosed {
+                budget,
+                generated_chars,
+            } => Some(unclosed_think_reason(
+                "golden_output_gpu",
+                *budget,
+                *generated_chars,
             )),
         }
     }
@@ -566,11 +793,13 @@ pub(crate) fn runtime_golden_backend(
         (false, Some(why)) => Ok(format!(
             "CPU: the dispatch reported used_gpu=false, and the GPU was not expected ({why})"
         )),
-        (false, None) => Err("the GPU should have served this model (a cuda build, a CUDA \
+        (false, None) => Err(
+            "the GPU should have served this model (a cuda build, a CUDA \
              device, an architecture the GPU runs) and the dispatch reported CPU: the GPU \
              forward failed and fell back, and its reason is on stderr. A broken GPU, not a \
              pass (#3711)"
-            .to_string()),
+                .to_string(),
+        ),
     }
 }
 
@@ -606,13 +835,24 @@ fn validate_gpu_golden_output(
     let model = OwnedQuantizedModel::from_mapped(mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
     let generated = match OwnedQuantizedModelCuda::new(model, 0) {
-        Ok(mut cuda_model) => cuda_model
-            .generate_gpu_resident(prompt_tokens, gen_config)
-            .map(|gpu_tokens| gguf.decode(&gpu_tokens))
-            .map_err(|e| format!("GPU generation: {e}")),
+        Ok(cuda_model) => qa_dense_generate(
+            &mut qa_dense_cuda(cuda_model),
+            prompt_tokens,
+            gen_config,
+            true,
+        )
+        .map(|gpu_tokens| gguf.decode(&gpu_tokens))
+        .map_err(|e| format!("GPU generation: {e}")),
         Err(e) => Err(format!("CUDA init on device 0: {e}")),
     };
-    Ok(GpuGoldenLeg::judge(generated, expected_patterns))
+    // #3711 + #3724: ONE typed leg. The budget is passed so the leg can
+    // distinguish "still reasoning when the budget ran out" from "answered
+    // wrongly" and from "never started" — three outcomes, not two.
+    Ok(GpuGoldenLeg::judge(
+        generated,
+        expected_patterns,
+        gen_config.max_tokens,
+    ))
 }
 
 /// Note, in a verbose human-readable run, that the GPU half of the golden gate
@@ -651,9 +891,13 @@ fn note_gpu_golden_skip(config: &QaConfig, message: &str) {
 /// (the same reason `golden_output_apr` does it). Stop tokens come from the
 /// model's own EOS, which `run_gguf_inference` merges in.
 ///
-/// Returns the text and the dispatch's own `used_gpu` (#3711).
+/// Returns the text, the dispatch's own `used_gpu` (#3711) and the generated token count (#3961).
 #[cfg(feature = "inference")]
-fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result<(String, bool)> {
+fn golden_output_runtime(
+    path: &Path,
+    prompt: &str,
+    max_tokens: usize,
+) -> Result<(String, bool, usize)> {
     use realizar::gguf::MappedGGUFModel;
     use realizar::{run_inference, InferenceConfig};
 
@@ -674,7 +918,7 @@ fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result
         .with_top_k(1);
     let result = run_inference(&infer_config)
         .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
-    Ok((result.text, result.used_gpu))
+    Ok((result.text, result.used_gpu, result.generated_token_count))
 }
 
 /// Gate 1 for an architecture the dense loader refuses: the same golden cases,
@@ -702,7 +946,17 @@ fn run_golden_output_gate_runtime(
         );
     }
 
-    let test_cases = golden_test_cases();
+    // #3724: this leg serves the hybrid rungs, and it asks them the way production
+    // asks them too — same detector, keyed on `general.architecture`. Reading the
+    // header is cheap; a file that will not map is left to the generation call
+    // below, which reports the mapping error properly.
+    // #3990: the header map is kept, because the thinking-ON leg renders the model's own template.
+    let mapped_header = realizar::gguf::MappedGGUFModel::from_path(path).ok();
+    let architecture = mapped_header
+        .as_ref()
+        .and_then(|m| m.model.architecture())
+        .map(String::from);
+    let test_cases = golden_test_cases_for(architecture.as_deref());
     // GH-279-4: thinking models need room for <think>...</think> + the answer.
     let golden_max_tokens = config.max_tokens.max(512);
     let gpu_not_run = if cpu_only {
@@ -713,7 +967,8 @@ fn run_golden_output_gate_runtime(
 
     let mut served_by = String::new();
     for (prompt, expected_patterns) in &test_cases {
-        let (output_text, used_gpu) = golden_output_runtime(path, prompt, golden_max_tokens)?;
+        let (output_text, used_gpu, _) =
+            golden_output_runtime(path, prompt.as_str(), golden_max_tokens)?;
         // #3711: the backend first — a GPU that fell back is a FAIL even when the CPU's answer is right
         match runtime_golden_backend(used_gpu, gpu_not_run) {
             Ok(label) => served_by = label,
@@ -727,7 +982,25 @@ fn run_golden_output_gate_runtime(
                 ))
             }
         }
-        let answer_text = strip_thinking_blocks(&output_text);
+        // GH-279-4 / #3724: and then the answer — an unclosed block is reported by
+        // name on this leg too. The hybrid rungs run here, and a truncating strip
+        // would hide the same defect the dense leg just learned to name.
+        let answer_text = match split_thinking_blocks(&output_text) {
+            ThinkingSplit::Answer(answer) => answer,
+            ThinkingSplit::Unclosed => {
+                return Ok(GateResult::failed(
+                    "golden_output",
+                    &unclosed_think_reason(
+                        "golden_output_runtime",
+                        golden_max_tokens,
+                        output_text.len(),
+                    ),
+                    None,
+                    None,
+                    start.elapsed(),
+                ));
+            }
+        };
         if let OutputVerification::Fail { reason } =
             verify_output(&answer_text, "golden_output_runtime", expected_patterns)
         {
@@ -741,16 +1014,135 @@ fn run_golden_output_gate_runtime(
         }
     }
 
+    // #3724 done_when 3: the hybrid rungs are thinking-capable too, and this leg
+    // is where they are judged.
+    let on_leg = match runtime_thinking_on_leg(
+        path,
+        architecture.as_deref(),
+        mapped_header.as_ref().map(|m| &m.model),
+        gpu_not_run,
+        start,
+    )? {
+        Ok(on_leg) => on_leg,
+        Err(failed) => return Ok(failed),
+    };
+
     Ok(GateResult::passed(
         "golden_output",
         &format!(
-            "{} golden test cases passed through the runtime entry point (served by {served_by})",
+            "{} golden test cases passed through the runtime entry point (served by {served_by}){on_leg}",
             test_cases.len(),
         ),
         Some(test_cases.len() as f64),
         Some(test_cases.len() as f64),
         start.elapsed(),
     ))
+}
+
+/// #3724 done_when 3: the thinking-ON leg of the runtime golden gate. `Ok(suffix)` is the
+/// pass message's ON-leg clause (empty when the model has no thinking-on case), and
+/// `Err(failed)` ends the gate. Extracted from `run_golden_output_gate_runtime` unchanged,
+/// to keep that function under the complexity ratchet.
+fn runtime_thinking_on_leg(
+    path: &Path,
+    architecture: Option<&str>,
+    header: Option<&realizar::gguf::GGUFModel>,
+    gpu_not_run: Option<&'static str>,
+    start: Instant,
+) -> Result<std::result::Result<String, GateResult>> {
+    // #3724 done_when 3: the hybrid rungs are thinking-capable too, and this leg
+    // is where they are judged.
+    let on_case = match thinking_on_case_for_model(architecture, header) {
+        Ok(c) => c,
+        Err(reason) => {
+            return Ok(Err(GateResult::failed(
+                "golden_output",
+                &format!("golden_output_thinking_on: {reason}"),
+                None,
+                None,
+                start.elapsed(),
+            )))
+        }
+    };
+    if let Some((on_prompt, on_patterns)) = on_case {
+        // #3907 WIRING (#3907 landed the resolver and reached only the DENSE leg at
+        // golden_output.rs:795; this is the HYBRID leg, and it kept passing the raw
+        // `THINKING_ON_BUDGET` const to BOTH the generation and the judging). Measured
+        // before this change: APR_THINKING_ON_BUDGET=8192, =512 and unset all produced
+        // byte-identical output — "within 2048 tokens ... 8901 chars" — and =abc, which
+        // the resolver must reject as "is not a token count", changed nothing. The
+        // override was compiled in and unreachable. So the one model the budget table
+        // was written for was the one model that could not reach it.
+        let model_file = path
+            .file_name()
+            .map(|f| f.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let (on_budget, budget_basis) = match thinking_on_budget_for(&model_file) {
+            Ok(v) => v,
+            Err(reason) => {
+                return Ok(Err(GateResult::failed(
+                    "golden_output",
+                    &format!("golden_output_thinking_on: {reason}"),
+                    None,
+                    None,
+                    start.elapsed(),
+                )))
+            }
+        };
+        let (on_text, on_used_gpu, on_tokens) =
+            golden_output_runtime(path, on_prompt.as_str(), on_budget)?;
+        let generated = on_text.strip_prefix(on_prompt.as_str()).unwrap_or(&on_text);
+        let judged = on_leg_judged_text(&on_prompt, generated);
+        let generated = judged.as_str();
+        if let Some(reason) = thinking_on_leg_failure(
+            generated,
+            &on_patterns,
+            on_budget,
+            on_used_gpu,
+            gpu_not_run,
+            &budget_basis,
+        ) {
+            return Ok(Err(GateResult::failed(
+                "golden_output",
+                &reason,
+                None,
+                None,
+                start.elapsed(),
+            )));
+        }
+        // #3961: a pass says what the ON leg did -- its own backend, how much it reasoned
+        // and how long it ran. `think_body_chars` is the number that told the 0.8B model
+        // that skipped reasoning (0) from the controls that did (445-2149).
+        return Ok(Ok(format!(
+            "; thinking-ON leg served by {}, think_body_chars={}, generated_tokens={on_tokens}",
+            if on_used_gpu { "GPU" } else { "CPU" },
+            think_body_chars(generated),
+        )));
+    }
+    Ok(Ok(String::new()))
+}
+
+/// #3961: the hybrid thinking-ON leg's whole verdict, pure so a table can drive it.
+#[cfg(feature = "inference")]
+pub(crate) fn thinking_on_leg_failure(
+    generated: &str,
+    on_patterns: &[&str],
+    on_budget: usize,
+    on_used_gpu: bool,
+    gpu_not_run: Option<&'static str>,
+    budget_basis: &str,
+) -> Option<String> {
+    // The backend first, as on the OFF cases: a GPU-expected leg the CPU served is a FAIL
+    // even when the CPU's answer is right. The ON leg used to skip this ("the backend was
+    // already judged on the OFF cases") -- an assumption nothing checked, on the longest
+    // generation the gate runs, the one most exposed to a mid-run fallback (#3961).
+    if let Err(failure) = runtime_golden_backend(on_used_gpu, gpu_not_run) {
+        return Some(format!(
+            "golden_output_thinking_on: {failure} [budget basis — {budget_basis}]"
+        ));
+    }
+    judge_thinking_on_output(generated, &on_patterns, on_budget)
+        .map(|r| format!("{r} [budget basis — {budget_basis}]"))
 }
 
 /// Without `inference` there is no runtime to certify.
@@ -807,4 +1199,266 @@ fn golden_output_apr(path: &Path, prompt: &str, max_tokens: usize) -> Result<(Ve
         .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
 
     Ok((result.tokens, result.text))
+}
+
+/// #3782: a degenerate completion is not a correct answer, on ANY golden case.
+///
+/// The issue names the greeting case's `"!"`. Measured against all three cases
+/// first, the hole was wider: the ARITHMETIC case's whole expected answer is the
+/// single character `"4"`, so `"44444444"` scored correct on the flagship golden
+/// test and nothing in the issue mentions it. `"4"` cannot be dropped the way
+/// `"!"` can — it is the right answer — so the guard has to be general.
+///
+/// Boundary measured on the pre-fix gate: `"!"` repeated 1..=11 all PASSED;
+/// 12 and up were caught by `gibberish_repeated_fragment`, whose
+/// `bytes.len() >= 12` / 4-byte-fragment shape is exactly the gap.
+#[cfg(test)]
+mod pmat3782_degenerate_is_not_an_answer {
+    use super::{verify_output, OutputVerification};
+
+    fn rejected(output: &str, patterns: &[&str]) -> bool {
+        matches!(
+            verify_output(output, "PMAT-3782", patterns),
+            OutputVerification::Fail { .. }
+        )
+    }
+
+    /// The three live golden cases, with the degenerate completion that the
+    /// substring-any check would otherwise score as correct for each.
+    /// `(case, patterns, degenerate output, why it was accepted)`
+    const DEGENERATE: &[(&str, &[&str], &str, &str)] = &[
+        (
+            "arithmetic",
+            &["4"],
+            "44444444",
+            "the expected answer IS a single character, so any run of it matches — \
+             the flagship golden case, and not mentioned in #3782",
+        ),
+        (
+            "arithmetic (11, just under the old 12-byte floor)",
+            &["4"],
+            "44444444444",
+            "gibberish_repeated_fragment needs 12 bytes; this is 11",
+        ),
+        (
+            "greeting",
+            &["Hello", "Hi", "hey", "hello", "well"],
+            "!!!!!!!!",
+            "#3782 as filed: `!` is token id 0 in the Qwen vocab, what dead logits emit",
+        ),
+    ];
+
+    /// Every case at once, so a regression names each golden case it re-opened.
+    #[test]
+    fn no_golden_case_accepts_a_degenerate_completion() {
+        let accepted: Vec<String> = DEGENERATE
+            .iter()
+            .filter(|(_, pats, out, _)| !rejected(out, pats))
+            .map(|(case, _, out, why)| format!("\n  - {case}: {out:?} scored CORRECT. {why}"))
+            .collect();
+        assert!(
+            accepted.is_empty(),
+            "#3782 REGRESSION: {} of {} golden cases accept a degenerate completion, \
+             so a model emitting a dead-logit loop passes apr qa's golden_output:{}",
+            accepted.len(),
+            DEGENERATE.len(),
+            accepted.join("")
+        );
+    }
+
+    /// A token-0 loop at the gate's real generation length.
+    #[test]
+    fn a_token_zero_loop_is_rejected() {
+        for n in [8usize, 12, 32, 64] {
+            assert!(
+                rejected(&"!".repeat(n), &["Hello", "Hi", "hey", "hello", "well"]),
+                "#3782: a {n}-token loop of `!` (token id 0) scored correct"
+            );
+        }
+    }
+
+    /// The over-correction: a real answer must still pass. A guard that rejects
+    /// everything is not a guard, and the arithmetic case answers with ONE
+    /// character, which is the case most at risk from a careless length rule.
+    #[test]
+    fn real_answers_still_pass() {
+        let ok: &[(&str, &[&str])] = &[
+            ("4", &["4"]),
+            ("2 + 2 = 4", &["4"]),
+            ("The answer is 4.", &["4"]),
+            ("Hello! How are you doing today?", &["Hello", "Hi"]),
+            ("The capital of France is Paris.", &["Paris"]),
+            // 90% is a floor, not a ceiling: heavy but legitimate punctuation.
+            ("Hello!!!!!!!!", &["Hello"]),
+        ];
+        let wrongly: Vec<String> = ok
+            .iter()
+            .filter(|(out, pats)| rejected(out, pats))
+            .map(|(out, _)| format!("\n  - {out:?}"))
+            .collect();
+        assert!(
+            wrongly.is_empty(),
+            "#3782 OVER-CORRECTION: the degenerate guard rejected {} legitimate \
+             answer(s):{}",
+            wrongly.len(),
+            wrongly.join("")
+        );
+    }
+}
+
+/// #3904: the golden gate's failure reason must say what it dropped.
+#[cfg(all(test, feature = "inference"))]
+mod thinking_on_leg_3961 {
+    use super::thinking_on_leg_failure;
+
+    const REASONED: &str = "<think>two plus two is four</think>2 + 2 = 4.";
+
+    /// #3961 MUST-RED: the ON leg fell back to the CPU where the GPU was expected. The OFF
+    /// cases judged THEIR backend; this leg is the longest generation the gate runs and was
+    /// judged on its text alone, so a CPU-served answer passed as a GPU cell (#3922 shape).
+    #[test]
+    fn an_on_leg_that_fell_back_is_red() {
+        let got = thinking_on_leg_failure(REASONED, &["4"], 2048, false, None, "row qwen35")
+            .expect("a GPU-expected ON leg the CPU served is not a pass");
+        assert!(got.contains("golden_output_thinking_on"), "{got}");
+        assert!(got.contains("fell back"), "{got}");
+    }
+
+    /// Positive controls: GPU-served, and CPU where the GPU was never expected.
+    #[test]
+    fn an_on_leg_on_its_expected_backend_passes() {
+        assert_eq!(
+            thinking_on_leg_failure(REASONED, &["4"], 2048, true, None, "b"),
+            None
+        );
+        assert_eq!(
+            thinking_on_leg_failure(REASONED, &["4"], 2048, false, Some("no cuda build"), "b"),
+            None
+        );
+    }
+
+    /// #3948 quorum item 4: an ON-leg failure names the budget basis, as the dense leg's
+    /// does (golden_output.rs), so "closed EMPTY within 2048" cannot cite the wrong row.
+    #[test]
+    fn an_on_leg_failure_names_its_budget_basis() {
+        let got = thinking_on_leg_failure(
+            "<think>two plus two is four</think>It is five.",
+            &["4"],
+            2048,
+            true,
+            None,
+            "row Qwen3.5-0.8B-Q4_K_M",
+        )
+        .expect("a wrong answer fails");
+        assert!(
+            got.contains("[budget basis — row Qwen3.5-0.8B-Q4_K_M]"),
+            "{got}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod loud_truncation_3904 {
+    use super::*;
+
+    #[test]
+    fn a_short_reason_is_untouched() {
+        assert_eq!(
+            loudly_truncated("The capital of France is Paris.", 100),
+            "The capital of France is Paris."
+        );
+    }
+
+    /// Exactly at the bound is NOT truncated, so the marker never appears on a complete
+    /// string. An off-by-one here would make every full-length output look decapitated.
+    #[test]
+    fn exactly_the_bound_says_nothing() {
+        let s = "x".repeat(100);
+        assert_eq!(loudly_truncated(&s, 100), s);
+    }
+
+    /// THE ROW. A bare `.chars().take(100)` passes every assertion above and fails this
+    /// one: it produces a decapitated string indistinguishable from a complete short one.
+    #[test]
+    fn a_cut_reason_says_how_much_it_dropped() {
+        let s = "y".repeat(137);
+        let got = loudly_truncated(&s, 100);
+        assert!(got.starts_with(&"y".repeat(100)), "{got}");
+        assert!(
+            got.contains("and 37 more chars"),
+            "a reader cannot tell a cut string from a complete one: {got}"
+        );
+    }
+
+    /// Counted in CHARS, not bytes — the reason carries model output, which is not ASCII.
+    #[test]
+    fn the_count_is_chars_not_bytes() {
+        let s = "é".repeat(150);
+        let got = loudly_truncated(&s, 100);
+        assert!(got.contains("and 50 more chars"), "{got}");
+    }
+
+    /// End to end through the message the receipt actually carries.
+    #[test]
+    fn the_golden_failure_reason_is_loud() {
+        // Varied, non-degenerate text: a long run of one character trips the
+        // gibberish check first and never reaches the pattern branch, so a fixture
+        // built from `"z".repeat(300)` would exercise a different failure entirely.
+        let long: String = "<s>[INST] q [/INST] France is a country in western Europe \
+            whose largest city and seat of government has been the subject of this \
+            question for as long as anyone has been asking models about it at all."
+            .to_string();
+        assert!(long.chars().count() > 100, "fixture must exceed the bound");
+        let v = verify_output(&long, "t", &["Paris"]);
+        match v {
+            OutputVerification::Fail { reason } => assert!(
+                reason.contains("more chars"),
+                "the one string a human reads was cut silently: {reason}"
+            ),
+            other => panic!("expected Fail, got {other:?}"),
+        }
+    }
+
+    /// #3907 wiring: BOTH hybrid ON-leg sites take the resolver's budget.
+    ///
+    /// A source read, because the behavioural discriminator needs a GPU: measured on
+    /// lambda with `APR_THINKING_ON_BUDGET=256`, both-routed reports "within 256
+    /// tokens ... 1105 chars" and a JUDGING-unrouted mutant reports "within 2048
+    /// tokens ... 1105 chars" — the same generation, a misreported budget. A single
+    /// test touching only one site cannot tell a one-site fix from a two-site one,
+    /// and "a fix reaching one of N sites" is the defect this commit repairs.
+    #[test]
+    fn both_hybrid_on_leg_sites_take_the_resolved_budget() {
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/commands/output_verification.rs"
+        ))
+        .expect("own source readable");
+
+        // EVERY assertion scans the code ABOVE the test module, never the whole file.
+        // The first draft did not, and all three positive assertions matched their OWN
+        // text inside this test — so the guard passed with BOTH sites unrouted. Caught
+        // by mutating it rather than by reading it: a source-reading guard that scans
+        // itself is satisfied by its own assertion strings, which is the vacuous shape
+        // this commit exists to remove one level down.
+        let code = src.split("#[cfg(test)]").next().unwrap_or(&src);
+
+        assert!(
+            code.contains("golden_output_runtime(path, on_prompt.as_str(), on_budget)"),
+            "the hybrid ON leg's GENERATION must take the resolved budget, not a literal (#3907)"
+        );
+        assert!(
+            code.contains("judge_thinking_on_output(generated, &on_patterns, on_budget)"),
+            "the hybrid ON leg's JUDGING must take the resolved budget, not a literal (#3907)"
+        );
+        assert!(
+            code.contains("thinking_on_budget_for(&model_file)"),
+            "the hybrid ON leg must resolve through thinking_on_budget_for, which carries the \
+             per-model row, its refusal path and the APR_THINKING_ON_BUDGET probe (#3907)"
+        );
+        assert!(
+            !code.contains("THINKING_ON_BUDGET)"),
+            "no ON-leg site may pass the old THINKING_ON_BUDGET const — it is deleted (#3907)"
+        );
+    }
 }

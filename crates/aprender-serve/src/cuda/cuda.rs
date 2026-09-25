@@ -37,3 +37,4 @@ impl CudaKernels {
 }
 
 include!("kernels_generate_gemm_cuda.rs");
+include!("gemv_entry_name_tests_3477.rs");

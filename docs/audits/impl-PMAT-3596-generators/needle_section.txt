@@ -1,0 +1,144 @@
+//! PMAT-3596 (#3596): batched (chunked) prefill for the Qwen3.5 hybrid on CUDA.
+//!
+//! [`Qwen35CudaModel::forward_single`] advances one token: every projection is a GEMV
+//! that reads the whole weight for one activation row, every position runs the
+//! `lm_head` and downloads a vocabulary of logits, and full attention walks the cache
+//! with one block per head. Looping it over a prompt is what made a ~5.7k-token brief
+//! take 235 s on the 9B (#3596). [`Qwen35CudaModel::prefill`] runs the same layer
+//! programs over `T` tokens at a time:
+//!
+//! - every projection is ONE `dequant → f32 SGEMM` over the chunk's `T` rows
+//!   (`CudaExecutor::qwen35_project_rows`, f32 end to end — see that function);
+//! - the Gated `DeltaNet` recurrence is ONE launch of the chunk-resident scan, which is
+//!   bitwise-equal to `T` per-token launches (the #3596 ruling's "chunked form");
+//! - causal conv1d, the L2 norm, the gates and the partial RoPE run over rows with the
+//!   same arithmetic as their per-token twins; the norms, splits and gates that are
+//!   contiguous per head run as `T × heads` heads through the per-token wrappers;
+//! - full attention is QKᵀ → causal softmax → PV with cuBLAS over the resident cache,
+//!   after this chunk's K/V rows are written into it;
+//! - only the LAST row of the LAST chunk goes through the output norm and `lm_head`.
+//!
+//! The per-layer op order is `deltanet_layer_inner` / `attention_layer_inner`,
+//! verbatim; this file only changes how many rows each op sees. The state
+//! (`conv`, `ssm`, `kv`, `kv_len`) is left exactly where `T` calls of `forward_single`
+//! would leave it, so decode continues from it unchanged.
+
+use super::super::{RealizarError, Result};
+use super::{gpu_err, CudaLayer, Qwen35CudaDims, Qwen35CudaModel, Qwen35CudaState};
+use crate::gguf::forward_qwen35::{Qwen35Model, Qwen35OwnedLayer};
+use trueno_gpu::driver::GpuBuffer;
+
+/// Rows per chunk when the attention scores do not bound it lower.
+pub const PREFILL_MAX_CHUNK_ROWS: usize = 512;
+
+/// Rows per chunk never go below this, however long the context: a chunk of a few
+/// rows is back to GEMV-shaped work.
+pub const PREFILL_MIN_CHUNK_ROWS: usize = 16;
+
+/// Bytes the attention scores of one KV group may take (`heads_per_kv × T × L × 4`).
+pub const PREFILL_SCORES_BUDGET_BYTES: usize = 1 << 30;
+
+/// A non-owning device view: never frees what it points at.
+struct View(std::mem::ManuallyDrop<GpuBuffer<f32>>);
+
+impl View {
+    fn at(ptr: u64, elems: usize) -> Self {
+        // SAFETY: every call site passes a pointer into a live allocation with at
+        // least `elems` floats after it, and `ManuallyDrop` means the view never frees.
+        Self(std::mem::ManuallyDrop::new(unsafe {
+            GpuBuffer::<f32>::from_raw_parts(ptr, elems)
+        }))
+    }
+}
+
+impl std::ops::Deref for View {
+    type Target = GpuBuffer<f32>;
+    fn deref(&self) -> &GpuBuffer<f32> {
+        &self.0
+    }
+}
+
+/// Device buffers for one chunk of `rows` rows, allocated once per [`prefill`] call.
+///
+/// [`prefill`]: Qwen35CudaModel::prefill
+struct PrefillBuffers {
+    rows: usize,
+    /// `[rows][hidden]` — the residual stream.
+    x: GpuBuffer<f32>,
+    normed: GpuBuffer<f32>,
+    post_normed: GpuBuffer<f32>,
+    /// `[rows][hidden]` — the output of `ssm_out` / `attn_output` / `ffn_down`.
+    proj: GpuBuffer<f32>,
+    // Gated DeltaNet
+    conv_in: GpuBuffer<f32>,
+    conv_out: GpuBuffer<f32>,
+    alpha_raw: GpuBuffer<f32>,
+    beta_raw: GpuBuffer<f32>,
+    dt: GpuBuffer<f32>,
+    beta: GpuBuffer<f32>,
+    gate: GpuBuffer<f32>,
+    out_h: GpuBuffer<f32>,
+    ssm_out_in: GpuBuffer<f32>,
+    // full attention
+    q_full: GpuBuffer<f32>,
+    q: GpuBuffer<f32>,
+    q_normed: GpuBuffer<f32>,
+    attn_gate: GpuBuffer<f32>,
+    k_raw: GpuBuffer<f32>,
+    attn_out_in: GpuBuffer<f32>,
+    scores: GpuBuffer<f32>,
+    // FFN
+    ffn_gate: GpuBuffer<f32>,
+    ffn_up: GpuBuffer<f32>,
+    ffn_act: GpuBuffer<f32>,
+}
+
+/// Rows per chunk for a prompt ending at `total_positions` — one formula for the
+/// running prefill and the pre-load capacity plan.
+fn chunk_rows_for(d: Qwen35CudaDims, total_positions: usize) -> usize {
+    let hpk = (d.num_heads / d.num_kv_heads.max(1)).max(1) as usize;
+    let by_scores = PREFILL_SCORES_BUDGET_BYTES / (4 * hpk * total_positions.max(1));
+    by_scores.clamp(PREFILL_MIN_CHUNK_ROWS, PREFILL_MAX_CHUNK_ROWS)
+}
+
+/// Device bytes a prefill ending at `total_positions` allocates beyond weights and
+/// state: its chunk buffers, the attention scores and the f32 dequant scratch.
+fn workspace_bytes_for(
+    d: Qwen35CudaDims,
+    largest_projection: usize,
+    total_positions: usize,
+) -> usize {
+    let rows = chunk_rows_for(d, total_positions);
+    let hpk = (d.num_heads / d.num_kv_heads.max(1)).max(1) as usize;
+    let q_dim = (d.num_heads * d.attn_head_dim) as usize;
+    let kv_dim = (d.num_kv_heads * d.attn_head_dim) as usize;
+    let (hidden, inter) = (d.hidden_dim as usize, d.intermediate_dim as usize);
+    let (conv, v, nv) = (
+        d.conv_dim as usize,
+        d.v_dim as usize,
+        d.num_v_heads as usize,
+    );
+    let per_row = 4 * hidden
+        + 2 * conv
+        + 4 * nv
+        + 3 * v
+        + 2 * q_dim // q_full
+        + 4 * q_dim // q, q_normed, attn_gate, attn_out_in
+        + kv_dim
+        + 3 * inter;
+    let scores = hpk * rows * total_positions;
+    4 * (rows * per_row + scores + largest_projection)
+}
+
+/// Bytes an [`OwnedQuantizedTensor`](crate::gguf::OwnedQuantizedTensor) occupies once
+/// uploaded, and its `n x k`.
+fn quant_bytes(t: &crate::gguf::OwnedQuantizedTensor) -> (u64, usize) {
+    (t.data.len() as u64, t.out_dim * t.in_dim)
+}
+
+impl<'a> Qwen35CudaModel<'a> {
+    /// Rows per prefill chunk for a prompt that ends at `total_positions`.
+    ///
+    /// The scores of one KV group are `heads_per_kv × T × L` floats and must fit
+    /// [`PREFILL_SCORES_BUDGET_BYTES`] at the LAST chunk, where `L` is largest; the
+    /// chunk size is fixed for the whole call so every chunk bu

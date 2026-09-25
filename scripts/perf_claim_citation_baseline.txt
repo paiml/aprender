@@ -128,7 +128,6 @@ crates/aprender-serve/src/apr/special_tokens.rs:63
 crates/aprender-serve/src/brick/brick.rs:316
 crates/aprender-serve/src/brick/brick_impls.rs:316
 crates/aprender-serve/src/brick/brick_impls.rs:341
-crates/aprender-serve/src/cuda/executor/gemm_tiled.rs:154
 crates/aprender-serve/src/cuda/executor/layer_norm_gpu.rs:139
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/mod.rs:618
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/mod.rs:7
@@ -146,8 +145,6 @@ crates/aprender-serve/src/gguf/inference/forward/batch_size.rs:13
 crates/aprender-serve/src/gguf/inference/forward/batch_size.rs:134
 crates/aprender-serve/src/gguf/inference/forward/forward_fused_q4k.rs:4
 crates/aprender-serve/src/gpu/mod.rs:33
-crates/aprender-serve/src/gpu/scheduler/core.rs:126
-crates/aprender-serve/src/gpu/scheduler/core.rs:98
 crates/aprender-serve/src/gpu/scheduler/ops.rs:57
 crates/aprender-serve/src/quantize/fused_k.rs:190
 crates/aprender-serve/src/quantize/fused_k.rs:266

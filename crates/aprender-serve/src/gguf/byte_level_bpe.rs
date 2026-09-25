@@ -306,16 +306,7 @@ impl ByteLevelBpe {
         let merges: Vec<&str> = string_array(metadata, "tokenizer.ggml.merges")
             .ok_or(ByteLevelBpeRefusal::MissingMerges)?
             .collect();
-        let token_types: Vec<i32> = match metadata.get("tokenizer.ggml.token_type") {
-            Some(GGUFValue::Array(values)) => values
-                .iter()
-                .map(|v| match v {
-                    GGUFValue::Int32(t) => *t,
-                    _ => 1,
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
+        let token_types = token_types(metadata);
 
         let mut hasher = DefaultHasher::new();
         pre.hash(&mut hasher);
@@ -379,25 +370,7 @@ impl ByteLevelBpe {
             *id = token_to_id.get(glyphs[b].to_string().as_str()).copied();
         }
 
-        let mut specials: Vec<(String, u32)> = if token_types.len() == vocab.len() {
-            vocab
-                .iter()
-                .zip(token_types)
-                .enumerate()
-                .filter(|(_, (_, t))| SPECIAL_TOKEN_TYPES.contains(t))
-                .map(|(id, (text, _))| (text.clone(), id as u32))
-                .collect()
-        } else {
-            // No usable token types: the `<|...|>` convention this module replaced (GH-320).
-            vocab
-                .iter()
-                .enumerate()
-                .filter(|(_, t)| t.starts_with("<|") && t.ends_with("|>"))
-                .map(|(id, t)| (t.clone(), id as u32))
-                .collect()
-        };
-        specials.retain(|(t, _)| !t.is_empty());
-        specials.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then(a.1.cmp(&b.1)));
+        let specials = special_tokens(vocab, token_types);
 
         Self {
             pre,
@@ -426,34 +399,8 @@ impl ByteLevelBpe {
         ids
     }
 
-    /// `tokenizer_st_partition`: each special token, longest first, claims its occurrences
-    /// in the raw fragments that remain.
     fn partition_specials<'t>(&self, text: &'t str) -> Vec<Fragment<'t>> {
-        let mut fragments = vec![Fragment::Raw(text)];
-        for (special, id) in &self.specials {
-            if !text.contains(special.as_str()) {
-                continue;
-            }
-            let mut next = Vec::with_capacity(fragments.len());
-            for fragment in fragments {
-                let Fragment::Raw(mut raw) = fragment else {
-                    next.push(fragment);
-                    continue;
-                };
-                while let Some(at) = raw.find(special.as_str()) {
-                    if at > 0 {
-                        next.push(Fragment::Raw(&raw[..at]));
-                    }
-                    next.push(Fragment::Special(*id));
-                    raw = &raw[at + special.len()..];
-                }
-                if !raw.is_empty() {
-                    next.push(Fragment::Raw(raw));
-                }
-            }
-            fragments = next;
-        }
-        fragments
+        partition_specials(text, &self.specials)
     }
 
     /// BPE over one pre-token's byte glyphs: a port of `llm_tokenizer_bpe_session`'s merge
@@ -551,9 +498,83 @@ impl ByteLevelBpe {
     }
 }
 
-enum Fragment<'t> {
+pub(crate) enum Fragment<'t> {
     Raw(&'t str),
     Special(u32),
+}
+
+/// `tokenizer.ggml.token_type`, one llama.cpp token type per token. Empty when absent;
+/// a non-i32 entry reads as NORMAL (1).
+pub(crate) fn token_types(metadata: &std::collections::HashMap<String, GGUFValue>) -> Vec<i32> {
+    match metadata.get("tokenizer.ggml.token_type") {
+        Some(GGUFValue::Array(values)) => values
+            .iter()
+            .map(|v| match v {
+                GGUFValue::Int32(t) => *t,
+                _ => 1,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The tokens `tokenizer_st_partition` splits out of text with `parse_special`, longest
+/// text first: those typed UNKNOWN, CONTROL or USER_DEFINED. Without a usable type table,
+/// the `<|...|>` convention (GH-320). Shared by the byte-level BPE and the SentencePiece
+/// greedy path of `GGUFModel::encode` (#3993).
+pub(crate) fn special_tokens(vocab: &[String], token_types: &[i32]) -> Vec<(String, u32)> {
+    let mut specials: Vec<(String, u32)> = if token_types.len() == vocab.len() {
+        vocab
+            .iter()
+            .zip(token_types)
+            .enumerate()
+            .filter(|(_, (_, t))| SPECIAL_TOKEN_TYPES.contains(t))
+            .map(|(id, (text, _))| (text.clone(), id as u32))
+            .collect()
+    } else {
+        vocab
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.starts_with("<|") && t.ends_with("|>"))
+            .map(|(id, t)| (t.clone(), id as u32))
+            .collect()
+    };
+    specials.retain(|(t, _)| !t.is_empty());
+    specials.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then(a.1.cmp(&b.1)));
+    specials
+}
+
+/// `tokenizer_st_partition`: each special token, longest first, claims its occurrences
+/// in the raw fragments that remain.
+pub(crate) fn partition_specials<'t>(
+    text: &'t str,
+    specials: &[(String, u32)],
+) -> Vec<Fragment<'t>> {
+    let mut fragments = vec![Fragment::Raw(text)];
+    for (special, id) in specials {
+        if !text.contains(special.as_str()) {
+            continue;
+        }
+        let mut next = Vec::with_capacity(fragments.len());
+        for fragment in fragments {
+            let Fragment::Raw(mut raw) = fragment else {
+                next.push(fragment);
+                continue;
+            };
+            while let Some(at) = raw.find(special.as_str()) {
+                if at > 0 {
+                    next.push(Fragment::Raw(&raw[..at]));
+                }
+                next.push(Fragment::Special(*id));
+                raw = &raw[at + special.len()..];
+            }
+            if !raw.is_empty() {
+                next.push(Fragment::Raw(raw));
+            }
+        }
+        fragments = next;
+    }
+    fragments
 }
 
 #[derive(Debug, Clone, Copy)]

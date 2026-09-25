@@ -41,7 +41,7 @@
             ),
             GateResult::skipped("gpu_speedup", "no GPU"),
         ];
-        let passed = gates.iter().all(|g| g.passed);
+        let passed = gates_pass(&gates); // #3965: the production verdict, not a copy
         assert!(passed, "Mix of passed + skipped should be overall pass");
     }
 
@@ -102,6 +102,7 @@
             summary: "Failed gates: throughput".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
 
@@ -149,9 +150,10 @@
              GPU gate could not run republishes the withdrawn refusal: {reason}"
         );
         let gate = GateResult::skipped("gpu_speedup", reason);
+        // #3965: a skip is not a pass; it does not FAIL the run either.
         assert!(
-            gate.passed && gate.skipped,
-            "a reasoned skip must not fail the report: {gate:?}"
+            !gate.passed && gate.skipped && gates_pass(std::slice::from_ref(&gate)),
+            "a reasoned skip must not claim passed and must not fail the report: {gate:?}"
         );
         assert!(
             !reason.contains("capability match failure"),

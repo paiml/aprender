@@ -133,6 +133,7 @@
             load_ms: 5.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert!(result.text.contains("世界"));
         assert!(result.text.contains("🌍"));
@@ -150,6 +151,7 @@
             load_ms: 1.0,
             format: "APR".to_string(),
             used_gpu: true,
+            gpu_attempted: true,
         };
         assert!(result.text.contains("fn main()"));
         assert!(result.text.contains("println!"));
@@ -363,6 +365,7 @@
             verbose: true,
             use_mock_backend: false,
             force_chat_template: false,
+            thinking: None,
         };
 
         let debug = format!("{:?}", config);
@@ -397,6 +400,7 @@
             verbose: true,
             use_mock_backend: false,
             force_chat_template: false,
+            thinking: None,
         };
 
         let cloned = original.clone();
@@ -429,6 +433,7 @@
             load_ms: 50.0,
             format: "GGUF".to_string(),
             used_gpu: true,
+            gpu_attempted: true,
         };
 
         let debug = format!("{:?}", result);

@@ -6,6 +6,7 @@
 #[test]
 fn test_inference_result_debug() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "hello".to_string(),
         tokens: vec![1, 100],
         input_token_count: 1,
@@ -15,6 +16,7 @@ fn test_inference_result_debug() {
         load_ms: 10.0,
         format: "Test".to_string(),
         used_gpu: false,
+        gpu_attempted: false,
     };
     let debug = format!("{:?}", result);
     assert!(debug.contains("hello"));
@@ -24,6 +26,7 @@ fn test_inference_result_debug() {
 #[test]
 fn test_inference_result_clone() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "world".to_string(),
         tokens: vec![1, 2, 3],
         input_token_count: 1,
@@ -33,6 +36,7 @@ fn test_inference_result_clone() {
         load_ms: 5.0,
         format: "GGUF".to_string(),
         used_gpu: true,
+        gpu_attempted: true,
     };
     let cloned = result.clone();
     assert_eq!(cloned.text, "world");

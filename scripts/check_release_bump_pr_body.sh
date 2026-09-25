@@ -33,8 +33,11 @@
 #                   line adds no closing reference (a reason reading "closes #9002" would
 #                   close the epic on the bump's merge, the #3400 shape).
 #   prs-only        a CHANGELOG citing only PRs gets no keep-open line and still passes.
-#   landmine        a CHANGELOG carrying "no-close: #9005" is REFUSED: non-zero exit, no
-#                   `gh pr create`, and no branch pushed to origin.
+#   landmine        a CHANGELOG carrying "no-close: #9005" is REFUSED BY THE R-2 BODY CHECK:
+#                   non-zero exit, the refusal names §6 R-2, `ap/r2.log` was written, no
+#                   `gh pr create`, and no branch pushed to origin. The reason matters --
+#                   without it the row is satisfied by the model-ladder refusal downstream
+#                   and the `drop-refusal` mutant survives.
 #   ladder-missing-gx10  (#3708) the bump tree holds lambda.json but no gx10.json for 9.9.9:
 #                   REFUSED by scripts/check_model_ladder.sh (the dogfood's own judge, real copy,
 #                   fixture ladder of the two required hosts), naming gx10.json; nothing pushed
@@ -58,6 +61,9 @@ KEEP_OPEN_ANCHOR='keep-open: %s'
 REFUSAL_ANCHOR='bash "$CLOSES_GUARD" --body'
 LADDER_ANCHOR='bash scripts/check_model_ladder.sh --version "$V"'
 IGNORED_ANCHOR='[ -z "$ignored" ] ||'
+# The R-2 refusal's own words (prepare_bump.sh:89). `landmine` asserts the
+# refusal is THIS one, not merely that some refusal happened.
+LANDMINE_NEEDLE='the bump PR body fails §6 R-2'
 LADDER_JUDGE="$ROOT/scripts/check_model_ladder.sh"
 # What the judge reads besides the receipts (#3712): the contract's inventory spec -- COPIED into the
 # fixture ladder, never retyped, so the fixture follows whichever inventory shape the tree's judge
@@ -108,10 +114,50 @@ export PR_CLOSES_REF_KIND_CMD="$TMP/bin/kind"
 
 # write_receipt DIR HOST -> a green apr-model-ladder-receipt/v2 for 9.9.9: the fixture rung's file is
 # the host's whole measured inventory, read from its header as a Q4_K member (#3712 rows A, A2)
+#
+# THE `verbs` AND `teardown` BLOCKS ARE NOT DECORATION. This fixture exists to exercise
+# prepare_bump.sh's PR-BODY rules, and it reaches them only if the ladder judge accepts the
+# receipt first. When #3828 armed the verbs refusal and #3838 the teardown refusal, this
+# fixture was not updated, so check_model_ladder.sh began refusing it by name:
+#   "receipt records no `verbs` object -- the release matrix claims {run, chat, serve, code}
+#    and this rung measured only `run` (#3828)"
+# and five of the twelve rows below went red on a receipt shape, never reaching the body
+# rules they were written to test. Measured: the guard is rc=0 at origin/main and RED on the
+# release branch, so this was the batch's own arming of two refusals against a stale fixture
+# -- arming over a dirty universe, one layer down, in the guard's own test data.
+#
+# So this shape must track the judge's requirements: all four verbs present; `serve` probed
+# with a non-empty route set including an `/api/chat*` probe (which cannot inherit /v1
+# coverage, #3715/#3828); every route `ok`; and a `teardown` of clean|escalated. Adding a
+# refusal to check_model_ladder.sh without updating this function silently disarms twelve
+# body rules, which is why this comment names them rather than leaving the next person to
+# rediscover it from five confusing FAIL rows.
 write_receipt() {
     mkdir -p "$1"
-    printf '{"schema":"apr-model-ladder-receipt/v2","host":"%s","version":"9.9.9","sha":"fixture","executed":1,"red":0,"inventory":[{"file":"fx.gguf","sha256":"0000000000000000000000000000000000000000000000000000000000000000","bytes":1}],"candidates":[{"file":"fx.gguf","bytes":1,"dtype_counts":{"Q4_K":1},"dominant":["Q4_K"],"member":true}],"rungs":[{"id":"fx-rung","file":"fx.gguf","present":true,"sha_ok":true,"required":true,"capability_match":{"passed":true,"skipped":false},"golden_output":{"passed":true,"skipped":false},"backends":{"cpu":{"ran":true,"fallback":false,"rc":0}},"green":true}]}\n' \
-        "$2" > "$1/$2.json"
+    # #4128: the judge now binds a receipt to a BUILD (a 40-hex apr_sha that is the cut, #3957 F2)
+    # and requires CRUX proof of every certified model (#3957 F4, #3710 ruling 1). The cut is the
+    # bump tree's HEAD at judge time: prepare_bump.sh runs the judge before its own commit.
+    local cut; cut=$(git -C "$1" rev-parse HEAD) || return 2
+    printf '{"schema":"apr-model-ladder-receipt/v2","host":"%s","version":"9.9.9","sha":"fixture","apr_sha":"%s","executed":1,"red":0,"inventory":[{"file":"fx.gguf","sha256":"0000000000000000000000000000000000000000000000000000000000000000","bytes":1}],"candidates":[{"file":"fx.gguf","bytes":1,"dtype_counts":{"Q4_K":1},"dominant":["Q4_K"],"member":true}],"rungs":[{"id":"fx-rung","file":"fx.gguf","present":true,"sha_ok":true,"required":true,"qa_rc":0,"capability_match":{"passed":true,"skipped":false},"golden_output":{"passed":true,"skipped":false},"backends":{"cpu":{"ran":true,"fallback":false,"rc":0,"verbs":{"run":{"ran":true,"rc":0},"chat":{"ran":true,"rc":0},"code":{"ran":true,"rc":0},"serve":{"probed":true,"teardown":"clean","routes":{"/api/chat|stream=false":{"http":200,"ok":true},"/api/chat|stream=true":{"http":200,"ok":true},"/v1/chat/completions|stream=false":{"http":200,"ok":true},"/v1/completions|stream=false":{"http":200,"ok":true}}}}}},"green":true}]}\n' \
+        "$2" "$cut" > "$1/$2.json"
+    # CRUX beside it, for the one certified fixture model, on this host: the certification admits
+    # fx.gguf's sha, and this host's receipt answers every verb for it, bound to the same cut.
+    local crux; crux="$(git -C "$1" rev-parse --show-toplevel)/evidence/crux/9.9.9"
+    # bashrs SEC010: $crux is inside the fixture bump tree under this guard's own mktemp -d dir.
+    # bashrs disable-next-line=SEC010
+    mkdir -p "$crux" || return 2
+    python3 - "$crux" "$2" "$cut" <<'PY'
+import json, os, sys
+crux, host, cut = sys.argv[1:4]
+fx = "0" * 64
+json.dump({"schema": "crux-prompt-certification/v1", "admitted_by_sha": {fx: ["fixture-control"]}},
+          open(os.path.join(crux, "prompt-certification.json"), "w"))
+cells = [{"key": {"model_sha256": fx, "host": host, "verb": v, "thinking": "off", "rung": "golden",
+                  "prompt_id": "fixture-control"}, "verdict": "GREEN"} for v in ("run", "chat", "serve run", "code")]   # CRUX verb names (model_ladder_crux.VERB_TO_CRUX)
+json.dump({"schema": "crux-inference-receipt/v1", "host": host, "backend": "cpu", "apr": {"sha": cut},
+           "cells": cells, "summary": {"verdict": "PASS", "cells": len(cells)}},
+          open(os.path.join(crux, host + "-cpu.json"), "w"))
+PY
 }
 
 # run_ship NAME SUBJECT CHANGELOG_SECTION [LADDER: all|no-gx10|ignored] -> the fixture dir;
@@ -141,6 +187,9 @@ run_ship() {
     python3 - "$LADDER_CONTRACT" "$d/seed/contracts/model-capability-ladder-v1.yaml" <<'PY' || return 2
 import sys, yaml
 inv = yaml.safe_load(open(sys.argv[1]))["ladder"]["inventory"]
+# the real contract's red_* verdicts name REAL model files the fixture hosts do not hold; the judge
+# refuses a verdict for a file nobody holds (#3957 F9/F10), so they are not the fixture's (#4128)
+inv = {k: v for k, v in inv.items() if k not in ("red_model", "red_unsupported")}
 yaml.safe_dump({"ladder": {
     "hosts": [{"id": "lambda", "required": True, "gpu": "fixture", "cc": "sm_89"},
               {"id": "gx10", "required": True, "gpu": "fixture", "cc": "sm_121"}],
@@ -240,11 +289,30 @@ d="$TMP/prs-only"
     && [ "$(guard_rc "$d/body.md")" = 0 ]
 row prs-only "$?" "rc=$(cat "$d/rc"); a PR-only CHANGELOG must open a PR with no keep-open line that passes the guard"
 
-# row_landmine NAME SUBJECT -> 0 when prepare_bump refused before push and before gh pr create
+# row_landmine NAME SUBJECT -> 0 when prepare_bump refused FOR THE R-2 REASON, before push and before gh pr create
+#
+# The reason is load-bearing and this row used to omit it. `rc != 0` + no PR +
+# no push is the shape of ANY refusal, and prepare_bump has more than one:
+# the R-2 body check at prepare_bump.sh:89 and the model-ladder check at :96,
+# in that order. Delete the first (the `drop-refusal` mutant) and the landmine
+# body simply falls through to the second, which refuses it for an unrelated
+# reason -- same rc, same absent PR, same unpushed branch. The row stayed green
+# and the mutant survived: the row was testing that SOMETHING refused, not that
+# the R-2 guard did.
+#
+# So assert the reason two independent ways, the same way `row_ladder` below
+# already names its needle:
+#   * the refusal message names §6 R-2, and
+#   * `ap/r2.log` exists -- prepare_bump.sh:89 redirects into it unconditionally,
+#     so the file is present iff that line ran at all. That one is an artifact
+#     rather than prose, and it is what the mutant cannot fake: with line 89
+#     deleted the run writes `ap/ladder.log` and no `ap/r2.log`.
 row_landmine() {
     local d="$TMP/$1"
     run_ship "$1" "$2" "$LANDMINE_SECTION" || return 2
     [ "$(cat "$d/rc")" != 0 ] || { printf 'prepare_bump.sh --ship exited 0 on a landmine body\n'; return 1; }
+    grep -qF -- "$LANDMINE_NEEDLE" "$d/out.log" || { printf 'the refusal never named the R-2 body check: %s\n' "$(tail -1 "$d/out.log")"; return 1; }
+    [ -f "$d/ap/r2.log" ] || { printf 'no ap/r2.log -- the R-2 body check never ran; something else refused\n'; return 1; }
     ! grep -q '^pr create' "$d/gh.log" || { printf 'gh pr create was issued for a body the guard fails\n'; return 1; }
     [ -z "$(git -C "$d/origin.git" branch --list 'release-9.9.9')" ] || { printf 'the branch was pushed before the refusal\n'; return 1; }
     return 0

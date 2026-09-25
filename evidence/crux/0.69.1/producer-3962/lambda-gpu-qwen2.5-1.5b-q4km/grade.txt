@@ -1,0 +1,86 @@
+apr       code         -                                  {'ok': 4}
+apr       run          -                                  {'raw': 1}
+apr       serve run    POST /api/chat                     {'wrong': 17, 'ok': 1}
+apr       serve run    POST /api/generate                 {'wrong': 17, 'ok': 1}
+apr       serve run    POST /batch/generate               {'wrong': 17, 'ok': 1}
+apr       serve run    POST /generate                     {'wrong': 17, 'ok': 1}
+apr       serve run    POST /realize/batch                {'wrong': 17, 'ok': 1}
+apr       serve run    POST /v1/batch/completions         {'fault': 18}
+apr       serve run    POST /v1/chat/completions          {'wrong': 17, 'ok': 1}
+apr       serve run    POST /v1/completions               {'wrong': 17, 'ok': 1}
+apr       serve stream POST /api/chat                     {'wrong': 17, 'ok': 1}
+apr       serve stream POST /api/generate                 {'wrong': 17, 'ok': 1}
+apr       serve stream POST /realize/generate             {'fault': 18}
+apr       serve stream POST /stream/generate              {'fault': 18}
+apr       serve stream POST /v1/chat/completions          {'wrong': 17, 'ok': 1}
+apr       serve stream POST /v1/chat/completions/stream   {'wrong': 17, 'ok': 1}
+apr       serve stream POST /v1/completions               {'wrong': 17, 'ok': 1}
+llama.cpp code         -                                  {'ok': 4}
+llama.cpp run          -                                  {'raw': 1}
+llama.cpp serve run    POST /v1/chat/completions          {'ok': 10, 'wrong': 8}
+llama.cpp serve stream POST /v1/chat/completions          {'ok': 10, 'wrong': 8}
+ollama    code         -                                  {'ok': 4}
+ollama    run          -                                  {'raw': 1}
+ollama    serve run    POST /v1/chat/completions          {'ok': 10, 'wrong': 8}
+ollama    serve stream POST /v1/chat/completions          {'ok': 10, 'wrong': 8}
+
+APR-WRONG serve run POST /api/chat ctl-2plus2 no_answer_tag | '4'
+APR-WRONG serve run POST /api/chat ctl-recall-7 no_answer_tag | '7'
+APR-WRONG serve run POST /api/chat fact-capital-japan no_answer_tag | 'The capital city of Japan is Tokyo.'
+APR-WRONG serve run POST /api/chat fact-capital-france no_answer_tag | 'The capital city of France is Paris.'
+APR-WRONG serve run POST /api/generate ctl-2plus2 no_answer_tag | '4'
+APR-WRONG serve run POST /api/generate ctl-recall-7 no_answer_tag | '37'
+APR-WRONG serve run POST /api/generate fact-capital-japan no_answer_tag | 'The capital city of Japan is Tokyo.'
+APR-WRONG serve run POST /api/generate fact-capital-france no_answer_tag | 'The capital city of France is Paris.'
+APR-WRONG serve run POST /batch/generate ctl-2plus2 answer_not_int | 'system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assis'
+APR-WRONG serve run POST /batch/generate ctl-recall-7 answer_not_int | 'system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assis'
+APR-WRONG serve run POST /batch/generate fact-capital-japan mismatch | 'system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assis'
+APR-WRONG serve run POST /batch/generate fact-capital-france mismatch | 'system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assis'
+APR-WRONG serve run POST /generate ctl-2plus2 answer_not_int | 'system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assis'
+APR-WRONG serve run POST /generate ctl-recall-7 answer_not_int | 'system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assis'
+APR-WRONG serve run POST /generate fact-capital-japan mismatch | 'system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assis'
+APR-WRONG serve run POST /generate fact-capital-france mismatch | 'system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assis'
+APR-WRONG serve run POST /realize/batch ctl-2plus2 answer_not_int | 'system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assis'
+APR-WRONG serve run POST /realize/batch ctl-recall-7 answer_not_int | 'system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assis'
+APR-WRONG serve run POST /realize/batch fact-capital-japan mismatch | 'system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assis'
+APR-WRONG serve run POST /realize/batch fact-capital-france mismatch | 'system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assis'
+APR-WRONG serve run POST /v1/batch/completions ctl-2plus2 http_503: {"error":"No GPU-capable model loaded"}
+APR-WRONG serve run POST /v1/batch/completions ctl-recall-7 http_503: {"error":"No GPU-capable model loaded"}
+APR-WRONG serve run POST /v1/batch/completions fact-capital-japan http_503: {"error":"No GPU-capable model loaded"}
+APR-WRONG serve run POST /v1/batch/completions fact-capital-france http_503: {"error":"No GPU-capable model loaded"}
+APR-WRONG serve run POST /v1/chat/completions ctl-2plus2 no_answer_tag | '4'
+APR-WRONG serve run POST /v1/chat/completions ctl-recall-7 no_answer_tag | '7'
+APR-WRONG serve run POST /v1/chat/completions fact-capital-japan no_answer_tag | 'The capital city of Japan is Tokyo.'
+APR-WRONG serve run POST /v1/chat/completions fact-capital-france no_answer_tag | 'The capital city of France is Paris.'
+APR-WRONG serve run POST /v1/completions ctl-2plus2 no_answer_tag | 'The final answer is 4.'
+APR-WRONG serve run POST /v1/completions ctl-recall-7 no_answer_tag | 'answer: 7'
+APR-WRONG serve run POST /v1/completions fact-capital-japan no_answer_tag | 'The capital city of Japan is Tokyo.'
+APR-WRONG serve run POST /v1/completions fact-capital-france no_answer_tag | 'The capital city of France is Paris.'
+APR-WRONG serve stream POST /api/chat ctl-2plus2 no_answer_tag | '4'
+APR-WRONG serve stream POST /api/chat ctl-recall-7 no_answer_tag | '7'
+APR-WRONG serve stream POST /api/chat fact-capital-japan no_answer_tag | 'The capital city of Japan is Tokyo.'
+APR-WRONG serve stream POST /api/chat fact-capital-france no_answer_tag | 'The capital city of France is Paris.'
+APR-WRONG serve stream POST /api/generate ctl-2plus2 no_answer_tag | '4'
+APR-WRONG serve stream POST /api/generate ctl-recall-7 no_answer_tag | '37'
+APR-WRONG serve stream POST /api/generate fact-capital-japan no_answer_tag | 'The capital city of Japan is Tokyo.'
+APR-WRONG serve stream POST /api/generate fact-capital-france no_answer_tag | 'The capital city of France is Paris.'
+APR-WRONG serve stream POST /realize/generate ctl-2plus2 http_503: {"error":"Model registry error: No model available"}
+APR-WRONG serve stream POST /realize/generate ctl-recall-7 http_503: {"error":"Model registry error: No model available"}
+APR-WRONG serve stream POST /realize/generate fact-capital-japan http_503: {"error":"Model registry error: No model available"}
+APR-WRONG serve stream POST /realize/generate fact-capital-france http_503: {"error":"Model registry error: No model available"}
+APR-WRONG serve stream POST /stream/generate ctl-2plus2 http_503: {"error":"Model registry error: No model available"}
+APR-WRONG serve stream POST /stream/generate ctl-recall-7 http_503: {"error":"Model registry error: No model available"}
+APR-WRONG serve stream POST /stream/generate fact-capital-japan http_503: {"error":"Model registry error: No model available"}
+APR-WRONG serve stream POST /stream/generate fact-capital-france http_503: {"error":"Model registry error: No model available"}
+APR-WRONG serve stream POST /v1/chat/completions ctl-2plus2 no_answer_tag | '4'
+APR-WRONG serve stream POST /v1/chat/completions ctl-recall-7 no_answer_tag | '7'
+APR-WRONG serve stream POST /v1/chat/completions fact-capital-japan no_answer_tag | 'The capital city of Japan is Tokyo.'
+APR-WRONG serve stream POST /v1/chat/completions fact-capital-france no_answer_tag | 'The capital city of France is Paris.'
+APR-WRONG serve stream POST /v1/chat/completions/stream ctl-2plus2 no_answer_tag | '4'
+APR-WRONG serve stream POST /v1/chat/completions/stream ctl-recall-7 no_answer_tag | '7'
+APR-WRONG serve stream POST /v1/chat/completions/stream fact-capital-japan no_answer_tag | 'The capital city of Japan is Tokyo.'
+APR-WRONG serve stream POST /v1/chat/completions/stream fact-capital-france no_answer_tag | 'The capital city of France is Paris.'
+APR-WRONG serve stream POST /v1/completions ctl-2plus2 no_answer_tag | 'The final answer is 4.'
+APR-WRONG serve stream POST /v1/completions ctl-recall-7 no_answer_tag | 'answer: 7'
+APR-WRONG serve stream POST /v1/completions fact-capital-japan no_answer_tag | 'The capital city of Japan is Tokyo.'
+APR-WRONG serve stream POST /v1/completions fact-capital-france no_answer_tag | 'The capital city of France is Paris.'

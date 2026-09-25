@@ -1,0 +1,47 @@
+Backend override: cuda
+Backend: GPU (CUDA, NVIDIA GB10, 122502 MB VRAM) [qwen35 hybrid forward, #3090]
+F2 guard: validating on this run (receipt schema 1, this build writes 2) [source=fresh]
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 5 backward branch(es) for sm_121 JIT workaround
+[GH-559] RmsNorm PTX (1888 bytes)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 5 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+F2 guard: passed in 79782 ms on 65 positions; receipt written to /home/noah/.cache/apr/f2-receipts/84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806.json — the next run of this (model, apr, device) skips it.
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[qwen35] batched prefill: 4134 tokens in 45941 ms (90 tok/s, chunk 2048 rows, attention flash (f16 inputs, f32 accumulation))

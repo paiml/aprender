@@ -177,12 +177,12 @@ fn run_model_with_logits(
         eprintln!(
             "[ROSETTA] STDOUT ({} bytes): {:?}",
             stdout_text.len(),
-            &stdout_text[..stdout_text.len().min(200)]
+            crate::commands::log_head(&stdout_text, 200)
         );
         eprintln!(
             "[ROSETTA] STDERR ({} bytes): {:?}",
             stderr_text.len(),
-            &stderr_text[..stderr_text.len().min(200)]
+            crate::commands::log_head(&stderr_text, 200)
         );
     }
 

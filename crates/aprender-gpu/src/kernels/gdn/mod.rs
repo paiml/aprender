@@ -43,12 +43,16 @@
 //! the Gated `DeltaNet` block holds against the reference implementation.
 
 mod causal_conv1d;
+mod causal_conv1d_seq;
 mod decode_attention;
 mod delta_rule;
+mod delta_rule_scan;
 mod gated_rmsnorm;
 mod gdn_gates;
 mod l2_norm;
 mod partial_rope;
+mod prefill_flash_attention;
+mod rows;
 mod sigmoid_gate;
 mod split_interleave;
 
@@ -56,12 +60,16 @@ mod split_interleave;
 mod test_support;
 
 pub use causal_conv1d::CausalConv1dSiluKernel;
+pub use causal_conv1d_seq::CausalConv1dSiluSeqKernel;
 pub use decode_attention::{DecodeAttention256Kernel, DEFAULT_MAX_POSITIONS_PER_PASS};
 pub use delta_rule::DeltaRuleRecurrenceKernel;
+pub use delta_rule_scan::DeltaRuleChunkScanKernel;
 pub use gated_rmsnorm::GatedRmsNormKernel;
 pub use gdn_gates::GdnGatesKernel;
 pub use l2_norm::PerHeadL2NormKernel;
 pub use partial_rope::PartialNeoxRopeKernel;
+pub use prefill_flash_attention::{PrefillFlashAttention256Kernel, FLASH_HEAD_DIM};
+pub use rows::{GdnGatesRowsKernel, PartialNeoxRopeRowsKernel, PerHeadL2NormRowsKernel};
 pub use sigmoid_gate::SigmoidGateKernel;
 pub use split_interleave::SplitInterleavedKernel;
 
