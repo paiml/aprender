@@ -245,7 +245,9 @@ that decides a gate.
    determinism), each running all its parts to completion on the biggest runner in its class
    (nextest full-core, sccache warm), with the **same test set as before the collapse**: Σ
    executed is unchanged, proved by a case table (#4433). The train-active priority hook stays as
-   a floor. #4318 (0.69.5) is the last rc cut from a branch. Ticket: #4434.
+   a floor. For `ci / gate`, the 5 fat jobs **supersede** rule 16's pool-routed / crate-sharded
+   layout (and §3's B2-cpu shard line); rule 16 still governs work outside `ci / gate`.
+   #4318 (0.69.5) is the last rc cut from a branch. Ticket: #4434.
 
 ## §4 The train — each step has its own already-done test
 
