@@ -610,14 +610,30 @@ fn validate_gpu_golden_output(
     }
     let model = OwnedQuantizedModel::from_mapped(mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-    let generated = match OwnedQuantizedModelCuda::new(model, 0) {
-        Ok(mut cuda_model) => cuda_model
-            .generate_gpu_resident(prompt_tokens, gen_config)
-            .map(|gpu_tokens| gguf.decode(&gpu_tokens))
-            .map_err(|e| format!("GPU generation: {e}")),
-        Err(e) => Err(format!("CUDA init on device 0: {e}")),
+    // #3821: consult the SAME F2 parity guard `apr run --gpu` does, on the same
+    // prompt, before generating — so the two surfaces that decide GPU-correct
+    // for this model are compared instead of forming separate opinions.
+    // generate_gpu_resident resets the KV cache, so the probe does not consume it.
+    let (guard_admits, generated) = match OwnedQuantizedModelCuda::new(model, 0) {
+        Ok(mut cuda_model) => {
+            let admits =
+                realizar::infer::gpu_parity_admits(&mut cuda_model, gen_config, prompt_tokens);
+            let generated = cuda_model
+                .generate_gpu_resident(prompt_tokens, gen_config)
+                .map(|gpu_tokens| gguf.decode(&gpu_tokens))
+                .map_err(|e| format!("GPU generation: {e}"));
+            (Some(admits), generated)
+        },
+        Err(e) => (None, Err(format!("CUDA init on device 0: {e}"))),
     };
-    Ok(GpuGoldenLeg::judge(generated, expected_patterns))
+    let leg = GpuGoldenLeg::judge(generated, expected_patterns);
+    // REPORT_ONLY (#3821's ruling): name a contradiction, do not change the verdict.
+    if let Some(admits) = guard_admits {
+        if let Some(text) = golden_contradiction(admits, &leg, || subject_of_bytes(mapped.data())) {
+            eprintln!("{}", text.red());
+        }
+    }
+    Ok(leg)
 }
 
 /// Note, in a verbose human-readable run, that the GPU half of the golden gate

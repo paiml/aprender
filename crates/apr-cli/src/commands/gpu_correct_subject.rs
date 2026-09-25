@@ -121,6 +121,60 @@ pub(crate) fn gpu_correct_subject(model_sha256: &str, host: &str, apr_version: &
     format!("GPU-correct(model {short}, host {host}, apr {apr_version})")
 }
 
+/// The two surfaces' names, as a user would invoke them.
+pub(crate) const F2_GUARD_SURFACE: &str = "apr run --gpu (F2 parity guard)";
+pub(crate) const GOLDEN_SURFACE: &str = "apr qa golden_output";
+
+/// The F2 guard's answer as a surface verdict. The guard is a probe that
+/// always runs to a decision, so it is never `Unknown`.
+pub(crate) fn f2_guard_verdict(admits: bool) -> SurfaceVerdict {
+    use provable_contracts::ontology::verdict::Verdict;
+    if admits {
+        SurfaceVerdict::new(F2_GUARD_SURFACE, Verdict::Pass, "admitted: GPU first tokens match CPU")
+    } else {
+        SurfaceVerdict::new(
+            F2_GUARD_SURFACE,
+            Verdict::Fail,
+            "REFUSED: GPU output diverges from CPU (apr run --gpu would fall back / exit 14)",
+        )
+    }
+}
+
+/// The golden gate's wiring (#3821): reconcile the guard's verdict with the
+/// leg's, on the same model and host, and return the contradiction text when
+/// they disagree. `subject` is only evaluated then — it hashes the model, which
+/// is seconds on a multi-GB GGUF and not worth paying when they agree.
+///
+/// REPORT_ONLY: the caller prints this and the gate verdict is unchanged.
+pub(crate) fn golden_contradiction(
+    guard_admits: bool,
+    leg: &crate::commands::qa::GpuGoldenLeg,
+    subject: impl FnOnce() -> String,
+) -> Option<String> {
+    use provable_contracts::ontology::verdict::Verdict;
+    let guard = f2_guard_verdict(guard_admits);
+    let golden = SurfaceVerdict::new(GOLDEN_SURFACE, leg.subject_verdict(), leg.subject_detail());
+    let pair = [guard, golden];
+    let says = |v: Verdict| pair.iter().any(|s| s.verdict == v);
+    if !(says(Verdict::Pass) && says(Verdict::Fail)) {
+        return None;
+    }
+    reconcile_gpu_correct(&subject(), &pair).contradiction
+}
+
+/// The subject for a mapped GGUF on this host and this binary.
+pub(crate) fn subject_of_bytes(model_bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let sha = format!("{:x}", Sha256::digest(model_bytes));
+    let host = std::fs::read_to_string("/etc/hostname")
+        .ok()
+        .map(|h| h.trim().to_string())
+        .filter(|h| !h.is_empty())
+        .or_else(|| std::env::var("HOSTNAME").ok())
+        .unwrap_or_else(|| "unknown-host".to_string());
+    gpu_correct_subject(&sha, &host, env!("CARGO_PKG_VERSION"))
+}
+
 // NOTE ON NAMING: `Makefile`'s coverage target passes `--skip gpu_`, and
 // libtest matches that substring against the WHOLE test path. Every name below
 // therefore avoids the sequence `gpu_` — otherwise these rows would compile,
@@ -140,7 +194,7 @@ impl crate::commands::qa::GpuGoldenLeg {
             Self::Passed => Verdict::Pass,
             Self::WrongAnswer(_) => Verdict::Fail,
             // Attempted, but produced nothing judgeable. Not evidence either way.
-            Self::Errored(_) | Self::Unclosed { .. } | Self::NotRun(_) => {
+            Self::Errored(_) | Self::NotRun(_) => {
                 Verdict::Unknown(Reason::NotRun)
             }
         }
@@ -152,9 +206,6 @@ impl crate::commands::qa::GpuGoldenLeg {
             Self::Passed => "golden patterns matched on the device".to_string(),
             Self::WrongAnswer(why) => why.clone(),
             Self::Errored(e) => format!("errored: {e}"),
-            Self::Unclosed { budget, generated_chars } => {
-                format!("still reasoning at the {budget}-token budget ({generated_chars} chars)")
-            }
             Self::NotRun(why) => (*why).to_string(),
         }
     }
@@ -287,10 +338,6 @@ mod subject_verdict_tests {
             (GpuGoldenLeg::Passed, Verdict::Pass),
             (GpuGoldenLeg::WrongAnswer("gibberish".into()), Verdict::Fail),
             (GpuGoldenLeg::Errored("CUDA init".into()), Verdict::Unknown(Reason::NotRun)),
-            (
-                GpuGoldenLeg::Unclosed { budget: 16, generated_chars: 40 },
-                Verdict::Unknown(Reason::NotRun),
-            ),
             (GpuGoldenLeg::NotRun("no device"), Verdict::Unknown(Reason::NotRun)),
         ];
         let wrong: Vec<String> = cases
@@ -312,7 +359,6 @@ mod subject_verdict_tests {
             GpuGoldenLeg::Passed,
             GpuGoldenLeg::WrongAnswer("fragment repeats".into()),
             GpuGoldenLeg::Errored("init".into()),
-            GpuGoldenLeg::Unclosed { budget: 16, generated_chars: 40 },
             GpuGoldenLeg::NotRun("no device"),
         ] {
             let d = leg.subject_detail();
@@ -321,6 +367,61 @@ mod subject_verdict_tests {
         assert!(GpuGoldenLeg::WrongAnswer("fragment repeats".into())
             .subject_detail()
             .contains("fragment repeats"), "the reason must survive into the detail");
+    }
+
+    /// The golden wiring: every (guard, leg) pair, and whether it names a
+    /// contradiction. The dangerous row is guard-refuses + gate-passes, which
+    /// `meet` alone would report as an ordinary Fail.
+    #[test]
+    fn the_golden_wiring_names_exactly_the_disagreeing_pairs() {
+        use super::golden_contradiction;
+        use crate::commands::qa::GpuGoldenLeg;
+        let legs = || {
+            vec![
+                GpuGoldenLeg::Passed,
+                GpuGoldenLeg::WrongAnswer("fragment repeats".into()),
+                GpuGoldenLeg::Errored("init".into()),
+                GpuGoldenLeg::NotRun("no device"),
+            ]
+        };
+        let mut got = Vec::new();
+        for admits in [true, false] {
+            for leg in legs() {
+                let c = golden_contradiction(admits, &leg, subject);
+                got.push((admits, format!("{leg:?}"), c.is_some()));
+            }
+        }
+        let named: Vec<_> = got.iter().filter(|r| r.2).map(|r| (r.0, r.1.clone())).collect();
+        assert_eq!(
+            named,
+            vec![
+                (true, format!("{:?}", GpuGoldenLeg::WrongAnswer("fragment repeats".into()))),
+                (false, format!("{:?}", GpuGoldenLeg::Passed)),
+            ],
+            "only guard-admits+wrong-answer and guard-refuses+passed contradict"
+        );
+        let text = golden_contradiction(false, &GpuGoldenLeg::Passed, subject).expect("contradiction");
+        assert!(text.contains("REFUSED") && text.contains(QA) && text.contains(RUN), "{text}");
+    }
+
+    /// The subject is hashed only when there is something to report.
+    #[test]
+    fn agreement_never_hashes_the_model() {
+        use super::golden_contradiction;
+        use crate::commands::qa::GpuGoldenLeg;
+        let c = golden_contradiction(true, &GpuGoldenLeg::Passed, || {
+            panic!("subject evaluated on agreement")
+        });
+        assert!(c.is_none());
+    }
+
+    /// The subject names content, host and version.
+    #[test]
+    fn the_subject_of_bytes_is_the_content_digest() {
+        let s = super::subject_of_bytes(b"abc");
+        // sha256("abc") = ba7816bf8f01...
+        assert!(s.contains("model ba7816bf8f01"), "{s}");
+        assert!(s.contains(env!("CARGO_PKG_VERSION")), "{s}");
     }
 
     /// A short or empty sha must not panic on the 12-char slice.
