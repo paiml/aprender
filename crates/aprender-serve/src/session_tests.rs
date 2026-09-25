@@ -316,6 +316,28 @@ fn an_identical_prompt_again_restores_the_checkpoint_before_its_last_marker() {
     assert_eq!(s.engine().restores, 1);
 }
 
+// #4445: `apr bench` repeats one prompt and must time a whole prefill each time.
+#[test]
+fn forget_prefix_makes_the_same_prompt_prefill_whole_again() {
+    let mut s = Session::new(Scripted::checkpointing(3, 100, MARK));
+    let prompt = [7801, 7802, MARK, 7803];
+    for turn in 0..3 {
+        s.forget_prefix();
+        let t = s
+            .generate(&prompt, &greedy(1), &mut |_| true)
+            .expect("turn");
+        assert_eq!(
+            t.reused, 0,
+            "turn {turn} resumed a prefix after forget_prefix"
+        );
+        assert_eq!(s.engine().calls.last(), Some(&(4, 2)));
+    }
+    assert_eq!(s.engine().restores, 0, "no checkpoint was restored");
+    // Every turn prefilled from position 0: (2, 0) opens each of the 3 turns.
+    let from_zero = s.engine().calls.iter().filter(|c| c.1 == 0).count();
+    assert_eq!(from_zero, 3);
+}
+
 #[test]
 fn a_re_rendered_history_resumes_from_the_last_turns_checkpoint() {
     let mut s = Session::new(Scripted::checkpointing(3, 100, MARK));
