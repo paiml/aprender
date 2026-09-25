@@ -48,13 +48,20 @@
 //!   `review-champion-challenger-v1` ledger. Both receipt files must verify under
 //!   `--pubkey` (unsigned data cannot promote, R-1); an omitted gate fails.
 //!   Exit 0 promoted, 10 rejected, 11 refused (no evaluation spent).
+//! - `b2 status [--refusals F] [--accepted verb=receipt,...]` REX-12: one
+//!   `review-b2-loop-v1` row per B2 tier (ready, verb_refused, unledgered).
+//!   Exit 11 while any row is NotRun.
+//! - `b2 teacher-receipt --logits F --teacher-sha W --k K` the teacher-logit
+//!   dataset receipt (sha, count, 0 test hashes) or every reason it is refused.
 
+use aprender_review_experiment::b2;
 use aprender_review_experiment::build_corpus::{
     choose, g_candidates, is_green, p_candidates, r_candidates, seal, Mutant, Pr, PER_CLASS,
 };
 use aprender_review_experiment::champion;
+use aprender_review_experiment::contamination::Index;
 use aprender_review_experiment::corpus::{
-    assign_splits, corpus_version, render_manifest, sha256_hex, Item, Split,
+    assign_splits, corpus_version, parse_manifest, render_manifest, sha256_hex, Item, Split,
 };
 use aprender_review_experiment::harness::{
     classify, post, request_body, rerun_subset, run_order, utc_now, Run,
@@ -81,6 +88,7 @@ fn main() -> ExitCode {
         Some("ladder") => ladder_cmd(&args[1..]),
         Some("ratchet") => ratchet_cmd(&args[1..]),
         Some("challenge") => challenge_cmd(&args[1..]),
+        Some("b2") => b2_cmd(&args[1..]),
         Some(c @ ("review" | "not-run" | "score" | "admit")) => {
             match flags(&args[1..]).and_then(|f| match c {
                 "review" => review(&f),
@@ -104,7 +112,7 @@ fn main() -> ExitCode {
         },
         _ => {
             eprintln!(
-                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder|ratchet|challenge> (see the example docs)"
+                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder|ratchet|challenge|b2> (see the example docs)"
             );
             ExitCode::from(2)
         }
@@ -715,6 +723,76 @@ fn ratchet_cmd(a: &[String]) -> ExitCode {
         }),
         _ => {
             eprintln!("usage: rex ratchet record|check --file F ... (see the example docs)");
+            ExitCode::from(2)
+        }
+    }
+}
+
+/// REX-12: `b2 status` (exit 11 while any B2 row is NotRun) and
+/// `b2 teacher-receipt`.
+fn b2_cmd(a: &[String]) -> ExitCode {
+    let run = |sub: &str| -> Result<ExitCode, String> {
+        let f = flags(&a[1..])?;
+        if sub == "status" {
+            let path = f
+                .get("refusals")
+                .map_or("evidence/verbs/refusals.json", String::as_str);
+            let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+            let ledger = b2::parse_ledger(&text).map_err(|e| format!("{path}: {e}"))?;
+            let mut accepted = BTreeMap::new();
+            for kv in f.get("accepted").map_or("", String::as_str).split(',') {
+                if kv.is_empty() {
+                    continue;
+                }
+                let (verb, receipt) = kv
+                    .split_once('=')
+                    .ok_or_else(|| format!("--accepted {kv}: verb=receipt"))?;
+                accepted.insert(verb.to_string(), receipt.to_string());
+            }
+            let rows = b2::status(&ledger, &accepted)?;
+            for r in &rows {
+                println!("{}", serde_json::to_string(r).map_err(|e| e.to_string())?);
+            }
+            let ready = rows
+                .iter()
+                .all(|r| matches!(r.state, b2::State::Ready { .. }));
+            return Ok(if ready {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(11)
+            });
+        }
+        let (items, _, _) = corpus()?;
+        let manifest = std::fs::read_to_string(format!("{CORPUS_DIR}/test-manifest-v1.txt"))
+            .map_err(|e| e.to_string())?;
+        let sealed = parse_manifest(&manifest).ok_or("test manifest does not parse")?;
+        let path = need(&f, "logits")?;
+        let jsonl = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+        let k = need(&f, "k")?.parse().map_err(|e| format!("--k: {e}"))?;
+        match b2::teacher_receipt(
+            &jsonl,
+            need(&f, "teacher-sha")?,
+            k,
+            &items,
+            &Index::new(&sealed),
+        ) {
+            Ok(r) => {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&r).map_err(|e| e.to_string())?
+                );
+                Ok(ExitCode::SUCCESS)
+            }
+            Err(e) => Err(e.join("\n")),
+        }
+    };
+    match a.first().map(String::as_str) {
+        Some(s @ ("status" | "teacher-receipt")) => run(s).unwrap_or_else(|e| {
+            eprintln!("rex b2 {s}: {e}");
+            ExitCode::from(1)
+        }),
+        _ => {
+            eprintln!("usage: rex b2 status|teacher-receipt ... (see the example docs)");
             ExitCode::from(2)
         }
     }

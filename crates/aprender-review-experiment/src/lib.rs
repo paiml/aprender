@@ -16,8 +16,10 @@
 //! - [`ratchet`]: the REX-10 `review-lane-perf-ratchet-v1` p95 ratchet (§5.1).
 //! - [`champion`]: the REX-11 §5.4 champion/challenger promotion gate.
 //! - [`fewshot`]: the REX-11 B1 challengers: prompt versions and leak-proof retrieval few-shot.
+//! - [`b2`]: the REX-12 B2 loop: verb-gated row status and the teacher-logit dataset receipt.
 
 pub mod admission;
+pub mod b2;
 pub mod build_corpus;
 pub mod champion;
 pub mod contamination;
