@@ -202,7 +202,7 @@ arm4() {
     fi
     echo "  A2  subject ($kind) diff $base..$head, patch-id $pid"
 
-    local dir best_dir='' best_head='' d h rp legacy=0 other=0
+    local dir best_dir='' best_head='' d h rp legacy=0 other=0 legacy_dir=''
     if [ ! -d "$root/$pr" ]; then
         echo "  A2  no receipt directory at $root/$pr" >&2
         echo "      S6.3: a missing receipt is RED, not skipped. S8 fixes" >&2
@@ -213,7 +213,7 @@ arm4() {
         d=${dir%/}
         [ -f "$d/receipt.intoto.jsonl" ] || continue
         rp=$(jq -r '.predicate.diff_patch_id // empty' "$d/receipt.intoto.jsonl" 2>/dev/null)
-        if [ -z "$rp" ]; then legacy=$((legacy + 1)); continue; fi
+        if [ -z "$rp" ]; then legacy=$((legacy + 1)); legacy_dir=$d; continue; fi
         if [ "$rp" != "$pid" ]; then other=$((other + 1)); continue; fi
         h=$(receipt_head "$d")
         # Several receipts may bind the same diff (a re-review); prefer the one whose
@@ -222,6 +222,12 @@ arm4() {
             best_dir=$d; best_head=$h
         fi
     done
+    if [ -z "$best_dir" ] && [ -n "$legacy_dir" ] && legacy_exempt "$pr"; then
+        best_dir=$legacy_dir; best_head=$(receipt_head "$legacy_dir")
+        echo "  A2  LEGACY EXEMPT - $legacy_dir has no diff_patch_id (signed before #4421)."
+        echo "      Accepted because PR $pr < $PR_REVIEW_LEGACY_BELOW (open when FLOW-04 merged) and now"
+        echo "      $(legacy_now) < $PR_REVIEW_LEGACY_UNTIL (24h after it). Its signature is still checked (A3/A4)."
+    fi
     if [ -z "$best_dir" ]; then
         echo "  A2  $root/$pr holds no receipt whose predicate.diff_patch_id is $pid." >&2
         echo "      $other receipt(s) bind a DIFFERENT diff (the change moved after review," >&2
@@ -410,6 +416,13 @@ self_test() {
     cp -a "$repo" "$legacy"
     cp "$rcpt"/* "$legacy/evidence/pr-review/999/$head/"
 
+    # The legacy copy with its signature corrupted: the exemption waives the diff
+    # binding, never the signature.
+    local legacy_bad="$ST_ROOT/legacy-badsig"
+    cp -a "$legacy" "$legacy_bad"
+    corrupt_signature_line "$legacy_bad/evidence/pr-review/999/$head/receipt.intoto.jsonl.minisig" \
+        || die_env "could not corrupt the legacy fixture signature"
+
     # A copy whose receipt signature does not verify.
     local badsig="$ST_ROOT/badsig"
     cp -a "$repo" "$badsig"
@@ -428,7 +441,7 @@ self_test() {
         # it the fixture PR numbers grandfather out and six rows silently pass on the
         # cutoff branch instead of the branch they name. A per-row override still wins:
         # a later `env VAR=VAL` beats an earlier one.
-        env PR_NUMBER="$pr" PR_HEAD_SHA="$subject" PR_REVIEW_CUTOFF=0 "$@" \
+        env PR_NUMBER="$pr" PR_HEAD_SHA="$subject" PR_REVIEW_CUTOFF=0 PR_REVIEW_LEGACY_BELOW=0 "$@" \
             bash "$tree/scripts/check_pr_review_arm4.sh" >/dev/null 2>&1 || got=$?
         if [ "$got" -eq "$want" ]; then
             printf 'ok    %-28s rc=%s  %s\n' "$id" "$got" "$desc"
@@ -461,6 +474,16 @@ self_test() {
         "$repo"   999 "$squash"
     row legacy-receipt-no-id      1 "a valid signed receipt with no diff_patch_id binds nothing" \
         "$legacy" 999 "$tip"
+    # THE LEGACY EXEMPTION, each bound in both polarities over the SAME legacy tree
+    # (row() pins PR_REVIEW_LEGACY_BELOW=0 so no other row can reach it by accident).
+    row legacy-exempt-in-window   0 "legacy receipt: PR open at merge (999 < 1000) and inside the 24h" \
+        "$legacy" 999 "$tip"  PR_REVIEW_LEGACY_BELOW=1000 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=1999
+    row legacy-expired-at-24h     1 "legacy receipt: the SAME PR at the expiry second is RED" \
+        "$legacy" 999 "$tip"  PR_REVIEW_LEGACY_BELOW=1000 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=2000
+    row legacy-pr-opened-after    1 "legacy receipt: a PR opened after the merge (999 >= 999) is RED in the window" \
+        "$legacy" 999 "$tip"  PR_REVIEW_LEGACY_BELOW=999 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=1999
+    row legacy-exempt-bad-sig     1 "legacy receipt in the window with a corrupted signature is RED (A4 still runs)" \
+        "$legacy_bad" 999 "$tip"  PR_REVIEW_LEGACY_BELOW=1000 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=1999
     row corrupt-signature         1 "receipt present, signature does not verify (A4)" \
         "$badsig" 999 "$tip"
     row guard-accepts-everything  1 "A3: a permissive guard must not read green" \
@@ -482,8 +505,30 @@ self_test() {
         echo "--- $st_fail row(s) did not produce the required verdict ---" >&2
         return 1
     fi
-    echo "--- 16/16 rows, both polarities ---"
+    echo "--- 20/20 rows, both polarities ---"
     return 0
+}
+
+# ---------------------------------------------------------------------------
+# THE LEGACY EXEMPTION (FLOW-04; operator ruling relayed by the cop, 2026-09-25 16:14
+# Madrid). A receipt signed before #4421 has no diff_patch_id, so A2 cannot bind it.
+# PRs already open when this merged were reviewed under the old signer. For them - and
+# only them, and only for 24 hours - such a receipt is accepted in place of a
+# patch-id match. Both bounds are constants, so a reviewer reads them in the diff:
+#   PR_REVIEW_LEGACY_BELOW   the first PR number NOT exempt. 4427 = this PR (#4426) + 1.
+#                            PR numbers only increase, so every PR opened after #4426 is
+#                            excluded. That is stricter than "open at merge": a PR opened
+#                            in the minutes between this PR and its merge must re-sign.
+#   PR_REVIEW_LEGACY_UNTIL   epoch at which the exemption ends: 2026-09-26T16:00:00Z,
+#                            24h after the 16:00Z merge target. A later merge makes the
+#                            window SHORTER, never longer. After it this code is dead,
+#                            and removing it is a follow-up diff, not a precondition.
+# The receipt's signature is still verified (A3/A4); only the diff binding is waived.
+PR_REVIEW_LEGACY_BELOW=${PR_REVIEW_LEGACY_BELOW:-4427}
+PR_REVIEW_LEGACY_UNTIL=${PR_REVIEW_LEGACY_UNTIL:-1790438400}
+legacy_now() { echo "${PR_REVIEW_NOW:-$(date -u +%s)}"; }
+legacy_exempt() {
+    [ "$1" -lt "$PR_REVIEW_LEGACY_BELOW" ] 2>/dev/null && [ "$(legacy_now)" -lt "$PR_REVIEW_LEGACY_UNTIL" ] 2>/dev/null
 }
 
 # ---------------------------------------------------------------------------
