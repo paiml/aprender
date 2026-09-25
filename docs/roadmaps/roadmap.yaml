@@ -18201,6 +18201,15 @@ roadmap:
   assigned_to: aprender-e6
   created: 2026-09-23T20:30:19.864488525+00:00
   updated: 2026-09-23T20:30:19.864488525+00:00
+- id: GH-4086
+  github_issue: 4086
+  item_type: task
+  title: '0.70.0: dogfood''s declared check_model_ladder gate ignores a recorded emergency scope (no seam) — known-red at 0.69.1'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T23:52:18.558504381+00:00
+  updated: 2026-09-23T23:52:18.558504381+00:00
   spec: null
   acceptance_criteria: []
   phases: []
