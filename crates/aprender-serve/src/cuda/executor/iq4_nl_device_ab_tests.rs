@@ -591,6 +591,31 @@ mod iq4_nl_device_ab_tests {
         u32,
     ) -> Result<(), GpuError>;
 
+    /// Worst normalised error `|got - expected| / denom` over the rows, and the
+    /// row that set it. NaN (an unwritten row) is +inf, never a pass; a zero
+    /// denominator passes only on an exact match.
+    fn worst_normalised(got: &[f32], expected: &[f32], denom: &[f64]) -> (f64, usize) {
+        let mut worst = (0.0f64, 0usize);
+        for (r, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            let err = if g.is_finite() {
+                f64::from((g - e).abs())
+            } else {
+                f64::INFINITY
+            };
+            let m = if denom[r] > 0.0 {
+                err / denom[r]
+            } else if err == 0.0 {
+                0.0
+            } else {
+                f64::INFINITY
+            };
+            if m > worst.0 {
+                worst = (m, r);
+            }
+        }
+        worst
+    }
+
     /// #3950/#3963: the real-bytes A/B for ANY IQ type this crate decodes on the
     /// CPU — one audited implementation instead of a copy per kernel.
     ///
@@ -681,29 +706,7 @@ mod iq4_nl_device_ab_tests {
                 ob.copy_to_host(&mut got).unwrap();
                 got
             };
-            // Worst normalised error; NaN (an unwritten row) is +inf, never a pass.
-            let norm_worst = |got: &[f32]| -> (f64, usize) {
-                let mut worst = (0.0f64, 0usize);
-                for (r, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
-                    let err = if g.is_finite() {
-                        f64::from((g - e).abs())
-                    } else {
-                        f64::INFINITY
-                    };
-                    let m = if denom[r] > 0.0 {
-                        err / denom[r]
-                    } else if err == 0.0 {
-                        0.0
-                    } else {
-                        f64::INFINITY
-                    };
-                    if m > worst.0 {
-                        worst = (m, r);
-                    }
-                }
-                worst
-            };
-
+            let norm_worst = |got: &[f32]| worst_normalised(got, &expected, &denom);
             let got = run(&mut exec, weights);
             let unwritten = got.iter().filter(|v| v.is_nan()).count();
             assert_eq!(
