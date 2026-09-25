@@ -103,12 +103,84 @@ parse() {
     printf '%s\n' "${cmds[@]}"
 }
 
-# run DIR [N/M] -- runs the commands in order; with N/M only every M-th command
-# starting at the N-th (round-robin over the sorted list), so M shards cover the
-# list exactly once between them (PACK-001). N and M are validated; a shard that
-# selects zero commands is a refusal, not a pass.
+
+# plan DIR M WEIGHTS PRELOAD -> one line per fragment, in list order:
+#   <shard>\t<seconds>\t<basename>
+# then one `LOAD <shard> <seconds>` line per shard on stderr-free stdout tail.
+# Longest-processing-time-first over measured seconds (Y2): fragments by weight
+# descending (name ascending on a tie), each to the least-loaded shard (lowest
+# index on a tie), shards starting at PRELOAD -- the seconds of the once-only
+# steps each shard already carries (e.g. "Build every example" on shard 3).
+# Deterministic: the same tree, weights and preload give the same plan on every
+# shard, which is what makes M independent jobs cover the list exactly once.
+# A fragment with no weight is planned at the median of the weights that do
+# apply, so a new fragment needs no edit here. rc 2 on a malformed weights line,
+# a duplicate weight, a preload that is not M non-negative integers, or no
+# applicable weight at all (a plan from zero measurements is round-robin in
+# disguise). A weight naming no fragment is STALE on stderr, not a refusal:
+# deleting a fragment must not break every other PR.
+plan() {
+    local dir=$1 m=$2 wfile=$3 preload=${4:-} out base line w i j best med n
+    local -a names=() pre=() load=() sorted=()
+    local -A weight=() shard_of=() present=()
+    out=$(parse "$dir") || return $?
+    mapfile -t names < <(find "$dir" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
+    for base in "${names[@]}"; do present[$base]=1; done
+    if [ ! -f "$wfile" ]; then
+        printf 'ENV   weights file %s: no such file\n' "$wfile" >&2; return 2
+    fi
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in ''|\#*) continue ;; esac
+        if ! [[ "$line" =~ ^([0-9]{3}-[a-z0-9-]+\.cmd)$'\t'([0-9]+)$ ]]; then
+            printf 'REFUSE %s: malformed weight line (want <NNN-slug.cmd><TAB><seconds>): %s\n' "$wfile" "$line" >&2
+            return 2
+        fi
+        base=${BASH_REMATCH[1]}; w=${BASH_REMATCH[2]}
+        if [ -n "${weight[$base]:-}" ]; then
+            printf 'REFUSE %s: %s is weighted twice\n' "$wfile" "$base" >&2; return 2
+        fi
+        weight[$base]=$w
+        [ -n "${present[$base]:-}" ] || printf 'STALE %s: %s names no fragment in %s\n' "$wfile" "$base" "$dir" >&2
+    done < "$wfile"
+    mapfile -t sorted < <(for base in "${names[@]}"; do [ -n "${weight[$base]:-}" ] && printf '%s\n' "${weight[$base]}"; done | sort -n)
+    n=${#sorted[@]}
+    if [ "$n" -eq 0 ]; then
+        printf 'REFUSE %s weights none of the %s fragment(s) -- a plan from zero measurements is not a plan\n' "$wfile" "${#names[@]}" >&2
+        return 2
+    fi
+    med=${sorted[$(( (n - 1) / 2 ))]}
+    if [ -z "$preload" ]; then
+        for ((i = 0; i < m; i++)); do pre+=(0); done
+    else
+        IFS=, read -ra pre <<< "$preload"
+        if [ "${#pre[@]}" -ne "$m" ]; then
+            printf 'REFUSE --preload %s has %s value(s) for %s shard(s)\n' "$preload" "${#pre[@]}" "$m" >&2; return 2
+        fi
+        for w in "${pre[@]}"; do
+            [[ "$w" =~ ^[0-9]+$ ]] || { printf 'REFUSE --preload value %s is not a non-negative integer\n' "$w" >&2; return 2; }
+        done
+    fi
+    load=("${pre[@]}")
+    while IFS=$'\t' read -r w base; do
+        best=0
+        for ((j = 1; j < m; j++)); do
+            [ "${load[$j]}" -lt "${load[$best]}" ] && best=$j
+        done
+        load[best]=$(( load[best] + w ))
+        shard_of[$base]=$(( best + 1 ))
+    done < <(for base in "${names[@]}"; do printf '%s\t%s\n' "${weight[$base]:-$med}" "$base"; done | LC_ALL=C sort -t$'\t' -k1,1nr -k2,2)
+    for base in "${names[@]}"; do
+        printf '%s\t%s\t%s\n' "${shard_of[$base]}" "${weight[$base]:-$med}" "$base"
+    done
+    for ((j = 0; j < m; j++)); do printf 'LOAD %s %s\n' "$((j + 1))" "${load[$j]}"; done
+}
+# run DIR [N/M] [FF] [WEIGHTS] [PRELOAD] -- runs the commands in order; with N/M
+# only the N-th shard's share, so M shards cover the list exactly once between
+# them (PACK-001). The share is every M-th command from the N-th (round-robin),
+# or with WEIGHTS the shard `plan` assigns (Y2). N and M are validated; a shard
+# that selects zero commands is a refusal, not a pass.
 run() {
-    local dir=$1 shard=${2:-1/1} ff=${3:-0} out cmd i=0 total rc n m k=0 sel=0 failed=0 first_fail=""
+    local dir=$1 shard=${2:-1/1} ff=${3:-0} wfile=${4:-} preload=${5:-} out cmd i=0 total rc n m k=0 sel=0 failed=0 first_fail=""
     local -a cmds
     if ! [[ "$shard" =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]]; then
         printf 'REFUSE --shard must look like N/M, got %s\n' "$shard" >&2; return 2
@@ -124,9 +196,21 @@ run() {
         printf 'REFUSE %s parsed to zero commands -- nothing to run is not a pass\n' "$dir" >&2; return 2
     fi
     if [ "$m" -gt 1 ]; then
-        local -a mine=()
+        local -a mine=() assigned=()
+        if [ -n "$wfile" ]; then
+            # Y2: the LPT plan, in the same sorted order as cmds. Belt for the
+            # Σ invariant: one assignment per command, each to a shard in 1..M.
+            out=$(plan "$dir" "$m" "$wfile" "$preload") || return $?
+            mapfile -t assigned < <(grep -v '^LOAD ' <<< "$out" | cut -f1)
+            if [ "${#assigned[@]}" -ne "$total" ] || grep -qvxE "[1-9][0-9]*" < <(printf '%s\n' "${assigned[@]}") \
+                || [ "$(printf '%s\n' "${assigned[@]}" | sort -n | tail -1)" -gt "$m" ]; then
+                printf 'REFUSE the plan assigned %s of %s command(s) or named a shard outside 1..%s\n' "${#assigned[@]}" "$total" "$m" >&2
+                return 2
+            fi
+        fi
         for cmd in "${cmds[@]}"; do
-            k=$((k + 1)); sel=$(( (k - 1) % m + 1 ))
+            k=$((k + 1))
+            if [ -n "$wfile" ]; then sel=${assigned[$((k - 1))]}; else sel=$(( (k - 1) % m + 1 )); fi
             if [ "$sel" -eq "$n" ]; then mine+=("$cmd"); fi
         done
         if [ "${#mine[@]}" -eq 0 ]; then
@@ -167,16 +251,31 @@ run() {
 
 case "${1:-}" in
     --list) parse "${2:-$DEFAULT_DIR}" ;;
-    --run)
-        dir=${2:-$DEFAULT_DIR}; shard=1/1; ff=0; shift 2 2>/dev/null || shift $#
+    --run|--plan)
+        mode=$1; dir=${2:-$DEFAULT_DIR}; shard=1/1; ff=0; wfile=""; preload=""; shards=""
+        shift 2 2>/dev/null || shift $#
         while [ "$#" -gt 0 ]; do
             case "$1" in
                 --shard) shard=${2:?--shard needs N/M}; shift 2 ;;
+                --shards) shards=${2:?--shards needs M}; shift 2 ;;
+                --weights) wfile=${2:?--weights needs FILE}; shift 2 ;;
+                --preload) preload=${2:?--preload needs S1,...,SM}; shift 2 ;;
                 --fail-fast) ff=1; shift ;;
-                *) printf 'usage: %s --run [DIR] [--shard N/M] [--fail-fast]\n' "$0" >&2; exit 2 ;;
+                *) printf 'usage: %s --run [DIR] [--shard N/M] [--weights F [--preload S1,..,SM]] [--fail-fast]\n' "$0" >&2; exit 2 ;;
             esac
         done
-        run "$dir" "$shard" "$ff" ;;
+        if [ -n "$preload" ] && [ -z "$wfile" ]; then
+            printf 'REFUSE --preload without --weights: round-robin ignores it\n' >&2; exit 2
+        fi
+        if [ "$mode" = --run ]; then run "$dir" "$shard" "$ff" "$wfile" "$preload"; exit $?; fi
+        if ! [[ "$shards" =~ ^[1-9][0-9]*$ ]] || [ -z "$wfile" ]; then
+            printf 'usage: %s --plan [DIR] --shards M --weights F [--preload S1,..,SM]\n' "$0" >&2; exit 2
+        fi
+        out=$(plan "$dir" "$shards" "$wfile" "$preload") || exit $?
+        printf '%s\n' "$out"
+        # max/min of the planned loads, x100 (integer): the Y2 target is <= 125.
+        awk '/^LOAD /{ if (mx == "" || $3 > mx) mx = $3; if (mn == "" || $3 < mn) mn = $3 }
+             END { printf "RATIO max/min x100 = %d (max %d s, min %d s)\n", (mn > 0 ? int(100 * mx / mn + 0.5) : 0), mx, mn }' <<< "$out" ;;
     -h|--help) sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//' ;;
-    *) printf 'usage: %s --list|--run [DIR] [--shard N/M]\n' "$0" >&2; exit 2 ;;
+    *) printf 'usage: %s --list|--run|--plan [DIR] ...\n' "$0" >&2; exit 2 ;;
 esac

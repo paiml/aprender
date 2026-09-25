@@ -57,8 +57,9 @@ jobs:
   # over 24 h: intel 15 / gx10 6 / yoga 5 of 27 workspace-tests; gx10 mean 16 min,
   # intel 18, intel worst 51 under contention). This job is now a 3-way matrix:
   # nextest `--partition hash:N/3` splits the lib tests by stable hash, and the
-  # explicit-command runner takes every 3rd fragment (`--shard N/3`). The once-only
-  # steps (GPU crates, compute, quick tier, guards) run on shard 1. Each shard
+  # explicit-command runner takes its share of the fragments (`--shard N/3`, by
+  # measured weight since Y2). The once-only steps (GPU crates, compute, guards)
+  # run on shard 1; the quick tier runs hash-partitioned on all three (Y2). Each shard
   # owns its cargo state (registry + target parent keyed by PR_OR_REF-sN, see the
   # env below): the test-binary compile is therefore repeated per shard, and it is
   # cheap because codegen comes from the shared sccache (measured ~1 min on a warm
@@ -506,6 +507,14 @@ jobs:
             bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q "test result: ok\." /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
       - name: Integration tests
         if: steps.tier.outputs.tier == 'full'
+        # Y2: the fragments are split by MEASURED seconds (ci/explicit-test-weights.tsv),
+        # longest first onto the least-loaded shard, not round-robin. --preload is the
+        # once-only work each shard already carries: shard 1 the GPU-crate / compute /
+        # apr-format steps (~100 s), shard 3 "Build every example" (~310 s), both the
+        # gx10+yoga means of 14 full-tier jobs. Round-robin put a predicted 639 s on
+        # shard 3 against 404 / 388; the plan gives 477 / 477 / 477. Every fragment is
+        # still on exactly one shard (Σ, pinned by check_explicit_test_commands.sh
+        # --self-test), and a fragment with no weight is planned at the median.
         # #2465: the four FALSIFY-AUTH targets were appended here because they
         # were DARK — `falsify_auth_002` appeared nowhere in .github/, scripts/
         # or Makefile, and neither did the contract loader
@@ -576,7 +585,8 @@ jobs:
             -e CARGO_BUILD_JOBS=8 \
             -e SHARD -e SHARDS \
             "$IMAGE" \
-            bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d --shard "${SHARD}/${SHARDS}"
+            bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d --shard "${SHARD}/${SHARDS}" \
+              --weights ci/explicit-test-weights.tsv --preload 100,0,310
       - name: "Σ-executed: the tests this job ran are exactly the tests it owes (#4433)"
         if: steps.tier.outputs.tier == 'full' && matrix.shard == 1 && matrix.shards == 1
         # #4433, the cop's condition on the 5-fat-job PR: "The test-id set across
@@ -651,7 +661,12 @@ jobs:
       # targets (default features) under the same image and mounts as the full
       # tier. Empty selection (a scripts/docs PR) skips this step; part 2 still runs.
       - name: "Quick tier: lib + integration tests of the selected crates (BSE-17)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1 && steps.tier.outputs.crates != ''
+        # Y2: all three shards, each a nextest hash partition. This step and part 2
+        # used to run on shard 1 alone while shards 2/3 idled: 12 quick-tier runs
+        # measured shard 1 at 7-59x the others (gx10: 1.5 min compile + 5.6 min
+        # tests here, 5 + 4.8 in part 2). Test execution is the larger half, so it
+        # goes 3-wide; the compile repeats per shard from the shared sccache.
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.crates != ''
         # 20, not 60 (PMAT-1098, #3084). A quick tier that is ALLOWED an hour is
         # not a quick tier, and 60 is the number that let part 2 burn 55 minutes
         # (run 34449608126) before dying at the cap under fleet load on #3063
@@ -688,7 +703,7 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            bash -c "cargo nextest run --profile ci --lib --tests$pkgs"
+            bash -c "cargo nextest run --profile ci --lib --tests$pkgs --partition hash:${SHARD}/${SHARDS}"
       # BSE-17 quick tier, part 2: every test target that reads the tree, from
       # scripts/tree_reader_tests.txt (derived; the guard has already proved the
       # registry equals the sources in this run).
@@ -718,7 +733,8 @@ jobs:
       # reads this exclude list out of this file and drops their targets), so the
       # exclusion removes nothing the filterset asks for.
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
+        # Y2: every shard, hash-partitioned (see part 1).
+        if: steps.tier.outputs.tier == 'quick'
         # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
         # yoga-build2 compiled 811 crates in ~9 min (cold per-run target dir, warm shared sccache) and was part way
         # through 65,266 tests at the cap; attempt 2 on intel-clean-room-15 timed out at 20 min too. The ~6 min
@@ -762,7 +778,7 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            cargo nextest run --profile ci $pkgs --lib --tests -E "$EXPR"
+            cargo nextest run --profile ci $pkgs --lib --tests -E "$EXPR" --partition "hash:${SHARD}/${SHARDS}"
       # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
       # selection was OVER THE CAP (touched crates + their direct reverse
       # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate
@@ -779,7 +795,7 @@ jobs:
       # --locked: a quick tier that silently rewrites Cargo.lock would be a
       # different dependency graph from the one the PR is proposing.
       - name: "Quick tier: cargo check --workspace (over-the-cap integration, BSE-17 rule (i))"
-        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && matrix.shard == 1
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && matrix.shard == 3
         timeout-minutes: 20
         env:
           REASON: ${{ steps.tier.outputs.reason }}
