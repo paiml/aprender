@@ -81,7 +81,9 @@ capable() {
 SHAPES_SRC="${FLEET_PV_SHAPES_SRC:-$ROOT/crates/aprender-contracts/src/ontology/shapes.rs}"
 tree_component() { # tree_component <pv stderr line> -> the key, when the tree's parser lists it
     [[ $1 =~ ^error:\ shape\ [^\ ]+\ uses\ unsupported\ ([A-Za-z]+)$ ]] || return 1
-    grep -qxE "[[:space:]]*\"${BASH_REMATCH[1]}\"," "$SHAPES_SRC" 2>/dev/null || return 1
+    # Only the shape-key tables count: shapes.rs also quotes datatypes (NUMERIC_TYPES: "integer", ...)
+    # and test strings, and a refusal of one of those as a shape KEY is this tree's defect, not fleet state.
+    awk -v k="\"${BASH_REMATCH[1]}\"," '/^const (NODE|PROPERTY)_KEYS: /{on=1; next} on && /^\];/{on=0} on && $1 == k {f=1} END{exit !f}' "$SHAPES_SRC" 2>/dev/null || return 1
     printf '%s' "${BASH_REMATCH[1]}"
 }
 
@@ -294,22 +296,36 @@ STUB
     mkcrash "$d/pv_unsup" "echo 'error: shape release-readiness-v1.refusal uses unsupported allowEmpty' >&2; exit 3"
     mkcrash "$d/pv_typo" "echo 'error: shape release-readiness-v1.refusal uses unsupported allowEmtpy' >&2; exit 3"
     mkcrash "$d/pv_three" "echo 'error: io failure reading contracts' >&2; exit 3"
-    printf 'const NODE_KEYS: &[&str] = &[\n    "targetClass",\n    "allowEmpty",\n];\n' > "$d/shapes.rs"
+    mkcrash "$d/pv_numeric" "echo 'error: shape release-readiness-v1.refusal uses unsupported integer' >&2; exit 3"
+    printf 'const NODE_KEYS: &[&str] = &[\n    "targetClass",\n    "allowEmpty",\n];\nconst NUMERIC_TYPES: &[&str] = &[\n    "integer",\n];\n' > "$d/shapes.rs"
     out=$(FLEET_PV_BIN="$d/pv_unsup" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" RUNNER_NAME=intel-clean-room-4 bash "$0" 2>&1); rc=$?
     [ "$rc" -eq 0 ] && grep -q '^UNMEASURED runner=intel-clean-room-4 reason=incapable .*refuses shape key allowEmpty, which this tree' <<<"$out" && ! grep -qE '^(SUMMARY )?(PASS|FAIL)' <<<"$out" && ok "pinned pv refuses a shape key the tree parses (exit 3) -> UNMEASURED reason=incapable, never PASS" || nok "expected UNMEASURED reason=incapable for allowEmpty, got rc=$rc: $out"
     out=$(FLEET_PV_BIN="$d/pv_unsup" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
     [ "$rc" -eq 0 ] && grep -q '^UNMEASURED .*reason=incapable .*allowEmpty' <<<"$out" && ok "...and this tree's REAL shapes.rs lists allowEmpty (the row is tied to the parser, not the fixture)" || nok "this tree's shapes.rs does not list allowEmpty, or the arm did not read it: rc=$rc: $out"
-    for c in "pv_typo allowEmtpy" "pv_three io.failure"; do
+    for c in "pv_typo allowEmtpy" "pv_three io.failure" "pv_numeric integer"; do
         read -r stub err <<<"$c"
         out=$(FLEET_PV_BIN="$d/$stub" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
         [ "$rc" -eq 1 ] && grep -q "^FAIL runner=probe-runner reason=pv-no-verdict .*pv exited 3[ ,].*pv stderr: .*$err" <<<"$out" && ! grep -qE '^(SUMMARY )?(PASS|UNMEASURED)' <<<"$out" && ok "exit 3 with '$err' (no shape key the tree parses) -> RED, never UNMEASURED" || nok "expected RED for exit-3 $stub, got rc=$rc: $out"
     done
     #     ...and the mutant that stops asking the tree turns the typo UNMEASURED, exit 0
-    sed 's/^\( *\)grep -qxE "\[\[:space:\]\]\*\\"\${BASH_REMATCH\[1\]}\\"," "\$SHAPES_SRC" 2>\/dev\/null || return 1$/\1true/' "$0" > "$d/mut_tree.sh"
+    sed 's/^\( *\)awk -v k=.* || return 1$/\1true/' "$0" > "$d/mut_tree.sh"
     if cmp -s "$0" "$d/mut_tree.sh"; then nok "mutant (tree not asked) did not apply; the typo row proves nothing"
     elif ! bash -n "$d/mut_tree.sh" 2>/dev/null; then nok "mutant (tree not asked) is not valid bash; the row would prove nothing"
     else out=$(FLEET_PV_BIN="$d/pv_typo" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" bash "$d/mut_tree.sh" 2>&1); rc=$?
          [ "$rc" -eq 0 ] && grep -q '^UNMEASURED .*reason=incapable .*allowEmtpy' <<<"$out" && ok "mutant that does not ask the tree's parser turns the typo UNMEASURED exit 0 -- the typo row would go RED under it" || nok "mutant (tree not asked) did not reproduce the hole: rc=$rc: $out"; fi
+    #     ...and the mutant that reads the WHOLE file (not just the key tables) turns a datatype refused as a
+    #     shape key -- the tree's own defect -- UNMEASURED; on the real shapes.rs too (NUMERIC_TYPES lists integer)
+    sed 's/ on \&\& \$1 == k / $1 == k /' "$0" > "$d/mut_range.sh"
+    if cmp -s "$0" "$d/mut_range.sh"; then nok "mutant (whole file) did not apply; the integer row proves nothing"
+    elif ! bash -n "$d/mut_range.sh" 2>/dev/null; then nok "mutant (whole file) is not valid bash"
+    else fails=0
+         for src in "$d/shapes.rs" "$SHAPES_SRC"; do
+             out=$(FLEET_PV_BIN="$d/pv_numeric" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$src" RUNNER_NAME=probe-runner bash "$d/mut_range.sh" 2>&1); rc=$?
+             [ "$rc" -eq 0 ] && grep -q '^UNMEASURED .*reason=incapable .*integer' <<<"$out" || fails=$((fails+1))
+         done
+         [ "$fails" -eq 0 ] && ok "mutant that reads the whole file turns 'integer' (a datatype, not a shape key) UNMEASURED on the fixture AND the real shapes.rs -- the integer row would go RED under it" || nok "mutant (whole file) did not reproduce the hole on $fails source(s): rc=$rc: $out"; fi
+    out=$(FLEET_PV_BIN="$d/pv_numeric" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
+    [ "$rc" -eq 1 ] && grep -q '^FAIL .*reason=pv-no-verdict .*integer' <<<"$out" && ok "...and on this tree's REAL shapes.rs, 'integer' refused as a shape key is RED" || nok "real shapes.rs: expected RED for integer, got rc=$rc: $out"
 
     # 8c. the verdict parser cannot run (no python3 on the runner) -> UNMEASURED reason=judge-env
     out=$(FLEET_PV_BIN="$d/pv_ok" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_PYTHON="$d/no-such-python" bash "$0" 2>&1); rc=$?
