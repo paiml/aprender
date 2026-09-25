@@ -1,0 +1,14 @@
+{
+  "census_id_set_sha256": "f8b4adf781a52e20b5ff58c14554256961993bee58074b1ff5abfa53d1878dfa",
+  "relations_sha256": "45058bc7a303443a23b7af52190877185ab0502a7ef0d89ea3c6badccfa4d92d",
+  "reasoner_git_sha": "8328a76cf3fe6f06de6d3efc2bf7006b4266a15d",
+  "checkable_n": 38,
+  "result": {
+    "kind": "model",
+    "payload": {
+      "false": []
+    }
+  },
+  "pc_reasoner": "fired",
+  "cpu_ms": 1
+}
