@@ -708,8 +708,16 @@ done
 printf '#!/usr/bin/env bash\n# guard-tree: serial\n[ "${1:-}" = --help ] && { echo usage; exit 0; }\necho "start l_serial" >> "%s/events"\nsleep 2\necho "end l_serial" >> "%s/events"\nexit 0\n' \
     "$lfix" "$lfix" >"$lfix/scripts/check_l_serial.sh"
 git -C "$lfix" add -A && git -C "$lfix" commit -q -m fixture
-serial_alone() { # -> 0 iff no other event falls between "start l_serial" and "end l_serial"
-    awk '/^start l_serial$/{f=1; next} /^end l_serial$/{f=0; next} f{bad=1} END{exit bad}' "$lfix/events"
+serial_alone() { # -> 0 iff no other guard is running at any point while l_serial runs
+    # An event inside the serial window is not the only overlap: a pool guard that
+    # started BEFORE l_serial and ended AFTER it leaves the window empty. Count the
+    # guards still open when l_serial starts (#4439: a|b|serial-start|serial-end|a|b
+    # read as "alone").
+    awk '/^start l_serial$/{if (open > 0) bad=1; f=1; next}
+         /^end l_serial$/{f=0; next}
+         f{bad=1}
+         /^start /{open++} /^end /{open--}
+         END{exit bad}' "$lfix/events"
 }
 : > "$lfix/events"
 l_out="$(cd "$lfix" && GUARD_TREE_JOBS=8 bash scripts/guard_tree.sh 2>&1)"
