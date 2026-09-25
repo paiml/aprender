@@ -252,6 +252,38 @@ mod ptx_tests {
         // n * TWO_PI_HI must be exact for n up to 2^16: 6.28125 = 201/32.
         assert!((f64::from(TWO_PI_HI) * 32.0 - 201.0).abs() < f64::EPSILON);
     }
+
+    /// #3522 OXIDE-001: the cuda-oxide port times itself against the hand PTX
+    /// committed under `experiments/cuda-oxide/partial-rope/baseline-ptx/`. `head_dim`
+    /// and `n_rot` are baked into the PTX (the head count is only the grid), so there
+    /// is one baseline per target. If this emitter changes and the baselines do not,
+    /// this golden check fails.
+    ///
+    /// Regenerate: `APR_BLESS_PTX=1 cargo test -p aprender-gpu --lib gdn_partial_rope_ptx_golden`
+    #[test]
+    fn gdn_partial_rope_ptx_golden() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../experiments/cuda-oxide/partial-rope/baseline-ptx");
+        let bless = std::env::var_os("APR_BLESS_PTX").is_some();
+        let kernel = PartialNeoxRopeKernel::new(16, 256, 128);
+        for target in ["sm_89", "sm_121"] {
+            let path = dir.join(format!("gdn_partial_neox_rope.{target}.ptx"));
+            let ptx = kernel.emit_ptx_for_target(target);
+            if bless {
+                std::fs::create_dir_all(&dir).expect("baseline dir");
+                std::fs::write(&path, &ptx).expect("write baseline");
+                continue;
+            }
+            let golden = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+                panic!("{}: {e} (bless with APR_BLESS_PTX=1)", path.display())
+            });
+            assert!(
+                golden == ptx,
+                "{} drifted from the emitter; re-bless and re-run the #3522 receipts",
+                path.display()
+            );
+        }
+    }
 }
 
 /// Device parity against a verbatim port of `apply_partial_neox_rope`.
