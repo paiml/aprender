@@ -273,3 +273,51 @@ fn two_extractions_are_identical() {
 fn the_positive_control_fires() {
     assert!(positive_control());
 }
+
+#[test]
+fn an_unsafe_method_a_trait_default_and_an_extern_block_are_sites() {
+    // Sonnet quorum, O-2 round 1: `ImplItemFn` is not `ItemFn`, so an unsafe METHOD read as safe.
+    let src = SAFE_SRC.replace(
+        "    fn helper",
+        "    struct W;\n    impl W { unsafe fn put(&self) {} }\n    trait T { unsafe fn t(&self) {} }\n    extern \"C\" { fn ext(); }\n    fn helper",
+    );
+    assert_ne!(src, SAFE_SRC, "the plant must land");
+    let (g, _) = run(&tree(&src, &green_files()));
+    assert_eq!(
+        lits(&g, "unsafeSite"),
+        vec![
+            "extern block (module level)".to_string(),
+            "unsafe fn in fn put".to_string(),
+            "unsafe fn in fn t".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn unsafe_and_raw_pointers_hidden_in_a_macro_are_sites_and_a_plain_macro_is_not() {
+    let plain = SAFE_SRC.replace(
+        "{ x[0] }\n    #[kernel",
+        "{ assert!(x.len() > 0); x[0] }\n    #[kernel",
+    );
+    assert_ne!(plain, SAFE_SRC, "the plant must land");
+    let (g, _) = run(&tree(&plain, &green_files()));
+    assert!(
+        lits(&g, "unsafeSite").is_empty(),
+        "{:?}",
+        lits(&g, "unsafeSite")
+    );
+
+    let hidden = SAFE_SRC.replace(
+        "{ x[0] }\n    #[kernel",
+        "{ m!(unsafe { *(x.as_ptr() as *const f32) }) }\n    #[kernel",
+    );
+    let (g, _) = run(&tree(&hidden, &green_files()));
+    assert_eq!(
+        lits(&g, "unsafeSite"),
+        vec!["unsafe in macro in fn helper".to_string()]
+    );
+    assert_eq!(
+        lits(&g, "rawPointer"),
+        vec!["raw pointer in macro in fn helper".to_string()]
+    );
+}

@@ -23,6 +23,7 @@ provable-contracts-macros = { path = "../aprender-contracts-macros", version = "
 regex = "1"
 sha2 = { workspace = true }
 syn = { workspace = true }
+proc-macro2 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }

@@ -539,6 +539,54 @@ impl<'a> Visit<'a> for ModuleFacts {
         syn::visit::visit_item_fn(self, f);
         self.current_fn = outer;
     }
+    // A method is `ImplItemFn` and a trait default body is `TraitItemFn`, not `ItemFn`: an `unsafe fn` there
+    // needs no inner block and no pointer type, so without these two it read as safe.
+    fn visit_impl_item_fn(&mut self, f: &'a syn::ImplItemFn) {
+        let outer = std::mem::replace(&mut self.current_fn, f.sig.ident.to_string());
+        if f.sig.unsafety.is_some() {
+            let site = self.site("unsafe fn");
+            self.unsafe_sites.push(site);
+        }
+        syn::visit::visit_impl_item_fn(self, f);
+        self.current_fn = outer;
+    }
+    fn visit_trait_item_fn(&mut self, f: &'a syn::TraitItemFn) {
+        let outer = std::mem::replace(&mut self.current_fn, f.sig.ident.to_string());
+        if f.sig.unsafety.is_some() {
+            let site = self.site("unsafe fn");
+            self.unsafe_sites.push(site);
+        }
+        syn::visit::visit_trait_item_fn(self, f);
+        self.current_fn = outer;
+    }
+    fn visit_item_trait(&mut self, t: &'a syn::ItemTrait) {
+        if t.unsafety.is_some() {
+            let site = self.site("unsafe trait");
+            self.unsafe_sites.push(site);
+        }
+        syn::visit::visit_item_trait(self, t);
+    }
+    /// Every call into an `extern` block is unsafe; the block itself is the site.
+    fn visit_item_foreign_mod(&mut self, m: &'a syn::ItemForeignMod) {
+        let site = self.site("extern block");
+        self.unsafe_sites.push(site);
+        syn::visit::visit_item_foreign_mod(self, m);
+    }
+    /// `syn` does not expand macros, so a macro's tokens are opaque to the typed visits above. Any `unsafe`
+    /// token or `*const`/`*mut` pair inside an invocation is a site: over-reporting a macro that merely
+    /// mentions the word is the safe error, reading an unsafe one as clean is not.
+    fn visit_macro(&mut self, m: &'a syn::Macro) {
+        let (unsafe_tok, ptr_tok) = macro_tokens(m.tokens.clone());
+        if unsafe_tok {
+            let site = self.site("unsafe in macro");
+            self.unsafe_sites.push(site);
+        }
+        if ptr_tok {
+            let site = self.site("raw pointer in macro");
+            self.raw_pointers.push(site);
+        }
+        syn::visit::visit_macro(self, m);
+    }
     fn visit_expr_unsafe(&mut self, e: &'a syn::ExprUnsafe) {
         let site = self.site("unsafe block");
         self.unsafe_sites.push(site);
@@ -556,6 +604,29 @@ impl<'a> Visit<'a> for ModuleFacts {
         self.raw_pointers.push(site);
         syn::visit::visit_type_ptr(self, p);
     }
+}
+
+/// `(has an unsafe token, has a *const/*mut pair)` anywhere in a token stream, groups included.
+fn macro_tokens(ts: proc_macro2::TokenStream) -> (bool, bool) {
+    use proc_macro2::TokenTree;
+    let (mut unsafe_tok, mut ptr_tok, mut after_star) = (false, false, false);
+    for tt in ts {
+        let star = matches!(&tt, TokenTree::Punct(p) if p.as_char() == '*');
+        match tt {
+            TokenTree::Ident(i) => {
+                unsafe_tok |= i == "unsafe";
+                ptr_tok |= after_star && (i == "const" || i == "mut");
+            }
+            TokenTree::Group(g) => {
+                let (u, p) = macro_tokens(g.stream());
+                unsafe_tok |= u;
+                ptr_tok |= p;
+            }
+            _ => {}
+        }
+        after_star = star;
+    }
+    (unsafe_tok, ptr_tok)
 }
 
 /// The body of [`control_sample`]: a minimal oxide kernel with one safe device module, planted in memory.
