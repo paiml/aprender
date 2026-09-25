@@ -138,7 +138,11 @@ fn falsify_crux_p_04_001_lineage_answers_run_dataset_base_or_orphan() {
     let po = provenance(&lineage_in(&c.home, &orphan).expect("orphan"));
     assert!(po.is_orphan(), "{po:?}");
     assert_eq!(po.produced_by, None);
-    assert!(po.summary(&orphan).contains("orphan"), "{}", po.summary(&orphan));
+    assert!(
+        po.summary(&orphan).contains("orphan"),
+        "{}",
+        po.summary(&orphan)
+    );
     assert!(p.summary(&c.produced).contains("RUN1"));
 }
 
@@ -199,7 +203,10 @@ fn falsify_crux_p_04_003_offline_scanners_case_table() {
     for l in must_pass {
         assert!(network_lines(l).is_empty(), "must pass: {l}");
     }
-    assert_eq!(network_lines("a\n// b\nlet _ = TcpStream::connect(x);\n"), vec![3]);
+    assert_eq!(
+        network_lines("a\n// b\nlet _ = TcpStream::connect(x);\n"),
+        vec![3]
+    );
 
     let dep_flag = [
         "pacha = { workspace = true, features = [\"remote\"] }",
@@ -233,7 +240,11 @@ fn falsify_crux_p_04_003_tracking_path_is_offline() {
         ("track.rs", include_str!("track.rs")),
     ];
     for (name, src) in sources {
-        assert!(network_lines(src).is_empty(), "{name}: {:?}", network_lines(src));
+        assert!(
+            network_lines(src).is_empty(),
+            "{name}: {:?}",
+            network_lines(src)
+        );
     }
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -244,7 +255,11 @@ fn falsify_crux_p_04_003_tracking_path_is_offline() {
             manifests.push(m);
         }
     }
-    assert!(manifests.len() > 10, "scanned {} manifests", manifests.len());
+    assert!(
+        manifests.len() > 10,
+        "scanned {} manifests",
+        manifests.len()
+    );
     for m in &manifests {
         let text = std::fs::read_to_string(m).expect("manifest");
         for line in text.lines() {
