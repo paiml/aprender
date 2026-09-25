@@ -15,9 +15,11 @@
 #   flip to `enforce` is a one-line reviewed commit to DEFAULT_MODE, never an environment variable.
 #   RELEASE_READINESS_MODE may only STRENGTHEN the committed mode (`enforce`); asking for `report` over an
 #   `enforce` default, or any other value, is a caller error (3). A gate an env var can weaken is theater.
-#   What `report` never downgrades: a decline (pv 2), a caller error (pv 3), an unknown exit, a missing pv,
-#   or a "Fail" exit whose output carries no Fail verdict. Those mean the wiring did not engage, and a
-#   gate whose wiring does not engage must not read as a WARN.
+#   Could-not-judge under `report` (cop ruling 2026-09-25 09:15Z: "record the rc and receipt, don't
+#   stop"): a decline (pv 2), an unknown exit, a missing pv, or a "Fail" exit carrying no Fail verdict is
+#   printed as its FAIL row PLUS a `WARN  R8 REPORT-ONLY could not judge (rc 2)` row, and exits 0. The
+#   rc is on the page, not hidden. Under `enforce` each is exit 2. A caller error (3) stops in either
+#   mode: it means this script was called wrong, and that is a wiring defect, not a verdict.
 #
 # RECEIPTS-COMMIT (T-4). The committed receipts were measured at the binary's commit (their `apr_sha`),
 # which is never the tagged HEAD: the receipts are committed on top. pv takes `--receipts-commit` on trust
@@ -26,7 +28,8 @@
 # receipts against the release commit, and a stale receipt is a violation — the row says which.
 #
 # EXIT  0 Pass, or a Fail verdict under `report` (WARN row) · 1 Fail under `enforce` ·
-#       2 pv declined / could not judge / is missing · 3 caller error. Every non-zero STOPs the caller.
+#       2 pv declined / could not judge / is missing, under `enforce` (a WARN + 0 under `report`) ·
+#       3 caller error. Every non-zero STOPs the caller.
 #
 # SEAMS (the selftest drives every row through them; production sets neither):
 #   RELEASE_READINESS_PV    the pv binary (default: scripts/pv_bin.sh, built from THIS tree)
@@ -181,6 +184,10 @@ main() {
     [ -z "$dogfood" ] || [ -f "$dogfood" ] || caller_error "--dogfood-receipt $dogfood does not exist"
     if [ -n "$out" ]; then tmpout="$out"; else tmpout="$(mktemp)"; fi
     judge "$mode" "$root" "$version" "$commit" "$receipts" "$dogfood" "$tmpout"; rc=$?
+    if [ "$rc" = 2 ] && [ "$mode" = report ]; then
+        echo "WARN  R8 REPORT-ONLY could not judge (rc 2), recorded and not a stop until #3712 lands (DEFAULT_MODE in $PROG)"
+        rc=0
+    fi
     [ -n "$out" ] || rm -f -- "$tmpout"
     exit "$rc"
 }
@@ -239,11 +246,14 @@ STUB
     row fail_under_report_warns                  0 "WARN  R8 REPORT-ONLY" "$d" FX_PV_RC=1
     row fail_under_report_names_the_count        0 "3 violation(s): cell=3" "$d" FX_PV_RC=1
     row fail_under_enforce_refuses               1 "FAIL  R8 release-readiness-v1 for 1.2.3" "$d" FX_PV_RC=1 RELEASE_READINESS_MODE=enforce
-    row decline_is_never_downgraded              2 "pv DECLINED" "$d" FX_PV_RC=2 FX_PV_BODY=junk
+    row decline_under_report_is_recorded         0 "REPORT-ONLY could not judge (rc 2)" "$d" FX_PV_RC=2 FX_PV_BODY=junk
+    row decline_under_report_names_the_decline   0 "pv DECLINED" "$d" FX_PV_RC=2 FX_PV_BODY=junk
+    row decline_under_enforce_refuses            2 "pv DECLINED" "$d" FX_PV_RC=2 FX_PV_BODY=junk RELEASE_READINESS_MODE=enforce
     row caller_error_is_never_downgraded         3 "caller error" "$d" FX_PV_RC=3 FX_PV_BODY=junk
-    row exit1_without_a_fail_verdict_declines    2 "no Fail verdict" "$d" FX_PV_RC=1 FX_PV_BODY=junk
-    row exit_outside_contract_declines           2 "outside its 0/1/2/3 contract" "$d" FX_PV_RC=101 FX_PV_BODY=junk
-    row missing_pv_declines                      2 "is not executable" "$d" RELEASE_READINESS_PV="$tmp/nope"
+    row exit1_without_a_fail_verdict_declines    2 "no Fail verdict" "$d" FX_PV_RC=1 FX_PV_BODY=junk RELEASE_READINESS_MODE=enforce
+    row exit_outside_contract_declines           2 "outside its 0/1/2/3 contract" "$d" FX_PV_RC=101 FX_PV_BODY=junk RELEASE_READINESS_MODE=enforce
+    row missing_pv_declines                      2 "is not executable" "$d" RELEASE_READINESS_PV="$tmp/nope" RELEASE_READINESS_MODE=enforce
+    row missing_pv_under_report_is_recorded      0 "is not executable" "$d" RELEASE_READINESS_PV="$tmp/nope"
     row env_may_not_weaken_to_bogus              3 "may only strengthen" "$d" RELEASE_READINESS_MODE=off
     # a source change between the receipts' commit and the release commit: the flag is WITHHELD
     d="$tmp/s"; mk "$d"; printf 'b\n' > "$d/src/f"; g "$d" commit -qam src
