@@ -1,0 +1,72 @@
+{
+  "ticket": "GH-3459",
+  "head": "81eb2743a",
+  "base": "origin/batch/0.70.0@7014b28fd",
+  "author": "aprender-88 (claude-opus-5-5)",
+  "degraded": "same-family",
+  "rounds": [
+    {
+      "round": 1,
+      "head": "3e22b9b6a",
+      "lanes": [
+        {
+          "lane": "a",
+          "model": "claude-sonnet-5",
+          "session_id": "96ba2435-723f-48ba-9a36-946ecbcd6860",
+          "verdict": "FAIL",
+          "note": "promote_rc.sh publishes final vX.Y.Z with no milestone gate (verdict written to its plan file)"
+        },
+        {
+          "lane": "b",
+          "model": "claude-sonnet-5",
+          "session_id": "2af96a97-8d6b-4345-ac0e-1518dcdf278f",
+          "verdict": "PASS"
+        },
+        {
+          "lane": "c",
+          "model": "claude-haiku-4-5-20251001",
+          "session_id": "4befee17-1520-47a6-8cb9-62d2a71d2db3",
+          "verdict": "PASS (no exact VERDICT line)"
+        }
+      ],
+      "verdict": "FAIL (lane a)"
+    },
+    {
+      "round": 2,
+      "head": "81eb2743a",
+      "lanes": [
+        {
+          "lane": "a",
+          "model": "claude-sonnet-5",
+          "session_id": "2464ab3e-a4c7-4333-bc2d-6c8ffdb660dc",
+          "verdict": "PASS"
+        },
+        {
+          "lane": "b",
+          "model": "claude-sonnet-5",
+          "session_id": "e5bdecb1-9b90-42e8-a173-bd2ac7bc0c33",
+          "verdict": "PASS"
+        },
+        {
+          "lane": "c",
+          "model": "claude-haiku-4-5-20251001",
+          "session_id": "8f097b21-9561-45d8-b5b2-e78fc8db9bdc",
+          "verdict": "PASS"
+        }
+      ],
+      "verdict": "PASS 3/3"
+    }
+  ],
+  "findings_fixed": [
+    {
+      "round": 1,
+      "lane": "a",
+      "finding": "promote_rc.sh (#4286) publishes the final vX.Y.Z outside cut_tag() with no milestone read",
+      "fix": "16c845e93 milestone_gate() in promote(); 81eb2743a check_tag_step_gated judges promote_rc.sh (M6)"
+    }
+  ],
+  "scope_notes": [
+    "rc_cut.sh rc prereleases carry no milestone read by design (all 3 round-2 lanes agree)"
+  ],
+  "verdict": "PASS 3/3 (round 2)"
+}
