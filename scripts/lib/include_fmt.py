@@ -20,7 +20,47 @@ import os
 import re
 import subprocess
 import sys
-import tomllib
+
+# tomllib is python 3.11+, and the clean-room guard runners run 3.10 without tomli: a
+# module-level `import tomllib` died there with ModuleNotFoundError and took guard-cargo
+# red (B2 #4315, job 107931281356; the same death as #3626). This script reads ONE key
+# (a crate's `edition`), so it falls back to a reader for exactly that key.
+try:
+    import tomllib as _toml
+except ImportError:
+    try:
+        import tomli as _toml
+    except ImportError:
+        _toml = None
+if os.environ.get("INCLUDE_FMT_FORCE_FALLBACK") == "1":
+    _toml = None
+
+TOML_ERRORS = (ValueError,)  # tomllib/tomli.TOMLDecodeError subclass ValueError
+SECTION = re.compile(r"^\s*\[\s*([A-Za-z0-9_.-]+)\s*\]\s*(?:#.*)?$")
+EDITION = re.compile(r"""^\s*edition\s*(?:=\s*"([^"]*)"|\.workspace\s*=\s*true|=\s*\{[^}]*workspace\s*=\s*true[^}]*\})\s*(?:#.*)?$""")
+
+
+def load_toml(text):
+    """The manifest as a dict: the real parser when there is one, else only what edition_of reads,
+    [package] and [workspace.package] with their `edition` (a string, or {"workspace": True})."""
+    if _toml is not None:
+        return _toml.loads(text)
+    doc, cur = {}, None
+    for line in text.splitlines():
+        m = SECTION.match(line)
+        if m:
+            name = m.group(1)
+            if name == "package":
+                cur = doc.setdefault("package", {})
+            elif name == "workspace.package":
+                cur = doc.setdefault("workspace", {}).setdefault("package", {})
+            else:
+                cur = None
+            continue
+        m = EDITION.match(line)
+        if m and cur is not None:
+            cur["edition"] = m.group(1) if m.group(1) is not None else {"workspace": True}
+    return doc
 
 INCLUDE = re.compile(r'(?<![A-Za-z0-9_])include!\(\s*"([^"]+\.rs)"\s*\)')
 DIFF_IN = re.compile(r"^Diff in (.+?):\d+:\s*$")
@@ -59,14 +99,14 @@ def edition_of(root, rel, cache):
                 return cache[man]
         elif os.path.isfile(man):
             try:
-                pkg = tomllib.loads(open(man).read()).get("package")
-            except (OSError, tomllib.TOMLDecodeError):
+                pkg = load_toml(open(man).read()).get("package")
+            except (OSError,) + TOML_ERRORS:
                 pkg = None
             ed = None
             if pkg:
                 ed = pkg.get("edition", "2015")
                 if isinstance(ed, dict):
-                    ws = tomllib.loads(open(os.path.join(root, "Cargo.toml")).read())
+                    ws = load_toml(open(os.path.join(root, "Cargo.toml")).read())
                     ed = ws.get("workspace", {}).get("package", {}).get("edition", "2021")
             cache[man] = ed
             if ed:
