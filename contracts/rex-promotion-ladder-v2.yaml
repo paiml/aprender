@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   kind: schema
   description: |
     PRM-09 (PRM-001 v3 "PROMETHEUS" §5.4, §7, §9): the promotion ladder with the tie-breaker rung.
@@ -66,7 +66,7 @@ falsification_tests:
     if_fails: "A lane that is unavailable or nondeterministic would break ties in the quorum."
   - id: FALSIFY-RXG-006
     name: lambda_primary_is_refused_above_tripwire
-    prediction: "a report passing every gate with hardware_ruling.primary lambda-cuda is tripwire with an S-4 reason; a ruling without a primary is also tripwire"
+    prediction: "a report passing every gate with hardware_ruling.primary lambda-cuda is tripwire with an S-4 reason naming the cell as written (lambda-cuda, never a Rust Debug Some(..)); a ruling without a primary is also tripwire and is named (unnamed)"
     test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxg_006"
     expected_output: "exit 0"
     if_fails: "The operator's desktop GPU would sit on the merge path (R-9)."
