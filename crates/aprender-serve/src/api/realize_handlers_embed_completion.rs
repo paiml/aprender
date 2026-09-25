@@ -529,6 +529,7 @@ async fn try_batch_completion(
         max_tokens,
         temperature,
         top_k: if temperature == 0.0 { 1 } else { 40 },
+        stop_tokens: completion_stop_tokens(tokenizer, state.model_eos_token_id()),
         response_tx,
         submitted_at: std::time::Instant::now(),
     };
@@ -721,7 +722,7 @@ async fn try_cached_completions(
         max_tokens,
         temperature,
         top_k: if temperature == 0.0 { 1 } else { 40 },
-        stop_tokens: Vec::new(),
+        stop_tokens: completion_stop_tokens(&tokenizer, state.model_eos_token_id()),
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),
         ..Default::default()
@@ -760,6 +761,37 @@ async fn try_cached_completions(
     )))
 }
 
+/// aprender#4339: token ids a raw `/v1/completions` decode stops on.
+///
+/// Both CPU GGUF completion backends passed `stop_tokens: Vec::new()`, so a raw
+/// completion never stopped on a token: on Qwen2.5-coder-1.5b-instruct every one
+/// of 13 CRUX prompts ran past `<answer>…</answer>` into invented `\nHuman:` turns
+/// until `max_tokens`, while llama-server stopped. llama.cpp stops on every
+/// end-of-generation token, not just the one `eos_token_id` names: a Qwen instruct
+/// GGUF declares `<|im_end|>` (151645) as EOS, yet a raw completion ends with
+/// `<|endoftext|>` (151643). So the set is the model's EOS plus every EOG marker
+/// the vocabulary actually has (the GH-373 ChatML pair, and the Llama-3/Gemma
+/// turn ends). A marker absent from the vocabulary adds nothing.
+pub(crate) fn completion_stop_tokens(
+    tokenizer: &crate::tokenizer::BPETokenizer,
+    model_eos: Option<u32>,
+) -> Vec<u32> {
+    const EOG_MARKERS: [&str; 5] = [
+        "<|im_end|>",
+        "<|endoftext|>",
+        "<|eot_id|>",
+        "<|end_of_text|>",
+        "<end_of_turn>",
+    ];
+    let mut ids: Vec<u32> = model_eos.into_iter().collect();
+    for id in EOG_MARKERS.iter().filter_map(|m| tokenizer.get_token_id(m)) {
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    ids
+}
+
 /// Quantized model (CPU GGUF) backend.
 fn try_quantized_completions(
     state: &AppState,
@@ -796,7 +828,7 @@ fn try_quantized_completions(
         max_tokens,
         temperature,
         top_k: if temperature == 0.0 { 1 } else { 40 },
-        stop_tokens: Vec::new(),
+        stop_tokens: completion_stop_tokens(&tokenizer, state.model_eos_token_id()),
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),
         ..Default::default()

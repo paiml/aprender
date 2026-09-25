@@ -34,7 +34,7 @@ async fn process_batch(
             max_tokens: first.max_tokens,
             temperature: first.temperature,
             top_k: first.top_k,
-            stop_tokens: Vec::new(),
+            stop_tokens: first.stop_tokens.clone(),
             trace: false,
             ..Default::default()
         };
@@ -87,7 +87,7 @@ async fn process_batch(
                     max_tokens: request.max_tokens,
                     temperature: request.temperature,
                     top_k: request.top_k,
-                    stop_tokens: Vec::new(),
+                    stop_tokens: request.stop_tokens.clone(),
                     trace: false,
             ..Default::default()
                 };
