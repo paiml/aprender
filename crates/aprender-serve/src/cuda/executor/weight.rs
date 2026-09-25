@@ -259,10 +259,7 @@ impl CudaExecutor {
         let q8_buf = unsafe { GpuBuffer::<u8>::from_raw_parts(q8_ptr, q8_len) };
 
         // Step 1: Quantize activations to Q8_1 (skip if already valid — PMAT-027)
-        if !self.q8_activation_valid {
-            self.q8_quantize_into(input, &q8_buf, k)?;
-            self.q8_activation_valid = true;
-        }
+        self.q8_quantize_cached(input, &q8_buf, k)?;
 
         // Step 2: Launch DP4A Q6K GEMV kernel
         let num_warps = self.gpu_profile.mwv_warps;
@@ -349,10 +346,7 @@ impl CudaExecutor {
         // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
         let q8_buf = unsafe { GpuBuffer::<u8>::from_raw_parts(q8_ptr, q8_len) };
 
-        if !self.q8_activation_valid {
-            self.q8_quantize_into(input, &q8_buf, k)?;
-            self.q8_activation_valid = true;
-        }
+        self.q8_quantize_cached(input, &q8_buf, k)?;
 
         let num_warps = self.gpu_profile.mwv_warps;
         let kernel_type = KernelType::HwDp4aQ6KGemv { k, n, num_warps };

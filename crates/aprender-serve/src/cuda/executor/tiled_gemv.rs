@@ -317,6 +317,25 @@ impl CudaExecutor {
         Ok(buf_output)
     }
 
+    /// Quantize `input` into `output` unless the cached Q8_1 activation was
+    /// already quantized from this same input (PMAT-027), keyed on the input
+    /// pointer and length (#4378), not on the flag alone.
+    pub(crate) fn q8_quantize_cached(
+        &mut self,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<u8>,
+        n: u32,
+    ) -> Result<(), GpuError> {
+        let src = (input.as_ptr(), n);
+        if q8_cache_hit(self.q8_activation_valid, self.q8_activation_src, src) {
+            return Ok(());
+        }
+        self.q8_quantize_into(input, output, n)?;
+        self.q8_activation_valid = true;
+        self.q8_activation_src = src;
+        Ok(())
+    }
+
     /// PAR-PERF-DP4A: Q8 quantize into PRE-ALLOCATED buffer (zero allocation)
     ///
     /// Five-Whys root cause (2026-02-09):
@@ -376,5 +395,34 @@ impl CudaExecutor {
         }
 
         Ok(())
+    }
+}
+
+/// #4378: the cached Q8_1 activation serves a GEMV only when it is valid AND
+/// was quantized from the same (pointer, length). A valid flag alone let a
+/// new input read the previous input's activation.
+fn q8_cache_hit(valid: bool, cached: (u64, u32), src: (u64, u32)) -> bool {
+    valid && cached == src
+}
+
+#[cfg(test)]
+mod q8_cache_key_tests {
+    use super::q8_cache_hit;
+
+    #[test]
+    fn a_valid_cache_serves_only_the_input_it_was_quantized_from() {
+        let a = (0x7000_0000, 2048);
+        // (valid, cached, asked) -> hit
+        let cases = [
+            ((true, a, a), true),                   // QKV / gate+up share one input
+            ((false, a, a), false),                 // cleared after a rewrite
+            ((true, a, (0x7000_2000, 2048)), false), // per-sequence fallback: seq 1 view
+            ((true, a, (0x7000_0000, 4096)), false), // same buffer, batched m*k
+            ((true, (0, 0), (0, 0)), true),         // degenerate: key only, flag decides
+            ((false, (0, 0), a), false),            // fresh executor
+        ];
+        for ((valid, cached, src), want) in cases {
+            assert_eq!(q8_cache_hit(valid, cached, src), want, "{valid} {cached:?} {src:?}");
+        }
     }
 }

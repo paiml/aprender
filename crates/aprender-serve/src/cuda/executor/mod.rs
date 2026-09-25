@@ -648,6 +648,13 @@ pub struct CudaExecutor {
     // Set to true after q8_quantize_into; callers invalidate (set false)
     // when the input buffer content changes (e.g. after RMSNorm write).
     q8_activation_valid: bool,
+    // #4378: what the cached Q8_1 activation was quantized from — (input
+    // device pointer, element count). A GEMV on any other input requantizes
+    // even when no caller cleared the flag, so a caller that forgets the
+    // clear (per-sequence fallback, batched decode, MoE resident) cannot
+    // read the previous input's activation. A rewrite of the SAME buffer
+    // still needs the explicit clear.
+    q8_activation_src: (u64, u32),
     // PMAT-084: FP8 activation cache — skip redundant absmax+convert when
     // multiple FP8 GEMMs share the same input (QKV phase, FFN gate+up).
     // Saves 84 kernel pairs per prefill (3 per layer × 28 layers).

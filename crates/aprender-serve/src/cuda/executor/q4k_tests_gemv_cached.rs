@@ -369,6 +369,47 @@ mod tests {
         let _ = result;
     }
 
+    /// #4378: a DP4A GEMV on a NEW input must not read the Q8_1 activation
+    /// quantized from the previous one, even when no caller cleared the
+    /// cache (the per-sequence fallback, batched decode and MoE resident
+    /// paths never do). Before the (pointer, length) key, `second` equalled
+    /// `first`.
+    #[test]
+    fn test_hw_dp4a_new_input_requantizes_without_a_clear() {
+        use crate::cuda::executor::test_fixtures::{setup_executor_harness, HarnessConfig};
+        let Some(mut exec) = create_executor() else {
+            return;
+        };
+        let config = HarnessConfig::default();
+        if setup_executor_harness(&mut exec, &config).is_err() {
+            return;
+        }
+        let dim = config.hidden_dim;
+        let w = exec.indexed_layer_weights[0].attn_q_ptr;
+        let a_host = vec![0.1f32; dim];
+        let b_host: Vec<f32> = (0..dim).map(|i| ((i % 17) as f32 - 8.0) * 0.05).collect();
+        let a = GpuBuffer::from_host(&exec.context, &a_host).expect("a");
+        let b = GpuBuffer::from_host(&exec.context, &b_host).expect("b");
+        let run = |exec: &mut CudaExecutor, input: &GpuBuffer<f32>| -> Vec<f32> {
+            let out = GpuBuffer::<f32>::new(&exec.context, dim).expect("out");
+            exec.hw_dp4a_q4k_gemv_into(w, input, &out, dim as u32, dim as u32)
+                .expect("hw_dp4a gemv");
+            exec.stream.synchronize().expect("sync");
+            let mut host = vec![0.0f32; dim];
+            out.copy_to_host(&mut host).expect("download");
+            host
+        };
+
+        exec.q8_activation_valid = false;
+        let first = run(&mut exec, &a);
+        let second = run(&mut exec, &b); // no clear in between
+        exec.q8_activation_valid = false;
+        let fresh = run(&mut exec, &b);
+
+        assert_ne!(first, fresh, "a and b must give different outputs, or this test proves nothing");
+        assert_eq!(second, fresh, "b read a's cached Q8_1 activation (#4378)");
+    }
+
     #[test]
     fn test_fused_rmsnorm_q4k_with_harness() {
         use crate::cuda::executor::test_fixtures::{setup_executor_harness, HarnessConfig};
