@@ -110,5 +110,8 @@ lake exe cache get > "$LOG.cache" 2>&1 || { echo "decline: lake exe cache get fa
 # download" and unpacks nothing, so a fresh checkout elaborated all of Mathlib (measured 2026-09-24: 0 oleans after
 # get, 7743 after unpack). unpack skips what is already decompressed, so on a warm tree it is a no-op.
 lake exe cache unpack >> "$LOG.cache" 2>&1 || { echo "decline: lake exe cache unpack failed -- $(tail -1 "$LOG.cache")"; exit 2; }
+# #4348: at most 8 Lean worker threads by default (lake and every lean it spawns read LEAN_NUM_THREADS). Uncapped,
+# the Lean tools took 51 threads and 58-67 GB on lambda; the host must stay usable for other work.
+export LEAN_NUM_THREADS="${LEAN_NUM_THREADS:-8}"
 lake build > "$LOG" 2>&1; brc=$?
 gate "$LOG" "$brc"

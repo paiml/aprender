@@ -54,7 +54,10 @@ pub fn render(lean_dir: &Path, contract_dir: &Path) -> Result<Rendered, String> 
     for (stem, roots) in &binding.by_contract {
         let mut blocks = Vec::new();
         let mut imports = BTreeSet::new();
-        for root in roots {
+        // Two obligations may bind one theorem; a second restatement is a duplicate declaration and the file
+        // fails to elaborate (silu-kernel-v1: `sigmoid_lt_exp`, #4244). One challenge per root.
+        let mut seen = BTreeSet::new();
+        for root in roots.iter().filter(|r| seen.insert(r.fqn.as_str())) {
             match restate(&tree, root, &mut sources) {
                 Ok(block) => {
                     imports.insert(root.module.clone());

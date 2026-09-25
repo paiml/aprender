@@ -21,10 +21,15 @@ equations:
       - "F16 input, F32 accumulation (GB10 config 3: M=16 K=16 N=16)"
     lean_theorem: ProvableContracts.CooperativeMatrix.matmul_block_sum
   f16_error_bound:
-    formula: "|C_f32_accum - C_exact| ≤ K * ε_f16 * max|A| * max|B|"
-    domain: "K reduction dimension, ε_f16 = 2^{-10}"
+    formula: "|Σ_k fl(A[m,k])·fl(B[k,n]) - Σ_k A[m,k]·B[k,n]| ≤ K * (2u + u²) * max|A| * max|B|"
+    domain: "K reduction dimension; fl any rounding with |fl(x) - x| ≤ u|x| (F16 round-to-nearest: u = 2^{-11}, so 2u + u² = 2^{-10} + 2^{-22})"
     codomain: "error bound ∈ ℝ≥0"
-    lean_theorem: "none — f16_accumulation_error_bound is an AXIOM, not a proof (CooperativeTiling.lean, escape-allowlist.yaml, #4139)"
+    lean_theorem: ProvableContracts.CooperativeMatrix.f16_input_rounding_error_bound
+    lean_scope: >-
+      #4347: proved with the rounding model as a HYPOTHESIS, not an axiom. Covers F16 input
+      rounding with exact accumulation; F32 accumulation rounding is not modelled. The former
+      formula K * 2^{-10} * max|A| * max|B| is false even for exact accumulation (it drops the
+      u² term), and its Lean "proof" was an axiom asserting only that the number exists.
     notes:
       - "Uses wgpu::Features::SUBGROUP_VERTEX_STAGE or cooperative_matrix feature"
       - "Dispatch: ceil(M/coop_M) × ceil(N/coop_N) workgroups"

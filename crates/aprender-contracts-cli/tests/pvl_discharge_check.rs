@@ -386,7 +386,12 @@ fn a_bound_theorem_outside_the_roots_import_cone_is_orphaned_not_pinned() {
     fx.gen();
     let axioms = std::fs::read_to_string(fx.path("lean/Axioms.lean")).expect("Axioms.lean");
     assert!(!axioms.contains("gelu_bound"), "{axioms}");
-    assert_rc(&fx.check(&[]), 2, "decline: 0 contract-bound theorems");
+    // EV-6c (#4244): an orphaned bound theorem is RED by name, not the zero-roots decline -- a failure outranks it.
+    assert_rc(
+        &fx.check(&[]),
+        1,
+        "ORPHANED-ROOT ProvableContracts.Gelu.gelu_bound",
+    );
 }
 
 #[test]
@@ -423,8 +428,10 @@ fn the_real_lean_tree_passes_the_ev_6a_probe() {
         "is its regeneration",
     );
     let r = run(&["discharge", "check", lean, "--no-lake"]);
-    assert_rc(&r, 0, "PENDING (7)");
-    assert!(r.stdout.contains("ok    discharge"), "{}", r.show());
+    assert_rc(&r, 0, "ok    discharge");
+    // #4347 proved all 7 drafted escapes, so the real tree has none pending. A new escape needs a proof, or an
+    // allowlist entry AND this ratchet loosened in the same diff.
+    assert!(!r.stdout.contains("PENDING ("), "{}", r.show());
     assert_eq!(
         std::fs::read(&labels).expect("label set"),
         before,
