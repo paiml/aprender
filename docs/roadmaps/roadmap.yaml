@@ -18249,6 +18249,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Cop row (aprender-cf, 2026-09-24), filed by aprender-70. Release-time gate scripts/package_tarball_build.sh, declared in [package.metadata.dogfood].gates (no workflow edit; cargo-free guard_tree cannot run it). The PR-time half is rows 14-16 of check_package_includes.sh --self-test, which ci.yml guard-cargo already runs. MEASURED on lambda (compile only): main 49fe19c28 RED in 9 crates in 275 s with a warm target -> filed #4129 (include! outside the .crate) and #4130 (shipped integration tests with stripped path-only dev-deps). Negative control OK in 288 s. On 4eb21dbac aprender-serve is absent from the RED rows (582 s). A defect in the gate''s own first draft: tar restores archived mtimes and cargo decides freshness by mtime, so a warm target dir reused a DIFFERENT build of the same name and version (a false green, caught by row 15). Unpacking with tar -m fixes it.'
+- id: GH-4149
+  github_issue: 4149
+  item_type: task
+  kind: code
+  title: 'apr-cli tests reading workspace files fail out of tree (packaged tarball) — skip by name out of tree, FAIL in tree'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:00:00+00:00
+  updated: 2026-09-24T12:00:00+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  notes: null
 - id: GH-4162
   github_issue: 4162
   item_type: task
