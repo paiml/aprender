@@ -29,6 +29,7 @@ fn test_chat_completion_request_debug() {
 #[test]
 fn test_chat_completion_response_debug() {
     let resp = ChatCompletionResponse {
+        used_gpu: None,
         id: "id".to_string(),
         object: "chat.completion".to_string(),
         created: 0,
@@ -51,6 +52,7 @@ fn test_chat_completion_response_debug() {
 #[test]
 fn test_chat_completion_response_with_traces() {
     let resp = ChatCompletionResponse {
+        used_gpu: None,
         id: "id".to_string(),
         object: "chat.completion".to_string(),
         created: 123,

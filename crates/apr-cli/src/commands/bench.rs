@@ -830,6 +830,10 @@ fn print_header(path: &Path, config: &BenchConfig) {
 include!("benchmark.rs");
 include!("bench_safetensors.rs");
 include!("bench_moe.rs");
+include!("bench_qwen35.rs");
+#[cfg(all(test, feature = "inference"))]
+#[path = "bench_qwen35_tests.rs"]
+mod bench_qwen35_tests;
 include!("bench_04.rs");
 
 // ── PARITY-001: the bench receipt's provenance fields ───────────────────────

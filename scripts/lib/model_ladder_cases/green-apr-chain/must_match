@@ -1,0 +1,1 @@
+ok    cell m-q4k.apr fmt=apr quant=Q4K host=lambda backend=cuda verb=chat -- chain to source 111111111111: CRUX GREEN

@@ -1,0 +1,1 @@
+{"text": "<answer>水</answer>", "raw_text": "<answer>水</answer>\n", "turns": ["<answer>水</answer>"], "reported": {"interface": "generate", "thinking_requested": "off", "thinking_emitted": false, "prompt_opens_think": false, "prompt_tokens": 35, "completion_tokens": 10, "device": "cuda:0 NVIDIA GB10"}}

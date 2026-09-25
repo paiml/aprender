@@ -99,10 +99,18 @@ impl TensorValidation {
         self.inf_count > 0
     }
 
-    /// Check if tensor is all zeros (suspicious)
+    /// Check if tensor is all zeros (suspicious).
+    ///
+    /// A 0-element tensor is NOT all-zeros: "every element is zero" is not a
+    /// claim you can make about no elements, and `empty_tensor_validation`
+    /// already rules such a tensor `is_valid: true`. Without the
+    /// `element_count > 0` guard the two verdicts contradict each other, and
+    /// `strict_blocking` reads this one — which made `apr validate --strict`
+    /// reject every tied-embedding model over its 0-byte `lm_head.weight`
+    /// placeholder (#2309).
     #[must_use]
     pub fn is_all_zeros(&self) -> bool {
-        self.zero_count == self.element_count
+        self.element_count > 0 && self.zero_count == self.element_count
     }
 }
 

@@ -1,0 +1,213 @@
+{
+  "ticket": "PMAT-3855",
+  "base": "b3b3faa33",
+  "base_resolved": "b3b3faa33",
+  "base_note": "no origin/b3b3faa33 exists; judged against the local ref",
+  "head": "3a5bc6d3e03de0226d8a9714c7c60a58bd8ac06e",
+  "diff_sha256": "e6a5d5543c287c032f1029d846a531f70665336c7d2f4c4f94500e5ada2a7e0b",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 7636,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The added specification file introduces documentation only and does not violate any constraints of ticket PMAT-3855. No prohibited deletions, verdict changes, CI edits, or out‑of‑scope modifications are present.",
+      "findings": [],
+      "raw_bytes": 2096,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gpt-oss-120b-medium",
+      "model_measured": "gpt-oss-120b-medium",
+      "model_source": "measured",
+      "family": "openai",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gpt-oss-120b-medium",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "quota",
+            "reason": "API error (attempt 1): RESOURCE_EXHAUSTED (code 429): You have exhausted your capacity on this model. Your quota will reset after 0s."
+          },
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PASS",
+      "findings": [],
+      "raw_bytes": 2306,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gpt-oss-120b-medium",
+      "model_measured": "gpt-oss-120b-medium",
+      "model_source": "measured",
+      "family": "openai",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gpt-oss-120b-medium",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "capacity",
+            "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+          },
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff only adds a new design specification markdown file and does not modify any code, tests, or CI gates. No out‑of‑scope changes, weakened gates, or unsupported receipt claims are present. Therefore the change complies with PMAT‑3855.",
+      "findings": [],
+      "raw_bytes": 4849,
+      "err_bytes": 59,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gpt-oss-120b-medium",
+      "model_measured": "gpt-oss-120b-medium",
+      "model_source": "measured",
+      "family": "openai",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gpt-oss-120b-medium",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-opus-4-6-thinking",
+            "family": "claude",
+            "outcome": "quota",
+            "reason": "API error (attempt 1): RESOURCE_EXHAUSTED (code 429): You have exhausted your capacity on this model. Your quota will reset after 1s."
+          },
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "why": "family gemini quota-exhausted (429, first seen on lane 1 on gemini-3.1-pro-high)"
+          }
+        ]
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: every one of the 3 lanes ran on ONE model id (gpt-oss-120b-medium) — agreement under resampling, not independent corroboration (PMAT-125)",
+    "lane 1: judged by gpt-oss-120b-medium after falling through gemini-3.1-pro-high (quota: API error (attempt 1): RESOURCE_EXHAUSTED (code 429): You have exhausted your capacity on this model. Your quota will reset after 0s.) (PMAT-321)",
+    "lane 2: judged by gpt-oss-120b-medium after falling through gpt-oss-120b-medium (capacity: UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server) (PMAT-321)",
+    "lane 3: judged by gpt-oss-120b-medium after falling through claude-opus-4-6-thinking (quota: API error (attempt 1): RESOURCE_EXHAUSTED (code 429): You have exhausted your capacity on this model. Your quota will reset after 1s.); gemini-3.1-pro-high (skipped: family gemini quota-exhausted (429, first seen on lane 1 on gemini-3.1-pro-high)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "configured"
+      },
+      {
+        "model": "Qwen3.5-27B-Q4_K_M",
+        "family": "qwen",
+        "disposition": "local"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 2 lane(s), recorded role width (R-15a as amended 2026-09-22; receipt-lint enforces the same cap and refuses the author's own model id)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "capacity",
+        "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 2,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

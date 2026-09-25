@@ -1,0 +1,229 @@
+{
+ "schema": "crux-inference-receipt/v1",
+ "host": "lambda",
+ "backend": "cpu",
+ "apr": {
+  "sha": "ca5eca5eca5eca5eca5eca5eca5eca5eca5eca5e"
+ },
+ "greedy_only": true,
+ "cells": [
+  {
+   "key": {
+    "model_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "host": "lambda",
+    "verb": "run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  }
+ ],
+ "greedy": [
+  {
+   "key": {
+    "model_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "host": "lambda",
+    "prompt_id": "golden-2plus2",
+    "thinking": "off"
+   },
+   "apr": {
+    "raw": {
+     "generated_ids": [
+      151667,
+      198,
+      32313,
+      11,
+      103,
+      594,
+      1490
+     ],
+     "generated_text": "<think>\n\n</think>\n\nThe answer is five.",
+     "greedy": true,
+     "special": true,
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198,
+      248068,
+      198
+     ],
+     "backend": {
+      "requested": "cpu",
+      "ran": "cpu",
+      "fell_back": false
+     }
+    }
+   },
+   "llama.cpp@official": {
+    "raw": {
+     "generated_ids": [
+      151667,
+      198,
+      32313,
+      11,
+      1077,
+      594,
+      1490
+     ],
+     "generated_text": "<think>\n\n</think>\n\nThe answer is five.",
+     "greedy": true,
+     "special": true,
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198,
+      248068,
+      198
+     ],
+     "template_prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198,
+      248068,
+      198
+     ]
+    }
+   }
+  },
+  {
+   "key": {
+    "model_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "host": "lambda",
+    "prompt_id": "golden-2plus2",
+    "thinking": "off"
+   },
+   "apr": {
+    "raw": {
+     "generated_ids": [
+      151667,
+      198,
+      32313
+     ],
+     "generated_text": "<think>\n\n</think>\n\nThe answer is 4.",
+     "greedy": true,
+     "special": true,
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198,
+      248068,
+      198
+     ],
+     "backend": {
+      "requested": "cpu",
+      "ran": "cpu",
+      "fell_back": false
+     }
+    }
+   },
+   "llama.cpp@official": {
+    "raw": {
+     "generated_ids": [
+      151667,
+      198,
+      32313
+     ],
+     "generated_text": "<think>\n\n</think>\n\nThe answer is 4.",
+     "greedy": true,
+     "special": true,
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198,
+      248068,
+      198
+     ],
+     "template_prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198,
+      248068,
+      198
+     ]
+    }
+   }
+  }
+ ],
+ "summary": {
+  "verdict": "DECLINE",
+  "declined_because": "no cell was measured",
+  "cells": 0
+ }
+}

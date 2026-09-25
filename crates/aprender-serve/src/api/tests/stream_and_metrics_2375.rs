@@ -545,12 +545,23 @@ async fn unservable_temperature_is_refused_on_every_generating_route() {
         ),
     ];
 
+    // #3991: `/v1/batch/completions` is mounted only where a `cached_model` can
+    // serve it, so it is exercised on that state; every other route on the
+    // quantized server `apr serve model.gguf` builds.
+    let state_for = |uri: &str| {
+        if uri == "/v1/batch/completions" {
+            crate::api::test_helpers::create_test_cached_state()
+        } else {
+            quantized_state()
+        }
+    };
+
     for (uri, head, tail) in routes {
         // `names_the_field` is false only for the value serde_json refuses before
         // our guard is reached (see the doc comment).
         for (unservable, names_the_field) in [("-1", true), ("1e40", true), ("1e400", false)] {
             let (status, _, body) =
-                send(quantized_state(), uri, &format!("{head}{unservable}{tail}")).await;
+                send(state_for(uri), uri, &format!("{head}{unservable}{tail}")).await;
 
             assert!(
                 status.is_client_error(),
@@ -574,7 +585,7 @@ async fn unservable_temperature_is_refused_on_every_generating_route() {
         // Positive control on the SAME route and the same server: a servable
         // temperature is still answered, so the rejections above are about the
         // value and not about the route being broken.
-        let (status, _, body) = send(quantized_state(), uri, &format!("{head}0.7{tail}")).await;
+        let (status, _, body) = send(state_for(uri), uri, &format!("{head}0.7{tail}")).await;
         assert!(
             !status.is_client_error(),
             "{uri} refused a servable temperature of 0.7: {status} {body}"

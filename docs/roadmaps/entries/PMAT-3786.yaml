@@ -1,0 +1,20 @@
+- id: PMAT-3786
+  github_issue: 3786
+  item_type: task
+  title: 'APR Q4K GPU chat: the request seed reaches a seeded draw through the shared sampler; the wall-clock-hash sampler is deleted (#3786)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-a8
+  created: 2026-09-21T21:45:00Z
+  updated: 2026-09-21T21:45:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3786 done_when 1, verbatim: "`sample_with_temperature` is removed, or delegates to `realizar::sampling::draw_seeded` with a `StdRng` seeded from the request''s `seed` (default `sampling::DEFAULT_SEED`). The APR Q4K scheduler threads the seed through."'
+  - 'done_when 2, verbatim: "The same request and seed twice give byte-identical output on the APR Q4K GPU chat path. A different seed gives different output. Temperature 0 or `top_k` 1 stays greedy. Each is a test that is RED at 0.69.0."'
+  - 'done_when 3, verbatim: "No wall-clock-derived randomness is left in any token-selection site (`git grep -n ''SystemTime::now().hash''` over the generation paths is empty, or each remaining hit is justified)."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'STACKED on #3760 (fix/3760-shared-seeded-sampler @ 72db50867), which provides `realizar::sampling::{draw_seeded, DEFAULT_SEED}`. FIX: `AprQ4kRequest` gains `seed: u64`, and the three senders set it: `/generate` (api/batch.rs) and chat (api/cuda_chat_backend.rs) use `request.seed.unwrap_or(sampling::DEFAULT_SEED)`; `/v1/completions` (api/gpu_completions_handler.rs) uses DEFAULT_SEED because its request has no seed field. `generate_q4k` takes the seed and seeds ONE `StdRng` per request, and both sampled sites (first token, decode step) call the new ungated `q4k_sampled_token(logits, temperature, rng)` = `sampling::draw_seeded(logits, temperature, Q4K_TOP_K=40, 1.0, rng)`. Greedy is untouched (`temperature <= 0.01` -> `cli::inference::argmax`), so greedy output is byte-identical. `cli::inference::sample_with_temperature` (cli/apr_inference.rs), whose uniform draw was `hash(SystemTime::now())` and which also indexed `top[0]` of an empty slice at top_k 0, is DELETED; the Q4K scheduler was its only caller. done_when 3 sweep: `git grep -n ''SystemTime::now().hash''` over aprender-serve/src and aprender-core/src now finds only aprender-core/src/preprocessing/tsne.rs:328, t-SNE''s embedding initialisation, which is not token selection. TESTS (done_when 2, the sampler the GPU loop runs): api::apr_q4k_scheduler::sampled_token_3786: the same seed reproduces 32 draws byte for byte; a different seed changes them; the draw is not the argmax in disguise. MUTANT: q4k_sampled_token ignoring the request rng (an unseeded draw, the 0.69.0 behaviour) -> the_same_seed_reproduces_the_sampled_tokens RED. REAL PATH, measured and BLOCKED by a different defect: a `--features cuda` build of this branch (`apr 0.69.0 (2db3f55b2)`), `apr serve run qwen2.5-coder-1.5b-instruct-q4k.apr --gpu` on lambda''s RTX 4090, takes the Q4K path ("[GH-471] Entering Q4K GPU path"), but its forward emits degenerate logits. At temperature 0.8 every seed returns "HHHHHHHHHHHHHHHHHHHHHHHH"; temperature 0 fails `Invalid token ID: 151935` (vocab-1, the argmax of NaN logits). No template is applied (prompt_tokens 7), and GET /health answers 503 while it serves. With identical degenerate logits every seed draws the same token, so the path cannot discriminate the seed; the unit rows are the evidence. Reported to the cop as a separate defect. The cop routed that defect as #3791 (aprender-c7); a follow-up evidence commit re-measures the path once it lands. SUITES at this commit: `cargo test -p aprender-serve --lib` 15923 passed; `-p aprender-contracts --lib` 1689 passed; clippy -D warnings on aprender-serve, with and without `--features cuda`, clean; fmt clean.'

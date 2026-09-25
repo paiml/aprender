@@ -1,0 +1,1 @@
+{"text": "<answer>Ada</answer>", "turns": ["<answer>Ada</answer>", "<answer>15</answer>", "<answer>Ada</answer>"], "reported": {"interface": "LLM.chat", "thinking_requested": "off", "thinking_emitted": false, "prompt_tokens": 99, "completion_tokens": 25, "device": "cuda:0 NVIDIA GeForce RTX 4090"}}

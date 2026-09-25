@@ -34,6 +34,8 @@ fn dispatch_run(
     repeat_penalty: f32,
     repeat_last_n: usize,
     split_prompt: bool,
+    // #3723: `--thinking on|off`, None when absent.
+    thinking: Option<bool>,
 ) -> Result<(), CliError> {
     let effective_trace = trace || trace_payload;
     let effective_trace_level = if trace_payload {
@@ -71,6 +73,7 @@ fn dispatch_run(
         repeat_last_n,
         split_prompt,
         chat_template,
+        thinking,
     )
 }
 
@@ -136,8 +139,10 @@ fn dispatch_serve(
         gpu_layers: match gpu_layers.as_deref() {
             Some(v) => Some(serve::GpuLayerRequest::parse(v).map_err(CliError::InvalidInput)?),
             None if gpu && !no_gpu => Some(serve::GpuLayerRequest::All),
-            None => None,
+            // #4089: no flag resolves as `apr run` resolves it on this build.
+            None => serve::GpuLayerRequest::serve_default(no_gpu, backend.as_deref()),
         },
+        gpu_layers_defaulted: gpu_layers.is_none() && !(gpu && !no_gpu),
         batch,
         trace,
         trace_level: trace_level.to_owned(),

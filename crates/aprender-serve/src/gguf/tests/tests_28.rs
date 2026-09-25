@@ -445,3 +445,4 @@ fn test_decode_gpt2_style() {
 
 include!("decode_byte.rs");
 include!("constraint_vocab.rs");
+include!("spm_control_tokens_3993.rs");
