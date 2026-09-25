@@ -105,7 +105,7 @@ t 2 "no tag is a usage error (2), never a pass" bash "$GUARD"
 # 4. the wiring: the workflow shares this checker
 t 0 "binary-release.yml calls the shared checker" \
   bash -c "grep -q 'check_release_assets.sh' '$WF'"
-t 0 "the verify job requires all four apr assets (it is no longer cuda-only)" \
+t 0 "the verify job exists (it requires all six apr assets; it is no longer cuda-only)" \
   bash -c "grep -q 'verify-apr-assets:' '$WF'"
 t 0 "a build-apr-cpu lane exists" bash -c "grep -q 'build-apr-cpu:' '$WF'"
 t 0 "a build-pv-darwin lane exists (#4353)" bash -c "grep -q '^  build-pv-darwin:' '$WF'"

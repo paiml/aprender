@@ -10,9 +10,10 @@ name: Binary Release
 # The aprender workspace ships dozens of crates; the `pv` lane scopes
 # itself to `aprender-contracts-cli`. The `apr-cuda` and `apr-cpu` lanes
 # below ship FOUR `apr` binaries per tag — {cuda, cpu} x {x86_64, aarch64} —
+# plus apr (cpu) for aarch64-apple-darwin and apr (wgpu) for x86_64 (#4353), six —
 # an operator HARD REQUIREMENT for every tag and every release (2026-09-10,
 # PMAT-1096/PMAT-1098, row 67-A1 of docs/specifications/06x-release-schedule.md,
-# Alfredo's #2869): a release without all four is not done, and
+# Alfredo's #2869): a release without all six is not done, and
 # `verify-apr-assets` FAILS the workflow when any is missing. v0.66.0 shipped
 # ZERO apr binaries and nothing was red — the verify job asked about two
 # assets, and only after a build lane that had already died. The question is
@@ -83,7 +84,7 @@ jobs:
   # is its rc's exact bytes (scripts/release/promote_rc.sh); publishing it with a
   # personal token fires `release: published` here, and the upload steps below delete
   # and replace same-named assets, so an ungated rebuild would silently swap the bytes
-  # that were dogfooded for new ones. With all eighteen present the build jobs skip and
+  # that were dogfooded for new ones. With all twenty-two present the build jobs skip and
   # verify + smoke still run, on the promoted bytes. A partial release (a lane died)
   # still rebuilds. An unreadable release (exit 2) fails this job, so the builds skip:
   # when in doubt, never overwrite.
@@ -747,9 +748,7 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           git fetch --no-tags --depth 1 origin "$GITHUB_WORKFLOW_SHA"
-          for f in stamp_rc_version.sh asset_version_check.sh; do
-            git show "FETCH_HEAD:scripts/release/$f" > "$RUNNER_TEMP/$f"
-          done
+          git show "FETCH_HEAD:scripts/release/stamp_rc_version.sh" > "$RUNNER_TEMP/stamp_rc_version.sh"
           case "$TAG" in *-rc.*) ;; *) echo "final tag $TAG: nothing to stamp"; exit 0 ;; esac
           bash "$RUNNER_TEMP/stamp_rc_version.sh" "$GITHUB_WORKSPACE" "$TAG"
 
@@ -793,8 +792,8 @@ jobs:
               | python3 -c 'import json,sys; a=json.load(sys.stdin); print("uploaded", a["name"], a["size"], "bytes")'
           done
 
-  # The hard requirement, as a check that can fail: all FOUR apr assets (tarball +
-  # sha256) and the eight pv assets must be on the release. A missing one is a red
+  # The hard requirement, as a check that can fail: all SIX apr assets (tarball +
+  # sha256) and the ten pv assets must be on the release. A missing one is a red
   # workflow, never a partial summary.
   #
   # THE LOOP THAT USED TO LIVE HERE IS NOW A SCRIPT. Inline, it could only ever run
@@ -804,7 +803,7 @@ jobs:
   # checker all four callers share, and its own case table carries the removed-asset
   # mutation (RED) that this job cannot demonstrate on a real release.
   verify-apr-assets:
-    name: All four apr assets are on the release
+    name: All six apr assets are on the release
     needs: [build, build-apr-cuda, build-apr-cpu, build-apr-darwin, build-pv-darwin]
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
@@ -817,7 +816,7 @@ jobs:
       - name: Preflight - this box has the tools this job assumes
         run: bash scripts/ci_self_hosted_preflight.sh
 
-      - name: Require the four apr assets (+ sha256) and the eight pv assets
+      - name: Require the six apr assets (+ sha256) and the ten pv assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1025,9 +1024,9 @@ jobs:
             echo "  - aarch64-unknown-linux-gnu"
             echo "  - aarch64-apple-darwin (mini): ${{ needs.build-pv-darwin.result }}"
             echo ""
-            echo "### apr Binary Release: $TAG - four assets, {cuda,cpu} x {x86_64,aarch64}"
+            echo "### apr Binary Release: $TAG - six assets, {cuda,cpu} x {x86_64,aarch64} + darwin cpu + x86_64 wgpu"
             echo "- cuda build: ${{ needs.build-apr-cuda.result }} · cpu build: ${{ needs.build-apr-cpu.result }} · darwin build (mini): ${{ needs.build-apr-darwin.result }} · pv darwin: ${{ needs.build-pv-darwin.result }}"
-            echo "- all four on the release: ${{ needs.verify-apr-assets.result }} · smoke cuda (yoga+gx10): ${{ needs.smoke-cuda.result }} · smoke cpu (clean-room+yoga+gx10): ${{ needs.smoke-cpu.result }}"
+            echo "- all six on the release: ${{ needs.verify-apr-assets.result }} · smoke cuda (yoga+gx10): ${{ needs.smoke-cuda.result }} · smoke cpu (clean-room+yoga+gx10): ${{ needs.smoke-cpu.result }}"
             echo "  - apr-$TAG-x86_64-unknown-linux-gnu-cuda.tar.gz (+ .sha256)"
             echo "  - apr-$TAG-aarch64-unknown-linux-gnu-cuda.tar.gz (+ .sha256)"
             echo "  - apr-$TAG-x86_64-unknown-linux-gnu-cpu.tar.gz (+ .sha256)"
