@@ -27,14 +27,19 @@ impl CudaExecutor {
         // PAR-058: Detect LM head quantization type using size-based detection
         // ALB-098: Use pool-aware lookup (pool entries or individual cache)
         let (lm_head_ptr, lm_head_buf_size) = self.get_quantized_weight_ptr_and_size(&lm_head_name)?;
-        let lm_head_qtype =
-            WeightQuantType::from_size(lm_head_buf_size, vocab_size as usize, hidden_dim as usize)
-                .unwrap_or_else(|| {
-                    self.quantized_weight_types
-                        .get(&lm_head_name)
-                        .and_then(|&t| WeightQuantType::from_ggml_type(t))
-                        .unwrap_or(WeightQuantType::Q4K)
-                });
+        // #3850: when the size is ambiguous, a recorded type with no GPU kernel is
+        // refused rather than decoded as Q4_K.
+        let lm_head_qtype = match WeightQuantType::from_size(
+            lm_head_buf_size,
+            vocab_size as usize,
+            hidden_dim as usize,
+        ) {
+            Some(t) => t,
+            None => crate::cuda::executor::weights::resolve_recorded_qtype(
+                &lm_head_name,
+                self.quantized_weight_types.get(&lm_head_name).copied(),
+            )?,
+        };
 
         // CORRECTNESS-002: Debug LM head weight buffer
         if debug_enabled {

@@ -418,25 +418,25 @@ impl CudaExecutor {
             let (ffn_norm_ptr, ffn_norm_len) = get_rmsnorm(&ffn_norm_name)?;
 
             // PAR-058: Resolve quantization types for all weight tensors
-            let attn_q_qtype = self.resolve_qtype(&q_name);
-            let attn_k_qtype = self.resolve_qtype(&k_name);
-            let attn_v_qtype = self.resolve_qtype(&v_name);
-            let attn_output_qtype = self.resolve_qtype(&o_name);
+            let attn_q_qtype = self.resolve_qtype(&q_name)?;
+            let attn_k_qtype = self.resolve_qtype(&k_name)?;
+            let attn_v_qtype = self.resolve_qtype(&v_name)?;
+            let attn_output_qtype = self.resolve_qtype(&o_name)?;
             // M-GPU-MOE-1.3: qtype sentinels for MoE (FFN qtypes unused)
             let ffn_gate_qtype = if arch.is_moe {
                 WeightQuantType::Q4K
             } else {
-                self.resolve_qtype(&gate_name)
+                self.resolve_qtype(&gate_name)?
             };
             let ffn_up_qtype = if arch.is_moe {
                 WeightQuantType::Q4K
             } else {
-                self.resolve_qtype(&up_name)
+                self.resolve_qtype(&up_name)?
             };
             let ffn_down_qtype = if arch.is_moe {
                 WeightQuantType::Q4K
             } else {
-                self.resolve_qtype(&down_name)
+                self.resolve_qtype(&down_name)?
             };
 
             // Log if non-Q4K types detected (for debugging mixed-quant models)
@@ -532,7 +532,7 @@ impl CudaExecutor {
         }
 
         self.indexed_layer_weights = indexed;
-        self.index_output_weights();
+        self.index_output_weights()?;
         Ok(())
     }
 
@@ -574,20 +574,23 @@ impl CudaExecutor {
 
     /// Resolve the quantization type for a named weight tensor.
     ///
-    /// Looks up the GGML type stored during `load_quantized_weights_with_type()`,
-    /// converts it to `WeightQuantType`, and defaults to Q4K if not found.
-    fn resolve_qtype(&self, name: &str) -> WeightQuantType {
-        self.quantized_weight_types
-            .get(name)
-            .and_then(|&t| WeightQuantType::from_ggml_type(t))
-            .unwrap_or(WeightQuantType::Q4K)
+    /// Looks up the GGML type stored during `load_quantized_weights_with_type()`
+    /// and converts it to `WeightQuantType`. A weight with no recorded type keeps
+    /// the legacy Q4K default.
+    ///
+    /// #3850: a RECORDED type that `from_ggml_type` does not know (Q5_1, Q8_1,
+    /// Q2_K, Q3_K, IQ*, ...) is refused. It used to fall into the same
+    /// `unwrap_or(Q4K)` as "absent", so its bytes were decoded by the Q4_K kernel
+    /// and the model produced garbage with no error anywhere.
+    fn resolve_qtype(&self, name: &str) -> Result<WeightQuantType, GpuError> {
+        resolve_recorded_qtype(name, self.quantized_weight_types.get(name).copied())
     }
 
     /// Index output norm and LM head pointers for zero-allocation forward pass.
     ///
     /// PAR-054: LM head weight for CUDA graph capture.
     /// PAR-058: Detect LM head quantization type (Q6_K in Qwen 1.5B, not Q4_K).
-    fn index_output_weights(&mut self) {
+    fn index_output_weights(&mut self) -> Result<(), GpuError> {
         if let Some(buf) = self.rmsnorm_cache.get("output_norm.gamma") {
             self.output_norm_ptr = buf.as_ptr();
             self.output_norm_len = buf.len();
@@ -597,7 +600,7 @@ impl CudaExecutor {
         if let Ok((ptr, size)) = self.get_quantized_weight_ptr_and_size("output.weight") {
             self.lm_head_ptr = ptr;
             self.lm_head_len = size;
-            self.lm_head_qtype = self.resolve_qtype("output.weight");
+            self.lm_head_qtype = self.resolve_qtype("output.weight")?;
             if verbose() {
                 eprintln!(
                     "[PAR-058] LM head qtype: {:?}, ptr={:#x}, len={}",
@@ -605,6 +608,7 @@ impl CudaExecutor {
                 );
             }
         }
+        Ok(())
     }
 
     /// Log non-Q4K quantization types for debugging mixed-quant models (PAR-058).
@@ -642,6 +646,55 @@ impl CudaExecutor {
                 layer_idx, attn_output, ffn_gate, ffn_up, ffn_down
             );
         }
+    }
+}
+
+/// #3850: the qtype a cached weight is decoded with. `None` (no recorded type)
+/// keeps the legacy Q4K default; a recorded type with no GPU kernel is an error,
+/// never Q4K. A free function so the rule is testable without a GPU.
+pub(super) fn resolve_recorded_qtype(
+    name: &str,
+    recorded: Option<u32>,
+) -> Result<WeightQuantType, GpuError> {
+    match recorded {
+        None => Ok(WeightQuantType::Q4K),
+        Some(t) => WeightQuantType::from_ggml_type(t).ok_or_else(|| {
+            GpuError::InvalidLaunchConfig(format!(
+                "#3850: weight '{name}' has GGML type {t}, which has no GPU GEMV kernel; \
+                 refusing to decode it as Q4_K. Run on CPU or convert the model to a supported quant"
+            ))
+        }),
+    }
+}
+
+#[cfg(test)]
+mod resolve_recorded_qtype_3850 {
+    use super::{resolve_recorded_qtype, WeightQuantType};
+
+    #[test]
+    fn known_types_resolve_and_unknown_types_are_refused() {
+        // (recorded ggml type, expected) -- None in `expected` means refused.
+        let table: &[(Option<u32>, Option<WeightQuantType>)] = &[
+            (None, Some(WeightQuantType::Q4K)),
+            (Some(0), Some(WeightQuantType::F32)),
+            (Some(8), Some(WeightQuantType::Q8_0)),
+            (Some(12), Some(WeightQuantType::Q4K)),
+            (Some(14), Some(WeightQuantType::Q6K)),
+            (Some(1), None),  // F16
+            (Some(7), None),  // Q5_1
+            (Some(9), None),  // Q8_1
+            (Some(10), None), // Q2_K
+            (Some(11), None), // Q3_K
+            (Some(16), None), // IQ2_XXS
+            (Some(30), None), // BF16
+            (Some(u32::MAX), None),
+        ];
+        for &(recorded, want) in table {
+            let got = resolve_recorded_qtype("blk.0.attn_q.weight", recorded).ok();
+            assert_eq!(got, want, "recorded={recorded:?}");
+        }
+        let err = resolve_recorded_qtype("w", Some(7)).expect_err("Q5_1 must be refused");
+        assert!(format!("{err}").contains("#3850"), "{err}");
     }
 }
 
