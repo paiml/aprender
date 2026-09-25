@@ -125,6 +125,33 @@ assert_contains "$n" "band 8 comparator: no samples is not a measurement" \
 assert_not_contains "$n" "Traceback" \
     "an empty comparator band must never crash"
 
+# #3805: the producer's "no accelerator resolved" note must reach the block, or
+# check_multiplatform_dogfood.sh demands a cuda lane the installed apr cannot run.
+AA="$TD/accel-absent"; mkdir -p "$AA"
+pbs_make_fixture "$AA" none clean
+printf 'crates.io apr has no cuda feature\n' >"$AA/accel-absent.txt"
+row 0 "accel-absent.txt in WORK -> the block still builds (#3805)" \
+    pbs_run "$AA" "$TD/aa.json"
+row 0 "the block carries accel_absent and --parity accepts it (#3805)" \
+    python3 "$ROOT/scripts/lib/bench_receipt.py" --parity "$TD/aa.json"
+row 0 "--accel-absent prints the producer's reason (#3805)" \
+    python3 "$ROOT/scripts/lib/bench_receipt.py" --accel-absent "$TD/aa.json"
+assert_contains "$n" "crates.io apr has no cuda feature" \
+    "the reason is the producer's words, carried verbatim"
+row 1 "control block (no accel-absent.txt) -> --accel-absent exits 1 (#3805)" \
+    python3 "$ROOT/scripts/lib/bench_receipt.py" --accel-absent "$TD/control.json"
+python3 - "$TD/aa.json" "$TD/aa-cuda.json" <<'PY2'
+import json, sys
+b = json.load(open(sys.argv[1]))
+blk = b["parity"] if isinstance(b.get("parity"), dict) else b
+blk["lanes"][0]["lane"] = "cuda"
+json.dump(b, open(sys.argv[2], "w"))
+PY2
+row 1 "accel_absent beside a cuda lane -> --parity refuses the contradiction (#3805)" \
+    python3 "$ROOT/scripts/lib/bench_receipt.py" --parity "$TD/aa-cuda.json"
+assert_contains "$n" "the block contradicts itself" \
+    "the refusal names the contradiction"
+
 if [ "$red" = 0 ]; then
     printf 'PASS  %s: every fixture (control, zero comparator, zero subject, empty comparator) verdicts as a named result, never a traceback\n' "$PROG"
     exit 0

@@ -726,7 +726,23 @@ def validate_parity(block):
         return errors
     for i, lane in enumerate(lanes):
         _check_parity_lane(lane, i, errors)
+    _check_accel_absent(block, lanes, errors)
     return errors
+
+
+def _check_accel_absent(block, lanes, errors):
+    """accel_absent (#3805) excuses a host from its accelerated lane, so it has
+    to mean what it says: a non-empty reason, and no accelerated lane beside it."""
+    if "accel_absent" not in block:
+        return
+    reason = block["accel_absent"]
+    if not isinstance(reason, str) or not reason.strip():
+        _err(errors, "parity.accel_absent: must be a non-empty reason string")
+    for lane in lanes:
+        name = lane.get("lane") if isinstance(lane, dict) else None
+        if name != "cpu":
+            _err(errors, "parity.accel_absent: says no accelerator resolved, but "
+                         "lane %r is not cpu -- the block contradicts itself" % name)
 
 
 def _parity_of(receipt):
@@ -760,6 +776,19 @@ def _mode_parity(path):
     return 1 if errors else 0
 
 
+def _mode_accel_absent(path):
+    """Print the block's accel_absent reason; exit 0 iff it has one (#3805)."""
+    try:
+        block = _parity_of(_load(path))
+    except (OSError, ValueError):
+        return 2
+    reason = (block or {}).get("accel_absent")
+    if isinstance(reason, str) and reason.strip():
+        print(reason.strip())
+        return 0
+    return 1
+
+
 def _mode_parity_ratio(path):
     """Print `lane ratio verdict` per lane, ratio DERIVED from the samples."""
     try:
@@ -786,6 +815,7 @@ MODES = {
     "--has-parity": _mode_has_parity,
     "--parity": _mode_parity,
     "--parity-ratio": _mode_parity_ratio,
+    "--accel-absent": _mode_accel_absent,
 }
 
 
@@ -795,7 +825,7 @@ def main(argv):
     if len(argv) < 2:
         sys.stderr.write("usage: bench_receipt.py [--bench|--has-bench|"
                          "--bench-median|--parity|--has-parity|"
-                         "--parity-ratio] <receipt.json> [...]\n")
+                         "--parity-ratio|--accel-absent] <receipt.json> [...]\n")
         return 2
     rc = 0
     for path in argv[1:]:

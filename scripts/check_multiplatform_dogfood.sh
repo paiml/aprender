@@ -35,6 +35,48 @@ cd "$(dirname "$0")/.." || exit 2
 #   mini        arm64 macOS   + Metal                Apple silicon, no /proc, APFS
 HOSTS="lambda intel gx10 mini"
 
+# required_lanes <accelerator> <accel_absent reason or empty>: the parity lanes a
+# receipt must carry. They come from what the ARTIFACT can do, not from the
+# host's hardware alone: a crates.io apr has no `cuda` feature, so on an sm_*
+# host it resolves no GPU layer and parity_host_receipt.sh records accel_absent.
+# Demanding a cuda lane there is a gate its own producer cannot satisfy (#3805).
+required_lanes() {
+    if [ -n "$2" ]; then
+        printf 'cpu\n'
+        return 0
+    fi
+    case "$1" in
+        *sm_*|*NVIDIA*|*CUDA*) printf 'cpu cuda\n' ;;
+        *Metal*|*M1*|*M2*|*M3*|*M4*) printf 'cpu metal\n' ;;
+        *) printf 'cpu\n' ;;
+    esac
+}
+
+# The case table (#3805 done_when): an sm_* host whose block says accel_absent
+# needs the cpu lane alone; one whose block does NOT say it still needs cuda.
+if [ "${1:-}" = "--self-test" ]; then
+    bad=0
+    while IFS='|' read -r accel absent want; do
+        got=$(required_lanes "$accel" "$absent")
+        if [ "$got" = "$want" ]; then
+            printf 'ok    %-26s absent=%-24s -> %s\n' "$accel" "${absent:-<none>}" "$want"
+        else
+            printf 'FAIL  %-26s absent=%-24s -> %s (wanted %s)\n' "$accel" "${absent:-<none>}" "$got" "$want"
+            bad=1
+        fi
+    done <<'EOF_CASES'
+NVIDIA RTX 4090 (sm_89)|no-accelerator-resolved|cpu
+NVIDIA RTX 4090 (sm_89)||cpu cuda
+GB10 (sm_121)|no-accelerator-resolved|cpu
+GB10 (sm_121)||cpu cuda
+Apple M4 (Metal)|no-accelerator-resolved|cpu
+Apple M4 (Metal)||cpu metal
+none||cpu
+none|no-accelerator-resolved|cpu
+EOF_CASES
+    exit "$bad"
+fi
+
 # The version comes from cargo, not from a grep of Cargo.toml: under
 # `version.workspace = true` the grep is empty and every receipt reads as STALE
 # (review quorum on #2859, lane 3, measured). The grep stays as the fallback
@@ -234,11 +276,12 @@ for h in $HOSTS; do
                 # accelerator, not from a list maintained beside it. A host that
                 # gains a GPU gains a required lane without anyone remembering.
                 accel=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('accelerator',''))" "$f")
-                want="cpu"
-                case "$accel" in
-                    *sm_*|*NVIDIA*|*CUDA*) want="cpu cuda" ;;
-                    *Metal*|*M1*|*M2*|*M3*|*M4*) want="cpu metal" ;;
-                esac
+                absent=$(python3 "$REPO_BENCH_VALIDATOR" --accel-absent "$f" 2>/dev/null) || absent=""
+                want=$(required_lanes "$accel" "$absent")
+                if [ -n "$absent" ]; then
+                    printf 'REPORT %-6s accelerator %s: accel lane UNMEASURED -- the installed apr resolved none (%s, #3805)\n' \
+                        "$h" "${accel:-<none>}" "$absent"
+                fi
                 have=$(python3 "$REPO_BENCH_VALIDATOR" --parity-ratio "$f" 2>/dev/null | awk '{print $1}' | tr '\n' ' ')
                 missing=""
                 for w in $want; do
