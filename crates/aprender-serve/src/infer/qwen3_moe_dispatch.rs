@@ -302,8 +302,9 @@ pub(crate) mod gpu {
         let ms = start.elapsed().as_secs_f64() * 1000.0;
         if report.accepted {
             eprintln!(
-                "F2 guard: GPU matches the CPU forward on {} positions (min cosine {:.4}) in {ms:.0} ms",
+                "F2 guard: GPU matches the CPU forward on {} positions (max top-k KL {:.4}; advisory min cosine {:.4}) in {ms:.0} ms",
                 cpu.len(),
+                report.max_kl_real,
                 report.min_cosine_real
             );
             Ok(())

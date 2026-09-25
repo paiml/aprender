@@ -1407,7 +1407,7 @@ pub(crate) const QWEN35_F2_PROBE_MAX: usize = 64;
 /// The dense `validate_gpu_first_token` cannot serve here — its CPU reference is
 /// `forward_single_with_cache` and its GPU probe `forward_gpu_resident`, neither
 /// of which exists for this architecture. The decision itself is shared:
-/// `f2_multi_position_report` with its floors (0.95 / 0.98 / 0.90), so the
+/// `f2_multi_position_report` (#4313: top-k KL + top-1 agreement), so the
 /// hybrid is judged by the same rule as every other GPU path. The probe path is
 /// [`F2ProbePath::Batched`] (#3596): `qwen35_gpu_decode` prefills the prompt with the
 /// batched prefill and decodes from there, so the probe does exactly that.
@@ -1922,3 +1922,9 @@ mod qhf_contract_tests;
 #[cfg(test)]
 #[path = "forward_qwen35_gqa_tests.rs"]
 mod qwen35_gqa_tests;
+
+/// #4313: a planted single-op corruption must be RED under the probability-space
+/// F2 metric (the cop's positive-control condition for retiring the cosine).
+#[cfg(test)]
+#[path = "f2_positive_control_tests.rs"]
+mod f2_positive_control_tests;

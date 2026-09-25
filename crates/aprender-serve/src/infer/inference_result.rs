@@ -732,10 +732,11 @@ fn log_cpu_backend(verbose: bool, is_legacy: bool) {
 /// fine — so the gate forwards the WHOLE probe on both backends and checks EVERY
 /// position.
 ///
-/// Decision (see [`f2_multi_position_acceptable`]):
-///   ACCEPT ⟺ ∀ p ≥ 1: argmax(cpu[p]) == argmax(gpu[p])
-///            ∧ min_{p≥1} cosine(cpu[p], gpu[p]) ≥ F2_GATE_COSINE_MIN (0.95)
-///            ∧ no NaN / zero-norm (catastrophic floor)
+/// Decision (see [`f2_multi_position_report`]; #4313 moved it to probability space):
+///   ACCEPT ⟺ ∀ p ≥ 1: all logits finite
+///            ∧ (argmax(cpu[p]) == argmax(gpu[p]) ∨ CPU rates GPU's pick within
+///               F2_TOP1_TIE_NATS (1.0) of its top)
+///            ∧ top-k KL(cpu[p] ‖ gpu[p]) ≤ F2_KL_MAX (0.1 nats)
 ///
 /// Position 0 is EXCLUDED: a context-less BOS / first-token distribution is
 /// near-flat, so an argmax flip there is a benign FP near-tie (PMAT-742 / #1864 —
@@ -849,11 +850,14 @@ pub(crate) fn f2_select_probe_path(
 /// behind a green guard. Pure + string-returning so it is unit-testable.
 pub(crate) fn f2_divergence_msg(report: &F2PositionReport, via: F2ProbePath) -> String {
     format!(
-        "warning: GPU output diverges from CPU at position {} (argmax {} != {}, cosine {:.4}); \
-min cosine {:.4}, validated via {} — falling back to CPU",
+        "warning: GPU output diverges from CPU at position {} ({}: argmax {} vs CPU {}, \
+top-k KL {:.4} nats, ceiling {F2_KL_MAX}; advisory cosine {:.4}, min {:.4}), \
+validated via {} — falling back to CPU",
         report.first_bad_pos,
+        report.first_bad_reason.as_str(),
         report.first_bad_gpu_argmax,
         report.first_bad_cpu_argmax,
+        report.first_bad_kl,
         report.first_bad_cosine,
         report.min_cosine_real,
         via.as_str(),
@@ -1037,7 +1041,9 @@ fn f2_gpu_batched_logits(
 pub enum F2Outcome {
     /// Compared and accepted.
     Validated {
-        /// Worst cosine over the real positions.
+        /// Worst top-k KL (nats) over the real positions: what the gate judged (#4313).
+        max_kl: f32,
+        /// Worst whole-vocab cosine over the real positions. Advisory since #4313.
         min_cosine: f32,
     },
     /// Compared and rejected, or the GPU forward failed.
@@ -1064,8 +1070,8 @@ thread_local! {
 #[must_use]
 pub(crate) fn f2_status_line(outcome: &F2Outcome) -> String {
     match outcome {
-        F2Outcome::Validated { min_cosine } => {
-            format!("[GH-480] F2 validation PASSED (min cosine {min_cosine:.4}) — launching GPU generation")
+        F2Outcome::Validated { max_kl, min_cosine } => {
+            format!("[GH-480] F2 validation PASSED (max top-k KL {max_kl:.4} nats; advisory min cosine {min_cosine:.4}) — launching GPU generation")
         },
         F2Outcome::Mismatch => "[GH-480] F2 validation FAILED — falling back to CPU".to_string(),
         F2Outcome::NotMeasured { reason } => format!(
@@ -1183,7 +1189,8 @@ fn f2_remeasure_without_fp8(
             let report = f2_multi_position_report(cpu_logits_per_pos, &v);
             if report.accepted {
                 eprintln!(
-                    "note: FP16 prefill passes (min cosine {:.4}); FP8 stays OFF for this model",
+                    "note: FP16 prefill passes (max top-k KL {:.4}, advisory min cosine {:.4}); FP8 stays OFF for this model",
+                    report.max_kl_real,
                     report.min_cosine_real,
                 );
             }
@@ -1214,7 +1221,8 @@ fn f2_accept_or_reject(
     // developer trace, not user output.
     if report.pos0_argmax_flip && crate::dev_trace::dev_trace_enabled() {
         eprintln!(
-            "pos0 argmax flip (benign BOS near-tie) ignored; all {real_positions} real positions match (min cosine {:.4} >= {F2_GATE_COSINE_MIN}) via {} — accepting GPU path",
+            "pos0 argmax flip (benign BOS near-tie) ignored; all {real_positions} real positions match (max top-k KL {:.4} <= {F2_KL_MAX}, advisory min cosine {:.4}) via {} — accepting GPU path",
+            report.max_kl_real,
             report.min_cosine_real,
             via.as_str(),
         );
@@ -1291,7 +1299,9 @@ pub fn validate_gpu_first_token(
     // both. A defect outside FP8 still fails the FP16 re-measure and still rejects.
     if f2_should_retry_without_fp8(&report, via, cuda_model.executor.gpu_profile.fp8_prefill) {
         eprintln!(
-            "note: FP8 batched prefill scored min cosine {:.4} vs CPU (floor {F2_GATE_COSINE_MIN}) — re-measuring on the FP16 prefill path",
+            "note: FP8 batched prefill failed F2 vs CPU ({}, top-k KL {:.4}, advisory min cosine {:.4}) — re-measuring on the FP16 prefill path",
+            report.first_bad_reason.as_str(),
+            report.first_bad_kl,
             report.min_cosine_real,
         );
         if let Some(fp16) = f2_remeasure_without_fp8(
@@ -1308,7 +1318,10 @@ pub fn validate_gpu_first_token(
     }
 
     if f2_accept_or_reject(&report, via, cpu_logits_per_pos.len().saturating_sub(1)) {
-        F2Outcome::Validated { min_cosine: report.min_cosine_real }
+        F2Outcome::Validated {
+            max_kl: report.max_kl_real,
+            min_cosine: report.min_cosine_real,
+        }
     } else {
         F2Outcome::Mismatch
     }
@@ -1337,10 +1350,13 @@ mod pmat3477_f2_fp8_retry_tests {
             accepted: false,
             pos0_argmax_flip: false,
             min_cosine_real: cos,
+            max_kl_real: 0.2,
             first_bad_pos: 27,
             first_bad_cpu_argmax: 29,
             first_bad_gpu_argmax: 29,
             first_bad_cosine: cos,
+            first_bad_kl: 0.2,
+            first_bad_reason: super::F2RejectReason::Kl,
         }
     }
 
@@ -1392,11 +1408,16 @@ mod pmat3477_f2_fp8_retry_tests {
     }
 }
 
+/// RETIRED by #4313: the gate no longer reads a cosine. The three PMAT-919 cosine
+/// bands below survive as the markers the synthetic falsifiers are written against,
+/// so each test still states which band its case sits in.
+///
 /// PMAT-919 F2 per-position cosine floor. For every REAL probe position (≥1) the
-/// GPU's logits must score `cosine ≥ F2_GATE_COSINE_MIN` against CPU's regardless of
+/// GPU's logits had to score `cosine ≥ F2_GATE_COSINE_MIN` against CPU's regardless of
 /// argmax. Set strictly below the load-time `PARITY_GATE_COSINE_MIN` (0.98 in
 /// `cuda/mod.rs`) so this subordinate gate never rejects a model the load-time gate
 /// accepted. Backstops the degraded HwDp4a 7B case (pos6 @ 0.9398 → reject).
+#[cfg(test)]
 pub(crate) const F2_GATE_COSINE_MIN: f32 = 0.95;
 
 /// PMAT-919 F2 argmax-mismatch cosine threshold. A per-position argmax MISMATCH is
@@ -1407,6 +1428,7 @@ pub(crate) const F2_GATE_COSINE_MIN: f32 = 0.95;
 /// late-position argmax at cosine 0.9995; rejecting that is the PMAT-742/#1864
 /// false-positive at a non-zero position). Set to the load-time τ_load (0.98) so the
 /// "argmax flip below 0.98" reject window is exactly the degraded-cosine band.
+#[cfg(test)]
 pub(crate) const F2_ARGMAX_MISMATCH_COSINE: f32 = 0.98;
 
 /// Catastrophic cosine floor (orthogonal garbage / NaN), matching the `apr parity`
@@ -1416,6 +1438,50 @@ pub(crate) const F2_ARGMAX_MISMATCH_COSINE: f32 = 0.98;
 #[cfg(test)]
 pub(crate) const F2_CATASTROPHIC_COSINE: f32 = 0.90;
 
+/// #4313 F2 probability-space ceiling: the most KL divergence, in nats, the GPU's
+/// next-token distribution may carry from CPU's at any REAL position. Measured on
+/// the correct Qwen3.5-4B path: backend-to-backend transients peak at 0.015 (gx10
+/// GPU vs gx10 CPU, pos 40) and 0.037 (x86 CPU vs aarch64 CPU, pos 27), at raw
+/// logit cosines of 0.83 and 0.73 — the whole-vocab cosine false-rejected both.
+/// See `docs/findings/4313-gb10-qwen35-f2-prefill-divergence.md`.
+pub(crate) const F2_KL_MAX: f32 = 0.1;
+
+/// #4313: how many of each side's most probable tokens [`f2_topk_kl`] keeps apart
+/// before pooling the rest into one bucket.
+pub(crate) const F2_TOPK: usize = 16;
+
+/// #4313 F2 top-1 near-tie band, in nats: an argmax mismatch is benign when CPU
+/// itself rates the GPU's pick within this much of its own top token, i.e.
+/// `ln p_cpu(cpu_top) − ln p_cpu(gpu_top) ≤ 1.0` (the GPU's pick has at least
+/// e⁻¹ ≈ 37% of the top token's CPU probability). The correct fp32-Mwv path flips a
+/// late argmax across a 0.01-logit tie; degraded HwDp4a promotes a tail token.
+pub(crate) const F2_TOP1_TIE_NATS: f32 = 1.0;
+
+/// Why the F2 gate rejected a position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum F2RejectReason {
+    /// Accepted: nothing rejected.
+    None,
+    /// A logit is NaN or infinite.
+    NonFinite,
+    /// The GPU's top token is one CPU does not rate as a near-tie.
+    Top1,
+    /// The next-token distributions differ by more than [`F2_KL_MAX`].
+    Kl,
+}
+
+impl F2RejectReason {
+    /// How the reason reads in a log line.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::NonFinite => "non-finite logits",
+            Self::Top1 => "top-1 disagreement",
+            Self::Kl => "top-k KL above the ceiling",
+        }
+    }
+}
+
 /// Per-position F2 decision report. Pure + GPU-free → unit-testable without CUDA.
 #[derive(Debug, Clone)]
 pub(crate) struct F2PositionReport {
@@ -1423,90 +1489,171 @@ pub(crate) struct F2PositionReport {
     pub accepted: bool,
     /// Was position 0's argmax flipped (benign BOS near-tie, ignored)?
     pub pos0_argmax_flip: bool,
-    /// Minimum cosine over REAL positions (≥1); 1.0 if there are none.
+    /// Minimum whole-vocab cosine over REAL positions (≥1); 1.0 if there are none.
+    /// ADVISORY since #4313: reported, never decides.
     pub min_cosine_real: f32,
+    /// Maximum top-k KL (nats) over REAL positions; 0.0 if there are none.
+    pub max_kl_real: f32,
     /// First REAL position that caused a reject (0 if accepted).
     pub first_bad_pos: usize,
     pub first_bad_cpu_argmax: u32,
     pub first_bad_gpu_argmax: u32,
     pub first_bad_cosine: f32,
+    pub first_bad_kl: f32,
+    pub first_bad_reason: F2RejectReason,
 }
 
-/// PMAT-919 (reconciled) F2 decision over a multi-token probe. For every REAL
-/// position (index ≥ 1) the GPU path is REJECTED iff:
-///   • cosine < `F2_GATE_COSINE_MIN` (0.95) — quant/catastrophic floor (degraded
-///     HwDp4a 7B pos6 @ 0.9398, orthogonal garbage cos≈0), OR
-///   • argmax mismatch AND cosine < `F2_ARGMAX_MISMATCH_COSINE` (0.98) — a genuine
-///     mid-context divergence (degraded HwDp4a 1.5B pos3, argmax flip @ 0.9705).
-/// A high-cosine (≥0.98) argmax flip is a BENIGN near-tie and is ACCEPTED (the
-/// correct fp32-Mwv default flips a late-position argmax at cosine 0.9995). Position 0
-/// (the context-less BOS near-tie) is EXCLUDED entirely so the correct path is never
-/// false-rejected there (PMAT-742/#1864). Pure + GPU-free.
+impl F2PositionReport {
+    fn accept(pos0_argmax_flip: bool, min_cosine_real: f32, max_kl_real: f32) -> Self {
+        Self {
+            accepted: true,
+            pos0_argmax_flip,
+            min_cosine_real,
+            max_kl_real,
+            first_bad_pos: 0,
+            first_bad_cpu_argmax: 0,
+            first_bad_gpu_argmax: 0,
+            first_bad_cosine: 1.0,
+            first_bad_kl: 0.0,
+            first_bad_reason: F2RejectReason::None,
+        }
+    }
+}
+
+/// #4313 F2 decision over a multi-token probe, judged on the NEXT-TOKEN
+/// DISTRIBUTION rather than on raw logits. For every REAL position (index ≥ 1) the
+/// GPU path is REJECTED iff:
+///   • any logit on either side is NaN/inf, OR
+///   • the argmaxes differ and CPU rates the GPU's pick more than
+///     [`F2_TOP1_TIE_NATS`] below its own top token (degraded HwDp4a 1.5B pos3,
+///     orthogonal garbage), OR
+///   • the top-[`F2_TOPK`] KL(cpu ‖ gpu) exceeds [`F2_KL_MAX`].
+///
+/// A single position is enough to reject: a defect is not required to persist.
+///
+/// Why not the whole-vocab cosine (PMAT-919, 0.95) any more: on repetitive code a
+/// few TAIL vocabulary rows can swing by 6–8 logits between two correct backends —
+/// x86 CPU vs aarch64 CPU scored cosine 0.27 at a position where both put the same
+/// top token at the same probability. Those rows carry ~no probability, so the
+/// sampler never sees them, but they dominate a raw-logit cosine. The cosine is
+/// still computed and reported (`min_cosine_real`), as an advisory.
+///
+/// Position 0 (the context-less BOS near-tie) is EXCLUDED entirely so the correct
+/// path is never false-rejected there (PMAT-742/#1864). Pure + GPU-free.
 pub(crate) fn f2_multi_position_report(
     cpu_per_pos: &[Vec<f32>],
     gpu_per_pos: &[Vec<f32>],
 ) -> F2PositionReport {
     let n = cpu_per_pos.len().min(gpu_per_pos.len());
     let mut min_cosine_real = 1.0_f32;
-    let mut pos0_argmax_flip = false;
+    let mut max_kl_real = 0.0_f32;
 
     // Detect the benign pos0 near-tie purely for diagnostics (it never causes reject).
-    if n > 0 {
-        pos0_argmax_flip = argmax_u32(&cpu_per_pos[0]) != argmax_u32(&gpu_per_pos[0]);
-    }
-
-    // No real position to validate → no-op accept (load-time gate is primary).
-    if n < 2 {
-        return F2PositionReport {
-            accepted: true,
-            pos0_argmax_flip,
-            min_cosine_real: 1.0,
-            first_bad_pos: 0,
-            first_bad_cpu_argmax: 0,
-            first_bad_gpu_argmax: 0,
-            first_bad_cosine: 1.0,
-        };
-    }
+    let pos0_argmax_flip = n > 0 && argmax_u32(&cpu_per_pos[0]) != argmax_u32(&gpu_per_pos[0]);
 
     for pos in 1..n {
         let cpu = &cpu_per_pos[pos];
         let gpu = &gpu_per_pos[pos];
         let cosine = logits_cosine_similarity(cpu, gpu);
-        if cosine < min_cosine_real {
-            min_cosine_real = cosine;
-        }
+        min_cosine_real = min_cosine_real.min(cosine);
         let cpu_argmax = argmax_u32(cpu);
         let gpu_argmax = argmax_u32(gpu);
-        let argmax_mismatch = cpu_argmax != gpu_argmax;
-        // Reject on: cosine below the quant-aware floor (degraded HwDp4a 7B /
-        // orthogonal garbage), OR a real-position argmax mismatch AT a degraded
-        // cosine (< 0.98 — degraded HwDp4a 1.5B). A high-cosine (≥0.98) argmax flip
-        // is a benign FP/quant near-tie → NOT a reject (correct fp32-Mwv flips a
-        // late argmax at cosine 0.9995).
-        let bad =
-            cosine < F2_GATE_COSINE_MIN || (argmax_mismatch && cosine < F2_ARGMAX_MISMATCH_COSINE);
-        if bad {
-            return F2PositionReport {
-                accepted: false,
-                pos0_argmax_flip,
-                min_cosine_real,
-                first_bad_pos: pos,
-                first_bad_cpu_argmax: cpu_argmax,
-                first_bad_gpu_argmax: gpu_argmax,
-                first_bad_cosine: cosine,
-            };
-        }
+        let finite = cpu.iter().chain(gpu.iter()).all(|x| x.is_finite());
+        let kl = if finite { f2_topk_kl(cpu, gpu, F2_TOPK) } else { f32::INFINITY };
+        max_kl_real = max_kl_real.max(kl);
+        let reason = if !finite {
+            F2RejectReason::NonFinite
+        } else if cpu_argmax != gpu_argmax && !f2_top1_near_tie(cpu, cpu_argmax, gpu_argmax) {
+            F2RejectReason::Top1
+        } else if kl > F2_KL_MAX {
+            F2RejectReason::Kl
+        } else {
+            continue;
+        };
+        return F2PositionReport {
+            accepted: false,
+            pos0_argmax_flip,
+            min_cosine_real,
+            max_kl_real,
+            first_bad_pos: pos,
+            first_bad_cpu_argmax: cpu_argmax,
+            first_bad_gpu_argmax: gpu_argmax,
+            first_bad_cosine: cosine,
+            first_bad_kl: kl,
+            first_bad_reason: reason,
+        };
     }
 
-    F2PositionReport {
-        accepted: true,
-        pos0_argmax_flip,
-        min_cosine_real,
-        first_bad_pos: 0,
-        first_bad_cpu_argmax: 0,
-        first_bad_gpu_argmax: 0,
-        first_bad_cosine: 1.0,
+    // No real position (n < 2) → no-op accept (the load-time gate is primary).
+    F2PositionReport::accept(pos0_argmax_flip, min_cosine_real, max_kl_real)
+}
+
+/// Does CPU rate `gpu_argmax` within [`F2_TOP1_TIE_NATS`] of its own top token?
+/// A logit difference is a log-probability difference, so this reads straight off
+/// the CPU logits. An out-of-range id is never a near-tie.
+pub(crate) fn f2_top1_near_tie(cpu: &[f32], cpu_argmax: u32, gpu_argmax: u32) -> bool {
+    match (cpu.get(cpu_argmax as usize), cpu.get(gpu_argmax as usize)) {
+        (Some(top), Some(pick)) => top - pick <= F2_TOP1_TIE_NATS,
+        _ => false,
     }
+}
+
+/// KL(P ‖ Q) in nats between CPU's (`p_logits`) and GPU's (`q_logits`) softmax,
+/// coarsened to the union of each side's `k` most probable tokens plus ONE bucket
+/// holding every other token's mass. The bucket keeps a mass shift into the tail
+/// visible without letting single tail rows, which carry ~no probability, decide.
+/// f64-accumulated; each cell is floored at 1e-12 so a vanished cell is a large,
+/// finite penalty. Pure + GPU-free.
+pub(crate) fn f2_topk_kl(p_logits: &[f32], q_logits: &[f32], k: usize) -> f32 {
+    let n = p_logits.len().min(q_logits.len());
+    if n == 0 {
+        return 0.0;
+    }
+    let (p, q) = (&p_logits[..n], &q_logits[..n]);
+    let mut idx = top_k_indices(p, k);
+    idx.extend(top_k_indices(q, k));
+    idx.sort_unstable();
+    idx.dedup();
+    let lse = |v: &[f32]| {
+        let m = v.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let s: f64 = v.iter().map(|&x| (f64::from(x) - f64::from(m)).exp()).sum();
+        f64::from(m) + s.ln()
+    };
+    let (lp, lq) = (lse(p), lse(q));
+    let cell = |x: f64| x.max(1e-12);
+    let (mut kl, mut p_in, mut q_in) = (0.0_f64, 0.0_f64, 0.0_f64);
+    for &i in &idx {
+        let pi = (f64::from(p[i]) - lp).exp();
+        let qi = (f64::from(q[i]) - lq).exp();
+        p_in += pi;
+        q_in += qi;
+        kl += cell(pi) * (cell(pi) / cell(qi)).ln();
+    }
+    let (pr, qr) = (cell(1.0 - p_in), cell(1.0 - q_in));
+    kl += pr * (pr / qr).ln();
+    kl.max(0.0) as f32
+}
+
+/// Indices of the `k` largest values (unordered). One pass; the running minimum
+/// is re-found only when it is replaced, which is rare past the first few hundred
+/// entries of a vocab-sized vector. Pure.
+fn top_k_indices(v: &[f32], k: usize) -> Vec<usize> {
+    let k = k.min(v.len());
+    if k == 0 {
+        return Vec::new();
+    }
+    let mut top: Vec<usize> = (0..k).collect();
+    let min_slot = |top: &[usize]| {
+        (0..top.len()).fold(0, |m, s| if v[top[s]] < v[top[m]] { s } else { m })
+    };
+    let mut lo = min_slot(&top);
+    for (i, &x) in v.iter().enumerate().skip(k) {
+        if x > v[top[lo]] {
+            top[lo] = i;
+            lo = min_slot(&top);
+        }
+    }
+    top
 }
 
 /// Cosine similarity between two logit vectors, f64-accumulated (matches the
@@ -2073,10 +2220,13 @@ mod pmat3477_f2_prefill_path_tests {
             accepted: false,
             pos0_argmax_flip: false,
             min_cosine_real: 0.9186,
+            max_kl_real: 0.4321,
             first_bad_pos: 1,
             first_bad_cpu_argmax: 40,
             first_bad_gpu_argmax: 198,
             first_bad_cosine: 0.9186,
+            first_bad_kl: 0.4321,
+            first_bad_reason: super::F2RejectReason::Top1,
         };
         let batched = f2_divergence_msg(&report, F2ProbePath::Batched);
         assert!(
@@ -2097,6 +2247,7 @@ mod pmat3477_f2_prefill_path_tests {
             assert!(msg.contains("position 1"), "{msg}");
             assert!(msg.contains("198"), "{msg}");
             assert!(msg.contains("0.9186"), "{msg}");
+            assert!(msg.contains("0.4321") && msg.contains("top-1 disagreement"), "{msg}");
         }
     }
 }
@@ -2109,7 +2260,7 @@ mod pmat3477_f2_prefill_path_tests {
 mod pmat3477_f2_batched_probe_cuda_tests {
     use super::{
         argmax_u32, f2_cpu_reference_logits, f2_gpu_batched_logits, f2_multi_position_report,
-        f2_select_probe_path, F2ProbePath, F2_GATE_COSINE_MIN,
+        f2_select_probe_path, F2ProbePath, F2_KL_MAX,
     };
 
     fn model_path() -> std::path::PathBuf {
@@ -2195,17 +2346,19 @@ mod pmat3477_f2_batched_probe_cuda_tests {
         let report = f2_multi_position_report(&cpu, &gpu);
         assert!(
             report.accepted,
-            "batched prefill must agree with CPU: first bad pos {} (argmax {} != {}, cosine {:.4}), min cosine {:.4}",
+            "batched prefill must agree with CPU: first bad pos {} ({}: argmax {} != {}, KL {:.4}, cosine {:.4}), min cosine {:.4}",
             report.first_bad_pos,
+            report.first_bad_reason.as_str(),
             report.first_bad_gpu_argmax,
             report.first_bad_cpu_argmax,
+            report.first_bad_kl,
             report.first_bad_cosine,
             report.min_cosine_real,
         );
         assert!(
-            report.min_cosine_real >= F2_GATE_COSINE_MIN,
-            "min real-position cosine {} must clear the F2 floor",
-            report.min_cosine_real
+            report.max_kl_real <= F2_KL_MAX,
+            "max real-position top-k KL {} must clear the F2 ceiling",
+            report.max_kl_real
         );
     }
 }
@@ -2231,8 +2384,8 @@ mod f2_outcome_3973_tests {
     /// print PASSED.
     #[test]
     fn only_a_validated_outcome_prints_passed() {
-        let v = f2_status_line(&F2Outcome::Validated { min_cosine: 0.9987 });
-        assert!(v.contains("PASSED") && v.contains("0.9987"), "{v}");
+        let v = f2_status_line(&F2Outcome::Validated { max_kl: 0.0123, min_cosine: 0.9987 });
+        assert!(v.contains("PASSED") && v.contains("0.0123") && v.contains("0.9987"), "{v}");
         let m = f2_status_line(&F2Outcome::Mismatch);
         assert!(m.contains("FAILED") && !m.contains("PASSED"), "{m}");
         let n = f2_status_line(&F2Outcome::NotMeasured { reason: "because".into() });
@@ -2284,9 +2437,9 @@ mod f2_outcome_3973_tests {
         // Positive control: the same real prompt, reference intact, IS compared, so
         // the two NotMeasured results above are about their branches.
         match validate_gpu_first_token(&mut cuda, &cfg, &prompt) {
-            F2Outcome::Validated { min_cosine } => {
-                assert!(min_cosine >= F2_GATE_COSINE_MIN, "validated below the floor: {min_cosine}");
-                eprintln!("#3973 positive control: Validated, min cosine {min_cosine:.4}");
+            F2Outcome::Validated { max_kl, min_cosine } => {
+                assert!(max_kl <= super::F2_KL_MAX, "validated above the ceiling: {max_kl}");
+                eprintln!("#3973 positive control: Validated, max KL {max_kl:.4}, min cosine {min_cosine:.4}");
             },
             other => panic!("a real prompt on a sound model must validate; got {other:?}"),
         }
@@ -2322,3 +2475,141 @@ mod throughput_3981_tests {
     }
 }
 
+
+// ============================================================================
+// #4313: F2 judges the next-token DISTRIBUTION, not the raw logits.
+#[cfg(test)]
+mod f2_prob_space_4313_tests {
+    use super::{
+        f2_multi_position_report, f2_top1_near_tie, f2_topk_kl, logits_cosine_similarity,
+        top_k_indices, F2RejectReason, F2_GATE_COSINE_MIN, F2_KL_MAX, F2_TOP1_TIE_NATS,
+    };
+
+    const V: usize = 4096;
+
+    /// A peaked next-token distribution: `leader` at 12, a runner-up at 10, and a
+    /// long tail spread over [-6, 2].
+    fn peaked(leader: usize, seed: f32) -> Vec<f32> {
+        (0..V)
+            .map(|i| match i {
+                _ if i == leader => 12.0,
+                _ if i == leader + 1 => 10.0,
+                _ => -2.0 + ((i as f32 + seed) * 0.7).sin() * 4.0,
+            })
+            .collect()
+    }
+
+    fn probe(cpu: Vec<f32>, gpu: Vec<f32>) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
+        let head = peaked(7, 0.0);
+        (vec![head.clone(), peaked(100, 1.0), cpu], vec![head, peaked(100, 1.0), gpu])
+    }
+
+    /// The measured #4313 shape: a handful of TAIL rows swing by 6–8 logits (gx10
+    /// pos 40: token 53983 +7.6, 166756 +6.2, 107110 −5.9) while the top of the
+    /// distribution is untouched. The raw cosine collapses below the retired 0.95
+    /// floor; the sampler sees the same distribution. ACCEPT.
+    #[test]
+    fn tail_row_swings_that_collapse_the_cosine_are_accepted() {
+        // A QUIET tail (±0.1), so the norm is the head's and the five swung rows can
+        // carry the cosine down — with `peaked`'s ±4 tail they only reach 0.998.
+        let mut cpu: Vec<f32> = peaked(300, 2.0)
+            .iter()
+            .enumerate()
+            .map(|(i, &x)| if i == 300 || i == 301 { x } else { (x + 2.0) / 40.0 })
+            .collect();
+        let swings = [(53, 7.6), (1667, 6.2), (1071, -5.9), (2900, 7.0), (3100, -7.5)];
+        for (i, _) in swings {
+            cpu[i] = -9.0; // deep in the tail, as the measured rows were
+        }
+        let mut gpu = cpu.clone();
+        for (i, d) in swings {
+            gpu[i] += d;
+        }
+        let cos = logits_cosine_similarity(&cpu, &gpu);
+        assert!(cos < F2_GATE_COSINE_MIN, "the case must sit below the retired floor: cosine {cos}");
+        let (c, g) = probe(cpu, gpu);
+        let r = f2_multi_position_report(&c, &g);
+        assert!(r.accepted, "tail-only swings must pass: {r:?}");
+        assert!(r.max_kl_real < F2_KL_MAX, "{r:?}");
+        assert!(r.min_cosine_real < F2_GATE_COSINE_MIN, "the cosine is still reported: {r:?}");
+    }
+
+    /// No persistence rule: ONE bad position is enough. The top token keeps its
+    /// rank but loses half its probability to the runner-up. REJECT on KL.
+    #[test]
+    fn a_single_position_mass_shift_with_the_same_argmax_is_rejected() {
+        let cpu = peaked(300, 2.0);
+        let mut gpu = cpu.clone();
+        gpu[301] = 11.9; // runner-up from 10 to within 0.1 of the leader
+        let (c, g) = probe(cpu, gpu);
+        let r = f2_multi_position_report(&c, &g);
+        assert!(!r.accepted, "{r:?}");
+        assert_eq!(r.first_bad_pos, 2);
+        assert_eq!(r.first_bad_reason, F2RejectReason::Kl);
+        assert_eq!(r.first_bad_cpu_argmax, r.first_bad_gpu_argmax, "argmax is unchanged");
+    }
+
+    /// Mass leaking into the tail as a whole (many rows, each small) is caught by the
+    /// pooled remainder bucket even though no single tail row enters the top-k.
+    #[test]
+    fn mass_spread_over_the_tail_is_rejected() {
+        let cpu = peaked(300, 2.0);
+        let gpu: Vec<f32> = cpu.iter().enumerate().map(|(i, &x)| if i == 300 || i == 301 { x } else { x + 3.0 }).collect();
+        let (c, g) = probe(cpu, gpu);
+        let r = f2_multi_position_report(&c, &g);
+        assert!(!r.accepted, "{r:?}");
+        assert_eq!(r.first_bad_reason, F2RejectReason::Kl);
+    }
+
+    #[test]
+    fn a_non_finite_logit_is_rejected() {
+        let cpu = peaked(300, 2.0);
+        let mut gpu = cpu.clone();
+        gpu[3000] = f32::NAN;
+        let (c, g) = probe(cpu, gpu);
+        let r = f2_multi_position_report(&c, &g);
+        assert!(!r.accepted);
+        assert_eq!(r.first_bad_reason, F2RejectReason::NonFinite);
+    }
+
+    /// The tie band, both sides of it: CPU rating the GPU's pick 0.5 nats below its
+    /// top is a near-tie; 1.5 nats is a disagreement.
+    #[test]
+    fn the_top1_tie_band_is_one_nat() {
+        let mut cpu = peaked(300, 2.0);
+        cpu[301] = 12.0 - 0.5;
+        assert!(f2_top1_near_tie(&cpu, 300, 301));
+        cpu[301] = 12.0 - 1.5;
+        assert!(!f2_top1_near_tie(&cpu, 300, 301));
+        assert!(!f2_top1_near_tie(&cpu, 300, V as u32), "an out-of-range pick is never a tie");
+        assert!((F2_TOP1_TIE_NATS - 1.0).abs() < f32::EPSILON);
+
+        let mut gpu = cpu.clone();
+        gpu[301] = 12.5; // GPU promotes a token CPU rates 1.5 nats down
+        let (c, g) = probe(cpu, gpu);
+        let r = f2_multi_position_report(&c, &g);
+        assert_eq!(r.first_bad_reason, F2RejectReason::Top1, "{r:?}");
+    }
+
+    #[test]
+    fn topk_kl_is_zero_on_identity_and_invariant_to_a_logit_shift() {
+        let p = peaked(300, 2.0);
+        assert!(f2_topk_kl(&p, &p, 16).abs() < 1e-9);
+        let shifted: Vec<f32> = p.iter().map(|x| x + 5.0).collect();
+        assert!(f2_topk_kl(&p, &shifted, 16).abs() < 1e-6, "softmax is shift-invariant");
+    }
+
+    #[test]
+    fn top_k_indices_matches_a_full_sort() {
+        let v = peaked(300, 2.0);
+        let mut got = top_k_indices(&v, 16);
+        got.sort_unstable();
+        let mut order: Vec<usize> = (0..v.len()).collect();
+        order.sort_by(|&a, &b| v[b].total_cmp(&v[a]));
+        let mut want = order[..16].to_vec();
+        want.sort_unstable();
+        assert_eq!(got, want);
+        assert!(top_k_indices(&v, 0).is_empty());
+        assert_eq!(top_k_indices(&v[..3], 16).len(), 3);
+    }
+}
