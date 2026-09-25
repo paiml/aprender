@@ -26,6 +26,11 @@ set -uo pipefail
 PROG=rc_tag_main
 HERE=${RC_TAG_HERE:-"$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"}   # a mutant copy runs from a tmp dir
 REPO=${RC_TAG_REPO:-paiml/aprender}
+# The input overrides are for the self-test's fake only. On a live run, a green cells file, a moved clock or a
+# mutant gate would each write a real tag past the fleet gate, so a live run refuses to start when any is set.
+if [ "${1:-}" != --self-test ] && [ -z "${RC_TAG_FAKE:-}" ] && [ -n "${RC_TAG_HERE:-}${RC_TAG_CELLS:-}${RC_TAG_NOW:-}" ]; then
+    echo "$PROG: RC_TAG_HERE/RC_TAG_CELLS/RC_TAG_NOW are self-test only (RC_TAG_FAKE unset): refusing a live run" >&2; exit 2
+fi
 
 # rc_tag_decide -- pure. Reads D_TAG D_SHA D_ON_MAIN D_GATE D_VERSION D_TAG_AT.
 # Prints `cut <tag> <sha>` or `refuse <why>`. Returns 0 for both.
@@ -43,6 +48,7 @@ rc_tag_decide() {
         || { printf 'refuse ci / gate on %s is %s, not completed success\n' "${D_SHA:0:9}" "${D_GATE:-absent}"; return 0; }
     [ "${D_VERSION:-}" = "$x" ] \
         || { printf 'refuse Cargo.toml@%s reads %s, the tag wants %s\n' "${D_SHA:0:9}" "${D_VERSION:-?}" "$x"; return 0; }
+    [ "${D_TAG_AT:-}" != '?unread' ] || { printf 'refuse cannot read whether %s exists\n' "$D_TAG"; return 0; }
     [ -z "${D_TAG_AT:-}" ] || { printf 'refuse %s already exists at %s\n' "$D_TAG" "${D_TAG_AT:0:9}"; return 0; }
     printf 'cut %s %s\n' "$D_TAG" "$D_SHA"
 }
@@ -85,7 +91,7 @@ run_tag() {
     cargo=$(api_get "contents/Cargo.toml?ref=$sha" | b64file) || cargo=''
     D_VERSION=$(printf '%s\n' "$cargo" | awk -F'"' '/^version *=/{v=$2; exit} END{print v}')
     D_TAG_AT=$(api_get "git/matching-refs/tags/$tag" \
-        | jq -r --arg r "refs/tags/$tag" '.[]? | select(.ref == $r) | .object.sha' 2>/dev/null) || D_TAG_AT=''
+        | jq -r --arg r "refs/tags/$tag" '.[]? | select(.ref == $r) | .object.sha' 2>/dev/null) || D_TAG_AT='?unread'   # a failed read must refuse, not read as "new"
     decision=$(rc_tag_decide)
     echo "$PROG: $decision"
     case "$decision" in cut\ *) ;; *) return 1 ;; esac
@@ -139,6 +145,7 @@ self_test() {
     base; D_GATE=''; expect 'refuse ci / gate on aaaaaaaaa is absent, not completed success' 'no gate run refused'
     base; D_VERSION=0.69.3; expect 'refuse Cargo.toml@aaaaaaaaa reads 0.69.3, the tag wants 0.70.0' 'unbumped workspace refused'
     base; D_TAG_AT=$B; expect 'refuse v0.70.0-rc.1 already exists at bbbbbbbbb' 'an existing tag refused'
+    base; D_TAG_AT='?unread'; expect 'refuse cannot read whether v0.70.0-rc.1 exists' 'an unreadable tag list refused'
     base; D_TAG=v0.70.0; expect 'refuse tag v0.70.0 is not vX.Y.Z-rc.N' 'a final tag is not this script'"'"'s'
     base; D_TAG=v0.70.0-rc.0; expect 'refuse tag v0.70.0-rc.0 is not vX.Y.Z-rc.N' 'rc.0 refused'
     base; D_SHA=aaaaaaaaa; expect 'refuse sha aaaaaaaaa is not a full 40-hex commit' 'a short sha refused'
@@ -177,6 +184,14 @@ self_test() {
     got=$(cut -d' ' -f2 "$d/api/posts" 2>/dev/null | tr '\n' ' ')
     if [ "$rc" = 1 ] && [ "$got" = "git/refs " ]; then echo "  ok   tag POST 422 (a concurrent cut): no draft, no dispatch"
     else echo "  FAIL tag POST 422: rc $rc, posts '$got'"; fail=1; fi
+    fake GREEN; mv -- "$d/api/get/$(fkey git/matching-refs/tags/v0.70.0-rc.1)" "$d/api/unread"; cut_with "$me"; rc=$?
+    if [ "$rc" = 1 ] && [ ! -s "$d/api/posts" ]; then echo "  ok   unreadable tag list: refused, nothing written"
+    else echo "  FAIL unreadable tag list: rc $rc"; fail=1; fi
+    for v in RC_TAG_HERE RC_TAG_CELLS RC_TAG_NOW; do   # live run (no RC_TAG_FAKE): exits before any API call
+        env -u RC_TAG_FAKE "$v=$d" GH_TOKEN=unused bash "$me" --tag v0.70.0-rc.1 --sha "$A" --dry-run > /dev/null 2>&1; rc=$?
+        if [ "$rc" = 2 ]; then echo "  ok   live run with $v set: refused (rc 2)"
+        else echo "  FAIL live run with $v set: rc $rc"; fail=1; fi
+    done
 
     echo "$PROG self-test: mutant"
     # the gate call deleted: the RED cell must now be tagged, or the refusal above was not the gate's
