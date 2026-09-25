@@ -398,11 +398,25 @@ pub fn update_main(p: &Product, args: &[String]) -> i32 {
 /// the binary's own `main` continues. Call it as the first statement of
 /// `main` — through [`hook!`] unless the binary needs a custom [`Product`].
 pub fn entry(p: &Product) {
+    let p = &with_usable_sha(*p);
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).is_some_and(|a| a == "update") {
         std::process::exit(update_main(p, &args[2..]));
     }
     startup(p, &args);
+}
+
+/// `aprender-build-sha` stamps `v<version>+no-git` when a build has no git
+/// (#4219). That names no commit, so ancestry could never place it: drop it,
+/// and the nightly is compared by version instead of never being offered.
+#[must_use]
+pub fn with_usable_sha(mut p: Product) -> Product {
+    if p.build_sha
+        .is_some_and(|s| s.is_empty() || s.contains("+no-git"))
+    {
+        p.build_sha = None;
+    }
+    p
 }
 
 /// `sovereign_update::hook!("bin")` — [`entry`] for an aprender binary, with
@@ -420,7 +434,9 @@ macro_rules! hook {
             bin: $bin,
             repo: "paiml/aprender",
             version: env!("CARGO_PKG_VERSION"),
-            build_sha: None,
+            // Stamped by `aprender-build-sha` (#4219) where the crate has its
+            // build.rs; None elsewhere, and the nightly is compared by version.
+            build_sha: option_env!("APR_GIT_SHA"),
             release_asset: $asset,
             nightly: true,
         };
@@ -491,6 +507,21 @@ mod tests {
             check(&Fake(with_release("v0.69.0"), false), &P, T),
             Ok(Decision::UpToDate)
         );
+    }
+
+    #[test]
+    fn a_no_git_build_sha_is_dropped_and_a_real_one_is_kept() {
+        let with = |sha| {
+            with_usable_sha(Product {
+                build_sha: sha,
+                ..P
+            })
+            .build_sha
+        };
+        assert_eq!(with(Some("v0.70.0+no-git")), None);
+        assert_eq!(with(Some("")), None);
+        assert_eq!(with(None), None);
+        assert_eq!(with(Some("7014b28fd")), Some("7014b28fd"));
     }
 
     #[test]
