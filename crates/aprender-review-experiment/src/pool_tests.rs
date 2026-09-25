@@ -105,6 +105,17 @@ fn secret_scanner_case_table() {
             "slack-token",
         ),
     ];
+    // A key hidden behind a JSON escape is still a key.
+    let escaped = format!("{{\"output\": \"\\u0041{}\"}}", &planted_aws_key()[1..]);
+    assert!(
+        !escaped.contains("AKIA"),
+        "the fixture must actually hide the literal"
+    );
+    assert_eq!(
+        secrets(&escaped),
+        vec!["aws-access-key-id"],
+        "must match: {escaped}"
+    );
     for (text, kind) in &hits {
         assert_eq!(secrets(text), vec![*kind], "must match: {text}");
     }
