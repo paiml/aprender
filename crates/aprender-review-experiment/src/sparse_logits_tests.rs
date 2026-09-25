@@ -124,6 +124,12 @@ fn falsify_spl_004_decoder_is_strict() {
     let mut long = blob.clone();
     long.push(0);
     assert!(decode(&long).is_err(), "trailing byte accepted");
+    // Exactly one extra column byte inside a valid zstd frame.
+    let mut cols = zstd::bulk::decompress(&blob[12 + hl..], 1 << 20).expect("cols");
+    cols.push(0);
+    let mut b = blob[..12 + hl].to_vec();
+    b.extend(zstd::bulk::compress(&cols, 3).expect("zstd"));
+    assert!(decode(&b).is_err(), "one extra column byte accepted");
 }
 
 #[test]
