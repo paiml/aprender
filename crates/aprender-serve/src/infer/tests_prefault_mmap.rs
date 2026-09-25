@@ -124,6 +124,7 @@ mod tests {
             load_ms: 789.012,
             format: "SafeTensors".to_string(),
             used_gpu: true,
+            ..InferenceResult::default()
         };
 
         let cloned = original.clone();
@@ -151,6 +152,7 @@ mod tests {
             load_ms: 1.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            ..InferenceResult::default()
         };
 
         let debug_str = format!("{:?}", result);

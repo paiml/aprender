@@ -1,0 +1,105 @@
+{
+  "ticket": "PMAT-3598",
+  "pr": 3606,
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "head": "094f16988bb96fef8892bfd6ba75afd27f7d62c8",
+  "diff_sha256": "f4f16aaf635d8035324c1512b521bec39435faf8fe297a970db4f7c9316ae592",
+  "width": 3,
+  "executor": "claude-sequential",
+  "prompt_mode": "file",
+  "prompt_bytes": 138904,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "degraded": "same-family",
+  "degraded_reason": "agy gemini returned 429 on every lane (quota); operator rule: fall back to Claude Code lanes, never the author id, no fable-5-1/opus-5 (OPERATOR verbatim 2026-09-24). Lanes 1 and 3 are two independent claude-sonnet-5 samples, lane 2 is claude-haiku-4-5.",
+  "agreed": true,
+  "verdict_counts": {
+    "PASS": 3,
+    "FAIL": 0
+  },
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed the full diff (43 files, verified via `git diff origin/main...HEAD --stat` to match exactly what was quoted in the prompt) against PMAT-3598/#3606/#4105's done_when clauses. Traced every stage-attribution call site by hand: run_gguf_inference's load plant sits inside the load_start window (the historical bug is fixed), the CUDA-dense split_generate_ms derives decode on both arms (no-prefill-phase case verified against its unit tests), the qwen35 GPU path's prefill/decode windows are exact (not derived), and validate_ref_ms/validate_probe_ms are excluded from measured_sum_ms so the books close without double-counting. Confirmed stages_measured/backend/outside_wall_ms/null-not-zero semantics in build_final_json/merge_stage_fields by reading run_entry.rs directly (inference_time_ms is set earlier in the same json! macro, so outside_wall_ms's lookup succeeds). Confirmed done_when 3 (single JSON document to stdout) by reading print_run_output's early-return structure, and done_when 1's five keys plus tokens_out in merge_stage_fields. Verified struct-literal fallout: grepped every InferenceResult{...}/RunResult{...}/InferenceOutput{...} literal across aprender-serve and apr-cli for the new unconditional `stages` field; the only literals missing it (tests_inference_02.rs, tests_clean_model_03.rs, tests_run_inference.rs, reached only via infer/tests_12.rs) are pre-existing dead code never `mod`/`include!`d into the crate (confirmed with a repo-wide grep), so they don't break the build the receipt claims is clean. Verified the receipt's specific claims that are checkable read-only: c0ee0e5da is a real two-parent merge commit (measured via `git show --format=%P`), driver_cuda_gguf.rs is byte-identical to origin/main (measured via `git diff origin/main`, confirming its cuda failure predates this PR), and the stage_timings test count is exactly 15 non-ignored (measured: 11 in stage_timings_tests.rs + 4 non-ignored in stage_timings_callsite_tests.rs, 2 correctly `#[ignore]`d for GPU runners). Did not run cargo build/test/clippy/fmt per the read-only constraint, so those specific pass/clean claims are unverified (not refuted) by me. One documentation nuance noted but not rising to a finding: in a GPU-attempt-then-CPU-fallback run, h2d_ms/validate_ms from the aborted GPU attempt can remain populated even though stages.backend reports the final CPU path, which is in slight tension with stage_timings.rs's comment that backend tells a reader \"which fields could be measured\" — but this is the same wasted-GPU-attempt cost the diff's own evidence/perf/3598/MEASUREMENT.md documents and deliberately surfaces (values are genuinely measured, never a fabricated zero), so it does not violate any done_when clause. No test asserts the opposite of the ticket, no gate is weakened, and no scope creep beyond what #3542/#3598's done_when 4 explicitly requests (the (cached) rewording) was found.",
+      "findings": [],
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "width",
+      "verdict_source": "structured_output",
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3598 implementation correctly adds stage timing breakdown to apr run --json output. Merge cleanly keeps both main's usage field and #3606's stages field. All code paths properly instrument themselves with measured fields or leave them absent. Books close exactly by construction. 231 apr-cli + 761 aprender-serve tests pass including falsifier tests verifying planted delays land in correct stages.",
+      "findings": [],
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "width",
+      "verdict_source": "structured_output",
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Adversarial re-read at 094f16988: merge resolutions (backend object kept, .path inserted; run_report + stage_timings both kept; manual RunResult Default) and the call-site falsifier (drives run_inference -> run_gguf_inference, the production path; containment + delta rule; clean control; checker meta-test; ENV_LOCK shared with mod callsite) verified non-vacuous. GPU-only plants are #[ignore] and disclosed.",
+      "findings": [],
+      "model": "claude-sonnet-5",
+      "model_measured": "claude-sonnet-5",
+      "model_source": "flag",
+      "family": "claude",
+      "role": "width",
+      "verdict_source": "structured_output",
+      "fallback": {
+        "judged_by": "claude-sonnet-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "partial_reasons": [
+    "degraded: same-family — all lanes are claude family, author claude-opus-5-5; receipt-lint refuses author-family lanes, so this artifact needs the cop override to be armable",
+    "model_source flag: Agent-tool subagents write no agy log to measure"
+  ]
+}

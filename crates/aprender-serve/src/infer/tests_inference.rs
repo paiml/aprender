@@ -15,6 +15,7 @@ fn test_inference_result_debug() {
         load_ms: 10.0,
         format: "Test".to_string(),
         used_gpu: false,
+        ..InferenceResult::default()
     };
     let debug = format!("{:?}", result);
     assert!(debug.contains("hello"));
@@ -33,6 +34,7 @@ fn test_inference_result_clone() {
         load_ms: 5.0,
         format: "GGUF".to_string(),
         used_gpu: true,
+        ..InferenceResult::default()
     };
     let cloned = result.clone();
     assert_eq!(cloned.text, "world");

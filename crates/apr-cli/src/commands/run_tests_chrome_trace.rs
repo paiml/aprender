@@ -24,7 +24,7 @@
             used_gpu: Some(false),
             generated_tokens: None,
             token_texts: None,
-            usage: Default::default(),
+            ..RunResult::default()
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 16, true);
@@ -55,7 +55,7 @@
             used_gpu: None,
             generated_tokens: None,
             token_texts: None,
-            usage: Default::default(),
+            ..RunResult::default()
         };
 
         let json = build_chrome_trace_events(&result, "empty.gguf", 0, false);
@@ -75,7 +75,7 @@
             used_gpu: None,
             generated_tokens: None,
             token_texts: None,
-            usage: Default::default(),
+            ..RunResult::default()
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 10, false);
@@ -95,7 +95,7 @@
             used_gpu: Some(true),
             generated_tokens: None,
             token_texts: None,
-            usage: Default::default(),
+            ..RunResult::default()
         };
 
         let json = build_chrome_trace_events(&result, "my-model.gguf", 64, true);
@@ -115,7 +115,7 @@
             used_gpu: Some(false),
             generated_tokens: None,
             token_texts: None,
-            usage: Default::default(),
+            ..RunResult::default()
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 10, false);
@@ -145,7 +145,7 @@
             used_gpu: Some(false),
             generated_tokens: None,
             token_texts: None,
-            usage: Default::default(),
+            ..RunResult::default()
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 10, false);
@@ -165,7 +165,7 @@
             used_gpu: None,
             generated_tokens: None,
             token_texts: None,
-            usage: Default::default(),
+            ..RunResult::default()
         };
         let json = build_chrome_trace_events(&result, "m.gguf", 1, false);
         assert_eq!(json["displayTimeUnit"], "ms");
@@ -185,7 +185,7 @@
             used_gpu: Some(false),
             generated_tokens: None,
             token_texts: None,
-            usage: Default::default(),
+            ..RunResult::default()
         };
         // Just ensure no panic; file creation is best-effort
         print_chrome_trace(&result, "test-model.gguf", 32, false, None);
@@ -218,7 +218,7 @@
             used_gpu: Some(false),
             generated_tokens: None,
             token_texts: None,
-            usage: Default::default(),
+            ..RunResult::default()
         };
         print_chrome_trace(&result, "test-model.gguf", 32, false, Some(&target));
 
@@ -248,7 +248,7 @@
             used_gpu: Some(false),
             generated_tokens: None,
             token_texts: None,
-            usage: Default::default(),
+            ..RunResult::default()
         };
         print_benchmark_results(&result, "model.gguf", "text", 100);
     }
@@ -264,7 +264,7 @@
             used_gpu: Some(false),
             generated_tokens: None,
             token_texts: None,
-            usage: Default::default(),
+            ..RunResult::default()
         };
         print_benchmark_results(&result, "model.gguf", "json", 50);
     }
@@ -280,7 +280,7 @@
             used_gpu: None,
             generated_tokens: None,
             token_texts: None,
-            usage: Default::default(),
+            ..RunResult::default()
         };
         print_benchmark_results(&result, "model.gguf", "text", 10);
     }

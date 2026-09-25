@@ -313,6 +313,9 @@ impl ChatSession {
                     prompt_tokens,
                     gen_config,
                     config.force_cpu,
+                    // `apr chat` does not report a stage breakdown (that is `apr run --json`,
+                    // PMAT-3598 row 1); the accumulator is filled and dropped rather than faked.
+                    &mut realizar::infer::stage_timings::StageTimings::default(),
                 )
                 .map(|(tokens, _used_gpu)| tokens)
                 .map_err(|e| format!("Qwen3.5 generate failed: {e}"));

@@ -330,6 +330,7 @@ mod tests {
             load_ms: 10.0,
             format: "GGUF".to_string(),
             used_gpu: true,
+            ..InferenceResult::default()
         };
 
         let cloned = result.clone();
@@ -356,6 +357,7 @@ mod tests {
             load_ms: 1.0,
             format: "Mock".to_string(),
             used_gpu: false,
+            ..InferenceResult::default()
         };
 
         let debug_str = format!("{:?}", result);

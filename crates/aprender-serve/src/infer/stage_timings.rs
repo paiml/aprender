@@ -1,0 +1,186 @@
+//! PMAT-3598 row 1 (#3542) — where the time went, as a thing a consumer can read.
+//!
+//! **Why this exists.** `apr run` reported one number: wall clock. From that single number the
+//! mechanism behind a large time-to-first-token was named twice and was wrong twice inside fifteen
+//! minutes — *"it is load"* died to a two-character prompt costing nearly as much, and *"prefill is
+//! orders of magnitude too slow"* died to doubling the prompt costing almost nothing extra. Three
+//! candidate mechanisms and one number that admits all three. **Slow is allowed; invisible is not.**
+//!
+//! The readings are in `evidence/perf/3598/MEASUREMENT.md`, with the host, the occupancy at start
+//! and the binary that took them — a number in a doc comment is a claim nobody can re-derive, which
+//! is the defect one level up from the one this module fixes.
+//!
+//! **Every field is `Option`, and absent means NOT MEASURED — never zero.** A stage that reports `0.0`
+//! because nobody timed it is the defect this row exists to end: it reads as "free" and it is the
+//! cheapest possible lie. The CPU and wgpu paths do not split prefill from decode today, so on those
+//! backends those two fields are `None` and say so.
+//!
+//! **The residual is a field, not a rounding error.** [`StageTimings::unattributed_ms`] is
+//! `wall − Σ(measured stages)` and is always present. It is what makes "the fields sum to the wall
+//! clock" an assertion a test can make rather than a claim in a comment: they sum exactly, by
+//! construction, and the part nobody attributed is visible instead of smeared across the parts that
+//! were. A large `unattributed_ms` is a finding — it says the instrument is missing a stage.
+
+use std::time::Instant;
+
+/// One `apr run` broken into the stages that can each be attributed to a cause.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct StageTimings {
+    /// Reading and building the model on the HOST: mmap, prefault, tensor wiring.
+    pub load_ms: Option<f64>,
+    /// Moving the weights HOST → DEVICE. `None` on any backend that never transfers (CPU), which is
+    /// a different statement from `Some(0.0)`.
+    pub h2d_ms: Option<f64>,
+    /// The pre-generation first-token validation the CUDA path runs before it will use the GPU.
+    ///
+    /// It is a whole forward pass, it happens before the user's first token, and until this row it
+    /// was invisible — folded into a wall clock that nobody could decompose. It is its own field
+    /// because attributing it to `prefill_ms` would report the model as twice as slow to prefill as
+    /// it is, and attributing it to `load_ms` would hide that it scales with the prompt.
+    pub validate_ms: Option<f64>,
+    /// The CPU reference forward inside [`Self::validate_ms`], when the guard reports its halves.
+    ///
+    /// Split out because #3604 caches the whole validation, and its before/after receipt has to
+    /// record WHICH mechanism disappeared, not merely that something got faster. "Not blocking the
+    /// fix" and "not needed in the receipt" are different claims.
+    pub validate_ref_ms: Option<f64>,
+    /// The GPU probe forward inside [`Self::validate_ms`]. Absent on any guard that times itself
+    /// as one unit — the dense path does, and says so by absence rather than by halving the total.
+    pub validate_probe_ms: Option<f64>,
+    /// Processing the prompt.
+    pub prefill_ms: Option<f64>,
+    /// Generating the output tokens.
+    pub decode_ms: Option<f64>,
+    /// Tokens actually generated — the denominator any rate here is computed against.
+    pub tokens_out: usize,
+    /// `wall − Σ(measured stages)`, set by [`StageTimings::close`].
+    ///
+    /// `Option`, for the same reason every stage is: **an un-closed report must not read as a run
+    /// whose whole duration was attributed.** A quorum lane found the original `f64` here — an
+    /// uninstrumented path returns `InferenceResult::default()`, never calls `close`, and so
+    /// reported `unattributed_ms: 0.0` and `wall_ms: 0.0`, which is indistinguishable from a run
+    /// that took no time and attributed all of it. That is precisely the absent-is-not-zero rule
+    /// this module exists to enforce, broken in the two fields that close the books.
+    pub unattributed_ms: Option<f64>,
+    /// Which generate path produced these numbers, so a reader knows which fields could be measured.
+    pub backend: String,
+    /// Total wall clock for the run, measured once at the outermost boundary by
+    /// [`StageTimings::close`]. `None` until then — see `unattributed_ms`.
+    pub wall_ms: Option<f64>,
+}
+
+impl StageTimings {
+    /// Sum of the stages that were actually measured. `None`s contribute nothing — they are not zero.
+    #[must_use]
+    pub fn measured_sum_ms(&self) -> f64 {
+        // `validate_ref_ms` and `validate_probe_ms` are INSIDE `validate_ms` and are deliberately
+        // absent here: adding them would double-count the guard and the books would not close.
+        [
+            self.load_ms,
+            self.h2d_ms,
+            self.validate_ms,
+            self.prefill_ms,
+            self.decode_ms,
+        ]
+        .iter()
+        .flatten()
+        .sum()
+    }
+
+    /// Close the books: record the wall clock and make the residual explicit.
+    ///
+    /// Called once, at the outermost boundary. After this the invariant
+    /// `measured_sum_ms() + unattributed_ms == wall_ms` holds exactly, which is what the falsifier
+    /// asserts — a tolerance is then a statement about how much is UNATTRIBUTED, not about whether
+    /// the arithmetic works.
+    pub fn close(&mut self, wall_ms: f64) {
+        self.wall_ms = Some(wall_ms);
+        self.unattributed_ms = Some(wall_ms - self.measured_sum_ms());
+    }
+
+    /// Were the books ever closed? `false` means this report came off a path that never called
+    /// [`StageTimings::close`] — so it has no wall clock and no residual, and a consumer must say
+    /// "not measured" rather than print zeros.
+    #[must_use]
+    pub fn is_closed(&self) -> bool {
+        self.wall_ms.is_some()
+    }
+
+    /// The names of the stages this run could measure, in order — for the report.
+    #[must_use]
+    pub fn measured(&self) -> Vec<&'static str> {
+        let mut v = Vec::new();
+        for (name, val) in [
+            ("load_ms", self.load_ms),
+            ("h2d_ms", self.h2d_ms),
+            ("validate_ms", self.validate_ms),
+            ("validate_ref_ms", self.validate_ref_ms),
+            ("validate_probe_ms", self.validate_probe_ms),
+            ("prefill_ms", self.prefill_ms),
+            ("decode_ms", self.decode_ms),
+        ] {
+            if val.is_some() {
+                v.push(name);
+            }
+        }
+        v
+    }
+}
+
+/// A deliberate delay planted in one stage, for the falsifier.
+///
+/// **A timing row that cannot localise a planted delay is decoration.** `APR_STAGE_DELAY_MS` takes
+/// `<stage>:<ms>` (e.g. `h2d:500`) and sleeps inside exactly that stage, so a test can assert the
+/// delay lands in that field AND in no other. Reading an env var in the measured path is deliberate:
+/// the alternative is a test double that measures a different code path from the one that ships.
+///
+/// Unset, malformed, or naming an unknown stage → no delay, silently. This never fails a run.
+#[must_use]
+pub fn planted_delay(stage: &str) -> Option<std::time::Duration> {
+    let spec = std::env::var("APR_STAGE_DELAY_MS").ok()?;
+    let (want, ms) = spec.split_once(':')?;
+    if want != stage {
+        return None;
+    }
+    Some(std::time::Duration::from_millis(ms.trim().parse().ok()?))
+}
+
+/// Split one GPU generate call's wall time into `(prefill_ms, decode_ms)`.
+///
+/// `total_ms` spans the whole call INCLUDING both planted sleeps; `engine_prefill_ms` is what the
+/// engine measured inside it, `None` when no prefill PHASE ran (a single-token prompt, a prefix-cache
+/// hit); `planted_prefill_ms` is the prefill plant slept outside the engine, which the engine cannot
+/// see. Decode is the remainder.
+///
+/// **Decode is derived on BOTH arms** (#3606 re-review). The first cut derived it only when the engine
+/// reported a prefill, so a single-token prompt dropped ALL of its decode time — and any `decode`
+/// plant — into `unattributed_ms`: a planted delay that moved no field at all.
+#[must_use]
+pub fn split_generate_ms(
+    total_ms: f64,
+    engine_prefill_ms: Option<f64>,
+    planted_prefill_ms: f64,
+) -> (Option<f64>, Option<f64>) {
+    // No prefill phase and no prefill plant ⇒ prefill stays NOT MEASURED, never `Some(0.0)`.
+    let prefill = match engine_prefill_ms {
+        Some(p) => Some(p + planted_prefill_ms),
+        None if planted_prefill_ms > 0.0 => Some(planted_prefill_ms),
+        None => None,
+    };
+    let decode = (total_ms - prefill.unwrap_or(0.0)).max(0.0);
+    (prefill, Some(decode))
+}
+
+/// Time `f`, adding any delay planted for `stage`, and return `(value, elapsed_ms)`.
+pub fn timed<T>(stage: &str, f: impl FnOnce() -> T) -> (T, f64) {
+    let start = Instant::now();
+    if let Some(d) = planted_delay(stage) {
+        std::thread::sleep(d);
+    }
+    let out = f();
+    (out, start.elapsed().as_secs_f64() * 1000.0)
+}
+
+#[cfg(test)]
+#[path = "stage_timings_tests.rs"]
+mod tests;

@@ -19,6 +19,27 @@ pub struct InferenceResult {
     pub format: String,
     /// Whether GPU was used
     pub used_gpu: bool,
+    /// PMAT-3598 row 1 (#3542): where the time went, per stage, with the unattributed remainder
+    /// explicit. Defaulted (every stage `None`, the whole wall clock unattributed) on any path that
+    /// does not instrument itself — which is an honest statement, not a zero.
+    pub stages: crate::infer::stage_timings::StageTimings,
+}
+
+impl Default for InferenceResult {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            tokens: Vec::new(),
+            input_token_count: 0,
+            generated_token_count: 0,
+            inference_ms: 0.0,
+            tok_per_sec: 0.0,
+            load_ms: 0.0,
+            format: String::new(),
+            used_gpu: false,
+            stages: crate::infer::stage_timings::StageTimings::default(),
+        }
+    }
 }
 
 // ============================================================================
@@ -218,7 +239,21 @@ fn run_gguf_inference(
         eprintln!("Loading model: {}", config.model_path.display());
     }
 
+    // PMAT-3598 row 1: one clock for the whole run, and an accumulator each backend fills with
+    // what it can HONESTLY attribute. What nobody attributes shows up as `unattributed_ms`
+    // rather than being folded into whichever stage happens to bracket it.
+    let run_start = Instant::now();
+    let mut stages = crate::infer::stage_timings::StageTimings::default();
+    // ORDER IS THE WHOLE POINT. The sleep must sit INSIDE the measured window, or the planted
+    // delay lands in `unattributed_ms` and `load_ms` does not move — which is done_when 2's
+    // falsifier failing silently. It was the wrong way round here: a quorum lane found that
+    // `APR_STAGE_DELAY_MS=load:N` shifted nothing, while the unit tests stayed green because they
+    // exercise `StageTimings::timed`/`planted_delay` in isolation and never this hand-rolled
+    // wiring. `timed()` gets it right by construction; these sites bypassed it.
     let load_start = Instant::now();
+    if let Some(d) = crate::infer::stage_timings::planted_delay("load") {
+        std::thread::sleep(d);
+    }
     let mapped = MappedGGUFModel::from_path(&config.model_path)?;
     prefault_mmap(mapped.data());
     // #3091: Qwen3.5/Qwen3.8 hybrids (Gated DeltaNet) have their own CPU forward. The dense
@@ -231,6 +266,7 @@ fn run_gguf_inference(
         OwnedQuantizedModel::from_mapped(&mapped)?
     };
     let load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
+    stages.load_ms = Some(load_ms);
 
     // PMAT-109: Architecture from GGUF metadata (not filename)
     let gguf_arch = mapped.model.architecture().unwrap_or("transformer");
@@ -279,13 +315,15 @@ fn run_gguf_inference(
         // #3714: the CUDA forward serves unless --no-gpu; a GPU that cannot
         // serve prints its reason before the CPU chain runs. This site used to
         // hard-code `(tokens, false)` and never try CUDA at all.
-        crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
+        let moe = crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
             &mapped,
             &model,
             &input_tokens,
             &gen_config,
             config.no_gpu,
-        )?
+        )?;
+        stages.backend = if moe.1 { "cuda-moe" } else { "cpu-moe" }.to_string();
+        moe
     } else if is_qwen35 {
         // #3477: the hybrid now has a GPU forward (#3090), so `apr run --gpu`
         // routes to it and reports CUDA; the CPU forward (#3091) serves
@@ -299,9 +337,11 @@ fn run_gguf_inference(
             &input_tokens,
             &gen_config,
             config.no_gpu,
+            &mut stages,
         )?
     } else {
-        let (tokens, used_gpu) = run_gguf_generate(model, &input_tokens, &gen_config, config)?;
+        let (tokens, used_gpu) =
+            run_gguf_generate(model, &input_tokens, &gen_config, config, &mut stages)?;
         (tokens, used_gpu, 0.0)
     };
     let inference_ms = (infer_start.elapsed().as_secs_f64() * 1000.0 - setup_ms).max(0.0);
@@ -326,6 +366,13 @@ fn run_gguf_inference(
     }
     let text = clean_model_output(&raw_text);
     let generated_token_count = generated_tokens.len();
+    // Close the books ONCE, at the boundary that owns the wall clock. After this,
+    // measured_sum_ms() + unattributed_ms == wall_ms exactly.
+    stages.tokens_out = generated_token_count;
+    if stages.backend.is_empty() {
+        stages.backend = if used_gpu { "gpu" } else { "cpu" }.to_string();
+    }
+    stages.close(run_start.elapsed().as_secs_f64() * 1000.0);
     let tps = tok_per_sec(generated_token_count, inference_ms);
 
     write_gguf_trace(
@@ -368,6 +415,7 @@ fn run_gguf_inference(
             load_ms,
             format: "GGUF".to_string(),
             used_gpu,
+            stages,
         },
         report,
     ))

@@ -231,6 +231,7 @@ fn test_inference_result_creation() {
         load_ms: 50.0,
         format: "GGUF".to_string(),
         used_gpu: true,
+        ..InferenceResult::default()
     };
     assert_eq!(result.text, "Generated text");
     assert_eq!(result.tokens, vec![1, 2, 3, 4]);
@@ -250,6 +251,7 @@ fn test_inference_result_clone() {
         load_ms: 5.0,
         format: "APR".to_string(),
         used_gpu: false,
+        ..InferenceResult::default()
     };
     let cloned = result.clone();
     assert_eq!(result.text, cloned.text);
@@ -270,6 +272,7 @@ fn test_inference_result_debug() {
         load_ms: 5.0,
         format: "GGUF".to_string(),
         used_gpu: true,
+        ..InferenceResult::default()
     };
     let debug = format!("{:?}", result);
     assert!(debug.contains("InferenceResult"));
@@ -289,6 +292,7 @@ fn test_inference_result_zero_inference_ms() {
         load_ms: 0.0,
         format: String::new(),
         used_gpu: false,
+        ..InferenceResult::default()
     };
     assert_eq!(result.inference_ms, 0.0);
     assert_eq!(result.tok_per_sec, 0.0);
@@ -306,6 +310,7 @@ fn test_inference_result_large_values() {
         load_ms: 500_000.0,
         format: "SafeTensors".to_string(),
         used_gpu: true,
+        ..InferenceResult::default()
     };
     assert_eq!(result.text.len(), 1_000_000);
     assert_eq!(result.tokens.len(), 100_000);
@@ -323,6 +328,7 @@ fn test_inference_result_empty_text() {
         load_ms: 2.0,
         format: "GGUF".to_string(),
         used_gpu: false,
+        ..InferenceResult::default()
     };
     assert!(result.text.is_empty());
 }
@@ -339,6 +345,7 @@ fn test_inference_result_unicode_text() {
         load_ms: 5.0,
         format: "GGUF".to_string(),
         used_gpu: true,
+        ..InferenceResult::default()
     };
     assert!(result.text.contains("こんにちは"));
     assert!(result.text.contains("🌍"));
@@ -358,6 +365,7 @@ fn test_inference_result_all_formats() {
             load_ms: 1.0,
             format: format.to_string(),
             used_gpu: false,
+            ..InferenceResult::default()
         };
         assert_eq!(result.format, *format);
     }
@@ -612,6 +620,7 @@ mod proptest_tests {
                 load_ms: 0.0,
                 format: "GGUF".to_string(),
                 used_gpu: false,
+                ..InferenceResult::default()
             };
             let cloned = result.clone();
             prop_assert_eq!(result.text, cloned.text);
@@ -668,6 +677,7 @@ fn test_inference_result_tok_per_sec_calculation() {
         load_ms: 0.0,
         format: "GGUF".to_string(),
         used_gpu: false,
+        ..InferenceResult::default()
     };
     assert!((result.tok_per_sec - 4.0).abs() < f64::EPSILON);
 }
@@ -684,6 +694,7 @@ fn test_inference_result_high_throughput() {
         load_ms: 10.0,
         format: "GGUF".to_string(),
         used_gpu: true,
+        ..InferenceResult::default()
     };
     assert!((result.tok_per_sec - 10000.0).abs() < f64::EPSILON);
 }
@@ -700,6 +711,7 @@ fn test_inference_result_gpu_vs_cpu() {
         load_ms: 100.0,
         format: "GGUF".to_string(),
         used_gpu: true,
+        ..InferenceResult::default()
     };
 
     let cpu_result = InferenceResult {
@@ -712,6 +724,7 @@ fn test_inference_result_gpu_vs_cpu() {
         load_ms: 50.0,
         format: "GGUF".to_string(),
         used_gpu: false,
+        ..InferenceResult::default()
     };
 
     assert!(gpu_result.used_gpu);

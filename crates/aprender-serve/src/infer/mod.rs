@@ -591,3 +591,5 @@ include!("batch.rs");
 pub mod qwen3_moe_dispatch;
 pub mod qwen3_moe_generate;
 pub mod run_report;
+/// PMAT-3598 row 1 (#3542): where the time went, per stage, with the unattributed remainder visible.
+pub mod stage_timings;

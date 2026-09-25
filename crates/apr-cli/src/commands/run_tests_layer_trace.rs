@@ -21,6 +21,8 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            #[cfg(feature = "inference")]
+            stages: realizar::infer::stage_timings::StageTimings::default(),
         }
     }
 

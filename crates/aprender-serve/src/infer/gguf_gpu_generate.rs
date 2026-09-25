@@ -286,11 +286,22 @@ fn try_gguf_gpu_generate(
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     verbose: bool,
+    stages: &mut crate::infer::stage_timings::StageTimings,
 ) -> std::result::Result<Result<(Vec<u32>, bool)>, Box<crate::gguf::OwnedQuantizedModel>> {
     use crate::gguf::OwnedQuantizedModelCuda;
+    use crate::infer::stage_timings::timed;
 
-    let mut cuda_model = match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
-        Ok(m) => m,
+    // PMAT-3598 row 1: this call is the HOST -> DEVICE transfer. It was inside the same wall clock
+    // as everything else, which is one of the three mechanisms that could have explained the 14 s
+    // and could not be told apart from the other two.
+    let (built, h2d_ms) = timed("h2d", || OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048));
+    let mut cuda_model = match built {
+        Ok(m) => {
+            // Only a transfer that HAPPENED is reported. A failed init falls back to CPU, where
+            // there is no host-to-device transfer to speak of and the field stays absent.
+            stages.h2d_ms = Some(h2d_ms);
+            m
+        },
         Err(e) => {
             if verbose {
                 eprintln!("Backend: CPU (GPU unavailable: {})", e);
@@ -309,17 +320,55 @@ fn try_gguf_gpu_generate(
         );
     }
 
-    if !validate_gpu_first_token(&mut cuda_model, gen_config, input_tokens) {
+    // The GPU path runs a whole forward pass before it will commit to the GPU. It happens before
+    // the user's first token and it was invisible: folded into a wall clock nobody could decompose.
+    // It gets its own field because charging it to `prefill_ms` would report the model as twice as
+    // slow to prefill as it is, and charging it to `load_ms` would hide that it scales with the prompt.
+    let (ok, validate_ms) =
+        timed("validate", || validate_gpu_first_token(&mut cuda_model, gen_config, input_tokens));
+    stages.validate_ms = Some(validate_ms);
+    if !ok {
         // Validation failed — extract model back for CPU fallback
         return Err(Box::new(cuda_model.into_model()));
     }
 
     // Reuse existing CUDA model — generate_gpu_resident() creates fresh KV cache
     // and resets GPU KV positions internally, so validation doesn't "consume" it.
+    let generate_start = std::time::Instant::now();
+    // Both plants are taken here and ATTRIBUTED BELOW to the stage each names. A quorum lane
+    // found that the prefill plant moved the wrong field: `phases.prefill_ms` is measured by the
+    // engine INSIDE `generate_gpu_resident` and cannot see a sleep outside it, while
+    // `decode_ms = total - prefill` is a remainder — so the prefill delay silently became decode
+    // time. Moving the wrong field is worse than moving none: the falsifier reads as working.
+    // The lane also found `decode` had no plant site on this path at all.
+    let planted_prefill = crate::infer::stage_timings::planted_delay("prefill");
+    if let Some(d) = planted_prefill {
+        std::thread::sleep(d);
+    }
+    let planted_decode = crate::infer::stage_timings::planted_delay("decode");
+    if let Some(d) = planted_decode {
+        std::thread::sleep(d);
+    }
     let result = cuda_model
         .generate_gpu_resident(input_tokens, gen_config)
         .map(|tokens| (tokens, true))
         .map_err(|e| RealizarError::InferenceError(format!("GPU generation failed: {}", e)));
+    // The engine already measured prefill for the SERVE path (`take_phase_timings`, §3) and nothing
+    // ever carried it to the CLI. Decode is the remainder of the generate call, exactly as
+    // `cuda_chat_backend::phase_split` derives it — one derivation, not two.
+    let phases = cuda_model.take_phase_timings();
+    let total_ms = generate_start.elapsed().as_secs_f64() * 1000.0;
+    // The prefill plant is added to prefill explicitly; the decode plant needs nothing, because
+    // decode is the remainder and the sleep is already inside `total_ms`. Decode is derived even
+    // when the engine ran no prefill phase — see `split_generate_ms`.
+    let (prefill_ms, decode_ms) = crate::infer::stage_timings::split_generate_ms(
+        total_ms,
+        phases.prefill_ms,
+        planted_prefill.map_or(0.0, |d| d.as_secs_f64() * 1000.0),
+    );
+    stages.prefill_ms = prefill_ms;
+    stages.decode_ms = decode_ms;
+    stages.backend = "cuda".to_string();
     Ok(result)
 }
 
@@ -330,6 +379,7 @@ fn run_gguf_generate(
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     config: &InferenceConfig,
+    stages: &mut crate::infer::stage_timings::StageTimings,
 ) -> Result<(Vec<u32>, bool)> {
     // M32c.2.1: short-circuit MoE forward attempts BEFORE any GPU/CPU
     // dispatch. M32c.2 made `from_gguf` succeed for qwen3_moe by routing
@@ -364,7 +414,7 @@ fn run_gguf_generate(
     // GPU path: pass model by value (zero-clone) — model is returned on failure for CPU fallback
     #[cfg(feature = "cuda")]
     let model = if !config.no_gpu && !has_legacy_quant {
-        match try_gguf_gpu_generate(model, input_tokens, gen_config, config.verbose) {
+        match try_gguf_gpu_generate(model, input_tokens, gen_config, config.verbose, stages) {
             Ok(result) => return result,
             Err(returned_model) => *returned_model, // GPU failed, use returned model for CPU
         }
@@ -377,7 +427,10 @@ fn run_gguf_generate(
     #[cfg(feature = "gpu")]
     if !config.no_gpu && !has_legacy_quant {
         match try_wgpu_generate(&model, input_tokens, gen_config, config.verbose) {
-            Ok(result) => return Ok(result),
+            Ok(result) => {
+                stages.backend = "wgpu".to_string();
+                return Ok(result);
+            },
             Err(e) => {
                 if config.verbose {
                     eprintln!("Backend: CPU (wgpu unavailable: {})", e);
@@ -387,6 +440,7 @@ fn run_gguf_generate(
     }
 
     log_cpu_backend(config.verbose, has_legacy_quant);
+    stages.backend = "cpu".to_string();
     let tokens = model
         .generate_with_cache(input_tokens, gen_config)
         .map_err(|e| RealizarError::InferenceError(format!("CPU generation failed: {}", e)))?;
@@ -708,6 +762,7 @@ fn try_apr_wgpu_inference(
         tok_per_sec: if inference_ms > 0.0 { tokens_generated as f64 / (inference_ms / 1000.0) } else { 0.0 },
         format: "APR".to_string(),
         used_gpu: true,
+        ..InferenceResult::default()
     }))
 }
 
@@ -873,6 +928,7 @@ fn try_apr_cuda_inference(
         load_ms,
         format: "APR".to_string(),
         used_gpu: true,
+        ..InferenceResult::default()
     }))
 }
 
@@ -956,6 +1012,7 @@ fn run_apr_quantized_cpu_inference(
         load_ms,
         format: "APR".to_string(),
         used_gpu: false,
+        ..InferenceResult::default()
     })
 }
 
@@ -1135,6 +1192,7 @@ fn try_safetensors_cuda_inference(
         load_ms,
         format: "SafeTensors".to_string(),
         used_gpu: true,
+        ..InferenceResult::default()
     }))
 }
 

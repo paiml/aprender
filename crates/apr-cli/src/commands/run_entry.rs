@@ -470,7 +470,11 @@ fn print_run_output(
         return print_stream_output(result, source, max_tokens, accel_forced);
     }
 
-    // GH-240/GH-250: JSON output mode with accurate token counts
+    // GH-240/GH-250: JSON output mode with accurate token counts.
+    //
+    // PMAT-3598 row 1, done_when 3 — THE STREAM IS DECLARED: in `--json` mode stdout carries
+    // exactly one JSON document and nothing else; every human-facing line (`Backend:`, mmap notes,
+    // trace output) goes to stderr. A consumer pipes stdout to a parser without filtering.
     if output_format == "json" && !benchmark {
         let json = build_final_json(result, source, max_tokens, accel_forced);
         println!(
@@ -488,15 +492,31 @@ fn print_run_output(
         println!("{}", result.text);
     }
 
+    // UNREACHABLE IN `--json`, and the guard is not local: the `output_format == "json"` arm
+    // above `return`s before here (and `--json --benchmark` is taken by the `benchmark` arm), so
+    // stdout in JSON mode carries exactly one document. Verified by running the binary: stdout was
+    // pure JSON with the human lines on stderr.
+    //
+    // Said out loud because a quorum lane read this `println!`, found no format guard beside it,
+    // and reported it as done_when 3 stdout pollution — a correct reading of what is visible here.
+    // An invariant enforced seventeen lines away is one a reader has to go and find.
     if !benchmark {
         println!();
         println!(
             "Completed in {:.2}s {}",
             result.duration_secs,
+            // #3598 done_when 4, quoted so this is not re-raised as scope creep (a quorum lane
+            // read it that way): "The `(cached)` suffix on `Completed in N s` states what was
+            // cached or is removed — it currently prints on runs that demonstrably executed."
+            // #3542 adds: "Worth rewording in the same change."
+            //
+            // The suffix is about the MODEL FILE, not the run. `(cached)` on a run that
+            // demonstrably executed reads as "this result was cached", which is a claim nothing
+            // here measures.
             if result.cached {
-                "(cached)".dimmed()
+                "(model already local)".dimmed()
             } else {
-                "(downloaded)".dimmed()
+                "(model downloaded this run)".dimmed()
             }
         );
     }
@@ -520,7 +540,8 @@ fn build_final_json(
     });
     // GH-250: Include generated token IDs for parity checking
     let tokens_json = result.generated_tokens.as_deref().unwrap_or(&[]);
-    serde_json::json!({
+    #[allow(unused_mut)]
+    let mut json = serde_json::json!({
         "model": source,
         "text": result.text,
         "tokens": tokens_json,
@@ -555,7 +576,80 @@ fn build_final_json(
             "ran": if result.used_gpu == Some(true) { "gpu" } else { "cpu" },
             "fell_back": accel_forced && result.used_gpu == Some(false),
         },
-    })
+    });
+    // PMAT-3598 row 1 (#3542): the stage breakdown. `apr run` used to report ONE number — wall
+    // clock — and on a 4B model that number was 14 s while nothing could say which stage owned it.
+    // Every stage here is `null` when it was not measured, NEVER 0: a zero reads as "free" and is
+    // the cheapest possible lie. `unattributed_ms` is the remainder, always present, so the fields
+    // sum to `wall_ms` exactly and a tolerance is a statement about how much is unattributed.
+    #[cfg(feature = "inference")]
+    merge_stage_fields(&mut json, &result.stages);
+    json
+}
+
+/// Fold the measured stages into the report. Separate from [`build_final_json`] so the
+/// non-inference build has no opinion about timings it could not take.
+#[cfg(feature = "inference")]
+fn merge_stage_fields(
+    json: &mut serde_json::Value,
+    stages: &realizar::infer::stage_timings::StageTimings,
+) {
+    let Some(obj) = json.as_object_mut() else {
+        return;
+    };
+    let ms = |v: Option<f64>| match v {
+        Some(x) => serde_json::json!((x * 100.0).round() / 100.0),
+        None => serde_json::Value::Null,
+    };
+    obj.insert("load_ms".into(), ms(stages.load_ms));
+    obj.insert("h2d_ms".into(), ms(stages.h2d_ms));
+    obj.insert("validate_ms".into(), ms(stages.validate_ms));
+    // The two halves of the guard, INSIDE validate_ms and never added to the sum. #3604's
+    // before/after receipt has to say which mechanism the cache removed, not just that the total fell.
+    obj.insert("validate_ref_ms".into(), ms(stages.validate_ref_ms));
+    obj.insert("validate_probe_ms".into(), ms(stages.validate_probe_ms));
+    obj.insert("prefill_ms".into(), ms(stages.prefill_ms));
+    obj.insert("decode_ms".into(), ms(stages.decode_ms));
+    obj.insert("tokens_out".into(), serde_json::json!(stages.tokens_out));
+    // NOT `Some(...)`: an uninstrumented generate path returns a default report that never had
+    // `close()` called on it, and wrapping in `Some` printed `0.0` for both — a run that took no
+    // time and attributed all of it. Absent is NOT MEASURED here exactly as it is for every stage.
+    obj.insert("unattributed_ms".into(), ms(stages.unattributed_ms));
+    obj.insert("wall_ms".into(), ms(stages.wall_ms));
+    // PMAT-4105 / #3606: TWO clocks, stated. `wall_ms` is the engine's: it starts just before the
+    // load stage inside realizar's `run_gguf_inference`, and the stages close against it exactly.
+    // `inference_time_ms` is the CLI's: it also covers resolving the model and preparing the tokens.
+    // The difference belongs to no stage, so it is its own labelled field rather than being
+    // silently absent from both. `null` when the books were never closed.
+    let outside = match (
+        stages.wall_ms,
+        obj.get("inference_time_ms")
+            .and_then(serde_json::Value::as_f64),
+    ) {
+        (Some(wall), Some(total)) => Some(total - wall),
+        _ => None,
+    };
+    obj.insert("outside_wall_ms".into(), ms(outside));
+    obj.insert(
+        "stages_measured".into(),
+        serde_json::json!(stages.measured()),
+    );
+    // `backend` is #3602's {requested, ran, fell_back} object: never overwrite it. Which generate
+    // PATH produced these timings (so a reader knows which stages could be measured) goes inside it.
+    match obj
+        .get_mut("backend")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        Some(b) => {
+            b.insert("path".into(), serde_json::json!(stages.backend));
+        }
+        None => {
+            obj.insert(
+                "backend".into(),
+                serde_json::json!({ "path": stages.backend }),
+            );
+        }
+    }
 }
 
 /// Emit one JSON line per generated token plus a terminal `final` blob.

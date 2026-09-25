@@ -232,7 +232,7 @@
             used_gpu: None,
             generated_tokens: None,
             token_texts: None,
-            usage: Default::default(),
+            ..RunResult::default()
         };
         let result_zero = RunResult {
             text: String::new(),
@@ -243,7 +243,7 @@
             used_gpu: None,
             generated_tokens: None,
             token_texts: None,
-            usage: Default::default(),
+            ..RunResult::default()
         };
         assert_ne!(
             result_none.tokens_generated, result_zero.tokens_generated,
@@ -264,7 +264,7 @@
             used_gpu: Some(true),
             generated_tokens: Some(vec![10, 20, 30]),
             token_texts: None,
-            usage: Default::default(),
+            ..RunResult::default()
         };
         assert_eq!(result.text, "output");
         assert!((result.duration_secs - 1.234).abs() < f64::EPSILON);

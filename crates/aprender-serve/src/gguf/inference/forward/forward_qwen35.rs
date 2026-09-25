@@ -1806,8 +1806,9 @@ pub fn run_qwen35_generate_dispatch(
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     no_gpu: bool,
+    stages: &mut crate::infer::stage_timings::StageTimings,
 ) -> Result<(Vec<u32>, bool)> {
-    run_qwen35_generate_dispatch_timed(mapped, base, input_tokens, gen_config, no_gpu)
+    run_qwen35_generate_dispatch_timed(mapped, base, input_tokens, gen_config, no_gpu, stages)
         .map(|(tokens, used_gpu, _setup_ms)| (tokens, used_gpu))
 }
 
@@ -1824,6 +1825,7 @@ pub fn run_qwen35_generate_dispatch_timed(
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     no_gpu: bool,
+    stages: &mut crate::infer::stage_timings::StageTimings,
 ) -> Result<(Vec<u32>, bool, f64)> {
     let dispatch_start = std::time::Instant::now();
     let route = qwen35_route(no_gpu, cfg!(feature = "cuda"));
@@ -1832,7 +1834,7 @@ pub fn run_qwen35_generate_dispatch_timed(
     }
     #[cfg(feature = "cuda")]
     if route == Qwen35Route::Gpu {
-        match run_qwen35_generate_gpu(mapped, base, input_tokens, gen_config) {
+        match run_qwen35_generate_gpu(mapped, base, input_tokens, gen_config, stages) {
             Ok((tokens, setup_ms)) => return Ok((tokens, true, setup_ms)),
             Err(reason) => {
                 eprintln!("{QWEN35_GPU_FALLBACK_PREFIX}, falling back to CPU: {reason}");
@@ -1840,6 +1842,7 @@ pub fn run_qwen35_generate_dispatch_timed(
         }
     }
     let setup_ms = dispatch_start.elapsed().as_secs_f64() * 1000.0;
+    stages.backend = "cpu-qwen35".to_string();
     let tokens = run_qwen35_generate(mapped, base, input_tokens, gen_config)?;
     Ok((tokens, false, setup_ms))
 }
@@ -1861,6 +1864,7 @@ fn run_qwen35_generate_gpu(
     base: &OwnedQuantizedModel,
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
+    stages: &mut crate::infer::stage_timings::StageTimings,
 ) -> std::result::Result<(Vec<u32>, f64), String> {
     let setup_start = std::time::Instant::now();
     if input_tokens.is_empty() {
@@ -1877,9 +1881,12 @@ fn run_qwen35_generate_gpu(
     let vram_mb = executor.memory_info().unwrap_or((0, 0)).1 / (1024 * 1024);
 
     let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
-    let mut gpu =
+    // PMAT-3598 row 1: building the CUDA model is the HOST -> DEVICE transfer for this path.
+    let (built, h2d_ms) = crate::infer::stage_timings::timed("h2d", || {
         crate::gguf::cuda::Qwen35CudaModel::with_max_seq_len(&qwen, executor, max_seq_len)
-            .map_err(|e| format!("the CUDA model would not build: {e}"))?;
+    });
+    let mut gpu = built.map_err(|e| format!("the CUDA model would not build: {e}"))?;
+    stages.h2d_ms = Some(h2d_ms);
 
     // Unconditional, like every other backend-selection line on this path: the
     // user must be able to tell a GPU run from a CPU one without --verbose.
@@ -1890,15 +1897,27 @@ fn run_qwen35_generate_gpu(
     // #3604: the guard runs once per (model sha256, apr version, device) and
     // leaves a receipt; a later run whose triple matches reads it instead of
     // re-deriving a 64-position CPU forward that was 67 % of a 14 s TTFT.
-    let f2 =
-        f2_validate_qwen35_receipted(&mut gpu, &qwen, input_tokens, mapped.data(), &device_name);
+    // PMAT-3598: the whole guard — hash, receipt read, and (on a miss) both forwards — is `validate`.
+    // On a receipt hit it is ~the hash alone, and the stage says so instead of vanishing.
+    let (f2, validate_ms) = crate::infer::stage_timings::timed("validate", || {
+        f2_validate_qwen35_receipted(
+            &mut gpu,
+            &qwen,
+            input_tokens,
+            mapped.data(),
+            &device_name,
+            stages,
+        )
+    });
+    stages.validate_ms = Some(validate_ms);
     if !f2.accepted {
         return Err("the F2 CPU-parity guard rejected the GPU path".to_string());
     }
     // Everything above is setup (layer load, CUDA build, F2 guard); only the
     // decode below is generation.
     let setup_ms = setup_start.elapsed().as_secs_f64() * 1000.0;
-    qwen35_gpu_decode(&mut gpu, input_tokens, gen_config).map(|tokens| (tokens, setup_ms))
+    stages.backend = "cuda-qwen35".to_string();
+    qwen35_gpu_decode(&mut gpu, input_tokens, gen_config, stages).map(|tokens| (tokens, setup_ms))
 }
 
 /// Prefill + decode on the GPU, with the token choice
@@ -1909,6 +1928,7 @@ fn qwen35_gpu_decode(
     gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
+    stages: &mut crate::infer::stage_timings::StageTimings,
 ) -> std::result::Result<Vec<u32>, String> {
     use rand::SeedableRng;
     let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
@@ -1917,11 +1937,22 @@ fn qwen35_gpu_decode(
         .map_err(|e| format!("the decode state would not allocate: {e}"))?;
     let mut rng = rand::rngs::StdRng::seed_from_u64(gen_config.seed);
 
+    // PMAT-3598 row 1: the prompt loop IS prefill and the generate loop IS decode. The boundary
+    // is exact here, not derived, so neither number is the other's remainder.
+    let prefill_start = std::time::Instant::now();
+    if let Some(d) = crate::infer::stage_timings::planted_delay("prefill") {
+        std::thread::sleep(d);
+    }
     let mut logits = Vec::new();
     for (pos, &token) in input_tokens.iter().enumerate() {
         logits = gpu
             .forward_single(token, &mut state, pos)
             .map_err(|e| format!("the GPU forward failed at prompt position {pos}: {e}"))?;
+    }
+    stages.prefill_ms = Some(prefill_start.elapsed().as_secs_f64() * 1000.0);
+    let decode_start = std::time::Instant::now();
+    if let Some(d) = crate::infer::stage_timings::planted_delay("decode") {
+        std::thread::sleep(d);
     }
     let mut tokens = input_tokens.to_vec();
     for _ in 0..gen_config.max_tokens {
@@ -1945,6 +1976,7 @@ fn qwen35_gpu_decode(
             .forward_single(next, &mut state, pos)
             .map_err(|e| format!("the GPU forward failed at decode position {pos}: {e}"))?;
     }
+    stages.decode_ms = Some(decode_start.elapsed().as_secs_f64() * 1000.0);
     Ok(tokens)
 }
 
@@ -1997,6 +2029,7 @@ fn f2_validate_qwen35(
     gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
     cpu: &Qwen35Model<'_>,
     probe_context: &[u32],
+    stages: &mut crate::infer::stage_timings::StageTimings,
 ) -> F2Verdict {
     // Same escape hatch as the dense gate, and the same one `apr parity` uses.
     if std::env::var("SKIP_PARITY_GATE").is_ok_and(|v| v == "1") {
@@ -2008,13 +2041,22 @@ fn f2_validate_qwen35(
     if probe.len() < 2 {
         return F2Verdict::NotJudged;
     }
-    let Some(cpu_per_pos) = f2_qwen35_cpu_reference(cpu, probe) else {
+    // #3604 needs to know WHICH half the 9.55 s is, so the guard reports its two forwards
+    // separately. Both are inside `validate_ms` and are excluded from the stage sum.
+    let (cpu_ref, ref_ms) =
+        crate::infer::stage_timings::timed("validate_ref", || f2_qwen35_cpu_reference(cpu, probe));
+    stages.validate_ref_ms = Some(ref_ms);
+    let Some(cpu_per_pos) = cpu_ref else {
         return F2Verdict::NotJudged; // the CPU forward itself failed: nothing to judge against.
     };
     let decode_token = cpu_per_pos
         .get(probe.len().saturating_sub(1))
         .map_or(0, |l| crate::infer::argmax_u32(l));
-    let gpu_per_pos = match f2_qwen35_gpu_logits(gpu, probe, decode_token) {
+    let (gpu_probe, probe_ms) = crate::infer::stage_timings::timed("validate_probe", || {
+        f2_qwen35_gpu_logits(gpu, probe, decode_token)
+    });
+    stages.validate_probe_ms = Some(probe_ms);
+    let gpu_per_pos = match gpu_probe {
         Ok(v) => v,
         Err(msg) => {
             eprintln!("{msg}");
@@ -2074,6 +2116,7 @@ fn f2_validate_qwen35_receipted(
     probe_context: &[u32],
     model_bytes: &[u8],
     device_name: &str,
+    stages: &mut crate::infer::stage_timings::StageTimings,
 ) -> F2Outcome {
     use crate::gguf::f2_receipt::{
         apr_version, decide, model_sha256, read_receipt, receipt_dir, receipt_path,
@@ -2121,7 +2164,7 @@ fn f2_validate_qwen35_receipted(
     }
 
     let start = std::time::Instant::now();
-    let verdict = f2_validate_qwen35(gpu, cpu, probe_context);
+    let verdict = f2_validate_qwen35(gpu, cpu, probe_context, stages);
     let validate_ms = start.elapsed().as_secs_f64() * 1000.0;
 
     let source = match verdict {

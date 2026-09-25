@@ -1,4 +1,3 @@
-
 /// `--stream` emits one JSON token line per generated token id, then one
 /// `event:final` blob — N tokens → N+1 NDJSON lines.
 #[test]
@@ -16,7 +15,7 @@ fn stream_output_emits_n_plus_one_json_lines() {
             " world".to_string(),
             "!".to_string(),
         ]),
-        usage: Default::default(),
+        ..RunResult::default()
     };
 
     let mut buf: Vec<u8> = Vec::new();
@@ -86,7 +85,7 @@ fn stream_token_events_carry_their_own_decoded_text() {
             " here".to_string(),
             " to help".to_string(),
         ]),
-        usage: Default::default(),
+        ..RunResult::default()
     };
 
     let mut buf: Vec<u8> = Vec::new();
@@ -127,7 +126,7 @@ fn stream_token_events_degrade_to_empty_text_without_a_tokenizer() {
         used_gpu: Some(false),
         generated_tokens: Some(vec![7, 9]),
         token_texts: None,
-        usage: Default::default(),
+        ..RunResult::default()
     };
 
     let mut buf: Vec<u8> = Vec::new();
@@ -153,7 +152,7 @@ fn stream_output_no_tokens_emits_only_final() {
         used_gpu: Some(false),
         generated_tokens: Some(Vec::new()),
         token_texts: None,
-        usage: Default::default(),
+        ..RunResult::default()
     };
 
     let mut buf: Vec<u8> = Vec::new();
@@ -179,7 +178,7 @@ fn stream_output_none_tokens_emits_only_final() {
         used_gpu: None,
         generated_tokens: None,
         token_texts: None,
-        usage: Default::default(),
+        ..RunResult::default()
     };
 
     let mut buf: Vec<u8> = Vec::new();
@@ -204,7 +203,7 @@ fn build_final_json_matches_legacy_json_shape() {
         used_gpu: Some(true),
         generated_tokens: Some(vec![1, 2, 3]),
         token_texts: None,
-        usage: Default::default(),
+        ..RunResult::default()
     };
     let v = build_final_json(&result, "src.apr", 100, false);
     assert_eq!(v["model"], "src.apr");
@@ -217,4 +216,95 @@ fn build_final_json_matches_legacy_json_shape() {
     assert_eq!(v["used_gpu"], true);
     assert_eq!(v["cached"], true);
     assert_eq!(v["inference_time_ms"], 1000.0);
+}
+
+/// PMAT-3598 done_when 1, asserted on the DOCUMENT `apr run --json` prints (#3606 re-review):
+/// "apr run --json emits load_ms, h2d_ms, prefill_ms, decode_ms, tokens_out." Both `--json` paths
+/// (plain and the `--stream` final blob) are built by `build_final_json`, so this is that output.
+/// Every key must be PRESENT; a stage that was not measured is `null`, never `0`.
+#[cfg(feature = "inference")]
+#[test]
+fn run_json_emits_the_five_stage_keys_and_null_when_not_measured() {
+    use realizar::infer::stage_timings::StageTimings;
+    const KEYS: [&str; 5] = ["load_ms", "h2d_ms", "prefill_ms", "decode_ms", "tokens_out"];
+
+    let measured = RunResult {
+        stages: StageTimings {
+            load_ms: Some(120.5),
+            h2d_ms: Some(40.25),
+            prefill_ms: Some(10.0),
+            decode_ms: Some(300.0),
+            tokens_out: 7,
+            ..StageTimings::default()
+        },
+        ..RunResult::default()
+    };
+    let v = build_final_json(&measured, "m.gguf", 16, false);
+    for k in KEYS {
+        assert!(v.get(k).is_some(), "--json is missing `{k}`: {v}");
+    }
+    assert_eq!(v["load_ms"], 120.5);
+    assert_eq!(v["h2d_ms"], 40.25);
+    assert_eq!(v["prefill_ms"], 10.0);
+    assert_eq!(v["decode_ms"], 300.0);
+    assert_eq!(v["tokens_out"], 7);
+
+    // A CPU-shaped run: load measured, nothing transferred, prefill/decode not split.
+    let absent = RunResult {
+        stages: StageTimings {
+            load_ms: Some(5.0),
+            ..StageTimings::default()
+        },
+        ..RunResult::default()
+    };
+    let v = build_final_json(&absent, "m.gguf", 16, false);
+    for k in ["h2d_ms", "prefill_ms", "decode_ms"] {
+        assert!(
+            v.get(k).is_some_and(serde_json::Value::is_null),
+            "`{k}` was not measured: it must be present and null, never 0 or missing: {v}"
+        );
+    }
+    assert_eq!(v["load_ms"], 5.0);
+    assert_eq!(
+        v["tokens_out"], 0,
+        "tokens_out is a count, present even when zero"
+    );
+}
+
+/// PMAT-4105 / #3606 done_when 2: the wall-clock boundary is stated, not implied. `wall_ms` is
+/// the engine's clock (the stages close against it); `inference_time_ms` is the CLI's, and also
+/// covers resolve and tokenization. `outside_wall_ms` is exactly their difference, and it is
+/// `null`, never 0, when the engine never closed its books.
+#[cfg(feature = "inference")]
+#[test]
+fn run_json_states_the_gap_between_the_cli_clock_and_the_engine_clock() {
+    use realizar::infer::stage_timings::StageTimings;
+    let mut stages = StageTimings {
+        load_ms: Some(100.0),
+        ..StageTimings::default()
+    };
+    stages.close(400.0);
+    let closed = RunResult {
+        duration_secs: 0.45,
+        stages,
+        ..RunResult::default()
+    };
+    let v = build_final_json(&closed, "m.gguf", 16, false);
+    assert_eq!(v["inference_time_ms"], 450.0);
+    assert_eq!(v["wall_ms"], 400.0);
+    assert_eq!(
+        v["outside_wall_ms"], 50.0,
+        "the CLI clock minus the engine clock: {v}"
+    );
+
+    let unclosed = RunResult {
+        duration_secs: 0.45,
+        ..RunResult::default()
+    };
+    let v = build_final_json(&unclosed, "m.gguf", 16, false);
+    assert!(
+        v.get("outside_wall_ms")
+            .is_some_and(serde_json::Value::is_null),
+        "no engine clock, no gap: present and null, never 0: {v}"
+    );
 }

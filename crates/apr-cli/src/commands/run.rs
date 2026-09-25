@@ -255,6 +255,27 @@ pub(crate) struct RunResult {
     pub token_texts: Option<Vec<String>>,
     /// Prompt and completion counts plus the finish reason (#3718).
     pub usage: RunUsage,
+    /// PMAT-3598 row 1 (#3542): the stage breakdown `--json` reports.
+    #[cfg(feature = "inference")]
+    pub stages: realizar::infer::stage_timings::StageTimings,
+}
+
+impl Default for RunResult {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            duration_secs: 0.0,
+            cached: false,
+            tokens_generated: None,
+            tok_per_sec: None,
+            used_gpu: None,
+            generated_tokens: None,
+            token_texts: None,
+            usage: RunUsage::default(),
+            #[cfg(feature = "inference")]
+            stages: realizar::infer::stage_timings::StageTimings::default(),
+        }
+    }
 }
 
 /// Resolve a user-supplied model argument into a [`ModelSource`].
@@ -333,6 +354,8 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         .or_else(|| Some(output.text.split_whitespace().count()));
 
     Ok(RunResult {
+        #[cfg(feature = "inference")]
+        stages: output.stages,
         text: output.text,
         duration_secs: duration.as_secs_f64(),
         cached: matches!(model_source, ModelSource::Local(_)) || model_source.cache_path().exists(),
