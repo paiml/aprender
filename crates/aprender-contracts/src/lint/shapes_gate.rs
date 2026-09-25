@@ -26,7 +26,8 @@
 //! `pv-contract`, a contract stripped of `metadata` carries no `ont:kind`; `json`, a nested key the vocabulary does
 //! not map is refused naming it; `gguf`, a corrupt magic is refused; `apr-model`, a header whose tensor count
 //! disagrees with its index is refused; `code` and `lean`, as their modules state; `parity-receipt`, a record
-//! stripped of `comparator` loses its comparator edge. All of them every run, in memory.
+//! stripped of `comparator` loses its comparator edge; `kernel-receipt`, an `unsafe` planted in a safe device
+//! module is found. All of them every run, in memory.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -35,8 +36,8 @@ use std::time::Instant;
 use crate::ontology::arming::ArmedShapes;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, code, gguf, json, lean, parity_receipt, pv_contract, release_evidence,
-    ExtractFailure,
+    self, apr_model, code, gguf, json, kernel_receipt, lean, parity_receipt, pv_contract,
+    release_evidence, ExtractFailure,
 };
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
 use crate::ontology::receipts;
@@ -165,6 +166,24 @@ fn parity_refusal(
     None
 }
 
+/// OXIDE-001 O-2 (aprender#3522): the kernel corpus is pinned the same way — `EXPECTED_KERNELS`, and no file
+/// under `evidence/kernels/` refused — before anything is graded.
+fn kernel_refusal(
+    kernels: &extract::kernel_receipt::KernelStats,
+    shapes_n: usize,
+) -> Option<ShapesOutcome> {
+    let refused: Vec<String> = kernels.errors.iter().map(ToString::to_string).collect();
+    let (expected, found) = kernels
+        .wrong_corpus()
+        .unwrap_or((kernels.expected.unwrap_or(kernels.kernels), kernels.kernels));
+    (expected != found || !refused.is_empty()).then_some(ShapesOutcome::WrongCorpus {
+        shapes_n,
+        expected,
+        found,
+        refused,
+    })
+}
+
 /// A torn JSONL line is the INPUT's fault and is carried as a warning on the entity's root shape — the
 /// gate already rules that warnings alone are `Unknown{Warn}`, never a pass and never a silent drop.
 fn carry_extract_warnings(report: &mut Report, warnings: &[extract::json::Warning]) {
@@ -257,6 +276,9 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
     };
     // PMAT-3577: the count is pinned before anything is graded. A miss here is not a corpus verdict.
     if let Some(refusal) = parity_refusal(&extraction.parity, shapes.len()) {
+        return refusal;
+    }
+    if let Some(refusal) = kernel_refusal(&extraction.kernels, shapes.len()) {
         return refusal;
     }
     let graph = &extraction.graph;
@@ -433,6 +455,7 @@ fn by_entity_type(extraction: &extract::Extraction) -> BTreeMap<String, usize> {
         // and an absent key is not zero, so a consumer that treats it as one measures nothing and
         // calls it a pass. The same shape as #3610, one map over.
         ("parity-receipt", extraction.parity.records),
+        ("kernel-receipt", extraction.kernels.kernels),
         ("code", extraction.code.symbols),
         ("lean", extraction.lean.statements),
     ]
@@ -490,6 +513,8 @@ fn extract_controls() -> BTreeMap<String, String> {
             "parity-receipt",
             parity_receipt::positive_control(&parity_receipt::control_sample()),
         ),
+        // OXIDE-001 O-2: an `unsafe` planted in a safe device module must become exactly one site
+        ("kernel-receipt", kernel_receipt::positive_control()),
         // aprender#3715: drawn every run, subject or not — a cell owed without a receipt stays a node
         ("release-evidence", release_evidence::positive_control()),
     ]

@@ -18,6 +18,7 @@ pub mod apr_model;
 pub mod code;
 pub mod gguf;
 pub mod json;
+pub mod kernel_receipt;
 pub mod lean;
 pub mod parity_receipt;
 pub mod pv_contract;
@@ -46,6 +47,8 @@ pub struct Extraction {
     pub lean: lean::LeanStats,
     /// ONT-4c3: the logit-parity receipts under `evidence/parity/**`, and the files this extractor refused.
     pub parity: parity_receipt::ParityStats,
+    /// OXIDE-001 O-2 (aprender#3522): the kernels under `evidence/kernels/<k>/`, and the files refused.
+    pub kernels: kernel_receipt::KernelStats,
     /// aprender#3715: the release evidence — `None` unless a release subject was given (an ordinary PR has none).
     pub release: Option<release_evidence::ReleaseStats>,
 }
@@ -107,6 +110,7 @@ pub fn all_with(
     out.code = code::extract(contract_dir, &mut out.graph);
     out.lean = lean::extract(contract_dir, &mut out.graph);
     out.parity = parity_receipt::extract(root, &mut out.graph);
+    out.kernels = kernel_receipt::extract(root, &mut out.graph);
     if let Some(subject) = release {
         out.release = Some(
             release_evidence::extract(&mut out.graph, contract_dir, subject)

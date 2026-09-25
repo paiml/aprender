@@ -1,0 +1,180 @@
+# ──────────────────────────────────────────────
+# kernel-receipt-v1 — a GPU kernel is an ont:Kernel entity, graded by its receipts (OXIDE-001 O-2, aprender#3522)
+#
+# POLICY (KERNEL-001, #3522). New kernels are authored in cuda-oxide first. A kernel is an `ont:Kernel` with a
+# `kernel:reference` (the f64 CPU fn it is measured against) and a `kernel:authoring` in {oxide, ptx}; a
+# hand-PTX kernel exists only under a `ptx_exemption` that names the receipt which justified it.
+#
+# WHERE THE FACTS COME FROM. `evidence/kernels/<k>/kernel.json` (schema apr-kernel/v1) is the DECLARATION:
+# authoring, source file, device module, `#[kernel]` entries, reference fn, required CUDA hosts, exemption.
+# `evidence/kernels/<k>/<host>.json` (schema apr-kernel-receipt/v1) is the MEASUREMENT, written by
+# `experiments/cuda-oxide/<k>/receipt.sh`. `extract:kernel-receipt` joins them and resolves everything a shape
+# cannot open for itself — the host coverage, the source, the device module's `unsafe` and raw-pointer sites
+# (a `syn` walk of the WHOLE module, helpers included), the reference fn, the exemption path — into literals
+# these shapes refuse with `maxCount 0`.
+#
+# FOUR SHAPES FOR THE ISSUE'S THREE. The issue names kernel-parity, kernel-timing and kernel-safety. The subset
+# has no `sh:or`, so "timing ≤ 1.2 OR an exemption receipt" is two shapes over two subclasses the extractor
+# assigns by `authoring`: an OxideKernel must win on timing (and be safe Rust); a PtxKernel must carry an
+# exemption that resolves. An oxide kernel that loses on timing has no exemption path of its own — it is fixed,
+# or the hand PTX is kept under a ptx_exemption naming the losing receipt. That IS the policy.
+#
+# WHAT IS ARMED. Nothing. Arming is per shape in `contracts/lint-baseline.json` `armed_shapes[]` and follows the
+# ONT per-shape ratchet: these shapes are COMPUTED AND REPORTED first ("never red-by-construction on main",
+# #3522 rollout), and arming them is a named follow-up with the ontology session.
+#
+# THE COUNT IS PINNED. `evidence/kernels/EXPECTED_KERNELS` holds the number of manifests; a different count,
+# or any refused file under evidence/kernels/, is Unknown{WrongCorpus} (exit 2) — never Pass.
+#
+# NO THRESHOLD IS TYPED HERE. cos ≥ 0.9999, max|Δ| < 1e-3 and oxide/hand ≤ 1.2 are applied by the harness,
+# which records both the measured values and the thresholds it used in every receipt row; the shapes read its
+# `pass` booleans. A threshold typed into a shape would be a second copy to drift.
+#
+# KIND: pattern. Vocabulary, an extractor and shapes over a graph; the proof is the extractor's case table and
+# the CLI fixtures.
+# ──────────────────────────────────────────────
+name: kernel-receipt-v1
+version: "1.0.0"
+scope: >
+  How a GPU kernel declared under evidence/kernels/<k>/ becomes an ont:Kernel focus node joined to its per-host
+  kernel:KernelReceipt rows, and the shapes over it: parity on every required host, timing (oxide) or a
+  resolving exemption (ptx), and safety (safe-Rust device module, every entry found, a register budget in every
+  row). Out of scope: arming (a lint-baseline.json follow-up), the O-3 ptxas register budget obligation of
+  #3062 beyond "recorded", and the kernels themselves.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-25'
+  last_modified: '2026-09-25'
+  author: PAIML Engineering
+  description: >
+    A kernel is an entity with a reference, an authoring and receipts; a receipt from every required CUDA host
+    must pass parity, an oxide kernel must win or tie on timing and contain no unsafe device code, and a
+    hand-PTX kernel must name the receipt that justified it.
+  references:
+    - 'aprender#3522 (OXIDE-001; this is row O-2), #3062 (register_budget obligation)'
+    - 'crates/aprender-contracts/src/ontology/extract/kernel_receipt.rs — the extractor and its case table'
+    - 'experiments/cuda-oxide/gated-rmsnorm/receipt.sh — the receipt writer (O-1)'
+    - 'evidence/kernels/EXPECTED_KERNELS — the pinned manifest count'
+    - 'contracts/parity-receipt-v2.yaml — the pattern this contract follows'
+
+entity:
+  type: kernel-receipt
+
+relations:
+  depends_on: [ont-shapes-v1, ont-relations-v1, ont-sigma-v1]
+
+shapes:
+  # Every kernel, whatever its authoring: a reference that exists, and a passing parity row for every
+  # (required host, entry). A host with no receipt is `missingReceipt`, never a silent pass.
+  - id: kernel-parity
+    targetClass: ont:Kernel
+    properties:
+      - {path: kernel:authoring, minCount: 1, maxCount: 1, in: [oxide, ptx]}
+      - {path: kernel:reference, minCount: 1, maxCount: 1}
+      - {path: kernel:missingReference, maxCount: 0}
+      - {path: kernel:requiredHost, minCount: 1}
+      - {path: kernel:missingReceipt, maxCount: 0}
+      # A receipt from a dirty tree measured a kernel that is not the committed one.
+      - {path: kernel:receipt, minCount: 1, nodeKind: IRI, class: kernel:KernelReceipt,
+         node: {properties: [{path: kernel:parityPass, minCount: 1, maxCount: 1, in: [true]},
+                             {path: kernel:treeDirtyPaths, minCount: 1, maxCount: 1, in: [0]}]}}
+
+  # An oxide kernel wins or ties the hand PTX on every host (oxide/hand ≤ 1.2, applied by the harness), and
+  # was measured on a GPU nothing else was using (a foreign process moved the hand-PTX time 4.1 → 7.8 µs on
+  # gx10 during O-1 — RESULTS.md, "Contaminated gx10 run").
+  - id: kernel-timing
+    targetClass: kernel:OxideKernel
+    properties:
+      - {path: kernel:receipt, node: {properties: [{path: kernel:timingPass, minCount: 1, maxCount: 1, in: [true]},
+                                                   {path: kernel:foreignGpuProcs, maxCount: 0}]}}
+
+  # A hand-PTX kernel exists only under an exemption that names a receipt in the tree.
+  - id: kernel-ptx-exemption
+    targetClass: kernel:PtxKernel
+    properties:
+      - {path: kernel:exemptionReceipt, minCount: 1, maxCount: 1}
+      - {path: kernel:exemptionReceiptMissing, maxCount: 0}
+
+  # An oxide kernel's device module is safe Rust: no unsafe block/fn/impl and no raw-pointer type anywhere in
+  # it (bounds-checked slices and DisjointSlice writes are then the only memory access), every declared entry
+  # is a `#[kernel]` fn in it, and every receipt row records the register budget.
+  - id: kernel-safety
+    targetClass: kernel:OxideKernel
+    properties:
+      - {path: kernel:source, minCount: 1, maxCount: 1}
+      - {path: kernel:sourceMissing, maxCount: 0}
+      - {path: kernel:entry, minCount: 1}
+      - {path: kernel:missingEntry, maxCount: 0}
+      - {path: kernel:unsafeSite, maxCount: 0}
+      - {path: kernel:rawPointer, maxCount: 0}
+      - {path: kernel:receipt, node: {properties: [{path: kernel:registersOxide, minCount: 1, maxCount: 1,
+                                                    datatype: xsd:integer}]}}
+
+equations:
+  focus:
+    formula: "kernel(d) ⇔ d ∈ evidence/kernels/* ∧ d/kernel.json.schema = 'apr-kernel/v1'"
+    domain: "every directory under evidence/kernels/, its *.json walked in byte order"
+    codomain: "a kernel:OxideKernel node when authoring = oxide, a kernel:PtxKernel node when authoring = ptx"
+    invariants:
+      - "a file under evidence/kernels/ that is neither a manifest nor a receipt is refused by name, never skipped"
+      - "a receipt with no manifest beside it, or naming another kernel, is refused"
+    preconditions:
+      - "evidence/kernels/EXPECTED_KERNELS holds the manifest count"
+    postconditions:
+      - "two extractions are byte-identical (R-15)"
+    lean_theorem: none — L4 not declared
+  coverage:
+    formula: "∀ h ∈ requiredHost(k), e ∈ entry(k): ¬∃ row(k,h,e) ⇒ missingReceipt(k) ∋ h or h:e"
+    domain: "one kernel's manifest and receipts"
+    codomain: "zero or more missingReceipt literals"
+    invariants:
+      - "an absent host is a named miss, never a pass"
+    preconditions:
+      - "required_hosts is declared in the manifest"
+    postconditions:
+      - "kernel-parity fails exactly when a literal is present or a present row fails parity"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: KRC-INV-001
+    property: a required host with no receipt fails kernel-parity
+    formal: 'h ∈ requiredHost(k) ∧ ¬receipted(k,h) ⇒ Fail(kernel-parity, k)'
+    prose: false
+  - id: KRC-INV-002
+    property: an unsafe site anywhere in an oxide kernel's device module fails kernel-safety
+    formal: '|unsafeSite(k)| ≥ 1 ⇒ Fail(kernel-safety, k)'
+    prose: false
+  - id: KRC-INV-003
+    property: an oxide receipt row that lost on timing fails kernel-timing
+    formal: '∃ r ∈ receipt(k): timingPass(r) = false ⇒ Fail(kernel-timing, k)'
+    prose: false
+  - id: KRC-INV-004
+    property: a ptx kernel whose exemption receipt is not in the tree fails kernel-ptx-exemption
+    formal: '¬exists(exemptionReceipt(k)) ⇒ Fail(kernel-ptx-exemption, k)'
+    prose: false
+  - id: KRC-INV-005
+    property: the extractor's reach equals the committed denominator or the gate declines
+    formal: '|kernels| ≠ EXPECTED_KERNELS ∨ |refused| ≥ 1 ⇒ verdict = Unknown(WrongCorpus)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-KRC-001
+    rule: the extractor's classification and resolution
+    prediction: >
+      the green tree is one OxideKernel with four receipts and no resolved defect; a missing host file and a
+      missing row are both named; an unsafe block in a HELPER is a site; unsafe outside the device module is
+      not; a renamed reference, an entry without #[kernel], a missing source and a missing module are each
+      named; foreign files and orphan receipts are refused; the denominator pins the count
+    test: cargo test -p aprender-contracts --lib ontology::extract::kernel_receipt
+    if_fails: a kernel the graph cannot see, or cannot see into, reads as a clean one
+  - id: FALSIFY-KRC-002
+    rule: the shapes discriminate on the committed corpus
+    prediction: >
+      the committed gdn_gated_rmsnorm tree raises zero kernel-* violations; the same tree with one host
+      receipt removed, one parity pass flipped, one timing pass flipped, or an unsafe block planted in the
+      device module each raises a violation naming the kernel and the property; all are reported, none armed
+    test: cargo test -p aprender-contracts-cli --test oxide_kernel_receipts
+    if_fails: the shapes decorate the corpus instead of grading it
