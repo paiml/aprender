@@ -19,10 +19,11 @@ pub const SCHEME: &str = "rex-001-report-v2";
 
 /// A rung of the ladder, lowest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum Mode {
     Shadow,
     Tripwire,
+    TieBreaker,
     Vote,
 }
 
@@ -97,7 +98,13 @@ fn shadow(reason: String) -> Decision {
 /// Decide the lane's rung from one report. Never errors: an unreadable,
 /// foreign, exploratory or stale report is a reason to stay in shadow.
 #[must_use]
-pub fn decide(report_json: &str, prereg_sha: &str) -> Decision {
+pub fn decide(report_json: &str, prereg_sha: &str, _current: Mode) -> Decision {
+    evidence(report_json, prereg_sha)
+}
+
+/// RED stub.
+#[must_use]
+pub fn evidence(report_json: &str, prereg_sha: &str) -> Decision {
     let r: Report = match serde_json::from_str(report_json) {
         Ok(r) => r,
         Err(e) => return shadow(format!("report does not parse: {e}")),

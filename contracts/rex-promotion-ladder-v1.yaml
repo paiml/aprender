@@ -2,6 +2,7 @@ metadata:
   version: 2.0.0
   kind: schema
   description: |
+    SUPERSEDED by rex-promotion-ladder-v2 (PRM-09, the tie-breaker rung); kept as the v2-spec record.
     PROMETHEUS (PRM-001, was REX-001) REX-09 promotion ladder, spec §3 H4/H5, §4.5, R-11.
     `rex ladder REPORT_JSON` (crates/aprender-review-experiment: ladder.rs) reads only a
     `rex-001-report-v2` report (spec v2) whose prereg_sha is the lock and that is not exploratory,

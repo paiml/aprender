@@ -640,7 +640,11 @@ fn ladder_cmd(a: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let d = aprender_review_experiment::ladder::decide(&text, lock);
+    let d = aprender_review_experiment::ladder::decide(
+        &text,
+        lock,
+        aprender_review_experiment::ladder::Mode::Shadow,
+    );
     match serde_json::to_string(&d) {
         Ok(j) => println!("{j}"),
         Err(e) => eprintln!("rex ladder: {e}"),
