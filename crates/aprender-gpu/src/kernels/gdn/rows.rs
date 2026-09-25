@@ -380,6 +380,40 @@ mod ptx_tests {
             (32, 1, 1)
         );
     }
+
+    /// #3522 OXIDE-001: the cuda-oxide port times itself against the hand PTX
+    /// committed under `experiments/cuda-oxide/gdn-gates-rows/baseline-ptx/`. Heads
+    /// are baked into the PTX (`count` is a runtime param), so there is one baseline
+    /// per timed head count. If this emitter changes and the baselines do not, this
+    /// golden check fails.
+    ///
+    /// Regenerate: `APR_BLESS_PTX=1 cargo test -p aprender-gpu --features cuda --lib gdn_gates_rows_ptx_golden`
+    #[test]
+    fn gdn_gates_rows_ptx_golden() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../experiments/cuda-oxide/gdn-gates-rows/baseline-ptx");
+        let bless = std::env::var_os("APR_BLESS_PTX").is_some();
+        for heads in [16u32, 32, 48] {
+            let kernel = GdnGatesRowsKernel::new(heads);
+            for target in ["sm_89", "sm_121"] {
+                let path = dir.join(format!("gdn_gates_rows_h{heads}.{target}.ptx"));
+                let ptx = kernel.emit_ptx_for_target(target);
+                if bless {
+                    std::fs::create_dir_all(&dir).expect("baseline dir");
+                    std::fs::write(&path, &ptx).expect("write baseline");
+                    continue;
+                }
+                let golden = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+                    panic!("{}: {e} (bless with APR_BLESS_PTX=1)", path.display())
+                });
+                assert!(
+                    golden == ptx,
+                    "{} drifted from the emitter; re-bless and re-run the #3522 receipts",
+                    path.display()
+                );
+            }
+        }
+    }
 }
 
 /// Device proof: each rows kernel over `T` rows equals `T` launches of its twin.
