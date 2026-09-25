@@ -25,7 +25,9 @@ pub fn emit() {
     // in a worktree `.git` is a file pointer to `<common-dir>/worktrees/<name>/`.
     // Resolve the actual git directory(ies) via `git rev-parse` so both layouts
     // are watched correctly (#1862).
-    register_git_rerun_triggers();
+    for path in git_rerun_triggers() {
+        println!("cargo:rerun-if-changed={path}");
+    }
 
     println!("cargo:rerun-if-env-changed=APR_GIT_SHA_OVERRIDE");
     println!("cargo:rerun-if-changed=.git-sha");
@@ -61,22 +63,26 @@ fn nonblank(s: Option<&str>) -> Option<&str> {
     s.map(str::trim).filter(|s| !s.is_empty())
 }
 
-fn register_git_rerun_triggers() {
+/// The git paths whose change must rerun the build script. Returned rather
+/// than printed so a test can read them.
+fn git_rerun_triggers() -> Vec<String> {
+    let mut paths = Vec::new();
     // Worktree-local HEAD: <git-dir>/HEAD. In a worktree this is the per-worktree
     // HEAD pointer; in a primary checkout it's the same as <common-dir>/HEAD.
     if let Some(git_dir) = run_git(&["rev-parse", "--git-dir"]) {
         let head = format!("{git_dir}/HEAD");
         if std::path::Path::new(&head).exists() {
-            println!("cargo:rerun-if-changed={head}");
+            paths.push(head);
         }
     }
     // Shared refs live under <common-dir>/refs/heads/ regardless of layout.
     if let Some(common_dir) = run_git(&["rev-parse", "--git-common-dir"]) {
         let refs = format!("{common_dir}/refs/heads");
         if std::path::Path::new(&refs).exists() {
-            println!("cargo:rerun-if-changed={refs}");
+            paths.push(refs);
         }
     }
+    paths
 }
 
 fn run_git(args: &[&str]) -> Option<String> {
@@ -116,7 +122,7 @@ fn resolve_git_sha() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve;
+    use super::{git_rerun_triggers, resolve, resolve_git_sha, run_git};
 
     #[test]
     fn override_wins_over_everything() {
@@ -161,5 +167,58 @@ mod tests {
             "v0.69.0+no-git"
         );
         assert_eq!(resolve(None, None, None, None), "v0.0.0+no-git");
+    }
+
+    // The git-running half: these kill the mutants that the pure `resolve`
+    // tests cannot reach (#4315 mutants job, 8 MISSED).
+
+    #[test]
+    fn run_git_returns_trimmed_stdout_on_success() {
+        let v = run_git(&["--version"]).expect("git is on PATH in every build env");
+        assert!(v.starts_with("git version "), "{v:?}");
+        assert_eq!(v, v.trim());
+    }
+
+    #[test]
+    fn run_git_is_none_on_failure_and_on_empty_stdout() {
+        assert_eq!(run_git(&["definitely-not-a-git-subcommand"]), None);
+        // `git rev-parse` with no arguments succeeds and prints nothing.
+        assert_eq!(run_git(&["rev-parse"]), None);
+    }
+
+    #[test]
+    fn rerun_triggers_watch_head_and_refs_when_in_a_checkout() {
+        let triggers = git_rerun_triggers();
+        if run_git(&["rev-parse", "--git-dir"]).is_none() {
+            assert!(triggers.is_empty(), "{triggers:?}");
+            return;
+        }
+        assert!(
+            triggers.iter().any(|p| p.ends_with("/HEAD")),
+            "no HEAD trigger: {triggers:?}"
+        );
+        assert!(
+            triggers.iter().any(|p| p.ends_with("/refs/heads")),
+            "no refs/heads trigger: {triggers:?}"
+        );
+        for p in &triggers {
+            assert!(std::path::Path::new(p).exists(), "{p}");
+        }
+    }
+
+    #[test]
+    fn resolve_git_sha_agrees_with_resolve_over_the_live_sources() {
+        let override_env = std::env::var("APR_GIT_SHA_OVERRIDE").ok();
+        let git_head = run_git(&["rev-parse", "--short", "HEAD"]);
+        let sha_file = std::fs::read_to_string(".git-sha").ok();
+        let version = std::env::var("CARGO_PKG_VERSION").ok();
+        let want = resolve(
+            override_env.as_deref(),
+            git_head.as_deref(),
+            sha_file.as_deref(),
+            version.as_deref(),
+        );
+        assert!(!want.is_empty());
+        assert_eq!(resolve_git_sha(), want);
     }
 }

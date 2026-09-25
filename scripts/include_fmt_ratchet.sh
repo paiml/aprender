@@ -120,6 +120,13 @@ if [ "${1:-}" = "--self-test" ]; then
     if [ "$rc" = "$want" ] && grep -qF -- "$needle" <<< "$out"; then printf 'ok    %s\n' "$name"
     else printf 'FAIL  %s: rc=%s (want %s), no "%s" in:\n%s\n' "$name" "$rc" "$want" "$needle" "$out"; fails=1; fi
   }
+  # The fallback TOML reader (py3.10 runners have no tomllib, #4315): its case table, with and without
+  # the real parser, and its parity with the real parser on every tracked manifest when one exists.
+  for fb in 0 1; do
+    if INCLUDE_FMT_FORCE_FALLBACK="$fb" python3 "$SCRIPT_DIR/lib/include_fmt.py" --self-test "$SCRIPT_DIR/.."; then
+      printf 'ok    include_fmt.py reader case table (forced fallback=%s)\n' "$fb"
+    else printf 'FAIL  include_fmt.py reader case table (forced fallback=%s)\n' "$fb"; fails=1; fi
+  done
   mkdir -p "$R/src" "$R/scripts/lib"
   cp -- "$SCRIPT_DIR/include_fmt_ratchet.sh" "$SCRIPT_DIR/lib_baseline_ratchet.sh" "$R/scripts/"
   cp -- "$SCRIPT_DIR/lib/include_fmt.py" "$R/scripts/lib/"
