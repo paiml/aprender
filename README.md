@@ -23,10 +23,62 @@
 cargo install aprender                    # CPU ONLY - no GPU backend is compiled in
 cargo install aprender --features cuda    # NVIDIA GPU acceleration
 cargo install aprender --features full    # everything (training, visualization, zram)
-
-apr pull qwen2.5-coder-1.5b
-apr run qwen2.5-coder-1.5b "What is 2+2?"
+apr pull hf://Qwen/Qwen2.5-Coder-0.5B-Instruct
+apr list
+apr serve /home/*/.cache/pacha/models/*.safetensors "2+2?"
 ```
+
+full log of output
+
+<details>
+
+```bash
+
+apr pull hf://Qwen/Qwen2.5-Coder-0.5B-Instruct
+== APR Pull ===
+
+Model: hf://Qwen/Qwen2.5-Coder-0.5B-Instruct/model.safetensors
+
+Downloading (streaming)...
+ 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+✓ Downloaded successfully
+  Path: /home/*/.cache/pacha/models/*.safetensors
+  Size: 942.3 MB
+...  
+Usage:
+  apr run /home/*/.cache/pacha/models/*.safetensors
+  apr serve /home/*/.cache/pacha/models/*.safetensors
+  
+apr list 
+=== Cached Models ===
+
+NAME                                     SIZE         FORMAT       PATH
+--------------------------------------------------------------------------------------------------------
+***                       942.3 MB     SafeTensors  /home/brody/.cache/pacha/models/*.safetensors (orphan)
+
+Total: 1 models (0 tracked + 1 orphans), 1.0 GB used
+
+apr list
+=== Cached Models ===
+
+NAME                                     SIZE         FORMAT       PATH
+--------------------------------------------------------------------------------------------------------
+1e3be9285aea6923                         942.3 MB     SafeTensors  /home/*/.cache/pacha/models/*.safetensors (orphan)
+
+Total: 1 models (0 tracked + 1 orphans), 942.3 MB used
+apr run /home/*/.cache/pacha/models/*.safetensors "what is 2+2?"
+=== APR Run ===
+
+Source: /home/*/.cache/pacha/models/*.safetensors
+[GH-189] Loaded tokenizer from /home/*/.cache/pacha/models/*.tokenizer.json: 22 special tokens
+
+Output:
+2 + 2 equals 4.
+
+Completed in 4.82s (cached)
+```
+
+</details>
 
 For release notes see [GitHub Releases](https://github.com/paiml/aprender/releases).
 
