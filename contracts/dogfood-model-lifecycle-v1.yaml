@@ -268,7 +268,8 @@ falsification_tests:
   obligation: EXT-INV-009
   rule: Stock-baseline gate
   prediction: a candidate planted below upstream stock on one sealed suite is refused promotion
-  if_fails: 'a finetune that regresses the base model can ship (owed EXT-30 #4412; planned: cargo test -p apr-cli --test ext_promote falsify_ext_023_below_stock_refused)'
+  test: cargo test -p apr-cli --lib falsify_ext_023_below_stock_refused
+  if_fails: 'a finetune that regresses the base model can ship: a candidate Holm-significantly worse than the blocking stock arm on one sealed suite is promoted, or an API arm (report-only, non-hermetic) decides the verdict'
 - id: FALSIFY-EXT-024
   obligation: EXT-INV-010
   rule: No competitor ratio on a card
