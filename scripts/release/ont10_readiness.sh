@@ -62,7 +62,11 @@ grep -qx "$CRATE" scripts/release/publish-order.txt || missing+=("in_order: $CRA
 [ -s "$AP/cleanroom-run-id" ] || missing+=("cleanroom: no $AP/cleanroom-run-id (rule 7)")
 # RP-001 no-publish-in-ci (ONT-10: "RP-001 no-publish-in-ci green"): measured on this tree, every run
 rp001=$(bash scripts/release-policy.sh --only no-publish-in-ci 2>&1); rp001_rc=$?
-[ "$rp001_rc" = 0 ] || missing+=("no_publish_in_ci: ${rp001:-release-policy.sh printed nothing (rc $rp001_rc)}")
+# Green is rc 0 AND the gate's own PASS line: an empty or truncated release-policy.sh exits 0 too.
+case "$rp001_rc:$rp001" in
+    "0:PASS no-publish-in-ci"*) ;;
+    *) missing+=("no_publish_in_ci: rc $rp001_rc, ${rp001:-release-policy.sh printed nothing}") ;;
+esac
 oracle_commit=$(cat "$AP/oracle-check-commit" 2>/dev/null || true)
 [ "$oracle_commit" = "$HEAD_SHA" ] || missing+=("oracle: make oracle-check not recorded green at $HEAD_SHA (--run-oracle)")
 
@@ -76,6 +80,9 @@ json.dump({"row": "ONT-10", "crate": "aprender-contracts-cli", "version": versio
            "previous_pin": pin, "pkgid": pkgid, "ready": ready == "true", "missing": missing},
           open(out, "w"), indent=2)
 PY
+    [ "$?" = 0 ] || { echo "NOT MEASURED: could not write $AP/ont10-readiness.json" >&2; exit 3; }
+else
+    echo "NOT MEASURED: cannot create $AP for the readiness receipt" >&2; exit 3
 fi
 
 echo "ONT-10 $CRATE $V at ${HEAD_SHA:0:9}: previous_pin=$previous_pin pkgid=$pkgid_version"

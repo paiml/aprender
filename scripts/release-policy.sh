@@ -20,6 +20,11 @@
 #   those of the targets they call, to a fixed point. `make publish` stays legal because no
 #   workflow reaches it; the day one does, this gate is RED.
 #
+# Known limits (under-reach; each is absent from this tree, re-check when one appears):
+#   a script run through a variable (`"$S"`); a publish split across lines (`cargo \` + newline +
+#   `publish`, or a YAML `>` folded scalar); a makefile outside this repo (`make -C ../infra ...`,
+#   whose own repo runs its own RP-001); a publisher other than cargo (`cargo release`).
+#
 # Usage:
 #   bash scripts/release-policy.sh [--tag <tag>] [--only <gate>] [--gates-dir <dir>]
 #   bash scripts/release-policy.sh --self-test      # every falsifier must turn RED, hermetic
@@ -31,7 +36,8 @@ ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 SELF="${BASH_SOURCE[0]}"
 
 # Whitespace-tolerant: `cargo  publish` (two spaces) defeated a literal match (ruchy #219 quorum).
-PUBLISH_RE='cargo[[:space:]]+publish'
+# `cargo +nightly publish` and `$CARGO publish` / `${CARGO} publish` are the same upload.
+PUBLISH_RE='(cargo|\$\{?CARGO\}?)([[:space:]]+\+[A-Za-z0-9._-]+)?[[:space:]]+publish'
 PY_PUBLISH_RE="[\"']cargo[\"'][[:space:]]*,[[:space:]]*[\"']publish[\"']"
 
 pass() { printf 'PASS %s\n' "$1"; }
@@ -54,21 +60,42 @@ workflow_files() {  # the real repo's .github/, else every YAML under the root (
     fi
 }
 
-# Recipe lines (file:line:text) of make target $2 in $1/Makefile.
-recipe_of() {
-    awk -v t="$2" '
-        $0 ~ "^" t "[[:space:]]*:" && $0 !~ "^" t "[[:space:]]*:=" { p = 1; next }
-        p && /^\t/ { printf "%s:%d:%s\n", FILENAME, NR, $0; next }
-        p && /^[[:space:]]*$/ { next }
-        p { p = 0 }' "$1/Makefile"
+# Every makefile under the root: the git-tracked ones for a repo, all of them for a fixture.
+makefiles_of() {
+    local root="$1"
+    if [ "$(git -C "$root" rev-parse --show-toplevel 2>/dev/null)" = "$root" ]; then
+        git -C "$root" ls-files -z | tr '\0' '\n' | grep -E '(^|/)(GNUmakefile|[Mm]akefile|[^/]*\.mk)$' | sed "s|^|$root/|"
+    else
+        find "$root" -type f \( -name GNUmakefile -o -name Makefile -o -name makefile -o -name '*.mk' \) 2>/dev/null
+    fi
 }
 
-# Prerequisites of make target $2 (the words after `t:` on its header line).
+# awk: is the line a rule header naming target T (`a T b: deps`, not `T := v`)? Sets HDR_REST.
+MK_HEADER='function is_header(line, t,   pre, w, n, i) {
+    if (line ~ /^[\t#]/ || line !~ /:/ || line ~ /^[^:]*:=/ || line ~ /^[^:=]*=/) return 0
+    pre = line; sub(/:.*/, "", pre); n = split(pre, w, /[ \t]+/)
+    for (i = 1; i <= n; i++) if (w[i] == t) { HDR_REST = line; sub(/^[^:]*::?/, "", HDR_REST); return 1 }
+    return 0 }'
+
+# Recipe lines (file:line:text) of make target $2 in every makefile under $1.
+recipe_of() {
+    local mk
+    makefiles_of "$1" | while IFS= read -r mk; do
+        awk -v t="$2" "$MK_HEADER"'
+            is_header($0, t) { p = 1; next }
+            p && /^\t/ { printf "%s:%d:%s\n", FILENAME, FNR, $0; next }
+            p && /^[[:space:]]*$/ { next }
+            p { p = 0 }' "$mk"
+    done
+}
+
+# Prerequisites of make target $2 (the words after the colon on its header lines).
 prereqs_of() {
-    awk -v t="$2" '
-        $0 ~ "^" t "[[:space:]]*:" && $0 !~ "^" t "[[:space:]]*:=" {
-            sub(/^[^:]*:/, ""); sub(/##.*/, ""); sub(/#.*/, ""); print; exit }' "$1/Makefile" \
-        | tr ' \t' '\n\n' | grep -E '^[A-Za-z0-9_.-]+$' || true
+    local mk
+    makefiles_of "$1" | while IFS= read -r mk; do
+        awk -v t="$2" "$MK_HEADER"'
+            is_header($0, t) { r = HDR_REST; sub(/#.*/, "", r); sub(/;.*/, "", r); print r }' "$mk"
+    done | tr ' \t|' '\n\n\n' | grep -E '^[A-Za-z0-9_][A-Za-z0-9_.-]*$' || true
 }
 
 # Text on stdin without its comment lines: `# ... make publish` in a workflow comment is not a call.
@@ -85,10 +112,39 @@ scripts_run_in() {
         | grep -oE "$SCRIPT_RE\$" | sort -u || true
 }
 
-# make targets named in text on stdin: `make [-flags ...] t`, `$(MAKE) [-flags] t`.
+# make targets named in text on stdin. Per command segment (split on ; & | ) and backticks), after a
+# `make` / `$(MAKE)` / `${MAKE}` word: skip flags, the operand of -C -f -I -o -W (and a numeric one
+# after -j -l), and VAR=value; every other target-shaped word is a target. `make -C dir t` is `t`,
+# not `dir`. `$(...)` is flattened first so `make -C "$(dirname "$X")" t` still yields `t`. A
+# segment whose command is echo/printf only TALKS about make. Over-reach is safe (a word that is not
+# a target has no recipe); under-reach is the defect.
 make_targets_in() {
-    grep -oE '(^|[^A-Za-z0-9_-])(make|\$\(MAKE\)|\$\{MAKE\})([[:space:]]+-[A-Za-z0-9_-]+(=[^[:space:]]+)?)*[[:space:]]+[A-Za-z0-9_][A-Za-z0-9_.-]*' \
-        | awk '{print $NF}' | grep -vE '^-' || true
+    awk '
+        {
+            line = $0
+            gsub(/\$\(MAKE\)|\$\{MAKE\}/, "make", line)
+            while (line ~ /\$\([^()]*\)/) gsub(/\$\([^()]*\)/, "SUBST", line)
+            gsub(/["\047]/, " ", line)
+            ns = split(line, seg, /[;&|)`]/)
+            for (k = 1; k <= ns; k++) {
+                n = split(seg[k], w, /[ \t]+/)
+                first = ""
+                for (i = 1; i <= n; i++) {
+                    if (w[i] == "") continue
+                    if (first == "" && w[i] !~ /^(-|run:|[@-]+)$/) { first = w[i]; sub(/^[@-]+/, "", first) }
+                    if (w[i] != "make" || first ~ /^(echo|printf)$/) continue
+                    for (j = i + 1; j <= n; j++) {
+                        tk = w[j]
+                        if (tk == "") continue
+                        if (tk ~ /^-[CfIoW]$/) { j++; continue }
+                        if (tk ~ /^-[jl]$/) { if (w[j + 1] ~ /^[0-9.]+$/) j++; continue }
+                        if (tk ~ /^-/ || tk ~ /=/ || tk ~ /^[<>0-9]*[<>]/) continue
+                        if (tk ~ /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/) print tk
+                    }
+                    break
+                }
+            }
+        }' || true
 }
 
 # Every file and make target CI can reach, to a fixed point. Prints `file <path>` and
@@ -138,12 +194,13 @@ reach() {
 # file:line of every publish: matches PUBLISH_RE, not a comment, not --dry-run, not inside an
 # echo/printf string (a line that tells a person to publish is not CI publishing).
 publish_lines() {
-    awk -v re="$PUBLISH_RE" '
+    RE="$PUBLISH_RE" awk 'BEGIN { re = ENVIRON["RE"] }
         {
             rest = $0
             sub(/^[^:]*:[0-9]+:/, "", rest)
             sub(/^[ \t@-]+/, "", rest)
             if (rest ~ /^#/) next
+            sub(/[ \t]+#.*$/, "", rest)
             if (rest !~ re) next
             if (rest ~ /--dry-run/) next
             if (rest ~ /^(echo|printf)[ \t]/) next
@@ -177,6 +234,9 @@ gate_no_publish_in_ci() {
     r=$(reach "$root")
     nf=$(printf '%s\n' "$r" | grep -c '^file ' || true)
     nr=$(printf '%s\n' "$r" | grep -c '^recipe ' || true)
+    local unreadable
+    unreadable=$(printf '%s\n' "$r" | sed -n 's/^file //p' | while IFS= read -r f; do [ -r "$f" ] || printf '%s ' "$f"; done)
+    [ -z "$unreadable" ] || { fail "$gate" "cannot read files CI reaches, so they are unmeasured: $unreadable"; return 1; }
     hits=$(publish_hits "$r")
     if [ -n "$hits" ]; then
         fail "$gate" "CI can reach a crate publish at $(printf '%s' "$hits" | tr '\n' ' ')"
@@ -265,6 +325,18 @@ self_test() {
     fx varpath scripts/p.sh '#!/bin/sh\ncargo publish -p x\n'
     fx cmdpos .github/workflows/r.yml "$WF      - run: |\n          set -e\n          ./scripts/p.sh --all\n"
     fx cmdpos scripts/p.sh '#!/bin/sh\ncargo publish -p x\n'
+    fx makeC .github/workflows/r.yml "$WF      - run: make -C \"\$(dirname \"\$MK\")\" -j 4 release\n"
+    fx makeC Makefile 'release:\n\tcargo publish -p x\n'
+    fx multihdr .github/workflows/r.yml "$WF      - run: make ship\n"
+    fx multihdr Makefile 'build ship: ; true\nbuild ship:\n\tcargo publish -p x\n'
+    fx toolchain .github/workflows/r.yml "$WF      - run: cargo +nightly publish -p x\n"
+    fx cargovar .github/workflows/r.yml "$WF      - run: \\\${CARGO} publish -p x\n"
+    fx drycomment .github/workflows/r.yml "$WF      - run: cargo publish -p x  # not a --dry-run\n"
+    fx echomake .github/workflows/r.yml "$WF      - run: echo 'release with: make release'\n"
+    fx echomake Makefile 'release:\n\tcargo publish -p x\n'
+    fx unreadable .github/workflows/r.yml "$WF      - run: bash scripts/p.sh\n"
+    fx unreadable scripts/p.sh '#!/bin/sh\ncargo publish -p x\n'
+    chmod 000 "$d/unreadable/scripts/p.sh"
     mkdir -p "$d/empty"
     row() {  # row <want PASS|FAIL> <label> <cmd...>
         local want=$1 label=$2; shift 2
@@ -289,6 +361,15 @@ self_test() {
     row FAIL 'python argv ["cargo", "publish"]' gate_no_publish_in_ci "$d/pyargv"
     row FAIL 'bash "${VAR}/scripts/p.sh" under timeout' gate_no_publish_in_ci "$d/varpath"
     row FAIL './scripts/p.sh as a command in a run block' gate_no_publish_in_ci "$d/cmdpos"
+    row FAIL 'make -C "$(dirname ..)" -j 4 release: the target, not the dir' gate_no_publish_in_ci "$d/makeC"
+    row FAIL 'a target on a multi-target rule header' gate_no_publish_in_ci "$d/multihdr"
+    row FAIL 'cargo +nightly publish' gate_no_publish_in_ci "$d/toolchain"
+    row FAIL '${CARGO} publish' gate_no_publish_in_ci "$d/cargovar"
+    row FAIL '--dry-run only inside a trailing comment' gate_no_publish_in_ci "$d/drycomment"
+    row PASS 'echo that names make release is not a call' gate_no_publish_in_ci "$d/echomake"
+    if [ "$(id -u)" != 0 ]; then
+        row FAIL 'a reached file it cannot read is unmeasured, not clean' gate_no_publish_in_ci "$d/unreadable"
+    fi
     row FAIL 'no workflow files: a gate over nothing' gate_no_publish_in_ci "$d/empty"
     row FAIL 'a missing root' gate_no_publish_in_ci "$d/no-such-dir"
     row FAIL 'no-registry-secret on a missing tool' require_tool no-registry-secret gh-does-not-exist
@@ -296,6 +377,9 @@ self_test() {
     if [ -z "$(printf 'clean-room-%s.log\ndogfood-receipt-%s.json\nfresh-container-%s.log\n' $S $S $S | missing_receipts $S)" ]; then
         echo "  ok   receipts-at-tag: all three receipts at the SHA                PASS"
     else echo "  FAIL receipts-at-tag: a complete asset list reported missing"; rc=1; fi
+    if [ -z "$(printf 'clean-room-%s.log\nreceipt-apr-%s.json\nfresh-container-%s.log\n' $S $S $S | missing_receipts $S)" ]; then
+        echo "  ok   receipts-at-tag: receipt-*.json stands in for dogfood            PASS"
+    else echo "  FAIL receipts-at-tag: receipt-<sha>.json was not accepted as the dogfood receipt"; rc=1; fi
     if [ -n "$(printf 'clean-room-%s.log\ndogfood-receipt-%s.json\n' $S $S | missing_receipts $S)" ]; then
         echo "  ok   receipts-at-tag: fresh-container stripped                       FAIL"
     else echo "  FAIL receipts-at-tag: a stripped asset list passed"; rc=1; fi
@@ -309,6 +393,15 @@ self_test() {
     elif bash "$mut" --gates-dir "$d/direct" --only no-publish-in-ci >/dev/null 2>&1; then
         echo "  ok   mutant (blind PUBLISH_RE) lets the publish through: the detector is load-bearing"
     else echo "  FAIL mutant still refuses: something other than PUBLISH_RE is judging"; rc=1; fi
+    mutant() {  # mutant <sed expr> <fixture> <what it blinds>
+        sed "$1" "$SELF" > "$mut"
+        if cmp -s "$mut" "$SELF"; then echo "  FAIL mutant '$1' not built: the anchor moved"; rc=1
+        elif bash "$mut" --gates-dir "$d/$2" --only no-publish-in-ci >/dev/null 2>&1; then
+            echo "  ok   mutant ($3) lets the $2 publish through: it is load-bearing"
+        else echo "  FAIL mutant ($3) still refuses $2: something else is judging"; rc=1; fi
+    }
+    mutant "s/^SCRIPT_RE=.*/SCRIPT_RE='NO_SUCH_PATH'/" nested 'blind script reach'
+    mutant 's/^        new_t=\$(printf .%s. "\$texts" | uncommented | make_targets_in | sort -u)$/        new_t=/' viamake 'blind make reach'
     if [ "$rc" = 0 ]; then pass self-test; else fail self-test "a falsifier did not turn RED"; fi
     return "$rc"
 }
