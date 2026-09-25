@@ -116,6 +116,12 @@ pub struct GgufModelConfig {
     pub num_experts_per_tok: Option<usize>,
     /// MoE expert intermediate/FFN dimension
     pub moe_intermediate_size: Option<usize>,
+    /// Hybrid linear-attention hyperparameters (Qwen3.5 Gated DeltaNet) copied
+    /// verbatim from `config.json` (`text_config` merged): `linear_*`,
+    /// `full_attention_interval`, `partial_rotary_factor`, `mrope_section`,
+    /// `mtp_num_hidden_layers`. Stored as APR custom `linear_attn_hparams` so
+    /// `apr export --format gguf` can write the `qwen35.ssm.*` keys (#4418).
+    pub linear_attn_hparams: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 impl GgufModelConfig {
@@ -241,6 +247,7 @@ pub fn load_gguf_with_tokenizer<P: AsRef<Path>>(path: P) -> Result<GgufLoadResul
         num_experts: None,
         num_experts_per_tok: None,
         moe_intermediate_size: None,
+        linear_attn_hparams: None,
     };
 
     Ok(GgufLoadResult {
@@ -334,6 +341,7 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
         num_experts: None,
         num_experts_per_tok: None,
         moe_intermediate_size: None,
+        linear_attn_hparams: None,
     };
 
     // Contract: apr-inspect-metadata-propagation-v1 F-INSPECT-META-001 (paiml/aprender#622).

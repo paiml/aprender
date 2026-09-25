@@ -1,4 +1,3 @@
-
 /// Update inferred config from a single tensor's name and shape.
 fn infer_q4k_single_tensor(cfg: &mut InferredQ4kConfig, name: &str, shape: &[usize]) {
     // Infer hidden_size from norm weights (1D tensor of hidden_dim)
@@ -185,6 +184,9 @@ pub use import::apr_import;
 // Export functionality extracted to export.rs (PMAT-197)
 mod export;
 pub use export::{apr_export, ExportFormat, ExportOptions, ExportReport};
+
+// Qwen3.5 hybrid GGUF export (#4418)
+mod qwen35_gguf;
 
 // Merge functionality extracted to merge.rs (PMAT-197)
 mod merge;

@@ -430,6 +430,10 @@ fn enforce_arch_completeness_gate_f32(
         return Ok(());
     }
     let names: Vec<&str> = tensors.keys().map(String::as_str).collect();
+    // #4418: a Qwen3.5 hybrid stack alternates full and linear attention.
+    if super::qwen35_gguf::is_qwen35_tensor_set(tensors) {
+        return super::qwen35_gguf::enforce_hybrid_layer_completeness(&names, num_layers);
+    }
     crate::format::layout_contract::enforce_architecture_completeness(&names, arch_key, num_layers)
         .map_err(|e| AprenderError::FormatError {
             message: format!("GH-279 architecture completeness gate: {e}"),
@@ -717,6 +721,7 @@ fn streaming_sharded_import(
     if let Some(ref tok) = tokenizer {
         super::write::insert_f32_tokenizer_metadata(tok, &mut custom);
     }
+    super::write::insert_linear_attn_hparams(model_config.as_ref(), &mut custom);
 
     let metadata = AprV2Metadata {
         model_type: format!("{metadata_arch:?}"),

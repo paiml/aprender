@@ -74,6 +74,7 @@ pub(crate) fn infer_model_config_from_tensors(
         num_experts: None,
         num_experts_per_tok: None,
         moe_intermediate_size: None,
+        linear_attn_hparams: None,
     })
 }
 
