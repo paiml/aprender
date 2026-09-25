@@ -1,0 +1,55 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PRM-001 v3 PRM-C9 (was PRA T9), gate G-DUP: "split by repo#PR, time-ordered, >= 14 d
+    embargo, clusters closed to their earliest member; 0 cross-split clusters".
+    `split_guard::assign` (crates/aprender-review-experiment/src/split_guard.rs) writes the
+    `split_guard{group_key, split, dedup_cluster}` a trace row carries. Units sharing a PR or
+    a trace-dedup-v1 cluster form one component; the component's earliest first-seen day
+    picks its split against the plan's val_from / test_from; a component first seen within
+    14 d before a boundary is embargoed (split None, in no pool); a component holding a
+    near-dup of a sealed item is `sealed` (in no pool). A plan whose val window is not longer
+    than the embargo, or an unreadable date, is refused. `split_guard::audit` checks ANY
+    assignment, not only its own, for PRs and clusters that straddle splits; G-DUP holds
+    when both lists are empty. Embargoed members are in no pool and never make a straddle.
+  references:
+    - "docs/specifications/research-design-pr-agent-qwen-3.5.md"
+    - "contracts/trace-dedup-v1.yaml"
+    - "https://github.com/paiml/aprender/issues/4354"
+
+equations:
+  component:
+    formula: "u ~ w ⇔ repo#PR(u) = repo#PR(w) ∨ cluster(u) = cluster(w); components = transitive closure of ~"
+  split:
+    formula: "d = min_{u ∈ C} day(at(u)); split(C) = sealed if C ∋ near-dup of a sealed item, else train if d < val−14, None if d < val, val if d < test−14, None if d < test, else test"
+  plan:
+    formula: "assign refused ⇔ test − val ≤ 14 ∨ some date unreadable"
+  audit:
+    formula: "straddle(K) = { k : |{ split(u) : key(u) = k, split(u) ≠ None }| > 1 }; G-DUP ⇔ straddle(repo#PR) = ∅ ∧ straddle(cluster) = ∅"
+
+falsification_tests:
+  - id: FALSIFY-TSG-001
+    name: a_pr_never_straddles_splits
+    prediction: "a PR's later round keeps its first round's split; a straddling assignment is named by audit"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tsg_001"
+    expected_output: "exit 0"
+    if_fails: "Two rounds of one PR could sit in train and test."
+  - id: FALSIFY-TSG-002
+    name: a_near_dup_cluster_closes_to_its_earliest_members_split
+    prediction: "a PR/cluster chain takes its earliest member's split; a per-row split of the same units shows a cross-split cluster"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tsg_002"
+    expected_output: "exit 0"
+    if_fails: "A re-indented copy of a train diff could be scored as test."
+  - id: FALSIFY-TSG-003
+    name: the_embargo_is_at_least_14_days
+    prediction: "first seen 14 d or less before a boundary is embargoed; 15 d is not; a short val window and a bad date are refused"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tsg_003"
+    expected_output: "exit 0"
+    if_fails: "Work from the same fortnight could span train and test."
+  - id: FALSIFY-TSG-004
+    name: a_perturbed_sealed_item_is_refused_with_its_whole_pr
+    prediction: "a renamed, re-indented sealed diff puts its whole component in `sealed`, named by the sealed id"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tsg_004"
+    expected_output: "exit 0"
+    if_fails: "A sealed test item could reach a training pool under a new sha."

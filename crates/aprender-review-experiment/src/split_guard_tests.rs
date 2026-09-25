@@ -4,7 +4,9 @@ use super::*;
 fn segs(from: u32, to: u32) -> String {
     (from..to)
         .flat_map(|k| {
-            (0..4).map(move |j| format!("+    let v = w.get({k}).map(|x| x * {k}{j}).unwrap_or({j});\n"))
+            (0..4).map(move |j| {
+                format!("+    let v = w.get({k}).map(|x| x * {k}{j}).unwrap_or({j});\n")
+            })
         })
         .collect()
 }
@@ -15,11 +17,20 @@ fn perturb(d: &str) -> String {
 }
 
 fn plan() -> Plan {
-    Plan { val_from: "2026-09-01".into(), test_from: "2026-10-01".into() }
+    Plan {
+        val_from: "2026-09-01".into(),
+        test_from: "2026-10-01".into(),
+    }
 }
 
 fn unit<'a>(id: &'a str, pr: u64, at: &'a str, diff: &'a str) -> Unit<'a> {
-    Unit { id, repo: "paiml/aprender", pr, at, diff }
+    Unit {
+        id,
+        repo: "paiml/aprender",
+        pr,
+        at,
+        diff,
+    }
 }
 
 fn splits(g: &[Guard]) -> Vec<Option<Split>> {
@@ -79,14 +90,23 @@ fn falsify_tsg_003_the_embargo_is_at_least_14_days() {
     let g = assign(&u, &[], &plan()).expect("assigns");
     assert_eq!(
         splits(&g),
-        [Some(Split::Train), None, Some(Split::Val), None, Some(Split::Test)]
+        [
+            Some(Split::Train),
+            None,
+            Some(Split::Val),
+            None,
+            Some(Split::Test)
+        ]
     );
     // An embargoed member never makes a straddle.
     let mut one = g.clone();
     one[1].group_key = one[0].group_key.clone();
     assert_eq!(audit(&one), Audit::default());
     // A val window no longer than the embargo is refused, as is a bad date.
-    let short = Plan { val_from: "2026-09-01".into(), test_from: "2026-09-15".into() };
+    let short = Plan {
+        val_from: "2026-09-01".into(),
+        test_from: "2026-09-15".into(),
+    };
     assert!(assign(&u, &[], &short).is_err());
     let bad = [unit("t", 1, "yesterday", &d[0])];
     assert!(assign(&bad, &[], &plan()).is_err());

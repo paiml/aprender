@@ -90,31 +90,85 @@ pub fn day(s: &str) -> Option<i64> {
 /// Assign each unit its guard, in input order. A plan whose val window is
 /// shorter than the embargo, or an unreadable date, is an error.
 pub fn assign(units: &[Unit], sealed: &[(&str, &str)], plan: &Plan) -> Result<Vec<Guard>, String> {
-    let _ = sealed;
     let (v, t) = (
         day(&plan.val_from).ok_or("val_from is not a date")?,
         day(&plan.test_from).ok_or("test_from is not a date")?,
     );
-    let items: Vec<Item> = units
+    if t - v <= EMBARGO_DAYS {
+        return Err(format!(
+            "val window {} d is not longer than the {EMBARGO_DAYS} d embargo",
+            t - v
+        ));
+    }
+    let days = units
         .iter()
-        .map(|u| Item { id: u.id, at: u.at, diff: u.diff })
+        .map(|u| day(u.at).ok_or_else(|| format!("{}: at {:?} is not a date", u.id, u.at)))
+        .collect::<Result<Vec<i64>, String>>()?;
+    // Sealed items sort before every unit (empty `at`), so they name their clusters.
+    let items: Vec<Item> = sealed
+        .iter()
+        .map(|&(id, diff)| Item { id, at: "", diff })
+        .chain(units.iter().map(|u| Item {
+            id: u.id,
+            at: u.at,
+            diff: u.diff,
+        }))
         .collect();
-    let clusters = dedup::clusters(&items);
-    units
+    let all = dedup::clusters(&items);
+    let (sealed_ids, clusters) = all.split_at(sealed.len());
+    let sealed_ids: BTreeSet<&String> = sealed_ids.iter().collect();
+    // Components: units joined by a shared PR or a shared cluster.
+    let keys: Vec<String> = units
         .iter()
-        .zip(clusters)
-        .map(|(u, c)| {
-            let d = day(u.at).ok_or_else(|| format!("{}: at {:?} is not a date", u.id, u.at))?;
-            let split = if d < v {
+        .map(|u| format!("{}#{}", u.repo, u.pr))
+        .collect();
+    let mut parent: Vec<usize> = (0..units.len()).collect();
+    let mut first: HashMap<&str, usize> = HashMap::new();
+    for i in 0..units.len() {
+        for k in [keys[i].as_str(), clusters[i].as_str()] {
+            let j = *first.entry(k).or_insert(i);
+            let (ri, rj) = (root(&mut parent, i), root(&mut parent, j));
+            parent[ri.max(rj)] = ri.min(rj);
+        }
+    }
+    let mut comp: BTreeMap<usize, (i64, bool)> = BTreeMap::new();
+    for i in 0..units.len() {
+        let r = root(&mut parent, i);
+        let e = comp.entry(r).or_insert((days[i], false));
+        e.0 = e.0.min(days[i]);
+        e.1 |= sealed_ids.contains(&clusters[i]);
+    }
+    Ok((0..units.len())
+        .map(|i| {
+            let (d, is_sealed) = comp[&root(&mut parent, i)];
+            let split = if is_sealed {
+                Some(Split::Sealed)
+            } else if d < v - EMBARGO_DAYS {
                 Some(Split::Train)
-            } else if d < t {
+            } else if d < v {
+                None
+            } else if d < t - EMBARGO_DAYS {
                 Some(Split::Val)
+            } else if d < t {
+                None
             } else {
                 Some(Split::Test)
             };
-            Ok(Guard { group_key: format!("{}#{}", u.repo, u.pr), split, dedup_cluster: c })
+            Guard {
+                group_key: keys[i].clone(),
+                split,
+                dedup_cluster: clusters[i].clone(),
+            }
         })
-        .collect()
+        .collect())
+}
+
+fn root(parent: &mut [usize], mut i: usize) -> usize {
+    while parent[i] != i {
+        parent[i] = parent[parent[i]];
+        i = parent[i];
+    }
+    i
 }
 
 /// What straddles splits in an assignment. G-DUP holds when both are empty.
@@ -128,8 +182,24 @@ pub struct Audit {
 /// never make a straddle.
 #[must_use]
 pub fn audit(guards: &[Guard]) -> Audit {
-    let _ = guards;
-    Audit::default()
+    let mut by_group: BTreeMap<&str, BTreeSet<Split>> = BTreeMap::new();
+    let mut by_cluster: BTreeMap<&str, BTreeSet<Split>> = BTreeMap::new();
+    for g in guards {
+        if let Some(s) = g.split {
+            by_group.entry(&g.group_key).or_default().insert(s);
+            by_cluster.entry(&g.dedup_cluster).or_default().insert(s);
+        }
+    }
+    let straddles = |m: BTreeMap<&str, BTreeSet<Split>>| -> Vec<String> {
+        m.into_iter()
+            .filter(|(_, s)| s.len() > 1)
+            .map(|(k, _)| k.to_owned())
+            .collect()
+    };
+    Audit {
+        straddling_groups: straddles(by_group),
+        cross_split_clusters: straddles(by_cluster),
+    }
 }
 
 #[cfg(test)]
