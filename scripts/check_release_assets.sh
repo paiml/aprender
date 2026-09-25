@@ -174,7 +174,7 @@ selftest() {
         grep -q "MISSING apr-$tag-aarch64-unknown-linux-gnu-cpu.tar.gz" <<< "$out"
     # Eighteen, not "some": a table that expected four would pass the rows above.
     row 0 "eighteen assets are expected, and five of them are apr tarballs (one darwin)" \
-        bash -c "[ \$(bash '$0' --list '$tag' | grep -c .) -eq 18 ] && [ \$(bash '$0' --list '$tag' | grep -c '^apr-.*tar.gz\$') -eq 5 ] && bash '$0' --list '$tag' | grep -qx 'apr-$tag-aarch64-apple-darwin-cpu.tar.gz'"
+        bash -c "[ \$(bash '$0' --list '$tag' | grep -c .) -eq 18 ] && [ \$(bash '$0' --list '$tag' | grep -c '^apr-.*tar.gz\$') -eq 5 ] && grep -qx 'apr-$tag-aarch64-apple-darwin-cpu.tar.gz' <(bash '$0' --list '$tag')"
 
     printf '%s/%s rows\n' "$((n - red))" "$n"
     [ "$red" = 0 ] || return 1
