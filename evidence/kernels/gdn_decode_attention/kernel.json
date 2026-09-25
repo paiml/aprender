@@ -1,0 +1,12 @@
+{
+  "schema": "apr-kernel/v1",
+  "kernel": "gdn_decode_attention",
+  "issue": 3522,
+  "authoring": "oxide",
+  "source": "experiments/cuda-oxide/decode-attention/src/main.rs",
+  "module": "kernels",
+  "entries": ["decode_attn_chunk_exp", "decode_attn_chunk_ex2", "decode_attn_combine_exp", "decode_attn_combine_ex2"],
+  "reference": "cpu_decode_attention",
+  "required_hosts": ["noah-Lambda-Vector", "yoga", "gx10-a5b5"],
+  "shipped_ptx": "crates/aprender-gpu/src/kernels/gdn/decode_attention.rs"
+}

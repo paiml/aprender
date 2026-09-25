@@ -11,7 +11,7 @@ that is neither a manifest nor a receipt (WrongCorpus).
 The set is every `impl Kernel` under `crates/aprender-gpu/src/kernels/gdn/`, measured at 7af9e6637, except
 `HelperProbe`, which is a test helper. `layernorm/` and `conv1d.rs` are outside the GDN set.
 
-## Decided (13 of 15)
+## Decided (15 of 15)
 
 The thresholds are cos ≥ 0.9999, max|Δ| < 1e-3 against f64, and oxide/hand ≤ 1.2, taking the worst ratio
 over the timed shapes (heads 16/32/48 for the per-head kernels, n = 2048/4096/6144 for the elementwise ones,
@@ -39,6 +39,8 @@ A receipt whose `timing` has no `"method":"cuda-graph-100"` is an eager one.
 | `SplitInterleavedKernel` | `kernels/gdn/split_interleave.rs` | **oxide**, within budget, not a win | 1.061 | 1.072 | 1.027 |
 | `DeltaRuleRecurrenceKernel` | `kernels/gdn/delta_rule.rs` | **oxide** (`ex2`), at parity | 1.021 | 1.079 | 1.035 |
 | `DeltaRuleChunkScanKernel` | `kernels/gdn/delta_rule_scan.rs` | **ptx_exemption**: oxide NO-GO on sm_89 | 1.814 | 1.986 | 1.158 |
+| `DecodeAttention256Kernel` | `kernels/gdn/decode_attention.rs` | **oxide** (`ex2`), split-K, 3–20× win | 0.294 | 0.324 | 0.299 |
+| `PrefillFlashAttention256Kernel` | `kernels/gdn/prefill_flash_attention.rs` | **ptx_exemption**: oxide NO-GO, no tensor cores | 5.002 | 8.646 | 4.501 |
 
 **`GatedRmsNormKernel`**
 - Receipts: `evidence/kernels/gdn_gated_rmsnorm/{noah-Lambda-Vector,yoga,gx10-a5b5}.json`, 2 entries per
@@ -248,16 +250,45 @@ A receipt whose `timing` has no `"method":"cuda-graph-100"` is an eager one.
   `.func` call, which turned the ex2 flag into a runtime branch). The extractor's `syn` walk does not
   expand macros. A future oxide port of this row must spell its entries out.
 
-## Undecided: RED, no receipt (2 of 15)
+**`DecodeAttention256Kernel`**
+- Port: `experiments/cuda-oxide/decode-attention/`, split-K ("flash decoding") in two kernels, four entries:
+  `decode_attn_chunk_{exp,ex2}` (one warp per (head, chunk of positions), online softmax, a shfl.xor dot)
+  and `decode_attn_combine_{exp,ex2}` (thread d of head h folds the chunks). The hand kernel's shared scores
+  buffer and block reductions need `SharedArray`, which is `unsafe`; split-K needs no shared memory.
+- Receipts: `evidence/kernels/gdn_decode_attention/{noah-Lambda-Vector,yoga,gx10-a5b5}.json`, 2 rows per
+  host, each timing the chunk + combine pair as one launch against the one hand launch. Shapes (16,2),
+  (16,4), (24,4); parity at seq 1/5/37/128/1024/4101, timed at 128/1024/4101.
+- Parity on every host: cos 1.0, max|Δ| ≤ 2e-7 against the verbatim `forward_attention` softmax port.
+- Oxide wins everywhere. The worst ratio is at seq 128 (~0.29–0.33); at seq 4101 it is ~0.05 on lambda.
+  The hand kernel launches only num_heads blocks and scores one position per thread with an uncoalesced
+  256-wide scalar dot, so it leaves most of the GPU idle; split-K spreads the positions over every SM.
+- The first lambda receipt was measured with a test-only edit in the gdn directory (`tree_dirty_paths: 1`)
+  and was refused; the committed lambda row is the rerun on a clean tree (9d5f24989). yoga and gx10 are
+  run 3 of 3 at 2283d4889, no foreign process.
+- Registers: chunk 47 (sm_89) / 48 (sm_121), combine 31/36, 0 spill; hand PTX 34.
 
-Each row needs an O-1-style port: an oxide `#[kernel]` beside the hand PTX, an f64 CPU reference, a
-`receipt.sh` run on lambda, yoga and gx10, and a manifest under `evidence/kernels/`, with
-`EXPECTED_KERNELS` bumped. The row order is the issue's order: memory-bound first.
-
-| kernel | shipped PTX |
-|---|---|
-| `DecodeAttention256Kernel` | `kernels/gdn/decode_attention.rs` |
-| `PrefillFlashAttention256Kernel` | `kernels/gdn/prefill_flash_attention.rs` |
+**`PrefillFlashAttention256Kernel`: NO-GO, the hand PTX stays**
+- Port: `experiments/cuda-oxide/prefill-flash-attention/`, entries `prefill_attn_{exp,ex2}`. One warp per
+  (query row, head), causal keys `0..=pos0+row`, online softmax and a shfl.xor dot as in the decode port,
+  output normalised by 1/l, written through `DisjointSlice<f32, LinearTiles<8>>`.
+- Receipts: `evidence/kernels/gdn_prefill_flash_attention_256/{noah-Lambda-Vector,yoga,gx10-a5b5}.json`,
+  all at c2dbd116c on a clean tree with no foreign GPU process. Shapes (8,2), (16,4), (24,4); parity at
+  (rows, pos0) = (16,0), (20,3), (37,29), (100,500), (128,0), (512,0); timed at 16/128/512 rows.
+- Parity on every host: cos 1.0, max|Δ| ≤ 2.7e-7 against an f64 causal-attention reference. (The hand
+  kernel converts to f16 for `mma`, so its own f32 parity is ~5.7e-4.)
+- Timing, worst case at 512 rows, `ex2` / `exp`: lambda 5.002 / 5.005, yoga 8.646 / 8.708, gx10 4.501 /
+  4.467. **NO-GO everywhere.** Oxide wins at 16 rows (~0.26–0.29 on gx10), where the hand kernel's
+  16-row tiles leave the GPU idle, and loses from 128 rows up.
+- Cause: the hand kernel is a flash-attention tile kernel, with 16 query rows per warp on f16
+  `mma.sync` tensor cores and K/V staged once per tile in shared memory. In cuda-oxide the `mma`/`wmma`
+  intrinsics are `unsafe fn`, and `SharedArray` is a `static mut`. So the safe port gets neither tensor
+  cores nor shared staging, and each warp re-reads K/V for its single query row. Sharing K/V across R rows
+  per warp (`RuntimeRowMajorTiles<R, 8>` makes the strided output writes safe) cuts K/V traffic by R but
+  leaves the scalar FLOPs, and at 4.5–8.7× that does not reach 1.2.
+- Registers: oxide 47 (sm_89) / 48 (sm_121), 0 spill; hand PTX 242 / 254.
+- The manifest says `authoring: ptx`, with `ptx_exemption.receipt` naming the losing lambda receipt, as for
+  `DeltaRuleChunkScanKernel`. This row stays a `ptx_exemption` until cuda-oxide has safe tensor-core and
+  shared-memory primitives. It is not deferred.
 
 ## #3062
 

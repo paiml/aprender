@@ -122,6 +122,19 @@ fn a_missing_host_file_and_a_missing_row_are_both_named() {
 }
 
 #[test]
+fn a_row_timing_a_launch_sequence_covers_every_entry_it_lists_and_no_other() {
+    let mut files = green_files();
+    let mut pair = row("h1", "k_a", true);
+    pair["entries"] = serde_json::json!(["k_a", "k_b"]);
+    files[1].1 = receipt("h1", &[pair]); // one row measures k_a + k_b on h1
+    let mut single = row("h2", "k_a", true);
+    single["entries"] = serde_json::json!(["k_a"]);
+    files[2].1 = receipt("h2", &[single]); // lists only k_a: k_b stays missing on h2
+    let (g, _) = run(&tree(SAFE_SRC, &files));
+    assert_eq!(lits(&g, "missingReceipt"), vec!["h2:k_b".to_string()]);
+}
+
+#[test]
 fn an_unsafe_block_in_a_helper_is_a_site_not_only_one_in_an_entry() {
     let src = SAFE_SRC.replace(
         "{ x[0] }\n    #[kernel",

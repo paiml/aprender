@@ -16,7 +16,8 @@
 //! refuses with `maxCount 0` (the `resolves:` idiom of `parity_receipt.rs`):
 //!
 //! - `kernel:missingReceipt` — a required host with no receipt file (`<host>`), or a file with no row for an
-//!   entry (`<host>:<entry>`). An absent host is never a pass.
+//!   entry (`<host>:<entry>`). An absent host is never a pass. A row covers its `entry` and every name in
+//!   its `entries` (a launch sequence timed as one unit, e.g. split-K chunk + combine).
 //! - `kernel:sourceMissing`, `kernel:missingEntry`, `kernel:missingReference` — the declared source, a declared
 //!   `#[kernel]` entry inside the declared module, or the reference fn, is not where the manifest says.
 //! - `kernel:unsafeSite`, `kernel:rawPointer` — a `syn` walk of the WHOLE device module (helpers included,
@@ -390,7 +391,11 @@ fn emit_receipts(
             let r = iri_path("kernel-receipt", &[name, &host, &entry]);
             emit_row(g, &r, rel, row);
             g.insert(node.to_string(), kernel("receipt"), Term::iri(r));
-            seen.entry(host).or_default().insert(entry);
+            // A row timing a launch sequence (split-K: chunk + combine) lists every entry it ran in
+            // `entries`; each is measured on this host by that row, not only the one it is keyed by.
+            let covered = seen.entry(host).or_default();
+            covered.extend(strings(row, "entries"));
+            covered.insert(entry);
             stats.receipts += 1;
         }
     }

@@ -1,0 +1,15 @@
+{
+  "schema": "apr-kernel/v1",
+  "kernel": "gdn_prefill_flash_attention_256",
+  "issue": 3522,
+  "authoring": "ptx",
+  "source": "experiments/cuda-oxide/prefill-flash-attention/src/main.rs",
+  "module": "kernels",
+  "entries": ["prefill_attn_exp", "prefill_attn_ex2"],
+  "reference": "cpu_prefill_attention",
+  "required_hosts": ["noah-Lambda-Vector", "yoga", "gx10-a5b5"],
+  "shipped_ptx": "crates/aprender-gpu/src/kernels/gdn/prefill_flash_attention.rs",
+  "ptx_exemption": {
+    "receipt": "evidence/kernels/gdn_prefill_flash_attention_256/noah-Lambda-Vector.json"
+  }
+}

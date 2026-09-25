@@ -69,6 +69,8 @@ relations:
 shapes:
   # Every kernel, whatever its authoring: a reference that exists, and a passing parity row for every
   # (required host, entry). A host with no receipt is `missingReceipt`, never a silent pass.
+  # A row covers its `entry` and each name in its `entries`: a launch sequence (split-K chunk + combine)
+  # is timed and parity-checked as one unit, so one row measures all of its kernels.
   - id: kernel-parity
     targetClass: ont:Kernel
     properties:
@@ -127,7 +129,7 @@ equations:
       - "two extractions are byte-identical (R-15)"
     lean_theorem: none — L4 not declared
   coverage:
-    formula: "∀ h ∈ requiredHost(k), e ∈ entry(k): ¬∃ row(k,h,e) ⇒ missingReceipt(k) ∋ h or h:e"
+    formula: "∀ h ∈ requiredHost(k), e ∈ entry(k): ¬∃ row(k,h) with e ∈ {entry(row)} ∪ entries(row) ⇒ missingReceipt(k) ∋ h or h:e"
     domain: "one kernel's manifest and receipts"
     codomain: "zero or more missingReceipt literals"
     invariants:
