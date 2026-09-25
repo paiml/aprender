@@ -25,6 +25,7 @@ esac
 gate() { # gate <log> <build rc>
   python3 - "$1" "$2" <<'PY'
 import re, sys
+def clip(s, n): return s if len(s) <= n else "%s ... and %d more chars" % (s[:n], len(s) - n)
 log, brc = sys.argv[1], int(sys.argv[2])
 text = open(log, encoding="utf-8", errors="replace").read()
 miss = [m.group(1) for m in re.finditer(r"^\S+ \[\d+/\d+\] Built (Mathlib\.[^\s:(]+)(?=\s|$)", text, re.M)]
@@ -35,10 +36,10 @@ for m in re.finditer(r"^warning: (\S+?):(\d+):(\d+): (.*)$", text, re.M):
     ours = rel.startswith("ProvableContracts/") or "/lean/ProvableContracts/" in path
     ours = ours or rel == "ProvableContracts.lean" or path.endswith("/lean/ProvableContracts.lean")   # the root module
     if ours:
-        fails.append("FAIL  warning in our tree: %s:%s: %s" % (rel, m.group(2), m.group(4)[:100]))
+        fails.append("FAIL  warning in our tree: %s:%s: %s" % (rel, m.group(2), clip(m.group(4), 100)))
 if brc != 0:
     errs = sorted(set(re.findall(r"^error: .*$", text, re.M)))
-    fails.append("FAIL  lake build exited %d: %s" % (brc, "; ".join(errs[:3]) or "no error line"))
+    fails.append("FAIL  lake build exited %d: %s" % (brc, ("; ".join(errs[:3]) + (" ... and %d more error(s)" % (len(errs) - 3) if len(errs) > 3 else "")) or "no error line"))
 # a cold cache DECLINES only a log that is otherwise clean: a failure or a warning of ours is judged either way
 if miss and not fails:
     print("decline: mathlib cache miss -- not a verdict (%d Mathlib module(s) elaborated, e.g. %s)" % (len(miss), miss[0]))
@@ -83,7 +84,7 @@ open(sys.argv[2], "w").write(code.replace(sys.argv[3], sys.argv[4]) + cut + rest
     done <<'MUT'
 scope-dropped~mathlib-warning-is-ignored~    ours = rel.startswith("ProvableContracts/") or "/lean/ProvableContracts/" in path~    ours = True
 root-dropped~root-module-warning-is-red~    ours = ours or rel == "ProvableContracts.lean" or path.endswith("/lean/ProvableContracts.lean")~    ours = ours
-our-warning-ignored~our-warning-is-red~        fails.append("FAIL  warning in our tree: %s:%s: %s" % (rel, m.group(2), m.group(4)[:100]))~        pass
+our-warning-ignored~our-warning-is-red~        fails.append("FAIL  warning in our tree: %s:%s: %s" % (rel, m.group(2), clip(m.group(4), 100)))~        pass
 cache-miss-ignored~mathlib-elaborated-is-a-cache-miss~if miss and not fails:~if False:
 miss-masks-failure~cold-cache-failed-build-is-red~if miss and not fails:~if miss:
 native-counted-as-miss~native-object-is-not-a-miss~(Mathlib\.[^\s:(]+)(?=\s|$)~(Mathlib\.[^\s(]+)

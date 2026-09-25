@@ -42,6 +42,7 @@ trap cleanup EXIT
 run_rows() { # <ci.yml>
   python3 - "$1" "$T" <<'PY'
 import os, subprocess, sys, yaml
+def clip(s, n): return s if len(s) <= n else "%s ... and %d more chars" % (s[:n], len(s) - n)
 ci, tmp = sys.argv[1], sys.argv[2]
 try:
     jobs = yaml.safe_load(open(ci))["jobs"]
@@ -107,9 +108,9 @@ def row(name, guard, shard_outcome, want_shards_run, want_fan_green, want_in_err
     if rc is None:
         print(f"FAIL {name}: {out}"); return
     if (rc == 0) != want_fan_green:
-        print(f"FAIL {name}: `{FAN}` exited {rc} with shards {results[SH]}, want {'green' if want_fan_green else 'red'}; output: {out.strip()[:200]}"); return
+        print(f"FAIL {name}: `{FAN}` exited {rc} with shards {results[SH]}, want {'green' if want_fan_green else 'red'}; output: {clip(out.strip(), 200)}"); return
     if want_in_error and want_in_error not in out:
-        print(f"FAIL {name}: `{FAN}`'s output does not name {want_in_error!r}: {out.strip()[:200]}"); return
+        print(f"FAIL {name}: `{FAN}`'s output does not name {want_in_error!r}: {clip(out.strip(), 200)}"); return
     print(f"ok   {name}: guard-tree {guard} -> shards {results[SH]} -> `{FAN}` {'green' if rc == 0 else 'red'}")
 
 row("guard-red", "failure", "success", False, False, "guard-tree was 'failure'")
