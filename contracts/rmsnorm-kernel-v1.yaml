@@ -221,7 +221,9 @@ falsification_tests:
 kani_harnesses:
 - id: KANI-RN-001
   obligation: RN-INV-001
-  property: Output always finite with ε > 0
+  property: 'Output always finite with ε > 0, |x_i| ≤ 1e18 and |γ_i| ≤ 1e30. Unbounded
+    finite γ is refuted (γ = -5e31 overflows the output); |x| past 1e18 overflows
+    Σx² so every output is 0 (PMAT-3140)'
   bound: 16
   strategy: exhaustive
   harness: verify_rmsnorm_finiteness

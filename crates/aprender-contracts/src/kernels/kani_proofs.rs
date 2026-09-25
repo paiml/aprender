@@ -51,6 +51,18 @@ fn stub_exp(_x: f32) -> f32 {
     r
 }
 
+/// Deterministic exp stand-in for EQUIVALENCE harnesses (PMAT-3140).
+///
+/// `stub_exp` draws a fresh `kani::any()` per call, so two code paths that each
+/// call `exp` on the same argument see two unrelated values and an equivalence
+/// assertion between them is refuted by the stub, not by the code. This stub is a
+/// pure function of `x` (positive, like exp), so both paths see the same value
+/// and the harness judges only the arithmetic around the call. It has no branch
+/// and no division: a stub with both timed out at 600 s on 4 elements.
+fn stub_exp_det(x: f32) -> f32 {
+    1.0 + x * x
+}
+
 /// Stub for `f32::sqrt` — returns an arbitrary non-negative finite value.
 fn stub_sqrt(_x: f32) -> f32 {
     let r: f32 = kani::any();

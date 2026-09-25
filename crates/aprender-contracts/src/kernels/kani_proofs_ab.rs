@@ -190,18 +190,24 @@ fn verify_softmax_bounded() {
     }
 }
 
-/// KANI-RN-001: RMSNorm output is finite when eps > 0.
+/// KANI-RN-001: RMSNorm output is finite when eps > 0, |x| <= 1e18 and |gamma| <= 1e30.
 /// Obligation: RN-INV-001
 /// Strategy: exhaustive
 /// Bound: 16 elements
+///
+/// The gamma bound is a real precondition, not a solver convenience (PMAT-3140):
+/// the normalized value reaches sqrt(n) = 4 here, so gamma = f32::MAX overflows
+/// to inf. Kani refuted the unbounded claim with gamma = -5e31.
 #[kani::proof]
 #[kani::unwind(17)]
 fn verify_rmsnorm_finiteness() {
     const N: usize = 16;
     let input: [f32; N] = kani::any();
     let gamma: [f32; N] = kani::any();
-    kani::assume(input.iter().all(|x| x.is_finite()));
-    kani::assume(gamma.iter().all(|x| x.is_finite()));
+    // |x| <= 1e18 keeps sum(x^2) <= 1.6e37 < f32::MAX. Past that, sum_sq overflows,
+    // inv_rms becomes 0 and every output is 0: finite, but no longer RMSNorm.
+    kani::assume(input.iter().all(|x| x.is_finite() && x.abs() <= 1.0e18));
+    kani::assume(gamma.iter().all(|x| x.is_finite() && x.abs() <= 1.0e30));
 
     let eps: f32 = kani::any();
     kani::assume(eps > 0.0 && eps.is_finite() && eps < 1.0);
