@@ -183,7 +183,7 @@ apt-get -qq install -y --no-install-recommends curl ca-certificates >/dev/null
 cat > /opt/install.sh
 chmod 644 /opt/install.sh
 useradd -m -s /bin/bash tester
-su tester -c "set -o pipefail; export PATH=\$HOME/.local/bin:\$PATH; curl -fsSL \"$FETCH\" | bash -s -- --channel $CHANNEL --cpu && APR=\$(IFS=:; for d in \$PATH; do [ -x \"\$d/apr\" ] && { echo \"\$d/apr\"; break; }; done) && echo APR_PATH=\$APR && echo APR_VERSION=\$(\"\$APR\" --version) && echo APR_BIN_SHA=\$(sha256sum \"\$APR\")" # bashrs disable-line=SEC008,SEC015 (curl | bash IS the path under test, in a throwaway container)
+su tester -c "set -o pipefail; export PATH=\$HOME/.local/bin:\$PATH; curl -fsSL \"$FETCH\" | bash -s -- --channel $CHANNEL --cpu && APR=\$(IFS=:; for d in \$PATH; do [ -x \"\$d/apr\" ] && { echo \"\$d/apr\"; exit 0; }; done; exit 1) && echo APR_PATH=\$APR && echo APR_VERSION=\$(\"\$APR\" --version) && echo APR_BIN_SHA=\$(sha256sum \"\$APR\")" # bashrs disable-line=SEC008,SEC015,SC2154 (curl | bash IS the path under test, in a throwaway container; APR is assigned in the su shell)
 ' <"$SRC" >"$WORK/run.log" 2>&1 || RC=$? # bashrs disable-line=SEC008,SEC015 (the script above; see its comment)
 sed 's/^/      | /' "$WORK/run.log" | tail -n 25
 check "$RC" "curl-pipe-bash -s -- --channel $CHANNEL --cpu exits 0 in a clean $IMAGE (rc=$RC)"
