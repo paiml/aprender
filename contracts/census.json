@@ -28,7 +28,7 @@
     "repo": 1
   },
   "by_concept": {
-    "Code": 161,
+    "Code": 502,
     "Contract": 1781,
     "Dataset": 0,
     "Doc": 0,
@@ -42,8 +42,8 @@
     "Proof": 0,
     "PullRequest": 1,
     "Repo": 1,
-    "Statement": 408,
-    "Symbol": 161,
+    "Statement": 415,
+    "Symbol": 502,
     "Test": 0
   },
   "by_anchoring": {
