@@ -386,7 +386,12 @@ fn a_bound_theorem_outside_the_roots_import_cone_is_orphaned_not_pinned() {
     fx.gen();
     let axioms = std::fs::read_to_string(fx.path("lean/Axioms.lean")).expect("Axioms.lean");
     assert!(!axioms.contains("gelu_bound"), "{axioms}");
-    assert_rc(&fx.check(&[]), 2, "decline: 0 contract-bound theorems");
+    // EV-6c (#4244): an orphaned bound theorem is RED by name, not the zero-roots decline -- a failure outranks it.
+    assert_rc(
+        &fx.check(&[]),
+        1,
+        "ORPHANED-ROOT ProvableContracts.Gelu.gelu_bound",
+    );
 }
 
 #[test]
