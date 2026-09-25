@@ -230,6 +230,9 @@ jobs:
     name: aarch64-apple-darwin on mini (advisory)
     runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
     timeout-minutes: 90
+    # Advisory at the RUN level too: a red darwin must not turn the nightly run
+    # red (quorum, sonnet-5). The manifest already keeps it out of the decision.
+    continue-on-error: true
     env:
       CARGO_INCREMENTAL: 0
       CARGO_TERM_COLOR: never
