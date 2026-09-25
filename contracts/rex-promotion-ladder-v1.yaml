@@ -1,0 +1,41 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PROMETHEUS (PRM-001, was REX-001) REX-09 promotion ladder, spec §3 H4/H5, §4.5, R-11.
+    `rex ladder REPORT_JSON` (crates/aprender-review-experiment: ladder.rs) reads only a
+    `rex-001-report-v1` report whose prereg_sha is the lock and that is not exploratory,
+    and returns the 4B lane's rung: shadow by default; tripwire when H4 holds (explicit
+    `holds` verdict and a finite paired-bootstrap CI with lower bound ≥ 0); vote when H4
+    and H5 both hold. H5 without H4 stays shadow. The §4.5 hardware ruling mode caps the
+    rung, and a report without one is shadow. The paiml-implement quorum gate and arbiter
+    `decide` consume `.mode`; they never re-derive it.
+  references:
+    - "docs/specifications/review-experiment-protocol.md"
+    - "https://github.com/paiml/aprender/issues/4364"
+
+equations:
+  ladder:
+    formula: "mode = min(ruling.mode, H4 ∧ H5 ? vote : H4 ? tripwire : shadow)"
+  holds:
+    formula: "holds(H) ⇔ verdict(H) = holds ∧ ci_lo(H) ≥ 0 ∧ ci finite"
+
+falsification_tests:
+  - id: FALSIFY-RXG-001
+    name: a_failing_h4_keeps_the_lane_in_shadow
+    prediction: "the planted report with H4 failing, a holds verdict with a CI crossing 0, or H4 absent all stay shadow"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxg_001"
+    expected_output: "exit 0"
+    if_fails: "The 4B lane would enter tripwire without evidence its precision matches the voters (R-11)."
+  - id: FALSIFY-RXG-002
+    name: h4_alone_is_tripwire_never_vote
+    prediction: "H4 with H5 failing is tripwire; a shadow hardware ruling or no ruling caps both gates passing at shadow"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxg_002"
+    expected_output: "exit 0"
+    if_fails: "The lane could cast a deciding vote without the recall gate or lengthen the quorum past the queue budget."
+  - id: FALSIFY-RXG-003
+    name: only_a_locked_confirmatory_report_is_read
+    prediction: "a foreign schema, a stale prereg sha, an exploratory report or unparsable JSON stays shadow"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxg_003"
+    expected_output: "exit 0"
+    if_fails: "A promotion could be read from a report outside the pre-registration (R-1)."

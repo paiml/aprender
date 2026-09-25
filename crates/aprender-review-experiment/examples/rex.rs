@@ -30,6 +30,9 @@
 //! - `ledger REPO OUT_JSONL QUORUM_RECEIPT...` REX-07: write `review-ledger-v1`
 //!   rows from quorum receipts and print shadow coverage. Exit 10 unless every
 //!   receipt carries an uncounted shadow row that leaves the width alone.
+//! - `ladder REPORT_JSON` REX-09: the lane's rung (shadow/tripwire/vote) from a
+//!   `rex-001-report-v1` report, with every reason it stopped below vote. Exit 0
+//!   whatever the rung; the gates read `.mode`.
 
 use aprender_review_experiment::build_corpus::{
     choose, g_candidates, is_green, p_candidates, r_candidates, seal, Mutant, Pr, PER_CLASS,
@@ -58,6 +61,7 @@ fn main() -> ExitCode {
         Some("prereg-check") => prereg_cmd(true),
         Some("admission-check") => admission_check(&args[1..]),
         Some("ledger") => ledger_cmd(&args[1..]),
+        Some("ladder") => ladder_cmd(&args[1..]),
         Some(c @ ("review" | "not-run" | "score" | "admit")) => {
             match flags(&args[1..]).and_then(|f| match c {
                 "review" => review(&f),
@@ -81,7 +85,7 @@ fn main() -> ExitCode {
         },
         _ => {
             eprintln!(
-                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger> (see the example docs)"
+                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger|ladder> (see the example docs)"
             );
             ExitCode::from(2)
         }
@@ -572,4 +576,28 @@ fn ledger_cmd(a: &[String]) -> ExitCode {
         );
         ExitCode::from(10)
     }
+}
+
+fn ladder_cmd(a: &[String]) -> ExitCode {
+    let Some(path) = a.first() else {
+        eprintln!("usage: rex ladder REPORT_JSON");
+        return ExitCode::from(2);
+    };
+    let Some(lock) = prereg::locked_prereg_sha() else {
+        eprintln!("rex ladder: no locked prereg sha");
+        return ExitCode::from(1);
+    };
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("rex ladder: {path}: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    let d = aprender_review_experiment::ladder::decide(&text, lock);
+    match serde_json::to_string(&d) {
+        Ok(j) => println!("{j}"),
+        Err(e) => eprintln!("rex ladder: {e}"),
+    }
+    ExitCode::SUCCESS
 }
