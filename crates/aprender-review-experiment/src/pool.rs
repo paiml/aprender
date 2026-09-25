@@ -124,10 +124,6 @@ fn verdict(row: &str, sealed: &Index) -> Verdict {
 /// # Errors
 /// The row is hosted, untagged, or labelled by a non-gold source.
 pub fn provenance(row: &str) -> Result<(), Prov> {
-    // RED: provenance is not checked yet.
-    let _ = row;
-    return Ok(());
-    #[allow(unreachable_code)]
     let Ok(v) = serde_json::from_str::<Value>(row) else {
         return Err(Prov::Untagged(vec![Gap::NotJson]));
     };
