@@ -1,0 +1,37 @@
+{
+  "ticket": "#3715 done_when 4 — release-readiness-v1 wired at T-1 (autopilot `readiness` step) and T-4 (preflight R8)",
+  "branch": "fold/3715-on-b3",
+  "commits": ["bbcf298e3", "11f13c3c7", "9a613eef7"],
+  "author": {"model": "claude-opus-5-5", "family": "claude"},
+  "cop_ruling": "aprender-77 09:15Z 2026-09-25: approved; report by default (record the rc and receipt, don't stop); flip to enforce when #3712 lands; fold into B3",
+  "rounds": [
+    {"reviewed": "9ef6d39e2..bbcf298e3", "snapshot": "chmod a-w, read-only lanes",
+     "lanes": [
+       {"model": "claude-sonnet-5", "verdict": "APPROVE", "findings": []},
+       {"model": "gemini-3.1-pro-high (agy)", "verdict": "APPROVE", "conversation": "ca035f58-39de-443d-aca9-eee183c29a15",
+        "note": "agy-lane exit 3 attributed by pre-launch ref snapshot to foreign sessions (rex/001, wip/4352, v2b/3712); lane clone byte-identical"},
+       {"model": "claude-haiku-4-5", "verdict": "REQUEST_CHANGES (nit only)",
+        "findings": ["models_t1 harness has no rule_r8() existence check"],
+        "disposition": "no change: covered by preflight selftest r8 rows + mutant r8-call-removed (54/54)"}]},
+    {"reviewed": "bbcf298e3..11f13c3c7 (report-mode could-not-judge downgrade, per cop ruling)",
+     "lanes": [
+       {"model": "claude-sonnet-5", "verdict": "APPROVE", "findings": ["nit: no report-mode rows for rc1-no-verdict and rc101"]},
+       {"model": "gemini-3.1-pro-high (agy)", "verdict": "REQUEST_CHANGES (uncounted: exit 3, no pre-launch snapshot)", "conversation": "91484414-7ca8-42b2-816f-d4247d40d7fe",
+        "findings": ["same coverage gap as sonnet; missing-pv report row greps the cause, not the WARN"]},
+       {"model": "claude-haiku-4-5", "verdict": "APPROVE", "findings": []}],
+     "disposition": "fixed in 9a613eef7: 3 report-mode rows added, missing-pv row greps the REPORT-ONLY line; selftest 23/23, downgrade-removed mutant 17/23"}
+  ],
+  "guards_at_9a613eef7": {
+    "release_readiness.sh --selftest": "23/23",
+    "check_publish_preflight.sh --selftest": "54/54",
+    "check_release_models_t1.sh": "37/37 (5 readiness rows, 2 readiness mutants killed)",
+    "check_release_scripts_derive_identity.sh": "PASS",
+    "check_tag_step_gated.sh": "PASS",
+    "check_release_autopilot_dogfood_close.sh": "PASS 17",
+    "check_cascade_clean_room_gate.sh": "PASS",
+    "check_sourced_libs_option_neutral.sh": "OK 11",
+    "bashrs lint (4 files)": "0 errors"
+  },
+  "degraded": "round 2 agy lane uncounted (exit 3); counted lanes sonnet-5 + haiku-4-5 are same-family as the author: degraded: same-family",
+  "measured_0_69_1": "pv rc=1, 1101 violations (cell 1008, coverage 87, model 28, tokenizer 28, context 5, host 2, release 1): under report this is a WARN row, not a stop"
+}
