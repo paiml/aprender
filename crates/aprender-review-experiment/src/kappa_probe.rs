@@ -338,10 +338,6 @@ pub struct GateVerdict {
 /// `h7_holds` (fewer than two voters, or an undefined κ).
 #[must_use]
 pub fn gate(rows: &[Row], split: &str, shadow: &str, m: &Manifest) -> GateVerdict {
-    // RED: the δ-free H7 gate is not wired yet.
-    let _ = (rows, split, shadow, m);
-    return GateVerdict { pass: true, refusals: vec![], n: 0, qwen_vs_voter: vec![], voter_vs_voter: vec![], ceiling: None };
-    #[allow(unreachable_code)]
     let items = items_of(rows, split);
     let mut refusals = Vec::new();
     let voters: Vec<&str> = m.counted_lanes.iter().map(String::as_str).collect();
