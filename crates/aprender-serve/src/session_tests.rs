@@ -234,3 +234,101 @@ fn plain_greedy_takes_the_device_argmax_and_a_penalty_or_sampling_does_not() {
         "a repeat penalty needs the logits"
     );
 }
+
+/// #4026: `logprobs_top_k` on a greedy config.
+fn greedy_logprobs(max_tokens: usize, k: usize) -> QuantizedGenerateConfig {
+    QuantizedGenerateConfig {
+        logprobs_top_k: k,
+        ..greedy(max_tokens)
+    }
+}
+
+#[test]
+fn logprobs_record_one_step_per_generated_token_whose_top1_is_the_choice() {
+    let _ = take_last_turn_steps();
+    let mut s = Session::new(Scripted::new(3, 100));
+    let turn = s
+        .generate(&[7801, 7802], &greedy_logprobs(3, 2), &mut |_| true)
+        .expect("turn");
+    assert_eq!(turn.tokens, vec![7801, 7802, 3, 3, 3]);
+    assert_eq!(turn.steps.len(), 3, "one record per generated token");
+    for (i, step) in turn.steps.iter().enumerate() {
+        assert_eq!(step.step, i);
+        assert_eq!(step.chosen, turn.tokens[2 + i]);
+        assert_eq!(step.top.len(), 2);
+        assert_eq!(
+            step.top[0].token_id, step.chosen,
+            "greedy: top-1 is the choice"
+        );
+        assert_eq!(step.top[0].logit, 1.0);
+        assert!(step.top[0].logprob > step.top[1].logprob);
+    }
+    assert_eq!(take_last_turn_steps(), Some(turn.steps.clone()));
+    assert_eq!(take_last_turn_steps(), None, "a take clears it");
+}
+
+#[test]
+fn logprobs_zero_records_nothing_and_publishes_nothing() {
+    let _ = take_last_turn_steps();
+    let mut s = Session::new(Scripted::new(3, 100));
+    let turn = s
+        .generate(&[7811], &greedy(2), &mut |_| true)
+        .expect("turn");
+    assert!(turn.steps.is_empty());
+    assert_eq!(take_last_turn_steps(), None);
+}
+
+#[test]
+fn logprobs_bypass_the_device_argmax_because_it_never_shows_the_logits() {
+    let mut s = Session::new(DeviceGreedy {
+        inner: Scripted::new(3, 100),
+        greedy_answer: 5,
+        greedy_calls: 0,
+    });
+    let turn = s
+        .generate(&[7821], &greedy_logprobs(2, 1), &mut |_| true)
+        .expect("turn");
+    assert_eq!(s.engine().greedy_calls, 0);
+    assert_eq!(turn.tokens, vec![7821, 3, 3], "chosen from the host logits");
+    assert_eq!(turn.steps.len(), 2);
+}
+
+#[test]
+fn logprobs_rank_what_the_model_said_not_what_the_penalty_left() {
+    // The prompt holds 3. A positive penalty only shrinks 3's logit toward
+    // the others' 0.0, never below it, so a negative one is used to flip its
+    // sign: 1.0 / -1.0 = -1.0, and the argmax falls to token 0. The record
+    // must still rank 3 first — it is taken before the penalty.
+    let mut cfg = greedy_logprobs(1, 2);
+    cfg.repeat_penalty = -1.0;
+    let mut s = Session::new(Scripted::new(3, 100));
+    let turn = s.generate(&[3], &cfg, &mut |_| true).expect("turn");
+    assert_eq!(turn.steps[0].chosen, 0, "the penalty moved the choice");
+    assert_eq!(turn.steps[0].top[0].token_id, 3, "the record did not move");
+}
+
+#[test]
+fn logprobs_follow_the_logits_a_planted_change_moves_the_record() {
+    // Negative control: the same prompt against a forward whose argmax was
+    // moved must record a different top-1, or the record is not reading them.
+    let run = |next| {
+        let mut s = Session::new(Scripted::new(next, 100));
+        s.generate(&[7831], &greedy_logprobs(1, 1), &mut |_| true)
+            .expect("turn")
+            .steps[0]
+            .top[0]
+            .token_id
+    };
+    assert_eq!(run(3), 3);
+    assert_eq!(run(6), 6);
+}
+
+#[test]
+fn logprobs_stop_on_a_stop_token_with_its_own_record() {
+    let mut cfg = greedy_logprobs(4, 1);
+    cfg.stop_tokens = vec![3];
+    let mut s = Session::new(Scripted::new(3, 100));
+    let turn = s.generate(&[7841], &cfg, &mut |_| true).expect("turn");
+    assert_eq!(turn.tokens, vec![7841, 3]);
+    assert_eq!(turn.steps.len(), 1);
+}

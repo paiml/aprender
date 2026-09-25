@@ -188,6 +188,8 @@ struct InferenceOutput {
     token_texts: Option<Vec<String>>,
     /// Prompt and completion counts plus the finish reason (#3718).
     usage: RunUsage,
+    /// #4026: see `RunResult::logprobs`.
+    logprobs: Option<serde_json::Value>,
 }
 
 /// Execute inference on model
@@ -222,6 +224,7 @@ fn execute_inference(
             input_path.map_or_else(|| "stdin".to_string(), |p| p.display().to_string());
 
         Ok(InferenceOutput {
+            logprobs: None,
             text: format!(
                 "[Inference requires --features inference]\nModel: {}\nInput: {}\nFormat: {}\nGPU: {}",
                 model_path.display(),
@@ -335,7 +338,8 @@ pub(crate) fn realizar_config(
         .with_repeat_penalty(options.repeat_penalty)
         .with_repeat_last_n(options.repeat_last_n)
         .with_force_chat_template(options.chat_template)
-        .with_thinking(options.thinking);
+        .with_thinking(options.thinking)
+        .with_logprobs_top_k(options.logprobs_top_k);
 
     if options.no_gpu {
         config = config.without_gpu();
@@ -377,7 +381,14 @@ fn execute_with_realizar(
     // #3718: the report carries what only the decode path knows (finish reason,
     // context window); the prompt count is `input_token_count`, taken after the
     // chat template, so it is the number the model actually read.
+    let _ = realizar::session::take_last_turn_steps(); // #4026: never an earlier run's steps
     let (result, report) = run_inference_report(&config).map_err(inference_error)?;
+    let logprobs = run_logprobs(
+        options.logprobs_top_k,
+        &result.format,
+        &result.tokens[..result.input_token_count.min(result.tokens.len())],
+        realizar::session::take_last_turn_steps(),
+    )?;
 
     // Report performance if benchmarking
     if options.benchmark {
@@ -427,7 +438,35 @@ fn execute_with_realizar(
                 .generation_ms
                 .map(|g| (result.inference_ms - g).max(0.0).round() as u64),
         },
+        logprobs,
     })
+}
+
+/// #4026: the `logprobs` object of `apr run --json`, or a refusal by name when
+/// `--logprobs K` was asked and the path that served the run recorded nothing.
+/// An empty list is never reported for a path that could not see the logits.
+#[cfg(feature = "inference")]
+fn run_logprobs(
+    top_k: usize,
+    format: &str,
+    prompt_token_ids: &[u32],
+    steps: Option<Vec<realizar::gguf::StepLogprobs>>,
+) -> Result<Option<serde_json::Value>> {
+    if top_k == 0 {
+        return Ok(None);
+    }
+    let steps = steps.ok_or_else(|| {
+        CliError::InvalidInput(format!(
+            "--logprobs {top_k}: the {format} path that served this run does not record \
+             per-step logprobs (only the GGUF session engine does, on CPU and CUDA) — \
+             refused rather than reported empty (#4026)"
+        ))
+    })?;
+    Ok(Some(serde_json::json!({
+        "top_k": top_k,
+        "prompt_token_ids": prompt_token_ids,
+        "steps": steps,
+    })))
 }
 
 #[cfg(all(test, feature = "inference"))]
@@ -454,5 +493,45 @@ mod tests_2403 {
             rendered,
             "Inference failed: Format error: Architecture 'qwen35' uses SSM/Gated Delta Net layers"
         );
+    }
+}
+
+#[cfg(all(test, feature = "inference"))]
+mod tests_4026 {
+    use super::run_logprobs;
+    use realizar::gguf::{StepLogprobs, TopLogprob};
+
+    #[test]
+    fn logprobs_off_reports_nothing_even_without_steps() {
+        assert_eq!(run_logprobs(0, "GGUF", &[1], None).expect("ok"), None);
+    }
+
+    #[test]
+    fn logprobs_on_a_path_that_records_nothing_is_refused_by_name() {
+        let err = run_logprobs(3, "SafeTensors", &[1], None).expect_err("refused");
+        let msg = err.to_string();
+        assert!(msg.contains("SafeTensors"), "{msg}");
+        assert!(msg.contains("--logprobs 3"), "{msg}");
+    }
+
+    #[test]
+    fn logprobs_report_the_prompt_ids_and_every_step() {
+        let steps = vec![StepLogprobs {
+            step: 0,
+            chosen: 17,
+            top: vec![TopLogprob {
+                token_id: 17,
+                logit: 4.0,
+                logprob: -0.25,
+            }],
+        }];
+        let v = run_logprobs(1, "GGUF", &[5, 6], Some(steps))
+            .expect("ok")
+            .expect("some");
+        assert_eq!(v["top_k"], 1);
+        assert_eq!(v["prompt_token_ids"], serde_json::json!([5, 6]));
+        assert_eq!(v["steps"][0]["chosen"], 17);
+        assert_eq!(v["steps"][0]["top"][0]["token_id"], 17);
+        assert_eq!(v["steps"][0]["top"][0]["logprob"], -0.25);
     }
 }

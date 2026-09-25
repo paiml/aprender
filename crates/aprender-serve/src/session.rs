@@ -38,7 +38,7 @@ use std::collections::VecDeque;
 use std::sync::Mutex;
 
 use crate::error::{RealizarError, Result};
-use crate::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
+use crate::gguf::{top_k_logprobs, OwnedQuantizedModel, QuantizedGenerateConfig, StepLogprobs};
 
 /// One architecture's forward on one backend: the only per-arch code a verb
 /// reaches, and only through a [`Session`].
@@ -102,7 +102,7 @@ pub trait ArchForward {
 }
 
 /// What one [`Session::generate`] call did.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Turn {
     /// The prompt followed by the generated tokens.
     pub tokens: Vec<u32>,
@@ -115,6 +115,24 @@ pub struct Turn {
     /// `max_tokens` and before a stop token. It is the one reason a reply is
     /// shorter than asked for that the caller did not choose.
     pub context_capped: bool,
+    /// One record per generated token when `config.logprobs_top_k` > 0
+    /// (#4026), else empty.
+    pub steps: Vec<StepLogprobs>,
+}
+
+// #4026: the steps of the last turn a session generated on this thread, for
+// `apr run`, whose dispatch drops the `Turn` inside per-backend helpers. Same
+// idiom as `infer`'s generation-start mark: cleared before a dispatch, taken
+// after it. `None` after a dispatch means the engine did not serve it.
+std::thread_local! {
+    static LAST_TURN_STEPS: std::cell::RefCell<Option<Vec<StepLogprobs>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Take the steps [`Session::generate`] last recorded on this thread (#4026).
+/// `None` when no turn with `logprobs_top_k` > 0 ran since the last take.
+pub fn take_last_turn_steps() -> Option<Vec<StepLogprobs>> {
+    LAST_TURN_STEPS.with(std::cell::RefCell::take)
 }
 
 /// A loaded model plus its decode state: the one engine (#4263).
@@ -229,13 +247,21 @@ impl<F: ArchForward> Session<F> {
     /// return it and how many leading tokens were already held. A greedy
     /// choice with no repetition penalty goes through
     /// [`ArchForward::forward_greedy`] when the backend has it.
+    ///
+    /// With `config.logprobs_top_k` > 0 the choice always comes from host
+    /// logits (the device argmax never shows them), and one [`StepLogprobs`]
+    /// is pushed to `steps`, ranked on the logits the FORWARD produced —
+    /// before the repetition penalty — so it records what the model said,
+    /// not what the sampler was handed (#4026).
     fn advance_and_choose(
         &mut self,
         tokens: &[u32],
         config: &QuantizedGenerateConfig,
         rng: &mut rand::rngs::StdRng,
+        steps: &mut Vec<StepLogprobs>,
     ) -> Result<(u32, usize)> {
-        if is_greedy(config) && !penalty_active(config) {
+        let recording = config.logprobs_top_k > 0;
+        if !recording && is_greedy(config) && !penalty_active(config) {
             let start = if self.extends(tokens) {
                 self.processed.len()
             } else {
@@ -255,13 +281,22 @@ impl<F: ArchForward> Session<F> {
             }
         }
         let (mut logits, reused) = self.advance_to(tokens)?;
+        let top = recording.then(|| top_k_logprobs(&logits, config.logprobs_top_k));
         OwnedQuantizedModel::apply_repeat_penalty(
             &mut logits,
             tokens,
             config.repeat_penalty,
             config.repeat_last_n,
         );
-        Ok((choose_token(&logits, config, rng), reused))
+        let chosen = choose_token(&logits, config, rng);
+        if let Some(top) = top {
+            steps.push(StepLogprobs {
+                step: steps.len(),
+                chosen,
+                top,
+            });
+        }
+        Ok((chosen, reused))
     }
 
     fn reserve(&mut self, positions: usize) -> Result<()> {
@@ -322,7 +357,8 @@ impl<F: ArchForward> Session<F> {
         self.reserve(prompt.len() + budget)?;
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(config.seed);
-        let (mut next, reused) = self.advance_and_choose(prompt, config, &mut rng)?;
+        let mut steps = Vec::new();
+        let (mut next, reused) = self.advance_and_choose(prompt, config, &mut rng, &mut steps)?;
         let mut tokens = prompt.to_vec();
         let mut context_capped = false;
         for generated in 1..=budget {
@@ -338,13 +374,22 @@ impl<F: ArchForward> Session<F> {
                 context_capped = context_limited;
                 break;
             }
-            next = self.advance_and_choose(&tokens, config, &mut rng)?.0;
+            next = self
+                .advance_and_choose(&tokens, config, &mut rng, &mut steps)?
+                .0;
+        }
+        // A step past the last kept token (a cancel before it was pushed) is
+        // not part of the turn.
+        steps.truncate(tokens.len() - prompt.len());
+        if config.logprobs_top_k > 0 {
+            LAST_TURN_STEPS.with(|c| c.replace(Some(steps.clone())));
         }
         Ok(Turn {
             tokens,
             reused,
             used_gpu: self.on_gpu(),
             context_capped,
+            steps,
         })
     }
 
