@@ -33,11 +33,10 @@ const TOLERANCE_ABS: f32 = 4.0;
 /// 0.95 (quant-aware). A correct quantized GPU path scores cosine ~0.97–1.0 vs the
 /// CPU reference — it computes the SAME function, just with quantization noise — so a
 /// 0.999 bit-exact floor mislabels it "different function". 0.95 still rejects a
-/// genuinely broken kernel (cosine ≈ 0, garbage) and matches the per-inference F2
-/// gate's `F2_GATE_COSINE_MIN`. NOTE: this aggregate SPC verdict is a coarse
-/// last-/per-token check; the authoritative per-inference defense is the F2
-/// per-position gate, which ALSO asserts per-position argmax agreement to catch the
-/// degraded-HwDp4a mid-context divergence that aggregate cosine alone can miss. The
+/// genuinely broken kernel (cosine ≈ 0, garbage). NOTE: this aggregate SPC verdict
+/// is a coarse last-/per-token check; the authoritative per-inference defense is the
+/// F2 per-position gate, which since #4313 judges the next-token distribution (top-k
+/// KL + top-1 agreement) and no longer uses a cosine floor at all. The
 /// catastrophic floor (cosine < 0.9) below is unchanged.
 const COSINE_SIM_MIN: f32 = 0.95;
 /// KL divergence maximum for PASS (softmax distribution distance)
