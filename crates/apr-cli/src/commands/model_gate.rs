@@ -9,8 +9,10 @@
 //! - it writes `model-gate-receipt-v1`, with one row per gate and no timestamp, so the
 //!   same inputs give the same bytes.
 //!
-//! Missing evidence is RED, never a skip. M-CR (EXT-13) and M7 (EXT-15) are separate rows.
+//! Missing evidence is RED, never a skip. M-CR (EXT-13, `model_gate_cr`) runs first; M7
+//! (EXT-15) is a separate row.
 
+use super::model_gate_cr::{mcr, CrEvidence};
 use super::model_gate_m2::arms::{gate as m2_gate, Arm, GateReport};
 use super::model_gate_m2::{M2Prereg, ReleaseClass, Suite};
 use pacha::data::{AdmittedManifest, SealedItems};
@@ -124,6 +126,9 @@ pub(crate) struct M3Evidence {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct GateEvidence {
+    /// The clean-room job's record (M-CR).
+    #[serde(default)]
+    pub cr: Option<CrEvidence>,
     #[serde(default)]
     pub m1: Option<M1Evidence>,
     #[serde(default)]
@@ -175,6 +180,8 @@ pub(crate) struct GateInputs<'a> {
     pub sealed: &'a SealedItems,
     /// The released `apr` crate tarball, re-hashed against `engine.crate_tarball_sha256`.
     pub engine_tarball: Option<&'a Path>,
+    /// The rc as the clean-room job fetched it from HF, re-hashed for M-CR.
+    pub fetched: Option<&'a Path>,
     pub env: &'a dyn GateEnv,
 }
 
@@ -194,7 +201,7 @@ fn hex_lower(b: &[u8]) -> String {
         })
 }
 
-fn row(gate: &'static str, findings: Vec<String>, checked: String) -> GateRow {
+pub(crate) fn row(gate: &'static str, findings: Vec<String>, checked: String) -> GateRow {
     if findings.is_empty() {
         GateRow {
             gate,
@@ -210,7 +217,7 @@ fn row(gate: &'static str, findings: Vec<String>, checked: String) -> GateRow {
     }
 }
 
-fn clean_name(n: &str) -> bool {
+pub(crate) fn clean_name(n: &str) -> bool {
     !n.is_empty() && !n.contains('/') && !n.contains('\\') && n != "." && n != ".."
 }
 
@@ -306,7 +313,7 @@ fn m0(m: &ReleaseManifest, inp: &GateInputs<'_>) -> GateRow {
 }
 
 /// M1 parity: cosine ≥ 0.98 against the pinned llama.cpp.
-fn m1(ev: Option<&M1Evidence>) -> GateRow {
+pub(crate) fn m1(ev: Option<&M1Evidence>) -> GateRow {
     let Some(e) = ev else {
         return row("M1", vec!["no M1 parity evidence".into()], String::new());
     };
@@ -366,7 +373,7 @@ fn verdict_text(v: &super::model_gate_m2::Verdict) -> String {
 }
 
 /// M3 smoke: every probe answered by both `apr run` and `apr serve`.
-fn m3(ev: Option<&M3Evidence>) -> GateRow {
+pub(crate) fn m3(ev: Option<&M3Evidence>) -> GateRow {
     let Some(e) = ev else {
         return row("M3", vec!["no M3 probe evidence".into()], String::new());
     };
@@ -560,7 +567,7 @@ fn m6(m: &ReleaseManifest, inp: &GateInputs<'_>) -> GateRow {
     )
 }
 
-/// Run M0..M6.
+/// Run M-CR, then M0..M6.
 ///
 /// # Errors
 ///
@@ -573,6 +580,7 @@ pub(crate) fn run(pre: &M2Prereg, inp: &GateInputs<'_>) -> Result<GateReceipt, S
         serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
     let (m2_row, m2_report) = m2(pre, inp.evidence.m2.as_ref());
     let gates = vec![
+        mcr(&m, inp.evidence.cr.as_ref(), inp.fetched),
         m0(&m, inp),
         m1(inp.evidence.m1.as_ref()),
         m2_row,

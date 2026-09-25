@@ -239,8 +239,9 @@ falsification_tests:
 - id: FALSIFY-EXT-016
   obligation: EXT-INV-002
   rule: Clean-room gate sees corruption
-  prediction: a one-byte corruption of the rc artifact fails M-CR
-  if_fails: 'M-CR checks a name, not bytes (owed EXT-13 #4395; planned: cargo test -p apr-cli --test ext_promote falsify_ext_016_rc_corruption_fails_mcr)'
+  prediction: a one-byte corruption of the rc artifact fails M-CR, and an engine whose HEAD is not its tag fails M-CR
+  test: cargo test -p apr-cli --lib falsify_ext_016
+  if_fails: 'M-CR checks a name, not bytes, or trusts an engine built off its tag (apr model gate M-CR, EXT-13 #4393)'
 - id: FALSIFY-EXT-017
   obligation: EXT-INV-008,EXT-INV-013
   rule: Post-publish verification
