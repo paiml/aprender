@@ -28,74 +28,231 @@
 set -uo pipefail
 PROG=stamp_rc_version
 
+# stamp(): bash + POSIX awk, no python3 (#4352). Parity with the python it replaced is
+# the table in #4352; every rule below names the python behaviour it keeps.
+
+# sr_repr S -> S as python's repr() prints a str (quotes, backslash, \n \t \r).
+sr_repr() {
+    local s=$1 q="'"
+    s=${s//\\/\\\\}
+    case $s in *"'"*) case $s in *'"'*) s=${s//\'/\\\'} ;; *) q='"' ;; esac ;; esac
+    s=${s//$'\n'/\\n}; s=${s//$'\t'/\\t}; s=${s//$'\r'/\\r}
+    printf '%s%s%s' "$q" "$s" "$q"
+}
+
+# sr_read FILE -> SR_TEXT = its text as python's text mode reads it (\r\n and \r -> \n), or
+# rc 1 with SR_ERR = the OSError python would print.
+sr_read() {
+    local f=$1
+    if [ -d "$f" ]; then SR_ERR="[Errno 21] Is a directory: $(sr_repr "$f")"; return 1; fi
+    if [ ! -e "$f" ]; then SR_ERR="[Errno 2] No such file or directory: $(sr_repr "$f")"; return 1; fi
+    if [ ! -r "$f" ]; then SR_ERR="[Errno 13] Permission denied: $(sr_repr "$f")"; return 1; fi
+    SR_TEXT=$(cat -- "$f" && printf x) || { SR_ERR="cannot read $(sr_repr "$f")"; return 1; }
+    SR_TEXT=${SR_TEXT%x}
+    case $SR_TEXT in *$'\r'*) SR_TEXT=${SR_TEXT//$'\r\n'/$'\n'}; SR_TEXT=${SR_TEXT//$'\r'/$'\n'} ;; esac
+    return 0
+}
+
+# sr_write FILE AWKOUT TEXT_IT_CAME_FROM: awk ends every line with \n; drop the last one when
+# the source had no final newline, so the file keeps its shape (python writes s back as-is).
+sr_write() {
+    local out=$2
+    case $3 in '' | *$'\n') ;; *) out=${out%$'\n'} ;; esac
+    printf '%s' "$out" > "$1"
+}
+
+# sr_normpath P -> posixpath.normpath(P)
+sr_normpath() {
+    local p=$1 init='' c r='' n=0
+    local -a out=()
+    case $p in '') echo .; return ;; ///*) init=/ ;; //*) init=// ;; /*) init=/ ;; esac
+    local IFS=/
+    set -f
+    for c in $p; do
+        case $c in '' | .) continue ;; esac
+        if [ "$c" != .. ] || { [ -z "$init" ] && [ "$n" -eq 0 ]; } || { [ "$n" -gt 0 ] && [ "${out[n-1]}" = .. ]; }; then
+            out[n]=$c; n=$((n + 1))
+        elif [ "$n" -gt 0 ]; then
+            n=$((n - 1)); unset "out[$n]"
+        fi
+    done
+    set +f
+    [ "$n" -gt 0 ] && r="${out[*]}"
+    r=$init$r
+    echo "${r:-.}"
+}
+
+# The root's [workspace.package] version: a `version = "..."` line at column 0 after the header
+# and before the next line that starts with `[`; a later header is searched when one misses.
+SR_AWK_WS='
+/^\[workspace\.package\][[:space:]]*$/ { ins = 1; next }
+ins && /^\[/ { ins = 0 }
+ins && match($0, /^version[[:space:]]*=[[:space:]]*"[^"]+"/) {
+    v = substr($0, 1, RLENGTH); sub(/^[^"]*"/, "", v); sub(/"$/, "", v); print v; exit
+}'
+
+# `KEY = [ ... ]`: `#` to end of line dropped FIRST, then up to the first `]`, then every
+# double-quoted string, scanned as re.findall(r'"([^"]+)"') does. The python cut at the first
+# `]` even inside a comment: #4219's `# ... every [[bin]]` ended `members` after 3 entries and
+# the rc tree failed `cargo metadata` (aprender-core "^0.69.0" vs 0.69.0-rc.1). Single quotes are
+# NOT read -- the python did not read them either (#4352 notes the latent defect).
+SR_AWK_LIST='
+{ t = t "\n" $0 }
+END {
+    if (!match(t, "\n" key "[[:space:]]*=[[:space:]]*\\[")) exit
+    n = split(substr(t, RSTART + RLENGTH), L, "\n"); body = ""
+    for (j = 1; j <= n; j++) { x = L[j]; h = index(x, "#"); if (h) x = substr(x, 1, h - 1); body = body (j > 1 ? "\n" : "") x }
+    e = index(body, "]"); if (!e) exit
+    body = substr(body, 1, e - 1)
+    p = 1
+    while ((q = index(substr(body, p), "\"")) > 0) {
+        o = p + q - 1; c = index(substr(body, o + 1), "\"")
+        if (!c) break
+        if (c == 1) { p = o + 1; continue }
+        print substr(body, o + 1, c - 1); p = o + c + 1
+    }
+}'
+
+# One manifest, line by line, in the python order own -> dep -> dep2:
+#   own   column-0 version = "BASE"                       -> NEW
+#   dep   the LAST pin `\bversion\s*=\s*"[=^~]?N(.N){0,2}"` with a `\bpath\s*=` before it
+#   dep2  the LAST such pin with a `\bpath\s*=` after its closing quote
+# A pin is rewritten only when its dotted parts are a prefix of BASE's; a pin that is not
+# still COUNTS (subn counted matches, not changes). Counts go to the file `cf`.
+SR_AWK_MANIFEST='
+function isw(ch) { return ch ~ /[A-Za-z0-9_]/ }
+function kw(s, p, k,   r) {  # 0, or the index just past the `=` of `\bk\s*=` at p
+    if (substr(s, p, length(k)) != k) return 0
+    if (p > 1 && isw(substr(s, p - 1, 1))) return 0
+    r = substr(s, p + length(k))
+    if (!match(r, /^[[:space:]]*=/)) return 0
+    return p + length(k) + RLENGTH
+}
+function scan(s,   p, i, pos, e, qo, op) {  # fills V*/NV (valid pins) and minpe/maxps (path=)
+    NV = 0; minpe = 0; maxps = 0; p = 1
+    while ((i = index(substr(s, p), "path")) > 0) {
+        pos = p + i - 1; e = kw(s, pos, "path")
+        if (e) { if (!minpe || e < minpe) minpe = e; if (pos > maxps) maxps = pos }
+        p = pos + 1
+    }
+    p = 1
+    while ((i = index(substr(s, p), "version")) > 0) {
+        pos = p + i - 1; p = pos + 1
+        e = kw(s, pos, "version"); if (!e) continue
+        if (!match(substr(s, e), /^[[:space:]]*"/)) continue
+        qo = e + RLENGTH
+        if (!match(substr(s, qo), /^[=^~]?[0-9]+(\.[0-9]+)?(\.[0-9]+)?"/)) continue
+        op = (substr(s, qo, 1) ~ /[=^~]/) ? 1 : 0
+        NV++; VS[NV] = pos; VN[NV] = qo + op; VL[NV] = RLENGTH - 1 - op; VA[NV] = qo + RLENGTH
+    }
+}
+function pin(s, k,   num, a, b, n, j) {
+    num = substr(s, VN[k], VL[k]); n = split(num, a, "."); split(base, b, ".")
+    for (j = 1; j <= n; j++) if ((a[j] "") != (b[j] "")) return s
+    return substr(s, 1, VN[k] - 1) new substr(s, VN[k] + VL[k])
+}
+{
+    s = $0
+    if (match(s, /^version[[:space:]]*=[[:space:]]*"/) && substr(s, RLENGTH + 1, length(base) + 1) == base "\"") {
+        s = substr(s, 1, RLENGTH) new substr(s, RLENGTH + 1 + length(base)); nown++
+    }
+    scan(s); hit = 0
+    if (minpe) for (k = NV; k >= 1; k--) if (VS[k] >= minpe) { hit = k; break }
+    if (hit) { s = pin(s, hit); ndep++ }  # dep: path= before the pin
+    scan(s); hit = 0
+    for (k = NV; k >= 1; k--) if (maxps && maxps >= VA[k]) { hit = k; break }
+    if (hit) { s = pin(s, hit); ndep++ }  # dep2: path= after the pin
+    print s
+}
+END { print nown + 0, ndep + 0 > cf }'
+
+# Cargo.lock: python split on "\n[[package]]\n" (left to right, non-overlapping) and, in every
+# block after the first with no "\nsource = " (a source on the block'"'"'s FIRST line is not seen),
+# replaced lines that are exactly version = "BASE". Lines are held one behind so the last line
+# is known: a final [[package]] with no newline after it is not a separator.
+SR_AWK_LOCK='
+function flush(   j, src) {
+    if (bi > 0) {
+        src = 0
+        for (j = 2; j <= bn; j++) if (index(bl[j], "source = ") == 1) src = 1
+        if (!src) for (j = 1; j <= bn; j++) if (bl[j] == "version = \"" base "\"") { bl[j] = "version = \"" new "\""; nl++ }
+    }
+    for (j = 1; j <= bn; j++) print bl[j]
+    bn = 0
+}
+function take(line, islast) {
+    k++
+    if (line == "[[package]]" && k > 1 && !islast && !prevsep) { flush(); print line; bi++; prevsep = 1; return }
+    prevsep = 0; bl[++bn] = line
+}
+{ if (havep) take(pend, 0); pend = $0; havep = 1 }
+END { if (havep) take(pend, nolf); flush(); print nl + 0 > cf }'
+
 stamp() {  # stamp TREE TAG
-    python3 - "$1" "$2" <<'EOF'
-import os, re, sys
-tree, tag = sys.argv[1], sys.argv[2]
-m = re.fullmatch(r"v(\d+\.\d+\.\d+)(-rc\.(\d+))?", tag)
-if not m:
-    print(f"refuse: tag {tag!r} is not vX.Y.Z or vX.Y.Z-rc.N"); sys.exit(1)
-base, new = m.group(1), tag[1:]
-root = os.path.join(tree, "Cargo.toml")
-try:
-    text = open(root, encoding="utf-8").read()
-except OSError as e:
-    print(f"usage: {e}"); sys.exit(2)
-ws = re.search(r'^\[workspace\.package\]\s*\n(?:(?!\[).*\n)*?version\s*=\s*"([^"]+)"', text, re.M)
-if not ws:
-    print("usage: no [workspace.package] version in the root Cargo.toml"); sys.exit(2)
-have = ws.group(1)
-if have == new:
-    print(f"ok {new}: already stamped"); sys.exit(0)
-if have != base:
-    print(f"refuse: tag {tag} names {base}, the workspace is {have}"); sys.exit(1)
-if not m.group(2):
-    print(f"ok {new}: a final tag, nothing to stamp"); sys.exit(0)
-# members: root + every Cargo.toml under crates/ that is not in a nested workspace we exclude
-mem = re.search(r'^members\s*=\s*\[(.*?)\]', text, re.M | re.S)
-exc = re.search(r'^exclude\s*=\s*\[(.*?)\]', text, re.M | re.S)
-quoted = lambda s: re.findall(r'"([^"]+)"', re.sub(r'#.*', '', s)) if s else []
-import glob
-manifests = [root]
-for pat in quoted(mem.group(1) if mem else ""):
-    for d in sorted(glob.glob(os.path.join(tree, pat))):
-        f = os.path.join(d, "Cargo.toml")
-        if os.path.isfile(f):
-            manifests.append(f)
-excluded = [os.path.normpath(os.path.join(tree, e)) for e in quoted(exc.group(1) if exc else "")]
-manifests = [f for f in manifests if not any(os.path.normpath(f).startswith(e + os.sep) for e in excluded)]
-b = re.escape(base)
-own = re.compile(rf'^(version\s*=\s*"){b}(")', re.M)
-# a pin's number may be partial ("0.69" in aprender-core -> apr-format): any X / X.Y / X.Y.Z that
-# base satisfies is a pin on this workspace, and none of them matches a pre-release
-req = r'([=^~]?)(\d+(?:\.\d+){0,2})'
-dep = re.compile(rf'^(.*\bpath\s*=.*\bversion\s*=\s*"){req}(")', re.M)
-dep2 = re.compile(rf'^(.*\bversion\s*=\s*"){req}(".*\bpath\s*=)', re.M)
-def pin(mo):
-    num = mo.group(3).split(".")
-    if num != base.split(".")[:len(num)]:
-        return mo.group(0)
-    return mo.group(1) + mo.group(2) + new + mo.group(4)
-n_own = n_dep = 0
-for f in manifests:
-    s = open(f, encoding="utf-8").read()
-    s, a = own.subn(rf'\g<1>{new}\g<2>', s)
-    s, c = dep.subn(pin, s)
-    s, d = dep2.subn(pin, s)
-    n_own, n_dep = n_own + a, n_dep + c + d
-    open(f, "w", encoding="utf-8").write(s)
-lock = os.path.join(tree, "Cargo.lock")
-n_lock = 0
-if os.path.isfile(lock):
-    blocks = open(lock, encoding="utf-8").read().split("\n[[package]]\n")
-    for i, blk in enumerate(blocks):
-        if i and "\nsource = " not in blk:
-            blk, k = re.subn(rf'^version = "{b}"$', f'version = "{new}"', blk, flags=re.M)
-            blocks[i], n_lock = blk, n_lock + k
-    open(lock, "w", encoding="utf-8").write("\n[[package]]\n".join(blocks))
-print(f"stamped {base} -> {new}: {len(manifests)} manifests, {n_own} package versions, {n_dep} path pins, {n_lock} lock entries")
-sys.exit(0 if n_own else 1)
-EOF
+    local tree=$1 tag=$2 base new rc_n root text have mem exc pat full d f e keep
+    local n_own=0 n_dep=0 n_lock=0 a c cf out nolf
+    local -x LC_ALL=C
+    if [[ $tag =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-rc\.([0-9]+))?$ ]]; then
+        base=${BASH_REMATCH[1]}; rc_n=${BASH_REMATCH[2]}; new=${tag#v}
+    else
+        echo "refuse: tag $(sr_repr "$tag") is not vX.Y.Z or vX.Y.Z-rc.N"; return 1
+    fi
+    case $tree in */) root=${tree}Cargo.toml ;; *) root=$tree/Cargo.toml ;; esac
+    sr_read "$root" || { echo "usage: $SR_ERR"; return 2; }
+    text=$SR_TEXT
+    have=$(printf '%s' "$text" | awk "$SR_AWK_WS")
+    if [ -z "$have" ]; then echo "usage: no [workspace.package] version in the root Cargo.toml"; return 2; fi
+    if [ "$have" = "$new" ]; then echo "ok $new: already stamped"; return 0; fi
+    if [ "$have" != "$base" ]; then echo "refuse: tag $tag names $base, the workspace is $have"; return 1; fi
+    if [ -z "$rc_n" ]; then echo "ok $new: a final tag, nothing to stamp"; return 0; fi
+    local -a manifests=("$root") excluded=() kept=()
+    mem=$(printf '%s' "$text" | awk -v key=members "$SR_AWK_LIST")
+    exc=$(printf '%s' "$text" | awk -v key=exclude "$SR_AWK_LIST")
+    local oldng; oldng=$(shopt -p nullglob)
+    shopt -s nullglob
+    while IFS= read -r pat; do
+        [ -n "$pat" ] || continue
+        case $pat in /*) full='' ;; *) case $tree in */) full=$tree ;; *) full=$tree/ ;; esac ;; esac
+        local IFS=
+        for d in "$full"$pat; do
+            case $d in */) f=${d}Cargo.toml ;; *) f=$d/Cargo.toml ;; esac
+            [ -f "$f" ] && manifests+=("$f")
+        done
+        unset IFS
+    done <<< "$mem"
+    eval "$oldng"
+    while IFS= read -r e; do
+        [ -n "$e" ] || continue
+        case $e in /*) excluded+=("$(sr_normpath "$e")") ;; *) case $tree in */) excluded+=("$(sr_normpath "$tree$e")") ;; *) excluded+=("$(sr_normpath "$tree/$e")") ;; esac ;; esac
+    done <<< "$exc"
+    for f in "${manifests[@]}"; do
+        keep=1
+        if [ "${#excluded[@]}" -gt 0 ]; then
+            d=$(sr_normpath "$f")
+            for e in "${excluded[@]}"; do case $d in "$e"/*) keep=0; break ;; esac; done
+        fi
+        [ "$keep" = 1 ] && kept+=("$f")
+    done
+    manifests=("${kept[@]}")
+    cf=$(mktemp) || return 1
+    for f in "${manifests[@]}"; do
+        sr_read "$f" || { echo "$PROG: $SR_ERR" >&2; rm -f -- "$cf"; return 1; }
+        out=$(printf '%s' "$SR_TEXT" | awk -v base="$base" -v new="$new" -v cf="$cf" "$SR_AWK_MANIFEST"; printf x)
+        read -r a c < "$cf"
+        sr_write "$f" "${out%x}" "$SR_TEXT"
+        n_own=$((n_own + a)); n_dep=$((n_dep + c))
+    done
+    case $tree in */) f=${tree}Cargo.lock ;; *) f=$tree/Cargo.lock ;; esac
+    if [ -f "$f" ]; then
+        sr_read "$f" || { echo "$PROG: $SR_ERR" >&2; rm -f -- "$cf"; return 1; }
+        nolf=0; case $SR_TEXT in '' | *$'\n') ;; *) nolf=1 ;; esac
+        out=$(printf '%s' "$SR_TEXT" | awk -v base="$base" -v new="$new" -v cf="$cf" -v nolf="$nolf" "$SR_AWK_LOCK"; printf x)
+        read -r n_lock < "$cf"
+        sr_write "$f" "${out%x}" "$SR_TEXT"
+    fi
+    rm -f -- "$cf"
+    echo "stamped $base -> $new: ${#manifests[@]} manifests, $n_own package versions, $n_dep path pins, $n_lock lock entries"
+    [ "$n_own" -gt 0 ]
 }
 
 self_test() {
@@ -104,10 +261,11 @@ self_test() {
     d=$(mktemp -d) || return 2
     # a scratch workspace shaped like the real one: [workspace.package] version, a member that
     # inherits it, one that declares its own, a path dep with a caret pin and one with =, an
-    # excluded nested crate, and a lock entry for a REGISTRY crate at the same number
+    # excluded nested crate, and a lock entry for a REGISTRY crate at the same number. `members`
+    # carries a `]` in a comment before its glob, the #4219 shape that cut the list short
     mkws() {
         local w=$1; rm -rf -- "${w:?}"; mkdir -p "$w/crates/a/src" "$w/crates/b/src" "$w/crates/c/src" "$w/crates/d/src" "$w/crates/x/src"
-        printf '[workspace]\nmembers = ["crates/*"]\nexclude = [\n    "crates/x", # nested\n]\nresolver = "2"\n\n[workspace.package]\nversion = "0.69.3"\nedition = "2021"\n\n[workspace.dependencies]\nb = { path = "crates/b", version = "0.69.3" }\n' > "$w/Cargo.toml"
+        printf '[workspace]\nmembers = [\n    "crates/a", # every [[bin]] prints the SHA (#4219)\n    "crates/*",\n]\nexclude = [\n    "crates/x", # nested\n]\nresolver = "2"\n\n[workspace.package]\nversion = "0.69.3"\nedition = "2021"\n\n[workspace.dependencies]\nb = { path = "crates/b", version = "0.69.3" }\n' > "$w/Cargo.toml"
         printf '[package]\nname = "a"\nversion.workspace = true\nedition = "2021"\n\n[dependencies]\nb = { workspace = true }\nd = { path = "../d", version = "0.69" }\nc = { version = "=0.69.3", path = "../c" }\n' > "$w/crates/a/Cargo.toml"
         printf '[package]\nname = "b"\nversion = "0.69.3"\nedition = "2021"\n' > "$w/crates/b/Cargo.toml"
         printf '[package]\nname = "c"\nversion = "0.69.3"\nedition = "2021"\n' > "$w/crates/c/Cargo.toml"; : > "$w/crates/c/src/lib.rs"
@@ -119,7 +277,7 @@ self_test() {
     # versions WT -> "a=<v> b=<v>" from cargo, resolving --locked; "LOCKED-FAIL" when cargo refuses
     versions() {
         (cd "$1" && cargo metadata --locked --offline --format-version 1 2> /dev/null) \
-        | python3 -c 'import json,sys; print(" ".join(sorted(p["name"]+"="+p["version"] for p in json.load(sys.stdin)["packages"])))' 2> /dev/null \
+        | jq -r '[.packages[] | .name + "=" + .version] | sort | join(" ")' 2> /dev/null \
         || echo LOCKED-FAIL
     }
     expect() {  # expect ROW WANT GOT
@@ -144,13 +302,16 @@ self_test() {
     done
     # MUTANTS, built from THIS file: each drops one rewrite, and cargo must refuse the result.
     # Without them the table could pass on a stamper that only renamed the packages.
-    for row in "lock|blocks[i], n_lock = blk, n_lock + k|n_lock = n_lock + k" \
-               "path-first pins|s, c = dep.subn|c = 0; _ = dep.subn" \
-               "version-first pins|s, d = dep2.subn|d = 0; _ = dep2.subn" \
-               "partial (X.Y) pins|(?:\\.\\d+){0,2}|(?:\\.\\d+){2}"; do
+    local src a1 b1 pre
+    src=$(cat -- "${BASH_SOURCE[0]}"; printf x); src=${src%x}; pre=${src%%$'\n'"self_test() {"*}
+    for row in 'lock|bl[j] = "version = \"" new "\""; nl++|nl++' \
+               'path-first pins|{ s = pin(s, hit); ndep++ }  # dep:|{ ndep++ }  # dep:' \
+               'version-first pins|{ s = pin(s, hit); ndep++ }  # dep2:|{ ndep++ }  # dep2:' \
+               'partial (X.Y) pins|[0-9]+(\.[0-9]+)?(\.[0-9]+)?"/|[0-9]+\.[0-9]+\.[0-9]+"/' \
+               'members comments (#4219)|h = index(x, "#"); if (h) x = substr(x, 1, h - 1); |'; do
         IFS='|' read -r name a1 b1 <<< "$row"
-        A1=$a1 B1=$b1 python3 -c 'import os,sys; s=open(sys.argv[1]).read(); a=os.environ["A1"]; assert s.count(a)>=1 and s.index(a)<s.index("self_test()"); open(sys.argv[2],"w").write(s.replace(a,os.environ["B1"],1))' \
-            "${BASH_SOURCE[0]}" "$d/mut.sh" 2> /dev/null || { echo "  FAIL mutant $name: anchor moved, re-anchor it"; fail=1; continue; }
+        case $pre in *"$a1"*) ;; *) echo "  FAIL mutant $name: anchor moved, re-anchor it"; fail=1; continue ;; esac
+        printf '%s' "${src/"$a1"/"$b1"}" > "$d/mut.sh"
         mkws "$d/w"; bash "$d/mut.sh" "$d/w" v0.69.3-rc.2 > /dev/null
         got=$(versions "$d/w")
         case "$got" in *LOCKED-FAIL*) echo "  ok   mutant ($name rewrite dropped): cargo refuses the tree";;
