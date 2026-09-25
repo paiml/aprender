@@ -126,6 +126,29 @@ fn resolve(registry: &Registry, target: &str) -> Result<(String, bool)> {
     Ok((target.to_string(), false))
 }
 
+/// Which run, datasets and bases produced a model — the direct producer only
+/// (EXT-31, FALSIFY-CRUX-P-04-001). `produced_by: None` is an orphan.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct Provenance {
+    pub produced_by: Option<String>,
+    pub datasets: Vec<String>,
+    pub bases: Vec<String>,
+}
+
+impl Provenance {
+    pub(crate) fn is_orphan(&self) -> bool {
+        false
+    }
+
+    pub(crate) fn summary(&self, _root: &str) -> String {
+        String::new()
+    }
+}
+
+pub(crate) fn provenance(_ancestry: &Ancestry) -> Provenance {
+    Provenance::default()
+}
+
 fn print_ancestry(ancestry: &Ancestry, json: bool) -> Result<()> {
     if json {
         let value = serde_json::to_string(ancestry)
