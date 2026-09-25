@@ -227,12 +227,54 @@ jobs:
       # so this step cannot clobber another job's pmat either — the exposure is
       # symmetric and #2353 only happened to be observed from the victim side.
       - name: pmat must match the fleet pin (never install)
+        id: pmat_pin
         run: |
           # Was: `command -v pmat || cargo install pmat … || true` — two fail-opens on
           # one line. The fleet pin (infra machines/*/forjar.yaml) is the only
           # installer this repo may rely on; assert it and fail CLOSED.
           export PATH="$COV_TOOLS/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
           bash scripts/check_tool_versions.sh
+
+      # aprender#2463: EvoScore is one of pmat score's 8 dimensions, and it was never
+      # measured. It needs a SERIES of `pmat test --record` files
+      # (.pmat-metrics/commit-<sha>-tests.json), and a clean checkout has none.
+      # So the series lives OUTSIDE the workspace, in the runner user's cache on
+      # this one pinned host (yoga). /mnt/nvme-raid0/ci-cache is not used, because
+      # /mnt/nvme-raid0 is not writable by the runner user here (see COV_TARGET_DIR
+      # above). Only runs on main append to it, never a PR or a tag. The record
+      # re-parses the instrumented run's own test.log ("test result:" lines), with
+      # no second test run, so the series is the same --lib test set every night.
+      # ADVISORY: a missing log or a parse failure is a ::warning naming why, and
+      # never a green "recorded".
+      - name: EvoScore - append this commit's test record (aprender#2463)
+        if: ${{ always() && github.ref == 'refs/heads/main' && steps.pmat_pin.outcome == 'success' }}
+        run: |
+          set -uo pipefail
+          export PATH="$COV_TOOLS/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          series="${XDG_CACHE_HOME:-$HOME/.cache}/aprender-ci/pmat-metrics"
+          log=target/coverage/test.log
+          if [ ! -s "$log" ]; then
+            echo "::warning title=EvoScore NOT RECORDED::$log is absent or empty (the coverage run did not reach its tests)"
+            exit 0
+          fi
+          mkdir -p "$series" || { echo "::warning title=EvoScore NOT RECORDED::cannot create $series"; exit 0; }
+          # make coverage wrote coverage.result into a real ./.pmat-metrics. Carry
+          # it over, then point ./.pmat-metrics at the series. -L first: a
+          # symlink kept by `clean: false` must not be copied onto itself.
+          if [ -d .pmat-metrics ] && [ ! -L .pmat-metrics ]; then
+            if [ -f .pmat-metrics/coverage.result ]; then cp .pmat-metrics/coverage.result "$series/"; fi
+            rm -rf -- .pmat-metrics
+          fi
+          ln -sfn "$series" .pmat-metrics
+          if ! out="$(pmat test --record --from-stdin < "$log" 2>&1)"; then
+            echo "$out" | tail -n 20
+            echo "::warning title=EvoScore NOT RECORDED::pmat test --record could not parse $log"
+            exit 0
+          fi
+          echo "$out" | grep -E '^Recorded:' || true
+          n="$(find "$series" -maxdepth 1 -name 'commit-*-tests.json' | wc -l)"
+          echo "EvoScore series: $n record(s) in $series"
+          echo "**EvoScore series:** $n record(s) on $(hostname) — $(echo "$out" | grep -E '^Recorded:' || echo 'no Recorded line')" >> "$GITHUB_STEP_SUMMARY"
 
       # Dogfooded gap analysis — pmat query, NOT raw llvm-cov output (CLAUDE.md).
       # Same default ./target as the make step so pmat finds the coverage profiles.
