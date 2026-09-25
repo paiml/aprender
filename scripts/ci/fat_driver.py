@@ -291,6 +291,25 @@ def interpolate(text: str, ev: Evaluator) -> str:
     return EXPR_RE.sub(lambda m: to_str(ev.eval(m.group(1))), text)
 
 
+def make_funcs(failed, workspace) -> dict:
+    """The expression functions; `failed`/`workspace` are thunks on the section."""
+    return {
+        "always": lambda: True,
+        "success": lambda: not failed() and not CANCELLED.is_set(),
+        "failure": lambda: failed(),
+        "cancelled": lambda: CANCELLED.is_set(),
+        "startswith": lambda a, b: to_str(a).lower().startswith(to_str(b).lower()),
+        "endswith": lambda a, b: to_str(a).lower().endswith(to_str(b).lower()),
+        "contains": lambda a, b: (any(loose_eq(x, b) for x in a) if isinstance(a, list)
+                                  else to_str(b).lower() in to_str(a).lower()),
+        "format": lambda f, *a: re.sub(r"\{(\d+)\}", lambda m: to_str(a[int(m.group(1))]), f),
+        "join": lambda a, sep=",": sep.join(to_str(x) for x in (a or [])),
+        "tojson": lambda v: json.dumps(v, indent=2),
+        "fromjson": lambda s: json.loads(s),
+        "hashfiles": lambda *pats: hash_files(workspace(), pats),
+    }
+
+
 def eval_if(cond, ev: Evaluator, default_status: bool) -> bool:
     """An `if:` with no status function is implicitly `success() && (...)`."""
     if cond is None:
@@ -463,21 +482,7 @@ class Section:
             "job": {"status": "failure" if self.failed else "success"},
             "strategy": {},
         }
-        funcs = {
-            "always": lambda: True,
-            "success": lambda: not self.failed and not CANCELLED.is_set(),
-            "failure": lambda: self.failed,
-            "cancelled": lambda: CANCELLED.is_set(),
-            "startswith": lambda a, b: to_str(a).lower().startswith(to_str(b).lower()),
-            "endswith": lambda a, b: to_str(a).lower().endswith(to_str(b).lower()),
-            "contains": lambda a, b: (any(loose_eq(x, b) for x in a) if isinstance(a, list)
-                                      else to_str(b).lower() in to_str(a).lower()),
-            "format": lambda f, *a: re.sub(r"\{(\d+)\}", lambda m: to_str(a[int(m.group(1))]), f),
-            "join": lambda a, sep=",": sep.join(to_str(x) for x in (a or [])),
-            "tojson": lambda v: json.dumps(v, indent=2),
-            "fromjson": lambda s: json.loads(s),
-            "hashfiles": lambda *pats: hash_files(self.workspace, pats),
-        }
+        funcs = make_funcs(lambda: self.failed, lambda: self.workspace)
         return Evaluator(contexts, funcs)
 
     @property
@@ -1183,6 +1188,90 @@ def cmd_list(a):
             print(f"{n}\t{i}\t{label}")
 
 
+def cmd_self_test(a):
+    """Case table: each row names what it would read if the rule it guards were
+    deleted (AnyShard, implicit success(), the depth-1 cut, the verdict rule)."""
+    import tempfile
+    from types import SimpleNamespace
+    rows = []
+
+    def row(label, got, want):
+        rows.append((label, got == want, got, want))
+
+    def ev(failed=False, **ctx):
+        base = {"github": {"event_name": "pull_request"}, "matrix": {"shard": AnyShard("1"), "shards": 1},
+                "steps": {"tier": {"outputs": {"tier": "full"}}}, "env": {}}
+        base.update(ctx)
+        return Evaluator(base, make_funcs(lambda: failed, lambda: Path(".")))
+
+    e = ev()
+    row("event == 'pull_request'", truthy(e.eval("github.event_name == 'pull_request'")), True)
+    row("string == is case-insensitive", truthy(e.eval("github.event_name == 'PULL_REQUEST'")), True)
+    row("AnyShard: shard == 1", truthy(e.eval("steps.tier.outputs.tier == 'full' && matrix.shard == 1")), True)
+    row("AnyShard: shard == 3 too (once-only steps of every shard run)", truthy(e.eval("matrix.shard == 3")), True)
+    row("tier quick turns the full-tier step off",
+        truthy(ev(steps={"tier": {"outputs": {"tier": "quick"}}}).eval("steps.tier.outputs.tier == 'full'")), False)
+    row("contains(list)", truthy(e.eval("contains(fromJSON('[\"a\",\"b\"]'), 'b')")), True)
+    row("startsWith is case-insensitive", truthy(e.eval("startsWith('Refs/Tags/v1', 'refs/tags/')")), True)
+    row("format", to_str(e.eval("format('{0}-{1}', 'a', 2)")), "a-2")
+    row("|| yields a value", to_str(e.eval("github.missing || 'fallback'")), "fallback")
+    row("!cancelled()", truthy(e.eval("!cancelled()")), True)
+    row("implicit success(): a failed section skips a plain if",
+        eval_if("github.event_name == 'pull_request'", ev(failed=True), True), False)
+    row("always() overrides the failure", eval_if("always() && github.event_name == 'pull_request'",
+                                                   ev(failed=True), True), True)
+    row("no if: runs only on success", eval_if(None, ev(failed=True), True), False)
+    row("verdict: failure + continue-on-error passes",
+        verdict({"a": {"result": "failure", "continue_on_error": True}}), 0)
+    row("verdict: failure fails", verdict({"a": {"result": "failure", "continue_on_error": False}}), 1)
+    row("verdict: skipped passes", verdict({"a": {"result": "skipped", "continue_on_error": False}}), 0)
+    row("verdict: cancelled fails", verdict({"a": {"result": "cancelled", "continue_on_error": False}}), 1)
+    cat = {"determinism[X64]": 0, "determinism[ARM64]": 0, "determinism-compare": 0, "sov.test": 0, "sov.gate": 0}
+    row("a bracketed name resolves to itself only", resolve_section_names(cat, "determinism[X64]"),
+        ["determinism[X64]"])
+    row("sov.* globs", resolve_section_names(cat, "sov.*"), ["sov.test", "sov.gate"])
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "out"
+        f.write_text("a=1\nb<<EOF\nx\ny=z\nEOF\nc=3\n")
+        row("file command heredoc", parse_file_command(f), {"a": "1", "b": "x\ny=z", "c": "3"})
+        src = Path(td) / "src"
+        g = ["git", "-C", str(src)]
+        subprocess.run(["git", "init", "-q", str(src)], check=True)
+        for i in range(3):
+            (src / "f").write_text(str(i))
+            subprocess.run(g + ["add", "f"], check=True)
+            subprocess.run(g + ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", str(i)], check=True)
+        subprocess.run(g + ["tag", "v0"], check=True)
+        head = subprocess.run(g + ["rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+        def clone(name):
+            ws = Path(td) / name
+            subprocess.run(["git", "clone", "-q", "--shared", str(src), str(ws)], check=True)
+            return SimpleNamespace(workspace=ws, ctx=SimpleNamespace(head=head),
+                                   log=open(os.devnull, "w"))
+
+        sec = clone("d1")
+        ok, _ = uses_checkout(sec, {}, None)
+        cnt = subprocess.run(["git", "-C", str(sec.workspace), "rev-list", "--count", "HEAD"],
+                             capture_output=True, text=True).stdout.strip()
+        tags = subprocess.run(["git", "-C", str(sec.workspace), "tag", "-l"], capture_output=True,
+                              text=True).stdout.split()
+        row("checkout default depth 1: one commit, no tags", (ok, cnt, tags), (True, "1", []))
+        sec = clone("d0")
+        ok, _ = uses_checkout(sec, {"fetch-depth": 0}, None)
+        cnt = subprocess.run(["git", "-C", str(sec.workspace), "rev-list", "--count", "HEAD"],
+                             capture_output=True, text=True).stdout.strip()
+        row("checkout fetch-depth 0: full history", (ok, cnt), (True, "3"))
+        ok, _ = uses_checkout(clone("d2"), {"fetch-depth": 2}, None)
+        row("checkout fetch-depth 2 refuses (not emulated)", ok, False)
+    bad = 0
+    for label, good, got, want in rows:
+        bad += not good
+        print(f"{'ok  ' if good else 'BAD '} {label}" + ("" if good else f"  got={got!r} want={want!r}"))
+    print(f"fat_driver self-test: {len(rows) - bad}/{len(rows)} rows as expected")
+    return 1 if bad else 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1195,8 +1284,9 @@ def main(argv=None):
     w.add_argument("--results", required=True)
     w.add_argument("--base")
     sub.add_parser("list")
+    sub.add_parser("self-test")
     a = ap.parse_args(argv)
-    return {"run": cmd_run, "wait": cmd_wait, "list": cmd_list}[a.cmd](a)
+    return {"run": cmd_run, "wait": cmd_wait, "list": cmd_list, "self-test": cmd_self_test}[a.cmd](a)
 
 
 if __name__ == "__main__":
