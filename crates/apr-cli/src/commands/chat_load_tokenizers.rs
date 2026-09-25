@@ -613,8 +613,8 @@ fn apr_cuda_banner(
             .join("+")
     };
     let f2 = match f2 {
-        F2Outcome::Validated { min_cosine } => {
-            format!("F2-validated (min cosine {min_cosine:.4})")
+        F2Outcome::Validated { max_kl, min_cosine } => {
+            format!("F2-validated (max top-k KL {max_kl:.4}, advisory min cosine {min_cosine:.4})")
         },
         F2Outcome::Mismatch => "F2 MISMATCH".to_string(),
         F2Outcome::NotMeasured { reason } => format!("F2 NOT MEASURED — {reason}"),
@@ -661,10 +661,11 @@ mod apr_cuda_banner_tests_3955 {
     fn a_validated_q4k_q6k_model_says_so_with_its_cosine() {
         let banner = apr_cuda_banner(
             &BTreeSet::from([12, 14]),
-            &F2Outcome::Validated { min_cosine: 0.9991 },
+            &F2Outcome::Validated { max_kl: 0.0042, min_cosine: 0.9991 },
         );
         assert!(banner.contains("Q4_K+Q6_K"), "{banner}");
         assert!(banner.contains("F2-validated") && banner.contains("0.9991"), "{banner}");
+        assert!(banner.contains("0.0042"), "{banner}");
     }
 
     /// An id the name table does not know is shown as its number, never guessed.
