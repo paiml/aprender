@@ -389,6 +389,75 @@ pub(crate) fn run_gc(dir: &Option<PathBuf>, global: bool, yes: bool, json: bool)
     Ok(())
 }
 
+/// `apr runs fsck` (EXT-04, aprender#4386): I-6 over the pacha registry.
+/// A dangling pointer is an error (exit 5), after the report is printed.
+pub(crate) fn run_fsck(registry: Option<&Path>, json: bool) -> Result<()> {
+    let path = match registry {
+        Some(p) => p.to_path_buf(),
+        None => dirs::home_dir()
+            .map(|h| h.join(".pacha").join("registry.db"))
+            .ok_or_else(|| {
+                CliError::ValidationFailed("Could not determine home directory".into())
+            })?,
+    };
+    if !path.is_file() {
+        return Err(CliError::ValidationFailed(format!(
+            "No pacha registry at: {}",
+            path.display()
+        )));
+    }
+    let report = entrenar::tracking::pacha::fsck_path(&path)
+        .map_err(|e| CliError::ValidationFailed(format!("fsck failed: {e}")))?;
+    if json {
+        let dangling: Vec<serde_json::Value> = report
+            .dangling
+            .iter()
+            .map(|d| {
+                serde_json::json!({
+                    "run_id": d.row_id,
+                    "metrics_db": d.metrics_db,
+                    "reason": format!("{:?}", d.reason),
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::json!({
+                "registry": path,
+                "pointers": report.pointers,
+                "other_rows": report.other_rows,
+                "dangling": dangling,
+            })
+        );
+    } else {
+        println!(
+            "fsck {}: {} tracking pointers, {} other rows, {} dangling",
+            path.display(),
+            report.pointers,
+            report.other_rows,
+            report.dangling.len()
+        );
+        for d in &report.dangling {
+            let db = d.metrics_db.as_deref().map(Path::display);
+            println!(
+                "  DANGLING {} {:?} -> {}",
+                d.row_id,
+                d.reason,
+                db.map_or("?".into(), |p| p.to_string())
+            );
+        }
+    }
+    if report.is_clean() {
+        Ok(())
+    } else {
+        Err(CliError::ValidationFailed(format!(
+            "{} dangling run pointer(s) in {}",
+            report.dangling.len(),
+            path.display()
+        )))
+    }
+}
+
 /// `(path, bytes, sha256)` of the pre-gc backup.
 type GcBackup = (PathBuf, u64, String);
 
@@ -1132,6 +1201,35 @@ fn param_display(pv: &entrenar::storage::ParameterValue) -> String {
 #[cfg(test)]
 mod runs_tests {
     use super::*;
+
+    // ─── fsck (EXT-04, aprender#4386) ────────────────────────────────────
+
+    /// FALSIFY-EXT-003 at the CLI: clean registry exits 0, a planted
+    /// dangling pointer (its metrics DB deleted) exits non-zero.
+    #[test]
+    fn falsify_ext_003_runs_fsck_exits_nonzero_on_dangling_pointer() {
+        use entrenar::tracking::pacha::PachaBackend;
+        use entrenar::tracking::{ExperimentTracker, RunStatus};
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let reg = dir.path().join("pacha").join("registry.db");
+        let met = dir.path().join("cache").join("metrics.db");
+        let mut tracker =
+            ExperimentTracker::new("fsck", PachaBackend::open(&reg, &met).expect("open"));
+        let id = tracker.start_run(None).expect("start");
+        tracker.log_metric(&id, "loss", 1.5, 1).expect("metric");
+        tracker.end_run(&id, RunStatus::Completed).expect("end");
+        drop(tracker);
+        assert!(
+            run_fsck(Some(&reg), true).is_ok(),
+            "a clean registry must pass"
+        );
+
+        std::fs::remove_file(&met).expect("plant: delete the metrics DB");
+        let err = run_fsck(Some(&reg), true).expect_err("a dangling pointer must fail");
+        assert!(err.to_string().contains("1 dangling"), "{err}");
+        assert!(run_fsck(Some(&dir.path().join("absent.db")), true).is_err());
+    }
 
     // ─── gc (EXT-03, aprender#4385) ──────────────────────────────────────
 

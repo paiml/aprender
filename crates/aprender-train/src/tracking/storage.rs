@@ -22,6 +22,12 @@ pub enum TrackingStorageError {
 
     #[error("Run not found: {0}")]
     RunNotFound(String),
+
+    #[error("database error: {0}")]
+    Database(#[from] rusqlite::Error),
+
+    #[error("run id is not a ULID: {0}")]
+    InvalidRunId(String),
 }
 
 /// Result alias for tracking storage operations

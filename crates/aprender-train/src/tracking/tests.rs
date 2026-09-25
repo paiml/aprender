@@ -104,12 +104,12 @@ fn test_tracker_tags() {
 }
 
 #[test]
-fn test_start_run_assigns_sequential_ids() {
+fn test_start_run_assigns_distinct_ulids() {
     let mut tracker = make_tracker();
     let id1 = tracker.start_run(Some("first")).expect("operation should succeed");
     let id2 = tracker.start_run(Some("second")).expect("operation should succeed");
-    assert_eq!(id1, "run-1");
-    assert_eq!(id2, "run-2");
+    assert!(super::ulid::is_ulid(&id1) && super::ulid::is_ulid(&id2), "{id1} {id2}");
+    assert_ne!(id1, id2);
 }
 
 #[test]
@@ -417,10 +417,11 @@ fn test_list_runs_sorted_by_id() {
     tracker.end_run(&id2, RunStatus::Completed).expect("operation should succeed");
 
     let runs = tracker.list_runs().expect("operation should succeed");
-    assert_eq!(runs.len(), 3);
-    assert_eq!(runs[0].run_id, id1);
-    assert_eq!(runs[1].run_id, id2);
-    assert_eq!(runs[2].run_id, id3);
+    // Ids are ULIDs: sorted by id is creation order across milliseconds only.
+    let mut want = vec![id1, id2, id3];
+    want.sort();
+    let got: Vec<String> = runs.iter().map(|r| r.run_id.clone()).collect();
+    assert_eq!(got, want);
 }
 
 // ---------------------------------------------------------------------------

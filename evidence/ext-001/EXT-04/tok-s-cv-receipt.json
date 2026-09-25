@@ -1,0 +1,86 @@
+{
+ "row": "EXT-04",
+ "issue": "paiml/aprender#4386",
+ "purpose": "tok/s noise band basis for S-4 / EXT-05 regression threshold",
+ "measured_utc": "2026-09-25T15:15Z..15:20Z",
+ "host": "yoga",
+ "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+ "gpu_lock": "/tmp/apr-gpu.lock (flock per run)",
+ "r9": "no lambda 4090; train-active absent on yoga",
+ "apr": "apr 0.69.3 (v0.69.3+no-git)",
+ "apr_sha256": "8a67a0103cbb036332908cc184d5a8a8ae422fb9025bd5c78e42d65df86cfbd7",
+ "workload": "albor pretrain-50m-quick (62.4M params, batch 4, seq 128), albor@e348d17, epochs 13 / max_steps 50",
+ "config_sha256": "77519053848add645cc97200bb9ca0514159921221b5369b11be109e75afa005",
+ "metric": "steady tok/s = 512*(N-1)/(elapsed_N - elapsed_1), warm-up step 1 excluded",
+ "n": 10,
+ "runs": [
+  {
+   "run": "r01",
+   "steps": 50,
+   "steady_tok_s": 1875.3,
+   "final_loss": 4.306003570556641
+  },
+  {
+   "run": "r02",
+   "steps": 50,
+   "steady_tok_s": 2931.5,
+   "final_loss": 4.306003570556641
+  },
+  {
+   "run": "r03",
+   "steps": 50,
+   "steady_tok_s": 2921.5,
+   "final_loss": 4.306003570556641
+  },
+  {
+   "run": "r04",
+   "steps": 50,
+   "steady_tok_s": 2310.6,
+   "final_loss": 4.306003570556641
+  },
+  {
+   "run": "r05",
+   "steps": 50,
+   "steady_tok_s": 2174.3,
+   "final_loss": 4.306003570556641
+  },
+  {
+   "run": "r06",
+   "steps": 50,
+   "steady_tok_s": 1969.3,
+   "final_loss": 4.306003570556641
+  },
+  {
+   "run": "r07",
+   "steps": 50,
+   "steady_tok_s": 2760.4,
+   "final_loss": 4.306003570556641
+  },
+  {
+   "run": "r08",
+   "steps": 50,
+   "steady_tok_s": 2268.8,
+   "final_loss": 4.306003570556641
+  },
+  {
+   "run": "r09",
+   "steps": 50,
+   "steady_tok_s": 2307.8,
+   "final_loss": 4.306003570556641
+  },
+  {
+   "run": "r10",
+   "steps": 50,
+   "steady_tok_s": 1682.5,
+   "final_loss": 4.306003570556641
+  }
+ ],
+ "mean_tok_s": 2320.2,
+ "sd_tok_s": 432.2,
+ "cv_pct": 18.63,
+ "min": 1682.5,
+ "max": 2931.5,
+ "final_loss_identical": true,
+ "confound": "host load avg 10-26 from other fleet work during the runs (not clean-room); CV is an upper bound for a shared host",
+ "implication": "a single-run tok/s delta under ~2*CV (~37%) on a shared host is not evidence of regression; EXT-05 must compare medians of >=5 runs or run clean-room"
+}

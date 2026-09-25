@@ -37,7 +37,9 @@
 //! # }
 //! ```
 
+pub mod pacha;
 pub mod storage;
+pub mod ulid;
 
 #[cfg(test)]
 mod tests;
@@ -137,7 +139,6 @@ pub struct ExperimentTracker<B: TrackingBackend> {
     backend: B,
     /// Active runs held in memory for fast mutation
     active_runs: HashMap<String, Run>,
-    next_run_id: u64,
 }
 
 impl<B: TrackingBackend> ExperimentTracker<B> {
@@ -148,7 +149,6 @@ impl<B: TrackingBackend> ExperimentTracker<B> {
             tags: HashMap::new(),
             backend,
             active_runs: HashMap::new(),
-            next_run_id: 1,
         }
     }
 
@@ -171,10 +171,10 @@ impl<B: TrackingBackend> ExperimentTracker<B> {
 
     /// Start a new run, optionally with a human-readable name
     ///
-    /// Returns the run ID.
+    /// Returns the run ID, a ULID (EXT-001 §3.1): ids from separate processes
+    /// sharing one registry must not collide.
     pub fn start_run(&mut self, run_name: Option<&str>) -> Result<String> {
-        let run_id = format!("run-{}", self.next_run_id);
-        self.next_run_id += 1;
+        let run_id = ulid::new_ulid();
 
         let mut run =
             Run::new(run_id.clone(), run_name.map(String::from), self.experiment_name.clone());
