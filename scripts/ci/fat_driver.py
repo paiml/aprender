@@ -310,6 +310,15 @@ def make_funcs(failed, workspace) -> dict:
     }
 
 
+def resolve_input(v, ev):
+    if not isinstance(v, str):
+        return v
+    m = re.fullmatch(r"\s*\$\{\{(.*?)\}\}\s*", v, re.S)
+    if m and "${{" not in m.group(1):
+        return ev.eval(m.group(1))
+    return interpolate(v, ev)
+
+
 def eval_if(cond, ev: Evaluator, default_status: bool) -> bool:
     """An `if:` with no status function is implicitly `success() && (...)`."""
     if cond is None:
@@ -470,7 +479,7 @@ class Section:
             "github": c.github_ctx(self.workspace),
             "env": env,
             "steps": self.steps_ctx,
-            "inputs": self.spec["inputs"],
+            "inputs": self.inputs_ctx(),
             "matrix": self.spec["matrix"],
             "needs": {k: {"result": c.need_result(v), "outputs": c.need_outputs(v)}
                       for k, v in self.spec["needs"].items()},
@@ -484,6 +493,25 @@ class Section:
         }
         funcs = make_funcs(lambda: self.failed, lambda: self.workspace)
         return Evaluator(contexts, funcs)
+
+    def inputs_ctx(self):
+        """A reusable workflow's `inputs` are the caller's `with:` values EVALUATED in
+        the caller's contexts (github, vars, secrets, matrix, needs) -- not the raw
+        text. Run 36157991647 handed sov.test the literal
+        `${{ github.event.repository.name }}` as `inputs.repo`; dash rejected it
+        ("Bad substitution") and the container mounted a target dir by that name.
+        A value that is one whole expression keeps its type (a boolean stays one)."""
+        if getattr(self, "_inputs", None) is None:
+            c = self.ctx
+            caller = Evaluator({
+                "github": c.github_ctx(self.workspace), "vars": c.vars,
+                "secrets": {"GITHUB_TOKEN": c.token, **c.secrets},
+                "matrix": self.spec["matrix"], "inputs": {}, "strategy": {},
+                "needs": {k: {"result": c.need_result(v), "outputs": c.need_outputs(v)}
+                          for k, v in self.spec["needs"].items()},
+            }, make_funcs(lambda: False, lambda: self.workspace))
+            self._inputs = {k: resolve_input(v, caller) for k, v in self.spec["inputs"].items()}
+        return self._inputs
 
     @property
     def workspace(self) -> Path:
@@ -562,10 +590,14 @@ class Section:
         self.temp.mkdir(parents=True)
         (self.dir / "home").mkdir()
         self.workspace.parent.mkdir(parents=True)
-        # --shared: objects come from the one checkout; refs are this clone's own,
-        # so concurrent `git fetch` in two sections never contend on a ref lock.
+        # A local clone HARDLINKS the checkout's object files: self-contained, and
+        # nearly free on one filesystem. Not --shared: its alternates point at the
+        # runner checkout, which a section's own `docker run -v $GITHUB_WORKSPACE:...`
+        # cannot see -- run 36157991647's shard died in `cargo publish --dry-run` on
+        # "An object with id ... could not be found". Refs are this clone's own, so
+        # concurrent `git fetch` in two sections never contend on a ref lock.
         src = self.ctx.checkout
-        subprocess.run(["git", "clone", "-q", "--shared", "--no-checkout", str(src),
+        subprocess.run(["git", "clone", "-q", "--local", "--no-checkout", str(src),
                         str(self.workspace)], check=True)
         g = ["git", "-C", str(self.workspace)]
         subprocess.run(g + ["remote", "set-url", "origin", self.ctx.origin_url], check=True)
@@ -1240,6 +1272,11 @@ def cmd_self_test(a):
     row("always() overrides the failure", eval_if("always() && github.event_name == 'pull_request'",
                                                    ev(failed=True), True), True)
     row("no if: runs only on success", eval_if(None, ev(failed=True), True), False)
+    row("with: whole expression evaluates in the caller",
+        resolve_input("${{ github.event_name }}", e), "pull_request")
+    row("with: whole expression keeps its type", resolve_input("${{ 1 == 1 }}", e), True)
+    row("with: embedded expression interpolates", resolve_input("r-${{ github.event_name }}", e), "r-pull_request")
+    row("with: plain value unchanged", resolve_input(False, e), False)
     row("verdict: failure + continue-on-error passes",
         verdict({"a": {"result": "failure", "continue_on_error": True}}), 0)
     row("verdict: failure fails", verdict({"a": {"result": "failure", "continue_on_error": False}}), 1)
@@ -1296,7 +1333,7 @@ def cmd_self_test(a):
 
         def clone(name):
             ws = Path(td) / name
-            subprocess.run(["git", "clone", "-q", "--shared", str(src), str(ws)], check=True)
+            subprocess.run(["git", "clone", "-q", "--local", str(src), str(ws)], check=True)
             return SimpleNamespace(workspace=ws, ctx=SimpleNamespace(head=head),
                                    log=open(os.devnull, "w"))
 
@@ -1307,6 +1344,8 @@ def cmd_self_test(a):
         tags = subprocess.run(["git", "-C", str(sec.workspace), "tag", "-l"], capture_output=True,
                               text=True).stdout.split()
         row("checkout default depth 1: one commit, no tags", (ok, cnt, tags), (True, "1", []))
+        alt = sec.workspace / ".git" / "objects" / "info" / "alternates"
+        row("a section clone has no alternates (a container sees every object)", alt.exists(), False)
         sec = clone("d0")
         ok, _ = uses_checkout(sec, {"fetch-depth": 0}, None)
         cnt = subprocess.run(["git", "-C", str(sec.workspace), "rev-list", "--count", "HEAD"],

@@ -309,7 +309,7 @@ jobs:
           EVT: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          res() { printf '%s' "${1:-null}" | jq -r --arg s "$2" '(. // {})[$s].result // "missing"'; }
+          res() { printf '%s' "${1:-null}" | SEC="$2" jq -r '(. // {})[env.SEC].result // "missing"'; }
           # The old gate's needs, in its order: guard-tree, guard-cargo, ci (the
           # sovereign-ci gate), workspace-test, determinism-compare. gpu-quick and
           # cuda-unit were never in the gate; they still are not.

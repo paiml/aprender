@@ -174,13 +174,22 @@ assertions_awk() {
 
     local leg1=false leg2=false leg3=false leg4=false
     [ "${needs_line:-1}" -eq 0 ] && leg1=true
-    grep '^    needs:' <<<"$gate_job" | grep -qE '(^|[^a-z0-9_-])x86-main([^a-z0-9_-]|$)' \
-        && run_text_of_job_block <<<"$gate_job" | grep -qE "$GATE_RE" \
-        && run_text_of_job_block <<<"$x86_job" | tr '\n' ' ' | grep -qE -- "$SECTIONS_RE" \
+    # Each producer's text is captured first and grepped from a here-string: a
+    # pipe into `grep -q` reports the producer's SIGPIPE under pipefail
+    # (check_no_pipe_into_grep_q.sh).
+    local gate_needs gate_run x86_run gt_run x86_runson
+    gate_needs="$(grep '^    needs:' <<<"$gate_job" || true)"
+    gate_run="$(run_text_of_job_block <<<"$gate_job" || true)"
+    x86_run="$(run_text_of_job_block <<<"$x86_job" | tr '\n' ' ' || true)"
+    gt_run="$(run_text_of_job_block <<<"$gt_job" || true)"
+    x86_runson="$(grep '^    runs-on:' <<<"$x86_job" || true)"
+    grep -qE '(^|[^a-z0-9_-])x86-main([^a-z0-9_-]|$)' <<<"$gate_needs" \
+        && grep -qE "$GATE_RE" <<<"$gate_run" \
+        && grep -qE -- "$SECTIONS_RE" <<<"$x86_run" \
         && leg2=true
-    run_text_of_job_block <<<"$gt_job" | grep -qE "$CARGO_RE" || leg3=true
-    printf '%s\n' "$runson_line" | grep -qE '(^|[^a-z0-9_-])clean-room([^a-z0-9_-]|$)' \
-        && grep '^    runs-on:' <<<"$x86_job" | grep -qE '(^|[^a-z0-9_-])clean-room([^a-z0-9_-]|$)' \
+    grep -qE "$CARGO_RE" <<<"$gt_run" || leg3=true
+    grep -qE '(^|[^a-z0-9_-])clean-room([^a-z0-9_-]|$)' <<<"$runson_line" \
+        && grep -qE '(^|[^a-z0-9_-])clean-room([^a-z0-9_-]|$)' <<<"$x86_runson" \
         && leg4=true
 
     if [ "$leg1" = true ] && [ "$leg2" = true ] && [ "$leg3" = true ] && [ "$leg4" = true ]; then
