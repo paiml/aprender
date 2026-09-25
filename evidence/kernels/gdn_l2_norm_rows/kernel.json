@@ -1,0 +1,12 @@
+{
+  "schema": "apr-kernel/v1",
+  "kernel": "gdn_l2_norm_rows",
+  "issue": 3522,
+  "authoring": "oxide",
+  "source": "experiments/cuda-oxide/l2-norm-rows/src/main.rs",
+  "module": "kernels",
+  "entries": ["l2_norm_rows_sqrt", "l2_norm_rows_rsqrt"],
+  "reference": "cpu_l2_norm_rows",
+  "required_hosts": ["noah-Lambda-Vector", "yoga", "gx10-a5b5"],
+  "shipped_ptx": "crates/aprender-gpu/src/kernels/gdn/rows.rs"
+}

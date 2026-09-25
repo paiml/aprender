@@ -1,0 +1,15 @@
+{
+  "schema": "apr-kernel/v1",
+  "kernel": "gdn_delta_rule_scan",
+  "issue": 3522,
+  "authoring": "ptx",
+  "source": "experiments/cuda-oxide/delta-rule-scan/src/main.rs",
+  "module": "kernels",
+  "entries": ["delta_rule_scan_exp", "delta_rule_scan_ex2"],
+  "reference": "cpu_delta_rule",
+  "required_hosts": ["noah-Lambda-Vector", "yoga", "gx10-a5b5"],
+  "shipped_ptx": "crates/aprender-gpu/src/kernels/gdn/delta_rule_scan.rs",
+  "ptx_exemption": {
+    "receipt": "evidence/kernels/gdn_delta_rule_scan/noah-Lambda-Vector.json"
+  }
+}

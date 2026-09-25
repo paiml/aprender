@@ -1,0 +1,103 @@
+{
+  "schema": "apr-kernel-receipt/v1",
+  "kernel": "gdn_delta_rule_scan",
+  "issue": 3522,
+  "receipts": [
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_delta_rule_scan",
+      "variant": "exp",
+      "entry": "delta_rule_scan_exp",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "head_k_dim": 128,
+      "head_v_dim": 128,
+      "num_k_heads": 16,
+      "chunk": 64,
+      "schedule": [
+        1,
+        17,
+        64
+      ],
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 5.96e-08,
+        "rel_max": 3.198e-07,
+        "cos_threshold": 0.9999,
+        "maxdiff_threshold": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 441.027,
+        "handptx_us": 239.196,
+        "ratio": 1.8438,
+        "worst_nv": 32,
+        "tokens": 64,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 2.2664,
+        "pass": false
+      },
+      "register_budget": {
+        "oxide": 255,
+        "handptx": 255
+      },
+      "host": "yoga",
+      "sha": "625fe7928b63d760bdfda6de44123e673372f5a5",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "595.91.07, NVIDIA GeForce RTX 4060 Laptop GPU",
+      "foreign_gpu_procs": "2420396, /home/noah/eph-work/_work/aprender/aprender/target/release/deps/realizar-52dd890ce9af7974, 744 MiB;",
+      "phantom_gpu_ctx": ""
+    },
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_delta_rule_scan",
+      "variant": "ex2",
+      "entry": "delta_rule_scan_ex2",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "head_k_dim": 128,
+      "head_v_dim": 128,
+      "num_k_heads": 16,
+      "chunk": 64,
+      "schedule": [
+        1,
+        17,
+        64
+      ],
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 5.96e-08,
+        "rel_max": 5.062e-07,
+        "cos_threshold": 0.9999,
+        "maxdiff_threshold": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 576.87,
+        "handptx_us": 290.54,
+        "ratio": 1.9855,
+        "worst_nv": 48,
+        "tokens": 64,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 2.4032,
+        "pass": false
+      },
+      "register_budget": {
+        "oxide": 255,
+        "handptx": 255
+      },
+      "host": "yoga",
+      "sha": "625fe7928b63d760bdfda6de44123e673372f5a5",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "595.91.07, NVIDIA GeForce RTX 4060 Laptop GPU",
+      "foreign_gpu_procs": "2420396, /home/noah/eph-work/_work/aprender/aprender/target/release/deps/realizar-52dd890ce9af7974, 744 MiB;",
+      "phantom_gpu_ctx": ""
+    }
+  ]
+}

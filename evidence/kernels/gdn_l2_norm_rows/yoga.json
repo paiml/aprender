@@ -1,0 +1,93 @@
+{
+  "schema": "apr-kernel-receipt/v1",
+  "kernel": "gdn_l2_norm_rows",
+  "issue": 3522,
+  "receipts": [
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_l2_norm_rows",
+      "variant": "sqrt",
+      "entry": "l2_norm_rows_sqrt",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "head_dim": 128,
+      "rows": 64,
+      "row_stride": "3*heads*head_dim",
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 2.98e-08,
+        "unit_err_max": 2.982e-07,
+        "padding_intact": true,
+        "cos_floor": 0.9999,
+        "maxdiff_ceiling": 0.001,
+        "unit_err_ceiling": 0.0001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 3.194,
+        "handptx_us": 2.836,
+        "ratio": 1.1263,
+        "worst_heads": 16,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 1.0858,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 20,
+        "handptx": 14
+      },
+      "host": "yoga",
+      "sha": "6dd4a27b667d7054b3ce3f1cf402ea5521014f92",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "595.91.07, NVIDIA GeForce RTX 4060 Laptop GPU",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": ""
+    },
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_l2_norm_rows",
+      "variant": "rsqrt",
+      "entry": "l2_norm_rows_rsqrt",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "head_dim": 128,
+      "rows": 64,
+      "row_stride": "3*heads*head_dim",
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 2.98e-08,
+        "unit_err_max": 2.998e-07,
+        "padding_intact": true,
+        "cos_floor": 0.9999,
+        "maxdiff_ceiling": 0.001,
+        "unit_err_ceiling": 0.0001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 3.236,
+        "handptx_us": 3.011,
+        "ratio": 1.0748,
+        "worst_heads": 16,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 1.0478,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 20,
+        "handptx": 14
+      },
+      "host": "yoga",
+      "sha": "6dd4a27b667d7054b3ce3f1cf402ea5521014f92",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "595.91.07, NVIDIA GeForce RTX 4060 Laptop GPU",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": ""
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "schema": "apr-kernel-receipt/v1",
+  "kernel": "gdn_gates_rows",
+  "issue": 3522,
+  "receipts": [
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_gates_rows",
+      "variant": "exp",
+      "entry": "gdn_gates_rows_exp",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "block": 256,
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 7.629e-06,
+        "cos_floor": 0.9999,
+        "maxdiff_ceiling": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 1.331,
+        "handptx_us": 1.321,
+        "ratio": 1.0078,
+        "worst_n": 16,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 1.1869,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 16,
+        "handptx": 16
+      },
+      "host": "yoga",
+      "sha": "14889b304f8b4947b066341cf1ff52be977d1637",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "595.91.07, NVIDIA GeForce RTX 4060 Laptop GPU",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": ""
+    },
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_gates_rows",
+      "variant": "ex2",
+      "entry": "gdn_gates_rows_ex2",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "block": 256,
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 1.144e-05,
+        "cos_floor": 0.9999,
+        "maxdiff_ceiling": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 1.27,
+        "handptx_us": 1.321,
+        "ratio": 0.9612,
+        "worst_n": 16,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 1.1353,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 15,
+        "handptx": 16
+      },
+      "host": "yoga",
+      "sha": "14889b304f8b4947b066341cf1ff52be977d1637",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "595.91.07, NVIDIA GeForce RTX 4060 Laptop GPU",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": ""
+    }
+  ]
+}
