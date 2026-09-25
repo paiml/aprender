@@ -22,5 +22,6 @@ proptest.workspace = true
 workspace = true
 
 [[bin]]
-name = "apr-qa-readme-sync"
+# #4430: every shipped [[bin]] is aprender-* (was `apr-qa-readme-sync`)
+name = "aprender-qa-readme-sync"
 path = "src/main.rs"

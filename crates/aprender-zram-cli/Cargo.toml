@@ -9,7 +9,8 @@ authors.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "trueno-zram"
+# #4430: every shipped [[bin]] is aprender-* (was `trueno-zram`)
+name = "aprender-zram"
 path = "src/main.rs"
 
 [dependencies]

@@ -22,7 +22,7 @@ fn manifest(name: &str, yaml: &str) -> PathBuf {
 
 /// Run `presentar gate <path>` at the default `--min-grade B`.
 fn gate(path: &PathBuf) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_presentar"))
+    Command::new(env!("CARGO_BIN_EXE_aprender-present"))
         .args(["gate", path.to_str().expect("utf-8 path")])
         .output()
         .expect("run presentar")

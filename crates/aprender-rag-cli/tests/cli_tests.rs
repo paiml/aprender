@@ -13,7 +13,7 @@ use tempfile::TempDir;
 
 /// Helper to get CLI command
 fn cli() -> Command {
-    Command::cargo_bin("trueno-rag").unwrap()
+    Command::cargo_bin("aprender-rag").unwrap()
 }
 
 // ============================================================================

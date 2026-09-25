@@ -128,7 +128,8 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
-name = "simular"
+# #4430: every shipped [[bin]] is aprender-* (was `simular`)
+name = "aprender-simulate"
 path = "src/main.rs"
 
 [[example]]
