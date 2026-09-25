@@ -40,6 +40,7 @@ SECTION = re.compile(r"^\s*\[\s*([A-Za-z0-9_.-]+)\s*\]\s*(?:#.*)?$")
 EDITION = re.compile(r"""^\s*edition\s*(?:=\s*(?:"([^"]*)"|'([^']*)')|\.workspace\s*=\s*true|=\s*\{[^}]*workspace\s*=\s*true[^}]*\})\s*(?:#.*)?$""")
 EDITION_KEY = re.compile(r"""^\s*(?:package\s*\.\s*|workspace\s*\.\s*package\s*\.\s*)?["']?edition["']?\s*[.=]""")
 ML_DELIMS = ('"' * 3, "'" * 3)
+ML_OPEN = re.compile(r"""^\s*[A-Za-z0-9_.-]+\s*=\s*("{3}|'{3})""")
 
 
 class FallbackUnreadable(Exception):
@@ -56,7 +57,12 @@ def load_toml(text):
     doc, cur, in_ml = {}, None, None
     for n, line in enumerate(text.splitlines(), 1):
         if in_ml:  # inside a multi-line string: nothing here is a key
-            if line.count(in_ml) % 2 == 1:
+            if in_ml in line:
+                # The first delimiter closes it. Anything after that could reopen it or hide an
+                # escaped quote; the fallback refuses rather than track it.
+                rest = line.split(in_ml, 1)[1]
+                if any(d in rest for d in ML_DELIMS) or "\\" in line.split(in_ml, 1)[0][-1:]:
+                    raise FallbackUnreadable("line %d: an ambiguous multi-line string end: %r" % (n, line.strip()))
                 in_ml = None
             continue
         if line.lstrip().startswith("["):  # every header, [[bin]] included, leaves the section
@@ -76,10 +82,21 @@ def load_toml(text):
                 raise FallbackUnreadable("line %d: %r" % (n, line.strip()))
             ed = m.group(1) if m.group(1) is not None else m.group(2)
             cur["edition"] = ed if ed is not None else {"workspace": True}
-        for delim in ML_DELIMS:
-            if line.count(delim) % 2 == 1:
+        # A multi-line string opens only as `key = """` / `key = '''`, and only the opener's own
+        # delimiter can close it. A triple quote anywhere else (a comment, a one-line string, after
+        # the close) is refused rather than guessed at: guessing wrong skips the real edition line
+        # with no error (#4315 quorum rounds 2-4).
+        m = ML_OPEN.match(line)
+        if m:
+            delim, rest = m.group(1), line[m.end():]
+            if delim not in rest:
                 in_ml = delim
-                break
+            else:
+                body, after = rest.split(delim, 1)
+                if body.endswith("\\") or any(d in after for d in ML_DELIMS):
+                    raise FallbackUnreadable("line %d: an ambiguous one-line %s string: %r" % (n, delim, line.strip()))
+        elif any(d in line for d in ML_DELIMS):
+            raise FallbackUnreadable("line %d: a triple quote outside `key = <triple quote>`: %r" % (n, line.strip()))
     return doc
 
 
@@ -94,7 +111,15 @@ SELF_TEST = [
     ('[workspace.package]\nedition = "2024"\n', None, "2024"),
     ('[package]\nname = "x"\n\n[[bin]]\nname = "b"\nedition = "2015"\n', None, None),
     ('[package]\nedition = "2021"\n[[bin]]\nedition = "2015"\n', "2021", None),
-    ('[package]\ndescription = ' + Q3 + '\nedition = "2018"\n' + Q3 + '\nedition = "2021"\n', "2021", None),
+    ('[package]\nedition = "2021"\ndescription = ' + Q3 + '\nedition = "2018"\n' + Q3 + '\n', "2021", None),
+    ('[package]\nedition = "2021"\nreadme = ' + Q3 + 'one line, closed' + Q3 + '\nname = "x"\n', "2021", None),
+    ('[package]\n# a stray ' + Q3 + ' in a comment\nedition = "2021"\n', "RAISE", None),
+    ("[package]\nreadme = " + A3 + "see " + Q3 + "ex" + Q3 + " here" + A3 + "\nedition = '2021'\n", "2021", None),
+    ("[package]\nreadme = " + A3 + "a " + Q3 + " b\n" + Q3 + "\n" + A3 + "\nedition = '2021'\n", "2021", None),
+    ('[package]\nreadme = ' + Q3 + 'a' + Q3 + ' # ' + Q3 + '\nedition = "2021"\n', "RAISE", None),
+    ('[package]\ndescription = ' + Q3 + '\nend' + Q3 + ' # ' + Q3 + '\nedition = "2021"\n', "RAISE", None),
+    ('[package]\ndescription = ' + Q3 + '\nsaid \\' + Q3 + '\nedition = "2021"\n', "RAISE", None),
+    ("[package]\ndescription = '" + Q3 + "'\nedition = \"2021\"\n", "RAISE", None),
     ("[package]\ndescription = " + A3 + "\nedition = '2018'\n" + A3 + "\n", None, None),
     ('[package.metadata]\nedition = "2015"\n[package]\nedition = "2021"\n', "2021", None),
     ('[dependencies]\nedition = "1"\n', None, None),
