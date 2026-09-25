@@ -1131,3 +1131,60 @@ fn na_obligations_grant_no_lean_credit() {
     let one = contract_with_na_obligations(1, 3, 4, 4);
     assert!(!is_lean_proved_with_grounding(&one, 1));
 }
+
+/// #4351 case table for `lean_has_sorry`: prose never counts, code always does, and anything the
+/// scanner cannot parse counts (fail closed).
+#[test]
+fn lean_has_sorry_case_table() {
+    let must_match: &[&str] = &[
+        "theorem t : 1 = 1 := by sorry",
+        "theorem t : 1 = 1 := sorry",
+        "theorem t : P := by\n  exact (sorry)",
+        "theorem t : P := h.sorry",
+        "/- closed -/ theorem t : P := sorry",
+        "/- /- nested -/ still comment -/ theorem t : P := sorry",
+        "-- line comment\ntheorem t : P := sorry",
+        "/- unterminated comment",
+        "def s := \"unterminated string",
+        "theorem t : P := by\n  sorry -- TODO",
+    ];
+    let must_not_match: &[&str] = &[
+        "/-! Module doc: this file compiles sorry-free. -/\ntheorem t : 1 = 1 := rfl",
+        "/-- no sorry here -/\ntheorem t : 1 = 1 := rfl",
+        "-- sorry\ntheorem t : 1 = 1 := rfl",
+        "/- outer /- sorry -/ sorry -/ theorem t : 1 = 1 := rfl",
+        "def msg := \"sorry\"\ntheorem t : 1 = 1 := rfl",
+        "def msg := \"a \\\" sorry\"",
+        "theorem sorry_free : 1 = 1 := rfl",
+        "theorem not_sorry' : 1 = 1 := rfl",
+        "theorem t : 1 = 1 := rfl",
+    ];
+    for src in must_match {
+        assert!(lean_has_sorry(src), "must read as sorry: {src:?}");
+    }
+    for src in must_not_match {
+        assert!(!lean_has_sorry(src), "must NOT read as sorry: {src:?}");
+    }
+}
+
+/// #4351, on the real tree: the TensorTranspose file (a doc comment says "sorry-free") and the
+/// `Theorems.<Domain>.<File>` citation form both resolve now.
+#[test]
+fn lean_scan_grounds_comment_sorry_file_and_dotted_form() {
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/aprender-contracts-staging/lean");
+    let file = base.join("ProvableContracts/Theorems/TensorTranspose/Roundtrip.lean");
+    let src = std::fs::read_to_string(&file).expect("TensorTranspose/Roundtrip.lean");
+    assert!(
+        src.contains("sorry"),
+        "fixture premise: the word appears in prose"
+    );
+    assert!(!lean_has_sorry(&src), "no sorry token in code");
+    let names = scan_theorem_base(base.to_str().expect("utf8"));
+    for n in [
+        "Theorems.TensorTranspose.Roundtrip",
+        "Theorems.GgufExportSymmetry.Roundtrip",
+    ] {
+        assert!(names.contains(n), "{n} must resolve");
+    }
+}
