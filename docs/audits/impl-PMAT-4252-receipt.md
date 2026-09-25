@@ -139,3 +139,21 @@ require restarting the lambda serve, which is a new lambda-CPU apr run, and the 
 lambda-CPU apr runs." It is proven only by the stub positive control above (one POST, served_by lambda-cpu), and
 M1/M2 show the gate is what decides.
 
+
+## REX-07 Ask 2: the gx10 receipt names the served weights' sha256 (commit 3aa97c21b)
+
+PROMETHEUS REX-07 (#4362) Ask 2: "record the served weights sha256". Every advisory-lane ledger row was an identity gap.
+
+- `weights_identity(path, prev)` hashes the model file in 1 MiB chunks before `apr serve` starts, and records
+  `{model, size, mtime_ns, model_sha256}`. It reuses a previous hash only if the path, size and mtime_ns are all
+  identical. On a stat or read error it records `model_sha256: null` plus the `why`.
+- `weights_still(ident)` runs when `/health` answers. It withdraws the hash (`null`, why "the model file changed
+  between hashing and the server answering /health") if the size or mtime_ns moved, so a hash never names bytes the
+  server may not have loaded.
+- `parse_gx10` carries `model` and `model_sha256` from state.json into the receipt's `provenance`. The rail side
+  (paiml-implement#433) copies them into `.advisory_lane` and the ledger. It records `null` and never computes a hash.
+
+Measured: the three lane test files are GREEN. The new rows cover: from state, absent → null, the sha equals
+hashlib's, an unchanged stat reuses the cache, a changed file is re-hashed, unchanged stays bound, changed is
+withdrawn, and missing → null with a reason. Planted mutants M1 (`weights_still` never withdraws) and M2 (the cache
+ignores stat) are each killed. The deploy to the gx10 watcher follows the merge, shipped with `git archive`.
