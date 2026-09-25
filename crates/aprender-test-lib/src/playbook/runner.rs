@@ -256,6 +256,26 @@ impl<E: ActionExecutor> PlaybookRunner<E> {
                 });
             }
 
+            // The executor picks its transition by (state, event). If that is not
+            // the one this step names, the step did not run what it says it ran.
+            let ran = executed
+                .transitions_executed
+                .last()
+                .map(|r| r.transition_id.as_str());
+            if ran != Some(transition_id.as_str()) {
+                return Ok(StepResult {
+                    name: step.name.clone(),
+                    passed: false,
+                    duration: start.elapsed(),
+                    captured,
+                    error: Some(format!(
+                        "step names transition '{transition_id}' but event '{}' ran '{}'",
+                        t.event,
+                        ran.unwrap_or("<none>")
+                    )),
+                });
+            }
+
             // Record state path
             self.state_path.push(t.to.clone());
         }
@@ -722,6 +742,48 @@ playbook:
             calls.borrow().is_empty(),
             "no step may run after a refused setup"
         );
+    }
+
+    /// Two transitions leave `start` on the same event; the step names the
+    /// second. The executor runs the first, so the step must fail rather than
+    /// record a path it never took.
+    #[test]
+    fn a_step_that_runs_a_different_transition_than_it_names_fails() {
+        let yaml = r#"
+version: "1.0"
+machine:
+  id: "dup"
+  initial: "start"
+  states:
+    start:
+      id: "start"
+    a:
+      id: "a"
+      final_state: true
+    b:
+      id: "b"
+      final_state: true
+  transitions:
+    - id: "t_a"
+      from: "start"
+      to: "a"
+      event: "go"
+    - id: "t_b"
+      from: "start"
+      to: "b"
+      event: "go"
+playbook:
+  steps:
+    - name: "go"
+      transitions: ["t_b"]
+"#;
+        let playbook = Playbook::from_yaml(yaml).expect("parse");
+        let mut runner = PlaybookRunner::new(playbook, RecordingExecutor::default());
+        let result = runner.run();
+        assert!(!result.passed, "{result:?}");
+        let err = result.step_results[0].error.as_deref().unwrap_or_default();
+        assert!(err.contains("'t_b'") && err.contains("'t_a'"), "{err}");
+        assert_eq!(result.state_path, ["start"]);
     }
 
     struct MockExecutor;
