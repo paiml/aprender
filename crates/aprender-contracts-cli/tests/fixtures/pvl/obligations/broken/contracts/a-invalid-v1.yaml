@@ -1,0 +1,8 @@
+# CHECK 1: no `metadata:` — `pv validate` fails. The script and pv both report it.
+equations:
+  id:
+    formula: "y = x"
+proof_obligations:
+  - type: invariant
+    property: "identity"
+    applies_to: all

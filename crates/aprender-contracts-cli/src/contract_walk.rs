@@ -193,6 +193,27 @@ impl fmt::Display for LintRejected {
 
 impl std::error::Error for LintRejected {}
 
+/// `pv obligations --gate` found problems (PVL-001 EV-10): measured, and failed. Exit 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObligationsRejected {
+    /// Problems reported.
+    pub problems: usize,
+    /// Contracts checked.
+    pub contracts: usize,
+}
+
+impl fmt::Display for ObligationsRejected {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "obligation gate failed ({} problem(s) over {} contracts)",
+            self.problems, self.contracts
+        )
+    }
+}
+
+impl std::error::Error for ObligationsRejected {}
+
 /// `pv lint --gate sigma` found Σ itself malformed (ONT-001 §5 ONT-2b): the DECLARATION is wrong, not the corpus,
 /// so it is `error:` at exit 3 and never `reject:`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -272,6 +293,7 @@ pub fn verdict_for(err: &(dyn std::error::Error + 'static)) -> &'static str {
         "decline"
     } else if err.downcast_ref::<ParseErrors>().is_some()
         || err.downcast_ref::<LintRejected>().is_some()
+        || err.downcast_ref::<ObligationsRejected>().is_some()
     {
         "reject"
     } else {

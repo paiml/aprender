@@ -343,6 +343,7 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             contract_dir,
             top,
         } => commands::infer::run(&crate_dir, &binding, &contract_dir, top),
+        Commands::Obligations { root, gate } => commands::obligations::run(&root, gate),
         Commands::Unlock { contract, reason } => commands::unlock::run(&contract, &reason),
         Commands::Roofline {
             contract_dir,
