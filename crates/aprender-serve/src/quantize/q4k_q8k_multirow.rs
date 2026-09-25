@@ -230,14 +230,14 @@ fn transpose_token_lanes(input: &[f32], in_dim: usize, groups: usize) -> Vec<f32
 /// replay `fused_q5k_dot`'s mul-then-add order per lane. `out_r[t]` is token `t`'s output.
 fn q5k_row_all_tokens(row: &[u8], act_t: &[f32], w: &mut [f32], out_r: &mut [f32]) {
     let in_dim = w.len();
-    for (sb_i, sb) in row.chunks_exact(Q5K_SB_BYTES).enumerate() {
+    for (sb_i, sb) in row.as_chunks::<Q5K_SB_BYTES>().0.iter().enumerate() {
         let wb = &mut w[sb_i * QK_K..(sb_i + 1) * QK_K];
         super::dequant::for_each_q5k_value(sb, |i, v| wb[i] = v);
     }
     let m = out_r.len();
     for (g, a) in act_t.chunks_exact(in_dim * Q5K_LANES).enumerate() {
         let mut acc = [0.0f32; Q5K_LANES];
-        for (wi, ai) in w.iter().zip(a.chunks_exact(Q5K_LANES)) {
+        for (wi, ai) in w.iter().zip(a.as_chunks::<Q5K_LANES>().0) {
             for l in 0..Q5K_LANES {
                 acc[l] += *wi * ai[l];
             }

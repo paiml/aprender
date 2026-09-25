@@ -578,8 +578,10 @@ fn load_f32_vec(tensor_ref: &QuantizedTensorRef, data: &[u8]) -> Result<Vec<f32>
         })?;
     // Decoded, not reinterpreted: an mmap offset carries no f32 alignment guarantee.
     Ok(bytes
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
         .collect())
 }
 
