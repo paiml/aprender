@@ -41,6 +41,8 @@ judge_line() {
 scan() {
     local f n l why red=0 files=0
     while IFS= read -r f; do
+        # This file's own patterns and case table are the RED lines by design; judging them is self-flagging.
+        [ "$f" = scripts/check_leanchecker_scoped.sh ] && continue
         files=$((files + 1)); n=0
         while IFS= read -r l || [ -n "$l" ]; do
             n=$((n + 1))
