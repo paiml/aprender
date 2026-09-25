@@ -233,7 +233,12 @@ fn verify_rmsnorm_finiteness() {
 /// Obligation: RN-INV-002
 /// Strategy: exhaustive
 /// Bound: 16 elements
-/// Inlines the RMS computation to check the intermediate value.
+/// Inlines the RMS computation to check the intermediate value, then binds the
+/// property to the KERNEL: the inline copy alone never calls `rmsnorm_scalar`,
+/// so a kernel that dropped or negated `+ eps` stayed green (#3140 finding).
+/// The all-zero input is the worst case (sum_sq = 0, denominator = eps): there
+/// the kernel's output is finite iff its denominator was positive, since a zero
+/// denominator gives 0 * inf = NaN and a negative one gives sqrt(<0) = NaN.
 #[kani::proof]
 #[kani::unwind(17)]
 fn verify_rms_positive() {
@@ -252,6 +257,20 @@ fn verify_rms_positive() {
     let denom = sum_sq / N as f32 + eps;
 
     assert!(denom > 0.0, "KANI-RN-002: denominator = {} <= 0", denom);
+
+    let zeros = [0.0f32; N];
+    let gamma: [f32; N] = kani::any();
+    kani::assume(gamma.iter().all(|g| g.is_finite()));
+    let mut output = [1.0f32; N];
+    rmsnorm::rmsnorm_scalar(&zeros, &gamma, eps, &mut output);
+    for i in 0..N {
+        assert!(
+            output[i] == 0.0,
+            "KANI-RN-002: kernel output[{}] = {} on zero input (denominator not positive)",
+            i,
+            output[i]
+        );
+    }
 }
 
 /// KANI-LN-001: LayerNorm output has zero mean (with gamma=1, beta=0).
