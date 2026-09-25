@@ -1,0 +1,17 @@
+{
+  "tensor_count": 739,
+  "total_size_bytes": 7359076352,
+  "by_dtype": [
+    {
+      "dtype": "F32",
+      "n": 384,
+      "bytes": 5097101312
+    },
+    {
+      "dtype": "Q4_K",
+      "n": 355,
+      "bytes": 2261975040
+    }
+  ],
+  "blk_named": 0
+}

@@ -1,0 +1,29 @@
+{
+  "schema": "ext-bind-receipt-v1",
+  "row": "EXT-00",
+  "ticket": "PMAT-4382",
+  "issue": "paiml/aprender#4382",
+  "spec": {"repo": "paiml/infra", "path": "docs/specifications/EXT-001-dogfood-model-lifecycle.md", "sha256_prefix": "a47a6c0386da"},
+  "stamp": {"host": "noah-Lambda-Vector", "boot_id": "bddb62a6-6bd7-4813-bbe0-a103ffe342f6", "tree": "origin/main a5efa14433b52138bc80bed7faead845123f18d5", "worktree": "/mnt/nvme-raid0/tmp/ext", "time_utc": "2026-09-25T12:30Z..12:50Z"},
+  "engine": {"apr_version": "0.69.3", "artifact": "apr-v0.69.3-x86_64-unknown-linux-gnu-cpu.tar.gz", "tarball_sha256": "399b8053e38bc0f22b3a4269526c8b89f9566186132b9fe6ca0328e831f380e8", "sha_check": "OK against the release .sha256 asset"},
+  "rows": [
+    {"id": "T1", "was": "[A]", "now": "[V]", "value": {"models": 81, "runs": 0, "lineage": 0}, "probe": "sqlite3 ~/.pacha/registry.db (models,runs,lineage counts)"},
+    {"id": "T2", "was": "[A]", "now": "[V]", "value": {"experiments": 3947, "tmp_named": 3614, "runs_running": 238, "runs_completed": 3709, "artifacts": 0}, "delta_vs_v0": "experiments +7, .tmp +7 since the v0 sample: tests still leak into the real home (EXT-02 is live, not historical)", "probe": "sqlite3 ~/.entrenar/experiments.db"},
+    {"id": "T3", "was": "[A]", "now": "[V]", "value": {"loose_run_dirs": 48}, "probe": "ls -1d /mnt/nvme-raid0/runs/*/ | wc -l"},
+    {"id": "T13", "was": "[X]->[U]", "now": "bound-to:EXT-17", "value": null, "reason": "spec binds T13 to a real GHCR push in EXT-17; pushing needs a GHCR token that exists only on the driver host (R-7). Not probed here"},
+    {"id": "T14", "was": "[U]", "now": "[X]-verified", "value": {"per_file_limit": "2 GiB", "assets_per_release": 1000}, "consequence": "Release assets carry manifest, card and receipts only, never weights (D-2 default holds)", "probe": "docs.github.com about-releases: 'Each file included in a release must be under 2 GiB'"},
+    {"id": "T15", "was": "[U]", "now": "[V] read / [X] write", "value": {"refs_endpoint": "GET https://huggingface.co/api/models/{repo}/refs -> 200 {branches,tags}", "tree_endpoint": "GET /api/models/{repo}/tree/{revision} -> 200 (lfs.oid = sha256)", "resolve_by_revision": "GET /{repo}/resolve/{revision}/{file} -> 200", "write_endpoints": "POST /api/models/{repo}/branch/{name}, POST /api/models/{repo}/tag/{revision}, POST /api/models/{repo}/commit/{revision} (hub API, [X]); bound by EXT-14 with a real token on the driver host"}},
+    {"id": "T16", "was": "[U]", "now": "[V] exists / scope=extend", "value": {"verb": "apr publish <DIR> <REPO_ID> (APR-PUB-001)", "impl": "crates/aprender-core/src/hf_hub (native Rust ureq; no Python)", "gaps": ["commit/preupload URLs hardcode revision 'main' (client_impl.rs:367, upload.rs:17): no rc branch, no tag, no move-main", "token read from HF_TOKEN env (client_impl.rs:16): R-7 needs a driver-host file source and a training-verb env scrub", "default --license mit: must be the upstream license (Apache-2.0)"]}, "consequence": "EXT-14 re-scoped from 'reuse' to 'extend apr publish': revision-aware commit, branch/tag create, token-from-path, idempotence"},
+    {"id": "T17", "was": "[U]", "now": "premise-falsified", "value": {"input": "Qwen/Qwen3.5-4B@851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a BF16 (shards sha256-verified vs HF lfs.oid)", "import_rc": 0, "import_wall_s": 57.6, "quantize_rc": 0, "quantize_wall_s": 249, "quantize_peak_rss_kb": 41592560, "output_bytes": 7359076352, "output_sha256": "50ef6e2108e88eb6b57ae0b52204e2c4fb2be7adbe697fd9fecb05db90771b41", "dtypes": {"F32": 384, "Q4_K": 355}, "unmapped_tensors": 738, "blk_named": 0, "llama_cpp_d1d3c3396_load": "FAIL gguf_init_from_reader: failed to read tensor info", "positive_control": "unsloth Qwen3.5-4B-Q4_K_M.gguf (00fe7986...) loads, 'The capital of France is' -> 'Paris'"}, "filed": "paiml/aprender#4418", "consequence": "EXT-18 blocked on #4418: no apr-built qwen35 artifact the parity oracle can load", "evidence": "evidence/ext-001/EXT-00/t17-*"},
+    {"id": "T18", "was": "[U]", "now": "[V] verb / premise-falsified for qwen35", "value": {"verb": "apr export --format gguf; apr quantize --format gguf", "qwen35": "not loadable by the oracle (T17, #4418)"}, "consequence": "D-4 default (apr + GGUF) waits on #4418; no 0.72 export-verb issue is needed because the verb exists"},
+    {"id": "T19", "was": "[U]", "now": "[V]", "value": {"revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a", "license": "apache-2.0", "LICENSE_sha256": "bbedc3fda3305820b977265f01b8619d87570a6739de3a5582c3464840f1e57a", "NOTICE": "absent upstream (file list at revision has no NOTICE)", "pipeline_tag": "image-text-to-text", "base_model": "Qwen/Qwen3.5-4B-Base", "bf16_total_bytes": 9319828096}, "consequence": "S-5 does NOT fire: Apache-2.0 permits derivatives with LICENSE carried and changes stated. I-13/M5 must accept 'upstream NOTICE absent' as a recorded fact, not a failure. T11 corrected: BF16 is 9.32 GB (vision tower + mtp), not ~8 GB"},
+    {"id": "T20", "was": "[A]", "now": "[V]", "value": {"repo": "paiml/albor-370m-v1", "sha": "15c1f609192c2ea06368ba974747634567f81093"}},
+    {"id": "T21", "was": "[X]", "now": "[V]", "value": {"crate": "ocipkg", "max_stable_version": "0.4.0"}, "probe": "crates.io API"}
+  ],
+  "side_findings": [
+    "The two local review-lane GGUFs (~/models/Qwen3.5-4B-Q4_K_M.gguf 00fe7986..., Qwen3.5-4B-UD-Q4_K_XL.gguf b252c561...) are byte-identical to unsloth/Qwen3.5-4B-GGUF@e87f1764: the lane's model is not apr-built (D-6 input)",
+    "bartowski/Qwen_Qwen3.5-4B-GGUF@4168f45a Q4_K_M sha256 13c16f42..., 3013027808 B (EXT-24 pin input)",
+    "llama-completion d1d3c3396 exits 0 when the model fails to load: any gate must read the log, not the rc"
+  ],
+  "verdict": {"premise_falsified": ["T17", "T18(qwen35)"], "s5_license_stop": false, "ext14_rescope": "extend apr publish", "blockers": ["#4418 blocks EXT-18"]}
+}
