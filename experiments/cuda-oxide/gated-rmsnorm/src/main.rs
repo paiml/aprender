@@ -345,6 +345,9 @@ fn main() {
 
     // Parity sweep: Qwen3.5-0.8B (16 heads), larger GDN configs, and a 1-head edge.
     let mut all_ok = true;
+    // A timing NO-GO is its own exit code (4), not a pass: the receipts still
+    // print, so receipt.sh records `"pass":false` and then fails (#3522 quorum).
+    let mut timing_all_ok = true;
     for ex2 in [false, true] {
         let name = if ex2 { "ex2 (B)" } else { "exp (A)" };
         for heads in [1usize, 16, 32, 48] {
@@ -403,6 +406,7 @@ fn main() {
             parity = (parity.0.min(o.cos), parity.1.max(o.maxdiff));
         }
         let timing_ok = worst_ratio <= TIMING_RATIO_MAX;
+        timing_all_ok &= timing_ok;
         // One line per variant; receipt.sh adds host, sha, ptxas and writes the file.
         println!(
             "RECEIPT {{\"schema\":\"apr-kernel-receipt/v1\",\"kernel\":\"gdn_gated_rmsnorm\",\"variant\":\"{variant}\",\"entry\":\"{entry}\",\"authoring\":\"oxide\",\"cc\":\"{sm}\",\"head_dim\":{HEAD_DIM},\"parity\":{{\"cos_min\":{:.9},\"maxdiff_max\":{:.3e},\"cos_floor\":{PARITY_COS},\"maxdiff_ceiling\":{PARITY_MAXDIFF:e},\"pass\":{}}},\"timing\":{{\"oxide_us\":{:.3},\"handptx_us\":{:.3},\"ratio\":{worst_ratio:.4},\"worst_heads\":{},\"ratio_max\":{TIMING_RATIO_MAX},\"pass\":{timing_ok}}},\"register_budget\":{{\"oxide\":{},\"handptx\":{regs_hand}}}}}",
@@ -419,6 +423,10 @@ fn main() {
     if !all_ok {
         eprintln!("#3522 PARITY FAILED");
         std::process::exit(1);
+    }
+    if !timing_all_ok {
+        eprintln!("#3522 TIMING NO-GO (oxide/hand > {TIMING_RATIO_MAX})");
+        std::process::exit(4);
     }
     println!("#3522 O-1 DONE");
 }

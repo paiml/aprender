@@ -6,7 +6,8 @@
 # `RECEIPT {...}` line per variant. This wrapper adds only facts the binary
 # cannot see: host, repo sha, cuda-oxide rev, ptxas and driver versions, and
 # any foreign GPU process sharing the device during the run. It fails if the
-# harness fails or prints no receipt, so it cannot write an empty file.
+# harness prints no receipt, so it cannot write an empty file, and it exits
+# with the harness's status after writing, so a failing gate never reads green.
 #
 # Usage (from this directory, GPU host, cuda-oxide toolchain installed):
 #   PATH=/usr/local/cuda-13.3/bin:$PATH flock /tmp/apr-gpu.lock ./receipt.sh
@@ -30,15 +31,11 @@ foreign="$(nvidia-smi --query-compute-apps=pid,name,used_memory --format=csv,noh
 cd "$here" || exit 1
 rc=0
 cargo oxide run >"$log" 2>&1 || rc=$?
-if [ "$rc" -ne 0 ]; then
-    tail -n 40 "$log" >&2
-    echo "receipt.sh: harness exited $rc; no receipt written" >&2
-    exit "$rc"
-fi
-receipts="$(grep '^RECEIPT ' "$log" | sed 's/^RECEIPT //')"
+receipts="$(grep '^RECEIPT ' "$log" | sed 's/^RECEIPT //' || true)"
 if [[ -z "$receipts" ]]; then
-    echo "receipt.sh: harness printed no RECEIPT line" >&2
-    exit 3
+    tail -n 40 "$log" >&2
+    echo "receipt.sh: harness exited $rc and printed no RECEIPT line; nothing written" >&2
+    exit "$(( rc == 0 ? 3 : rc ))"
 fi
 
 mkdir -p "$out_dir"
@@ -55,5 +52,11 @@ for r in rows:
 print(json.dumps({"schema": "apr-kernel-receipt/v1", "kernel": "gdn_gated_rmsnorm",
                   "issue": 3522, "receipts": rows}, indent=2))
 EOF
-grep -E 'parity|GO|DONE' "$log"
+grep -E 'parity|GO|DONE|FAILED' "$log"
 echo "wrote $out_dir/$host.json"
+# A failing gate still writes its receipt (the file carries "pass":false), then
+# fails the run: 1 = parity, 4 = timing NO-GO.
+if [ "$rc" -ne 0 ]; then
+    echo "receipt.sh: harness exited $rc (1 parity / 4 timing); receipt records the failure" >&2
+    exit "$rc"
+fi
