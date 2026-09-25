@@ -560,5 +560,49 @@ impl Registry {
     }
 }
 
+// ==================== Dataset manifests (EXT-08, aprender#4390) ====================
+
+impl Registry {
+    /// Register a dataset manifest: admit it (clean rows, I-14 labels, I-11 against
+    /// `sealed`), then store it under its canonical hash. A refused manifest stores nothing.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PachaError::Validation` for a refused manifest, `AlreadyExists` for a
+    /// repeated canonical hash or name+version, or a storage error.
+    pub fn register_dataset_manifest(
+        &self,
+        name: &str,
+        version: &crate::data::DatasetVersion,
+        manifest: &crate::data::DatasetManifest,
+        sealed: &crate::data::SealedItems,
+    ) -> Result<crate::data::AdmittedManifest> {
+        let admitted = manifest.admit(sealed)?;
+        self.db.insert_dataset_manifest(name, &version.to_string(), &admitted)?;
+        Ok(admitted)
+    }
+
+    /// The admitted manifest with this canonical hash, if registered.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn get_dataset_manifest(
+        &self,
+        canonical_sha256: &str,
+    ) -> Result<Option<crate::data::AdmittedManifest>> {
+        self.db.get_dataset_manifest(canonical_sha256)
+    }
+
+    /// Number of registered dataset manifests.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn dataset_manifest_count(&self) -> Result<usize> {
+        self.db.dataset_manifest_count()
+    }
+}
+
 #[cfg(test)]
 mod tests;
