@@ -248,6 +248,16 @@ that decides a gate.
    a floor. For `ci / gate`, the 5 fat jobs **supersede** rule 16's pool-routed / crate-sharded
    layout (and §3's B2-cpu shard line); rule 16 still governs work outside `ci / gate`.
    #4318 (0.69.5) is the last rc cut from a branch. Ticket: #4434.
+18. **Every release is an rc, deployed to the fleet and measured there; nothing more by default**
+   (operator 2026-09-25, verbatim, quoted on #4434 comment 5835033678: "no, only release candidate
+   and deployed to fleet and measured going forward all releases"). A release is the rule-17 rc tag,
+   installed on every host (lambda-labs, gx10, yoga, intel, mini) with PATH `apr --version` reading
+   the tag and its sha, then measured on each host: at least one row per tag × host in the arbiter
+   perf ledger (paiml/infra#1057). No final tag and no crates.io publish unless the operator asks
+   for one. The check is `scripts/release/check_rc_fleet_measured.sh <tag> <install-receipt>
+   [ledger]`: it is RED when any host lacks an ok receipt row or an `apr` ledger row at that
+   version and sha, it fails closed on a missing file, and `--self-test` runs its 13-row case table.
+   Ticket: #4434.
 
 ## §4 The train — each step has its own already-done test
 
@@ -264,6 +274,8 @@ that decides a gate.
 **rc cut (rule 17):** `vX.Y.Z-rc.N` is a tag on a queue-green `main` sha within 5 min of green; T-2 and
 T-3's hardware, clean-room and accuracy receipts run in parallel on that tag and gate promotion. A
 promotion failure is `rc.N+1`, never a patched rc.
+**deployed + measured (rule 18):** an rc counts as released only when `check_rc_fleet_measured.sh` is
+GREEN for it (5-host install receipt + infra#1057 ledger rows); final tags and crates.io are operator-asked only.
 
 Any step RED → SKIPPED, no partial promotion. Scope is assigned to trains after the fact:
 0.67 contains whatever merged before the 0.67 cut, by definition.

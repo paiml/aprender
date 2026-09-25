@@ -10,5 +10,6 @@ merge sha in hand, and the path column names merged files, never chat or `cop-st
 
 | state | ruling (date, Madrid) | ticket | PR | merge sha | merged path |
 |---|---|---|---|---|---|
-| [U] | rc.N = tag on a queue-green main sha within 5 min; receipts on the tag gate promotion; promotion failure → rc.N+1; CI = 5 fat jobs, Σ executed unchanged (2026-09-25 16:58) | #4434 | — | — | `docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md` §3 rule 17 |
-| [U] | this register: step 1 reads it; only `[M]` rows are in force (2026-09-25 ~17:05) | #4436 | — | — | `.claude/skills/cop/SKILL.md` §1, `.claude/skills/cop/RULINGS.md` |
+| [U] | rc.N = tag on a queue-green main sha within 5 min; receipts on the tag gate promotion; promotion failure → rc.N+1; CI = 5 fat jobs, Σ executed unchanged (2026-09-25 16:58) | #4434 | #4440 | — | `docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md` §3 rule 17 |
+| [U] | this register: step 1 reads it; only `[M]` rows are in force (2026-09-25 ~17:05) | #4436 | #4440 | — | `.claude/skills/cop/SKILL.md` §1, `.claude/skills/cop/RULINGS.md` |
+| [U] | only rc releases, deployed to the whole fleet and measured there (5-host install receipt + infra#1057 ledger rows); no final tag or crates.io unless asked (2026-09-25) | #4434 | #4440 | — | APR-RELEASE-001 §3 rule 18, `scripts/release/check_rc_fleet_measured.sh` |
