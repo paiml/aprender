@@ -42,6 +42,7 @@ relations:
   depends_on: [ont-sigma-v1, ont-shapes-v1]
 
 shape:
+  targetClass: readme:Readme
   closed: true
   properties:
     - {path: readme:schemaVersion, minCount: 1, maxCount: 1, pattern: "^[0-9]+\\.[0-9]+$"}
