@@ -33,13 +33,16 @@
 #      changes no field still counts as changed — check_roadmap_diff_additive.sh
 #      already refuses that shape, so this gate must not be the one place it
 #      reads as "nothing happened".
-#   2. THE AGGREGATE MUST BE REGENERATED. Whenever either side of the pair
-#      changes, head's roadmap.yaml must equal aggregate(head's entries/).
+#   2. A DIFF THAT WRITES THE AGGREGATE WRITES ALL OF IT. When the diff changes
+#      roadmap.yaml, head's roadmap.yaml must equal aggregate(head's entries/).
+#      A fragment-only diff leaves the aggregate LAGGING, by design: P4 (#4417)
+#      forbids a PR to write roadmap.yaml at all (check_pr_generated_write_set.sh)
+#      and main regenerates it.
 #      That placement rule is NOT restated here: it is
 #      `roadmap_fragments.py aggregate --check`, the same function `make
 #      roadmap-aggregate` writes with, so the guard and the generator cannot
-#      drift. A fragment landed without `make roadmap-aggregate` is drift and is
-#      named as such.
+#      drift. A PARTIAL regeneration (the aggregate written, a fragment missed)
+#      is drift and is named as such.
 #
 # WHAT IS STILL ALLOWED: the aggregate changing AS AN AGGREGATE — every entry
 # that moved has its fragment in the same diff and the file equals
@@ -121,9 +124,10 @@ remedy() {
     printf '        python3 scripts/lib/roadmap_fragments.py adopt <ID>\n'
     printf '  * an EXISTING entry — adopt it once, then edit %s/<ID>.yaml\n' "$ENTRIES_DIR"
     printf '    (a fragment SUPERSEDES the base entry of the same id).\n'
-    printf '  * then regenerate and stage BOTH sides:\n'
-    printf '        make roadmap-aggregate\n'
-    printf '        git add %s/<ID>.yaml %s\n' "$ENTRIES_DIR" "$ROADMAP_FILE"
+    printf '  * then stage the FRAGMENT ONLY and restore the aggregate (P4, #4417 --\n'
+    printf '    main regenerates it; check_pr_generated_write_set.sh refuses a PR that writes it):\n'
+    printf '        git add %s/<ID>.yaml\n' "$ENTRIES_DIR"
+    printf '        git checkout <base> -- %s\n' "$ROADMAP_FILE"
     printf '  * an id that is not filename-safe (prose, or carrying a path separator) has NO\n'
     printf '    fragment path: it stays in the base and is immutable (RMFR-OB-005).\n'
 }
@@ -214,11 +218,23 @@ judge() {
         fi
     done < <(printf '%s\n' "$out")
 
-    # --- RULE 2: the aggregate at head is REGENERATED, not drifting ----------
-    out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
-    rc=$?
+    # --- RULE 2: a diff that WRITES the aggregate writes all of it ---------
+    # P4 (#4417): a PR writes only its fragment; main regenerates roadmap.yaml
+    # (check_pr_generated_write_set.sh refuses the PR that writes it). So a
+    # fragment-only diff leaves the aggregate LAGGING by design, and that lag
+    # is not drift. Only a diff that does write roadmap.yaml (the regen PR, or
+    # an allowlisted in-flight batch) must leave it == aggregate(fragments).
+    local lag=0
+    if [ "$roadmap_changed" = 0 ]; then
+        lag=1 out="" rc=0
+    else
+        out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
+        rc=$?
+    fi
     rm -rf -- "${td:?}"
-    if [ "$rc" = 0 ]; then
+    if [ "$lag" = 1 ]; then
+        printf 'ok    LAG   %s untouched; the fragment lands alone and main regenerates the aggregate (P4, #4417)\n' "$ROADMAP_FILE"
+    elif [ "$rc" = 0 ]; then
         printf 'ok    %s == aggregate(%s/) at head\n' "$ROADMAP_FILE" "$ENTRIES_DIR"
     else
         violations=$((violations + 1))
@@ -234,7 +250,7 @@ judge() {
         remedy
         return 1
     fi
-    printf 'PASS  %s: %s changed entry/entries, each with its fragment; the aggregate is regenerated\n' "$PROG" "$checked"
+    printf 'PASS  %s: %s changed entry/entries, each with its fragment; the aggregate is regenerated or left to main\n' "$PROG" "$checked"
     return 0
 }
 
@@ -329,6 +345,13 @@ self_test() {
         printf -- '- id: PMAT-200\n  title: fragment only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
         commit_all "$1"
     }
+    # Writes the aggregate for PMAT-200 but lands PMAT-400's fragment after it.
+    b_partial_regen() {
+        printf -- '- id: PMAT-200\n  title: regenerated\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        printf -- '- id: PMAT-400\n  title: not regenerated\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-400.yaml"
+        commit_all "$1"
+    }
     b_unrelated() {
         printf 'a docs-only change\n' >>"$1/docs/roadmaps/README.md"
         commit_all "$1"
@@ -406,8 +429,10 @@ PY
         1 'ADDED    PMAT-200 in docs/roadmaps/roadmap.yaml with NO change' b_monolith_only
     row 'fragment + regenerated aggregate, in sync -> PASS' \
         0 'ok    ADDED    PMAT-200 — docs/roadmaps/entries/PMAT-200.yaml changes in the same diff' b_fragment_and_aggregate
-    row 'fragment added, aggregate NOT regenerated -> REFUSE, naming the drift' \
-        1 'FAIL  DRIFT' b_fragment_no_regen
+    row 'P4: fragment added, aggregate untouched -> PASS, the aggregate LAGS (main regenerates)' \
+        0 'ok    LAG' b_fragment_no_regen
+    row 'a diff that WRITES the aggregate but only part of it -> REFUSE, naming the drift' \
+        1 'FAIL  DRIFT' b_partial_regen
     row 'a docs-only diff touching neither side -> PASS (no false positive)' \
         0 'nothing to judge' b_unrelated
     row 'the aggregate RE-SERIALISED with no content change -> REFUSE' \
