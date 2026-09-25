@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check_ont_complete.sh -- G-ONT, a MUST-RED gate of 0.70.0 (#4045): ONT-001 is FINISHED, on both sides.
+# ont_complete_gate.sh -- G-ONT, a MUST-RED gate of 0.70.0 (#4045): ONT-001 is FINISHED, on both sides.
 #
 # Operator, verbatim via the release cop (2026-09-23): "the ontology spec MUST be finished in .7". Every ONT row of
 # infra/docs/specifications/paiml-ontology.md is closed with its done_when MEASURED:
@@ -10,11 +10,11 @@
 #   3. EVERY scripts/ont/done_when/ONT-*.sh probe exits 0 against the release commit (WT) and the pinned infra
 #      (WT_INFRA). A probe that exits 2 DECLINED: not done, RED, never skipped.
 #
-#   bash scripts/check_ont_complete.sh --infra <infra checkout> --pin <infra sha> [--wt <aprender tree>] [--ledger <f>]
-#   bash scripts/check_ont_complete.sh --self-test
+#   bash scripts/release/ont_complete_gate.sh --infra <infra checkout> --pin <infra sha> [--wt <aprender tree>] [--ledger <f>]
+#   bash scripts/release/ont_complete_gate.sh --self-test
 # exit 0 = ONT-001 complete . 1 = not complete (every open row named) . 2 = usage / vacuous
 set -uo pipefail
-cd "$(dirname "$0")/.." || exit 2
+cd "$(dirname "$0")/../.." || exit 2
 INFRA=""; PIN=""; WT="$(pwd)"; LEDGER=""; SELF_TEST=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -131,7 +131,7 @@ no-probe-pass~no-probes-declines~  [ "$n" -gt 0 ] || { echo "decline: no scripts
 MUT
     if [ -n "$M" ] && [ "$M" != "/" ] && [ -d "$M" ]; then rm -rf -- "$M"; fi
   fi
-  echo "check_ont_complete self-test: $([ "$tbad" = 0 ] && echo PASS || echo FAIL)"
+  echo "ont_complete_gate self-test: $([ "$tbad" = 0 ] && echo PASS || echo FAIL)"
   exit "$tbad"
 fi
 
