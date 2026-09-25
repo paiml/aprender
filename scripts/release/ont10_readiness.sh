@@ -76,8 +76,15 @@ if mkdir -p "$AP" 2>/dev/null; then
     python3 - "$AP/ont10-readiness.json" "$V" "$HEAD_SHA" "$previous_pin" "$pkgid_version" "$ready" "${missing[@]}" <<'PY'
 import json, sys
 out, version, head, pin, pkgid, ready, *missing = sys.argv[1:]
+# every item, by name: true only when it was measured green (its absence from `missing`)
+ITEMS = ("pkgid", "pin_below", "in_order", "dryrun_receipt", "cleanroom", "no_publish_in_ci", "oracle")
+failed = {m.split(":", 1)[0] for m in missing}
+unknown = failed - set(ITEMS)
+if unknown:
+    sys.exit("readiness item(s) not in ITEMS: %s" % sorted(unknown))
 json.dump({"row": "ONT-10", "crate": "aprender-contracts-cli", "version": version, "head": head,
-           "previous_pin": pin, "pkgid": pkgid, "ready": ready == "true", "missing": missing},
+           "previous_pin": pin, "pkgid": pkgid, "ready": ready == "true",
+           "items": {i: i not in failed for i in ITEMS}, "missing": missing},
           open(out, "w"), indent=2)
 PY
     [ "$?" = 0 ] || { echo "NOT MEASURED: could not write $AP/ont10-readiness.json" >&2; exit 3; }

@@ -123,7 +123,13 @@ make_targets_in() {
         {
             line = $0
             gsub(/\$\(MAKE\)|\$\{MAKE\}/, "make", line)
-            while (line ~ /\$\([^()]*\)/) gsub(/\$\([^()]*\)/, "SUBST", line)
+            # innermost $(...) first: its INSIDE is scanned too (`X=$(make print-floor)` calls
+            # print-floor), then it is flattened so an enclosing `make -C "$(dirname ..)" t` parses
+            while (match(line, /\$\([^()]*\)/)) {
+                inner = substr(line, RSTART + 2, RLENGTH - 3)
+                line = substr(line, 1, RSTART - 1) "SUBST" substr(line, RSTART + RLENGTH)
+                line = line ";" inner
+            }
             gsub(/["\047]/, " ", line)
             ns = split(line, seg, /[;&|)`]/)
             for (k = 1; k <= ns; k++) {
@@ -152,7 +158,8 @@ make_targets_in() {
 reach() {
     local root="$1" f t s changed=1 guard=0
     local -A seen_f=() seen_t=()
-    local queue_f=() new_t
+    local queue_f=() new_t mks
+    mks=$(makefiles_of "$root")
     while IFS= read -r f; do [ -n "$f" ] && queue_f+=("$f"); done < <(workflow_files "$root")
     local recipes=""
     while [ "$changed" = 1 ] && [ "$guard" -lt 50 ]; do
@@ -169,7 +176,7 @@ reach() {
             [ -f "$root/$s" ] && [ -z "${seen_f[$root/$s]:-}" ] && queue_f+=("$root/$s")
         done < <(printf '%s' "$texts" | scripts_run_in)
         # make targets named by newly read text, plus their prerequisites, to a fixed point
-        [ -f "$root/Makefile" ] || continue
+        [ -n "$mks" ] || continue
         new_t=$(printf '%s' "$texts" | uncommented | make_targets_in | sort -u)
         while [ -n "$new_t" ]; do
             local next=""
@@ -202,8 +209,16 @@ publish_lines() {
             if (rest ~ /^#/) next
             sub(/[ \t]+#.*$/, "", rest)
             if (rest !~ re) next
-            if (rest ~ /--dry-run/) next
-            if (rest ~ /^(echo|printf)[ \t]/) next
+            # judge each command, not the line: `cargo publish --dry-run; cargo publish` and
+            # `echo x && cargo publish` both publish. Splitting inside a quoted string over-reaches (safe).
+            n = split(rest, seg, /;|&&|\|\||\||`|\$\(/)
+            hit = 0
+            for (k = 1; k <= n; k++) {
+                c = seg[k]; sub(/^[ \t({]+/, "", c); sub(/^(then|do|else|if|!)[ \t]+/, "", c)
+                if (c !~ re || c ~ /--dry-run/ || c ~ /^(echo|printf)[ \t]/) continue
+                hit = 1
+            }
+            if (!hit) next
             match($0, /^[^:]*:[0-9]+:/)
             print substr($0, 1, RLENGTH - 1)
         }'
@@ -211,7 +226,9 @@ publish_lines() {
 
 publish_lines_py() {  # file:line of an argv publish that is not a comment and not --dry-run
     awk '{ rest = $0; sub(/^[^:]*:[0-9]+:/, "", rest); sub(/^[ \t]+/, "", rest)
-           if (rest ~ /^#/ || rest ~ /--dry-run/) next
+           if (rest ~ /^#/) next
+           # --dry-run excuses the call only inside the same argv list, after "publish"
+           if (rest ~ /[Pp][Uu][Bb][Ll][Ii][Ss][Hh]["\047][^]]*["\047]--dry-run["\047]/) next
            match($0, /^[^:]*:[0-9]+:/); print substr($0, 1, RLENGTH - 1) }'
 }
 
@@ -337,6 +354,14 @@ self_test() {
     fx unreadable .github/workflows/r.yml "$WF      - run: bash scripts/p.sh\n"
     fx unreadable scripts/p.sh '#!/bin/sh\ncargo publish -p x\n'
     chmod 000 "$d/unreadable/scripts/p.sh"
+    fx cmdsubst .github/workflows/r.yml "$WF      - run: V=\"\$(make -s print-v 2>/dev/null || echo unknown)\"\n"
+    fx cmdsubst Makefile 'print-v:\n\tcargo publish -p x\n'
+    fx lowermk .github/workflows/r.yml "$WF      - run: make release\n"
+    fx lowermk makefile 'release:\n\tcargo publish -p x\n'
+    fx drythenreal .github/workflows/r.yml "$WF      - run: cargo publish --dry-run -p x; cargo publish -p x\n"
+    fx echothenreal .github/workflows/r.yml "$WF      - run: echo go && cargo publish -p x\n"
+    fx pydry .github/workflows/r.yml "$WF      - run: python3 scripts/p.py\n"
+    fx pydry scripts/p.py 'import subprocess\nsubprocess.run(["cargo", "publish", "--dry-run"])\nsubprocess.run(["cargo", "publish"]); note = "--dry-run"\n'
     mkdir -p "$d/empty"
     row() {  # row <want PASS|FAIL> <label> <cmd...>
         local want=$1 label=$2; shift 2
@@ -370,6 +395,11 @@ self_test() {
     if [ "$(id -u)" != 0 ]; then
         row FAIL 'a reached file it cannot read is unmeasured, not clean' gate_no_publish_in_ci "$d/unreadable"
     fi
+    row FAIL 'X=$(make -s print-v): a make call inside a command substitution' gate_no_publish_in_ci "$d/cmdsubst"
+    row FAIL 'a lowercase makefile' gate_no_publish_in_ci "$d/lowermk"
+    row FAIL 'cargo publish --dry-run; cargo publish' gate_no_publish_in_ci "$d/drythenreal"
+    row FAIL 'echo go && cargo publish' gate_no_publish_in_ci "$d/echothenreal"
+    row FAIL 'python: a real argv publish next to an unrelated "--dry-run" string' gate_no_publish_in_ci "$d/pydry"
     row FAIL 'no workflow files: a gate over nothing' gate_no_publish_in_ci "$d/empty"
     row FAIL 'a missing root' gate_no_publish_in_ci "$d/no-such-dir"
     row FAIL 'no-registry-secret on a missing tool' require_tool no-registry-secret gh-does-not-exist
