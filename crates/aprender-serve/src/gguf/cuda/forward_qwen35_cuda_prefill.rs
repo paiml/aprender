@@ -541,6 +541,30 @@ impl Qwen35CudaModel<'_> {
         bytes
     }
 
+    /// #4450: free the fp16 weight cache [`Self::warm_prefill_weights`] filled and
+    /// disarm the f16 prefill GEMM, so prefill runs on the f32 path from here on.
+    /// Returns the bytes released (0 = the cache was not armed, nothing freed).
+    ///
+    /// The prewarm leaves 1 GiB beside the cache; a session whose decode state then
+    /// grows to a long turn is left with less than the fixed floor of any batched
+    /// plan, and every later prompt prefilled one token at a time. The cache is a
+    /// speed-up, so memory pressure gives it back rather than batching.
+    pub(crate) fn release_prefill_f16(&mut self) -> usize {
+        if !self.executor.qwen35_prefill_f16() {
+            return 0;
+        }
+        let (ptrs, bytes): (Vec<u64>, usize) =
+            self.projection_weights()
+                .iter()
+                .fold((Vec::new(), 0), |(mut ptrs, bytes), w| {
+                    ptrs.push(w.ptr);
+                    (ptrs, bytes + w.n as usize * w.k as usize * 2)
+                });
+        self.executor.drop_fp16_weights(&ptrs);
+        self.executor.set_qwen35_prefill_f16(false);
+        bytes
+    }
+
     fn alloc_prefill(&self, rows: usize, total_positions: usize) -> Result<PrefillBuffers> {
         let d = self.dims;
         let attention = self.prefill_attention_mode();

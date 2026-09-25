@@ -469,7 +469,22 @@ impl Qwen35Forward {
             return Ok(None);
         }
         let end = pos0 + new.len();
-        if let Err(why) = fit_prefill_plan(qwen, &mut gpu.model, end) {
+        let fit = fit_or_release(
+            &mut gpu.model,
+            |model| fit_prefill_plan(qwen, model, end),
+            crate::gguf::cuda::Qwen35CudaModel::release_prefill_f16,
+        );
+        if let Ok(freed) = &fit {
+            if *freed > 0 {
+                eprintln!(
+                    "[qwen35] batched prefill: {} tokens at position {pos0} did not fit beside the fp16 \
+                     prefill weights; released them ({} MiB) and prefill uses f32 from here on (#4450)",
+                    new.len(),
+                    freed >> 20
+                );
+            }
+        }
+        if let Err(why) = fit {
             eprintln!(
                 "[qwen35] batched prefill: {} tokens at position {pos0} would not fit ({why}); \
                  prefilling one token at a time on the GPU",
@@ -728,9 +743,7 @@ fn fit_prefill_plan(
             crate::gguf::cuda::UNIFIED_PREFILL_CHUNK_ROWS,
             crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS,
         ],
-        crate::capacity::DeviceMemory::Discrete { .. } => {
-            &[crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS]
-        },
+        crate::capacity::DeviceMemory::Discrete { .. } => &DISCRETE_PREFILL_ROWS,
     };
     let attentions = crate::gguf::cuda::Qwen35CudaModel::prefill_attention_candidates_for(
         qwen,
@@ -750,6 +763,38 @@ fn fit_prefill_plan(
     model.set_prefill_attention(attention);
     model.set_prefill_chunk_rows(rows);
     Ok(())
+}
+
+/// Chunk rows a mid-session prefill tries on a discrete GPU, largest first (#4450):
+/// a plan that misses at 512 rows steps down before it gives up batching, since
+/// even 64 rows batches ~64x faster than one token at a time.
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+const DISCRETE_PREFILL_ROWS: [usize; 4] = [512, 256, 128, 64];
+
+/// Fit the prefill; when it does not fit, `release` what the model can give back
+/// (the #4313 fp16 weight cache) and fit once more (#4450). `Ok(bytes released)` —
+/// 0 when the first fit took; the first `Err` when nothing was released, the
+/// second when the release did not make room either. Pure over `M`, so the retry
+/// is tested without a device.
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+fn fit_or_release<M>(
+    model: &mut M,
+    mut fit: impl FnMut(&mut M) -> std::result::Result<(), String>,
+    release: impl FnOnce(&mut M) -> usize,
+) -> std::result::Result<usize, String> {
+    let Err(first) = fit(model) else {
+        return Ok(0);
+    };
+    let freed = release(model);
+    if freed == 0 {
+        return Err(first);
+    }
+    fit(model).map(|()| freed).map_err(|why| {
+        format!(
+            "{why}, after releasing {} MiB of fp16 prefill weights",
+            freed >> 20
+        )
+    })
 }
 
 /// The first `(attention, rows)`, attention-major in the order given, whose

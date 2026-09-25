@@ -451,3 +451,121 @@ fn successful_batched_prefill_returns_its_logits_unchanged() {
         Err(Step::Fatal(e)) => panic!("an Ok prefill became a fatal error: {e}"),
     }
 }
+}
+
+// #4450: the 9B at --context-length 40960 on a 24 GB RTX 4090 prewarmed 13196 MiB
+// of fp16 prefill weights, and the 32k turn then found 408 MiB free, against a
+// plan floor of ~713 MiB (512 MiB overhead + the 201 MiB dequant scratch) that no
+// row count gets under. The device is modelled by the numbers its log printed.
+
+/// A device as `try_batched_prefill` sees it: free bytes, and the fp16 cache the
+/// session could give back.
+struct Device {
+    free: u64,
+    fp16: u64,
+    fits: Vec<usize>,
+}
+
+/// The logged 9B need: 713 MiB at any row count, plus ~0.39 MiB a row (914 MiB at
+/// 512 rows under flash).
+fn need_9b(rows: usize) -> u64 {
+    713 * MIB + rows as u64 * 201 * MIB / 512
+}
+
+fn fit(d: &mut Device) -> std::result::Result<(), String> {
+    let (_, rows) = choose_prefill_plan(
+        d.free,
+        &["flash"],
+        &DISCRETE_PREFILL_ROWS,
+        |_, r| need_9b(r),
+        |a| a,
+    )?;
+    d.fits.push(rows);
+    Ok(())
+}
+
+fn release(d: &mut Device) -> usize {
+    let freed = std::mem::take(&mut d.fp16);
+    d.free += freed;
+    freed as usize
+}
+
+#[test]
+fn the_4450_turn_batches_after_the_fp16_cache_is_released() {
+    let mut d = Device {
+        free: 408 * MIB,
+        fp16: 13196 * MIB,
+        fits: vec![],
+    };
+    // RED before #4450: with nothing released the turn fits at no row count.
+    let why = fit(&mut Device {
+        free: 408 * MIB,
+        fp16: 0,
+        fits: vec![],
+    })
+    .expect_err("408 MiB is under the 713 MiB floor");
+    assert!(
+        why.contains("flash at 64 rows"),
+        "every step-down was tried: {why}"
+    );
+    assert_eq!(
+        fit_or_release(&mut d, fit, release),
+        Ok(13196 * MIB as usize)
+    );
+    assert_eq!(d.fits, [512], "released, it batches at the full chunk");
+    assert_eq!(d.fp16, 0);
+    // The next turn fits outright and releases nothing more.
+    assert_eq!(fit_or_release(&mut d, fit, release), Ok(0));
+}
+
+#[test]
+fn a_fit_that_takes_first_time_releases_nothing() {
+    let mut d = Device {
+        free: 1 << 40,
+        fp16: 13196 * MIB,
+        fits: vec![],
+    };
+    assert_eq!(fit_or_release(&mut d, fit, release), Ok(0));
+    assert_eq!(
+        d.fp16,
+        13196 * MIB,
+        "a prompt that fits keeps the fp16 speed-up"
+    );
+}
+
+#[test]
+fn with_no_cache_to_release_the_first_refusal_stands() {
+    let mut d = Device {
+        free: 408 * MIB,
+        fp16: 0,
+        fits: vec![],
+    };
+    let why = fit_or_release(&mut d, fit, release).expect_err("nothing to give back");
+    assert!(!why.contains("after releasing"), "{why}");
+}
+
+#[test]
+fn a_release_too_small_to_help_says_so() {
+    let mut d = Device {
+        free: 100 * MIB,
+        fp16: 200 * MIB,
+        fits: vec![],
+    };
+    let why = fit_or_release(&mut d, fit, release).expect_err("300 MiB < 713 MiB");
+    assert!(
+        why.ends_with("after releasing 200 MiB of fp16 prefill weights"),
+        "{why}"
+    );
+}
+
+#[test]
+fn a_512_row_miss_steps_down_before_it_gives_up_batching() {
+    // 750 MiB: 512 rows need 914, 256 need 813, 128 need 763, 64 need 738.
+    let mut d = Device {
+        free: 750 * MIB,
+        fp16: 0,
+        fits: vec![],
+    };
+    assert_eq!(fit_or_release(&mut d, fit, release), Ok(0));
+    assert_eq!(d.fits, [64]);
+}
