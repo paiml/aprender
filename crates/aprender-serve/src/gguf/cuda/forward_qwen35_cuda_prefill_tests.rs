@@ -56,12 +56,12 @@ const FLASH_BUDGET: Budget = Budget {
 };
 
 /// #4313: the f16 projection GEMMs (fp16 weights and activations, fp32 accumulate)
-/// with f32 attention. Budgets start at the flash path's and are replaced by the
-/// measured reading x10.
+/// with f32 attention. Measured x10 on 0.8B Q4_K_M, n=64 and n=600 with splits
+/// (2026-09-25): worst cosine 0.9999995, logits rel L∞ 7.32e-4, state 1.215e-3.
 const F16_GEMM_BUDGET: Budget = Budget {
-    cosine: 0.9999,
-    logits: 2e-2,
-    state: 5e-2,
+    cosine: 0.999_995,
+    logits: 7.5e-3,
+    state: 1.25e-2,
 };
 
 fn cosine(a: &[f32], b: &[f32]) -> f64 {
