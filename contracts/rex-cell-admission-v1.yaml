@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   kind: schema
   description: |
     PROMETHEUS (PRM-001, was REX-001) REX-04 per-cell admission, spec §2.1/§7. One JSONL
@@ -21,6 +21,8 @@ equations:
     formula: "∀ c ∈ CELLS: |rows(c)| = 1 ∧ state(c) ∈ {Admitted, Refused, NotRun}"
   admitted:
     formula: "Admitted(c) ⇒ cosine(c) ≥ threshold(c) ∧ receipt_sha256(c) is 64-hex ∧ threshold_basis(c) ≠ ∅"
+  derived:
+    formula: "parity_from_receipt(R, x) = Ok(p) ⇒ n(R) ≥ x.min_positions ∧ p.cosine = min_i cos_i(R) ≥ x.threshold ∧ p.receipt_sha256 = sha256(R) ∧ sha(R).binary = x.apr_sha256 (when R carries one) ∧ sha(R).weights = x.weights_sha256 ∧ oracle(R) ∈ {llama.cpp@d1d3c3396, apr-parity-gpu-cpu}"
   s7:
     formula: "S-7 ⇔ |{c : Admitted(c)}| = 0"
 
@@ -43,3 +45,21 @@ falsification_tests:
     test_harness: "cargo test -p aprender-review-experiment --lib falsify_rca_003"
     expected_output: "exit 0"
     if_fails: "The experiment would proceed to REX-05 with no admissible cell for (A)."
+  - id: FALSIFY-RCA-004
+    name: admitted_is_derived_from_the_receipt
+    prediction: "`rex admit --parity-receipt R` fills Admitted.parity from R: the minimum cosine over R's positions (never its summary `cosine`), sha256 of R's bytes, R's oracle, and the DECLARED threshold and basis (never R's own); exactly min_positions and exactly the threshold admit"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rca_004"
+    expected_output: "exit 0"
+    if_fails: "An Admitted row would carry a hand-typed cosine or the receipt's self-chosen threshold instead of the measured worst position."
+  - id: FALSIFY-RCA-005
+    name: a_short_or_failing_receipt_does_not_admit
+    prediction: "fewer than min_positions (64, evidence/parity/thresholds.yaml, I8/CF-4 #1864) positions, exit ≠ 0, a non-passing verdict, failed > 0, any position below threshold, a missing or non-finite cosine, an undeclared oracle, an empty basis or a non-finite threshold is refused with the reason named"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rca_005"
+    expected_output: "exit 0"
+    if_fails: "A 7-position smoke check would admit a cell to the hardware ruling that parity evidence requires 64 positions for."
+  - id: FALSIFY-RCA-006
+    name: the_receipt_must_be_the_rows_binary_and_weights
+    prediction: "a passing receipt whose binary_sha256 or weights sha256 differs from the row's apr_sha256 / weights_sha256 (or is absent) is refused"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rca_006"
+    expected_output: "exit 0"
+    if_fails: "Parity measured on another build or another model would admit this cell."

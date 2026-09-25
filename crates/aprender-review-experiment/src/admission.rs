@@ -15,6 +15,10 @@ pub const SCHEME: &str = "rex-cell-admission-v1";
 /// GPU with CPU only; a llama.cpp comparison is recorded under this name.
 pub const LLAMA_CPP: &str = "llama.cpp@d1d3c3396";
 
+/// The interim oracle of §4.1 rule 1 until llama.cpp is a declared input: the
+/// released `apr parity` GPU-vs-CPU comparison (plus H1 in the analysis).
+pub const APR_GPU_CPU: &str = "apr-parity-gpu-cpu";
+
 /// One §2.1 device cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cell {
@@ -206,6 +210,26 @@ pub fn check(lines: &str, prereg_sha: &str) -> Result<Summary, Vec<String>> {
     } else {
         Err(errors)
     }
+}
+
+/// What a parity receipt must match before it admits a cell: the row's own
+/// binary and weights, the declared threshold and its basis, and the evidence
+/// floor (`min_positions` of `evidence/parity/thresholds.yaml`).
+#[derive(Debug, Clone, Copy)]
+pub struct Expect<'a> {
+    pub apr_sha256: &'a str,
+    pub weights_sha256: &'a str,
+    pub threshold: f64,
+    pub threshold_basis: &'a str,
+    pub min_positions: usize,
+}
+
+/// Derive an `Admitted` parity block from the bytes of a parity receipt.
+///
+/// # Errors
+/// Every reason the receipt cannot admit the cell.
+pub fn parity_from_receipt(_receipt: &[u8], _x: &Expect<'_>) -> Result<Parity, Vec<String>> {
+    Err(vec!["not implemented".into()])
 }
 
 #[cfg(test)]
