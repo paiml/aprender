@@ -606,11 +606,12 @@ impl Qwen35Forward {
         if have_state && positions <= self.capacity {
             return Ok(());
         }
-        let capacity = positions
-            .max(self.capacity.saturating_mul(2))
-            .max(self.min_capacity)
-            .min(self.context_length)
-            .max(positions);
+        let capacity = grown_capacity(
+            positions,
+            self.capacity,
+            self.min_capacity,
+            self.context_length,
+        );
         self.allocations += 1;
         let qwen = self.qwen;
         match &mut self.backend {
@@ -808,6 +809,32 @@ fn say(notices: &mut Vec<String>, line: String) {
 /// The loud, never-silent GPU fallback, in the one shape every hybrid path uses.
 fn fallback_line(reason: &str) -> String {
     format!("{QWEN35_GPU_FALLBACK_PREFIX}, falling back to CPU: {reason}")
+}
+
+/// The capacity a state grows to for a turn of `positions`: `min_capacity`
+/// doubled until it holds the turn (never below double the `current` one),
+/// then clamped to the declared context. #4274: the first allocation used to
+/// be exactly `positions` whenever a turn outgrew `min_capacity`, so the
+/// very next turn reallocated, which drops the checkpoint and re-prefills
+/// the whole conversation from position 0. A one-call state
+/// (`min_capacity == 0`) is sized to the call exactly.
+fn grown_capacity(
+    positions: usize,
+    current: usize,
+    min_capacity: usize,
+    context_length: usize,
+) -> usize {
+    if min_capacity == 0 {
+        return positions
+            .max(current.saturating_mul(2))
+            .min(context_length)
+            .max(positions);
+    }
+    let mut capacity = min_capacity.max(current.saturating_mul(2));
+    while capacity < positions {
+        capacity = capacity.saturating_mul(2);
+    }
+    capacity.min(context_length).max(positions)
 }
 
 #[cfg(test)]
