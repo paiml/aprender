@@ -179,49 +179,57 @@ self_test() {
     row 2 "REFUSE a shard that selects zero commands (more shards than commands)" 'selects 0 of 3' bash "$R" --run "$td/p" --shard 4/4
     row 2 "REFUSE a malformed --shard" 'must look like N/M' bash "$R" --run "$td/p" --shard x
     row 2 "REFUSE an unknown --run option" 'usage' bash "$R" --run "$td/p" --bogus
-    # ── Y2: weighted LPT plan (--weights/--preload); Σ: every command on exactly ONE shard ──
+    # ── Y2: over-partition into 3N buckets + local work-steal pool (--workers/--weights) ──
     frags "$td/w" '010-a.cmd=echo a\n' '020-b.cmd=echo b\n' '030-c.cmd=echo c\n' '040-d.cmd=echo d\n' '050-e.cmd=echo e\n'
     printf '# comment\n\n010-a.cmd\t50\n020-b.cmd\t40\n030-c.cmd\t30\n040-d.cmd\t20\n050-e.cmd\t10\n' > "$td/w.tsv"
-    # 2 shards, no preload: a->1 (50) b->2 (40) c->2 (70) d->1 (70) e->2? no: 70 = 70 ties to the LOWER index -> e->1
-    fact "--plan 2 shards: a,d,e on 1 and b,c on 2 (heaviest first, least-loaded shard, tie -> lower index)" \
-        test "$(bash "$R" --plan "$td/w" --shards 2 --weights "$td/w.tsv" | grep -v '^[LR]' | cut -f1 | tr -d '\n')" = "12211"
+    # 2 buckets: a->1 (50) b->2 (40) c->2 (70) d->1 (70) e: 70 = 70 ties to the LOWER index -> e->1
+    fact "--plan 2 buckets: a,d,e in 1 and b,c in 2 (heaviest first, least-loaded bucket, tie -> lower index)" \
+        test "$(bash "$R" --plan "$td/w" --buckets 2 --weights "$td/w.tsv" | grep -v '^[LR]' | cut -f1 | tr -d '\n')" = "12211"
     fact "  ...and the loads are 80 / 70" \
-        test "$(bash "$R" --plan "$td/w" --shards 2 --weights "$td/w.tsv" | grep '^LOAD' | cut -d' ' -f3 | tr '\n' ' ')" = "80 70 "
-    # preload 0,100 (shard 2 already carries a 100 s step): a->1 b->1 c->1 (90<100) d->2 e->1 (120=120, lower index)
-    fact "--preload 0,100 moves work off the preloaded shard: only d on 2" \
-        test "$(bash "$R" --plan "$td/w" --shards 2 --weights "$td/w.tsv" --preload 0,100 | grep -v '^[LR]' | cut -f1 | tr -d '\n')" = "11121"
-    local mm sh got
-    for mm in 2 3 4 5; do
-        got=""
-        for ((sh = 1; sh <= mm; sh++)); do
-            got+=$(bash "$R" --run "$td/w" --shard "$sh/$mm" --weights "$td/w.tsv" --preload "$(printf '0%.0s,' $(seq 2 "$mm"))7" 2>/dev/null | grep -xE '[a-e]')
-            got+=$'\n'
+        test "$(bash "$R" --plan "$td/w" --buckets 2 --weights "$td/w.tsv" | grep '^LOAD' | cut -d' ' -f3 | tr '\n' ' ')" = "80 70 "
+    local ww wt
+    for ww in 2 3 4 5; do
+        for wt in "" "$td/w.tsv"; do
+            fact "  Σ pool of $ww worker(s)${wt:+, weighted}: every command ran exactly once, output replayed in list order" \
+                test "$(bash "$R" --run "$td/w" --workers "$ww" ${wt:+--weights "$wt"} 2>/dev/null | grep -xE '[a-e]' | tr -d '\n')" = "abcde"
         done
-        fact "  Σ over $mm weighted shards: every command ran exactly once (a..e, no duplicate, none missing)" \
-            test "$(printf '%s' "$got" | grep -xE '[a-e]' | LC_ALL=C sort | tr -d '\n')" = "abcde"
     done
-    fact "--run --weights runs exactly the shard --plan assigned (b,c on 2/2)" \
-        test "$(bash "$R" --run "$td/w" --shard 2/2 --weights "$td/w.tsv" 2>/dev/null | grep -xE '[a-e]' | tr -d '\n')" = "bc"
+    row 0 "--workers 2 over 5 commands cuts 5 buckets (3N=6 capped at the command count)" '5 command\(s\) in 5 bucket\(s\) over 2 worker' bash "$R" --run "$td/w" --workers 2
+    # work-steal: bucket 1 sleeps; with 2 workers the idle one must take every
+    # other bucket. Static 2-way assignment would give it at most 3 of the 6.
+    frags "$td/ws" '010-a.cmd=sleep 2\n' '020-b.cmd=true b\n' '030-c.cmd=true c\n' '040-d.cmd=true d\n' '050-e.cmd=true e\n' '060-f.cmd=true f\n'
+    local slow
+    out=$(bash "$R" --run "$td/ws" --workers 2 2>/dev/null)
+    slow=$(sed -n 's|^bucket 1/6: worker ||p' <<< "$out")
+    fact "work-steal: while bucket 1 sleeps, the OTHER worker claims all 5 remaining buckets" \
+        test "$(grep -E '^bucket [2-6]/6: worker [0-9]+$' <<< "$out" | grep -vc " ${slow:-none}\$")" = "5"
+    # Σ belt: a worker that dies mid-bucket leaves commands with no rc -> UNKNOWN, never PASS
+    frags "$td/die" '010-a.cmd=kill -9 $PPID\n' '020-b.cmd=true b\n' '030-c.cmd=true c\n' '040-d.cmd=true d\n' '050-e.cmd=true e\n' '060-f.cmd=true f\n' '070-g.cmd=true g\n'
+    row 2 "a worker killed mid-bucket leaves the rest of its bucket UNMEASURED (rc 2), not passed" 'UNKNOWN 2 of 7' bash "$R" --run "$td/die" --workers 2
+    frags "$td/pf" '010-a.cmd=true a\n' '020-b.cmd=exit 3\n' '030-c.cmd=true c\n'
+    row 1 "a failing command in the pool is a measured FAIL (rc 1), the others still ran" 'failed; all 3 ran' bash "$R" --run "$td/pf" --workers 2
     grep -v '^050-e' "$td/w.tsv" > "$td/w4.tsv"
     fact "an unweighted fragment is planned at the MEDIAN weight (e = 30 of 20/30/40/50), not 0" \
-        test "$(bash "$R" --plan "$td/w" --shards 2 --weights "$td/w4.tsv" | grep '050-e.cmd' | cut -f2)" = "30"
+        test "$(bash "$R" --plan "$td/w" --buckets 2 --weights "$td/w4.tsv" | grep '050-e.cmd' | cut -f2)" = "30"
     printf '010-a.cmd\t50\n999-gone.cmd\t5\n' > "$td/stale.tsv"
-    row 0 "a weight naming no fragment is STALE on stderr, not a refusal" 'STALE' bash "$R" --plan "$td/w" --shards 2 --weights "$td/stale.tsv"
+    row 0 "a weight naming no fragment is STALE on stderr, not a refusal" 'STALE' bash "$R" --plan "$td/w" --buckets 2 --weights "$td/stale.tsv"
     printf '010-a.cmd 50\n' > "$td/bad.tsv"
-    row 2 "REFUSE a weight line without a TAB" 'malformed weight line' bash "$R" --plan "$td/w" --shards 2 --weights "$td/bad.tsv"
+    row 2 "REFUSE a weight line without a TAB" 'malformed weight line' bash "$R" --plan "$td/w" --buckets 2 --weights "$td/bad.tsv"
     printf '010-a.cmd\t5.5\n' > "$td/bad.tsv"
-    row 2 "REFUSE a non-integer weight" 'malformed weight line' bash "$R" --plan "$td/w" --shards 2 --weights "$td/bad.tsv"
+    row 2 "REFUSE a non-integer weight" 'malformed weight line' bash "$R" --plan "$td/w" --buckets 2 --weights "$td/bad.tsv"
     printf '010-a.cmd\t5\n010-a.cmd\t6\n' > "$td/bad.tsv"
-    row 2 "REFUSE a fragment weighted twice" 'weighted twice' bash "$R" --plan "$td/w" --shards 2 --weights "$td/bad.tsv"
+    row 2 "REFUSE a fragment weighted twice" 'weighted twice' bash "$R" --plan "$td/w" --buckets 2 --weights "$td/bad.tsv"
     printf '# nothing measured\n999-gone.cmd\t5\n' > "$td/bad.tsv"
-    row 2 "REFUSE weights that apply to no fragment (a plan from zero measurements)" 'weights none of the 5' bash "$R" --run "$td/w" --shard 1/2 --weights "$td/bad.tsv"
-    row 2 "REFUSE a missing weights file" 'no such file' bash "$R" --run "$td/w" --shard 1/2 --weights "$td/absent.tsv"
-    row 2 "REFUSE --preload with the wrong count" 'has 3 value' bash "$R" --run "$td/w" --shard 1/2 --weights "$td/w.tsv" --preload 1,2,3
-    row 2 "REFUSE a negative/non-integer --preload" 'not a non-negative integer' bash "$R" --run "$td/w" --shard 1/2 --weights "$td/w.tsv" --preload 1,-2
-    row 2 "REFUSE --preload without --weights (round-robin would silently ignore it)" 'without --weights' bash "$R" --run "$td/w" --shard 1/2 --preload 1,2
-    row 2 "REFUSE --plan without --shards" 'usage' bash "$R" --plan "$td/w" --weights "$td/w.tsv"
+    row 2 "REFUSE weights that apply to no fragment (a plan from zero measurements)" 'weights none of the 5' bash "$R" --run "$td/w" --workers 2 --weights "$td/bad.tsv"
+    row 2 "REFUSE a missing weights file" 'no such file' bash "$R" --run "$td/w" --workers 2 --weights "$td/absent.tsv"
+    row 2 "REFUSE --weights on a host shard (weights shape pool buckets, never a host)" 'without --workers' bash "$R" --run "$td/w" --shard 1/2 --weights "$td/w.tsv"
+    row 2 "REFUSE --workers stacked on --shard M>1" 'replaces host sharding' bash "$R" --run "$td/w" --shard 1/2 --workers 2
+    row 2 "REFUSE --fail-fast in a pool" 'no order in a pool' bash "$R" --run "$td/w" --workers 2 --fail-fast
+    row 2 "REFUSE a non-integer --workers" 'positive integer' bash "$R" --run "$td/w" --workers 0
+    row 2 "REFUSE --preload (weight-by-host is gone, #4424)" 'usage' bash "$R" --run "$td/w" --workers 2 --preload 1,2
+    row 2 "REFUSE --plan without --buckets" 'usage' bash "$R" --plan "$td/w" --weights "$td/w.tsv"
     fact "the in-tree weights plan the in-tree fragments with no REFUSE (rc 0)" \
-        bash "$R" --plan "$HERE/../ci/explicit-test-commands.d" --shards 3 --weights "$HERE/../ci/explicit-test-weights.tsv" > /dev/null
+        bash "$R" --plan "$HERE/../ci/explicit-test-commands.d" --buckets 9 --weights "$HERE/../ci/explicit-test-weights.tsv" > /dev/null
     # ── refusals: filename shape (must-match / must-not-match, rule 7) ───
     local bad
     for bad in '10-a.cmd' '0100-a.cmd' '010-A.cmd' '010-a_b.cmd' '010-.cmd' '010-a.txt' '010a.cmd' 'README.md' '.gitkeep' '010-a.cmd.orig'; do
