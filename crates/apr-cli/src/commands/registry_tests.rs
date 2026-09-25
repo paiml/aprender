@@ -73,6 +73,15 @@ fn falsify_ext_006_lineage_three_hop_and_cycle_refused() {
     assert!(err.to_string().contains("lineage cycle"), "{err}");
 }
 
+/// A registered model with no recorded parents is a root, not an error.
+#[test]
+fn a_registered_root_has_an_empty_ancestry() {
+    let c = chain();
+    let base = lineage_in(&c.home, &c.produced).expect("chain").nodes[2].clone();
+    let a = lineage_in(&c.home, &base).expect("root");
+    assert_eq!((a.nodes, a.edges.len()), (vec![base], 0));
+}
+
 /// An unknown target is an error, not an empty ancestry.
 #[test]
 fn an_unknown_target_is_refused() {
