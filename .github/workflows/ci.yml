@@ -140,9 +140,44 @@ jobs:
         with:
           subject-path: ${{ runner.temp }}/fat/sov.provenance/ws/${{ github.event.repository.name }}/Cargo.toml
 
+  # The GPU decision stays OFF the GPU hosts, as before #4433: an `if:` that
+  # could only be evaluated on gx10/yoga would queue the job to answer it, and
+  # a queued job has already claimed the fleet's one GB10 / one RTX 4060 (and
+  # displaced a pending job in its perf-* group). A ten-second decision on the
+  # clean-room pool, not a sixth fat job; gx10 and yoga run only on a
+  # pull_request that it says touches the GPU set, exactly as gpu-quick and
+  # cuda-unit did. scripts/tests/ci_gpu_touched_test.sh pins this shape.
+  gpu-touched:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
+    outputs:
+      gpu_touched: ${{ steps.decide.outputs.gpu_touched }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Sections
+        id: run
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'gpu-touched'
+          --results "$RUNNER_TEMP/fat/results.json"
+      - name: The decision, as this job's output
+        id: decide
+        run: |
+          set -euo pipefail
+          jq -r '"gpu_touched=" + ((."gpu-touched".outputs.gpu_touched // "0") | tostring)' \
+            "$RUNNER_TEMP/fat/results.json" | tee -a "$GITHUB_OUTPUT"
+
   gx10:
     runs-on: [self-hosted, Linux, ARM64, cuda, gx10, ephemeral, docker]
     timeout-minutes: 30
+    needs: [gpu-touched]
+    if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
     # Shared with the other gx10 perf workflows (qwen-story-daily, silicon-nightly,
     # cuda-nightly, b2-gpu): one GPU job on the box at a time.
     concurrency:
@@ -167,6 +202,8 @@ jobs:
   yoga:
     runs-on: [self-hosted, Linux, X64, cuda, yoga, ephemeral, docker]
     timeout-minutes: 50
+    needs: [gpu-touched]
+    if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
     concurrency:
       group: perf-yoga
       cancel-in-progress: false
@@ -305,7 +342,7 @@ jobs:
   gate:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 22
-    needs: [x86-main, gx10, yoga, determinism]
+    needs: [x86-main, determinism]   # as on main: the GPU jobs are advisory (68-C3 / 68-D2)
     if: always()
     steps:
       - name: Check required sections
