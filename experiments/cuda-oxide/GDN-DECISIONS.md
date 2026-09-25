@@ -11,7 +11,7 @@ that is neither a manifest nor a receipt (WrongCorpus).
 The set is every `impl Kernel` under `crates/aprender-gpu/src/kernels/gdn/`, measured at 7af9e6637, except
 `HelperProbe`, which is a test helper. `layernorm/` and `conv1d.rs` are outside the GDN set.
 
-## Decided (5 of 15)
+## Decided (6 of 15)
 
 The thresholds are cos ≥ 0.9999, max|Δ| < 1e-3 against f64, and oxide/hand ≤ 1.2, taking the worst ratio
 over the timed shapes (heads 16/32/48 for the per-head kernels, n = 2048/4096/6144 for the elementwise ones,
@@ -31,6 +31,7 @@ A receipt whose `timing` has no `"method":"cuda-graph-100"` is an eager one.
 | `SigmoidGateKernel` | `kernels/gdn/sigmoid_gate.rs` | **oxide** (`ex2`), within budget, not a win | 1.058 | 1.076 | 1.089 |
 | `CausalConv1dSiluKernel` | `kernels/gdn/causal_conv1d.rs` | **oxide** (`ex2`), within budget, not a win | 1.080 | 1.091 | 1.139 |
 | `CausalConv1dSiluSeqKernel` | `kernels/gdn/causal_conv1d_seq.rs` | **oxide** (`ex2`), at parity | 1.003 | 1.002 | 0.984 |
+| `GdnGatesKernel` | `kernels/gdn/gdn_gates.rs` | **oxide** (`ex2` + `lg2_approx_f32`) | 0.911 | 0.918 | 0.901 |
 
 **`GatedRmsNormKernel`**
 - Receipts: `evidence/kernels/gdn_gated_rmsnorm/{noah-Lambda-Vector,yoga,gx10-a5b5}.json`, 2 entries per
@@ -164,7 +165,24 @@ A receipt whose `timing` has no `"method":"cuda-graph-100"` is an eager one.
     `apr.cur` both times.
   - Lambda ran with no live foreign process. Its only entry is the phantom context above.
 
-## Undecided: RED, no receipt (10 of 15)
+**`GdnGatesKernel`**
+
+- One thread per head: `dt = softplus(alpha + dt_bias) * a` (threshold 20) and `beta = sigmoid(beta_raw)`.
+  Six pointer params in the hand PTX; the oxide port takes twelve (slice ptr + len each), which costs nothing
+  measurable at this size.
+- Variant B needs `cuda_device::float::lg2_approx_f32` explicitly. `f32::log2` lowers to libdevice's exact
+  `log2f`, an inlined ~12-FMA polynomial, not `lg2.approx.f32`. With the intrinsic, B's PTX has the hand
+  kernel's 2 × `ex2.approx.f32` + 1 × `lg2.approx.f32`. The sigmoid's `1 / y` lowers to `rcp.rn.f32`, where
+  the hand kernel has `div.rn.f32`. Both round correctly, so the values match.
+- Variant A (`exp`/`ln`) is GO too (worst 0.967, yoga) and uses 20 registers on gx10 against the hand's 14.
+  B uses 15 on every host.
+- Parity is exact to within 7.6e-6 at heads 1/16/48/1000, including the softplus branch on both sides of 20.
+- Receipts are at 125ede286 on a clean tree, with the alternating-order 3-round median timing and the
+  `phantom_gpu_ctx` split from row 5. yoga and gx10 ran 3 times each, and all 18 rows per host are GO. The
+  committed receipt is the fixed run 3, with no foreign GPU process (gx10's run 1 listed `apr.cur`). Lambda
+  was one run, with only the phantom context (pid 3650689).
+
+## Undecided: RED, no receipt (9 of 15)
 
 Each row needs an O-1-style port: an oxide `#[kernel]` beside the hand PTX, an f64 CPU reference, a
 `receipt.sh` run on lambda, yoga and gx10, and a manifest under `evidence/kernels/`, with
@@ -172,7 +190,6 @@ Each row needs an O-1-style port: an oxide `#[kernel]` beside the hand PTX, an f
 
 | kernel | shipped PTX |
 |---|---|
-| `GdnGatesKernel` | `kernels/gdn/gdn_gates.rs` |
 | `GdnGatesRowsKernel` | `kernels/gdn/rows.rs` |
 | `PerHeadL2NormRowsKernel` | `kernels/gdn/rows.rs` |
 | `PartialNeoxRopeKernel` | `kernels/gdn/partial_rope.rs` |

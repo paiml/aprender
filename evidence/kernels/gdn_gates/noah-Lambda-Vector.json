@@ -1,0 +1,83 @@
+{
+  "schema": "apr-kernel-receipt/v1",
+  "kernel": "gdn_gates",
+  "issue": 3522,
+  "receipts": [
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_gates",
+      "variant": "exp",
+      "entry": "gdn_gates_exp",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "block": 256,
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 9.537e-07,
+        "cos_floor": 0.9999,
+        "maxdiff_ceiling": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 0.983,
+        "handptx_us": 1.034,
+        "ratio": 0.9505,
+        "worst_n": 16,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 1.0437,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 16,
+        "handptx": 16
+      },
+      "host": "noah-Lambda-Vector",
+      "sha": "125ede286f15629771e749000e9b2d71422c80bd",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "580.119.02, NVIDIA GeForce RTX 4090",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": "3650689, [Not Found], 936 MiB;"
+    },
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_gates",
+      "variant": "ex2",
+      "entry": "gdn_gates_ex2",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "block": 256,
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 7.629e-06,
+        "cos_floor": 0.9999,
+        "maxdiff_ceiling": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 0.942,
+        "handptx_us": 1.034,
+        "ratio": 0.9109,
+        "worst_n": 48,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 1.0474,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 15,
+        "handptx": 16
+      },
+      "host": "noah-Lambda-Vector",
+      "sha": "125ede286f15629771e749000e9b2d71422c80bd",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "580.119.02, NVIDIA GeForce RTX 4090",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": "3650689, [Not Found], 936 MiB;"
+    }
+  ]
+}
