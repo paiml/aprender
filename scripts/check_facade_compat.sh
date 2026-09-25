@@ -179,6 +179,8 @@ if [ "${1:-}" = "--self-test" ]; then
     # shared. That is what makes the mutation proof transfer to every caller at
     # once: break the regex and THIS self-test turns red too.
     cargo_classify_selftest || fails=1
+    # R5's #2615 arm: the ancestor-[patch] finder, its own table.
+    ancestor_cargo_patch_selftest || fails=1
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
     printf '\nSELF-TEST PASSED (8/8 structural + classifier table above)\n'
@@ -214,6 +216,17 @@ python3 "$FACTS" "$ROOT_MD" "$FAC_MD" || rc=1
 # lock and the manifests disagree, in about a second, with no build.
 if ( cd "$FACADE_WS" && cargo metadata --format-version 1 --locked ) > "$LOCKLOG" 2>&1; then
     printf 'ok    R5 crates/facades/Cargo.lock matches the facade manifests (--locked)\n'
+elif grep -q 'was not used in the crate graph' "$LOCKLOG" \
+        && PATCHCFG="$( ancestor_cargo_patch "$FACADE_WS" )"; then
+    # #2615: an ancestor dev config's [patch.crates-io] reaches this separate
+    # workspace, and --locked wants [[patch.unused]] stanzas. Not a stale lock.
+    printf 'ENV   R5 NOT measured: cargo loaded a [patch] table from host config (#2615):\n'
+    sed 's/^/      | /' <<< "$PATCHCFG"
+    printf '      cargo reads every ancestor .cargo/config.toml, so those patches reach\n'
+    printf '      crates/facades and --locked wants [[patch.unused]] lines in its lock.\n'
+    printf '      Do NOT regenerate or commit that rewrite. Re-run from a checkout with no\n'
+    printf '      such ancestor (a worktree elsewhere) or read CI.\n'
+    rc=1
 elif [ "$( classify_cargo_failure "$LOCKLOG" )" = 'ENV' ]; then
     report_cargo_env_failure "$LOCKLOG" 'R5 (facade lockfile currency)'
     rc=1

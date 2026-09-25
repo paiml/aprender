@@ -42,6 +42,8 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# ancestor_cargo_patch (#2615) lives with the other cargo-environment helpers.
+. "${REPO_ROOT}/scripts/cargo_classify.sh" || exit 1
 
 # The facade manifests whose `upstream` pin tracks the aprender version. Derived,
 # not listed: a fourth facade added later is picked up without editing this file,
@@ -179,6 +181,10 @@ if [ "${1:-}" = "--check" ]; then
         printf 'ok    crates/facades/Cargo.lock matches its manifests (--locked)\n'
     else
         printf 'FAIL  crates/facades/Cargo.lock is stale\n'; rc=1
+        if pc="$( ancestor_cargo_patch "$REPO_ROOT/crates/facades" )"; then
+            printf '      ...or NOT measured: host config carries [patch] (#2615): %s\n' "$pc"
+            printf '      Re-check from a checkout with no such ancestor before believing it.\n'
+        fi
     fi
     exit "$rc"
 fi
@@ -209,6 +215,15 @@ printf 'rewrote %s facade upstream pin(s)\n' "$N"
 if [ "${N:-0}" -lt 1 ]; then
     printf 'FAIL (vacuity): no facade upstream pin matched. The REWRITE is broken,\n' >&2
     printf '      not the tree -- crates/facades still needs bumping by hand.\n' >&2
+    exit 1
+fi
+
+# #2615: a [patch] in an ancestor .cargo/config.toml reaches crates/facades, so
+# regenerating here would write [[patch.unused]] churn into a tracked lock.
+if pc="$( ancestor_cargo_patch "$REPO_ROOT/crates/facades" )"; then
+    printf 'FAIL  refusing to regenerate crates/facades/Cargo.lock: host config carries\n' >&2
+    printf '      [patch] (#2615): %s\n' "$pc" >&2
+    printf '      Bump from a checkout with no such ancestor (e.g. a worktree elsewhere).\n' >&2
     exit 1
 fi
 

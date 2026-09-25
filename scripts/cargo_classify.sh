@@ -143,6 +143,69 @@ report_cargo_env_failure() {
     sed 's/^/      | /' "$log" 2>/dev/null
 }
 
+# ancestor_cargo_patch DIR -> prints every cargo config file cargo would load
+# for a run in DIR that carries a [patch.*] table; rc 0 if any, 1 if none.
+# #2615: cargo reads EVERY ancestor .cargo/config.toml (and CARGO_HOME's), so a
+# gitignored dev config holding [patch.crates-io] above a checkout applies to
+# crates/facades too. `--locked` then fails wanting [[patch.unused]] stanzas:
+# host config, not a stale lock, and regenerating would commit that churn.
+ancestor_cargo_patch() {
+    local d f found=1 h="${CARGO_HOME:-$HOME/.cargo}"
+    d="$( cd "${1:-.}" 2>/dev/null && pwd -P )" || return 1
+    while :; do
+        for f in "$d/.cargo/config.toml" "$d/.cargo/config"; do
+            if [ -f "$f" ] && grep -qE '^[[:space:]]*\[patch\.' "$f"; then
+                printf '%s\n' "$f"
+                found=0
+            fi
+        done
+        [ "$d" = / ] && break
+        d="$( dirname "$d" )"
+    done
+    for f in "$h/config.toml" "$h/config"; do
+        if [ -f "$f" ] && grep -qE '^[[:space:]]*\[patch\.' "$f"; then
+            printf '%s\n' "$f"
+            found=0
+        fi
+    done
+    return "$found"
+}
+
+# ancestor_cargo_patch_selftest -> rc 0 / rc 1. Its own table: a different
+# surface from the classifier, so the classifier's green does not transfer.
+ancestor_cargo_patch_selftest() {
+    local t fails=0 got
+    t="$( mktemp -d )" || return 1
+    mkdir -p "$t/home" "$t/a/.cargo" "$t/a/b/c" "$t/n/.cargo" "$t/n/m" "$t/k/.cargo" "$t/k/j"
+    printf '[patch.crates-io]\nfoo = { path = "../foo" }\n' > "$t/a/.cargo/config.toml"
+    printf '# [patch.crates-io] is off here\n[profile.release]\nlto = true\n' > "$t/n/.cargo/config.toml"
+    printf '  [patch."https://example.invalid/x"]\n' > "$t/k/.cargo/config"
+    got="$( CARGO_HOME="$t/home" ancestor_cargo_patch "$t/a/b/c" )"
+    if [ "$got" = "$( cd "$t/a" && pwd -P )/.cargo/config.toml" ]; then
+        printf 'ok    P1 a [patch.crates-io] two levels up is found\n'
+    else
+        printf 'FAIL  P1 ancestor patch two levels up not found: [%s]\n' "$got"; fails=1
+    fi
+    if got="$( CARGO_HOME="$t/home" ancestor_cargo_patch "$t/n/m" )"; then
+        printf 'FAIL  P2 a commented [patch] and a [profile] table were reported: [%s]\n' "$got"; fails=1
+    else
+        printf 'ok    P2 a commented [patch] line and a [profile] table are not a patch\n'
+    fi
+    if CARGO_HOME="$t/home" ancestor_cargo_patch "$t/k/j" > /dev/null; then
+        printf 'ok    P3 an indented [patch."<git url>"] in legacy .cargo/config is found\n'
+    else
+        printf 'FAIL  P3 legacy .cargo/config [patch."<url>"] missed\n'; fails=1
+    fi
+    printf '[patch.crates-io]\n' > "$t/home/config.toml"
+    if CARGO_HOME="$t/home" ancestor_cargo_patch "$t/n/m" > /dev/null; then
+        printf 'ok    P4 a [patch] in CARGO_HOME/config.toml is found\n'
+    else
+        printf 'FAIL  P4 CARGO_HOME patch missed\n'; fails=1
+    fi
+    rm -rf -- "${t:?}"
+    return "$fails"
+}
+
 # cargo_classify_selftest -> rc 0 / rc 1
 # The must-match / must-not-match table. Callers run this inside their OWN
 # --self-test: extending a guard's scope requires re-mutating in the new scope,
