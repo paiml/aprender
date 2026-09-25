@@ -29,6 +29,9 @@ pub mod fetch;
 pub mod install;
 pub mod policy;
 
+#[cfg(test)]
+mod all_bins_tests;
+
 use decide::{Candidate, Current, Decision};
 use fetch::Net;
 use policy::Installs;
@@ -119,6 +122,9 @@ fn user_agent(p: &Product) -> String {
 pub fn check(net: &dyn Net, p: &Product, target: &str) -> Result<Decision, String> {
     let release = fetch::latest_release(net, p, target)?;
     let nightly = fetch::nightly(net, p, target)?;
+    if release.is_none() && nightly.is_none() {
+        return Ok(Decision::Unpublished);
+    }
     let cur = Current {
         version: p.version.to_string(),
         build_sha: p.build_sha.map(str::to_string),
@@ -138,7 +144,7 @@ pub fn refresh(net: &dyn Net, p: &Product, target: &str, path: &Path, now: u64) 
     let old = cache::load(path);
     let (available, error) = match check(net, p, target) {
         Ok(Decision::Available(c)) => (Some(c), None),
-        Ok(Decision::UpToDate) => (None, None),
+        Ok(Decision::UpToDate | Decision::Unpublished) => (None, None),
         Err(e) => (old.and_then(|c| c.available), Some(e)),
     };
     let c = cache::Cache {
@@ -241,6 +247,15 @@ pub fn update_with(
             return (0, vec![format!("{} {} is up to date", p.bin, p.version)])
         }
         Ok(Decision::Available(c)) => c,
+        Ok(Decision::Unpublished) => {
+            return (
+                0,
+                vec![format!(
+                    "{} {}: no published build for {target}; nothing to update from",
+                    p.bin, p.version
+                )],
+            )
+        }
         Err(e) => return (1, vec![format!("{}: update check failed: {e}", p.bin)]),
     };
     let mut out = vec![format!(
@@ -378,6 +393,41 @@ pub fn update_main(p: &Product, args: &[String]) -> i32 {
     }
 }
 
+/// The whole wiring for one binary: `<bin> update …` is dispatched to
+/// [`update_main`] and exits; anything else runs [`startup`] and returns, so
+/// the binary's own `main` continues. Call it as the first statement of
+/// `main` — through [`hook!`] unless the binary needs a custom [`Product`].
+pub fn entry(p: &Product) {
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).is_some_and(|a| a == "update") {
+        std::process::exit(update_main(p, &args[2..]));
+    }
+    startup(p, &args);
+}
+
+/// `sovereign_update::hook!("bin")` — [`entry`] for an aprender binary, with
+/// the CALLER's `CARGO_PKG_VERSION` (the macro expands in the caller's crate).
+/// Without a release-asset template the binary is checked against the green
+/// nightly manifest only; while that carries no entry for it, `update` says
+/// "no published build" rather than "up to date" (EPIC #4232).
+#[macro_export]
+macro_rules! hook {
+    ($bin:literal) => {
+        $crate::hook!($bin, None)
+    };
+    ($bin:literal, $asset:expr) => {{
+        const PRODUCT: $crate::Product = $crate::Product {
+            bin: $bin,
+            repo: "paiml/aprender",
+            version: env!("CARGO_PKG_VERSION"),
+            build_sha: None,
+            release_asset: $asset,
+            nightly: true,
+        };
+        $crate::entry(&PRODUCT);
+    }};
+}
+
 #[cfg(test)]
 #[allow(clippy::disallowed_methods)] // serde_json::json! expands to Result::unwrap
 mod tests {
@@ -409,6 +459,38 @@ mod tests {
         let n = format!("pv-{tag}-{T}.tar.gz");
         let body = serde_json::json!([{"tag_name": tag, "prerelease": false, "draft": false, "assets": [{"name": n, "browser_download_url": format!("https://dl/{n}")}]}]);
         HashMap::from([(LATEST.to_string(), serde_json::to_vec(&body).expect("json"))])
+    }
+
+    #[test]
+    fn a_binary_nothing_publishes_is_unpublished_not_up_to_date() {
+        let exe = Path::new("/nonexistent/pv");
+        let none = Product {
+            release_asset: None,
+            nightly: false,
+            ..P
+        };
+        // No channel at all, and a channel that carries no asset for this bin:
+        // both are Unpublished, never a claim of "up to date" (#4232).
+        for (p, net) in [(&none, HashMap::new()), (&P, HashMap::new())] {
+            assert_eq!(check(&Fake(net, false), p, T), Ok(Decision::Unpublished));
+        }
+        let (c, o) = update_with(
+            &Fake(HashMap::new(), false),
+            &P,
+            T,
+            &Installs::User,
+            exe,
+            true,
+        );
+        assert_eq!(
+            (c, o[0].as_str()),
+            (0, "pv 0.69.0: no published build for x86_64-unknown-linux-gnu; nothing to update from")
+        );
+        // Control: a published release at our version is still "up to date".
+        assert_eq!(
+            check(&Fake(with_release("v0.69.0"), false), &P, T),
+            Ok(Decision::UpToDate)
+        );
     }
 
     #[test]
@@ -480,8 +562,11 @@ mod tests {
         );
         assert_eq!(
             (c, o[0].as_str()),
-            (0, "pv 0.69.0 is up to date"),
-            "nothing published (404s)"
+            (
+                0,
+                "pv 0.69.0: no published build for x86_64-unknown-linux-gnu; nothing to update from"
+            ),
+            "nothing published (404s) is not \"up to date\" (#4232)"
         );
     }
 

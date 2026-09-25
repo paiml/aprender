@@ -3,5 +3,6 @@
 //! docs there.
 
 fn main() -> anyhow::Result<()> {
+    sovereign_update::hook!("trueno-rag"); // EPIC #4232: `trueno-rag update`, and the startup notice
     aprender_rag_cli::run()
 }

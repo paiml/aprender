@@ -56,6 +56,10 @@ pub enum Ancestry {
 pub enum Decision {
     UpToDate,
     Available(Candidate),
+    /// Neither the release nor the nightly carries this binary for this
+    /// target, so there is nothing to compare against. Never "up to date":
+    /// that would claim a check that had nothing to check (#4232).
+    Unpublished,
 }
 
 fn parse(v: &str) -> Option<Version> {
@@ -183,7 +187,7 @@ mod tests {
     }
     fn src(d: &Decision) -> Option<(Source, String)> {
         match d {
-            Decision::UpToDate => None,
+            Decision::UpToDate | Decision::Unpublished => None,
             Decision::Available(c) => Some((c.source, c.git_ref.clone())),
         }
     }

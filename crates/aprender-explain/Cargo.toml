@@ -27,6 +27,9 @@ crossterm = "0.28"
 # Internal dependency for PTX generation
 trueno-gpu = { version = "0.69.3", path = "../aprender-gpu", package = "aprender-gpu", features = ["cuda"] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+aprender-update = { workspace = true }  # EPIC #4232 update check (not wasm32: ureq)
+
 [dev-dependencies]
 proptest = "1.4"
 pretty_assertions = "1.4"

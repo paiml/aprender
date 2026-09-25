@@ -9,5 +9,6 @@
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
+    sovereign_update::hook!("trueno-zram"); // EPIC #4232: `trueno-zram update`, and the startup notice
     aprender_zram_cli::run()
 }

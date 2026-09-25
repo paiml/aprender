@@ -193,7 +193,7 @@ web-sys = { version = "0.3", features = ["console"], optional = true }
 default = ["native", "rag", "agents", "inference"]
 
 # Native build with core features (lean: ~249 deps)
-native = [
+native = ["dep:aprender-update", 
     "clap",
     "serde_yaml_ng",
     "toml",
@@ -311,6 +311,9 @@ sovereign-stack = [
 [build-dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+aprender-update = { workspace = true, optional = true }  # EPIC #4232 update check (not wasm32: ureq)
 
 [dev-dependencies]
 assert_cmd = "2.0"

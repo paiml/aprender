@@ -177,6 +177,7 @@ enum Commands {
 }
 
 fn main() -> ExitCode {
+    sovereign_update::hook!("aprender-explain"); // EPIC #4232: `aprender-explain update`, and the startup notice
     let cli = Cli::parse();
 
     match run(cli) {
