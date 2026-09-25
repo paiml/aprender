@@ -441,6 +441,32 @@ fn insert_theorem_names_from_content(names: &mut std::collections::HashSet<Strin
     }
 }
 
+/// Byte length of a Lean char literal's body, when `rest` (the text after a prime) starts one:
+/// one char, or an escape (`\n`, `\'`, `\xHH`, `\uHHHH`, `\u{H..}`), then the closing prime.
+/// Escape digits are hex only, so no literal body can spell `sorry`.
+fn lean_char_literal_body(rest: &str) -> Option<usize> {
+    let b = rest.as_bytes();
+    let len = if b.first() == Some(&b'\\') {
+        let hex = |r: &[u8]| r.iter().take_while(|c| c.is_ascii_hexdigit()).count();
+        match b.get(1)? {
+            b'x' => 2 + hex(&b[2..]).min(2),
+            b'u' if b.get(2) == Some(&b'{') => {
+                let n = hex(&b[3..]);
+                if b.get(3 + n) != Some(&b'}') {
+                    return None;
+                }
+                4 + n
+            }
+            b'u' => 2 + hex(&b[2..]).min(4),
+            c if c.is_ascii() => 2,
+            _ => return None,
+        }
+    } else {
+        rest.chars().next()?.len_utf8()
+    };
+    (b.get(len) == Some(&b'\'')).then_some(len)
+}
+
 /// Does this Lean source contain a `sorry` TOKEN in code?
 ///
 /// `content.contains("sorry")` also matched prose. A doc comment saying a file "compiles sorry-free"
@@ -488,6 +514,13 @@ pub(crate) fn lean_has_sorry(src: &str) -> bool {
                     }
                 }
                 i += 1;
+            }
+            // `'c'`, `'\n'`, `'\u{..}'` is a char literal, skipped whole so `'"'` cannot open a
+            // phantom string that hides a real `sorry` (quorum finding, #4351). Any other prime is
+            // term syntax (`xs[i]'h`) and is skipped alone; a literal spans one char or escape, so it
+            // can never swallow a `sorry`.
+            b'\'' => {
+                i += 1 + lean_char_literal_body(&src[i + 1..]).map_or(0, |n| n + 1);
             }
             c if ident(c) => {
                 let start = i;
