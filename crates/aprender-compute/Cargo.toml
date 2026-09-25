@@ -84,6 +84,7 @@ web-sys = { version = "0.3", optional = true, features = ["console"] }
 hostname = "0.4"
 
 [build-dependencies]
+provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 

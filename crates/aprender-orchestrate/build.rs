@@ -58,9 +58,10 @@ fn main() {
     let total = bindings.bindings.len() as u32;
 
     for b in &bindings.bindings {
-        let stem = b.contract.trim_end_matches(".yaml").to_uppercase().replace('-', "_");
-        let eq = b.equation.to_uppercase().replace('-', "_");
-        let var = format!("CONTRACT_{stem}_{eq}");
+        let var = provable_contracts::build_helper::env_key(
+            b.contract.trim_end_matches(".yaml"),
+            &b.equation,
+        );
         println!("cargo:rustc-env={var}={}", b.status);
         if b.status == "implemented" {
             implemented += 1;
@@ -106,8 +107,7 @@ fn main() {
                 if let Ok(c) = std::fs::read_to_string(&p) {
                     if let Ok(y) = serde_yaml_ng::from_str::<CY>(&c) {
                         for (n, eq) in &y.equations {
-                            let k =
-                                format!("CONTRACT_{}_{}", s, n.to_uppercase().replace('-', "_"));
+                            let k = provable_contracts::build_helper::env_key(&s, n);
                             if !eq.preconditions.is_empty() {
                                 println!(
                                     "cargo:rustc-env={k}_PRE_COUNT={}",

@@ -55,13 +55,10 @@ fn main() {
     let total = bindings.bindings.len() as u32;
 
     for b in &bindings.bindings {
-        let stem = b
-            .contract
-            .trim_end_matches(".yaml")
-            .to_uppercase()
-            .replace('-', "_");
-        let eq = b.equation.to_uppercase().replace('-', "_");
-        let var = format!("CONTRACT_{stem}_{eq}");
+        let var = provable_contracts::build_helper::env_key(
+            b.contract.trim_end_matches(".yaml"),
+            &b.equation,
+        );
         println!("cargo:rustc-env={var}={}", b.status);
         if b.status == "implemented" {
             implemented += 1;

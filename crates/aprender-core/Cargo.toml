@@ -195,6 +195,7 @@ provable-contracts-macros = { workspace = true }
 # realizar = { version = "0.6", default-features = false, optional = true }  # BLOCKED
 
 [build-dependencies]
+provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 

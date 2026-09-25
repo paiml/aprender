@@ -39,13 +39,10 @@ struct Binding {
 ///
 /// `"learning-rate-schedules-v1.yaml"` + `"cosine_warmup"` → `"CONTRACT_LEARNING_RATE_SCHEDULES_V1_COSINE_WARMUP"`
 fn env_var_name(contract: &str, equation: &str) -> String {
-    let stem = contract
-        .trim_end_matches(".yaml")
-        .trim_end_matches(".yml")
-        .to_uppercase()
-        .replace('-', "_");
-    let eq = equation.to_uppercase().replace('-', "_");
-    format!("CONTRACT_{stem}_{eq}")
+    provable_contracts::build_helper::env_key(
+        contract.trim_end_matches(".yaml").trim_end_matches(".yml"),
+        equation,
+    )
 }
 
 /// Rank status values for deduplication: `implemented` > `partial` > `not_implemented`.
@@ -269,7 +266,7 @@ fn emit_contract_file(path: &Path, total_pre: &mut usize, total_post: &mut usize
         return;
     };
     for (eq_name, eq) in &parsed.equations {
-        let key = format!("CONTRACT_{}_{}", stem, eq_name.to_uppercase().replace('-', "_"));
+        let key = provable_contracts::build_helper::env_key(&stem, eq_name);
         emit_pre_post(&key, eq, total_pre, total_post);
     }
 }

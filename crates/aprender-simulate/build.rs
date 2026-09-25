@@ -119,10 +119,8 @@ fn emit_contract_file(path: &Path, total_pre: &mut usize, total_post: &mut usize
     let Ok(contract) = serde_yaml::from_str::<ContractYaml>(&content) else {
         return;
     };
-    let stem_upper = stem.to_uppercase().replace('-', "_");
     for (eq_name, equation) in &contract.equations {
-        let eq_upper = eq_name.to_uppercase().replace('-', "_");
-        let key = format!("CONTRACT_{stem_upper}_{eq_upper}");
+        let key = provable_contracts::build_helper::env_key(&stem, eq_name);
         emit_pre_post(&key, equation, total_pre, total_post);
     }
 }
@@ -191,13 +189,9 @@ fn enforce_provable_binding() {
 fn emit_binding_vars(bf: &BindingFile) -> Vec<String> {
     let mut gaps = Vec::new();
     for b in &bf.bindings {
-        let var = format!(
-            "CONTRACT_{}_{}",
-            b.contract
-                .trim_end_matches(".yaml")
-                .to_uppercase()
-                .replace('-', "_"),
-            b.equation.to_uppercase().replace('-', "_")
+        let var = provable_contracts::build_helper::env_key(
+            b.contract.trim_end_matches(".yaml"),
+            &b.equation,
         );
         println!("cargo:rustc-env={var}={}", b.status);
         if b.status != "implemented" {

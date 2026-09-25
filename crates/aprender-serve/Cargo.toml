@@ -172,6 +172,7 @@ libc = "0.2"
 uuid = { version = "1", features = ["v4", "serde", "js"] }
 
 [build-dependencies]
+provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 # Parsing provable-contracts binding.yaml for CONTRACT_* env vars (build.rs)
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"

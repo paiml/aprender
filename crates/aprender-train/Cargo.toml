@@ -135,6 +135,7 @@ zip = "2.2"  # RO-Crate ZIP export (requires native compression, not available o
 alimentar = { workspace = true, optional = true }  # Dataset loading with parquet/arrow support (gated behind parquet feature)
 
 [build-dependencies]
+provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 

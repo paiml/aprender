@@ -434,6 +434,7 @@ name = "aprender-compute"
 version = "0.69.0"
 dependencies = [
  "anyhow",
+ "aprender-contracts",
  "aprender-contracts-macros",
  "aprender-core",
  "aprender-cuda-edge",
@@ -687,6 +688,7 @@ dependencies = [
  "aprender-build-sha",
  "aprender-common",
  "aprender-compute",
+ "aprender-contracts",
  "arrow 59.2.0",
  "axum 0.7.9",
  "bytemuck",
@@ -949,6 +951,7 @@ name = "aprender-present-cli"
 version = "0.69.0"
 dependencies = [
  "aprender-build-sha",
+ "aprender-contracts",
  "aprender-present-yaml",
  "clap",
  "notify",
@@ -962,6 +965,7 @@ dependencies = [
 name = "aprender-present-core"
 version = "0.69.0"
 dependencies = [
+ "aprender-contracts",
  "aprender-contracts-macros",
  "criterion 0.7.0",
  "proptest",
@@ -1252,6 +1256,7 @@ version = "0.69.0"
 dependencies = [
  "aprender-common",
  "aprender-compute",
+ "aprender-contracts",
  "aprender-serve",
  "async-trait",
  "bincode",

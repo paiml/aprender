@@ -92,6 +92,7 @@ provable-contracts-macros = { workspace = true }
 # Code gated behind #[cfg(feature = "z3-proofs")]
 
 [build-dependencies]
+provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"

@@ -321,19 +321,8 @@ fn scan_source_fns(dir: &Path, found: &mut std::collections::HashSet<String>) {
     }
 }
 
-/// The env var key `#[contract(contract, equation = equation)]` reads.
-///
-/// A producer (a consuming crate's `build.rs`) must emit its
-/// `cargo:rustc-env` vars under exactly this key, plus `_PRE_COUNT`,
-/// `_PRE_<i>`, `_POST_COUNT` and `_POST_<i>`. Call this instead of
-/// re-deriving the format: a hand-rolled copy that drifts makes every
-/// condition land under a name the macro never reads (#2699 §4). It is
-/// tested equal to the macro's own `contract_env_key!`.
-pub fn env_key(contract: &str, equation: &str) -> String {
-    let contract_part = contract.to_uppercase().replace(['-', '.'], "_");
-    let equation_part = equation.to_uppercase().replace(['-', '.'], "_");
-    format!("CONTRACT_{contract_part}_{equation_part}")
-}
+// One definition, shared with this crate's own build.rs (#4369).
+include!("env_key.rs");
 
 #[cfg(test)]
 mod tests {
@@ -1255,5 +1244,83 @@ bindings:
     fn verify_bindings_bare_filename() {
         // A bare filename with no directory separators
         verify_bindings("nonexistent.yaml", BindingPolicy::WarnOnGaps);
+    }
+
+    // ── #4369: no build.rs hand-rolls the key ──
+
+    /// A line of a build.rs that builds a `CONTRACT_<C>_<E>` key itself
+    /// instead of calling `env_key`: a format string that interpolates
+    /// straight after `CONTRACT_`, or a `"CONTRACT_"` prefix to concatenate
+    /// onto. Fixed names (`CONTRACT_BINDING_SOURCE=none`) and comments pass.
+    fn hand_rolls_contract_key(line: &str) -> bool {
+        let code = line.trim_start();
+        !code.starts_with("//") && (code.contains("CONTRACT_{") || code.contains("\"CONTRACT_\""))
+    }
+
+    #[test]
+    fn hand_rolled_key_detector_case_table() {
+        let must_match = [
+            r#"let var = format!("CONTRACT_{stem}_{eq}");"#,
+            r#"    "CONTRACT_{}_{}","#,
+            r#"let k = format!("CONTRACT_{su}_{eu}");"#,
+            r#"let k = "CONTRACT_".to_string() + &stem;"#,
+            r#"println!("cargo:rustc-env=CONTRACT_{stem}_{eq}={}", s);"#,
+        ];
+        let must_not_match = [
+            r#"println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=none");"#,
+            r#"println!("cargo:rustc-env=CONTRACT_TOTAL={total}");"#,
+            r#"let var = provable_contracts::build_helper::env_key(c, e);"#,
+            r#"println!("cargo:rustc-env={k}_PRE_COUNT={}", n);"#,
+            r#"//   CONTRACT_{STEM}_{EQ}=<status>"#,
+            r#"/// `"x.yaml"` → `"CONTRACT_{}_{}"`"#,
+        ];
+        for l in must_match {
+            assert!(hand_rolls_contract_key(l), "must match: {l}");
+        }
+        for l in must_not_match {
+            assert!(!hand_rolls_contract_key(l), "must not match: {l}");
+        }
+    }
+
+    /// Every build.rs in the workspace builds its keys with `env_key` (#4369).
+    /// A hand-rolled copy that drifts from the macro's format binds nothing,
+    /// silently (#2699 §4). Outside the workspace (a packaged crate) there is
+    /// no tree to scan and the test says so rather than passing on zero files.
+    #[test]
+    fn no_build_rs_hand_rolls_the_contract_key() {
+        let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let root = crates.join("..");
+        if !root.join("Cargo.toml").exists() || !crates.join("aprender-core").exists() {
+            eprintln!("SKIP: not in the aprender workspace (packaged crate)");
+            return;
+        }
+        let mut scanned = Vec::new();
+        let mut offenders = Vec::new();
+        let mut files = vec![root.join("build.rs")];
+        for e in std::fs::read_dir(&crates).expect("read crates/") {
+            files.push(e.expect("dir entry").path().join("build.rs"));
+        }
+        for f in files.into_iter().filter(|f| f.is_file()) {
+            let src = std::fs::read_to_string(&f).expect("read build.rs");
+            for (i, l) in src.lines().enumerate() {
+                if hand_rolls_contract_key(l) {
+                    offenders.push(format!("{}:{}: {}", f.display(), i + 1, l.trim()));
+                }
+            }
+            scanned.push(f);
+        }
+        // 12 producers existed when this guard was written; a scan of fewer
+        // build.rs files than that is looking in the wrong place.
+        assert!(
+            scanned.len() >= 12,
+            "scanned only {} build.rs files",
+            scanned.len()
+        );
+        assert!(
+            offenders.is_empty(),
+            "build.rs hand-rolls a CONTRACT_* key; call provable_contracts::build_helper::env_key \
+             (after trimming \".yaml\"):\n{}",
+            offenders.join("\n")
+        );
     }
 }
