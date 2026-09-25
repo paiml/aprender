@@ -1,3 +1,6 @@
+// `json!` expands to an `unwrap` of an infallible `to_value`.
+#![allow(clippy::disallowed_methods)]
+
 use super::*;
 
 const PREREG: &str = "ef51087dc79bab0ad160e8a14f5b13e2ea43986b30c05dafc63c84c2dc21cdc0";
@@ -233,12 +236,10 @@ fn falsify_rca_004_admitted_is_derived_from_the_receipt() {
     assert!(parity_from_receipt(&bytes(&serve_receipt(64, 0, 0.98)), &expect()).is_ok());
 
     // the derived block is a well-formed Admitted row
-    let mut rows = mixed();
+    let mut rows: Vec<Row> = CELLS.iter().map(|c| row(c, not_run())).collect();
     rows[3] = row(&CELLS[3], Status::Admitted { parity: p });
-    assert_eq!(
-        check(&file(&rows), PREREG).expect("admissible").admitted,
-        vec!["C4"]
-    );
+    let s = check(&file(&rows), PREREG).expect("admissible");
+    assert_eq!((s.admitted, s.s7), (vec!["C4".to_string()], false));
 }
 
 /// FALSIFY-RCA-005: a receipt with too few positions, a failing or
@@ -302,6 +303,13 @@ fn falsify_rca_005_a_short_or_failing_receipt_does_not_admit() {
     );
     assert!(parity_from_receipt(b"{not json", &x).is_err());
     assert!(parity_from_receipt(b"{\"schema\": \"other\"}", &x).is_err());
+    // a half-shaped receipt (parity block, no comparator, or the reverse) is
+    // not a parity receipt at all, not an oracle mismatch
+    for key in ["comparator", "parity"] {
+        let mut v = serve_receipt(64, 0, 0.99);
+        v.as_object_mut().expect("object").remove(key);
+        refuse(&v, &x, "not a parity receipt");
+    }
 }
 
 /// FALSIFY-RCA-006: the receipt must be of the row's own binary and weights —
