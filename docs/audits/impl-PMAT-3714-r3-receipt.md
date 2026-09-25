@@ -17,7 +17,7 @@ batch/0.70.0.
   `model` moves and is used for both the dispatch and the clamp.
 
 ## Two defects the at-head measurement found (not visible in R2's evidence)
-1. **qa throughput counted setup as generation.** At `0979b3481`,
+1. **qa throughput counted setup as generation.** At `0979b3481` (`evidence/3714/r3-port-at-head-lambda.txt`),
    `apr qa` on Qwen3-30B-A3B-Instruct-2507 returned **rc=5**: `throughput 8.6 tok/s
    < 10`, while `apr run --gpu` decoded the same file at ~80 tok/s. The MoE GPU
    dispatch builds the CUDA model (~1.7–4.9 s) and runs the F2 guard (~2–3.5 s)
@@ -25,7 +25,7 @@ batch/0.70.0.
    `inference_ms` = "generation only, excludes model load" (batch.rs:51).
    Fix `6d8d5b155`: the dispatch returns its setup ms, and the caller subtracts it.
    After the fix, throughput is **45.1 tok/s** (2507) and **59.9 tok/s** (Coder),
-   against 12.1 before.
+   against 12.1 before (`evidence/3714/r3-port-at-head-lambda.txt`).
 2. **The throughput label came from the build, not from what ran.** The gate
    printed `hybrid forward, GPU #3090` whenever the build had cuda. That was
    wrong for a MoE file, and wrong for any run that fell back to the CPU. Fix
@@ -42,6 +42,7 @@ build was refused once, and the pin forced a rebuild.
 |---|---|---|---|
 | Qwen3-Coder-30B-A3B-Instruct-Q4_K_M | rc=0, used_gpu=true, ran=gpu, fell_back=false, "2 + 2 = 4" | rc=0, min cosine 1.000000 | rc=0, 12 gates, 7 executed, 0 failed; throughput 59.9 tok/s, labelled "GPU on every timed run" |
 | Qwen3-30B-A3B-Instruct-2507-Q4_K_M | rc=0, used_gpu=true, ran=gpu, fell_back=false, "2 + 2 = 4." | rc=0, min cosine 1.000000 | rc=0, 12 gates, 7 executed, 0 failed; throughput 45.1 tok/s, labelled "GPU on every timed run" |
+Every rate in this table is copied from `evidence/3714/r3-port-at-head-lambda.txt`.
 
 The four skipped qa gates (ollama_parity, gpu_speedup, format_parity,
 gpu_state_isolation) are dense-loader gates. Each one says so and names the

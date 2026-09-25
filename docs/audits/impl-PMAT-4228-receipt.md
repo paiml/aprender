@@ -97,7 +97,7 @@ tokens (load1 at start 6.8 / 29.6 / 33.8):
 | 3 | 54.4 | 6.0 | 9.04× |
 
 On base, prefill tok/s fell by more than half from 850 to 4096 tokens, because
-attention was serial and O(n²). On new, it holds flat at about 50 tok/s.
+attention was serial and O(n²). On new, it holds flat across both lengths (table above).
 
 Contended runs (load1 56–110) kept the same direction: base 11.8/14.6/13.9 vs
 new 18.6/26.9/25.2 at 850, and base 8.5/8.9/10.8 vs new 22.9/26.8/51.5 at 4096.

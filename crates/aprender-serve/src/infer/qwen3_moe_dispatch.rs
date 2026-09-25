@@ -21,8 +21,9 @@ pub const QWEN3MOE_GPU_FALLBACK_PREFIX: &str = "qwen3moe: the CUDA forward did n
 /// began — the CUDA model build (weights resident), the F2 guard, and a GPU
 /// attempt that fell back. `InferenceResult::inference_ms` is "generation only,
 /// excludes model load"; without this the qa throughput gate divided 128 tokens
-/// by build + guard + decode and failed a file decoding at ~80 tok/s (#3714,
-/// measured 8.6 tok/s on Qwen3-30B-A3B-Instruct-2507).
+/// by build + guard + decode and failed a file whose decode clears the gate
+/// with room to spare (#3714; the measured rates are in
+/// `evidence/3714/r3-port-at-head-lambda.txt`).
 ///
 /// # Errors
 /// Only the CPU forward's own failure: a GPU failure is a printed fallback.
