@@ -208,7 +208,7 @@ stamp() {  # stamp TREE TAG
     local -a manifests=("$root") excluded=() kept=()
     mem=$(printf '%s' "$text" | awk -v key=members "$SR_AWK_LIST")
     exc=$(printf '%s' "$text" | awk -v key=exclude "$SR_AWK_LIST")
-    local oldng; oldng=$(shopt -p nullglob)
+    local hadng=0; shopt -q nullglob && hadng=1
     shopt -s nullglob
     while IFS= read -r pat; do
         [ -n "$pat" ] || continue
@@ -220,7 +220,7 @@ stamp() {  # stamp TREE TAG
         done
         unset IFS
     done <<< "$mem"
-    eval "$oldng"
+    if [ "$hadng" = 1 ]; then shopt -s nullglob; else shopt -u nullglob; fi
     while IFS= read -r e; do
         [ -n "$e" ] || continue
         case $e in /*) excluded+=("$(sr_normpath "$e")") ;; *) case $tree in */) excluded+=("$(sr_normpath "$tree$e")") ;; *) excluded+=("$(sr_normpath "$tree/$e")") ;; esac ;; esac
