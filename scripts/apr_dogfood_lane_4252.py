@@ -258,6 +258,8 @@ def gx10_ask(messages, max_tokens, timeout):
               f"-H 'Content-Type: application/json' "
               f"-d '{{\"model\":\"default\",\"prompt\":\"Hi\",\"max_tokens\":1,\"temperature\":0}}' | "
               f"python3 -c 'import json,sys; print(json.load(sys.stdin).get(\"used_gpu\"))'); "
+              # the served binary's version, so the receipt names what answered (#4252)
+              f"echo HEALTH=$(curl -sf -m 3 http://127.0.0.1:{GX10_PORT}/health | tr -d '\\n'); "
               f"nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader; "
               f"echo TRACE_BEGIN; grep -iE 'gpu.layers|offload' $S/serve.log | tail -2; "
               f"tail -n +$((L+1)) $S/serve.log | grep -iE 'cublas|prefill|cuda|gpu|kernel' | head -5")
@@ -267,7 +269,13 @@ def gx10_ask(messages, max_tokens, timeout):
     r = subprocess.run(["ssh", "-o", "ConnectTimeout=5", "gx10", remote], input=payload,
                        capture_output=True, text=True, timeout=timeout + 10)
     dt = time.monotonic() - t0
-    lines = r.stdout.splitlines()
+    resp, prov = parse_gx10(r.stdout)
+    return dt, resp, prov
+
+
+def parse_gx10(stdout):
+    """Split gx10_ask's line protocol into (response, provenance). Pure: tested on a fixture."""
+    lines = stdout.splitlines()
     st = json.loads(lines[0]) if lines and lines[0].startswith("{") else {}
     rc_line = next((l for l in lines if l.startswith("CURL_RC=")), "CURL_RC=?")
     if rc_line != "CURL_RC=0":
@@ -276,14 +284,21 @@ def gx10_ask(messages, max_tokens, timeout):
     i = lines.index(rc_line)
     j = lines.index("TRACE_BEGIN")
     probe = next((l for l in lines if l.startswith("PROBE=")), "PROBE=")
-    apps = [l for l in lines[i + 1:j] if not l.startswith("PROBE=")]
+    hline = next((l for l in lines if l.startswith("HEALTH=")), "HEALTH=")
+    try:
+        h = json.loads(hline.removeprefix("HEALTH="))
+    except ValueError:
+        h = None
+    apps = [l for l in lines[i + 1:j] if not l.startswith(("PROBE=", "HEALTH="))]
     trace = lines[j + 1:]
     pid = str(st.get("pid"))
-    return dt, resp, {"host": "gx10", "server_pid": st.get("pid"),
-                      "gpu_apps": apps,
-                      "server_holds_gpu": any(a.split(",")[0].strip() == pid for a in apps),
-                      "used_gpu_probe": probe.removeprefix("PROBE=") == "True",
-                      "trace_lines": trace}
+    return resp, {"host": "gx10", "server_pid": st.get("pid"),
+                  "health": h,
+                  "apr": h.get("version") if isinstance(h, dict) else None,
+                  "gpu_apps": apps,
+                  "server_holds_gpu": any(a.split(",")[0].strip() == pid for a in apps),
+                  "used_gpu_probe": probe.removeprefix("PROBE=") == "True",
+                  "trace_lines": trace}
 
 
 def cmd_ask(args):
@@ -363,6 +378,7 @@ def _ask_legs(args, messages, rec, deadline, remaining):
             rec["attempts"].append({"host": "lambda", "ok": True, "wall_s": dt})
             rec.update({"served_by": "lambda-cpu", "response": resp,
                         "provenance": {"host": "lambda", "health": h,
+                                       "apr": h.get("version") if isinstance(h, dict) else None,
                                        "unit": "apr-dogfood-4252.service (apr-dogfood.slice)"}})
         except Exception as e:  # advisory lane: no verdict is a receipt, never a crash
             rec["attempts"].append({"host": "lambda", "ok": False, "error": str(e)[:400]})
