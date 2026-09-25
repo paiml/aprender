@@ -254,3 +254,34 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
         env:
           JOB_STATUS: ${{ job.status }}
+
+  # #4152: clippy over the 77 workspace MEMBERS, which no gate had ever linted
+  # (`ci / lint` runs bare `cargo clippy`, i.e. the two-file root facade). Its
+  # own job, not a step above: a cold whole-workspace clippy measured ~20 min
+  # on lambda, and guards-nightly already runs 32-55 min against its 60.
+  # The PR path does not run it yet -- guard-cargo is at its budget; the
+  # changed-package mode (the script's default) is the candidate once measured
+  # on a runner.
+  clippy-members:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    # 45: one cold workspace clippy (~20 min measured) + the one-crate self-test,
+    # with the same contention allowance as the job above.
+    timeout-minutes: 45
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
+    steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - name: Member-clippy gate can still go RED (#4152, planted needless_return)
+        run: bash scripts/check_clippy_members.sh --self-test
+      - name: Workspace-member clippy findings may only shrink (#4152)
+        run: bash scripts/check_clippy_members.sh --full
