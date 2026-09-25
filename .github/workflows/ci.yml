@@ -838,6 +838,37 @@ jobs:
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
             cargo check --workspace --all-targets --locked
+      # aprender-serve's cuda-gated test targets (`#![cfg(feature = "cuda")]`) are
+      # DARK everywhere else: no workspace member enables aprender-serve/cuda, so
+      # every other build compiles them as empty crates. tests/driver_cuda_gguf.rs
+      # rotted that way (10 x E0063 against GGUFConfig/OwnedQuantizedLayer, fixed
+      # in b79bc3a63). Compile-only: the cuda feature adds aprender-gpu (driver
+      # dlopen'd at runtime, no build.rs) and needs neither a GPU nor a CUDA
+      # toolkit - measured 2026-09-25 in rust:1.93.0-bookworm with no nvcc, no
+      # /usr/local/cuda, no libcuda: Finished in 1m21s.
+      - name: "cargo check aprender-serve --features cuda --tests (cuda-gated targets, compile-only)"
+        if: (steps.tier.outputs.tier == 'quick' || steps.tier.outputs.tier == 'full') && matrix.shard == 1
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_TERM_COLOR=never \
+            "$IMAGE" \
+            cargo check -p aprender-serve --features cuda --tests --locked
       # BSE-17 reuse: the queue ref's tree is byte-identical to a PR head whose
       # workspace-test already succeeded; measuring it again is waste, not
       # evidence. The tier step proved both facts (trees compared by hash, the
