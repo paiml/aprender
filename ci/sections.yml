@@ -507,14 +507,15 @@ jobs:
             bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q "test result: ok\." /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
       - name: Integration tests
         if: steps.tier.outputs.tier == 'full'
-        # Y2: the fragments are split by MEASURED seconds (ci/explicit-test-weights.tsv),
-        # longest first onto the least-loaded shard, not round-robin. --preload is the
-        # once-only work each shard already carries: shard 1 the GPU-crate / compute /
-        # apr-format steps (~100 s), shard 3 "Build every example" (~310 s), both the
-        # gx10+yoga means of 14 full-tier jobs. Round-robin put a predicted 639 s on
-        # shard 3 against 404 / 388; the plan gives 477 / 477 / 477. Every fragment is
-        # still on exactly one shard (Σ, pinned by check_explicit_test_commands.sh
-        # --self-test), and a fragment with no weight is planned at the median.
+        # Y2 (#4424, operator via cop 2026-09-25: "over-partition (3N buckets,
+        # work-steal), not weight-by-host"): on the one-shard fat host the fragments
+        # are cut into 3N buckets (longest-first by MEASURED seconds from
+        # ci/explicit-test-weights.tsv) and N local workers claim buckets by atomic
+        # mkdir, so an early finisher steals the next bucket instead of idling. A
+        # stale weight costs one bucket of imbalance, never a whole host. Every
+        # fragment still runs exactly once (Σ, pinned by check_explicit_test_commands.sh
+        # --self-test); a fragment with no weight is planned at the median. An
+        # unpinned multi-shard matrix falls back to round-robin --shard N/M.
         # #2465: the four FALSIFY-AUTH targets were appended here because they
         # were DARK — `falsify_auth_002` appeared nowhere in .github/, scripts/
         # or Makefile, and neither did the contract loader
@@ -570,11 +571,10 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.d
-          # Y2: the preload models the once-only steps of the 3-shard matrix. Any
-          # other shard count (a one-job release car, #4433) plans without it; a
-          # 3-value preload would otherwise REFUSE rc 2 for SHARDS != 3.
-          preload=()
-          if [ "${SHARDS}" = 3 ]; then preload=(--preload "100,0,310"); fi
+          # Y2: one shard -> the local work-steal pool; SHARDS > 1 -> round-robin
+          # host shards (--workers refuses to stack on --shard M>1).
+          split=(--shard "${SHARD}/${SHARDS}")
+          if [ "${SHARDS}" = 1 ]; then split=(--workers 3 --weights ci/explicit-test-weights.tsv); fi
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
@@ -590,8 +590,7 @@ jobs:
             -e CARGO_BUILD_JOBS=8 \
             -e SHARD -e SHARDS \
             "$IMAGE" \
-            bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d --shard "${SHARD}/${SHARDS}" \
-              --weights ci/explicit-test-weights.tsv "${preload[@]}"
+            bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d "${split[@]}"
       - name: "Σ-executed: the tests this job ran are exactly the tests it owes (#4433)"
         if: steps.tier.outputs.tier == 'full' && matrix.shard == 1 && matrix.shards == 1
         # #4433, the cop's condition on the 5-fat-job PR: "The test-id set across

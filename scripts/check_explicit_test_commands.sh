@@ -194,6 +194,19 @@ self_test() {
                 test "$(bash "$R" --run "$td/w" --workers "$ww" ${wt:+--weights "$wt"} 2>/dev/null | grep -xE '[a-e]' | tr -d '\n')" = "abcde"
         done
     done
+    # Σ by SIDE EFFECT, not replayed output: the replay is keyed by command, so
+    # a bucket run twice would print once. Each command appends to one ledger.
+    frags "$td/led" "010-a.cmd=echo a >> $td/ledger\n" "020-b.cmd=echo b >> $td/ledger\n" "030-c.cmd=echo c >> $td/ledger\n" \
+        "040-d.cmd=echo d >> $td/ledger\n" "050-e.cmd=echo e >> $td/ledger\n" "060-f.cmd=echo f >> $td/ledger\n" "070-g.cmd=echo g >> $td/ledger\n"
+    for ww in 2 3; do
+        rm -f "$td/ledger"; bash "$R" --run "$td/led" --workers "$ww" > /dev/null 2>&1 || true
+        fact "  Σ ledger, $ww workers: each of 7 commands EXECUTED exactly once (a bucket is never run twice)" \
+            test "$(LC_ALL=C sort "$td/ledger" 2>/dev/null | tr -d '\n')" = "abcdefg"
+    done
+    # parallelism: three 1 s commands on 3 workers take ~1 s, never the serial 3 s
+    frags "$td/par" '010-a.cmd=sleep 1\n' '020-b.cmd=sleep 1.0\n' '030-c.cmd=sleep 1.00\n'
+    fact "3 workers run three 1 s commands concurrently (< 2.5 s wall; serial is 3 s)" \
+        bash -c 'S=$(date +%s%N); bash "$1" --run "$2" --workers 3 > /dev/null 2>&1; E=$(date +%s%N); [ $(( (E - S) / 1000000 )) -lt 2500 ]' _ "$R" "$td/par"
     row 0 "--workers 2 over 5 commands cuts 5 buckets (3N=6 capped at the command count)" '5 command\(s\) in 5 bucket\(s\) over 2 worker' bash "$R" --run "$td/w" --workers 2
     # work-steal: bucket 1 sleeps; with 2 workers the idle one must take every
     # other bucket. Static 2-way assignment would give it at most 3 of the 6.
