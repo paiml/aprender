@@ -40,14 +40,16 @@ check() { # check <status> <label>
     fi
 }
 
-# version_ok <apr --version output> <tag> <tag commit sha, full>: 0 when the output carries the tag's cargo
-# version as a word (an rc tag's `-rc.N` is not in the crate version) and a 7+ hex prefix of the commit.
+# version_ok <apr --version output> <tag> <tag commit sha, full>: 0 when the output carries the tag's version
+# as a word and a 7+ hex prefix of the commit. An rc tag's binary may print the full `X.Y.Z-rc.N`
+# (stamp_rc_version.sh stamps it; v0.69.5-rc.1 prints `apr 0.69.5-rc.1 (5660b0877)`) or the bare crate `X.Y.Z`
+# (an unstamped build); a different rc's stamp, or an rc stamp under a final tag, is not a word match.
 version_ok() {
-    local out="$1" tag="$2" sha="$3" ver tok
-    ver="${tag#v}"
-    ver="${ver%%-rc.*}"
+    local out="$1" tag="$2" sha="$3" full ver tok
+    full="${tag#v}"
+    ver="${full%%-rc.*}"
     case "$out" in *"+no-git"*) return 1 ;; *) ;; esac
-    case " $out " in *" ${ver} "*) ;; *) return 1 ;; esac
+    case " $out " in *" ${full} "* | *" ${ver} "*) ;; *) return 1 ;; esac
     while read -r tok; do
         if [ "${sha#"$tok"}" != "$sha" ]; then return 0; fi
     done < <(printf '%s\n' "$out" | grep -oE '[0-9a-f]{7,40}')
@@ -65,6 +67,11 @@ self_test() {
     done <<'EOF'
 0|apr 0.69.1 (d8a6df53a)|v0.69.1
 0|apr 0.69.3 (d8a6df53a6c7)|v0.69.3-rc.2
+0|apr 0.69.5-rc.1 (d8a6df53a)|v0.69.5-rc.1
+1|apr 0.69.5-rc.2 (d8a6df53a)|v0.69.5-rc.1
+1|apr 0.69.5-rc.1 (d8a6df53a)|v0.69.5
+1|apr 0.69.5-rc.1 (v0.69.5-rc.1+no-git)|v0.69.5-rc.1
+1|apr 0.69.5-rc.1 (15c3032fc)|v0.69.5-rc.1
 1|apr 0.69.1 (v0.69.1+no-git)|v0.69.1
 1|apr 0.69.1 (15c3032fc)|v0.69.1
 1|apr 0.69.2 (d8a6df53a)|v0.69.1
