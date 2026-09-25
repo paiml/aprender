@@ -253,7 +253,10 @@ STUB
     row exit1_without_a_fail_verdict_declines    2 "no Fail verdict" "$d" FX_PV_RC=1 FX_PV_BODY=junk RELEASE_READINESS_MODE=enforce
     row exit_outside_contract_declines           2 "outside its 0/1/2/3 contract" "$d" FX_PV_RC=101 FX_PV_BODY=junk RELEASE_READINESS_MODE=enforce
     row missing_pv_declines                      2 "is not executable" "$d" RELEASE_READINESS_PV="$tmp/nope" RELEASE_READINESS_MODE=enforce
-    row missing_pv_under_report_is_recorded      0 "is not executable" "$d" RELEASE_READINESS_PV="$tmp/nope"
+    row missing_pv_under_report_is_recorded      0 "REPORT-ONLY could not judge (rc 2)" "$d" RELEASE_READINESS_PV="$tmp/nope"
+    row missing_pv_under_report_names_the_cause  0 "is not executable" "$d" RELEASE_READINESS_PV="$tmp/nope"
+    row no_verdict_under_report_is_recorded      0 "REPORT-ONLY could not judge (rc 2)" "$d" FX_PV_RC=1 FX_PV_BODY=junk
+    row outside_contract_under_report_recorded   0 "REPORT-ONLY could not judge (rc 2)" "$d" FX_PV_RC=101 FX_PV_BODY=junk
     row env_may_not_weaken_to_bogus              3 "may only strengthen" "$d" RELEASE_READINESS_MODE=off
     # a source change between the receipts' commit and the release commit: the flag is WITHHELD
     d="$tmp/s"; mk "$d"; printf 'b\n' > "$d/src/f"; g "$d" commit -qam src
