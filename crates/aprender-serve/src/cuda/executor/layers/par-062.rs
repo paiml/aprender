@@ -141,9 +141,7 @@ impl CudaExecutor {
             self.argmax_num_blocks = num_blocks;
         }
 
-        // #4215: resolve both modules before borrowing the argmax buffers, so the
-        // cached keys can take `&mut self`.
-        // Load first-pass kernel module (cached after first use)
+        // #4215: load both modules (cached after first use) before borrowing the argmax buffers.
         let argmax_kernel_type = KernelType::ArgMax { length: vocab_size };
         let argmax_key = module_key!(self, "argmax_{}", vocab_size);
         if !self.modules.contains_key(&*argmax_key) {
