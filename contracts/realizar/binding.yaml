@@ -692,19 +692,19 @@ bindings:
   notes: 'PMAT-403: metadata fields must be measured or zero. No hardcoded nonzero constants (137, 173.9, etc.)'
 - contract: wgpu-forward-pass-v1.yaml
   equation: dequant_correctness
-  function: dequant_model_weights
+  function: gpu::adapters::wgpu_adapter::dequant_model_weights
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-serve/src/gpu/adapters/wgpu_adapter.rs:52) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: gpu-weight-residency-v1.yaml
   equation: pcie_overhead
-  function: try_init_wgpu_batch
+  function: infer::try_init_wgpu_batch
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-serve/src/infer/batch_wgpu.rs:129) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: gpu-multi-backend-parity-v1.yaml
   equation: multi_backend_parity
-  function: generate
+  function: infer::WgpuBatchState::generate
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-serve/src/infer/batch_wgpu.rs:44) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'

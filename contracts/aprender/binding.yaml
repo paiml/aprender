@@ -1353,157 +1353,157 @@ bindings:
 # --- tweet-eval-stance-benchmark-v1 ---
 - contract: setfit-encoder-conformance-v1.yaml
   equation: gelu_exact
-  function: gelu_exact
+  function: autograd::ops::Tensor::gelu_exact
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/autograd/ops/activation.rs:181) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: matmul-kernel-v1.yaml
   equation: matmul
-  function: matmul
+  function: autograd::ops::Tensor::matmul
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/autograd/ops/activation.rs:272) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: setfit-encoder-conformance-v1.yaml
   equation: embedding_gather
-  function: embedding_gather
+  function: autograd::ops::embedding_gather
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/autograd/ops/embedding.rs:38) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: setfit-encoder-conformance-v1.yaml
   equation: additive_attention_mask
-  function: additive_attention_mask
+  function: autograd::ops::additive_attention_mask
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/autograd/ops/masking.rs:43) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: setfit-encoder-conformance-v1.yaml
   equation: l2_normalize_rows
-  function: l2_normalize_rows
+  function: autograd::ops::l2_normalize_rows
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/autograd/ops/normalize.rs:56) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: setfit-encoder-conformance-v1.yaml
   equation: masked_mean_pool
-  function: masked_mean_pool
+  function: autograd::ops::masked_mean_pool
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/autograd/ops/pooling.rs:50) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: setfit-encoder-conformance-v1.yaml
   equation: mse_loss
-  function: mse_loss
+  function: autograd::ops::mse_loss
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/autograd/ops/similarity.rs:196) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: setfit-encoder-conformance-v1.yaml
   equation: cosine_similarity_rows
-  function: cosine_similarity_rows
+  function: autograd::ops::cosine_similarity_rows
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/autograd/ops/similarity.rs:55) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: kmeans-kernel-v1.yaml
   equation: update
-  function: fit
+  function: cluster::kmeans::KMeans::fit
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/cluster/kmeans_impl.rs:362) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: kmeans-kernel-v1.yaml
   equation: assignment
-  function: predict
+  function: cluster::kmeans::KMeans::predict
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/cluster/kmeans_impl.rs:406) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: f16-conversion-v1.yaml
   equation: f16_to_f32_bias
-  function: f16_to_f32
+  function: format::gguf::dequant::f16_to_f32
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/format/gguf/dequant.rs:18) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: cma-es-kernel-v1.yaml
   equation: mean_update
-  function: optimize
+  function: metaheuristics::cmaes::CmaEs::optimize
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/metaheuristics/cmaes_include_01.rs:5) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: cma-es-kernel-v1.yaml
   equation: sample
-  function: sample
+  function: metaheuristics::cmaes::CmaEs::sample
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/metaheuristics/cmaes.rs:274) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: embedding-algebra-v1.yaml
   equation: embedding_lookup
-  function: forward
+  function: models::qwen2::Embedding::forward
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/models/qwen2/mod.rs:121) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: conv1d-kernel-v1.yaml
   equation: conv1d
-  function: forward
+  function: nn::conv::Conv1d::forward
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/nn/conv/mod.rs:292) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: cross-entropy-kernel-v1.yaml
   equation: log_softmax
-  function: log_softmax
+  function: nn::functional::log_softmax
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/nn/functional.rs:307) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: silu-kernel-v1.yaml
   equation: sigmoid
-  function: sigmoid
+  function: nn::functional::sigmoid
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/nn/functional.rs:58) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: silu-kernel-v1.yaml
   equation: silu
-  function: silu
+  function: nn::functional::silu
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/nn/functional.rs:90) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: cross-entropy-kernel-v1.yaml
   equation: cross_entropy
-  function: forward
+  function: nn::loss::CrossEntropyLoss::forward
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/nn/loss.rs:257) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: rmsnorm-kernel-v1.yaml
   equation: rmsnorm
-  function: forward
+  function: nn::normalization::group_norm::RMSNorm::forward
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/nn/normalization/group_norm.rs:348) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: layernorm-kernel-v1.yaml
   equation: layernorm
-  function: forward
+  function: nn::normalization::LayerNorm::forward
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/nn/normalization/mod.rs:131) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: batchnorm-kernel-v1.yaml
   equation: batchnorm_train
-  function: forward
+  function: nn::normalization::BatchNorm1d::forward
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/nn/normalization/mod.rs:391) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: adamw-kernel-v1.yaml
   equation: weight_update
-  function: step
+  function: nn::optim::rm_sprop::AdamW::step
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/nn/optim/rm_sprop.rs:97) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: rope-kernel-v1.yaml
   equation: rope
-  function: apply
+  function: nn::transformer::attention_helpers::RotaryPositionEmbedding::apply
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/nn/transformer/attention_helpers.rs:268) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: gqa-kernel-v1.yaml
   equation: gqa
-  function: forward
+  function: nn::transformer::MultiHeadAttention::forward
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/nn/transformer/mod.rs:409) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
 - contract: setfit-encoder-conformance-v1.yaml
   equation: apply_additive_mask
-  function: add_mask
+  function: nn::transformer::positional_encoding::add_mask
   status: partial
   notes: '#4369 backfill, unaudited: the #[contract] site (crates/aprender-core/src/nn/transformer/positional_encoding.rs:476) was
     written while this registry was unreachable. Recorded so the site compiles; not a claim it is proven.'
