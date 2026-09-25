@@ -898,6 +898,17 @@ pub(crate) fn streaming_token_sink(
     }
 }
 
+/// The deltas a closed token stream still owes, in order: the UTF-8 decoder's held-back
+/// bytes (through the stop filter), then whatever the stop filter was holding back.
+fn tail_deltas(
+    utf8: &mut LiveUtf8Deltas,
+    tokenizer: &BPETokenizer,
+    filter: &mut ChatStopFilter,
+) -> Vec<String> {
+    let held = utf8.finish(tokenizer).and_then(|t| filter.push(&t));
+    held.into_iter().chain(filter.finish()).collect()
+}
+
 /// Build a true-streaming SSE response with keep-alive (tokens arrive via channel).
 ///
 /// Deltas are raw, char-safe decodes — see `LiveUtf8Deltas`. The `clean` parameter
@@ -966,14 +977,7 @@ pub(crate) fn true_streaming_sse_response(
                 }
             }
         }
-        if let Some(text) = utf8.finish(&tokenizer).and_then(|t| filter.push(&t)) {
-            let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
-            if let Some(evt) = sse_event(&chunk) {
-                yield evt;
-            }
-        }
-
-        if let Some(text) = filter.finish() {
+        for text in tail_deltas(&mut utf8, &tokenizer, &mut filter) {
             let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
             if let Some(evt) = sse_event(&chunk) {
                 yield evt;

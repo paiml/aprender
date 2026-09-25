@@ -691,7 +691,7 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@$(COV_CARGO_ENV) cargo llvm-cov test --no-report -p aprender-serve --lib -- --list \
 		> target/coverage/serve-list.txt 2>> target/coverage/test.log || \
 		{ echo "❌ coverage DID NOT MEASURE: could not list aprender-serve's lib tests. No coverage verdict."; exit 1; }
-	@python3 scripts/coverage_serve_shards.py target/coverage/serve-list.txt scripts/coverage-skips.txt \
+	@bash scripts/coverage_serve_shards.sh target/coverage/serve-list.txt scripts/coverage-skips.txt \
 		target/coverage/serve-shards scripts/coverage-solo.txt
 	@# scripts/coverage-solo.txt: run FIRST, each in its OWN process, and print its test binary's peak RSS
 	@# (RUSAGE_CHILDREN.ru_maxrss), so a later skip carries a measured per-test reason.

@@ -373,7 +373,6 @@ fn decide_shapes_gate(
     outcome: provable_contracts::lint::shapes_gate::ShapesOutcome,
 ) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
     use provable_contracts::lint::shapes_gate::ShapesOutcome;
-    use provable_contracts::ontology::verdict::Reason;
 
     match outcome {
         ShapesOutcome::Unsupported(e) => {
@@ -382,14 +381,24 @@ fn decide_shapes_gate(
         ShapesOutcome::ExtractFailed(e) => {
             Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
-        ShapesOutcome::NoShapes { .. } => Err(LintDeclined {
-            reason: Reason::NoShapes,
+        ShapesOutcome::Ran { result, findings } => Ok((result, findings)),
+        declined => Err(LintDeclined {
+            reason: shapes_decline_reason(declined),
         }
         .into()),
-        ShapesOutcome::NoFocus { .. } => Err(LintDeclined {
-            reason: Reason::NoFocus,
-        }
-        .into()),
+    }
+}
+
+/// A `shapes` outcome that is a decline: print what could not be checked, return the decline's reason.
+fn shapes_decline_reason(
+    outcome: provable_contracts::lint::shapes_gate::ShapesOutcome,
+) -> provable_contracts::ontology::verdict::Reason {
+    use provable_contracts::lint::shapes_gate::ShapesOutcome;
+    use provable_contracts::ontology::verdict::Reason;
+
+    match outcome {
+        ShapesOutcome::NoShapes { .. } => Reason::NoShapes,
+        ShapesOutcome::NoFocus { .. } => Reason::NoFocus,
         ShapesOutcome::WrongCorpus {
             shapes_n,
             expected,
@@ -402,10 +411,7 @@ fn decide_shapes_gate(
             for r in &refused {
                 eprintln!("shapes: refused {r}");
             }
-            Err(LintDeclined {
-                reason: Reason::WrongCorpus,
-            }
-            .into())
+            Reason::WrongCorpus
         }
         ShapesOutcome::NoReceipts { shapes_n, dir } => {
             // ONT-4c1: the WHY travels with the decline — the lattice has no ReceiptUnmeasured element (ONT-6's
@@ -413,36 +419,24 @@ fn decide_shapes_gate(
             eprintln!(
                 "shapes: {shapes_n} shape(s) resolve receipts and the tree holds none under {dir}/"
             );
-            Err(LintDeclined {
-                reason: Reason::NoCheckable,
-            }
-            .into())
+            Reason::NoCheckable
         }
         ShapesOutcome::HarnessBroken { causes } => {
             for c in &causes {
                 eprintln!("shapes: CRUX harness broken — {c}");
             }
-            Err(LintDeclined {
-                reason: Reason::NoCheckable,
-            }
-            .into())
+            Reason::NoCheckable
         }
         ShapesOutcome::EmptyDomain { shapes_n } => {
             // ONT-4c5 / R-2: |D| = 0 answers nothing about a required cell — a decline, never Pass, never RED
             eprintln!(
                 "shapes: capability-cells domain D is empty ({shapes_n} shape(s)) — no required rung has a host to be measured on"
             );
-            Err(LintDeclined {
-                reason: Reason::NoCheckable,
-            }
-            .into())
+            Reason::NoCheckable
         }
         ShapesOutcome::PositiveControlFailed { which, .. } => {
             eprintln!("shapes: positive control {which} did not fire");
-            Err(LintDeclined {
-                reason: Reason::PositiveControlFailed,
-            }
-            .into())
+            Reason::PositiveControlFailed
         }
         ShapesOutcome::Differential {
             passed, n, failed, ..
@@ -454,12 +448,12 @@ fn decide_shapes_gate(
             for f in &failed {
                 eprintln!("  {f}");
             }
-            Err(LintDeclined {
-                reason: Reason::Differential,
-            }
-            .into())
+            Reason::Differential
         }
-        ShapesOutcome::Ran { result, findings } => Ok((result, findings)),
+        // answered by decide_shapes_gate before it asks for a decline reason
+        ShapesOutcome::Unsupported(_)
+        | ShapesOutcome::ExtractFailed(_)
+        | ShapesOutcome::Ran { .. } => Reason::NoCheckable,
     }
 }
 

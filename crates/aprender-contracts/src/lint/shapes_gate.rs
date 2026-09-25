@@ -251,22 +251,23 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
 /// [`run_shapes_gate`] with `--shape` / `--release-*` (aprender#3715).
 #[must_use]
 pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> ShapesOutcome {
-    let start = Instant::now();
-    let (shapes, arming, checked) = match prepare(contract_dir, opts) {
-        Ok(x) => x,
-        Err(answer) => return answer,
-    };
+    match run_or_answer(contract_dir, opts) {
+        Ok(ran) | Err(ran) => ran,
+    }
+}
 
-    let extraction = match extract_gradeable(contract_dir, opts, shapes.len()) {
-        Ok(x) => x,
-        Err(answer) => return answer,
-    };
+/// The gate's body: `Err` is an early answer (a refusal or a decline), `Ok` the outcome it ran to.
+fn run_or_answer(
+    contract_dir: &Path,
+    opts: &ShapesOptions,
+) -> Result<ShapesOutcome, ShapesOutcome> {
+    let start = Instant::now();
+    let (shapes, arming, checked) = prepare(contract_dir, opts)?;
+
+    let extraction = extract_gradeable(contract_dir, opts, shapes.len())?;
     // ONT-4c5: the validator's half runs on the gate's own copy — `pv extract` keeps writing what was found
     let mut owned = extraction.graph.clone();
-    let cells = match cells_corpus(&mut owned, &shapes, &extraction) {
-        Ok(c) => c,
-        Err(answer) => return answer,
-    };
+    let cells = cells_corpus(&mut owned, &shapes, &extraction)?;
     let graph = &owned;
 
     // #3610: the per-shape reach, computed BEFORE any verdict — did this shape grade anything at all?
@@ -278,16 +279,13 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
     }
     carry_extract_warnings(&mut report, &extraction.warnings);
     let pc_extract = extract_controls();
-    let pc_shapes = match cells_controls(
+    let pc_shapes = cells_controls(
         &shapes,
         &arming,
         &report,
         &extraction.gguf.rungs,
         cells.as_ref(),
-    ) {
-        Ok(pc) => pc,
-        Err(answer) => return answer,
-    };
+    )?;
     let unmeasured = needs_receipts(&shapes) && extraction.receipts.is_empty();
     // Every shape in scope empty is the global vacuity — unless every one of them declared it (#3610 quorum).
     let all_allow_empty = shapes.iter().all(|s| s.allow_empty.is_some());
@@ -299,12 +297,9 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
         plant_violations,
         &pc_extract,
     ) {
-        return d;
+        return Err(d);
     }
-    let w3c_run = match w3c_checked(shapes.len(), report.focus_nodes_n) {
-        Ok(run) => run,
-        Err(differential) => return differential,
-    };
+    let w3c_run = w3c_checked(shapes.len(), report.focus_nodes_n)?;
 
     let mut counted = findings_of(
         &report,
@@ -332,10 +327,8 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
         .map(|s| s.id.clone())
         .filter(|id| !vacuous_any.contains(id))
         .partition(|id| arming.is_armed(id));
-    let by_entity_type = match by_entity_type(&extraction, &sigma_implemented(contract_dir)) {
-        Ok(m) => m,
-        Err(e) => return ShapesOutcome::Unsupported(e),
-    };
+    let by_entity_type = by_entity_type(&extraction, &sigma_implemented(contract_dir))
+        .map_err(ShapesOutcome::Unsupported)?;
     let duration = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
     let result = GateResult {
         name: "shapes".into(),
@@ -392,10 +385,10 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
             release: extraction.release.clone().map(Box::new),
         }),
     };
-    ShapesOutcome::Ran {
+    Ok(ShapesOutcome::Ran {
         result: Box::new(result),
         findings: counted.findings,
-    }
+    })
 }
 
 /// The ONE walk (R-18) and the refusals that must answer before anything is graded: every extractor, the json

@@ -25,19 +25,11 @@ struct ExtractReport<'a> {
     check: Option<Vec<String>>,
 }
 
-/// `check == true` → compare and report drift, write nothing. With a release `subject` (aprender#3715) the
-/// release evidence joins the graph, and the result goes ONLY to `out`: the tracked `contracts.nt` is the corpus,
-/// and a release's receipts written into it would be a release baked into every later PR's baseline.
-pub fn run(
-    contract_dir: &Path,
-    check: bool,
-    subject: Option<&Subject>,
+/// `--out` and `--cells-out` describe a release; without a release subject they are refused.
+fn refuse_release_only_args(
     out: Option<&Path>,
     cells_out: Option<&Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if let Some(subject) = subject {
-        return run_release(contract_dir, check, subject, out, cells_out);
-    }
     if cells_out.is_some() {
         return Err(ReleaseArgsRefused(
             "--cells-out lists a release's derived cells; it needs --release-version, --release-commit and --surface"
@@ -51,6 +43,23 @@ pub fn run(
         )
         .into());
     }
+    Ok(())
+}
+
+/// `check == true` → compare and report drift, write nothing. With a release `subject` (aprender#3715) the
+/// release evidence joins the graph, and the result goes ONLY to `out`: the tracked `contracts.nt` is the corpus,
+/// and a release's receipts written into it would be a release baked into every later PR's baseline.
+pub fn run(
+    contract_dir: &Path,
+    check: bool,
+    subject: Option<&Subject>,
+    out: Option<&Path>,
+    cells_out: Option<&Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(subject) = subject {
+        return run_release(contract_dir, check, subject, out, cells_out);
+    }
+    refuse_release_only_args(out, cells_out)?;
     let extraction = match extract::all(contract_dir) {
         Ok(x) => x,
         Err(e) => {

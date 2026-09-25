@@ -1197,6 +1197,31 @@ fn turtle_node(s: &NodeShape, subject: &str) -> String {
     o
 }
 
+/// The string-based (`sh:pattern`, `sh:minLength`, `sh:maxLength`) and property-pair (`sh:lessThan`,
+/// `sh:lessThanOrEquals`) lines of one `sh:property` block, in emission order.
+fn turtle_string_and_pair_lines(p: &PropertyShape) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some((src, _)) = &p.pattern {
+        lines.push(format!(
+            "sh:pattern \"{}\"",
+            src.replace('\\', "\\\\").replace('"', "\\\"")
+        ));
+    }
+    if let Some(n) = p.min_length {
+        lines.push(format!("sh:minLength {n}"));
+    }
+    if let Some(n) = p.max_length {
+        lines.push(format!("sh:maxLength {n}"));
+    }
+    if let Some(o) = &p.less_than {
+        lines.push(format!("sh:lessThan <{o}>"));
+    }
+    if let Some(o) = &p.less_than_or_equals {
+        lines.push(format!("sh:lessThanOrEquals <{o}>"));
+    }
+    lines
+}
+
 /// One `sh:property [ … ] ;` block. Every implemented component has a line; nothing else is emitted.
 fn turtle_property(p: &PropertyShape) -> String {
     let mut o = String::from("    sh:property [\n");
@@ -1238,23 +1263,8 @@ fn turtle_property(p: &PropertyShape) -> String {
             .collect();
         line(format!("sh:in ( {} )", items.join(" ")));
     }
-    if let Some((src, _)) = &p.pattern {
-        line(format!(
-            "sh:pattern \"{}\"",
-            src.replace('\\', "\\\\").replace('"', "\\\"")
-        ));
-    }
-    if let Some(n) = p.min_length {
-        line(format!("sh:minLength {n}"));
-    }
-    if let Some(n) = p.max_length {
-        line(format!("sh:maxLength {n}"));
-    }
-    if let Some(o) = &p.less_than {
-        line(format!("sh:lessThan <{o}>"));
-    }
-    if let Some(o) = &p.less_than_or_equals {
-        line(format!("sh:lessThanOrEquals <{o}>"));
+    for l in turtle_string_and_pair_lines(p) {
+        line(l);
     }
     if p.severity == Severity::Warning {
         line("sh:severity sh:Warning".to_string());
