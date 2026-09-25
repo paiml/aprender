@@ -264,6 +264,14 @@ tools:
     required:
       - base_model
 
+  - name: apr.capability
+    shipped_in: 'aprender#3856 row 3 (MCP surface of apr-model-capability-v1)'
+    source: crates/aprender-mcp/src/tools/capability.rs
+    description: "Report what this apr build can and cannot run on the GPU, and why: the architecture -> required-op map, per-op GPU support with the reason for every unsupported op, and the ggml quant-type table. Wraps `apr capability --json`, which emits the embedded apr-model-capability-v1 contract. Takes no arguments."
+    cli_mapping: "apr capability --json"
+    args: []
+    required: []
+
 # ── Falsification gates ──
 # FALSIFY-MCP-008 is the flagship gate this contract unblocks. It landed in M3
 # (2026-04-18) alongside `build.rs` + `tests/falsify_mcp_008.rs` and is now

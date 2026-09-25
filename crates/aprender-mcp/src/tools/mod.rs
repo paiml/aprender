@@ -13,6 +13,8 @@ pub mod args;
 #[cfg(feature = "apr-tools")]
 pub mod bench;
 #[cfg(feature = "apr-tools")]
+pub mod capability;
+#[cfg(feature = "apr-tools")]
 pub mod finetune;
 #[cfg(feature = "apr-tools")]
 pub mod port_owner;
@@ -40,6 +42,8 @@ pub use registry::{DispatchFn, ToolIndex};
 
 #[cfg(feature = "apr-tools")]
 pub use bench::bench_tool_definition;
+#[cfg(feature = "apr-tools")]
+pub use capability::capability_tool_definition;
 #[cfg(feature = "apr-tools")]
 pub use finetune::finetune_tool_definition;
 #[cfg(feature = "apr-tools")]

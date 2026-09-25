@@ -17,9 +17,9 @@
 //!    transport contract — anything else means MCP clients can't connect).
 //! 2. `initialize` returns `protocolVersion = "2024-11-05"` and
 //!    `serverInfo.name = "aprender-mcp"`.
-//! 3. `tools/list` returns the 9 registered Phase-1 tools with valid object
+//! 3. `tools/list` returns the 10 registered tools (9 Phase-1 + `apr.capability`) with valid object
 //!    schemas (one per `crates/aprender-mcp/src/tools/mod.rs`).
-//! 4. `tools/call` works for every one of those 9 tools — either succeeding
+//! 4. `tools/call` works for every one of those 10 tools — either succeeding
 //!    via a mock subprocess (for tools that shell out to `apr <cmd> --json`)
 //!    or returning `isError:true` via the argument-validation branch (the
 //!    same path a real client would hit on a malformed request). Either
@@ -76,6 +76,7 @@ const EXPECTED_TOOLS: &[&str] = &[
     "apr.run",
     "apr.serve",
     "apr.finetune",
+    "apr.capability",
 ];
 
 /// Hard cap on how long a single stdout read may block. Anything longer is
@@ -282,7 +283,7 @@ fn request(id: u64, method: &str, params: serde_json::Value) -> serde_json::Valu
 /// a real readable path.
 fn minimal_args(tool: &str) -> serde_json::Value {
     match tool {
-        "apr.version" => serde_json::json!({}),
+        "apr.version" | "apr.capability" => serde_json::json!({}),
         "apr.serve" => serde_json::json!({ "model_path": "/dev/null", "port": 18080 }),
         "apr.finetune" => serde_json::json!({ "base_model": "/dev/null" }),
         // Every other tool takes a single required `model_path`.
@@ -358,7 +359,7 @@ fn falsify_mcp_dogfood_001_full_client_session() {
         "capabilities.tools must be present (spec v2024-11-05)"
     );
 
-    // 5. tools/list — assert exactly 9 tools and every name is registered.
+    // 5. tools/list — assert exactly 10 tools and every name is registered.
     send(&mut stdin, &request(2, "tools/list", serde_json::json!({})));
     let list = recv(&rx);
     assert_eq!(list["id"], 2);
@@ -432,6 +433,26 @@ fn falsify_mcp_dogfood_001_full_client_session() {
             content[0]["text"].is_string(),
             "tools/call {tool} content[0].text must be a string"
         );
+        // apr.capability needs no model, so it has no error path to hide
+        // behind: it must SUCCEED and carry the contract's own facts
+        // (aprender#3856 row 3). A negative fact is checked, not just a key,
+        // because a wrapper returning `{}` would satisfy a key check.
+        if *tool == "apr.capability" {
+            assert_ne!(
+                result.get("isError").and_then(serde_json::Value::as_bool),
+                Some(true),
+                "apr.capability must succeed through the shipped binary; got: {result:?}"
+            );
+            let text = content[0]["text"].as_str().expect("capability text");
+            let facts: serde_json::Value = serde_json::from_str(text)
+                .unwrap_or_else(|e| panic!("apr.capability text is not JSON ({e}): {text}"));
+            let layer_norm = facts["ops"]
+                .as_array()
+                .and_then(|ops| ops.iter().find(|o| o["op"] == "LayerNorm"))
+                .unwrap_or_else(|| panic!("apr.capability ops has no LayerNorm row: {text}"));
+            assert_eq!(layer_norm["gpu_supported"], false, "{layer_norm}");
+            assert!(layer_norm["reason"].is_string(), "{layer_norm}");
+        }
         // isError is optional in the MCP spec; if present it must be a
         // boolean. If it's true, the text must be a non-empty error blurb.
         if let Some(is_err) = result.get("isError").and_then(|v| v.as_bool()) {

@@ -17,6 +17,7 @@ use aprender_mcp::{AprMcpServer, JsonRpcRequest};
 
 const GOLDEN_TOOL_NAMES: &[&str] = &[
     "apr.bench",
+    "apr.capability",
     "apr.finetune",
     "apr.qa",
     "apr.run",

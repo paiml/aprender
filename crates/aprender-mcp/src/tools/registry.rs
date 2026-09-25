@@ -204,13 +204,14 @@ mod tests {
     use super::*;
 
     /// Sanity: building the index from the live inventory does not panic
-    /// and yields the 9 Phase-1 tool names in alphabetical order.
+    /// and yields the 10 tool names in alphabetical order.
     #[test]
     fn live_inventory_yields_phase_one_tool_set() {
         let index = ToolIndex::from_inventory();
         let names = index.names();
         let expected = [
             "apr.bench",
+            "apr.capability",
             "apr.finetune",
             "apr.qa",
             "apr.run",
@@ -221,7 +222,7 @@ mod tests {
             "apr.version",
         ];
         assert_eq!(names, expected);
-        assert_eq!(index.definitions().len(), 9);
+        assert_eq!(index.definitions().len(), 10);
     }
 
     #[test]
