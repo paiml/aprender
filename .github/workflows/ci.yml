@@ -514,7 +514,10 @@ jobs:
         # `--exclude` list is preserved verbatim (aprender-compute stays
         # excluded; its SIGSEGV-at-exit is handled by the dedicated "Compute
         # tests" step below). `--profile ci` uses .config/nextest.toml
-        # ([profile.ci]: retries=0, fail-fast). line-tables-only debuginfo now
+        # ([profile.ci]: retries = 2, fail-fast = false - READ THE FILE, this
+        # comment said "retries=0, fail-fast" while the file said the opposite,
+        # #2616). A green here can be a pass on the third attempt: nextest
+        # prints those as FLAKY in the Summary line. line-tables-only debuginfo now
         # comes from root Cargo.toml [profile.test]; the CARGO_PROFILE_*_DEBUG
         # env vars are kept as belt-and-suspenders.
         timeout-minutes: 110
