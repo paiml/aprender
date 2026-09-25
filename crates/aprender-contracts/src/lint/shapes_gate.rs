@@ -1233,4 +1233,76 @@ mod tests {
             other => panic!("expected a named refusal, got {other:?}"),
         }
     }
+
+    /// FALSIFY-CAPSH-003 (#3856): the committed capability row shapes, over the committed registry with two
+    /// planted defects, grade every row, stay reported-not-armed, and name each defect by shape and path.
+    #[test]
+    fn the_capability_row_shapes_grade_the_real_rows_and_name_a_planted_bad_row() {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let read = |p: std::path::PathBuf| std::fs::read_to_string(&p).expect("read");
+        let registry = read(repo.join("contracts/apr-model-capability-v1.yaml"));
+        let planted = registry
+            .replacen("gpu_supported: true", "gpu_supported: \"no\"", 1)
+            .replacen("ggml_type: 0", "ggml_type: 0\n    extra: 1", 1);
+        assert_ne!(planted, registry, "the plant must change the registry");
+        let root = tempfile::tempdir().expect("tempdir");
+        let dir = root.path().join("contracts");
+        std::fs::create_dir(&dir).expect("mkdir");
+        let write = |name: &str, text: &str| std::fs::write(dir.join(name), text).expect("write");
+        write("apr-model-capability-v1.yaml", &planted);
+        write(
+            "apr-model-capability-shapes-v1.yaml",
+            &read(repo.join("contracts/apr-model-capability-shapes-v1.yaml")),
+        );
+        write("ontology.yaml", &read(fixture("shapes-ok/ontology.yaml")));
+        // The armed holder only carries the plant's minCount; the corpus's own contract kinds are not its subject.
+        let holder = read(fixture("shapes-ok/shape-holder.yaml"));
+        let holder = holder.replace(
+            "    - {path: ont:kind, maxCount: 1, in: [kernel, pattern]}\n",
+            "",
+        );
+        write("shape-holder.yaml", &holder);
+        write(
+            "lint-baseline.json",
+            r#"{"armed_shapes": ["shape-holder"]}"#,
+        );
+        match run_shapes_gate(&dir) {
+            ShapesOutcome::Ran { result, findings } => {
+                let (_, _, _, armed, not_armed) = extra(&result);
+                assert_eq!(armed, vec!["shape-holder".to_string()]);
+                assert_eq!(
+                    not_armed,
+                    vec![
+                        "capability-op-row".to_string(),
+                        "capability-quant-row".to_string()
+                    ]
+                );
+                assert!(
+                    result.passed,
+                    "unarmed violations must not fail the gate: {findings:?}"
+                );
+                let named = |node: &str, shape: &str, what: &str| {
+                    findings.iter().any(|f| {
+                        f.message
+                            .starts_with(&format!("ont:cap/apr-model-capability-shapes-v1.{node} "))
+                            && f.message.contains(&format!("shape `{shape}` [not armed]"))
+                            && f.message.contains(what)
+                    })
+                };
+                assert!(
+                    named("ops.0", "capability-op-row", "is not a xsd:boolean"),
+                    "{findings:?}"
+                );
+                assert!(
+                    named(
+                        "quant_types.0",
+                        "capability-quant-row",
+                        "carries ont:cap/extra"
+                    ),
+                    "{findings:?}"
+                );
+            }
+            other => panic!("expected Ran, got {other:?}"),
+        }
+    }
 }
