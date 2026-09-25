@@ -29,6 +29,7 @@ pub mod harness;
 pub mod ladder;
 pub mod ledger;
 pub mod pilot;
+pub mod pool;
 pub mod prereg;
 pub mod ratchet;
 pub mod receipt;
