@@ -54,8 +54,15 @@ and `src/format/…` paths this file still advertised. Counts it cannot check, y
 - Capture evidence into `evidence/section-NN-*/findings.json`
 - Update memory files (`memory/*.md`) with new lessons
 - Continue cascades — when one PR lands, automatically start the next prioritized item per §80-class queues
-- Surface defects as new spec sections rather than asking "should I file this?"
+- Record defects you find in the findings ledger: one JSON line in `docs/findings/<date>-<session>.jsonl`
+  (schema in `docs/findings/README.md`, validated by `scripts/check_findings_ledger.sh`), shipped in your PR
 - Pivot strategies (e.g. when P0-A blocks, immediately try P0-B; when P0-B blocks, surface §81-class amendment and continue to next prereq)
+
+### Issues: only the cop mints (APR-EPIC-001 intake control, #4455)
+- **Never run `gh issue create`.** Only the cop creates issues, and only when the target epic has budget.
+  A defect goes to `docs/findings/` (above); the cop mints from the ledger.
+- **Every PR discharges one open issue**: `Closes #N`, a rule-20 `Refs #P row <id>`, or a
+  `no-issue: <reason>` line. CI enforces it with `scripts/check_pr_closes_issue.sh --require-close`.
 
 ### Check in BEFORE acting (real escalations only)
 - Compute spend > 1hr on non-lambda-vector hosts (lambda-vector is pre-authorized per `feedback_compute_pre_authorized.md`)

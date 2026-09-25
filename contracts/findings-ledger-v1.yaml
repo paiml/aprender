@@ -1,0 +1,187 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# findings-ledger-v1 — findings go to docs/findings/*.jsonl, not to new issues;
+# every PR discharges an issue (APR-EPIC-001 v1.3 intake control, row A8, #4455)
+#
+# WHAT IT GOVERNS
+#   * docs/findings/*.jsonl: one JSON object per line and per finding, each
+#     with the seven required keys. Sessions append here instead of running
+#     `gh issue create`; the cop mints issues from the ledger when the target
+#     epic has budget.
+#   * Rule 18, "every PR closes one": at PR time, the body of a pull request
+#     must discharge an OPEN issue (`Closes #N`, or a rule-20 `Refs #P row
+#     <id>`), or say why it cannot (`no-issue: <reason>` at the start of a
+#     line). It is enforced by `scripts/check_pr_closes_issue.sh
+#     --require-close` in ci.yml's R-2 step. Merged-PR reconciliation
+#     (check_reconcile.sh) omits the flag, because a merged PR's target is
+#     closed by then.
+#
+# PROOF LADDER, STATED HONESTLY
+#   * L1 — both resolvers exist and are wired. check_findings_ledger.sh runs
+#          bare under guard_tree.sh; --require-close runs in ci.yml's R-2 step
+#          on pull_request.
+#   * L2 — case tables, MEASURED 2026-09-25:
+#          check_findings_ledger.sh --self-test has 17 cases, 8/8 mutants
+#          killed; check_pr_closes_issue.sh --self-test has 36 cases (15 of
+#          them rule-18 rows), 9/9 mutants killed.
+#   * L3/L4 — NOT APPLICABLE: a data file and a PR body, not a kernel.
+# ─────────────────────────────────────────────────────────────────────────────
+name: findings-ledger
+version: "1.0.0"
+scope: >
+  Every docs/findings/*.jsonl file, and the body of every pull request at PR
+  time. Out of scope: who may run `gh issue create` (a session rule in
+  CLAUDE.md that no guard can observe, because every session files issues as
+  the same GitHub account; see ledger row FND-20260925-flow011-author), and
+  the cop's minting budget (APR-EPIC-001 FLOW-011..013, row A6).
+status: active
+
+metadata:
+  kind: pattern     # a data-file and PR-body rule, not a math kernel. Set
+                    # EXPLICITLY so `pv validate`'s `kernel` default never applies.
+  version: "1.0.0"
+  created: '2026-09-25'
+  last_modified: '2026-09-25'
+  author: PAIML Engineering
+  references:
+    - 'scripts/check_findings_ledger.sh — the ledger guard: bare (case table, then docs/findings/) · <dir> · --self-test (17 cases)'
+    - 'scripts/check_pr_closes_issue.sh --require-close — rule 18 at PR time (15 rc-* rows in --self-test)'
+    - '.github/workflows/ci.yml — the R-2 step (pull_request only) runs the guard with --require-close'
+    - 'scripts/release/prepare_bump.sh — the bump PR body carries a `no-issue:` line and is preflighted with --require-close'
+    - 'docs/findings/README.md — the row schema, for the sessions that write it'
+    - 'APR-EPIC-001 v1.3 row A8, issue #4455'
+  description: >
+    A finding is one line of JSON with exactly the keys id, title, evidence,
+    repro, suspected_epic, severity and found_at_sha, all non-empty strings.
+    severity is P0..P3, found_at_sha is 7-40 lowercase hex, and id is
+    [A-Za-z0-9._-]+ and unique across all ledger files. An empty ledger is
+    RED. A pull request's body must discharge an open issue or give a
+    `no-issue:` reason.
+
+equations:
+  every_row_is_complete:
+    formula: |
+      ∀ file ∈ docs/findings/*.jsonl, ∀ non-blank line ℓ ∈ file:
+        r = json(ℓ) is an object
+        keys(r) = {id, title, evidence, repro, suspected_epic, severity, found_at_sha}
+        ∀ k: r[k] is a string with non-whitespace content
+        r.severity ∈ {P0, P1, P2, P3}
+        r.found_at_sha ~ ^[0-9a-f]{7,40}$
+        r.id ~ ^[A-Za-z0-9._-]+$
+    domain: 'every non-blank line of docs/findings/*.jsonl'
+    codomain: 'bool'
+    invariants:
+    - 'NO EXTRA KEYS (case typo-key): a misspelt `severty` is refused, so it cannot sit beside a row that is otherwise complete.'
+    - 'ONLY *.jsonl IS LEDGER (case readme-ignored): README.md beside the rows is not parsed.'
+    preconditions: []
+    postconditions:
+    - 'the guard prints one FAIL line per defect, naming <file>:<line>'
+
+  ids_are_unique_and_the_ledger_is_not_empty:
+    formula: |
+      |{ r.id }| = |rows|  across ALL ledger files
+      |rows| ≥ 1
+    domain: 'the union of docs/findings/*.jsonl'
+    codomain: 'bool'
+    invariants:
+    - 'A DUPLICATE ACROSS FILES IS A DUPLICATE (case dup-files): the second one is named, together with the location of the first.'
+    - 'ZERO ROWS IS VACUOUS, NOT GREEN (case empty).'
+    preconditions: []
+    postconditions:
+    - 'the OK line reports the row count it checked'
+
+  every_pr_discharges_an_open_issue:
+    formula: |
+      at PR time: body ∋ (Closes|Fixes|Resolves) #N with N an OPEN issue in this repo
+               ∨ body ∋ Refs #P row <id> with P an OPEN issue in this repo
+               ∨ body ∋ a line matching ^\s*no-issue:\s*\S
+      a target that cannot be resolved fails as close-target-unverified, never as a pass
+    domain: 'the pull_request body in ci.yml R-2, and the bump PR body in prepare_bump.sh'
+    codomain: 'bool'
+    invariants:
+    - 'REFS ALONE DOES NOT DISCHARGE (rc-flow-012-refs-only, FALSIFY-FLOW-012).'
+    - 'A CLOSED ISSUE, A PR NUMBER OR A CROSS-REPO TARGET DOES NOT DISCHARGE (rc-closes-closed, rc-closes-pr, rc-cross-repo).'
+    - 'R-2 STILL APPLIES UNDER THE FLAG (rc-r2-still-applies).'
+    preconditions:
+    - 'GH_TOKEN is set in the R-2 step, so issue state can be read'
+    postconditions:
+    - 'check_reconcile.sh does not pass the flag: merged PRs are judged by R-2 alone'
+
+proof_obligations:
+  - id: FND-OB-001
+    statement: "Every ledger row carries exactly the seven keys, each non-empty, with a valid severity, sha and id."
+    discharged_by: falsification_tests[0]
+  - id: FND-OB-002
+    statement: "Ids are unique across files, and an empty ledger is RED."
+    discharged_by: falsification_tests[1]
+  - id: FND-OB-003
+    statement: "At PR time a body discharges an open issue or gives a no-issue reason."
+    discharged_by: falsification_tests[2]
+  - id: FND-OB-004
+    statement: "Both guards are wired: the ledger guard under guard_tree, --require-close in ci.yml R-2."
+    discharged_by: falsification_tests[3]
+
+falsification_tests:
+
+  - id: FND-F-001
+    rule: every row is complete
+    prediction: >-
+      A good row PASSES. Non-JSON, a non-object, a missing repro, a
+      whitespace-only evidence, a numeric suspected_epic, an unknown key,
+      severity `high`, sha `HEAD`, a 6-hex sha and an id with a space all
+      FAIL, each with its own marker.
+    test: 'bash scripts/check_findings_ledger.sh --self-test'
+    if_fails: >-
+      the cop reads a finding it cannot triage without asking the author
+    mutation: >-
+      replace `if missing:` with `if False:` in check_dir; case missing-repro
+      must turn RED.
+
+  - id: FND-F-002
+    rule: unique ids, non-empty ledger
+    prediction: >-
+      The same id twice in one file FAILS, as it does in two files (naming
+      the first); a ledger with zero rows FAILS.
+    test: 'bash scripts/check_findings_ledger.sh --self-test'
+    if_fails: >-
+      two findings share a handle and one is minted twice or never
+    mutation: >-
+      replace `if rows == 0:` with `if False:`; case empty must turn RED.
+
+  - id: FND-F-003
+    rule: every PR discharges an open issue
+    prediction: >-
+      Closes of an open issue, an own-repo prefix, a rule-20 row ref and a
+      no-issue line PASS. Refs-only, no refs, an empty or mid-line no-issue,
+      a closed issue, a PR number, a cross-repo target and a row ref to a
+      closed issue FAIL as no-close. An unresolvable target FAILS as
+      close-target-unverified.
+    test: 'bash scripts/check_pr_closes_issue.sh --self-test'
+    if_fails: >-
+      PRs merge without closing anything, and the open-issue count only grows
+    mutation: >-
+      count `unknown` ref kinds as open in check_require_close; case
+      rc-unresolvable must turn RED.
+
+  - id: FND-F-004
+    rule: both guards are wired
+    prediction: >-
+      check_guards_are_wired.sh passes with its ratchet unchanged;
+      check_release_bump_pr_body.sh passes, so the bump PR body satisfies
+      --require-close by construction.
+    test: 'bash scripts/check_guards_are_wired.sh && bash scripts/check_release_bump_pr_body.sh'
+    if_fails: >-
+      the rule exists and gates nothing (class #2878)
+    mutation: >-
+      delete the `no-issue:` line that prepare_bump.sh appends; the prs-only
+      row of check_release_bump_pr_body.sh must turn RED (measured
+      2026-09-25: a bump whose CHANGELOG cites only PRs discharges nothing).
+
+non_goals:
+  - "Detecting who ran `gh issue create`: every session and the cop share one GitHub account (FND-20260925-flow011-author). That belongs to FLOW-011, row A6."
+  - "Migrating issues already filed into the ledger."
+
+binding_registry:
+  guard: scripts/check_findings_ledger.sh
+  ci_job: guard-tree                   # run bare by scripts/guard_tree.sh
+  make_target: tier3
+  issue: "https://github.com/paiml/aprender/issues/4455"

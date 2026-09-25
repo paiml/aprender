@@ -58,7 +58,7 @@ SUBJECT="$ROOT/scripts/release/prepare_bump.sh"
 GUARD="$ROOT/scripts/check_pr_closes_issue.sh"
 PARAMS="$ROOT/scripts/release/lib_release_params.sh"
 KEEP_OPEN_ANCHOR='keep-open: %s'
-REFUSAL_ANCHOR='bash "$CLOSES_GUARD" --body'
+REFUSAL_ANCHOR='bash "$CLOSES_GUARD" --require-close --body'
 LADDER_ANCHOR='bash scripts/check_model_ladder.sh --version "$V"'
 IGNORED_ANCHOR='[ -z "$ignored" ] ||'
 # The R-2 refusal's own words (prepare_bump.sh:89). `landmine` asserts the
@@ -220,7 +220,7 @@ PY
     printf '%s\n' "$?" > "$d/rc"
 }
 
-guard_rc() { bash "$GUARD" --body "$1" > /dev/null 2>&1; printf '%s' "$?"; }
+guard_rc() { bash "$GUARD" --require-close --body "$1" > /dev/null 2>&1; printf '%s' "$?"; }
 
 EPIC_SECTION='Train summary: the fixture train, EPIC #9002.
 
@@ -243,7 +243,7 @@ row_epic_and_refs() {
     run_ship "epic-$1" "$2" "$EPIC_SECTION" || return 2
     [ "$(cat "$d/rc")" = 0 ] || { printf 'prepare_bump.sh --ship exited %s: %s\n' "$(cat "$d/rc")" "$(tail -1 "$d/out.log")"; return 1; }
     grep -q '^pr create' "$d/gh.log" || { printf 'no gh pr create was issued\n'; return 1; }
-    [ "$(guard_rc "$d/body.md")" = 0 ] || { printf 'the opened body FAILS the guard: %s\n' "$(bash "$GUARD" --body "$d/body.md" 2>&1)"; return 1; }
+    [ "$(guard_rc "$d/body.md")" = 0 ] || { printf 'the opened body FAILS the guard: %s\n' "$(bash "$GUARD" --require-close --body "$d/body.md" 2>&1)"; return 1; }
     [ "$(grep -c '^keep-open:' "$d/body.md")" = 1 ] || { printf 'expected ONE keep-open line, found %s\n' "$(grep -c '^keep-open:' "$d/body.md")"; return 1; }
     line=$(grep '^keep-open:' "$d/body.md")
     [ "$line" = "keep-open: #9002 #9005 -- $KEEP_OPEN_REASON" ] \

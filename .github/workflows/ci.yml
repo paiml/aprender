@@ -1414,13 +1414,19 @@ jobs:
         # so no guard result can be its precondition. (#3282 classifies the other
         # 46, which is a judgment call per step rather than one blanket edit.)
         if: "!cancelled() && github.event_name == 'pull_request'"
+        # --require-close (APR-EPIC-001 rule 18, #4455): the body must also DISCHARGE an
+        # open issue (`Closes #N`, `Refs #P row <id>`) or say `no-issue: <reason>`. PR-time
+        # only: a merged body's issue is closed by then, so check_reconcile.sh omits it.
+        # GH_TOKEN: the discharge target's state is read from the API, and an unreadable
+        # one is RED; github.token's per-job quota keeps that off the shared login (infra#721).
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           bash scripts/check_pr_closes_issue.sh --self-test
           printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.txt"
-          bash scripts/check_pr_closes_issue.sh --body "$RUNNER_TEMP/pr-body.txt"
+          bash scripts/check_pr_closes_issue.sh --require-close --body "$RUNNER_TEMP/pr-body.txt"
       # APR-RELEASE-001 §11.1, WIRED. The section shipped as prose in #3268 and
       # nothing read it: `grep -rl ont-delta scripts/ .github/ Makefile` returned
       # NOTHING, while §11.1's own text says "Absent is a PR-body lint failure,
