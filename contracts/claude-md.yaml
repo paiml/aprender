@@ -1,0 +1,85 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# claude-md — the repository's LLM context file as a graded document (ONT-001 §5 ONT-4c, Appendix B.5; #3847)
+#
+# WHAT IS GRADED. `extract:llm-context` reads CLAUDE.md: frontmatter `tools:` → llm:declaredTool (graded `in:`
+# Σ's tool names); every `## ` heading → llm:section; a heading listed under a role in Σ
+# `llm_context_role_synonyms` → that role's own predicate (v4.16 D5b), each a plain minCount 1; every inline code
+# span that is a relative path → llm:referencedPath, refused by name when it does not exist; every claim-fence
+# command → llm:command, refused `llm:command unresolved: <cmd>` when no merge-path workflow runs it; every
+# `Never:` line → llm:neverRule. The claim set is measured into lint-baseline.json `claude_md` (F-33, F-34).
+#
+# KIND: pattern. The edit that makes it fail: delete `## Project Overview` (Purpose's only synonym).
+# ─────────────────────────────────────────────────────────────────────────────
+name: claude-md
+version: "1.0.0"
+scope: >
+  CLAUDE.md at the repository root: its role sections, the paths and commands it tells an agent about, its
+  declared tools and its Never rules. Out of scope: whether the advice is good.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: PAIML Engineering
+  description: >
+    CLAUDE.md becomes an llm:LlmContext node; every path it names exists, every claim-fence command is one CI
+    runs, its tools are Σ's, and the four role sections plus a Never rule are present.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.16 §5 ONT-4c, Appendix B.5 (D5b)'
+    - 'crates/aprender-contracts/src/ontology/extract/{llm_context,claims}.rs'
+    - 'contracts/ontology.yaml llm_context_role_synonyms'
+
+entity:
+  type: llm-context
+  ref: CLAUDE.md
+
+relations:
+  depends_on: [ont-sigma-v1, ont-shapes-v1]
+
+shape:
+  targetClass: llm:LlmContext
+  closed: true
+  properties:
+    - {path: llm:section, minCount: 0}
+    - {path: llm:purposeSection, minCount: 1}
+    - {path: llm:rulesSection, minCount: 1}
+    - {path: llm:commandsSection, minCount: 1}
+    - {path: llm:layoutSection, minCount: 1}
+    - {path: llm:referencedPath, resolves: path}
+    - {path: llm:command, resolves: ci-step}
+    - {path: llm:declaredTool, in: [pmat, pv, forjar, bashrs, cargo, gh]}
+    - {path: llm:neverRule, minCount: 1}
+
+equations:
+  context_resolves:
+    formula: "∀ p ∈ paths(CLAUDE.md): exists(p) ∧ ∀ c ∈ claims(CLAUDE.md): normalise(c) ∈ run_lines(W_merge)"
+    domain: CLAUDE.md's relative-path code spans and claim-fence commands
+    codomain: llm:referencedPath / llm:command values, or PV-ONT-012 refusals naming each
+    invariants:
+      - a path or command an agent is told about and cannot use is refused by name
+    preconditions:
+      - Σ llm_context_role_synonyms is declared
+    postconditions:
+      - the committed claude_md.verified_commands[] equals the live set (F-33)
+    lean_theorem: "none — L4 not declared"
+
+invariants:
+  - id: LLM-INV-001
+    property: every relative path CLAUDE.md names exists
+    formal: '∀ p ∈ paths(CLAUDE.md): exists(root/p)'
+    prose: false
+  - id: LLM-INV-002
+    property: every role has a section
+    formal: '∀ r ∈ {Purpose, Rules, Commands, Layout}: |{h ∈ headings₂ : h ∈ synonyms(r)}| ≥ 1'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-LLM-001
+    rule: a stale path is refused
+    prediction: >
+      naming a path that does not exist in a code span makes the shapes gate exit 1 naming
+      `llm:referencedPath unresolved: <p>`; renaming `## Project Overview` fails llm:purposeSection minCount
+    test: cargo test -p aprender-contracts --lib ontology::extract::llm_context
+    if_fails: an agent is steered at a file or command that does not exist

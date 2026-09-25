@@ -1,3 +1,7 @@
+---
+tools: [pmat, pv, cargo, gh, bashrs]
+---
+
 # CLAUDE.md
 
 ## Project Overview
@@ -83,7 +87,7 @@ When using `/loop`, treat fallback wakeups as cheap and merge events as primary.
 
 ## Build Commands
 
-```bash
+```text
 cargo build --release              # Optimized build (every workspace member; no default-members)
 cargo test -p aprender-core --lib  # Core ML library only
 cargo test -p apr-cli --lib        # CLI tests only
@@ -121,17 +125,17 @@ GH-202 lesson: we read code instead of running `apr qa` which would have instant
 an absolute path to one. Four `apr` binaries were found coexisting on the dev box
 (0.60.0 ×2, 0.61.0, 0.62.0); a bare `apr` resolved to a **26-day-old** copy, and
 the path this file used to call "canonical" was two minor versions stale. There is
-no correct path to hardcode — `.cargo/config.toml` [gitignored] redirects cargo's
+no correct path to hardcode — the gitignored `config.toml` under `.cargo/` redirects cargo's
 target-dir, so the main checkout and a fresh worktree build to different places.
 
-```bash
+```text
 . scripts/apr_bin.sh || exit 1   # exports $APR, proves it was built from HEAD
 ```
 
 Everything below uses `"$APR"`. A diagnostic run against the wrong binary is worse
 than no diagnostic: it produces a confident answer about code you are not running.
 
-```bash
+```text
 # Step 1: ALWAYS start here (catches 80% of issues)
 "$APR" qa model.apr
 
@@ -168,7 +172,7 @@ All tools support GGUF, APR, and SafeTensors formats. If a tool says "format not
 `aprender-serve` package (`[lib] name = "realizar"`, `crates/aprender-serve/Cargo.toml`);
 that package ships no `[[bin]]`. Tracing is driven through `apr run`:
 
-```bash
+```text
 "$APR" run model.safetensors --prompt "2+2?" --trace
 "$APR" run model.gguf --prompt "Hi" --trace --trace-steps tokenize,sample,decode
 "$APR" run model.gguf --prompt "Hi" --trace --trace-level payload   # or --trace-payload
@@ -215,17 +219,17 @@ the crate count run the command in the Project Overview table, don't trust a num
 | CUDA/GPU Inference | Never | Primary | Kernels |
 
 ```rust
-// WRONG - bypasses realizar, 0.3 tok/s
+// WRONG - bypasses realizar
 use aprender::models::Qwen2Model;
 let output = model.generate(&input_ids, 32, 0.7, 0.9);
 
-// CORRECT - uses realizar, 225+ tok/s
+// CORRECT - uses realizar
 use realizar::Model;
 let model = Model::load_safetensors(&path)?;
 let output = model.generate(&input_ids, config)?;
 ```
 
-```bash
+```text
 # BEST - apr CLI uses realizar automatically
 cargo run --bin apr --features inference -- run model.safetensors \
     --prompt "What is 2+2?" --max-tokens 32
@@ -235,7 +239,7 @@ Feature flag (`crates/apr-cli/Cargo.toml`): `inference = ["realizar", "trueno", 
 "axum", "futures-util"]`, and `default = ["hf-hub", "safetensors-compare", "inference",
 "training", "visualization", "zram"]` — so `inference` is on unless you pass
 `--no-default-features`. GPU work needs `--features cuda`, which pulls in `inference`,
-`realizar/cuda` and `entrenar/cuda`.
+the `cuda` features of `realizar` and `entrenar`.
 Always profile with `apr profile`/`apr trace`/`apr bench` before optimizing.
 
 ### Performance Targets (Ollama Parity)
@@ -307,28 +311,34 @@ CONTRACT.validate_apr_shape("lm_head.weight", &[vocab, hidden], vocab, hidden)?;
 ### Code Scheduled for Deletion
 
 - ~~`src/models/qwen2/mod.rs::generate()` / `forward()`~~ - DELETED (Refs #224, #1977). `Qwen2Model` has no inference path; all inference (incl. KV caching) goes through `realizar`. Only construction, weight loading, and introspection remain.
-- ~~`examples/qwen_inference.rs`~~ - DELETED (Refs #224). Use the `apr` CLI / `realizar` for inference.
+- ~~examples/qwen_inference.rs~~ - DELETED (Refs #224). Use the `apr` CLI / `realizar` for inference.
 
 ## Publishing Safety (CB-510 Lesson)
 
 **CRITICAL: `.gitignore` and `Cargo.toml` exclude patterns must use root-anchored paths.**
 
-The `models/` pattern silently matches `src/models/` — hiding source code from git and crates.io. Always use `/models/` (root-anchored).
+The unanchored pattern **models/** silently matches **src/models/** — hiding source code from git and crates.io. Always use **/models/** (root-anchored).
 
-```bash
+```text
 # Pre-publish checks (also in make tier3). Both print the count they checked —
 # read it off the output, don't quote a number from this file.
 bash scripts/check_include_files.sh     # scans src/ AND crates/; printed 1771 on 2026-08-13
-bash scripts/check_package_includes.sh  # scans src/ ONLY, against `cargo package -p aprender --list`
 
 # After creating new include!() files, verify they're not gitignored:
 git ls-files --others --exclude-standard crates/
 git check-ignore -v crates/<crate>/src/path/to/new_file.rs  # exit 1 == not ignored (good)
 ```
 
+The one of the two that a merge-path CI step runs verbatim — so it stays a `bash` claim fence (ONT-4c,
+`contracts/claude-md.yaml`); the fence above is `text` because no workflow runs those lines:
+
+```bash
+bash scripts/check_package_includes.sh  # scans src/ ONLY, against `cargo package -p aprender --list`
+```
+
 **`check_package_includes.sh` is currently vacuous — know this before trusting it.**
 It greps `include!(` in the root `src/` only, and the root `src/` is a two-file facade
-(`lib.rs`, `bin/`) with **zero** `include!()` directives. So it reports
+(`src/lib.rs`, `src/bin/`) with **zero** `include!()` directives. So it reports
 `OK: All 0 include!() files are included in cargo package` and can never fail. The
 real coverage against CB-510 today comes from `check_include_files.sh` (1771 files,
 `src/` + `crates/`). Extending the package check to the 70+ publishable member crates
@@ -338,7 +348,7 @@ is open work — do not treat its green as evidence.
 
 ## Shell Scripts: Use bashrs (NOT shellcheck)
 
-```bash
+```text
 bashrs lint scripts/*.sh          # Lint
 bashrs purify scripts/ci.sh       # Determinism + idempotency
 bashrs make lint Makefile          # Makefile linting
@@ -360,7 +370,7 @@ These are not style notes. Each cost real time, and in every case the general
 principle was known and the specific instance still went wrong.
 
 **1. Never read `$?` through a pipe.** It is the LAST command's status.
-```bash
+```text
 cmd > /tmp/out.log 2>&1; rc=$?               # correct
 cmd | tee /tmp/out.log; rc=${PIPESTATUS[0]}  # correct (bash)
 cmd | grep -E "^error"; echo "exit=$?"       # WRONG — that is grep's status
@@ -406,7 +416,7 @@ ran (#2361). When a fix seems to have no effect, ask what else claims that name
 
 Target: 60% unit, 30% property, 10% integration. Coverage: **88.78% line** (786448/885829, measured 2026-07-29 by coverage-nightly on 95145584f; target ≥95%, enforced floor 88% via COV_FLOOR). The long-quoted "96.35%" predates the measurement ever working - the pipeline reported 0/0 until #2333.
 
-```bash
+```text
 cargo test -p <crate> --lib             # Unit tests for one crate (what you run while working)
 cargo test -p <crate> --test <target>   # ONE integration target. There is NO root
                                         # `tests/` dir, so `cargo test --test integration`
@@ -491,7 +501,7 @@ the `commands:` list, never `grep -c '^  - name:'` (117; other same-indent
 `name:` keys exist in the file).
 Key commands: `run`, `chat`, `serve`, `pull`, `finetune`, `prune`, `distill`, `merge`, `quantize`, `inspect`, `debug`, `validate`, `diff`, `tensors`, `trace`, `lint`, `explain`, `export`, `import`, `convert`, `compile`, `train`, `tune`, `eval`, `bench`, `profile`, `qa`, `mcp`, `probar`, `cbtop`, `tui`, `hex`, `tree`, `flow`, `qualify`
 
-```bash
+```text
 apr validate model.apr --quality
 apr convert model.safetensors --quantize int8 -o model-int8.apr
 apr export model.apr --format gguf -o model.gguf
@@ -526,7 +536,7 @@ still carries a header comment claiming it was "Updated for PMAT v2.215.0".
 SATD is checked by `pmat analyze satd`, but no SATD threshold is configured in
 `.pmat-gates.toml`; the pre-commit hook there is `pmat comply check --failures-only`.
 
-```bash
+```text
 pmat quality-gates              # Run all gates (config: .pmat-gates.toml)
 pmat rust-project-score         # Project analysis
 pmat analyze complexity         # Cyclomatic/cognitive complexity
@@ -547,7 +557,7 @@ unwrap() banned via `.clippy.toml` disallowed-methods. Use `expect()` or `ok_or_
 
 **`pv` is THE dogfooded contract CLI.** When you need to validate, lint, score, scaffold, diff, audit, generate proofs, or run falsification tests on a YAML contract in `contracts/`, use `pv`. Writing a bash/yq/python script that re-implements what `pv` already does is **muda** (waste) and will be rejected.
 
-```bash
+```text
 pv validate contracts/apr-code-parity-v1.yaml    # schema + falsification gates
 pv lint contracts/                               # validate + audit + score on all
 pv status contracts/tensor-layout-v1.yaml        # equations, obligations, coverage
@@ -565,10 +575,10 @@ verify-bindings, migrate`.
 
 **If `pv validate` rejects a contract** (wrong kind, missing required fields), the fix is one of:
 1. Restructure the contract to fit the existing schema (usually `KernelContract` shape with `equations`, `proof_obligations`, `falsification_tests`).
-2. Extend `aprender-contracts/src/schema/` to add the new `kind` + validator rule (real engineering task, own PMAT ticket).
+2. Extend `crates/aprender-contracts/src/schema/` to add the new `kind` + validator rule (real engineering task, own PMAT ticket).
 3. If it genuinely isn't a provable contract, use a different YAML schema under a different directory and a purpose-built `apr` subcommand — not `contracts/`.
 
-**Never** work around `pv` with a shell script. The in-tree tool is the source of truth.
+**Never:** work around `pv` with a shell script. The in-tree tool is the source of truth.
 
 ## CRITICAL: Code Search Policy
 
@@ -586,7 +596,7 @@ verify-bindings, migrate`.
 
 ### Examples
 
-```bash
+```text
 # BAD - Raw text search returns 500+ noisy matches with no context
 # GOOD - Semantic search returns 10 ranked functions with quality metrics
 pmat query "error handling" --limit 10
@@ -597,7 +607,7 @@ pmat query "error handling" --limit 10
 The index automatically includes sibling projects (aprender, trueno, realizar).
 Query from any project to search 60k+ functions across all three codebases.
 
-```bash
+```text
 # Build index in each project first (one-time setup)
 cd ~/src/aprender && pmat query "init" --rebuild-index --limit 1
 cd ~/src/trueno && pmat query "init" --rebuild-index --limit 1
@@ -616,7 +626,7 @@ pmat query "matrix multiplication" --limit 5
 
 ### Quick Reference
 
-```bash
+```text
 pmat query "<intent>"                    # Basic search
 pmat query "<intent>" --rank-by pagerank # Most important functions
 pmat query "<intent>" --format json      # Machine-readable
@@ -638,7 +648,7 @@ pmat query "model training" --churn --duplicates --entropy --faults -G  # full a
 
 **Use `pmat query --coverage` to find untested code. NEVER parse coverage JSON manually.**
 
-```bash
+```text
 # Find top uncovered functions (no query needed)
 pmat query --coverage-gaps
 
@@ -668,7 +678,7 @@ See monorepo spec Rule 7: Coverage + Contracts Co-Evolution.
 
 ## Stack Documentation Search
 
-```bash
+```text
 batuta oracle --rag "your question here"    # Search entire Sovereign AI Stack
 batuta oracle --rag-index                   # Reindex (the command prints the doc count)
 ```
