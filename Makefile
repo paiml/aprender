@@ -1417,3 +1417,8 @@ oracle:
 oracle-check: oracle
 	@git diff --exit-code tests/oracle/differential.json \
 	  || { echo "FAIL: tests/oracle/differential.json differs from a fresh run — commit it"; exit 1; }
+
+# PRA-001 §1 G14 (T0): read-only, one row per fleet host; UNREACHABLE fails the target.
+transcript-retention-audit:
+	@bash scripts/transcript_retention_audit.sh
+.PHONY: transcript-retention-audit
