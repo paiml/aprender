@@ -4,7 +4,6 @@
 //! the classifier discharges has a matching captured JSON body that the
 //! binary must classify exactly as the harness expects.
 
-use serde_json::json;
 use std::io::Write;
 use std::process::Command;
 
@@ -19,7 +18,7 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .prefix("crux-h-13-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
+        .expect("create temp file");
     f.write_all(
         serde_json::to_vec_pretty(body)
             .expect("serialize")
@@ -31,7 +30,10 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
 }
 
 fn good_body() -> serde_json::Value {
-    json!({"min": -0.85, "max": 0.92, "sample_rate": 16000, "channels": 2, "samples": 48000})
+    serde_json::from_str::<serde_json::Value>(
+        r#"{"min": -0.85, "max": 0.92, "sample_rate": 16000, "channels": 2, "samples": 48000}"#,
+    )
+    .expect("literal fixture is valid JSON")
 }
 
 // ===== g2: CLI shape =====
@@ -126,7 +128,8 @@ fn falsify_crux_h_13_001_amplitude_ok_on_good_body() {
 #[test]
 fn falsify_crux_h_13_001_amplitude_rejects_below_floor() {
     let mut body = good_body();
-    body["min"] = json!(-1.5);
+    body["min"] = serde_json::from_str::<serde_json::Value>(r#"-1.5"#)
+        .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["audio-inspect-lint", "--json-file"])
@@ -144,7 +147,8 @@ fn falsify_crux_h_13_001_amplitude_rejects_below_floor() {
 #[test]
 fn falsify_crux_h_13_001_amplitude_rejects_above_ceiling() {
     let mut body = good_body();
-    body["max"] = json!(1.5);
+    body["max"] =
+        serde_json::from_str::<serde_json::Value>(r#"1.5"#).expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["audio-inspect-lint", "--json-file"])
@@ -195,7 +199,8 @@ fn falsify_crux_h_13_002_sample_rate_rejects_mismatch() {
 #[test]
 fn falsify_crux_h_13_002_sample_rate_rejects_non_canonical() {
     let mut body = good_body();
-    body["sample_rate"] = json!(12345);
+    body["sample_rate"] = serde_json::from_str::<serde_json::Value>(r#"12345"#)
+        .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["audio-inspect-lint", "--json-file"])

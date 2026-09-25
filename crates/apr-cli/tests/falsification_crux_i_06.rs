@@ -4,7 +4,6 @@
 //! the classifier discharges has a matching captured trace JSON that the
 //! binary must classify exactly as the harness expects.
 
-use serde_json::json;
 use std::io::Write;
 use std::process::Command;
 
@@ -19,7 +18,7 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .prefix("crux-i-06-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
+        .expect("create temp file");
     f.write_all(
         serde_json::to_vec_pretty(body)
             .expect("serialize")
@@ -31,21 +30,24 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
 }
 
 fn good_final_answer() -> serde_json::Value {
-    json!({
+    serde_json::from_str::<serde_json::Value>(
+        r#"{
         "iterations": 1,
         "answer": "4",
         "scratchpad": "Thought: I should compute 2+2.\nFinal Answer: 4",
         "exit_code": 0
-    })
+    }"#,
+    )
+    .expect("literal fixture is valid JSON")
 }
 
 fn good_max_iterations() -> serde_json::Value {
-    json!({
+    serde_json::from_str::<serde_json::Value>(r#"{
         "iterations": 3,
         "reason": "max_iterations",
         "scratchpad": "Thought: try\nAction: echo\nAction Input: hi\nObservation: hi\nThought: try\nAction: echo\nAction Input: hi\nObservation: hi\nThought: still trying\nAction: echo\nAction Input: x\nObservation: x",
         "exit_code": 2
-    })
+    }"#).expect("literal fixture is valid JSON")
 }
 
 // ===== g2: CLI shape =====
@@ -150,12 +152,15 @@ fn falsify_crux_i_06_002_termination_ok_on_max_iterations() {
 
 #[test]
 fn falsify_crux_i_06_001_termination_rejects_exit_code_mismatch() {
-    let body = json!({
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "iterations": 3,
         "reason": "max_iterations",
         "scratchpad": "Thought: x\nAction: y\nAction Input: z\nObservation: o",
         "exit_code": 1
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["react-trace-lint", "--trace-file"])
@@ -172,12 +177,15 @@ fn falsify_crux_i_06_001_termination_rejects_exit_code_mismatch() {
 
 #[test]
 fn falsify_crux_i_06_001_termination_rejects_unknown_reason() {
-    let body = json!({
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "iterations": 1,
         "reason": "weird_other",
         "scratchpad": "Thought: x\nFinal Answer: 4",
         "exit_code": 7
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["react-trace-lint", "--trace-file"])
@@ -194,12 +202,15 @@ fn falsify_crux_i_06_001_termination_rejects_unknown_reason() {
 
 #[test]
 fn falsify_crux_i_06_001_grammar_rejects_action_after_final_answer() {
-    let body = json!({
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "iterations": 1,
         "answer": "4",
         "scratchpad": "Thought: done\nFinal Answer: 4\nAction: rogue\nAction Input: x",
         "exit_code": 0
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["react-trace-lint", "--trace-file"])
@@ -233,12 +244,15 @@ fn falsify_crux_i_06_002_iteration_bound_ok_within_budget() {
 
 #[test]
 fn falsify_crux_i_06_002_iteration_bound_rejects_over_budget() {
-    let body = json!({
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "iterations": 100,
         "reason": "max_iterations",
         "scratchpad": "Thought: x\nAction: y\nAction Input: z\nObservation: o",
         "exit_code": 2
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["react-trace-lint", "--trace-file"])

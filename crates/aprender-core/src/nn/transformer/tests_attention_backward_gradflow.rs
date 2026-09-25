@@ -11,6 +11,7 @@
 //!   - `reshape_for_attention`      -> `Tensor::from_vec`   (split heads)
 //!   - `reshape_from_attention`     -> `Tensor::from_vec`   (concat heads)
 //!   - `nn::functional::softmax`    -> `Tensor::from_vec`   (attn weights)
+//!
 //! After `loss.backward()`, `get_grad(q_proj.weight.id())` etc. were `None` —
 //! the Q/K/V (and the attention-side path to out) projection weights never
 //! received gradient, so a transformer attention block was NON-FINE-TUNABLE
@@ -24,7 +25,6 @@
 
 use crate::autograd::{self, Tensor};
 use crate::nn::transformer::MultiHeadAttention;
-use crate::nn::Module;
 
 const FD_EPS: f32 = 1e-3;
 const TOL: f32 = 2e-2;
@@ -79,7 +79,7 @@ fn make_weight(out: usize, inp: usize, seed: f32) -> Vec<f32> {
         .map(|k| {
             let r = (k / inp) as f32;
             let c = (k % inp) as f32;
-            seed + 0.35 * ((r - c) as f32) + 0.2 * c - 0.1 * r
+            seed + 0.35 * (r - c) + 0.2 * c - 0.1 * r
         })
         .collect()
 }

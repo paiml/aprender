@@ -312,9 +312,7 @@ async fn dropping_the_request_future_stops_a_running_generation() {
     // abandoned request.
     let mut response_future = Box::pin(app.oneshot(request));
     let started_rx = tokio::task::spawn_blocking(move || {
-        started_rx
-            .recv_timeout(std::time::Duration::from_secs(10))
-            .map(|()| ())
+        started_rx.recv_timeout(std::time::Duration::from_secs(10))
     });
     tokio::select! {
         _ = &mut response_future => panic!("the handler must not complete on its own"),

@@ -308,7 +308,7 @@ fn safetensors_bytes(json: &str, body_len: usize) -> Vec<u8> {
     let mut v = Vec::new();
     v.extend_from_slice(&(json.len() as u64).to_le_bytes());
     v.extend_from_slice(json.as_bytes());
-    v.extend(std::iter::repeat(0u8).take(body_len));
+    v.extend(std::iter::repeat_n(0u8, body_len));
     v
 }
 

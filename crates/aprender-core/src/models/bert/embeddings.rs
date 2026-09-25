@@ -129,7 +129,7 @@ mod tests {
     fn embeddings_mismatched_ids_panics() {
         let config = BertConfig::minilm_l6();
         let emb = BertEmbeddings::new(&config);
-        emb.forward(&[101u32, 2024], &[0u32]);
+        let _ = emb.forward(&[101u32, 2024], &[0u32]);
     }
 
     #[test]

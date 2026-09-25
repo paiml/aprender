@@ -269,10 +269,7 @@ fn json_output_validates_against_the_schema_on_fixtures_and_on_this_machine() {
             .collect();
         assert!(errors.is_empty(), "{name}: schema violations: {errors:?}");
         assert!(
-            v["entries"]
-                .as_array()
-                .map(|a| a.len() >= 5)
-                .unwrap_or(false),
+            v["entries"].as_array().is_some_and(|a| a.len() >= 5),
             "{name}: five kind lines"
         );
     }
@@ -337,21 +334,25 @@ fn schema_twin_documents_serde_refuses_do_not_validate() {
     let good: serde_json::Value = serde_json::from_str(&stdout(&out)).expect("json");
     assert!(validator.is_valid(&good));
     let mut no_path = good.clone();
-    no_path["entries"][1]["status"] =
-        serde_json::json!({"state": "unavailable", "kind": "driver-not-found"});
+    no_path["entries"][1]["status"] = serde_json::from_str::<serde_json::Value>(
+        r#"{"state": "unavailable", "kind": "driver-not-found"}"#,
+    )
+    .expect("literal fixture is valid JSON");
     assert!(
         !validator.is_valid(&no_path),
         "driver-not-found without `path` must not validate"
     );
     let mut kind_on_ready = good.clone();
     kind_on_ready["entries"][0]["status"] =
-        serde_json::json!({"state": "ready", "kind": "no-device"});
+        serde_json::from_str::<serde_json::Value>(r#"{"state": "ready", "kind": "no-device"}"#)
+            .expect("literal fixture is valid JSON");
     assert!(
         !validator.is_valid(&kind_on_ready),
         "a ready status must not carry a reason kind"
     );
     let mut stray = good.clone();
-    stray["entries"][0]["bogus"] = serde_json::json!(1);
+    stray["entries"][0]["bogus"] =
+        serde_json::from_str::<serde_json::Value>(r#"1"#).expect("literal fixture is valid JSON");
     assert!(
         !validator.is_valid(&stray),
         "a stray field on an entry must not validate"

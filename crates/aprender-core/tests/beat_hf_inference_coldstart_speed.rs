@@ -32,6 +32,7 @@
 //!   4. a forward projection (lm_head `Matrix::matvec`) to logits over a vocab tile
 //!   5. greedy sampling (`Vector::argmax`) → next-token id
 //!   6. `decode` of the produced token back to text
+//!
 //! This is the same tokenize→embed→forward→sample→decode pipeline a real LLM runs
 //! per step; it is just sized to a tiny tile so the whole PROCESS is dominated by
 //! cold-start, which is exactly the quantity under test.

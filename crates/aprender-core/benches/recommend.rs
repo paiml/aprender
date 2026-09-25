@@ -1,5 +1,6 @@
 use aprender::recommend::ContentRecommender;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
 
 fn generate_movie_descriptions(n: usize) -> Vec<(String, String)> {
     let genres = [

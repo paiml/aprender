@@ -192,16 +192,16 @@ update_baseline() {
 
 self_test() {
     command -v jq >/dev/null 2>&1 || die2 "jq not found"
-    local target="$ROOT/crates/aprender-build-sha/src/lib.rs" backup base cur
+    local target="$ROOT/crates/aprender-common/src/lib.rs" backup base cur
     backup="$(mktemp)"
     base="$(mktemp)"
     cur="$(mktemp)"
-    # Scoped to the smallest member lib (one dependency): the property under test
+    # Scoped to a small member lib that is on main (two dependencies): the property under test
     # is the key/compare path, and it must stay cheap on a cold CI target dir.
-    measure "$base" -p aprender-build-sha --lib
+    measure "$base" -p aprender-common --lib
     # A SECOND measurement, not `compare "$base" "$base"`: one path passed twice
     # is ARGV[1] on both reads, so compare() would never reach its row logic.
-    measure "$cur" -p aprender-build-sha --lib
+    measure "$cur" -p aprender-common --lib
     if ! compare "$base" "$cur" >/dev/null 2>&1; then
         echo "SELF-TEST FAILED: an unchanged tree compared RED against a re-measurement of itself" >&2
         return 1
@@ -218,7 +218,7 @@ fn check_clippy_members_planted() -> u8 {
     return 1;
 }
 PLANT
-    measure "$cur" -p aprender-build-sha --lib
+    measure "$cur" -p aprender-common --lib
     if compare "$base" "$cur" >/dev/null 2>&1; then
         echo "SELF-TEST FAILED: a planted needless_return compared green" >&2
         return 1

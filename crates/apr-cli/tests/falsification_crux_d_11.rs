@@ -4,7 +4,6 @@
 //! gate the classifier discharges has a matching captured JSON pair that
 //! the binary must classify exactly as the harness expects.
 
-use serde_json::json;
 use std::io::Write;
 use std::process::Command;
 
@@ -19,7 +18,7 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .prefix("crux-d-11-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
+        .expect("create temp file");
     f.write_all(
         serde_json::to_vec_pretty(body)
             .expect("serialize")
@@ -31,20 +30,26 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
 }
 
 fn good_t1() -> serde_json::Value {
-    json!({
+    serde_json::from_str::<serde_json::Value>(
+        r#"{
         "tokens_per_sec": 1000.0,
         "final_loss": 2.5,
         "ddp_metrics": {"allreduce_bandwidth_gbps": [120.0, 118.0, 121.0]}
-    })
+    }"#,
+    )
+    .expect("literal fixture is valid JSON")
 }
 
 fn good_t4() -> serde_json::Value {
     // T_4 = 3500 → eff = 3500/4000 = 0.875 ≥ 0.85; loss within 0.4%.
-    json!({
+    serde_json::from_str::<serde_json::Value>(
+        r#"{
         "tokens_per_sec": 3500.0,
         "final_loss": 2.51,
         "ddp_metrics": {"allreduce_bandwidth_gbps": [80.0, 82.0, 79.0]}
-    })
+    }"#,
+    )
+    .expect("literal fixture is valid JSON")
 }
 
 // ===== g2: CLI shape =====
@@ -149,11 +154,14 @@ fn falsify_crux_d_11_001_scaling_ok_at_0_875() {
 #[test]
 fn falsify_crux_d_11_001_scaling_rejects_below_floor() {
     let f1 = write_json(&good_t1());
-    let bad = json!({
+    let bad = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "tokens_per_sec": 2000.0,
         "final_loss": 2.51,
         "ddp_metrics": {"allreduce_bandwidth_gbps": [40.0]}
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let fn_ = write_json(&bad);
     let out = apr_binary()
         .args(["ddp-metrics-lint", "--metrics-1gpu-file"])
@@ -189,11 +197,14 @@ fn falsify_crux_d_11_002_loss_parity_ok_within_tolerance() {
 #[test]
 fn falsify_crux_d_11_002_loss_parity_rejects_divergence() {
     let f1 = write_json(&good_t1());
-    let bad = json!({
+    let bad = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "tokens_per_sec": 3500.0,
         "final_loss": 5.0,
         "ddp_metrics": {"allreduce_bandwidth_gbps": [80.0]}
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let fn_ = write_json(&bad);
     let out = apr_binary()
         .args(["ddp-metrics-lint", "--metrics-1gpu-file"])
@@ -214,11 +225,14 @@ fn falsify_crux_d_11_002_loss_parity_rejects_divergence() {
 #[test]
 fn falsify_crux_d_11_003_allreduce_rejects_missing_array() {
     let f1 = write_json(&good_t1());
-    let bad = json!({
+    let bad = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "tokens_per_sec": 3500.0,
         "final_loss": 2.51
-        // no ddp_metrics
-    });
+        
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let fn_ = write_json(&bad);
     let out = apr_binary()
         .args(["ddp-metrics-lint", "--metrics-1gpu-file"])
@@ -239,11 +253,14 @@ fn falsify_crux_d_11_003_allreduce_rejects_missing_array() {
 #[test]
 fn falsify_crux_d_11_003_allreduce_rejects_zero_step() {
     let f1 = write_json(&good_t1());
-    let bad = json!({
+    let bad = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "tokens_per_sec": 3500.0,
         "final_loss": 2.51,
         "ddp_metrics": {"allreduce_bandwidth_gbps": [120.0, 0.0, 121.0]}
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let fn_ = write_json(&bad);
     let out = apr_binary()
         .args(["ddp-metrics-lint", "--metrics-1gpu-file"])
@@ -265,11 +282,14 @@ fn falsify_crux_d_11_003_allreduce_rejects_zero_step() {
 fn falsify_crux_d_11_scaling_floor_configurable() {
     // T_4/4*T_1 = 0.6; default floor 0.85 fails, --scaling-floor 0.5 passes.
     let f1 = write_json(&good_t1());
-    let body = json!({
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "tokens_per_sec": 2400.0,
         "final_loss": 2.51,
         "ddp_metrics": {"allreduce_bandwidth_gbps": [50.0]}
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let fn_ = write_json(&body);
     let out = apr_binary()
         .args(["ddp-metrics-lint", "--metrics-1gpu-file"])

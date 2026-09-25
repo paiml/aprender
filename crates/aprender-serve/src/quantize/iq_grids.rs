@@ -504,7 +504,6 @@ mod tests {
                 [0x01u8, 0x03, 0x05, 0x07, 0x09, 0x0b, 0x0d, 0x0f],
             ),
         ] {
-            let legal = legal;
             for (i, &v) in grid.iter().enumerate() {
                 for j in 0..4 {
                     let b = ((v >> (8 * j)) & 0xff) as u8;

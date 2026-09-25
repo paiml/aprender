@@ -6,7 +6,8 @@ use aprender::citl::{
     CompilerDiagnostic, DiagnosticSeverity, Difficulty, ErrorCategory, ErrorCode, ErrorEmbedding,
     ErrorEncoder, NeuralEncoderConfig, NeuralErrorEncoder, PatternLibrary, SourceSpan,
 };
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
 /// Generate random embedding vector for benchmarking.
 fn random_embedding(dim: usize, seed: u64) -> Vec<f32> {

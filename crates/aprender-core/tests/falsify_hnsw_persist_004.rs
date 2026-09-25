@@ -53,19 +53,19 @@ fn cold_open_first_query_within_budget() {
     let probe = random_vector(&mut rng);
 
     // Set up the snapshot.
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("create tempdir");
     let path = dir.path().join("cold.bin");
-    let mut idx = PersistentHnsw::open(&path, 16, 200).unwrap();
+    let mut idx = PersistentHnsw::open(&path, 16, 200).expect("open index");
     for (id, v) in &corpus {
         idx.add(id.clone(), Vector::from_slice(v));
     }
-    idx.flush().unwrap();
+    idx.flush().expect("flush");
     drop(idx);
 
     // Cold open + first query measurement.
     let probe_vec = Vector::from_slice(&probe);
     let start = Instant::now();
-    let reopened = PersistentHnsw::open(&path, 16, 200).unwrap();
+    let reopened = PersistentHnsw::open(&path, 16, 200).expect("open index");
     let hits = reopened.search(&probe_vec, 10);
     let elapsed = start.elapsed();
 
@@ -97,17 +97,17 @@ fn open_alone_is_well_under_budget() {
     let corpus: Vec<(String, Vec<f64>)> = (0..CORPUS_SIZE)
         .map(|i| (format!("doc-{i:04}"), random_vector(&mut rng)))
         .collect();
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("create tempdir");
     let path = dir.path().join("open.bin");
-    let mut idx = PersistentHnsw::open(&path, 16, 200).unwrap();
+    let mut idx = PersistentHnsw::open(&path, 16, 200).expect("open index");
     for (id, v) in &corpus {
         idx.add(id.clone(), Vector::from_slice(v));
     }
-    idx.flush().unwrap();
+    idx.flush().expect("flush");
     drop(idx);
 
     let start = Instant::now();
-    let _ = PersistentHnsw::open(&path, 16, 200).unwrap();
+    let _ = PersistentHnsw::open(&path, 16, 200).expect("open index");
     let elapsed = start.elapsed();
     let max = budget();
     assert!(

@@ -263,8 +263,9 @@ async fn falsify_crux_c_34_004_main_health_agrees_with_ready() {
 async fn falsify_crux_c_34_005_force_loading_env_flips_status() {
     let prior = std::env::var("APR_TEST_FORCE_LOADING").ok();
     // SAFETY: std::env::{set_var, remove_var} are marked unsafe as of the
-    // 2024 edition due to threading concerns. We serialize access through
-    // ENV_LOCK above, and the env var is scoped to this single test.
+    // 2024 edition due to threading concerns. Every test that reads or writes
+    // this var runs under #[serial(env_force_loading)], so no other thread
+    // touches the environment meanwhile.
     unsafe {
         std::env::set_var("APR_TEST_FORCE_LOADING", "1");
     }
@@ -276,6 +277,8 @@ async fn falsify_crux_c_34_005_force_loading_env_flips_status() {
     let json = json_body(resp).await;
 
     // Restore env before asserting (so a panic still cleans up).
+    // SAFETY: as above, #[serial(env_force_loading)] serialises every test
+    // that reads or writes the environment.
     unsafe {
         match prior {
             Some(v) => std::env::set_var("APR_TEST_FORCE_LOADING", v),
@@ -301,6 +304,8 @@ async fn falsify_crux_c_34_005_force_loading_ready_is_503() {
     // The readiness probe MUST also flip to 503 under the force-loading hook.
 
     let prior = std::env::var("APR_TEST_FORCE_LOADING").ok();
+    // SAFETY: as above, #[serial(env_force_loading)] serialises every test
+    // that reads or writes the environment.
     unsafe {
         std::env::set_var("APR_TEST_FORCE_LOADING", "1");
     }
@@ -309,6 +314,8 @@ async fn falsify_crux_c_34_005_force_loading_ready_is_503() {
     let resp = app.oneshot(get("/health/ready")).await.expect("oneshot");
     let status = resp.status();
 
+    // SAFETY: as above, #[serial(env_force_loading)] serialises every test
+    // that reads or writes the environment.
     unsafe {
         match prior {
             Some(v) => std::env::set_var("APR_TEST_FORCE_LOADING", v),

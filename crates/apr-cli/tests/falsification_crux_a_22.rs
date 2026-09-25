@@ -4,7 +4,6 @@
 //! gate the classifier discharges has a matching e2e JSON observation
 //! that the binary must classify exactly as the harness expects.
 
-use serde_json::json;
 use std::io::Write;
 use std::process::Command;
 
@@ -19,9 +18,13 @@ fn write_obs(json_body: &serde_json::Value) -> tempfile::NamedTempFile {
         .prefix("crux-a-22-obs-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
-    f.write_all(serde_json::to_vec_pretty(json_body).unwrap().as_slice())
-        .expect("write obs");
+        .expect("create temp file");
+    f.write_all(
+        serde_json::to_vec_pretty(json_body)
+            .expect("serialise JSON")
+            .as_slice(),
+    )
+    .expect("write obs");
     f.flush().expect("flush");
     f
 }
@@ -78,12 +81,12 @@ fn falsify_crux_a_22_cli_empty_file_fails() {
         .prefix("crux-a-22-empty-")
         .suffix(".json")
         .tempfile()
-        .unwrap();
+        .expect("create temp file");
     let out = apr_binary()
         .args([
             "registry-quota-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -96,14 +99,14 @@ fn falsify_crux_a_22_cli_invalid_json_fails() {
         .prefix("crux-a-22-bad-")
         .suffix(".json")
         .tempfile()
-        .unwrap();
-    tmp.write_all(b"{not json").unwrap();
-    tmp.flush().unwrap();
+        .expect("create temp file");
+    tmp.write_all(b"{not json").expect("write");
+    tmp.flush().expect("flush");
     let out = apr_binary()
         .args([
             "registry-quota-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -112,12 +115,15 @@ fn falsify_crux_a_22_cli_invalid_json_fails() {
 
 #[test]
 fn falsify_crux_a_22_cli_no_gates_fails() {
-    let tmp = write_obs(&json!({"unrelated": true}));
+    let tmp = write_obs(
+        &serde_json::from_str::<serde_json::Value>(r#"{"unrelated": true}"#)
+            .expect("literal fixture is valid JSON"),
+    );
     let out = apr_binary()
         .args([
             "registry-quota-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -128,20 +134,23 @@ fn falsify_crux_a_22_cli_no_gates_fails() {
 
 #[test]
 fn falsify_crux_a_22_001_reject_one_byte_over() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "quota": {
             "quota": 1000,
             "used": 600,
             "incoming": 401,
             "expected_outcome": "reject"
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "registry-quota-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -156,20 +165,23 @@ fn falsify_crux_a_22_001_reject_one_byte_over() {
 
 #[test]
 fn falsify_crux_a_22_001_allow_under_budget() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "quota": {
             "quota": 1000,
             "used": 200,
             "incoming": 300,
             "expected_outcome": "allow"
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "registry-quota-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -179,20 +191,23 @@ fn falsify_crux_a_22_001_allow_under_budget() {
 #[test]
 fn falsify_crux_a_22_001_wrong_expected_outcome_fails() {
     // Classifier returns allow, observer claimed reject → FAIL.
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "quota": {
             "quota": 1000,
             "used": 200,
             "incoming": 300,
             "expected_outcome": "reject"
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "registry-quota-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -205,20 +220,23 @@ fn falsify_crux_a_22_001_wrong_expected_outcome_fails() {
 
 #[test]
 fn falsify_crux_a_22_002_atomic_reject_is_deterministic() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "atomic": {
             "quota": 500,
             "used": 400,
             "incoming": 200,
             "expected_outcome": "reject"
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "registry-quota-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -233,20 +251,23 @@ fn falsify_crux_a_22_002_atomic_reject_is_deterministic() {
 
 #[test]
 fn falsify_crux_a_22_002_atomic_allow_is_deterministic() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "atomic": {
-            "quota": 1_000_000,
+            "quota": 1000000,
             "used": 0,
             "incoming": 100,
             "expected_outcome": "allow"
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "registry-quota-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -255,20 +276,23 @@ fn falsify_crux_a_22_002_atomic_allow_is_deterministic() {
 
 #[test]
 fn falsify_crux_a_22_002_atomic_wrong_outcome_fails() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "atomic": {
             "quota": 500,
             "used": 400,
             "incoming": 200,
             "expected_outcome": "allow"
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "registry-quota-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -281,7 +305,8 @@ fn falsify_crux_a_22_002_atomic_wrong_outcome_fails() {
 
 #[test]
 fn falsify_crux_a_22_003_ceiling_allow_preserves_invariant() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "ceiling": {
             "quota": 1000,
             "used": 200,
@@ -289,13 +314,15 @@ fn falsify_crux_a_22_003_ceiling_allow_preserves_invariant() {
             "expected_outcome": "allow",
             "expected_post_used_le_quota": true
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "registry-quota-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -311,7 +338,8 @@ fn falsify_crux_a_22_003_ceiling_allow_preserves_invariant() {
 #[test]
 fn falsify_crux_a_22_003_ceiling_exact_fit_allow() {
     // used + incoming == quota → Allow, invariant holds with equality.
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "ceiling": {
             "quota": 1000,
             "used": 600,
@@ -319,13 +347,15 @@ fn falsify_crux_a_22_003_ceiling_exact_fit_allow() {
             "expected_outcome": "allow",
             "expected_post_used_le_quota": true
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "registry-quota-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -335,7 +365,8 @@ fn falsify_crux_a_22_003_ceiling_exact_fit_allow() {
 #[test]
 fn falsify_crux_a_22_003_ceiling_reject_invariant_false() {
     // Reject verdict → post_used would exceed quota; invariant=false.
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "ceiling": {
             "quota": 1000,
             "used": 900,
@@ -343,13 +374,15 @@ fn falsify_crux_a_22_003_ceiling_reject_invariant_false() {
             "expected_outcome": "reject",
             "expected_post_used_le_quota": false
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "registry-quota-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -359,7 +392,8 @@ fn falsify_crux_a_22_003_ceiling_reject_invariant_false() {
 #[test]
 fn falsify_crux_a_22_003_ceiling_wrong_invariant_fails() {
     // Observer claims invariant holds even though verdict is Reject.
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "ceiling": {
             "quota": 1000,
             "used": 900,
@@ -367,13 +401,15 @@ fn falsify_crux_a_22_003_ceiling_wrong_invariant_fails() {
             "expected_outcome": "reject",
             "expected_post_used_le_quota": true
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "registry-quota-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -386,7 +422,8 @@ fn falsify_crux_a_22_003_ceiling_wrong_invariant_fails() {
 
 #[test]
 fn falsify_crux_a_22_multi_gate_all_pass() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "quota": {
             "quota": 1000, "used": 600, "incoming": 401,
             "expected_outcome": "reject"
@@ -400,13 +437,15 @@ fn falsify_crux_a_22_multi_gate_all_pass() {
             "expected_outcome": "allow",
             "expected_post_used_le_quota": true
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "registry-quota-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -423,19 +462,22 @@ fn falsify_crux_a_22_multi_gate_all_pass() {
 
 #[test]
 fn falsify_crux_a_22_json_output_shape() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "quota": {
             "quota": 1000, "used": 600, "incoming": 401,
             "expected_outcome": "reject"
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "--json",
             "registry-quota-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");

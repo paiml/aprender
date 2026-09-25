@@ -465,7 +465,7 @@ fn falsify_skf_bal_001_fold_sizes_differ_by_at_most_one() {
     // Per class: 10 / 3 = 3 with remainder 1. Round-robin offset must push the
     // two extras to different folds, not both to fold 0.
     let mut labels = vec![0.0f32; 10];
-    labels.extend(std::iter::repeat(1.0f32).take(10));
+    labels.extend(std::iter::repeat_n(1.0f32, 10));
     let y = Vector::from_slice(&labels);
 
     let skfold = StratifiedKFold::new(3);
@@ -499,7 +499,7 @@ fn falsify_skf_bal_001_fold_sizes_differ_by_at_most_one() {
 #[test]
 fn falsify_skf_bal_002_coverage_every_index_once() {
     let mut labels = vec![0.0f32; 10];
-    labels.extend(std::iter::repeat(1.0f32).take(10));
+    labels.extend(std::iter::repeat_n(1.0f32, 10));
     let y = Vector::from_slice(&labels);
 
     let skfold = StratifiedKFold::new(3);
@@ -533,8 +533,8 @@ fn falsify_skf_bal_002_coverage_every_index_once() {
 fn falsify_skf_bal_003_general_balance() {
     // class 0: 7 samples, class 1: 7 samples, class 2: 4 samples; n_splits = 3.
     let mut labels = vec![0.0f32; 7];
-    labels.extend(std::iter::repeat(1.0f32).take(7));
-    labels.extend(std::iter::repeat(2.0f32).take(4));
+    labels.extend(std::iter::repeat_n(1.0f32, 7));
+    labels.extend(std::iter::repeat_n(2.0f32, 4));
     let y = Vector::from_slice(&labels);
 
     let skfold = StratifiedKFold::new(3);

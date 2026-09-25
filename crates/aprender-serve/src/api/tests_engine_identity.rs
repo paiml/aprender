@@ -394,7 +394,7 @@ fn non_test_sources(root: std::path::PathBuf) -> Vec<std::path::PathBuf> {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if path.is_dir() {
                 stack.push(path);
-            } else if name.ends_with(".rs") && !name.contains("test") {
+            } else if path.extension().is_some_and(|e| e == "rs") && !name.contains("test") {
                 files.push(path);
             }
         }

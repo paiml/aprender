@@ -1,7 +1,8 @@
 //! Benchmarks for DataFrame operations.
 
 use aprender::prelude::*;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
 
 fn bench_dataframe_to_matrix(c: &mut Criterion) {
     let mut group = c.benchmark_group("dataframe_to_matrix");

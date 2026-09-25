@@ -17,10 +17,10 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn write_log_probs(log_probs: &[f64]) -> tempfile::NamedTempFile {
-    let mut f = tempfile::NamedTempFile::new().unwrap();
-    let body = serde_json::to_vec(log_probs).unwrap();
-    f.write_all(&body).unwrap();
-    f.flush().unwrap();
+    let mut f = tempfile::NamedTempFile::new().expect("create temp file");
+    let body = serde_json::to_vec(log_probs).expect("serialise JSON");
+    f.write_all(&body).expect("write");
+    f.flush().expect("flush");
     f
 }
 
@@ -29,7 +29,7 @@ fn write_log_probs(log_probs: &[f64]) -> tempfile::NamedTempFile {
 #[test]
 fn falsify_crux_e_02_help_advertises_log_probs_file_flag() {
     Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args(["ppl", "--help"])
         .assert()
         .success()
@@ -39,7 +39,7 @@ fn falsify_crux_e_02_help_advertises_log_probs_file_flag() {
 #[test]
 fn falsify_crux_e_02_rejects_bare_ppl_without_file() {
     let output = Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args(["ppl"])
         .output()
         .expect("apr binary runs");
@@ -59,12 +59,12 @@ fn falsify_crux_e_02_json_emits_ppl_key() {
     let f = write_log_probs(&log_probs);
 
     let output = Command::cargo_bin("apr")
-        .unwrap()
+        .expect("apr binary is built")
         .args([
             "--json",
             "ppl",
             "--log-probs-file",
-            f.path().to_str().unwrap(),
+            f.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("apr binary runs");
@@ -121,16 +121,20 @@ fn falsify_crux_e_02_empty_distinct_outcome() {
 #[test]
 fn falsify_crux_e_02_nan_log_prob_rejected_via_cli() {
     let f = {
-        let mut file = tempfile::NamedTempFile::new().unwrap();
+        let mut file = tempfile::NamedTempFile::new().expect("create temp file");
         // Write raw JSON with a NaN-alike: serde_json can't write NaN, so
         // emit a positive log-prob which also trips no-silent-pass.
-        file.write_all(br"[-1.0, 0.5, -2.0]").unwrap();
-        file.flush().unwrap();
+        file.write_all(br"[-1.0, 0.5, -2.0]").expect("write");
+        file.flush().expect("flush");
         file
     };
     let output = Command::cargo_bin("apr")
-        .unwrap()
-        .args(["ppl", "--log-probs-file", f.path().to_str().unwrap()])
+        .expect("apr binary is built")
+        .args([
+            "ppl",
+            "--log-probs-file",
+            f.path().to_str().expect("temp path is UTF-8"),
+        ])
         .output()
         .expect("apr binary runs");
     assert!(
@@ -146,12 +150,16 @@ fn falsify_crux_e_02_nan_log_prob_rejected_via_cli() {
 
 #[test]
 fn falsify_crux_e_02_empty_file_rejected_via_cli() {
-    let mut f = tempfile::NamedTempFile::new().unwrap();
-    f.write_all(b"[]").unwrap();
-    f.flush().unwrap();
+    let mut f = tempfile::NamedTempFile::new().expect("create temp file");
+    f.write_all(b"[]").expect("write");
+    f.flush().expect("flush");
     let output = Command::cargo_bin("apr")
-        .unwrap()
-        .args(["ppl", "--log-probs-file", f.path().to_str().unwrap()])
+        .expect("apr binary is built")
+        .args([
+            "ppl",
+            "--log-probs-file",
+            f.path().to_str().expect("temp path is UTF-8"),
+        ])
         .output()
         .expect("apr binary runs");
     assert!(
@@ -165,13 +173,11 @@ fn falsify_crux_e_02_ppl_monotone_in_nll() {
     use aprender::metrics::perplexity::{compute_perplexity, PerplexityOutcome};
     let a = [-0.5_f64, -0.5, -0.5];
     let b = [-2.0_f64, -2.0, -2.0];
-    let pa = match compute_perplexity(&a) {
-        PerplexityOutcome::Ok { ppl, .. } => ppl,
-        _ => panic!(),
+    let PerplexityOutcome::Ok { ppl: pa, .. } = compute_perplexity(&a) else {
+        panic!("finite log-probs give a perplexity")
     };
-    let pb = match compute_perplexity(&b) {
-        PerplexityOutcome::Ok { ppl, .. } => ppl,
-        _ => panic!(),
+    let PerplexityOutcome::Ok { ppl: pb, .. } = compute_perplexity(&b) else {
+        panic!("finite log-probs give a perplexity")
     };
     assert!(pa < pb, "ppl({pa}) < ppl({pb}) must hold");
 }

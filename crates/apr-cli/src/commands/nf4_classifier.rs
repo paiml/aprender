@@ -270,14 +270,14 @@ mod tests {
         // element sample has enough variance to occasionally hit ~0.09.
         // So we sample 128 blocks and assert the mean meets the bound.
         let mut state: u64 = 0xDEAD_BEEF_CAFE_F00D;
-        let mut uniform = |s: &mut u64| -> f64 {
+        let uniform = |s: &mut u64| -> f64 {
             *s = s
                 .wrapping_mul(6364136223846793005)
                 .wrapping_add(1442695040888963407);
             let u = ((*s >> 32) as u32) as f64 / (u32::MAX as f64 + 1.0);
             u.max(1e-12)
         };
-        let mut gaussian = |s: &mut u64| -> f32 {
+        let gaussian = |s: &mut u64| -> f32 {
             let u1 = uniform(s);
             let u2 = uniform(s);
             ((-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()) as f32

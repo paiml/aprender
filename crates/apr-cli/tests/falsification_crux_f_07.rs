@@ -4,7 +4,6 @@
 //! gate the classifier discharges has a matching captured Chrome Trace
 //! JSON body that the binary must classify exactly as the harness expects.
 
-use serde_json::json;
 use std::io::Write;
 use std::process::Command;
 
@@ -19,7 +18,7 @@ fn write_body(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .prefix("crux-f-07-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
+        .expect("create temp file");
     f.write_all(
         serde_json::to_vec_pretty(body)
             .expect("serialize")
@@ -31,7 +30,7 @@ fn write_body(body: &serde_json::Value) -> tempfile::NamedTempFile {
 }
 
 fn good_trace() -> serde_json::Value {
-    json!({
+    serde_json::from_str::<serde_json::Value>(r#"{
         "displayTimeUnit": "ns",
         "traceEvents": [
             {"ph": "i", "ts": 0,    "name": "alloc", "pid": 0, "tid": 1, "args": {"bytes": 1024, "addr": "0xAAAA"}},
@@ -39,7 +38,7 @@ fn good_trace() -> serde_json::Value {
             {"ph": "i", "ts": 200,  "name": "free",  "pid": 0, "tid": 1, "args": {"bytes": 1024, "addr": "0xAAAA"}},
             {"ph": "i", "ts": 300,  "name": "free",  "pid": 0, "tid": 1, "args": {"bytes": 2048, "addr": "0xBBBB"}}
         ]
-    })
+    }"#).expect("literal fixture is valid JSON")
 }
 
 // ===== g2: CLI shape =====
@@ -114,7 +113,7 @@ fn falsify_crux_f_07_cli_malformed_json_fails() {
         .prefix("crux-f-07-bad-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
+        .expect("create temp file");
     f.write_all(b"{ not json").expect("write");
     f.flush().expect("flush");
     let out = apr_binary()
@@ -144,7 +143,8 @@ fn falsify_crux_f_07_001_schema_ok_on_good_body() {
 
 #[test]
 fn falsify_crux_f_07_001_schema_rejects_missing_trace_events() {
-    let body = json!({"otherKey": []});
+    let body = serde_json::from_str::<serde_json::Value>(r#"{"otherKey": []}"#)
+        .expect("literal fixture is valid JSON");
     let f = write_body(&body);
     let out = apr_binary()
         .args(["gpu-memtrace-lint", "--trace-file"])
@@ -161,7 +161,10 @@ fn falsify_crux_f_07_001_schema_rejects_missing_trace_events() {
 
 #[test]
 fn falsify_crux_f_07_001_schema_rejects_event_missing_ph() {
-    let body = json!({"traceEvents": [{"ts": 0, "name": "alloc"}]});
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{"traceEvents": [{"ts": 0, "name": "alloc"}]}"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_body(&body);
     let out = apr_binary()
         .args(["gpu-memtrace-lint", "--trace-file"])
@@ -178,13 +181,16 @@ fn falsify_crux_f_07_001_schema_rejects_event_missing_ph() {
 
 #[test]
 fn falsify_crux_f_07_002_alloc_free_pairing_rejects_orphan_alloc() {
-    let body = json!({
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "traceEvents": [
             {"ph": "i", "ts": 0, "name": "alloc", "args": {"addr": "0xLEAK"}},
             {"ph": "i", "ts": 1, "name": "alloc", "args": {"addr": "0xOK"}},
             {"ph": "i", "ts": 2, "name": "free",  "args": {"addr": "0xOK"}}
         ]
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_body(&body);
     let out = apr_binary()
         .args(["gpu-memtrace-lint", "--trace-file"])
@@ -201,13 +207,16 @@ fn falsify_crux_f_07_002_alloc_free_pairing_rejects_orphan_alloc() {
 
 #[test]
 fn falsify_crux_f_07_002_alloc_free_pairing_rejects_orphan_free() {
-    let body = json!({
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "traceEvents": [
             {"ph": "i", "ts": 0, "name": "alloc", "args": {"addr": "0xAAA"}},
             {"ph": "i", "ts": 1, "name": "free",  "args": {"addr": "0xAAA"}},
             {"ph": "i", "ts": 2, "name": "free",  "args": {"addr": "0xPHANTOM"}}
         ]
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_body(&body);
     let out = apr_binary()
         .args(["gpu-memtrace-lint", "--trace-file"])
@@ -224,12 +233,15 @@ fn falsify_crux_f_07_002_alloc_free_pairing_rejects_orphan_free() {
 
 #[test]
 fn falsify_crux_f_07_003_monotonic_timestamps_rejects_violation() {
-    let body = json!({
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "traceEvents": [
             {"ph": "i", "ts": 100, "name": "alloc", "pid": 0, "tid": 1, "args": {"addr": "0xA"}},
             {"ph": "i", "ts":  50, "name": "free",  "pid": 0, "tid": 1, "args": {"addr": "0xA"}}
         ]
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_body(&body);
     let out = apr_binary()
         .args(["gpu-memtrace-lint", "--trace-file"])
@@ -247,14 +259,17 @@ fn falsify_crux_f_07_003_monotonic_timestamps_rejects_violation() {
 #[test]
 fn falsify_crux_f_07_003_monotonic_timestamps_allows_cross_stream_interleave() {
     // Different (pid, tid) streams can interleave freely.
-    let body = json!({
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "traceEvents": [
             {"ph": "i", "ts": 100, "name": "alloc", "pid": 0, "tid": 1, "args": {"addr": "0xA"}},
             {"ph": "i", "ts":  50, "name": "alloc", "pid": 0, "tid": 2, "args": {"addr": "0xB"}},
             {"ph": "i", "ts": 200, "name": "free",  "pid": 0, "tid": 1, "args": {"addr": "0xA"}},
             {"ph": "i", "ts": 250, "name": "free",  "pid": 0, "tid": 2, "args": {"addr": "0xB"}}
         ]
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_body(&body);
     let out = apr_binary()
         .args(["gpu-memtrace-lint", "--trace-file"])

@@ -4,7 +4,6 @@
 //! the classifier discharges has a matching captured JSON body that the
 //! binary must classify exactly as the harness expects.
 
-use serde_json::json;
 use std::io::Write;
 use std::process::Command;
 
@@ -19,7 +18,7 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .prefix("crux-l-02-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
+        .expect("create temp file");
     f.write_all(
         serde_json::to_vec_pretty(body)
             .expect("serialize")
@@ -31,15 +30,16 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
 }
 
 fn good_parity() -> serde_json::Value {
-    json!({"max_abs_diff": 0.002, "cosine_sim": 0.99999})
+    serde_json::from_str::<serde_json::Value>(r#"{"max_abs_diff": 0.002, "cosine_sim": 0.99999}"#)
+        .expect("literal fixture is valid JSON")
 }
 
 fn good_provenance() -> serde_json::Value {
-    json!({
+    serde_json::from_str::<serde_json::Value>(r#"{
         "attn_impl": "flash2",
         "kernel_source": "hf-kernels-community:flash-attn2@abcdef0123456789abcdef0123456789abcdef01",
         "fallback": null
-    })
+    }"#).expect("literal fixture is valid JSON")
 }
 
 // ===== g2: CLI shape =====
@@ -99,7 +99,10 @@ fn falsify_crux_l_02_002_parity_ok_within_bounds() {
 
 #[test]
 fn falsify_crux_l_02_002_parity_rejects_max_abs_diff_above() {
-    let body = json!({"max_abs_diff": 0.01, "cosine_sim": 0.99999});
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{"max_abs_diff": 0.01, "cosine_sim": 0.99999}"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["attn-parity-lint", "--parity-file"])
@@ -116,7 +119,9 @@ fn falsify_crux_l_02_002_parity_rejects_max_abs_diff_above() {
 
 #[test]
 fn falsify_crux_l_02_002_parity_rejects_cosine_below_floor() {
-    let body = json!({"max_abs_diff": 0.001, "cosine_sim": 0.99});
+    let body =
+        serde_json::from_str::<serde_json::Value>(r#"{"max_abs_diff": 0.001, "cosine_sim": 0.99}"#)
+            .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["attn-parity-lint", "--parity-file"])
@@ -148,10 +153,13 @@ fn falsify_crux_l_02_003_provenance_ok_on_pinned_flash2() {
 
 #[test]
 fn falsify_crux_l_02_003_provenance_rejects_malformed_sha() {
-    let body = json!({
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "attn_impl": "flash2",
         "kernel_source": "hf-kernels-community:flash-attn2@short"
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["attn-parity-lint", "--provenance-file"])
@@ -168,7 +176,10 @@ fn falsify_crux_l_02_003_provenance_rejects_malformed_sha() {
 
 #[test]
 fn falsify_crux_l_02_003_provenance_ok_on_naive_with_reason() {
-    let body = json!({"attn_impl": "naive", "fallback": "no-gpu"});
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{"attn_impl": "naive", "fallback": "no-gpu"}"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["attn-parity-lint", "--provenance-file"])
@@ -184,7 +195,10 @@ fn falsify_crux_l_02_003_provenance_ok_on_naive_with_reason() {
 
 #[test]
 fn falsify_crux_l_02_004_head_dim_error_ok_on_unsupported() {
-    let body = json!({"error": "unsupported-head-dim: got 96, expected 64 or 128"});
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{"error": "unsupported-head-dim: got 96, expected 64 or 128"}"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["attn-parity-lint", "--head-dim-error-file"])
@@ -200,7 +214,8 @@ fn falsify_crux_l_02_004_head_dim_error_ok_on_unsupported() {
 
 #[test]
 fn falsify_crux_l_02_004_head_dim_error_rejects_irrelevant_error() {
-    let body = json!({"error": "out of memory"});
+    let body = serde_json::from_str::<serde_json::Value>(r#"{"error": "out of memory"}"#)
+        .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["attn-parity-lint", "--head-dim-error-file"])
