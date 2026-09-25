@@ -18191,6 +18191,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-4086
+  github_issue: 4086
+  item_type: task
+  title: '0.70.0: dogfood''s declared check_model_ladder gate ignores a recorded emergency scope (no seam) — known-red at 0.69.1'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T23:52:18.558504381+00:00
+  updated: 2026-09-23T23:52:18.558504381+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  notes: null
 - id: GH-4140
   github_issue: 4140
   item_type: task
