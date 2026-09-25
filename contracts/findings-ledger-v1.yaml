@@ -21,8 +21,9 @@
 #          on pull_request.
 #   * L2 — case tables, MEASURED 2026-09-25:
 #          check_findings_ledger.sh --self-test has 19 cases, 10/10 mutants
-#          killed; check_pr_closes_issue.sh --self-test has 57 cases (36 of
-#          them rule-18 rows), 23/23 mutants killed.
+#          killed; check_pr_closes_issue.sh --self-test has 71 cases (50 of
+#          them rule-18 rows); 26 mutants, 25 killed, 1 equivalent
+#          (dropping CLOSE_LINE_RE's end anchor: the extracting sed re-anchors it).
 #   * L3/L4 — NOT APPLICABLE: a data file and a PR body, not a kernel.
 # ─────────────────────────────────────────────────────────────────────────────
 name: findings-ledger
@@ -44,7 +45,7 @@ metadata:
   author: PAIML Engineering
   references:
     - 'scripts/check_findings_ledger.sh — the ledger guard: bare (case table, then docs/findings/) · <dir> · --self-test (19 cases)'
-    - 'scripts/check_pr_closes_issue.sh --require-close — rule 18 at PR time (36 rc-* rows in --self-test)'
+    - 'scripts/check_pr_closes_issue.sh --require-close — rule 18 at PR time (50 rc-* rows in --self-test)'
     - '.github/workflows/ci.yml — the R-2 step (pull_request only) runs the guard with --require-close'
     - 'scripts/release/prepare_bump.sh — the bump PR body carries a `no-issue:` line and is preflighted with --require-close'
     - 'docs/findings/README.md — the row schema, for the sessions that write it'
@@ -93,14 +94,16 @@ equations:
 
   every_pr_discharges_an_open_issue:
     formula: |
-      at PR time: body ∋ (Closes|Fixes|Resolves) #N with N an OPEN issue in this repo
-               ∨ body ∋ Refs #P row <id> with P an OPEN issue in this repo whose body has an unticked line `- [ ] <id>:`
-               ∨ body ∋ a line matching ^\s*no-issue:\s*\S
+      prose(body) = the lines outside ``` / ~~~ fences and <!-- --> comments, an unclosed one running to the end
+      at PR time: prose ∋ a line, whole and at column 0, `(Closes|Fixes|Resolves)[:] [own/repo]#N[.]` with N an OPEN issue in this repo
+               ∨ prose ∋ a line `Refs #P row <id>[.]` with P an OPEN issue in this repo whose body has an unticked line `- [ ] <id>:`
+               ∨ prose ∋ a line matching ^no-issue:\s*\S
       a target that cannot be resolved fails as close-target-unverified, never as a pass
     domain: 'the pull_request body in ci.yml R-2, and the bump PR body in prepare_bump.sh'
     codomain: 'bool'
     invariants:
-    - 'ONLY PROSE COUNTS, AS GITHUB PARSES IT (rc-close-fenced, -tilde-fence, -backticked, -html-comment, rc-row-ref-fenced, rc-no-issue-fenced, rc-close-mid-word, rc-close-suffix): code fences, inline code and HTML comments are removed first, and a closing keyword counts only as a whole word before a whole number.'
+    - 'A DISCHARGE IS A WHOLE LINE AT COLUMN 0 OF PROSE (rc-close-fenced, -tilde-fence, -unclosed-fence, -unclosed-comment, -html-comment, -backticked, -double-tick, -indented, -blockquote, -in-sentence, -mid-word, -suffix; rc-row-ref-fenced, -in-sentence; rc-no-issue-fenced, -indented): fences and comments are tracked line by line, an unclosed one running to the end as GitHub renders it, and only a line in one strict form counts. This replaced a regex strip that three agy rounds kept finding Markdown shapes past.'
+    - 'NO FALSE RED ON LEGITIMATE LAYOUT (rc-two-close-lines, rc-close-after-fence, -after-comment, -after-inline-comment, rc-mixed-fences, rc-comment-opened-in-fence, rc-crlf-fence-closes, rc-no-issue-code-reason).'
     - 'REFS ALONE DOES NOT DISCHARGE (rc-flow-012-refs-only, FALSIFY-FLOW-012).'
     - 'A ROW REF MUST NAME A REAL, UNTICKED ROW (rc-row-ref-fabricated, -ticked, -prefix): the parent body must carry `- [ ] <id>:`, matched whole, and `Refs` must start a word (rc-row-ref-mid-word: `Xrefs #N row X` is prose); a row ref closes nothing on merge, so an unchecked id would let `Refs #1 row x` discharge rule 18. An unreadable parent body is close-target-unverified (rc-row-ref-no-body).'
     - 'A CLOSED ISSUE, A PR NUMBER OR A CROSS-REPO TARGET DOES NOT DISCHARGE (rc-closes-closed, rc-closes-pr, rc-cross-repo).'
