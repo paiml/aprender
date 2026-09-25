@@ -46,4 +46,29 @@
 - The in-tree precondition is structural (the writer emits only admitted kinds); the oracle's `kinds` arm is the
   independent confirmation on the live file.
 
-verdict: DONE (code) — awaiting quorum; not armed.
+## Re-verification and re-quorum (aprender-75, 2026-09-24; the author's session had ended)
+
+The prior quorum was at `27315ed18`, and `9fad260dc`, the clippy `--all-targets` fix, came after it. The fix only
+moves `owl_tests.rs` inline as `mod tests` and rustfmts the CLI test. Lines 1–374 of `owl.rs` are byte-identical
+across the two heads.
+
+Re-run in a fresh worktree at `9fad260dc` on lambda:
+- fmt clean; clippy `--all-targets -D warnings` clean;
+- `aprender-contracts --lib` **1717 passed**; `ont2c_owl_tbox` **9/9**;
+- the row's probe: `ontology.ofn` and `tbox-report.json` tracked, the jq clause holds, and export is byte-identical;
+  `pv lint --gate tbox` gives `decline: Advisory` (rc 2);
+- `make oracle-owl-check` rc 0: roundtrip 13 == fixture, kinds 36 admitted, ELK agrees, the positive control RED,
+  and `tbox-differential.json` shows no drift;
+- the row's mutation, planted independently (`TransitiveObjectProperty` + `IrreflexiveObjectProperty` on `refines`):
+  roundtrip rc 1 (`written but not expected`), kinds rc 1 (`outside the told-closure precondition`).
+
+Re-quorum at `9fad260dc` (`docs/audits/quorum-PMAT-4071.json`): **3/3 PASS**, agy gemini-3.1-pro-high,
+gemini-3.8-flash-high and gemini-3.7-flash-high, no dissent. All lanes exited 3 on isolation, and every cause is
+attributed to foreign worktrees; the flag stays `partial: true`.
+
+**Open dependency:** paiml/infra#965 (the ELK 0.4.3 pin in `ont-oracle-ledger.md`, and forjar's
+`ont-oracle-jvm`) is still an OPEN PR. The oracle code pins ELK by sha256 on its own; the ledger row is where the
+spec records the pin.
+
+verdict: DONE (code) — quorum receipt at `9fad260dc`; not armed.
+

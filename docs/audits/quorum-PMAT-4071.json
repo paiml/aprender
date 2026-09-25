@@ -1,80 +1,243 @@
 {
   "ticket": "PMAT-4071",
-  "base": "origin/main",
-  "base_resolved": "49fe19c28",
-  "head": "27315ed187ad4c6d17d2caf3e4f5604ff6a0b8af",
+  "executor": "agy",
   "width": 3,
-  "executor": "claude-sequential",
-  "degraded": "same-family",
-  "degraded_basis": "agy quota exhausted on EVERY family at the pre-check (gemini, openai/gpt-oss, claude all 429 'Individual quota reached', resets in ~1h41m; agy round preserved in docs/audits/quorum-PMAT-4071.agy-round/artifact.json, all lanes NO-VERDICT). Operator standing rule, verbatim (~/.claude/CLAUDE.md): \"if agy quota is ever gone, simply use claude code itself\" and same-family (degraded) quorums are valid, marked `degraded: same-family`. Cop (aprender-cf, 2026-09-23): lanes must not be the author's own model id — author claude-opus-5-5, lanes Sonnet 5.",
-  "author": {"model": "claude-opus-5-5", "family": "claude", "source": "model-gate.sh measured (opus-5-5)"},
-  "agreed": true,
-  "armed": false,
-  "arming_note": "Stop at the receipt (cop instruction). Not armed. receipt-lint.sh refuses any lane in the author's family by design; this artifact is admissible only under the operator's degraded same-family rule quoted above.",
+  "head": "9fad260dc",
+  "base": "origin/main 49fe19c28",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "note": "original author aprender-19 [c630e1] (session ended); re-quorum run by aprender-75"
+  },
   "lanes": [
     {
       "lane": 1,
-      "model": "claude-sonnet-5",
-      "model_source": "declared (Agent tool model=sonnet; the harness maps it to Sonnet 5)",
-      "family": "claude",
-      "role": "degraded-same-family",
-      "agent_id": "af8ac93dc43ff237d",
-      "rounds": [
-        {"head": "08da1882f", "verdict": "PASS", "findings": [
-          {"file": "docs/audits/impl-PMAT-4071-receipt.md", "line": 33, "grounding": "measured", "claim": "make oracle-owl / oracle-owl-check invoked by no workflow or dogfood script; RED-at-release is unenforced", "resolution": "OPEN, disclosed; release-surface wiring reported to the cop (the pre-existing SHACL `make oracle` has the same gap)"},
-          {"file": "crates/aprender-contracts-cli/src/commands/ontology.rs", "line": 1, "grounding": "measured", "claim": "the pv ontology CLI has no test", "resolution": "FIXED 3a08bbc80: tests/ont2c_owl_tbox.rs (9 tests), wired c444b7d10"},
-          {"file": "crates/aprender-contracts-cli/src/commands/lint.rs", "line": 304, "grounding": "measured", "claim": "decide_tbox_gate's Advisory mapping untested; an Advisory->Ok mutant would survive", "resolution": "FIXED 3a08bbc80; mutant Advisory->NoCheckable KILLED (2 tests fail), restore verified byte-identical"}
-        ]},
-        {"head": "27315ed18", "verdict": "PASS", "findings": [
-          {"file": "Makefile", "line": 1392, "grounding": "measured", "claim": "oracle-owl still has no invoker", "resolution": "OPEN, disclosed (same as round 1)"}
-        ]}
-      ],
+      "model": "gemini-3.1-pro-high",
+      "family": "gemini",
       "verdict": "PASS"
     },
     {
       "lane": 2,
-      "model": "claude-sonnet-5",
-      "model_source": "declared (Agent tool model=sonnet)",
-      "family": "claude",
-      "role": "degraded-same-family",
-      "agent_id": "a28a33c17d0d11ce2",
-      "rounds": [
-        {"head": "c444b7d10", "verdict": "PASS", "findings": [
-          {"file": "crates/aprender-contracts/src/ontology/owl.rs", "line": 11, "grounding": "cited", "claim": "Role read by field access: a new role flag compiles and is silently dropped, contradicting the 'every Σ key mapped' build-time claim", "resolution": "FIXED 3ecf65c0d: exhaustive Role destructure, output byte-identical"},
-          {"file": "Makefile", "line": 1392, "grounding": "cited", "claim": "oracle-owl has no invoker", "resolution": "OPEN, disclosed"}
-        ]},
-        {"head": "27315ed18", "verdict": "PASS", "findings": [
-          {"file": "crates/aprender-contracts/src/ontology/owl.rs", "line": 191, "grounding": "cited", "claim": "RESOLVED: Role destructured with no `..`", "resolution": "confirmed"},
-          {"file": "Makefile", "line": 1392, "grounding": "cited", "claim": "oracle-owl has no invoker", "resolution": "OPEN, disclosed"}
-        ]}
-      ],
+      "model": "gemini-3.8-flash-high",
+      "family": "gemini",
       "verdict": "PASS"
     },
     {
       "lane": 3,
-      "model": "claude-sonnet-5",
-      "model_source": "declared (Agent tool model=sonnet)",
-      "family": "claude",
-      "role": "degraded-same-family",
-      "agent_id": "af61ff13b7dd64978",
-      "rounds": [
-        {"head": "3ecf65c0d", "verdict": "PASS", "findings": [
-          {"file": "tests/oracle/owl/src/main.rs", "line": 309, "grounding": "cited", "claim": "predictable ont-oracle-elk-<pid> work dir via create_dir_all in shared /tmp (symlink pre-emption)", "resolution": "FIXED 27315ed18: exclusive create_dir, pid+nanos, failure declines"},
-          {"file": "tests/oracle/owl/Cargo.lock", "line": 1, "grounding": "measured", "claim": "F-20's literal `-sys` pattern already fails on linux-raw-sys via aprender-contracts; pre-existing on main, not from this diff", "resolution": "OUT OF SCOPE; routed to infra-83 (F-20 owner)"}
-        ]},
-        {"head": "27315ed18", "verdict": "PASS", "findings": []}
-      ],
+      "model": "gemini-3.7-flash-high",
+      "family": "gemini",
       "verdict": "PASS"
     }
   ],
-  "open_findings": [
-    "make oracle-owl / oracle-owl-check (and the pre-existing make oracle) are invoked by no workflow and not by scripts/dogfood.sh: the ruling's 'agreement at the RELEASE gate, no JVM is RED at release' is stated, not wired. Release-surface change; reported to the cop.",
-    "F-20 `-sys` pattern false positive on linux-raw-sys (pre-existing; infra-83)."
+  "agreed": true,
+  "verdict": "PASS",
+  "dissent": [],
+  "partial": true,
+  "partial_reasons": [
+    "all 3 lanes exited 3 on isolation: every moved ref and the shared .git/config change attributed by reflog and worktree list to OTHER worktrees' commits and pushes (PMAT-4076, ci/4133, fix/4114, chore/0.69.1-merge-back, fix/4126, fix/4130) in the 03:34-03:38 window; each lane ran sandboxed in its own clone, removed byte-identical; verdicts counted, flag kept"
   ],
-  "measured_at_head": {
-    "aprender-contracts --lib": "1717 passed (at d9aa1bdb2+); ontology::owl 11, lint::tbox_gate 5 re-run at 3ecf65c0d",
-    "aprender-contracts-cli --test ont2c_owl_tbox": "9 passed",
-    "oracle (lambda, java 17.0.20)": "roundtrip 13==13 hand-written; kinds 36/36; elk agree, positive control RED; 4 oracle unit tests",
-    "guards": "check_complexity_ratchet PASS 49fe19c28 vs 635fe04e5; check_tree_reader_tests PASS 145; check_explicit_test_commands PASS; check_guards_are_wired rc 0; check_include_files rc 0; clippy -D warnings clean; fmt clean"
+  "conversations": [
+    "d9c4b0e3-6b9b-414f-84d0-3f4f2be807e8",
+    "2eb11ea9-5455-489c-8bc2-4d438d59bf7c",
+    "017197b8-9bff-4b70-a733-da0c1194a216"
+  ],
+  "gate": {
+    "cmd": "ont2c CLI test + owl lib tests + make oracle-owl-check",
+    "exit": 0,
+    "log_sha256": "e905bb1ed9cac39e251cdc00e9e052996f1a24477eee40515cfd70f002cfcfc5"
+  },
+  "why_re_quorum": "the prior 3/3 PASS was at 27315ed18; 9fad260dc (clippy --all-targets: owl tests inlined, CLI test rustfmt) came after it. Production code in owl.rs lines 1-374 is byte-identical across the two heads (orchestrator and delegate both checked).",
+  "prior_rounds": [
+    {
+      "ticket": "PMAT-4071",
+      "base": "origin/main",
+      "base_resolved": "49fe19c28",
+      "head": "27315ed187ad4c6d17d2caf3e4f5604ff6a0b8af",
+      "width": 3,
+      "executor": "claude-sequential",
+      "degraded": "same-family",
+      "degraded_basis": "agy quota exhausted on EVERY family at the pre-check (gemini, openai/gpt-oss, claude all 429 'Individual quota reached', resets in ~1h41m; agy round preserved in docs/audits/quorum-PMAT-4071.agy-round/artifact.json, all lanes NO-VERDICT). Operator standing rule, verbatim (~/.claude/CLAUDE.md): \"if agy quota is ever gone, simply use claude code itself\" and same-family (degraded) quorums are valid, marked `degraded: same-family`. Cop (aprender-cf, 2026-09-23): lanes must not be the author's own model id \u2014 author claude-opus-5-5, lanes Sonnet 5.",
+      "author": {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "source": "model-gate.sh measured (opus-5-5)"
+      },
+      "agreed": true,
+      "armed": false,
+      "arming_note": "Stop at the receipt (cop instruction). Not armed. receipt-lint.sh refuses any lane in the author's family by design; this artifact is admissible only under the operator's degraded same-family rule quoted above.",
+      "lanes": [
+        {
+          "lane": 1,
+          "model": "claude-sonnet-5",
+          "model_source": "declared (Agent tool model=sonnet; the harness maps it to Sonnet 5)",
+          "family": "claude",
+          "role": "degraded-same-family",
+          "agent_id": "af8ac93dc43ff237d",
+          "rounds": [
+            {
+              "head": "08da1882f",
+              "verdict": "PASS",
+              "findings": [
+                {
+                  "file": "docs/audits/impl-PMAT-4071-receipt.md",
+                  "line": 33,
+                  "grounding": "measured",
+                  "claim": "make oracle-owl / oracle-owl-check invoked by no workflow or dogfood script; RED-at-release is unenforced",
+                  "resolution": "OPEN, disclosed; release-surface wiring reported to the cop (the pre-existing SHACL `make oracle` has the same gap)"
+                },
+                {
+                  "file": "crates/aprender-contracts-cli/src/commands/ontology.rs",
+                  "line": 1,
+                  "grounding": "measured",
+                  "claim": "the pv ontology CLI has no test",
+                  "resolution": "FIXED 3a08bbc80: tests/ont2c_owl_tbox.rs (9 tests), wired c444b7d10"
+                },
+                {
+                  "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+                  "line": 304,
+                  "grounding": "measured",
+                  "claim": "decide_tbox_gate's Advisory mapping untested; an Advisory->Ok mutant would survive",
+                  "resolution": "FIXED 3a08bbc80; mutant Advisory->NoCheckable KILLED (2 tests fail), restore verified byte-identical"
+                }
+              ]
+            },
+            {
+              "head": "27315ed18",
+              "verdict": "PASS",
+              "findings": [
+                {
+                  "file": "Makefile",
+                  "line": 1392,
+                  "grounding": "measured",
+                  "claim": "oracle-owl still has no invoker",
+                  "resolution": "OPEN, disclosed (same as round 1)"
+                }
+              ]
+            }
+          ],
+          "verdict": "PASS"
+        },
+        {
+          "lane": 2,
+          "model": "claude-sonnet-5",
+          "model_source": "declared (Agent tool model=sonnet)",
+          "family": "claude",
+          "role": "degraded-same-family",
+          "agent_id": "a28a33c17d0d11ce2",
+          "rounds": [
+            {
+              "head": "c444b7d10",
+              "verdict": "PASS",
+              "findings": [
+                {
+                  "file": "crates/aprender-contracts/src/ontology/owl.rs",
+                  "line": 11,
+                  "grounding": "cited",
+                  "claim": "Role read by field access: a new role flag compiles and is silently dropped, contradicting the 'every \u03a3 key mapped' build-time claim",
+                  "resolution": "FIXED 3ecf65c0d: exhaustive Role destructure, output byte-identical"
+                },
+                {
+                  "file": "Makefile",
+                  "line": 1392,
+                  "grounding": "cited",
+                  "claim": "oracle-owl has no invoker",
+                  "resolution": "OPEN, disclosed"
+                }
+              ]
+            },
+            {
+              "head": "27315ed18",
+              "verdict": "PASS",
+              "findings": [
+                {
+                  "file": "crates/aprender-contracts/src/ontology/owl.rs",
+                  "line": 191,
+                  "grounding": "cited",
+                  "claim": "RESOLVED: Role destructured with no `..`",
+                  "resolution": "confirmed"
+                },
+                {
+                  "file": "Makefile",
+                  "line": 1392,
+                  "grounding": "cited",
+                  "claim": "oracle-owl has no invoker",
+                  "resolution": "OPEN, disclosed"
+                }
+              ]
+            }
+          ],
+          "verdict": "PASS"
+        },
+        {
+          "lane": 3,
+          "model": "claude-sonnet-5",
+          "model_source": "declared (Agent tool model=sonnet)",
+          "family": "claude",
+          "role": "degraded-same-family",
+          "agent_id": "af61ff13b7dd64978",
+          "rounds": [
+            {
+              "head": "3ecf65c0d",
+              "verdict": "PASS",
+              "findings": [
+                {
+                  "file": "tests/oracle/owl/src/main.rs",
+                  "line": 309,
+                  "grounding": "cited",
+                  "claim": "predictable ont-oracle-elk-<pid> work dir via create_dir_all in shared /tmp (symlink pre-emption)",
+                  "resolution": "FIXED 27315ed18: exclusive create_dir, pid+nanos, failure declines"
+                },
+                {
+                  "file": "tests/oracle/owl/Cargo.lock",
+                  "line": 1,
+                  "grounding": "measured",
+                  "claim": "F-20's literal `-sys` pattern already fails on linux-raw-sys via aprender-contracts; pre-existing on main, not from this diff",
+                  "resolution": "OUT OF SCOPE; routed to infra-83 (F-20 owner)"
+                }
+              ]
+            },
+            {
+              "head": "27315ed18",
+              "verdict": "PASS",
+              "findings": []
+            }
+          ],
+          "verdict": "PASS"
+        }
+      ],
+      "open_findings": [
+        "make oracle-owl / oracle-owl-check (and the pre-existing make oracle) are invoked by no workflow and not by scripts/dogfood.sh: the ruling's 'agreement at the RELEASE gate, no JVM is RED at release' is stated, not wired. Release-surface change; reported to the cop.",
+        "F-20 `-sys` pattern false positive on linux-raw-sys (pre-existing; infra-83)."
+      ],
+      "measured_at_head": {
+        "aprender-contracts --lib": "1717 passed (at d9aa1bdb2+); ontology::owl 11, lint::tbox_gate 5 re-run at 3ecf65c0d",
+        "aprender-contracts-cli --test ont2c_owl_tbox": "9 passed",
+        "oracle (lambda, java 17.0.20)": "roundtrip 13==13 hand-written; kinds 36/36; elk agree, positive control RED; 4 oracle unit tests",
+        "guards": "check_complexity_ratchet PASS 49fe19c28 vs 635fe04e5; check_tree_reader_tests PASS 145; check_explicit_test_commands PASS; check_guards_are_wired rc 0; check_include_files rc 0; clippy -D warnings clean; fmt clean"
+      }
+    }
+  ],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "note": "stop at the receipt; never arm"
+  },
+  "ruling": {
+    "by": "cop aprender-cf",
+    "date": "2026-09-24",
+    "text": "the round counts: ONE round, 3/3 gemini PASS at 9fad260dc; the partial reason (exit 3 on isolation) is shown benign by measurement, every moved ref foreign and the lane clones byte-identical; not a composed receipt",
+    "ref_attribution": {
+      "window": "03:34:16-03:38 CEST 2026-09-24",
+      "refs": {
+        "PMAT-4076-ont7-valid-under": "commit 03:35:19, worktree scratchpad/wt/ont7 (session 5eb27f84)",
+        "ci/4133-guard-steps-setsid": "commit 03:35:12, push 03:35:15, /home/noah/src/aprender-4133",
+        "fix/4114-tarball-build-gate": "commit 03:35:59, push 03:36:02, /mnt/nvme-raid0/agent-wt/aprender-f5-4114",
+        "chore/0.69.1-merge-back": "commit 03:36:23 + cherry-pick 03:36:25, /mnt/nvme-raid0/tmp/aprfc/wt-mergeback",
+        "fix/4126-probe-timeout-keeps-evidence": "commit 03:37:37, push 03:37:40, /mnt/nvme-raid0/tmp/apr36-4126",
+        "fix/4130-shipped-tests-path-dev-deps": "commit 03:37:55, /home/noah/src/aprender-4130"
+      },
+      "git_config": "sibling-branch upstream stanzas consistent with a sibling's push -u (inferred)",
+      "lane_clones": "sandboxed, own .git, all 3 removed byte-identical"
+    }
   }
 }
