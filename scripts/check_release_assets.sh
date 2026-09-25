@@ -86,7 +86,7 @@ cra_release_by_tag() {
     jq -cs --arg t "$1" 'if length != 1 or (.[0] | type) != "array" then error("not a release list") else .[0] end
         | [first(.[] | if type == "object" and has("tag_name") then . else error("release without tag_name") end
                  | select(.tag_name == $t))]
-        | if . == [] then error("no release \($t)") else .[0] end' 2>/dev/null || return 1
+        | if length == 0 then error("no release \($t)") else .[0] end' 2>/dev/null || return 1
 }
 
 read_assets() {
