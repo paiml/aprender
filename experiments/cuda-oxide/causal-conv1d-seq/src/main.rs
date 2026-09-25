@@ -591,8 +591,24 @@ fn main() {
         let mut worst_eager = 0.0f64;
         let mut parity = (1.0f64, 0.0f32);
         for n in TIMED_NS {
-            let o = run_oxide(&ctx, &module, (n, n, T_TILE), ex2, true);
-            let (h, _) = run_handptx(&ctx, &sm, n);
+            // Three rounds, alternating which kernel is timed first, and the round
+            // with the median ratio is the row. yoga's clocks step between ~15 µs and
+            // ~11.5 µs per launch partway through a run; with a fixed order that step
+            // always landed on the kernel timed first (oxide: 15.5 vs 11.5 = 1.35
+            // NO-GO). A step now contaminates at most one round, and the median drops it.
+            let mut rounds: Vec<(Measured, Measured)> = (0..3)
+                .map(|round| {
+                    if round % 2 == 0 {
+                        let o = run_oxide(&ctx, &module, (n, n, T_TILE), ex2, true);
+                        (o, run_handptx(&ctx, &sm, n).0)
+                    } else {
+                        let h = run_handptx(&ctx, &sm, n).0;
+                        (run_oxide(&ctx, &module, (n, n, T_TILE), ex2, true), h)
+                    }
+                })
+                .collect();
+            rounds.sort_by(|a, b| (a.0.us / a.1.us).total_cmp(&(b.0.us / b.1.us)));
+            let (o, h) = rounds.swap_remove(1);
             let ratio = o.us / h.us;
             let ok = ratio <= TIMING_RATIO_MAX;
             let eager_ratio = o.eager_us / h.eager_us;
