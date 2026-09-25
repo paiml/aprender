@@ -233,31 +233,6 @@ that decides a gate.
    is retired. `pack:` during queue pressure with any pooled box < 0.8 busy/online is a §8 stop.
    p95 `ci / gate` wall clock is a shrink-only ratchet after 3 records. Ticket: 0.69, immediately
    after P0·Fan-out lands; no §1.5 scope PR merges before it.
-17. **An rc is a tag on a queue-green `main` sha; receipts gate PROMOTION, not the rc**
-   (operator ruling 2026-09-25 16:58 Madrid, verbatim, quoted on #4433: "No RC CI run. rc.N = tag
-   on a queue-green main sha, cut within 5 min of green. Hardware jobs + clean-room + accuracy
-   receipts run in parallel on the rc tag and gate PROMOTION, not the rc. Promotion failure →
-   rc.N+1."). There are no RC branches and no RC CI run: `vX.Y.Z-rc.N` is cut within 5 min of the
-   `main` sha going queue-green. Hardware jobs, clean-room and accuracy receipts run **in
-   parallel on the rc tag**, and T-3 promotes only when every one is green on that tag's sha. A
-   promotion failure is never patched onto the same rc: the fix lands on `main` and the next
-   green sha is `rc.N+1`. `ci / gate` is **5 fat jobs** (x86 main, gx10, yoga, mac-refusal,
-   determinism), each running all its parts to completion on the biggest runner in its class
-   (nextest full-core, sccache warm), with the **same test set as before the collapse**: Σ
-   executed is unchanged, proved by a case table (#4433). The train-active priority hook stays as
-   a floor. For `ci / gate`, the 5 fat jobs **supersede** rule 16's pool-routed / crate-sharded
-   layout (and §3's B2-cpu shard line); rule 16 still governs work outside `ci / gate`.
-   #4318 (0.69.5) is the last rc cut from a branch. Ticket: #4434.
-18. **Every release is an rc, deployed to the fleet and measured there; nothing more by default**
-   (operator 2026-09-25, verbatim, quoted on #4434 comment 5835033678: "no, only release candidate
-   and deployed to fleet and measured going forward all releases"). A release is the rule-17 rc tag,
-   installed on every host (lambda-labs, gx10, yoga, intel, mini) with PATH `apr --version` reading
-   the tag and its sha, then measured on each host: at least one row per tag × host in the arbiter
-   perf ledger (paiml/infra#1057). No final tag and no crates.io publish unless the operator asks
-   for one. The check is `scripts/release/check_rc_fleet_measured.sh <tag> <install-receipt>
-   [ledger]`: it is RED when any host lacks an ok receipt row or an `apr` ledger row at that
-   version and sha, it fails closed on a missing file, and `--self-test` runs its 13-row case table.
-   Ticket: #4434.
 
 ## §4 The train — each step has its own already-done test
 
@@ -270,12 +245,6 @@ that decides a gate.
 | **T-3 Promote** | **immediately before the tag, after the bump PR has merged:** `bash scripts/check_milestone_cut.sh 0.N.0` exits 0 again. Exit ≠ 0 is RED and there is no tag. The T-0 read is not enough, because an item reopened between the reads is invisible to it (v0.68.0 shipped with #3091 reopened 85 min before the tag, #3445). Then tag; clean-room on the tag; GitHub release with T-2 receipt attached **Then (rule 14, 2026-09-17):** fan-out per rule 14 on the release commit (T-1, A0–B1, B2-cpu shards, B2-gpu in parallel); tag only when every shard is green; clean-room-on-tag **inherits** when `tag sha == commit sha`, else **dispatch `clean-room.yml` on the tag immediately**; the run's first step asserts `HEAD == tag` and fails otherwise; record the run id; GitHub release with T-2 receipt attached. Interim until infra#621 (ref input) lands — the nightly clones `main` at 23:00Z and has never tested a tag (0 of 10 runs after v0.66/v0.67) | release `v0.N.0` exists — release `v0.N.0` exists with a green clean-room run id on its sha — **ordering change (2026-09-16, #3366):** T-3 builds the `apr-*` binary assets on the tag **before** T-2 runs, because T-2's installer row consumes them; a T-2 receipt that predates the tag's assets is [U]. Release notes: the installer is the headline after Qwen 3.5 |
 | **T-4 Publish** | `publish_strict.sh` from a detached checkout of the tag, `HEAD == tag` asserted, clean tree; order derived from `cargo metadata` at the tag (acyclic, re-checked before start; TIERS is deleted — #3462); one crate per call; stop on first non-zero and report crate + what is already published (never hand-rolled back); retry only 429/5xx ×3 with backoff; never `--allow-dirty`; refuses without the clean-room run id on the tag sha (#3335) and a committed dry-run receipt (`--dry-run --no-verify --locked`, rc=0, tree clean). **Unattended under standing operator authorization** (2026-09-17); receipt records `attended_min` and cascade start/end (the next kaizen number). Post-publish: `cargo install apr-cli --version 0.N.M` on intel + gx10 via a `fleet-hosts` make target, `apr --version` matches; all crates verified on crates.io; run id, receipt and per-crate timestamps attached to the release | all crates at `0.N.M` on crates.io |
 | **T-5 Reconcile** | **hard gate (operator 2026-09-13: kaizen)** — the §6 reconcile predicates hold, receipt `docs/build-ledger/<date>/<sha>-reconcile.json` committed; the train has no `DONE` line without it | receipt exists for this sha and every predicate reads 0 |
-
-**rc cut (rule 17):** `vX.Y.Z-rc.N` is a tag on a queue-green `main` sha within 5 min of green; T-2 and
-T-3's hardware, clean-room and accuracy receipts run in parallel on that tag and gate promotion. A
-promotion failure is `rc.N+1`, never a patched rc.
-**deployed + measured (rule 18):** an rc counts as released only when `check_rc_fleet_measured.sh` is
-GREEN for it (5-host install receipt + infra#1057 ledger rows); final tags and crates.io are operator-asked only.
 
 Any step RED → SKIPPED, no partial promotion. Scope is assigned to trains after the fact:
 0.67 contains whatever merged before the 0.67 cut, by definition.
