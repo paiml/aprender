@@ -72,6 +72,19 @@ capable() {
     return 0
 }
 
+# SHAPE COMPONENTS THIS TREE'S OWN pv PARSES (#3610 / the 0.70.0 car). pv refuses a shape key it
+# does not implement at parse, with exit 3 and `error: shape <s> uses unsupported <key>`. When the
+# key is one this tree's parser accepts, the pinned pv is simply older than the contracts -- the
+# 0.65.2 `incapable` class again, one release on: allowEmpty landed in the same car as the first
+# contract to use it, so no fleet pv could have it until that car ships. A key the tree does NOT
+# parse either (a typo, an unimplemented component) stays RED.
+SHAPES_SRC="${FLEET_PV_SHAPES_SRC:-$ROOT/crates/aprender-contracts/src/ontology/shapes.rs}"
+tree_component() { # tree_component <pv stderr line> -> the key, when the tree's parser lists it
+    [[ $1 =~ ^error:\ shape\ [^\ ]+\ uses\ unsupported\ ([A-Za-z]+)$ ]] || return 1
+    grep -qxE "[[:space:]]*\"${BASH_REMATCH[1]}\"," "$SHAPES_SRC" 2>/dev/null || return 1
+    printf '%s' "${BASH_REMATCH[1]}"
+}
+
 # resolve_fleet_pv -> prints the first candidate that exists and is executable; rc 1 if none
 resolve_fleet_pv() {
     local c; local IFS=:
@@ -81,7 +94,7 @@ resolve_fleet_pv() {
 
 # judge -> prints ONE verdict row and returns 0 (PASS or UNMEASURED) / 1 (FAIL) / 2 (ENV)
 judge() {
-    local pin ver why out rc pvrc d PV_BIN
+    local pin ver why out rc pvrc d PV_BIN comp
     if [ ! -r "$PV_PIN" ]; then
         printf 'UNMEASURED runner=%s reason=no-pin pin=%s -- this runner was never converged (infra#708); the shapes gate is not measured here, and this row is not a pass\n' "$RUNNER" "$PV_PIN"
         return 0
@@ -141,6 +154,12 @@ PY
         1:*) printf '%s runner=%s pin=%s pv=%s version=%s\n' "$out" "$RUNNER" "$pin" "$PV_BIN" "$ver" >&2 ;;
         2:2) printf 'UNMEASURED runner=%s reason=pv-env pin=%s pv=%s version=%s -- %s; pv stderr: %s; fleet state, not a verdict\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "${out:-no output}" "${err1:-none}"
            return 0 ;;
+        2:3) if comp=$(tree_component "$err1"); then
+                 printf 'UNMEASURED runner=%s reason=incapable pin=%s pv=%s version=%s -- the pinned pv refuses shape key %s, which this tree'"'"'s own pv parses (%s); the fleet pv is older than the contracts; fleet state, not a verdict\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "$comp" "${err1:-none}"
+                 return 0
+             fi
+             printf 'FAIL runner=%s reason=pv-no-verdict pin=%s pv=%s version=%s -- %s; pv exited %s, and only its exit 2 (a refusal of its input) or a shape key this tree parses is fleet state -- a panic or a signal can be caused by this tree; pv stderr: %s\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "${out#ENV }" "$pvrc" "${err1:-none}" >&2
+             return 1 ;;
         2:*) printf 'FAIL runner=%s reason=pv-no-verdict pin=%s pv=%s version=%s -- %s; pv exited %s, and only its exit 2 (a refusal of its input) is fleet state -- a panic or a signal can be caused by this tree; pv stderr: %s\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "${out#ENV }" "$pvrc" "${err1:-none}" >&2
            return 1 ;;
         *) printf 'UNMEASURED runner=%s reason=judge-env pin=%s pv=%s version=%s -- the verdict parser (%s) did not run (rc=%s): %s; not a verdict\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "$PV_PYTHON" "$rc" "${out:-no output}"
@@ -267,6 +286,30 @@ STUB
     elif ! bash -n "$d/mut_rc.sh" 2>/dev/null; then nok "mutant (pv-env for any pv rc) is not valid bash; the row would prove nothing"
     else out=$(FLEET_PV_BIN="$d/pv_panic" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" bash "$d/mut_rc.sh" 2>&1); rc=$?
          [ "$rc" -eq 0 ] && grep -q '^UNMEASURED .*reason=pv-env' <<<"$out" && ok "mutant keying pv-env on the parser alone turns the panic into UNMEASURED exit 0 -- the panic row would go RED under it" || nok "mutant keying pv-env on the parser alone did not reproduce #3671: rc=$rc: $out"; fi
+
+    # 8e. the 0.70.0 car (#3610): the pinned pv is OLDER than the contracts. It refuses at parse a
+    #     shape key this tree's own pv implements (exit 3, `uses unsupported allowEmpty`) -- the
+    #     0.65.2 `incapable` class one release on, fleet state. The same refusal of a key the tree
+    #     does NOT parse (a typo), and any other exit-3 stderr, stay RED.
+    mkcrash "$d/pv_unsup" "echo 'error: shape release-readiness-v1.refusal uses unsupported allowEmpty' >&2; exit 3"
+    mkcrash "$d/pv_typo" "echo 'error: shape release-readiness-v1.refusal uses unsupported allowEmtpy' >&2; exit 3"
+    mkcrash "$d/pv_three" "echo 'error: io failure reading contracts' >&2; exit 3"
+    printf 'const NODE_KEYS: &[&str] = &[\n    "targetClass",\n    "allowEmpty",\n];\n' > "$d/shapes.rs"
+    out=$(FLEET_PV_BIN="$d/pv_unsup" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" RUNNER_NAME=intel-clean-room-4 bash "$0" 2>&1); rc=$?
+    [ "$rc" -eq 0 ] && grep -q '^UNMEASURED runner=intel-clean-room-4 reason=incapable .*refuses shape key allowEmpty, which this tree' <<<"$out" && ! grep -qE '^(SUMMARY )?(PASS|FAIL)' <<<"$out" && ok "pinned pv refuses a shape key the tree parses (exit 3) -> UNMEASURED reason=incapable, never PASS" || nok "expected UNMEASURED reason=incapable for allowEmpty, got rc=$rc: $out"
+    out=$(FLEET_PV_BIN="$d/pv_unsup" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
+    [ "$rc" -eq 0 ] && grep -q '^UNMEASURED .*reason=incapable .*allowEmpty' <<<"$out" && ok "...and this tree's REAL shapes.rs lists allowEmpty (the row is tied to the parser, not the fixture)" || nok "this tree's shapes.rs does not list allowEmpty, or the arm did not read it: rc=$rc: $out"
+    for c in "pv_typo allowEmtpy" "pv_three io.failure"; do
+        read -r stub err <<<"$c"
+        out=$(FLEET_PV_BIN="$d/$stub" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
+        [ "$rc" -eq 1 ] && grep -q "^FAIL runner=probe-runner reason=pv-no-verdict .*pv exited 3[ ,].*pv stderr: .*$err" <<<"$out" && ! grep -qE '^(SUMMARY )?(PASS|UNMEASURED)' <<<"$out" && ok "exit 3 with '$err' (no shape key the tree parses) -> RED, never UNMEASURED" || nok "expected RED for exit-3 $stub, got rc=$rc: $out"
+    done
+    #     ...and the mutant that stops asking the tree turns the typo UNMEASURED, exit 0
+    sed 's/^\( *\)grep -qxE "\[\[:space:\]\]\*\\"\${BASH_REMATCH\[1\]}\\"," "\$SHAPES_SRC" 2>\/dev\/null || return 1$/\1true/' "$0" > "$d/mut_tree.sh"
+    if cmp -s "$0" "$d/mut_tree.sh"; then nok "mutant (tree not asked) did not apply; the typo row proves nothing"
+    elif ! bash -n "$d/mut_tree.sh" 2>/dev/null; then nok "mutant (tree not asked) is not valid bash; the row would prove nothing"
+    else out=$(FLEET_PV_BIN="$d/pv_typo" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" bash "$d/mut_tree.sh" 2>&1); rc=$?
+         [ "$rc" -eq 0 ] && grep -q '^UNMEASURED .*reason=incapable .*allowEmtpy' <<<"$out" && ok "mutant that does not ask the tree's parser turns the typo UNMEASURED exit 0 -- the typo row would go RED under it" || nok "mutant (tree not asked) did not reproduce the hole: rc=$rc: $out"; fi
 
     # 8c. the verdict parser cannot run (no python3 on the runner) -> UNMEASURED reason=judge-env
     out=$(FLEET_PV_BIN="$d/pv_ok" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_PYTHON="$d/no-such-python" bash "$0" 2>&1); rc=$?
