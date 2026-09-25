@@ -1,0 +1,44 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PROMETHEUS (PRM-001, was REX-001) review corpus v1, spec §2.2. 150 items: P (planted
+    cargo-mutants diffs, markers stripped), R (merged fix PRs with a linked issue,
+    code hunks reverse-applied), G (merged PRs before the 14-day cutoff, green
+    ci / gate + workspace-test, not reverted, no regression label). Strata on a
+    bytes/4 token proxy (S < 2000, M 2000–8000, L > 8000). Seeded (4354), stratified
+    30/70 dev/test split. Item metadata: docs/audits/review-corpus/corpus-v1.jsonl.
+    Sealed test manifest: docs/audits/review-corpus/test-manifest-v1.txt (version
+    review-corpus-v1@787d2026256cc08b). Diffs: items-v1.tar (sha256 70dffe5625e1849661303b82bb1fdf5254ab1d4560e2fe3eacc147e5d2588bba), outside git.
+  references:
+    - "docs/specifications/review-experiment-protocol.md"
+    - "docs/audits/rex-001/rex-02-receipt.md"
+    - "https://github.com/paiml/aprender/issues/4357"
+
+equations:
+  stratum:
+    formula: "t = ceil(bytes/4); S if t < 2000, M if t <= 8000, else L"
+  split:
+    formula: "per (class, stratum): order by SplitMix64(4354) key in id order; first round(0.3 n) are dev"
+  corpus_version:
+    formula: "'review-corpus-v1@' || sha256(test-manifest-v1.txt)[0..16]"
+
+falsification_tests:
+  - id: FALSIFY-RCV-001
+    name: mutation_markers_never_reach_a_prompt
+    prediction: "a sanitised P diff names neither cargo-mutants nor the replacement"
+    test_harness: "cargo test -p aprender-review-experiment --lib sanitize_removes_every_mutation_marker"
+    expected_output: "exit 0"
+    if_fails: "P items leak their answer; every P verdict is void."
+  - id: FALSIFY-RCV-002
+    name: split_is_seeded_stratified_and_order_free
+    prediction: "the same seed gives the same split whatever the input order; a different seed moves it; each cell is 30% dev"
+    test_harness: "cargo test -p aprender-review-experiment --lib split_is_stratified_seeded_and_stable"
+    expected_output: "exit 0"
+    if_fails: "The split is not reproducible; the sealed manifest cannot be re-derived."
+  - id: FALSIFY-RCV-003
+    name: comment_only_hunks_are_not_defects
+    prediction: "R items keep only hunks that change code; defect locations point at code lines"
+    test_harness: "cargo test -p aprender-review-experiment --lib comment_only_hunks_are_not_the_fix"
+    expected_output: "exit 0"
+    if_fails: "R labels name comments; localization is measured against the wrong line."
