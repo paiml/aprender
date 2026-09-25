@@ -1,4 +1,4 @@
-//! REX-001 review-lane experiment (spec `docs/specifications/review-experiment-protocol.md`).
+//! PRM-001 PROMETHEUS review-lane experiment (spec `docs/specifications/PRM-001-prometheus.md`; was REX-001).
 //!
 //! - [`prereg`]: the REX-00 pre-registration lock (`rex-prereg-v2`).
 //! - [`stats`]: the frozen analysis code — Wilson, McNemar exact, seeded

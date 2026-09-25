@@ -6,11 +6,14 @@
 **Launch:** from `~/src/aprender`, run `Implement docs/specifications/review-experiment-protocol.md autonomously.`
 **Related:** ARB-APR-001 (arbiter on apr), ARB-SELF-001 (dogfood feedback loop), `stack-30-day-plan.md` §4.4 (trustworthy review), #3558 (Pareto model-size selection rule), APR-PERF-GATE-001 (perf arms, receipt transport J3).
 **Status:** spec, not implemented. Dated 2026-09-25.
-**Version:** **v2** (2026-09-25, operator ruling PRM-001 v2, `cop-inbox/handoff/ruling-prm-v2.md`). Changed in §3–§4: H1 is verdict identity; H4 is one Holm rule with min() inside each resample; H5 is decided on class R; admission reads the cell's `parity.oracle`; train-active falls through the ladder. v1 was locked with **0 data rows**, so nothing is relabelled `exploratory` (R-1). Lock scheme `rex-prereg-v2`.
 
 **Provenance marks:** `[V]` verified at the cited sha/time · `[C]` computed · `[A]` asserted · `[U]` unverified/unmeasured · `[X]` third-party.
 
 ---
+
+> **SUPERSEDED** by [`PRM-001-prometheus.md`](PRM-001-prometheus.md) (PRM-001 v3, 2026-09-25). This file is kept
+> byte-frozen in §2–§5 so its `rex-prereg-v1` lock (`docs/audits/rex-001/prereg.lock`,
+> prereg_sha `ef51087d…`) still verifies. Do not edit it; amend PRM-001 instead.
 
 ## §0 Operating assumptions
 
@@ -27,8 +30,7 @@
 4. **Producer is never the gate.**
    - The review lane runs a **released, sha-verified `apr` tag**, never aprender HEAD.
    - The model weights are pinned by sha256.
-   - Until promotion the lane is a **zero-weight shadow** (operator ruling PRM-001 v2, item 4; `cop-inbox/handoff/ruling-prm-v2.md`): its verdict is recorded in `review-ledger-v1` and changes no quorum outcome. An apr dissent neither sends a 2–0 to HRQ nor breaks a 1–1.
-   - The tripwire rung (H4) is the first point at which an apr dissent can route to HRQ; the vote rung (H4 and H5) is the first at which it counts.
+   - The lane's vote stays asymmetric until it is promoted: an apr dissent sends a 2–0 to human review (HRQ), and apr never breaks a 1–1.
 5. **A refusal is a result, not an error.**
    - A cell whose backend refuses the model (for example WGPU or Metal before 0.71) is recorded as `Refused{removed_by}` in the report and filed as an aprender issue.
    - It is never retried under another backend while keeping the same cell name.
@@ -148,17 +150,12 @@ The family for Holm correction is H1–H6, overall α = 0.05. All CIs are 95%.
 
 | # | Hypothesis | Test | Decision consequence |
 |---|---|---|---|
-| H1 | **Invariance:** on every parity-admissible cell, 4B VERDICTS equal the reference cell's on every test item (v2: byte identity across cells is descriptive, not tested) | a count of items whose verdict differs; any count > 0 rejects H1 | each divergence becomes an aprender parity issue with the item attached. **A divergent cell is not admissible for (A)** |
+| H1 | **Invariance:** on every parity-admissible cell, 4B verdicts and output bytes equal the reference cell's on every test item | a count of divergent items; any count > 0 rejects H1 | each divergence becomes an aprender parity issue with the item attached. **A divergent cell is not admissible for (A)** |
 | H2 | **Determinism:** same cell, same item → byte-identical output | a count on the 10% re-run; > 0 rejects | a non-deterministic cell is inadmissible until fixed |
 | H3 | **Size:** 9B per-item correctness exceeds 4B's on the test split | McNemar exact, paired, one-sided | if not rejected, 4B stays the lane model. If rejected, the §5 promotion rule decides whether 9B replaces it, weighing its measured wall-clock |
-| H4 | **Usefulness vs voters:** 4B precision ≥ the lowest precision among the existing voting lanes (Haiku, agy) on the same items | one rule (v2): paired bootstrap of p4B − min(pHaiku, pAgy), with the min computed inside each resample (10k resamples, seed 4354); one-sided p = share of resamples < 0; H4 holds iff the Holm-adjusted p ≤ 0.05. The 95% CI is reported, never decided on | this is the gate from shadow to **tripwire** (dissent may trigger HRQ) |
-| H5 | **Recall vs voters:** 4B recall on class **R** ≥ the Claude lane's recall on class R | paired bootstrap of the difference on R items, one-sided p, Holm-adjusted ≤ 0.05. Recall on class P and precision are reported per class and are descriptive (planted mutants are a confound) | this is the gate from tripwire to **full vote** |
+| H4 | **Usefulness vs voters:** 4B precision ≥ the lowest precision among the existing voting lanes (Haiku, agy) on the same items | a paired bootstrap CI of the difference (10k resamples, seeded); H4 holds if the CI lower bound ≥ 0 | this is the gate from shadow to **tripwire** (dissent may trigger HRQ) |
+| H5 | **Recall vs voters:** 4B recall ≥ the Claude lane's recall | same test | this is the gate from tripwire to **full vote** |
 | H6 | **Interference:** the serve on cell X slows the host's reference workload by more than run-to-run noise | the reference workload runs 5× alone and 5× co-located; noise = 2 × sd(alone) `[C at measurement]` | a cell whose serve slows a gated CI job or the arbiter host beyond noise is ranked below every cell that doesn't |
-
-Descriptive (not tested), added in v2:
-- Recall per class (P, R) and precision per class for every lane, with Wilson 95% intervals.
-- H1 output-byte divergence count per admitted cell.
-- **Error overlap:** Cohen's κ on per-item errors (a parsed verdict that is not correct) between apr and each voter, on items both parsed. Measured before and after every silver-label training step. A κ rise with no recall gain is an andon: the student is copying the voters' blind spots, not learning.
 
 Descriptive (not tested): the per-cell p50/p95 wall-clock with bootstrap CIs, TTFT, and tok/s, each compared against llama.cpp `d1d3c3396` running the same model on the same cell `[X]`.
 
@@ -171,9 +168,7 @@ Descriptive (not tested): the per-cell p50/p95 wall-clock with bootstrap CIs, TT
 This rule is lexicographic and fixed in REX-00.
 
 1. **Admissible:**
-   - a parity receipt passes against the cell's explicit `parity.oracle` field (`rex-cell-admission-v1`; v2). The oracle is whatever the cell declares, never inferred:
-     - `llama.cpp@d1d3c3396` `[X]` is admissible where a cell declares it (logit compare: `apr parity-oracle`, #4444; `ds.yaml` min_cosine 0.98);
-     - until a cell declares it, the oracle is `apr-parity-gpu-cpu` plus the H1 verdict check against the reference cell;
+   - a parity receipt passes (`apr parity` vs llama.cpp `[X]`, `ds.yaml` min_cosine 0.98);
    - H1 and H2 not rejected for that cell;
    - parse rate equal to the reference cell's;
    - the cell's executor is forjar-declared.
@@ -184,8 +179,8 @@ This rule is lexicographic and fixed in REX-00.
    - If no cell meets it, the fastest admissible cell is selected **as shadow only**.
    - Every cell's gap vs llama.cpp is filed as an aprender perf issue.
 6. **Output:** a **primary cell and a failover cell.**
-   - Every lane row is one of `Verdict{verdict, cell, backend}`, `NotRun{NoExecutor|Busy|Timeout|ContextOverflow|TrainActive}` or `Refused{cell, removed_by: ladder|gpu-proof|parse}` (the one spelling shared with paiml-implement#436; any other key or value fails to parse). A quorum never silently runs below its width.
-   - v2: when `train-active` is set on the primary's host, that rung records `NotRun{TrainActive}` and the round **falls through the dispatch ladder** (failover cell, then the R-9 order). It never blocks. If every rung is down the row is `NotRun{NoExecutor}`.
+   - If both are down, the lane refuses by name (`Unknown{LaneUnavailable}`). A quorum never silently runs below its width.
+   - When `train-active` is set on the primary's host, the lane emits `NotRun{TrainActive}` and blocks rather than passing.
 
 The ruling is committed as `docs/audits/rex-001-hardware-ruling.md` with the receipts attached. It supersedes the 2026-09-25 provisional gx10 placement only if it differs, and then through the infra issue that moves the declared unit.
 
@@ -274,13 +269,12 @@ A challenger (any §5.3 candidate) replaces the champion only if all of these ho
 - **R-8 No Python** in any file this spec creates, harness or analysis. Shell passes `bashrs`; everything else is Rust (an aprender workspace crate or xtask).
 - **R-9 Lambda GPU is excluded, except as shadow rung 2 at dispatch time** (operator ruling 2026-09-25, option b; `cop-inbox/handoff/ruling-r9-b.md`).
   - No REX experiment cell, teacher or finetune job, resident `apr serve` or VRAM-preloaded weights may place work on the lambda-labs 4090. Every other R-9 exclusion stands.
-  - Accounting (ruling PRM-001 v2, item 4): experiment cells, teacher, resident serve: **0** lambda GPU minutes; shadow rung-2 minutes are measured and reported (§9.1).
   - The single exception: the apr SHADOW lane may run on `lambda-cuda` as rung 2, only when rung 1 (`gx10-cuda`) returned `NotRun` and the lambda GPU lock is free at dispatch time.
   - `lambda-cuda` yields to agent sessions and `train-active`. A lock taken before or during the round makes the row `NotRun{Busy}`, never a Verdict, and the ladder continues. The round is not retried on the same cell.
   - Fallback order: `gx10-cuda` → `lambda-cuda` → `intel-wgpu` → `mini-metal` → `intel-cpu` → `NotRun{NoExecutor}`. Each row records the backend that actually ran; the `gx10-cpu` labelling rule applies to lambda too.
   - The rung-2 routing lives in paiml-implement#436. Falsifier: a fixture holding the lambda GPU lock produces a `lambda-cuda` row of `NotRun{Busy}`.
 - **R-10 The release train wins.** When `train-active` is set, the lane and the experiment jobs yield on clean-room/CUDA pools.
-- **R-11 Zero-weight shadow until promoted** (ruling PRM-001 v2, item 4). Before H4 holds, the apr lane has weight 0: recorded, never consulted. At tripwire (H4) a dissent may send the round to HRQ. Only at vote (H4 and H5, through the §5.4 machinery) does apr cast a deciding vote.
+- **R-11 The asymmetric vote holds** until H4 and H5 pass through the §5.4 machinery. Before that, apr never casts a deciding vote.
 - **R-12 Measurement states its tree:** HEAD vs `origin/main`, the host, and a per-session worktree.
 
 ---
@@ -298,9 +292,9 @@ A challenger (any §5.3 candidate) replaces the champion only if all of these ho
 | 2 | **REX-04** parity admission | `apr parity` per cell against llama.cpp `d1d3c3396` `[X]` on the exact weights; refusals recorded with `removed_by` | `rex-cell-admission-v1` | 6/6 cells are `Admitted`, `Refused{removed_by}` or `NotRun{NoDeclaredExecutor}`, each with a receipt; 0 cells silent | 120 |
 | 2 | **REX-05** pilot | 10 dev items on every admitted cell, plus cold-start runs and the H6 reference workload alone ×5 | extends REX-03 | variance and runtime projection receipted; the sample-size rule from §2.2 applied and logged | 90 |
 | 3 | **REX-06** full run | Test split on all admitted cells; 9B control on the reference cell; Haiku and agy baselines on the reference cell; 10% determinism re-run; H6 co-located runs | extends REX-03 | 100% of (item × cell × arm) have an admissible receipt or an explicit `NotRun`; 0 `unknown` identity fields | 240 |
-| 3 | **REX-07** day-0 shadow lane | As soon as gx10's declaration lands: the 4B lane runs as a non-voting 4th lane on every aprender quorum and writes `review-ledger-v1` | `review-ledger-v1` | 100% of quorums after activation carry a shadow row (0 missing); a planted gx10-down leaves the quorum's width at 3, and the shadow row is written as `NotRun{NoExecutor}` (v2 typed enum) | 90 |
-| 4 | **REX-08** analysis + hardware ruling | Run the §3 tests and apply the §4 rule; commit `rex-001-hardware-ruling.md`; file one aprender issue per H1/H2 divergence and one per cell perf gap vs llama.cpp; file an infra issue if the primary cell ≠ gx10 | `rex-001-report-v2` | every §3 hypothesis has a verdict with its statistic and CI; primary and failover cells named, or "shadow only" with its reason | 150 |
-| 5 | **REX-09** promotion ladder | Encode H4/H5 as the shadow→tripwire→vote gates in paiml-implement (filed issue) and arbiter `decide` (filed issue) | extends ARB-APR-001 | the gates read only `rex-001-report-v2` and later §5.4 reports; a planted report with H4 failing keeps the lane in shadow | 60 |
+| 3 | **REX-07** day-0 shadow lane | As soon as gx10's declaration lands: the 4B lane runs as a non-voting 4th lane on every aprender quorum and writes `review-ledger-v1` | `review-ledger-v1` | 100% of quorums after activation carry a shadow row (0 missing); a planted gx10-down leaves the quorum's width at 3, and the shadow row is written as `Unknown{LaneUnavailable}` | 90 |
+| 4 | **REX-08** analysis + hardware ruling | Run the §3 tests and apply the §4 rule; commit `rex-001-hardware-ruling.md`; file one aprender issue per H1/H2 divergence and one per cell perf gap vs llama.cpp; file an infra issue if the primary cell ≠ gx10 | `rex-001-report-v1` | every §3 hypothesis has a verdict with its statistic and CI; primary and failover cells named, or "shadow only" with its reason | 150 |
+| 5 | **REX-09** promotion ladder | Encode H4/H5 as the shadow→tripwire→vote gates in paiml-implement (filed issue) and arbiter `decide` (filed issue) | extends ARB-APR-001 | the gates read only `rex-001-report-v1` and later §5.4 reports; a planted report with H4 failing keeps the lane in shadow | 60 |
 | 6 | **REX-10** perf ratchet | Per-tag §5.1 job on the primary cell; ratchet file; knob sweep per train | `review-lane-perf-ratchet-v1` | 3 consecutive tags recorded; a planted +10% p95 regression turns the andon RED | 90 |
 | 7 | **REX-11** B1 loop | Prompt versions and retrieval few-shot evaluated via §5.4 | `review-champion-challenger-v1` | ≥ 1 challenger evaluated end-to-end with its receipt, promoted or rejected by rule; the test-version evaluation counter increments | 120 |
 | 8 | **REX-12** B2 loop | Teacher logit generation (27B on gx10, top-k, m = 1) over the train pool; the B2a/B2b/B2c acceptance tests wired to the qwen35 finetune/distill/merge tickets | extends REX-11 | the teacher dataset is receipted (sha, count, 0 test hashes); B2 rows read `NotRun{VerbRefused}` until the verbs land, then run §5.4 automatically | 150 |
@@ -314,7 +308,7 @@ A challenger (any §5.3 candidate) replaces the champion only if all of these ho
 - **S-1** REX-00 cannot be committed before any measurement (pre-registration out of order).
 - **S-2** An executing host resolves `apr` to an undeclared binary, or its weights sha mismatches the declaration.
 - **S-3** The sealed-test contamination check fails anywhere.
-- **S-4** Any change would place work on the lambda-labs GPU outside the R-9 shadow rung-2 exception (an experiment cell, teacher or resident serve minute > 0).
+- **S-4** Any change would place work on the lambda-labs GPU outside the R-9 shadow rung-2 exception.
 - **S-5** A run overlaps `train-active` on a clean-room/CUDA pool without yielding.
 - **S-6** **Training on hosted-model outputs.** Using Claude or agy (Gemini) outputs as training data for B2 may conflict with those providers' terms. It is an operator decision, and until Noah rules, silver labels stay evaluation-irrelevant and unused for training. B2 proceeds with the local 27B teacher and gold labels only.
 - **S-7** Every cell is `Refused` or `NotRun`, so there is no admissible cell for (A).
@@ -355,7 +349,7 @@ next_row: REX-NN
 
 | Metric | Target | Rendered by |
 |---|---|---|
-| Cells with an admissible receipt, a refusal or an explicit NotRun | **6/6**, 0 silent | `rex-001-report-v2` |
+| Cells with an admissible receipt, a refusal or an explicit NotRun | **6/6**, 0 silent | `rex-001-report-v1` |
 | Cross-cell verdict divergence on admitted cells | **0** | H1 |
 | Receipts with `unknown` identity | **0** | receipt lint |
 | Quorums carrying a shadow row after activation | **100%** | `review-ledger-v1` |
@@ -364,6 +358,5 @@ next_row: REX-NN
 | Gap to llama.cpp on the primary cell | measured every tag; filed when it grows | perf ratchet |
 | Champion correctness on the sealed test | never-down across promotions | §5.4 reports |
 | Lane precision / recall | measured, then ratcheted never-down | §5.4 reports |
-| Lambda GPU minutes: experiment cells, teacher, resident serve | **0** | host receipts |
-| Lambda GPU minutes: shadow rung 2 (R-9 option b) | measured, reported | host receipts + `review-ledger-v1` backend field |
+| Lambda GPU minutes consumed by this spec outside the R-9 shadow rung 2 | **0** | host receipts |
 | Python lines in files this spec touches | **0** | `grep -rl python3` over the diff |

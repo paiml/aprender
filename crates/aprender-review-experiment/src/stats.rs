@@ -1,4 +1,4 @@
-//! REX-001 frozen analysis code (spec §2.3, §3, §5.4).
+//! PRM-001 (PROMETHEUS) frozen analysis code (spec v3 §2.7, §3, §5.3; was REX-001).
 //!
 //! This file is part of the pre-registration bundle (`prereg.rs`): its sha256 is
 //! folded into the prereg sha that every receipt carries. Changing a single byte
@@ -18,8 +18,9 @@
 //!   decision is the Holm-adjusted one-sided p; the 95 % CI is report-only.
 //! - v2 H5: recall on class R only; class-P recall and precision are
 //!   descriptive (mutant confound).
-//! - v2 descriptive: Cohen's κ on per-item errors between apr and each voter
-//!   (`error_kappa`); a κ rise with no recall gain is an andon (`kappa_andon`).
+//! - v3 H7 (a gate outside the Holm family, δ-free): Cohen's κ on per-item
+//!   errors (`error_kappa`); holds iff κ(apr, each voter) ≤ the max voter–voter
+//!   κ on the same items (`h7_holds`).
 //! - Holm step-down over the family H1–H6 at overall alpha = 0.05. The count
 //!   and threshold tests (H1, H2, H6) enter the family as p = 0 when rejected
 //!   and p = 1 when not: they are deterministic rules, not sampling statistics.
@@ -283,8 +284,8 @@ pub fn bootstrap_vs_min_voter(
     })
 }
 
-/// Cohen's κ between two lanes' per-item ERROR indicators (spec v2 §3,
-/// descriptive): 1 = they miss the same items, 0 = overlap at chance.
+/// Cohen's κ between two lanes' per-item ERROR indicators (PRM-001 v3 §2.7,
+/// H7): 1 = they miss the same items, 0 = overlap at chance.
 /// `None` when the lengths differ, the sample is empty, or chance agreement
 /// is 1 (both lanes constant), where κ is undefined.
 #[must_use]
@@ -300,11 +301,21 @@ pub fn error_kappa(a_err: &[bool], b_err: &[bool]) -> Option<f64> {
     (chance < 1.0).then(|| (agree - chance) / (1.0 - chance))
 }
 
-/// Spec v2 §3 andon: error overlap with a voter rose across a silver-label
-/// training step while recall did not rise. Undefined inputs are no andon.
+/// H7 independence gate (PRM-001 v3 §3; outside the Holm family, δ-free):
+/// the local lane's κ_err with EVERY voter must not exceed the largest κ_err
+/// among voter–voter pairs on the same items — a tie-breaker may not be more
+/// correlated with a voter than the voters already are with each other.
+/// `None` (undecided, never "holds") when either side is empty or any κ is
+/// undefined.
 #[must_use]
-pub fn kappa_andon(kappa: (Option<f64>, Option<f64>), recall: (f64, f64)) -> bool {
-    matches!(kappa, (Some(before), Some(after)) if after > before) && recall.1 <= recall.0
+pub fn h7_holds(qwen_vs_voter: &[Option<f64>], voter_vs_voter: &[Option<f64>]) -> Option<bool> {
+    if qwen_vs_voter.is_empty() || voter_vs_voter.is_empty() {
+        return None;
+    }
+    let pairs: Option<Vec<f64>> = voter_vs_voter.iter().copied().collect();
+    let ceiling = pairs?.into_iter().fold(f64::NEG_INFINITY, f64::max);
+    let qwen: Option<Vec<f64>> = qwen_vs_voter.iter().copied().collect();
+    Some(qwen?.into_iter().all(|k| k <= ceiling))
 }
 
 /// Nearest-rank percentile of an ascending slice. `q` in (0, 1].
@@ -574,18 +585,24 @@ mod tests {
     }
 
     #[test]
-    fn kappa_andon_fires_only_on_overlap_rise_without_recall_gain() {
-        assert!(kappa_andon((Some(0.2), Some(0.4)), (0.6, 0.6)));
-        assert!(kappa_andon((Some(0.2), Some(0.4)), (0.6, 0.5)));
-        assert!(
-            !kappa_andon((Some(0.2), Some(0.4)), (0.6, 0.7)),
-            "recall gained"
+    fn falsify_h7_is_max_pair_and_undecided_on_gaps() {
+        let pairs = [Some(0.30), Some(0.10), Some(0.20)];
+        assert_eq!(
+            h7_holds(&[Some(0.30), Some(0.05)], &pairs),
+            Some(true),
+            "≤ max pair"
         );
-        assert!(!kappa_andon((Some(0.4), Some(0.4)), (0.6, 0.6)), "no rise");
-        assert!(
-            !kappa_andon((None, Some(0.9)), (0.6, 0.6)),
-            "undefined before"
+        assert_eq!(
+            h7_holds(&[Some(0.31), Some(0.05)], &pairs),
+            Some(false),
+            "one voter above max"
         );
+        // Not the min, not the mean: 0.25 is above both and still holds.
+        assert_eq!(h7_holds(&[Some(0.25)], &pairs), Some(true));
+        assert_eq!(h7_holds(&[None, Some(0.0)], &pairs), None);
+        assert_eq!(h7_holds(&[Some(0.0)], &[Some(0.3), None]), None);
+        assert_eq!(h7_holds(&[], &pairs), None);
+        assert_eq!(h7_holds(&[Some(0.0)], &[]), None);
     }
 
     #[test]

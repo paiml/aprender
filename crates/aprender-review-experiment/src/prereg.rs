@@ -1,4 +1,9 @@
-//! REX-00 pre-registration lock (contract `rex-prereg-v1`, scheme `rex-prereg-v2`, rule R-1).
+//! PRM-00b pre-registration lock (contract `rex-prereg-v1`, scheme `rex-prereg-v2`, rule R-1).
+//!
+//! `rex-prereg-v2` locks PRM-001 v3 (`docs/specifications/PRM-001-prometheus.md`). The v1
+//! lock (`docs/audits/rex-001/prereg.lock`, prereg_sha `ef51087d…`) is SUPERSEDED, never
+//! deleted or edited (operator, 2026-09-25); its spec and plan stay byte-frozen in-tree and
+//! `falsify_rex_prereg_004` keeps them verifying.
 //!
 //! The prereg sha is a sha256 over the sha256 of four frozen components, in a
 //! fixed order:
@@ -6,26 +11,34 @@
 //! 1. `spec_s2_s5`  — spec bytes from the line `## §2 ` up to (not including)
 //!    the line `## §6 ` (design, hypotheses, decision rule, improvement loop);
 //! 2. `stats_rs`    — the analysis code;
-//! 3. `analysis_plan` — `docs/audits/rex-001/analysis-plan.md`;
+//! 3. `analysis_plan` — `docs/audits/prm-001/analysis-plan.md` (plan v2);
 //! 4. `prompt_v1`   — the fixed review prompt.
 //!
 //! The sealed test-item manifest is NOT a prereg component: it is filled once by
 //! REX-02 (placeholder → sealed) and carried separately as the corpus version.
-//! Everything outside §2–§5 (status line, §7 tickets, §9 schema) may be edited
+//! Everything outside §2–§5 (header, §7 tickets, §9 schema) may be edited
 //! without a new spec version.
 
 use sha2::{Digest, Sha256};
 
 /// The spec as committed in-tree.
-pub const SPEC: &str = include_str!("../../../docs/specifications/review-experiment-protocol.md");
+pub const SPEC: &str = include_str!("../../../docs/specifications/PRM-001-prometheus.md");
 /// The analysis code.
 pub const STATS_RS: &str = include_str!("stats.rs");
 /// The analysis plan.
-pub const ANALYSIS_PLAN: &str = include_str!("../../../docs/audits/rex-001/analysis-plan.md");
+pub const ANALYSIS_PLAN: &str = include_str!("../../../docs/audits/prm-001/analysis-plan.md");
 /// Prompt v1 (the G1 prompt header; the diff is appended after it).
 pub const PROMPT_V1: &str = include_str!("../../../docs/audits/review-corpus/prompts/v1.txt");
 /// The committed lock.
-pub const LOCK: &str = include_str!("../../../docs/audits/rex-001/prereg.lock");
+pub const LOCK: &str = include_str!("../../../docs/audits/prm-001/prereg.lock");
+
+/// The superseded v1 lock and the v1 spec and plan it froze (never edited).
+pub const LOCK_V1: &str = include_str!("../../../docs/audits/rex-001/prereg.lock");
+/// The v1 spec (`rex-prereg-v1`), byte-frozen in §2–§5.
+pub const SPEC_V1: &str =
+    include_str!("../../../docs/specifications/review-experiment-protocol.md");
+/// The v1 analysis plan, byte-frozen.
+pub const ANALYSIS_PLAN_V1: &str = include_str!("../../../docs/audits/rex-001/analysis-plan.md");
 
 /// Contract id stamped into the digest so a lock can never match another scheme.
 pub const SCHEME: &str = "rex-prereg-v2";
@@ -99,7 +112,7 @@ impl Components {
     #[must_use]
     pub fn render_lock(&self) -> String {
         format!(
-            "# REX-001 pre-registration lock (rex-prereg-v2). Written by the spec v2 re-lock; v1 had 0 data rows.\n\
+            "# PRM-001 pre-registration lock (rex-prereg-v2) over spec PRM-001 v3. Written by PRM-00b; v1 had 0 data rows.\n\
              # A mismatch against the tree is a new spec version (R-1), never an edit here.\n\
              spec_s2_s5={}\nstats_rs={}\nanalysis_plan={}\nprompt_v1={}\nprereg_sha={}\n",
             self.spec_s2_s5,
@@ -167,7 +180,7 @@ mod tests {
     /// FALSIFY-REX-PREREG-002: a planted edit to §3 changes the prereg sha.
     #[test]
     fn falsify_rex_prereg_002_planted_section3_edit_is_caught() {
-        let planted = SPEC.replacen("McNemar exact, paired, one-sided", "t-test", 1);
+        let planted = SPEC.replacen("McNemar exact, one-sided", "t-test", 1);
         assert_ne!(planted, SPEC, "the §3 anchor text must exist");
         let c = Components::of(&planted, STATS_RS, ANALYSIS_PLAN, PROMPT_V1).expect("span");
         assert!(!verify(LOCK, &c).is_empty());
@@ -177,8 +190,8 @@ mod tests {
     #[test]
     fn falsify_rex_prereg_003_status_line_edit_is_not_a_new_version() {
         let edited = SPEC.replacen(
-            "**Status:** spec, not implemented.",
-            "**Status:** implemented.",
+            "**Runner:** the aprender traffic cop",
+            "**Runner:** the fleet",
             1,
         );
         assert_ne!(edited, SPEC);
@@ -186,6 +199,35 @@ mod tests {
         assert!(verify(LOCK, &c).is_empty());
     }
 
+    /// FALSIFY-REX-PREREG-004: the superseded v1 lock is untouched and the v1
+    /// spec §2–§5, plan and prompt it froze still verify against it. (v1
+    /// `stats_rs` is verified against git `5f0ae10ac`; the code moved on.)
+    #[test]
+    fn falsify_rex_prereg_004_v1_lock_is_frozen_and_verifies() {
+        assert_eq!(
+            lock_value(LOCK_V1, "prereg_sha"),
+            Some("ef51087dc79bab0ad160e8a14f5b13e2ea43986b30c05dafc63c84c2dc21cdc0")
+        );
+        assert!(LOCK_V1.starts_with("# REX-001 pre-registration lock (rex-prereg-v1)."));
+        let span = spec_sections_2_to_5(SPEC_V1).expect("v1 §2..§6");
+        assert_eq!(
+            lock_value(LOCK_V1, "spec_s2_s5"),
+            Some(sha256_hex(span.as_bytes()).as_str())
+        );
+        assert_eq!(
+            lock_value(LOCK_V1, "analysis_plan"),
+            Some(sha256_hex(ANALYSIS_PLAN_V1.as_bytes()).as_str())
+        );
+        assert_eq!(
+            lock_value(LOCK_V1, "prompt_v1"),
+            Some(sha256_hex(PROMPT_V1.as_bytes()).as_str())
+        );
+        assert_ne!(
+            lock_value(LOCK_V1, "prereg_sha"),
+            locked_prereg_sha(),
+            "v2 is a new lock"
+        );
+    }
     #[test]
     fn span_requires_both_headings() {
         assert!(spec_sections_2_to_5("## §2 a\nb\n## §6 c\n").is_some());
