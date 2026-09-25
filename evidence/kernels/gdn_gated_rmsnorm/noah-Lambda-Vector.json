@@ -19,10 +19,10 @@
         "pass": true
       },
       "timing": {
-        "oxide_us": 2.384,
-        "handptx_us": 2.61,
-        "ratio": 0.9135,
-        "worst_heads": 48,
+        "oxide_us": 2.354,
+        "handptx_us": 2.591,
+        "ratio": 0.9085,
+        "worst_heads": 16,
         "ratio_max": 1.2,
         "pass": true
       },
@@ -31,7 +31,7 @@
         "handptx": 27
       },
       "host": "noah-Lambda-Vector",
-      "sha": "5630ddc8b674a442ab45c9a4cced1bbcc9140aae",
+      "sha": "5b29ed2cdfb6ebb67800771b50e9f6cb7cb6e4c7",
       "tree_dirty_paths": 0,
       "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
       "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
@@ -54,9 +54,9 @@
         "pass": true
       },
       "timing": {
-        "oxide_us": 2.56,
-        "handptx_us": 2.611,
-        "ratio": 0.9804,
+        "oxide_us": 2.376,
+        "handptx_us": 2.601,
+        "ratio": 0.9134,
         "worst_heads": 48,
         "ratio_max": 1.2,
         "pass": true
@@ -66,7 +66,7 @@
         "handptx": 27
       },
       "host": "noah-Lambda-Vector",
-      "sha": "5630ddc8b674a442ab45c9a4cced1bbcc9140aae",
+      "sha": "5b29ed2cdfb6ebb67800771b50e9f6cb7cb6e4c7",
       "tree_dirty_paths": 0,
       "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
       "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",

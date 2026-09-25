@@ -1,7 +1,9 @@
 # #3522 OXIDE-001 O-1: cuda-oxide gated RMSNorm, pilot results
 
 **VERDICT: GO on lambda, yoga and gx10.** Parity and timing pass for both variants
-on every CUDA host, all measured at commit `5630ddc8b` from a clean tree.
+on every CUDA host, from a clean tree. yoga and gx10 were measured at `5630ddc8b`; lambda was
+re-measured at `5b29ed2cd`, which changes only the harness exit status (kernels identical).
+lambda's earlier 5630ddc8b run read 0.914 / 0.980.
 
 A safe-Rust `#[kernel]` port of the hand-PTX `GatedRmsNormKernel`
 (`crates/aprender-gpu/src/kernels/gdn/gated_rmsnorm.rs`, entry `gdn_gated_rmsnorm`),
@@ -27,8 +29,8 @@ Both kernels are safe Rust: they contain no `unsafe` block and no raw pointer.
 
 | host | GPU | cc | variant | cos min | max\|Δ\| | oxide µs | hand µs | ratio | regs oxide/hand |
 |---|---|---|---|---|---|---|---|---|---|
-| lambda | RTX 4090 | sm_89 | exp | 1.0000000 | 1.43e-6 | 2.38 | 2.61 | 0.914 | 31 / 27 |
-| lambda | RTX 4090 | sm_89 | ex2 | 1.0000000 | 1.43e-6 | 2.56 | 2.61 | 0.980 | 31 / 27 |
+| lambda | RTX 4090 | sm_89 | exp | 1.0000000 | 1.43e-6 | 2.35 | 2.59 | 0.909 | 31 / 27 |
+| lambda | RTX 4090 | sm_89 | ex2 | 1.0000000 | 1.43e-6 | 2.38 | 2.60 | 0.913 | 31 / 27 |
 | yoga | RTX 4060 Laptop | sm_89 | exp | 1.0000000 | 1.43e-6 | 2.95 | 3.12 | 0.944 | 30 / 27 |
 | yoga | RTX 4060 Laptop | sm_89 | ex2 | 1.0000000 | 1.43e-6 | 2.96 | 3.12 | 0.948 | 30 / 27 |
 | gx10 | GB10 | sm_121 | exp | 1.0000000 | 1.43e-6 | 4.10 | 4.10 | 1.000 | 32 / 29 |
@@ -59,9 +61,12 @@ between 4.1 and 6.2 µs. `nvidia-smi` showed a foreign `apr v0.69.3` process on 
 
 `receipt.sh` records `foreign_gpu_procs` so a contaminated receipt is visible on its face.
 
-## Mutation proofs (at 5630ddc8b, restored by trap)
+## Mutation proofs (restored by trap)
 
 - **Parity gate.** Deleting the last warp-butterfly step (`shuffle_down … 1`) made all 8 oxide parity rows FAIL,
   and the harness exited 1.
 - **Golden gate.** Changing one token in the sm_89 baseline (`ex2.approx.f32` → `ex2.approx.ftz.f32`) failed
   `gdn_gated_rmsnorm_ptx_golden` with "drifted from the emitter".
+- **Timing gate** (at 5b29ed2cd): the sonnet quorum lane found that `timing_ok` never reached the exit status,
+  so a NO-GO exited 0. It now exits 4. With `TIMING_RATIO_MAX` mutated to 0.5, `receipt.sh` exited 4 and still
+  wrote the receipt with `"pass": false` on both variants. The unmutated run exited 0.
