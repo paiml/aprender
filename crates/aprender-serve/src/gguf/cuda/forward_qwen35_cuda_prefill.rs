@@ -258,7 +258,8 @@ fn workspace_bytes_for(
         PrefillAttention::CublasF32 => {
             hpk * attention_rows_for(d, total_positions, max_rows) * total_positions
         },
-        PrefillAttention::FlashF16In => 0,
+        // The f16 copy of K and V over every position (#4442).
+        PrefillAttention::FlashF16In => kv_dim * total_positions,
     };
     4 * (rows * per_row + scores + largest_projection)
 }
@@ -505,13 +506,14 @@ impl Qwen35CudaModel<'_> {
             attn_gate: z(rows * q_dim)?,
             k_raw: z(rows * kv_dim)?,
             attn_out_in: z(rows * q_dim)?,
-            // Flash attention never materialises a score.
+            // Flash attention never materialises a score; it borrows this buffer
+            // for its f16 K/V copy (`kv_dim` halves of K + of V per position, #4442).
             scores: z(match attention {
                 PrefillAttention::CublasF32 => {
                     hpk * attention_rows_for(d, total_positions, self.prefill_rows)
                         * total_positions
                 },
-                PrefillAttention::FlashF16In => 1,
+                PrefillAttention::FlashF16In => kv_dim * total_positions,
             })?,
             ffn_gate: z(rows * inter)?,
             ffn_up: z(rows * inter)?,
@@ -983,6 +985,7 @@ impl Qwen35CudaModel<'_> {
                 b.q_normed.as_ptr(),
                 k_cache.as_ptr(),
                 v_cache.as_ptr(),
+                b.scores.as_ptr(),
                 b.attn_out_in.as_ptr(),
                 rows,
                 pos32,

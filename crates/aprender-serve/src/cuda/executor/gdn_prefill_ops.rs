@@ -371,6 +371,11 @@ impl CudaExecutor {
     /// the resident KV cache — f16 inputs to the tensor cores, f32 accumulation and
     /// f32 online softmax (the #3596 ruling). No scores are materialised.
     ///
+    /// `kv16` is scratch for the f16 copy of cache rows `0..pos0+rows` of K then V —
+    /// `(pos0 + rows) * num_kv_heads * 256` f32 floats' worth. The kernel streams f16
+    /// K/V tiles with 16 B `cp.async` (#4442); converting here once (`cvt.rn`, the
+    /// rounding v1 did per element in-kernel) keeps the result bit-identical.
+    ///
     /// # Errors
     /// Compile/launch failure or a null pointer.
     #[allow(clippy::too_many_arguments)]
@@ -379,6 +384,7 @@ impl CudaExecutor {
         q: u64,
         k_cache: u64,
         v_cache: u64,
+        kv16: u64,
         out: u64,
         rows: u32,
         pos0: u32,
@@ -386,6 +392,13 @@ impl CudaExecutor {
         num_kv_heads: u32,
     ) -> Result<(), GpuError> {
         let kern = PrefillFlashAttention256Kernel::new(num_heads, num_kv_heads);
+        let n = u64::from(pos0 + rows) * u64::from(num_kv_heads * FLASH_HEAD_DIM);
+        let count = u32::try_from(n).map_err(|_| {
+            GpuError::InvalidParameter(format!("flash prefill: {n} K/V elements exceed u32"))
+        })?;
+        let (k16, v16) = (kv16, kv16 + 2 * n);
+        self.convert_f32_to_f16(k_cache, k16, count)?;
+        self.convert_f32_to_f16(v_cache, v16, count)?;
         let key = format!("qp_flash_attn_{num_heads}_{num_kv_heads}");
         self.qp_prepare(&key, &kern)?;
         let (gx, gy, _) = kern.grid(rows);
@@ -395,7 +408,7 @@ impl CudaExecutor {
             block: (bx, 1, 1),
             shared_mem: 0, // static: the kernel declares its tiles
         };
-        let mut args = [q, k_cache, v_cache, out, u64::from(rows), u64::from(pos0)];
+        let mut args = [q, k16, v16, out, u64::from(rows), u64::from(pos0)];
         self.qp_launch(&key, kern.name(), config, &mut args, 4)
     }
 
