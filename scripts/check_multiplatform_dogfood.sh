@@ -213,7 +213,8 @@ pub, mea = r.get("sha256_published"), r.get("sha256_measured")
 if not (isinstance(pub, str) and hexre.fullmatch(pub) and isinstance(mea, str) and hexre.fullmatch(mea)):
     bad.append(f"sha256_published and sha256_measured are not both recorded ({pub!r}, {mea!r})")
 elif pub != mea:
-    bad.append(f"the .crate the host downloaded ({mea[:12]}) is not the one crates.io published ({pub[:12]})")
+    pub_sha, mea_sha = pub, mea
+    bad.append(f"the .crate the host downloaded ({mea_sha[:12]}) is not the one crates.io published ({pub_sha[:12]})")
 u = r.get("unmeasured")
 if not (isinstance(u, list) and u and all(isinstance(x, str) and x for x in u)):
     bad.append("unmeasured[] is empty or absent: a receipt names what its host could not prove")
@@ -250,7 +251,7 @@ PY
     # says WHY, from the producer's own refusal recorded in the train's receipt --
     # REPORT rows reach the release notes (autopilot postpub).
     if ! python3 "$REPO_BENCH_VALIDATOR" --has-bench "$f" >/dev/null 2>&1; then
-        brefused=$(python3 -c "import json,sys;a=json.load(open(sys.argv[1])).get('bench_attempt') or {};print(str(a.get('reason',''))[:200])" "$f" 2>/dev/null)
+        brefused=$(python3 -c "import json,sys;a=json.load(open(sys.argv[1])).get('bench_attempt') or {};s=str(a.get('reason',''));print(s[:200]+(f' ... and {len(s)-200} more chars' if len(s)>200 else ''))" "$f" 2>/dev/null)
         bwhy="${brefused:+the producer refused on this host: $brefused}"
         bowed=$(report_only_for bench)
         case " $TRAIN_RECEIPT_GRANDFATHERED " in

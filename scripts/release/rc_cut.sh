@@ -91,43 +91,6 @@ rc_decide() {
     printf 'cut v%s-rc.%d\n' "$v" "$((max + 1))"
 }
 
-# rcc_io_rows -- the jq reads against fixture answers, with a fake curl for the tag
-# dereference. Prints one line per row; returns 1 if any row is wrong.
-rcc_io_rows() {
-    local bad=0 got d
-    row() {  # row <want> <label> <got>
-        if [ "$3" = "$1" ]; then printf '  ok   %s\n' "$2"; else printf '  FAIL %s\n       want: %q\n       got:  %q\n' "$2" "$1" "$3"; bad=1; fi
-    }
-    local run='{"head_repository":null,"head_branch":"release/0.70.0","head_sha":null}'
-    row '' 'a null head_repository reads as "" (a fork check that cannot pass)' "$(printf '%s' "$run" | rcc_head_repo)"
-    row 'release/0.70.0' 'head_branch' "$(printf '%s' "$run" | rcc_or_empty head_branch)"
-    row '' 'a null head_sha reads as "", never "None"' "$(printf '%s' "$run" | rcc_or_empty head_sha)"
-    got=$(printf '%s' '{"jobs":[{"name":"ci / gate","conclusion":"success"},{"name":"workspace-test","conclusion":null}]}' | rcc_jobs_tsv)
-    row $'ci / gate\tsuccess\nworkspace-test\tNone' 'an unfinished job reads as None, which is not success' "$got"
-    printf '%s' '{"total_count":0}' | rcc_jobs_tsv > /dev/null 2>&1; row 5 'an answer with no jobs key is an error, not zero jobs' "$?"
-    row 2 'the page count' "$(printf '%s' '{"jobs":[{},{}]}' | rcc_jobs_count)"
-    row None 'print(d["object"]["sha"]) of a null sha' "$(printf '%s' '{"object":{"sha":null}}' | rcc_path 'key("object") | key("sha")')"
-    got=$(printf '%s' "{\"content\":\"$(printf 'lambda\tapr\tGREEN\nyoga\tpv\tRED\n' | base64 -w 16 | awk '{printf "%s\\n", $0}')\"}" | rcc_b64_content)
-    row $'lambda\tapr\tGREEN\nyoga\tpv\tRED' 'the contents API base64, wrapped, decodes to the cells' "$got"
-    got=$(printf '%s' '{"content":"bGFtYmRhC"}' | rcc_b64_content 2>/dev/null; echo "rc=$?")
-    row 'rc=5' 'truncated base64 writes nothing and fails (the gate then refuses empty cells)' "$got"
-    got=$(rcc_release_body 'v0.70.0-rc.1' $'notes "q"\n' | jq -c '[.tag_name, .name, .body, .prerelease, .draft, .make_latest]')
-    row '["v0.70.0-rc.1","v0.70.0-rc.1","notes \"q\"\n",true,true,"false"]' 'the release body: a draft prerelease, never latest' "$got"
-    d=$(mktemp -d) || return 1
-    printf '%s\n' '#!/usr/bin/env bash' 'for a; do u=$a; done' \
-        'case $u in *tag-ok) echo "{\"object\":{\"sha\":\"c0ffee\",\"type\":\"commit\"}}" ;; *) exit 22 ;; esac' > "$d/curl"
-    chmod +x "$d/curl"
-    got=$(printf '%s' '[{"ref":"refs/tags/v0.70.0-rc.1","object":{"type":"commit","sha":"aaa"}},{"ref":"refs/tags/v0.70.0-rc.2","object":{"type":"tag","sha":"ttt","url":"https://x/tag-ok"}}]' \
-        | GH_TOKEN=t PATH="$d:$PATH" rcc_tags_tsv)
-    row $'v0.70.0-rc.1\taaa\nv0.70.0-rc.2\tc0ffee' 'an annotated tag is dereferenced to its commit' "$got"
-    got=$(printf '%s' '[{"ref":"refs/tags/v0.70.0-rc.2","object":{"type":"tag","sha":"ttt","url":"https://x/gone"}}]' \
-        | GH_TOKEN=t PATH="$d:$PATH" rcc_tags_tsv 2>/dev/null; echo "rc=$?")
-    row 'rc=2' 'a failed dereference is ENV, never a missing tag' "$got"
-    row '' 'no matching refs -> no tags' "$(printf '%s' '[]' | rcc_tags_tsv)"
-    rm -f -- "$d/curl"; rmdir -- "$d"
-    return "$bad"
-}
-
 self_test() {
     local fail=0 got mut loop_head
     local J_OK=$'ci / gate\tsuccess\nworkspace-test\tsuccess\nlint\tfailure'
@@ -169,33 +132,11 @@ self_test() {
         else printf '  FAIL mutant did not behave as a mutant: %s\n' "$got"; fail=1; fi
     fi
     rm -f -- "$mut"
-    echo "$PROG self-test: the jq reads of the GitHub answers (#4352)"
-    rcc_io_rows || fail=1
-    # MUTANTS of the reads: each must turn at least one row red. Built from THIS file.
-    local m a b why src head tail marker=$'\n# ---- I/O: GitHub REST'
-    src=$(cat -- "${BASH_SOURCE[0]}")
-    for m in 1 2 3; do
-        case $m in
-            1) a='if key("type") == "commit" then'; b='if true then'; why='annotated tags not dereferenced' ;;
-            2) a='| gsub("[^A-Za-z0-9+/=]"; "") |'; b='|'; why='the base64 line breaks kept' ;;
-            3) a='prerelease: true, draft: true'; b='prerelease: true, draft: false'; why='the rc published at once, not as a draft' ;;
-        esac
-        mut=$(mktemp) || return 2
-        # mutate only the I/O section: the case lines above hold the same anchors
-        head=${src%%"$marker"*}; tail=${src#"$head"}
-        printf '%s\n' "$head${tail/"$a"/"$b"}" > "$mut"
-        if [ "$head" = "$src" ] || [ "${tail/"$a"/}" = "$tail" ]; then
-            echo "  FAIL mutant $m ($why) was not built: its anchor is not in the helpers"; fail=1
-        elif bash -c ". '$mut' --source-only; rcc_io_rows" > /dev/null 2>&1; then
-            echo "  FAIL mutant $m ($why) survived the rows"; fail=1
-        else echo "  ok   mutant $m ($why) is killed"; fi
-        rm -f -- "$mut"
-    done
     if [ "$fail" = 0 ]; then echo "$PROG self-test: PASS"; else echo "$PROG self-test: FAIL"; fi
     return "$fail"
 }
 
-# ---- I/O: GitHub REST via curl + jq (the fleet boxes carry no gh) ------------
+# ---- I/O: GitHub REST via curl + python3 (the fleet boxes carry no gh) ------------
 api_get() {  # api_get PATH -> body on stdout; returns 2 on any failure
     curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
         "https://api.github.com/repos/$GITHUB_REPOSITORY${1:+/$1}" || return 2
@@ -207,51 +148,7 @@ api_post() {  # api_post PATH JSON -> line 1 is the HTTP code, the rest is the b
         -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/$1" -d "$2") || { rm -f -- "$out"; return 2; }
     printf '%s\n' "$code"; cat "$out"; rm -f -- "$out"
 }
-# jq, not python3 (#4352). The helpers keep the python reads' semantics, which the parity
-# table pinned: a missing key or a non-object is an error (the caller returns 2), a JSON
-# null prints "None" as str(None) did, and `x or ""` treats every python-falsy value as "".
-# iter: python iterates an empty dict or str as zero items; any other non-list is an error.
-RCC_JQ='def obj: if type == "object" then . else error("not an object") end;
-def key($k): obj | if has($k) then .[$k] else error("missing key \($k)") end;
-def pystr: if . == null then "None" elif . == true then "True" elif . == false then "False"
-    elif type == "string" then . else tojson end;
-def truthy: . != null and . != false and . != 0 and . != "" and . != [] and . != {};
-def str: if type == "string" then . else error("not a string") end;
-def arr: if type == "array" then . else error("not an array") end;
-def iter: if . == {} or . == "" then [] else arr end;'
-json() { jq -r "$RCC_JQ $1"; }   # json FILTER: stdin JSON -> the filter's raw output
-rcc_head_repo() { json 'obj | (.head_repository | if truthy then . else {} end) | obj | if has("full_name") then .full_name | pystr else "" end'; }
-rcc_or_empty() { json "obj | .$1 | if truthy then pystr else \"\" end"; }   # print(d.get(K) or "")
-rcc_jobs_tsv() { json '[key("jobs") | iter | .[] | obj | (key("name") | str) + "\t" + (.conclusion | pystr)] | join("\n")'; }
-rcc_jobs_count() { json 'key("jobs") | if type == "array" or type == "object" or type == "string" then length else error("no len") end'; }
-rcc_path() { json "$1 | pystr"; }   # rcc_path 'key("a") | key("b")' -> print(d["a"]["b"])
-rcc_b64_content() {  # the contents API's base64 (wrapped at 60) -> the file; nothing on bad input
-    jq -j "$RCC_JQ"' key("content") | str | if explode | any(. > 127) then error("non-ascii") else . end
-        | gsub("[^A-Za-z0-9+/=]"; "") | (gsub("="; "") | length % 4) as $r | (capture("(?<p>=*)$").p | length) as $p
-        | if $r == 1 or ($r == 2 and $p < 2) or ($r == 3 and $p < 1) then error("bad padding") else . end
-        | gsub("="; "") | . + ["", "", "==", "="][$r] | @base64d
-        | if index("\ufffd") then error("not utf-8") else . end'   # python .decode() refused bad UTF-8
-}
-# rcc_tags_tsv: matching-refs JSON on stdin -> "<tag>\t<commit sha>"; an annotated tag's
-# object is fetched and dereferenced. All or nothing: any bad ref or fetch returns 2.
-rcc_tags_tsv() {
-    local lines tag sha url out=''
-    lines=$(json 'iter | .[] | (key("ref") | str | .[10:]) as $t | key("object")
-        | if key("type") == "commit" then "\($t)\u001f\(key("sha") | str)" else "\($t)\u001f\u001f\(key("url") | str)" end') || return 2
-    while IFS=$'\x1f' read -r tag sha url; do
-        [ -n "$tag$sha$url" ] || continue
-        if [ -z "$sha" ]; then
-            sha=$(curl -sSfL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$url" \
-                | json 'key("object") | key("sha") | str') || return 2
-        fi
-        out+="$tag"$'\t'"$sha"$'\n'
-    done <<< "$lines"
-    printf '%s' "$out"
-}
-rcc_release_body() {  # rcc_release_body TAG NOTES -> the POST /releases payload
-    jq -nc --arg tag "$1" --arg notes "$2" \
-        '{tag_name: $tag, name: $tag, body: $notes, prerelease: true, draft: true, make_latest: "false"}'
-}
+json() { python3 -c "import json,sys; d=json.load(sys.stdin); $1"; }
 emit() { if [ -n "${GITHUB_OUTPUT:-}" ]; then printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; fi; }
 summary() { if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '%s\n' "$@" >> "$GITHUB_STEP_SUMMARY"; fi; printf '%s\n' "$@"; }
 post_ok() {  # post_ok <want code> <what> <api_post output>
@@ -266,25 +163,34 @@ run_cut() {
     : "${GH_TOKEN:?GH_TOKEN is required}" "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
     run=$(api_get "actions/runs/$run_id") || { echo "$PROG: cannot read run $run_id" >&2; return 2; }
     D_REPO=$GITHUB_REPOSITORY
-    D_HEAD_REPO=$(printf '%s' "$run" | rcc_head_repo) || return 2
-    D_BRANCH=$(printf '%s' "$run" | rcc_or_empty head_branch) || return 2
-    D_HEAD_SHA=$(printf '%s' "$run" | rcc_or_empty head_sha) || return 2
+    D_HEAD_REPO=$(printf '%s' "$run" | json 'print((d.get("head_repository") or {}).get("full_name",""))') || return 2
+    D_BRANCH=$(printf '%s' "$run" | json 'print(d.get("head_branch") or "")') || return 2
+    D_HEAD_SHA=$(printf '%s' "$run" | json 'print(d.get("head_sha") or "")') || return 2
     D_JOBS='' D_TAGS='' D_TIP_SHA=''
     # Read the jobs, tip and tags only for a candidate; rc_decide still judges every field.
     if v=$(rc_version_of_branch "$D_BRANCH") && [ "$D_HEAD_REPO" = "$D_REPO" ]; then
         page=1
         while :; do  # CI can exceed one page of jobs once shards and matrices are counted: paginate
             body=$(api_get "actions/runs/$run_id/jobs?filter=latest&per_page=$PER_PAGE&page=$page") || { echo "$PROG: cannot read the jobs of run $run_id" >&2; return 2; }
-            D_JOBS+=$(printf '%s' "$body" | rcc_jobs_tsv)$'\n' || return 2
-            n=$(printf '%s' "$body" | rcc_jobs_count) || return 2
+            D_JOBS+=$(printf '%s' "$body" | json 'print("\n".join(j["name"]+"\t"+str(j.get("conclusion")) for j in d["jobs"]))')$'\n' || return 2
+            n=$(printf '%s' "$body" | json 'print(len(d["jobs"]))') || return 2
             [ "$n" -lt "$PER_PAGE" ] && break
             page=$((page + 1))
         done
         body=$(api_get "git/ref/heads/release/$v") || { echo "$PROG: cannot read the tip of release/$v" >&2; return 2; }
-        D_TIP_SHA=$(printf '%s' "$body" | rcc_path 'key("object") | key("sha")') || return 2
+        D_TIP_SHA=$(printf '%s' "$body" | json 'print(d["object"]["sha"])') || return 2
         # matching-refs returns [] when nothing matches; an annotated tag is dereferenced to its commit.
         body=$(api_get "git/matching-refs/tags/v$v-rc.") || { echo "$PROG: cannot list the v$v-rc.* tags" >&2; return 2; }
-        D_TAGS=$(printf '%s' "$body" | rcc_tags_tsv) || { echo "$PROG: cannot resolve the v$v-rc.* tags" >&2; return 2; }
+        D_TAGS=$(printf '%s' "$body" | python3 -c '
+import json, os, sys, urllib.request
+def get(url):
+    r = urllib.request.Request(url, headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"], "Accept": "application/vnd.github+json"})
+    return json.load(urllib.request.urlopen(r))
+for ref in json.load(sys.stdin):
+    o = ref["object"]
+    sha = o["sha"] if o["type"] == "commit" else get(o["url"])["object"]["sha"]
+    print(ref["ref"][len("refs/tags/"):] + "\t" + sha)
+') || { echo "$PROG: cannot resolve the v$v-rc.* tags" >&2; return 2; }
     fi
     decision=$(rc_decide)
     summary "### rc-cut: CI run $run_id on ${D_BRANCH:-?} @ ${D_HEAD_SHA:0:9}" "" "$decision"
@@ -302,7 +208,7 @@ run_cut() {
     local cells gate
     cells=$(mktemp) || return 2
     api_get "contents/fleet/cells.tsv?ref=fleet-state" 2>/dev/null \
-        | rcc_b64_content > "$cells" 2>/dev/null || : > "$cells"
+        | json 'import base64; sys.stdout.write(base64.b64decode(d["content"]).decode())' > "$cells" 2>/dev/null || : > "$cells"
     gate=$(bash "$(dirname -- "${BASH_SOURCE[0]}")/fleet_cells_gate.sh" --cells "$cells" \
         --waivers "$(dirname -- "${BASH_SOURCE[0]}")/fleet-waivers.tsv"); rc=$?
     rm -f -- "$cells"
@@ -321,7 +227,7 @@ run_cut() {
     #    visible only when rc_fleet_stage.sh has installed and verified it on every
     #    reachable fleet host. The notes carry the provenance the fleet pins by (commit and
     #    gating run) and the merge time the <=45 min target is measured from.
-    merged_at=$(api_get "commits/$D_HEAD_SHA" | rcc_path 'key("commit") | key("committer") | key("date")') || merged_at=unknown
+    merged_at=$(api_get "commits/$D_HEAD_SHA" | json 'print(d["commit"]["committer"]["date"])') || merged_at=unknown
     notes="Release candidate of ${v}, cut by CI (#4285). Not on crates.io.
 
 Commit \`$D_HEAD_SHA\` on \`release/$v\`, merged $merged_at.
@@ -330,12 +236,12 @@ Cut at $(date -u +%Y-%m-%dT%H:%M:%SZ). binary-release.yml attaches the apr and p
 scripts/release/rc_fleet_stage.sh publishes it only after every reachable fleet host runs it (#4327).
 
 Install: \`install.sh --version $tag\`, or \`install.sh --channel rc\` for the newest rc."
-    body=$(rcc_release_body "$tag" "$notes") || return 1
+    body=$(TAG=$tag NOTES=$notes python3 -c 'import json,os; print(json.dumps({"tag_name":os.environ["TAG"],"name":os.environ["TAG"],"body":os.environ["NOTES"],"prerelease":True,"draft":True,"make_latest":"false"}))') || return 1
     out=$(api_post releases "$body") || return 1
     post_ok 201 "creating prerelease $tag (the tag exists; create the release and dispatch binary-release.yml by hand)" "$out" || return 1
 
     # 3. The assets. A GITHUB_TOKEN-created release does not fire `release: published`.
-    ref=$(api_get "" | rcc_path 'key("default_branch")') || ref=main
+    ref=$(api_get "" | json 'print(d["default_branch"])') || ref=main
     out=$(api_post actions/workflows/binary-release.yml/dispatches "{\"ref\":\"$ref\",\"inputs\":{\"tag\":\"$tag\"}}") || return 1
     post_ok 204 "dispatching binary-release.yml for $tag" "$out" || return 1
     summary "Cut $tag at ${D_HEAD_SHA:0:9} as a DRAFT prerelease and dispatched binary-release.yml on $ref. Next: rc_fleet_stage.sh $tag --publish (#4327)."

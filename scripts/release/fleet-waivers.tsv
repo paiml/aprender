@@ -3,3 +3,12 @@
 #   <host|*>  <binary|*>  <until YYYY-MM-DD>  <reason, who ruled, when>
 # `*  *` also covers MISSING or STALE cells (the C3 monitor down); a host key never does.
 # A retired host is removed from the cells by C3; it is never waived here (C7).
+*	apr	2026-09-26	pre-RC no-sha: v0.69.3 was built +no-git (aprender#4256); cleared by installing v0.69.5-rc.1; after install apr must show the rc sha on every host before publish, unwaived (aprender#4327); owner infra-64 fleetbins
+*	pv	2026-09-26	pre-RC no-sha: v0.69.3 was built +no-git (aprender#4256); cleared by installing v0.69.5-rc.1; after install pv must show the rc sha on every host before publish, unwaived (aprender#4327); owner infra-64 fleetbins
+*	forjar	2026-09-27	no-sha: forjar --version names no commit (paiml/forjar#639); owner forjar
+*	bashrs	2026-09-27	no-sha: bashrs --version names no commit (paiml/bashrs#393); owner bashrs
+*	pzsh	2026-09-27	no-sha: pzsh --version names no commit (paiml/pzsh#34); owner pzsh
+*	copia	2026-09-27	no-sha (paiml/copia#74) + yoga behind on a stale nightly (paiml/copia#73); owner copia
+lambda-labs	pmat	2026-09-27	behind: v3.41.1 vs nightly, no scheduled install of the newest (paiml/infra#1055); owner infra-64 fleetbins
+*	apex	2026-09-27	mirror-unreachable: apex is private and ships no aarch64 asset (paiml/apex#153, paiml/apex#154); owner apex
+lambda-labs	rmedia	2026-09-27	dev box, WAIVED in fleet-bins-na.tsv (paiml/rmedia#746); owner rmedia

@@ -69,7 +69,8 @@ def decode_citing(raw, sup):  # SAME in judge() and pin_line(): the first encodi
             if any(s[:7] in t for s in sup): return t  # the encoding whose DECODED text really cites
     return None
 def pin_of(texts):  # the SAME formula --pin prints; the self-test's fixtures are pinned by --pin, so C1 proves they agree
-    return f"{len(texts)}:{hashlib.sha256(chr(10).join(texts).encode()).hexdigest()[:12]}"
+    digest = hashlib.sha256(chr(10).join(texts).encode()).hexdigest()
+    return f"{len(texts)}:{digest[:12]}"
 date_re = re.compile(r"20[0-9]{2}-[01][0-9]-[0-3][0-9]")
 bad = 0
 def entries(path):
@@ -159,7 +160,8 @@ def decode_citing(raw, sup):  # SAME in judge() and pin_line(): the first encodi
 text = decode_citing(open(f"{root}/{rel}", "rb").read(), sup) or ""
 texts = [l for l in text.splitlines() if any(p.search(l) for p in pats)]
 if not texts: sys.exit(f"{rel} cites no superseded pin")
-print(f"{len(texts)}:{hashlib.sha256(chr(10).join(texts).encode()).hexdigest()[:12]}")
+digest = hashlib.sha256(chr(10).join(texts).encode()).hexdigest()
+print(f"{len(texts)}:{digest[:12]}")
 PY
 }
 if [ "${1:-}" = "--pin" ]; then [ -n "${2:-}" ] || env_die "--pin PATH"; pin_line "$ROOT" "$2"; exit $?; fi

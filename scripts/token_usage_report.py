@@ -510,12 +510,12 @@ def _section_levers(since, real, lanes, convs, bys, t, all_c, at):
           % (pct(t["cache_read"], all_c), fmt(t["cache_read"]), pct(sum(ctot(rs) for rs in top10), all_c))]
     L += ["- **Repeat quorum rounds**: %d of %d tickets with lane envelopes on disk took more than one round (%s); those tickets' "
           "lanes used %s agy tokens." % (len(multi), len(per_ticket),
-                                         ", ".join("%s x%d" % (k, len(v)) for k, v in sorted(multi.items(), key=lambda kv: -len(kv[1]))[:6]) or "none",
+                                         ", ".join("%s x%d" % (k, len(v)) for k, v in sorted(multi.items(), key=lambda kv: -len(kv[1]))) or "none",
                                          fmt(sum(tick_tokens[k] for k in multi)))]
     L += ["- **Repeat rounds, from committed receipts** (aprender, every branch): %d quorum receipts committed for %d tickets; "
           "%d tickets committed more than one (%s). A committed receipt is one round that was kept; rounds rerun without a "
           "commit are not in this count." % (sum(len(v) for v in com.values()), len(com), len(com_multi),
-                                              ", ".join("%s x%d" % (k, len(v)) for k, v in sorted(com_multi.items(), key=lambda kv: -len(kv[1]))[:8]) or "none")]
+                                              ", ".join("%s x%d" % (k, len(v)) for k, v in sorted(com_multi.items(), key=lambda kv: -len(kv[1]))) or "none")]
     L += ["- **Lane brief size**: an agy quorum lane reads %s input tokens on average (max %s) plus %s cache-read tokens on average; "
           "three lanes read it per round." % (fmt(int(at["input"] / max(1, len(real)))), fmt(max((x["input"] for x in real), default=0)),
                                               fmt(int(sum(x["cache_read"] for x in real) / max(1, len(real)))))]

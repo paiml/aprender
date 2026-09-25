@@ -43,14 +43,6 @@ is_allowed() {
     */ship-discharges/ship-008-discharge.sh) return 0 ;;  # likewise: SHIP-008
                                          # discharge receipt, one run, its
                                          # duration recorded as provenance only.
-    */release/host_receipt.sh) return 0 ;;  # a RELEASE HOST RECEIPT, like the
-                                         # discharges: one `apr run` (2+2) whose
-                                         # wall_ms is provenance of that run. It
-                                         # states no tok/s and compares nothing;
-                                         # its bench and parity blocks come from
-                                         # the existing producers. Visible to the
-                                         # regex only since #4352 moved its clock
-                                         # from python3 to `date +%s%N`.
     */lib/parity_block_selftest.sh) return 0 ;;  # a CASE-TABLE FIXTURE BUILDER
                                          # (I-24, #2735), not a harness: it writes
                                          # synthetic receipts (zero, empty and

@@ -67,10 +67,14 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             aprender_rag_cli::dispatch(command.clone())
                 .map_err(|e| CliError::ValidationFailed(format!("rag: {e}"))),
         ),
-        Commands::Zram(args) => {
-            let format = aprender_zram_cli::resolve_format(args.format, cli.json);
+        Commands::Zram(command) => {
+            let format = if cli.json {
+                aprender_zram_cli::output::OutputFormat::Json
+            } else {
+                aprender_zram_cli::output::OutputFormat::Table
+            };
             Some(
-                aprender_zram_cli::dispatch(&args.command, format)
+                aprender_zram_cli::dispatch(command, format)
                     .map_err(|e| CliError::ValidationFailed(format!("zram: {e}"))),
             )
         }

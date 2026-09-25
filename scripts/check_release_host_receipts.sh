@@ -152,7 +152,7 @@ PARAMS="$ROOT/scripts/release/lib_release_params.sh"
 GATE="$ROOT/scripts/check_multiplatform_dogfood.sh"
 VALIDATOR="$ROOT/scripts/lib/bench_receipt.py"
 PIN="$ROOT/scripts/llama_pin.toml"
-LEDGER="$ROOT/scripts/release/ledger.sh"
+LEDGER="$ROOT/scripts/release/ledger.py"
 BANDLOCK="$ROOT/scripts/lib/gpu_band_lock.sh"
 PARITY="$ROOT/scripts/parity_host_receipt.sh"
 TWIN="$ROOT/scripts/lib/yaml_twin.py"
@@ -187,13 +187,13 @@ PY
 }
 M="$TMP/mutants"; mkdir -p "$M"
 mutate "$HOST_RECEIPT" "$M/hr-drop-accel-line.sh" \
-    'printf '"'"'%s\n'"'"' "accel lane: the crates.io build carries no' ': "accel lane: the crates.io build carries no'
+    'unmeasured.append("accel lane: the crates.io build carries no `cuda` feature (apr-cli default features), so no CUDA lane is measured in this receipt; the CUDA binary is the release asset, which the train'"'"'s hosts step runs")' 'pass'
 mutate "$HOST_RECEIPT" "$M/hr-parity-nested.sh" \
     '    receipt_set parity "$W/parity.block.json"' '    receipt_set parity "$W/parity.json"'
 mutate "$HOST_RECEIPT" "$M/hr-nvsmi-any-rc.sh" \
-    '  out=$(hr_timeout 120 "$@" 2> /dev/null) || return 0' '  out=$(hr_timeout 120 "$@" 2> /dev/null)'
+    '    return p.stdout.strip() if p.returncode == 0 else ""' '    return p.stdout.strip()'
 mutate "$HOST_RECEIPT" "$M/hr-drop-fallback.sh" \
-    '| if $fb then .unmeasured' '| if false then .unmeasured'
+    '        r.setdefault("unmeasured", []).append(f"generate: apr'"'"'s accelerated path was not used: {fallback}")' '        pass'
 mutate "$HOST_RECEIPT" "$M/hr-no-gpu-wrap.sh" \
     '      WRAP="gpu-q --prio $gpu_prio --"' '      WRAP=""'
 mutate "$HOST_RECEIPT" "$M/hr-gpuq-not-preferred.sh" \
@@ -203,13 +203,13 @@ mutate "$HOST_RECEIPT" "$M/hr-os-literal.sh" \
 mutate "$HOST_RECEIPT" "$M/hr-drop-attempt.sh" \
     'attempt parity "$T_RC" "$W/parity.log"; ' ''
 mutate "$HOST_RECEIPT" "$M/hr-sane-always.sh" \
-    'output_sane: (($out | if has("text") then .text else "" end) | pystr | test("\\b4\\b")),' 'output_sane: true,'
+    '"output_sane": bool(re.search(r"\b4\b", str(out.get("text", "")))),' '"output_sane": True,'
 mutate "$HOST_RECEIPT" "$M/hr-merge-hashes.sh" \
-    'sha256_measured: $measured}' 'sha256_measured: (if $pub.ok then $pub.c else null end)}'
+    'r["sha256_measured"] = sha256(cache[0]) if cache else None' 'r["sha256_measured"] = r["sha256_published"]'
 mutate "$HOST_RECEIPT" "$M/hr-no-version-check.sh" \
     '[[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {' 'true || {'
 mutate "$HOST_RECEIPT" "$M/hr-version-key.sh" \
-    'version_tested: $ver,' 'version: $ver,'
+    '"version_tested": ver,' '"version": ver,'
 mutate "$AUTOPILOT" "$M/ap-steps-reordered.sh" \
     'install hosts postpub ledger close)' 'install postpub hosts ledger close)'
 mutate "$AUTOPILOT" "$M/ap-no-receipts-env.sh" \
@@ -607,7 +607,7 @@ fixture() {
     kit_files "$r" "$3" || return 2
     cp -- "$2" "$r/scripts/release/autopilot.sh" && cp -- "$PARAMS" "$r/scripts/release/lib_release_params.sh" \
         && cp -- "$GATE" "$r/scripts/check_multiplatform_dogfood.sh" && cp -- "$TMP/cargo-stub" "$d/pkg/bin/cargo" \
-        && cp -- "$LEDGER" "$r/scripts/release/ledger.sh" || return 2
+        && cp -- "$LEDGER" "$r/scripts/release/ledger.py" || return 2
     if [ -n "${4:-}" ]; then
         python3 - "$r/scripts/check_multiplatform_dogfood.sh" "$4" <<'PY' || return 2
 import re, sys
@@ -993,12 +993,12 @@ print(json.dumps(doc, sort_keys=True))
 """
 def run(mode):
     r = subprocess.run([sys.executable, "-c", prog, lib, d, mode], capture_output=True, text=True)
-    return r.returncode, r.stdout, r.stderr.strip().splitlines()[-1:] if r.stderr.strip() else [""]
+    return r.returncode, r.stdout, [r.stderr.strip().splitlines()[-1]] if r.stderr.strip() else [""]
 a, b = run("yaml"), run("blocked")
 if a[0] != 0:
-    print("the YAML path failed:", a[2][0][:300]); sys.exit(1)
+    print("the YAML path failed:", a[2][0][:300] + (f" ... and {len(a[2][0]) - 300} more chars" if len(a[2][0]) > 300 else "")); sys.exit(1)
 if b[0] != 0:
-    print("with PyYAML blocked the readers did not load the twin:", b[2][0][:300]); sys.exit(1)
+    print("with PyYAML blocked the readers did not load the twin:", b[2][0][:300] + (f" ... and {len(b[2][0]) - 300} more chars" if len(b[2][0]) > 300 else "")); sys.exit(1)
 if a[1] != b[1] or len(a[1]) < 100:
     print("the twin does not parse to the object the YAML does"); sys.exit(1)
 PY

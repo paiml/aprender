@@ -175,7 +175,7 @@ for r, loc, text in v:
     if (r, path) in known:
         print(f"known {r} {loc}  (baseline: {next(i for rr, pp, i in b if (rr, pp) == (r, path))})")
     else:
-        print(f"FAIL  {r} {loc}: {text[:160]}"); bad = 1
+        print(f"FAIL  {r} {loc}: {text[:160]}" + (f" ... and {len(text) - 160} more chars" if len(text) > 160 else "")); bad = 1
 live = {(r, loc.rsplit(':', 1)[0]) for r, loc, _ in v}
 for r, p, i in b:
     if (r, p) not in live:

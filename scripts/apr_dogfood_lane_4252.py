@@ -119,7 +119,7 @@ def need_signals(own_pid):
     try:
         q = [n for n in os.listdir(QUEUE) if not n.startswith(".")]
         if q:
-            why.append(f"gpu-q tickets queued: {sorted(q)[:3]}")
+            why.append(f"gpu-q tickets queued ({len(q)}): {sorted(q)}")
     except FileNotFoundError:
         pass
     # 2. any GPU process that is not our server (CI GPU jobs, other sessions)
@@ -135,7 +135,8 @@ def need_signals(own_pid):
     # 3. another session's claim
     if os.path.exists(CLAIM):
         try:
-            why.append(f"claim file {CLAIM}: {open(CLAIM).read().strip()[:120]}")
+            claim = open(CLAIM).read().strip()
+            why.append(f"claim file {CLAIM}: {claim[:120]}" + (f" ... and {len(claim) - 120} more chars" if len(claim) > 120 else ""))
         except OSError:
             why.append(f"claim file {CLAIM}")
     # 4. disk and memory alarms (gx10's RAID is its root disk)
@@ -383,7 +384,7 @@ def _ask_legs(args, messages, rec, deadline, remaining):
             rec.update({"served_by": "gx10-cuda" if on_gpu else "gx10-cpu-UNPROVEN-GPU",
                         "provenance": prov, "response": resp})
         except Exception as e:  # yield, stop mid-request, ssh loss: all pass to lambda
-            rec["attempts"].append({"host": "gx10", "ok": False, "error": str(e)[:400]})
+            rec["attempts"].append({"host": "gx10", "ok": False, "error": str(e)[:400] + (f" ... and {len(str(e)) - 400} more chars" if len(str(e)) > 400 else "")})
     if "served_by" not in rec and deadline - time.monotonic() < 1:
         # gx10 failed with under a second left: starting lambda now could only be cut off
         # by the alarm mid-request. (The alarm itself can no longer be swallowed: it
@@ -402,7 +403,7 @@ def _ask_legs(args, messages, rec, deadline, remaining):
                                        "apr": h.get("version") if isinstance(h, dict) else None,
                                        "unit": "apr-dogfood-4252.service (apr-dogfood.slice)"}})
         except Exception as e:  # advisory lane: no verdict is a receipt, never a crash
-            rec["attempts"].append({"host": "lambda", "ok": False, "error": str(e)[:400]})
+            rec["attempts"].append({"host": "lambda", "ok": False, "error": str(e)[:400] + (f" ... and {len(str(e)) - 400} more chars" if len(str(e)) > 400 else "")})
 
 
 def main():

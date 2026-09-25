@@ -23,5 +23,4 @@ include!("lib_dispatch_coverage.rs");
 include!("lib_dogfood_2392.rs");
 include!("lib_falsify_2606_mcp_serve_argv.rs");
 include!("lib_parse_ptx_debug_4062.rs");
-include!("lib_parse_zram_format_4060.rs");
 }
