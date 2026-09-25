@@ -733,6 +733,7 @@ fn synthetic_forward() -> Qwen35Forward {
         batched_prefills: 0,
         checkpoint: None,
         im_start: None,
+        f2: None,
     }
 }
 
