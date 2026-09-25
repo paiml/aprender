@@ -31,7 +31,7 @@
 #      line. The offline seam: the self-test, the release-criteria row and the
 #      dogfood row all use it, so none of them needs the network to prove polarity.
 #   2. `gh release view <tag> --json assets`, when gh is on PATH.
-#   3. The REST API with GITHUB_TOKEN/GH_TOKEN via curl + python3 — the fleet
+#   3. The REST API with GITHUB_TOKEN/GH_TOKEN via curl + jq (#4352) — the fleet
 #      boxes (gx10, yoga) have NO `gh`: run 34448908554 died on
 #      `gh: command not found` after a 40-minute GPU build.
 set -uo pipefail
@@ -72,6 +72,23 @@ expected_assets() {
 # Returns 2 when the release cannot be read at all. Never invents an empty list:
 # an empty stdout with rc=0 means "the release exists and carries nothing", which
 # is a MISSING verdict (1), not an ENV one.
+# cra_asset_names: a release JSON on stdin -> its asset names, one per line; rc 1 unless it is ONE
+# object whose `assets` is a list of named objects. cra_release_by_tag TAG: a release LIST on stdin
+# -> the first release whose tag_name is TAG, as JSON; rc 1 if none (or a release before it has no
+# tag_name). jq, not python3 (#4352): stdout and rc match the python they replace on 29 cases.
+cra_asset_names() {
+    jq -rs 'if length != 1 then error("not one JSON document") else .[0].assets end
+        | if type != "array" then error("assets is not a list") else . end
+        | map(if type == "object" and (.name | type) == "string" then .name else error("asset without a name") end)
+        | join("\n")' 2>/dev/null || return 1
+}
+cra_release_by_tag() {
+    jq -cs --arg t "$1" 'if length != 1 or (.[0] | type) != "array" then error("not a release list") else .[0] end
+        | [first(.[] | if type == "object" and has("tag_name") then . else error("release without tag_name") end
+                 | select(.tag_name == $t))]
+        | if . == [] then error("no release \($t)") else .[0] end' 2>/dev/null || return 1
+}
+
 read_assets() {
     local tag="$1" json rc
     if [ -n "$ASSETS_FROM" ]; then
@@ -85,7 +102,7 @@ read_assets() {
     if command -v gh > /dev/null 2>&1; then
         json=$(gh release view "$tag" --json assets 2>/dev/null); rc=$?
         if [ "$rc" -eq 0 ] && [ -n "$json" ]; then
-            printf '%s' "$json" | python3 -c 'import json,sys; print("\n".join(a["name"] for a in json.load(sys.stdin)["assets"]))' 2>/dev/null && return 0
+            printf '%s' "$json" | cra_asset_names && return 0
         fi
         printf '%s: gh could not read release %s — falling back to the REST API\n' "$PROG" "$tag" >&2
     fi
@@ -97,13 +114,13 @@ read_assets() {
     }
     json=$(curl -sSf -H "Authorization: Bearer $token" -H "Accept: application/vnd.github+json" \
         "https://api.github.com/repos/${repo}/releases?per_page=100" 2>/dev/null \
-        | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$tag" 2>/dev/null); rc=$?
+        | cra_release_by_tag "$tag"); rc=$?
     # ^ by listing: an rc is a DRAFT until every fleet host runs it (#4327); releases/tags/ hides drafts
     [ "$rc" -eq 0 ] && [ -n "$json" ] || {
         printf '%s: ENV — REST read of %s release %s failed (rc=%s)\n' "$PROG" "$repo" "$tag" "$rc" >&2
         return 2
     }
-    printf '%s' "$json" | python3 -c 'import json,sys; print("\n".join(a["name"] for a in json.load(sys.stdin)["assets"]))' 2>/dev/null || {
+    printf '%s' "$json" | cra_asset_names || {
         printf '%s: ENV — the release payload for %s did not parse as JSON assets\n' "$PROG" "$tag" >&2
         return 2
     }
@@ -177,6 +194,24 @@ selftest() {
     # Eighteen, not "some": a table that expected four would pass the rows above.
     row 0 "eighteen assets are expected, and five of them are apr tarballs (one darwin)" \
         bash -c "[ \$(bash '$0' --list '$tag' | grep -c .) -eq 18 ] && [ \$(bash '$0' --list '$tag' | grep -c '^apr-.*tar.gz\$') -eq 5 ] && [ \$(bash '$0' --list '$tag' | grep -cx 'apr-$tag-aarch64-apple-darwin-cpu.tar.gz') -eq 1 ]"
+
+    # The JSON readers (#4352), then read_assets end to end through a fake gh and a fake curl.
+    local L='[{"tag_name":"v1","assets":[{"name":"x"}]},{"tag_name":"v2","assets":[{"name":"y"},{"name":"z"}]}]'
+    row 0 "assets JSON -> one name per line" \
+        test "$(printf '%s' '{"assets":[{"name":"a"},{"name":"b"}]}' | cra_asset_names | tr '\n' ,)" = "a,b,"
+    row 1 "an asset without a name is not an asset list" cra_asset_names <<< '{"assets":[{"n":1}]}'
+    row 1 "no JSON at all is not an empty asset list" cra_asset_names < /dev/null
+    row 1 "two JSON documents are not one release" cra_asset_names <<< '{"assets":[]} {"assets":[]}'
+    row 0 "the REST list is searched by tag_name" test "$(cra_release_by_tag v2 <<< "$L" | cra_asset_names | tr '\n' ,)" = "y,z,"
+    row 1 "a tag with no release is a failure, not an empty one" cra_release_by_tag v3 <<< "$L"
+    mkdir -p "$work/gh" "$work/rest"
+    printf '#!/usr/bin/env bash\necho %q\n' '{"assets":[{"name":"g1"},{"name":"g2"}]}' > "$work/gh/gh"
+    printf '#!/usr/bin/env bash\nexit 1\n' > "$work/rest/gh"
+    printf '#!/usr/bin/env bash\necho %q\n' "$L" > "$work/rest/curl"
+    chmod +x "$work/gh/gh" "$work/rest/gh" "$work/rest/curl"
+    row 0 "read_assets: gh's asset names" test "$(PATH="$work/gh:$PATH" read_assets v1 | tr '\n' ,)" = "g1,g2,"
+    row 0 "read_assets: gh fails -> the REST list, picked by tag" \
+        test "$(PATH="$work/rest:$PATH" GITHUB_TOKEN=t read_assets v2 2>/dev/null | tr '\n' ,)" = "y,z,"
 
     printf '%s/%s rows\n' "$((n - red))" "$n"
     [ "$red" = 0 ] || return 1
