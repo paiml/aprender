@@ -7,6 +7,8 @@
 fn main() {
     let sha = resolve_git_sha();
     println!("cargo:rustc-env=APR_GIT_SHA={sha}");
+    // EXT-001 I-5: a dirty or unidentifiable engine is refused at start_run.
+    println!("cargo:rustc-env=APR_GIT_DIRTY={}", resolve_git_dirty(&sha));
 
     // Rerun build when HEAD moves. In a primary checkout `.git` is a directory;
     // in a worktree `.git` is a file pointer to `<common-dir>/worktrees/<name>/`.
@@ -15,6 +17,8 @@ fn main() {
     register_git_rerun_triggers();
 
     println!("cargo:rerun-if-env-changed=APR_GIT_SHA_OVERRIDE");
+    // Tracked edits anywhere in the workspace change the dirty flag.
+    println!("cargo:rerun-if-changed=..");
     println!("cargo:rerun-if-changed=.git-sha");
 }
 
@@ -74,4 +78,31 @@ fn resolve_git_sha() -> String {
     // 4. Informative fallback — never bare "unknown"
     let version = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".to_string());
     format!("v{version}+no-git")
+}
+
+/// `"1"` when tracked files differ from HEAD, `"0"` when they do not or the
+/// sha came from a release (override or committed `.git-sha`), `"unknown"`
+/// when neither git nor a release sha identifies the build (EXT-001 I-5).
+fn resolve_git_dirty(sha: &str) -> &'static str {
+    if sha.ends_with("+no-git") {
+        return "unknown";
+    }
+    let from_release = std::env::var("APR_GIT_SHA_OVERRIDE").is_ok_and(|s| !s.trim().is_empty());
+    if from_release {
+        return "0";
+    }
+    let Ok(out) = std::process::Command::new("git")
+        .args(["status", "--porcelain", "--untracked-files=no"])
+        .output()
+    else {
+        return "0"; // no git: the sha came from the committed .git-sha
+    };
+    if !out.status.success() {
+        return "0";
+    }
+    if out.stdout.is_empty() {
+        "0"
+    } else {
+        "1"
+    }
 }

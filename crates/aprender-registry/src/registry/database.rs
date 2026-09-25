@@ -307,6 +307,41 @@ impl RegistryDb {
         Ok(())
     }
 
+    /// The id of a model whose artifact has BLAKE3 hash `hash_hex`, if any
+    /// (the oldest registration wins when two share an artifact).
+    pub fn find_model_id_by_content_hash(&self, hash_hex: &str) -> Result<Option<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id FROM models WHERE content_hash = ?1 ORDER BY created_at LIMIT 1")?;
+        let mut rows = stmt.query(params![hash_hex])?;
+        Ok(match rows.next()? {
+            Some(row) => Some(row.get(0)?),
+            None => None,
+        })
+    }
+
+    /// Insert one lineage edge `from_id -> to_id` (EXT-001 EXT-05).
+    pub fn insert_lineage_edge(
+        &self,
+        from_id: &str,
+        to_id: &str,
+        edge_type: &str,
+        metadata_json: Option<&str>,
+    ) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO lineage (from_id, to_id, edge_type, metadata_json) VALUES (?1, ?2, ?3, ?4)",
+            params![from_id, to_id, edge_type, metadata_json],
+        )?;
+        Ok(())
+    }
+
+    /// Count lineage edges.
+    pub fn count_lineage_edges(&self) -> Result<usize> {
+        let count: i64 =
+            self.conn.query_row("SELECT COUNT(*) FROM lineage", [], |row| row.get(0))?;
+        Ok(usize::try_from(count).unwrap_or(0))
+    }
+
     /// Count models.
     pub fn count_models(&self) -> Result<usize> {
         let count: i64 =

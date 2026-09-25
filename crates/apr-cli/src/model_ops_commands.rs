@@ -108,6 +108,10 @@ pub enum ModelOpsCommands {
         /// PMAT-486: Enable StepProfiler for per-phase wall-clock timing
         #[arg(long)]
         profile: bool,
+        /// EXT-05: do not record this run to the pacha registry (runs,
+        /// lineage, produced model). Recording is on by default.
+        #[arg(long)]
+        no_track: bool,
     },
     /// Prune model (structured/unstructured pruning) (GH-247)
     Prune {

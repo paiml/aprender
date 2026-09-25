@@ -1053,4 +1053,37 @@ mod tests {
             1
         );
     }
+
+    /// EXT-05: `apr train apply` records the config's base, dataset and
+    /// output dir; `--output` overrides the config's output dir.
+    #[test]
+    fn pretrain_lineage_reads_the_config() {
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let (cfg, base_p, data_p, ckpt) = (
+            dir.path().join("train.yaml"),
+            dir.path().join("base.safetensors"),
+            dir.path().join("data.jsonl"),
+            dir.path().join("ckpt"),
+        );
+        std::fs::write(&base_p, b"w").expect("base");
+        std::fs::write(&data_p, b"{}\n").expect("data");
+        std::fs::write(
+            &cfg,
+            format!(
+                "model:\n  path: {}\ndata:\n  train: {}\n  batch_size: 2\n\
+                 optimizer:\n  name: adamw\n  lr: 0.0001\ntraining:\n  epochs: 1\n  output_dir: {}\n",
+                base_p.display(),
+                data_p.display(),
+                ckpt.display()
+            ),
+        )
+        .expect("write");
+        let (base, data, out) = pretrain_lineage(Some(&cfg), None);
+        assert_eq!(base, Some(base_p));
+        assert_eq!(data, Some(data_p));
+        assert_eq!(out, Some(ckpt));
+        let over = std::path::Path::new("/tmp/elsewhere");
+        assert_eq!(pretrain_lineage(Some(&cfg), Some(over)).2, Some(over.to_path_buf()));
+        assert_eq!(pretrain_lineage(None, None), (None, None, None));
+    }
 }

@@ -93,7 +93,10 @@ pub struct Run {
 }
 
 impl Run {
-    fn new(run_id: String, run_name: Option<String>, experiment_name: String) -> Self {
+    /// A new active run started now. Backends that leave the host
+    /// ([`pacha::PachaBackend`]) accept only ULID ids.
+    #[must_use]
+    pub fn new(run_id: String, run_name: Option<String>, experiment_name: String) -> Self {
         let now_ms =
             SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
 

@@ -1008,6 +1008,7 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
             seed,
             profile,
             profile_interval,
+            no_track,
         } => {
             commands::runs::enforce_training_perimeter(output.as_deref())?;
             if *profile {
@@ -1016,7 +1017,22 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
                     profile_interval
                 );
             }
-            train::run_apply(
+            // EXT-05: record pretraining to pacha; in a distributed run only
+            // the coordinator (rank 0) records, so one run row per job.
+            let pretrain = matches!(task.as_str(), "pretrain" | "causal_lm");
+            let untracked = *no_track || !pretrain || (*distributed && rank.unwrap_or(0) != 0);
+            let (base, dataset, out) = if untracked {
+                (None, None, None)
+            } else {
+                train::pretrain_lineage(config.as_deref(), output.as_deref())
+            };
+            commands::track::tracked(
+                "train",
+                base.as_deref(),
+                dataset.as_deref(),
+                out.as_deref(),
+                untracked,
+                || train::run_apply(
                 plan.as_deref(),
                 config.as_deref(),
                 task,
@@ -1039,6 +1055,7 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
                 coordinator_addr.as_deref(),
                 *deterministic,
                 *seed,
+            ),
             )
         }
         TrainCommands::Watch {

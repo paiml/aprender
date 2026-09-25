@@ -381,6 +381,28 @@ fn print_pretrain_header(
     println!();
 }
 
+/// EXT-05: the (base model, dataset, output dir) a pretrain config trains
+/// from and writes to, for pacha lineage. `None` where the config does not
+/// load; a missing path is dropped by the recorder.
+pub(crate) fn pretrain_lineage(
+    config_path: Option<&std::path::Path>,
+    output_dir: Option<&std::path::Path>,
+) -> (
+    Option<std::path::PathBuf>,
+    Option<std::path::PathBuf>,
+    Option<std::path::PathBuf>,
+) {
+    let spec = config_path.and_then(|c| entrenar::config::load_config(c).ok());
+    let non_empty = |p: &std::path::Path| (!p.as_os_str().is_empty()).then(|| p.to_path_buf());
+    let base = spec.as_ref().and_then(|s| non_empty(&s.model.path));
+    let data = spec.as_ref().and_then(|s| non_empty(&s.data.train));
+    let out = output_dir.map(std::path::Path::to_path_buf).or_else(|| {
+        spec.as_ref()
+            .and_then(|s| non_empty(&s.training.output_dir))
+    });
+    (base, data, out)
+}
+
 /// Execute causal LM pre-training from YAML config (ALB-009).
 #[allow(clippy::too_many_arguments)]
 fn run_apply_pretrain(

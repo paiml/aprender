@@ -1306,6 +1306,7 @@ pub(crate) fn run(
     json_output: bool,
     experimental_mps: bool,
     gpu_share: u32,
+    no_track: bool,
 ) -> Result<()> {
     contract_pre_rank_bounds_safety!();
     contract_pre_alpha_rank_ratio!();
@@ -1419,6 +1420,7 @@ pub(crate) fn run(
         model_size,
         gpu_backend,
         max_seq_len,
+        no_track,
     )
 }
 
@@ -1435,6 +1437,7 @@ fn run_finetune_training(
     model_size: Option<&str>,
     gpu_backend: &str,
     max_seq_len: Option<usize>,
+    no_track: bool,
 ) -> Result<()> {
     let data = match data_path {
         Some(d) if d.exists() => d,
@@ -1461,17 +1464,27 @@ fn run_finetune_training(
     }
 
     let out = output_path.unwrap_or(Path::new("adapter.apr"));
-    execute_training(
-        mp,
-        config,
-        data,
-        out,
-        epochs,
-        learning_rate,
-        json_output,
-        model_size,
-        gpu_backend,
-        max_seq_len,
+    // EXT-05: record to pacha by default; `--no-track` opts out.
+    super::track::tracked(
+        "finetune",
+        Some(mp),
+        Some(data),
+        Some(out),
+        no_track,
+        || {
+            execute_training(
+                mp,
+                config,
+                data,
+                out,
+                epochs,
+                learning_rate,
+                json_output,
+                model_size,
+                gpu_backend,
+                max_seq_len,
+            )
+        },
     )
 }
 
