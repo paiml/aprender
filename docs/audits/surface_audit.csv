@@ -409,8 +409,8 @@ apr,mcp:apr.tensors,2,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprend
 apr,mcp:apr.trace,2,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprender-mcp/src/tools/trace.rs:20,high
 apr,mcp:apr.validate,2,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprender-mcp/src/tools/validate.rs:18,high
 apr,mcp:apr.version,7,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprender-mcp/src/tools/version.rs:8,high
-apr-corpus-ingest,apr-corpus-ingest plan,6,UNKNOWN,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/bin/apr-corpus-ingest.rs:67,high
-apr-corpus-ingest,apr-corpus-ingest validate-contract,6,UNKNOWN,huggingface-transformers,no,0,entrypoint-and-mcp,crates/apr-cli/src/bin/apr-corpus-ingest.rs:79,high
+apr-corpus-ingest,apr-corpus-ingest plan,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/bin/apr-corpus-ingest.rs:67,high
+apr-corpus-ingest,apr-corpus-ingest validate-contract,6,x86_64-linux,huggingface-transformers,no,0,entrypoint-and-mcp,crates/apr-cli/src/bin/apr-corpus-ingest.rs:79,high
 apr-qa,apr-qa bootstrap,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.rs:378,high
 apr-qa,apr-qa certify,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.rs:47,high
 apr-qa,apr-qa export-csv,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.rs:326,high

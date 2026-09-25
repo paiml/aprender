@@ -228,7 +228,7 @@ fn classify_roofline_gpu(tok_per_sec: f64) -> (u8, u8, &'static str, &'static st
     }
 }
 
-/// Above 50 tok/s without a GPU report: a CPU run never claims tensor cores.
+/// The fast tier without a GPU report: a CPU run never claims tensor cores.
 fn classify_roofline_fast_non_gpu(used_gpu: Option<bool>) -> (u8, u8, &'static str, &'static str) {
     if used_gpu == Some(false) {
         (
@@ -247,7 +247,7 @@ fn classify_roofline_fast_non_gpu(used_gpu: Option<bool>) -> (u8, u8, &'static s
     }
 }
 
-/// The throughput-only tiers at or below 50 tok/s.
+/// The throughput-only tiers below the fast tier.
 fn classify_roofline_tiers(tok_per_sec: f64) -> (u8, u8, &'static str, &'static str) {
     if tok_per_sec > 20.0 {
         (
