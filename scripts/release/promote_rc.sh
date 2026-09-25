@@ -13,6 +13,9 @@
 #
 #   1. read the rc release: a prerelease, carrying all eighteen assets
 #      (scripts/check_release_assets.sh), its tag resolved to a commit
+#   1b. the milestone cut, as autopilot's cut_tag() runs it (#3459): an open must-carry
+#      issue refuses; every other open item is carried off; the milestone must then be
+#      clean. A dry run reads must-carry only
 #   2. download every asset and verify each tarball against its .sha256; a missing
 #      .sha256 or a mismatch refuses
 #   3. stage each tarball under its final name (`-vX.Y.Z-rc.N-` -> `-vX.Y.Z-`), with
@@ -58,6 +61,44 @@ final_name() {
 }
 
 sha_of() { sha256sum "$1" | awk '{print $1}'; }
+
+# milestone_gate VERSION DRY — the same milestone cut autopilot's cut_tag() runs (#3459),
+# because this script publishes the FINAL vX.Y.Z and is the 0.70 path to it: quorum lane a
+# on the #3459 port found promote_rc.sh reached `api POST releases` with no milestone read,
+# so a milestone with an open must-carry issue could be tagged here.
+#   (a) --must-carry: an open issue labelled must-carry refuses (rc 1); Unknown refuses (rc 2)
+#   (b) carry_milestone_items.sh moves every other open item off the milestone
+#   (c) strict: the milestone holds nothing open but its release epic
+# A dry run runs (a) only: (b) writes live milestones, and (c) cannot be green before (b).
+milestone_gate() {
+    local v=$1 dry=$2 rc=0
+    bash "$ROOT/scripts/check_milestone_cut.sh" "$v" --must-carry >&2 || rc=$?
+    case "$rc" in
+        0) echo "$PROG: MUST-CARRY $v: no open must-carry issue" >&2 ;;
+        1) echo "$PROG: refuse: milestone $v holds open must-carry issue(s) -- nothing carried, nothing promoted" >&2; return 1 ;;
+        *) echo "$PROG: refuse: milestone $v could not be judged for must-carry (rc=$rc) -- Unknown is not a pass" >&2; return 1 ;;
+    esac
+    [ "$dry" = 1 ] && { echo "$PROG: --dry-run: carry + strict milestone read skipped (carry writes milestones)" >&2; return 0; }
+    rc=0
+    bash "$ROOT/scripts/release/carry_milestone_items.sh" "$v" >&2 || rc=$?
+    [ "$rc" -eq 0 ] || { echo "$PROG: refuse: carrying the open items out of $v failed (rc=$rc) -- nothing promoted" >&2; return 1; }
+    rc=0
+    bash "$ROOT/scripts/check_milestone_cut.sh" "$v" >&2 || rc=$?
+    case "$rc" in
+        0) echo "$PROG: MILESTONE-GATE $v clean at the cut" >&2; return 0 ;;
+        1) echo "$PROG: refuse: milestone $v still holds open item(s) after the carry -- nothing promoted" >&2; return 1 ;;
+        *) echo "$PROG: refuse: milestone $v could not be judged (rc=$rc) -- Unknown is not a pass" >&2; return 1 ;;
+    esac
+}
+
+# gate_precedes_publish FILE — promote() calls milestone_gate before its first write
+# (`api POST releases`). Structural, so the self-test can prove it on a mutant copy.
+gate_precedes_publish() {
+    awk '/^promote\(\)/{in_p=1} in_p && /^}/{in_p=0}
+         in_p && /milestone_gate "\$\{final#v\}"/ && !post {gate=1}
+         in_p && /api POST releases/ {post=1}
+         END {exit !(gate && post)}' "$1"
+}
 
 # stage RC FINAL SRC DST — verify every tarball in SRC against its .sha256, copy it
 # into DST under its final name, and write the final .sha256 carrying the SAME hash.
@@ -168,6 +209,41 @@ self_test() {
     rm -f -- "$w/good.out2/pv-$final-x86_64-unknown-linux-musl.tar.gz.sha256"
     row 1 "states 'missing'" "read-back: a missing final .sha256 fails" readback "$w/manifest" "$w/good.out2"
 
+    echo "$PROG self-test: milestone gate (#3459), against stub gates"
+    stub_tree() { # dir must_carry_rc carry_rc strict_rc — records each call in dir/calls
+        local d=$1
+        mkdir -p "$d/scripts/release"
+        printf '#!/usr/bin/env bash\nif [ "${2:-}" = --must-carry ]; then echo must-carry >> %q/calls; exit %s; fi\necho strict >> %q/calls; exit %s\n' "$d" "$2" "$d" "$4" > "$d/scripts/check_milestone_cut.sh"
+        printf '#!/usr/bin/env bash\necho carry >> %q/calls; exit %s\n' "$d" "$3" > "$d/scripts/release/carry_milestone_items.sh"
+    }
+    gate_in() { (ROOT=$1; milestone_gate 0.70.0 "$2"); }
+    stub_tree "$w/g-ok" 0 0 0
+    row 0 "MILESTONE-GATE" "clean: must-carry, carry, strict all 0 -> promote proceeds" gate_in "$w/g-ok" 0
+    [ "$(tr '\n' ' ' < "$w/g-ok/calls")" = "must-carry carry strict " ] && echo "  ok   order is must-carry -> carry -> strict" || { echo "  FAIL order: $(cat "$w/g-ok/calls")"; fail=1; }
+    stub_tree "$w/g-mc1" 1 0 0
+    row 1 "open must-carry" "must-carry rc 1 refuses" gate_in "$w/g-mc1" 0
+    [ "$(cat "$w/g-mc1/calls")" = must-carry ] && echo "  ok   must-carry rc 1 carries nothing" || { echo "  FAIL must-carry rc 1 went on to: $(cat "$w/g-mc1/calls")"; fail=1; }
+    stub_tree "$w/g-mc2" 2 0 0
+    row 1 "Unknown is not a pass" "must-carry rc 2 (Unknown) refuses" gate_in "$w/g-mc2" 0
+    stub_tree "$w/g-carry" 0 2 0
+    row 1 "carrying the open items" "a failed carry refuses" gate_in "$w/g-carry" 0
+    stub_tree "$w/g-strict" 0 0 1
+    row 1 "still holds open item" "strict rc 1 after the carry refuses" gate_in "$w/g-strict" 0
+    stub_tree "$w/g-strict2" 0 0 2
+    row 1 "could not be judged (rc=2)" "strict rc 2 refuses" gate_in "$w/g-strict2" 0
+    stub_tree "$w/g-dry" 0 0 1
+    row 0 "--dry-run" "a dry run reads must-carry only and writes nothing" gate_in "$w/g-dry" 1
+    [ "$(cat "$w/g-dry/calls")" = must-carry ] && echo "  ok   a dry run never carries" || { echo "  FAIL dry run called: $(cat "$w/g-dry/calls")"; fail=1; }
+    stub_tree "$w/g-dry1" 1 0 0
+    row 1 "open must-carry" "a dry run still refuses an open must-carry issue" gate_in "$w/g-dry1" 1
+    row 0 "" "promote() calls milestone_gate before api POST releases" gate_precedes_publish "${BASH_SOURCE[0]}"
+    grep -v 'milestone_gate "${final#v}" "$dry"' "${BASH_SOURCE[0]}" > "$w/mutant-nogate.sh"
+    row 1 "" "MUTANT gate call deleted -> the structural row goes red" gate_precedes_publish "$w/mutant-nogate.sh"
+    awk 'index($0, "    milestone_gate \"${final#v}\" \"$dry\" ||") == 1 {held=$0; next} {print}
+         index($0, "    rid=$(printf") == 1 && held != "" {print held; held=""}' "${BASH_SOURCE[0]}" > "$w/mutant-late.sh"
+    grep -c '^    milestone_gate "${final#v}" "$dry" ||' "$w/mutant-late.sh" | grep -qx 1 || { echo "  FAIL the gate-moved mutant did not apply"; fail=1; }
+    row 1 "" "MUTANT gate moved after api POST releases -> red" gate_precedes_publish "$w/mutant-late.sh"
+
     if [ "$fail" -eq 0 ]; then echo "$PROG self-test: PASS"; return 0; fi
     echo "$PROG self-test: FAIL"; return 1
 }
@@ -219,6 +295,7 @@ promote() {
     fi
     echo "$PROG: $rc is commit $commit"
     bash "$ROOT/scripts/check_release_assets.sh" "$rc" || die "refuse: $rc does not carry every asset"
+    milestone_gate "${final#v}" "$dry" || die "refuse: the milestone cut for ${final#v} is not clean (#3459)"
 
     # 2 + 3. download, verify, stage
     mkdir -p "$work/rc" "$work/final" "$work/back" || env_die "cannot create $work"
@@ -262,7 +339,7 @@ main() {
             --self-test) self_test; return ;;
             --dry-run) dry=1 ;;
             --work) work=${2:-}; shift ;;
-            -h|--help) sed -n '2,31p' "${BASH_SOURCE[0]}"; return 0 ;;
+            -h|--help) sed -n '2,34p' "${BASH_SOURCE[0]}"; return 0 ;;
             -*) echo "$PROG: unknown flag $1" >&2; return 2 ;;
             *) rc=$1 ;;
         esac
