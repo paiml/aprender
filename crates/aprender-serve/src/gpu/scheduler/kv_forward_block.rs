@@ -376,11 +376,7 @@ fn layer_norm_kv(model: &GpuModel, input: &[f32]) -> Vec<f32> {
 
 /// Argmax helper
 fn argmax(logits: &[f32]) -> usize {
-    logits
-        .iter()
-        .enumerate()
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-        .map_or(0, |(idx, _)| idx)
+    crate::sampling::argmax(logits) as usize
 }
 
 /// Top-k sampling: one seeded draw through the shared sampler (#3760; it used to

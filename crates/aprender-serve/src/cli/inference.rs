@@ -15,11 +15,7 @@ fn sample_next_token(logits: &[f32], temperature: f32) -> u32 {
     use crate::gguf::OwnedQuantizedModel;
     if temperature <= 0.01 {
         // Greedy decoding
-        logits
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map_or(0, |(idx, _)| idx as u32)
+        crate::sampling::argmax(logits)
     } else {
         // Temperature sampling with top-k=40
         OwnedQuantizedModel::sample_topk(logits, temperature, 40)

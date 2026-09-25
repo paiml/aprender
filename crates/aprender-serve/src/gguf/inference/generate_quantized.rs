@@ -126,11 +126,7 @@ impl OwnedQuantizedModel {
 
     /// Greedy argmax over logits
     pub(crate) fn argmax(logits: &[f32]) -> u32 {
-        logits
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map_or(0, |(idx, _)| idx as u32)
+        crate::sampling::argmax(logits)
     }
 
     /// Apply a repetition penalty to `logits` in place (PMAT-814).

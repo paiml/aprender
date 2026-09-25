@@ -14,17 +14,13 @@ use rand::SeedableRng;
 /// Token 0 is always treated as EOS (padding/unknown).
 #[inline]
 fn is_eos_token(token: u32, stop_tokens: &[u32]) -> bool {
-    token == 0 || stop_tokens.contains(&token)
+    token == 0 || crate::sampling::is_stop(token, stop_tokens)
 }
 
 /// Argmax over a logit slice (greedy selection).
 #[inline]
 fn argmax_logits(logits: &[f32]) -> u32 {
-    logits
-        .iter()
-        .enumerate()
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-        .map_or(0, |(idx, _)| idx as u32)
+    crate::sampling::argmax(logits)
 }
 
 /// The next token: greedy (this loop's own argmax) at temperature 0 or top-k 1,

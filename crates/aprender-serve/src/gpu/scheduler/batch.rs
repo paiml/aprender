@@ -326,40 +326,13 @@ pub fn forward_block_single(
     Ok(output)
 }
 
-/// Argmax helper for sampling - vectorized for large vocabularies
-#[allow(clippy::items_after_statements)]
+/// Argmax helper for sampling: the shared greedy pick (#4266).
+///
+/// The chunked "vectorized" path this replaced walked its 4096-wide chunks
+/// sequentially, so it bought nothing, and it kept the same last-maximum tie
+/// rule as [`crate::sampling::argmax`].
 pub fn argmax(logits: &[f32]) -> usize {
-    // For small vocab, use simple iterator
-    if logits.len() <= 1024 {
-        return logits
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map_or(0, |(i, _)| i);
-    }
-
-    // For large vocab (32K+), use chunked parallel argmax
-    const CHUNK_SIZE: usize = 4096;
-
-    // Find max in each chunk
-    let chunk_maxes: Vec<(usize, f32)> = logits
-        .chunks(CHUNK_SIZE)
-        .enumerate()
-        .map(|(chunk_idx, chunk)| {
-            let (local_idx, &max_val) = chunk
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                .expect("chunk is non-empty by construction");
-            (chunk_idx * CHUNK_SIZE + local_idx, max_val)
-        })
-        .collect();
-
-    // Find global max
-    chunk_maxes
-        .into_iter()
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-        .map_or(0, |(idx, _)| idx)
+    crate::sampling::argmax(logits) as usize
 }
 
 /// Optimized LM head + argmax using transposed weights with vectorized dot products
