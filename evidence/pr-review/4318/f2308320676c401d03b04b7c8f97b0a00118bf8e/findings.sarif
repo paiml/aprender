@@ -1,0 +1,285 @@
+{
+ "version": "2.1.0",
+ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat"
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "PRREV-4318-F2-DISPLAY-CHAR-BOUNDARY",
+     "level": "warning",
+     "message": {
+      "text": "F2ValidateReason::BuildIdMismatch's Display slices `&found[..found.len().min(23)]` by BYTE. `found` is the build_id read back from the on-disk F2 receipt JSON (serde, no format check), and the reason is printed by the F2 guard's eprintln at forward_qwen35.rs:1656. A receipt whose build_id has a multi-byte char straddling byte 23 panics the process instead of re-validating. Reproduced with the same expression on \"exe-sha256:x\" + \"é\"*20: rc=101, 'end byte index 23 is not a char boundary'."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/src/gguf/inference/forward/f2_receipt.rs"
+        },
+        "region": {
+         "startLine": 170
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "./slice"
+      ],
+      "exit_code": 101,
+      "stdout_sha256": "a2df3a85e57b2f7f7580ac8340eb29f72dfc1b20126be93b5c11290afb785f39",
+      "failure_scenario": "A corrupted or hand-edited F2 receipt with build_id \"exe-sha256:xéé...\" makes every later Qwen3.5 run abort with a slice panic at the F2 decision instead of taking the 'validating on this run' path the mismatch branch exists for; floor to a char boundary (or chars().take(23)).",
+      "precision_class": "advisory",
+      "rationale_for_class": "Real, measured panic, but reachable only through a non-ASCII build_id in a local receipt file this binary never writes; not a merge block."
+     }
+    },
+    {
+     "ruleId": "PRREV-4318-DUP-FILE-SHA256",
+     "level": "note",
+     "message": {
+      "text": "The diff adds `pub fn file_sha256(path) -> io::Result<String>` (streamed sha256, lower-hex) in aprender-serve f2_receipt.rs:400. The duplication scan hit a pre-existing same-name, same-purpose `fn file_sha256(path) -> Option<String>` at crates/apr-cli/src/commands/bench.rs:309 (PARITY-001); apr-cli already depends on aprender-serve, so bench.rs could reuse the new public one."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/src/gguf/inference/forward/f2_receipt.rs"
+        },
+        "region": {
+         "startLine": 400
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "bash",
+       "scripts/pr_review_duplication_scan.sh",
+       "--base",
+       "5fa13fe8c6d8e70f55bb703a241db1eb2e1bcb36",
+       "--head",
+       "f2308320676c401d03b04b7c8f97b0a00118bf8e",
+       "--rust-semantic",
+       "--json",
+       "/mnt/nvme-raid0/tmp/pr4318/dup.json"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "fdb468577e5c8c7a61e5be2f269c21fc2cac0a9ee207907deb42958e5e70d8e4",
+      "failure_scenario": "Two sha256-of-a-file helpers drift (one streams and errors, one io::copy's and returns None); a later fix to one misses the other, and the bench receipt and the F2 receipt name the same binary by diverging rules.",
+      "precision_class": "advisory",
+      "rationale_for_class": "The scan measures a name match; that the two are the same function is reviewer judgement from reading both bodies. DRY, not a correctness block."
+     }
+    },
+    {
+     "ruleId": "PRREV-4318-CKPT-STREAM-COMMENT",
+     "level": "note",
+     "message": {
+      "text": "save_checkpoint/restore_checkpoint copy the recurrent state on executor.compute_stream(), while the layer kernels launch on the execution stream (the new execution_stream()). The comment at line 821 says the copy runs 'after every launch that wrote the state'; that ordering holds today only because the caller (Session::prepare_prompt) runs after forward() has synchronously downloaded logits, not because of any stream ordering in this function."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/src/gguf/cuda/forward_qwen35_cuda.rs"
+        },
+        "region": {
+         "startLine": 821
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "rationale": "Read from the diff: two distinct stream handles, no event record/wait between them in save_checkpoint. Device ordering semantics could not be cited because the nvidia-cuda-docs arm is unreachable in this run, so this stays advisory.",
+      "failure_scenario": "A later caller that checkpoints between an async forward launch and its host sync (e.g. a pipelined prefill) copies a half-written recurrent state; the restored session then decodes from corrupted state with no error.",
+      "precision_class": "advisory"
+     }
+    },
+    {
+     "ruleId": "PRREV-4318-COMPLEXITY",
+     "level": "note",
+     "message": {
+      "text": "complexity_delta: 52 functions rose in cyclomatic complexity; 4 end above the .pmat-gates.toml max_complexity=10: scripts/lib/crux_fake_serve.py::do_POST 26->27; scripts/lib/crux_serve_routes.py::rows 20->24; scripts/lib/crux_serve_routes.py::sweep 12->16; scripts/lib/crux_smoke_scope.py::recorded_scope 0->11."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/crux_fake_serve.py"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "pmat",
+       "analyze",
+       "complexity",
+       "--format",
+       "json",
+       "-p",
+       "."
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "f2be0ca4ae1d8f8d4c8284f48265f36be95c5cc66dacc07f17cc985392928ca9",
+      "failure_scenario": "Guard helpers already over the per-function ceiling keep growing (crux_serve_routes.rows 20->24, sweep 12->16), so each new serve row lands in a function too branchy to mutation-test row by row.",
+      "precision_class": "advisory",
+      "rationale_for_class": "All four are Python guard helpers, not shipped code; the ceiling is a ratchet signal, not a merge block."
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "nvidia-cuda-docs",
+     "version": "mcp",
+     "rules": [
+      {
+       "id": "PRREV-CUDA",
+       "name": "device-behaviour claim vs NVIDIA docs"
+      }
+     ]
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": false,
+     "toolExecutionNotifications": [
+      {
+       "level": "error",
+       "message": {
+        "text": "nvidia-cuda-docs MCP is configured but needs OAuth authentication in this non-interactive session; no query could be sent. Not answered from memory."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "claude",
+         "mcp",
+         "list"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "b18b87c587bdd4a6595a9f5f82e7e2cfe0c569fbb6e97c93e83522e772b66253"
+       }
+      }
+     ]
+    }
+   ],
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "crux"
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "PRREV-4318-CRUX-NONE-EFFECTIVE-CONFIG",
+     "level": "note",
+     "message": {
+      "text": "GET /effective-config changes its output (build_features now lists only dispatchable features, backend_loaded reflects the Qwen3.5 session, model parameter_count/quantization now reported) and no crux contract names the route: crux_coverage none."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/apr-cli/src/commands/serve/effective_config.rs"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "git",
+       "grep",
+       "-l",
+       "-e",
+       "effective-config",
+       "-e",
+       "effective_config",
+       "--",
+       "contracts/crux-*.yaml"
+      ],
+      "exit_code": 1,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "failure_scenario": "A later change regresses /effective-config to reporting compiled-but-undispatchable features again and no CRUX gate or competitor comparison notices, because no contract covers the route.",
+      "precision_class": "advisory"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "cargo-mutants"
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true
+    }
+   ],
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity"
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "SESSION-SCORE-KV-CORRUPT",
+     "level": "note",
+     "message": {
+      "text": "Session::score corrupts the KV cache for checkpoints because it calls advance_to without invalidating self.checkpoint [primary: CONTRADICTED -- Session::advance_to (session.rs:239-246) forwards through Session::step, and step() drops the checkpoint whenever start < checkpoint.len() (session.rs:299-302), so score() cannot bypass the invalidation.]"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/src/session.rs"
+        },
+        "region": {
+         "startLine": 483
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "rationale": "agy's own asserted claim, recorded verbatim; the primary read advance_to and step and contradicts it.",
+      "failure_scenario": "If a user calls `score` with a sequence that overwrites the KV cache (e.g. from `start = 0`), `advance_to` bypasses the checkpoint clearing logic found in `advance_and_choose`, leaving `self.checkpoint` intact. When a subsequent `generate` call processes a prompt matching the checkpoint, `prepare_prompt` restores the checkpoint because the guard (`state.kv_len >= ckpt.kv_len`) passes vacuously (as `score` increased the KV length). The physical KV cache underneath was overwritten by the scored tokens, causing attention layers to attend to wrong tokens while recurrent layers use the restored state.",
+      "precision_class": "advisory",
+      "rationale_for_class": "S3.E is ADVISORY until 30 samples exist; this claim is additionally contradicted by the primary."
+     }
+    }
+   ]
+  }
+ ]
+}
