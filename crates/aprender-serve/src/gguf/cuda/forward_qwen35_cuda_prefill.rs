@@ -24,7 +24,8 @@
 //! would leave it, so decode continues from it unchanged.
 
 use super::super::{RealizarError, Result};
-use super::{gpu_err, CudaLayer, Qwen35CudaDims, Qwen35CudaModel, Qwen35CudaState};
+use super::{gpu_err, CudaLayer, CudaQuantWeight, Qwen35CudaDims, Qwen35CudaModel, Qwen35CudaState};
+use crate::cuda::types::WeightQuantType;
 use crate::gguf::forward_qwen35::{Qwen35Model, Qwen35OwnedLayer};
 use trueno_gpu::driver::GpuBuffer;
 
@@ -433,8 +434,8 @@ impl Qwen35CudaModel<'_> {
         self.prefill_attention
     }
 
-    /// `n × k` of the largest projection — the size of the f32 dequant scratch.
-    fn largest_projection_elems(&self) -> usize {
+    /// Every projection the batched prefill runs through `qwen35_project_rows`.
+    fn projection_weights(&self) -> Vec<&CudaQuantWeight> {
         self.layers
             .iter()
             .flat_map(|l| match l {
@@ -458,9 +459,48 @@ impl Qwen35CudaModel<'_> {
                     &w.ffn_down,
                 ],
             })
+            .collect()
+    }
+
+    /// `n × k` of the largest projection — the size of the f32 dequant scratch.
+    fn largest_projection_elems(&self) -> usize {
+        self.projection_weights()
+            .iter()
             .map(|q| q.n as usize * q.k as usize)
             .max()
             .unwrap_or(0)
+    }
+
+    /// #4313: fill the fp16 weight cache for every prefill projection at load, so the
+    /// first prompt does not pay a dequant + convert per weight. Only in `f16` mode,
+    /// and only when the whole set fits in free VRAM with 1 GiB to spare — otherwise
+    /// the cache fills lazily on first use, exactly as before. Returns the bytes
+    /// cached (0 when skipped).
+    pub(crate) fn warm_prefill_weights(&mut self) -> Result<usize> {
+        use crate::cuda::{qwen35_prefill_gemm_mode, Qwen35PrefillGemm};
+        if qwen35_prefill_gemm_mode() != Qwen35PrefillGemm::F16 {
+            return Ok(0);
+        }
+        let weights: Vec<(WeightQuantType, u64, u32, u32)> = self
+            .projection_weights()
+            .iter()
+            .map(|w| (w.qtype, w.ptr, w.n, w.k))
+            .collect();
+        let bytes: usize = weights.iter().map(|w| w.2 as usize * w.3 as usize * 2).sum();
+        let (free, _) = self
+            .executor
+            .context()
+            .memory_info()
+            .map_err(|e| gpu_err("qwen35_cuda_prefill_warm", &e))?;
+        if bytes + (1 << 30) > free {
+            return Ok(0);
+        }
+        for (qtype, ptr, n, k) in weights {
+            self.executor
+                .qwen35_fp16_weight(qtype, ptr, n, k)
+                .map_err(|e| gpu_err("qwen35_cuda_prefill_warm", &e))?;
+        }
+        Ok(bytes)
     }
 
     fn alloc_prefill(&self, rows: usize, total_positions: usize) -> Result<PrefillBuffers> {
