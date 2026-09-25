@@ -42,6 +42,7 @@ pub mod receipt;
 pub mod score;
 pub mod secret;
 pub mod sparse_logits;
+pub mod split_guard;
 pub mod stats;
 pub mod terms;
 pub mod workload;
