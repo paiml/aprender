@@ -1,0 +1,21 @@
+# Tests `make coverage` runs each in their OWN process (#4023), and still measures: every one
+# prints `coverage-solo-maxrss <KB> <test>` (RUSAGE_CHILDREN.ru_maxrss of its test binary),
+# so a later skip decision has a MEASURED per-test reason instead of a guess.
+# ONE full test path per line, matched exactly. Blank lines and #-comments are ignored.
+#
+# Why these: on yoga (28 GB, a real RTX 4060, so wgpu takes the device paths), the
+# instrumented aprender-serve `gpu` shard was SIGTERMed by earlyoom at 25,855 MiB (coverage
+# run 35881004821, journal 15:50:27Z). These are the tests that completed in the seconds
+# before the kill, plus two that single-thread sampling on gx10 had flagged (30/15 GB there,
+# an attribution later shown to be unreliable, so they are measured here rather than skipped).
+gpu::tests::gpu_compute::test_super_long_context_fill_performance
+gpu::tests::gpu_compute::test_mega_long_context_fill_performance
+gpu::tests::gpu_compute::test_ultra_long_context_fill_performance
+gpu::tests::gpu_compute::test_phase4_acceptance_gpu_throughput
+gpu::tests::gpu_compute::test_streaming_kv_cache_16384_positions
+gpu::tests::gpu_compute::test_streaming_kv_cache_32768_positions
+gpu::tests::tests_11::test_generate_gpu_large_vocab_many_tokens
+gpu::tests::tests_11::test_full_generation_flow_large_vocab
+gpu::tests::tests_11::test_generate_gpu_large_vocab_greedy_path
+gpu::tests::tests_11::test_optimized_lm_head_argmax_large_vocab_cross_chunk
+gpu::streaming_kv::kv_contract_tests::falsify_kv_001b_fp16_half_memory

@@ -3,7 +3,7 @@ metadata:
   created: '2026-08-22'
   author: PAIML Engineering
   references:
-  - 'docs/audits/surface_audit.csv — 142 of 830 features gated, across 28 binaries and 14 clusters, measured 2026-08-22 @ 4bbfeb07f; 142 of 832 features gated after the PERF-046 partial re-audit (PR #2742); 143 of 833 features gated after the PP-LLAMA-001 re-audit (GET /v1/effective-config added and swept by the dogfood route enumeration, router.rs rows re-pointed); 144 of 837 features gated after PP-066 L0-1b added the three `apr parity` flag rows (--per-op, --out, --threshold), which the dogfood sweep does not reach -- the denominator grew and the numerator did not; 144 of 838 features gated after #3726 added `apr tokenize encode` (the tokenizer-parity gate''s id source), which the dogfood sweep does not reach either'
+  - 'docs/audits/surface_audit.csv — 142 of 830 features gated, across 28 binaries and 14 clusters, measured 2026-08-22 @ 4bbfeb07f; 142 of 832 features gated after the PERF-046 partial re-audit (PR #2742); 143 of 833 features gated after the PP-LLAMA-001 re-audit (GET /v1/effective-config added and swept by the dogfood route enumeration, router.rs rows re-pointed); 144 of 837 features gated after PP-066 L0-1b added the three `apr parity` flag rows (--per-op, --out, --threshold), which the dogfood sweep does not reach -- the denominator grew and the numerator did not; 144 of 838 features gated after #3726 added `apr tokenize encode` (the tokenizer-parity gate''s id source), which the dogfood sweep does not reach either; 144 of 864 features gated after #4219 added one `<bin> --version` row for each of the 26 build-SHA bins (each run and observed printing its SHA), which the dogfood sweep does not reach'
   - 'docs/audits/surface_audit_elbow.png — k-selection evidence: inertia knee and silhouette over k in [2,45]'
   - 'scripts/dogfood_cluster.py — the k-sweep that produced the elbow plot (k-selection ONLY; it does not write the columns)'
   - 'scripts/check_no_cluster_id_keys.sh — T1 enforcement: nothing may key on `cluster_id`'
@@ -66,9 +66,9 @@ metadata:
 
     overall:
       command: "python3 scripts/dogfood_baseline.py  # section: totals"
-      rows: 838
+      rows: 864
       covered: 144
-      ratio: 0.1718            # 144/838 -- 17.2%, NOT "about 17%"
+      ratio: 0.1667            # 144/864 -- 16.7%, NOT "about 17%"
       binaries: 28
       binaries_at_zero_coverage: 27
       clusters: 14
@@ -84,33 +84,33 @@ metadata:
         covered may never DECREASE for any binary; total may never decrease
         without a reconciliation finding recording which direction moved.
       apr: {total: 375, covered: 144}
-      aprender-orchestrate: {total: 184, covered: 0}
-      aprender-test-cli: {total: 39, covered: 0}
+      aprender-orchestrate: {total: 185, covered: 0}
+      aprender-test-cli: {total: 40, covered: 0}
       pv: {total: 38, covered: 0}
-      alimentar: {total: 35, covered: 0}
-      aprender-cgp: {total: 25, covered: 0}
-      aprender-profile: {total: 16, covered: 0}
-      apr-qa: {total: 15, covered: 0}
-      aprender-train-shell: {total: 13, covered: 0}
-      trueno-rag: {total: 13, covered: 0}
-      simular: {total: 12, covered: 0}
-      verificar: {total: 11, covered: 0}
-      aprender-explain: {total: 7, covered: 0}
-      presentar: {total: 7, covered: 0}
-      aprender-train-bench: {total: 6, covered: 0}
-      aprender-train-inspect: {total: 6, covered: 0}
-      aprender-cbtop: {total: 4, covered: 0}
-      aprender-db: {total: 4, covered: 0}
-      aprender-train-distill: {total: 4, covered: 0}
-      aprender-train-lora: {total: 4, covered: 0}
-      ptop: {total: 4, covered: 0}
-      trueno-zram: {total: 4, covered: 0}
-      aprender-compute-xtask: {total: 3, covered: 0}
-      aprender-ptx-debug: {total: 3, covered: 0}
-      apr-corpus-ingest: {total: 2, covered: 0}
-      score: {total: 2, covered: 0}
-      apr-qa-readme-sync: {total: 1, covered: 0}
-      aprender-zram-generator: {total: 1, covered: 0}
+      alimentar: {total: 36, covered: 0}
+      aprender-cgp: {total: 26, covered: 0}
+      aprender-profile: {total: 17, covered: 0}
+      apr-qa: {total: 16, covered: 0}
+      aprender-train-shell: {total: 14, covered: 0}
+      trueno-rag: {total: 14, covered: 0}
+      simular: {total: 13, covered: 0}
+      verificar: {total: 12, covered: 0}
+      aprender-explain: {total: 8, covered: 0}
+      presentar: {total: 8, covered: 0}
+      aprender-train-bench: {total: 7, covered: 0}
+      aprender-train-inspect: {total: 7, covered: 0}
+      aprender-cbtop: {total: 5, covered: 0}
+      aprender-db: {total: 5, covered: 0}
+      aprender-train-distill: {total: 5, covered: 0}
+      aprender-train-lora: {total: 5, covered: 0}
+      ptop: {total: 5, covered: 0}
+      trueno-zram: {total: 5, covered: 0}
+      aprender-compute-xtask: {total: 4, covered: 0}
+      aprender-ptx-debug: {total: 4, covered: 0}
+      apr-corpus-ingest: {total: 3, covered: 0}
+      score: {total: 3, covered: 0}
+      apr-qa-readme-sync: {total: 2, covered: 0}
+      aprender-zram-generator: {total: 2, covered: 0}
 
     per_cluster:
       command: "python3 scripts/dogfood_baseline.py  # section: per_cluster"
@@ -148,18 +148,18 @@ metadata:
         cannot assert that a feature works, and quality_1_10 is never derived from
         it -- severity comes from the 0.63.0 ledger.
       apr-core-commands: {total: 111, covered: 39}          # 35.1% of cluster, 27.1% of gate effort
-      entrypoint-and-mcp: {total: 99, covered: 9}           # 9.1% of cluster,  6.3% of gate effort
-      http-orchestrate-banco: {total: 95, covered: 0}       #  ZERO -- one HTTP harness, the cheapest large win
+      entrypoint-and-mcp: {total: 115, covered: 9}           # 7.8% of cluster,  6.3% of gate effort
+      http-orchestrate-banco: {total: 96, covered: 0}       #  ZERO -- one HTTP harness, the cheapest large win
       contracts-pv: {total: 76, covered: 0}                 #  ZERO -- one contract-CLI harness, 76 pv subcommands
-      data-pipeline: {total: 76, covered: 0}                #  ZERO
+      data-pipeline: {total: 77, covered: 0}                #  ZERO
       apr-lint-diag: {total: 71, covered: 55}               # 77.5% of cluster, 38.5% of gate effort
       orchestrate-agent-stack: {total: 56, covered: 0}      #  ZERO
-      test-harness: {total: 49, covered: 0}                 #  ZERO
+      test-harness: {total: 51, covered: 0}                 #  ZERO
       http-apr-serve: {total: 45, covered: 40}              # 88.9% of cluster, 28.0% of gate effort
-      profiling: {total: 44, covered: 1}                    # 2.3% of cluster,  0.7% of gate effort
-      rag-eval: {total: 44, covered: 0}                     #  ZERO
-      qa-cgp: {total: 37, covered: 0}                       #  ZERO
-      simulation: {total: 18, covered: 0}                   #  ZERO
+      profiling: {total: 46, covered: 1}                    # 2.2% of cluster,  0.7% of gate effort
+      rag-eval: {total: 46, covered: 0}                     #  ZERO
+      qa-cgp: {total: 38, covered: 0}                       #  ZERO
+      simulation: {total: 19, covered: 0}                   #  ZERO
       orchestrate-pacha-secrets: {total: 17, covered: 0}    #  ZERO
 
     per_band:
@@ -173,7 +173,7 @@ metadata:
       q1_2: {total: 80, covered: 58}     # 72.5%
       q3_4: {total: 49, covered: 27}     # 55.1%
       q5_6: {total: 676, covered: 29}    # 4.3%
-      q7_8: {total: 12, covered: 10}      # 83.3%
+      q7_8: {total: 38, covered: 10}      # 26.3%
       q9_10: {total: 21, covered: 20}    # 95.2%
 
     hardware_provenance:
@@ -283,7 +283,7 @@ equations:
     codomain: bool
     invariants:
     - "T2. Cluster coverage is a PROXY: one gate in a 95-member cluster is 1%, not covered"
-    - "5/14 clusters (35.7%) and 144/838 features (17.2%) are reported together, always"
+    - "5/14 clusters (35.7%) and 144/864 features (16.7%) are reported together, always"
     - "Enforced mechanically by enforce_pairing(); deleting the feature fraction from the emitter turns the gate RED"
     - "This is the single most important trap: reporting the proxy alone is how a coverage gate becomes theatre while looking stricter"
 
@@ -672,7 +672,7 @@ falsification_tests:
     Every emitted line stating a CLUSTER-level ratio also states the underlying
     FEATURE-level ratio, on EVERY channel one can be emitted through: this gate's
     report, the receipt, scripts/dogfood_baseline.py and
-    .claude/skills/apr-dogfood/SKILL.md. 5 of 14 clusters (35.7%) is a proxy and 144 of 838 features (17.2%) is the thing.
+    .claude/skills/apr-dogfood/SKILL.md. 5 of 14 clusters (35.7%) is a proxy and 144 of 864 features (16.7%) is the thing.
     One gate in a 95-member cluster is
     1%. The rule keys on the NUMBER -- a denominator equal to the cluster count
     -- not on a phrase, because a phrase can be reworded and a denominator cannot;

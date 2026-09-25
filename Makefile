@@ -267,6 +267,8 @@ tier3:
 	@echo "Checking no test asserts about the fd 0 it inherited (aprender#2307)..."
 	@bash scripts/check_hermetic_stdin_tests.sh --self-test
 	@bash scripts/check_hermetic_stdin_tests.sh
+	@echo "Checking fleet hosts accept only the manifest nightly apr/pv (aprender#4186)..."
+	@bash scripts/check_nightly_pin.sh --self-test
 	@echo "Checking no declared-unsupported capability is already implemented (aprender#3686)..."
 	@bash scripts/check_unwired_capabilities.sh --self-test
 	@bash scripts/check_unwired_capabilities.sh
@@ -520,7 +522,13 @@ COV_THRESHOLD := 95
 # So the enforced condition is "do not regress below what we actually have".
 # Raise this number whenever a run comes in higher; never lower it to make red
 # go away. Integer truncation gives ~0.78pt of headroom before 88 becomes 87.
-COV_FLOOR := 88
+# 2026-09-23, #4023: 88 -> 89. The first COMPLETE measurement (every aprender-serve process
+# exited normally; coverage-nightly run 35908686532) was 849871/941605 = 90.26%. 89 is a
+# ratchet with margin, since 90 would leave no room for noise; it goes to 90 once two
+# consecutive nightlies measure >= 90.5% (release-cop ruling).
+COV_FLOOR := 89
+# #4023: libtest threads for aprender-serve's `gpu` coverage shard (25.9 GB at 22 on yoga).
+COV_GPU_SHARD_THREADS ?= 4
 
 # NVMe target dir (mirrors cargo() shell function that sets CARGO_TARGET_DIR)
 # Without this, Make's subshell bypasses the function and uses ./target/ instead
@@ -550,8 +558,11 @@ COV_CARGO_ENV := $(if $(COV_TARGET_DIR),CARGO_TARGET_DIR=$(COV_TARGET_DIR))
 #   two-phase, unscoped report  -> LH=0   LF=0    (empty)
 #   report --summary-only -p A -p B -> LH=686 LF=737  (93.08%)
 #   single-phase --lcov --output-path -> LH=686 LF=737  (93.08%)
-# Single-phase is chosen over an explicit -p list because the invocation that selects the
-# scope is the one that writes the report, so the two cannot drift apart again. profraw
+# #4023 brings two-phase BACK, deliberately: aprender-serve's lib tests cannot run in one
+# process on a 28 GB runner (#4028), so they run as several --no-report processes and one
+# report merges them. It is safe because every report is now scoped by an explicit `-p` list
+# DERIVED from `cargo metadata` (scripts/coverage_report_scope.py), the verified alternative
+# above, and scripts/check_coverage_report_scoped.sh refuses any unscoped `llvm-cov report`. profraw
 # survive it (31 present afterwards), so coverage-html still has data to work from.
 .PHONY: coverage-check contracts
 
@@ -598,7 +609,17 @@ coverage-check: coverage
 # CLAUDE.md, and the dogfood protocol looked for a target that did not exist, so
 # it WARNed instead of checking. `pv lint` runs validate + audit + score across
 # contracts/ and is the documented entry point (never hand-rolled bash).
+# EXIT PROPAGATION (PVL-001 EV-4, aprender#4168). Under .ONESHELL this whole
+# recipe is ONE shell script, so without errexit its status is the LAST line's
+# and every earlier step -- `pv lint` included -- was advisory: a failing lint
+# printed its tail and the gate exited 0. `set -e` stops at a failing step.
+# It is NOT enough on the pv lines: errexit ignores a failure on the LEFT of
+# `&&`, so a pv_bin.sh that REFUSES the binary (stale, wrong identity) would
+# fall through to the next step. Hence `|| exit` there as well, which exits
+# with that list's own status (pv's rc through the pipe, via -o pipefail).
+# Case table + mutants: scripts/tests/make_contracts_propagates.sh.
 contracts:
+	@set -e
 	@echo "== provable contracts: pv lint contracts/ =="
 # `| tail -5` DISCARDED THE VERDICT: the pipeline's status is tail's, so the armed-meet
 # result was PRINTED and NOT ENFORCED (found by aprender-d8, 0.69.1 tail rehearsal). That
@@ -606,13 +627,16 @@ contracts:
 # contracts-exit-integrity does not catch it -- it looks for `|| true` and bare for-loops,
 # not for a pipe. The output is kept to a tail for readability by writing it to a file and
 # tailing THAT, so the exit status belongs to pv and nothing else.
-	@. scripts/pv_bin.sh && { "$$PV" lint contracts/ > /tmp/pv-lint-contracts.$$$$.log 2>&1; rc=$$?; tail -5 /tmp/pv-lint-contracts.$$$$.log; rm -f /tmp/pv-lint-contracts.$$$$.log; exit $$rc; }
+# .ONESHELL: the whole recipe is ONE shell, so an unconditional `exit $$rc` here ended the
+# recipe green after lint -- census, graph, README, provenance and the engine tests never ran.
+# Exit only on failure (#4315, caught by scripts/tests/make_contracts_propagates.sh).
+	@. scripts/pv_bin.sh && { "$$PV" lint contracts/ > /tmp/pv-lint-contracts.$$$$.log 2>&1; rc=$$?; tail -5 /tmp/pv-lint-contracts.$$$$.log; rm -f /tmp/pv-lint-contracts.$$$$.log; [ $$rc -eq 0 ] || exit $$rc; } || exit
 	@echo "== census: tracked contracts/census.json == a fresh one (ONT-001 ONT-1, F-1) =="
 	@git ls-files --error-unmatch contracts/census.json >/dev/null || { echo "FAIL: contracts/census.json is not tracked, so diffing it proves nothing"; exit 1; }
-	@. scripts/pv_bin.sh && "$$PV" census contracts --format json > contracts/census.json
+	@. scripts/pv_bin.sh && "$$PV" census contracts --format json > contracts/census.json || exit
 	@git diff --exit-code contracts/census.json || { echo "FAIL: the tracked census differs from a fresh one — commit the regenerated contracts/census.json"; exit 1; }
 	@echo "== graph: tracked contracts/contracts.nt + shapes.ttl == a fresh extraction (ONT-001 ONT-4b, R-18) =="
-	@. scripts/pv_bin.sh && "$$PV" extract contracts --check >/dev/null
+	@. scripts/pv_bin.sh && "$$PV" extract contracts --check >/dev/null || exit
 	@echo "== README states the censused count =="
 	@bash scripts/readme_sync.sh --check
 	@echo "== provenance marks, interim (ONT-001 R-10) =="
@@ -626,6 +650,8 @@ contracts:
 # which pass without a GPU), so the number measured a subset over the whole denominator.
 coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@echo "📊 Running coverage ($(COV_THRESHOLD)%+ threshold)..."
+	@# #4023: refuse before any test runs if a `llvm-cov report` anywhere would cover only the facade.
+	@scripts/check_coverage_report_scoped.sh
 	@which cargo-llvm-cov > /dev/null 2>&1 || { cargo install cargo-llvm-cov --locked || exit 1; }
 	$(COV_REFUSE_GLOBAL_MOLD)
 	@# Pre-clean: remove stale profraw files to avoid LLVM version mismatch
@@ -634,24 +660,88 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@mkdir -p target/coverage
 	@rm -f target/coverage/lcov.info target/coverage/test.log target/coverage/failed-tests.txt
 	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
-	@echo "🧪 Tests with instrumentation + report in ONE invocation (CB-127-A: cargo llvm-cov test, not nextest)..."
+	@# #4023: aprender-serve's lib tests run as SEVERAL processes. In one process they build up
+	@# memory across tests (#4028: 30 GB single-threaded, 45 GB at 22 threads on gx10) and earlyoom
+	@# SIGTERMed them on yoga's 28 GB box (run 35868368976); one module group per process peaks
+	@# <= 7.8 GB. EVERY run is --no-report and ONE `cargo llvm-cov report` merges them: a run WITH a
+	@# report cleans the earlier profiles (measured: the first run's coverage fell to 0).
+	@echo "🧪 Workspace lib tests except aprender-serve (instrumented, --no-report)..."
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
-		$(COV_CARGO_ENV) cargo llvm-cov test \
-		--workspace --exclude aprender-gpu --lib --ignore-run-fail \
-		--lcov --output-path target/coverage/lcov.info \
-		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
+		$(COV_CARGO_ENV) cargo llvm-cov test --no-report \
+		--workspace --exclude aprender-gpu --exclude aprender-serve --lib --ignore-run-fail \
 		-- --exact $$(sed -e '/^#/d' -e '/^[[:space:]]*$$/d' -e 's/^/--skip /' scripts/coverage-skips.txt) \
 		2>&1 | tee target/coverage/test.log; \
 	rc=$${PIPESTATUS[0]}; \
 	if [ "$$rc" -ne 0 ]; then \
-		echo "❌ coverage DID NOT MEASURE: cargo llvm-cov exited $$rc (build or report failure;"; \
+		echo "❌ coverage DID NOT MEASURE: cargo llvm-cov exited $$rc on the workspace run (build failure;"; \
 		echo "   with --ignore-run-fail a failing test alone does not stop it). No coverage verdict."; \
 		exit 1; \
 	fi
+	@echo "🧪 aprender-serve lib tests, one process per module group (instrumented, --no-report)..."
+	@rm -rf target/coverage/serve-shards
+	@$(COV_CARGO_ENV) cargo llvm-cov test --no-report -p aprender-serve --lib -- --list \
+		> target/coverage/serve-list.txt 2>> target/coverage/test.log || \
+		{ echo "❌ coverage DID NOT MEASURE: could not list aprender-serve's lib tests. No coverage verdict."; exit 1; }
+	@python3 scripts/coverage_serve_shards.py target/coverage/serve-list.txt scripts/coverage-skips.txt \
+		target/coverage/serve-shards scripts/coverage-solo.txt
+	@# scripts/coverage-solo.txt: run FIRST, each in its OWN process, and print its test binary's peak RSS
+	@# (RUSAGE_CHILDREN.ru_maxrss), so a later skip carries a measured per-test reason.
+	@: > target/coverage/failed-runs.txt; \
+	for solo in target/coverage/serve-shards/solo-*.txt; do \
+		[ -e "$$solo" ] || continue; \
+		t=$$(cat $$solo); \
+		PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
+			$(COV_CARGO_ENV) python3 -c 'import resource, subprocess, sys; rc = subprocess.call(sys.argv[2:]); print("coverage-solo-maxrss", resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss, "KB", sys.argv[1], "rc=%d" % rc, flush=True); sys.exit(rc)' \
+			"$$t" cargo llvm-cov test --no-report -p aprender-serve --lib --ignore-run-fail -- --exact "$$t" \
+			2>&1 | tee -a target/coverage/test.log; \
+		rc=$${PIPESTATUS[0]}; \
+		[ "$$rc" -eq 0 ] || echo "solo $$t rc=$$rc" >> target/coverage/failed-runs.txt; \
+	done
+	@# The `gpu` module builds up memory in one process on yoga (25.9 GB at 22 threads, 26.5 GB at 4;
+	@# runs 35881004821, 35885731831), so the partitioner chunks it into <= 200-test processes, which
+	@# also run at COV_GPU_SHARD_THREADS. EVERY shard runs even if one fails, so a dispatch yields the
+	@# whole picture; any failure then means no verdict, naming each failed shard.
+	@for shard in target/coverage/serve-shards/shard-*.txt; do \
+		threads=""; case "$$shard" in *-gpu.*.txt) threads="--test-threads=$(COV_GPU_SHARD_THREADS)" ;; esac; \
+		echo "   $$shard ($$(wc -l < $$shard) tests) $$threads"; \
+		PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
+			$(COV_CARGO_ENV) cargo llvm-cov test --no-report -p aprender-serve --lib --ignore-run-fail \
+			-- --exact $$threads $$(cat $$shard) 2>&1 | tee -a target/coverage/test.log; \
+		rc=$${PIPESTATUS[0]}; \
+		echo "   coverage-shard-rc $$rc $$shard"; \
+		[ "$$rc" -eq 0 ] || echo "shard $$shard rc=$$rc" >> target/coverage/failed-runs.txt; \
+	done
+	@if [ -s target/coverage/failed-runs.txt ]; then \
+		echo "❌ coverage DID NOT MEASURE: these aprender-serve runs failed (every one was still run):"; \
+		sed 's/^/     /' target/coverage/failed-runs.txt; \
+		echo "   No coverage verdict."; \
+		exit 1; \
+	fi
+	@echo "📊 Merging every run's profiles into one report..."
+	@# `--workspace --exclude aprender-gpu` is REQUIRED: the root Cargo.toml is also a package (the
+	@# `apr` facade), and an unqualified `report` covers ONLY the root package. Proof run
+	@# 35892421393 printed "Finished report saved" and then found no (non-empty) lcov. Measured with
+	@# cargo-llvm-cov 0.9.0 (CI's version) on a root-package workspace: without --workspace the
+	@# lcov held only src/lib.rs; with it, every member.
+	@# SCOPE IS EXPLICIT: an unscoped `report` covers only the root facade (empty lcov, run
+	@# 35892421393 and the single-phase note above); `report --exclude` is rejected by 0.9.0 (run
+	@# 35901458111) and `report --workspace` by older versions. A derived `-p` list works on both.
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py --exclude aprender-gpu) \
+		--lcov --output-path $(CURDIR)/target/coverage/lcov.info \
+		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" 2>&1 | tee -a target/coverage/test.log; \
+	rc=$${PIPESTATUS[0]}; \
+	echo "   lcov: $$(ls -la $(CURDIR)/target/coverage/lcov.info 2>&1)"; \
+	echo "   lcov files under the workspace: $$(find $(CURDIR) -name lcov.info -newer target/coverage/.exclude-re 2>/dev/null | tr '\n' ' ')"; \
+	echo "   profraw files: $$(find $${CARGO_TARGET_DIR:-$(CURDIR)/target} -name '*.profraw' 2>/dev/null | wc -l)"; \
+	if [ "$$rc" -ne 0 ]; then echo "❌ coverage DID NOT MEASURE: the merged report step exited $$rc. No coverage verdict."; exit 1; fi
 	@# #3839: --ignore-run-fail keeps one failing test from blanking the number (the 2026-09-23
 	@# nightly wrote no lcov because of one timing test). Failures are LISTED, not hidden, and
 	@# every test run here is also run by CI's workspace-test, which fails on them.
 	@grep -E '^test .* \.\.\. FAILED$$' target/coverage/test.log | sed -e 's/^test //' -e 's/ \.\.\. FAILED$$//' | sort -u > target/coverage/failed-tests.txt || true
+	@# A test BINARY killed by a signal (earlyoom SIGTERMed aprender-serve at 25.7 GB on yoga, run
+	@# 35868368976) is swallowed by --ignore-run-fail, and its crate's profile is missing from the
+	@# lcov: that run printed "76% ... REGRESSION" with the largest crate absent. No verdict then.
+	@scripts/check_coverage_log_complete.sh target/coverage/test.log
 	@echo "📊 Parsing LCOV for the threshold check..."
 	@# Parse LCOV for line coverage (LH=lines hit, LF=lines found)
 	@if [ ! -s target/coverage/lcov.info ]; then echo "❌ coverage DID NOT MEASURE: no lcov.info was written. No coverage verdict."; exit 1; fi; \
@@ -698,8 +788,8 @@ coverage-html: ## Generate HTML + LCOV reports from last coverage run
 	$(COV_REFUSE_GLOBAL_MOLD)
 	@mkdir -p target/coverage
 	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
-	@$(COV_CARGO_ENV) cargo llvm-cov report --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
-	@$(COV_CARGO_ENV) cargo llvm-cov report --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py --exclude aprender-gpu) --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py --exclude aprender-gpu) --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 	@echo "📍 HTML: target/coverage/html/index.html"
 
 # Full coverage: All features (for CI, slower)
@@ -714,10 +804,10 @@ coverage-full: ## Full coverage report (all features, CI only)
 		$(COV_CARGO_ENV) cargo llvm-cov test --no-report --workspace --lib --all-features \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
 		-- --skip prop_gbm_expected_value --skip slow --skip heavy --skip benchmark --skip h12_ --skip j2_
-	@$(COV_CARGO_ENV) cargo llvm-cov report --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
-	@$(COV_CARGO_ENV) cargo llvm-cov report --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py) --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py) --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 	@echo ""
-	@$(COV_CARGO_ENV) cargo llvm-cov report --summary-only --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py) --summary-only --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 
 # Open coverage report in browser
 coverage-open: ## Open HTML coverage report in browser
@@ -1162,7 +1252,12 @@ test-audio-full: ## Run all audio tests including ALSA (if available)
 # contracts/aprender/binding.yaml. Generated tests: tests/contracts/.
 # Pre-consolidation `../provable-contracts/` references retired.
 
-PV_BIN := cargo run --release -p aprender-contracts-cli --bin pv --
+# NOT named PV_BIN (PVL-001 EV-4): a makefile assignment overrides an inherited
+# environment variable AND is what make exports to recipes, so `PV_BIN := cargo
+# run ...` handed scripts/pv_bin.sh the string "cargo run ..." whenever a caller
+# exported PV_BIN=/path/to/pv -- the one override pv_bin.sh honours -- and every
+# `. scripts/pv_bin.sh` step refused with `not executable: cargo run ...`.
+PV_CARGO_RUN := cargo run --release -p aprender-contracts-cli --bin pv --
 BINDING := contracts/aprender/binding.yaml
 CONTRACTS := contracts/softmax-kernel-v1.yaml \
              contracts/rmsnorm-kernel-v1.yaml \
@@ -1210,30 +1305,35 @@ contract-validate: ## Validate all kernel contracts (schema + staleness)
 	@echo "Validating kernel contracts..."
 	@for contract in $(CONTRACTS); do \
 		echo "  $$contract"; \
-		$(PV_BIN) validate "$$contract" || exit 1; \
+		$(PV_CARGO_RUN) validate "$$contract" || exit 1; \
 	done
 	@echo "Contract validation passed"
 
 contract-test: ## Run contract-driven property tests
+	@set -e
 	@echo "Running contract property tests..."
 	@PROPTEST_CASES=100 cargo test -p aprender-core --test contract_tests
 	@echo "Contract tests passed"
 
 contract-audit: ## Audit binding coverage (equations -> implementations)
 	@echo "Running binding audit..."
-	@for contract in $(CONTRACTS); do \
+	@rc=0; for contract in $(CONTRACTS); do \
 		echo ""; \
-		$(PV_BIN) audit "$$contract" --binding $(BINDING); \
+		$(PV_CARGO_RUN) audit "$$contract" --binding $(BINDING) || rc=$$?; \
 	done
 	@echo ""
+	@if [ "$$rc" -ne 0 ]; then echo "Binding audit FAILED: at least one audit exited non-zero (last rc=$$rc)"; exit "$$rc"; fi
 	@echo "Binding audit complete"
 
+# contract-regen keeps `|| true` ON PURPOSE (PVL-001 EV-4): it is not a gate --
+# it writes .rs.new files for a human to review, and one contract probar cannot
+# render must not stop the others being written.
 contract-regen: ## Regenerate wired test files from contracts
 	@echo "Regenerating contract test files..."
 	@for contract in $(CONTRACTS); do \
 		name=$$(basename "$$contract" .yaml | sed 's/-kernel-v[0-9]*//;s/-v[0-9]*//'); \
 		echo "  $$name <- $$contract"; \
-		$(PV_BIN) probar "$$contract" --binding $(BINDING) > tests/contracts/$${name}_contract.rs.new 2>/dev/null || true; \
+		$(PV_CARGO_RUN) probar "$$contract" --binding $(BINDING) > tests/contracts/$${name}_contract.rs.new 2>/dev/null || true; \
 	done
 	@echo "Regeneration complete (review .rs.new files)"
 

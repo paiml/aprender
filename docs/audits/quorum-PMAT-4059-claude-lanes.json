@@ -1,0 +1,20 @@
+{
+  "ticket": "PMAT-4059",
+  "head": "0bff759de3dd6ec34a7078f3109a8d82e654d33a",
+  "base": "origin/main",
+  "diff_sha256": "8b9d2ce473075d148b6c0cc82aedf8224a36c1017e2a60c7a696856c33291e48",
+  "brief_sha256": "6015a75de5018556de1270140938108063b0fec8c647d698a8ab9a8066e0b7ed",
+  "brief_note": "the brief quorum-review.sh wrote for the agy lane in quorum-PMAT-4059.json (35547 bytes), copied before its lane ran and given byte-identical to both Claude lanes",
+  "shape": "operator 2026-09-24 via cop aprender-cf: claude-sonnet-5 + 1 agy (gemini-3.1-pro-high) + claude-haiku-4-5",
+  "author": {"model": "claude-opus-5-5", "family": "claude"},
+  "lanes": [
+    {"model": "claude-sonnet-5", "family": "claude", "model_source": "Agent model override", "agent_id": "ae2a490b64e2e7063", "verdict": "PASS", "findings": [],
+     "summary": "Fix commit 0bff759de resolves round 1. Measured at head: derivation == 11-row ledger; --self-test OK (5 mutants killed, 18 rows); check_baseline_ratchets, check_guards_are_wired, check_explicit_test_commands PASS; all five check_roadmap_*.sh rc 0 incl. fragment_required; all 82 --test names exist as real targets; MoE falsifier wired nowhere; pv 17 wired / 0 unwired; no workflow touched."},
+    {"model": "claude-haiku-4-5-20251001", "family": "claude", "model_source": "Agent model override", "agent_id": "a2755fca1049b82e4", "verdict": "PASS", "findings": [],
+     "summary": "All receipt claims verified; roadmap.yaml regenerated; guard self-test passes; 82 wired, 11 ledgered; no gate weakened; five roadmap checks pass at the committed head."}
+  ],
+  "round_1": {"head": "739d80fc469565d866590b31c950ab4e6dc633f8", "brief_sha256": "ca8b9b11850d5be0fe9f14262121361cf574ba7089c995d5a9ed2243649372fe",
+    "verdicts": {"gemini-3.1-pro-high": "PASS", "claude-sonnet-5": "FAIL (measured: check_roadmap_fragment_required.sh rc 1, roadmap.yaml not regenerated; correct)", "claude-haiku-4-5": "PASS (claimed roadmap checks pass; wrong at that head)"},
+    "outcome": "not agreed; fixed in 0bff759de"},
+  "note": "Same family as the author (degraded: same-family for these two seats). Combined with quorum-PMAT-4059.json (gemini-3.1-pro-high PASS, measured): 3/3 PASS at 0bff759de."
+}

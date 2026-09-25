@@ -202,9 +202,23 @@ const PROPERTY_KEYS: &[&str] = &[
     "severity",
 ];
 
-/// Read a contract's `shape:` block. `None` when the contract has no `shape:`. The target class defaults to
-/// `ont:Contract` when the contract's `entity.type` is `pv-contract`; otherwise `targetClass` is required.
+/// Σ `entity_type_target_class` (v4.16 D-T1, qd4c4): `entity.type` → the class a shape with no `targetClass`
+/// targets, as a prefixed name (`readme:Readme`), expanded like any other.
+pub type TargetMap = std::collections::BTreeMap<String, String>;
+
+/// Read a contract's `shape:` block with NO Σ map — so a shape without `targetClass` is malformed. The gate
+/// reads Σ and calls [`parse_shape_with`].
 pub fn parse_shape(stem: &str, doc: &serde_yaml::Value) -> Result<Option<NodeShape>, ShapeError> {
+    parse_shape_with(stem, doc, &TargetMap::new())
+}
+
+/// Read a contract's `shape:` block. `None` when the contract has no `shape:`. With no `targetClass`, the
+/// target is `targets[entity.type]` (Σ `entity_type_target_class`); an unmapped type is malformed, named.
+pub fn parse_shape_with(
+    stem: &str,
+    doc: &serde_yaml::Value,
+    targets: &TargetMap,
+) -> Result<Option<NodeShape>, ShapeError> {
     let Some(block) = doc.get("shape") else {
         return Ok(None);
     };
@@ -214,16 +228,25 @@ pub fn parse_shape(stem: &str, doc: &serde_yaml::Value) -> Result<Option<NodeSha
             what: "`shape:` is not a mapping".into(),
         });
     };
-    parse_node_shape(stem, map, default_target(doc), 0).map(Some)
+    parse_node_shape(stem, map, default_target(doc, targets), 0).map(Some)
+}
+
+/// [`parse_shapes_with`] with no Σ map.
+pub fn parse_shapes(stem: &str, doc: &serde_yaml::Value) -> Result<Vec<NodeShape>, ShapeError> {
+    parse_shapes_with(stem, doc, &TargetMap::new())
 }
 
 /// Every shape a contract declares: its `shape:` block (id = the stem) and each entry of its `shapes:` list
 /// (id = the entry's own `id`, required, so a contract may hold several shapes that are armed one by one —
 /// ONT-4c1's `ladder-measured` and `ladder-green`). An entry without `id`, or an `id` that repeats within the
 /// contract, is malformed.
-pub fn parse_shapes(stem: &str, doc: &serde_yaml::Value) -> Result<Vec<NodeShape>, ShapeError> {
+pub fn parse_shapes_with(
+    stem: &str,
+    doc: &serde_yaml::Value,
+    targets: &TargetMap,
+) -> Result<Vec<NodeShape>, ShapeError> {
     let mut out = Vec::new();
-    if let Some(s) = parse_shape(stem, doc)? {
+    if let Some(s) = parse_shape_with(stem, doc, targets)? {
         out.push(s);
     }
     let Some(list) = doc.get("shapes") else {
@@ -253,17 +276,24 @@ pub fn parse_shapes(stem: &str, doc: &serde_yaml::Value) -> Result<Vec<NodeShape
         }
         let mut body = map.clone();
         body.remove(serde_yaml::Value::String("id".into()));
-        out.push(parse_node_shape(id, &body, default_target(doc), 0)?);
+        out.push(parse_node_shape(
+            id,
+            &body,
+            default_target(doc, targets),
+            0,
+        )?);
     }
     Ok(out)
 }
 
-fn default_target(doc: &serde_yaml::Value) -> Option<String> {
+/// Σ `entity_type_target_class[entity.type]`, expanded. No entity type is special-cased (v4.16 D-T1 replaced
+/// the `pv-contract`-only rule): a type the map does not carry has no default.
+fn default_target(doc: &serde_yaml::Value, targets: &TargetMap) -> Option<String> {
     doc.get("entity")
         .and_then(|e| e.get("type"))
         .and_then(serde_yaml::Value::as_str)
-        .filter(|t| *t == "pv-contract")
-        .map(|_| ont("Contract"))
+        .and_then(|t| targets.get(t))
+        .map(|c| expand(c))
 }
 
 fn parse_node_shape(
@@ -288,7 +318,8 @@ fn parse_node_shape(
             (0, None) => {
                 return Err(ShapeError::Malformed {
                     shape: id.to_string(),
-                    what: "no `targetClass`, and the contract's entity is not pv-contract".into(),
+                    what: "no targetClass (entity.type has no Σ entity_type_target_class mapping)"
+                        .into(),
                 })
             }
             // a nested `node` shape applies to the value, whatever its class
@@ -1032,9 +1063,13 @@ mod tests {
     use super::*;
     use crate::ontology::rdf::{iri, Term};
 
+    fn pv_map() -> TargetMap {
+        TargetMap::from([("pv-contract".to_string(), "ont:Contract".to_string())])
+    }
+
     fn shape(yaml: &str) -> NodeShape {
         let doc: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
-        parse_shape("t", &doc).unwrap().unwrap()
+        parse_shape_with("t", &doc, &pv_map()).unwrap().unwrap()
     }
 
     fn graph_with(id: &str, kind: Option<&str>) -> Graph {
@@ -1121,7 +1156,7 @@ mod tests {
         assert_eq!(r.results[0].component, "node");
         let doc: serde_yaml::Value = serde_yaml::from_str("entity: {type: pv-contract}\nshape:\n  properties:\n    - {path: ont:x, node: {properties: [{path: ont:y, node: {properties: []}}]}}\n").unwrap();
         assert!(matches!(
-            parse_shape("t", &doc),
+            parse_shape_with("t", &doc, &pv_map()),
             Err(ShapeError::Unsupported { .. })
         ));
     }
@@ -1136,7 +1171,7 @@ mod tests {
             ("entity: {type: pv-contract}\nshape:\n  or: []\n", "or"),
         ] {
             let doc: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
-            match parse_shape("t", &doc) {
+            match parse_shape_with("t", &doc, &pv_map()) {
                 Err(ShapeError::Unsupported { component, .. }) => assert!(component.starts_with(want), "{component} vs {want}"),
                 other => panic!("{yaml}: expected Unsupported, got {other:?}"),
             }
@@ -1147,14 +1182,17 @@ mod tests {
     fn a_shape_with_no_target_and_no_pv_contract_entity_is_malformed() {
         let doc: serde_yaml::Value = serde_yaml::from_str("shape:\n  properties: []\n").unwrap();
         assert!(matches!(
-            parse_shape("t", &doc),
+            parse_shape_with("t", &doc, &pv_map()),
             Err(ShapeError::Malformed { .. })
         ));
         let doc: serde_yaml::Value =
             serde_yaml::from_str("shape:\n  targetClass: ont:Contract\n  properties: []\n")
                 .unwrap();
         assert_eq!(
-            parse_shape("t", &doc).unwrap().unwrap().target_class,
+            parse_shape_with("t", &doc, &pv_map())
+                .unwrap()
+                .unwrap()
+                .target_class,
             ont("Contract")
         );
     }

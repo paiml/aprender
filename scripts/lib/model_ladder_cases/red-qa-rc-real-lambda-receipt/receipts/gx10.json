@@ -302,7 +302,19 @@
           }
         }
       },
-      "green": true
+      "green": true,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "qwen3-1.7b-q4km",
@@ -492,7 +504,19 @@
           }
         }
       },
-      "green": true
+      "green": true,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "qwen3-8b-q4km",
@@ -682,7 +706,19 @@
           }
         }
       },
-      "green": true
+      "green": true,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "qwen35-0.8b-q4km",
@@ -872,7 +908,19 @@
           }
         }
       },
-      "green": true
+      "green": true,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "qwen35-2b-q4km",
@@ -1062,7 +1110,19 @@
           }
         }
       },
-      "green": true
+      "green": true,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "qwen35-4b-q4km",
@@ -1252,7 +1312,19 @@
           }
         }
       },
-      "green": true
+      "green": true,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "qwen35-9b-q4km",
@@ -1442,7 +1514,19 @@
           }
         }
       },
-      "green": true
+      "green": true,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "qwen35-27b-q4km",
@@ -1632,7 +1716,19 @@
           }
         }
       },
-      "green": true
+      "green": true,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "inv:Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
@@ -1773,7 +1869,19 @@
           }
         }
       },
-      "green": false
+      "green": false,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "inv:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
@@ -1914,7 +2022,19 @@
           }
         }
       },
-      "green": false
+      "green": false,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "inv:qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
@@ -2053,7 +2173,19 @@
           }
         }
       },
-      "green": true
+      "green": true,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "inv:qwen2.5-coder-1.5b-instruct-fp16.apr",
@@ -2067,7 +2199,7 @@
       "capability_match": {
         "passed": true,
         "skipped": false,
-        "message": "Non-GGUF format \u2014 capability check not applicable"
+        "message": "Non-GGUF format — capability check not applicable"
       },
       "golden_output": {
         "passed": true,
@@ -2078,7 +2210,7 @@
         "capability_match": {
           "passed": true,
           "skipped": false,
-          "message": "Non-GGUF format \u2014 capability check not applicable"
+          "message": "Non-GGUF format — capability check not applicable"
         },
         "tensor_contract": {
           "passed": true,
@@ -2192,7 +2324,19 @@
           }
         }
       },
-      "green": true
+      "green": true,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "inv:qwen2.5-coder-1.5b-instruct-q4_k_m.apr",
@@ -2206,7 +2350,7 @@
       "capability_match": {
         "passed": true,
         "skipped": false,
-        "message": "Non-GGUF format \u2014 capability check not applicable"
+        "message": "Non-GGUF format — capability check not applicable"
       },
       "golden_output": {
         "passed": true,
@@ -2217,7 +2361,7 @@
         "capability_match": {
           "passed": true,
           "skipped": false,
-          "message": "Non-GGUF format \u2014 capability check not applicable"
+          "message": "Non-GGUF format — capability check not applicable"
         },
         "tensor_contract": {
           "passed": true,
@@ -2331,7 +2475,19 @@
           }
         }
       },
-      "green": true
+      "green": true,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "inv:qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
@@ -2470,7 +2626,19 @@
           }
         }
       },
-      "green": true
+      "green": true,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "inv:qwen2.5-coder-1.5b-instruct-q4k.apr",
@@ -2484,7 +2652,7 @@
       "capability_match": {
         "passed": true,
         "skipped": false,
-        "message": "Non-GGUF format \u2014 capability check not applicable"
+        "message": "Non-GGUF format — capability check not applicable"
       },
       "golden_output": {
         "passed": true,
@@ -2495,7 +2663,7 @@
         "capability_match": {
           "passed": true,
           "skipped": false,
-          "message": "Non-GGUF format \u2014 capability check not applicable"
+          "message": "Non-GGUF format — capability check not applicable"
         },
         "tensor_contract": {
           "passed": true,
@@ -2609,7 +2777,19 @@
           }
         }
       },
-      "green": true
+      "green": true,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "inv:qwen2.5-coder-32b-instruct-q4_k_m.gguf",
@@ -2748,7 +2928,19 @@
           }
         }
       },
-      "green": true
+      "green": true,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     },
     {
       "id": "inv:qwen2.5-coder-7b-instruct-q4_k_m.gguf",
@@ -2887,7 +3079,19 @@
           }
         }
       },
-      "green": true
+      "green": true,
+      "fit": {
+        "tool": "llama-fit-params",
+        "pin": "d1d3c3396",
+        "llama_cpp": "d1d3c3396",
+        "free_mib": 23332,
+        "ctx": 32768,
+        "ngl": -1,
+        "rc": 0,
+        "raw": "-c 32768 -ngl -1",
+        "verdict": "fits",
+        "reason": "full GPU at ctx 32768"
+      }
     }
   ]
 }

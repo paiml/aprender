@@ -1,0 +1,17 @@
+- id: PMAT-4023
+  github_issue: 4023
+  item_type: task
+  title: 'GH-4023: coverage-nightly produces a number again (port #3839 + killed-binary guard + per-module aprender-serve + scoped reports)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-23T21:54:34Z
+  updated: 2026-09-23T21:54:34Z
+  spec: null
+  acceptance_criteria:
+  - 'PR #4023'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

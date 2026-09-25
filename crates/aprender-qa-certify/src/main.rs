@@ -36,7 +36,7 @@ fn find_project_root() -> Option<PathBuf> {
 #[derive(Debug, Parser)]
 #[command(
     name = "apr-qa-readme-sync",
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"),
     about = "Updates README.md certification table from models.csv",
     long_about = None
 )]

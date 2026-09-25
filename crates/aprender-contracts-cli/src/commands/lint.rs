@@ -58,7 +58,7 @@ pub fn run(
     // missing on exactly the input the refusal exists for.
     refuse_single_file_strict_binding(contract_dir, strict_test_binding)?;
     if let Some(name) = gate {
-        return run_single_gate(contract_dir, name, &shapes_opts);
+        return run_single_gate(contract_dir, name, &shapes_opts, armed_baseline_ref);
     }
     if watch {
         return run_watch(
@@ -215,8 +215,10 @@ fn run_single_gate(
     contract_dir: &Path,
     name: &str,
     shapes_opts: &ShapesOptions,
+    armed_baseline_ref: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let (result, findings) = decide_named_gate(contract_dir, name, shapes_opts)?;
+    let (mut result, mut findings) = decide_named_gate(contract_dir, name, shapes_opts)?;
+    apply_measured_ratchet(contract_dir, armed_baseline_ref, &mut result, &mut findings)?;
 
     let report = SingleGateReport {
         gate: &result.name,
@@ -250,6 +252,58 @@ fn run_single_gate(
         }
         .into()),
     }
+}
+
+/// ONT-4c (v4.14) F-34 on the shapes gate: the measured-set withdrawal ratchet needs git, so it is applied here
+/// rather than in the library gate. It upgrades `ratchets.measured_sets` from the library's `not-checked` to
+/// `checked` when a comparand was asked, and each violation is an Error finding (PV-ONT-014) that turns the
+/// verdict to `Fail` — a ratchet that prints and exits 0 is the shape this corpus keeps refusing.
+fn apply_measured_ratchet(
+    contract_dir: &Path,
+    armed_baseline_ref: Option<&str>,
+    result: &mut provable_contracts::lint::GateResult,
+    findings: &mut Vec<provable_contracts::lint::finding::LintFinding>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use provable_contracts::lint::finding::LintFinding;
+    use provable_contracts::lint::rules::RuleSeverity;
+    use provable_contracts::lint::GateExtra;
+    use std::collections::BTreeSet;
+
+    let Some(GateExtra::Shapes {
+        readme,
+        claude_md,
+        ratchets,
+        ..
+    }) = result.extra.as_mut()
+    else {
+        return Ok(());
+    };
+    let live_readme: BTreeSet<String> = readme.verified_commands.iter().cloned().collect();
+    let live_claude: BTreeSet<String> = claude_md.verified_commands.iter().cloned().collect();
+    let answer = lint_arming::measured_ratchet(
+        contract_dir,
+        armed_baseline_ref,
+        [&live_readme, &live_claude],
+    )?;
+    ratchets.measured_sets = answer.status.to_string();
+    if answer.violations.is_empty() {
+        return Ok(());
+    }
+    let file = contract_dir
+        .join("lint-baseline.json")
+        .display()
+        .to_string();
+    for m in answer.violations {
+        findings.push(LintFinding::new(
+            "PV-ONT-014",
+            RuleSeverity::Error,
+            m,
+            file.clone(),
+        ));
+    }
+    result.passed = false;
+    result.verdict = provable_contracts::ontology::verdict::Verdict::Fail;
+    Ok(())
 }
 
 /// One gate's run, mapped to a report or to the refusal/decline that stands in its place. Every non-verdict
