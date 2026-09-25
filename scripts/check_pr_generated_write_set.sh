@@ -56,6 +56,14 @@ ALLOWLIST_MAX_ROWS=8                    # cop ruling: exactly the 8 PRs in fligh
 COUNT_RE='[0-9]+\*{0,2}( +[a-z]+){0,2} +(workspace crates?|contracts?|CLI commands?)\b'   # = check_readme_claims.sh's claim extractors: a line they do not read is not a claim
 MARKER_RE='CONTRACT_COUNT_(START|END)'
 REGEN_RE='^regen/'
+# OPERATOR A1 (2026-09-25 13:10Z) supersedes the cop's "strict now": REPORT-ONLY for every branch that is
+# not an allowlist row, until ALL of these hold, then ONE commit flips STRICT=1 (the self-test covers both):
+#   * paiml-mcp-agent-toolkit#1370 (`pmat roadmap sync` = the one writer) is released and forjar-pinned
+#     fleet-wide (pin owner infra-8d), and a scratch `pmat work add` diff excludes roadmap.yaml;
+#   * check_readme_claims.sh FALSIFY-README-002 lets the CONTRACT_COUNT block LAG the merge tree on a PR
+#     (today it is an EQUALITY, so every contract-adding PR must edit the census and would deadlock here).
+# OPERATOR A2 binds in BOTH modes: an allowlist row past its expiry FAILS.
+STRICT=0
 
 usage() { printf 'usage: %s [--base <ref>] [--head <ref>] [--branch <name>] [--event <name>] [--pr <N>] [--allowlist <tsv>] | --self-test\n' "$PROG" >&2; exit 2; }
 
@@ -87,9 +95,18 @@ remedy() {
     printf '  The aggregate is rendered on main by `pmat roadmap sync` (pmat#1370) through a regen/* PR.\n'
 }
 
-# judge <repo> <base> <head> <branch> <event> <pr> <now epoch> <allowlist> -> 0 / 1 / 2
+# not_allowed <why> -> strict: remedy + 1 · report-only (A1): a REPORT line + 0
+not_allowed() {
+    if [ "$STRICT" = 1 ]; then printf '      %s\n' "$1"; remedy; return 1; fi
+    printf '      %s\n' "$1"
+    printf 'REPORT %s: REPORT-ONLY (operator A1) until pmat#1370 is released + forjar-pinned and FALSIFY-README-002 lets the count lag; this diff WILL be refused once STRICT=1\n' "$PROG"
+    remedy; return 0
+}
+
+# judge <repo> <base> <head> <branch> <event> <pr> <now epoch> <allowlist> -> 0 / 1 / 2   (mode: $STRICT)
 judge() {
-    local repo=$1 base=$2 head=$3 branch=$4 event=$5 pr=$6 now=$7 tsv=$8
+    local repo=$1 base=$2 head=$3 branch=$4 event=$5 pr=$6 now=$7 tsv=$8 tag='NOTE '
+    [ "$STRICT" = 1 ] && tag='FAIL '
     local changed hits roadmap_hit=0 f others row rc_l ap ae ae_s
     case "$event" in
         merge_group|push)
@@ -113,32 +130,32 @@ judge() {
             printf 'PASS  %s: %s is the one writer'"'"'s regen PR and writes only the generated files (content judged by check_roadmap_fragment_required.sh + check_readme_claims.sh)\n' "$PROG" "$branch"
             return 0
         fi
-        printf 'FAIL  %s: regen branch %s writes generated files AND other paths; a regen PR carries nothing else:\n' "$PROG" "$branch"
+        printf '%s %s: regen branch %s writes generated files AND other paths; a regen PR carries nothing else:\n' "$tag" "$PROG" "$branch"
         sed 's/^/        /' <<<"$others"
-        return 1
+        not_allowed "a regen/* branch carries only the generated files"; return
     fi
 
-    [ "$roadmap_hit" = 1 ] && printf 'FAIL  %s: %s writes %s — main regenerates it; a PR writes only its fragment\n' "$PROG" "${branch:-<none>}" "$ROADMAP_FILE"
+    [ "$roadmap_hit" = 1 ] && printf '%s %s: %s writes %s — main regenerates it; a PR writes only its fragment\n' "$tag" "$PROG" "${branch:-<none>}" "$ROADMAP_FILE"
     if [ -n "$hits" ]; then
-        printf 'FAIL  %s: %s edits README census line(s) — main regenerates the counts:\n' "$PROG" "${branch:-<none>}"
+        printf '%s %s: %s edits README census line(s) — main regenerates the counts:\n' "$tag" "$PROG" "${branch:-<none>}"
         cut -c1-160 <<<"$hits" | sed 's/^/        /'
     fi
 
     rc_l=0; row=$(allow_lookup "$tsv" "$branch") || rc_l=$?
     case "$rc_l" in
         2) return 2 ;;
-        1) printf '      %s is not in %s — strict from day one (P4)\n' "${branch:-<none>}" "$tsv"; remedy; return 1 ;;
+        1) not_allowed "${branch:-<none>} is not in ${tsv#"$ROOT"/} — a new branch (P4)"; return ;;
     esac
     ap=${row%%$'\t'*}; ae=${row#*$'\t'}
     ae_s=$(to_epoch "$ae") || { printf '%s: ENV - cannot parse expiry %s\n' "$PROG" "$ae" >&2; return 2; }
     if [ -z "$pr" ]; then
-        printf '      allowlist row for %s is bound to PR #%s, and this run names no PR number, so the binding cannot be checked — RED\n' "$branch" "$ap"; remedy; return 1
+        not_allowed "allowlist row for $branch is bound to PR #$ap, and this run names no PR number, so the binding cannot be checked"; return
     fi
     if [ "$pr" != "$ap" ]; then
-        printf '      allowlist row for %s is bound to PR #%s; this is PR #%s — a new PR on the same branch is strict\n' "$branch" "$ap" "$pr"; remedy; return 1
+        not_allowed "allowlist row for $branch is bound to PR #$ap; this is PR #$pr — a new PR on the same branch is a new branch"; return
     fi
     if [ "$now" -ge "$ae_s" ]; then
-        printf '      allowlist row for %s (PR #%s) EXPIRED at %s — drop the generated-file edits\n' "$branch" "$ap" "$ae"; remedy; return 1
+        printf 'FAIL  %s: allowlist row for %s (PR #%s) EXPIRED at %s — drop the generated-file edits (operator A2: fails in every mode)\n' "$PROG" "$branch" "$ap" "$ae"; remedy; return 1
     fi
     printf 'ALLOWED %s: %s (PR #%s) is an in-flight row of %s until %s — the FAILs above are waived, not fixed; drop them the next time the branch is touched\n' "$PROG" "$branch" "$pr" "${tsv#"$ROOT"/}" "$ae"
     return 0
@@ -161,6 +178,7 @@ self_test() {
     printf '# b\tpr\texp\treason\nbatch/live\t101\t%s\tfixture\nbatch/stale\t102\t%s\tfixture\n' "$EXP_FUT" "$EXP_PAST" > "$TD/allow.tsv"
     printf 'batch/live\tnot-a-number\t%s\tfixture\n' "$EXP_FUT" > "$TD/bad.tsv"
 
+    local SHIPPED=$STRICT; STRICT=1   # the strict table runs first; the A1 report-only table follows
     row() { # row <want rc> <must-print> <label> <branch> <event> <pr> <allowlist> <shell mutating the tree>
         local want=$1 grepfor=$2 label=$3 branch=$4 event=$5 pr=$6 tsv=$7 mut=$8 rc=0
         n=$((n + 1))
@@ -188,19 +206,30 @@ self_test() {
     # the one writer's regen PR
     row 0 "one writer's regen PR" "regen/ branch writing only roadmap.yaml + README: PASS"   regen/roadmap pull_request '' "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml; sed -i "0,/1830/s//1831/" README.md'
     row 1 'AND other paths' "regen/ branch that also writes code: RED"                         regen/roadmap pull_request '' "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml; echo "// x" >> crates/x/src/lib.rs'
-    row 1 'strict from day one' "a branch merely CONTAINING regen/ is not a regen branch: RED" fix/regen/x pull_request '' "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
+    row 1 'a new branch' "a branch merely CONTAINING regen/ is not a regen branch: RED" fix/regen/x pull_request '' "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
     # the cop's allowlist: live row, expired row, wrong PR, no PR, new branch
     row 0 'ALLOWED' "allowlisted branch + its PR, before expiry: ALLOWED"                     batch/live pull_request 101 "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
     row 1 'EXPIRED' "allowlisted branch past its expiry: RED"                                 batch/stale pull_request 102 "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
-    row 1 'a new PR on the same branch is strict' "allowlisted branch, DIFFERENT PR number: RED" batch/live pull_request 999 "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
+    row 1 'a new PR on the same branch is a new branch' "allowlisted branch, DIFFERENT PR number: RED" batch/live pull_request 999 "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
     row 1 'cannot be checked' "allowlisted branch, NO PR number: RED"                         batch/live pull_request '' "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
-    row 1 'strict from day one' "a NEW branch not in the allowlist: RED"                      batch/new pull_request 103 "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
-    row 1 'strict from day one' "an allowlisted name's PREFIX is not the branch: RED"          batch/liv pull_request 101 "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
+    row 1 'a new branch' "a NEW branch not in the allowlist: RED"                      batch/new pull_request 103 "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
+    row 1 'a new branch' "an allowlisted name's PREFIX is not the branch: RED"          batch/liv pull_request 101 "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
     row 0 'writes no generated file' "a clean diff never reads the allowlist (malformed table ignored)" fix/a pull_request '' "$TD/bad.tsv" 'echo "// x" >> crates/x/src/lib.rs'
     row 2 'malformed allowlist row' "a malformed allowlist row is ENV (exit 2), never a pass" batch/live pull_request 101 "$TD/bad.tsv" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
     # shapes
     row 0 'REPORT' "merge_group shape: REPORT, exit 0"                                        '' merge_group '' "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
     row 0 'REPORT' "push shape: REPORT, exit 0"                                               '' push '' "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
+    # OPERATOR A1: report-only for every non-allowlist branch; A2: an expired row FAILS in every mode
+    STRICT=0
+    row 0 'REPORT-ONLY' "A1 report-only: a NEW branch writing roadmap.yaml is REPORTED, exit 0"      batch/new pull_request 103 "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
+    row 0 'REPORT-ONLY' "A1 report-only: a README census bump is REPORTED, exit 0"                   fix/a pull_request '' "$A" 'sed -i "0,/1830/s//1831/" README.md'
+    row 0 'REPORT-ONLY' "A1 report-only: regen/ + code is REPORTED, exit 0"                          regen/roadmap pull_request '' "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml; echo "// x" >> crates/x/src/lib.rs'
+    row 0 'REPORT-ONLY' "A1 report-only: an allowlisted branch under a DIFFERENT PR is REPORTED"     batch/live pull_request 999 "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
+    row 1 'EXPIRED' "A2: an allowlist row PAST its expiry is RED even in report-only mode"           batch/stale pull_request 102 "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
+    row 0 'ALLOWED' "A1 report-only: a live allowlist row is still ALLOWED"                          batch/live pull_request 101 "$A" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
+    row 0 'writes no generated file' "A1 report-only: a clean diff still PASSES"                     fix/a pull_request '' "$A" 'echo "// x" >> crates/x/src/lib.rs'
+    row 2 'malformed allowlist row' "A1 report-only: a malformed allowlist is still ENV 2"           batch/live pull_request 101 "$TD/bad.tsv" 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
+    STRICT=$SHIPPED
     n=$((n + 1)); local rc=0
     judge "$R" deadbeefdeadbeefdeadbeefdeadbeefdeadbeef "$BASE" fix/a pull_request '' "$NOW" "$A" > "$TD/out.$n" 2>&1 || rc=$?
     if [ "$rc" = 2 ]; then printf 'ok    row %-2s rc=2  an unresolvable base is ENV, never a pass\n' "$n"; else printf 'FAIL  row %-2s rc=%s (wanted 2)  unresolvable base\n' "$n" "$rc"; red=1; fi
@@ -223,6 +252,12 @@ self_test() {
         printf 'ok    row %-2s the real allowlist: %s row(s) <= %s, all parse, none past %s\n' "$n" "$real_rows" "$ALLOWLIST_MAX_ROWS" "$ALLOWLIST_CAP"
     else printf 'FAIL  row %-2s the real allowlist breaks the cop ruling (%s rows, cap %s)\n' "$n" "$real_rows" "$ALLOWLIST_MAX_ROWS"; red=1; fi
 
+    n=$((n + 1))
+    case "$SHIPPED" in
+        0) printf 'ok    row %-2s shipped mode: STRICT=0 (operator A1 report-only; flip in one commit when the header'"'"'s conditions hold)\n' "$n" ;;
+        1) printf 'ok    row %-2s shipped mode: STRICT=1\n' "$n" ;;
+        *) printf 'FAIL  row %-2s STRICT=%q is neither 0 nor 1\n' "$n" "$SHIPPED"; red=1 ;;
+    esac
     printf '%s/%s rows, %s\n' "$n" "$n" "$([ "$red" = 0 ] && echo 'all as expected' || echo 'FAILED')"
     return "$red"
 }
