@@ -1468,6 +1468,10 @@ pub(crate) enum F2RejectReason {
     Top1,
     /// The next-token distributions differ by more than [`F2_KL_MAX`].
     Kl,
+    /// The two sides do not have the same shape: a different number of positions,
+    /// or rows of different (or zero) vocabulary length. Never truncated to the
+    /// shorter side — the missing part is exactly what was not checked.
+    Shape,
 }
 
 impl F2RejectReason {
@@ -1478,6 +1482,7 @@ impl F2RejectReason {
             Self::NonFinite => "non-finite logits",
             Self::Top1 => "top-1 disagreement",
             Self::Kl => "top-k KL above the ceiling",
+            Self::Shape => "CPU and GPU logits differ in shape",
         }
     }
 }
@@ -1551,6 +1556,29 @@ pub(crate) fn f2_multi_position_report(
     // Detect the benign pos0 near-tie purely for diagnostics (it never causes reject).
     let pos0_argmax_flip = n > 0 && argmax_u32(&cpu_per_pos[0]) != argmax_u32(&gpu_per_pos[0]);
 
+    // #4313 review: fail closed on a shape mismatch. A GPU that returned fewer
+    // positions, or shorter rows, must not pass on the part it did return.
+    let shape_bad = |pos: usize| F2PositionReport {
+        accepted: false,
+        pos0_argmax_flip,
+        min_cosine_real: 1.0,
+        max_kl_real: 0.0,
+        first_bad_pos: pos,
+        first_bad_cpu_argmax: 0,
+        first_bad_gpu_argmax: 0,
+        first_bad_cosine: 0.0,
+        first_bad_kl: f32::INFINITY,
+        first_bad_reason: F2RejectReason::Shape,
+    };
+    if cpu_per_pos.len() != gpu_per_pos.len() {
+        return shape_bad(n);
+    }
+    if let Some(pos) = (1..n).find(|&p| {
+        cpu_per_pos[p].is_empty() || cpu_per_pos[p].len() != gpu_per_pos[p].len()
+    }) {
+        return shape_bad(pos);
+    }
+
     for pos in 1..n {
         let cpu = &cpu_per_pos[pos];
         let gpu = &gpu_per_pos[pos];
@@ -1605,11 +1633,15 @@ pub(crate) fn f2_top1_near_tie(cpu: &[f32], cpu_argmax: u32, gpu_argmax: u32) ->
 /// f64-accumulated; each cell is floored at 1e-12 so a vanished cell is a large,
 /// finite penalty. Pure + GPU-free.
 pub(crate) fn f2_topk_kl(p_logits: &[f32], q_logits: &[f32], k: usize) -> f32 {
-    let n = p_logits.len().min(q_logits.len());
-    if n == 0 {
+    // Rows of different length are not comparable: an infinite divergence, never a
+    // comparison of the common prefix.
+    if p_logits.len() != q_logits.len() {
+        return f32::INFINITY;
+    }
+    if p_logits.is_empty() {
         return 0.0;
     }
-    let (p, q) = (&p_logits[..n], &q_logits[..n]);
+    let (p, q) = (p_logits, q_logits);
     let mut idx = top_k_indices(p, k);
     idx.extend(top_k_indices(q, k));
     idx.sort_unstable();
@@ -2589,6 +2621,32 @@ mod f2_prob_space_4313_tests {
         let (c, g) = probe(cpu, gpu);
         let r = f2_multi_position_report(&c, &g);
         assert_eq!(r.first_bad_reason, F2RejectReason::Top1, "{r:?}");
+    }
+
+    /// #4313 review (agy lane + delegate): a shape mismatch was truncated to the
+    /// shorter side and could pass. It is a reject now, at the first bad position.
+    #[test]
+    fn a_shape_mismatch_is_rejected_never_truncated() {
+        let (c, g) = probe(peaked(300, 2.0), peaked(300, 2.0));
+        let mut short_pos = g.clone();
+        short_pos.pop();
+        let r = f2_multi_position_report(&c, &short_pos);
+        assert!(!r.accepted && r.first_bad_reason == F2RejectReason::Shape, "{r:?}");
+        assert_eq!(r.first_bad_pos, 2);
+
+        let mut short_row = g.clone();
+        short_row[2].truncate(V - 1);
+        let r = f2_multi_position_report(&c, &short_row);
+        assert!(!r.accepted && r.first_bad_reason == F2RejectReason::Shape, "{r:?}");
+
+        let mut empty = g;
+        empty[1].clear();
+        let mut empty_cpu = c;
+        empty_cpu[1].clear();
+        let r = f2_multi_position_report(&empty_cpu, &empty);
+        assert!(!r.accepted && r.first_bad_pos == 1, "{r:?}");
+
+        assert!(f2_topk_kl(&[1.0, 2.0], &[1.0], 16).is_infinite());
     }
 
     #[test]
