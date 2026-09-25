@@ -320,67 +320,6 @@ impl AprV2Model {
         Ok(logits)
     }
 
-    /// Autoregressive text generation.
-    ///
-    /// Generates tokens one at a time using greedy decoding (argmax sampling).
-    ///
-    /// # Arguments
-    ///
-    /// * `input_tokens` - Initial token sequence (prompt)
-    /// * `max_new_tokens` - Maximum number of new tokens to generate
-    /// * `eos_token_id` - End-of-sequence token ID (stops generation early)
-    ///
-    /// # Returns
-    ///
-    /// Complete token sequence including input and generated tokens
-    ///
-    /// # Errors
-    ///
-    /// Returns error if model is not a transformer or forward pass fails
-    pub fn generate(
-        &self,
-        input_tokens: &[u32],
-        max_new_tokens: usize,
-        eos_token_id: Option<u32>,
-    ) -> Result<Vec<u32>> {
-        if input_tokens.is_empty() {
-            return Err(RealizarError::InvalidShape {
-                reason: "Input tokens cannot be empty".to_string(),
-            });
-        }
-
-        let mut tokens = input_tokens.to_vec();
-        let vocab_size = self.metadata.vocab_size.unwrap_or(0);
-
-        for _ in 0..max_new_tokens {
-            // Forward pass to get logits for next token
-            let logits = self.forward(&tokens)?;
-
-            // Greedy sampling: pick token with highest logit
-            let next_token = logits
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                .map_or(0, |(idx, _)| idx as u32);
-
-            // Check for EOS
-            if let Some(eos) = eos_token_id {
-                if next_token == eos {
-                    break;
-                }
-            }
-
-            // Sanity check: don't append invalid tokens
-            if (next_token as usize) >= vocab_size && vocab_size > 0 {
-                break;
-            }
-
-            tokens.push(next_token);
-        }
-
-        Ok(tokens)
-    }
-
     /// Find first matching tensor name from candidates.
     /// Handles GGUF/SafeTensors/HuggingFace naming variations.
     pub fn find_tensor_name(&self, candidates: &[&str]) -> Result<String> {

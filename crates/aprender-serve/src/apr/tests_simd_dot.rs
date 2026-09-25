@@ -258,27 +258,6 @@
     }
 
     // =========================================================================
-    // AprV2Model::generate tests
-    // =========================================================================
-
-    #[test]
-    fn test_apr_v2_model_generate_empty_input() {
-        let data = create_test_apr_model();
-        let model = AprV2Model::from_bytes(data).expect("APR operation failed");
-        let result = model.generate(&[], 10, None);
-        assert!(result.is_err()); // Empty input should fail
-    }
-
-    #[test]
-    fn test_apr_v2_model_generate_not_transformer() {
-        let data = create_test_apr_model();
-        let model = AprV2Model::from_bytes(data).expect("APR operation failed");
-        // Model without transformer config should fail on generate
-        let result = model.generate(&[1, 2, 3], 5, None);
-        assert!(result.is_err());
-    }
-
-    // =========================================================================
     // Additional dtype_to_ggml_qtype coverage
     // =========================================================================
 

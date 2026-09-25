@@ -394,19 +394,6 @@ fn test_forward_not_transformer() {
 // generate() error paths
 // ============================================================================
 
-#[test]
-fn test_generate_empty_tokens() {
-    let data = build_apr_bytes(
-        r#"{"hidden_size": 64, "num_layers": 1, "num_heads": 4, "vocab_size": 100}"#,
-        &[],
-    );
-    let model = AprV2Model::from_bytes(data).expect("should parse");
-    let result = model.generate(&[], 5, None);
-    assert!(result.is_err());
-    let err = format!("{}", result.unwrap_err());
-    assert!(err.contains("empty"));
-}
-
 // ============================================================================
 // find_tensor_name error path
 // ============================================================================

@@ -88,24 +88,6 @@ mod tests {
     }
 
     // =========================================================================
-    // AprV2Model generate error case
-    // =========================================================================
-
-    #[test]
-    fn test_generate_empty_input() {
-        let mut data = vec![0u8; 256];
-        data[0..4].copy_from_slice(&MAGIC);
-        data[4] = 2;
-        data[12..20].copy_from_slice(&64u64.to_le_bytes());
-        data[24..32].copy_from_slice(&64u64.to_le_bytes());
-        data[32..40].copy_from_slice(&64u64.to_le_bytes());
-
-        let model = AprV2Model::from_bytes(data).expect("load");
-        let result = model.generate(&[], 10, None);
-        assert!(result.is_err());
-    }
-
-    // =========================================================================
     // simd_dot tests
     // =========================================================================
 

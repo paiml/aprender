@@ -96,31 +96,6 @@
     // Generate Method Edge Cases
     // =========================================================================
 
-    #[test]
-    fn test_apr_model_generate_eos_stops() {
-        // Test that generation stops at EOS token
-        // (Requires a valid transformer model - using mock to verify logic)
-        let data = create_test_apr_model();
-        let model = AprV2Model::from_bytes(data).expect("should load");
-
-        // Empty input should fail
-        let result = model.generate(&[], 10, Some(2));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_apr_model_generate_max_tokens() {
-        let data = create_test_apr_model();
-        let model = AprV2Model::from_bytes(data).expect("should load");
-
-        // Test that generate with max_tokens=0 works (returns empty or immediate)
-        let result = model.generate(&[1, 2, 3], 0, None);
-        // Either succeeds with 0 tokens or returns an error - both are valid
-        if let Ok(tokens) = result {
-            assert!(tokens.len() <= 3); // At most initial tokens
-        }
-    }
-
     // =========================================================================
     // SimpleTokenizer Additional Tests
     // =========================================================================
