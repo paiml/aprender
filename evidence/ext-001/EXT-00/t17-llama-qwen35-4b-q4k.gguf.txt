@@ -1,0 +1,12 @@
+0.00.043.597 E ggml_cuda_init: failed to initialize CUDA: no CUDA-capable device is detected
+0.00.207.189 E gguf_init_from_reader: tensor 'model.visual.patch_embed.proj.weight' has invalid number of dimensions: 5 > 4
+0.00.207.195 E gguf_init_from_reader: failed to read tensor info
+0.00.348.589 E llama_model_load: error loading model: llama_model_loader: failed to load model from /mnt/nvme-raid0/tmp/ext-models/t17/qwen35-4b-q4k.gguf
+0.00.348.605 E llama_model_load_from_file_impl: failed to load model
+0.00.601.789 E common_fit_params: encountered an error while trying to fit params to free device memory: failed to load model
+0.00.807.274 E gguf_init_from_reader: tensor 'model.visual.patch_embed.proj.weight' has invalid number of dimensions: 5 > 4
+0.00.807.333 E gguf_init_from_reader: failed to read tensor info
+0.00.818.729 E llama_model_load: error loading model: llama_model_loader: failed to load model from /mnt/nvme-raid0/tmp/ext-models/t17/qwen35-4b-q4k.gguf
+0.00.818.772 E llama_model_load_from_file_impl: failed to load model
+0.00.818.794 E cmn  common_init_: failed to load model '/mnt/nvme-raid0/tmp/ext-models/t17/qwen35-4b-q4k.gguf'
+0.00.818.821 E llama_completion: error: unable to create context

@@ -1,0 +1,111 @@
+2026-09-25T12:39:45Z
+apr 0.69.3 (v0.69.3+no-git)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  APR Import Pipeline
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╭────────┬─────────────────────────────────────────────────────────────────────────────────╮
+│ Source │ /mnt/nvme-raid0/tmp/ext-models/Qwen3.5-4B@851bf6e8/model.safetensors.index.json │
+│ Output │ /mnt/nvme-raid0/tmp/ext-models/t17/qwen35-4b-bf16.apr                           │
+╰────────┴─────────────────────────────────────────────────────────────────────────────────╯
+
+╭──────────────┬───────╮
+│ Architecture │ Auto  │
+│   Validation │ Basic │
+╰──────────────┴───────╯
+
+  ◉ Importing
+[BUG-EXPORT-004] Vocab: base=248044, added=26, expected=0, final=248070
+[PMAT-221] Embedding 247587 BPE merge rules into APR metadata (SafeTensors path)
+[realizar#136] Streaming import: 2 shards, 738 tensors → /mnt/nvme-raid0/tmp/ext-models/t17/qwen35-4b-bf16.apr
+[realizar#136] Shard model.safetensors-00001-of-00002.safetensors: 87 tensors (87 F16 passthrough, 0 quantized)
+[realizar#136] Shard model.safetensors-00002-of-00002.safetensors: 651 tensors (603 F16 passthrough, 48 quantized)
+[realizar#136] Weight tying: duplicated model.language_model.embed_tokens.weight → lm_head.weight
+[realizar#136] Streaming write complete: 739 tensors (690 F16 passthrough, 49 quantized), 11.0 GB data
+[realizar#136] Written /mnt/nvme-raid0/tmp/ext-models/t17/qwen35-4b-bf16.apr (11.1 GB)
+
+
+  ─── Validation Report
+╭───────┬─────────────────────╮
+│ Score │ 0/0 checks that ran │
+│ Grade │ N/A                 │
+╰───────┴─────────────────────╯
+
+  ⚠ Import completed with warnings
+	Command being timed: "/mnt/nvme-raid0/tmp/ext-bin/apr-v0.69.3-x86_64-unknown-linux-gnu-cpu/apr import /mnt/nvme-raid0/tmp/ext-models/Qwen3.5-4B@851bf6e8/model.safetensors.index.json -o /mnt/nvme-raid0/tmp/ext-models/t17/qwen35-4b-bf16.apr --offline"
+	User time (seconds): 20.60
+	System time (seconds): 26.04
+	Percent of CPU this job got: 80%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:57.60
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 6301216
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 707
+	Minor (reclaiming a frame) page faults: 1447663
+	Voluntary context switches: 2376
+	Involuntary context switches: 6307
+	Swaps: 0
+	File system inputs: 4023416
+	File system outputs: 46352760
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+IMPORT_RC=0
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  APR Quantize
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╭────────┬───────────────────────────────────────────────────────╮
+│  Input │ /mnt/nvme-raid0/tmp/ext-models/t17/qwen35-4b-bf16.apr │
+│ Scheme │ Q4K                                                   │
+│ Output │ /mnt/nvme-raid0/tmp/ext-models/t17/qwen35-4b-q4k.gguf │
+╰────────┴───────────────────────────────────────────────────────╯
+
+  ◉ Quantizing to GGUF
+[BUG-EXPORT-004] Warning: No tokenizer.json found near /mnt/nvme-raid0/tmp/ext-models/t17/qwen35-4b-bf16.apr, GGUF may lack tokenizer metadata
+[P0-G] Padding APR-fallback tokenizer.ggml.tokens: 248070 + 250 placeholders = 248320
+[GH-211] Extracted 4 tokenizer entries from APR metadata
+[GGUF-EXPORT-001] Writing 18 metadata keys (arch=qwen3_5, layers=32, heads=40/16kv, hidden=2560)
+[GH-277] Family 'qwen3_5' has no gguf_tensor_template, using legacy mapping
+
+
+  ─── GGUF Quantization Report
+╭───────────────┬───────────╮
+│ Original size │ 11.05 GiB │
+│     GGUF size │ 6.86 GiB  │
+│       Tensors │ 739       │
+│        Format │ GGUF      │
+╰───────────────┴───────────╯
+
+  ✓ GGUF quantization successful
+	Command being timed: "/mnt/nvme-raid0/tmp/ext-bin/apr-v0.69.3-x86_64-unknown-linux-gnu-cpu/apr quantize -s q4k --format gguf -o /mnt/nvme-raid0/tmp/ext-models/t17/qwen35-4b-q4k.gguf /mnt/nvme-raid0/tmp/ext-models/t17/qwen35-4b-bf16.apr"
+	User time (seconds): 28.52
+	System time (seconds): 217.05
+	Percent of CPU this job got: 98%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 4:09.07
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 41592560
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 2549845
+	Minor (reclaiming a frame) page faults: 35093757
+	Voluntary context switches: 139
+	Involuntary context switches: 38040
+	Swaps: 0
+	File system inputs: 67799120
+	File system outputs: 14392992
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+QUANT_RC=0
+2026-09-25T12:44:51Z
+unmapped_tensor_warnings=738

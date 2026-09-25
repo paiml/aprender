@@ -1,0 +1,2 @@
+0.00.022.295 E ggml_cuda_init: failed to initialize CUDA: no CUDA-capable device is detected
+The capital of France is Paris. The capital
