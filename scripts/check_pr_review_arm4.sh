@@ -202,7 +202,7 @@ arm4() {
     fi
     echo "  A2  subject ($kind) diff $base..$head, patch-id $pid"
 
-    local dir best_dir='' best_head='' d h rp legacy=0 other=0 legacy_dir=''
+    local dir best_dir='' best_head='' d h rp legacy=0 other=0 legacy_dir='' legacy_dirs=()
     if [ ! -d "$root/$pr" ]; then
         echo "  A2  no receipt directory at $root/$pr" >&2
         echo "      S6.3: a missing receipt is RED, not skipped. S8 fixes" >&2
@@ -213,7 +213,7 @@ arm4() {
         d=${dir%/}
         [ -f "$d/receipt.intoto.jsonl" ] || continue
         rp=$(jq -r '.predicate.diff_patch_id // empty' "$d/receipt.intoto.jsonl" 2>/dev/null)
-        if [ -z "$rp" ]; then legacy=$((legacy + 1)); legacy_dir=$d; continue; fi
+        if [ -z "$rp" ]; then legacy=$((legacy + 1)); legacy_dirs+=("$d"); continue; fi
         if [ "$rp" != "$pid" ]; then other=$((other + 1)); continue; fi
         h=$(receipt_head "$d")
         # Several receipts may bind the same diff (a re-review); prefer the one whose
@@ -228,16 +228,25 @@ arm4() {
     #           unweakened. A legacy receipt that fails it is RED, exempt or not.
     #   queue   no commit binding exists for a squash; the signature (A3/A4), the PR
     #           ceiling and the 24h expiry are the whole of the check, by ruling.
-    if [ -z "$best_dir" ] && [ -n "$legacy_dir" ] && legacy_exempt "$pr"; then
-        h=$(receipt_head "$legacy_dir")
-        if [ "$kind" = queue ] || { [ -n "$h" ] && git -C "$REPO_ROOT" merge-base --is-ancestor "$h" "$head" >/dev/null 2>&1; }; then
+    #   Every legacy receipt is tried, not the last one listed: a PR re-reviewed before
+    #   #4421 holds several, and an older head that no longer binds must not hide one that does.
+    if [ -z "$best_dir" ] && [ "${#legacy_dirs[@]}" -gt 0 ] && legacy_exempt "$pr"; then
+        for d in "${legacy_dirs[@]}"; do
+            h=$(receipt_head "$d")
+            if [ -n "$h" ] && git -C "$REPO_ROOT" merge-base --is-ancestor "$h" "$head" >/dev/null 2>&1; then
+                legacy_dir=$d; break
+            fi
+        done
+        [ -z "$legacy_dir" ] && [ "$kind" = queue ] && legacy_dir=${legacy_dirs[0]}
+        h=$(receipt_head "${legacy_dir:-${legacy_dirs[0]}}")
+        if [ -n "$legacy_dir" ]; then
             best_dir=$legacy_dir; best_head=$h
             echo "  A2  LEGACY EXEMPT - $legacy_dir has no diff_patch_id (signed before #4421)."
             echo "      Accepted because PR $pr < $PR_REVIEW_LEGACY_BELOW (open when FLOW-04 merged), now"
             echo "      $(legacy_now) < $PR_REVIEW_LEGACY_UNTIL (24h after it), and ($kind) its head binds as"
             echo "      before #4421. Its signature is still checked (A3/A4)."
         else
-            echo "  A2  legacy receipt $legacy_dir: reviewed head ${h:-<none>} is not an ancestor of $head;" >&2
+            echo "  A2  none of the ${#legacy_dirs[@]} legacy receipt(s) reviewed an ancestor of $head;" >&2
             echo "      the exemption waives the diff binding, never the pre-#4421 ancestor rule." >&2
         fi
     fi
@@ -436,6 +445,19 @@ self_test() {
     corrupt_signature_line "$legacy_bad/evidence/pr-review/999/$head/receipt.intoto.jsonl.minisig" \
         || die_env "could not corrupt the legacy fixture signature"
 
+    # The legacy copy re-reviewed twice before #4421: a SECOND legacy receipt, listed
+    # after the good one, whose head is NOT an ancestor. The exemption must still bind
+    # the good one - not only the last receipt the glob returns.
+    local legacy_two="$ST_ROOT/legacy-two" ev2
+    cp -a "$legacy" "$legacy_two"
+    ev2="$legacy_two/evidence/pr-review/999/zz-$not_ancestor"
+    mkdir -p "$ev2"
+    jq -c --arg h "$not_ancestor" '.predicate.head_sha = $h' "$rcpt/receipt.intoto.jsonl" \
+        > "$ev2/receipt.intoto.jsonl" || die_env "could not write the second legacy receipt"
+    minisign -S -s "$fix/keys/pr-review-test-TEST-ONLY.key" -m "$ev2/receipt.intoto.jsonl" \
+        -t "arm4 self-test, second legacy" </dev/null >/dev/null 2>&1 \
+        || die_env "could not sign the second legacy receipt"
+
     # A copy whose receipt signature does not verify.
     local badsig="$ST_ROOT/badsig"
     cp -a "$repo" "$badsig"
@@ -497,6 +519,8 @@ self_test() {
         "$legacy" 999 "$tip"  PR_REVIEW_LEGACY_BELOW=999 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=1999
     row legacy-exempt-not-ancestor 1 "legacy receipt in the window, branch event, head NOT an ancestor: the old rule still binds" \
         "$legacy" 999 "$squash"  PR_REVIEW_LEGACY_BELOW=1000 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=1999
+    row legacy-two-last-stale     0 "two legacy receipts, the LAST listed not an ancestor: the other still binds" \
+        "$legacy_two" 999 "$tip"  PR_REVIEW_LEGACY_BELOW=1000 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=1999
     row legacy-exempt-queue       0 "legacy receipt in the window on the queue squash (the commit #4421 exists for)" \
         "$legacy" 999 "$squash"  PR_REVIEW_LEGACY_BELOW=1000 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=1999 GITHUB_EVENT_NAME=merge_group
     row legacy-exempt-bad-sig     1 "legacy receipt in the window with a corrupted signature is RED (A4 still runs)" \
@@ -522,7 +546,7 @@ self_test() {
         echo "--- $st_fail row(s) did not produce the required verdict ---" >&2
         return 1
     fi
-    echo "--- 22/22 rows, both polarities ---"
+    echo "--- 23/23 rows, both polarities ---"
     return 0
 }
 
