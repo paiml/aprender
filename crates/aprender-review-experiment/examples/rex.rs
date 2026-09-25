@@ -31,7 +31,7 @@
 //!   rows from quorum receipts and print shadow coverage. Exit 10 unless every
 //!   receipt carries an uncounted shadow row that leaves the width alone.
 //! - `ladder REPORT_JSON` REX-09: the lane's rung (shadow/tripwire/vote) from a
-//!   `rex-001-report-v1` report, with every reason it stopped below vote. Exit 0
+//!   `rex-001-report-v2` report, with every reason it stopped below vote. Exit 0
 //!   whatever the rung; the gates read `.mode`.
 //! - `ratchet record --file F --tag T --cell C --receipts R [--llama-receipts L
 //!   --llama-cell LC]` REX-10: append one `review-lane-perf-ratchet-v1` entry
@@ -130,11 +130,11 @@ fn prereg_cmd(check: bool) -> ExitCode {
     }
     let bad = prereg::verify(prereg::LOCK, &c);
     if bad.is_empty() {
-        println!("rex-prereg-v1 OK prereg_sha={}", c.prereg_sha());
+        println!("{} OK prereg_sha={}", prereg::SCHEME, c.prereg_sha());
         return ExitCode::SUCCESS;
     }
     for b in &bad {
-        eprintln!("rex-prereg-v1 DRIFT {b}");
+        eprintln!("{} DRIFT {b}", prereg::SCHEME);
     }
     ExitCode::from(1)
 }

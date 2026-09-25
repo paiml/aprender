@@ -5,6 +5,7 @@ use crate::receipt::tests::{row, EXPECT};
 fn s(id: &str, defect: bool, verdict: Verdict, localized: bool) -> Scored {
     Scored {
         id: id.into(),
+        class: if defect { Class::P } else { Class::G },
         defect,
         verdict,
         localized,
@@ -268,5 +269,55 @@ fn divergence_pairs_and_mcnemar_by_hand() {
         correctness_pairs(&[], &champ[..1]),
         vec![(false, false)],
         "missing challenger is wrong"
+    );
+}
+
+#[test]
+fn falsify_h1_is_verdict_identity_bytes_are_descriptive() {
+    let a = fixture();
+    let mut b = fixture();
+    b[0].output_sha = Some("other".into()); // bytes only
+    assert_eq!(
+        verdict_divergence(&a, &b).0,
+        0,
+        "a byte-only diff must not reject H1"
+    );
+    assert_eq!(
+        divergence(&a, &b).0,
+        1,
+        "H2/descriptive still sees the bytes"
+    );
+    b[3].verdict = Verdict::Fail;
+    assert_eq!(verdict_divergence(&a, &b).0, 1, "a verdict diff rejects H1");
+}
+
+#[test]
+fn h5_reads_class_r_only_and_h4_needs_three_parsed_lanes() {
+    let mut a = fixture();
+    a[1].class = Class::R; // d2
+    let (r, _) = paired_parsed_class(&a, &a, Class::R);
+    assert_eq!(r.len(), 1, "one parsed class-R item");
+    let (p, _) = paired_parsed_class(&a, &a, Class::P);
+    assert!(p.iter().all(|x| x.defect) && !p.is_empty());
+
+    let (all, dropped) = paired_parsed(&a, &a);
+    let (three, dropped3) = vs_voters_parsed(&a, [&a, &a]);
+    assert_eq!((three.len(), dropped3), (all.len(), dropped));
+    let mut agy = fixture();
+    agy[0].verdict = Verdict::Unparsed;
+    let (three, dropped3) = vs_voters_parsed(&a, [&a, &agy]);
+    assert_eq!((three.len(), dropped3), (all.len() - 1, dropped + 1));
+}
+
+#[test]
+fn error_pairs_mark_wrong_parsed_verdicts() {
+    let a = fixture();
+    let mut b = fixture();
+    b[0].verdict = Verdict::Pass; // d1 missed by b
+    let (ea, eb) = error_pairs(&a, &b);
+    assert_eq!(ea.len(), eb.len());
+    assert_eq!(
+        eb.iter().filter(|e| **e).count(),
+        ea.iter().filter(|e| **e).count() + 1
     );
 }

@@ -5,13 +5,13 @@ const PREREG: &str = "ef51087dc79bab0ad160e8a14f5b13e2ea43986b30c05dafc63c84c2dc
 fn report(h4: &str, h5: &str, ruling: &str) -> String {
     format!(
         r#"{{"schema":"{SCHEME}","prereg_sha":"{PREREG}","results":{{"hypotheses":[
-            {{"id":"H1","ci":[0.0,0.1],"verdict":"holds"}},{h4},{h5}]}}{ruling}}}"#
+            {{"id":"H1","p_holm":1.0,"verdict":"holds"}},{h4},{h5}]}}{ruling}}}"#
     )
 }
 
-const H4_OK: &str = r#"{"id":"H4","ci":[0.01,0.2],"verdict":"holds"}"#;
-const H5_OK: &str = r#"{"id":"H5","ci":[0.0,0.1],"verdict":"holds"}"#;
-const H4_FAIL: &str = r#"{"id":"H4","ci":[-0.05,0.1],"verdict":"fails"}"#;
+const H4_OK: &str = r#"{"id":"H4","ci":[0.01,0.2],"p_holm":0.01,"verdict":"holds"}"#;
+const H5_OK: &str = r#"{"id":"H5","ci":[0.0,0.1],"p_holm":0.04,"verdict":"holds"}"#;
+const H4_FAIL: &str = r#"{"id":"H4","ci":[-0.05,0.1],"p_holm":0.3,"verdict":"fails"}"#;
 const VOTE: &str = r#","hardware_ruling":{"mode":"vote"}"#;
 
 #[test]
@@ -26,24 +26,41 @@ fn falsify_rxg_001_a_failing_h4_keeps_the_lane_in_shadow() {
     // The §7 REX-09 planted report: H4 failing, everything else passing.
     let d = decide(&report(H4_FAIL, H5_OK, VOTE), PREREG);
     assert_eq!(d.mode, Mode::Shadow, "{:?}", d.reasons);
-    // A "holds" verdict whose CI crosses 0 is not a pass either.
-    let crossing = r#"{"id":"H4","ci":[-0.01,0.2],"verdict":"holds"}"#;
+    // A "holds" verdict whose Holm p exceeds α is not a pass either.
+    for bad in [
+        r#"{"id":"H4","p_holm":0.051,"verdict":"holds"}"#,
+        r#"{"id":"H4","p_holm":NaN,"verdict":"holds"}"#,
+        r#"{"id":"H4","p_holm":-0.1,"verdict":"holds"}"#,
+        r#"{"id":"H4","verdict":"holds"}"#,
+        r#"{"id":"H3","p_holm":0.01,"verdict":"holds"}"#,
+    ] {
+        assert_eq!(
+            decide(&report(bad, H5_OK, VOTE), PREREG).mode,
+            Mode::Shadow,
+            "{bad}"
+        );
+    }
+}
+
+#[test]
+fn falsify_rxg_004_the_ci_is_report_only() {
+    // v2 §3 H4: the Holm p decides. A CI crossing 0 beside a passing p does
+    // not demote; a clean CI beside a failing p does not promote.
+    let crossing = r#"{"id":"H4","ci":[-0.01,0.2],"p_holm":0.02,"verdict":"holds"}"#;
     assert_eq!(
         decide(&report(crossing, H5_OK, VOTE), PREREG).mode,
-        Mode::Shadow
+        Mode::Vote
     );
-    let nan = r#"{"id":"H4","ci":[NaN,0.2],"verdict":"holds"}"#;
-    assert_eq!(decide(&report(nan, H5_OK, VOTE), PREREG).mode, Mode::Shadow);
-    let absent = r#"{"id":"H3","ci":[0.1,0.2],"verdict":"holds"}"#;
+    let clean = r#"{"id":"H4","ci":[0.05,0.2],"p_holm":0.2,"verdict":"holds"}"#;
     assert_eq!(
-        decide(&report(absent, H5_OK, VOTE), PREREG).mode,
+        decide(&report(clean, H5_OK, VOTE), PREREG).mode,
         Mode::Shadow
     );
 }
 
 #[test]
 fn falsify_rxg_002_h4_alone_is_tripwire_never_vote() {
-    let h5_fail = r#"{"id":"H5","ci":[-0.1,0.0],"verdict":"fails"}"#;
+    let h5_fail = r#"{"id":"H5","ci":[-0.1,0.0],"p_holm":0.6,"verdict":"fails"}"#;
     let d = decide(&report(H4_OK, h5_fail, VOTE), PREREG);
     assert_eq!(d.mode, Mode::Tripwire, "{:?}", d.reasons);
     assert!(d.reasons.iter().any(|r| r.starts_with("H5")));
@@ -60,7 +77,7 @@ fn falsify_rxg_002_h4_alone_is_tripwire_never_vote() {
 fn falsify_rxg_003_only_a_locked_confirmatory_report_is_read() {
     let ok = report(H4_OK, H5_OK, VOTE);
     let cases = [
-        ("foreign schema", ok.replace(SCHEME, "rex-001-report-v0")),
+        ("v1 schema", ok.replace(SCHEME, "rex-001-report-v1")),
         ("stale prereg", ok.replace(PREREG, &"0".repeat(64))),
         (
             "exploratory",

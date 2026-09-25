@@ -1,7 +1,7 @@
-# REX-001 pre-registration lock (rex-prereg-v1). Written once by REX-00.
+# REX-001 pre-registration lock (rex-prereg-v2). Written by the spec v2 re-lock; v1 had 0 data rows.
 # A mismatch against the tree is a new spec version (R-1), never an edit here.
-spec_s2_s5=dee8b66cbbaa417a9231d1c1332f91975e32bf2ab7731c5390822f92486617e9
-stats_rs=a892d50abebea3f4f879dc7c99391719da0f60c0557c9daeb74f15f7deec2784
-analysis_plan=8ae9213b8092c853e5ab8379827169712b9297d727ce27eaeeb617fbfe2fc43f
+spec_s2_s5=8b270ef73e852dc095e04361551c887a1c90ffcd49f580f324df7dd8da2b7705
+stats_rs=9719039b6cd37f8d3bf99847287d7470f4205acb957d3c90a16cdb9497c7b2d0
+analysis_plan=0672a3d2221ae337daca03e3e392aab66d8f6212f0434fab4b24173f6c8f2e04
 prompt_v1=dd9d67c2df458d92d66aed65fd7f3f6f2e5602499c05e6b0967465b9bd2662e6
-prereg_sha=ef51087dc79bab0ad160e8a14f5b13e2ea43986b30c05dafc63c84c2dc21cdc0
+prereg_sha=1f4acb3dca8fa0ac79aab2aefb666c3752b5404713796c3b9116f0b64a1d0b05

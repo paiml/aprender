@@ -1,4 +1,4 @@
-//! REX-00 pre-registration lock (contract `rex-prereg-v1`, rule R-1).
+//! REX-00 pre-registration lock (contract `rex-prereg-v1`, scheme `rex-prereg-v2`, rule R-1).
 //!
 //! The prereg sha is a sha256 over the sha256 of four frozen components, in a
 //! fixed order:
@@ -28,7 +28,7 @@ pub const PROMPT_V1: &str = include_str!("../../../docs/audits/review-corpus/pro
 pub const LOCK: &str = include_str!("../../../docs/audits/rex-001/prereg.lock");
 
 /// Contract id stamped into the digest so a lock can never match another scheme.
-pub const SCHEME: &str = "rex-prereg-v1";
+pub const SCHEME: &str = "rex-prereg-v2";
 
 /// Lowercase hex sha256.
 #[must_use]
@@ -99,7 +99,7 @@ impl Components {
     #[must_use]
     pub fn render_lock(&self) -> String {
         format!(
-            "# REX-001 pre-registration lock (rex-prereg-v1). Written once by REX-00.\n\
+            "# REX-001 pre-registration lock (rex-prereg-v2). Written by the spec v2 re-lock; v1 had 0 data rows.\n\
              # A mismatch against the tree is a new spec version (R-1), never an edit here.\n\
              spec_s2_s5={}\nstats_rs={}\nanalysis_plan={}\nprompt_v1={}\nprereg_sha={}\n",
             self.spec_s2_s5,

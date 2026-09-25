@@ -1,11 +1,13 @@
 //! REX-09 promotion ladder: H4/H5 as the shadow → tripwire → vote gates.
 //!
-//! The ladder reads only a `rex-001-report-v1` report (§9; JSON) and later
+//! The ladder reads only a `rex-001-report-v2` report (§9; JSON) and later
 //! §5.4 reports of the same schema. It is sequential and fails closed:
 //! - **shadow** is the default, and anything the ladder cannot read keeps it;
-//! - **tripwire** needs H4 (4B precision ≥ the lowest voting lane's; the
-//!   paired-bootstrap CI lower bound ≥ 0);
-//! - **vote** needs H4 and H5 (4B recall ≥ the Claude lane's, same test).
+//! - **tripwire** needs H4 (spec v2: 4B precision − min(Haiku, agy), min taken
+//!   inside each bootstrap resample; decided by the Holm-adjusted one-sided p);
+//! - **vote** needs H4 and H5 (4B class-R recall ≥ the Claude lane's, same test).
+//!
+//! The CI is report-only in v2: the ladder reads `verdict` and `p_holm`, never `ci`.
 //!
 //! H5 without H4 is still shadow (R-11: apr casts no deciding vote before
 //! both hold). The §4.5 queue budget caps the rung: a `hardware_ruling.mode`
@@ -13,7 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const SCHEME: &str = "rex-001-report-v1";
+pub const SCHEME: &str = "rex-001-report-v2";
 
 /// A rung of the ladder, lowest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -27,8 +29,10 @@ pub enum Mode {
 #[derive(Debug, Deserialize)]
 struct Hypothesis {
     id: String,
+    /// Holm-adjusted one-sided p over H1–H6 (spec v2 §3). `ci` may be present
+    /// and is ignored: it is report-only.
     #[serde(default)]
-    ci: Option<[f64; 2]>,
+    p_holm: Option<f64>,
     #[serde(default)]
     verdict: Option<String>,
 }
@@ -63,8 +67,8 @@ pub struct Decision {
     pub reasons: Vec<String>,
 }
 
-/// H4/H5 hold only on an explicit `holds` verdict with a finite CI whose
-/// lower bound is ≥ 0. Any other shape is "does not hold", with the reason.
+/// H4/H5 hold only on an explicit `holds` verdict whose Holm-adjusted p is
+/// finite and ≤ α. Any other shape is "does not hold", with the reason.
 fn holds(r: &Report, id: &str) -> Result<(), String> {
     let h = r
         .results
@@ -74,9 +78,12 @@ fn holds(r: &Report, id: &str) -> Result<(), String> {
     if h.verdict.as_deref() != Some("holds") {
         return Err(format!("{id}: verdict {:?}", h.verdict));
     }
-    match h.ci {
-        Some([lo, hi]) if lo.is_finite() && hi.is_finite() && lo >= 0.0 => Ok(()),
-        ci => Err(format!("{id}: CI {ci:?} lower bound is not ≥ 0")),
+    match h.p_holm {
+        Some(p) if p.is_finite() && (0.0..=crate::stats::ALPHA).contains(&p) => Ok(()),
+        p => Err(format!(
+            "{id}: Holm p {p:?} is not ≤ {}",
+            crate::stats::ALPHA
+        )),
     }
 }
 

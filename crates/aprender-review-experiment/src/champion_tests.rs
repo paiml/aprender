@@ -8,6 +8,11 @@ fn rows(verdict: impl Fn(usize) -> Verdict) -> Vec<Scored> {
             let v = verdict(i);
             Scored {
                 id: format!("t{i:02}"),
+                class: if i < 30 {
+                    crate::corpus::Class::P
+                } else {
+                    crate::corpus::Class::G
+                },
                 defect: i < 30,
                 verdict: v,
                 localized: false,
