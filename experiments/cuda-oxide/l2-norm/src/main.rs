@@ -34,7 +34,7 @@
 // prefixed `RECEIPT ` per variant; `receipt.sh` adds host facts and writes
 // evidence/kernels/gdn_l2_norm/<host>.json.
 
-use cuda_core::{CudaContext, DeviceBuffer, LaunchConfig1D};
+use cuda_core::{CudaContext, DeviceBuffer, IntoResult, LaunchConfig1D, sys};
 use cuda_device::{
     DisjointSlice, LinearTiles, cuda_module, float, kernel, launch_bounds, launch_contract, thread,
     warp,
@@ -185,7 +185,12 @@ struct Measured {
     cos: f64,
     maxdiff: f32,
     unit_err: f64,
+    /// Device time per launch, from a CUDA-graph replay (the gated number).
     us: f64,
+    /// Eager per-launch time: back-to-back stream launches. At ~2 us per kernel
+    /// this measures host submission as much as the kernel, and on yoga it was
+    /// bimodal (ratio 0.92 or 1.38 run to run), so it is recorded, never gated.
+    eager_us: f64,
 }
 
 impl Measured {
@@ -194,8 +199,8 @@ impl Measured {
     }
 }
 
-/// GPU-event median of 5 x 100 warm launches, in microseconds per launch.
-fn time_us(stream: &Arc<cuda_core::CudaStream>, mut launch: impl FnMut()) -> f64 {
+/// GPU-event median of 5 x 100 warm eager launches, in microseconds per launch.
+fn time_eager_us(stream: &Arc<cuda_core::CudaStream>, mut launch: impl FnMut()) -> f64 {
     for _ in 0..20 {
         launch();
     }
@@ -216,13 +221,69 @@ fn time_us(stream: &Arc<cuda_core::CudaStream>, mut launch: impl FnMut()) -> f64
     times[times.len() / 2]
 }
 
-fn measure(got: &[f32], x: &[f32], us: f64) -> Measured {
+/// GPU-event median of 5 replays of a CUDA graph holding 100 captured launches,
+/// in microseconds per launch. The graph takes host submission out of the number,
+/// so it is the kernel's device time plus the graph's per-node cost, the same for
+/// both authorings. Needs a real (non-legacy) stream: capture refuses the null one.
+fn time_graph_us(stream: &Arc<cuda_core::CudaStream>, mut launch: impl FnMut()) -> f64 {
+    const NODES: u32 = 100;
+    let s = stream.cu_stream();
+    assert!(!s.is_null(), "graph capture needs a created stream, not the legacy default");
+    // SAFETY: `s` is a live stream owned by `stream`; the graph and its executable
+    // are created, launched on `s` and destroyed inside this function, and the
+    // captured launches reference buffers the caller keeps alive across the call.
+    let exec = unsafe {
+        sys::cuStreamBeginCapture_v2(
+            s,
+            sys::CUstreamCaptureMode_enum_CU_STREAM_CAPTURE_MODE_THREAD_LOCAL,
+        )
+        .result()
+        .expect("begin capture");
+        for _ in 0..NODES {
+            launch();
+        }
+        let mut graph = std::ptr::null_mut();
+        sys::cuStreamEndCapture(s, &mut graph)
+            .result()
+            .expect("end capture");
+        let mut exec = std::ptr::null_mut();
+        sys::cuGraphInstantiateWithFlags(&mut exec, graph, 0)
+            .result()
+            .expect("instantiate");
+        sys::cuGraphDestroy(graph).result().expect("destroy graph");
+        exec
+    };
+    // SAFETY: `exec` is the executable instantiated above, `s` its stream.
+    let replay = || unsafe { sys::cuGraphLaunch(exec, s) }.result().expect("graph launch");
+    for _ in 0..3 {
+        replay();
+    }
+    stream.synchronize().expect("warmup sync");
+    let flags = Some(cuda_core::sys::CUevent_flags_enum_CU_EVENT_DEFAULT);
+    let mut times: Vec<f64> = (0..5)
+        .map(|_| {
+            let start = stream.record_event(flags).expect("event");
+            replay();
+            let end = stream.record_event(flags).expect("event");
+            f64::from(start.elapsed_ms(&end).expect("elapsed")) * 1000.0 / f64::from(NODES)
+        })
+        .collect();
+    // SAFETY: nothing else holds `exec`; its replays completed in elapsed_ms.
+    unsafe { sys::cuGraphExecDestroy(exec) }
+        .result()
+        .expect("destroy exec");
+    times.sort_by(f64::total_cmp);
+    times[times.len() / 2]
+}
+
+fn measure(got: &[f32], x: &[f32], us: f64, eager_us: f64) -> Measured {
     let want = cpu_l2_norm_per_head(x, EPS);
     Measured {
         cos: cosine(got, &want),
         maxdiff: max_abs_diff(got, &want),
         unit_err: worst_unit_error(got),
         us,
+        eager_us,
     }
 }
 
@@ -233,7 +294,7 @@ fn run_oxide(
     rsqrt: bool,
     perf: bool,
 ) -> Measured {
-    let stream = ctx.default_stream();
+    let stream = ctx.new_stream().expect("stream");
     let x = make_inputs(heads, 0x3522_0002 + heads as u64);
     let d_x = DeviceBuffer::from_host(&stream, &x).expect("x");
     let mut d_out = DeviceBuffer::<f32>::zeroed(&stream, heads * HEAD_DIM).expect("out");
@@ -254,18 +315,21 @@ fn run_oxide(
     };
     launch(&mut d_out);
     let got = d_out.to_host_vec(&stream).expect("download");
-    let us = if perf {
-        time_us(&stream, || launch(&mut d_out))
+    let (us, eager_us) = if perf {
+        (
+            time_graph_us(&stream, || launch(&mut d_out)),
+            time_eager_us(&stream, || launch(&mut d_out)),
+        )
     } else {
-        0.0
+        (0.0, 0.0)
     };
-    measure(&got, &x, us)
+    measure(&got, &x, us, eager_us)
 }
 
 /// The hand PTX, loaded from the committed baseline and launched on the same data:
 /// grid (heads), block (32), one pointer param, in place.
 fn run_handptx(ctx: &Arc<CudaContext>, ptx: &str, heads: usize) -> (Measured, u32) {
-    let stream = ctx.default_stream();
+    let stream = ctx.new_stream().expect("stream");
     let x = make_inputs(heads, 0x3522_0002 + heads as u64);
     let module = ctx.load_module_from_ptx_src(ptx).expect("load hand PTX");
     let func = module
@@ -296,9 +360,9 @@ fn run_handptx(ctx: &Arc<CudaContext>, ptx: &str, heads: usize) -> (Measured, u3
     // does the same work on already-unit heads.
     launch();
     let got = d_x.to_host_vec(&stream).expect("download");
-    let m = measure(&got, &x, 0.0);
-    let us = time_us(&stream, &mut launch);
-    (Measured { us, ..m }, regs)
+    let us = time_graph_us(&stream, &mut launch);
+    let eager_us = time_eager_us(&stream, &mut launch);
+    (measure(&got, &x, us, eager_us), regs)
 }
 
 /// Register count of an oxide kernel, read back from the embedded module.
@@ -359,7 +423,7 @@ fn main() {
         );
         all_ok &= ok;
     }
-    println!("\n  heads | variant | oxide us | handPTX us | ratio | verdict");
+    println!("\n  heads | variant | oxide us | handPTX us | ratio | verdict | eager oxide/hand");
     for rsqrt in [false, true] {
         let (variant, entry) = if rsqrt {
             ("rsqrt", "l2_norm_rsqrt")
@@ -369,22 +433,27 @@ fn main() {
         let regs = oxide_registers(&ctx, entry);
         let mut worst_ratio = 0.0f64;
         let mut worst = (0.0f64, 0.0f64, 0usize);
+        let mut worst_eager = 0.0f64;
         let mut parity = (1.0f64, 0.0f32, 0.0f64);
         for heads in [16usize, 32, 48] {
             let o = run_oxide(&ctx, &module, heads, rsqrt, true);
             let (h, _) = run_handptx(&ctx, &ptx, heads);
             let ratio = o.us / h.us;
             let ok = ratio <= TIMING_RATIO_MAX;
+            let eager_ratio = o.eager_us / h.eager_us;
             println!(
-                "  {heads:>5} | {variant:>7} | {:>8.3} | {:>10.3} | {ratio:.3} | {}",
+                "  {heads:>5} | {variant:>7} | {:>8.3} | {:>10.3} | {ratio:.3} | {:>7} | {:.3}/{:.3} = {eager_ratio:.3}",
                 o.us,
                 h.us,
-                if ok { "GO" } else { "NO-GO" }
+                if ok { "GO" } else { "NO-GO" },
+                o.eager_us,
+                h.eager_us,
             );
             if ratio > worst_ratio {
                 worst_ratio = ratio;
                 worst = (o.us, h.us, heads);
             }
+            worst_eager = worst_eager.max(eager_ratio);
             parity = (
                 parity.0.min(o.cos),
                 parity.1.max(o.maxdiff),
@@ -396,7 +465,7 @@ fn main() {
         let parity_ok = parity.0 >= PARITY_COS && parity.1 < PARITY_MAXDIFF && parity.2 < 1e-4;
         // One line per variant; receipt.sh adds host, sha, ptxas and writes the file.
         println!(
-            "RECEIPT {{\"schema\":\"apr-kernel-receipt/v1\",\"kernel\":\"gdn_l2_norm\",\"variant\":\"{variant}\",\"entry\":\"{entry}\",\"authoring\":\"oxide\",\"cc\":\"{sm}\",\"head_dim\":{HEAD_DIM},\"parity\":{{\"cos_min\":{:.9},\"maxdiff_max\":{:.3e},\"unit_err_max\":{:.3e},\"cos_floor\":{PARITY_COS},\"maxdiff_ceiling\":{PARITY_MAXDIFF:e},\"unit_err_ceiling\":1e-4,\"pass\":{parity_ok}}},\"timing\":{{\"oxide_us\":{:.3},\"handptx_us\":{:.3},\"ratio\":{worst_ratio:.4},\"worst_heads\":{},\"ratio_max\":{TIMING_RATIO_MAX},\"pass\":{timing_ok}}},\"register_budget\":{{\"oxide\":{},\"handptx\":{regs_hand}}}}}",
+            "RECEIPT {{\"schema\":\"apr-kernel-receipt/v1\",\"kernel\":\"gdn_l2_norm\",\"variant\":\"{variant}\",\"entry\":\"{entry}\",\"authoring\":\"oxide\",\"cc\":\"{sm}\",\"head_dim\":{HEAD_DIM},\"parity\":{{\"cos_min\":{:.9},\"maxdiff_max\":{:.3e},\"unit_err_max\":{:.3e},\"cos_floor\":{PARITY_COS},\"maxdiff_ceiling\":{PARITY_MAXDIFF:e},\"unit_err_ceiling\":1e-4,\"pass\":{parity_ok}}},\"timing\":{{\"oxide_us\":{:.3},\"handptx_us\":{:.3},\"ratio\":{worst_ratio:.4},\"worst_heads\":{},\"ratio_max\":{TIMING_RATIO_MAX},\"method\":\"cuda-graph-100\",\"eager_ratio_max\":{worst_eager:.4},\"pass\":{timing_ok}}},\"register_budget\":{{\"oxide\":{},\"handptx\":{regs_hand}}}}}",
             parity.0,
             parity.1,
             parity.2,
