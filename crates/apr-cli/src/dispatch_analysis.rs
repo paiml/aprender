@@ -484,11 +484,13 @@ fn dispatch_analysis_commands_rest(cli: &Cli) -> Option<Result<(), CliError>> {
         return None;
     };
     let result = match ext {
+        // #3856 Row 2: `apr capability` reads an embedded contract, so it needs no
+        // inference feature.
+        ExtendedCommands::Capability { json } => commands::capability::run(*json || cli.json),
         // PP-066 R-0a: `apr devices` — an extended command dispatched from this
         // file because dispatch.rs's runtime dispatcher carries pre-existing
         // complexity debt the pre-commit gate refuses to let any edit ride on.
         #[cfg(feature = "inference")]
-        ExtendedCommands::Capability { json } => commands::capability::run(*json || cli.json),
         ExtendedCommands::Devices { json } => commands::devices::run(*json || cli.json),
         ExtendedCommands::OtlpLint {
             otlp_file,
