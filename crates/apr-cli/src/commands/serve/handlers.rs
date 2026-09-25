@@ -745,7 +745,12 @@ fn run_wgpu_server(app: axum::Router, config: &ServerConfig) -> Result<()> {
         );
         println!("  POST /v1/chat/completions - Chat completions (WGPU)");
         println!("  GET  /health              - Health check");
+
+        let drain = super::drain::DrainHandle::new(config.drain_timeout_secs);
+        let app = super::drain::layer(drain.clone(), app);
+
         axum::serve(listener, app)
+            .with_graceful_shutdown(super::drain::shutdown_after_drain(drain))
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Serve: {e}")))?;
         Ok::<(), CliError>(())
@@ -1486,8 +1491,11 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 
         print_apr_cpu_banner(&bind_addr, is_transformer);
 
+        let drain = super::drain::DrainHandle::new(config.drain_timeout_secs);
+        let app = super::drain::layer(drain.clone(), app);
+
         axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown_signal())
+            .with_graceful_shutdown(super::drain::shutdown_after_drain(drain))
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;
 

@@ -320,8 +320,11 @@ fn serve_router(state: realizar::api::AppState, config: &ServerConfig) -> Result
         );
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
+        let drain = super::drain::DrainHandle::new(config.drain_timeout_secs);
+        let app = super::drain::layer(drain.clone(), app);
+
         axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown_signal())
+            .with_graceful_shutdown(super::drain::shutdown_after_drain(drain))
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;
 
@@ -438,8 +441,11 @@ fn start_gguf_server_gpu_batched(
         );
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
+        let drain = super::drain::DrainHandle::new(config.drain_timeout_secs);
+        let app = super::drain::layer(drain.clone(), app);
+
         axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown_signal())
+            .with_graceful_shutdown(super::drain::shutdown_after_drain(drain))
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;
 
@@ -447,16 +453,4 @@ fn start_gguf_server_gpu_batched(
         println!("{}", "Server stopped".yellow());
         Ok(())
     })
-}
-
-// ============================================================================
-// Shutdown signal helper
-// ============================================================================
-
-/// Shutdown signal handler
-#[cfg(feature = "inference")]
-pub(crate) async fn shutdown_signal() {
-    tokio::signal::ctrl_c()
-        .await
-        .expect("Failed to install Ctrl+C handler");
 }

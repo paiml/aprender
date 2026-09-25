@@ -184,8 +184,11 @@ pub(crate) fn start_safetensors_server(model_path: &Path, config: &ServerConfig)
         }
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
+        let drain = super::drain::DrainHandle::new(config.drain_timeout_secs);
+        let app = super::drain::layer(drain.clone(), app);
+
         axum::serve(listener, app)
-            .with_graceful_shutdown(super::handlers::shutdown_signal())
+            .with_graceful_shutdown(super::drain::shutdown_after_drain(drain))
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;
 
@@ -345,8 +348,11 @@ pub(crate) fn start_sharded_safetensors_server(
         }
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
+        let drain = super::drain::DrainHandle::new(config.drain_timeout_secs);
+        let app = super::drain::layer(drain.clone(), app);
+
         axum::serve(listener, app)
-            .with_graceful_shutdown(super::handlers::shutdown_signal())
+            .with_graceful_shutdown(super::drain::shutdown_after_drain(drain))
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;
 
