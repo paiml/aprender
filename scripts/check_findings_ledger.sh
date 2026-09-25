@@ -96,6 +96,7 @@ PY
 }
 
 SELF_N=0
+SELF_FAILS=0
 self_test() {
     local good
     SELF_TMP="$(mktemp -d)"
@@ -112,7 +113,7 @@ self_test() {
         SELF_N=$((SELF_N + 1))
         if [ "$rc" -ne "$want" ] || ! grep -qF -- "$marker" <<< "$out"; then
             printf 'self-test FAIL %s: want rc=%s marker %q, got rc=%s:\n%s\n' "$name" "$want" "$marker" "$rc" "$out" >&2
-            return 1
+            SELF_FAILS=$((SELF_FAILS + 1))
         fi
     }
     case_ good 0 'OK: findings ledger: 1 row' "$good"
@@ -140,7 +141,7 @@ self_test() {
     SELF_N=$((SELF_N + 1))
     if [ "$rc" -ne 1 ] || ! grep -qF "b.jsonl:1: duplicate id 'F-1' (first at a.jsonl:1)" <<< "$out"; then
         printf 'self-test FAIL dup-files: rc=%s\n%s\n' "$rc" "$out" >&2
-        return 1
+        SELF_FAILS=$((SELF_FAILS + 1))
     fi
     # a file that is not *.jsonl is not ledger: README.md beside a good row
     mkdir -p "$tmp/readme"
@@ -151,6 +152,10 @@ self_test() {
     SELF_N=$((SELF_N + 1))
     if [ "$rc" -ne 0 ]; then
         printf 'self-test FAIL readme-ignored: rc=%s\n%s\n' "$rc" "$out" >&2
+        SELF_FAILS=$((SELF_FAILS + 1))
+    fi
+    if [ "$SELF_FAILS" -gt 0 ]; then
+        printf 'self-test FAILED: %s of %s case(s).\n' "$SELF_FAILS" "$SELF_N" >&2
         return 1
     fi
     printf 'self-test OK: %s case(s).\n' "$SELF_N"

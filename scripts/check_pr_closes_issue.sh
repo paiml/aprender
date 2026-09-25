@@ -105,6 +105,17 @@ ref_kind() { # ref_kind NUM -> pr | closed | issue | unknown
         2>/dev/null || printf 'unknown'
 }
 
+# issue_body NUM -> the issue's body on stdout, exit 1 when it cannot be read.
+# Same seam as ref_kind: PR_CLOSES_ISSUE_BODY_CMD pins it in the case table.
+issue_body() {
+    if [ -n "${PR_CLOSES_ISSUE_BODY_CMD:-}" ]; then
+        $PR_CLOSES_ISSUE_BODY_CMD "$1" 2>/dev/null
+        return
+    fi
+    command -v gh > /dev/null 2>&1 || return 1
+    gh api "repos/${PR_CLOSES_REPO:-paiml/aprender}/issues/$1" -q '.body // ""' 2>/dev/null
+}
+
 # AN ISSUE THAT IS ALREADY CLOSED CANNOT BE LEFT OPEN FOREVER.
 #
 # That sentence is this guard's entire purpose, so demanding a `no-close:`
@@ -218,7 +229,10 @@ check_body_text() {
 #     `Fixes paiml/aprender#N`); a pull request, a closed issue, or another
 #     repository's issue does not discharge anything;
 #   * a rule-20 row reference `Refs #P row <id>` to an open parent checklist issue
-#     (the PR ticks one line; only the last line's PR says `Closes #P`);
+#     whose body carries an UNTICKED line `- [ ] <id>: ...` (the PR ticks it; only
+#     the last line's PR says `Closes #P`). The row must exist and be open: a row
+#     ref closes nothing on merge, so `Refs #1 row x` against any long-lived open
+#     issue would otherwise discharge rule 18 with no effect at all;
 #   * a line `no-issue: <reason>` with a non-empty reason. It carries no closing
 #     keyword, so it cannot be the #3400 landmine.
 # An unresolvable target is RED `close-target-unverified`: a guess is not a close.
@@ -231,9 +245,29 @@ check_require_close() {
     repo_lc="$(printf '%s' "${PR_CLOSES_REPO:-paiml/aprender}" | tr '[:upper:]' '[:lower:]')"
     targets="$(printf '%s\n' "$body" | grep -oiE "$CLOSE_RE" | tr '[:upper:]' '[:lower:]' \
         | sed -nE "s@^[a-z]+[[:space:]]*:?[[:space:]]*(${repo_lc}|)#([0-9]+)\$@\\2@p" || true)"
-    rows="$(printf '%s\n' "$body" | grep -oiE "$ROW_REF_RE" | grep -oE '#[0-9]+' | tr -d '#' || true)"
     open=0; unverified=0; seen=" "
-    for n in $targets $rows; do
+    # Row refs first, as "P:id" pairs: the parent must be an open issue AND list the
+    # row unticked. Each pair is judged on its own; a bare parent number is not added
+    # to the close targets, so an open parent alone never discharges.
+    row_pairs="$(printf '%s\n' "$body" | grep -oiE "$ROW_REF_RE" \
+        | sed -nE 's@^[^#]*#([0-9]+)[[:space:]]+[Rr][Oo][Ww][[:space:]]+(.+)$@\1:\2@p' || true)"
+    for pair in $row_pairs; do
+        p="${pair%%:*}"; id="${pair#*:}"; id="${id%.}"   # a sentence-ending period is prose, not the id
+        case "$(ref_kind "$p")" in
+            issue) ;;
+            unknown) printf '  #%s row %s: parent state UNREADABLE\n' "$p" "$id"; unverified=$((unverified + 1)); continue ;;
+            *) printf '  #%s row %s: parent is not an open issue (does not discharge)\n' "$p" "$id"; continue ;;
+        esac
+        if ! pbody="$(issue_body "$p")"; then
+            printf '  #%s row %s: parent body UNREADABLE\n' "$p" "$id"; unverified=$((unverified + 1)); continue
+        fi
+        if printf '%s\n' "$pbody" | sed -nE 's/^[[:space:]]*[-*][[:space:]]+\[ \][[:space:]]+([^:[:space:]]+):.*/\1/p' | grep -qxF -- "$id"; then
+            printf '  discharges #%s row %s (open checklist line)\n' "$p" "$id"; open=$((open + 1))
+        else
+            printf '  #%s row %s: no unticked `- [ ] %s:` line in #%s (does not discharge)\n' "$p" "$id" "$id" "$p"
+        fi
+    done
+    for n in $targets; do
         case "$seen" in *" $n "*) continue ;; esac
         seen="$seen$n "
         case "$(ref_kind "$n")" in
@@ -290,6 +324,17 @@ case "${1:-}" in
 esac
 STUB
     chmod +x "${tmp}/kindstub.sh"
+    # Parent bodies for rule-20 row refs: 9002 lists row A8 open and A7 ticked;
+    # 9006 is an open issue whose body cannot be read; every other body is empty.
+    cat > "${tmp}/bodystub.sh" <<'STUB'
+#!/usr/bin/env bash
+case "${1:-}" in
+  9002) printf '## Collapsed rows\n- [ ] A8: findings ledger (#4455)\n- [x] A7: done (#4454)\n- [ ] A8b.1: sub row\n' ;;
+  9006) exit 1 ;;
+  *)    printf '' ;;
+esac
+STUB
+    chmod +x "${tmp}/bodystub.sh"
     # DERIVED, NEVER QUOTED. The success line used to print a literal "9
     # case(s)" -- true when written, and still 9 after four rows were added.
     # A count that cannot move is not a count, it is a sentence about the past.
@@ -377,7 +422,7 @@ STUB
         printf '%s' "$body" > "${tmp}/${name}.txt"
         got=0
         cases=$((cases + 1))
-        PR_CLOSES_REF_KIND_CMD="${tmp}/kindstub.sh" \
+        PR_CLOSES_REF_KIND_CMD="${tmp}/kindstub.sh" PR_CLOSES_ISSUE_BODY_CMD="${tmp}/bodystub.sh" \
             bash "$SELF_PATH" --require-close ${author:+--author "$author"} --body "${tmp}/${name}.txt" > "${tmp}/${name}.out" 2>&1 || got=$?
         if [ "$got" -ne "$want" ]; then
             printf 'FAIL case %s: expected exit %s, got %s\n' "$name" "$want" "$got" >&2
@@ -401,6 +446,13 @@ STUB
     run_rc_case "rc-closes-pr"        "Closes #9001"                                 1 "FAIL no-close"
     run_rc_case "rc-cross-repo"       "Fixes paiml/infra#9002"                       1 "FAIL no-close"
     run_rc_case "rc-row-ref-closed"   $'Refs #9004 row A8'                           1 "FAIL no-close"
+    # The row must be a real, unticked line of the parent (Sonnet-5 review of #4455).
+    run_rc_case "rc-row-ref-fabricated" $'Refs #9002 row x\nkeep-open: parent checklist' 1 "FAIL no-close"
+    run_rc_case "rc-row-ref-ticked"   $'Refs #9002 row A7\nkeep-open: parent checklist' 1 "FAIL no-close"
+    run_rc_case "rc-row-ref-prefix"   $'Refs #9002 row A\nkeep-open: parent checklist'  1 "FAIL no-close"
+    run_rc_case "rc-row-ref-dotted"   $'Refs #9002 row A8b.1\nkeep-open: parent checklist' 0 "PASS: discharges 1"
+    run_rc_case "rc-row-ref-period"   $'Ticks Refs #9002 row A8.\nkeep-open: parent checklist' 0 "PASS: discharges 1"
+    run_rc_case "rc-row-ref-no-body"  $'Refs #9006 row A8\nkeep-open: parent checklist' 1 "FAIL close-target-unverified"
     run_rc_case "rc-unresolvable"     "Closes #9003"                                 1 "FAIL close-target-unverified"
     # R-2 still runs first under the flag: a discharge does not excuse an un-closed citation.
     run_rc_case "rc-r2-still-applies" $'Closes #9002\nsee #9005'                     1 "non-closing ref"
