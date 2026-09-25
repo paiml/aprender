@@ -66,6 +66,9 @@ cuda = ["dep:trueno-gpu"]
 # at release time. Not in CI's default set, and not in the nightly full surface.
 timing-gate = []
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+aprender-update = { workspace = true }  # EPIC #4232 update check (not wasm32: ureq)
+
 [dev-dependencies]
 proptest = "1.9"
 tempfile = "3"

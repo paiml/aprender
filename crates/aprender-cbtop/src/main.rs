@@ -221,6 +221,7 @@ fn parse_output_format(s: &str) -> OutputFormat {
 }
 
 fn main() -> Result<(), CbtopError> {
+    sovereign_update::hook!("aprender-cbtop"); // EPIC #4232: `aprender-cbtop update`, and the startup notice
     let cli = Cli::parse();
 
     // Handle subcommands

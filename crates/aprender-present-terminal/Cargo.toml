@@ -28,6 +28,9 @@ unicode-segmentation = "1.12"
 # Error handling
 thiserror = "2.0"
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+aprender-update = { workspace = true, optional = true }  # EPIC #4232 update check (not wasm32: ureq)
+
 [dev-dependencies]
 proptest = { workspace = true }
 criterion = { workspace = true }
@@ -49,10 +52,10 @@ harness = false
 
 [features]
 default = []
-ptop = ["sysinfo", "clap", "serde_json"]
+ptop = ["dep:aprender-update", "sysinfo", "clap", "serde_json"]
 tui-compare = ["clap"]
 bench-tool = ["clap"]
-score = ["clap", "serde", "serde_json", "serde_yaml_ng"]
+score = ["dep:aprender-update", "clap", "serde", "serde_json", "serde_yaml_ng"]
 
 # SPEC-024: Enforcement features
 # These features require interface tests to exist and pass

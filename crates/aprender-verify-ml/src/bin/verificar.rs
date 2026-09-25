@@ -272,6 +272,7 @@ fn parse_language(s: &str) -> Language {
 
 #[allow(clippy::too_many_lines, clippy::unwrap_used)]
 fn main() {
+    sovereign_update::hook!("verificar"); // EPIC #4232: `verificar update`, and the startup notice
     let cli = Cli::parse();
 
     match cli.command {

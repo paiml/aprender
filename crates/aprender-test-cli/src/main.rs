@@ -27,6 +27,8 @@ use probador::{
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
+    #[cfg(not(target_arch = "wasm32"))]
+    sovereign_update::hook!("aprender-test-cli"); // EPIC #4232: `aprender-test-cli update`, and the startup notice
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

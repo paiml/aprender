@@ -22,6 +22,9 @@ clap.workspace = true
 unsafe_code = "allow"
 
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+aprender-update = { workspace = true }  # EPIC #4232 update check (not wasm32: ureq)
+
 [dev-dependencies]
 proptest = "1.9"
 

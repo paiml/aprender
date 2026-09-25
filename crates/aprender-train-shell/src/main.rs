@@ -19,6 +19,7 @@ struct Cli {
 }
 
 fn main() {
+    sovereign_update::hook!("aprender-train-shell"); // EPIC #4232: `aprender-train-shell update`, and the startup notice
     let cli = Cli::parse();
 
     // Load session if provided

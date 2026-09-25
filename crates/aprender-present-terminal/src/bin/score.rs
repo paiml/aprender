@@ -797,6 +797,7 @@ fn print_text_report(report: &QualityReport, verbose: bool, no_color: bool) {
 }
 
 fn main() {
+    sovereign_update::hook!("score"); // EPIC #4232: `score update`, and the startup notice
     let cli = Cli::parse();
 
     // Load config (F-PMAT-018)

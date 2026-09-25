@@ -6,5 +6,6 @@
 use anyhow::Result;
 
 fn main() -> Result<()> {
+    sovereign_update::hook!("aprender-cgp"); // EPIC #4232: `aprender-cgp update`, and the startup notice
     cgp::cli::run()
 }

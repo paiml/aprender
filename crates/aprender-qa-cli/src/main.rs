@@ -11,5 +11,6 @@
 #![allow(clippy::ptr_arg)]
 
 fn main() {
+    sovereign_update::hook!("apr-qa"); // EPIC #4232: `apr-qa update`, and the startup notice
     aprender_qa_cli::cli::run();
 }

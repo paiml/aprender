@@ -105,6 +105,7 @@ fn run(cli: Cli) -> Result<(), CertifyError> {
 }
 
 fn main() -> ExitCode {
+    sovereign_update::hook!("apr-qa-readme-sync"); // EPIC #4232: `apr-qa-readme-sync update`, and the startup notice
     let cli = Cli::parse();
 
     match run(cli) {

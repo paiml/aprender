@@ -38,6 +38,9 @@ sqlite = ["aprender-rag/sqlite"]
 # Image OCR via tesseract CLI (PMAT-023)
 ocr = ["aprender-rag/ocr"]
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+aprender-update = { workspace = true }  # EPIC #4232 update check (not wasm32: ureq)
+
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.1"
