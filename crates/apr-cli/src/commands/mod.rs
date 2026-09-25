@@ -214,6 +214,24 @@ pub(crate) mod trace;
 pub(crate) mod trace_save_tensor;
 #[cfg(feature = "training")]
 pub(crate) mod track;
+/// Without `training` there is no pacha tracking backend: verbs run untracked.
+#[cfg(not(feature = "training"))]
+pub(crate) mod track {
+    use crate::error::CliError;
+    use std::path::Path;
+
+    pub(crate) type Input<'a> = (&'a Path, &'static str);
+
+    pub(crate) fn tracked(
+        _verb: &str,
+        _inputs: &[Input<'_>],
+        _output: Option<&Path>,
+        _no_track: bool,
+        train: impl FnOnce() -> Result<(), CliError>,
+    ) -> Result<(), CliError> {
+        train()
+    }
+}
 #[cfg(feature = "training")]
 pub(crate) mod train;
 pub(crate) mod tree;

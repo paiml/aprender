@@ -87,6 +87,7 @@
             density: 0.2,
             seed: 42,
             plan: false,
+            no_track: true,
                 force: true,
             });
         let result = dispatch_model_commands(&cli);
@@ -110,6 +111,7 @@
             density: 0.2,
             seed: 42,
             plan: true,
+            no_track: true,
                 force: true,
             });
         let result = dispatch_model_commands(&cli);
@@ -154,6 +156,7 @@
             analyze: false,
             plan: false,
             calibration: None,
+            no_track: true,
         }));
         let result = dispatch_model_commands(&cli);
         assert!(result.is_some(), "Prune should be handled by dispatch_model_commands");

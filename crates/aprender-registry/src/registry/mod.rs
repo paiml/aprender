@@ -1,8 +1,10 @@
 //! Registry implementation with `SQLite` storage.
 
+mod ancestry;
 mod database;
 mod evals;
 
+pub use ancestry::{Ancestry, StoredEdge};
 pub use database::RegistryDb;
 pub use evals::{is_sha256_hex, EvalRecord};
 
@@ -276,6 +278,43 @@ impl Registry {
     /// Returns an error if the query fails.
     pub fn count_lineage_edges(&self) -> Result<usize> {
         self.db.count_lineage_edges()
+    }
+
+    /// Every lineage edge into `to_id`, oldest first.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails or stored metadata is not JSON.
+    pub fn lineage_edges_into(&self, to_id: &str) -> Result<Vec<StoredEdge>> {
+        self.db
+            .lineage_edges_into(to_id)?
+            .into_iter()
+            .map(|(from_id, to_id, edge_type, metadata)| {
+                let metadata = metadata
+                    .map(|m| serde_json::from_str(&m))
+                    .transpose()
+                    .map_err(|e| PachaError::Validation(format!("lineage metadata: {e}")))?;
+                Ok(StoredEdge { from_id, to_id, edge_type, metadata })
+            })
+            .collect()
+    }
+
+    /// Every upstream node of `root` and the edges between them (EXT-07).
+    ///
+    /// # Errors
+    ///
+    /// [`PachaError::Validation`] on a lineage cycle, or a query error.
+    pub fn ancestry(&self, root: &str) -> Result<Ancestry> {
+        ancestry::walk(root, &mut |node| self.lineage_edges_into(node))
+    }
+
+    /// The id of a model whose card records `extra.sha256 == sha256_hex`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn find_model_id_by_card_sha256(&self, sha256_hex: &str) -> Result<Option<String>> {
+        self.db.find_model_id_by_card_sha256(sha256_hex)
     }
 
     /// Get model lineage graph.

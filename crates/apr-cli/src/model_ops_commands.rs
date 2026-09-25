@@ -142,6 +142,10 @@ pub enum ModelOpsCommands {
         /// Calibration data file
         #[arg(long, value_name = "FILE")]
         calibration: Option<PathBuf>,
+        /// EXT-06: do not record this run to the pacha registry (run,
+        /// lineage, produced model). Recording is on by default.
+        #[arg(long)]
+        no_track: bool,
     },
     /// Knowledge distillation (teacher -> student) (GH-247, ALB-011)
     Distill {
@@ -201,5 +205,9 @@ pub enum ModelOpsCommands {
         /// corpus directory.
         #[arg(long, value_name = "DIR")]
         dataset: Option<PathBuf>,
+        /// EXT-06: do not record this run to the pacha registry (run,
+        /// lineage, produced model). Recording is on by default.
+        #[arg(long)]
+        no_track: bool,
     },
 }

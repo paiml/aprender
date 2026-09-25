@@ -138,4 +138,4 @@ pub mod signing;
 pub mod storage;
 pub mod uri;
 pub use error::{PachaError, Result};
-pub use registry::{Registry, RegistryConfig, StorageStats};
+pub use registry::{Ancestry, Registry, RegistryConfig, StorageStats, StoredEdge};

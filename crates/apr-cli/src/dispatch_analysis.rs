@@ -1028,8 +1028,11 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
             };
             commands::track::tracked(
                 "train",
-                base.as_deref(),
-                dataset.as_deref(),
+                &base
+                    .iter()
+                    .map(|p| (p.as_path(), "base"))
+                    .chain(dataset.iter().map(|p| (p.as_path(), "dataset")))
+                    .collect::<Vec<_>>(),
                 out.as_deref(),
                 untracked,
                 || train::run_apply(

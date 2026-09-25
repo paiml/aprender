@@ -1,5 +1,7 @@
 //! EXT-05 (aprender#4387): FALSIFY-EXT-004 (the train-verb delta on a tmp
 //! pacha home) and FALSIFY-EXT-009 (engine identity refused at start_run).
+//! EXT-06 (aprender#4388): FALSIFY-EXT-005 (derivation verbs record parent
+//! edges into the produced model).
 
 use super::*;
 use tempfile::TempDir;
@@ -77,8 +79,7 @@ fn falsify_ext_004_train_verb_delta_on_tmp_pacha_home() {
         &f.home,
         &clean_engine(),
         "finetune",
-        Some(&f.base),
-        Some(&f.data),
+        &[(&f.base, "base"), (&f.data, "dataset")],
     )
     .expect("start");
     std::fs::write(&f.out, b"adapter produced by training").expect("train writes output");
@@ -139,8 +140,7 @@ fn a_failed_run_registers_no_model() {
         &f.home,
         &clean_engine(),
         "finetune",
-        Some(&f.base),
-        Some(&f.data),
+        &[(&f.base, "base"), (&f.data, "dataset")],
     )
     .expect("start");
     std::fs::write(&f.out, b"partial").expect("partial");
@@ -207,9 +207,14 @@ fn falsify_ext_009_dirty_or_unidentified_engine_refused_at_start_run() {
             ..clean_engine()
         },
     ] {
-        let err = Recorder::start_in(&f.home, &engine, "finetune", Some(&f.base), Some(&f.data))
-            .err()
-            .unwrap_or_else(|| panic!("{engine:?} must be refused"));
+        let err = Recorder::start_in(
+            &f.home,
+            &engine,
+            "finetune",
+            &[(&f.base, "base"), (&f.data, "dataset")],
+        )
+        .err()
+        .unwrap_or_else(|| panic!("{engine:?} must be refused"));
         assert!(err.to_string().contains("--no-track"), "{err}");
         assert!(
             !f.home.exists(),
@@ -219,11 +224,66 @@ fn falsify_ext_009_dirty_or_unidentified_engine_refused_at_start_run() {
     assert!(clean_engine().check().is_ok());
 }
 
+/// FALSIFY-EXT-005: each derivation verb records one `<verb>_from` edge per
+/// parent into the produced model (merge: 3 parents), and the produced
+/// model's ancestry reaches every parent.
+#[test]
+fn falsify_ext_005_derivation_verbs_record_parent_edges() {
+    for (verb, want_edge, parents) in [
+        ("distill", "distilled_from", 1),
+        ("merge", "merged_from", 3),
+        ("quantize", "quantized_from", 1),
+        ("prune", "pruned_from", 1),
+    ] {
+        assert_eq!(parent_edge(verb), Some(want_edge), "{verb}");
+        let f = fixture();
+        let files: Vec<PathBuf> = (0..parents)
+            .map(|i| {
+                let p = f.base.with_file_name(format!("parent{i}.apr"));
+                std::fs::write(&p, format!("{verb} parent {i}")).expect("parent");
+                p
+            })
+            .collect();
+        let mut inputs: Vec<Input<'_>> = files.iter().map(|p| (p.as_path(), want_edge)).collect();
+        inputs.push((&f.base, "base"));
+        let rec = Recorder::start_in(&f.home, &clean_engine(), verb, &inputs).expect("start");
+        std::fs::write(&f.out, format!("{verb} output")).expect("output");
+        let recorded = rec.finish(true, Some(&f.out)).expect("finish");
+        let produced = recorded.produced_model_id.expect("produced");
+
+        let reg = Registry::open(RegistryConfig::new(&f.home)).expect("registry");
+        let into = reg.lineage_edges_into(&produced).expect("edges");
+        let from_parents: Vec<_> = into.iter().filter(|e| e.edge_type == want_edge).collect();
+        assert_eq!(from_parents.len(), parents, "{verb}: parent edges");
+        assert_eq!(
+            into.iter().filter(|e| e.edge_type == "produced").count(),
+            1,
+            "{verb}: produced edge"
+        );
+        // Parents point at the model, never at the run; the base points at the run.
+        assert!(reg
+            .lineage_edges_into(&recorded.run_id)
+            .expect("run edges")
+            .iter()
+            .all(|e| e.edge_type == "base"));
+        let ancestry = reg.ancestry(&produced).expect("ancestry");
+        for p in &files {
+            let node = format!("blake3:{}", blake3_file(p).expect("hash"));
+            assert!(
+                ancestry.nodes.contains(&node),
+                "{verb}: {node} not an ancestor"
+            );
+        }
+        assert!(ancestry.nodes.contains(&recorded.run_id), "{verb}: run");
+    }
+    assert_eq!(parent_edge("finetune"), None);
+}
+
 /// `--no-track` runs the verb without touching pacha, whatever the engine.
 #[test]
 fn no_track_trains_without_recording() {
     let mut ran = false;
-    tracked("finetune", None, None, None, true, || {
+    tracked("finetune", &[], None, true, || {
         ran = true;
         Ok(())
     })
@@ -259,8 +319,7 @@ fn ext05_recorder_overhead_receipt() {
         &f.home,
         &clean_engine(),
         "finetune",
-        Some(&f.base),
-        Some(&f.data),
+        &[(&f.base, "base"), (&f.data, "dataset")],
     )
     .expect("start");
     let start_s = t.elapsed().as_secs_f64();

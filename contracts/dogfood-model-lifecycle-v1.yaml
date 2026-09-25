@@ -176,7 +176,8 @@ falsification_tests:
   obligation: EXT-INV-001
   rule: Edge type and parent count per verb
   prediction: distill/merge(N)/quantize/prune each write the case-table edge type with the case-table parent count
-  if_fails: 'a verb records the wrong edge type or drops a merge parent (owed EXT-06 #4388; planned: cargo test -p apr-cli --test ext_train_verbs falsify_ext_005_edge_case_table)'
+  test: cargo test -p apr-cli --lib falsify_ext_005_derivation_verbs_record_parent_edges
+  if_fails: 'a verb records the wrong edge type, drops a merge parent, or points a parent at the run instead of the produced model'
 - id: FALSIFY-EXT-006
   obligation: EXT-INV-001
   rule: Lineage is acyclic

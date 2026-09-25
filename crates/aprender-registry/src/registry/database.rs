@@ -337,6 +337,34 @@ impl RegistryDb {
         Ok(())
     }
 
+    /// Every lineage edge into `to_id`, oldest first, as
+    /// `(from_id, to_id, edge_type, metadata_json)` (EXT-001 EXT-07).
+    pub fn lineage_edges_into(
+        &self,
+        to_id: &str,
+    ) -> Result<Vec<(String, String, String, Option<String>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT from_id, to_id, edge_type, metadata_json FROM lineage WHERE to_id = ?1 ORDER BY id",
+        )?;
+        let rows = stmt.query_map(params![to_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// The id of a model whose card records `extra.sha256 == sha256_hex`, if
+    /// any (oldest first; EXT-001 EXT-07).
+    pub fn find_model_id_by_card_sha256(&self, sha256_hex: &str) -> Result<Option<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id FROM models WHERE json_extract(card_json, '$.extra.sha256') = ?1 ORDER BY created_at LIMIT 1",
+        )?;
+        let mut rows = stmt.query(params![sha256_hex])?;
+        Ok(match rows.next()? {
+            Some(row) => Some(row.get(0)?),
+            None => None,
+        })
+    }
+
     /// Count lineage edges.
     pub fn count_lineage_edges(&self) -> Result<usize> {
         let count: i64 =

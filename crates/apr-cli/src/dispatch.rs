@@ -944,16 +944,27 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             batch,
             plan,
             force,
+            no_track,
         } => crate::error::resolve_model_path(file).and_then(|r| {
-            quantize::run(
-                &r,
-                scheme,
+            // EXT-06: a batch writes several outputs; only a single one is recorded.
+            let untracked = *no_track || *plan || batch.is_some();
+            commands::track::tracked(
+                "quantize",
+                &[(r.as_path(), "quantized_from")],
                 output.as_deref(),
-                format.as_deref(),
-                batch.as_deref(),
-                *plan,
-                *force,
-                cli.json,
+                untracked,
+                || {
+                    quantize::run(
+                        &r,
+                        scheme,
+                        output.as_deref(),
+                        format.as_deref(),
+                        batch.as_deref(),
+                        *plan,
+                        *force,
+                        cli.json,
+                    )
+                },
             )
         }),
 
@@ -981,25 +992,42 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             seed,
             plan,
             force,
+            no_track,
         } => {
             let resolved: std::result::Result<Vec<std::path::PathBuf>, _> = files
                 .iter()
                 .map(|f| crate::error::resolve_model_path(f))
                 .collect();
             match resolved {
-                Ok(r) => merge::run(
-                    &r,
-                    strategy,
-                    output.as_deref(),
-                    weights.clone(),
-                    base_model.clone(),
-                    *drop_rate,
-                    *density,
-                    *seed,
-                    cli.json,
-                    *plan,
-                    *force,
-                ),
+                Ok(r) => {
+                    // EXT-06: one merged_from edge per parent; a TIES/DARE base is `base`.
+                    let inputs: Vec<commands::track::Input<'_>> = r
+                        .iter()
+                        .map(|p| (p.as_path(), "merged_from"))
+                        .chain(base_model.iter().map(|p| (p.as_path(), "base")))
+                        .collect();
+                    commands::track::tracked(
+                        "merge",
+                        &inputs,
+                        output.as_deref(),
+                        *no_track || *plan,
+                        || {
+                            merge::run(
+                                &r,
+                                strategy,
+                                output.as_deref(),
+                                weights.clone(),
+                                base_model.clone(),
+                                *drop_rate,
+                                *density,
+                                *seed,
+                                cli.json,
+                                *plan,
+                                *force,
+                            )
+                        },
+                    )
+                }
                 Err(e) => Err(e),
             }
         }
@@ -1089,18 +1117,30 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             analyze,
             plan,
             calibration,
+            no_track,
         }) => crate::error::resolve_model_path(file).and_then(|r| {
-            prune::run(
-                &r,
-                method,
-                *target_ratio,
-                *sparsity,
+            let inputs: Vec<commands::track::Input<'_>> = std::iter::once((r.as_path(), "pruned_from"))
+                .chain(calibration.iter().map(|p| (p.as_path(), "dataset")))
+                .collect();
+            commands::track::tracked(
+                "prune",
+                &inputs,
                 output.as_deref(),
-                remove_layers.as_deref(),
-                *analyze,
-                *plan,
-                calibration.as_deref(),
-                cli.json,
+                *no_track || *plan || *analyze,
+                || {
+                    prune::run(
+                        &r,
+                        method,
+                        *target_ratio,
+                        *sparsity,
+                        output.as_deref(),
+                        remove_layers.as_deref(),
+                        *analyze,
+                        *plan,
+                        calibration.as_deref(),
+                        cli.json,
+                    )
+                },
             )
         }),
         Commands::ModelOps(ModelOpsCommands::Distill {
@@ -1117,27 +1157,43 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             stage,
             backend,
             dataset,
+            no_track,
         }) => {
             #[cfg(feature = "training")]
             if let Err(e) = commands::runs::enforce_training_perimeter(output.as_deref()) {
                 return Some(Err(e));
             }
-            distill::run(
-            teacher.as_deref(),
-            student.as_deref(),
-            data.as_deref(),
-            output.as_deref(),
-            strategy,
-            *temperature,
-            *alpha,
-            *epochs,
-            *plan,
-            config.as_deref(),
-            stage.as_deref(),
-            backend.as_str(),
-            dataset.as_deref(),
-            cli.json,
-        )
+            // EXT-06: the teacher is the parent; the student is the base.
+            let inputs: Vec<commands::track::Input<'_>> = teacher
+                .iter()
+                .map(|p| (p.as_path(), "distilled_from"))
+                .chain(student.iter().map(|p| (p.as_path(), "base")))
+                .chain(data.iter().chain(dataset.iter()).map(|p| (p.as_path(), "dataset")))
+                .collect();
+            commands::track::tracked(
+                "distill",
+                &inputs,
+                output.as_deref(),
+                *no_track || *plan,
+                || {
+                    distill::run(
+                        teacher.as_deref(),
+                        student.as_deref(),
+                        data.as_deref(),
+                        output.as_deref(),
+                        strategy,
+                        *temperature,
+                        *alpha,
+                        *epochs,
+                        *plan,
+                        config.as_deref(),
+                        stage.as_deref(),
+                        backend.as_str(),
+                        dataset.as_deref(),
+                        cli.json,
+                    )
+                },
+            )
         }
         Commands::Pull {
             model_ref,

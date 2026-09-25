@@ -767,6 +767,10 @@ pub enum Commands {
         /// #2392: Overwrite an existing output file (refused without it)
         #[arg(short, long)]
         force: bool,
+        /// EXT-06: do not record this run to the pacha registry (run,
+        /// lineage, produced model). Recording is on by default.
+        #[arg(long)]
+        no_track: bool,
     },
     /// Quantize model weights (GH-243)
     Quantize {
@@ -791,6 +795,10 @@ pub enum Commands {
         /// Force overwrite existing files
         #[arg(short, long)]
         force: bool,
+        /// EXT-06: do not record this run to the pacha registry (run,
+        /// lineage, produced model). Recording is on by default.
+        #[arg(long)]
+        no_track: bool,
     },
     /// Model optimization commands (fine-tune, prune, distill)
     #[command(flatten)]

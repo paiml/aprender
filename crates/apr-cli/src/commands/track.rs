@@ -4,11 +4,15 @@
 //! - one run row, identified by a ULID and carrying the engine identity (I-5);
 //! - one `models` row for the produced artifact, whose `card.extra` holds its
 //!   sha256 and the run id;
-//! - three lineage edges: `base` (base model -> run), `dataset` (dataset ->
-//!   run) and `produced` (run -> produced model).
+//! - lineage edges, each pointing downstream (`from_id` is the input):
+//!   `base` (base model -> run), `dataset` (dataset -> run) and `produced`
+//!   (run -> produced model);
+//! - for the derivation verbs (EXT-06), one `<verb>_from` edge per parent,
+//!   parent -> produced model: `distilled_from` (teacher), `merged_from`
+//!   (each of N inputs), `quantized_from`, `pruned_from`. See [`parent_edge`].
 //!
-//! A base model already in `models` is referred to by its model id. An
-//! unregistered base, and every dataset (until EXT-08's canonical manifest),
+//! A model already in `models` is referred to by its model id. An
+//! unregistered model, and every dataset (until EXT-08's canonical manifest),
 //! is referred to as `blake3:<hex>`, the content address pacha itself uses.
 //! `--no-track` opts out.
 
@@ -138,6 +142,26 @@ pub(crate) fn produced_artifact(output: &Path) -> Option<PathBuf> {
         .find(|p| p.is_file() && p.metadata().is_ok_and(|m| m.len() > 0))
 }
 
+/// The edge from each parent to the model a derivation verb produces
+/// (FALSIFY-EXT-005). `None` for a verb that derives nothing from a parent.
+pub(crate) fn parent_edge(verb: &str) -> Option<&'static str> {
+    match verb {
+        "distill" => Some("distilled_from"),
+        "merge" => Some("merged_from"),
+        "quantize" => Some("quantized_from"),
+        "prune" => Some("pruned_from"),
+        _ => None,
+    }
+}
+
+/// An input to a tracked verb and the edge it gets.
+pub(crate) type Input<'a> = (&'a Path, &'static str);
+
+/// Edges that point at the produced model rather than at the run.
+fn is_parent_edge(edge: &str) -> bool {
+    edge.ends_with("_from")
+}
+
 /// What a finished tracked run recorded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Recorded {
@@ -157,17 +181,12 @@ pub(crate) struct Recorder {
 
 /// Start recording `verb` unless `no_track`. A refused identity refuses the
 /// run, before any training starts.
-pub(crate) fn start(
-    verb: &str,
-    base: Option<&Path>,
-    dataset: Option<&Path>,
-    no_track: bool,
-) -> Result<Option<Recorder>> {
+pub(crate) fn start(verb: &str, inputs: &[Input<'_>], no_track: bool) -> Result<Option<Recorder>> {
     if no_track {
         return Ok(None);
     }
     let home = default_pacha_home()?;
-    Recorder::start_in(&home, &EngineIdentity::current(), verb, base, dataset).map(Some)
+    Recorder::start_in(&home, &EngineIdentity::current(), verb, inputs).map(Some)
 }
 
 impl Recorder {
@@ -176,8 +195,7 @@ impl Recorder {
         home: &Path,
         engine: &EngineIdentity,
         verb: &str,
-        base: Option<&Path>,
-        dataset: Option<&Path>,
+        inputs: &[Input<'_>],
     ) -> Result<Self> {
         engine.check()?;
         let registry = Registry::open(RegistryConfig::new(home)).map_err(pacha_err)?;
@@ -194,34 +212,35 @@ impl Recorder {
         run.tags.insert("engine_dirty".into(), engine.dirty.clone());
         run.tags.insert("verb".into(), verb.to_string());
 
-        let mut inputs = Vec::new();
-        if let Some(base) = base.filter(|p| p.exists()) {
-            let b3 = blake3_tree(base)?;
-            let node = match registry
-                .find_model_id_by_content_hash(&b3)
-                .map_err(pacha_err)?
-            {
-                Some(id) => id,
-                None => format!("blake3:{b3}"),
+        let mut nodes = Vec::new();
+        for &(path, edge) in inputs.iter().filter(|(p, _)| p.exists()) {
+            let b3 = blake3_tree(path)?;
+            // A dataset is never a registered model; anything else may be.
+            let registered = if edge == "dataset" {
+                None
+            } else {
+                registry
+                    .find_model_id_by_content_hash(&b3)
+                    .map_err(pacha_err)?
             };
-            run.params.insert("base".into(), node.clone());
+            let node = registered.unwrap_or_else(|| format!("blake3:{b3}"));
+            let n = nodes.iter().filter(|(_, e)| *e == edge).count();
+            let key = if n == 0 {
+                edge.to_string()
+            } else {
+                format!("{edge}.{n}")
+            };
+            run.params.insert(key.clone(), node.clone());
             run.params
-                .insert("base_path".into(), base.display().to_string());
-            inputs.push((node, "base"));
-        }
-        if let Some(dataset) = dataset.filter(|p| p.exists()) {
-            let node = format!("blake3:{}", blake3_tree(dataset)?);
-            run.params.insert("dataset".into(), node.clone());
-            run.params
-                .insert("dataset_path".into(), dataset.display().to_string());
-            inputs.push((node, "dataset"));
+                .insert(format!("{key}_path"), path.display().to_string());
+            nodes.push((node, edge));
         }
         backend.save_run(&run).map_err(pacha_err)?;
         Ok(Self {
             registry,
             backend,
             run,
-            inputs,
+            inputs: nodes,
         })
     }
 
@@ -235,7 +254,7 @@ impl Recorder {
             produced_sha256: None,
             edges: 0,
         };
-        for (node, edge) in &self.inputs {
+        for (node, edge) in self.inputs.iter().filter(|(_, e)| !is_parent_edge(e)) {
             self.registry
                 .add_lineage_edge(node, &run_id, edge, None)
                 .map_err(pacha_err)?;
@@ -250,6 +269,12 @@ impl Recorder {
                     .add_lineage_edge(&run_id, &id, "produced", Some(&meta))
                     .map_err(pacha_err)?;
                 recorded.edges += 1;
+                for (parent, edge) in self.inputs.iter().filter(|(_, e)| is_parent_edge(e)) {
+                    self.registry
+                        .add_lineage_edge(parent, &id, edge, None)
+                        .map_err(pacha_err)?;
+                    recorded.edges += 1;
+                }
                 self.run
                     .params
                     .insert("output_sha256".into(), sha256.clone());
@@ -306,13 +331,12 @@ impl Recorder {
 /// engine before training), then close the run with the verb's outcome.
 pub(crate) fn tracked(
     verb: &str,
-    base: Option<&Path>,
-    dataset: Option<&Path>,
+    inputs: &[Input<'_>],
     output: Option<&Path>,
     no_track: bool,
     train: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
-    let Some(recorder) = start(verb, base, dataset, no_track)? else {
+    let Some(recorder) = start(verb, inputs, no_track)? else {
         return train();
     };
     let outcome = train();
