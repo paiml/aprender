@@ -21,8 +21,8 @@
 #          on pull_request.
 #   * L2 — case tables, MEASURED 2026-09-25:
 #          check_findings_ledger.sh --self-test has 18 cases, 9/9 mutants
-#          killed; check_pr_closes_issue.sh --self-test has 46 cases (25 of
-#          them rule-18 rows), 16/16 mutants killed.
+#          killed; check_pr_closes_issue.sh --self-test has 47 cases (26 of
+#          them rule-18 rows), 17/17 mutants killed.
 #   * L3/L4 — NOT APPLICABLE: a data file and a PR body, not a kernel.
 # ─────────────────────────────────────────────────────────────────────────────
 name: findings-ledger
@@ -44,7 +44,7 @@ metadata:
   author: PAIML Engineering
   references:
     - 'scripts/check_findings_ledger.sh — the ledger guard: bare (case table, then docs/findings/) · <dir> · --self-test (18 cases)'
-    - 'scripts/check_pr_closes_issue.sh --require-close — rule 18 at PR time (25 rc-* rows in --self-test)'
+    - 'scripts/check_pr_closes_issue.sh --require-close — rule 18 at PR time (26 rc-* rows in --self-test)'
     - '.github/workflows/ci.yml — the R-2 step (pull_request only) runs the guard with --require-close'
     - 'scripts/release/prepare_bump.sh — the bump PR body carries a `no-issue:` line and is preflighted with --require-close'
     - 'docs/findings/README.md — the row schema, for the sessions that write it'
@@ -100,7 +100,7 @@ equations:
     codomain: 'bool'
     invariants:
     - 'REFS ALONE DOES NOT DISCHARGE (rc-flow-012-refs-only, FALSIFY-FLOW-012).'
-    - 'A ROW REF MUST NAME A REAL, UNTICKED ROW (rc-row-ref-fabricated, -ticked, -prefix): the parent body must carry `- [ ] <id>:`, matched whole; a row ref closes nothing on merge, so an unchecked id would let `Refs #1 row x` discharge rule 18. An unreadable parent body is close-target-unverified (rc-row-ref-no-body).'
+    - 'A ROW REF MUST NAME A REAL, UNTICKED ROW (rc-row-ref-fabricated, -ticked, -prefix): the parent body must carry `- [ ] <id>:`, matched whole, and `Refs` must start a word (rc-row-ref-mid-word: `Xrefs #N row X` is prose); a row ref closes nothing on merge, so an unchecked id would let `Refs #1 row x` discharge rule 18. An unreadable parent body is close-target-unverified (rc-row-ref-no-body).'
     - 'A CLOSED ISSUE, A PR NUMBER OR A CROSS-REPO TARGET DOES NOT DISCHARGE (rc-closes-closed, rc-closes-pr, rc-cross-repo).'
     - 'R-2 STILL APPLIES UNDER THE FLAG (rc-r2-still-applies).'
     - 'A `[bot]` AUTHOR IS EXEMPT FROM RULE 18 ONLY (rc-bot-exempt, rc-bot-r2-applies): dependabot cannot write a trailer; a human login that merely looks like a bot is not exempt (rc-bot-lookalike). ci.yml passes --author from the pull_request payload.'
