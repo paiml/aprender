@@ -58,8 +58,8 @@
 //!   --candidate ROWS2)` PRM-C13 (was PRA-001 T13) (contract lane-independence-v1): κ_err of the
 //!   shadow lane against every counted lane on matured gold rows of the split, as
 //!   JSON; a thin pair prints `insufficient`, never a number. With `--candidate`
-//!   the gate runs: δ and min_n come only from the manifest's `lane_independence`
-//!   block. Exit 12 (andon, S-14) on a refused candidate, an unusable manifest,
+//!   the gate runs H7 (δ-free, `stats::h7_holds`) on the candidate rows: the
+//!   voters and min_n come only from the manifest's `lane_independence` block. Exit 12 (andon, S-14) on a refused candidate, an unusable manifest,
 //!   or `--candidate` without `--manifest`.
 
 use aprender_review_experiment::b2;
@@ -676,7 +676,9 @@ fn lane_kappa_cmd(a: &[String]) -> ExitCode {
         Some(Err(e)) => return andon(format!("S-14 manifest: {e}")),
     };
     if f.contains_key("candidate") && manifest.is_none() {
-        return andon("S-14 --candidate needs --manifest: δ is not pre-registered".into());
+        return andon(
+            "S-14 --candidate needs --manifest: the voters and min_n are not pre-registered".into(),
+        );
     }
     let min_n = match (&manifest, f.get("min-n").map(|n| n.parse::<usize>())) {
         (Some(m), _) => m.min_n,
@@ -697,17 +699,15 @@ fn lane_kappa_cmd(a: &[String]) -> ExitCode {
     out.insert("baseline".into(), to_json(&baseline));
     let mut code = ExitCode::SUCCESS;
     if let (Some(m), Some(c)) = (&manifest, f.get("candidate")) {
-        let candidate = match load(c) {
-            Ok(r) => probe(&r, split, shadow, min_n),
+        let rows = match load(c) {
+            Ok(r) => r,
             Err(e) => {
                 eprintln!("rex lane-kappa: {e}");
                 return ExitCode::from(1);
             }
         };
-        let v = match gate(&baseline, &candidate, m) {
-            Ok(v) => v,
-            Err(e) => return andon(e),
-        };
+        let candidate = probe(&rows, split, shadow, min_n);
+        let v = gate(&rows, split, shadow, m);
         if !v.pass {
             eprintln!("rex lane-kappa: ANDON {}", v.refusals.join("; "));
             code = ExitCode::from(ANDON_KAPPA);
