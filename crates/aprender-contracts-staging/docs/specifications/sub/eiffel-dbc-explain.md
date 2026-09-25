@@ -118,7 +118,7 @@ governing paper(s) and the domain.
 - Mathematical invariants (prose, not table)
 - Preconditions (if present): what the caller must guarantee
 - Postconditions (if present): what the kernel guarantees
-- `lean_theorem` reference (if present): link to the L5 proof
+- `lean_theorem` reference (if present): link to the L4 proof
 
 **3. Proof obligations** — For each obligation in `proof_obligations`:
 - Obligation type with its mathematical pattern
@@ -132,10 +132,9 @@ governing paper(s) and the domain.
   verify this obligation
 
 **4. Verification ladder** — Summary of verification coverage:
-- L5 (Lean): N of M proved (percentage)
-- L4 (Kani): N harnesses with strategy breakdown
-- L3 (probar): N property tests
-- L2 (falsification): N tests
+- L4 (Lean): N of M proved (percentage)
+- L3 (Kani): N harnesses with strategy breakdown
+- L2 (Tests): N falsification tests
 - Overall proof level (L1-L5)
 
 **5. Falsification tests** — For each test:
@@ -205,7 +204,7 @@ Proof obligations (6)
      Lean: Softmax.partition_of_unity (proved)
        Depends: Real.exp_pos, Finset.sum_div_distrib
        Note: Proof over reals; f32 gap addressed by error-bound lemma.
-     Verified at: L2 (FALSIFY-SM-001), L4 (KANI-SM-001), L5 (Lean)
+     Verified at: L2 (FALSIFY-SM-001), L3 (KANI-SM-001), L4 (Lean)
 
   2. [invariant] All outputs strictly positive
      Pattern: ∀x ∈ Domain: P(f(x))
@@ -213,13 +212,13 @@ Proof obligations (6)
      Why: Logarithm of softmax output must be defined (log-softmax in
        cross-entropy). Zero outputs cause -inf and NaN propagation.
      Lean: Softmax.softmax_pos (proved)
-     Verified at: L2 (FALSIFY-SM-002), L4 (KANI-SM-002), L5 (Lean)
+     Verified at: L2 (FALSIFY-SM-002), L3 (KANI-SM-002), L4 (Lean)
 
   ...
 
 Verification ladder
-  L5 (Lean):  5/6 proved (83%)
-  L4 (Kani):  3 harnesses (stub_float strategy)
+  L4 (Lean):  5/6 proved (83%)
+  L3 (Kani):  3 harnesses (3× stub_float)
   L2 (Tests): 6 falsification tests
   Level: L4
 
@@ -321,7 +320,7 @@ Produces `aprender/CONTRACT-README.md` containing:
 
 1. **Contract coverage badge** — "28/31 contracts bound (90.3%)"
 2. **Bound contracts table** — contract stem, equation, binding function,
-   proof level (L1-L5), Lean status
+   Lean status, proof level (L1-L5)
 3. **Verification ladder summary** — how many obligations at each level
 4. **Gap list** — unbound equations with priority and suggested action
 5. **Build integration** — `build.rs` setup instructions for

@@ -77,10 +77,11 @@ Architecture: `crates/provable-contracts/` (library), `crates/provable-contracts
 
 **Sub-spec**: [sub/verification-ladder.md](sub/verification-ladder.md)
 
-Two hierarchies: proof levels (L0 review → L5 Lean theorem) and
-enforcement layers (build.rs → trait impl → `#[contract]` → Kani → Lean).
-L0–L2 enforce on every build in 7 repos. L3 on 18 annotated functions.
-L4/L5 defined in YAML, not yet in CI.
+Two hierarchies: proof levels (L1 equations → L5 Lean + bindings) and
+enforcement layers (E0 review → E1 build.rs → E2 trait impl →
+E3 `#[contract]` → E4 Kani → E5 Lean).
+E0–E2 enforce on every build in 7 repos. E3 on 18 annotated functions.
+E4/E5 defined in YAML, not yet in CI.
 
 The provability invariant: if a contract has proof obligations, it MUST
 have Kani harnesses and falsification tests. Registries (`metadata.registry: true`) exempt.
@@ -584,7 +585,7 @@ Codegen: 294 contracts, 1025 Lean theorems, 31 compilable postcondition macros.
 
 **Remaining work** (maintenance mode):
 - GH-686: Per-function `#[contract]` proc macro annotations (Level A)
-- GH-687: L5 Lean proofs for 4 work contracts
+- GH-687: Lean proofs (L4) for 4 work contracts
 - GH-691: Per-crate penetration reporting (apr-cli vs aprender lib)
 - GH-367: InternLM2.5 architecture — fused QKV tensor naming
 

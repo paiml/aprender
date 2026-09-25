@@ -200,6 +200,43 @@ fn readme_and_ladder_docs_match_enum() {
     }
 }
 
+/// Docs outside the three ladder copies that name a proof level next to Kani or Lean
+/// (#4106). They carry no generated block; they only must not pair a level with the
+/// wrong tool. `legacy/` and PP-066 are records of the old numbering and stay out.
+#[cfg(test)]
+const LADDER_CITING_DOCS: [&str; 12] = [
+    "crates/aprender-contracts-staging/docs/specifications/sub/eiffel-dbc-explain.md",
+    "docs/specifications/aprender-contracts-staging/sub/eiffel-dbc-explain.md",
+    "crates/aprender-contracts-staging/docs/specifications/sub/lean-kani-composition.md",
+    "docs/specifications/aprender-contracts-staging/sub/lean-kani-composition.md",
+    "crates/aprender-contracts-staging/book/src/lean-kani-composition.md",
+    "crates/aprender-contracts-staging/docs/specifications/sub/eiffel-dbc-domains-2.md",
+    "docs/specifications/aprender-contracts-staging/sub/eiffel-dbc-domains-2.md",
+    "crates/aprender-contracts-staging/docs/specifications/pv-spec.md",
+    "docs/specifications/aprender-contracts-staging/pv-spec.md",
+    "crates/aprender-contracts-staging/book/src/examples.md",
+    "crates/aprender-contracts-staging/book/src/integration.md",
+    "docs/specifications/components/cli-silent-failure-enforcement.md",
+];
+
+#[test]
+fn ladder_citing_docs_pair_levels_with_the_right_tool() {
+    let stale: Vec<String> = LADDER_CITING_DOCS
+        .iter()
+        .flat_map(|path| {
+            stale_level_pairings(&ladder_copy(path))
+                .into_iter()
+                .map(move |line| format!("{path}: {line}"))
+        })
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "a doc pairs a level with the wrong tool (Kani is L3, Lean alone is L4; \
+         enforcement layers are E0-E5):\n{}",
+        stale.join("\n")
+    );
+}
+
 /// The block itself names every level exactly once, in order: a regression in
 /// `ladder_block` cannot pass by printing nothing.
 #[test]

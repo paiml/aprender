@@ -93,11 +93,11 @@ provides formal frameworks for detecting and preventing them:
 **Root cause**: The provable contract system validates **existence** (function bound, signature matches) and **structure** (equations have invariants, falsification tests exist) but cannot verify **data flow** — that a value parsed at the CLI layer reaches the execution layer unchanged.
 
 This is a category error in the contract taxonomy:
-- **L1 (build.rs)**: Verifies function exists ✓
-- **L2 (traits)**: Verifies function has right signature ✓
-- **L3 (build.rs + traits)**: Both ✓
-- **L4 (Kani)**: Bounded model checking on function body ✓
-- **L5 (Lean)**: Unbounded proof ✓
+- **E1 (build.rs)**: Verifies function exists ✓
+- **E2 (traits)**: Verifies function has right signature ✓
+- **E1+E2 (build.rs + traits)**: Both ✓
+- **E4 (Kani)**: Bounded model checking on function body ✓
+- **E5 (Lean)**: Unbounded proof ✓
 - **MISSING**: **L-flow**: Data flow from CLI parse to execution — **no enforcement level covers this**
 
 ---
@@ -318,12 +318,12 @@ ExtendedCommands::Train { .. } => {
 
 | Level | Mechanism | Covers | Misses |
 |-------|-----------|--------|--------|
-| L0 | Paper-only | Nothing | Everything |
-| L1 | build.rs | Function exists | Signature, behavior |
-| L2 | Traits | Function exists + signature | Behavior, data flow |
-| L3 | build.rs + traits | Function + signature + build | Behavior, data flow |
-| L4 | Kani | Function body bounded check | Cross-function flow |
-| L5 | Lean | Unbounded proof | Implementation binding |
+| E0 | Paper-only | Nothing | Everything |
+| E1 | build.rs | Function exists | Signature, behavior |
+| E2 | Traits | Function exists + signature | Behavior, data flow |
+| E3 | build.rs + traits | Function + signature + build | Behavior, data flow |
+| E4 | Kani | Function body bounded check | Cross-function flow |
+| E5 | Lean | Unbounded proof | Implementation binding |
 | **L-flow** | **MISSING** | — | **CLI parse → dispatch → execute data flow** |
 
 ---
@@ -417,7 +417,7 @@ live `apr` binary execution. Results:
 | **SF-001**: lib_parse_rosetta.rs blocks compilation | `cargo test -p apr-cli --lib` fails with E0063 (2 errors) | **CONFIRMED → FIXED** (5c46243e) |
 | **SF-002**: 7 sampling params dropped in `apr run` | `RunOptions` struct (run.rs:126-157) has NO sampling fields. `dispatch_run()` signature (dispatch_run.rs:4-26) omits all 7. `dispatch.rs:57-62` destructures but never passes them. | **CONFIRMED → FIXED** (8c5078af, b14f2e06) |
 | SF-002 batch path uses temp/top_k | `run_batch()` (run_entry.rs:276-284) takes temperature and top_k | **CONFIRMED** — batch path partial, main path total drop |
-| Five-whys root cause (L-flow gap) | Provable contracts verify L1-L5 (existence, signature, body) but nothing verifies CLI param → execution data flow | **CONFIRMED** |
+| Five-whys root cause (L-flow gap) | Provable contracts verify E1-E5 (existence, signature, body) but nothing verifies CLI param → execution data flow | **CONFIRMED** |
 
 ### 9.2 Claims Falsified (WRONG)
 

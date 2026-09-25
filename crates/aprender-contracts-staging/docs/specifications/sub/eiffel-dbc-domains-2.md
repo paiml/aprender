@@ -410,7 +410,7 @@ Extending provable-contracts to non-kernel domains requires:
    without modification — the *content* of the contracts changes, but
    the quality rubric does not.
 
-5. **Verification ladder adjustment.** L4 (Kani) and L5 (Lean) remain
+5. **Verification ladder adjustment.** L3 (Kani) and L4 (Lean) remain
    applicable but the "natural bound" concept differs:
    - Kernels: natural bound = SIMD width, super-block size
    - Simulation: natural bound = max particles, max timesteps per epoch
