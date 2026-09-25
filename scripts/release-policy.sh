@@ -104,11 +104,12 @@ uncommented() { grep -vE '^[[:space:]]*#' || true; }
 # scripts/ paths on stdin in an EXECUTION position -- the first word of a command, or the operand
 # of an interpreter (bash/sh/zsh/python/source/exec/.) -- so `run_rules "$U" scripts/x.sh` (a guard
 # READING a script) is not a run of it. Comment lines are dropped first. LIMIT: a script run
-# through a variable (`"$S"` where S=scripts/x.sh) is not followed.
+# through a variable (`"$S"` where S=scripts/x.sh) is not followed. An interpreter flag may carry one
+# operand (`bash --rcfile F scripts/x.sh`); over-reach there (`bash -c CMD scripts/x.sh`) is safe.
 SCRIPT_RE='scripts/[A-Za-z0-9_./-]+'
 PREFIX_RE='"?((\$\{?[A-Za-z_]+\}?|\.)/)?'
 scripts_run_in() {
-    uncommented | grep -oE "((^|[;&|(\`]|run:)[[:space:]]*[@-]*[[:space:]]*|(^|[^A-Za-z0-9_./-])(bash|sh|zsh|python3?|source|exec|\.)[[:space:]]+(--?[A-Za-z-]*[[:space:]]+)*)$PREFIX_RE$SCRIPT_RE" \
+    uncommented | grep -oE "((^|[;&|(\`]|run:)[[:space:]]*[@-]*[[:space:]]*|(^|[^A-Za-z0-9_./-])(bash|sh|zsh|python3?|source|exec|\.)[[:space:]]+(--?[A-Za-z-]*([[:space:]]+[^-[:space:]][^[:space:]]*)?[[:space:]]+)*)$PREFIX_RE$SCRIPT_RE" \
         | grep -oE "$SCRIPT_RE\$" | sort -u || true
 }
 
@@ -373,6 +374,8 @@ self_test() {
     fx dashdash scripts/q.sh '#!/bin/sh\ncargo publish -p x\n'
     fx dashdash2 .github/workflows/r.yml "$WF      - run: bash -- scripts/p.sh\n"
     fx dashdash2 scripts/p.sh '#!/bin/sh\ncargo publish -p x\n'
+    fx flagarg .github/workflows/r.yml "$WF      - run: bash --rcfile /etc/bashrc scripts/p.sh\n"
+    fx flagarg scripts/p.sh '#!/bin/sh\ncargo publish -p x\n'
     mkdir -p "$d/empty"
     row() {  # row <want PASS|FAIL> <label> <cmd...>
         local want=$1 label=$2; shift 2
@@ -415,6 +418,7 @@ self_test() {
     row FAIL 'a missing root' gate_no_publish_in_ci "$d/no-such-dir"
     row FAIL 'bash --noprofile --norc -e scripts/q.sh' gate_no_publish_in_ci "$d/dashdash"
     row FAIL 'bash -- scripts/p.sh' gate_no_publish_in_ci "$d/dashdash2"
+    row FAIL 'bash --rcfile F scripts/p.sh' gate_no_publish_in_ci "$d/flagarg"
     local sec
     sec=$(printf 'CODECOV_TOKEN\tUpdated 2026-01-01\nCARGO_REGISTRY_TOKEN\tUpdated 2026-02-02\n' | registry_secrets_in)
     if [ "$sec" = "CARGO_REGISTRY_TOKEN " ]; then echo "  ok   no-registry-secret: CARGO_REGISTRY_TOKEN in a listing is found           FAIL"
