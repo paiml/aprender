@@ -475,6 +475,12 @@ pub enum ExtendedCommands {
         #[arg(long, default_value = "tui")]
         format: String,
     },
+    /// Release gates for a packed model (EXT-001 §3.6)
+    #[cfg(feature = "training")]
+    Model {
+        #[command(subcommand)]
+        command: ModelCommands,
+    },
     /// List, show, and compare training experiment runs
     #[cfg(feature = "training")]
     Runs {
@@ -1518,6 +1524,36 @@ pub enum KernelCommands {
         /// Overwrite an existing --output file (refused without it)
         #[arg(short, long)]
         force: bool,
+    },
+}
+
+#[cfg(feature = "training")]
+/// Subcommands for `apr model` — model release lifecycle (EXT-001)
+#[derive(Subcommand, Debug)]
+pub enum ModelCommands {
+    /// Run the M0..M6 release gates on a release directory and write the receipt
+    Gate {
+        /// Release directory holding model-release-v1.json and the files it lists
+        #[arg(value_name = "DIR")]
+        dir: PathBuf,
+        /// Gate evidence JSON: M1 parity, M2 sealed suites + arms, M3 probes, receipt ids
+        #[arg(long, value_name = "FILE")]
+        evidence: PathBuf,
+        /// Sealed-item directory (the eval set a dataset must not overlap, I-11)
+        #[arg(long, value_name = "DIR")]
+        sealed: PathBuf,
+        /// The released apr crate tarball, re-hashed against engine.crate_tarball_sha256
+        #[arg(long, value_name = "FILE")]
+        engine_tarball: Option<PathBuf>,
+        /// Pacha home (default: ~/.pacha)
+        #[arg(long, value_name = "DIR")]
+        pacha_home: Option<PathBuf>,
+        /// Write the receipt here (default: DIR/model-gate-receipt-v1.json)
+        #[arg(long, value_name = "FILE")]
+        out: Option<PathBuf>,
+        /// Print the receipt as JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 
