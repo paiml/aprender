@@ -8,6 +8,10 @@ fn try_safetensors_cuda_backend(
     start: Instant,
     cancel: &CancelToken,
 ) -> Option<Response> {
+    // Residency FIRST: this backend is tried before the CPU quantized one, so a
+    // refusal ahead of the `?` refused `ignore_eos` for every model in a cuda
+    // build, not just SafeTensors CUDA ones (aprender#3956).
+    let model_lock = state.safetensors_cuda_model()?;
     // PERF-039: fail closed rather than silently dropping `ignore_eos`.
     if let Some(r) = super::openai_handlers::reject_unsupported_ignore_eos(
         state,
@@ -16,7 +20,6 @@ fn try_safetensors_cuda_backend(
     ) {
         return Some(r);
     }
-    let model_lock = state.safetensors_cuda_model()?;
     let tokenizer = match require_tokenizer(state) {
         Ok(t) => t,
         Err(r) => return Some(r),
@@ -423,6 +426,8 @@ fn try_apr_transformer_backend(
 ) -> Option<Response> {
     use crate::apr_transformer::GenerateConfig;
 
+    // Residency first, as in `try_safetensors_cuda_backend` (aprender#3956).
+    let apr_transformer = state.apr_transformer()?;
     // PERF-039: fail closed rather than silently dropping `ignore_eos`.
     if let Some(r) = super::openai_handlers::reject_unsupported_ignore_eos(
         state,
@@ -431,8 +436,6 @@ fn try_apr_transformer_backend(
     ) {
         return Some(r);
     }
-
-    let apr_transformer = state.apr_transformer()?;
     let tokenizer = match require_tokenizer(state) {
         Ok(t) => t,
         Err(r) => return Some(r),

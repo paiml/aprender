@@ -299,6 +299,181 @@ if [ "${1:-}" = "--self-test" ]; then
   else
     printf 'FAIL  row 13 cfg(all/any(test)) handling, got: %s\n' "$got"; fails=1
   fi
+  # Rows 14-16 (#4114): the SOURCE reader above cannot be the verdict. scripts/package_tarball_build.sh
+  # packages the crate, unpacks the .crate outside the tree and compiles its tests there. One-crate
+  # fixture, no dependencies, so this stays cheap enough for the PR path.
+  tb_fixture() { # dir, lib.rs body
+    mkdir -p "$1/src" "$1/tests/fixtures"
+    printf '[package]\nname = "pti-fixture"\nversion = "0.1.0"\nedition = "2021"\nlicense = "MIT"\ndescription = "x"\nexclude = ["/tests/"]\n' > "$1/Cargo.toml"
+    printf 'fixture bytes\n' > "$1/tests/fixtures/header.bin"
+    printf 'fixture bytes\n' > "$1/src/in_src.bin"
+    printf '%b' "$2" > "$1/src/lib.rs"
+  }
+  tb_run() { # root -> output; rc in tb_rc
+    tb_out="$(TARBALL_BUILD_MIN_FREE_GB=1 TARBALL_BUILD_TARGET_DIR="$TD/tb-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$1" 2>&1)"; tb_rc=$?
+  }
+  tb_fixture "$TD/tb-clean" 'pub fn f() {}\n#[cfg(test)]\nmod t { const B: &[u8] = include_bytes!("in_src.bin"); #[test] fn b() { assert!(!B.is_empty()); } }\n'
+  tb_run "$TD/tb-clean"
+  if [ "$tb_rc" = 0 ] && grep -q '^PASS  all 1 published tarball' <<< "$tb_out"; then
+    printf 'ok    row 14 a tarball whose test include ships compiles: PASS\n'
+  else
+    printf 'FAIL  row 14 clean tarball: rc=%s\n%s\n' "$tb_rc" "$tb_out"; fails=1
+  fi
+  # the #4048 shape: a #[cfg(test)] include of a file the package EXCLUDES
+  tb_fixture "$TD/tb-planted" 'pub fn f() {}\n#[cfg(test)]\nmod t { const B: &[u8] = include_bytes!("../tests/fixtures/header.bin"); #[test] fn b() { assert!(!B.is_empty()); } }\n'
+  # the source reader's blind spot, over BOTH of its paths (lane 1 of the #4114 quorum: the default
+  # mode alone matches only include!() and would be blind to include_bytes! for an unrelated reason).
+  # The default scan lists include!() targets; --escapes lists include_str!/include_bytes! targets
+  # that leave the crate, with #[cfg(test)] bodies stripped. Neither reports this defect.
+  reader_sees="$( { python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/tb-planted"
+                    python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/tb-planted" --escapes; } 2>/dev/null \
+                  | grep -c 'header.bin' || true)"
+  tb_run "$TD/tb-planted"
+  if [ "$tb_rc" = 1 ] && grep -q 'RED   pti-fixture-0.1.0' <<< "$tb_out" \
+     && grep -q 'src/lib.rs:3:.*header.bin' <<< "$tb_out" && [ "$reader_sees" = 0 ]; then
+    printf 'ok    row 15 a #[cfg(test)] include of an excluded file: neither source-reader path (include!() scan, --escapes) reports it; the tarball build is RED naming it\n'
+  else
+    printf 'FAIL  row 15 planted cfg(test) include: tarball rc=%s (want 1)\n%s\n' "$tb_rc" "$tb_out"; fails=1
+  fi
+  mkdir -p "$TD/tb-none"; printf '[workspace]\nmembers = []\n' > "$TD/tb-none/Cargo.toml"
+  tb_run "$TD/tb-none"
+  if [ "$tb_rc" = 2 ]; then
+    printf 'ok    row 16 no publishable crate is "could not check" (2), never a pass\n'
+  else
+    printf 'FAIL  row 16 an empty workspace returned rc=%s\n%s\n' "$tb_rc" "$tb_out"; fails=1
+  fi
+  # Row 17 (#4114): a failing BUILD HOST is never a crate verdict. Measured on gx10 at ENOSPC: every
+  # crate became "could not compile" and the first draft reported RED. The attribution helper must
+  # say 4 (host), and it must still say 1 for a real crate error in an otherwise healthy log.
+  printf 'error: failed to write `/t/debug/.fingerprint/x/invoked.timestamp`\nCaused by:\n  No space left on device (os error 28)\nerror: could not compile `pti-fixture` (lib test)\n' > "$TD/host.log"
+  printf 'pkgs/pti-fixture-0.1.0/src/lib.rs:3:22: error: couldn'"'"'t read `x`: No such file or directory (os error 2)\nerror: could not compile `pti-fixture` (lib test) due to 1 previous error\n' > "$TD/crate.log"
+  h_rc=0; python3 "$REPO_ROOT/scripts/lib/tarball_build_errors.py" "$TD/host.log" > /dev/null || h_rc=$?
+  c_rc=0; python3 "$REPO_ROOT/scripts/lib/tarball_build_errors.py" "$TD/crate.log" > /dev/null || c_rc=$?
+  if [ "$h_rc" = 4 ] && [ "$c_rc" = 1 ]; then
+    printf 'ok    row 17 a disk-full host is 4 (could not check), a crate error is 1 (RED)\n'
+  else
+    printf 'FAIL  row 17 host log rc=%s (want 4), crate log rc=%s (want 1)\n' "$h_rc" "$c_rc"; fails=1
+  fi
+  # Row 18 (#4114 quorum lane 1): --crate-file keys on the MANIFEST name, so a prerelease version
+  # with a '-' (0.1.0-rc.1) substitutes the right crate instead of "matching 0".
+  tb_fixture "$TD/tb-rc" 'pub fn f() {}\n'
+  sed -i 's/^version = "0.1.0"$/version = "0.1.0-rc.1"/' "$TD/tb-rc/Cargo.toml"
+  ( cd "$TD/tb-rc" && CARGO_TARGET_DIR="$TD/tb-rc-pkg" cargo package --no-verify --allow-dirty > /dev/null 2>&1 )
+  rc_crate="$TD/tb-rc-pkg/package/pti-fixture-0.1.0-rc.1.crate"
+  tb_out="$(TARBALL_BUILD_MIN_FREE_GB=1 TARBALL_BUILD_TARGET_DIR="$TD/tb-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$TD/tb-rc" --crate-file "$rc_crate" 2>&1)"; tb_rc=$?
+  if [ -f "$rc_crate" ] && [ "$tb_rc" = 0 ] && grep -q '^SUBSTITUTED pti-fixture (pti-fixture-0.1.0-rc.1)' <<< "$tb_out"; then
+    printf 'ok    row 18 a prerelease --crate-file substitutes by manifest name\n'
+  else
+    printf 'FAIL  row 18 prerelease substitution: rc=%s\n%s\n' "$tb_rc" "$tb_out"; fails=1
+  fi
+  # Row 19 (#4114/#4129/#4130): the tarballs' test surface may shrink only where the gate SAYS so. A
+  # dropped integration target (excluded tests/it.rs) and a run-time *_or_skip( site are both counted.
+  tb_fixture "$TD/tb-shrink" 'pub fn f() {}\n#[cfg(test)]\nfn fixture_or_skip(t: &str) -> Option<()> { let _ = t; None }\n#[cfg(test)]\nmod t { #[test] fn a() { let _ = super::fixture_or_skip("a"); } }\n'
+  printf '#[test]\nfn it() {}\n' > "$TD/tb-shrink/tests/it.rs"
+  tb_run "$TD/tb-shrink"
+  if [ "$tb_rc" = 0 ] && grep -q '^NOT SHIPPED  pti-fixture .* 1 integration test target(s): tests/it.rs' <<< "$tb_out" \
+     && grep -q '^SKIP SITES   pti-fixture-0.1.0 .* 1 run-time' <<< "$tb_out" \
+     && grep -q '^SHRINK: 1 integration test target(s) not shipped across 1 crate(s); 1 run-time skip site(s)' <<< "$tb_out"; then
+    printf 'ok    row 19 a dropped integration target and a run-time skip site are both counted, never silent\n'
+  else
+    printf 'FAIL  row 19 shrink report: rc=%s\n%s\n' "$tb_rc" "$tb_out"; fails=1
+  fi
+  # Row 20 (cop, 2026-09-24): a gate that fills its disk is its own outage. Below the free-space
+  # floor it refuses (2) before writing, and its work dir is BESIDE the target, never in /tmp.
+  fl_out="$(TARBALL_BUILD_MIN_FREE_GB=999999999 TARBALL_BUILD_TARGET_DIR="$TD/tb-floor" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$TD/tb-clean" 2>&1)"; fl_rc=$?
+  left="$(find "$TD" -maxdepth 1 -name 'tb-floor.work.*' | grep -c . || true)"
+  tb_run "$TD/tb-clean"
+  if [ "$fl_rc" = 2 ] && grep -q 'below the 999999999G floor' <<< "$fl_out" && [ "$left" = 0 ] \
+     && grep -qF "work dir: $TD/tb-target.work." <<< "$tb_out"; then
+    printf 'ok    row 20 below the free-space floor the gate refuses (2) before writing; the work dir sits beside the target\n'
+  else
+    printf 'FAIL  row 20 floor: rc=%s left=%s\n%s\n' "$fl_rc" "$left" "$fl_out"; fails=1
+  fi
+  # Rows 21-22 (#4175): --run executes what the tarball compiled, with the environment `cargo test`
+  # gives it. The fixture's integration test reads CARGO_BIN_EXE_<bin>, CARGO_MANIFEST_DIR, the cwd and
+  # RUSTUP_TOOLCHAIN at RUN time, so a bare exe (the 0.69.1 false REDs B1/B3) fails it. It runs from
+  # $TD, never the manifest dir, so the cwd check is not satisfied by accident.
+  run_fixture() { # dir, extra test file body ('' for none)
+    mkdir -p "$1/src/bin" "$1/tests"
+    printf '[package]\nname = "ptr-fixture"\nversion = "0.1.0"\nedition = "2021"\nlicense = "MIT"\ndescription = "x"\n' > "$1/Cargo.toml"
+    printf 'pub fn two() -> u32 { 2 }\n' > "$1/src/lib.rs"
+    printf 'fn main() {}\n' > "$1/src/bin/ptr-tool.rs"
+    printf '#[test] fn env_as_cargo_test_gives_it() {\n  let exe = std::env::var("CARGO_BIN_EXE_ptr-tool").expect("CARGO_BIN_EXE at run time");\n  assert!(std::path::Path::new(&exe).exists());\n  let md = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");\n  assert_eq!(std::env::current_dir().unwrap(), std::path::PathBuf::from(&md));\n  assert!(std::env::var("RUSTUP_TOOLCHAIN").is_ok());\n  assert_eq!(ptr_fixture::two(), 2);\n}\n' > "$1/tests/env.rs"
+    [ -z "$2" ] || printf '%b' "$2" > "$1/tests/bad.rs"
+  }
+  run_fixture "$TD/tr-clean" ''
+  tr_out="$(cd "$TD" && TARBALL_BUILD_MIN_FREE_GB=1 TARBALL_BUILD_TARGET_DIR="$TD/tr-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$TD/tr-clean" --run 2>&1)"; tr_rc=$?
+  if [ "$tr_rc" = 0 ] && grep -q 'compile AND run' <<< "$tr_out"; then
+    printf 'ok    row 21 --run: a tarball test that needs the cargo-test environment passes when run\n'
+  else
+    printf 'FAIL  row 21 --run clean: rc=%s\n%s\n' "$tr_rc" "$tr_out"; fails=1
+  fi
+  run_fixture "$TD/tr-bad" '#[test] fn fails_on_purpose() { assert_eq!(ptr_fixture::two(), 3); }\n'
+  tr_out="$(cd "$TD" && TARBALL_BUILD_MIN_FREE_GB=1 TARBALL_BUILD_TARGET_DIR="$TD/tr-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$TD/tr-bad" --run 2>&1)"; tr_rc=$?
+  if [ "$tr_rc" = 1 ] && grep -q 'RUN FAIL  ptr-fixture-0.1.0 test bad .*fails_on_purpose' <<< "$tr_out" && ! grep -q 'test env ' <<< "$tr_out"; then
+    printf 'ok    row 22 --run: a failing tarball test is RED (1), named by binary and test; the passing one is not\n'
+  else
+    printf 'FAIL  row 22 --run planted failure: rc=%s (want 1)\n%s\n' "$tr_rc" "$tr_out"; fails=1
+  fi
+  # a memory cap that cannot be applied (no user bus) is "could not check" (2), never a named RED (1)
+  tr_out="$(cd "$TD" && DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent XDG_RUNTIME_DIR=/nonexistent TARBALL_RUN_MEM_MAX=1G TARBALL_BUILD_MIN_FREE_GB=1 TARBALL_BUILD_TARGET_DIR="$TD/tr-target" bash "$REPO_ROOT/scripts/package_tarball_build.sh" --root "$TD/tr-clean" --run 2>&1)"; tr_rc=$?
+  if [ "$tr_rc" = 2 ] && grep -q 'cannot check: TARBALL_RUN_MEM_MAX' <<< "$tr_out"; then
+    printf 'ok    row 23 --run: a memory cap whose systemd scope cannot start is could-not-check (2), not RED\n'
+  else
+    printf 'FAIL  row 23 --run unstartable cap: rc=%s (want 2)\n%s\n' "$tr_rc" "$tr_out"; fails=1
+  fi
+  # a test binary that cannot even start (stale exe, EACCES, fork failure) is could-not-check (2), not RED:
+  # 1 is reserved for a binary that RAN and failed. Hermetic: a hand-written stream, no cargo.
+  printf '{"reason":"compiler-artifact","manifest_path":"%s","target":{"kind":["test"],"name":"gone"},"profile":{"test":true},"executable":"%s"}\n' \
+    "$TD/tr-clean/Cargo.toml" "$TD/no-such-test-exe" > "$TD/tr-gone.json"
+  python3 "$REPO_ROOT/scripts/lib/tarball_test_run.py" "$TD/tr-gone.json" "$TD/tr-gone.run" --cargo /bin/true --toolchain x \
+    --sysroot "$TD" --target-dir "$TD" > "$TD/tr-gone.out" 2>&1; tr_rc=$?
+  if [ "$tr_rc" = 2 ] && grep -q 'did not start' "$TD/tr-gone.out"; then
+    printf 'ok    row 24 --run: a test binary that cannot start is could-not-check (2), never a named RED\n'
+  else
+    printf 'FAIL  row 24 --run unstartable binary: rc=%s (want 2)\n%s\n' "$tr_rc" "$(cat "$TD/tr-gone.out")"; fails=1
+  fi
+  # rows 25-28, hermetic: shell scripts stand in for test binaries. A binary the HOST killed (SIGKILL: OOM
+  # or the scope's cap; our --timeout) proves nothing: 2. One that RAN and failed (exit 1, SIGABRT) is 1, and
+  # 1 outranks every could-not-check binary in the same run, so a regression is never hidden behind one.
+  for k in exit1 abort sigkill slow; do
+    case "$k" in
+      exit1) body='exit 1' ;; abort) body='kill -ABRT $$' ;; sigkill) body='kill -KILL $$' ;; slow) body='sleep 30' ;;
+    esac
+    printf '#!/bin/bash\n%s\n' "$body" > "$TD/tr-$k.sh"; chmod +x "$TD/tr-$k.sh"
+  done
+  tr_stream() {  # tr_stream OUT NAME... : one test artifact per NAME (tr-NAME.sh; "gone" = no such exe)
+    local out=$1 n; shift; : > "$out"
+    for n in "$@"; do
+      printf '{"reason":"compiler-artifact","manifest_path":"%s","target":{"kind":["test"],"name":"%s"},"profile":{"test":true},"executable":"%s"}\n' \
+        "$TD/tr-clean/Cargo.toml" "$n" "$TD/tr-$n.sh" >> "$out"
+    done
+  }
+  tr_py() {  # tr_py CASE NAME... -> tr_rc, $TD/tr-CASE.out
+    tr_stream "$TD/tr-$1.json" "${@:2}"
+    python3 "$REPO_ROOT/scripts/lib/tarball_test_run.py" "$TD/tr-$1.json" "$TD/tr-$1.run" --timeout 2 --cargo /bin/true \
+      --toolchain x --sysroot "$TD" --target-dir "$TD" > "$TD/tr-$1.out" 2>&1; tr_rc=$?
+  }
+  tr_py killed sigkill slow
+  if [ "$tr_rc" = 2 ] && grep -q 'RUN KILLED .* sigkill by SIGKILL' "$TD/tr-killed.out" \
+     && grep -q 'RUN KILLED .* slow by the --timeout' "$TD/tr-killed.out" && ! grep -q 'RUN FAIL' "$TD/tr-killed.out"; then
+    printf 'ok    row 25 --run: a binary SIGKILLed or timed out is could-not-check (2), named, never a RED\n'
+  else
+    printf 'FAIL  row 25 --run host-killed: rc=%s (want 2)\n%s\n' "$tr_rc" "$(cat "$TD/tr-killed.out")"; fails=1
+  fi
+  tr_py abrt abort
+  if [ "$tr_rc" = 1 ] && grep -q 'RUN FAIL .* abort rc=-6' "$TD/tr-abrt.out"; then
+    printf 'ok    row 26 --run: a binary that aborts (SIGABRT) is a named RED (1): it ran and failed\n'
+  else
+    printf 'FAIL  row 26 --run SIGABRT: rc=%s (want 1)\n%s\n' "$tr_rc" "$(cat "$TD/tr-abrt.out")"; fails=1
+  fi
+  tr_py mixed gone sigkill exit1
+  if [ "$tr_rc" = 1 ] && grep -q 'RUN FAIL .* exit1 rc=1' "$TD/tr-mixed.out" && grep -q 'RUN NOT STARTED .* gone' "$TD/tr-mixed.out" \
+     && grep -q 'RUN KILLED .* sigkill' "$TD/tr-mixed.out"; then
+    printf 'ok    row 27 --run: a real failure is RED (1) even beside an unstarted and a killed binary, which are listed\n'
+  else
+    printf 'FAIL  row 27 --run mixed: rc=%s (want 1)\n%s\n' "$tr_rc" "$(cat "$TD/tr-mixed.out")"; fails=1
+  fi
   [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
   printf '\nSELF-TEST PASSED\n'
   exit 0
