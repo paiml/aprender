@@ -28,6 +28,7 @@ Speed is not a gate here; the receipt records it.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -185,8 +186,48 @@ def stop_server(st, reason):
     save_state(st)
 
 
+def weights_identity(path, prev=None):
+    """The served weights' identity: path, sha256 and the stat it was hashed at (REX-07 Ask 2).
+
+    The hash is reused only when path, size and mtime_ns all match the previous record, so a
+    restart does not re-read 2.5 GB, and a replaced file is always re-hashed. An unreadable
+    file gives model_sha256 None with the reason, never a crash of the watch loop.
+    """
+    try:
+        s = os.stat(path)
+    except OSError as e:
+        return {"model": path, "model_sha256": None, "why": f"cannot stat: {e}"}
+    ident = {"model": path, "size": s.st_size, "mtime_ns": s.st_mtime_ns}
+    if prev and prev.get("model_sha256") and all(prev.get(k) == v for k, v in ident.items()):
+        return prev
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+    except OSError as e:
+        return {**ident, "model_sha256": None, "why": f"cannot read: {e}"}
+    return {**ident, "model_sha256": h.hexdigest()}
+
+
+def weights_still(ident):
+    """ident, or a copy with model_sha256 None when the file changed after it was hashed."""
+    try:
+        s = os.stat(ident["model"])
+        same = (s.st_size, s.st_mtime_ns) == (ident.get("size"), ident.get("mtime_ns"))
+    except OSError:
+        same = False
+    if same or ident.get("model_sha256") is None:
+        return ident
+    return {**ident, "model_sha256": None,
+            "why": "the model file changed between hashing and the server answering /health"}
+
+
 def start_server(st, args):
     os.makedirs(STATE_DIR, exist_ok=True)
+    # hashed BEFORE the load: the served weights are the bytes read here, re-checked by stat
+    # once /health answers (weights_still)
+    st["weights"] = weights_identity(args.model, st.get("weights"))
     log = open(os.path.join(STATE_DIR, "serve.log"), "a")
     # #4089: on v0.69.1 `--backend cuda` alone silently runs on the CPU. The lane asks for
     # the layers as a QUANTITY and proves the offload per request (`used_gpu`, below).
@@ -210,6 +251,7 @@ def start_server(st, args):
             return
         if health(f"http://127.0.0.1:{GX10_PORT}"):
             st["serving"] = True
+            st["weights"] = weights_still(st["weights"])
             save_state(st)
             return
         time.sleep(1)
@@ -311,9 +353,13 @@ def parse_gx10(stdout):
     apps = [l for l in lines[i + 1:j] if not l.startswith(("PROBE=", "HEALTH="))]
     trace = lines[j + 1:]
     pid = str(st.get("pid"))
+    w = st.get("weights") if isinstance(st.get("weights"), dict) else {}
     return resp, {"host": "gx10", "server_pid": st.get("pid"),
                   "health": h,
                   "apr": h.get("version") if isinstance(h, dict) else None,
+                  # the served weights (REX-07 Ask 2): null from a watcher that predates it
+                  "model": w.get("model"),
+                  "model_sha256": w.get("model_sha256"),
                   "gpu_apps": apps,
                   "server_holds_gpu": any(a.split(",")[0].strip() == pid for a in apps),
                   "used_gpu_probe": probe.removeprefix("PROBE=") == "True",
