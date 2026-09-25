@@ -299,7 +299,7 @@ EOF
     self=$d/mutant.sh
     sed 's/if ! out=$(bash "$HERE\/asset_version_check.sh"/if false \&\& out=$(bash "$HERE\/asset_version_check.sh"/' "${BASH_SOURCE[0]}" > "$self"
     if cmp -s "$self" "${BASH_SOURCE[0]}"; then echo "  FAIL verify mutant not built: the anchor moved"; fail=1
-    else e2e 0 1 'mutant (apr verify deleted) publishes past the lying host: the verify is what holds it' good1 bad good2; fi
+    else e2e 0 1 'mutant (asset verify deleted) publishes past the lying host: the verify is what holds it' good1 bad good2; fi
     rm -rf -- "${d:?}"
     if [ "$fail" = 0 ]; then echo "$PROG self-test: PASS"; else echo "$PROG self-test: FAIL"; fi
     return "$fail"
