@@ -335,7 +335,7 @@ spans via OTLP for distributed tracing with Jaeger/Tempo.
 | Command | Purpose | Tracing |
 |---------|---------|---------|
 | `apr inspect` | Metadata, vocab, structure | — |
-| `apr validate` | Integrity, 100-point quality score | — |
+| `apr validate` | Integrity, structural quality score over the checks that ran | — |
 | `apr diff` | Two-model comparison | — |
 | `apr trace` | Layer-by-layer state machine analysis | Full |
 | `apr profile` | Roofline, flamegraph, energy, CI mode | BrickProfiler |

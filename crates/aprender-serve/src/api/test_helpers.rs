@@ -114,6 +114,41 @@ pub fn create_test_app() -> Router {
     create_router(state)
 }
 
+/// #3991: a state that HAS a `cached_model` — the only state that mounts
+/// `/v1/batch/completions`. On any other state the route is neither mounted nor
+/// listed, so tests of that handler's request validation are built on this.
+#[cfg(feature = "gpu")]
+pub fn create_test_cached_state() -> AppState {
+    use crate::gguf::{ArchConstraints, GGUFConfig, OwnedQuantizedModelCachedSync};
+
+    let config = GGUFConfig {
+        architecture: "llama".to_string(),
+        constraints: ArchConstraints::from_architecture("llama"),
+        hidden_dim: 64,
+        intermediate_dim: 128,
+        num_layers: 2,
+        num_heads: 4,
+        num_kv_heads: 4,
+        vocab_size: 256,
+        context_length: 128,
+        rope_theta: 10000.0,
+        eps: 1e-5,
+        rope_type: 0,
+        explicit_head_dim: None,
+        query_pre_attn_scalar: None,
+        bos_token_id: None,
+        eos_token_id: None,
+    };
+    let cached = OwnedQuantizedModelCachedSync::new(create_test_quantized_model(&config));
+    AppState::with_cached_model(cached).expect("build cached AppState")
+}
+
+/// Router over [`create_test_cached_state`].
+#[cfg(feature = "gpu")]
+pub fn create_test_cached_app() -> Router {
+    create_router(create_test_cached_state())
+}
+
 /// Helper to create test quantized model for IMP-116 tests
 #[cfg(feature = "gpu")]
 pub fn create_test_quantized_model(

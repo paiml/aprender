@@ -68,11 +68,7 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("gemm_{}_{}_{}_{}", m, n, k, 32);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -225,11 +221,7 @@ impl CudaExecutor {
         let cache_key = format!("gemm_{}_{}_{}_{}", m, n, k, 32);
 
         // Load module if not cached
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -345,11 +337,7 @@ impl CudaExecutor {
         let cache_key = format!("gemm_{}_{}_{}_{}", m, n, k, 32);
 
         // Load module if not cached
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -407,7 +395,7 @@ impl CudaExecutor {
     /// GH-174: GEMM using named FP16 cached weights via cuBLAS HGEMM.
     ///
     /// FP16 weights × FP16 activations → FP32 output using tensor cores.
-    /// ~3.5x faster than FP32 GemmTiled for SafeTensors F16 models
+    // ~3.5x faster than FP32 GemmTiled for SafeTensors F16 models
     /// (2x bandwidth savings + tensor core acceleration).
     ///
     /// Falls back to FP32 `gemm_b_cached()` if FP16 weights are not

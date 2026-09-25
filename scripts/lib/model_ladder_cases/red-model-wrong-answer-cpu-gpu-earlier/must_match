@@ -1,0 +1,1 @@
+apr CPU and GPU diverge at step 2, EARLIER than the oracle's own CPU/CUDA split \(step 4\)

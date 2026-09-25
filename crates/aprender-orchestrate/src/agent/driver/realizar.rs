@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use std::path::PathBuf;
 use tracing::info;
 
-use super::chat_template::{format_prompt_with_template, ChatTemplate};
+use super::chat_template::{format_prompt_for_model, format_prompt_with_template, ChatTemplate};
 use super::validate::validate_model_file;
 use super::{CompletionRequest, CompletionResponse, LlmDriver, ToolCall};
 use crate::agent::result::{AgentError, DriverError, StopReason, TokenUsage};
@@ -61,7 +61,10 @@ impl RealizarDriver {
 impl LlmDriver for RealizarDriver {
     async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, AgentError> {
         // Format messages using auto-detected chat template
-        let prompt = format_prompt_with_template(&request, self.template);
+        // #3801: the prompt PRODUCTION would send for this model — realizar's
+        // detector keyed on `general.architecture`, not a filename guess. The
+        // stored `self.template` is kept for the Llama-3 exception inside.
+        let prompt = format_prompt_for_model(&request, &self.model_path);
 
         // Build inference config (explicit fields — no Default impl)
         let config = realizar::infer::InferenceConfig {
@@ -70,7 +73,9 @@ impl LlmDriver for RealizarDriver {
             input_tokens: None,
             max_tokens: request.max_tokens as usize,
             temperature: request.temperature,
-            top_k: 0,
+            // #3754: the default `apr run`, `apr chat` and `apr serve` sample with. This
+            // driver used 0 (no filter) while `apr code`'s apr-serve driver got serve's 40.
+            top_k: realizar::infer::sampling_top_k(request.temperature, None),
             // PMAT-823: new sampling fields default to greedy/disabled so this
             // agent driver's behavior is unchanged (it only exposes temperature).
             top_p: None,
@@ -80,6 +85,10 @@ impl LlmDriver for RealizarDriver {
             // PMAT-156/158: Disable GPU only for APR models (wgpu shader bug).
             // GGUF models work fine with CUDA — keep GPU enabled for them.
             no_gpu: self.model_path.extension().is_some_and(|e| e == "apr"),
+            // #3757: this driver exposes no accelerator flag, so nothing here is
+            // an explicit request — the wgpu fallback stays off, as it already
+            // effectively was (it failed its own cpu-parity gate and fell back).
+            accel_forced: false,
             trace: false,
             trace_verbose: false,
             trace_output: None,
@@ -87,6 +96,7 @@ impl LlmDriver for RealizarDriver {
             verbose: false,
             use_mock_backend: false,
             force_chat_template: false,
+            thinking: None,
             stop_tokens: vec![],
         };
 

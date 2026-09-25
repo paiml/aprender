@@ -112,7 +112,7 @@ impl PartialNeoxRopeKernel {
 
 /// `(sin(theta), cos(theta))` with a Cody-Waite reduction of `theta` into `[-pi, pi]`
 /// before the hardware approximations, which are only accurate in that range.
-fn emit_sin_cos(
+pub(super) fn emit_sin_cos(
     ctx: &mut crate::ptx::builder::KernelBuilder<'_>,
     theta: VirtualReg,
 ) -> (VirtualReg, VirtualReg) {

@@ -42,6 +42,7 @@ fn test_imp_1001d_gpu_model_with_cuda_backend() {
         max_tokens: 5,
         temperature: 1.0,
         top_k: 50,
+        seed: crate::sampling::DEFAULT_SEED,
         stop_tokens: vec![],
         trace: false,
         // aprender#2376(3) added this field and missed this initializer, because

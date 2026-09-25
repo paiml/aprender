@@ -256,6 +256,7 @@ Line with \n escaped newline<|im_end|>";
     #[test]
     fn test_inference_result_high_precision_times() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -265,6 +266,7 @@ Line with \n escaped newline<|im_end|>";
             load_ms: 0.000001,
             format: "GGUF".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert!(result.inference_ms > 0.0);
         assert!(result.tok_per_sec > 999999.0);
@@ -273,6 +275,7 @@ Line with \n escaped newline<|im_end|>";
     #[test]
     fn test_inference_result_extreme_token_counts() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1; 100000],
             input_token_count: 50000,
@@ -282,6 +285,7 @@ Line with \n escaped newline<|im_end|>";
             load_ms: 100.0,
             format: "GGUF".to_string(),
             used_gpu: true,
+            gpu_attempted: true,
         };
         assert_eq!(
             result.input_token_count + result.generated_token_count,

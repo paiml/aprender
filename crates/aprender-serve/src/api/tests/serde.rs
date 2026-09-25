@@ -237,8 +237,10 @@ async fn test_batch_generate_endpoint() {
 }
 
 #[tokio::test]
+#[cfg(feature = "gpu")]
 async fn test_gpu_batch_completions_endpoint() {
-    let app = create_test_app_shared();
+    // #3991: only a `cached_model` state mounts this route.
+    let app = crate::api::test_helpers::create_test_cached_app();
     let request = Request::builder()
         .method("POST")
         .uri("/v1/batch/completions")
@@ -259,8 +261,10 @@ async fn test_gpu_batch_completions_endpoint() {
 }
 
 #[tokio::test]
+#[cfg(feature = "gpu")]
 async fn test_gpu_batch_completions_empty_prompts() {
-    let app = create_test_app_shared();
+    // #3991: only a `cached_model` state mounts this route.
+    let app = crate::api::test_helpers::create_test_cached_app();
     let request = Request::builder()
         .method("POST")
         .uri("/v1/batch/completions")

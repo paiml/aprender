@@ -1,3 +1,4 @@
+#![cfg(feature = "apr-tools")] // apr's own tools (PMAT-3954: they exist only under this feature)
 //! FALSIFY-INVENTORY-003 — the inventory dispatch path produces the
 //! same `tools/call` envelope as the pre-migration hardcoded match
 //! arms for every shipped tool. Equivalence is checked at the JSON

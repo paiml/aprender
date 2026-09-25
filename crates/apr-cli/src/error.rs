@@ -65,6 +65,18 @@ pub enum CliError {
         message: String,
     },
 
+    /// A required COMPANION file was not found in any searched location.
+    ///
+    /// #3881: `apr chat` reported a missing `tokenizer.json` as
+    /// [`CliError::InvalidFormat`], whose Display hardcodes "Invalid APR
+    /// format" and whose code is 4 — so a user with a perfectly good model was
+    /// told the model was malformed. Nothing about the model is wrong; a file
+    /// beside it is absent. Shares exit code 3 with `FileNotFound`/`NotAFile`,
+    /// the class this actually belongs to, and passes its message through
+    /// UNPREFIXED because the message already names every path searched.
+    #[error("{0}")]
+    MissingCompanionFile(String),
+
     /// IO error
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -146,7 +158,7 @@ impl CliError {
     /// testable in-process.
     pub fn exit_code_value(&self) -> u8 {
         match self {
-            Self::FileNotFound(_) | Self::NotAFile(_) => 3,
+            Self::FileNotFound(_) | Self::NotAFile(_) | Self::MissingCompanionFile(_) => 3,
             Self::InvalidFormat(_) | Self::InvalidInput(_) | Self::InvalidModelFile { .. } => 4,
             Self::Io(_) => 7,
             Self::ValidationFailed(_) => 5,

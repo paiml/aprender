@@ -543,7 +543,7 @@ fn infer_moe_config_from_tensors(
 /// # Returns
 /// Output vector [n]
 #[cfg(feature = "cuda")]
-pub fn q4k_gemv(
+pub fn quantized_gemv(
     executor: &mut CudaExecutor,
     cache_key: &str,
     input: &[f32],
@@ -551,12 +551,46 @@ pub fn q4k_gemv(
     k: usize,
 ) -> Result<Vec<f32>> {
     let mut output = vec![0.0f32; n];
-    executor
-        .q4k_gemv_cached(cache_key, input, &mut output, n as u32, k as u32)
-        .map_err(|e| RealizarError::GpuError {
-            reason: format!("Q4K GEMV failed for {cache_key}: {e}"),
-        })?;
+    let launched = match executor.get_quantized_weight_type(cache_key) {
+        Some(Q6K_TYPE) => {
+            executor.q6k_gemv_cached(cache_key, input, &mut output, n as u32, k as u32)
+        },
+        None | Some(Q4K_TYPE) => {
+            executor.q4k_gemv_cached(cache_key, input, &mut output, n as u32, k as u32)
+        },
+        Some(other) => return Err(unsupported_qtype(cache_key, other)),
+    };
+    launched.map_err(|e| RealizarError::GpuError {
+        reason: format!("GEMV failed for {cache_key}: {e}"),
+    })?;
     Ok(output)
+}
+
+/// #3791: whether `key` takes this path's batched Q4_K kernels.
+///
+/// The pool upload records every tensor's GGML type — Q4_K and Q6_K alike — but
+/// every GEMV here launched a Q4_K kernel. A Q4_K_M file keeps half its layers'
+/// `attn_v` and `ffn_down`, and its `lm_head`, at Q6_K; decoded as Q4_K they gave
+/// NaN logits: "HHHH…" at T=0.8, argmax = vocab−1 (151935) at T=0. Only a
+/// tensor that IS Q4_K may enter a batched Q4_K launch; anything else goes
+/// through [`quantized_gemv`], which dispatches on the recorded type.
+fn is_q4k(executor: &CudaExecutor, key: &str) -> bool {
+    matches!(
+        executor.get_quantized_weight_type(key),
+        None | Some(Q4K_TYPE)
+    )
+}
+
+/// A weight of a type this path has no kernel for: refused by name, never decoded
+/// as Q4_K (#3791).
+fn unsupported_qtype(key: &str, qtype: u32) -> RealizarError {
+    RealizarError::UnsupportedOperation {
+        operation: "apr_q4k_gemv".to_string(),
+        reason: format!(
+            "'{key}' is GGML type {qtype}; the APR Q4K GPU path has GEMV kernels for Q4_K and \
+             Q6_K only, and refuses rather than decoding it as Q4_K (#3791)"
+        ),
+    }
 }
 
 /// ALB-111: Q4K GEMV with input already in the GEMV input buffer.
@@ -565,9 +599,14 @@ pub fn q4k_gemv(
 fn q4k_gemv_reuse_input(
     executor: &mut CudaExecutor,
     cache_key: &str,
+    input: &[f32],
     n: usize,
     k: usize,
 ) -> Result<Vec<f32>> {
+    // #3791: the input buffer holds the activation for a Q4_K launch only.
+    if !is_q4k(executor, cache_key) {
+        return quantized_gemv(executor, cache_key, input, n, k);
+    }
     let mut output = vec![0.0f32; n];
     let out_ptr = executor
         .ensure_gemv_output_buffer(n)
@@ -605,6 +644,15 @@ fn q4k_batch_qkv(
     kv_dim: usize,
     hidden_dim: usize,
 ) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>)> {
+    // #3791: batch only when all three are Q4_K (a Q4_K_M file keeps attn_v at Q6_K
+    // in half its layers); otherwise each projection dispatches on its own type.
+    if !(is_q4k(executor, q_key) && is_q4k(executor, k_key) && is_q4k(executor, v_key)) {
+        return Ok((
+            quantized_gemv(executor, q_key, normed, q_dim, hidden_dim)?,
+            quantized_gemv(executor, k_key, normed, kv_dim, hidden_dim)?,
+            quantized_gemv(executor, v_key, normed, kv_dim, hidden_dim)?,
+        ));
+    }
     // Upload input once
     executor
         .q4k_upload_to_input_buffer(normed, hidden_dim as u32)
@@ -876,7 +924,7 @@ fn moe_ffn_forward(
 ) -> Result<Vec<f32>> {
     // Step 1: Gate GEMV (hidden_dim → num_experts)
     let gate_key = format!("model.layers.{layer_idx}.mlp.gate.weight");
-    let logits = q4k_gemv(executor, &gate_key, hidden_state, num_experts, hidden_dim)?;
+    let logits = quantized_gemv(executor, &gate_key, hidden_state, num_experts, hidden_dim)?;
 
     // Softmax
     let max_logit = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
@@ -928,7 +976,7 @@ fn moe_ffn_forward(
         }
 
         // down_proj: moe_intermediate → hidden_dim
-        let down_out = q4k_gemv(executor, &down_key, &act, hidden_dim, moe_intermediate)?;
+        let down_out = quantized_gemv(executor, &down_key, &act, hidden_dim, moe_intermediate)?;
 
         // Re-upload hidden_state for next expert's gate/up (down_proj overwrote input buffer)
         if idx + 1 < top_k.len() {
@@ -973,7 +1021,7 @@ fn moe_ffn_forward(
             act[i] = silu(gate_out[i]) * up_out[i];
         }
 
-        let shared_out = q4k_gemv(
+        let shared_out = quantized_gemv(
             executor,
             &shared_down_key,
             &act,
@@ -984,7 +1032,8 @@ fn moe_ffn_forward(
         // Check for shared expert gate
         let gate_weight_key = format!("model.layers.{layer_idx}.mlp.shared_expert_gate.weight");
         if executor.has_quantized_weights(&gate_weight_key) {
-            let gate_logit = q4k_gemv(executor, &gate_weight_key, hidden_state, 1, hidden_dim)?;
+            let gate_logit =
+                quantized_gemv(executor, &gate_weight_key, hidden_state, 1, hidden_dim)?;
             let gate_scale = 1.0 / (1.0 + (-gate_logit[0]).exp()); // sigmoid
             for i in 0..hidden_dim {
                 routed_out[i] += gate_scale * shared_out[i];
@@ -1013,21 +1062,39 @@ fn dense_ffn_forward(
     let up_key = format!("model.layers.{layer_idx}.mlp.up_proj.weight");
     let down_key = format!("model.layers.{layer_idx}.mlp.down_proj.weight");
 
-    // Upload hidden_state once, batch gate + up
-    executor
-        .q4k_upload_to_input_buffer(hidden_state, hidden_dim as u32)
-        .map_err(|e| RealizarError::GpuError {
-            reason: format!("Upload: {e}"),
-        })?;
-    let (gate_out, up_out) =
-        q4k_batch_gate_up(executor, &gate_key, &up_key, intermediate_dim, hidden_dim)?;
+    // Upload hidden_state once, batch gate + up — when both are Q4_K (#3791).
+    let (gate_out, up_out) = if is_q4k(executor, &gate_key) && is_q4k(executor, &up_key) {
+        executor
+            .q4k_upload_to_input_buffer(hidden_state, hidden_dim as u32)
+            .map_err(|e| RealizarError::GpuError {
+                reason: format!("Upload: {e}"),
+            })?;
+        q4k_batch_gate_up(executor, &gate_key, &up_key, intermediate_dim, hidden_dim)?
+    } else {
+        (
+            quantized_gemv(
+                executor,
+                &gate_key,
+                hidden_state,
+                intermediate_dim,
+                hidden_dim,
+            )?,
+            quantized_gemv(
+                executor,
+                &up_key,
+                hidden_state,
+                intermediate_dim,
+                hidden_dim,
+            )?,
+        )
+    };
 
     let mut act = vec![0.0f32; intermediate_dim];
     for i in 0..intermediate_dim {
         act[i] = silu(gate_out[i]) * up_out[i];
     }
 
-    q4k_gemv(executor, &down_key, &act, hidden_dim, intermediate_dim)
+    quantized_gemv(executor, &down_key, &act, hidden_dim, intermediate_dim)
 }
 
 /// Per-head RMS norm for QK-norm (Qwen3-style).
@@ -1163,7 +1230,7 @@ pub fn forward_token_apr_q4k(
             .map_err(|e| RealizarError::GpuError {
                 reason: format!("Upload: {e}"),
             })?;
-        let attn_proj = q4k_gemv_reuse_input(executor, &o_key, hidden_dim, q_dim)?;
+        let attn_proj = q4k_gemv_reuse_input(executor, &o_key, &attn_out, hidden_dim, q_dim)?;
 
         // 2f. Residual
         for i in 0..hidden_dim {
@@ -1212,7 +1279,7 @@ pub fn forward_token_apr_q4k(
                                                    // Check if lm_head exists as a separate tensor
     let lm_head_output_key = "lm_head.weight";
     if executor.has_quantized_weights(lm_head_output_key) {
-        q4k_gemv(
+        quantized_gemv(
             executor,
             lm_head_output_key,
             &final_normed,
@@ -1221,7 +1288,7 @@ pub fn forward_token_apr_q4k(
         )
     } else if executor.has_quantized_weights(lm_head_key) {
         // Tied embeddings: use embed_tokens as LM head
-        q4k_gemv(
+        quantized_gemv(
             executor,
             lm_head_key,
             &final_normed,

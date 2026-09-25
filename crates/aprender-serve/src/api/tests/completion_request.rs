@@ -64,6 +64,7 @@ fn test_completion_request_traits() {
 #[test]
 fn test_completion_response_serialization() {
     let response = CompletionResponse {
+        used_gpu: None,
         id: "cmpl-test-123".to_string(),
         object: "text_completion".to_string(),
         created: 1700000000,
