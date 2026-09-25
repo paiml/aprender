@@ -151,6 +151,22 @@ fn target(stage: &str) -> (&'static str, Option<&'static str>) {
     }
 }
 
+/// Whether a field that is not the plant's own moved outside its band.
+///
+/// A plant is a sleep, and every field but the residual is an `elapsed()` window around its own
+/// work, so a misplaced plant can only make a window GROW. A window that shrank is the host
+/// getting faster between runs: on the dense CUDA leg (lambda, 4090, a crux job sharing the GPU)
+/// `validate_ms` came in 8.4 s and `h2d_ms` 1.2 s UNDER the last clean run, past a band measured
+/// minutes earlier (#4105). The residual `unattributed_ms` is `wall - sum` and stays two-sided:
+/// it drops only when some time was counted twice, which is an attribution defect too.
+fn breaks_band(field: &str, moved: f64, tol: f64) -> bool {
+    if field == "unattributed_ms" {
+        moved.abs() > tol
+    } else {
+        moved > tol
+    }
+}
+
 /// `Ok` when the plant for `stage` moved its own field by at least the band's plant, and no other
 /// field by more than that field's tolerance. `Err` names the stage and each field that broke the rule.
 fn plant_lands_in_its_stage(
@@ -187,7 +203,7 @@ fn plant_lands_in_its_stage(
             continue;
         }
         match (field(base, f), field(planted, f)) {
-            (Some(b), Some(p)) if (p - b).abs() > band.tol(f) => {
+            (Some(b), Some(p)) if breaks_band(f, p - b, band.tol(f)) => {
                 why.push(format!(
                     "{f} moved {:.1} ms (tolerance {:.0} ms)",
                     p - b,
@@ -220,7 +236,7 @@ fn plant_lands_nowhere(
     let mut why = Vec::new();
     for f in FIELDS {
         match (field(base, f), field(planted, f)) {
-            (Some(b), Some(p)) if (p - b).abs() > band.tol(f) => {
+            (Some(b), Some(p)) if breaks_band(f, p - b, band.tol(f)) => {
                 why.push(format!("{f} moved {:.1} ms", p - b));
             },
             (None, Some(_)) => why.push(format!("{f} appeared")),
@@ -441,6 +457,50 @@ fn a_measured_band_widens_only_the_noisy_fields_and_still_rejects_a_neighbour() 
     };
     let e = plant_lands_in_its_stage("h2d", &band, base, &neighbour).expect_err("neighbour");
     assert!(e.contains("validate_ms moved"), "{e}");
+}
+
+/// Direction matters (#4105): a window that SHRANK past its band is the host speeding up, never
+/// a misplaced sleep, but a residual that shrank means time was counted twice.
+#[test]
+fn only_growth_breaks_a_window_but_the_residual_breaks_both_ways() {
+    let band = Band::fixed();
+    let base = StageTimings {
+        load_ms: Some(900.0),
+        h2d_ms: Some(1_500.0),
+        validate_ms: Some(9_000.0),
+        prefill_ms: Some(3.0),
+        decode_ms: Some(7.0),
+        unattributed_ms: Some(2_000.0),
+        wall_ms: Some(13_410.0),
+        ..StageTimings::default()
+    };
+    let plant = band.plant_ms as f64;
+    // a correct decode plant on a host that got faster: h2d and validate fell far past TOL_MS
+    let faster = StageTimings {
+        decode_ms: Some(7.0 + plant),
+        h2d_ms: Some(300.0),
+        validate_ms: Some(600.0),
+        ..base.clone()
+    };
+    plant_lands_in_its_stage("decode", &band, &base, &faster).unwrap_or_else(|e| panic!("{e}"));
+    plant_lands_nowhere(
+        "load",
+        &band,
+        &base,
+        &StageTimings {
+            h2d_ms: Some(300.0),
+            ..base.clone()
+        },
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    // the residual falling by the plant: the sleep was attributed twice -> RED
+    let double = StageTimings {
+        decode_ms: Some(7.0 + plant),
+        unattributed_ms: Some(2_000.0 - plant),
+        ..base.clone()
+    };
+    let e = plant_lands_in_its_stage("decode", &band, &base, &double).expect_err("double count");
+    assert!(e.contains("unattributed_ms moved"), "{e}");
 }
 
 /// The GPU legs share one driver: every stage `stages` names, each through the real CUDA path,
