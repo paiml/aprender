@@ -93,14 +93,6 @@ falsification_tests:
     [ "$COUNT" -le 21 ]
   if_fails: "new binary added without updating this contract"
 
-- id: FALSIFY-BINRULE-004
-  rule: every shipped bin is aprender-* (#4430)
-  prediction: "every [[bin]] in the root and facade workspaces (from cargo metadata) is apr, pv,
-    aprender-<word>[-<word>...], or a pending-fold row in scripts/bin_names_pending_fold.txt"
-  test: |
-    bash scripts/check_bin_names_aprender.sh --self-test && bash scripts/check_bin_names_aprender.sh
-  if_fails: "a bin ships under a non-aprender name (rename it) or a pending-fold row is stale (delete it)"
-
 - id: FALSIFY-BINRULE-003
   rule: legacy binaries have apr subcommand equivalent
   prediction: "every LEGACY binary's functionality is accessible via apr subcommand"
@@ -110,6 +102,14 @@ falsification_tests:
       grep -q "\"$cmd\"" crates/apr-cli/src/commands_enum.rs || exit 1
     done
   if_fails: "legacy binary has no apr subcommand migration path"
+
+- id: FALSIFY-BINRULE-004
+  rule: every shipped bin is aprender-* (#4430)
+  prediction: "every [[bin]] in the root and facade workspaces (from cargo metadata) is apr, pv,
+    aprender-<word>[-<word>...], or a pending-fold row in scripts/bin_names_pending_fold.txt"
+  test: |
+    bash scripts/check_bin_names_aprender.sh --self-test && bash scripts/check_bin_names_aprender.sh
+  if_fails: "a bin ships under a non-aprender name (rename it) or a pending-fold row is stale (delete it)"
 
 proof_obligations:
 - id: AMBR-INV-001
@@ -122,5 +122,5 @@ proof_obligations:
 verification_summary:
   total_obligations: 2
   proven: 0
-  tested: 3
+  tested: 4
   status: audited
