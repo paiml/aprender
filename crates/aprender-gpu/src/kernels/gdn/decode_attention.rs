@@ -69,6 +69,9 @@ pub struct DecodeAttention256Kernel {
     pub head_dim: u32,
     /// Positions scored per pass — the shared scores buffer holds this many floats.
     pub max_positions_per_pass: u32,
+    /// #4233: read `position` from a device `u32` (`pos_ptr`) and attend over
+    /// `position + 1` entries, so a captured CUDA graph replays at any position.
+    pub indirect: bool,
 }
 
 impl DecodeAttention256Kernel {
@@ -92,7 +95,16 @@ impl DecodeAttention256Kernel {
             num_kv_heads,
             head_dim,
             max_positions_per_pass: DEFAULT_MAX_POSITIONS_PER_PASS,
+            indirect: false,
         }
+    }
+
+    /// #4233: the graph-capturable variant — `seq_len = *pos_ptr + 1`, read on
+    /// the device, so the launch arguments are identical at every token.
+    #[must_use]
+    pub const fn indirect(mut self) -> Self {
+        self.indirect = true;
+        self
     }
 
     /// Override the positions-per-pass cap (the shared scores buffer size).
@@ -179,7 +191,11 @@ fn emit_block_reduce(
 
 impl Kernel for DecodeAttention256Kernel {
     fn name(&self) -> &str {
-        "gdn_decode_attention"
+        if self.indirect {
+            "gdn_decode_attention_indirect"
+        } else {
+            "gdn_decode_attention"
+        }
     }
 
     fn build_ptx(&self) -> PtxKernel {
@@ -191,169 +207,193 @@ impl Kernel for DecodeAttention256Kernel {
         let sqrt_head_dim = (head_dim as f32).sqrt();
         let scratch_max = cap * 4;
         let scratch_sum = cap * 4 + WARPS * 4;
+        let indirect = self.indirect;
 
-        PtxKernel::new(self.name())
+        let kernel = PtxKernel::new(self.name())
             .param(PtxType::U64, "q_ptr") // [num_heads * head_dim]
             .param(PtxType::U64, "k_cache_ptr") // [max_len][num_kv_heads * head_dim]
             .param(PtxType::U64, "v_cache_ptr") // [max_len][num_kv_heads * head_dim]
-            .param(PtxType::U64, "out_ptr") // [num_heads * head_dim]
-            .param(PtxType::U32, "seq_len") // valid positions, = position + 1
-            .shared_memory(self.shared_bytes())
-            .build(|ctx| {
-                let tid = ctx.special_reg(PtxReg::TidX);
-                let h = ctx.special_reg(PtxReg::CtaIdX);
-                let lane = ctx.and_u32_imm(tid, 31);
-                let warp = ctx.shr_u32_imm(tid, 5);
+            .param(PtxType::U64, "out_ptr"); // [num_heads * head_dim]
+        let kernel = if indirect {
+            kernel.param(PtxType::U64, "pos_ptr") // device u32 position; seq_len = it + 1
+        } else {
+            kernel.param(PtxType::U32, "seq_len") // valid positions, = position + 1
+        };
+        kernel.shared_memory(self.shared_bytes()).build(|ctx| {
+            let tid = ctx.special_reg(PtxReg::TidX);
+            let h = ctx.special_reg(PtxReg::CtaIdX);
+            let lane = ctx.and_u32_imm(tid, 31);
+            let warp = ctx.shr_u32_imm(tid, 5);
 
-                let q_ptr = ctx.load_param_u64("q_ptr");
-                let k_ptr = ctx.load_param_u64("k_cache_ptr");
-                let v_ptr = ctx.load_param_u64("v_cache_ptr");
-                let out_ptr = ctx.load_param_u64("out_ptr");
-                let seq_len = ctx.load_param_u32("seq_len");
+            let q_ptr = ctx.load_param_u64("q_ptr");
+            let k_ptr = ctx.load_param_u64("k_cache_ptr");
+            let v_ptr = ctx.load_param_u64("v_cache_ptr");
+            let out_ptr = ctx.load_param_u64("out_ptr");
+            let seq_len = if indirect {
+                let pos_ptr = ctx.load_param_u64("pos_ptr");
+                let position = ctx.ld_global_u32(pos_ptr);
+                ctx.add_u32(position, 1)
+            } else {
+                ctx.load_param_u32("seq_len")
+            };
 
-                // An empty cache has no softmax: leave the output alone.
-                let zero_u32 = ctx.mov_u32_imm(0);
-                let has_positions = ctx.setp_lt_u32(zero_u32, seq_len);
-                ctx.branch_if_not(has_positions, "gdn_attn_exit");
+            // An empty cache has no softmax: leave the output alone.
+            let zero_u32 = ctx.mov_u32_imm(0);
+            let has_positions = ctx.setp_lt_u32(zero_u32, seq_len);
+            ctx.branch_if_not(has_positions, "gdn_attn_exit");
 
-                // kv head of this query head, and its byte offset inside a cache row.
-                let kv_h = ctx.div_u32(h, group_size);
-                let kv_off = ctx.mul_wide_u32(kv_h, head_dim * 4);
-                let head_off = ctx.mul_wide_u32(h, head_dim * 4);
-                let q_base = ctx.add_u64(q_ptr, head_off);
-                let out_base = ctx.add_u64(out_ptr, head_off);
-                let k_head = ctx.add_u64(k_ptr, kv_off);
-                let v_head = ctx.add_u64(v_ptr, kv_off);
+            // kv head of this query head, and its byte offset inside a cache row.
+            let kv_h = ctx.div_u32(h, group_size);
+            let kv_off = ctx.mul_wide_u32(kv_h, head_dim * 4);
+            let head_off = ctx.mul_wide_u32(h, head_dim * 4);
+            let q_base = ctx.add_u64(q_ptr, head_off);
+            let out_base = ctx.add_u64(out_ptr, head_off);
+            let k_head = ctx.add_u64(k_ptr, kv_off);
+            let v_head = ctx.add_u64(v_ptr, kv_off);
 
-                let head_dim_r = ctx.mov_u32_imm(head_dim);
-                let cap_r = ctx.mov_u32_imm(cap);
-                let sqrt_hd = ctx.mov_f32_imm(sqrt_head_dim);
-                let four = ctx.mov_u32_imm(4);
-                let out_elem_off = ctx.mul_wide_u32_reg(tid, four);
+            let head_dim_r = ctx.mov_u32_imm(head_dim);
+            let cap_r = ctx.mov_u32_imm(cap);
+            let sqrt_hd = ctx.mov_f32_imm(sqrt_head_dim);
+            let four = ctx.mov_u32_imm(4);
+            let out_elem_off = ctx.mul_wide_u32_reg(tid, four);
 
-                // Running softmax state, carried across passes (flash decoding).
-                let running_max = ctx.mov_f32_imm(f32::NEG_INFINITY);
-                let running_sum = ctx.mov_f32_imm(0.0);
-                let acc = ctx.mov_f32_imm(0.0);
-                let chunk = ctx.mov_u32_imm(0);
+            // Running softmax state, carried across passes (flash decoding).
+            let running_max = ctx.mov_f32_imm(f32::NEG_INFINITY);
+            let running_sum = ctx.mov_f32_imm(0.0);
+            let acc = ctx.mov_f32_imm(0.0);
+            let chunk = ctx.mov_u32_imm(0);
 
-                ctx.label("gdn_attn_chunk_loop");
-                let more_chunks = ctx.setp_lt_u32(chunk, seq_len);
-                ctx.branch_if_not(more_chunks, "gdn_attn_chunk_end");
-                // n_c = min(cap, seq_len - chunk)
-                let remaining = ctx.sub_u32_reg(seq_len, chunk);
-                let n_c = ctx.min_u32(remaining, cap_r);
+            ctx.label("gdn_attn_chunk_loop");
+            let more_chunks = ctx.setp_lt_u32(chunk, seq_len);
+            ctx.branch_if_not(more_chunks, "gdn_attn_chunk_end");
+            // n_c = min(cap, seq_len - chunk)
+            let remaining = ctx.sub_u32_reg(seq_len, chunk);
+            let n_c = ctx.min_u32(remaining, cap_r);
 
-                // ---- Phase 1: scores for this pass, one thread per few positions.
-                let local_max = ctx.mov_f32_imm(f32::NEG_INFINITY);
-                let pp = ctx.add_u32(tid, 0);
-                ctx.label("gdn_attn_score_loop");
-                let score_go = ctx.setp_lt_u32(pp, n_c);
-                ctx.branch_if_not(score_go, "gdn_attn_score_end");
-                let p = ctx.add_u32_reg(chunk, pp);
-                let row_off = ctx.mul_wide_u32(p, row_stride_bytes);
-                let k_row = ctx.add_u64(k_head, row_off);
+            // ---- Phase 1: scores for this pass, one thread per few positions.
+            let local_max = ctx.mov_f32_imm(f32::NEG_INFINITY);
+            let pp = ctx.add_u32(tid, 0);
+            ctx.label("gdn_attn_score_loop");
+            let score_go = ctx.setp_lt_u32(pp, n_c);
+            ctx.branch_if_not(score_go, "gdn_attn_score_end");
+            let p = ctx.add_u32_reg(chunk, pp);
+            let row_off = ctx.mul_wide_u32(p, row_stride_bytes);
+            let k_row = ctx.add_u64(k_head, row_off);
 
-                let dot = ctx.mov_f32_imm(0.0);
-                let i = ctx.mov_u32_imm(0);
-                ctx.label("gdn_attn_dot_loop");
-                let dot_go = ctx.setp_lt_u32(i, head_dim_r);
-                ctx.branch_if_not(dot_go, "gdn_attn_dot_end");
-                let elem_off = ctx.mul_wide_u32_reg(i, four);
-                let q_addr = ctx.add_u64(q_base, elem_off);
-                let k_addr = ctx.add_u64(k_row, elem_off);
-                let q_val = ctx.ld_global_f32(q_addr);
-                let k_val = ctx.ld_global_f32(k_addr);
-                // mul then add, like the CPU's `dot += q_h[i] * k_p[i]` — Rust does
-                // not contract into an fma, so neither do we.
-                let prod = ctx.mul_f32(q_val, k_val);
-                ctx.add_f32_inplace(dot, prod);
-                ctx.add_u32_inplace(i, 1);
-                ctx.branch("gdn_attn_dot_loop");
-                ctx.label("gdn_attn_dot_end");
+            let dot = ctx.mov_f32_imm(0.0);
+            let i = ctx.mov_u32_imm(0);
+            ctx.label("gdn_attn_dot_loop");
+            let dot_go = ctx.setp_lt_u32(i, head_dim_r);
+            ctx.branch_if_not(dot_go, "gdn_attn_dot_end");
+            let elem_off = ctx.mul_wide_u32_reg(i, four);
+            let q_addr = ctx.add_u64(q_base, elem_off);
+            let k_addr = ctx.add_u64(k_row, elem_off);
+            let q_val = ctx.ld_global_f32(q_addr);
+            let k_val = ctx.ld_global_f32(k_addr);
+            // mul then add, like the CPU's `dot += q_h[i] * k_p[i]` — Rust does
+            // not contract into an fma, so neither do we.
+            let prod = ctx.mul_f32(q_val, k_val);
+            ctx.add_f32_inplace(dot, prod);
+            ctx.add_u32_inplace(i, 1);
+            ctx.branch("gdn_attn_dot_loop");
+            ctx.label("gdn_attn_dot_end");
 
-                let score = ctx.div_f32(dot, sqrt_hd);
-                let score_slot = ctx.mul_u32(pp, 4);
-                let score_addr = ctx.cvt_u64_u32(score_slot);
-                ctx.st_shared_f32(score_addr, score);
-                ctx.max_f32_inplace(local_max, score);
-                ctx.add_u32_inplace(pp, BLOCK);
-                ctx.branch("gdn_attn_score_loop");
-                ctx.label("gdn_attn_score_end");
-                ctx.bar_sync(0);
+            let score = ctx.div_f32(dot, sqrt_hd);
+            let score_slot = ctx.mul_u32(pp, 4);
+            let score_addr = ctx.cvt_u64_u32(score_slot);
+            ctx.st_shared_f32(score_addr, score);
+            ctx.max_f32_inplace(local_max, score);
+            ctx.add_u32_inplace(pp, BLOCK);
+            ctx.branch("gdn_attn_score_loop");
+            ctx.label("gdn_attn_score_end");
+            ctx.bar_sync(0);
 
-                // ---- Phase 2: softmax over the pass, folded into the running state.
-                let chunk_max =
-                    emit_block_reduce(ctx, local_max, lane, warp, scratch_max, ReduceOp::Max, "gdn_attn_max");
-                let new_max = ctx.max_f32(running_max, chunk_max);
-                // correction = exp(old_max - new_max); on the first pass old_max is
-                // -inf, so this is 0 and the (still zero) accumulators are unaffected.
-                let max_delta = ctx.sub_f32(running_max, new_max);
-                let correction = emit_exp_f32(ctx, max_delta);
-                ctx.mov_f32_reg(running_max, new_max);
+            // ---- Phase 2: softmax over the pass, folded into the running state.
+            let chunk_max = emit_block_reduce(
+                ctx,
+                local_max,
+                lane,
+                warp,
+                scratch_max,
+                ReduceOp::Max,
+                "gdn_attn_max",
+            );
+            let new_max = ctx.max_f32(running_max, chunk_max);
+            // correction = exp(old_max - new_max); on the first pass old_max is
+            // -inf, so this is 0 and the (still zero) accumulators are unaffected.
+            let max_delta = ctx.sub_f32(running_max, new_max);
+            let correction = emit_exp_f32(ctx, max_delta);
+            ctx.mov_f32_reg(running_max, new_max);
 
-                let local_sum = ctx.mov_f32_imm(0.0);
-                let wp = ctx.add_u32(tid, 0);
-                ctx.label("gdn_attn_weight_loop");
-                let weight_go = ctx.setp_lt_u32(wp, n_c);
-                ctx.branch_if_not(weight_go, "gdn_attn_weight_end");
-                let w_slot = ctx.mul_u32(wp, 4);
-                let w_addr = ctx.cvt_u64_u32(w_slot);
-                let raw = ctx.ld_shared_f32(w_addr);
-                let shifted = ctx.sub_f32(raw, running_max);
-                let weight = emit_exp_f32(ctx, shifted);
-                ctx.st_shared_f32(w_addr, weight);
-                ctx.add_f32_inplace(local_sum, weight);
-                ctx.add_u32_inplace(wp, BLOCK);
-                ctx.branch("gdn_attn_weight_loop");
-                ctx.label("gdn_attn_weight_end");
-                ctx.bar_sync(0);
+            let local_sum = ctx.mov_f32_imm(0.0);
+            let wp = ctx.add_u32(tid, 0);
+            ctx.label("gdn_attn_weight_loop");
+            let weight_go = ctx.setp_lt_u32(wp, n_c);
+            ctx.branch_if_not(weight_go, "gdn_attn_weight_end");
+            let w_slot = ctx.mul_u32(wp, 4);
+            let w_addr = ctx.cvt_u64_u32(w_slot);
+            let raw = ctx.ld_shared_f32(w_addr);
+            let shifted = ctx.sub_f32(raw, running_max);
+            let weight = emit_exp_f32(ctx, shifted);
+            ctx.st_shared_f32(w_addr, weight);
+            ctx.add_f32_inplace(local_sum, weight);
+            ctx.add_u32_inplace(wp, BLOCK);
+            ctx.branch("gdn_attn_weight_loop");
+            ctx.label("gdn_attn_weight_end");
+            ctx.bar_sync(0);
 
-                let chunk_sum =
-                    emit_block_reduce(ctx, local_sum, lane, warp, scratch_sum, ReduceOp::Sum, "gdn_attn_sum");
-                ctx.mul_f32_inplace(running_sum, correction);
-                ctx.add_f32_inplace(running_sum, chunk_sum);
-                ctx.mul_f32_inplace(acc, correction);
+            let chunk_sum = emit_block_reduce(
+                ctx,
+                local_sum,
+                lane,
+                warp,
+                scratch_sum,
+                ReduceOp::Sum,
+                "gdn_attn_sum",
+            );
+            ctx.mul_f32_inplace(running_sum, correction);
+            ctx.add_f32_inplace(running_sum, chunk_sum);
+            ctx.mul_f32_inplace(acc, correction);
 
-                // ---- Phase 3: thread `tid` accumulates output element `tid`,
-                // positions ascending, exactly the CPU's accumulation order.
-                let in_head = ctx.setp_lt_u32(tid, head_dim_r);
-                ctx.branch_if_not(in_head, "gdn_attn_value_skip");
-                let vp = ctx.mov_u32_imm(0);
-                ctx.label("gdn_attn_value_loop");
-                let value_go = ctx.setp_lt_u32(vp, n_c);
-                ctx.branch_if_not(value_go, "gdn_attn_value_end");
-                let v_slot = ctx.mul_u32(vp, 4);
-                let v_slot64 = ctx.cvt_u64_u32(v_slot);
-                let w_val = ctx.ld_shared_f32(v_slot64);
-                let vpos = ctx.add_u32_reg(chunk, vp);
-                let v_row_off = ctx.mul_wide_u32(vpos, row_stride_bytes);
-                let v_row = ctx.add_u64(v_head, v_row_off);
-                let v_addr = ctx.add_u64(v_row, out_elem_off);
-                let v_val = ctx.ld_global_f32(v_addr);
-                let contrib = ctx.mul_f32(w_val, v_val);
-                ctx.add_f32_inplace(acc, contrib);
-                ctx.add_u32_inplace(vp, 1);
-                ctx.branch("gdn_attn_value_loop");
-                ctx.label("gdn_attn_value_end");
-                ctx.label("gdn_attn_value_skip");
+            // ---- Phase 3: thread `tid` accumulates output element `tid`,
+            // positions ascending, exactly the CPU's accumulation order.
+            let in_head = ctx.setp_lt_u32(tid, head_dim_r);
+            ctx.branch_if_not(in_head, "gdn_attn_value_skip");
+            let vp = ctx.mov_u32_imm(0);
+            ctx.label("gdn_attn_value_loop");
+            let value_go = ctx.setp_lt_u32(vp, n_c);
+            ctx.branch_if_not(value_go, "gdn_attn_value_end");
+            let v_slot = ctx.mul_u32(vp, 4);
+            let v_slot64 = ctx.cvt_u64_u32(v_slot);
+            let w_val = ctx.ld_shared_f32(v_slot64);
+            let vpos = ctx.add_u32_reg(chunk, vp);
+            let v_row_off = ctx.mul_wide_u32(vpos, row_stride_bytes);
+            let v_row = ctx.add_u64(v_head, v_row_off);
+            let v_addr = ctx.add_u64(v_row, out_elem_off);
+            let v_val = ctx.ld_global_f32(v_addr);
+            let contrib = ctx.mul_f32(w_val, v_val);
+            ctx.add_f32_inplace(acc, contrib);
+            ctx.add_u32_inplace(vp, 1);
+            ctx.branch("gdn_attn_value_loop");
+            ctx.label("gdn_attn_value_end");
+            ctx.label("gdn_attn_value_skip");
 
-                // The next pass overwrites the scores buffer.
-                ctx.bar_sync(0);
-                ctx.add_u32_reg_inplace(chunk, cap_r);
-                ctx.branch("gdn_attn_chunk_loop");
-                ctx.label("gdn_attn_chunk_end");
+            // The next pass overwrites the scores buffer.
+            ctx.bar_sync(0);
+            ctx.add_u32_reg_inplace(chunk, cap_r);
+            ctx.branch("gdn_attn_chunk_loop");
+            ctx.label("gdn_attn_chunk_end");
 
-                // out = sum_p exp(s_p - max) * v_p / sum_p exp(s_p - max)
-                let in_head_out = ctx.setp_lt_u32(tid, head_dim_r);
-                ctx.branch_if_not(in_head_out, "gdn_attn_exit");
-                let result = ctx.div_f32(acc, running_sum);
-                let out_addr = ctx.add_u64(out_base, out_elem_off);
-                ctx.st_global_f32(out_addr, result);
+            // out = sum_p exp(s_p - max) * v_p / sum_p exp(s_p - max)
+            let in_head_out = ctx.setp_lt_u32(tid, head_dim_r);
+            ctx.branch_if_not(in_head_out, "gdn_attn_exit");
+            let result = ctx.div_f32(acc, running_sum);
+            let out_addr = ctx.add_u64(out_base, out_elem_off);
+            ctx.st_global_f32(out_addr, result);
 
-                ctx.label("gdn_attn_exit");
-                ctx.ret();
-            })
+            ctx.label("gdn_attn_exit");
+            ctx.ret();
+        })
     }
 }
 
@@ -600,6 +640,62 @@ mod gdn_decode_attention_device_tests {
                     (got[h * HEAD_DIM + i] - expected).abs() < 1e-5,
                     "head {h} element {i} = {} but its KV head is {expected}",
                     got[h * HEAD_DIM + i]
+                );
+            }
+        }
+    }
+
+    /// #4233: the graph variant reads `position` from the device and must produce
+    /// the eager kernel's output bit for bit — including across the multi-pass
+    /// boundary, where `seq_len` drives the chunk loop.
+    #[test]
+    fn gdn_decode_attention_indirect_is_bit_identical_to_direct() {
+        let Ok(ctx) = CudaContext::new(0) else {
+            println!("gdn_decode_attention indirect: no CUDA device — SKIPPED.");
+            return;
+        };
+        let stream = CudaStream::new(&ctx).expect("stream");
+        let num_kv_heads = 2usize;
+        let (q, k, v) = fixture(num_kv_heads, 0x4233_0002);
+        for cap in [None, Some(8u32)] {
+            let mut direct = DecodeAttention256Kernel::new(
+                NUM_HEADS as u32,
+                num_kv_heads as u32,
+                HEAD_DIM as u32,
+            );
+            if let Some(cap) = cap {
+                direct = direct.with_max_positions_per_pass(cap);
+            }
+            let indirect = direct.indirect();
+            for seq_len in [1usize, 5, 37] {
+                let want = run(&ctx, &stream, &direct, &q, &k, &v, seq_len);
+
+                let q_buf = GpuBuffer::from_host(&ctx, &q).expect("q");
+                let k_buf = GpuBuffer::from_host(&ctx, &k).expect("k");
+                let v_buf = GpuBuffer::from_host(&ctx, &v).expect("v");
+                let out_buf = GpuBuffer::<f32>::new(&ctx, NUM_HEADS * HEAD_DIM).expect("out");
+                let pos = u32::try_from(seq_len - 1).expect("pos");
+                let pos_buf = GpuBuffer::from_host(&ctx, &[pos]).expect("pos");
+                let mut args = [
+                    q_buf.as_ptr(),
+                    k_buf.as_ptr(),
+                    v_buf.as_ptr(),
+                    out_buf.as_ptr(),
+                    pos_buf.as_ptr(),
+                ];
+                run_kernel(
+                    &ctx,
+                    &stream,
+                    &indirect,
+                    indirect.grid(),
+                    indirect.block(),
+                    &mut args,
+                );
+                let mut got = vec![0.0f32; NUM_HEADS * HEAD_DIM];
+                out_buf.copy_to_host(&mut got).expect("download");
+                assert_eq!(
+                    got, want,
+                    "indirect vs direct, cap {cap:?}, seq_len {seq_len}"
                 );
             }
         }

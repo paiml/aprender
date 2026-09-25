@@ -56,18 +56,19 @@ echo "✅ Doc tests passed"
 # Step 6: Coverage (optional, requires cargo-llvm-cov)
 echo "📊 [6/7] Coverage analysis..."
 if command -v cargo-llvm-cov &> /dev/null; then
-    # Temporarily disable mold linker (breaks LLVM coverage)
-    if [ -f ~/.cargo/config.toml ]; then
-        mv ~/.cargo/config.toml ~/.cargo/config.toml.ci-backup
+    # mold breaks LLVM coverage. This used to `mv ~/.cargo/config.toml` aside for the run,
+    # renaming a file every other cargo process on the host reads, and leaving it renamed when
+    # the run was killed before the restore. Refuse instead, as the Makefile does (#3839, #4097).
+    cargo_cfg="${CARGO_HOME:-"$HOME/.cargo"}/config.toml"
+    if [ -f "$cargo_cfg" ] && grep -q mold "$cargo_cfg"; then
+        echo "❌ $cargo_cfg enables mold, which breaks LLVM coverage instrumentation."
+        echo "   Refusing rather than moving a file every other cargo process on this host reads (#4097)."
+        echo "   Run with CARGO_HOME pointing at a copy without mold, or remove mold from that file."
+        exit 1
     fi
 
     cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-    COVERAGE=$(cargo llvm-cov report --summary-only 2>&1 | grep "TOTAL" | awk '{print $10}' | tr -d '%')
-
-    # Restore mold linker
-    if [ -f ~/.cargo/config.toml.ci-backup ]; then
-        mv ~/.cargo/config.toml.ci-backup ~/.cargo/config.toml
-    fi
+    COVERAGE=$(cargo llvm-cov report $(python3 scripts/coverage_report_scope.py) --summary-only 2>&1 | grep "TOTAL" | awk '{print $10}' | tr -d '%')
 
     echo "Coverage: ${COVERAGE}%"
     if (( $(echo "$COVERAGE < $COVERAGE_THRESHOLD" | bc -l) )); then

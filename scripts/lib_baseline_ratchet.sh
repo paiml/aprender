@@ -152,6 +152,8 @@
 # Refs: paiml/aprender#2706 (APR-PERF-GATE-001), PERF-008, PERF-028.
 
 BASELINE_RATCHET_BASE_REF="${BASELINE_RATCHET_BASE_REF:-origin/main}"
+# Where bashrs_pin.sh lives: next to this file, wherever the caller sourced it from.
+_BR_LIB_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd) || return 1
 
 # ---------------------------------------------------------------------------
 # baseline_require_tool_version — a ratchet compares (tree, instrument), and a
@@ -178,7 +180,7 @@ BASELINE_RATCHET_BASE_REF="${BASELINE_RATCHET_BASE_REF:-origin/main}"
 #     are not comparable, so this is refused before the comparator runs.
 #   * versions agree               -> rc 0.
 baseline_require_tool_version() { # baseline_require_tool_version <baseline-file>
-    local file="$1" raw tool version live_line live_ver
+    local file="$1" raw tool version live_line live_ver bin
     raw=$(grep -m1 -E '^#[[:space:]]*tool_version=' "$file" 2>/dev/null) || raw=""
     raw=${raw#*tool_version=}
     if [ -z "$raw" ]; then
@@ -194,12 +196,28 @@ baseline_require_tool_version() { # baseline_require_tool_version <baseline-file
     if [ "$tool" = "none" ]; then
         return 0
     fi
-    if ! command -v "$tool" >/dev/null 2>&1; then
+    # --- TOOLPIN-RESOLVE-BEGIN ---
+    # bashrs resolves to CI's PIN (tools.toml via bashrs_pin.sh), never PATH: the
+    # fleet runs nightly bashrs while CI pins another, and the ambient one is a
+    # different instrument on every box. A resolver failure is rc 4, loud.
+    if [ "$tool" = bashrs ]; then
+        BASHRS_PIN_ERR="bashrs_pin.sh could not be sourced from $_BR_LIB_DIR"
+        if ! . "$_BR_LIB_DIR/bashrs_pin.sh" || ! bashrs_pin_resolve 2>/dev/null; then
+            printf 'tool_version: %s was recorded under %s %s; %s\n' \
+                "$file" "$tool" "$version" "$BASHRS_PIN_ERR"
+            return 4
+        fi
+        bin=$BASHRS
+    else
+        bin=$(command -v "$tool" 2>/dev/null) || bin=""
+    fi
+    # --- TOOLPIN-RESOLVE-END ---
+    if [ -z "$bin" ]; then
         printf 'tool_version: %s was recorded under %s %s, runner has no %s on PATH — verdicts would compare two instruments\n' \
             "$file" "$tool" "$version" "$tool"
         return 4
     fi
-    live_line=$("$tool" --version 2>/dev/null)
+    live_line=$("$bin" --version 2>/dev/null)
     live_line=${live_line%%$'\n'*}
     # --- TOOLVER-CMP-BEGIN ---
     if [ "$live_line" != "$tool $version" ]; then

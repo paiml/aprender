@@ -136,7 +136,7 @@ async-stream = "0.3"
 provable-contracts-macros = { workspace = true }
 
 # Shared formatting and system utilities (Batuta stack)
-batuta-common = { workspace = true }
+batuta-common = { workspace = true, features = ["cli-roles"] }
 
 # Sovereign coding assistant (apr code → batuta agent engine) — PMAT-182.
 # Non-optional since claude-code-parity-apr M150 (outcome-parity Phase 3
@@ -259,6 +259,8 @@ alimentar = { workspace = true }
 # `dispatch` fn those binaries call, so the surfaces cannot drift.
 aprender-rag-cli = { workspace = true }
 aprender-zram-cli = { workspace = true }
+# `apr ptx-debug` (#4062): pure-Rust PTX falsification analyzer, always built.
+aprender-ptx-debug = { workspace = true }
 # simular: hand-rolled parser, wired as a verbatim passthrough (apr sim ...)
 simular = { workspace = true }
 aprender-cgp = { workspace = true }
@@ -289,6 +291,9 @@ required-features = ["inference", "cuda"]
 [[example]]
 name = "ptx_parity_validation"
 required-features = ["inference"]
+
+[build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 
 [dev-dependencies]
 jsonschema = "0.28"  # apr devices --json validated against contracts/schemas/apr-devices-v1.schema.json (PP-066 R-0a)

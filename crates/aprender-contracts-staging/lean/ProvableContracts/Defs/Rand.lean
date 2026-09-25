@@ -15,11 +15,11 @@ namespace ProvableContracts.Rand
 
 /-- A counter-based RNG is a pure function from (key, counter) to output.
     Determinism is the core property: same inputs → same output. -/
-def deterministic (f : α → β → γ) : Prop :=
+def deterministic {α β γ : Type*} (f : α → β → γ) : Prop :=
   ∀ k c, f k c = f k c
 
 /-- Counter increment preserves key. -/
-def counter_independent (f : α → ℕ → γ) : Prop :=
-  ∀ k c₁ c₂, c₁ ≠ c₂ → True  -- We can't prove outputs differ without the actual function
+def counter_independent {α γ : Type*} (f : α → ℕ → γ) : Prop :=
+  ∀ (k : α) (c₁ c₂ : ℕ), c₁ ≠ c₂ → True  -- We can't prove outputs differ without the actual function
 
 end ProvableContracts.Rand

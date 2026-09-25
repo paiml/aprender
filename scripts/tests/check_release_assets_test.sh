@@ -62,6 +62,9 @@ trap 'rm -rf "$WORK"' EXIT
       printf 'apr-%s-%s-unknown-linux-gnu-%s.tar.gz.sha256\n' "$TAG" "$t_arch" "$flavour"
     done
   done
+  # the one darwin apr (#4327: an rc is a draft until every fleet host, the mini included, runs it)
+  printf 'apr-%s-aarch64-apple-darwin-cpu.tar.gz\n' "$TAG"
+  printf 'apr-%s-aarch64-apple-darwin-cpu.tar.gz.sha256\n' "$TAG"
   for t_arch in x86_64 aarch64; do
     for libc in musl gnu; do
       printf 'pv-%s-%s-unknown-linux-%s.tar.gz\n' "$TAG" "$t_arch" "$libc"
@@ -74,6 +77,7 @@ MUTANT_NAME="apr-$TAG-aarch64-unknown-linux-gnu-cpu.tar.gz"
 grep -vx "$MUTANT_NAME" "$WORK/complete.txt" > "$WORK/mutant.txt"
 grep -vx "apr-$TAG-x86_64-unknown-linux-gnu-cuda.tar.gz.sha256" "$WORK/complete.txt" > "$WORK/nosha.txt"
 grep -v '^pv-' "$WORK/complete.txt" > "$WORK/nopv.txt"
+grep -vx "apr-$TAG-aarch64-apple-darwin-cpu.tar.gz" "$WORK/complete.txt" > "$WORK/nodarwin.txt"
 
 # 1. the guard's own table, and it is not vacuous
 t 0 "$GUARD --selftest is green" bash "$GUARD" --selftest
@@ -87,6 +91,7 @@ t 0 "the mutation is NAMED, not merely counted" \
   bash -c "bash '$GUARD' '$TAG' --assets-from '$WORK/mutant.txt' 2>&1 | grep -q '$MUTANT_NAME'"
 t 1 "a missing .sha256 is as fatal as a missing tarball" bash "$GUARD" "$TAG" --assets-from "$WORK/nosha.txt"
 t 1 "the eight pv assets are required too" bash "$GUARD" "$TAG" --assets-from "$WORK/nopv.txt"
+t 1 "the darwin apr is required too (#4327)" bash "$GUARD" "$TAG" --assets-from "$WORK/nodarwin.txt"
 
 # 3. unreadable is ENV (2), never a pass
 t 2 "an unreadable asset list is ENV (2), never 0" bash "$GUARD" "$TAG" --assets-from "$WORK/does-not-exist.txt"

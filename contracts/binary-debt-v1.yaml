@@ -1,0 +1,143 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-09-25"
+  author: "PAIML Engineering"
+  description: >
+    Binary-debt ledger (#4058, EPIC #4057). Every binary the workspace ships has
+    exactly one row here, classified against the one-`apr`-entry-point plan, and
+    the two debt counters (BINARY_DEBT, LEGACY_NAMES) never exceed their ceilings.
+    The binary universe is DERIVED by scripts/check_binary_debt.sh from every
+    package manifest (root, crates/*, workspace members AND excludes), so an
+    excluded crate's binary (aprender-viz-ttop, trueno-ublk, ccpa-sft-export)
+    cannot hide from it.
+  kind: pattern
+  references:
+    - "paiml/aprender#4057 — EPIC: one apr binary; binary-debt census and classes"
+    - "paiml/aprender#4058 — this ledger and its derived-universe guard"
+    - "paiml/aprender#4060 — 0.70.0: delete the absorbed duplicates"
+    - "paiml/aprender#4061 — 0.70.0: DECIDE-row quorum"
+    - "scripts/check_binary_debt.sh"
+
+five_whys:
+  why1: "Why a ledger? The #4057 census was a hand-typed table; nothing failed when a new binary appeared."
+  why2: "Why derive the universe? The census scanned crates/*/ only and missed trueno-ublk and ccpa-sft-export, both excluded crates."
+  why3: "Why not cargo metadata? It lists workspace members only; every excluded crate is invisible to it."
+  why4: "Why a STALE finding? A universe scan that silently collapses would otherwise read as zero debt, a clean pass."
+  why5: "Why ceilings? Debt that is only counted drifts up; a shrink-only ceiling makes each deletion stick."
+
+equations:
+  binary_debt:
+    formula: "BINARY_DEBT = |{ b in ledger : class(b) != KEEP }|"
+    domain: "ledger rows, one per derived binary"
+    codomain: "non-negative integer"
+    invariants:
+      - "BINARY_DEBT <= ceilings.current.binary_debt"
+      - "for each armed release r with workspace version >= r: BINARY_DEBT <= r.binary_debt"
+  legacy_names:
+    formula: "LEGACY_NAMES = |{ n in legacy_names : sunset(n) = null }|"
+    domain: "legacy crates.io names"
+    codomain: "non-negative integer"
+    invariants:
+      - "LEGACY_NAMES <= ceilings.current.legacy_names"
+  ledger_is_the_universe:
+    formula: "keys(ledger) = { (package, bin) : bin shipped by any package manifest in root ∪ crates/* ∪ members ∪ exclude, cargo-fuzz packages removed }"
+    domain: "the repository tree"
+    codomain: "boolean"
+    invariants:
+      - "no NEW: every derived binary has a row"
+      - "no STALE: every row names a derived binary"
+
+proof_obligations:
+  - type: invariant
+    property: "Every shipped binary is ledgered"
+    formal: "universe ⊆ keys(ledger)"
+    applies_to: all
+  - type: invariant
+    property: "Every ledger row is live"
+    formal: "keys(ledger) ⊆ universe"
+    applies_to: all
+  - type: bound
+    property: "Debt never exceeds its ceiling"
+    formal: "BINARY_DEBT <= ceiling ∧ LEGACY_NAMES <= ceiling"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-BIN-DEBT-001
+    rule: "The ledger matches the derived universe and both counters are within ceiling"
+    prediction: "bash scripts/check_binary_debt.sh exits 0 on the tree"
+    test: "bash scripts/check_binary_debt.sh"
+    if_fails: "A binary was added or removed without a ledger row change, or debt rose above its ceiling"
+  - id: FALSIFY-BIN-DEBT-002
+    rule: "The guard turns RED on each defect class (NEW, excluded-crate NEW, STALE, CLASS, DUP, CEILING, armed release ceiling)"
+    prediction: "every row of the case table gets its expected verdict"
+    test: "bash scripts/check_binary_debt.sh --self-test"
+    if_fails: "A finding class went vacuous; the guard would pass a tree it should fail"
+
+# ---- the ledger ---------------------------------------------------------------
+# Class vocabulary is #4057's. KEEP + RENAME counts as debt until the rename lands.
+classes: [KEEP, KEEP + RENAME, MERGE, MERGE-INTO-apr, DEPRECATE→DELETE, DECIDE]
+
+ceilings:
+  # ENFORCED now: the measured baseline, 2026-09-25. Lower it as rows retire;
+  # never raise it without a cop ruling.
+  current: {binary_debt: 28, legacy_names: 13}
+  # #4057's release table, each binary_debt +1 for trueno-ublk (DECIDE, missed by
+  # the census). UNARMED: arming one blocks that release until its deletions land;
+  # arming is a cop ruling.
+  releases:
+    - {release: 0.70.0, binary_debt: 23, legacy_names: 13, armed: false}
+    - {release: 0.71.0, binary_debt: 17, legacy_names: 13, armed: false}
+    - {release: 0.72.0, binary_debt: 11, legacy_names: 13, armed: false}
+    - {release: 0.73.0, binary_debt: 5, legacy_names: 13, armed: false}
+    - {release: 0.74.0, binary_debt: 0, legacy_names: 6, armed: false}
+    - {release: 0.75.0, binary_debt: 0, legacy_names: 0, armed: false}
+
+legacy_names:
+  - {name: renacer, sunset: null}
+  - {name: trueno-db, sunset: null}
+  - {name: entrenar, sunset: null}
+  - {name: alimentar, sunset: null}
+  - {name: ttop, sunset: null}
+  - {name: presentar, sunset: null}
+  - {name: trueno-rag, sunset: null}
+  - {name: verificar, sunset: null}
+  - {name: trueno-explain, sunset: null}
+  - {name: simular, sunset: null}
+  - {name: batuta, sunset: null}
+  - {name: probar, sunset: null}
+  - {name: probador, sunset: null}
+
+binaries:
+  - {crate: aprender, bin: apr, class: KEEP, reason: "the one entry point", target: null}
+  - {crate: aprender-compute-xtask, bin: aprender-compute-xtask, class: KEEP, reason: "build tooling, never installed", target: null}
+  - {crate: aprender-contracts-cli, bin: pv, class: KEEP, reason: "contract CLI, dogfooded by every gate", target: null}
+  - {crate: aprender-zram-generator, bin: aprender-zram-generator, class: KEEP, reason: "systemd generator, must be a standalone ELF", target: null}
+  - {crate: ccpa-sft-export, bin: ccpa-sft-export, class: KEEP, reason: "publish = false dev tool (excluded crate; missed by the #4057 census)", target: null}
+  - {crate: aprender-orchestrate, bin: aprender-orchestrate, class: KEEP + RENAME, reason: "rename to batuta", target: "0.73.0"}
+  - {crate: aprender-profile, bin: aprender-profile, class: KEEP + RENAME, reason: "rename to renacer", target: "0.73.0"}
+  - {crate: apr-cli, bin: apr, class: MERGE, reason: "duplicate of the root facade's apr", target: "0.71.0"}
+  - {crate: apr-cli, bin: apr-corpus-ingest, class: MERGE-INTO-apr, reason: "becomes an apr subcommand", target: "0.71.0"}
+  - {crate: aprender-explain, bin: aprender-explain, class: MERGE-INTO-apr, reason: "becomes an apr subcommand", target: "0.71.0"}
+  - {crate: aprender-ptx-debug, bin: aprender-ptx-debug, class: MERGE-INTO-apr, reason: "becomes an apr subcommand", target: "0.71.0"}
+  - {crate: aprender-qa-certify, bin: apr-qa-readme-sync, class: MERGE-INTO-apr, reason: "becomes an apr subcommand", target: "0.71.0"}
+  - {crate: aprender-qa-cli, bin: apr-qa, class: MERGE-INTO-apr, reason: "becomes an apr subcommand", target: "0.71.0"}
+  - {crate: aprender-train-bench, bin: aprender-train-bench, class: MERGE-INTO-apr, reason: "becomes an apr train subcommand", target: "0.72.0"}
+  - {crate: aprender-train-distill, bin: aprender-train-distill, class: MERGE-INTO-apr, reason: "apr distill exists", target: "0.72.0"}
+  - {crate: aprender-train-inspect, bin: aprender-train-inspect, class: MERGE-INTO-apr, reason: "apr inspect exists", target: "0.72.0"}
+  - {crate: aprender-train-lora, bin: aprender-train-lora, class: MERGE-INTO-apr, reason: "apr finetune exists", target: "0.72.0"}
+  - {crate: aprender-data, bin: alimentar, class: MERGE-INTO-apr, reason: "becomes apr data", target: "0.73.0"}
+  - {crate: aprender-test-cli, bin: aprender-test-cli, class: MERGE-INTO-apr, reason: "becomes an apr subcommand", target: "0.73.0"}
+  - {crate: aprender-cbtop, bin: aprender-cbtop, class: DEPRECATE→DELETE, reason: "superseded by apr cbtop", target: "0.70.0"}
+  - {crate: aprender-cgp, bin: aprender-cgp, class: DEPRECATE→DELETE, reason: "absorbed duplicate", target: "0.70.0"}
+  - {crate: aprender-present-terminal, bin: ptop, class: DEPRECATE→DELETE, reason: "monitor duplicate", target: "0.73.0"}
+  - {crate: aprender-rag-cli, bin: trueno-rag, class: DEPRECATE→DELETE, reason: "absorbed duplicate", target: "0.70.0"}
+  - {crate: aprender-simulate, bin: simular, class: DEPRECATE→DELETE, reason: "absorbed duplicate", target: "0.70.0"}
+  - {crate: aprender-train-canary, bin: aprender-train-canary, class: DEPRECATE→DELETE, reason: "excluded crate, canary harness", target: "0.72.0"}
+  - {crate: aprender-train-shell, bin: aprender-train-shell, class: DEPRECATE→DELETE, reason: "superseded by apr train", target: "0.72.0"}
+  - {crate: aprender-zram-cli, bin: trueno-zram, class: DEPRECATE→DELETE, reason: "absorbed duplicate", target: "0.70.0"}
+  - {crate: aprender-db, bin: aprender-db, class: DECIDE, reason: "#4061 quorum", target: "0.70.0"}
+  - {crate: aprender-present-cli, bin: presentar, class: DECIDE, reason: "#4061 quorum", target: "0.70.0"}
+  - {crate: aprender-present-terminal, bin: score, class: DECIDE, reason: "#4061 quorum", target: "0.70.0"}
+  - {crate: aprender-verify-ml, bin: verificar, class: DECIDE, reason: "#4061 quorum", target: "0.70.0"}
+  - {crate: aprender-viz-ttop, bin: aprender-viz-ttop, class: DECIDE, reason: "#4061 quorum (excluded crate)", target: "0.70.0"}
+  - {crate: trueno-ublk, bin: trueno-ublk, class: DECIDE, reason: "excluded, broken rust-version (#2470); missed by the #4057 census", target: "0.70.0"}

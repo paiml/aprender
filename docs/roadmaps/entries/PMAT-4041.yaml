@@ -1,0 +1,20 @@
+- id: PMAT-4041
+  github_issue: 4041
+  item_type: task
+  title: 'apr-cli --no-default-features compiles and lints clean: gate the inference-only sites; add the axis to the feature-matrix lint'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-75
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo clippy -p apr-cli --lib --no-default-features -- -D warnings exits 0 (was 8 compile errors on main@49fe19c28)'
+  - 'supported, not dark: crates/apr-cli/Cargo.toml documents the minimal crates.io install; a gate runs the axis so it cannot rot again'
+  - 'the other single-feature axes are measured and each is green or ticketed'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

@@ -816,7 +816,15 @@ fn pregenerated_sse_response(
     prompt_tokens: usize,
 ) -> Response {
     let completion_tokens = token_ids.len();
-    let StreamedText { deltas, stopped } = streaming_text_deltas(&tokenizer, &token_ids, stops);
+    // aprender#4340: the chat stop markers `clean_chat_output` truncates the
+    // non-streaming body at apply here too, on top of the request's `stop`.
+    let stops: Vec<String> = crate::api::realize_handlers::CHAT_STOP_SEQUENCES
+        .iter()
+        .map(|s| (*s).to_string())
+        .chain(stops.unwrap_or_default().iter().cloned())
+        .collect();
+    let StreamedText { deltas, stopped } =
+        streaming_text_deltas(&tokenizer, &token_ids, Some(&stops));
     // #2375(6): `max_tokens` is a parameter so this path CANNOT emit a finish
     // reason without knowing the budget it was generated under. The terminal
     // chunk now agrees with the non-streaming body for the same request.
@@ -914,12 +922,15 @@ pub(crate) fn true_streaming_sse_response(
     max_tokens: usize,
     prompt_tokens: usize,
     timings_rx: Option<tokio::sync::oneshot::Receiver<super::PhaseTimings>>,
+    stops: Option<&[String]>,
 ) -> Response {
     use tokio_stream::wrappers::ReceiverStream;
     use tokio_stream::StreamExt;
 
     let token_stream = ReceiverStream::new(rx);
     let mut completion_tokens = 0usize;
+    // aprender#4340: chat stop markers and the request's `stop` never reach a delta.
+    let mut filter = ChatStopFilter::new(stops);
 
     let stream = async_stream::stream! {
         if let Some(evt) = sse_event(&ChatCompletionChunk::initial_with_mode(
@@ -936,7 +947,11 @@ pub(crate) fn true_streaming_sse_response(
             match result {
                 Ok(token_id) => {
                     completion_tokens += 1;
-                    if let Some(text) = utf8.push(&tokenizer, token_id) {
+                    // The token is still counted after a stop: the engine
+                    // generated it. Draining (not breaking) keeps a stop from
+                    // being recorded as an abandoned stream.
+                    let text = utf8.push(&tokenizer, token_id).and_then(|t| filter.push(&t));
+                    if let Some(text) = text {
                         let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
                         if let Some(evt) = sse_event(&chunk) {
                             yield evt;
@@ -951,7 +966,14 @@ pub(crate) fn true_streaming_sse_response(
                 }
             }
         }
-        if let Some(text) = utf8.finish(&tokenizer) {
+        if let Some(text) = utf8.finish(&tokenizer).and_then(|t| filter.push(&t)) {
+            let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
+            if let Some(evt) = sse_event(&chunk) {
+                yield evt;
+            }
+        }
+
+        if let Some(text) = filter.finish() {
             let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
             if let Some(evt) = sse_event(&chunk) {
                 yield evt;
@@ -960,7 +982,7 @@ pub(crate) fn true_streaming_sse_response(
 
         // #2375(6): a token stream that delivered the whole budget was cut off at
         // `max_tokens`; anything shorter ended on a stop/EOS token.
-        let finish = FinishReason::from_generation(false, completion_tokens, max_tokens);
+        let finish = FinishReason::from_generation(filter.stopped(), completion_tokens, max_tokens);
         // The engine has finished by the time the token channel closed, so the
         // oneshot either already carries the measurement or never will.
         let timings = match timings_rx {

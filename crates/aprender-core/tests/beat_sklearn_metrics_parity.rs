@@ -30,11 +30,14 @@ struct BeatParams {
     ci_gate_name: String,
 }
 
-fn load_beat() -> BeatParams {
-    const YAML: &str = include_str!("../../../contracts/apr-sklearn-metrics-parity-beat-v1.yaml");
-    let contract: BeatContract = serde_yaml::from_str(YAML)
+fn load_beat() -> Option<BeatParams> {
+    let yaml = provable_contracts::workspace_file_or_skip!(
+        "beat_sklearn_metrics_parity",
+        "contracts/apr-sklearn-metrics-parity-beat-v1.yaml"
+    )?;
+    let contract: BeatContract = serde_yaml::from_str(&yaml)
         .expect("parse contracts/apr-sklearn-metrics-parity-beat-v1.yaml");
-    contract.beat
+    Some(contract.beat)
 }
 
 // Pinned 8-sample binary fixture (identical to the probabilistic.rs unit tests).
@@ -67,7 +70,9 @@ fn max_dev(got: &[f32], oracle: &[f32]) -> f64 {
 
 #[test]
 fn beat_sklearn_metrics_parity() {
-    let beat = load_beat();
+    let Some(beat) = load_beat() else {
+        return;
+    };
     assert_eq!(
         beat.ci_gate_name, "beat_sklearn_metrics_parity",
         "contract ci_gate_name must match this test binary"

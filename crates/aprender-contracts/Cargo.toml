@@ -11,6 +11,13 @@ keywords = ["verification", "formal-methods", "kani", "contracts", "ml-kernels"]
 categories = ["development-tools::testing", "mathematics"]
 exclude = ["/tests/", "benches/"]
 
+[package.metadata.kani]
+# kani_proofs_cd.rs uses #[kani::stub], which needs -Z stubbing. Kani reads this
+# only from the crate directory (`cd crates/aprender-contracts && cargo kani
+# --lib`); `cargo kani -p` from the workspace root still needs `-Z stubbing`
+# (#3140).
+unstable = { stubbing = true }
+
 [features]
 default = []
 kani = []

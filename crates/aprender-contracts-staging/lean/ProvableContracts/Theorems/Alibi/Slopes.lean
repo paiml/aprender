@@ -56,7 +56,7 @@ theorem alibi_head_zero_eight : alibiSlope 8 0 = 1 / 2 := by
 
 -- Status: proved
 /-- Every ALiBi slope is strictly positive (base `2 > 0`). -/
-theorem alibi_slope_pos (n h : ℝ) : 0 < alibiSlope n h := by
+theorem alibi_slope_pos_real (n h : ℝ) : 0 < alibiSlope n h := by
   unfold alibiSlope
   exact Real.rpow_pos_of_pos (by norm_num) _
 
@@ -97,13 +97,13 @@ theorem alibi_slope_strict_anti {n h₁ h₂ : ℝ} (hn : 0 < n) (h : h₁ < h�
 -- Tests
 #check @alibi_head_zero
 #check @alibi_head_zero_eight
-#check @alibi_slope_pos
+#check @alibi_slope_pos_real
 #check @alibi_slope_lt_one
 #check @alibi_slope_ggml
 #check @alibi_slope_strict_anti
 
 example : alibiSlope 8 0 = 1 / 2 := alibi_head_zero_eight
-example : (0 : ℝ) < alibiSlope 8 3 := alibi_slope_pos 8 3
+example : (0 : ℝ) < alibiSlope 8 3 := alibi_slope_pos_real 8 3
 example : alibiSlope 8 0 = alibiM0 8 := alibi_head_zero 8
 
 end ProvableContracts.Alibi

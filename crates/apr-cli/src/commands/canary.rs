@@ -16,6 +16,7 @@
 //! ```
 
 use crate::error::{CliError, Result};
+use batuta_common::cli_roles::{ConfigPath, InputFile, ModelPath, OutputPath};
 use clap::Subcommand;
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
@@ -30,25 +31,25 @@ pub enum CanaryCommands {
     Create {
         /// Model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
 
         /// Input file (e.g. wav)
         #[arg(long)]
-        input: PathBuf,
+        input: InputFile,
 
         /// Output json file
         #[arg(long)]
-        output: PathBuf,
+        output: OutputPath,
     },
     /// Check against a canary test
     Check {
         /// Model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
 
         /// Canary json file
         #[arg(long)]
-        canary: PathBuf,
+        canary: ConfigPath,
     },
 }
 

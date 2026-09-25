@@ -5,6 +5,11 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
     contract_pre_side_effect_classification!();
     contract_pre_dispatch_completeness!();
     contract_pre_output_format_fidelity!();
+    // #3745 S1: the gate input, answered before any command that loads a model.
+    if matches!(cli.command.as_ref(), Commands::Surface) {
+        return Some(crate::surface::run());
+    }
+
     // Try runtime commands first (check, run, serve)
     if let Some(result) = dispatch_runtime_commands(cli) {
         return Some(result);
@@ -62,14 +67,10 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             aprender_rag_cli::dispatch(command.clone())
                 .map_err(|e| CliError::ValidationFailed(format!("rag: {e}"))),
         ),
-        Commands::Zram(command) => {
-            let format = if cli.json {
-                aprender_zram_cli::output::OutputFormat::Json
-            } else {
-                aprender_zram_cli::output::OutputFormat::Table
-            };
+        Commands::Zram(args) => {
+            let format = aprender_zram_cli::resolve_format(args.format, cli.json);
             Some(
-                aprender_zram_cli::dispatch(command, format)
+                aprender_zram_cli::dispatch(&args.command, format)
                     .map_err(|e| CliError::ValidationFailed(format!("zram: {e}"))),
             )
         }
@@ -91,6 +92,9 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cgp::cli::dispatch(command.clone(), cli.json)
                 .map_err(|e| CliError::ValidationFailed(format!("cgp: {e}"))),
         ),
+        Commands::PtxDebug(command) => Some(ptx_debug_result(
+            trueno_ptx_debug::run::run(command.clone()),
+        )),
         Commands::Pv(command) => Some(
             aprender_contracts_cli::dispatch(command.clone())
                 .map_err(|e| CliError::ValidationFailed(format!("pv: {e}"))),
@@ -105,6 +109,24 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 /// signatures that #3606 is changing at the same time; the flag is still a flag to the user, and
 /// the guard prints `--revalidate` as its reason when it fires. (Extracted from
 /// `dispatch_runtime_commands` unchanged, to keep it under the complexity ratchet.)
+/// Map an `apr ptx-debug` outcome onto apr's error type (#4062).
+///
+/// The standalone binary exits 1/2/3 for its analysis verdict (score < 90,
+/// score < `--min-score`, critical bugs). apr has one exit-code convention, so
+/// every non-zero verdict becomes a validation failure (exit 5) whose message
+/// names the verdict — a failing analysis must never exit 0.
+fn ptx_debug_result(outcome: Result<i32, String>) -> Result<(), CliError> {
+    let verdict = match outcome {
+        Ok(0) => return Ok(()),
+        Ok(1) => "score below 90",
+        Ok(2) => "score below --min-score",
+        Ok(3) => "critical bugs present",
+        Ok(_) => "analysis failed",
+        Err(e) => return Err(CliError::ValidationFailed(format!("ptx-debug: {e}"))),
+    };
+    Err(CliError::ValidationFailed(format!("ptx-debug: {verdict}")))
+}
+
 fn request_f2_revalidate(revalidate: bool) {
     if revalidate {
         // SAFETY-BY-ORDER: set before any inference thread exists; the
@@ -175,10 +197,10 @@ fn check_run_backend(backend: Option<&str>) -> Result<(), CliError> {
 `cuda` feature, so the CUDA backend does not exist in this binary. \
 Refusing to silently fall back to wgpu/CPU: that path is ~20x slower \
 (~20 tok/s vs ~400) and makes any throughput measurement taken through it \
-meaningless. Rebuild the ROOT facade with CUDA: `cargo build --release \
---features cuda` (build the root, not `-p apr-cli`: BOTH packages define a \
-binary named `apr`, and only the root's cuda = [\"cli\", \"apr-cli/cuda\"] \
-chain enables this path). To run on this build anyway, pass `--backend cpu` \
+meaningless. Rebuild with CUDA: `cargo build --release --features cuda` \
+(the root facade) or `cargo build --release -p apr-cli --features cuda` \
+(what the nightly CUDA asset builds). Both `apr` binaries run the same \
+`apr_cli::cli_main`. To run on this build anyway, pass `--backend cpu` \
 or drop `--backend`."
                 .to_string(),
         ));
@@ -307,11 +329,12 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
             // GH-240: merge global --json flag into output format
             let effective_format = if cli.json { "json" } else { format.as_str() };
+            let trace_steps = trace_steps.as_deref().map(batuta_common::cli_roles::strings);
             dispatch_run(
                 source,
-                positional_prompt.as_ref(),
+                positional_prompt.as_ref().map(PromptText::as_string),
                 input.as_deref(),
-                prompt.as_ref(),
+                prompt.as_ref().map(PromptText::as_string),
                 *max_tokens,
                 *stream,
                 language.as_deref(),
@@ -326,7 +349,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 *trace_payload,
                 trace_steps.as_deref(),
                 *trace_verbose,
-                trace_output.clone(),
+                trace_output.as_deref().map(Path::to_path_buf),
                 trace_level.as_str(),
                 *profile,
                 *chat,
@@ -361,14 +384,14 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             max_tokens,
             thinking,
         } => dispatch_code_command(CodeArgs {
-            model,
+            model: &model.as_deref().map(Path::to_path_buf),
             project,
-            resume,
-            prompt,
+            resume: &resume.as_ref().map(|r| r.as_ref().map(FreeText::to_string)),
+            prompt: &batuta_common::cli_roles::strings(prompt),
             print: *print,
             max_turns: *max_turns,
-            manifest,
-            emit_trace,
+            manifest: &manifest.as_deref().map(Path::to_path_buf),
+            emit_trace: &emit_trace.as_deref().map(Path::to_path_buf),
             output_format: *output_format,
             input_format: *input_format,
             no_gpu: *no_gpu,
@@ -514,13 +537,13 @@ fn dispatch_debug(
     }) = action
     {
         return commands::embed_viz::run(&commands::embed_viz::EmbedVizArgs {
-            model: model.clone(),
-            tensor: tensor.clone(),
+            model: model.to_path_buf(),
+            tensor: tensor.as_deref().map(str::to_string),
             projection: *projection,
             seed: *seed,
             limit: *limit,
-            tokens: tokens.clone(),
-            output: output.clone(),
+            tokens: tokens.as_deref().map(Path::to_path_buf),
+            output: output.as_deref().map(Path::to_path_buf),
             force: *force,
         });
     }
@@ -600,7 +623,7 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         Commands::Manifest { files, output } => {
             // CRUX-G-05 — SHA-256 manifest of the input file set.
-            commands::manifest::run(files, output, cli.json)
+            commands::manifest::run(&batuta_common::cli_roles::path_bufs(files), output, cli.json)
         }
         Commands::Explain {
             code_or_file,
@@ -611,8 +634,8 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             verbose,
             proof_status,
         } => explain::run(
-            code_or_file.clone(),
-            file.clone(),
+            code_or_file.as_deref().map(str::to_string),
+            file.as_deref().map(Path::to_path_buf),
             tensor.as_deref(),
             *kernel,
             *json || cli.json,
@@ -859,7 +882,7 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 quantize.as_deref(),
                 *strict,
                 *preserve_q4k,
-                tokenizer.as_ref(),
+                tokenizer.as_deref().map(Path::to_path_buf).as_ref(),
                 *enforce_provenance,
                 *allow_no_config,
                 cli.json,
@@ -992,7 +1015,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     strategy,
                     output.as_deref(),
                     weights.clone(),
-                    base_model.clone(),
+                    base_model.as_deref().map(Path::to_path_buf),
                     *drop_rate,
                     *density,
                     *seed,
@@ -1067,7 +1090,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 coordinator.as_deref(),
                 *expect_workers,
                 *wait_gpu,
-                adapters,
+                &batuta_common::cli_roles::strings(adapters),
                 adapters_config.as_deref(),
                 cli.json,
                 *experimental_mps,
@@ -1157,7 +1180,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     // full downloads in violation of the contract.
                     Some(r) => pull::run_dataset(
                         r,
-                        include,
+                        &batuta_common::cli_roles::strings(include),
                         revision.as_deref(),
                         output.as_deref(),
                         *dry_run,
@@ -1185,7 +1208,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         Commands::Registry { command } => crate::commands::registry::run(command.clone()),
         Commands::List => pull::list(cli.json, cli.quiet),
         Commands::Rm { model_ref } => pull::remove(model_ref, cli.json),
-        Commands::Tui { file } => tui::run(file.clone()),
+        Commands::Tui { file } => tui::run(file.as_deref().map(Path::to_path_buf)),
         Commands::Mcp {} => mcp::run(),
 
         _ => return None,

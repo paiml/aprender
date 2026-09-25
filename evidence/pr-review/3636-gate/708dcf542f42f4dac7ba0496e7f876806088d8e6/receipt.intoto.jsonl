@@ -1,0 +1,48 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "predicateType": "pr-review/v2",
+  "subject": [
+    {
+      "name": "batch/0.70.0 #3636 gate",
+      "digest": {
+        "gitCommit": "708dcf542f42f4dac7ba0496e7f876806088d8e6"
+      }
+    }
+  ],
+  "predicate": {
+    "signed": false,
+    "base": "cb09defb38d51ec7fcb4dd0a3dfb2131705acac8",
+    "diff": "three-dot cb09defb38d51ec7fcb4dd0a3dfb2131705acac8...708dcf542f42f4dac7ba0496e7f876806088d8e6",
+    "author": {
+      "model": "claude-opus-5-5",
+      "family": "claude"
+    },
+    "degraded": "same-family",
+    "degraded_reason": "agy lane round 1 denied a command permission headless; opus is the author id, so the 3rd seat is a 2nd sonnet (operator rule)",
+    "approval": "cop aprender-77 21:15Z, conditional on 3/3",
+    "lanes": [
+      {
+        "name": "sonnet-a",
+        "model_measured": "claude-sonnet-5",
+        "verdict": "PASS"
+      },
+      {
+        "name": "sonnet-b",
+        "model_measured": "claude-sonnet-5",
+        "verdict": "PASS"
+      },
+      {
+        "name": "haiku",
+        "model_measured": "claude-haiku-4-5-20251001",
+        "verdict": "PASS"
+      }
+    ],
+    "agreed": true,
+    "verdict": "PASS",
+    "history": [
+      "round1 7776399d5: sonnet FAIL (apr-cli outside GPU_CRATES -> filed #4336, documented), haiku FAIL (trap dropped backup on failed cp -> fixed), agy no output",
+      "round2 afcf60f8b: VOID - two-dot diff vs a base ref another session moved showed unrelated reverts (sonnet-b FAIL on that), sonnet-a PASS, haiku PASS",
+      "round3: 3/3 PASS on pinned three-dot diff"
+    ]
+  }
+}

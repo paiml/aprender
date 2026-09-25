@@ -268,6 +268,120 @@ impl CudaExecutor {
         )
     }
 
+    /// aprender#4233: [`Self::gdn_partial_neox_rope_into`] with the position read
+    /// from the device `u32` at `pos`, so a captured decode graph replays at
+    /// whatever position the host last wrote there. Bit-identical to the direct
+    /// kernel (`aprender-gpu` device test).
+    ///
+    /// # Errors
+    /// PTX compilation or kernel launch failure, or a null device pointer.
+    pub fn gdn_partial_neox_rope_indirect_into(
+        &mut self,
+        x: &GpuBuffer<f32>,
+        pos: &GpuBuffer<u32>,
+        num_heads: u32,
+        head_dim: u32,
+        n_rot: u32,
+        theta_scale: f32,
+    ) -> Result<(), GpuError> {
+        let kernel =
+            trueno_gpu::kernels::gdn::PartialNeoxRopeKernel::new(num_heads, head_dim, n_rot)
+                .indirect();
+        let kernel_type = KernelType::GdnPartialNeoxRopeIndirect {
+            num_heads,
+            head_dim,
+            n_rot,
+        };
+        let cache_key = format!("gdn_partial_neox_rope_indirect_{num_heads}_{head_dim}_{n_rot}");
+        let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
+        let (gx, _, _) = kernel.grid();
+        let (bx, _, _) = kernel.block();
+        let config = LaunchConfig::grid_2d(gx, 1, bx, 1);
+        self.gdn_launch_mixed(
+            &cache_key,
+            kernel_name,
+            config,
+            &[x.as_ptr(), pos.as_ptr()],
+            &[u64::from(theta_scale.to_bits())],
+        )
+    }
+
+    /// aprender#4233: [`Self::gdn_decode_attention_into`] attending over
+    /// `*pos + 1` positions, read on the device.
+    ///
+    /// # Errors
+    /// PTX compilation or kernel launch failure, or a null device pointer.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_decode_attention_indirect_into(
+        &mut self,
+        q: &GpuBuffer<f32>,
+        k_cache: &GpuBuffer<f32>,
+        v_cache: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        pos: &GpuBuffer<u32>,
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+    ) -> Result<(), GpuError> {
+        let kernel = trueno_gpu::kernels::gdn::DecodeAttention256Kernel::new(
+            num_heads,
+            num_kv_heads,
+            head_dim,
+        )
+        .indirect();
+        let kernel_type = KernelType::GdnDecodeAttentionIndirect {
+            num_heads,
+            num_kv_heads,
+            head_dim,
+        };
+        let cache_key =
+            format!("gdn_decode_attention_indirect_{num_heads}_{num_kv_heads}_{head_dim}");
+        let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
+        let (gx, _, _) = kernel.grid();
+        let (bx, _, _) = kernel.block();
+        let config = LaunchConfig::grid_2d(gx, 1, bx, 1);
+        self.gdn_launch(
+            &cache_key,
+            kernel_name,
+            config,
+            &[
+                q.as_ptr(),
+                k_cache.as_ptr(),
+                v_cache.as_ptr(),
+                output.as_ptr(),
+                pos.as_ptr(),
+            ],
+        )
+    }
+
+    /// aprender#4233: append one KV row, `cache[*pos * row ..][..row] = src`,
+    /// with the position read on the device — the graph-safe replacement for
+    /// writing through a host-computed row view.
+    ///
+    /// # Errors
+    /// PTX compilation or kernel launch failure, or a null device pointer.
+    pub fn gdn_kv_row_scatter_indirect_into(
+        &mut self,
+        src: &GpuBuffer<f32>,
+        cache: &GpuBuffer<f32>,
+        pos: &GpuBuffer<u32>,
+        row: u32,
+    ) -> Result<(), GpuError> {
+        let kernel = trueno_gpu::kernels::gdn::KvRowScatterIndirectKernel::new(row);
+        let kernel_type = KernelType::GdnKvRowScatterIndirect { row };
+        let cache_key = format!("gdn_kv_row_scatter_indirect_{row}");
+        let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
+        let (gx, _, _) = kernel.grid();
+        let (bx, _, _) = kernel.block();
+        let config = LaunchConfig::grid_2d(gx, 1, bx, 1);
+        self.gdn_launch(
+            &cache_key,
+            kernel_name,
+            config,
+            &[src.as_ptr(), cache.as_ptr(), pos.as_ptr()],
+        )
+    }
+
     /// Fused causal depthwise conv1d + SiLU for one decode step (`causal_conv1d`
     /// plus the SiLU loop that follows it in `forward_deltanet`).
     ///

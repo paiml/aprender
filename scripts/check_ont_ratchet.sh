@@ -31,21 +31,67 @@
 # on its own — it is derived from `pv --help`, never declared — and the counter
 # starts meaning what §11.2 says it means.
 #
-#   bash scripts/check_ont_ratchet.sh            # check against the baseline
-#   bash scripts/check_ont_ratchet.sh --write    # restamp (ONT R-6: make ont-ratchet)
+# #3569 — THE COUNTERS ARE MEASURED AT BOTH ENDS, NEVER STORED. They used to be
+# typed into contracts/lint-baseline.json by `--write` and compared against the
+# working tree. That made the comparand a file the pull request itself edits:
+# restamp in the same commit and every direction check compared the branch with
+# itself. Every PR that moved a counter also had to restamp, and two such PRs
+# conflicted on the same lines. Now `--check` measures the comparand tree
+# (scripts/lib/resolve_base.sh: merge-base with origin/main on a branch, the
+# FIRST PARENT on a push to main — where the merge-base is HEAD itself and HEAD
+# judged against HEAD is a vacuous pass — and a refusal, never the tree against
+# itself, when no base can be named),
+# extracted with `git archive`, and the working tree, with ONE instrument, and
+# holds each direction between those two measurements. lint-baseline.json keeps
+# only DECISIONS: armed_gates, armed_shapes (both reviewable, and read by `pv
+# lint`) and the two Rust gates' own shrink-only numbers.
+#
+#   bash scripts/check_ont_ratchet.sh            # comparand tree -> working tree
+#   bash scripts/check_ont_ratchet.sh --print    # the measurement of the working tree
+#   bash scripts/check_ont_ratchet.sh --write    # normalise lint-baseline.json to decisions only
 #   bash scripts/check_ont_ratchet.sh --self-test
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASELINE="$REPO_ROOT/contracts/lint-baseline.json"
+PROG=check_ont_ratchet
+# shellcheck source=scripts/lib/resolve_base.sh
+. "$REPO_ROOT/scripts/lib/resolve_base.sh" || exit 2
 
 # ── the consumer probe ───────────────────────────────────────────────────────
 # Derived from the binary's own surface, never from a list here. `pv census` is
 # ONT-1; until it exists, `entity:` is a key nothing reads.
-ont_consumer_present() {
-    local pvbin help_out
-    pvbin="$(command -v pv 2>/dev/null || true)"
-    [ -n "$pvbin" ] || return 1
+#
+# WHICH pv (#3679). This probe used to take a bare `pv` off PATH. On intel the
+# fleet pin was clobbered to 0.65.2 (paiml-implement#315), which has no census,
+# so the probe answered "no consumer" about the RUNNER, not the tree, and the
+# guard went RED on `contracts_anchored rose 3 -> 6`. It now resolves pv the way
+# check_fleet_pv_shapes_gate.sh does (#3633): the fleet paths, the pin, and the
+# version proved against the pin. A pv that cannot answer is UNMEASURED, and it
+# names its version: a binary too old to judge is not evidence of absence.
+#
+# Two outcomes, printed on one line:
+#   true                        the pinned pv lists `census`
+#   unmeasured <reason> <what>  no-pin | no-binary | pin-mismatch | incapable
+# There is no `false` outcome. The one binary that could say "absent" is a pinned
+# pv without census, and that says only that the pin predates ONT-1.
+FLEET_PV_CANDIDATES="${FLEET_PV_BIN:-"/opt/fleet-bin/bin/pv:$HOME/.cargo/bin/pv"}"
+FLEET_PV_PIN_FILE="${FLEET_PV_PIN:-"$HOME/.config/fleet/pv.pin"}"
+# resolve_fleet_pv -> the first candidate that is executable; rc 1 if none (same order as #3633)
+resolve_fleet_pv() {
+    local c IFS=:
+    for c in $FLEET_PV_CANDIDATES; do
+        if [ -x "$c" ]; then printf '%s\n' "$c"; return 0; fi
+    done
+    return 1
+}
+ont_consumer_probe() {
+    local pin pvbin ver help_out
+    [ -r "$FLEET_PV_PIN_FILE" ] || { printf 'unmeasured no-pin pin_file=%s\n' "$FLEET_PV_PIN_FILE"; return 0; }
+    pin="$(<"$FLEET_PV_PIN_FILE")"; pin="${pin//[[:space:]]/}"
+    pvbin="$(resolve_fleet_pv)" || { printf 'unmeasured no-binary pin=%s candidates=%s\n' "$pin" "$FLEET_PV_CANDIDATES"; return 0; }
+    ver="$("$pvbin" --version 2>/dev/null || true)"; ver="${ver%%$'\n'*}"; ver="$(awk '{print $2}' <<<"$ver")"
+    [ "$ver" = "$pin" ] || { printf 'unmeasured pin-mismatch pin=%s pv=%s version=%s\n' "$pin" "$pvbin" "${ver:-?}"; return 0; }
     help_out="$("$pvbin" --help 2>&1 || true)"
     # HERE-STRING, never a pipe into a quiet grep. Under pipefail the quiet grep
     # exits on the first match, the producer takes SIGPIPE and returns 141, and the
@@ -53,8 +99,8 @@ ont_consumer_present() {
     # EXISTS. check_no_pipe_into_grep_q.sh caught this line; it then caught the
     # COMMENT that replaced it, because the scanner reads text and a warning that
     # spells the banned construct IS the banned construct as far as it can tell.
-    grep -qE '^[[:space:]]+census[[:space:]]' <<<"$help_out" || return 1
-    return 0
+    if grep -qE '^[[:space:]]+census[[:space:]]' <<<"$help_out"; then printf 'true\n'; return 0; fi
+    printf 'unmeasured incapable pv=%s version=%s (no census subcommand)\n' "$pvbin" "$ver"
 }
 
 # ── the five counters ───────────────────────────────────────────────────────
@@ -104,10 +150,18 @@ foreign_ont_keys() { # foreign_ont_keys FILE -> `    "k": v,` lines, in file ord
 # and enforced by `lint/valid_under_gate.rs` (PV-ONT-016, shrink-only). This script does not measure it, so by
 # the rule above it rides through `--write` verbatim; without this, `make ont-ratchet` would delete it and
 # disarm the ratchet. Prints nothing when the key is absent, so measure() can omit it.
-foreign_top_keys() { # foreign_top_keys FILE -> `  "k": v,` lines
+# PVL-001 EV-11 (PMAT-4166): the same holds for `command` and the two `pv lint` ratchets
+# (`unpaired_theorem_modules`, `contracts_without_depends_on`), owned by `lint/ratchet_gates.rs` and moved only by
+# `make lint-ratchet`. A top-level key is one at EXACTLY two spaces of indent (the layout this script and
+# lint_ratchet.sh write); a nested key of the same name sits deeper and is never carried.
+FOREIGN_TOP_KEYS="contracts_without_valid_under command unpaired_theorem_modules contracts_without_depends_on"
+foreign_top_keys() { # foreign_top_keys FILE -> `  "k": v,` lines, in FOREIGN_TOP_KEYS order
     [ -f "$1" ] || return 0
-    { grep -E '"contracts_without_valid_under"[[:space:]]*:' "$1" || true; } | head -1 \
-        | sed 's/^[[:space:]]*/  /; s/,\{0,1\}[[:space:]]*$/,/'
+    local key
+    for key in $FOREIGN_TOP_KEYS; do
+        { grep -E "^  \"$key\"[[:space:]]*:" "$1" || true; } | head -1 \
+            | sed 's/^[[:space:]]*/  /; s/,\{0,1\}[[:space:]]*$/,/'
+    done
 }
 
 # ONT R-5, verbatim: "Only contracts that *should* be anchored (kernel-kind with
@@ -126,18 +180,19 @@ foreign_top_keys() { # foreign_top_keys FILE -> `  "k": v,` lines
 # nothing to anchor); only the bindable ones are the backlog this ↓ counter
 # drains.
 count_unanchored_bindable() {
-    local n=0 f is_kernel has_binding names_file
-    while IFS= read -r f; do
-        grep -qE '^entity:' "$f" 2>/dev/null && continue
-        is_kernel=0; has_binding=0; names_file=0
-        grep -qE '^kind:[[:space:]]*Kernel' "$f" 2>/dev/null && is_kernel=1
-        grep -qE '^[[:space:]]*binding:' "$f" 2>/dev/null && has_binding=1
-        grep -qE '^[[:space:]]*(file|path|source_file):' "$f" 2>/dev/null && names_file=1
-        if { [ "$is_kernel" -eq 1 ] && [ "$has_binding" -eq 1 ]; } || [ "$names_file" -eq 1 ]; then
-            n=$((n+1))
-        fi
-    done < <(find "$REPO_ROOT/contracts" -name '*.yaml' -type f 2>/dev/null)
-    printf '%s\n' "$n"
+    # ONE awk over every file, not three greps per file: the comparand is now
+    # measured too (#3569), and 3 forks x ~1900 files x 2 trees was a minute.
+    # Same four per-file predicates as the grep form it replaced.
+    { find "$REPO_ROOT/contracts" -name '*.yaml' -type f -print0 2>/dev/null || true; } \
+        | xargs -0 -r awk '
+            function flush() { if (seen && !ent && ((ker && bind) || fil)) n++ }
+            FNR == 1 { flush(); seen = 1; ent = ker = bind = fil = 0 }
+            /^entity:/                                 { ent = 1 }
+            /^kind:[[:space:]]*Kernel/                 { ker = 1 }
+            /^[[:space:]]*binding:/                    { bind = 1 }
+            /^[[:space:]]*(file|path|source_file):/    { fil = 1 }
+            END { flush(); print n + 0 }' \
+        | awk '{ t += $1 } END { print t + 0 }'
 }
 
 # ONT-6 (PMAT-3451): `armed_gates` is the arming declaration `pv lint` reads, not
@@ -184,11 +239,9 @@ armed_shapes_of() { # armed_shapes_of FILE -> the one-line JSON array, or nothin
 # RECORDED, not ratcheted: a new shape ships reported-first (ladder-green), so the count may rise; what the
 # baseline gives a reviewer is a diff, not a silence.
 count_shapes_declared() {
-    local n=0 f
-    while IFS= read -r f; do
-        n=$((n + $(awk 'BEGIN{c=0;inl=0} /^shape:/{c++} /^shapes:/{inl=1;next} inl&&/^[^ ]/{inl=0} inl&&/^  - id:/{c++} END{print c}' "$f")))
-    done < <(find "$REPO_ROOT/contracts" -name '*.yaml' -type f 2>/dev/null)
-    printf '%s\n' "$n"
+    { find "$REPO_ROOT/contracts" -name '*.yaml' -type f -print0 2>/dev/null || true; } \
+        | xargs -0 -r awk 'FNR == 1 { inl = 0 } /^shape:/ { c++ } /^shapes:/ { inl = 1; next } inl && /^[^ ]/ { inl = 0 } inl && /^  - id:/ { c++ } END { print c + 0 }' \
+        | awk '{ t += $1 } END { print t + 0 }'
 }
 count_shapes_unarmed() { # count_shapes_unarmed BASELINE_FILE
     local armed declared
@@ -200,6 +253,40 @@ count_shapes_unarmed() { # count_shapes_unarmed BASELINE_FILE
     case "$armed" in '[]'|'[ ]') entries=0 ;; *) entries=$(( $(printf '%s' "$armed" | tr -cd ',' | wc -c) + 1 )) ;; esac
     [ "$declared" -ge "$entries" ] && printf '%s\n' $((declared - entries)) || printf '0\n'
 }
+# What `--write` keeps: the declarations and the foreign keys. No counter — a
+# stored counter is a comparand the PR under test can rewrite (#3569).
+decisions() { # prints the lint-baseline.json document
+    local armed armed_shapes foreign
+    armed="$(armed_gates_of "$BASELINE")" || return 2
+    armed_shapes="$(armed_shapes_of "$BASELINE")" || return 2
+    foreign="$(foreign_ont_keys "$BASELINE" | sed '$ s/,$//')"
+    printf '{\n  "_spec": "APR-RELEASE-001 §11.2 counters are MEASURED comparand->head by scripts/check_ont_ratchet.sh (#3569); this file holds decisions only",\n'
+    printf '  "armed_gates": %s,\n' "$armed"
+    [ -z "$armed_shapes" ] || printf '  "armed_shapes": %s,\n' "$armed_shapes"
+    # ONT-7 / EV-11 top-level ratchets are the Rust gates' foreign keys too: --write must not drop them.
+    foreign_top_keys "$BASELINE"
+    if [ -n "$foreign" ]; then printf '  "ont": {\n%s\n  }\n' "$foreign"; else printf '  "ont": {}\n'; fi
+    printf '}\n'
+}
+
+# The comparand's measurement: the SAME measure(), run over the comparand's
+# contracts/ extracted from the object store — never over a number on disk.
+measure_comparand() { # measure_comparand SCRATCH_DIR -> JSON on stdout; rc 1 when unmeasurable
+    local tree="$1" ref
+    BASE_REF="" BASE_HOW=""
+    if ! resolve_base HEAD || [ -z "$BASE_REF" ]; then
+        printf 'FAIL  no comparand could be named for HEAD: the counters are UNMEASURED at the base, and that is not "unchanged".\n' >&2
+        printf '      In CI: git fetch --no-tags --depth=2 origin +refs/heads/main:refs/remotes/origin/main\n' >&2
+        return 1
+    fi
+    ref="$BASE_REF"
+    git -C "$REPO_ROOT" archive --format=tar "$ref" -- contracts | tar -xf - -C "$tree" || {
+        printf 'FAIL  could not extract contracts/ at %s\n' "$ref" >&2; return 1; }
+    [ -d "$tree/contracts" ] || { printf 'FAIL  %s carries no contracts/\n' "$ref" >&2; return 1; }
+    printf '  comparand   %s (%s)\n' "$(git -C "$REPO_ROOT" rev-parse --short "$ref" 2>/dev/null || printf '%s' "$ref")" "$BASE_HOW" >&2
+    REPO_ROOT="$tree" BASELINE="$tree/contracts/lint-baseline.json" measure
+}
+
 measure() { # prints the JSON document
     local anchored shaped types extractors bindable consumer total armed armed_shapes shapes_line unarmed top_line
     armed="$(armed_gates_of "$BASELINE")" || return 2
@@ -215,7 +302,10 @@ measure() { # prints the JSON document
     types="$(count_entity_types)"; extractors="$(count_extractors)"
     bindable="$(count_unanchored_bindable)"
     total="$({ find "$REPO_ROOT/contracts" -name '*.yaml' -type f 2>/dev/null || true; } | wc -l | tr -d ' ')"
-    if ont_consumer_present; then consumer=true; else consumer=false; fi
+    # `true`, or the JSON STRING "unmeasured" -- never `false` from a runner that cannot judge (#3679).
+    # compare_against() skips the consumer rule on it, visibly; --write refuses to stamp it.
+    [ -n "${ONT_PROBE:-}" ] || ONT_PROBE="$(ont_consumer_probe)"
+    case "$ONT_PROBE" in true) consumer=true ;; *) consumer='"unmeasured"' ;; esac
     cat <<JSON
 {
   "_spec": "APR-RELEASE-001 §11.2 — moves only through \`make ont-ratchet\` (ONT R-6)",
@@ -242,19 +332,23 @@ JSON
 # characters is how a green-looking table measures nothing.
 field() { # field JSON_FILE NAME
     { grep -E "\"$2\"" "$1" || true; } | head -1 \
-        | sed -E "s/.*\"$2\"[[:space:]]*:[[:space:]]*//" \
+        | sed -E "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"?//" \
         | sed -E 's/[^A-Za-z0-9._-].*$//'
 }
 
 self_test() {
     local t pass=0 fail=0
     t="$(mktemp -d)"
-    case "$t" in /tmp/*|/var/tmp/*) : ;; *) printf 'NO-GO: odd mktemp path %s\n' "$t" >&2; return 2 ;; esac
+    case "$t" in /tmp/*|/var/tmp/*|"${TMPDIR:-/nonexistent}"/*) : ;; *) printf 'NO-GO: odd mktemp path %s\n' "$t" >&2; return 2 ;; esac
     row() { # row NAME GOT WANT
         if [ "$2" = "$3" ]; then pass=$((pass+1)); printf '  ok    %-44s %s\n' "$1" "$3"
         else fail=$((fail+1)); printf '  FAIL  %-44s want=%s got=%s\n' "$1" "$3" "$2"; fi
     }
     printf 'check_ont_ratchet self-test\n'
+    # The --write rows below test what --write PRESERVES, so they run against a MEASURED consumer. Left to
+    # the host's real probe, an unconverged box makes --write refuse and every "preserved" row passes on an
+    # untouched file (#3679). The probe's own rows set ONT_PROBE themselves.
+    local ONT_PROBE=true
     printf '{"ont":{"contracts_anchored": 7}}\n' > "$t/j.json"
     row "field reads a number"          "$(field "$t/j.json" contracts_anchored)" "7"
     printf '{"ont":{"consumer_present": false}}\n' > "$t/k.json"
@@ -275,7 +369,7 @@ self_test() {
     BASELINE="$t/ws.json" main --write >/dev/null 2>&1
     set -e
     row "--write preserves armed_shapes in place" "$(grep -o '"armed_shapes": *\[[^]]*\]' "$t/ws.json" | tr -d ' ')" '"armed_shapes":["ont-shapes-v1","ladder-measured"]'
-    row "--write writes shapes_unarmed"            "$(grep -c '"shapes_unarmed"' "$t/ws.json")" "1"
+    row "--write stores NO measured counter (#3569)" "$(grep -cE '"(shapes_unarmed|contracts_anchored|contracts_shaped|unanchored_but_bindable|contracts_total|consumer_present)"' "$t/ws.json" || true)" "0"
     row "--write does not invent armed_shapes"     "$(grep -c '"armed_shapes"' "$t/w.json")" "0"
     printf '{\n  "armed_gates": ["validate"],\n  "armed_shapes": [\n    "a"\n  ]\n}\n' > "$t/multis.json"
     set +e
@@ -321,6 +415,15 @@ self_test() {
     set -e
     row "--write keeps contracts_without_valid_under in place" "$(grep -c '"contracts_without_valid_under": 386' "$t/vu.json")" 1
     row "--write does not invent contracts_without_valid_under" "$(grep -c '"contracts_without_valid_under"' "$t/fw.json")" 0
+    # EV-11 (PMAT-4166): `make lint-ratchet`'s three keys ride through --write too; a NESTED key of the same name does not.
+    printf '{\n  "armed_gates": ["validate"],\n  "contracts_without_valid_under": 386,\n  "command": "make lint-ratchet",\n  "unpaired_theorem_modules": 130,\n  "contracts_without_depends_on": 278,\n  "ont": {\n    "formal_prose": 1\n  }\n}\n' > "$t/lr.json"
+    set +e
+    BASELINE="$t/lr.json" main --write >/dev/null 2>&1
+    set -e
+    row "--write keeps command + both lint ratchets in place" "$(grep -cE '^  "(command": "make lint-ratchet"|unpaired_theorem_modules": 130|contracts_without_depends_on": 278),$' "$t/lr.json")" 3
+    printf '{\n  "armed_gates": ["validate"],\n  "ont": {\n    "command": "nested",\n    "formal_prose": 1\n  }\n}\n' > "$t/nest.json"
+    row "a nested \"command\" is not carried to the top level" "$(foreign_top_keys "$t/nest.json" | grep -c '"command"')" 0
+    row "a top-level \"command\" beside a nested one is carried once" "$(printf '{\n  "command": "x",\n  "ont": {\n    "command": "y"\n  }\n}\n' > "$t/both.json"; foreign_top_keys "$t/both.json" | tr '\n' '|')" '  "command": "x",|'
     if command -v python3 >/dev/null 2>&1; then
         python3 -c "import json;json.load(open('$t/vum.json'))" >/dev/null 2>&1 \
             && row "measure() with the valid-under key is valid JSON" ok ok || row "measure() with the valid-under key is valid JSON" bad ok
@@ -329,6 +432,66 @@ self_test() {
         python3 -c "import json,sys;json.load(open('$t/f.json'))" >/dev/null 2>&1 \
             && row "measure() with foreign keys is valid JSON" ok ok || row "measure() with foreign keys is valid JSON" bad ok
     fi
+    # #3569 AC3 — the never-down check runs comparand -> head, in a scratch repo
+    # whose origin/main is real. Both directions of every counter are proven.
+    local r="$t/dir" base_sha
+    mkdir -p "$r/contracts"
+    git -C "$r" init -q -b main
+    git -C "$r" config user.email t@t; git -C "$r" config user.name t
+    git -C "$r" config commit.gpgsign false; git -C "$r" config core.hooksPath /dev/null
+    printf '{\n  "armed_gates": ["validate"],\n  "ont": {}\n}\n' > "$r/contracts/lint-baseline.json"
+    printf 'entity: kernel\n' > "$r/contracts/a1.yaml"
+    printf 'entity: kernel\nshape: x\n' > "$r/contracts/a2.yaml"
+    printf 'kind: Kernel\nbinding: x\n' > "$r/contracts/b1.yaml"
+    printf 'file: x.rs\n' > "$r/contracts/b2.yaml"
+    git -C "$r" add -A; git -C "$r" commit -qm base
+    base_sha=$(git -C "$r" rev-parse HEAD)
+    git -C "$r" update-ref refs/remotes/origin/main "$base_sha"
+    git -C "$r" checkout -qb feat
+    git -C "$r" commit -q --allow-empty -m "feat: a branch commit, so HEAD is not the origin/main tip (push shape)"
+    dir_row() { # dir_row NAME WANT_RC — measures $r's working tree against origin/main
+        local rc=0
+        REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" \
+            ONT_PROBE=true main --check >"$t/dir.out" 2>&1 || rc=$?
+        row "$1" "$rc" "$2"
+        git -C "$r" checkout -q -- . ; git -C "$r" clean -qfd
+    }
+    dir_row "base -> head unchanged: GREEN" 0
+    printf 'entity: kernel\n' > "$r/contracts/a3.yaml";                 dir_row "contracts_anchored RISES (consumer present): GREEN" 0
+    rm "$r/contracts/a1.yaml";                                           dir_row "contracts_anchored FALLS: RED" 1
+    printf 'shape: y\n' > "$r/contracts/s2.yaml";                        dir_row "contracts_shaped RISES: GREEN" 0
+    printf 'entity: kernel\n' > "$r/contracts/a2.yaml"; printf 'entity: kernel\n' > "$r/contracts/a4.yaml"
+                                                                         dir_row "contracts_shaped FALLS (anchored held): RED" 1
+    printf 'file: y.rs\n' > "$r/contracts/b3.yaml";                      dir_row "unanchored_but_bindable RISES: RED" 1
+    printf 'entity: kernel\nfile: x.rs\n' > "$r/contracts/b2.yaml";      dir_row "unanchored_but_bindable FALLS (anchored it): GREEN" 0
+    # a committed restamp cannot move the comparand: the base is measured, not read
+    rm "$r/contracts/a1.yaml"
+    printf '{\n  "armed_gates": ["validate"],\n  "ont": {"contracts_anchored": 0}\n}\n' > "$r/contracts/lint-baseline.json"
+    git -C "$r" commit -qam "drop an anchor and restamp the counter in the same commit"
+    local rc=0
+    REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" \
+        ONT_PROBE=true main --check >"$t/dir.out" 2>&1 || rc=$?
+    row "RED: a fall committed WITH a restamped counter" "$rc" 1
+    # PUSH SHAPE: HEAD is the origin/main tip, so merge-base(origin/main, HEAD) is HEAD
+    # itself and a merge-base comparand would pass the fall vacuously (pvl-a, 19:55Z)
+    git -C "$r" update-ref refs/remotes/origin/main HEAD
+    rc=0
+    REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" \
+        ONT_PROBE=true main --check >"$t/dir.out" 2>&1 || rc=$?
+    row "RED: a push to main that drops an anchor is judged against its FIRST PARENT" "$rc" 1
+    grep -q 'first parent of HEAD' "$t/dir.out"; row "push shape names its comparand as the first parent" "$?" 0
+    printf 'entity: kernel\n' > "$r/contracts/a1.yaml"; git -C "$r" add -A; git -C "$r" commit -qm "restore the anchor"
+    git -C "$r" update-ref refs/remotes/origin/main HEAD
+    rc=0
+    REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" \
+        ONT_PROBE=true main --check >"$t/dir.out" 2>&1 || rc=$?
+    row "GREEN: a push to main that restores the anchor (control)" "$rc" 0
+    git -C "$r" update-ref -d refs/remotes/origin/main
+    rc=0
+    REPO_ROOT="$r" BASELINE="$r/contracts/lint-baseline.json" \
+        ONT_PROBE=true main --check >"$t/dir.out" 2>&1 || rc=$?
+    row "RED: no comparand is UNMEASURED, not unchanged" "$rc" 1
+
     # THE DECIDING ROW: with no consumer, a rise in contracts_anchored is refused.
     printf '{"ont":{"consumer_present": false,"contracts_anchored": 0}}\n' > "$t/base.json"
     local rc
@@ -337,6 +500,46 @@ self_test() {
     rc=$?
     set -e
     row "anchored rises with NO consumer -> refused" "$rc" "1"
+    # #3679: WHICH pv the consumer probe asks. Stubs only -- a real pv on this box would make the rows
+    # pass here and vacuously everywhere else. `stale` has no census and sits FIRST on PATH (the intel
+    # 0.65.2 condition); `fleet` has census and is the pinned binary. The PATH-probe this replaced reads
+    # `stale` and says false, so reverting the resolution turns the first row RED.
+    mkdir -p "$t/stale" "$t/fleet"
+    printf '#!/bin/sh\ncase "$1" in --version) echo "pv 0.65.2 (stub)";; --help) printf "Commands:\\n  validate  V\\n";; esac\n' > "$t/stale/pv"
+    printf '#!/bin/sh\ncase "$1" in --version) echo "pv 9.9.9 (stub)";; --help) printf "Commands:\\n  validate  V\\n  census    C\\n";; esac\n' > "$t/fleet/pv"
+    chmod +x "$t/stale/pv" "$t/fleet/pv"
+    printf '9.9.9\n' > "$t/pin.ok"; printf '0.65.2\n' > "$t/pin.old"; printf '1.0.0\n' > "$t/pin.other"
+    PATH="$t/stale:$PATH" FLEET_PV_CANDIDATES="$t/fleet/pv" FLEET_PV_PIN_FILE="$t/pin.ok" ONT_PROBE='' \
+        BASELINE="$t/armed.json" measure > "$t/pinned.json"
+    row "stale PATH pv + pinned census pv -> consumer true" "$(field "$t/pinned.json" consumer_present)" "true"
+    row "pinned pv without census -> unmeasured, names version" \
+        "$(FLEET_PV_CANDIDATES="$t/stale/pv" FLEET_PV_PIN_FILE="$t/pin.old" ont_consumer_probe | awk '{print $1, $2, $4}')" \
+        "unmeasured incapable version=0.65.2"
+    row "no pin -> unmeasured no-pin" \
+        "$(FLEET_PV_CANDIDATES="$t/fleet/pv" FLEET_PV_PIN_FILE="$t/nope" ont_consumer_probe | awk '{print $1, $2}')" "unmeasured no-pin"
+    row "pin != binary version -> unmeasured pin-mismatch" \
+        "$(FLEET_PV_CANDIDATES="$t/fleet/pv" FLEET_PV_PIN_FILE="$t/pin.other" ont_consumer_probe | awk '{print $1, $2}')" "unmeasured pin-mismatch"
+    row "no fleet binary -> unmeasured no-binary" \
+        "$(FLEET_PV_CANDIDATES="$t/none/pv" FLEET_PV_PIN_FILE="$t/pin.ok" ont_consumer_probe | awk '{print $1, $2}')" "unmeasured no-binary"
+    PATH="$t/stale:$PATH" FLEET_PV_CANDIDATES="$t/stale/pv" FLEET_PV_PIN_FILE="$t/pin.old" ONT_PROBE='' \
+        BASELINE="$t/armed.json" measure > "$t/unm.json"
+    row "an unmeasured consumer is never written as false" "$(field "$t/unm.json" consumer_present)" "unmeasured"
+    set +e
+    BASELINE="$t/base.json" ONT_PROBE='unmeasured no-pin stub' _ONT_FORCE_ANCHORED=5 _ONT_FORCE_CONSUMER='"unmeasured"' \
+        compare_against "$t/base.json" > "$t/cmp.out" 2>&1
+    rc=$?
+    set -e
+    row "anchored rises, consumer UNMEASURED -> not judged (rc 0)" "$rc" "0"
+    row "...and says UNMEASURED, never silent" "$(grep -c '^UNMEASURED consumer probe' "$t/cmp.out")" "1"
+    # #3569: --write stores DECISIONS only, so an unmeasured probe has nothing to stamp and is no reason
+    # to refuse. It writes, and consumer_present stays out of the file (#3679's worry cannot arise).
+    cp "$t/armed.json" "$t/wu.json"
+    set +e
+    BASELINE="$t/wu.json" ONT_PROBE='unmeasured no-pin stub' main --write >/dev/null 2>&1
+    rc=$?
+    set -e
+    row "--write under an UNMEASURED probe writes decisions (rc 0)" "$rc" "0"
+    row "...and stamps no consumer_present" "$(grep -c '"consumer_present"' "$t/wu.json" || true)" "0"
     printf 'self-test: %s passed, %s failed\n' "$pass" "$fail"
     [ -n "$t" ] && [ -d "$t" ] && rm -rf "$t"
     [ "$fail" -eq 0 ]
@@ -356,9 +559,15 @@ compare_against() { # compare_against BASELINE_FILE -> 0 ok, 1 violation
     bind_now="$(field "$cur" unanchored_but_bindable)"; bind_was="$(field "$base" unanchored_but_bindable)"
     consumer_now="$(field "$cur" consumer_present)"
 
+    # UNMEASURED is fleet state, not a verdict (#3679, the #3633 convention): the runner's pv cannot
+    # say whether the consumer exists, so the consumer rule is not judged here -- and says so. The
+    # ratchet directions below still are.
+    if [ "$consumer_now" = "unmeasured" ]; then
+        printf 'UNMEASURED consumer probe: %s -- the anchored-rise rule is not judged on this runner; fleet state, not a pass\n' "${ONT_PROBE#unmeasured }"
+    fi
     # THE GATE. An anchor nothing reads is decoration, and a counter that rises on
     # decoration is the theater §11 exists to stop. Refuse the rise, name the fix.
-    if [ "$consumer_now" != "true" ] && [ "${anchored_now:-0}" -gt "${anchored_was:-0}" ]; then
+    if [ "$consumer_now" = "false" ] && [ "${anchored_now:-0}" -gt "${anchored_was:-0}" ]; then
         printf 'FAIL  contracts_anchored rose %s -> %s while consumer_present=false.\n' "${anchored_was:-0}" "${anchored_now:-0}"
         printf '      `pv census` does not exist, nothing in either contracts crate reads\n'
         printf '      `entity:`, and `pv validate` calls such a contract VALID by ignoring\n'
@@ -378,31 +587,42 @@ compare_against() { # compare_against BASELINE_FILE -> 0 ok, 1 violation
 main() {
     case "${1:---check}" in
         --self-test) self_test; return $? ;;
+        --print) measure; return $? ;;
         --write)
             mkdir -p "$(dirname "$BASELINE")"
-            # Never `measure > "$BASELINE"`: the shell truncates the file BEFORE
-            # measure() reads armed_gates out of it, so the declaration read back
+            # Never `decisions > "$BASELINE"`: the shell truncates the file BEFORE
+            # decisions() reads armed_gates out of it, so the declaration read back
             # empty and was rewritten as [].
             local tmp
             tmp="$(mktemp "$BASELINE.XXXXXX")"
-            measure > "$tmp" || { rm -f "$tmp"; return 2; }
+            decisions > "$tmp" || { rm -f "$tmp"; return 2; }
             mv "$tmp" "$BASELINE"
-            printf 'wrote %s\n' "${BASELINE#"$REPO_ROOT"/}"
-            sed -n '/"ont"/,/}/p' "$BASELINE"
+            printf 'wrote %s (decisions only; the counters are measured, #3569)\n' "${BASELINE#"$REPO_ROOT"/}"
             return 0 ;;
         --check|"") ;;
-        *) printf 'usage: %s [--check|--write|--self-test]\n' "$(basename "$0")" >&2; return 2 ;;
+        *) printf 'usage: %s [--check|--print|--write|--self-test]\n' "$(basename "$0")" >&2; return 2 ;;
     esac
-    printf '== ONT ratchet (APR-RELEASE-001 §11.2) ==\n'
+    printf '== ONT ratchet (APR-RELEASE-001 §11.2), comparand tree -> working tree (#3569) ==\n'
     if [ ! -f "$BASELINE" ]; then
-        printf 'NO-GO: %s does not exist. §11.2 records the counters there;\n' "${BASELINE#"$REPO_ROOT"/}" >&2
-        printf 'without it every counter is unmeasured and this guard would pass vacuously.\n' >&2
-        printf 'Create it: make ont-ratchet\n' >&2
+        printf 'NO-GO: %s does not exist. It declares armed_gates; without it\n' "${BASELINE#"$REPO_ROOT"/}" >&2
+        printf 'the measurement has no arming to read and this guard would pass vacuously.\n' >&2
         return 2
     fi
-    measure | sed -n '/"ont"/,/^  }/p'
-    if compare_against "$BASELINE"; then printf 'PASS\n'; return 0; fi
-    printf 'FAILED: §11.2 — the ratchet turns one way, through `make ont-ratchet` only.\n'
+    local scratch base_json rc=0
+    rmscratch() { case "${1:-}" in "${TMPDIR:-/tmp}"/tmp.*|/tmp/tmp.*) rm -rf -- "$1" ;; *) : ;; esac; }
+    scratch="$(mktemp -d)"; base_json="$scratch/base.json"
+    mkdir -p "$scratch/tree"
+    if ! measure_comparand "$scratch/tree" > "$base_json"; then
+        rmscratch "$scratch"
+        printf 'FAILED: §11.2 — the comparand could not be measured.\n'
+        return 1
+    fi
+    printf '  base: %s\n' "$(sed -n '/"ont"/,/^  }/p' "$base_json" | tr -d ' \n')"
+    printf '  head: %s\n' "$(measure | sed -n '/"ont"/,/^  }/p' | tr -d ' \n')"
+    compare_against "$base_json" || rc=1
+    rmscratch "$scratch"
+    if [ "$rc" = 0 ]; then printf 'PASS\n'; return 0; fi
+    printf 'FAILED: §11.2 — the ratchet turns one way, measured comparand -> head.\n'
     return 1
 }
 

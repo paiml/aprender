@@ -252,6 +252,19 @@ install() {
     step "Installing"
     tar -xzf "$tmp_dir/archive.tar.gz" -C "$tmp_dir"
     extracted="$tmp_dir/${asset}/${BINARY_NAME}"
+    if [ ! -f "$extracted" ]; then
+        # A promoted final (#4286) is its rc's exact bytes, so the archive's top
+        # directory still carries the rc label (apr-vX.Y.Z-rc.N-<target>-<variant>/).
+        # Take the one ${BINARY_NAME}-* directory the archive holds, and only one.
+        found=''
+        n=0
+        for cand in "$tmp_dir/${BINARY_NAME}-"*"/${BINARY_NAME}"; do
+            [ -f "$cand" ] || continue
+            found=$cand
+            n=$((n + 1))
+        done
+        [ "$n" -eq 1 ] && extracted=$found
+    fi
     [ -f "$extracted" ] || error "Binary '${BINARY_NAME}' not found in archive (expected at ${asset}/${BINARY_NAME})"
 
     mkdir -p "$INSTALL_DIR"

@@ -28,6 +28,9 @@ unicode-segmentation = "1.12"
 # Error handling
 thiserror = "2.0"
 
+[build-dependencies]
+aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
+
 [dev-dependencies]
 proptest = { workspace = true }
 criterion = { workspace = true }

@@ -497,6 +497,7 @@ pub fn fused_q5k_parallel_matvec(
 
 include!("q5k_q6k_matvec.rs");
 include!("parallel_k_fused_q4k.rs");
+include!("q4k_q8k_multirow.rs");
 
 #[cfg(test)]
 mod fp32_activation_scope_tests {

@@ -190,7 +190,7 @@ strip_ansi() { sed -e 's/\x1b\[[0-9;]*[A-Za-z]//g' -e 's/\x1b([A-Z]//g'; }
 gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
   local name="$1"; shift
   local out rc log
-  # KEEP THE OUTPUT (#3841). This used to discard `out` into a shell variable, so
+  # KEEP THE OUTPUT (#3844; e8c341cca cited #3841 in error). This used to discard `out` into a shell variable, so
   # `gate` was the ONLY row family writing nothing into $WORKLOG -- fmt, clippy, test
   # and bashrs. d8's keep-the-worklog-on-NO-GO fix could not reach them because they
   # never put anything there to keep. A red `test` row's real output was simply gone.
@@ -199,7 +199,7 @@ gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
   out=$(printf '%s' "$out" | strip_ansi)
   printf '%s\n' "$out" > "$log" 2>/dev/null || :
   local note
-  # ANCHORED picker (#3841). The old pattern was an unanchored case-insensitive
+  # ANCHORED picker (#3844). The old pattern was an unanchored case-insensitive
   # 'error|fail|...' and it matched SUBSTRINGS INSIDE DEPENDENCY NAMES, so on a red
   # row the entire visible explanation could be a `Compiling` line emitted minutes
   # before the real diagnostic. Three instances measured on ONE yoga run:
@@ -1314,7 +1314,7 @@ if [ "$DOGFOOD_PHASE" = post-publish ]; then
     RA_RC=$RUN_RC
     RA_MISS=$(grep -c '^MISSING ' "$WORKLOG/release-assets.log" 2>/dev/null || true)
     if [ "$RA_RC" -eq 0 ]; then
-      mark release-assets PASS "v$VERSION carries all 16 assets (4 apr {cuda,cpu}x{x86_64,aarch64} + 4 sha256 + 8 pv)"
+      mark release-assets PASS "v$VERSION carries all 18 assets (4 apr {cuda,cpu}x{x86_64,aarch64} + darwin cpu, each + sha256, + 8 pv)"
     elif [ "$RA_RC" -eq 2 ]; then
       # ENV is a FAIL here on purpose: "the release could not be read" is not
       # evidence that the release is complete.

@@ -174,6 +174,8 @@ impl InstructPipeline {
             head_dim as usize,
             inter as usize,
         );
+        // #4056: the WGSL RMSNorm takes the model's eps (it hardcoded 1e-6).
+        fwd.set_rms_norm_eps(_model_config.rms_norm_eps);
 
         // KAIZEN: Only upload norm weights (tiny: 14 KB each, 28 layers = ~800 KB total).
         let mut uploaded = 0usize;

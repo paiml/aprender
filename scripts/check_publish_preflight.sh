@@ -17,10 +17,10 @@
 #       from an argument.
 #   R3  the tag `v<version>` points at HEAD: the crate that is uploaded is the
 #       commit that is tagged, not a neighbour of it.
-#   R4  HEAD is on the main ref: nothing publishes from a branch. Either HEAD is an ancestor of
-#       main, or -- main's merge queue SQUASHES (a ruleset), so a release cut never becomes an
-#       ancestor -- main CONTAINS HEAD's crate content: `git diff HEAD <main>` is empty over
-#       crates/, src/, Cargo.toml and Cargo.lock, i.e. every published source file is equal.
+#   R4  HEAD is an ancestor of release/<version> (origin/release/X.Y.Z): nothing
+#       publishes from a topic branch. NOT main (cop ruling 2026-09-24, #4286): RC
+#       binaries ship from the release branch before merge-back, and main ancestry
+#       is enforced at merge-back (#4224). A missing release ref refuses.
 #   R6  no versioned sibling dev-dependency lies on a CYCLE. cargo keeps a versioned
 #       dev-dependency in the published manifest and resolves it on the registry,
 #       so two siblings that name each other can never be uploaded first
@@ -39,12 +39,13 @@
 #       refuses: a decline is not a pass.
 #
 # EXIT  0 every rule holds · 1 a rule refused · 2 the box cannot answer
-#       (no git/cargo/python3, not a repository). 2 is not a pass.
+#       (no git/cargo/jq/iconv, not a repository). 2 is not a pass.
 #
 # SEAMS (the selftest builds a throwaway repository and drives every rule to
 # both verdicts through them; production never sets them):
 #   PUBLISH_PREFLIGHT_ROOT         repository root (default: this script's repo)
-#   PUBLISH_PREFLIGHT_MAIN_REF     the main ref for R4 (default: origin/main)
+#   PUBLISH_PREFLIGHT_RELEASE_REF  the ref for R4 (default: origin/release/<R2 version>;
+#                                  the selftest leaves it unset so the derivation is tested)
 #   PUBLISH_PREFLIGHT_RECEIPT_DIR  the dogfood receipt dir (default: $ROOT/.dogfood)
 #   PUBLISH_PREFLIGHT_LADDER_JUDGE the R7 judge (default: $ROOT/scripts/check_model_ladder.sh)
 #
@@ -52,6 +53,7 @@
 #   bash scripts/check_publish_preflight.sh             # the gate
 #   bash scripts/check_publish_preflight.sh --selftest  # case table, both polarities
 #   bash scripts/check_publish_preflight.sh --receipt-only  # R2+R5 only: T-1, before the tag (#3708)
+#   bash scripts/check_publish_preflight.sh --graph-only    # R2+R6 only: the rc cut (#4287)
 #   bash scripts/check_publish_preflight.sh --scope crux-smoke [--cut-commit SHA]
 #       R7 under a RECORDED operator emergency scope (contracts/model-capability-ladder-v1.yaml
 #       `ladder.emergency_scopes`; 0.69.1 only): the judge's own `--scope` path
@@ -85,20 +87,88 @@ PREPUBLISH_OPEN_OBLIGATIONS="publish-dry-run declared:check_multiplatform_dogfoo
 # so this does not loosen anything else; a row not named here is still refused whatever it
 # is called.
 
+# ---- JSON reads, in jq (#4352: python3 is out of the release path) ----
+# Each keeps the python it replaced, case for case (parity table in #4352), with one deliberate
+# difference: where python parsed the JSON and then crashed on its shape (a receipt that is not an
+# object, a package without a name, "dependencies": null), its empty stdout read as a verdict --
+# for R6 as "ok, no sibling dev-dependency". Here any such document is UNREADABLE, and refused.
+# One cosmetic difference: a list or object in a receipt field prints as JSON (["x"]), not python's
+# repr (['x']). It only reaches a FAIL message; no such value is ever a GO, a sha or a version.
+PP_JQ='def obj: if type == "object" then . else error("not an object") end;
+def key($k): obj | if has($k) then .[$k] else error("missing key \($k)") end;
+def pystr: if . == null then "None" elif . == true then "True" elif . == false then "False"
+    elif type == "string" then .
+    elif type == "number" and isnan then "nan"
+    elif type == "number" and isinfinite then (if . > 0 then "inf" else "-inf" end)
+    else tojson end;
+def truthy: . != null and . != false and . != 0 and . != "" and . != [] and . != {};
+def str: if type == "string" then . else error("not a string") end;
+def pyiter: if type == "array" then .[] elif type == "object" then keys_unsorted[]
+    elif type == "string" then explode[] | [.] | implode else error("not iterable") end;
+def one: input as $d | if ([inputs] | length) > 0 then error("extra data") else $d end;'
+# pp_manifest_rows: stdin `cargo metadata` -> one `manifest<US>1<US>version` row per package, in
+# order (`<US>0<US>` when it has no version: python's KeyError fires only on the match).
+pp_manifest_rows() {
+    jq -rn "$PP_JQ"' one | obj | (if has("packages") then .packages else [] end)
+        | [pyiter] | .[] | "\(key("manifest_path") | str)\u001f\(if has("version") then "1\u001f\(.version | pystr)" else "0\u001f" end)"'
+}
+pp_realpath() { realpath -m -- "$1" 2> /dev/null || readlink -f -- "$1"; }  # os.path.realpath
+# pp_receipt_fields FILE -> `verdict commit version phase deferred open` (a falsy field is "-", phase
+# "full"; deferred and open_obligations comma-joined, #3957), or `UNREADABLE - - - - -` for anything python could not read
+# (missing, not UTF-8, not JSON) and anything it read and then crashed on (not an object).
+pp_receipt_fields() {
+    # python's open(encoding="utf-8") refuses a BOM that jq would skip: refuse it here too
+    { iconv -f UTF-8 -t UTF-8 < "$1" > /dev/null 2>&1 \
+        && [ "$(head -c 3 "$1" | od -An -tx1 | tr -d ' \n')" != efbbbf ] \
+        && jq -rn "$PP_JQ"' one | obj
+            | def f($k; $d): if has($k) and (.[$k] | truthy) then .[$k] | pystr else $d end;
+            def l($k): (if has($k) and (.[$k] | truthy) then .[$k] else [] end)
+                | [pyiter | pystr] | join(",") | if . == "" then "-" else . end;
+            [f("verdict"; "-"), f("commit"; "-"), f("version"; "-"), f("phase"; "full"),
+             l("deferred"), l("open_obligations")] | join(" ")' < "$1" 2> /dev/null
+    } || echo "UNREADABLE - - - - -"
+}
+# pp_devdep_edges: stdin `cargo metadata` -> `CYCLE|ACYCLIC <crate> -> <sibling> <req>` for every
+# VERSIONED dev-dependency between publishable siblings, sorted; CYCLE when the sibling can reach
+# the crate back over normal, build and versioned dev edges. UNREADABLE for bad metadata.
+read -r -d '' PP_R6_JQ <<'JQ' || :
+        def reaches($s; $d; $E): {seen: {}, stack: [$s], found: false}
+          | until(.found or (.stack | length) == 0;
+              .stack[-1] as $x | .stack |= .[:-1]
+              | reduce ($E[$x] | keys_unsorted[]) as $y (.;
+                  if .found then . elif $y == $d then .found = true
+                  elif .seen[$y] then . else .seen[$y] = true | .stack += [$y] end))
+          | .found;
+        one | obj
+        | (reduce ((if has("packages") then .packages else [] end) | [pyiter] | .[] | obj
+                   | select((if has("publish") then .publish else null end) != [])) as $p
+             ({}; .[$p | key("name") | str] = $p)) as $pk
+        | (reduce ($pk | to_entries[]) as $e ({edges: ($pk | map_values({})), vdev: []};
+             reduce ($e.value | if has("dependencies") then .dependencies else [] end | [pyiter] | .[] | obj) as $dep (.;
+               ($dep | if has("name") then .name else null end) as $t
+               | ($dep | if has("kind") then .kind else null end) as $kind
+               | if ($t | type) != "string" or ($pk | has($t) | not) or $t == $e.key then .
+                 elif $kind == "dev" and (($dep.req | if truthy then . else "*" end) == "*") then .
+                 else (if $kind == "dev" then .vdev += [[$e.key, $t, $dep.req]] else . end)
+                      | .edges[$e.key][$t] = true
+                 end))) as $g
+        | $g.vdev | sort | .[]
+        | "\(if reaches(.[1]; .[0]; $g.edges) then "CYCLE" else "ACYCLIC" end) \(.[0]) -> \(.[1]) \(.[2] | pystr)"
+JQ
+pp_devdep_edges() {
+    jq -rn "$PP_JQ$PP_R6_JQ" 2> /dev/null || echo UNREADABLE
+}
+# ---- end JSON reads ----
+
 root_version() { # root -> the root manifest's package version, from cargo metadata
-    local root="$1"
-    cargo metadata --no-deps --offline --format-version 1 --manifest-path "$root/Cargo.toml" 2>/dev/null \
-    | python3 -c '
-import json, os, sys
-try:
-    m = json.load(sys.stdin)
-except ValueError:
-    sys.exit(1)   # cargo metadata printed nothing: no version, no stack trace
-root = os.path.realpath(sys.argv[1])
-for p in m.get("packages", []):
-    if os.path.realpath(p["manifest_path"]) == root:
-        print(p["version"]); sys.exit(0)
-sys.exit(1)' "$root/Cargo.toml"
+    local root="$1" want mp have v
+    want="$(pp_realpath "$root/Cargo.toml")"
+    while IFS=$'\x1f' read -r mp have v; do
+        [ "$mp" = "$want" ] || [ "$(pp_realpath "$mp")" = "$want" ] || continue
+        [ "$have" = 1 ] || return 1
+        printf '%s\n' "$v"; return 0
+    done < <(cargo metadata --no-deps --offline --format-version 1 --manifest-path "$root/Cargo.toml" 2>/dev/null | pp_manifest_rows)
+    return 1   # cargo metadata printed nothing, or no package is the root manifest
 }
 
 newest_receipt() { # dir -> path of the newest receipt-*.json, or nothing
@@ -121,17 +191,7 @@ rule_r5() {
         echo "FAIL  R5 no dogfood receipt under $rdir (run scripts/dogfood.sh on this commit)"
         return 1
     else
-        read -r verdict rcommit rversion rphase rdeferred ropen < <(python3 -c '
-import json, sys
-try:
-    d = json.load(open(sys.argv[1]))
-except Exception:
-    print("UNREADABLE - - - - -"); sys.exit(0)
-deferred = d.get("deferred") or []
-opened = d.get("open_obligations") or []
-print(d.get("verdict") or "-", d.get("commit") or "-", d.get("version") or "-",
-      d.get("phase") or "full", ",".join(str(x) for x in deferred) or "-",
-      ",".join(str(x) for x in opened) or "-")' "$receipt")
+        read -r verdict rcommit rversion rphase rdeferred ropen < <(pp_receipt_fields "$receipt")
         # #3957 F1b: any deferred row refuses. An OPEN row is accepted only in a pre-publish
         # receipt and only for the closed list; the list is a whitelist, so a row not named in
         # it is refused whatever it is called.
@@ -192,6 +252,35 @@ rule_r7() {
     return 1
 }
 
+# R6, ONE function for both ends (#4287): the full gate at T-4, and --graph-only at the
+# rc cut, so a publish-graph defect is found on the rc and not at the final tag.
+# rule_r6 root -> prints its row; 0 accepted, 1 refused
+rule_r6() {
+    local root=$1
+    # R6 no versioned sibling dev-dependency lies on a cycle (PMAT-955, #3468). A
+    # dev-dependency with a version is kept in the published manifest and resolved
+    # on the registry at publish time; a path-only one is stripped. The edge is a
+    # defect only when its target can reach its source: then neither crate can be
+    # uploaded first. Acyclic edges are printed, so the publish order that must
+    # honour them is visible in the receipt.
+    local r6
+    r6="$(cargo metadata --no-deps --offline --format-version 1 --manifest-path "$root/Cargo.toml" 2>/dev/null | pp_devdep_edges)"
+    if [ "$r6" = UNREADABLE ]; then
+        echo "FAIL  R6 cargo metadata is unreadable, so sibling dev-dependencies cannot be judged"
+        return 1
+    elif grep -q '^CYCLE ' <<< "$r6"; then
+        printf 'FAIL  R6 a versioned sibling dev-dependency lies on a cycle (kept in the published manifest; neither crate can be uploaded first):\n%s\n' \
+            "$(printf '%s\n' "$r6" | sed -n 's/^CYCLE //p')"
+        return 1
+    elif [ -n "$r6" ]; then
+        printf 'ok    R6 %s versioned sibling dev-dependency edge(s), none on a cycle (the target publishes first):\n%s\n' \
+            "$(printf '%s\n' "$r6" | grep -c '^ACYCLIC ')" "$(printf '%s\n' "$r6" | sed -n 's/^ACYCLIC /        /p')"
+    else
+        echo "ok    R6 no sibling dev-dependency carries a version (path-only, stripped at publish)"
+    fi
+    return 0
+}
+
 # R7 under a recorded operator emergency scope (0.69.1: CRUX smoke only). The scope is READ by the
 # judge (`--scope`, scripts/lib/crux_smoke_scope.py), never re-implemented here: it refuses another
 # release, receipts from another binary, and a missing host. This rule adds the one binding the judge
@@ -232,9 +321,9 @@ rule_r7_scope() {
 }
 
 gate() {
-    local root="${PUBLISH_PREFLIGHT_ROOT:-}" main_ref="${PUBLISH_PREFLIGHT_MAIN_REF:-origin/main}"
+    local root="${PUBLISH_PREFLIGHT_ROOT:-}" release_ref
     local fails=0 status version tags head
-    for t in git cargo python3; do
+    for t in git cargo jq iconv; do
         command -v "$t" >/dev/null 2>&1 || die_env "$t is not on PATH"
     done
     if [ -z "$root" ]; then
@@ -274,77 +363,22 @@ gate() {
         fails=1
     fi
 
-    # R4 HEAD is on main: by ancestry, or by CONTENT when main squash-merged it
-    local r4diff
-    if ! git -C "$root" rev-parse --verify --quiet "${main_ref}^{commit}" >/dev/null; then
-        echo "FAIL  R4 the main ref $main_ref does not exist here"
-        fails=1
-    elif git -C "$root" merge-base --is-ancestor "$head" "$main_ref" 2>/dev/null; then
-        echo "ok    R4 HEAD is an ancestor of $main_ref"
+    # R4 HEAD is on the release branch of THIS version (#4286), not main: main is
+    # merge-back's check (#4224). No version, no release ref to judge: refuse.
+    release_ref="${PUBLISH_PREFLIGHT_RELEASE_REF:-origin/release/${version:-?}}"
+    if [ -n "$version" ] \
+       && git -C "$root" rev-parse --verify --quiet "${release_ref}^{commit}" >/dev/null \
+       && git -C "$root" merge-base --is-ancestor "$head" "$release_ref" 2>/dev/null; then
+        echo "ok    R4 HEAD is an ancestor of $release_ref"
     else
-        r4diff="$(git -C "$root" diff --name-only "$head" "$main_ref" -- crates src Cargo.toml Cargo.lock 2>&1)"
-        if [ -z "$r4diff" ]; then
-            echo "ok    R4 cut content in main via squash $(git -C "$root" rev-parse --short=9 "$main_ref"): HEAD ${head:0:9} is not an ancestor, but every file under crates/ src/ Cargo.toml Cargo.lock is equal"
-        else
-            printf 'FAIL  R4 HEAD %s is not an ancestor of %s, and main does not contain its crate content -- %s published path(s) differ:\n%s\n' \
-                "${head:0:9}" "$main_ref" "$(printf '%s\n' "$r4diff" | grep -c .)" "$(printf '%s\n' "$r4diff" | head -n 10 | sed 's/^/        /')"
-            fails=1
-        fi
+        echo "FAIL  R4 HEAD ${head:0:9} is not an ancestor of $release_ref (or that ref does not exist)"
+        fails=1
     fi
 
     # R5 dogfood receipt: GO, this commit, this version
     rule_r5 "$root" "$head" "$version" || fails=1
 
-    # R6 no versioned sibling dev-dependency lies on a cycle (PMAT-955, #3468). A
-    # dev-dependency with a version is kept in the published manifest and resolved
-    # on the registry at publish time; a path-only one is stripped. The edge is a
-    # defect only when its target can reach its source: then neither crate can be
-    # uploaded first. Acyclic edges are printed, so the publish order that must
-    # honour them is visible in the receipt.
-    r6="$(cargo metadata --no-deps --offline --format-version 1 --manifest-path "$root/Cargo.toml" 2>/dev/null | python3 -c '
-import json, sys
-try:
-    d = json.load(sys.stdin)
-except Exception:
-    print("UNREADABLE"); sys.exit(0)
-pk = {p["name"]: p for p in d.get("packages", []) if p.get("publish") != []}
-edges = {n: set() for n in pk}
-vdev = []
-for n, p in pk.items():
-    for dep in p.get("dependencies", []):
-        t = dep.get("name")
-        if t not in pk or t == n:
-            continue
-        if dep.get("kind") == "dev":
-            if (dep.get("req") or "*") == "*":
-                continue
-            vdev.append((n, t, dep.get("req")))
-        edges[n].add(t)
-def reaches(src, dst):
-    seen, stack = set(), [src]
-    while stack:
-        x = stack.pop()
-        for y in edges.get(x, ()):
-            if y == dst:
-                return True
-            if y not in seen:
-                seen.add(y); stack.append(y)
-    return False
-for n, t, req in sorted(vdev):
-    print("%s %s -> %s %s" % ("CYCLE" if reaches(t, n) else "ACYCLIC", n, t, req))')"
-    if [ "$r6" = UNREADABLE ]; then
-        echo "FAIL  R6 cargo metadata is unreadable, so sibling dev-dependencies cannot be judged"
-        fails=1
-    elif grep -q '^CYCLE ' <<< "$r6"; then
-        printf 'FAIL  R6 a versioned sibling dev-dependency lies on a cycle (kept in the published manifest; neither crate can be uploaded first):\n%s\n' \
-            "$(printf '%s\n' "$r6" | sed -n 's/^CYCLE //p')"
-        fails=1
-    elif [ -n "$r6" ]; then
-        printf 'ok    R6 %s versioned sibling dev-dependency edge(s), none on a cycle (the target publishes first):\n%s\n' \
-            "$(printf '%s\n' "$r6" | grep -c '^ACYCLIC ')" "$(printf '%s\n' "$r6" | sed -n 's/^ACYCLIC /        /p')"
-    else
-        echo "ok    R6 no sibling dev-dependency carries a version (path-only, stripped at publish)"
-    fi
+    rule_r6 "$root" || fails=1
 
     # R7 the model matrix, re-read at T-4 through the T-1 judge (#3717)
     rule_r7 "$root" "$version" || fails=1
@@ -354,11 +388,37 @@ for n, t, req in sorted(vdev):
         return 1
     fi
     if [ -n "${SCOPE:-}" ]; then
-        echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO, OPERATOR EMERGENCY SCOPE $SCOPE satisfied (the model matrix was NOT the gate)"
+        echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, dogfood GO, OPERATOR EMERGENCY SCOPE $SCOPE satisfied (the model matrix was NOT the gate)"
     else
-        echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO, model matrix green"
+        echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, dogfood GO, model matrix green"
     fi
     return 0
+}
+
+# --graph-only (#4287): R2 + R6 on PUBLISH_PREFLIGHT_ROOT, the rc cut's end of the
+# publish graph. R1/R3/R4/R5/R7 describe the upload (a tag, the release branch, receipts) and are
+# judged at T-4 as before.
+graph_gate() {
+    local root="${PUBLISH_PREFLIGHT_ROOT:-}" version
+    for t in cargo jq; do
+        command -v "$t" >/dev/null 2>&1 || die_env "$t is not on PATH"
+    done
+    if [ -z "$root" ]; then
+        root="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+    fi
+    [ -f "$root/Cargo.toml" ] || die_env "$root has no Cargo.toml"
+    version="$(root_version "$root")" || version=""
+    if [ -z "$version" ]; then
+        echo "FAIL  R2 cargo metadata names no version for the root manifest"
+        echo "REFUSE $PROG --graph-only: no version to judge."
+        return 1
+    fi
+    echo "ok    R2 version $version (cargo metadata, root manifest)"
+    if ! rule_r6 "$root"; then
+        echo "REFUSE $PROG --graph-only: the publish graph of $version cannot be uploaded (R6)."
+        return 1
+    fi
+    echo "PASS  $PROG --graph-only: R6 holds at $version (R1/R3/R4/R5/R7 are judged at publish)"
 }
 
 # --receipt-only (#3708): R2 + R5 and nothing else. R1/R3/R4/R6 describe the tree
@@ -366,7 +426,7 @@ for n, t, req in sorted(vdev):
 # they are judged at T-4 by the full gate, as before.
 receipt_gate() {
     local root="${PUBLISH_PREFLIGHT_ROOT:-}" head version
-    for t in git cargo python3; do
+    for t in git cargo jq iconv; do
         command -v "$t" >/dev/null 2>&1 || die_env "$t is not on PATH"
     done
     if [ -z "$root" ]; then
@@ -387,6 +447,81 @@ receipt_gate() {
     fi
     echo "PASS  $PROG --receipt-only: R5 holds for ${head:0:9} at $version (R1/R3/R4/R6 are judged at publish)"
     return 0
+}
+
+# ------------------------------------------------------------- JSON-read rows ---
+# pp_io_rows (#4352): each jq read above against the output the python it replaced gave on the
+# same input (the full parity table is in #4352; these are the rows that pin each rule). Then,
+# unless PP_NO_MUTANTS=1, every mutant below is applied to a copy of THIS file's JSON-read region
+# and must turn at least one row red -- a row table no mutant can fail proves nothing.
+pp_io_rows() {
+    local t pass=0 fail=0 m anchor repl src head tail cp rc
+    t="$(mktemp -d)" || die_env "mktemp failed"
+    case "$t" in /tmp/?*|/var/folders/?*|/mnt/?*) : ;; *) die_env "mktemp gave ${t:-<empty>}" ;; esac
+    io() { # want label cmd... (stdout compared exactly)
+        local want="$1" label="$2" got; shift 2
+        got="$("$@" 2> /dev/null)"
+        if [ "$got" = "$want" ]; then pass=$((pass + 1)); printf 'ok    io %s\n' "$label"
+        else fail=$((fail + 1)); printf 'FAIL  io %s: want [%s] got [%s]\n' "$label" "$want" "$got"; fi
+    }
+    rec() { printf '%s' "$2" > "$t/$1.json"; }
+    rec plain '{"verdict":"GO","commit":"abc","version":"1.2.3","phase":"pre-publish","deferred":["publish-dry-run"]}'
+    rec falsy '{"verdict":0,"commit":"","version":null,"phase":"","deferred":[]}'
+    rec pyish '{"verdict":true,"commit":false,"version":NaN,"deferred":[null,true,"x"]}'
+    rec strdefer '{"verdict":"GO","deferred":"ab"}'
+    rec open '{"verdict":"GO","phase":"pre-publish","deferred":[],"open_obligations":["x","y"]}'
+    rec notobj '[1]'
+    rec twodocs '{"verdict":"GO"}{"verdict":"GO"}'
+    printf '\357\273\277{"verdict":"GO"}' > "$t/bom.json"
+    printf '{"verdict":"G\377O"}' > "$t/badutf8.json"
+    io "GO abc 1.2.3 pre-publish publish-dry-run -" receipt_plain        pp_receipt_fields "$t/plain.json"
+    io "- - - full - -"                 receipt_falsy_is_dash_phase_full pp_receipt_fields "$t/falsy.json"
+    io "True - nan full None,True,x -"  receipt_python_str_of_values   pp_receipt_fields "$t/pyish.json"
+    io "GO - - full a,b -"              receipt_string_deferral_iterates pp_receipt_fields "$t/strdefer.json"
+    io "GO - - pre-publish - x,y"       receipt_open_obligations_joined pp_receipt_fields "$t/open.json"
+    io "UNREADABLE - - - - -"           receipt_not_object_unreadable  pp_receipt_fields "$t/notobj.json"
+    io "UNREADABLE - - - - -"           receipt_extra_data_unreadable  pp_receipt_fields "$t/twodocs.json"
+    io "UNREADABLE - - - - -"           receipt_bom_unreadable         pp_receipt_fields "$t/bom.json"
+    io "UNREADABLE - - - - -"           receipt_not_utf8_unreadable    pp_receipt_fields "$t/badutf8.json"
+    io "UNREADABLE - - - - -"           receipt_missing_unreadable     pp_receipt_fields "$t/absent.json"
+    printf '%s' '{"packages":[{"name":"a","publish":null,"dependencies":[{"name":"b","req":"^1","kind":"dev"},{"name":"c","kind":"dev"},{"name":"c","req":"*","kind":"dev"},{"name":"a","req":"^1","kind":"dev"}]},{"name":"b","dependencies":[{"name":"a","req":"^1","kind":null}]},{"name":"c","dependencies":[]},{"name":"d","dependencies":[{"name":"c","req":"=2","kind":"dev"},{"name":"x","req":"^1","kind":"dev"}]},{"name":"x","publish":[],"dependencies":[{"name":"d","req":"^1"}]}]}' > "$t/r6.json"
+    io $'CYCLE a -> b ^1\nACYCLIC d -> c =2' r6_versioned_dev_edges_classified pp_devdep_edges < "$t/r6.json"
+    io "UNREADABLE"                     r6_bad_metadata_unreadable     pp_devdep_edges < "$t/notobj.json"
+    printf '%s' '{"packages":[{"manifest_path":"/m/a","version":"1.2.3"},{"manifest_path":"/m/b"}]}' > "$t/mf.json"
+    printf '%s' '{"packages":[{"manifest_path":7,"version":"1"}]}' > "$t/mf7.json"
+    io ""                               manifest_path_not_string_refused pp_manifest_rows < "$t/mf7.json"
+    io $'/m/a\x1f1\x1f1.2.3\n/m/b\x1f0\x1f' manifest_rows_mark_missing_version pp_manifest_rows < "$t/mf.json"
+    if [ "${PP_NO_MUTANTS:-}" != 1 ]; then
+        src="$(cat "$0")"; head="${src%%"# ---- end JSON reads ----"*}"; tail="${src#"$head"}"
+        while IFS='~' read -r anchor repl; do
+            [ -n "$anchor" ] || continue
+            m="${head#*"$anchor"}"
+            if [ "$m" = "$head" ] || [ "${m#*"$anchor"}" != "$m" ]; then
+                fail=$((fail + 1)); printf 'FAIL  mutant anchor absent or not unique: %s\n' "$anchor"; continue
+            fi
+            cp="$t/mutant.sh"; printf '%s%s%s%s' "${head%%"$anchor"*}" "$repl" "$m" "$tail" > "$cp"
+            PP_NO_MUTANTS=1 bash "$cp" --io-selftest > "$t/mutant.out" 2>&1; rc=$?
+            if [ "$rc" -ne 0 ] && grep -q '^FAIL  io ' "$t/mutant.out"; then
+                pass=$((pass + 1)); printf 'ok    mutant killed: %s\n' "$anchor"
+            else fail=$((fail + 1)); printf 'FAIL  mutant SURVIVED: %s\n' "$anchor"; fi
+        done <<'MUTANTS'
+!= efbbbf ]~!= 000000 ]
+iconv -f UTF-8 -t UTF-8 <~cat <
+ and . != 0 and ~ and 
+elif type == "number" and isnan then "nan"~elif false then "nan"
+then error("extra data")~then $d
+error("not a string")~.
+if reaches(.[1]; .[0]; $g.edges) then "CYCLE"~if false then "CYCLE"
+elif $kind == "dev" and~elif false and
+"$PP_JQ$PP_R6_JQ" 2> /dev/null || echo UNREADABLE~"$PP_JQ$PP_R6_JQ" 2> /dev/null || :
+else "0\u001f" end~else "1\u001f" end
+MUTANTS
+    fi
+    if [ -n "$t" ] && [ "$t" != "/" ]; then
+        case "$t" in /tmp/?*|/var/folders/?*|/mnt/?*) rm -rf -- "$t" || return 2 ;; esac
+    fi
+    printf -- '--- io %s/%s rows ---\n' "$pass" "$((pass + fail))"
+    [ "$fail" -eq 0 ]
 }
 
 # --------------------------------------------------------------- selftest ---
@@ -422,6 +557,7 @@ selftest() {
         git -C "$d" add -A
         git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'fixture' >/dev/null
         git -C "$d" tag v1.2.3
+        git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
         mkdir -p "$d/.dogfood"
         write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     }
@@ -472,12 +608,13 @@ FXJUDGE
         git -C "$d" add -A
         git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'fixture' >/dev/null
         git -C "$d" tag v1.2.3
+        git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
         mkdir -p "$d/.dogfood"
         write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     }
     row() { # name, expect(0|1), needle, dir [, gate|receipt_gate]
         local name="$1" expect="$2" needle="$3" d="$4" mode="${5:-gate}" out rc=0
-        out="$( PUBLISH_PREFLIGHT_ROOT="$d" PUBLISH_PREFLIGHT_MAIN_REF=fixture-main "$mode" 2>&1 )" || rc=$?
+        out="$( PUBLISH_PREFLIGHT_ROOT="$d" "$mode" 2>&1 )" || rc=$?
         if [ "$rc" != "$expect" ]; then
             printf '  BROKE %-36s expected exit %s got %s\n' "$name" "$expect" "$rc"; fail=$((fail + 1)); return 0
         fi
@@ -508,26 +645,22 @@ FXJUDGE
     d="$tmp/branch"; build_repo "$d"; git -C "$d" checkout -q -b topic
     printf 'pub fn k() {}\n' >> "$d/src/lib.rs"; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'topic' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
-    row head_off_main_refuses          1 "FAIL  R4" "$d"
+    row head_off_release_branch_refuses 1 "FAIL  R4 HEAD" "$d"
 
-    # R4 by CONTENT: main's merge queue squashes, so the cut is never an ancestor of main.
-    sq() { # dir: topic commit squash-merged onto fixture-main, HEAD left on the topic (the cut)
-        local d="$1"; build_repo "$d"; git -C "$d" checkout -q -b topic
-        printf 'pub fn k() {}\n' >> "$d/src/lib.rs"
-        git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'topic' >/dev/null
-        git -C "$d" checkout -q fixture-main; git -C "$d" merge -q --squash topic >/dev/null
-        git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'squash' >/dev/null
-    }
-    sq_finish() { git -C "$1" checkout -q topic; git -C "$1" tag -f v1.2.3 >/dev/null; write_receipt "$1" GO "$(git -C "$1" rev-parse HEAD)" 1.2.3; }
-    d="$tmp/squash"; sq "$d"; sq_finish "$d"
-    row squash_merged_content_passes   0 "ok    R4 cut content in main via squash" "$d"
-    d="$tmp/squash-docs"; sq "$d"; printf 'notes\n' > "$d/NOTES.md"; git -C "$d" add NOTES.md
-    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'docs on main' >/dev/null; sq_finish "$d"
-    row squash_then_docs_on_main_passes 0 "ok    R4 cut content in main via squash" "$d"
-    d="$tmp/squash-drift"; sq "$d"; printf 'pub fn z() {}\n' >> "$d/src/lib.rs"
-    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'crate change on main' >/dev/null; sq_finish "$d"
-    row squash_then_crate_file_differs_refuses 1 "FAIL  R4" "$d"
-    row squash_then_crate_file_names_it 1 "        src/lib.rs" "$d"
+    # R4 (#4286, cop ruling 2026-09-24): the release branch, not main. An rc commit on
+    # release/1.2.3 that main does not contain yet passes; main containing HEAD does not
+    # rescue a missing release ref; another version's release branch does not count.
+    d="$tmp/rc-on-release"; build_repo "$d"; git -C "$d" checkout -q -b release-1.2.3
+    printf 'pub fn r() {}\n' >> "$d/src/lib.rs"; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'rc fix' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    ! git -C "$d" merge-base --is-ancestor HEAD fixture-main || { echo "  BROKE fixture: rc commit is on main"; fail=$((fail + 1)); }
+    row rc_on_release_not_main_passes  0 "ok    R4 HEAD is an ancestor of origin/release/1.2.3" "$d"
+    d="$tmp/no-release-ref"; build_repo "$d"; git -C "$d" update-ref -d refs/remotes/origin/release/1.2.3
+    row release_ref_absent_on_main_refuses 1 "FAIL  R4" "$d"
+    d="$tmp/other-release"; build_repo "$d"; git -C "$d" update-ref -d refs/remotes/origin/release/1.2.3
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.4 HEAD
+    row other_versions_release_refuses 1 "not an ancestor of origin/release/1.2.3" "$d"
 
     d="$tmp/nogo"; build_repo "$d"; write_receipt "$d" NO-GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row dogfood_no_go_refuses          1 "FAIL  R5" "$d"
@@ -602,6 +735,13 @@ FXJUDGE
     row versioned_sibling_devdep_acyclic_passes 0 "fx-a -> fx-b" "$d"
     d="$tmp/devdep_path"; build_ws_repo "$d" ''
     row pathed_sibling_devdep_passes   0 "PASS" "$d"
+    # --graph-only (#4287), both polarities: the rc cut refuses the same cycle, and passes
+    # an untagged tree off its release branch that the full gate would refuse on R3/R4.
+    d="$tmp/devdep_cycle"; row graph_only_cycle_refuses      1 "FAIL  R6" "$d" graph_gate
+    d="$tmp/devdep_version"; git -C "$d" tag -d v1.2.3 >/dev/null
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -q --allow-empty -m 'off release' >/dev/null
+    row graph_only_acyclic_untagged_passes 0 "PASS  $PROG --graph-only" "$d" graph_gate
+    row graph_only_control_full_gate_refuses 1 "FAIL  R3" "$d"
 
     # R7 (#3717): the committed model-matrix receipts, judged by the T-1 judge. all_rules_hold above
     # is the green row (the stub refuses any version but 1.2.3, so it also proves the argument).
@@ -631,6 +771,7 @@ FXJUDGE
     # bashrs disable-next-line=SEC010
     mkdir -p "$d/evidence/crux/1.2.3"; printf '{}\n' > "$d/evidence/crux/1.2.3/lambda-gpu.json"
     git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'receipts' >/dev/null
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD  # R4 (#4286): the release branch carries the commit
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_cut_below_evidence_commit_passes 0 "satisfied at the cut ${cut:0:12}" "$d"
     FX_EXPECT_CUT="$cut" SCOPE=crux-smoke row scope_head_is_not_the_cut_refuses 1 "judge asked about cut" "$d"
@@ -646,6 +787,7 @@ FXJUDGE
     # bashrs disable-next-line=SEC010
     printf '# tooling\n' > "$d/scripts/new_tool.sh"; mkdir -p "$d/contracts"; printf 'x: 1\n' > "$d/contracts/c.yaml"
     git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'tooling' >/dev/null
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD  # R4 (#4286): the release branch carries the commit
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_tooling_after_the_cut_passes 0 "satisfied at the cut ${cut:0:12}" "$d"
     d="$tmp/sc-badcut"; build_repo "$d"
@@ -670,6 +812,8 @@ FXJUDGE
     write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 pre-publish '["publish-dry-run","bashrs"]'
     row receipt_only_unexpected_deferral_refuses 1 "FAIL  R5" "$d" receipt_gate
 
+    pp_io_rows || fail=$((fail + 1))
+
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
 }
@@ -685,7 +829,9 @@ done
 [ -z "$CUT_COMMIT" ] || [ -n "$SCOPE" ] || { printf '%s: --cut-commit is only meaningful with --scope\n' "$PROG" >&2; exit 2; }
 case "$MODE" in
     --selftest) selftest ;;
+    --io-selftest) pp_io_rows ;;
     --receipt-only) receipt_gate ;;
+    --graph-only) graph_gate ;;
     '')         gate ;;
     -h|--help)  sed -n '2,48p' "$0" ;;
     *)          printf '%s: unknown argument %s\n' "$PROG" "$MODE" >&2; exit 2 ;;

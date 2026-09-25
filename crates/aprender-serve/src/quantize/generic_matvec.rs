@@ -175,6 +175,79 @@ pub fn generic_parallel_matvec<F: QuantBlockFormat>(
     Ok(output)
 }
 
+/// Multi-row variant of [`generic_parallel_matvec_into`] (#4228): `input` is `m` token rows of
+/// `in_dim`, `output` is `m` rows of `out_dim`, token-major.
+///
+/// Rayon splits the weight into row tiles sized to stay L2-resident; each tile runs every token
+/// against its rows, so the weight streams from DRAM once per call instead of once per token.
+/// Every output is the same `dot_fn(row, padded_token)` the single-row function computes, so
+/// the result is bit-identical to calling it once per token.
+///
+/// # Errors
+/// Mis-sized weight, input or output buffers.
+pub fn generic_multirow_matmul_into<F: QuantBlockFormat>(
+    weight_data: &[u8],
+    input: &[f32],
+    m: usize,
+    in_dim: usize,
+    out_dim: usize,
+    output: &mut [f32],
+    dot_fn: FusedDotFn,
+) -> Result<()> {
+    use rayon::prelude::*;
+
+    let super_blocks_per_row = in_dim.div_ceil(F::ELEMENTS_PER_SUPERBLOCK);
+    let bytes_per_row = super_blocks_per_row * F::SUPERBLOCK_BYTES;
+    if weight_data.len() < out_dim * bytes_per_row
+        || input.len() != m * in_dim
+        || output.len() < m * out_dim
+    {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "{} multirow: weight {} < {out_dim}x{bytes_per_row}, input {} != {m}x{in_dim} \
+                 or output {} < {m}x{out_dim}",
+                F::FORMAT_ID,
+                weight_data.len(),
+                input.len(),
+                output.len()
+            ),
+        });
+    }
+    if m == 0 || out_dim == 0 {
+        return Ok(());
+    }
+    let padded = super_blocks_per_row * F::ELEMENTS_PER_SUPERBLOCK;
+    let acts: Vec<Cow<'_, [f32]>> = input
+        .chunks_exact(in_dim)
+        .map(|row| pad_activations_generic(row, padded))
+        .collect();
+
+    // L2-sized row tile, as the Q4_K multi-row kernel: 256 KiB of weight, 4..=64 rows.
+    let tile = ((256 * 1024) / bytes_per_row.max(1)).clamp(4, 64) / 4 * 4;
+    // Row-major [out_dim][m] so each tile owns a contiguous chunk; transposed below.
+    let mut by_row = vec![0.0f32; out_dim * m];
+    by_row
+        .par_chunks_mut(tile * m)
+        .enumerate()
+        .for_each(|(ti, chunk)| {
+            let row0 = ti * tile;
+            let rows = chunk.len() / m;
+            for (t, act) in acts.iter().enumerate() {
+                for r in 0..rows {
+                    let at = (row0 + r) * bytes_per_row;
+                    chunk[r * m + t] =
+                        dot_fn(&weight_data[at..at + bytes_per_row], act).unwrap_or(0.0);
+                }
+            }
+        });
+    for (row, vals) in by_row.chunks_exact(m).enumerate() {
+        for (t, &v) in vals.iter().enumerate() {
+            output[t * out_dim + row] = v;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

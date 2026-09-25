@@ -48,7 +48,7 @@ pub fn run(
     watch: bool,
     strict_test_binding: bool,
     armed_baseline_ref: Option<&str>,
-    gate: Option<&str>,
+    gate: &[String],
     shapes_opts: ShapesOptions,
 ) -> Result<(), Box<dyn std::error::Error>> {
     refuse_missing_corpus(contract_dir)?;
@@ -57,8 +57,10 @@ pub fn run(
     // is asked for, because run_single_gate would otherwise report every ref
     // missing on exactly the input the refusal exists for.
     refuse_single_file_strict_binding(contract_dir, strict_test_binding)?;
-    if let Some(name) = gate {
-        return run_single_gate(contract_dir, name, &shapes_opts);
+    match gate {
+        [] => {}
+        [name] => return run_single_gate(contract_dir, name, &shapes_opts),
+        names => return run_gates(contract_dir, names, &shapes_opts),
     }
     if watch {
         return run_watch(
@@ -252,6 +254,47 @@ fn run_single_gate(
     }
 }
 
+/// PVL-001 EV-11: `--gate a --gate b` runs every named gate, each printing its own report as `--gate a` alone
+/// would, and exits with their MEET: any refusal (exit 3) over any reject (1) over any decline (2) over pass (0).
+/// A name this build does not compute is refused before any gate runs, so a typo never reports a partial pass.
+fn run_gates(
+    contract_dir: &Path,
+    names: &[String],
+    shapes_opts: &ShapesOptions,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use provable_contracts::lint::NAMED_GATES;
+    if let Some(bad) = names.iter().find(|n| !NAMED_GATES.contains(&n.as_str())) {
+        return Err(crate::contract_walk::UnknownGate {
+            asked: bad.clone(),
+            known: NAMED_GATES.iter().map(|g| (*g).to_string()).collect(),
+        }
+        .into());
+    }
+    let outcomes: Vec<_> = names
+        .iter()
+        .map(|n| run_single_gate(contract_dir, n, shapes_opts))
+        .collect();
+    let rank = |r: &Result<(), Box<dyn std::error::Error>>| match r {
+        Ok(()) => 0,
+        Err(e) if e.is::<LintDeclined>() => 1,
+        Err(e) if e.is::<LintRejected>() => 2,
+        Err(_) => 3,
+    };
+    let passed = outcomes.iter().filter(|r| rank(r) == 0).count();
+    let worst = outcomes
+        .into_iter()
+        .max_by_key(|r| rank(r))
+        .unwrap_or(Ok(()));
+    match worst {
+        Err(e) if e.is::<LintRejected>() => Err(LintRejected {
+            passed,
+            armed: names.len(),
+        }
+        .into()),
+        other => other,
+    }
+}
+
 /// One gate's run, mapped to a report or to the refusal/decline that stands in its place. Every non-verdict
 /// answer says WHY on stderr before it returns, because an exit code without a reason is the thing this gate
 /// exists to refuse.
@@ -266,7 +309,7 @@ fn decide_named_gate(
     shapes_opts: &ShapesOptions,
 ) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
     use provable_contracts::lint::{
-        relations_gate::RelationsOutcome, sigma_gate::SigmaOutcome,
+        ratchet_gates::RatchetOutcome, relations_gate::RelationsOutcome, sigma_gate::SigmaOutcome,
         valid_under_gate::ValidUnderOutcome, NamedGateOutcome, NAMED_GATES,
     };
 
@@ -309,7 +352,15 @@ fn decide_named_gate(
         NamedGateOutcome::ValidUnder(ValidUnderOutcome::Malformed(e)) => {
             Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
+        NamedGateOutcome::Ratchet(RatchetOutcome::Declined(why)) => {
+            eprintln!("{name}: {why}");
+            Err(LintDeclined {
+                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+            }
+            .into())
+        }
         NamedGateOutcome::Sigma(SigmaOutcome::Ran { result, findings })
+        | NamedGateOutcome::Ratchet(RatchetOutcome::Ran { result, findings })
         | NamedGateOutcome::Relations(RelationsOutcome::Ran { result, findings })
         | NamedGateOutcome::ValidUnder(ValidUnderOutcome::Ran { result, findings })
         | NamedGateOutcome::Ran { result, findings } => Ok((result, findings)),
@@ -361,6 +412,25 @@ fn decide_shapes_gate(
             // 15 reasons), so the reason is NoCheckable and this line says what could not be checked.
             eprintln!(
                 "shapes: {shapes_n} shape(s) resolve receipts and the tree holds none under {dir}/"
+            );
+            Err(LintDeclined {
+                reason: Reason::NoCheckable,
+            }
+            .into())
+        }
+        ShapesOutcome::HarnessBroken { causes } => {
+            for c in &causes {
+                eprintln!("shapes: CRUX harness broken — {c}");
+            }
+            Err(LintDeclined {
+                reason: Reason::NoCheckable,
+            }
+            .into())
+        }
+        ShapesOutcome::EmptyDomain { shapes_n } => {
+            // ONT-4c5 / R-2: |D| = 0 answers nothing about a required cell — a decline, never Pass, never RED
+            eprintln!(
+                "shapes: capability-cells domain D is empty ({shapes_n} shape(s)) — no required rung has a host to be measured on"
             );
             Err(LintDeclined {
                 reason: Reason::NoCheckable,
