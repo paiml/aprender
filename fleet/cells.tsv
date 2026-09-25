@@ -1,4 +1,4 @@
-# measured 2026-09-25T16:47:04Z
+# measured 2026-09-25T17:17:05Z
 lambda-labs	apr	GREEN	ok (installed v0.69.5-rc.1@5660b08, target v0.69.5-rc.1@5660b08)
 lambda-labs	pv	RED	no-sha (installed v0.69.5-rc.1@5660b08, target v0.69.5-rc.1@5660b08)
 lambda-labs	forjar	RED	no-sha (installed v1.32.0@b12a839, target v1.32.0@b12a839)
@@ -10,7 +10,7 @@ lambda-labs	rmedia	RED	WAIVED dev (installed -, target -)
 lambda-labs	apex	GREEN	ok (installed v-apex-0.1.0-rc.2@f2e20b6, target v-apex-0.1.0-rc.2@f2e20b6)
 lambda-labs	ollama	GREEN	ok (installed 0.34.4, target v0.34.4)
 lambda-labs	llama.cpp	GREEN	lag (installed b11176, target b11182)
-gx10	apr	GREEN	ok (installed v0.69.5-rc.1@5660b08, target v0.69.5-rc.1@5660b08)
+gx10	apr	RED	bytes-not-recorded (installed v0.69.5-rc.1@5660b08, target v0.69.5-rc.1@5660b08)
 gx10	pv	RED	no-sha (installed v0.69.5-rc.1@5660b08, target v0.69.5-rc.1@5660b08)
 gx10	forjar	RED	no-sha (installed v1.32.0@b12a839, target v1.32.0@b12a839)
 gx10	bashrs	RED	no-sha (installed nightly@19b2a12, target nightly@19b2a12)
