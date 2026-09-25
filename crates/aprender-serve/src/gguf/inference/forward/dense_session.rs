@@ -125,6 +125,17 @@ impl DenseForward {
         forward
     }
 
+    /// The CUDA model, if this forward still holds one: `None` on the CPU,
+    /// including after a mid-turn fallback moved it there (#3821).
+    #[cfg(feature = "cuda")]
+    #[must_use]
+    pub fn into_cuda(self) -> Option<crate::gguf::OwnedQuantizedModelCuda> {
+        match self.backend {
+            Backend::Cuda { model, .. } => Some(*model),
+            Backend::Cpu { .. } | Backend::Moving => None,
+        }
+    }
+
     /// The host model, whichever backend holds it.
     #[must_use]
     pub fn model(&self) -> &OwnedQuantizedModel {

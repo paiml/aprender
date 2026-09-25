@@ -835,17 +835,20 @@ fn validate_gpu_golden_output(
     let model = OwnedQuantizedModel::from_mapped(mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
     let (generated, f2) = match OwnedQuantizedModelCuda::new(model, 0) {
-        Ok(mut cuda_model) => {
-            // #3821: ask the SAME F2 guard `apr run --gpu` asks, on the same
-            // prompt, so the two surfaces decide one subject. The probe resets the
-            // GPU KV cache on every path, so the generation below starts clean.
-            let f2 =
-                realizar::infer::validate_gpu_first_token(&mut cuda_model, gen_config, prompt_tokens);
-            let generated =
-                qa_dense_generate(&mut qa_dense_cuda(cuda_model), prompt_tokens, gen_config, true)
-                    .map(|gpu_tokens| gguf.decode(&gpu_tokens))
-                    .map_err(|e| format!("GPU generation: {e}"));
-            (generated, Some(f2))
+        Ok(cuda_model) => {
+            let mut session = qa_dense_cuda(cuda_model);
+            let generated = qa_dense_generate(&mut session, prompt_tokens, gen_config, true)
+                .map(|gpu_tokens| gguf.decode(&gpu_tokens))
+                .map_err(|e| format!("GPU generation: {e}"));
+            // #3821: ask the SAME F2 guard `apr run --gpu` asks, on the same prompt,
+            // so the two surfaces decide one subject. It runs AFTER the leg has
+            // generated: on an in-band FP8 miss the guard switches the model to
+            // FP16 for good (`f2_remeasure_without_fp8`), so asking it first would
+            // change what this gate judges. `None` if the turn fell back to the CPU.
+            let f2 = session.into_engine().into_cuda().map(|mut cuda_model| {
+                realizar::infer::validate_gpu_first_token(&mut cuda_model, gen_config, prompt_tokens)
+            });
+            (generated, f2)
         },
         Err(e) => (Err(format!("CUDA init on device 0: {e}")), None),
     };

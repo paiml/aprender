@@ -154,6 +154,14 @@ impl<F: ArchForward> Session<F> {
         &self.forward
     }
 
+    /// End the session and hand back its forward. The session is consumed, so
+    /// nothing can drive the forward through it afterwards; `apr qa` uses this to
+    /// ask the F2 guard about the model it just generated with (#3821).
+    #[must_use]
+    pub fn into_engine(self) -> F {
+        self.forward
+    }
+
     /// The architecture's forward, mutably: for tests that set a forward's
     /// knobs. A verb never drives the forward directly.
     pub(crate) fn engine_mut(&mut self) -> &mut F {
