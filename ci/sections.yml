@@ -717,6 +717,15 @@ jobs:
       # own steps. None of them appears in the registry (check_tree_reader_tests.sh
       # reads this exclude list out of this file and drops their targets), so the
       # exclusion removes nothing the filterset asks for.
+      - name: "Σ-executed: keep the quick selected-crates junit (the next nextest run overwrites it)"
+        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1 && steps.tier.outputs.crates != ''
+        # #4433: a PR merges on its QUICK tier (a merge_group whose tree equals the
+        # PR head's reuses that result), so the quick tier's own runs are checked too.
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sigma"
+          cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/quick-sel.junit.xml"
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
         if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
         # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
@@ -778,6 +787,61 @@ jobs:
       #
       # --locked: a quick tier that silently rewrites Cargo.lock would be a
       # different dependency graph from the one the PR is proposing.
+      - name: "Σ-executed: keep the quick tree-reader junit (the next nextest run overwrites it)"
+        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
+        # #4433: a PR merges on its QUICK tier (a merge_group whose tree equals the
+        # PR head's reuses that result), so the quick tier's own runs are checked too.
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sigma"
+          cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/quick-tree.junit.xml"
+      - name: "Σ-executed (quick tier): the tests this job ran are exactly the tests it owes (#4433)"
+        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
+        # The quick tier's universe is its SELECTION (BSE-17): the tier step's crates
+        # and tree-reader targets. The filters are written out again HERE from those
+        # outputs, never read back from the run steps -- an added --exclude or a
+        # narrowed -E in a run step cannot narrow its own yardstick.
+        env:
+          CRATES: ${{ steps.tier.outputs.crates }}
+          TARGETS: ${{ steps.tier.outputs.targets }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sig="$RUNNER_TEMP/sigma"
+          mkdir -p "$sig"
+          python3 scripts/ci/sigma_executed.py --self-test
+          read -ra crates <<< "$CRATES"
+          sel=""; for c in "${crates[@]}"; do sel="$sel -p $c"; done
+          read -ra targets <<< "$TARGETS"
+          tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \
+                  | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
+          EXPR="$(bash scripts/ci_test_tier.sh --filterset "$TARGETS")"
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -v "${sig}:/sigma" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e SEL="$sel" -e TREE="$tree" -e EXPR="$EXPR" \
+            "$IMAGE" \
+            bash -c 'set -euo pipefail
+              if [ -n "$SEL" ]; then cargo nextest list --profile ci --lib --tests $SEL --message-format json > /sigma/quick-sel.list.json; fi
+              cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --message-format json > /sigma/quick-tree.list.json'
+          rc=0
+          if [ -n "$CRATES" ]; then
+            python3 scripts/ci/sigma_executed.py nextest --kind "quick selected crates" --junit "$sig/quick-sel.junit.xml" --list-json "$sig/quick-sel.list.json" || rc=1
+          fi
+          python3 scripts/ci/sigma_executed.py nextest --kind "quick tree readers" --junit "$sig/quick-tree.junit.xml" --list-json "$sig/quick-tree.list.json" || rc=1
+          exit "$rc"
       - name: "Quick tier: cargo check --workspace (over-the-cap integration, BSE-17 rule (i))"
         if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && matrix.shard == 1
         timeout-minutes: 20
