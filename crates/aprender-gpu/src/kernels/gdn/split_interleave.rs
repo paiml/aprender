@@ -132,6 +132,37 @@ mod ptx_tests {
         assert_eq!(kernel.grid(), (16, 1, 1));
         assert_eq!(kernel.block(), (256, 1, 1));
     }
+
+    /// #3522 OXIDE-001: the cuda-oxide port of [`SplitInterleavedKernel`] times
+    /// itself against the hand PTX committed under
+    /// `experiments/cuda-oxide/split-interleave/baseline-ptx/`. head_dim is baked
+    /// into the PTX; heads is the grid. One baseline per target, at Qwen3.5's
+    /// head_dim 256.
+    ///
+    /// Regenerate: `APR_BLESS_PTX=1 cargo test -p aprender-gpu --features cuda --lib gdn_split_interleave_ptx_golden`
+    #[test]
+    fn gdn_split_interleave_ptx_golden() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../experiments/cuda-oxide/split-interleave/baseline-ptx");
+        let bless = std::env::var_os("APR_BLESS_PTX").is_some();
+        let kernel = SplitInterleavedKernel::new(16, 256);
+        for target in ["sm_89", "sm_121"] {
+            let path = dir.join(format!("gdn_split_interleaved_q_gate.{target}.ptx"));
+            let ptx = kernel.emit_ptx_for_target(target);
+            if bless {
+                std::fs::create_dir_all(&dir).expect("baseline dir");
+                std::fs::write(&path, &ptx).expect("write baseline");
+                continue;
+            }
+            let golden = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{}: {e} (bless with APR_BLESS_PTX=1)", path.display()));
+            assert!(
+                golden == ptx,
+                "{} drifted from the emitter; re-bless and re-run the #3522 receipts",
+                path.display()
+            );
+        }
+    }
 }
 
 /// Device parity against a verbatim port of `forward_attention`'s split.
