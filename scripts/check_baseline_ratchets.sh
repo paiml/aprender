@@ -606,6 +606,42 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
         "$LIB" "$PT/tools.toml" "$PT/root-ok" "$PT/path-match" "$PT/base_old.txt"
     pin_row 'pin   tools.toml names no [bashrs]'          4 'names no \[bashrs\] version' \
         "$LIB" "$PT/nobashrs.toml" "$PT/root-ok" "$PT/path-match" "$PT/base.txt"
+    # -- WHERE the pin lives: the default base is lambda's layout, and a clean-room
+    # runner without it must fall back to RUNNER_TEMP -- still the pinned binary,
+    # never a skip (aprender#4429: both ratchets red with "cannot create").
+    # $PT/blocked is a regular FILE, so mkdir under it fails even as root.
+    : > "$PT/blocked"
+    mkbashrs "$PT/rt/tool-pins/bashrs-9.9.1/bin" 9.9.1
+    mkdir -p "$PT/rt-empty"
+    fb_row() { # fb_row <label> <want-rc> <must-match> <bashrs_pin.sh> <RUNNER_TEMP or ->
+        local out got rt=()
+        [ "$5" = - ] && rt=(-u RUNNER_TEMP) || rt=(RUNNER_TEMP="$5")
+        out=$(env -u BASHRS_PIN_ROOT "${rt[@]}" TOOL_PIN_TOML="$PT/tools.toml" TOOL_PIN_BASE="$PT/blocked/base" \
+            BASHRS_PIN_NO_INSTALL=1 bash -c '. "$1" || exit 9; bashrs_pin_resolve || exit $?; printf "BASHRS=%s\n" "$BASHRS"' \
+            _ "$4" 2>&1); got=$?
+        say_row "$1" "$2" "$got"
+        if [ "$got" = "$2" ] && ! grep -qE -- "$3" <<< "$out"; then
+            printf 'FAIL  %-46s rc ok but output lacks /%s/: %s\n' "$1" "$3" "$out"
+            bad=1
+        fi
+    }
+    PIN="$REPO_ROOT/scripts/bashrs_pin.sh"
+    fb_row 'pin   base unwritable, pin in RUNNER_TEMP'    0 "^BASHRS=$PT/rt/tool-pins/bashrs-9\.9\.1/bin/bashrs$" "$PIN" "$PT/rt"
+    fb_row 'pin   base unwritable, RUNNER_TEMP empty'     4 "not installed at $PT/rt-empty/tool-pins/bashrs-9\.9\.1/bin/bashrs" "$PIN" "$PT/rt-empty"
+    fb_row 'pin   base unwritable, no RUNNER_TEMP'        4 'no writable root for pinned bashrs 9\.9\.1' "$PIN" -
+    # MUTANT C: the fallback deleted -> the first row must go RED, or it proves nothing.
+    mkdir -p "$PT/mutC"
+    sed '/# --- TOOLPIN-FALLBACK-BEGIN ---/,/# --- TOOLPIN-FALLBACK-END ---/d' "$PIN" > "$PT/mutC/bashrs_pin.sh"
+    rows=$((rows + 1))
+    if cmp -s "$PIN" "$PT/mutC/bashrs_pin.sh"; then
+        printf 'FAIL  pin mutant C not built: its markers moved\n'
+        bad=1
+    elif env -u BASHRS_PIN_ROOT RUNNER_TEMP="$PT/rt" TOOL_PIN_TOML="$PT/tools.toml" TOOL_PIN_BASE="$PT/blocked/base" \
+            BASHRS_PIN_NO_INSTALL=1 bash -c '. "$1" || exit 9; bashrs_pin_resolve' _ "$PT/mutC/bashrs_pin.sh" >/dev/null 2>&1; then
+        printf 'FAIL  pin mutant C (no RUNNER_TEMP fallback) still resolves: the fallback row does not discriminate\n'
+        bad=1
+    fi
+
     # MUTANTS. Each must turn its row GREEN, or that row proves nothing.
     #   A: the resolver swapped back to PATH -> "pin absent, PATH matches" passes.
     #   B: the pin comparison deleted       -> "MISMATCH" passes.
@@ -639,7 +675,7 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
         exit 1
     fi
     printf 'PASS  case table only: %s rows (set, count, keyed, keyed2, comparand resolver,\n' "$rows"
-    printf '      end-to-end, classification totality, bashrs pin + 2 mutants). NO baseline in this tree was\n'
+    printf '      end-to-end, classification totality, bashrs pin + root fallback + 3 mutants). NO baseline in this tree was\n'
     printf '      compared — run with no arguments for that.\n'
     exit 0
 fi

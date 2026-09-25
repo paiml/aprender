@@ -13,7 +13,9 @@
 #
 # So the binary is resolved from the pin, not from PATH:
 #
-#   root = ${BASHRS_PIN_ROOT:-${TOOL_PIN_BASE:-/mnt/nvme-raid0/tmp/tool-pins}/bashrs-<pin>}
+#   root = $BASHRS_PIN_ROOT if set, else the first writable of
+#          ${TOOL_PIN_BASE:-/mnt/nvme-raid0/tmp/tool-pins}/bashrs-<pin> and
+#          $RUNNER_TEMP/tool-pins/bashrs-<pin>
 #   bin  = $root/bin/bashrs, installed on first use with
 #          cargo install bashrs --version =<pin> --locked --root "$root"
 #          (under flock, so concurrent jobs on one host build it once)
@@ -29,7 +31,7 @@
 # (CLAUDE.md, check_sourced_libs_option_neutral.sh).
 #
 # Env for tests: TOOL_PIN_TOML (default <repo>/tools.toml), BASHRS_PIN_ROOT,
-# TOOL_PIN_BASE, BASHRS_PIN_NO_INSTALL=1.
+# TOOL_PIN_BASE, RUNNER_TEMP, BASHRS_PIN_NO_INSTALL=1.
 #
 # Refs: tools.toml, scripts/check_tool_versions.sh, PMAT-1066.
 
@@ -54,6 +56,27 @@ _bashrs_pin_fail() {
     return 4
 }
 
+# _bashrs_pin_root <pin> -> the first base whose bashrs-<pin> already holds the
+# binary or can be created. The default base is lambda's layout; a clean-room
+# runner without it (aprender#4429: both ratchets red with "cannot create")
+# falls back to the job's RUNNER_TEMP. That costs one install per job there,
+# and it is still the PINNED binary, version-checked by the caller: a fallback
+# of WHERE, never of WHICH instrument, and never a skip.
+_bashrs_pin_root() {
+    local base bases
+    bases=("${TOOL_PIN_BASE:-/mnt/nvme-raid0/tmp/tool-pins}")
+    # --- TOOLPIN-FALLBACK-BEGIN ---
+    [ -n "${RUNNER_TEMP:-}" ] && bases+=("$RUNNER_TEMP/tool-pins")
+    # --- TOOLPIN-FALLBACK-END ---
+    for base in "${bases[@]}"; do
+        if [ -x "$base/bashrs-$1/bin/bashrs" ] || mkdir -p -- "$base/bashrs-$1" 2>/dev/null; then
+            printf '%s\n' "$base/bashrs-$1"
+            return 0
+        fi
+    done
+    return 1
+}
+
 bashrs_pin_resolve() {
     local toml pin root bin live lock
     BASHRS_PIN_ERR=""
@@ -63,7 +86,13 @@ bashrs_pin_resolve() {
         _bashrs_pin_fail '%s names no [bashrs] version; cannot resolve the CI pin' "$toml"
         return 4
     fi
-    root=${BASHRS_PIN_ROOT:-${TOOL_PIN_BASE:-/mnt/nvme-raid0/tmp/tool-pins}/bashrs-$pin}
+    if [ -n "${BASHRS_PIN_ROOT:-}" ]; then
+        root=$BASHRS_PIN_ROOT
+    elif ! root=$(_bashrs_pin_root "$pin"); then
+        _bashrs_pin_fail 'no writable root for pinned bashrs %s under %s or RUNNER_TEMP=%s; set BASHRS_PIN_ROOT' \
+            "$pin" "${TOOL_PIN_BASE:-/mnt/nvme-raid0/tmp/tool-pins}" "${RUNNER_TEMP:-unset}"
+        return 4
+    fi
     bin=$root/bin/bashrs
     if [ ! -x "$bin" ]; then
         if [ "${BASHRS_PIN_NO_INSTALL:-0}" = 1 ]; then
