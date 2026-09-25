@@ -46,6 +46,7 @@ this workflow holds `contents: write` only (issues would need `issues: write`).
 """
 import argparse
 import datetime
+import functools
 import hashlib
 import json
 import os
@@ -181,8 +182,25 @@ def probe_version(exe):
     return p.returncode, (out[0] if out else "")
 
 
+def probe_update(exe, b):
+    # EPIC #4232: every shipped bin runs the update check, so `<bin> update --help`
+    # prints aprender-update's usage line and exits 0. --help touches no network,
+    # so the gate stays offline; a bin that never adopted `hook!` hands `update`
+    # to its own parser and answers something else.
+    exe = os.path.abspath(exe)
+    env = dict(os.environ, SOVEREIGN_DISABLE_UPDATE_CHECK="1")
+    with tempfile.TemporaryDirectory() as cwd:
+        try:
+            p = subprocess.run([exe, "update", "--help"], cwd=cwd, stdin=subprocess.DEVNULL, env=env,
+                               capture_output=True, text=True, timeout=20)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            return False, str(e)
+    first = (p.stdout.strip().splitlines() or [""])[0]
+    return p.returncode == 0 and first == f"usage: {b} update [--check]", f"rc={p.returncode}: {first}"
+
+
 def record(target, sha, bins, bin_dir, dist, build_outcome="success", probe=probe_version, version=None,
-           variants=()):
+           variants=(), update_probe=probe_update):
     if build_outcome != "success":
         # A cancelled build proved nothing about the code, so it is not a build
         # verdict: the gate retries the SHA instead of calling it handled.
@@ -229,6 +247,10 @@ def record(target, sha, bins, bin_dir, dist, build_outcome="success", probe=prob
         elif not vsha:
             red = red or {"sha": sha, "reason": "version-no-sha",
                           "detail": f"{b}: --version names no build SHA: {line}"}
+        wired, udetail = update_probe(exe, b)
+        if not wired:
+            red = red or {"sha": sha, "reason": "update-unwired",
+                          "detail": f"{key}: `{b} update --help` is not aprender-update's (#4232): {udetail}"}
         tools[key] = {
             "asset": os.path.basename(tar) if tar else None,
             "sha256": sha256_file(tar) if tar else None,
@@ -464,6 +486,39 @@ def self_test():
     except ValueError:
         check("two member crates defining one bin name -> refused", "refused", "refused")
 
+    # The fake executables below are not runnable; every bin is update-wired
+    # unless a case says otherwise (EPIC #4232, probe_update's own cases follow).
+    rec = functools.partial(record, update_probe=lambda exe, b: (True, "rc=0"))
+    print("probe_update (#4232):")
+    with tempfile.TemporaryDirectory() as d:
+        def sh(name, text, rc=0):
+            path = os.path.join(d, name)
+            with open(path, "w") as f:
+                f.write(f"#!/bin/sh\n[ \"$1 $2\" = 'update --help' ] || exit 9\nprintf '%s\\n' '{text}'\nexit {rc}\n")
+            os.chmod(path, 0o755)
+            return path
+        check("aprender-update's usage line, rc 0 -> wired",
+              probe_update(sh("apr", "usage: apr update [--check]"), "apr")[0], True)
+        check("a bin that hands `update` to its own parser (rc 2) -> unwired",
+              probe_update(sh("ptop", "error: unrecognized subcommand 'update'", 2), "ptop")[0], False)
+        check("another bin's usage line -> unwired (the product is named for THIS bin)",
+              probe_update(sh("score", "usage: ptop update [--check]"), "score")[0], False)
+        check("a missing executable -> unwired, not a crash",
+              probe_update(os.path.join(d, "absent"), "absent")[0], False)
+        os.makedirs(os.path.join(d, "u"))
+        for b in ("apr", "pv"):
+            open(os.path.join(d, "u", b), "wb").write(b"exe-" + b.encode())
+        unwired = lambda exe, b: (b != "pv", f"rc=2 ({b})")  # noqa: E731
+        good_v = lambda exe: (0, f"{os.path.basename(exe)} 0.69.0 ({S[:9]})")  # noqa: E731
+        uu = record("release-commit", S, ["apr", "pv"], os.path.join(d, "u"), None, probe=good_v,
+                    version="0.69.0", update_probe=unwired)
+        check("smoke: a bin without the update check -> update-unwired, naming it",
+              (uu["status"], (uu["red"] or {}).get("reason"), (uu["red"] or {}).get("detail", "").split(":")[0]),
+              ("red", "update-unwired", "pv"))
+        uw = record("release-commit", S, ["apr", "pv"], os.path.join(d, "u"), None, probe=good_v,
+                    version="0.69.0", update_probe=lambda exe, b: (True, "rc=0"))
+        check("smoke: every bin update-wired and SHA-stamped -> green", uw["status"], "green")
+
     print("record:")
     with tempfile.TemporaryDirectory() as d:
         for b in ("apr", "pv"):
@@ -471,47 +526,47 @@ def self_test():
             open(os.path.join(d, f"{b}-{T[0]}.tar.gz"), "wb").write(b"tar-" + b.encode())
         fake = lambda out: (lambda exe: out[os.path.basename(exe)])  # noqa: E731
         good = {"apr": (0, f"apr 0.69.0 ({S[:9]})"), "pv": (0, f"pv 0.69.0 ({S[:9]}) (aprender provable-contracts verifier)")}
-        ok = record(T[0], S, ["apr", "pv"], d, d, probe=fake(good))
+        ok = rec(T[0], S, ["apr", "pv"], d, d, probe=fake(good))
         check("every bin runs and prints its build SHA -> green", ok["status"], "green")
         check("pv's short SHA is recorded as the full build SHA", ok["tools"]["pv"]["version_sha"], S)
-        ns = record(T[0], S, ["apr", "pv"], d, d,
+        ns = rec(T[0], S, ["apr", "pv"], d, d,
                     probe=fake(dict(good, pv=(0, "pv 0.69.0 (aprender provable-contracts verifier)"))))
         check("a bin printing NO SHA -> version-no-sha (#4219)", (ns["status"], (ns["red"] or {}).get("reason"),
               ns["tools"]["pv"]["version_sha"]), ("red", "version-no-sha", None))
         check("apr's short SHA is recorded as the full build SHA", ok["tools"]["apr"]["version_sha"], S)
         check("bin_sha256 hashes the EXECUTABLE, not the tarball",
               ok["tools"]["pv"]["bin_sha256"], hashlib.sha256(b"exe-pv").hexdigest())
-        mm = record(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, apr=(0, f"apr 0.69.0 ({OLD[:9]})"))))
+        mm = rec(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, apr=(0, f"apr 0.69.0 ({OLD[:9]})"))))
         check("a binary printing ANOTHER SHA -> version-mismatch", (mm["status"], mm["red"]["reason"]),
               ("red", "version-mismatch"))
-        ng = record(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, apr=(0, "apr 0.69.1 (v0.69.1+no-git)"))))
+        ng = rec(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, apr=(0, "apr 0.69.1 (v0.69.1+no-git)"))))
         check("a +no-git build names no SHA -> version-no-sha; its version_sha is null",
               (ng["status"], (ng["red"] or {}).get("reason"), ng["tools"]["apr"]["version_sha"]), ("red", "version-no-sha", None))
-        vf = record(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, pv=(101, "panicked"))))
+        vf = rec(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, pv=(101, "panicked"))))
         check("--version failing -> version-failed", (vf["status"], vf["red"]["reason"]), ("red", "version-failed"))
-        bf = record(T[0], S, ["apr", "pv"], d, d, build_outcome="failure", probe=fake(good))
+        bf = rec(T[0], S, ["apr", "pv"], d, d, build_outcome="failure", probe=fake(good))
         check("the build step failed -> build-failed, no tools", (bf["red"]["reason"], bf["tools"]), ("build-failed", {}))
-        bc = record(T[0], S, ["apr", "pv"], d, d, build_outcome="cancelled", probe=fake(good))
+        bc = rec(T[0], S, ["apr", "pv"], d, d, build_outcome="cancelled", probe=fake(good))
         check("a cancelled build -> build-cancelled, and the gate retries it",
               (bc["red"]["reason"], gate(S, man({T[0]: gt(S), T[1]: {"green_sha": OLD, "red": bc["red"]}}), T, green)[0]),
               ("build-cancelled", "build"))
-        vv = record(T[0], S, ["apr", "pv"], d, d, probe=fake(good), version="0.69.0")
+        vv = rec(T[0], S, ["apr", "pv"], d, d, probe=fake(good), version="0.69.0")
         check("every bin prints the crate version -> green and its build SHA", vv["status"], "green")
-        vw = record(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, pv=(0, "pv 0.68.0"))), version="0.69.0")
+        vw = rec(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, pv=(0, "pv 0.68.0"))), version="0.69.0")
         check("a bin printing another crate version -> version-failed", (vw["status"], (vw.get("red") or {}).get("reason")),
               ("red", "version-failed"))
-        vp = record(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, pv=(0, "pv 10.69.0"))), version="0.69.0")
+        vp = rec(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, pv=(0, "pv 10.69.0"))), version="0.69.0")
         check("the version must match whole, not as a substring (10.69.0 != 0.69.0)", vp["status"], "red")
         os.remove(os.path.join(d, f"pv-{T[0]}.tar.gz"))
-        ma = record(T[0], S, ["apr", "pv"], d, d, probe=fake(good))
+        ma = rec(T[0], S, ["apr", "pv"], d, d, probe=fake(good))
         check("a missing tarball -> missing-artifact", (ma["status"], ma["red"]["reason"]), ("red", "missing-artifact"))
-        sk = record("release-commit", S, ["apr", "pv"], d, None, probe=fake(good), version="0.69.0")
+        sk = rec("release-commit", S, ["apr", "pv"], d, None, probe=fake(good), version="0.69.0")
         check("smoke (dist=None): no tarball is required -> green", sk["status"], "green")
         os.remove(os.path.join(d, "pv"))
-        sm = record("release-commit", S, ["apr", "pv"], d, None, probe=fake(good), version="0.69.0")
+        sm = rec("release-commit", S, ["apr", "pv"], d, None, probe=fake(good), version="0.69.0")
         check("smoke: a bin that did not build -> missing-artifact",
               (sm["status"], (sm["red"] or {}).get("reason")), ("red", "missing-artifact"))
-        sv = record("release-commit", S, ["apr"], d, None, probe=fake(dict(good, apr=(0, "apr 0.69.0"))), version="0.69.0")
+        sv = rec("release-commit", S, ["apr"], d, None, probe=fake(dict(good, apr=(0, "apr 0.69.0"))), version="0.69.0")
         check("smoke: a bin printing no SHA -> version-no-sha",
               (sv["status"], (sv["red"] or {}).get("reason")), ("red", "version-no-sha"))
 
@@ -524,7 +579,7 @@ def self_test():
         open(cu_exe, "wb").write(b"exe-apr\0libcuda.so\0")
         open(cu_tar, "wb").write(b"tar-apr-cuda")
         by_path = lambda out: (lambda exe: out.get(exe, (0, f"apr 0.69.0 ({S[:9]})")))  # noqa: E731
-        vg = record(T[0], S, ["apr"], d, d, probe=by_path({}), variants=["apr:cuda"])
+        vg = rec(T[0], S, ["apr"], d, d, probe=by_path({}), variants=["apr:cuda"])
         check("a cuda variant carrying libcuda.so, printing S -> green",
               (vg["status"], sorted(vg["tools"])), ("green", ["apr", "apr-cuda"]))
         check("the variant ships under binary-release.yml's name, apr-<target>-cuda.tar.gz",
@@ -532,19 +587,19 @@ def self_test():
         check("the variant's bin_sha256 is ITS executable, not the CPU apr",
               vg["tools"]["apr-cuda"]["bin_sha256"], hashlib.sha256(b"exe-apr\0libcuda.so\0").hexdigest())
         check("no variants asked -> the manifest is unchanged (no apr-cuda row)",
-              sorted(record(T[0], S, ["apr"], d, d, probe=by_path({}))["tools"]), ["apr"])
-        vm = record(T[0], S, ["apr"], d, d, probe=by_path({cu_exe: (0, f"apr 0.69.0 ({OLD[:9]})")}),
+              sorted(rec(T[0], S, ["apr"], d, d, probe=by_path({}))["tools"]), ["apr"])
+        vm = rec(T[0], S, ["apr"], d, d, probe=by_path({cu_exe: (0, f"apr 0.69.0 ({OLD[:9]})")}),
                     variants=["apr:cuda"])
         check("the variant printing ANOTHER SHA -> version-mismatch",
               (vm["status"], (vm["red"] or {}).get("reason")), ("red", "version-mismatch"))
         open(cu_exe, "wb").write(b"exe-apr-cpu-only")
-        vn = record(T[0], S, ["apr"], d, d, probe=by_path({}), variants=["apr:cuda"])
+        vn = rec(T[0], S, ["apr"], d, d, probe=by_path({}), variants=["apr:cuda"])
         check("a 'cuda' build with no libcuda.so (lost --features) -> variant-feature-missing",
               (vn["status"], (vn["red"] or {}).get("reason")), ("red", "variant-feature-missing"))
         check("variant-feature-missing is a BUILD verdict (the gate does not rebuild S)",
               "variant-feature-missing" in BUILD_VERDICTS, True)
         os.remove(cu_tar)
-        vt = record(T[0], S, ["apr"], d, d, probe=by_path({}), variants=["apr:cuda"])
+        vt = rec(T[0], S, ["apr"], d, d, probe=by_path({}), variants=["apr:cuda"])
         check("the variant's tarball missing -> missing-artifact, naming apr-cuda",
               (vt["status"], (vt["red"] or {}).get("reason"), (vt["red"] or {}).get("detail")),
               ("red", "missing-artifact", "apr-cuda"))
