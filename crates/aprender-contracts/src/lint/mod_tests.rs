@@ -26,8 +26,12 @@ fn lint_score_gate_fails_with_high_threshold() {
 
 #[test]
 fn lint_empty_dir() {
+    // Nested, not the tempdir itself: lint reads <contract_dir>/../scripts, and a
+    // tempdir's parent is the shared /tmp, where a stray /tmp/scripts/ turned this red.
     let tmp = tempfile::tempdir().unwrap();
-    let config = LintConfig::new(tmp.path(), None, 0.0);
+    let dir = tmp.path().join("contracts");
+    std::fs::create_dir_all(&dir).unwrap();
+    let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
     assert!(report.passed);
 }
