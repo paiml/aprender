@@ -69,7 +69,8 @@ REF_RE='#[0-9]+'
 # backtick is not a fence), every line that touches a <!-- --> comment, HTML
 # blocks (<pre|script|style|textarea> to the closing tag, <? to ?>, <![CDATA[
 # to ]]>, <!X to >, any other tag line to the next blank line), blockquote
-# lines and their lazy continuations. Rule 18 then accepts only a WHOLE LINE at
+# lines and their lazy continuations, and a line that starts inside a code span,
+# tag or link reference definition opened earlier in its paragraph. Rule 18 then accepts only a WHOLE LINE at
 # column 0 in one strict form, so indented code, inline code of any backtick
 # count and mid-sentence keywords never discharge anything. This replaces a
 # regex race against a Markdown parser (agy quorum @afc250626, @1d16e6caa,
@@ -77,12 +78,24 @@ REF_RE='#[0-9]+'
 # PR body, a false GREEN is a PR that closes nothing.
 prose_lines() {
     perl -ne '
-        BEGIN { $end = ""; $quote = 0 }
+        BEGIN { $end = ""; $quote = 0; $tick = 0; $tag = 0; $lrd = 0 }
         s/\r?\n\z//;
         if ($end ne "") { $end = "" if ($end eq "BLANK" ? /^[ \t]*$/ : /$end/); next }
-        if (/^[ \t]*$/) { $quote = 0; print "\n"; next }
+        if (/^[ \t]*$/) { $quote = $tick = $tag = $lrd = 0; print "\n"; next }
         if (/^ {0,3}(`{3,})[^`]*$/ || /^ {0,3}(~{3,})/) {
             $end = "^ {0,3}" . quotemeta(substr($1, 0, 1)) . "{" . length($1) . ",}[ \t]*\$"; $quote = 0; next }
+        # inline state across the lines of one paragraph: an open code span (a
+        # backtick run closes only on one of equal length), an open tag, or a
+        # link reference definition. A line that starts inside one is not prose.
+        $drop = $tick || $tag || $lrd;
+        $lrd = 1 if /^ {0,3}\[[^\]]+\]:/;
+        for $t (/(`+|<[A-Za-z\/]|>)/g) {
+            if ($tick) { $tick = 0 if substr($t, 0, 1) eq "`" && length($t) == $tick }
+            elsif ($tag) { $tag = 0 if $t eq ">" }
+            elsif (substr($t, 0, 1) eq "`") { $tick = length($t) }
+            elsif ($t ne ">") { $tag = 1 }
+        }
+        next if $drop;
         if (/<!--/) { $end = "-->" if /<!--(?!.*-->)/; next }
         if (/^ {0,3}<(pre|script|style|textarea)(?:[\s>]|$)/i) {
             $end = "(?i)</(?:pre|script|style|textarea)>" unless /<\/(?:pre|script|style|textarea)>/i; $quote = 0; next }
@@ -513,7 +526,15 @@ STUB
     run_rc_case "rc-close-in-cdata"    $'<![CDATA[\n\nCloses #9002\n]]>'             1 "FAIL no-close"
     run_rc_case "rc-close-in-declaration" $'<!X\n\nCloses #9002\n>'                  1 "FAIL no-close"
     run_rc_case "rc-close-after-quote-then-fence" $'> q\n```\nx\n```\nCloses #9002'  0 "PASS: discharges 1"
-    run_rc_case "rc-backtick-info-not-fence" $'``` a`b\nCloses #9002'               0 "PASS: discharges 1"
+    # agy round 4 (@6f9582631): inline constructs spanning lines
+    run_rc_case "rc-close-in-multiline-code" $'`\nCloses #9002\n`'                  1 "FAIL no-close"
+    run_rc_case "rc-close-in-multiline-tag" $'text <a href="\nCloses #9002\n">'     1 "FAIL no-close"
+    run_rc_case "rc-close-after-linkref" $'[foo]:\nCloses #9002'                    1 "FAIL no-close"
+    run_rc_case "rc-close-in-code-after-comment" $'x `<!-- -->\nCloses #9002\n`'    1 "FAIL no-close"
+    run_rc_case "rc-close-after-balanced-code" $'Fix `a` and ``b`c``\nCloses #9002' 0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-closed-tag" $'See <b>this</b>\nCloses #9002'        0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-open-code-para" $'`open\n\nCloses #9002'            0 "PASS: discharges 1"
+    run_rc_case "rc-backtick-info-not-fence" $'``` a`b\n\nCloses #9002'               0 "PASS: discharges 1"
     run_rc_case "rc-no-issue-code-reason" $'no-issue: `docs/` only'                 0 "PASS: no-issue"
     run_rc_case "rc-no-issue-indented" $'  no-issue: docs'                          1 "FAIL no-close"
     run_rc_case "rc-close-after-fence" $'```\nexample\n```\nCloses #9002'           0 "PASS: discharges 1"
