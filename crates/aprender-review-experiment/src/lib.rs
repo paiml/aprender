@@ -22,6 +22,7 @@ pub mod admission;
 pub mod b2;
 pub mod build_corpus;
 pub mod champion;
+pub mod cluster;
 pub mod contamination;
 pub mod corpus;
 pub mod fewshot;

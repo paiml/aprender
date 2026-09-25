@@ -8,7 +8,8 @@
 //! - `prereg-check`  exit 1 unless the committed lock matches the tree
 //! - `corpus-build PRS_JSON CUTOFF ITEMS_DIR MUTANTS_JSON...`
 //!   build corpus v1 (REX-02): writes `ITEMS_DIR/<id>.diff`, and in the repo
-//!   `docs/audits/review-corpus/corpus-v1.jsonl` + `test-manifest-v1.txt`.
+//!   `docs/audits/review-corpus/corpus-v1.jsonl` + `test-manifest-v1.txt` +
+//!   `test-sketch-v1.txt` (PRA-001 T7 near-dup sketches of the test items).
 //!   Prints counts only; it never prints a test item.
 //! - `review --url U --cell C --host H --backend B --arm A --model-id M
 //!   --weights-sha W --apr-tag T --apr-sha S --items DIR --out DIR --split dev|test
@@ -59,6 +60,7 @@ use aprender_review_experiment::build_corpus::{
     choose, g_candidates, is_green, p_candidates, r_candidates, seal, Mutant, Pr, PER_CLASS,
 };
 use aprender_review_experiment::champion;
+use aprender_review_experiment::cluster::{parse_sketches, render_sketches, sketch};
 use aprender_review_experiment::contamination::Index;
 use aprender_review_experiment::corpus::{
     assign_splits, corpus_version, parse_manifest, render_manifest, sha256_hex, Item, Split,
@@ -193,6 +195,16 @@ fn write_outputs(all: &[(Item, String)], items_dir: &str) -> Result<(), String> 
             .or_default() += 1;
     }
     let manifest = render_manifest(&seal(all));
+    let sketches: Vec<(String, Vec<u64>)> = all
+        .iter()
+        .filter(|(i, _)| i.split == Split::Test)
+        .filter_map(|(i, d)| Some((i.id.clone(), sketch(d)?)))
+        .collect();
+    std::fs::write(
+        format!("{CORPUS_DIR}/test-sketch-v1.txt"),
+        render_sketches(&sketches),
+    )
+    .map_err(|e| e.to_string())?;
     std::fs::write(format!("{CORPUS_DIR}/corpus-v1.jsonl"), &jsonl).map_err(|e| e.to_string())?;
     std::fs::write(format!("{CORPUS_DIR}/test-manifest-v1.txt"), &manifest)
         .map_err(|e| e.to_string())?;
@@ -766,16 +778,20 @@ fn b2_cmd(a: &[String]) -> ExitCode {
         let manifest = std::fs::read_to_string(format!("{CORPUS_DIR}/test-manifest-v1.txt"))
             .map_err(|e| e.to_string())?;
         let sealed = parse_manifest(&manifest).ok_or("test manifest does not parse")?;
+        let index = match std::fs::read_to_string(format!("{CORPUS_DIR}/test-sketch-v1.txt")) {
+            Ok(t) => Index::new(&sealed)
+                .with_sketches(parse_sketches(&t).ok_or("test sketch file does not parse")?),
+            Err(_) => {
+                eprintln!(
+                    "no test-sketch-v1.txt: exact-hash contamination only (no cluster check)"
+                );
+                Index::new(&sealed)
+            }
+        };
         let path = need(&f, "logits")?;
         let jsonl = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
         let k = need(&f, "k")?.parse().map_err(|e| format!("--k: {e}"))?;
-        match b2::teacher_receipt(
-            &jsonl,
-            need(&f, "teacher-sha")?,
-            k,
-            &items,
-            &Index::new(&sealed),
-        ) {
+        match b2::teacher_receipt(&jsonl, need(&f, "teacher-sha")?, k, &items, &index) {
             Ok(r) => {
                 println!(
                     "{}",

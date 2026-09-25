@@ -6,6 +6,9 @@
 //! stripped, so a re-based copy still matches). JSON string values are scanned
 //! after unescaping, so a diff stored in a JSONL `"diff"` field is seen as the
 //! diff it is, not as one escaped line.
+//!
+//! With [`Index::with_sketches`], a re-spaced, renamed or lightly edited copy
+//! is a `cluster` hit too (PRA-001 T7, [`crate::cluster`]).
 
 use crate::corpus::{hunk_fingerprints, Sealed};
 use std::collections::BTreeMap;
@@ -22,11 +25,13 @@ pub struct Hit {
     pub how: &'static str,
 }
 
-/// Index of the sealed items: diff sha → id, hunk fingerprint → id.
+/// Index of the sealed items: diff sha → id, hunk fingerprint → id, and
+/// (optionally) each item's near-dup sketch from [`crate::cluster`].
 #[derive(Debug, Default)]
 pub struct Index {
     shas: BTreeMap<String, String>,
     hunks: BTreeMap<String, String>,
+    sketches: Vec<(String, Vec<u64>)>,
 }
 
 impl Index {
@@ -40,6 +45,14 @@ impl Index {
             }
         }
         ix
+    }
+
+    /// Add sealed near-dup sketches (`id`, bottom-k hashes), so a re-spaced or
+    /// renamed copy of a sealed diff is a `cluster` hit.
+    #[must_use]
+    pub fn with_sketches(mut self, sketches: Vec<(String, Vec<u64>)>) -> Self {
+        self.sketches = sketches;
+        self
     }
 
     /// Number of sealed diff shas indexed (0 means the scan proves nothing).
