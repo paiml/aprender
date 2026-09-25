@@ -655,6 +655,11 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.d
+          # Y2: the preload models the once-only steps of the 3-shard matrix. Any
+          # other shard count (a one-job release car, #4433) plans without it; a
+          # 3-value preload would otherwise REFUSE rc 2 for SHARDS != 3.
+          preload=()
+          if [ "${SHARDS}" = 3 ]; then preload=(--preload "100,0,310"); fi
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
@@ -671,7 +676,7 @@ jobs:
             -e SHARD -e SHARDS \
             "$IMAGE" \
             bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d --shard "${SHARD}/${SHARDS}" \
-              --weights ci/explicit-test-weights.tsv --preload 100,0,310
+              --weights ci/explicit-test-weights.tsv "${preload[@]}"
       # PACK-001: the examples build used to be fragment 350 of the explicit
       # list. Measured on the first sharded full-tier run (35361149112, shard 1
       # on yoga): 489 s of that shard's 794 s integration phase was this ONE
