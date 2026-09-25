@@ -640,6 +640,25 @@ jobs:
           nice -n 19 cargo test -p aprender-serve --release \
             --test beat_ollama_decode_throughput_speed -- --ignored --nocapture
 
+      # #4179: FALSIFY-QW3-MOE-FORWARD-003, the qwen3_moe `apr run` live pin. Its
+      # only other home is a dev box, so without this step it SKIPs everywhere CI
+      # runs. Naming the model in APR_MOE_FALSIFY_MODEL removes the skip path: a
+      # missing file panics UNMEASURABLE (red), never a vacuous pass.
+      # Measured on gx10 2026-09-25 from batch/0.70.0 12e86b1e1: build 135 s,
+      # test 145 s (the run itself 31.8 s), positive control PASS; a
+      # /nonexistent.gguf negative control exits 101 UNMEASURABLE.
+      # `--release` is what was measured: assert_cmd runs the test-profile `apr`,
+      # and a debug-profile MoE forward on the 17 GB GGUF was not timed. It runs
+      # on CPU (apr-cli's test build has no `cuda` feature), so it takes no GPU.
+      - name: FALSIFY-QW3-MOE-FORWARD-003 - qwen3_moe apr run live falsifier (#4179)
+        if: steps.decide.outputs.proceed == 'true'
+        env:
+          APR_MOE_FALSIFY_MODEL: ${{ vars.APR_MOE_FALSIFY_MODEL || '/home/noah/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf' }}
+        run: |
+          set -euo pipefail
+          nice -n 19 cargo test -p apr-cli --release \
+            --test qwen3_moe_apr_run_live_falsifier -- --nocapture
+
   # ── ada-yoga: the sm_89 leg, restored ─────────────────────────────────────
   #
   # RESTORING A DELETION, NOT INVENTING A LANE. #2740 removed the x86_64 leg
