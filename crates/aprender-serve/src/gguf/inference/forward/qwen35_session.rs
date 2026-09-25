@@ -877,6 +877,10 @@ fn fit_prefill_plan(
 /// even 64 rows batches ~64x faster than one token at a time.
 #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
 const DISCRETE_PREFILL_ROWS: [usize; 4] = [512, 256, 128, 64];
+// The ladder starts at the chunk the prefill is built for; a change to that constant
+// must not leave a first rung the workspace was never sized to.
+#[cfg(feature = "cuda")]
+const _: () = assert!(DISCRETE_PREFILL_ROWS[0] == crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS);
 
 /// Fit the prefill; when it does not fit, `release` what the model can give back
 /// (the #4313 fp16 weight cache) and fit once more (#4450). `Ok(bytes released)` —
