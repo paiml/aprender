@@ -116,6 +116,9 @@ mod tests {
     ];
 
     /// `dequantize_row_iq3_xxs` of IQ3_XXS_BLOCK, from ggml-quants.c.
+    // `%.9e` dumps of the ggml reference output, kept byte-for-byte so they diff
+    // against it; the values are exact in f32, only the digit count trips the lint.
+    #[allow(clippy::excessive_precision)]
     #[rustfmt::skip]
     const IQ3_XXS_EXPECTED: [f32; IQ3_XXS_BLOCK_ELEMS] = [
         3.515625000e-01, -3.515625000e-01, 3.515625000e-01, -3.515625000e-01, -6.328125000e-01, 4.921875000e-01,
