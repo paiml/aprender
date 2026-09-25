@@ -393,8 +393,16 @@ async fn gpu_a_chat_request_answers_from_the_gpu_session() {
 /// every gate stayed green because none of them sent a prompt through the
 /// router. The counter is `Qwen35Session::batched_prefills`, which moves only
 /// when `Qwen35CudaModel::prefill` returned logits — the F2 probe, the
-/// per-token fallback and decode steps never move it. Each request below
-/// starts a prompt the session does not hold, so each must add exactly one.
+/// per-token fallback and decode steps never move it.
+///
+/// Since #4214 a prompt prefills in up to two batched spans, split where
+/// `checkpoint_at` puts the checkpoint: before a chat's last `<|im_start|>`
+/// (the generation header), else before a raw prompt's last token. So the
+/// expected count follows the split, not "one per request": a fresh chat is
+/// 2, the same chat again resumes from its checkpoint and adds 1, and a raw
+/// prompt adds 1 batched span plus a one-token step the counter never sees.
+/// A per-token serve adds 0 on every route, so each assertion still catches
+/// #3596.
 ///
 /// RED under `APR_QWEN35_SESSION_PREFILL=per-token` (the session's own
 /// switch back to the one-token loop), and with the batched branch deleted
@@ -434,13 +442,15 @@ async fn gpu_every_serve_route_prefills_through_the_batched_prefill() {
     );
     assert_eq!(
         prefills(),
-        1,
-        "/v1/chat/completions prefilled its prompt one token at a time (#3596)"
+        2,
+        "/v1/chat/completions prefilled its prompt one token at a time (#3596) — \
+         want two batched spans, history then generation header (#4214)"
     );
 
     // 2. /v1/chat/completions, streamed — the SSE path spawns its own generate.
     // The session holds prompt + reply, so the same prompt again does not
-    // extend it: a fresh prefill from position 0.
+    // extend it; it restores request 1's checkpoint (#4214) and prefills only
+    // the generation header, one batched span.
     let (status, body) = post(
         create_router(state.clone()),
         "/v1/chat/completions",
@@ -450,8 +460,9 @@ async fn gpu_every_serve_route_prefills_through_the_batched_prefill() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         prefills(),
-        2,
-        "streamed /v1/chat/completions prefilled one token at a time (#3596)"
+        3,
+        "streamed /v1/chat/completions prefilled one token at a time (#3596) — \
+         want one batched span from request 1's checkpoint (#4214)"
     );
 
     // 3. /v1/completions — a raw prompt of several tokens.
@@ -462,10 +473,13 @@ async fn gpu_every_serve_route_prefills_through_the_batched_prefill() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    // No `<|im_start|>`: the checkpoint goes before the last token, so the
+    // prompt is one batched span and a one-token step.
     assert_eq!(
         prefills(),
-        3,
-        "/v1/completions prefilled its prompt one token at a time (#3596)"
+        4,
+        "/v1/completions prefilled its prompt one token at a time (#3596) — \
+         want one batched span up to the last token (#4214)"
     );
 
     assert!(
