@@ -282,7 +282,7 @@ def judge(L, receipts, rungs_doc, out, rungs_main=None):
     # NOT ARMED requires that NO required receipt carries cells. The moment the producer
     # emits them the judge arms itself with no edit here, and a receipt that carries cells
     # beside one that does not is a REGRESSION and still FAILs. Proven by the case table's
-    # cells-partial row; deleting either branch below turns it red.
+    # red-cells-no-cells row (gx10 carries cells, lambda none) and its `not-armed` cmutant.
     carrying = {hid for hid, R in receipts.items() if R.get("cells")}
     if receipts and not carrying:
         out(
