@@ -430,11 +430,12 @@ commands:
 
   - name: runs
     category: ui
-    description: "List, show, compare, garbage-collect, and fsck training experiment runs"
+    description: "List, show, compare, garbage-collect, fsck, and backfill-import training experiment runs"
     requires_model: false
     # gc (EXT-03, aprender#4385) writes a backup and, with --yes, the store.
+    # import (EXT-10, aprender#4392) writes backfilled runs with --yes.
     side_effects: [filesystem]
-    subcommands: [diff, fsck, gc, ls, show]
+    subcommands: [diff, fsck, gc, import, ls, show]
 
   - name: experiment
     category: ui

@@ -297,6 +297,7 @@ assert_cmd = "2.0"
 predicates = "3.1"
 tempfile = "3.14"
 proptest = "1.6"
+rusqlite = { version = "0.32", features = ["bundled"] }  # EXT-10: read the pacha runs row in tests
 regex = "1.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 axum-test = "16"

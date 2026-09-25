@@ -133,6 +133,7 @@ fn status_str(s: RunStatus) -> &'static str {
         RunStatus::Completed => "completed",
         RunStatus::Failed => "failed",
         RunStatus::Cancelled => "cancelled",
+        RunStatus::Unknown => "unknown",
     }
 }
 

@@ -1599,6 +1599,28 @@ pub enum RunsCommands {
         #[arg(long)]
         json: bool,
     },
+    /// Backfill loose run directories into pacha (EXT-10, I-3)
+    ///
+    /// Each child of DIR is one legacy run. Reads checkpoint metadata, r.json
+    /// and model files; tags every run provenance=backfilled; leaves every
+    /// field the source does not hold NULL. Prints the plan unless --yes.
+    Import {
+        /// Directory whose children are run directories
+        #[arg(value_name = "DIR")]
+        dir: PathBuf,
+        /// Print the plan only (the default; accepted for explicitness)
+        #[arg(long, conflicts_with = "yes")]
+        dry_run: bool,
+        /// Write the plan to pacha
+        #[arg(long)]
+        yes: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+        /// Pacha home to write (default ~/.pacha)
+        #[arg(long, value_name = "DIR")]
+        pacha_home: Option<PathBuf>,
+    },
     /// Check that every tracking run in the pacha registry resolves (EXT-04, I-6)
     ///
     /// A tracking run's registry row points at the metrics DB holding its

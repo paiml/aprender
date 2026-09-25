@@ -193,7 +193,8 @@ falsification_tests:
   obligation: EXT-INV-003
   rule: Backfill never fabricates
   prediction: apr runs import writes NULL for every unknown field and provenance=backfilled
-  if_fails: 'backfill invents a hash, time or metric it could not read (owed EXT-10 #4392; planned: cargo test -p apr-cli --test ext_backfill falsify_ext_008_backfill_never_fabricates)'
+  test: cargo test -p apr-cli --lib falsify_ext_008_backfill_never_fabricates
+  if_fails: 'backfill invents a hash, time, status or metric it could not read, guesses an epoch from a file name, or drops a directory without a reason (apply: cargo test -p apr-cli --lib apply_is_idempotent_and_stores_nulls)'
 - id: FALSIFY-EXT-009
   obligation: EXT-INV-005
   rule: Engine identity at start_run

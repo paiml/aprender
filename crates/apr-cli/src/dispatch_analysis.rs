@@ -918,6 +918,18 @@ fn dispatch_runs_command(command: &RunsCommands, cli: &Cli) -> std::result::Resu
             yes,
             json,
         } => commands::runs::run_gc(dir, *global, *yes, *json || cli.json),
+        RunsCommands::Import {
+            dir,
+            dry_run: _,
+            yes,
+            json,
+            pacha_home,
+        } => commands::runs_import::run_import(
+            dir,
+            *yes,
+            *json || cli.json,
+            pacha_home.as_deref(),
+        ),
         RunsCommands::Fsck { registry, json } => {
             commands::runs::run_fsck(registry.as_deref(), *json || cli.json)
         }

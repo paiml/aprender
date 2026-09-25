@@ -306,6 +306,7 @@ dependencies = [
  "rayon",
  "regex",
  "rmp-serde",
+ "rusqlite",
  "safetensors 0.4.5",
  "serde",
  "serde_json",

@@ -62,6 +62,9 @@ pub enum RunStatus {
     Failed,
     /// Run was cancelled
     Cancelled,
+    /// The outcome was never recorded: a backfilled run whose source holds
+    /// no status (EXT-001 I-3, FALSIFY-EXT-008). Never inferred.
+    Unknown,
 }
 
 /// A single experiment run
