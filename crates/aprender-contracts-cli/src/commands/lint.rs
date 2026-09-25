@@ -48,7 +48,7 @@ pub fn run(
     watch: bool,
     strict_test_binding: bool,
     armed_baseline_ref: Option<&str>,
-    gate: Option<&str>,
+    gate: &[String],
     shapes_opts: ShapesOptions,
 ) -> Result<(), Box<dyn std::error::Error>> {
     refuse_missing_corpus(contract_dir)?;
@@ -57,8 +57,10 @@ pub fn run(
     // is asked for, because run_single_gate would otherwise report every ref
     // missing on exactly the input the refusal exists for.
     refuse_single_file_strict_binding(contract_dir, strict_test_binding)?;
-    if let Some(name) = gate {
-        return run_single_gate(contract_dir, name, &shapes_opts);
+    match gate {
+        [] => {}
+        [name] => return run_single_gate(contract_dir, name, &shapes_opts),
+        names => return run_gates(contract_dir, names, &shapes_opts),
     }
     if watch {
         return run_watch(
@@ -237,6 +239,19 @@ fn run_single_gate(
     };
     println!("{}", serde_json::to_string_pretty(&report)?);
 
+    // ONT-4e: `refines` says WHICH clause broke Liskov on the reject line, and which prose clause left it Unknown.
+    if result.name == provable_contracts::lint::refines_gate::GATE {
+        let lines = provable_contracts::lint::refines_gate::explain(&result, &findings);
+        if result.verdict == provable_contracts::ontology::verdict::Verdict::Fail
+            && !lines.is_empty()
+        {
+            return Err(crate::contract_walk::GateRejected(lines.join("; ")).into());
+        }
+        for line in &lines {
+            eprintln!("{line}");
+        }
+    }
+
     // The exit is the gate's VERDICT, not its `passed` bit: a gate that ran and answered `Unknown{Warn}` (ONT-4b, warnings
     // and no violation) is a decline, exit 2 — `passed` alone would print 0 for a corpus nobody judged clean.
     match result.verdict {
@@ -249,6 +264,47 @@ fn run_single_gate(
             armed: 1,
         }
         .into()),
+    }
+}
+
+/// PVL-001 EV-11: `--gate a --gate b` runs every named gate, each printing its own report as `--gate a` alone
+/// would, and exits with their MEET: any refusal (exit 3) over any reject (1) over any decline (2) over pass (0).
+/// A name this build does not compute is refused before any gate runs, so a typo never reports a partial pass.
+fn run_gates(
+    contract_dir: &Path,
+    names: &[String],
+    shapes_opts: &ShapesOptions,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use provable_contracts::lint::NAMED_GATES;
+    if let Some(bad) = names.iter().find(|n| !NAMED_GATES.contains(&n.as_str())) {
+        return Err(crate::contract_walk::UnknownGate {
+            asked: bad.clone(),
+            known: NAMED_GATES.iter().map(|g| (*g).to_string()).collect(),
+        }
+        .into());
+    }
+    let outcomes: Vec<_> = names
+        .iter()
+        .map(|n| run_single_gate(contract_dir, n, shapes_opts))
+        .collect();
+    let rank = |r: &Result<(), Box<dyn std::error::Error>>| match r {
+        Ok(()) => 0,
+        Err(e) if e.is::<LintDeclined>() => 1,
+        Err(e) if e.is::<LintRejected>() => 2,
+        Err(_) => 3,
+    };
+    let passed = outcomes.iter().filter(|r| rank(r) == 0).count();
+    let worst = outcomes
+        .into_iter()
+        .max_by_key(|r| rank(r))
+        .unwrap_or(Ok(()));
+    match worst {
+        Err(e) if e.is::<LintRejected>() => Err(LintRejected {
+            passed,
+            armed: names.len(),
+        }
+        .into()),
+        other => other,
     }
 }
 
@@ -266,6 +322,7 @@ fn decide_named_gate(
     shapes_opts: &ShapesOptions,
 ) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
     use provable_contracts::lint::{
+        evidence_gate::EvidenceOutcome, ratchet_gates::RatchetOutcome,
         relations_gate::RelationsOutcome, sigma_gate::SigmaOutcome,
         valid_under_gate::ValidUnderOutcome, NamedGateOutcome, NAMED_GATES,
     };
@@ -293,6 +350,25 @@ fn decide_named_gate(
             Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
         NamedGateOutcome::Shapes(outcome) => decide_shapes_gate(outcome),
+        NamedGateOutcome::Consistency(outcome) => decide_consistency_gate(outcome),
+        NamedGateOutcome::Refines(outcome) => decide_refines_gate(outcome),
+        NamedGateOutcome::Tbox(outcome) => decide_tbox_gate(outcome),
+        NamedGateOutcome::Evidence(EvidenceOutcome::NoSigma) => Err(LintDeclined {
+            reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+        }
+        .into()),
+        NamedGateOutcome::Evidence(EvidenceOutcome::NoEvidence { contracts_checked }) => {
+            eprintln!(
+                "evidence: no evidence block in {contracts_checked} contract(s) — nothing was measured"
+            );
+            Err(LintDeclined {
+                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+            }
+            .into())
+        }
+        NamedGateOutcome::Evidence(EvidenceOutcome::Malformed(e)) => {
+            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
         NamedGateOutcome::ValidUnder(ValidUnderOutcome::NoSigma) => Err(LintDeclined {
             reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
         }
@@ -309,10 +385,100 @@ fn decide_named_gate(
         NamedGateOutcome::ValidUnder(ValidUnderOutcome::Malformed(e)) => {
             Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
+        NamedGateOutcome::Ratchet(RatchetOutcome::Declined(why)) => {
+            eprintln!("{name}: {why}");
+            Err(LintDeclined {
+                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+            }
+            .into())
+        }
         NamedGateOutcome::Sigma(SigmaOutcome::Ran { result, findings })
+        | NamedGateOutcome::Ratchet(RatchetOutcome::Ran { result, findings })
         | NamedGateOutcome::Relations(RelationsOutcome::Ran { result, findings })
         | NamedGateOutcome::ValidUnder(ValidUnderOutcome::Ran { result, findings })
+        | NamedGateOutcome::Evidence(EvidenceOutcome::Ran { result, findings })
         | NamedGateOutcome::Ran { result, findings } => Ok((result, findings)),
+    }
+}
+
+/// The `ont-consistency` gate's answers (ONT-5). Only `Ran` is a verdict; every decline prints WHY first — a stale
+/// witness names the command that regenerates it.
+fn decide_consistency_gate(
+    outcome: provable_contracts::lint::consistency_gate::ConsistencyOutcome,
+) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
+    use provable_contracts::lint::consistency_gate::{decline_reason, why, ConsistencyOutcome};
+
+    match outcome {
+        ConsistencyOutcome::Ran { result, findings } => Ok((result, findings)),
+        ConsistencyOutcome::Malformed(e) => {
+            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
+        other => {
+            eprintln!("ont-consistency: {}", why(&other));
+            let reason = decline_reason(&other)
+                .unwrap_or(provable_contracts::ontology::verdict::Reason::NoCheckable);
+            Err(LintDeclined { reason }.into())
+        }
+    }
+}
+
+/// The `refines` gate's answers (ONT-4e). Only `Ran` is a verdict; every decline prints WHY first — a stale Liskov
+/// witness names `make contracts`.
+fn decide_refines_gate(
+    outcome: provable_contracts::lint::refines_gate::RefinesOutcome,
+) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
+    use provable_contracts::lint::refines_gate::{decline_reason, why, RefinesOutcome, GATE};
+
+    match outcome {
+        RefinesOutcome::Ran { result, findings } => Ok((result, findings)),
+        RefinesOutcome::Malformed(e) => {
+            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
+        other => {
+            eprintln!("{GATE}: {}", why(&other));
+            let reason = decline_reason(&other)
+                .unwrap_or(provable_contracts::ontology::verdict::Reason::NoCheckable);
+            Err(LintDeclined { reason }.into())
+        }
+    }
+}
+
+/// The `tbox` gate's answers (ONT-2c). There is no verdict arm: a clean classification is `Unknown{Advisory}`
+/// (R-7, no inferred fact arms a merge); everything else is the declaration's fault (exit 3).
+fn decide_tbox_gate(
+    outcome: provable_contracts::lint::tbox_gate::TboxOutcome,
+) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
+    use provable_contracts::lint::tbox_gate::TboxOutcome;
+    use provable_contracts::ontology::verdict::Reason;
+
+    match outcome {
+        TboxOutcome::NoSigma => Err(LintDeclined {
+            reason: Reason::NoCheckable,
+        }
+        .into()),
+        TboxOutcome::Malformed(e) | TboxOutcome::Stale(e) => {
+            Err(crate::contract_walk::SigmaMalformed(e).into())
+        }
+        TboxOutcome::PreconditionFailed(refused) => {
+            Err(crate::contract_walk::SigmaMalformed(format!(
+                "told-closure precondition fails, so no classification is claimed: {}",
+                refused.join("; ")
+            ))
+            .into())
+        }
+        TboxOutcome::Advisory(report) => {
+            eprintln!(
+                "tbox: {} classes, consistent={}, unintended_subsumptions={} (method {}, advisory; never arms)",
+                report.classes,
+                report.consistent,
+                report.unintended_subsumptions.len(),
+                report.method
+            );
+            Err(LintDeclined {
+                reason: Reason::Advisory,
+            }
+            .into())
+        }
     }
 }
 

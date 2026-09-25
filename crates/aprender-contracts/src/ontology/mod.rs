@@ -2,16 +2,27 @@
 //!
 //! - [`arming`] — which gates enter a repo's meet (`armed_gates` in `contracts/lint-baseline.json`, monotone; §3.9).
 //! - [`extract`] — extractors: each entity type becomes RDF (§3.7; ONT-4b implements `pv_contract`).
+//! - [`owl`] — Σ as OWL 2 EL functional syntax, in-house, and its told-closure TBox, advisory (§3.8; ONT-2c).
 //! - [`rdf`] — the deterministic graph and its N-Triples writer (R-15; no blank nodes).
 //! - [`shapes`] — the in-house SHACL-Core-subset validator and the Turtle export (§3.6; ONT-4b).
 //! - [`sigma`] — Σ, the ontology's own declaration (`contracts/ontology.yaml`; §4.1).
 //! - [`verdict`] — the one verdict lattice every `pv lint` gate reports into (§3.4).
+//! - [`witness`] — ONT-5: the Horn graph pv-sat reasons over, the witness it writes, and the checker (F-7: no reasoner).
 
 pub mod arming;
 pub mod extract;
+pub mod liskov;
+pub mod owl;
 pub mod rdf;
 pub mod receipts;
 pub mod shapes;
 pub mod sigma;
 pub mod verdict;
 pub mod w3c;
+pub mod witness;
+// ONT-9: the bounded universe KANI-ONT-9-1 quantifies over, and its relation-semantics oracle (test + kani only).
+#[cfg(any(test, kani))]
+pub mod witness_small;
+// ONT-9: planted-solution generation for `ont_planted` (F-12).
+#[cfg(test)]
+mod witness_planted;

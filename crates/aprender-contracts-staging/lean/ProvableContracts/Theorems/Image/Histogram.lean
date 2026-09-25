@@ -1,5 +1,6 @@
 import ProvableContracts.Defs.Image
 import Mathlib.Algebra.BigOperators.Group.Finset.Basic
+import Mathlib.Data.Fintype.Card
 
 /-!
 # Histogram — Conservation of Mass
@@ -17,7 +18,7 @@ open Finset
 theorem histogram_sum_const {n : ℕ} (c : ℝ) :
     histogram_sum (fun (_ : Fin n) => c) = n * c := by
   unfold histogram_sum
-  simp [Finset.sum_const, Finset.card_fin, nsmul_eq_mul]
+  simp [Finset.sum_const, Finset.card_univ, Fintype.card_fin, nsmul_eq_mul]
 
 #check @histogram_sum_const
 

@@ -1,0 +1,122 @@
+contract: pvl-3-one-ladder
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    PVL-3 (PMAT-4081; paiml/infra docs/specifications/PVL-001-pv-lean-gate.md
+    row EV-3): ONE definition of the proof levels.
+
+    MEASURED before this contract (origin/main 49fe19c28, 2026-09-23): the
+    `ProofLevel` enum (crates/aprender-contracts/src/proof_status.rs) defines
+    L3 = Kani bounded model check, L4 = Lean 4 theorem proved, L5 = L4 + every
+    binding verified. `readme_gen`'s Verification Ladder table printed its OWN
+    strings one level off (the Kani row one level too high, L5 "Lean 4 theorem",
+    L1 "Type system"), and all three copies of the ladder doc taught the same
+    off-by-one ladder plus an L0 the enum does not have. A README reader was told
+    an L4 contract was Kani-checked when pv had computed it was Lean-proved.
+
+    Now `ProofLevel::method` is the one definition. `readme_gen` prints it, and
+    each ladder copy carries `levels::ladder_block()` verbatim between
+    `<!-- generated from ProofLevel; do not edit -->` and its end marker, with the
+    statement that L4/L5 are grounded only textually until PVL-001 EV-8b lands
+    (a claim with no sorry-free in-tree Lean theorem is self-declared and excluded).
+  references:
+    - "docs/specifications/PVL-001-pv-lean-gate.md (paiml/infra), row EV-3"
+    - "crates/aprender-contracts/src/levels.rs"
+    - "crates/aprender-contracts/src/readme_gen.rs"
+    - "crates/aprender-contracts/src/proof_status.rs"
+
+equations:
+  readme_prints_the_enum:
+    formula: >
+      forall l in ProofLevel . row(verification_ladder_table(c), l)
+        = "| " ++ l ++ " | " ++ c(l) ++ " | " ++ method(l) ++ " |"
+    domain: "l in {L1..L5}; c the per-level contract counts"
+    codomain: "the README Verification Ladder table"
+    invariants:
+      - "readme_gen holds no level-description string of its own"
+  every_ladder_copy_carries_the_block:
+    formula: >
+      forall d in {the three ladder doc copies PVL-001 EV-3 names} .
+        ladder_block() is a substring of d
+    domain: "d a tracked markdown file"
+    codomain: "{true}"
+    invariants:
+      - "the block starts with the marker line and ends with the end marker"
+      - "the block names each of L5..L1 exactly once, highest first"
+
+proof_obligations:
+  - id: P3-INV-001
+    type: invariant
+    property: "The README ladder table's method for every level is ProofLevel::method"
+    formal: '∀ l ∈ ProofLevel: methodColumn(readmeLadder, l) ≡ method(l)'
+    applies_to: all
+  - id: P3-INV-002
+    type: invariant
+    property: "Every ladder doc copy carries the block generated from ProofLevel, byte for byte"
+    formal: '∀ d ∈ ladderCopies: ladderBlock ⊆ d'
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-PVL-3-001
+    rule: "PVL-3-README-IS-ENUM"
+    prediction: >
+      Hard-coding one readme_gen string again (L4 -> "Kani BMC" in
+      verification_ladder_table) turns levels::readme_and_ladder_docs_match_enum RED.
+    test_harness: "cargo test -p aprender-contracts --lib -- levels::readme_and_ladder_docs_match_enum"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-23: mutation engaged -> FAILED. 0 passed; 1 failed; 1707 filtered
+      out ("README ladder row for L4 is not the enum's definition"); restored -> ok.
+      1 passed; 0 failed.
+  - id: FALSIFY-PVL-3-002
+    rule: "PVL-3-DOCS-ARE-ENUM"
+    prediction: >
+      Editing one row of one ladder copy's generated block (the book copy's L3
+      row) turns levels::readme_and_ladder_docs_match_enum RED, naming that file.
+    test_harness: "cargo test -p aprender-contracts --lib -- levels::readme_and_ladder_docs_match_enum"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-23: mutation engaged -> FAILED. 0 passed; 1 failed ("…book/src/
+      verification-ladder.md does not carry the block generated from ProofLevel");
+      restored -> ok. 1 passed; 0 failed.
+  - id: FALSIFY-PVL-3-003
+    rule: "PVL-3-README-IS-ENUM"
+    prediction: >
+      The shipped state (readme_gen's own strings, the three docs at origin/main)
+      fails the accept test. The accept path names the test directly: under
+      levels::tests:: the spec's accept command ran ZERO tests and passed.
+    test_harness: "cargo test -p aprender-contracts --lib -- levels::readme_and_ladder_docs_match_enum"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-23: shipped strings + origin/main docs -> FAILED. 0 passed; 1
+      failed ("README ladder row for L5 is not the enum's definition"); this tree ->
+      ok. 1 passed; 0 failed; 1707 filtered out.
+  - id: FALSIFY-PVL-3-004
+    rule: "PVL-3-DOCS-ARE-ENUM"
+    prediction: >
+      Restoring the old "Where Each Tool Lives" header (`Level 4 (Kani) | Level 5
+      (Lean)`) in the book copy turns levels::readme_and_ladder_docs_match_enum RED:
+      the generated block is not enough, prose OUTSIDE it must not pair L4/L5 with
+      Kani or L5 with Lean alone. Found by quorum lane 2 on PR #4092 round 1; the
+      enforcement-layer table in copies 1/3 is relabelled E0-E5 for the same reason.
+    test_harness: "cargo test -p aprender-contracts --lib -- levels::readme_and_ladder_docs_match_enum"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-23: mutation engaged -> FAILED. 0 passed; 1 failed ("…book/src/
+      verification-ladder.md still pairs a level with the wrong tool outside the generated
+      block"); restored -> ok. 1 passed; 0 failed.
+  - id: FALSIFY-PVL-3-005
+    rule: "PVL-3-DOCS-ARE-ENUM"
+    prediction: >
+      The stale-pairing detector pairs each tool with its NEAREST level token in either
+      direction. Disabling the level-after-tool arm leaves "Falsification is L2 then
+      Kani at L4." unflagged; disabling the level-before-tool arm leaves "Level 4 (Kani)"
+      unflagged. Either turns levels::stale_level_pairings_case_table RED. (Quorum
+      lane 1, PR #4092 round 3, found the forward-only detector blind to reversed order.)
+    test_harness: "cargo test -p aprender-contracts --lib -- levels::"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-23: after-arm disabled -> FAILED 2 passed; 1 failed ("must flag:
+      Falsification is L2 then Kani at L4."); before-arm disabled -> FAILED 1 passed; 2
+      failed; unmutated -> ok 3 passed.

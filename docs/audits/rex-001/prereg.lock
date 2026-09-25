@@ -1,0 +1,7 @@
+# REX-001 pre-registration lock (rex-prereg-v1). Written once by REX-00.
+# A mismatch against the tree is a new spec version (R-1), never an edit here.
+spec_s2_s5=dee8b66cbbaa417a9231d1c1332f91975e32bf2ab7731c5390822f92486617e9
+stats_rs=a892d50abebea3f4f879dc7c99391719da0f60c0557c9daeb74f15f7deec2784
+analysis_plan=8ae9213b8092c853e5ab8379827169712b9297d727ce27eaeeb617fbfe2fc43f
+prompt_v1=dd9d67c2df458d92d66aed65fd7f3f6f2e5602499c05e6b0967465b9bd2662e6
+prereg_sha=ef51087dc79bab0ad160e8a14f5b13e2ea43986b30c05dafc63c84c2dc21cdc0

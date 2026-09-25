@@ -208,7 +208,7 @@ pub static RULES: &[LintRule] = &[
         id: "PV-PRV-004",
         category: RuleCategory::Provability,
         default_severity: RuleSeverity::Info,
-        description: "No Lean theorems (L5 not attempted)",
+        description: "No Lean theorems (L4 not attempted)",
         effort_minutes: 60,
     },
     // Trend rules (10 min each — review trend)

@@ -1,0 +1,19 @@
+# ontology.ofn — Σ as OWL 2 functional syntax. GENERATED from its ontology.yaml by
+# `pv ontology export --owl`; do not edit (ONT-001 ONT-2c, R-18). Not expressed here, by design:
+#   acyclic: irreflexive ∧ transitive is disallowed in OWL 2 DL; acyclicity is checked in Rust (R-19)
+#   symbols: the `formal:` token vocabulary is a lexicon, not a TBox
+Ontology(<https://ont.paiml.dev/v1alpha1/sigma>
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Code>))
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Contract>))
+Declaration(Class(<https://ont.paiml.dev/v1alpha1/Test>))
+Declaration(ObjectProperty(<https://ont.paiml.dev/v1alpha1/binds>))
+Declaration(ObjectProperty(<https://ont.paiml.dev/v1alpha1/pairs_with>))
+Declaration(ObjectProperty(<https://ont.paiml.dev/v1alpha1/refines>))
+ObjectPropertyDomain(<https://ont.paiml.dev/v1alpha1/binds> <https://ont.paiml.dev/v1alpha1/Contract>)
+ObjectPropertyDomain(<https://ont.paiml.dev/v1alpha1/pairs_with> <https://ont.paiml.dev/v1alpha1/Test>)
+ObjectPropertyDomain(<https://ont.paiml.dev/v1alpha1/refines> <https://ont.paiml.dev/v1alpha1/Contract>)
+ObjectPropertyRange(<https://ont.paiml.dev/v1alpha1/binds> <https://ont.paiml.dev/v1alpha1/Code>)
+ObjectPropertyRange(<https://ont.paiml.dev/v1alpha1/pairs_with> <https://ont.paiml.dev/v1alpha1/Test>)
+ObjectPropertyRange(<https://ont.paiml.dev/v1alpha1/refines> <https://ont.paiml.dev/v1alpha1/Contract>)
+SymmetricObjectProperty(<https://ont.paiml.dev/v1alpha1/pairs_with>)
+)

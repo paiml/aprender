@@ -88,6 +88,7 @@ count_extractors() {
 
 # Keys under `ont` that OTHER gates own and this script does not measure: `formal_prose` (the sigma gate's
 # prose-debt ratchet) and `legacy_unresolved_depends_on` (the relations gate's, PV-ONT-010). Both are read
+# (ONT-4e adds `liskov_prose`, the refines gate's PV-ONT-027 prose ratchet, on the same terms.)
 # from this file by `lint/{sigma,relations}_gate.rs` and neither is computed here — so `--write` used to
 # DELETE them, disarming two shrink-only ratchets in the act of updating a third. They ride through verbatim,
 # the same rule `armed_gates` and `armed_shapes` already follow: what this script does not measure, it does
@@ -95,7 +96,7 @@ count_extractors() {
 foreign_ont_keys() { # foreign_ont_keys FILE -> `    "k": v,` lines, in file order
     [ -f "$1" ] || return 0
     local key
-    for key in formal_prose legacy_unresolved_depends_on; do
+    for key in formal_prose legacy_unresolved_depends_on liskov_prose; do
         { grep -E "\"$key\"[[:space:]]*:" "$1" || true; } | head -1 | sed 's/^[[:space:]]*/    /; s/,\{0,1\}[[:space:]]*$/,/'
     done
 }
@@ -104,10 +105,29 @@ foreign_ont_keys() { # foreign_ont_keys FILE -> `    "k": v,` lines, in file ord
 # and enforced by `lint/valid_under_gate.rs` (PV-ONT-016, shrink-only). This script does not measure it, so by
 # the rule above it rides through `--write` verbatim; without this, `make ont-ratchet` would delete it and
 # disarm the ratchet. Prints nothing when the key is absent, so measure() can omit it.
-foreign_top_keys() { # foreign_top_keys FILE -> `  "k": v,` lines
+# PVL-001 EV-11 (PMAT-4166): the same holds for `command` and the two `pv lint` ratchets
+# (`unpaired_theorem_modules`, `contracts_without_depends_on`), owned by `lint/ratchet_gates.rs` and moved only by
+# `make lint-ratchet`. A top-level key is one at EXACTLY two spaces of indent (the layout this script and
+# lint_ratchet.sh write); a nested key of the same name sits deeper and is never carried.
+# ONT-4f (aprender#4330): this WAS an allowlist of the foreign keys above, and it went stale the first time a
+# gate added one — `underived_proved_claims` (proved-is-derived) was not on it, so `make ont-ratchet` DELETED
+# that ratchet from the baseline while printing PASS. Two hand-kept lists with nothing tying them together
+# (bashrs#266's root cause). So the rule is inverted: every top-level key this script does NOT own is carried,
+# in file order, and one it cannot carry verbatim (a multi-line value) is refused, never dropped.
+OWNED_TOP_KEYS="_spec armed_gates armed_shapes ont"
+foreign_top_keys() { # foreign_top_keys FILE -> `  "k": v,` lines, in file order; 1 on an uncarriable value
     [ -f "$1" ] || return 0
-    { grep -E '"contracts_without_valid_under"[[:space:]]*:' "$1" || true; } | head -1 \
-        | sed 's/^[[:space:]]*/  /; s/,\{0,1\}[[:space:]]*$/,/'
+    local line key
+    while IFS= read -r line; do
+        key="${line#  \"}"; key="${key%%\"*}"
+        case " $OWNED_TOP_KEYS " in *" $key "*) continue ;; esac
+        case "$line" in
+            *'{'|*'['|*'{'[[:space:]]|*'['[[:space:]])
+                printf 'ont-ratchet: top-level "%s" is multi-line; --write cannot carry it verbatim\n' "$key" >&2
+                return 1 ;;
+        esac
+        printf '%s\n' "$line" | sed 's/^[[:space:]]*/  /; s/,\{0,1\}[[:space:]]*$/,/'
+    done < <(grep -E '^  "[^"]+"[[:space:]]*:' "$1" || true)
 }
 
 # ONT R-5, verbatim: "Only contracts that *should* be anchored (kernel-kind with
@@ -208,7 +228,7 @@ measure() { # prints the JSON document
     [ -z "$armed_shapes" ] || shapes_line="$(printf '  "armed_shapes": %s,\n' "$armed_shapes")
 "
     unarmed="$(count_shapes_unarmed "$BASELINE")" || return 2
-    top_line="$(foreign_top_keys "$BASELINE")"
+    top_line="$(foreign_top_keys "$BASELINE")" || return 2
     [ -z "$top_line" ] || top_line="$top_line
 "
     anchored="$(count_anchored)"; shaped="$(count_shaped)"
@@ -303,15 +323,16 @@ self_test() {
     cp "$t/sigma.yaml" "$t/repo/contracts/ontology.yaml"
     row "entity types counted from Σ, not from a Rust form nobody writes" "$(REPO_ROOT="$t/repo" count_entity_types)" 2
     row "extractors counted from Σ's implemented: true" "$(REPO_ROOT="$t/repo" count_extractors)" 1
-    printf '{\n  "armed_gates": ["validate"],\n  "ont": {\n    "formal_prose": 1464,\n    "legacy_unresolved_depends_on": 8\n  }\n}\n' > "$t/foreign.json"
+    printf '{\n  "armed_gates": ["validate"],\n  "ont": {\n    "formal_prose": 1464,\n    "legacy_unresolved_depends_on": 8,\n    "liskov_prose": 0\n  }\n}\n' > "$t/foreign.json"
     BASELINE="$t/foreign.json" measure > "$t/f.json"
     row "measure() keeps formal_prose (the sigma gate reads it)" "$(grep -c '"formal_prose": 1464' "$t/f.json")" 1
     row "measure() keeps legacy_unresolved_depends_on (the relations gate reads it)" "$(grep -c '"legacy_unresolved_depends_on": 8' "$t/f.json")" 1
+    row "measure() keeps liskov_prose (the refines gate reads it)" "$(grep -c '"liskov_prose": 0' "$t/f.json")" 1
     cp "$t/foreign.json" "$t/fw.json"
     set +e
     BASELINE="$t/fw.json" main --write >/dev/null 2>&1
     set -e
-    row "--write keeps both foreign keys in place" "$(grep -cE '"formal_prose"|"legacy_unresolved_depends_on"' "$t/fw.json")" 2
+    row "--write keeps all three foreign keys in place" "$(grep -cE '"formal_prose"|"legacy_unresolved_depends_on"|"liskov_prose"' "$t/fw.json")" 3
     # ONT-7: the valid-under gate's top-level ratchet survives measure() and --write, and absence stays absent.
     printf '{\n  "armed_gates": ["validate"],\n  "contracts_without_valid_under": 386,\n  "ont": {\n    "formal_prose": 1\n  }\n}\n' > "$t/vu.json"
     BASELINE="$t/vu.json" measure > "$t/vum.json"
@@ -321,6 +342,24 @@ self_test() {
     set -e
     row "--write keeps contracts_without_valid_under in place" "$(grep -c '"contracts_without_valid_under": 386' "$t/vu.json")" 1
     row "--write does not invent contracts_without_valid_under" "$(grep -c '"contracts_without_valid_under"' "$t/fw.json")" 0
+    # EV-11 (PMAT-4166): `make lint-ratchet`'s three keys ride through --write too; a NESTED key of the same name does not.
+    printf '{\n  "armed_gates": ["validate"],\n  "contracts_without_valid_under": 386,\n  "command": "make lint-ratchet",\n  "unpaired_theorem_modules": 130,\n  "contracts_without_depends_on": 278,\n  "ont": {\n    "formal_prose": 1\n  }\n}\n' > "$t/lr.json"
+    set +e
+    BASELINE="$t/lr.json" main --write >/dev/null 2>&1
+    set -e
+    row "--write keeps command + both lint ratchets in place" "$(grep -cE '^  "(command": "make lint-ratchet"|unpaired_theorem_modules": 130|contracts_without_depends_on": 278),$' "$t/lr.json")" 3
+    # ONT-4f (aprender#4330): a top-level key NO list here names — the next gate's ratchet — rides through too.
+    # Against the old allowlist this row read 0: `underived_proved_claims` was deleted by `make ont-ratchet`.
+    printf '{\n  "armed_gates": ["validate"],\n  "underived_proved_claims": 95,\n  "some_future_ratchet": 7,\n  "ont": {\n    "formal_prose": 1\n  }\n}\n' > "$t/fut.json"
+    set +e
+    BASELINE="$t/fut.json" main --write >/dev/null 2>&1
+    set -e
+    row "--write keeps a top-level ratchet no list names" "$(grep -cE '^  "(underived_proved_claims": 95|some_future_ratchet": 7),$' "$t/fut.json")" 2
+    printf '{\n  "armed_gates": ["validate"],\n  "nested_block": {\n    "x": 1\n  },\n  "ont": {\n    "formal_prose": 1\n  }\n}\n' > "$t/ml.json"
+    row "a multi-line top-level value is refused, never dropped" "$(foreign_top_keys "$t/ml.json" >/dev/null 2>&1 && echo carried || echo refused)" refused
+    printf '{\n  "armed_gates": ["validate"],\n  "ont": {\n    "command": "nested",\n    "formal_prose": 1\n  }\n}\n' > "$t/nest.json"
+    row "a nested \"command\" is not carried to the top level" "$(foreign_top_keys "$t/nest.json" | grep -c '"command"')" 0
+    row "a top-level \"command\" beside a nested one is carried once" "$(printf '{\n  "command": "x",\n  "ont": {\n    "command": "y"\n  }\n}\n' > "$t/both.json"; foreign_top_keys "$t/both.json" | tr '\n' '|')" '  "command": "x",|'
     if command -v python3 >/dev/null 2>&1; then
         python3 -c "import json;json.load(open('$t/vum.json'))" >/dev/null 2>&1 \
             && row "measure() with the valid-under key is valid JSON" ok ok || row "measure() with the valid-under key is valid JSON" bad ok

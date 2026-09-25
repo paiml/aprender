@@ -1,0 +1,4 @@
+✔ [120/16435] Built Mathlib.Algebra.Group.Defs (41s)
+⚠ [2400/16435] Built ProvableContracts.Theorems.Foo (3.1s)
+warning: ProvableContracts/Theorems/Foo.lean:3:0: declaration uses 'sorry'
+Build completed successfully (16435 jobs).

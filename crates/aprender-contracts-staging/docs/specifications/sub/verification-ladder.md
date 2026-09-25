@@ -5,35 +5,40 @@ the math) and **enforcement layers** (how we enforce it in the build).
 
 ## Proof Levels (theoretical guarantees)
 
-```
-Level   Method                  Tool            Guarantee
------   ------                  ----            ---------
-  L5    Theorem proving         Lean 4          True for ALL inputs. Period.
-  L4    Bounded model check     Kani            True for ALL inputs <= size N.
-  L3    Property-based test     probar/proptest True for ~10,000 random inputs.
-  L2    Falsification test      #[test]         True for specific edge cases.
-  L1    Type system             rustc           True by construction.
-  L0    Code review             Human eyes      "Looks right to me."
-```
+<!-- generated from ProofLevel; do not edit -->
+| Level | Method |
+|-------|--------|
+| L5 | L4 + at least one binding, every binding implemented |
+| L4 | Every obligation has a sorry-free in-tree Lean 4 theorem or is not applicable, with at least one proved |
+| L3 | L2 + at least one Kani bounded-model-check harness |
+| L2 | Falsification tests cover every obligation |
+| L1 | Contract YAML with equations |
+
+L4 and L5 are grounded only textually until PVL-001 EV-8b lands: a claimed Lean proof counts when a sorry-free Lean theorem in this tree matches it (a claim with none is reported self-declared and excluded from L4), a not-applicable count is taken from the contract's own verification summary, and no checked lake discharge summary is read yet.
+<!-- end generated from ProofLevel -->
 
 ## Enforcement Layers (practical deployment, strictest first)
 
+Enforcement layers are labelled **E0–E5** so they cannot be read as the proof
+levels **L1–L5** above: a layer is *how* a build enforces something, a level is
+*what* has been proved about a contract.
+
 | Layer | What it catches | Mechanism | Coverage | Misses |
 |-------|----------------|-----------|----------|--------|
-| **L5** | Algorithm incorrect | Lean 4 proof (no sorry) | 3 theorems (softmax) | — |
-| **L4** | Logic bugs, overflows | Kani `#[kani::proof]` BMC | 985 harnesses (YAML-defined) | Inputs > bound |
-| **L3** | Violated invariants | `#[contract]` debug_assert | 18 functions (forjar: 4, paiml-mcp-agent-toolkit: 11, batuta: 3) | Release builds |
-| **L2** | Renamed/deleted fns | Trait `impl` (§23) | 12/33 repos have trait tests | Logic bugs |
-| **L1** | Missing bindings | build.rs AllImplemented | 660 real bindings | Ghost bindings |
-| **L0.5** | Schema/audit/score | `pv lint` 7 gates | 315/315 contracts pass | Impl bugs |
-| **L0** | Obvious bugs | Human review | — | Everything subtle |
+| **E5** | Algorithm incorrect | Lean 4 proof (no sorry) | 3 theorems (softmax) | — |
+| **E4** | Logic bugs, overflows | Kani `#[kani::proof]` BMC | 985 harnesses (YAML-defined) | Inputs > bound |
+| **E3** | Violated invariants | `#[contract]` debug_assert | 18 functions (forjar: 4, paiml-mcp-agent-toolkit: 11, batuta: 3) | Release builds |
+| **E2** | Renamed/deleted fns | Trait `impl` (§23) | 12/33 repos have trait tests | Logic bugs |
+| **E1** | Missing bindings | build.rs AllImplemented | 660 real bindings | Ghost bindings |
+| **E0.5** | Schema/audit/score | `pv lint` 7 gates | 315/315 contracts pass | Impl bugs |
+| **E0** | Obvious bugs | Human review | — | Everything subtle |
 
-**L0 through L2 enforce on every `cargo build` + `cargo test`** in
+**E0 through E2 enforce on every `cargo build` + `cargo test`** in
 the 7 repos with build.rs (aprender, trueno, entrenar, realizar,
 forjar, ruchy, simular). The other 26 repos have YAML bindings only.
 
-L3 enforces on 18 annotated functions across forjar, paiml-mcp-agent-toolkit, and batuta
-debug builds. L4 and L5 are defined in YAML but not yet run in CI.
+E3 enforces on 18 annotated functions across forjar, paiml-mcp-agent-toolkit, and batuta
+debug builds. E4 and E5 are defined in YAML but not yet run in CI.
 
 > **Spec Falsification (2026-03-28, v2.2.0):** Round 3 stripped 28,206
 > ghost bindings (mass-generated entries without `module_path`). Honest
@@ -45,10 +50,13 @@ debug builds. L4 and L5 are defined in YAML but not yet run in CI.
 
 When we say a kernel is "provable," we mean:
 
-1. **L1:** The type system prevents invalid construction (Poka-Yoke).
-2. **L3:** probar tested the property for 10,000+ random inputs.
-3. **L4:** Kani exhaustively verified for ALL inputs within the kernel's
+1. **Types:** the type system prevents invalid construction (Poka-Yoke).
+2. **L2:** falsification tests (probar/proptest) exercised the property for
+   10,000+ random inputs.
+3. **L3:** Kani exhaustively verified it for ALL inputs within the kernel's
    natural bound (super-block size, SIMD width).
+4. **L4:** a Lean 4 theorem proves it unbounded; **L5** additionally requires
+   every binding verified as implemented.
 
 For fixed-size kernel operations — which ML inference IS — bounded
 verification at the natural bound IS exhaustive. A Q4_K super-block is
@@ -84,7 +92,7 @@ no reason to exist.
 
 ## Where Each Tool Lives
 
-| Obligation Type | L1 (Types) | L3 (probar) | L4 (Kani) | L5 (Lean) |
+| Obligation Type | Types (rustc) | L2 (probar/proptest) | L3 (Kani) | L4 (Lean) |
 |---|---|---|---|---|
 | Shape correctness | ValidatedTensor | N/A | N/A | N/A |
 | Softmax sums to 1 | N/A | proptest random | kani::proof <=16 | Lean theorem |
@@ -92,7 +100,7 @@ no reason to exist.
 | No overflow | N/A | proptest edges | Kani auto | N/A |
 | Quantized bsums | N/A | proptest blocks | kani::proof exact | N/A |
 
-## How L4 and L5 Compose
+## How Kani (L3) and Lean (L4) Compose
 
 Lean and Kani are NOT alternatives — they verify different things about
 the SAME obligation. See **[lean-kani-composition.md](lean-kani-composition.md)**

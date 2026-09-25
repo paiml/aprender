@@ -1,0 +1,3 @@
+ℹ [2346/2512] Replayed ProvableContracts.Theorems.AbsolutePosition.Core
+warning: ./.lake/packages/mathlib/Mathlib/Order/Basic.lean:10:2: `foo` has been deprecated
+Build completed successfully (16435 jobs).

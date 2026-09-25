@@ -1,0 +1,139 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-docs-corpus-v1 — the docs corpus as ontology focus nodes
+# (aprender#3560 "docs, examples and cookbook pv-SHACL validated for Qwen3.5"; row R1)
+#
+# R1 (this file's first row): extract:example — every cargo example target of a
+#   workspace member (examples/*.rs, examples/*/main.rs) is an ont:Example with
+#   its file, crate, target name, and the model families its text names.
+# LATER ROWS (not claimed here): R2 book pages (after ONT-4c's readme reader),
+#   R3 apr-cookbook (its own repo), R5 every example builds and runs.
+# R4: the model-currency shape — an example that names a model family must name
+#   the current one (qwen3.5), or say why not.
+#
+# ARMING: both shapes are REPORTED, not armed. `examples-well-formed` holds on
+#   this tree. `examples-model-current` (R4) does not: 430 examples name an
+#   older model. R4's gate is the shrink-only pin, which CI's --lib run holds:
+#   a NEW stale example is RED today; the shape arms when the pin reaches 0.
+# PIN: an example that names an older model on purpose says so with
+#   `// ont:model-pinned: <reason>`; the reason is kept as example:modelPinned.
+# ─────────────────────────────────────────────────────────────────────────────
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: PAIML Engineering
+  description: >
+    extract:example — the cargo example targets of the workspace members, found by the same [workspace]
+    members/exclude reading extract:code uses, each an ont:Example carrying example:file, example:crate,
+    example:name, one example:namesModel per model family a token scan finds, and example:namesQwen35.
+    Zero examples read at a [workspace] root is an extractor error (PV-ONT-012), never a green.
+  references:
+    - 'paiml/aprender#3560 (docs, examples and cookbook pv-SHACL validated for Qwen3.5)'
+    - 'paiml/infra docs/specifications/paiml-ontology.md §3.7 (extractors), R-3, R-15'
+    - 'crates/aprender-contracts/src/ontology/extract/example.rs, example_tests.rs'
+    - 'crates/aprender-contracts/src/ontology/extract/code.rs — workspace_membership, manifest_names (reused)'
+
+relations:
+  depends_on: [ont-shapes-v1, ont-sigma-v1]
+
+equations:
+  extract_example:
+    formula: "examples(root) = { e | m ∈ members(root), e ∈ m/examples/*.rs ∪ m/examples/*/main.rs } ; namesModel(e) = families(tokens(lower(text(e))))"
+    domain: "the repo root the contract dir sits in; members by [workspace] members/exclude, or every manifest when the root has no [workspace]"
+    codomain: "one ont:Example node per target, plus ExampleStats {packages, examples, non_member_examples, naming_a_model, naming_qwen35, by_family, errors}"
+    invariants:
+      - "a target under a manifest the workspace excludes is counted in non_member_examples and not extracted"
+      - "a helper module below examples/<x>/ other than main.rs is not a target"
+      - "the family scan is by token: `graphics` is not phi, `llama.cpp` is a runtime, `qwen3.5` is tried before `qwen3`"
+    preconditions:
+      - "the root's Cargo.toml, when it is a [workspace], lists its members"
+    postconditions:
+      - "at a [workspace] root, examples = 0 ∧ (members = 0 ∨ non_member_examples > 0) ⇒ one extractor error"
+      - "two extractions of the same tree are byte-identical (R-15)"
+    lean_theorem: none — L4 not declared
+  model_current:
+    formula: "current(e) ⇔ namesModel(e) = ∅ ∨ qwen3.5 ∈ namesModel(e) ∨ pinned(e) ≠ ⊥ ; stale = |{e | ¬current(e)}| ≤ STALE_EXAMPLES_PINNED"
+    domain: "every extracted ont:Example"
+    codomain: "example:modelCurrent true|false, example:modelPinned the stated reason"
+    invariants:
+      - "a pin is a `//` comment carrying `ont:model-pinned:` and a non-empty reason; the marker in a string is not a pin"
+      - "the pin only shrinks: a count below it fails until the constant is lowered to it"
+    preconditions:
+      - "CURRENT_FAMILY names the family the project ships against (qwen3.5, #3560)"
+    postconditions:
+      - "a new example naming an older model without a pin fails CI's --lib run naming the file"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: DOCS-INV-001
+    property: deterministic, no blank nodes
+    formal: '∀ tree: extract(tree) = extract(tree) ∧ ∀ t ∈ extract(tree): subject(t) ∈ IRI'
+    prose: false
+  - id: DOCS-INV-002
+    property: a walk that read nothing it could have is RED, never green; a workspace with no examples measures zero
+    formal: 'workspace(root) ∧ |examples(root)| = 0 ∧ (|members(root)| = 0 ∨ non_member_examples(root) > 0) ⇒ PV-ONT-012 ∈ findings'
+    prose: false
+  - id: DOCS-INV-003
+    property: only targets cargo builds are extracted
+    formal: '∀ e ∈ examples(root): admits(membership(root), dir(e)) ∧ (ext(e) = rs ∧ depth(e) = 1 ∨ e = examples/*/main.rs)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-DOCS-001
+    rule: the walk extracts exactly the member targets
+    prediction: a planted workspace yields its two example forms and not the helper module, the excluded crate, a README or target/
+    test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::a_planted_workspace_yields_exactly_its_member_targets
+    if_fails: an example cargo never builds is graded, or a real one is missed
+  - id: FALSIFY-DOCS-002
+    rule: vacuity is RED
+    prediction: "a [workspace] root that admits no member, or whose example targets all sit outside the membership, reports one extractor error; a member with no examples/, or a bare dir, reports none"
+    test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::a_workspace_root_that_read_nothing_is_an_error_and_one_with_no_examples_is_not
+    if_fails: a walk that read nothing reports a clean corpus
+  - id: FALSIFY-DOCS-003
+    rule: the family scan tells models from look-alikes
+    prediction: 13 cases — Qwen3.5/3/2.5/2, TinyLlama vs Llama, phi vs graphics and phishing, llama.cpp named as no model — each give the stated family set
+    test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::the_family_scan_separates_models_from_look_alikes
+    if_fails: a Qwen3 example counts as Qwen3.5, or llama.cpp counts as a Llama example
+  - id: FALSIFY-DOCS-004
+    rule: the repo's own examples
+    prediction: the workspace yields more than 500 examples across more than 20 packages, with no extractor error
+    test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::the_repo_examples_are_extracted
+    if_fails: the membership reading or the walk lost the corpus
+  - id: FALSIFY-DOCS-005
+    rule: the extractor is registered and its control fires
+    prediction: Σ lists example as an implemented entity type, the shapes gate counts it in by_entity_type and its pc_extract control fires
+    test: cargo test -p aprender-contracts --lib lint::shapes_gate
+    if_fails: the extractor runs and no gate knows, or its control is silent
+  - id: FALSIFY-DOCS-006
+    rule: currency and the pin marker
+    prediction: "an example naming only Qwen2.5 is stale; the same with a `// ont:model-pinned: why` line, or naming no model, is current; a marker in a string literal or with no reason is not a pin"
+    test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::a_pin_needs_the_marker_in_a_comment_and_a_reason
+    if_fails: a stale example passes as current, or a pin without a reason exempts it
+  - id: FALSIFY-DOCS-007
+    rule: the stale count is pinned shrink-only (R4's drift gate)
+    prediction: the repo's stale examples equal STALE_EXAMPLES_PINNED (430 on 2026-09-24)
+    test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::the_repo_stale_examples_are_pinned_shrink_only
+    if_fails: a new example on an older model landed (the message lists the stale files), or examples migrated and the pin was not lowered
+
+qa_gate:
+  required_checks:
+    - "cargo test -p aprender-contracts --lib ontology::extract::example"
+    - "cargo test -p aprender-contracts --lib lint::shapes_gate"
+
+shapes:
+  # REPORTED, not armed (see the header).
+  - id: examples-well-formed
+    targetClass: ont:Example
+    properties:
+      - {path: example:file, minCount: 1, maxCount: 1}
+      - {path: example:crate, minCount: 1, maxCount: 1}
+      - {path: example:name, minCount: 1, maxCount: 1}
+      - {path: example:namesQwen35, minCount: 1, maxCount: 1, in: [true, false]}
+      - {path: example:modelCurrent, minCount: 1, maxCount: 1, in: [true, false]}
+  # R4, REPORTED, not armed: 430 of the 432 examples that name a model name an older one. The drift gate is the
+  # shrink-only pin STALE_EXAMPLES_PINNED (FALSIFY-DOCS-007), not this shape; arm it when the pin reaches 0.
+  - id: examples-model-current
+    targetClass: ont:Example
+    properties:
+      - {path: example:modelCurrent, minCount: 1, maxCount: 1, in: [true]}

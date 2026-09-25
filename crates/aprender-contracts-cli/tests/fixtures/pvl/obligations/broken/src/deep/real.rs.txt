@@ -1,0 +1,3 @@
+pub fn real_fn() {}
+
+fn bounded_v2() {}

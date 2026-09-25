@@ -12,7 +12,13 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    # #4112 (operator-approved option B, 2026-09-24): batching folds each author branch into a
+    # release/** branch by a direct PUSH, and no PR is opened, so guard-tree and guard-cargo first
+    # ran on the release->main integration PR: drift was caught at release time, not at the fold
+    # that caused it. A push to release/** now runs THOSE TWO jobs and nothing else. Every other job
+    # carries `if: !(push && refs/heads/release/*)`, and the rest were already pull_request-only.
+    # A push runs the ci.yml in the pushed tree, so this covers release branches cut after it lands.
+    branches: [main, master, 'release/**']
     # #3676: sovereign-ci's `coverage_on: tag` (below) runs coverage only on a push of a
     # v* tag, and its gate REQUIRES it to succeed there. A push filtered to branches never
     # fires for a tag, so this is the reusable's second required edit.
@@ -67,6 +73,8 @@ jobs:
     # 23916c00d adds an OPTIONAL `runs_on` input whose default is the label set
     # this repo already gets, and 70e51ec04 swaps the digest on every job. No
     # input this repo passes changes meaning.
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     uses: paiml/.github/.github/workflows/sovereign-ci.yml@f713290c86fcd70d6f26a0faab14e67e6713586f
     with:
       repo: ${{ github.event.repository.name }}
@@ -159,8 +167,22 @@ jobs:
   # The check-run every consumer reads -- branch protection, `gate`, the BSE-17
   # reuse lookup by check_name -- is the fan-in job `workspace-test` below, which
   # fails unless every shard passed.
+  #
+  # #3177: the shards WAIT ON guard-tree. A merge group whose guard-tree was
+  # already red kept all three shards running to the end, and `gate` could only
+  # report the red after them: 2.8 h of clean-room time over the last 20 red
+  # merge groups (aprender-dd, 2026-09-24). With `needs: [guard-tree]` and no
+  # `if:`, a failed or cancelled guard-tree SKIPS every shard before it takes a
+  # runner, and the fan-in `workspace-test` below still reports -- red, naming
+  # guard-tree -- so the required check is never missing from a merge group.
+  # Green-path cost, measured on the last 10 successful runs per event (job
+  # start->end, queue excluded): merge_group +73 s median (+196 mean, +1048
+  # worst), push to main +432 s median, because the shards now start after
+  # guard-tree instead of beside it. Case table:
+  # scripts/check_workspace_test_waits_on_guard_tree.sh.
   workspace-test-shard:
     name: workspace-test-shard (${{ matrix.shard }}/${{ matrix.shards }})
+    needs: [guard-tree]
     strategy:
       fail-fast: false
       matrix:
@@ -173,6 +195,8 @@ jobs:
     # The four aarch64-only reds that pin found are fixed in the same PR (an x86
     # example, a shared-B GEMM defect, a wall-clock ratio moved to bench-gates, a
     # lane-count tolerance). pr-review-receipt keeps X64 until #3132.
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     runs-on: [self-hosted, Linux, clean-room]
     # 100, not 85. The step below sets `timeout-minutes: 75`, but "Set up runner"
     # (image pull) has measured at 20 minutes, so 20 + 75 = 95 > 85 and the JOB
@@ -276,6 +300,9 @@ jobs:
         # row 2a requires a genuinely orphaned dir to still be reclaimed. A
         # blanket skip passes row 1 and fails row 2.
         run: bash scripts/ci_reclaim_target_dirs.sh --self-test
+      - name: Target-dir release must still turn RED (case table, #4102)
+        # Includes the must-RED race: two jobs finishing together delete exactly once, never zero, never twice.
+        run: bash scripts/ci_run_target_release.sh --self-test
       - name: Reclaim orphaned per-RUN target dirs (never a live sibling)
         # WHAT THIS REPLACED, and why (#2825).
         #
@@ -391,6 +418,15 @@ jobs:
           heal_path /mnt/nvme-raid0/targets/aprender-ci "${parent}/run-${GITHUB_RUN_ID}"
           heal_path /mnt/nvme-raid0/cargo-ci/registry "$reg"
           ls -ld "$parent" "${parent}/run-${GITHUB_RUN_ID}" "$reg"
+      - name: Register this job on the run's target dir (last-one-out, #4102)
+        # A marker under <run dir>/.live/, taken under a flock on the host-local sibling <run dir>.lock. The
+        # always() step at the end of this job releases it, and deletes the tree only if no other job's marker
+        # remains. FATAL on purpose: a job with no marker is invisible to a sibling's release, which would then
+        # delete this job's tree while it builds. A job that cannot register must not build on a shared tree.
+        run: |
+          bash scripts/ci_run_target_release.sh register \
+            "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}" \
+            "${GITHUB_JOB}-s${SHARD}-a${GITHUB_RUN_ATTEMPT}"
       - name: Pre-build chown — fix per-RUN root ownership
         # Root cause (five-whys):
         #   1. Why do fresh runs sometimes fail with "failed to create
@@ -898,27 +934,48 @@ jobs:
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             "$IMAGE" \
             bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
+      - name: Release this run's target dir — the last job out deletes it (#4102)
+        # #4102: one #4046 shard left 64G here on gx10. Pass, fail or cancel, this job drops its marker; the tree is
+        # deleted only when no other job of this run still holds one (scripts/ci_run_target_release.sh). A job
+        # killed before this step keeps the tree, and the next run's start-of-job reclaim is the backstop. The
+        # delete runs in the build image because the tree holds root-owned files. A cleanup never fails the build.
+        if: always()
+        run: |
+          set -uo pipefail
+          dir="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}"
+          before=$(du -sh "$dir" 2> /dev/null | cut -f1)
+          bash scripts/ci_run_target_release.sh release "$dir" "${GITHUB_JOB}-s${SHARD}-a${GITHUB_RUN_ATTEMPT}" -- \
+            bash -c 'docker run --rm -v "$(dirname "$0"):/p" "$IMAGE" rm -rf -- "/p/$(basename "$0")"' 
+          rc=$?
+          echo "target dir ${dir}: before ${before:-absent}, after $(du -sh "$dir" 2> /dev/null | cut -f1 || true)"
+          [ "$rc" -eq 0 ] || echo "::warning::target-dir release exited ${rc}; the start-of-job reclaim is the backstop"
+          exit 0
 
   # PACK-001: the check-run named `workspace-test`. Branch protection requires
   # this context, `gate` needs it, and the BSE-17 reuse lookup reads it by
   # check_name on the PR head -- so the name stays on ONE job that fans the
   # shards in. `if: always()` so a failed shard still produces a red check here
   # instead of a skipped one (a skipped required check blocks nothing and says
-  # nothing). Every non-success matrix result is named.
+  # nothing). Every non-success matrix result is named. #3177: it also needs
+  # guard-tree, only to NAME it -- the shards wait on guard-tree, so when they
+  # were skipped the red here says which guard verdict skipped them.
   workspace-test:
-    needs: [workspace-test-shard]
-    if: always()
+    needs: [guard-tree, workspace-test-shard]
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ always() && !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
     steps:
       - name: Every shard passed
         env:
           SHARD_RESULT: ${{ needs.workspace-test-shard.result }}
+          GUARD_RESULT: ${{ needs.guard-tree.result }}
         run: |
           set -euo pipefail
-          printf 'workspace-test-shard matrix result: %s\n' "$SHARD_RESULT"
+          printf 'workspace-test-shard matrix result: %s (guard-tree: %s)\n' "$SHARD_RESULT" "$GUARD_RESULT"
           case "$SHARD_RESULT" in
             success) echo "workspace-test: all shards green" ;;
+            skipped) echo "::error::workspace-test: shards skipped because guard-tree was '$GUARD_RESULT' (#3177: the shards wait on guard-tree; fix the guard first)"; exit 1 ;;
             *) echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1 ;;
           esac
 
@@ -932,6 +989,8 @@ jobs:
   # the runner's own persistent target dir is used and nothing is bind-mounted.
   # Not in `gate`'s needs yet: first-green proof on a real PR before it may block.
   mac-check:
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
     timeout-minutes: 60
     env:
@@ -1048,6 +1107,13 @@ jobs:
           # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
           # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
           if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+          # #4112: a fold push to release/** is NOT on origin/main, and a depth-1 checkout cannot name the
+          # merge-base, so scripts/lib/resolve_base.sh refuses a single-parent fold outright. The full
+          # history is ~11 s / 159 MB (measured 2026-09-24), so fetch it and let the ratchets judge the
+          # fold against merge-base(origin/main, HEAD), as the integration PR would.
+          case "${GITHUB_EVENT_NAME:-}:${GITHUB_REF:-}" in
+            push:refs/heads/release/*) git fetch --no-tags --unshallow origin +refs/heads/main:refs/remotes/origin/main ;;
+          esac
       # aprender#2822. Case table FIRST, per the convention above: the probe
       # below is only worth its 0.15s if the classifier it feeds can still turn
       # RED. Seven rows over a throwaway tree - no cargo, no network, no host.
@@ -1585,6 +1651,13 @@ jobs:
           # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
           # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
           if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+          # #4112: a fold push to release/** is NOT on origin/main, and a depth-1 checkout cannot name the
+          # merge-base, so scripts/lib/resolve_base.sh refuses a single-parent fold outright. The full
+          # history is ~11 s / 159 MB (measured 2026-09-24), so fetch it and let the ratchets judge the
+          # fold against merge-base(origin/main, HEAD), as the integration PR would.
+          case "${GITHUB_EVENT_NAME:-}:${GITHUB_REF:-}" in
+            push:refs/heads/release/*) git fetch --no-tags --unshallow origin +refs/heads/main:refs/remotes/origin/main ;;
+          esac
       # DOCKER CREATES A MISSING BIND SOURCE AS root:root, AND `--user` ALONE
       # THEN EACCESs ON IT. The per-RUN target path is fresh every run, so a
       # container that mounts it and drops to the runner's uid cannot write
@@ -1622,6 +1695,9 @@ jobs:
           }
           heal_path /mnt/nvme-raid0/targets/aprender-ci "$GUARD_TARGET_DIR"
           heal_path /mnt/nvme-raid0/cargo-ci/home "$GUARD_CARGO_HOME/registry"
+          # #4102: last-one-out marker; the always() step at the end of this job releases it. FATAL on purpose:
+          # without a marker a sibling's release could delete this job's live tree.
+          bash scripts/ci_run_target_release.sh register "$GUARD_TARGET_DIR" "${GITHUB_JOB}-a${GITHUB_RUN_ATTEMPT}"
           printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
           printf 'cargo home: %s (registry/ .package-cache .package-cache-mutate travel together)\n' "$GUARD_CARGO_HOME"
       # Poka-yoke: a beat that no workflow executes reads as enforcement, is
@@ -2407,6 +2483,17 @@ jobs:
             -e CARGO_NET_OFFLINE=1 \
             "$IMAGE" \
             bash scripts/check_nextest_config_keys.sh --self-test
+      - name: Release this run's guard target dir — the last job out deletes it (#4102)
+        if: always()
+        run: |
+          set -uo pipefail
+          before=$(du -sh "$GUARD_TARGET_DIR" 2> /dev/null | cut -f1)
+          bash scripts/ci_run_target_release.sh release "$GUARD_TARGET_DIR" "${GITHUB_JOB}-a${GITHUB_RUN_ATTEMPT}" -- \
+            bash -c 'docker run --rm -v "$(dirname "$0"):/p" "$IMAGE" rm -rf -- "/p/$(basename "$0")"' 
+          rc=$?
+          echo "guard target dir ${GUARD_TARGET_DIR}: before ${before:-absent}, after $(du -sh "$GUARD_TARGET_DIR" 2> /dev/null | cut -f1 || true)"
+          [ "$rc" -eq 0 ] || echo "::warning::target-dir release exited ${rc}; the start-of-job reclaim is the backstop"
+          exit 0
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
@@ -2440,6 +2527,8 @@ jobs:
   # Both are non-zero: an unmeasured gate is not a passing gate. The distinct
   # code is so a broken box is never read as a broken tree.
   vendored-schemas:
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 15
     steps:
@@ -3074,6 +3163,8 @@ jobs:
       fail-fast: false   # if one arch fails we still want the other's receipt to compare against
       matrix:
         arch: [X64, ARM64]
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     runs-on: [self-hosted, Linux, clean-room, "${{ matrix.arch }}"]
     # 45: NO history — this job is new, so the BSE-05 formula has nothing to fit. basis=[U].
     # The cold build pulls resvg + skrifa, which no other job in this workflow builds; 45 is the
@@ -3152,6 +3243,8 @@ jobs:
   # from one side would be asserting the thing under test.
   determinism-compare:
     name: determinism (compare)
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     needs: [determinism]
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 15   # downloads two small files and runs jq. basis=[U], floor of BSE-05.
@@ -3216,7 +3309,8 @@ jobs:
     # slow runner is never the thing that fails a required check.
     timeout-minutes: 22
     needs: [ci, workspace-test, mutants, guard-tree, guard-cargo, determinism-compare]
-    if: always()
+    # #4112: a fold push to release/** runs only guard-tree and guard-cargo.
+    if: ${{ always() && !(github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) }}
     steps:
       - name: Check required jobs
         run: |

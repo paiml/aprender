@@ -12,6 +12,11 @@ repository.workspace = true
 name = "pv"
 path = "src/main.rs"
 
+# ONT-5: the reasoner. Private to this target (F-7); the library holds only the graph and the checker.
+[[bin]]
+name = "pv-sat"
+path = "src/bin/pv-sat/main.rs"
+
 [dependencies]
 aprender-contracts = { path = "../aprender-contracts", version = "0.69.3" }
 clap = { workspace = true }

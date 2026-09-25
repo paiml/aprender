@@ -1,0 +1,4 @@
+// The type is only ever named as part of a longer word here.
+pub fn grade_gate(t: &GradeTable) -> bool {
+    t.is_empty()
+}

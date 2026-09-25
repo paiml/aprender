@@ -13,6 +13,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::binding::{BindingRegistry, ImplStatus};
+use crate::discharge::summary::{self, Discharged, L4Source};
 use crate::schema::Contract;
 
 // ── Proof level hierarchy ─────────────────────────────────────────
@@ -117,6 +118,13 @@ pub struct ProofStatusReport {
     pub kernel_classes: Vec<KernelClassSummary>,
     /// ONT-2a andon: a self-declared L4 is excluded from the L4 total in this build
     pub l4_self_declared_excluded: bool,
+    /// EV-8b: `discharge` when L4 credit came from `discharge-summary.json`, `self-declared` when no summary was found
+    /// and the tree's own `.lean` text was scanned instead
+    #[serde(default)]
+    pub l4_source: L4Source,
+    /// Why the summary granted nothing (`stale discharge: …`, `red discharge: …`); `None` when it granted or was absent
+    #[serde(default)]
+    pub l4_withheld: Option<String>,
     /// Aggregate totals across all contracts
     pub totals: ProofStatusTotals,
 }
@@ -255,9 +263,9 @@ pub fn is_lean_proved_with_grounding(contract: &Contract, grounded: u32) -> bool
     if total == 0 {
         return false;
     }
-    // ONT-001 ONT-2a (andon): a `verification_summary` is the contract talking about ITSELF, and until a
-    // discharge summary exists to check it against (PVL EV-8b) the only grounding in this tree is a
-    // sorry-free Lean theorem an equation names and `lean_theorem_names()` resolves. L4 is therefore
+    // ONT-001 ONT-2a (andon): a `verification_summary` is the contract talking about ITSELF. PVL EV-8b: the
+    // grounding is a theorem an equation names that a green, fresh, challenge-closed `discharge-summary.json`
+    // lists; with no summary beside the Lean base, a sorry-free theorem `lean_theorem_names()` resolves. L4 is therefore
     // granted on the GROUNDED count alone; a claim with nothing under it is reported `self-declared` by
     // `is_l4_self_declared`, excluded from the L4 total, and never counted quietly. The `not_applicable`
     // credit still comes from the summary: it is a claim about APPLICABILITY, not about a proof, and it
@@ -511,9 +519,122 @@ fn lean_theorem_names() -> &'static std::collections::HashSet<String> {
     })
 }
 
+/// The L4 grounding this process reads once: the discharge summary beside the first Lean base that has one, or the
+/// ONT-2a scan when none does.
+struct Grounding {
+    source: L4Source,
+    discharged: Discharged,
+}
+
+fn grounding() -> &'static Grounding {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<Grounding> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        let bases: Vec<&std::path::Path> = LEAN_THEOREM_BASES
+            .iter()
+            .map(std::path::Path::new)
+            .collect();
+        grounding_from(&bases, summary::current_tree_sha)
+    })
+}
+
+/// `grounding()` without the cache, over explicit bases and a tree-sha source, so a test can drive the whole
+/// discharge → refinement path. The first base with a summary wins.
+fn grounding_from(
+    bases: &[&std::path::Path],
+    tree_sha: impl Fn(&std::path::Path) -> Option<String>,
+) -> Grounding {
+    for &dir in bases {
+        let path = summary::summary_path(dir);
+        if !dir.is_dir() || !path.is_file() {
+            continue;
+        }
+        let mut discharged = match summary::load(&path) {
+            Ok(s) => summary::discharged(&s, tree_sha(dir).as_deref()),
+            Err(why) => Discharged {
+                withheld: Some(why),
+                ..Discharged::default()
+            },
+        };
+        refine(dir, &mut discharged);
+        return Grounding {
+            source: L4Source::Discharge,
+            discharged,
+        };
+    }
+    Grounding {
+        source: L4Source::SelfDeclared,
+        discharged: Discharged::default(),
+    }
+}
+
+/// ONT-3b (#4073): a discharged theorem stays L4 only when an `extraction`/`simulation` model whose `model_of`
+/// resolves covers its module. The workspace walk runs only when the discharge grants something.
+fn refine(lean_dir: &std::path::Path, discharged: &mut Discharged) {
+    use crate::discharge::refinement;
+    if discharged.theorems.is_empty() {
+        return;
+    }
+    let l4 = match refinement::load(lean_dir) {
+        Ok(rec) => {
+            let modules = discharged.module_of.values().cloned().collect();
+            let root = workspace_root(lean_dir);
+            refinement::l4_modules(&refinement::judge(
+                &rec.models,
+                &modules,
+                refinement::workspace_resolver(&root),
+            ))
+        }
+        Err(_) => std::collections::BTreeSet::new(),
+    };
+    discharged.require_refinement(&l4);
+}
+
+/// The nearest ancestor of `dir` whose Cargo.toml has a `[workspace]` table, else `.`.
+fn workspace_root(dir: &std::path::Path) -> std::path::PathBuf {
+    let abs = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    abs.ancestors()
+        .find(|a| {
+            std::fs::read_to_string(a.join("Cargo.toml"))
+                .is_ok_and(|t| t.lines().any(|l| l.trim() == "[workspace]"))
+        })
+        .map_or_else(
+            || std::path::PathBuf::from("."),
+            std::path::Path::to_path_buf,
+        )
+}
+
+/// The discharge summary's grant as this process read it: empty when there is no summary, or it is withheld.
+#[must_use]
+pub fn discharge_grounding() -> &'static Discharged {
+    &grounding().discharged
+}
+
+/// EV-8b: the equations whose `lean_theorem` the discharge summary grants. A theorem the YAML names and the summary
+/// does not list earns nothing, however the YAML describes it.
+#[must_use]
+pub fn count_discharged_for_contract(contract: &Contract, discharged: &Discharged) -> u32 {
+    let n = contract
+        .equations
+        .values()
+        .filter_map(|eq| eq.lean_theorem.as_deref())
+        .filter(|t| discharged.grants(t))
+        .count();
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+/// The grounding count for a contract: from the discharge summary when one exists, else the ONT-2a scan.
+fn count_lean_theorems_for_contract(contract: &Contract) -> u32 {
+    let g = grounding();
+    match g.source {
+        L4Source::Discharge => count_discharged_for_contract(contract, &g.discharged),
+        L4Source::SelfDeclared => count_scanned_theorems_for_contract(contract),
+    }
+}
+
 /// Count Lean theorems for a contract by matching `lean_theorem` refs against
 /// sorry-free `.lean` files in the Theorems/ directory.
-fn count_lean_theorems_for_contract(contract: &Contract) -> u32 {
+fn count_scanned_theorems_for_contract(contract: &Contract) -> u32 {
     let theorems = lean_theorem_names();
     let mut count = 0u32;
     for eq in contract.equations.values() {
@@ -630,6 +751,8 @@ pub fn proof_status_report(
     ProofStatusReport {
         schema_version: "1.0.0".to_string(),
         l4_self_declared_excluded: true,
+        l4_source: grounding().source,
+        l4_withheld: grounding().discharged.withheld.clone(),
         timestamp,
         contracts: statuses,
         kernel_classes,
@@ -694,7 +817,8 @@ pub fn format_text(report: &ProofStatusReport) -> String {
     out.push_str(&format!(
         "\nTotals: {} obligations ({} N/A, never counted as proved), {} tests, {} kani, {} lean claimed ({} grounded), {}/{} bound\n\
          L4 evidence: {} contract(s) self-declared and excluded from L4 (ONT-2a andon); grounded means a \
-         sorry-free in-tree Lean theorem the equation names\n",
+         theorem the equation names that a green, fresh discharge-summary.json lists (EV-8b), or with no summary \
+         a sorry-free in-tree Lean theorem\n",
         report.totals.obligations,
         report.totals.not_applicable,
         report.totals.falsification_tests,
@@ -705,6 +829,14 @@ pub fn format_text(report: &ProofStatusReport) -> String {
         report.totals.bindings_total,
         report.totals.l4_self_declared,
     ));
+    let source = match report.l4_source {
+        L4Source::Discharge => "discharge (discharge-summary.json)",
+        L4Source::SelfDeclared => "self-declared (no discharge-summary.json; in-tree .lean scan)",
+    };
+    out.push_str(&format!("L4 source: {source}\n"));
+    if let Some(why) = &report.l4_withheld {
+        out.push_str(&format!("L4 withheld: {why}\n"));
+    }
 
     out
 }

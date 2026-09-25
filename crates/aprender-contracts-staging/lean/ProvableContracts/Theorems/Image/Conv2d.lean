@@ -12,7 +12,7 @@ namespace ProvableContracts.Image
 -- Status: proved
 /-- Convolution output size is positive when kernel fits. -/
 theorem conv2d_output_positive {input_size kernel_size : ℕ}
-    (h : kernel_size ≤ input_size) (hk : 0 < kernel_size) :
+    (_h : kernel_size ≤ input_size) (_hk : 0 < kernel_size) :
     0 < conv2d_output_size input_size kernel_size := by
   unfold conv2d_output_size
   omega

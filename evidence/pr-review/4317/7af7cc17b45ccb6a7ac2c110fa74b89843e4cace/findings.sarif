@@ -1,0 +1,448 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.41.1",
+          "informationUri": "https://github.com/paiml/paiml-mcp-agent-toolkit",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "Index precondition: a prior partial build (.pmat/context.db.tmp.* + -wal/-shm, 189MB, no finished context.db) was found stale and removed, then a fresh build completed successfully in this worktree at HEAD 7af7cc17b (10594 files, 91418 functions, 10191477 call edges, 437.1 MB, 97.2s). Every pmat query in this review ran against that build."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "pmat",
+                  "query",
+                  "x",
+                  "--rebuild-index",
+                  "--limit",
+                  "1"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": null
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Transport: only the CLI transport was used in this review (pmat 3.41.1). The MCP transport (`pmat --mode mcp`) was not probed this run; recorded as transport: cli, no transport_unavailable claim is made about MCP since it was never asked."
+              },
+              "properties": {
+                "grounding": "asserted",
+                "rationale": "No MCP probe command was executed in this session; absence of a probe is recorded honestly rather than inferred as failure or success.",
+                "precision_class": "advisory"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "complexity_delta[]: computed by materializing the 36 pre-existing .rs files this diff modifies at BASE (aa7c6ef03e) and at HEAD (7af7cc17b) into two scratch dirs (git show BASE:path, and the review tree's own working copy for HEAD), then running `pmat analyze complexity --format json --path .` independently on each and diffing per (file_path, function_name), taking the max cyclomatic complexity on each side when a name appears more than once in a file. This is an AST-based delta, increase-only: 7 functions increased, none crosses the configured max_complexity=10 gate (highest post-change value is 9, run_single_gate in crates/aprender-contracts-cli/src/commands/lint.rs 2->6). 66 of the 102 changed .rs files are brand new (no base counterpart) and are not part of a 'delta' by construction; they are covered by tdg_delta/satd_introduced instead. This crosses only the pre-existing-and-modified subset, not the full changed-file set \u2014 recorded as a scope limitation, not a gap the guard's complexity_delta schema requires filling."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "pmat",
+                  "analyze",
+                  "complexity",
+                  "--format",
+                  "json",
+                  "--path",
+                  "."
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "1fdba0060fea9bb5f9f06d692888f9cc4e692cd07e6bf7a5a0fceda9615d769d"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "tdg_delta[]: same base/head materialization, `pmat analyze tdg --format json --top-files 0 --path .` on each side, matched by file_path. 27 of the 36 modified pre-existing files were scored on both sides (pmat's own reporting, --top-files 0 requested 'all'; the remaining 9 were not returned by either run and this was not investigated further). 16 of those 27 show a grade or score drift; worst case crates/aprender-contracts/src/lint/mod.rs A- (86.90) -> B (77.58) \u2014 AT, not below, the configured min_grade='B' floor in .pmat-gates.toml."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "pmat",
+                  "analyze",
+                  "tdg",
+                  "--format",
+                  "json",
+                  "--top-files",
+                  "0",
+                  "--path",
+                  "."
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "0beac6637097070862f9289761f65224cd53e3c9dcb6a11eeaaf9ab8db10879a"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "satd_introduced[]: not independently re-derived as a base/head SATD diff in this review (time-boxed); recorded as an honest gap rather than an empty array implying a clean measurement. No TODO|FIXME|HACK|XXX was noticed in the 8 files this review read closely (ci.yml, the 6 guard scripts, cli.rs), but that is incidental observation over a small subset, not a swept measurement over the 547-file diff, and is not cited as one."
+              },
+              "properties": {
+                "grounding": "asserted",
+                "rationale": "satd_introduced coverage was not run as a full base/head diff in the time available; recording the gap honestly per S3.0 rather than asserting a clean empty array.",
+                "precision_class": "advisory"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "duplication_hits[] / duplication_coverage: `scripts/pr_review_duplication_scan.sh` (the dedicated cross-branch/lexical scanner) was attempted 5 times against this diff, with growing timeouts up to 300s and `--horizon none`, and timed out (rc=124) every time \u2014 consistent with a structural scaling issue (hundreds of -e needle patterns fed to one `git grep -w -F` call across a 2797-branch remote horizon), not purely host contention. The Rust-semantic half was run directly via `pmat query` against the new pv CLI surface names (Discharge/Challenge/Ontology/GenAxioms/LabelRatchet) earlier in this session and returned 8 hits, none an actual clone of the new subcommand implementations (all pre-existing, unrelated enum/struct definitions such as GateExtra). The exact query argv for that specific run was not preserved across this session's context compaction boundary; a same-shaped re-run just now (60s timeout) itself timed out under current host load, so the argv could not be re-confirmed live. This review therefore records rust: semantic on the strength of the retained output artifact and its hash, with this residual-risk disclosure, and none for every other surface (shell, python, config, docs, other, sibling_branches, merge_base_to_main), each grounded by the 5 measured timeout attempts on the dedicated scanner. horizon_branches_total is a live count (2797 remote branches); horizon_branches_scanned is 0 because the sibling-branch sweep never completed."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "scripts/pr_review_duplication_scan.sh",
+                  "--base",
+                  "aa7c6ef03ee7b7f8d8dc09dc393e97619952d95f",
+                  "--head",
+                  "7af7cc17b45ccb6a7ac2c110fa74b89843e4cace",
+                  "--horizon",
+                  "none"
+                ],
+                "exit_code": 124,
+                "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "version": "n/a (guard-predicate trigger check only; no device-behaviour claim in the diff to send to the agent)",
+          "rules": [],
+          "fullName": "nvidia-cuda-docs (guard-predicate trigger check; no device-behaviour claim found in the diff)"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "Trigger evaluated via the guard's own predicate, not by eye: `bash scripts/check_pr_review_receipt.sh --match-path <f>` over every one of the changed paths. It fires on exactly 2 of the changed paths, both false positives on the literal substring 'cuda': crates/aprender-contracts-cli/tests/fixtures/pvl/obligations/pmat/src/tdg/cuda_simd_scores.rs.txt (a test fixture filename) and crates/aprender-contracts-staging/lean/Challenge/fp8-interchange-v1.lean (matches the fp8 pattern; a Lean proof file, not CUDA device code). Neither file contains a device-behaviour claim. Per skill S3.B this is recorded as consulted with a trigger_reason, never not-triggered."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "git diff --name-only $BASE HEAD | while IFS= read -r f; do bash scripts/check_pr_review_receipt.sh --match-path \"$f\" >/dev/null 2>&1 && echo \"$f\"; done"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "84cf8245375b67a0d093941b5d26dcbf0b63056e3d1d68e1c2d1cb01a1ba65cf"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "no-authority-found: no CUDA/device-behaviour query was sent to the nvidia-cuda-docs authority because neither triggering path makes a device-behaviour claim (one is a test-fixture filename containing the substring 'cuda_simd', the other is a Lean proof file about an fp8 interchange format, not a kernel or device numeric-behaviour claim). Recording the absence of an applicable claim explicitly rather than silently answering not-triggered."
+              },
+              "properties": {
+                "grounding": "asserted",
+                "rationale": "Read both triggering files' diff hunks directly; neither asserts anything about CUDA/GPU device behaviour that would need doc authority.",
+                "precision_class": "advisory"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "version": "n/a",
+          "rules": [],
+          "fullName": "crux (coverage check over contracts/crux-*.yaml for the new pv CLI surface)"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "Trigger: crates/aprender-contracts-cli/src/cli.rs changes 158 insertions / 6 deletions, adding new user-facing `pv` CLI subcommands (Discharge, Challenge, Ontology{Obligations,GenAxioms,Check,Run,LabelRatchet}, Gen/Check/Export/Tbox) and changing the `Lint` command's `--gate` flag from Option<String> to Vec<String> (repeatable). This is a CLI surface change; status: consulted."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "git",
+                  "diff",
+                  "--stat",
+                  "$BASE",
+                  "HEAD",
+                  "--",
+                  "crates/aprender-contracts-cli/src/cli.rs"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": null
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Coverage search: grepped all 318 contracts/crux-*.yaml files' `category:` taxonomy (A-O: Model Hub, Inspection, Quantization, Serving, Inference, Benchmarks, Training, Tensor Ops, Format Conversion, Data, Observability, Agent Orchestration, Deployment, HF kernels, APR-QA, Rust ML Framework Parity, AutoML Parity) and for literal mentions of 'contracts-cli' or a quoted 'pv ' command. Zero matches. No CRUX contract covers the `pv`/provable-contracts CLI surface; it is entirely an aprender/apr model-CLI taxonomy."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "grep",
+                  "-rl",
+                  "contracts-cli\\|\"pv \"",
+                  "contracts/crux-*.yaml"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "crux/no-coverage-for-new-cli-surface",
+          "level": "note",
+          "message": {
+            "text": "The new `pv` subcommand surface (Discharge, Challenge, Ontology + 5 sub-subcommands, Gen/Check/Export/Tbox, and the Lint --gate Vec<String> repeatable-flag change) has zero CRUX contract coverage: none of the 318 contracts/crux-*.yaml files' categories or competitor fields address the provable-contracts CLI. This is a coverage gap, not a regression \u2014 there is no prior competitive claim being widened or closed."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-contracts-cli/src/cli.rs"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-rl",
+              "contracts-cli\\|\"pv \"",
+              "contracts/crux-*.yaml"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "precision_class": "advisory",
+            "failure_scenario": "None directly \u2014 this is a coverage gap, not a functional defect. Its indirect risk: a future competitive claim about the `pv` CLI (e.g. 'pv lint is faster than X') would ship with no falsification contract behind it, the exact gap PR-REVIEW-SKILL-002's S3.C exists to surface before it becomes a BEATS.md-style unverified claim."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "n/a",
+          "rules": [],
+          "fullName": "cargo-mutants (scope-check: no committed mutation set for the 6 changed guard scripts)"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "Mutation trigger fires on this diff: 6 new/modified scripts/check_*.sh guard scripts plus .github/workflows/ci.yml are exactly the guard-touching surface S3.D requires 100% kill on a COMMITTED mutation set for. Searched the repo's own mutation-runner scripts (scripts/mutate*.sh: mutate-guard.sh, mutate_pr_review_wiring_guard.sh, mutate_quorum_arm.sh, mutate_spec_conformance.sh, mutate_vendored_schemas_guard.sh) for a reference to any of the 6 changed guard filenames: zero matches. No committed mutation set exists for scripts/check_ci_release_fold_scope.sh, scripts/check_guards_are_wired.sh, scripts/check_milestone_cut.sh, scripts/check_ont_ratchet.sh, scripts/check_tag_step_gated.sh, or scripts/check_workspace_test_waits_on_guard_tree.sh. Host rules for this review forbid running an unbounded/unscoped cargo-mutants sweep, and no bounded, guard-owned mutation harness exists to scope a run to instead. Honest encoding: status unreachable, scope guard, attempted 0 \u2014 not consulted-with-zero (rejected by the guard as vacuous) and not not-triggered (the trigger predicate does fire on these paths)."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "grep",
+                  "-l",
+                  "-E",
+                  "check_ci_release_fold_scope|check_guards_are_wired|check_milestone_cut|check_ont_ratchet|check_tag_step_gated|check_workspace_test_waits_on_guard_tree",
+                  "mutate*.sh"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "mutation/no-committed-set-for-new-guards",
+          "level": "warning",
+          "message": {
+            "text": "2 new guard scripts (check_ci_release_fold_scope.sh, check_workspace_test_waits_on_guard_tree.sh) and 4 modified ones (check_guards_are_wired.sh, check_milestone_cut.sh, check_ont_ratchet.sh, check_tag_step_gated.sh), plus the ci.yml hunk that wires them, ship with no committed mutation-kill set. A defect in any of their bash conditionals (an inverted -eq, a dropped quote, an always-true guard) would not be caught by this repo's own mutation infrastructure today."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_ci_release_fold_scope.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-l",
+              "-E",
+              "check_ci_release_fold_scope|check_guards_are_wired|check_milestone_cut|check_ont_ratchet|check_tag_step_gated|check_workspace_test_waits_on_guard_tree",
+              "mutate*.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "precision_class": "advisory",
+            "failure_scenario": "A silently-inverted condition in e.g. check_milestone_cut.sh (a `[ -z` that should be `[ -n`, or a `--gate` value comparison that always matches) would let a milestone cut through a gate meant to block it, or block one that should pass, and no mutation run in this repository's CI would ever surface it, because none targets this file."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "gemini-3.1-pro-high via agy 1.2.10 (conversation c40e6791-1318-49a5-a4ae-ca845706994b)",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "Invocation: disposable git-archive tree of 7af7cc17b (no .git), scoped.diff (72K, 7 guard/CI files + cli.rs new pv subcommands only, NOT the full 547-file/68k-insertion diff), prompt.md instructing gemini-3.1-pro-high to review only that subset and return agy-review-v1.schema.json-shaped JSON. reviewed:true, schema-valid, 2 findings returned."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "agy",
+                  "run",
+                  "--model",
+                  "gemini-3.1-pro-high",
+                  "--print"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "fba64a103607583f781e212fd39e215a12bc399013156dbde1bad5104c9d7a64"
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "ci-cleanup-set-e-abort",
+          "level": "error",
+          "message": {
+            "text": "CONFIRMED by primary. GitHub Actions default `run:` shell is `bash --noprofile --norc -eo pipefail {0}` (-e active). The new step 'Release this run's target dir' (.github/workflows/ci.yml, added by this PR) runs `bash scripts/ci_run_target_release.sh ... ; rc=$?` with only `set -uo pipefail` of its own (no -e override, but -e is already active from the GHA invocation and this script's own `set` does not clear it). If ci_run_target_release.sh exits non-zero, the shell aborts at that line and `rc=$?` on the next line never executes, failing the whole step -- directly contradicting the step's own comment 'A cleanup never fails the build.'"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                },
+                "region": {
+                  "startLine": 949
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "sed",
+              "-n",
+              "944,949p",
+              ".github/workflows/ci.yml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": null,
+            "excerpt": "          set -uo pipefail\n          dir=\"/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}\"\n          before=$(du -sh \"$dir\" 2> /dev/null | cut -f1)\n          bash scripts/ci_run_target_release.sh release \"$dir\" \"${GITHUB_JOB}-s${SHARD}-a${GITHUB_RUN_ATTEMPT}\" -- \\\n            bash -c 'docker run --rm -v \"$(dirname \"$0\"):/p\" \"$IMAGE\" rm -rf -- \"/p/$(basename \"$0\")\"' \n          rc=$?",
+            "excerpt_sha256": "e74880b08e46e526e3f0a92f9f7b768b7b1cd09da6236b78186c078f088b0262",
+            "precision_class": "advisory",
+            "corroborating_commands": [
+              [
+                "grep",
+                "-n",
+                "run:",
+                ".github/workflows/ci.yml"
+              ]
+            ],
+            "reverified_by_primary": true,
+            "divergence_class": "agreed",
+            "failure_scenario": "Any run where ci_run_target_release.sh's `docker run --rm ... rm -rf` returns non-zero (e.g. the docker daemon is momentarily unavailable, or the build-image container fails to start) now fails the whole workspace-test-shard job for a reason unrelated to the tests it ran, on every shard of every PR, contradicting the step's stated intent and turning a best-effort disk-reclaim into a source of CI flakiness."
+          }
+        },
+        {
+          "ruleId": "ci-cleanup-image-unbound",
+          "level": "note",
+          "message": {
+            "text": "REFUTED by primary. agy's claim that $IMAGE is unbound inside the nested `bash -c 'docker run ... \"$IMAGE\" ...'` is contradicted by a job-level `env:` block: `.github/workflows/ci.yml` line 222, within the same `workspace-test-shard` job (which starts at line 183, before the step at line 937 that uses it), sets `IMAGE: localhost:5000/sovereign-ci:stable`. Job-level env propagates to every step's shell environment, including a nested `bash -c` subshell invoked from that step, so $IMAGE is bound and non-empty at the point agy's finding claims it fails."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                },
+                "region": {
+                  "startLine": 222
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-n",
+              "IMAGE: localhost:5000/sovereign-ci:stable",
+              ".github/workflows/ci.yml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": null,
+            "excerpt": "      IMAGE: localhost:5000/sovereign-ci:stable",
+            "excerpt_sha256": "fc04dc72760ba4a77cc8073b572cc4b1621f82f4ec19ac221e663a0cfab08335",
+            "precision_class": "advisory",
+            "reverified_by_primary": true,
+            "divergence_class": "contradicted",
+            "suppressed_by_measurement": true,
+            "failure_scenario": "None \u2014 this finding does not hold. Included per S1.2: an asserted/measured claim contradicted by a measured value elsewhere in the same receipt is dropped from the acted-on findings and recorded as suppressed, not silently omitted."
+          }
+        }
+      ]
+    }
+  ]
+}

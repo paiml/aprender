@@ -17754,6 +17754,27 @@ roadmap:
   - bug
   notes: null
 
+- id: PMAT-3177
+  github_issue: 3177
+  item_type: task
+  title: 'ci: workspace-test shards wait on guard-tree, so a RED guard stops burning shard runner time (#3177)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-36
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: .github/workflows/ci.yml
+  acceptance_criteria:
+  - 'workspace-test-shard declares needs: [guard-tree]; a failed guard-tree skips every shard'
+  - 'the required check workspace-test still REPORTS (red) when the shards are skipped, so the merge queue never waits on a missing check'
+  - 'case table: guard red -> shards skipped, workspace-test red; guard green -> shards run; planted mutants go RED'
+  - 'green-path cost recorded from measured guard-tree and shard durations'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-3186
   github_issue: 3186
   item_type: task
@@ -18210,6 +18231,85 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Cop row (aprender-cf, 2026-09-24): the 0.69.1-lineage instances of #4129, branched off chore/0.69.1-merge-back @ f1b09d4d6, NOT part of #4046 single push; folds in the 0.70 batch after #4046. Same pattern as #4048/#4129/#4130.'
+- id: GH-4175
+  github_issue: 4175
+  item_type: task
+  title: 'clean-room B2: packaged-tarball test gate, all crates'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T07:51:58.558709285+00:00
+  updated: 2026-09-24T07:51:58.558709285+00:00
+  spec: null
+  acceptance_criteria:
+  - '[ ] `scripts/package_tarball_build.sh` gains the run step. Its case table covers a planted run-time panic (RED) and a clean crate (GREEN).'
+  - '[ ] `mode_b_tarball` in infra is wired nightly.'
+  - '[ ] RED measured on v0.69.1. The receipt lists the failing crates and tests, wall time and peak RSS.'
+  - '[ ] GREEN measured on the fix stack.'
+  - '[ ] Both-directions proof for the shared helper: out of tree it skips; in tree with the file removed it FAILs.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: GH-4191
+  github_issue: 4191
+  item_type: task
+  kind: code
+  title: 'aprender-orchestrate: test_resolve_project_root_nonexistent_falls_back is host-dependent (stray /tmp/Cargo.toml)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:00:00+00:00
+  updated: 2026-09-24T12:00:00+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  notes: null
+- id: GH-4197
+  github_issue: 4197
+  item_type: task
+  title: 'PVL-001 EV-6c pt1: kani_assume.rs per-file kani::assume token count (use-import refused, fails closed) + rises + Baseline check; 14 tests; proc-macro2 dep; DELETE dead tests_12b.rs. NO CLI flag, baseline, Makefile, workflow'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T08:24:32.273397348+00:00
+  updated: 2026-09-24T08:24:32.273397348+00:00
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p aprender-contracts --lib kani_assume: 14 passed. Mutations, each planted alone, restored sha-identical: group markers dropped reds a_group_boundary_breaks_the_sequence; rise as >= reds a_fall_or_a_removed_file_is_not_a_rise; import refusal off reds a_use_import_of_assume_is_refused_in_every_shape; consistency off reds an_inconsistent_baseline_is_refused; string literals counted reds comments_and_strings_never_count; target/ not skipped reds count_tree_keys_relative_paths_and_skips_target_and_hidden.'
+  - 'count_tree(crates/) on this tree: 177 in 26 files, fails closed on nothing. grep -c gives 187 in 28; the 10 extra are string literals in kani_gen/strategies.rs (9) and invariant_gen.rs (1), code generators whose output is counted.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ont-0.70
+  notes: 'Part 1 of PVL-001 EV-6c (Refs #4197, not Closes). The row probe runs pv discharge check --kani, a subcommand that exists only on EV-6a''s unmerged branch (#4139); part 2 adds the flag, contracts/kani-assume-baseline.json and make kani-ratchet after it lands. The spec''s baseline 254 [C v2] is stale; the measured count is 177. tests_12b.rs was deleted because fail-closed must hold on the real tree: it is not compiled (no mod/#[path]/include! names it) and has an unbalanced } at :35.'
+- id: GH-4198
+  github_issue: 4198
+  item_type: task
+  title: 'PVL-001 EV-10: pv obligations [ROOT] --gate (commands/obligations.rs, cli/lib/mod wiring) = pv-obligation-gate.py; 11 golden tests, fixtures, ci fragment 460; tree_reader registry +2, surface_audit pv cites +11 lines. NO ci.yml/Makefile/pmat edit'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T08:50:11.471932980+00:00
+  updated: 2026-09-24T08:50:11.471932980+00:00
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p aprender-contracts-cli --test pvl_obligations_golden: 11 passed. Goldens (pmat, broken, edge .stdout/.rc) were written by running pmat''s scripts/pv-obligation-gate.py (sha256 e4fa9719, pmat d70a78f67, PyYAML 6.0.3) over each fixture, never by pv; pv matches stdout byte for byte and the exit code (pmat 0 over 35 rc 0; broken 6 over 4 rc 1; edge 3 over 4 rc 1: merge keys incl. a chained merge, falsy applies_to/proved_type/document). A duplicate-key and a >64-bit-integer contract match the script''s measured output: the validate line only, 1 over 1 rc 1.'
+  - 'Mutations in obligations.rs, each planted alone, restored sha-identical, 17/17 red, each naming the test it reds: validate-always-passes, falsification-counts-every-entry, fn/type word boundary (3), binding-yaml-included, gate-flag-ignored, empty-corpus-reported-as-pass, equation-targets-not-skipped, merge-keys-not-resolved, merge-single-pass, everything-truthy, falsy-document-rejected, unused-bad-type-reported-eagerly (edge_fixture_follows_pyyaml_and_python_truthiness_as_the_script_does), symlinked-contracts-skipped (a_symlinked_contract_is_checked_like_its_target), reached-bad-type-silent (a_non_string_proved_type_is_named_where_a_bound_fn_reaches_it), parse-line-after-validate (a_document_serde_yaml_refuses_fails_validate_so_the_verdict_agrees).'
+  - 'Deliberate differences from the script, documented in the module doc: zero contracts is decline rc 2 (PVL-1), non-YAML/non-mapping/non-string input is a named problem not a traceback, src/ walked on disk, YAML 1.2 vs PyYAML 1.1 plain booleans, checks 2-3 not run on a document serde_yaml refuses (it fails validate on both sides, so the verdict agrees), word chars next to non-ASCII. Largest function cog 17 / cyc 6.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ont-0.70
+  notes: The PVL-001 EV-10 probe greps .github/workflows/ci.yml and uses repo-root tests/ paths; aprender wires integration tests via ci/explicit-test-commands.d fragments and the test lives under crates/aprender-contracts-cli/tests/. Reported to the PVL-001 owner (infra) as a stale probe. The src/ fixture files end .rs.txt because ten aprender gates scan tracked .rs files.
 - id: PMAT-3351
   github_issue: 3347
   item_type: task
@@ -21517,6 +21617,40 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3994
+  github_issue: 3994
+  item_type: task
+  title: EPIC 0.71 Don't Leave Behind + MoE plan (#3994)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T11:00:36Z
+  updated: 2026-09-23T11:00:36Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+- id: PMAT-3997
+  github_issue: 3997
+  item_type: task
+  title: Debt ratchet 0.70→0.74 — step 1 quorum research plan (#3997)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T10:24:54Z
+  updated: 2026-09-23T10:24:54Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
 - id: PMAT-3998
   github_issue: 3998
   item_type: task
@@ -21537,6 +21671,74 @@ roadmap:
   labels:
   - kind:docs
   notes: 'Assigned by aprender-cf (planning/triage cop), 2026-09-23, relaying the operator: "quorum decide. now use quorum and claud plan for each epic". Scope: plan + quorum receipt + one summary comment on #3998. No child issues and no milestone moves until operator review.'
+- id: PMAT-3999
+  github_issue: 3999
+  item_type: task
+  title: EPIC 0.73 llama.cpp Parity plan (#3999)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T11:00:41Z
+  updated: 2026-09-23T11:00:41Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+- id: PMAT-4000
+  github_issue: 4000
+  item_type: task
+  title: EPIC 0.72 Agent Ready plan (#4000)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T11:00:38Z
+  updated: 2026-09-23T11:00:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+- id: PMAT-4001
+  github_issue: 4001
+  item_type: task
+  title: EPIC 0.74 Any Model plan (#4001)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T11:00:44Z
+  updated: 2026-09-23T11:00:44Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+- id: PMAT-4002
+  github_issue: 4002
+  item_type: task
+  title: EPIC 0.75 CRUX fine-tune/distill plan (#4002)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T11:00:47Z
+  updated: 2026-09-23T11:00:47Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
 - id: PMAT-4067
   github_issue: 4067
   item_type: task
@@ -21554,6 +21756,130 @@ roadmap:
   - kind:code
   - apex-upstream
   notes: 'apex APEX-001 row EV-2e (spec v4.23, apex#136). Consumer: apex EV-23b embeds EV-23''s provenance payload through this API. The spec row proposed metadata(self, xml) -> Self; a builder returning Self cannot refuse a malformed payload, so the signature is -> Result<Self>, recorded as a row amendment in apex. Ends at STOP(PUBLISH: aprender-viz <version>); the cop folds it into the 0.70 batch, unarmed.'
+- id: PMAT-4070
+  github_issue: 4070
+  item_type: task
+  title: 'ONT-4d: subsumption in Σ; shapes inherit down the hierarchy'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-19
+  created: 2026-09-23T21:40:00Z
+  updated: 2026-09-23T22:10:00Z
+  spec: paiml/infra docs/specifications/paiml-ontology.md@948ae923 (ONT-4d, line 619; R-19)
+  acceptance_criteria:
+  - 'Row ONT-4d RED, verbatim: "Σ `subsumes` with a cycle → exit 3 `error: subsumes cycle <path>`; a shape on `Code` rejects a `Kernel` instance that violates it (`focus_nodes_n` for the shape == instances of `Code` ∪ all sub-concepts); a sub-concept shape that *removes* a super-concept constraint → exit 1 `reject: <sub> weakens <super>.<constraint>`; `rdf:type` closure present in `contracts.nt` for every super-concept; export byte-identical across two runs."'
+  - 'Row ONT-4d change: "Σ `subsumes[]`; `extract:pv-contract` materializes the type closure; `shapes.rs` resolves `targetClass` through it; OWL writer emits `SubClassOf` axioms; `by_concept` in census."'
+  - 'Row ONT-4d mutation: "drop the closure materialization → the `Kernel`-under-`Code` fixture stops firing → RED."'
+  - 'Row ONT-4d probe: `present ''^subsumes:'' contracts/ontology.yaml && "$PV" lint contracts/ --gate shapes --format json` with `.inherited_shapes_applied>0 and .verdict=="Pass"`, and `rg -q ''SubClassOf'' contracts/ontology.ofn`.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: 'Stacked on PMAT-4071 (ONT-2c): the probe greps SubClassOf in contracts/ontology.ofn, which ONT-2c''s writer produces. Real Σ edges are read off the concepts'' own docs: Kernel ⊑ Contract, Symbol ⊑ Code.'
+- id: PMAT-4071
+  github_issue: 4071
+  item_type: task
+  title: 'ONT-2c: in-house OWL 2 EL writer; TBox check via the oracle, advisory'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-19
+  created: 2026-09-23T18:30:00Z
+  updated: 2026-09-23T20:50:00Z
+  spec: paiml/infra docs/specifications/paiml-ontology.md@948ae923 (ONT-2c, line 626; §3.8)
+  acceptance_criteria:
+  - 'Row ONT-2c RED, verbatim: "writer output re-parsed by the oracle equals the fixture''s axiom set; two writes byte-identical; every Σ key mapped or in `not_expressible`; `acyclic` yields no axiom; `tbox-report.json` has `advisory: true`; gate maps it to `Unknown{Advisory}`; inferred subsumption between distinct Σ concepts → `unintended_subsumptions` non-empty."'
+  - 'Row ONT-2c mutation: "write `acyclic` as transitive + irreflexive → oracle round-trip RED."'
+  - 'Cop ruling 2026-09-23 (aprender-cf, refined per infra-83): (B) told-closure in-tree, precondition-guarded, advisory; (A) ELK 0.4.3 via a JVM as the independent oracle, agreement required at the RELEASE gate only; no JVM is a `decline:` NOT MEASURED, RED at release; a planted unintended subsumption must go RED in both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: 'ONT-001 R-22: kind:code,orch:fable,orch-basis:state admits Fable or Opus. No Rust EL reasoner exists (infra ont-oracle-ledger [V 2026-09-14]); ELK 0.4.3 pinned (zip 965ad946…, jar de1fffaf…, Apache-2.0), sent to infra-83 for the ledger. The OWL oracle is its own detached crate tests/oracle/owl/: oxigraph (via shacl) enables oxrdf Triple and breaks horned-owl''s horned-pretty-rdf under feature unification (E0004, measured).'
+- id: PMAT-4072
+  github_issue: 4072
+  item_type: task
+  title: 'ONT-3a: extract:code — bindings resolve fail-closed across the workspace, via syn'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-ont3a
+  created: 2026-09-24T14:05:08Z
+  updated: 2026-09-24T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - paiml/infra docs/specifications/paiml-ontology.md row ONT-3a. `pv lint --gate bindings` fail-closed on the repo corpus (PV-ONT-028/029/030), ghosts allowlisted with a ticket (#4319), enforced by a lib test.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4073
+  github_issue: 4073
+  item_type: task
+  title: 'ONT-3b: formalization.yaml gains model_of; no model earns no L4'
+  status: in_progress
+  priority: medium
+  assigned_to: pvl-b
+  created: 2026-09-24T17:12:12Z
+  updated: 2026-09-25T02:40:00Z
+  spec: infra docs/specifications/PVL-001-pv-lean-gate.md
+  acceptance_criteria:
+  - pv lint contracts/ --gate refinement --format json reports verdict Pass, models 3 resolved 3, unrefined_baseline 76
+  - proof-status L4 from the discharge requires a resolving extraction/simulation model_of for the theorem's module
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: Ported from feat/4082-4073-ev8b-ont3b@202d5c51d onto B3 (#4317); EV-8b half superseded by B3's 69ed3ac0e.
+- id: PMAT-4074
+  github_issue: 4074
+  item_type: task
+  title: 'ONT-5: pv-sat offline behind a bin boundary; witness checked in the gate; two positive controls'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T12:00:00Z
+  updated: 2026-09-24T12:00:00Z
+  spec: docs/specifications/paiml-ontology.md
+  acceptance_criteria:
+  - 'witness.rs: typed relations as propositional Horn (live ids are units, depends_on/refines imply, contradicts conflicts, supersedes withdraws a unit); census_id_set_sha256 + relations_sha256 name the witness; check() refuses any core that is not a derivation in the current graph and any model that falsifies a clause; pc_checker refuses fixtures/unsat-core-corrupt.json every run'
+  - 'pv lint --gate ont-consistency: PV-ONT-022 names the core, PV-ONT-023 a witness that does not check; exit 2 NoCheckable / WitnessStale (prints make contracts) / PositiveControlFailed; a malformed Σ exits 3; computed and NOT armed'
+  - 'pv-sat bin, private to its target (F-7: no mod sat in lib.rs): plant pc_reasoner draws [A, B, C] before it writes; every answer over a 500-seed sweep checks; the witness is byte-stable on rerun'
+  - 'make contracts runs pv-sat then pv lint --gate ont-consistency and fails if contracts/witness/ differs; contracts/ont-consistency-v1.yaml names 7 falsification tests that exist; ci/explicit-test-commands.d 460 (ont5_consistency_gate) and 470 (--bin pv-sat) run what workspace-test --lib cannot'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ONT-001 §5 row ONT-5. Handed off by rmedia-82 at e4577f7bd. Receipt: docs/audits/impl-PMAT-4074-receipt.md'
+- id: PMAT-4075
+  github_issue: 4075
+  item_type: task
+  title: 'ONT-4e: requires/ensures as first-class; Liskov rule on refines, witness-checked'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:05:32Z
+  updated: 2026-09-24T12:05:32Z
+  spec: docs/specifications/paiml-ontology.md
+  acceptance_criteria:
+  - 'schema: requires[] and ensures[] take the {id, statement, formal, formal_status} Clause shape; an invariant counts as a clause only when it carries formal_status; a non-list requires/ensures is PV-ONT-026 naming its file'
+  - 'liskov.rs: pre (B.requires implies A.requires), post (A.ensures implies B.ensures), inv (A.invariants implies B.invariants) over opaque atoms; check() refuses a chain from a different atom and a counter-model that hides or invents a violation; pc_checker refuses fixtures/liskov-corrupt.json every run'
+  - 'pv lint --gate refines: exit 1 reject naming "precondition strengthened (PRE-1)" / "postcondition weakened (POST-1)" / "invariant dropped"; prose is Unknown{Prose} naming the clause; legacy is Pass with liskov_pairs_checked 0; WitnessStale names make contracts; liskov_prose baseline ratchets down (PV-ONT-027); computed and NOT armed'
+  - 'pv-sat writes contracts/witness/liskov/<liskov_sha256>.json after its own pc_liskov_reasoner plant fires; readme_gen prints Requires/Ensures/Invariants counts; contracts/ont-refines-v1.yaml names 6 falsification tests that exist; ci/explicit-test-commands.d 600 runs ont4e_refines_gate'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ONT-001 §5 row ONT-4e. Stacked on #4248 (ONT-5) and #4137 (ONT-4d). Receipt: docs/audits/impl-PMAT-4075-receipt.md'
 - id: PMAT-4076
   github_issue: 4076
   item_type: task
@@ -21566,6 +21892,133 @@ roadmap:
   spec: null
   acceptance_criteria:
   - paiml/infra docs/specifications/paiml-ontology.md v4.12 @948ae923 row ONT-7 (:656), probe (:657). depends_on ONT-1, ONT-6. K̂ 60. Cop (aprender-cf) assignment 2026-09-23.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4077
+  github_issue: 4077
+  item_type: task
+  title: 'ONT-8: one evidence block — PROV-O names, one L-enum, every entity type'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T08:42:58Z
+  updated: 2026-09-24T08:42:58Z
+  spec: null
+  acceptance_criteria:
+  - paiml/infra docs/specifications/paiml-ontology.md v4.14 row ONT-8, probe (:667). Stacked on PMAT-4076 (ONT-7), gate 16 (EV-11 PMAT-4166 takes 14/15). Cop (aprender-cf) assignment 2026-09-24.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4080
+  github_issue: 4080
+  item_type: task
+  title: 'PVL-2: proof-status resolves bindings; ghost binding is a reject'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T18:46:02Z
+  updated: 2026-09-23T18:46:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4081
+  github_issue: 4081
+  item_type: task
+  title: 'PVL-3: one definition of L4/L5'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T18:28:10Z
+  updated: 2026-09-23T18:28:10Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4082
+  github_issue: 4082
+  item_type: task
+  title: '#4082: PVL-8b — L4 credit from discharge-summary.json; lean-status discharged column; formalization.yaml validated'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-ont
+  created: 2026-09-24T18:00:00Z
+  updated: 2026-09-24T18:00:00Z
+  spec: infra docs/specifications/PVL-001-pv-lean-gate.md
+  acceptance_criteria:
+  - pv discharge check <lean> --no-lake --validate-formalization exits 0 on the tracked record, 1 on a stale field
+  - pv proof-status --format json reports l4_source == discharge
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4102
+  github_issue: 4102
+  item_type: task
+  title: 'ci: a job''s per-run target dir is deleted when its last job ends (last-one-out, flock-guarded); size lever chosen from the measured by-kind split'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-75
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'a CI job on gx10 leaves no run-<id> target behind, pass or fail: du before/after one job AND a planted failing job (always() is the claim)'
+  - 'never a live sibling: a job that ends while another job of the run still holds the tree keeps it (cop ruling (A), 2026-09-24)'
+  - 'must-RED: two jobs finishing together delete exactly once, never zero, never twice, under one flock on the host-local fs (scripts/ci_run_target_release.sh --self-test)'
+  - 'the 64G is split by kind before a size lever is chosen; the lever''s before/after is measured on the same shard'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4108
+  github_issue: 4108
+  item_type: task
+  title: 'guard_tree.sh: 0 executed checks (or fewer than planned) is a failure, never a pass (#4108)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T21:56:06Z
+  updated: 2026-09-23T21:56:06Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4112
+  github_issue: 4112
+  item_type: task
+  title: 'GH-4112: ci.yml runs guard-tree + guard-cargo on fold pushes to release/** (operator-approved option B)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T06:47:28Z
+  updated: 2026-09-24T06:47:28Z
+  spec: null
+  acceptance_criteria:
+  - 'Refs #4112. push.branches gains ''release/**''; every job but guard-tree/guard-cargo is excluded on a release push; both guard jobs unshallow there so resolve_base.sh can name merge-base(origin/main, HEAD). Guard: scripts/check_ci_release_fold_scope.sh (R1-R3, 8-case self-test; RED on main''s ci.yml with 11 violations).'
   phases: []
   subtasks: []
   estimated_effort: null
@@ -21589,6 +22042,26 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4122
+  github_issue: 4122
+  item_type: task
+  title: 'PVL-001 EV-5a: pin Mathlib, scoped Lean warning gate, orphan allowlist'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-6c
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #4122 done_when 1, verbatim: "the pinned build is reproducible from a clean cache"'
+  - 'done_when 2, verbatim: "the warning gate goes RED on a planted warning inside its scope and ignores one outside it"'
+  - 'done_when 3, verbatim: "the orphan allowlist goes RED on a new unlisted orphan"'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Scope, verbatim from #4122: "pin Mathlib; add a scoped Lean warning gate; add an orphan allowlist. The Lean build runs on lambda ... No workflow edit." The branch also fixes the root lake build that is broken on main (a duplicate ProvableContracts.Alibi.alibi_slope_pos in Alibi.Basic and Alibi.Slopes; Slopes renamed alibi_slope_real_pos, contracts.nt regenerated by pv extract), without which no gate over the root build could be green. It also adds `lake exe cache unpack`, because `cache get` decompressed nothing on a fresh checkout. MEASURED on lambda from a fresh checkout at d18e411aa: 0 Mathlib modules elaborated, 16435 jobs, build.sh rc 0 in 804 s; check-orphans 162/103/59/59. A degraded same-family round (Sonnet 5 + Fable 5.1) passed at d18e411aa: docs/audits/quorum-GH-4122-pvl-5a-degraded.json.'
 - id: PMAT-4127
   github_issue: 4127
   item_type: task
@@ -21605,6 +22078,27 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4139
+  github_issue: 4139
+  item_type: task
+  title: 'PVL-001 EV-6a: pv discharge check -- axiom subset pins; compiler-escape allowlist'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-6c
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'PVL-001 EV-6a probe (infra spec, amended infra#992): escape-allowlist.yaml and Axioms.lean tracked; `pv discharge gen-axioms $LEAN --check` rc 0; `pv discharge check $LEAN --no-lake` rc 0'
+  - 'accept: `lake env lean Axioms.lean` passes on the built tree; `pv discharge check $LEAN --strict` rc 1 until the 7 pending entries are confirmed; `cargo test -p aprender-contracts-cli --test pvl_discharge_check`'
+  - 'infra#992: MISSING-ROOT rc 1 for exact `ProvableContracts.<...>.<decl>` refs and capstones naming no theorem; labels rc 1 only when NOT in $LEAN/unresolved-labels.json; the gate never writes that file (make label-ratchet does)'
+  - 'mutations: `axiom pvl_mutation : False` in a Theorem file -> scan RED and subset pin RED; `@[implemented_by]` on a def -> allowlist RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Stacked on EV-5a (#4122). Scope from #4139 and PVL-001 EV-6a as amended by infra#992 (cop relay, 2026-09-24). Also withdraws a false L4 claim: cooperative-matrix-gemm-v1 cited the AXIOM f16_accumulation_error_bound as its lean_theorem; the reference becomes the `none -- ...` sentinel. MEASURED on lambda: check with lake elaboration rc 0 (164 pinned, 85 ORPHANED-ROOT, 7 PENDING); --strict rc 1; the pvl_mutation mutation turns scan and pin RED.'
 - id: PMAT-4160
   github_issue: 4160
   item_type: task
@@ -21620,6 +22114,107 @@ roadmap:
   - 'accept-level (pv lint --gate shapes on a fixture): two entity types, two closed shapes scoped by entity class, Pass with no cross-firing'
   - 'must-RED: the same two shapes scoped by ont:Contract cross-fire (the gap, measured); a planted wrong-type contract fails its type''s shape'
   - 'apex: the study shape over all apex contracts passes and does not fire on the 18 claim contracts (acceptance run coordinated with apex-4c)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4166
+  github_issue: 4166
+  item_type: task
+  title: 'PVL-11: pv lint ratchets — theorem pairing and depends_on'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T07:10:50Z
+  updated: 2026-09-24T07:10:50Z
+  spec: null
+  acceptance_criteria:
+  - paiml/infra PVL-001 EV-11 (00553b0b). Cop (aprender-cf) assignment 2026-09-24.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-4199
+  github_issue: 4199
+  item_type: task
+  title: 'PVL-001 EV-6b: pv discharge check --leanchecker -- non-fresh kernel re-check, bounded'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-dd
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'PVL-001 EV-6b probe (amended as EV-7b A-7b.1: the target is wired through ci/explicit-test-commands.d, so the literal can never appear in ci.yml): `cd "$WT" && tracked crates/aprender-contracts-cli/tests/pvl_discharge_leanchecker.rs && present -- ''ci_run_explicit_test_commands\.sh --run ci/explicit-test-commands\.d'' .github/workflows/ci.yml && bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.d | present -- ''--test pvl_discharge_leanchecker( |$)'' && merged EV-6b`'
+  - 'probe arms MEASURED on 4cb4dffd2 (lambda, 2026-09-24): GREEN rc 0; 470-*.cmd removed rc 1; restored rc 0; ci.yml pointed at another directory rc 1; restored rc 0'
+  - 'RED: a stub `lake` on PATH whose leanchecker returns 1 -> rc 1; no lake -> rc 2; a toolchain without bin/leanchecker -> rc 2 `decline: leanchecker not in toolchain`, never rc 1'
+  - '`timeout <T> lake env leanchecker ProvableContracts` (--leanchecker-timeout, default 3600 s; --leanchecker-ulimit-v KiB when set); a timeout rejects; timeout/ulimit/lake start failures (rc 125-127) decline'
+  - 'formalization.yaml `scope` states the non-fresh limitation: --fresh replays Mathlib and is the nightly''s (PVL-F7)'
+  - 'accept on lambda: `timeout 60m "$PV" discharge check "$LEAN" --leanchecker`'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Stacked on EV-6a (#4139). Absent vs failed is decided by probing `lake env printenv LEAN_SYSROOT` for bin/leanchecker, because MEASURED on elan v4.15.0 `lake env leanchecker` exits 1 "does not have the binary" -- the rc alone would read a missing checker as a failed proof.'
+- id: PMAT-4200
+  github_issue: 4200
+  item_type: task
+  title: 'PVL-001 EV-7a: pv challenge gen/check -- pin each contract-bound statement apart from its proof'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-dd
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - '`pv challenge gen contracts $LEAN` writes $LEAN/Challenge/<contract>.lean: every bound root X restated as `theorem _root_.PvlChallenge.X <statement> := sorry` inside the scope frames still open at its declaration'
+  - '`pv challenge check contracts $LEAN` rc 0 when fresh; rc 1 on an extra, missing or differing file or an unrestated root; rc 2 on zero challenges or an unloadable tree'
+  - 'lint gate 13 `challenge-fresh` = check; skipped when no lean base or no challenge exists'
+  - 'mutation: a hand-edited challenge statement turns check RED (`cargo test -p aprender-contracts-cli --test pvl_challenge`)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Stacked on EV-6a (#4139). Consumed by EV-7b (aprender-98). Frames, not `open`: an opened namespace loses the current-namespace priority (alibi `dist` was ambiguous, Alibi.dist vs Dist.dist); a `_root_.` decl inside the reopened namespace resolves as the source does, and a sibling name reads the solution (lean v4.29.0-rc4 core probe). challenge-fresh is NOT armed in lint-baseline.json; it moves only via make ont-ratchet.'
+- id: PMAT-4201
+  github_issue: 4201
+  item_type: task
+  title: 'PVL-001 EV-7b: comparator -- the solution closes exactly the pinned statement'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-98
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'PVL-001 EV-7b: $LEAN/scripts/Comparator.lean (run via `lake env lean`) prints NDJSON {name, challenge_type_hash, solution_type_hash, axioms}; `pv discharge check --comparator`: hash mismatch rc 1, solution missing MISSING-ROOT rc 1, zero rows rc 2'
+  - 'SHA-256 statement hash over canon (binder names dropped, binder info kept), FIPS --self-test; a solution row with no axioms list is MALFORMED (fail closed)'
+  - '`proved-is-derived` is NOT in this row: per cop ruling option (1) 2026-09-24 it is born armed in EV-8a (#4202), with underived_proved_claims=95 shrink-only (PVL-001 A-7b.2)'
+  - 'probe (amended per cop ruling 2026-09-24, PVL-001 A-7b.1): crates/aprender-contracts-cli/tests/pvl_comparator.rs wired through ci/explicit-test-commands.d, which ci.yml consumes; removing the .d entry turns the probe RED'
+  - 'mutation: strengthen a hypothesis of a solution theorem -> hash mismatch RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Stacked on EV-6b (feat/4199-pvl-6b-leanchecker @4cb4dffd2, on EV-6a b536fd686); rebases onto EV-7a (#4200, aprender-dd) when it lands. Cop assignment (aprender-cf, 2026-09-24).'
+- id: PMAT-4207
+  github_issue: 4207
+  item_type: task
+  title: '#4207: lint tests read the shared /tmp as their project root — nest each corpus in a private tempdir'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T10:55:00Z
+  updated: 2026-09-24T10:55:00Z
+  spec: null
+  acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
@@ -21737,3 +22332,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'cuda_batch_scheduler generate_single_request (the m==1 fast path, shared with the iteration scheduler) runs one Session::generate over BorrowedCudaForward, a dense CUDA ArchForward over the scheduler''s borrowed model built on aprender-49''s cuda_reset/cuda_forward/cuda_forward_greedy. Stop tokens are filtered in the callback so none is sent (pre-port semantics). The m>1 batched path (batched_setup_and_prefill/batched_decode_step) is multi-slot and stays as is. Known delta: the per-request prefix cache (establish_prompt_kv/populate_prefix_cache) is not used on the ported path.'
+- id: PMAT-4347
+  github_issue: 4347
+  item_type: task
+  title: 'PVL: prove all 7 escape-allowlist axioms (DPO x3, f16 bound, NF4 x3) instead of confirming them'
+  status: in_progress
+  priority: high
+  assigned_to: pvl-b
+  created: 2026-09-25T01:30:00Z
+  updated: 2026-09-25T02:00:00Z
+  spec: infra docs/specifications/PVL-001-pv-lean-gate.md
+  acceptance_criteria:
+  - every escape-allowlist.yaml axiom is a Lean theorem whose #print axioms is [propext, Classical.choice, Quot.sound]
+  - escape-allowlist.yaml carries no entry for a proved decl; Axioms.lean regenerated (pv discharge gen-axioms --check rc 0)
+  - pv discharge check --no-lake PENDING count drops by the number proved
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'DPO x3 by pvl-b; NF4 x3 and f16 by aprender-57. The old dpo_gradient_formula axiom was false for beta < 0; now a HasDerivAt theorem plus dpo_gradient_scale_nonpos (0 <= beta).'

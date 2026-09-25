@@ -104,7 +104,14 @@ dispatcher_wired() {
             cargo-only) flag="--cargo-only" ;;
             *)          flag= ;;
         esac
-        out=$( cd "$root" && bash scripts/guard_tree.sh --dry-run $flag 2>/dev/null ) || out=''
+        # #4108 (ph9 review): a dry-run that FAILS has no dispatch list. Reading its
+        # failure as "dispatches nothing" reported every dispatched guard as newly
+        # unwired -- a second, wrong diagnosis on top of guard_tree's own FAIL row. So
+        # the failure is forwarded as a `!` line and main refuses the run on it.
+        if ! out=$( cd "$root" && bash scripts/guard_tree.sh --dry-run $flag 2>/dev/null ); then
+            printf '!dispatcher-failed: guard_tree.sh --dry-run %s\n' "${flag:-(all)}"
+            continue
+        fi
         printf '%s\n' "$out" | sed -n 's|^run: .*/||p; s|^run: \([^/]*\)$|\1|p'
     done | LC_ALL=C sort -u
 }
@@ -137,7 +144,11 @@ dogfood_declared_missing() {
 # Guards named by no workflow, one per line, sorted.
 unwired_in() {
     local root="$1" g base seen="" dispatched declared
-    dispatched=" $(dispatcher_wired "$root" | tr '\n' ' ') "
+    dispatched="$(dispatcher_wired "$root")"
+    # a failed dispatcher is reported, never folded into the unwired set (#4108 ph9)
+    # ...and nothing else is listed: with the dispatch list unknown, "unwired" is unknown too
+    grep '^!dispatcher-failed:' <<< "$dispatched" && return 0
+    dispatched=" $(grep -v '^!' <<< "$dispatched" | tr '\n' ' ') "
     declared=" $(dogfood_declared "$root" | sed 's|.*/||' | tr '\n' ' ') "
     # THE UNIVERSE WAS BUILT FROM THE FILENAME, AND A GUARD HID BEHIND ITS OWN.
     #
@@ -375,8 +386,26 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'FAIL  row 13 got [%s], expected [check_dark.sh check_release_gate.sh ]\n' "$got13"; fails=1
     fi
 
+    # ── Row 14: A DISPATCHER THAT FAILS IS NOT A DISPATCHER THAT RUNS NOTHING (#4108 ph9)
+    #
+    # Delete a tracked guard from disk in the row-3 fixture: guard_tree.sh --dry-run
+    # now refuses the universe (exit 1). The dispatched guard must NOT come back as
+    # "unwired" -- the failure is reported as the dispatcher's, by name.
+    printf 'jobs:\n  gate:\n    steps:\n      - run: bash scripts/guard_tree.sh --no-cargo\n' \
+        > "$TD2/.github/workflows/ci.yml"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$TD2/scripts/check_gone.sh"
+    git -C "$TD2" add -A
+    git -C "$TD2" -c commit.gpgsign=false commit -q -m row14
+    rm -f "$TD2/scripts/check_gone.sh"
+    got14=$(unwired_in "$TD2" | tr '\n' ' ')
+    if [ "$got14" = "!dispatcher-failed: guard_tree.sh --dry-run --no-cargo " ]; then
+        printf 'ok    row 14 a failing dispatcher is reported as failed, not as a wave of unwired guards\n'
+    else
+        printf 'FAIL  row 14 got [%s], expected [!dispatcher-failed: guard_tree.sh --dry-run --no-cargo ]\n' "$got14"; fails=1
+    fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (13/13)\n'
+    printf '\nSELF-TEST PASSED (14/14)\n'
     exit 0
 fi
 
@@ -414,6 +443,12 @@ if [ "$total" -lt 20 ]; then
 fi
 
 FOUND=$(unwired_in "$REPO_ROOT")
+if grep -q '^!dispatcher-failed:' <<< "$FOUND"; then
+    printf '\nFAIL: the dispatcher could not answer, so the wiring is unknown:\n'
+    grep '^!dispatcher-failed:' <<< "$FOUND" | sed 's|^!dispatcher-failed: |  |'
+    printf 'Run that command -- its own FAIL row names the cause.\n'
+    exit 1
+fi
 count=$(printf '%s\n' "$FOUND" | grep -c . || true)
 
 printf '%s guard(s) scanned, %s named by no workflow\n' "$total" "$count"
