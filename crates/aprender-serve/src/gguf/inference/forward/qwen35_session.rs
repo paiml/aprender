@@ -606,7 +606,7 @@ impl Qwen35Forward {
         if have_state && positions <= self.capacity {
             return Ok(());
         }
-        let capacity = grown_capacity(
+        let mut capacity = grown_capacity(
             positions,
             self.capacity,
             self.min_capacity,
@@ -619,11 +619,25 @@ impl Qwen35Forward {
             Backend::Gpu(gpu) => {
                 // Free the old state before asking for the larger one.
                 gpu.state = None;
-                gpu.state = Some(gpu.model.new_state_with_capacity(capacity).map_err(|e| {
+                let (state, got) = allocate_with_exact_retry(capacity, positions, |c| {
+                    gpu.model.new_state_with_capacity(c)
+                })
+                .map_err(|(c, e)| {
                     Step::Gpu(format!(
-                        "a decode state for {capacity} positions would not allocate: {e}"
+                        "a decode state for {c} positions would not allocate: {e}"
                     ))
-                })?);
+                })?;
+                if got < capacity {
+                    say(
+                        &mut self.notices,
+                        format!(
+                            "[qwen35] decode state: {capacity} positions would not allocate, \
+                             sized to the turn ({got}) instead (#4443)"
+                        ),
+                    );
+                }
+                gpu.state = Some(state);
+                capacity = got;
             },
             Backend::Cpu(state) => *state = Some(qwen.new_state(capacity)),
         }
@@ -835,6 +849,27 @@ fn grown_capacity(
         capacity = capacity.saturating_mul(2);
     }
     capacity.min(context_length).max(positions)
+}
+
+/// Allocate a state of `capacity` positions; when that fails and it holds
+/// more than the turn's `positions`, retry at exactly `positions`. #4443: the
+/// #4274 headroom is an optimisation, and a 32k turn doubled to 65536
+/// positions ran a Qwen3.5-27B out of VRAM, which demoted the whole session
+/// to the CPU although the turn itself fit. Returns the state and the
+/// capacity it holds, or the capacity that failed last and its error.
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+fn allocate_with_exact_retry<S, E>(
+    capacity: usize,
+    positions: usize,
+    mut alloc: impl FnMut(usize) -> std::result::Result<S, E>,
+) -> std::result::Result<(S, usize), (usize, E)> {
+    match alloc(capacity) {
+        Ok(state) => Ok((state, capacity)),
+        Err(_) if capacity > positions => alloc(positions)
+            .map(|state| (state, positions))
+            .map_err(|e| (positions, e)),
+        Err(e) => Err((capacity, e)),
+    }
 }
 
 #[cfg(test)]

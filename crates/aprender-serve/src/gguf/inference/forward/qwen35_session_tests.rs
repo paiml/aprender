@@ -482,3 +482,42 @@ fn a_state_that_outgrows_min_capacity_leaves_headroom_for_the_next_turn() {
     let first = grown_capacity(4197, 0, MIN_CAPACITY, 8192);
     assert!(4279 <= first, "turn 2 would reallocate from {first}");
 }
+
+/// #4443: headroom that does not fit must never cost the GPU. A failed
+/// oversized allocation retries at exactly the turn; only a turn that does
+/// not fit at all is an error, and the error names that exact size.
+#[test]
+fn headroom_that_does_not_allocate_retries_at_exactly_the_turn() {
+    // (capacity, positions, largest size that allocates) -> Ok(got) | Err(failed)
+    let cases: [((usize, usize, usize), std::result::Result<usize, usize>); 5] = [
+        // the #4443 repro: 32782 fits, its 65536 headroom does not
+        ((65536, 32782, 40000), Ok(32782)),
+        ((65536, 32782, 65536), Ok(65536)),
+        ((8192, 4197, 4197), Ok(4197)),
+        // the turn itself does not fit: an error at the exact size
+        ((65536, 32782, 30000), Err(32782)),
+        // no headroom to drop: one attempt, one error
+        ((4197, 4197, 100), Err(4197)),
+    ];
+    for ((capacity, positions, fits), want) in cases {
+        let mut tried = Vec::new();
+        let got = allocate_with_exact_retry(capacity, positions, |c| {
+            tried.push(c);
+            if c <= fits {
+                Ok(c)
+            } else {
+                Err("oom")
+            }
+        });
+        let got = got.map(|(state, held)| {
+            assert_eq!(state, held, "the state returned is not the one held");
+            held
+        });
+        assert_eq!(
+            got.map_err(|(c, _)| c),
+            want,
+            "allocate_with_exact_retry({capacity}, {positions}) with room for {fits}"
+        );
+        assert!(tried.len() <= 2 && tried[0] == capacity, "tried {tried:?}");
+    }
+}
