@@ -104,7 +104,7 @@ read_assets() {
     }
     json=$(curl -sSf -H "Authorization: Bearer $token" -H "Accept: application/vnd.github+json" \
         "https://api.github.com/repos/${repo}/releases?per_page=100" 2>/dev/null \
-        | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$tag" 2>/dev/null); rc=$?
+        | python3 -c 'import json,sys; t=sys.argv[1]; r=next((r for r in json.load(sys.stdin) if r["tag_name"]==t), None); r or sys.exit(f"no release (draft or published) for {t}"); print(json.dumps(r))' "$tag" 2>/dev/null); rc=$?
     # ^ by listing: an rc is a DRAFT until every fleet host runs it (#4327); releases/tags/ hides drafts
     [ "$rc" -eq 0 ] && [ -n "$json" ] || {
         printf '%s: ENV — REST read of %s release %s failed (rc=%s)\n' "$PROG" "$repo" "$tag" "$rc" >&2

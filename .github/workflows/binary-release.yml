@@ -999,9 +999,43 @@ jobs:
           fi
           echo "smoke ok on ${{ matrix.host }}: $v runs with no driver dependency"
 
+  # #4353: the darwin asset gets the same download + checksum + #4275 tag/commit binding as the
+  # linux smoke rows, on the host it is for. build-apr-darwin's inline check does not cover a
+  # promoted final (#4286), whose build jobs skip (quorum r5, agy 5656f794/de646ba5).
+  smoke-darwin:
+    name: smoke apr (cpu) aarch64-apple-darwin on mini
+    needs: verify-apr-assets
+    if: ${{ !cancelled() && needs.verify-apr-assets.result == 'success' }}
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download, verify checksum, run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          T=aarch64-apple-darwin
+          D="$RUNNER_TEMP/apr-darwin-smoke"; rm -rf "${D:?}"; mkdir -p "$D"; cd "$D"
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+            | python3 -c 'import json,sys; t=sys.argv[1]; r=next((r for r in json.load(sys.stdin) if r["tag_name"]==t), None); r or sys.exit(f"no release (draft or published) for {t}: the rc tagger must create it as a draft first (#4327)"); print(json.dumps(r))' "$TAG")
+          for f in "apr-${TAG}-${T}-cpu.tar.gz" "apr-${TAG}-${T}-cpu.tar.gz.sha256"; do
+            aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; a=next((a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n), None); a or sys.exit(f"release has no asset {n}"); print(a)' "$f")
+            curl -sSfL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" -o "$f" "$API/releases/assets/$aid"
+          done
+          shasum -a 256 -c "apr-${TAG}-${T}-cpu.tar.gz.sha256"
+          tar xzf "apr-${TAG}-${T}-cpu.tar.gz"
+          set -- "$D"/apr-v*-"${T}"-cpu/apr
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then echo "::error::expected exactly one apr binary in the archive, found: $*"; exit 1; fi
+          v=$("$1" --version | head -1); echo "$v"
+          COMMIT=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/commits/$TAG" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')
+          bash "$GITHUB_WORKSPACE/scripts/release/asset_version_check.sh" "$TAG" "$COMMIT" "$v" || { echo "::error::asset reports '$v', which does not belong to $TAG ($COMMIT)"; exit 1; }
+          echo "- apr-${TAG}-${T}-cpu on mini: $v" >> "$GITHUB_STEP_SUMMARY"
+
   summary:
     name: Summary
-    needs: [assets, build, build-apr-cuda, build-apr-cpu, build-apr-darwin, build-pv-darwin, verify-apr-assets, smoke-cuda, smoke-cpu]
+    needs: [assets, build, build-apr-cuda, build-apr-cpu, build-apr-darwin, build-pv-darwin, verify-apr-assets, smoke-cuda, smoke-cpu, smoke-darwin]
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
@@ -1035,7 +1069,7 @@ jobs:
             echo ""
             echo "### apr Binary Release: $TAG - six assets, {cuda,cpu} x {x86_64,aarch64} + darwin cpu + x86_64 wgpu"
             echo "- cuda build: ${{ needs.build-apr-cuda.result }} · cpu build: ${{ needs.build-apr-cpu.result }} · darwin build (mini): ${{ needs.build-apr-darwin.result }} · pv darwin: ${{ needs.build-pv-darwin.result }}"
-            echo "- all six on the release: ${{ needs.verify-apr-assets.result }} · smoke cuda (yoga+gx10): ${{ needs.smoke-cuda.result }} · smoke cpu (clean-room+yoga+gx10): ${{ needs.smoke-cpu.result }}"
+            echo "- all six on the release: ${{ needs.verify-apr-assets.result }} · smoke cuda (yoga+gx10): ${{ needs.smoke-cuda.result }} · smoke cpu (clean-room+yoga+gx10): ${{ needs.smoke-cpu.result }} · smoke darwin (mini): ${{ needs.smoke-darwin.result }}"
             echo "  - apr-$TAG-x86_64-unknown-linux-gnu-cuda.tar.gz (+ .sha256)"
             echo "  - apr-$TAG-aarch64-unknown-linux-gnu-cuda.tar.gz (+ .sha256)"
             echo "  - apr-$TAG-x86_64-unknown-linux-gnu-cpu.tar.gz (+ .sha256)"

@@ -202,7 +202,7 @@ promote() {
     # 1. the rc
     # by listing: an rc is a DRAFT until rc_fleet_stage.sh has it on every fleet host (#4327),
     # and releases/tags/ never returns a draft -- a still-draft rc must be refused by name
-    rel=$(api GET "releases?per_page=100" | json 'print(json.dumps(next(r for r in d if r["tag_name"] == sys.argv[1])))' "$rc") \
+    rel=$(api GET "releases?per_page=100" | json 'r = next((r for r in d if r["tag_name"] == sys.argv[1]), None); r or sys.exit(1); print(json.dumps(r))' "$rc") \
         || env_die "cannot read release $rc (not among the newest 100 releases)"
     [ "$(printf '%s' "$rel" | json 'print(d["draft"])')" = False ] || die "refuse: $rc is still a DRAFT -- it is not on every fleet host yet (scripts/release/rc_fleet_stage.sh $rc --publish, #4327)"
     [ "$(printf '%s' "$rel" | json 'print(d["prerelease"])')" = True ] || die "refuse: $rc is not a prerelease"
