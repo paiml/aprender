@@ -1,0 +1,151 @@
+{
+  "ticket": "PMAT-4076",
+  "round": "B",
+  "head": "c9314e0660083007b419978fdae8985c721f7251",
+  "base": "3913e2fad",
+  "rule": "operator verbatim 2026-09-24: \"one must always be a CHEAP claude code...perhaps haiku\" — 2 agy non-Claude lanes + 1 Claude Code lane on claude-haiku-4-5; the cop overrides receipt-lint on the single haiku seat",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "agy": {
+    "ticket": "PMAT-4076",
+    "base": "3913e2fad",
+    "base_resolved": "3913e2fad",
+    "base_note": "no origin/3913e2fad exists; judged against the local ref",
+    "head": "c9314e0660083007b419978fdae8985c721f7251",
+    "diff_sha256": "d7d47e1c3f48ae89a80936575244030fddbaa900388612d6ade293b4f3139721",
+    "width": 2,
+    "executor": "agy",
+    "prompt_mode": "inline",
+    "prompt_bytes": 7261,
+    "author": {
+      "model": "claude-opus-5-5",
+      "family": "claude",
+      "source": "flag"
+    },
+    "agreed": true,
+    "lanes": [
+      {
+        "lane": 1,
+        "status": "SUCCESS",
+        "verdict": "PASS",
+        "summary": "The diff correctly addresses the two open, non-blocking items from round 3. First, it updates the `readers.worlds` list in `contracts/ontology.yaml` and the metadata references in `contracts/ont-valid-under-v1.yaml` to include `lint/valid_under_gate.rs`. Second, it fixes the tautological formal invariant for `VU-INV-003`. While the receipt suggested the formula `len(keys(valid_under(c))) ≥ 1`, the author's implementation `valid_under(c) ≠ ⊥ ⇒ len(keys(valid_under(c))) ≥ 1` is formally correct and handles the case where the block is missing/omitted. There is no evidence refuting the diff.",
+        "findings": [],
+        "raw_bytes": 3528,
+        "err_bytes": 62,
+        "envelope_status": "SUCCESS",
+        "verdict_source": "structured_output",
+        "grounding_check": "parity",
+        "model": "gemini-3.1-pro-high",
+        "model_measured": "gemini-3.1-pro-high",
+        "model_source": "measured",
+        "family": "gemini",
+        "role": "independent",
+        "fallback": {
+          "judged_by": "gemini-3.1-pro-high",
+          "exhausted": false,
+          "attempts": [
+            {
+              "model": "gemini-3.1-pro-high",
+              "family": "gemini",
+              "outcome": "answered"
+            }
+          ],
+          "skipped": []
+        }
+      },
+      {
+        "lane": 2,
+        "status": "SUCCESS",
+        "verdict": "PASS",
+        "summary": "Diff (3913e2fad...HEAD) faithfully implements the two follow-up notes recorded in the PMAT-4076 receipt without regression or scope creep.\n\n1. Ticket & Receipt adherence:\n- Resolves the Σ readers list in `contracts/ontology.yaml` by registering `lint/valid_under_gate.rs` under `readers.worlds`, accurately reflecting that `valid_under_gate.rs` interprets `worlds:`. Line 37 of `contracts/ont-valid-under-v1.yaml` is updated to match.\n- Fixes VU-INV-003 formal invariant in `contracts/ont-valid-under-v1.yaml` from the tautological `valid_under(c) ≠ ∅ ⇒ len(keys(valid_under(c))) ≥ 1` to `valid_under(c) ≠ ⊥ ⇒ len(keys(valid_under(c))) ≥ 1`, using Σ's declared constant `⊥` (bottom) to state that a present valid_under block must have at least one key.\n\n2. Verification:\n- `pv validate` on `contracts/ont-valid-under-v1.yaml`: 0 errors, 0 warnings.\n- `pv lint --gate valid-under`: Pass (0 violations; 1830 contracts checked, 387 kernel contracts, 386 without valid_under, matching baseline).\n- `pv lint --gate sigma`: Pass (0 violations).\n- `pv lint --gate relations`: Pass (0 violations).\n- `pv extract contracts --check`: Pass (0 written, 0 check discrepancies).\n- `scripts/check_ont_ratchet.sh --check`: Pass.\n- `scripts/check_ont_ratchet.sh --self-test`: Pass (27/27 passed, 0 failed).\n\n3. Refutation audit:\n- Zero gates weakened.\n- No unrequested changes.\n- All receipt claims verified.",
+        "findings": [],
+        "raw_bytes": 4178,
+        "err_bytes": 0,
+        "envelope_status": "SUCCESS",
+        "verdict_source": "structured_output",
+        "grounding_check": "parity",
+        "model": "gemini-3.8-flash-high",
+        "model_measured": "gemini-3.8-flash-high",
+        "model_source": "measured",
+        "family": "gemini",
+        "role": "independent",
+        "fallback": {
+          "judged_by": "gemini-3.8-flash-high",
+          "exhausted": false,
+          "attempts": [
+            {
+              "model": "gemini-3.8-flash-high",
+              "family": "gemini",
+              "outcome": "answered"
+            }
+          ],
+          "skipped": []
+        }
+      }
+    ],
+    "dissent": [],
+    "dedup": [],
+    "uncovered": [],
+    "coverage_source": "lanes",
+    "partial": true,
+    "partial_reasons": [
+      "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+    ],
+    "fallback": {
+      "same_family_width": 1,
+      "chain": [
+        {
+          "model": "gemini-3.1-pro-high",
+          "family": "gemini",
+          "disposition": "configured"
+        },
+        {
+          "model": "gemini-3.8-flash-high",
+          "family": "gemini",
+          "disposition": "configured"
+        },
+        {
+          "model": "gpt-oss-120b-medium",
+          "family": "openai",
+          "disposition": "fallback"
+        }
+      ],
+      "precheck": [
+        {
+          "family": "gemini",
+          "model": "gemini-3.1-pro-high",
+          "probe": 1,
+          "outcome": "live"
+        }
+      ],
+      "prah": {
+        "source": "install-receipt",
+        "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+      }
+    },
+    "auto_merge": {
+      "checked": false,
+      "was_armed": false,
+      "disarmed": false,
+      "note": "no --pr given: nothing to disarm"
+    },
+    "lint": {
+      "ok": true,
+      "output": "receipt complete: kind=artifact lanes=2 author=claude-opus-5-5/claude"
+    }
+  },
+  "claude_seat": {
+    "model": "claude-haiku-4-5",
+    "model_measured": [
+      "claude-haiku-4-5"
+    ],
+    "session_id": "f6edb283-424f-4af0-a334-a7c98be1e2db",
+    "turns": 25,
+    "verdict": "PASS",
+    "summary": "All changes match the ticket requirements: (1) `lint/valid_under_gate.rs` correctly added as a reader of the `worlds` key in both ontology.yaml and its reference line, verified against the gate code that actually reads this key for world validation; (2) VU-INV-003 formula correctly changed from tautological `∅` check to semantically meaningful `⊥` check, with ⊥ properly declared and consistently used throughout contracts; (3) plural \"readers\" grammar correct since two readers now exist; (4) scope limited to exactly the two contract files with six minimal, targeted changes. No code changes, no unintended modifications, and commit message accurately describes all changes.",
+    "findings": []
+  },
+  "agreed": true
+}

@@ -2,6 +2,10 @@
   "_spec": "APR-RELEASE-001 §11.2 counters are MEASURED comparand->head by scripts/check_ont_ratchet.sh (#3569); this file holds decisions only",
   "armed_gates": ["validate", "audit", "score", "verify", "enforce", "enforcement-level", "duplicate-stems", "composition", "sigma", "relations", "shapes"],
   "armed_shapes": ["ont-shapes-v1", "ladder-measured", "ladder-green", "capability-cells"],
+  "contracts_without_valid_under": 386,
+  "command": "make lint-ratchet",
+  "unpaired_theorem_modules": 130,
+  "contracts_without_depends_on": 278,
   "ont": {
     "formal_prose": 1464,
     "legacy_unresolved_depends_on": 8

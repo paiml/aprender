@@ -21242,6 +21242,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4076
+  github_issue: 4076
+  item_type: task
+  title: 'ONT-7: valid_under — kernel-kind contracts carry a world index'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-23T20:51:06Z
+  updated: 2026-09-23T20:51:06Z
+  spec: null
+  acceptance_criteria:
+  - paiml/infra docs/specifications/paiml-ontology.md v4.12 @948ae923 row ONT-7 (:656), probe (:657). depends_on ONT-1, ONT-6. K̂ 60. Cop (aprender-cf) assignment 2026-09-23.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-4101
   github_issue: 4101
   item_type: task
@@ -21277,6 +21295,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
+- id: PMAT-4166
+  github_issue: 4166
+  item_type: task
+  title: 'PVL-11: pv lint ratchets — theorem pairing and depends_on'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T07:10:50Z
+  updated: 2026-09-24T07:10:50Z
+  spec: null
+  acceptance_criteria:
+  - paiml/infra PVL-001 EV-11 (00553b0b). Cop (aprender-cf) assignment 2026-09-24.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-4207
   github_issue: 4207

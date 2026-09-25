@@ -257,8 +257,12 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
                 watch,
                 strict_test_binding,
                 armed_baseline_ref.as_deref(),
-                gate.as_deref(),
-                commands::lint::shapes_options(gate.as_deref(), shape, &release)?,
+                &gate,
+                commands::lint::shapes_options(
+                    gate.iter().any(|g| g == "shapes").then_some("shapes"),
+                    shape,
+                    &release,
+                )?,
             )
         }
         Commands::Score {

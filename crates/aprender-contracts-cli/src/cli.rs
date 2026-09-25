@@ -291,9 +291,11 @@ pub enum Commands {
         /// merge-base(HEAD, origin/main), else the origin/main tip; with neither, NOT CHECKED is printed.
         #[arg(long)]
         armed_baseline_ref: Option<String>,
-        /// Run ONE named gate and report only it (ONT-001 section 5 ONT-2b): `--gate sigma`.
+        /// Run ONE named gate and report only it (ONT-001 section 5 ONT-2b): `--gate sigma`. Repeatable
+        /// (PVL-001 EV-11): every named gate runs and reports, and the exit is their meet — a refusal over a
+        /// reject over a decline over a pass.
         #[arg(long)]
-        gate: Option<String>,
+        gate: Vec<String>,
         /// With `--gate shapes`: grade only this shape family (the shape and every `<id>.*` shape), armed
         /// whatever `armed_shapes` says (aprender#3715: `--shape release-readiness-v1`).
         #[arg(long)]
