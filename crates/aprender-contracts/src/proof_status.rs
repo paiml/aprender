@@ -441,6 +441,69 @@ fn insert_theorem_names_from_content(names: &mut std::collections::HashSet<Strin
     }
 }
 
+/// Does this Lean source contain a `sorry` TOKEN in code?
+///
+/// `content.contains("sorry")` also matched prose. A doc comment saying a file "compiles sorry-free"
+/// denied credit to a file with no admitted proof in it (#4351). This skips `--` line comments,
+/// nested `/- ... -/` block comments (doc and module-doc forms included) and string literals, then
+/// matches `sorry` as a whole identifier. It fails CLOSED: an unterminated comment or string reads as
+/// containing `sorry`, because a file this scan cannot parse must not ground a claim.
+pub(crate) fn lean_has_sorry(src: &str) -> bool {
+    let b = src.as_bytes();
+    let ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c == b'\'' || c >= 0x80;
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'-' if b.get(i + 1) == Some(&b'-') => {
+                while i < b.len() && b[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'/' if b.get(i + 1) == Some(&b'-') => {
+                let mut depth = 1usize;
+                i += 2;
+                while depth > 0 {
+                    if i + 1 >= b.len() {
+                        return true;
+                    }
+                    if b[i] == b'/' && b[i + 1] == b'-' {
+                        depth += 1;
+                        i += 2;
+                    } else if b[i] == b'-' && b[i + 1] == b'/' {
+                        depth -= 1;
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+            b'"' => {
+                i += 1;
+                loop {
+                    match b.get(i) {
+                        None => return true,
+                        Some(b'\\') => i += 2,
+                        Some(b'"') => break,
+                        Some(_) => i += 1,
+                    }
+                }
+                i += 1;
+            }
+            c if ident(c) => {
+                let start = i;
+                while i < b.len() && ident(b[i]) {
+                    i += 1;
+                }
+                if &src[start..i] == "sorry" {
+                    return true;
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    false
+}
+
 /// Register the names contributed by one domain directory's sorry-free `.lean` files.
 ///
 /// A file containing `sorry` contributes NOTHING: an admitted proof grounds no claim, which is the whole
@@ -462,7 +525,7 @@ fn insert_domain_theorems(names: &mut std::collections::HashSet<String>, domain:
         let Ok(content) = std::fs::read_to_string(&path) else {
             continue;
         };
-        if content.contains("sorry") {
+        if lean_has_sorry(&content) {
             continue;
         }
         let stem = path
@@ -472,12 +535,14 @@ fn insert_domain_theorems(names: &mut std::collections::HashSet<String>, domain:
             .to_string();
         insert_name_forms(names, &domain_name);
         insert_name_forms(names, &stem);
+        // `Theorems.<Domain>.<File>`: the form a contract cites one file of a domain by (#4351).
+        names.insert(format!("Theorems.{domain_name}.{stem}"));
         insert_theorem_names_from_content(names, &content);
     }
 }
 
 /// Every theorem name one base directory contributes; empty when the base is absent.
-fn scan_theorem_base(base: &str) -> std::collections::HashSet<String> {
+pub(crate) fn scan_theorem_base(base: &str) -> std::collections::HashSet<String> {
     let mut names = std::collections::HashSet::new();
     let search_dir = std::path::Path::new(base).join("ProvableContracts/Theorems");
     if !search_dir.exists() {
