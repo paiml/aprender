@@ -525,8 +525,13 @@ impl Qwen35CudaModel<'_> {
         }
         // The dequant + convert launches are asynchronous: wait for them here, so the
         // time printed is the prewarm's and the first prefill is not billed for it, and
-        // so a fault in them disarms f16 instead of surfacing in that prefill.
-        if let Err(e) = self.executor.synchronize() {
+        // so a fault in them disarms f16 instead of surfacing in that prefill. The f16
+        // cuBLAS handle is created here for the same reason.
+        if let Err(e) = self
+            .executor
+            .synchronize()
+            .and_then(|()| self.executor.ensure_cublas_f16())
+        {
             let ptrs: Vec<u64> = weights.iter().map(|w| w.1).collect();
             self.executor.drop_fp16_weights(&ptrs);
             eprintln!("[qwen35] fp16 prefill prewarm failed ({e}); prefill uses f32");
