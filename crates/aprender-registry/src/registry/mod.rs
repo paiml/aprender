@@ -240,6 +240,42 @@ impl Registry {
         self.objects.get(&model.content_address)
     }
 
+    /// The id of the model registered with artifact BLAKE3 hash `hash_hex`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn find_model_id_by_content_hash(&self, hash_hex: &str) -> Result<Option<String>> {
+        self.db.find_model_id_by_content_hash(hash_hex)
+    }
+
+    /// Record the lineage edge `from_id -> to_id`. Ids are node ids: a model
+    /// id, a run ULID, or a content-addressed `blake3:<hex>` for an
+    /// unregistered artifact.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the insert fails.
+    pub fn add_lineage_edge(
+        &self,
+        from_id: &str,
+        to_id: &str,
+        edge_type: &str,
+        metadata: Option<&serde_json::Value>,
+    ) -> Result<()> {
+        let metadata = metadata.map(serde_json::Value::to_string);
+        self.db.insert_lineage_edge(from_id, to_id, edge_type, metadata.as_deref())
+    }
+
+    /// Number of lineage edges recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn count_lineage_edges(&self) -> Result<usize> {
+        self.db.count_lineage_edges()
+    }
+
     /// Get model lineage graph.
     ///
     /// # Errors

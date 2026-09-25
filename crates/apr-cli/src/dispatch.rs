@@ -1086,6 +1086,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             experimental_mps,
             gpu_share,
             profile,
+            no_track,
         }) => {
             if let Err(e) = commands::runs::enforce_training_perimeter(output.as_deref()) {
                 return Some(Err(e));
@@ -1124,6 +1125,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 cli.json,
                 *experimental_mps,
                 *gpu_share,
+                *no_track,
             )
         }
         Commands::ModelOps(ModelOpsCommands::Prune {

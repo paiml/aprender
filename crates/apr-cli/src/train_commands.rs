@@ -155,6 +155,10 @@ pub enum TrainCommands {
         /// Enable StepProfiler for per-phase wall-clock timing (KAIZEN-047)
         #[arg(long)]
         profile: bool,
+        /// EXT-05: do not record this run to the pacha registry (runs,
+        /// lineage, produced model). Recording is on by default.
+        #[arg(long)]
+        no_track: bool,
         /// StepProfiler report interval (every N steps, default: 50)
         #[arg(long, value_name = "N", default_value = "50")]
         profile_interval: usize,

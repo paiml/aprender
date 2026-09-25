@@ -170,7 +170,8 @@ falsification_tests:
   obligation: EXT-INV-001,EXT-INV-002
   rule: Train verbs record by default
   prediction: finetune on a tmp pacha home gives runs +1, lineage +3 (base, dataset, produced), models +1, output sha matches
-  if_fails: 'a verb skips a lineage edge or registers a hash of the wrong bytes (owed EXT-05 #4387; planned: cargo test -p apr-cli --test ext_train_verbs falsify_ext_004_train_delta)'
+  test: cargo test -p apr-cli --lib falsify_ext_004_train_verb_delta_on_tmp_pacha_home
+  if_fails: 'a verb skips a lineage edge (base, dataset or produced), names a registered base by a bare hash, or records a sha256 that is not the output file''s. Overhead vs the EXT-04 noise band is measured separately (evidence/ext-001/EXT-05)'
 - id: FALSIFY-EXT-005
   obligation: EXT-INV-001
   rule: Edge type and parent count per verb
@@ -195,7 +196,8 @@ falsification_tests:
   obligation: EXT-INV-005
   rule: Engine identity at start_run
   prediction: a dirty or unidentifiable engine build is refused at start_run and the message names --no-track
-  if_fails: 'a run is recorded against an engine nobody can rebuild (owed EXT-05 #4387; planned: cargo test -p aprender-train --test ext_pacha_backend falsify_ext_009_dirty_engine_refused)'
+  test: cargo test -p apr-cli --lib falsify_ext_009_dirty_or_unidentified_engine_refused_at_start_run
+  if_fails: 'a dirty, dirty-unknown, +no-git or empty-sha engine reaches pacha, or the refusal does not name --no-track, so a run is recorded against an engine nobody can rebuild'
 - id: FALSIFY-EXT-010
   obligation: EXT-INV-007
   rule: Export feeds the ledger

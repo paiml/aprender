@@ -23,8 +23,9 @@
 //! and `emit_tests` compiles this file as a build script and runs it for real.
 
 /// Resolve `APR_GIT_SHA`, print it as `cargo:rustc-env`, and register the
-/// rerun-if-changed triggers. Call once from `build.rs`.
-pub fn emit() {
+/// rerun-if-changed triggers. Call once from `build.rs`. Returns the stamped
+/// SHA, so a caller can derive more from exactly that value (EXT-001 I-5).
+pub fn emit() -> String {
     let sha = resolve_git_sha();
     println!("cargo:rustc-env=APR_GIT_SHA={sha}");
 
@@ -42,6 +43,7 @@ pub fn emit() {
             println!("cargo:rerun-if-changed={watched}");
         }
     }
+    sha
 }
 
 /// The pure resolution order. Each argument is the raw result of one source,

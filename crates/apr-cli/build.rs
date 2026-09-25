@@ -9,5 +9,39 @@
 // The resolution and its rerun-if-changed triggers live in the shared
 // `aprender-build-sha` crate (#4219) so every workspace [[bin]] stamps the same SHA.
 fn main() {
-    build_sha::emit();
+    let sha = build_sha::emit();
+
+    // EXT-001 I-5: a dirty or unidentifiable engine is refused at start_run.
+    // Derived from the SHA `emit` stamped, so the flag and the SHA never disagree.
+    println!("cargo:rustc-env=APR_GIT_DIRTY={}", resolve_git_dirty(&sha));
+    // Tracked edits under crates/ change the dirty flag. Edits elsewhere in the
+    // repo (contracts/, docs/) do not rerun this script.
+    println!("cargo:rerun-if-changed=..");
+}
+
+/// `"1"` when tracked files differ from HEAD, `"0"` when they do not or the
+/// sha came from a release (override or committed `.git-sha`), `"unknown"`
+/// when neither git nor a release sha identifies the build (EXT-001 I-5).
+fn resolve_git_dirty(sha: &str) -> &'static str {
+    if sha.ends_with("+no-git") {
+        return "unknown";
+    }
+    let from_release = std::env::var("APR_GIT_SHA_OVERRIDE").is_ok_and(|s| !s.trim().is_empty());
+    if from_release {
+        return "0";
+    }
+    let Ok(out) = std::process::Command::new("git")
+        .args(["status", "--porcelain", "--untracked-files=no"])
+        .output()
+    else {
+        return "0"; // no git: the sha came from the committed .git-sha
+    };
+    if !out.status.success() {
+        return "0";
+    }
+    if out.stdout.is_empty() {
+        "0"
+    } else {
+        "1"
+    }
 }
