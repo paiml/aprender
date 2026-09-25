@@ -1873,7 +1873,7 @@ pub enum LlmSubcommand {
         /// UNMEASURED, never a ratio. A ratio needs a baseline band from the
         /// SAME run (PP-3), joined on the PP-22 key and driven by this same
         /// client binary (PP-25); one lane cannot produce one.
-        #[arg(long, default_value = "perf-gate")]
+        #[arg(long, default_value = "perf-gate", requires = "band")]
         comparator_owner: String,
 
         // ------------------------------------------------------------------
@@ -1893,28 +1893,31 @@ pub enum LlmSubcommand {
         // that retains the lane's `GET /props` body, which §5.3 requires per
         // band. So --comparator-url without them is refused, by the producer,
         // with a message that names each missing flag.
+        // Every comparator flag also `requires = "band"`: the legacy mode has no
+        // comparator lane, and it once took --comparator-url, sent the comparator
+        // 0 requests and exited 0 (#4222).
         // ------------------------------------------------------------------
         /// Comparator endpoint. Measured by THIS binary, interleaved with the
         /// subject lane band by band, and joined on a shared `run_id`.
-        #[arg(long)]
+        #[arg(long, requires = "band")]
         comparator_url: Option<String>,
         /// Model name the comparator server expects in the request body.
         /// Defaults to --model; `llama-server` serves whatever it was
         /// launched with and ignores the field.
-        #[arg(long)]
+        #[arg(long, requires = "band")]
         comparator_model: Option<String>,
         /// PP-20: the comparator build's upstream commit.
-        #[arg(long)]
+        #[arg(long, requires = "band")]
         comparator_commit: Option<String>,
         /// PP-20: the `cmake` line the comparator was configured with.
-        #[arg(long)]
+        #[arg(long, requires = "band")]
         comparator_cmake: Option<String>,
         /// PP-20: the comparator binary's sha256, 64 lowercase hex.
-        #[arg(long)]
+        #[arg(long, requires = "band")]
         comparator_sha256: Option<String>,
         /// PP-20: the instant after which every ratio against this pin is
         /// COMPARATOR_STALE, as `YYYY-MM-DDTHH:MM:SS.mmmZ`.
-        #[arg(long)]
+        #[arg(long, requires = "band")]
         comparator_pin_expiry: Option<String>,
 
         // ------------------------------------------------------------------
@@ -1936,20 +1939,20 @@ pub enum LlmSubcommand {
         // ------------------------------------------------------------------
         /// §5.3: `-b` the comparator was launched with. `1` is REFUSED before
         /// a single request is issued: it switches llama.cpp's batching off.
-        #[arg(long)]
+        #[arg(long, requires = "band")]
         comparator_n_batch: Option<u32>,
         /// §5.3: per-slot context the comparator was launched with (`-c` over
         /// `-np`).
-        #[arg(long)]
+        #[arg(long, requires = "band")]
         comparator_n_ctx_slot: Option<u32>,
         /// §5.3: `-fa` as launched — `on`, `off` or `auto`. `auto` records
         /// NOTHING: a launcher that passed `-fa auto` does not know what the
         /// server resolved it to, and a guessed join-key field silently joins
         /// two different configurations.
-        #[arg(long)]
+        #[arg(long, requires = "band")]
         comparator_fa: Option<String>,
         /// §5.3: `-ctk/-ctv` as launched, e.g. `f16`.
-        #[arg(long)]
+        #[arg(long, requires = "band")]
         comparator_kv_type: Option<String>,
 
         /// PP-26: `witness.json` from
