@@ -3,5 +3,5 @@ name = "iqdec"
 version = "0.0.0"
 edition = "2021"
 [dependencies]
-aprender-serve = { path = "/home/noah/src/aprender-wt-3947/crates/aprender-serve", default-features = false }
+aprender-serve = { path = "$HOME/src/aprender-wt-3947/crates/aprender-serve", default-features = false }
 [workspace]

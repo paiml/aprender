@@ -1,5 +1,5 @@
 {
-  "model": "/home/noah/models/Qwen3-8B-Q4_K_M.gguf",
+  "model": "$HOME/models/Qwen3-8B-Q4_K_M.gguf",
   "passed": true,
   "gates": [
     {
@@ -88,7 +88,7 @@
     {
       "name": "performance_regression",
       "passed": true,
-      "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-8B-Q4_K_M.json",
+      "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen3-8B-Q4_K_M.json",
       "value": 0.0,
       "threshold": 0.1,
       "duration_ms": 2,

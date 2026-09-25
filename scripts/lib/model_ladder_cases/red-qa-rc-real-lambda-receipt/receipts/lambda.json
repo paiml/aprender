@@ -144,9 +144,9 @@
     }
   ],
   "inventory_dirs": [
-    "/home/noah/models",
-    "/home/noah/.apr/models",
-    "/home/noah/.cache/apr/models"
+    "$HOME/models",
+    "$HOME/.apr/models",
+    "$HOME/.cache/apr/models"
   ],
   "inventory_patterns": [
     "*q4_k*.gguf",
@@ -237,7 +237,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-1.5b-instruct-q4_k_m.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/qwen2.5-1.5b-instruct-q4_k_m.json"
         }
       },
       "gates_failed": [],
@@ -427,7 +427,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-1.7B-Q4_K_M.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen3-1.7B-Q4_K_M.json"
         }
       },
       "gates_failed": [],
@@ -617,7 +617,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-8B-Q4_K_M.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen3-8B-Q4_K_M.json"
         }
       },
       "gates_failed": [],
@@ -807,7 +807,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-0.8B-Q4_K_M.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen3.5-0.8B-Q4_K_M.json"
         }
       },
       "gates_failed": [],
@@ -997,7 +997,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-2B-Q4_K_M.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen3.5-2B-Q4_K_M.json"
         }
       },
       "gates_failed": [],
@@ -1187,7 +1187,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-4B-Q4_K_M.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen3.5-4B-Q4_K_M.json"
         }
       },
       "gates_failed": [],
@@ -1377,7 +1377,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-9B-Q4_K_M.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen3.5-9B-Q4_K_M.json"
         }
       },
       "gates_failed": [],
@@ -1567,7 +1567,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-27B-Q4_K_M.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen3.5-27B-Q4_K_M.json"
         }
       },
       "gates_failed": [],
@@ -1757,7 +1757,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen2.5-0.5B-Instruct-IQ3_M.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen2.5-0.5B-Instruct-IQ3_M.json"
         }
       },
       "gates_failed": [
@@ -1899,7 +1899,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen2.5-0.5B-Instruct-IQ4_XS.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen2.5-0.5B-Instruct-IQ4_XS.json"
         }
       },
       "gates_failed": [
@@ -2041,7 +2041,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen2.5-0.5B-Instruct-f16.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen2.5-0.5B-Instruct-f16.json"
         }
       },
       "gates_failed": [],
@@ -2180,7 +2180,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.json"
         }
       },
       "gates_failed": [
@@ -2321,7 +2321,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.json"
         }
       },
       "gates_failed": [
@@ -2462,7 +2462,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-0.8B-IQ4_XS.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen3.5-0.8B-IQ4_XS.json"
         }
       },
       "gates_failed": [
@@ -2604,7 +2604,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-0.8B-UD-IQ2_XXS.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen3.5-0.8B-UD-IQ2_XXS.json"
         }
       },
       "gates_failed": [
@@ -2746,7 +2746,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-35B-A3B-UD-IQ4_XS.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen3.5-35B-A3B-UD-IQ4_XS.json"
         }
       },
       "gates_failed": [
@@ -2864,7 +2864,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-4B-UD-Q4_K_XL.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/Qwen3.5-4B-UD-Q4_K_XL.json"
         }
       },
       "gates_failed": [
@@ -3005,7 +3005,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-0.5b-instruct-q4_k_m.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/qwen2.5-coder-0.5b-instruct-q4_k_m.json"
         }
       },
       "gates_failed": [],
@@ -3144,7 +3144,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-0.5b-instruct.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/qwen2.5-coder-0.5b-instruct.json"
         }
       },
       "gates_failed": [],
@@ -3283,7 +3283,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-q4_k_m.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-q4_k_m.json"
         }
       },
       "gates_failed": [],
@@ -3422,7 +3422,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-q4k-v2.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-q4k-v2.json"
         }
       },
       "gates_failed": [],
@@ -3561,7 +3561,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-q4k.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-q4k.json"
         }
       },
       "gates_failed": [],
@@ -3700,7 +3700,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-st.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-st.json"
         }
       },
       "gates_failed": [
@@ -3842,7 +3842,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-7b-instruct-q4_k_m.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/qwen2.5-coder-7b-instruct-q4_k_m.json"
         }
       },
       "gates_failed": [],
@@ -3981,7 +3981,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-1.5b-q4k.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/qwen2.5-coder-1.5b-q4k.json"
         }
       },
       "gates_failed": [],
@@ -4120,7 +4120,7 @@
         "performance_regression": {
           "passed": true,
           "skipped": false,
-          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/tinyllama-1.1b-chat-v1.0.Q4_K_M.json"
+          "message": "No regressions (ratios >10%, throughput >25%) vs $HOME/.cache/apr/qa-reports/tinyllama-1.1b-chat-v1.0.Q4_K_M.json"
         }
       },
       "gates_failed": [

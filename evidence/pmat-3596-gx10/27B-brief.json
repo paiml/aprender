@@ -1,5 +1,5 @@
 {
-  "model": "/home/noah/models/Qwen3.5-27B-Q4_K_M.gguf",
+  "model": "$HOME/models/Qwen3.5-27B-Q4_K_M.gguf",
   "text": "{",
   "tokens": [
     90

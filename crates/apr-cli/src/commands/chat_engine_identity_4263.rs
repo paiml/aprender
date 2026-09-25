@@ -2,13 +2,16 @@
 // are realizar's `api::tests_engine_identity`). Every turn of a Qwen3.5 chat
 // enters the resident session: one witness entry per turn, on THIS session.
 
-const MODEL_PATH: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
+fn model_path() -> String {
+    format!("{}/models/Qwen3.5-0.8B-Q4_K_M.gguf", std::env::var("HOME").unwrap_or_default())
+}
 
 #[test]
 fn every_chat_turn_enters_the_one_engine() {
-    let path = std::path::Path::new(MODEL_PATH);
+    let model = model_path();
+    let path = std::path::Path::new(&model);
     if !path.exists() {
-        eprintln!("SKIP: {MODEL_PATH} is absent");
+        eprintln!("SKIP: {model} is absent");
         return;
     }
     let mut chat = ChatSession::new(path, true).expect("load the hybrid");

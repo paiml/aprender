@@ -15,7 +15,17 @@ use axum::body::Body;
 use axum::http::Request;
 use tower::ServiceExt;
 
-const MODEL_PATH: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
+/// A model under `$HOME/models` (host-local; the tests SKIP when it is absent).
+fn home_model(name: &str) -> String {
+    format!(
+        "{}/models/{name}",
+        std::env::var("HOME").unwrap_or_default()
+    )
+}
+
+fn model_path() -> String {
+    home_model("Qwen3.5-0.8B-Q4_K_M.gguf")
+}
 
 /// Which architectures the engine serves, and for the rest the ticket that
 /// ports them. When a port lands its `impl ArchForward` appears and
@@ -163,11 +173,12 @@ async fn post(app: axum::Router, uri: &str, body: serde_json::Value) -> (StatusC
 
 #[tokio::test(flavor = "multi_thread")]
 async fn every_serve_route_enters_the_one_engine() {
-    if !std::path::Path::new(MODEL_PATH).exists() {
-        eprintln!("SKIP: {MODEL_PATH} is absent");
+    let model = model_path();
+    if !std::path::Path::new(&model).exists() {
+        eprintln!("SKIP: {model} is absent");
         return;
     }
-    let mapped = Arc::new(MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF"));
+    let mapped = Arc::new(MappedGGUFModel::from_path(&model).expect("map the GGUF"));
     let vocab = mapped.model.vocabulary().expect("vocabulary");
     let session = Qwen35Session::load(&mapped, true).expect("load the hybrid");
     let id = session.id();
@@ -213,13 +224,14 @@ async fn every_serve_route_enters_the_one_engine() {
 
 #[test]
 fn apr_run_enters_the_one_engine() {
-    if !std::path::Path::new(MODEL_PATH).exists() {
-        eprintln!("SKIP: {MODEL_PATH} is absent");
+    let model = model_path();
+    if !std::path::Path::new(&model).exists() {
+        eprintln!("SKIP: {model} is absent");
         return;
     }
     // Ids no other test uses, so the witness answers for this call alone.
     let prompt: Vec<u32> = vec![9_901, 9_902, 9_903, 9_904, 9_905];
-    let mut config = crate::infer::InferenceConfig::new(MODEL_PATH);
+    let mut config = crate::infer::InferenceConfig::new(&model);
     config.input_tokens = Some(prompt.clone());
     config.max_tokens = 2;
     config.temperature = 0.0;
@@ -239,11 +251,12 @@ fn apr_run_enters_the_one_engine() {
 /// The dense verb rows (#4268 D1, #4293): `apr run` on a dense GGUF enters the
 /// engine through `DenseForward`. One model per dense arch that is present on
 /// this box; an absent file skips its row, never the others.
-const DENSE_RUN_ROWS: &[(&str, &str)] = &[("qwen3", "/home/noah/models/Qwen3-1.7B-Q4_K_M.gguf")];
+const DENSE_RUN_ROWS: &[(&str, &str)] = &[("qwen3", "Qwen3-1.7B-Q4_K_M.gguf")];
 
 #[test]
 fn apr_run_on_a_dense_gguf_enters_the_one_engine() {
-    for (i, (arch, path)) in DENSE_RUN_ROWS.iter().enumerate() {
+    for (i, (arch, file)) in DENSE_RUN_ROWS.iter().enumerate() {
+        let path = &home_model(file);
         assert!(
             ARCHES.contains(&(*arch, Arch::Session("DenseForward"))),
             "{arch} has a dense verb row but its ARCHES row is not DenseForward"
@@ -255,7 +268,7 @@ fn apr_run_on_a_dense_gguf_enters_the_one_engine() {
         // Ids no other test uses, so the witness answers for this call alone.
         let base = 9_801 + 10 * i as u32;
         let prompt: Vec<u32> = (base..base + 5).collect();
-        let mut config = crate::infer::InferenceConfig::new(*path);
+        let mut config = crate::infer::InferenceConfig::new(path);
         config.input_tokens = Some(prompt.clone());
         config.max_tokens = 2;
         config.temperature = 0.0;
@@ -275,7 +288,9 @@ fn apr_run_on_a_dense_gguf_enters_the_one_engine() {
 
 /// The MoE verb row (PMAT-4269 M1): `apr run --no-gpu` on a qwen3_moe GGUF
 /// enters the engine through `Qwen3MoeForward`. Skipped when the file is absent.
-const MOE_RUN_PATH: &str = "/home/noah/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf";
+fn moe_run_path() -> String {
+    home_model("Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf")
+}
 
 #[test]
 fn apr_run_on_a_moe_gguf_enters_the_one_engine() {
@@ -283,13 +298,14 @@ fn apr_run_on_a_moe_gguf_enters_the_one_engine() {
         ARCHES.contains(&("qwen3_moe", Arch::Session("Qwen3MoeForward"))),
         "qwen3_moe has a verb row but its ARCHES row is not Qwen3MoeForward"
     );
-    if !std::path::Path::new(MOE_RUN_PATH).exists() {
-        eprintln!("SKIP: {MOE_RUN_PATH} is absent");
+    let moe = moe_run_path();
+    if !std::path::Path::new(&moe).exists() {
+        eprintln!("SKIP: {moe} is absent");
         return;
     }
     // Ids no other test uses, so the witness answers for this call alone.
     let prompt: Vec<u32> = (9_701..9_706).collect();
-    let mut config = crate::infer::InferenceConfig::new(MOE_RUN_PATH);
+    let mut config = crate::infer::InferenceConfig::new(&moe);
     config.input_tokens = Some(prompt.clone());
     config.max_tokens = 2;
     config.temperature = 0.0;
@@ -300,7 +316,7 @@ fn apr_run_on_a_moe_gguf_enters_the_one_engine() {
     assert_eq!(
         entries.len(),
         1,
-        "apr run on {MOE_RUN_PATH} left {entries:?}: it decoded outside the session"
+        "apr run on {moe} left {entries:?}: it decoded outside the session"
     );
     assert_eq!(entries[0].arch, "qwen3_moe");
     assert_eq!(entries[0].kind, EntryKind::Generate);

@@ -11,6 +11,14 @@ const Q6_K: u32 = 14;
 const IQ2_XXS: u32 = 16;
 const IQ3_XXS: u32 = 18;
 
+/// A model under `$HOME/models` (host-local; these tests SKIP when it is absent).
+fn home_model(name: &str) -> String {
+    format!(
+        "{}/models/{name}",
+        std::env::var("HOME").unwrap_or_default()
+    )
+}
+
 /// The ticket's census shape: a Q5_K tied head over an IQ2_XXS-dominated,
 /// mixed body. The old label was the head's type.
 #[test]
@@ -53,8 +61,8 @@ fn a_uniform_body_prints_one_type() {
 /// the census test above is the CI gate.
 #[test]
 fn the_real_qwen35_ud_iq2_xxs_header_is_labelled_iq2_xxs() {
-    let path = "/home/noah/models/Qwen3.5-0.8B-UD-IQ2_XXS.gguf";
-    let Ok(mapped) = crate::gguf::MappedGGUFModel::from_path(path) else {
+    let path = home_model("Qwen3.5-0.8B-UD-IQ2_XXS.gguf");
+    let Ok(mapped) = crate::gguf::MappedGGUFModel::from_path(&path) else {
         eprintln!("SKIP (not a pass): {path} is absent");
         return;
     };
@@ -101,17 +109,17 @@ fn safetensors_dtypes_map_onto_ggml_names() {
 fn a_bf16_apr_is_not_labelled_q4k_and_a_q4k_apr_is() {
     for (path, want, must_not) in [
         (
-            "/home/noah/models/qwen2.5-coder-0.5b-instruct.apr",
+            home_model("qwen2.5-coder-0.5b-instruct.apr"),
             "BF16",
             Some("Q4_K"),
         ),
         (
-            "/mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-q4k.apr",
+            "/mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-q4k.apr".to_string(),
             "Q4_K",
             None,
         ),
     ] {
-        let Ok(mapped) = crate::apr::MappedAprModel::from_path(path) else {
+        let Ok(mapped) = crate::apr::MappedAprModel::from_path(&path) else {
             eprintln!("SKIP (not a pass): {path} is absent");
             continue;
         };
@@ -128,7 +136,8 @@ fn a_bf16_apr_is_not_labelled_q4k_and_a_q4k_apr_is() {
 /// The SafeTensors CUDA path printed `quant=F16/BF16` — an either/or guess. Host-local.
 #[test]
 fn a_safetensors_label_is_read_from_its_header() {
-    let path = std::path::Path::new("/home/noah/models/qwen2.5-coder-1.5b-instruct.safetensors");
+    let path = home_model("qwen2.5-coder-1.5b-instruct.safetensors");
+    let path = std::path::Path::new(&path);
     if !path.exists() {
         eprintln!("SKIP (not a pass): {} is absent", path.display());
         return;

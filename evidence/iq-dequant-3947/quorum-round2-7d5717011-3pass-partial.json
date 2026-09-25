@@ -165,7 +165,7 @@
     ],
     "prah": {
       "source": "install-receipt",
-      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+      "path": "$HOME/.claude/skills/paiml-implement/bin/prah"
     }
   },
   "auto_merge": {
