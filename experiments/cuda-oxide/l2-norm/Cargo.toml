@@ -1,0 +1,17 @@
+[package]
+name = "l2_norm_oxide"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Standalone: never part of the aprender workspace, so the normal build and CI
+# never see the cuda-oxide toolchain. Build and run with `./receipt.sh`
+# (wraps `cargo oxide run`).
+[workspace]
+
+# #3522 O-1. Pinned: upstream moves ~10 commits/day, and a receipt that does not
+# name the codegen commit cannot be reproduced (O-0 finding 6).
+[dependencies]
+cuda-device = { git = "https://github.com/NVlabs/cuda-oxide.git", rev = "b9847e9515ed3a23096f22567d3eaf0a6e3e440c" }
+cuda-host = { git = "https://github.com/NVlabs/cuda-oxide.git", rev = "b9847e9515ed3a23096f22567d3eaf0a6e3e440c" }
+cuda-core = "=0.3.1"
