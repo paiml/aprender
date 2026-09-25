@@ -516,12 +516,17 @@ async fn qwen35_cpu_session_reports_cpu_on_both_routes_4254() {
     use crate::gguf::MappedGGUFModel;
     use std::sync::Arc;
 
-    const MODEL_PATH: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
-    if !std::path::Path::new(MODEL_PATH).exists() {
-        eprintln!("SKIP: {MODEL_PATH} is absent");
+    // A per-machine model path comes from the environment, never a literal
+    // (check_test_fixture_paths.sh): e.g. ~/models/Qwen3.5-0.8B-Q4_K_M.gguf.
+    let Ok(model_path) = std::env::var("APR_QWEN35_08B_GGUF") else {
+        eprintln!("SKIP: set APR_QWEN35_08B_GGUF to a Qwen3.5-0.8B Q4_K_M GGUF");
+        return;
+    };
+    if !std::path::Path::new(&model_path).exists() {
+        eprintln!("SKIP: APR_QWEN35_08B_GGUF={model_path} is absent");
         return;
     }
-    let mapped = Arc::new(MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF"));
+    let mapped = Arc::new(MappedGGUFModel::from_path(&model_path).expect("map the GGUF"));
     let vocab = mapped.model.vocabulary().expect("vocabulary");
     // `no_gpu = true`: the CPU path, which is what the v0.69.1 CPU asset ran.
     let session = Qwen35Session::load(&mapped, true).expect("load the hybrid");
