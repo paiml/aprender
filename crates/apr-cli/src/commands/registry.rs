@@ -137,24 +137,59 @@ pub(crate) struct Provenance {
 
 impl Provenance {
     pub(crate) fn is_orphan(&self) -> bool {
-        false
+        self.produced_by.is_none()
     }
 
-    pub(crate) fn summary(&self, _root: &str) -> String {
-        String::new()
+    pub(crate) fn summary(&self, root: &str) -> String {
+        match &self.produced_by {
+            None => format!("{root}: orphan — no run recorded as producing it (I-1)"),
+            Some(run) => format!(
+                "{root}: produced by {run}; dataset(s) [{}]; base(s) [{}]",
+                self.datasets.join(", "),
+                self.bases.join(", ")
+            ),
+        }
     }
 }
 
-pub(crate) fn provenance(_ancestry: &Ancestry) -> Provenance {
-    Provenance::default()
+pub(crate) fn provenance(ancestry: &Ancestry) -> Provenance {
+    let Some(run) = ancestry
+        .edges
+        .iter()
+        .find(|e| e.to_id == ancestry.root && e.edge_type == "produced")
+        .map(|e| e.from_id.clone())
+    else {
+        return Provenance::default();
+    };
+    let into_run = |kind: &str| -> Vec<String> {
+        ancestry
+            .edges
+            .iter()
+            .filter(|e| e.to_id == run && e.edge_type == kind)
+            .map(|e| e.from_id.clone())
+            .collect()
+    };
+    Provenance {
+        datasets: into_run("dataset"),
+        bases: into_run("base"),
+        produced_by: Some(run),
+    }
 }
 
 fn print_ancestry(ancestry: &Ancestry, json: bool) -> Result<()> {
+    let p = provenance(ancestry);
     if json {
-        let value = serde_json::to_string(ancestry)
+        let mut value = serde_json::to_value(ancestry)
             .map_err(|e| CliError::ValidationFailed(format!("ancestry json: {e}")))?;
+        value["provenance"] = serde_json::json!({
+            "produced_by": p.produced_by,
+            "datasets": p.datasets,
+            "bases": p.bases,
+            "orphan": p.is_orphan(),
+        });
         println!("{value}");
     } else {
+        println!("{}", p.summary(&ancestry.root));
         println!(
             "{}: {} ancestor(s), {} edge(s)",
             ancestry.root,
