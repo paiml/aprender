@@ -130,6 +130,42 @@ fn falsify_ext_004_train_verb_delta_on_tmp_pacha_home() {
     );
 }
 
+/// A dataset is always content-addressed, even when its bytes match a
+/// registered model: it is never named as that model.
+#[test]
+fn a_dataset_is_never_named_as_a_model() {
+    let f = fixture();
+    let reg = Registry::open(RegistryConfig::new(&f.home)).expect("registry");
+    reg.register_model(
+        "look-alike",
+        &ModelVersion::new(1, 0, 0),
+        &std::fs::read(&f.base).expect("read"),
+        ModelCard::new("same bytes as the dataset"),
+    )
+    .expect("register");
+    drop(reg);
+    let rec = Recorder::start_in(
+        &f.home,
+        &clean_engine(),
+        "finetune",
+        &[(&f.base, "dataset")],
+    )
+    .expect("start");
+    let recorded = rec.finish(false, None).expect("finish");
+    let run = PachaBackend::open(
+        &RegistryConfig::new(&f.home).db_path(),
+        &f.home.join("tracking-metrics.db"),
+    )
+    .expect("backend")
+    .load_run(&recorded.run_id)
+    .expect("run");
+    assert!(
+        run.params["dataset"].starts_with("blake3:"),
+        "{:?}",
+        run.params
+    );
+}
+
 /// A failed run is recorded as failed, with only its input edges and no
 /// produced model, even when a partial output file exists.
 #[test]
