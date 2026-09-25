@@ -55,6 +55,7 @@ judge() {
             if [ -n "$n" ]; then say "ACCEPT: con-leche accepted $n declarations (--verified)"; return 0; fi
             say "NOT A VERDICT -- exit 0 but no 'accepted N declarations' line"; return 2 ;;
         1)  if grep -q 'out of memory' "$log"; then say "NOT A VERDICT -- out of memory under MemoryMax=$MEM"; return 2; fi
+            if grep -q 'INTERNAL PANIC' "$log"; then say "NOT A VERDICT -- con-leche panicked: $line"; return 2; fi
             say "RED: a declaration was rejected: $line"; return 1 ;;
         2)  ax=$(grep -oE 'non-standard axiom \([^)]*\)' "$log" | head -1)
             if [ -n "$ax" ]; then say "RED: $ax -- an axiom beyond propext/Classical.choice/Quot.sound"; return 1; fi
@@ -80,6 +81,7 @@ self_test() {
     row 2 2 'con-leche: not implemented yet: nested inductive with indices'
     row 1 1 'con-leche: declaration Foo.bar rejected: type mismatch'
     row 2 1 'INTERNAL PANIC: out of memory'
+    row 2 1 'INTERNAL PANIC: index out of bounds'
     row 2 3 'usage: con-leche [--verified|--trusted] FILE.ndjson'
     row 2 137 ''
     printf '%s/%s rows\n' "$((n - red))" "$n"
@@ -101,7 +103,11 @@ pin() {
     local repo=$1 sha=$2 dir=$3
     [ -d "$dir/.git" ] || git clone -q "$repo" "$dir" || notverdict "git clone $repo failed"
     git -C "$dir" cat-file -e "$sha^{commit}" 2>/dev/null || git -C "$dir" fetch -q origin || notverdict "git fetch $repo failed"
-    git -C "$dir" checkout -q --detach "$sha" || notverdict "$repo has no commit $sha"
+    git -C "$dir" checkout -q --force --detach "$sha" || notverdict "$repo has no commit $sha"
+    # A reused cache clone must BE the pin: no edited tracked file, no stray source. .lake is lake's build cache,
+    # keyed on source hashes, and keeping it saves the 395 s con-leche build.
+    git -C "$dir" reset -q --hard "$sha" && git -C "$dir" clean -q -fdx -e .lake || notverdict "cannot reset $dir to $sha"
+    [ -z "$(git -C "$dir" status --porcelain --ignored=no)" ] || notverdict "$dir differs from $sha after reset"
     [ "$(git -C "$dir" rev-parse HEAD)" = "$sha" ] || notverdict "$dir is not at $sha"
 }
 
@@ -123,9 +129,13 @@ controls() {
         (cd "$d" && elan run "$TC" lean -o "$m.olean" "$m.lean") || notverdict "control $m did not compile"
         LEAN_PATH="$d:$sr/lib/lean" "$EXPORTER" "$m" > "$d/$m.ndjson" || notverdict "control $m did not export"
     done
+    # The negative control must fail for the PLANTED reason: exit 2 naming escape_ax. A crash (exit 1) or any other
+    # RED would also judge 1, and then the control would pass without con-leche ever having seen the axiom.
     rc=0; check "$d/Neg.ndjson" "$d/Neg.log" || rc=$?
+    [ "$rc" = 2 ] && grep -q 'non-standard axiom (escape_ax)' "$d/Neg.log" \
+        || notverdict "negative control: con-leche exit $rc without naming escape_ax: $(tail -1 "$d/Neg.log")"
     judge "$rc" "$d/Neg.log" > /dev/null; rc=$?
-    [ "$rc" = 1 ] || notverdict "negative control: an axiom-using module was not RED (judge $rc): $(tail -1 "$d/Neg.log")"
+    [ "$rc" = 1 ] || notverdict "negative control: judge did not call the escape_ax module RED (judge $rc)"
     rc=0; check "$d/Pos.ndjson" "$d/Pos.log" || rc=$?
     judge "$rc" "$d/Pos.log" > /dev/null; rc=$?
     [ "$rc" = 0 ] || notverdict "positive control: a trivial theorem was not accepted (judge $rc): $(tail -1 "$d/Pos.log")"
@@ -153,7 +163,11 @@ SYSROOT=$(elan run "$TC" lean --print-prefix) || notverdict "no $TC sysroot"
 controls "$SYSROOT"
 
 brc=0; capped "$HERE/build.sh" || brc=$?
-[ "$brc" = 0 ] || notverdict "build.sh exited $brc: the oleans are not fresh, an export of them would check a stale tree"
+case "$brc" in
+    0) ;;
+    2) notverdict "build.sh declined (exit 2, e.g. a Mathlib cache miss): it gave no verdict on the tree, so nothing is exported" ;;
+    *) notverdict "build.sh exited $brc: the tree does not build, and an export of its old oleans would check a stale tree" ;;
+esac
 erc=0; (cd "$HERE" && capped lake env "$EXPORTER" ProvableContracts > "$CACHE/ProvableContracts.ndjson" 2> "$CACHE/export.err") || erc=$?
 [ "$erc" = 0 ] || notverdict "lean4export exited $erc: $(tail -1 "$CACHE/export.err")"
 say "checking $(git -C "$HERE" rev-parse --short=12 HEAD 2>/dev/null || echo '<no git>') on $TC with lean4export@${EXPORT_SHA:0:12} con-leche@${CONLECHE_SHA:0:12}"
