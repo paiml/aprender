@@ -49,15 +49,6 @@ Usage:
   apr run /home/*/.cache/pacha/models/*.safetensors
   apr serve /home/*/.cache/pacha/models/*.safetensors
   
-apr list 
-=== Cached Models ===
-
-NAME                                     SIZE         FORMAT       PATH
---------------------------------------------------------------------------------------------------------
-***                       942.3 MB     SafeTensors  /home/brody/.cache/pacha/models/*.safetensors (orphan)
-
-Total: 1 models (0 tracked + 1 orphans), 1.0 GB used
-
 apr list
 === Cached Models ===
 
