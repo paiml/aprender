@@ -1,0 +1,66 @@
+{
+  "branch": "batch/release-tooling-4314-salvage",
+  "author": "claude-opus-5-5",
+  "origin": "PR #4314 closed as superseded (cop-approved D); salvage via cherry-pick -x",
+  "rounds": [
+    {
+      "round": 1,
+      "range": "origin/main...0edc34a89",
+      "lanes": {
+        "claude-sonnet-5": "PASS",
+        "claude-haiku-4-5": "PASS",
+        "gemini-3.1-pro-high": {
+          "verdict": "FAIL",
+          "agy_status": "SUCCESS",
+          "conversation_id": "2da40e08-59a9-4d5b-8cbd-6296d0c35387",
+          "blocking": [
+            "binary-release.yml draft lookup StopIteration when no release exists",
+            "rc_fleet_stage.sh gh release edit with no draft"
+          ]
+        }
+      },
+      "fix": "de3209315"
+    },
+    {
+      "round": 2,
+      "range": "0edc34a89..de3209315",
+      "lanes": {
+        "claude-sonnet-5": "PASS",
+        "gemini-3.1-pro-high": {
+          "verdict": "PASS",
+          "agy_status": "SUCCESS",
+          "conversation_id": "6d704450-06f0-4a3d-9134-ad8963ecef0d"
+        },
+        "claude-haiku-4-5": {
+          "verdict": "FAIL",
+          "blocking": [
+            "asset-id lookups ~881/~959 bare next()"
+          ]
+        }
+      },
+      "fix": "732580218"
+    },
+    {
+      "round": 3,
+      "range": "de3209315..732580218",
+      "lanes": {
+        "claude-sonnet-5": "PASS",
+        "gemini-3.1-pro-high": {
+          "verdict": "PASS",
+          "agy_status": "SUCCESS",
+          "conversation_id": "9d79c306-64de-4c9a-827a-58b23c5a53eb"
+        },
+        "claude-haiku-4-5": "PASS"
+      }
+    }
+  ],
+  "result": "PASS 3/3 (round 3), not degraded",
+  "open_by_design": "fleet_cells_gate.sh self-test WIRING row RED (UNWIRED) until the rc tagger calls it (RC_TAGGER); the rc tagger must create the rc as a draft release (#4327)",
+  "local_checks": {
+    "check_release_assets_test": "18/18",
+    "rc_fleet_stage --self-test": "PASS",
+    "promote_rc --self-test": "PASS",
+    "check_apr_bin_pinned": "OK",
+    "cargo test -p apr-cli --lib build_rs_vcs_sha": "2 passed"
+  }
+}
