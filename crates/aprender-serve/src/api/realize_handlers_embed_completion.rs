@@ -558,6 +558,44 @@ async fn try_batch_completion(
     )))
 }
 
+/// Special-token markers that end a generation when a model spells them out as
+/// ordinary text tokens (`"<|im"`, `"_end|>"`), so the EOS stop token never fires
+/// (aprender#4344). A whole special token decodes to `""` and never needs this.
+///
+/// These are the special-token half of `clean_chat_output`'s list, and only that
+/// half: the native routes are RAW completions, where `"\nUser:"` can be
+/// legitimate text.
+pub(crate) const SPECIAL_TOKEN_MARKERS: &[&str] =
+    &["<|im_end|>", "<|endoftext|>", "<|end|>", "</s>", "<|im_start|>"];
+
+/// Byte offset of the earliest [`SPECIAL_TOKEN_MARKERS`] match in `text`.
+pub(crate) fn first_special_marker(text: &str) -> Option<usize> {
+    SPECIAL_TOKEN_MARKERS.iter().filter_map(|m| text.find(m)).min()
+}
+
+/// Cut `text` (prompt echo + completion) at the first special-token marker
+/// that begins AFTER the prompt (aprender#4344).
+///
+/// The native routes return `decode(prompt ++ generated)`, and a
+/// chat-templated prompt carries markers of its own, so the search starts
+/// where `text` stops agreeing with `prompt_text`, the prompt's own decode.
+/// That is normally its full length; it is shorter only when BPE merges
+/// across the boundary.
+pub(crate) fn cut_completion_at_marker(mut text: String, prompt_text: &str) -> String {
+    let mut from = text
+        .bytes()
+        .zip(prompt_text.bytes())
+        .take_while(|(a, b)| a == b)
+        .count();
+    while !text.is_char_boundary(from) {
+        from -= 1;
+    }
+    if let Some(pos) = first_special_marker(&text[from..]) {
+        text.truncate(from + pos);
+    }
+    text
+}
+
 /// PMAT-754: truncate `text` at the EARLIEST occurrence of any stop string (OpenAI
 /// behavior) — the returned text never contains a stop string. Returns `text` unchanged
 /// when there are no stops. Several completion backends previously ignored `request.stop`
