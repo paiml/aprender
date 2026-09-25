@@ -222,7 +222,7 @@ kani_harnesses:
 - id: KANI-RN-001
   obligation: RN-INV-001
   property: 'Output always finite with ε > 0, |x_i| ≤ 1e18 and |γ_i| ≤ 1e30. Past
-    |x| ~ 1e19 Σx² overflows (Kani refuted the unbounded claim there, PMAT-3140);
+    |x| ~ 1e19 Σx² overflows and the output collapses to 0 (Kani flagged it via its sqrtf model, PMAT-3140);
     |γ| > f32::MAX/√n overflows the output, and 1e30 is a conservative bound under it'
   bound: 16
   strategy: exhaustive

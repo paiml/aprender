@@ -195,11 +195,14 @@ fn verify_softmax_bounded() {
 /// Strategy: exhaustive
 /// Bound: 16 elements
 ///
-/// Both bounds are real preconditions (PMAT-3140). The unbounded harness failed on
-/// the input side: Kani flagged "NaN on division" at `1.0 / rms` with |x| ~ 1.9e36,
-/// where sum(x^2) overflows. The gamma side is arithmetic, not a Kani finding: the
-/// normalized value reaches sqrt(n) = 4, so |gamma| > f32::MAX / 4 ~ 8.5e37 is inf.
-/// 1e30 is a conservative bound under that.
+/// Bounds (PMAT-3140). Input: unbounded, Kani 0.67 reported
+/// `rmsnorm_scalar.NaN.5 FAILURE "NaN on division"` at `1.0 / rms` (rmsnorm.rs:37)
+/// on a trace with |x| ~ 1.9e36, where sum(x^2) overflows. IEEE gives
+/// sqrt(inf) = inf and 1/inf = 0, so this is most likely CBMC's builtin sqrtf
+/// model on inf, not a runtime NaN. The bound stays anyway: past it the real
+/// output collapses to all zeros, which is finite but is not RMSNorm. Gamma: pure
+/// arithmetic, not a Kani finding. The normalized value reaches sqrt(n) = 4, so
+/// |gamma| > f32::MAX / 4 ~ 8.5e37 overflows, and 1e30 is conservative.
 #[kani::proof]
 #[kani::unwind(17)]
 fn verify_rmsnorm_finiteness() {
