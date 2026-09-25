@@ -60,12 +60,22 @@ fn text(rel: &str) -> String {
 /// present 'fn ont_planted' …/witness.rs && present 'KANI-ONT-9-1' …/witness.rs` (`merged ONT-9` is the ledger's).
 #[test]
 fn the_spec_probe_holds_on_the_repo() {
+    // CI runs this in a container whose uid does not own the checkout, and actions/checkout marked it safe only in
+    // the host's git config — git refuses the repo ("dubious ownership") and the probe read "not tracked". git 2.34
+    // honours `safe.directory` only from global/system config (not `-c`, not GIT_CONFIG_COUNT), so hand it one.
+    let cfg = tempfile::NamedTempFile::new().expect("temp gitconfig");
+    std::fs::write(cfg.path(), "[safe]\n\tdirectory = *\n").expect("write temp gitconfig");
     let tracked = Command::new("git")
         .args(["ls-files", "--error-unmatch", CONTRACT])
+        .env("GIT_CONFIG_GLOBAL", cfg.path())
         .current_dir(repo())
         .output()
         .expect("spawn git");
-    assert!(tracked.status.success(), "{CONTRACT} is not tracked");
+    assert!(
+        tracked.status.success(),
+        "{CONTRACT} is not tracked: {}",
+        String::from_utf8_lossy(&tracked.stderr)
+    );
     let r = pv(&["validate", s(&repo().join(CONTRACT))]);
     assert_eq!(r.code, 0, "{}", show(&r));
     let w = text(WITNESS_RS);
