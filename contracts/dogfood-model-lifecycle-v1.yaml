@@ -231,7 +231,8 @@ falsification_tests:
   obligation: EXT-INV-009
   rule: Model gates fire
   prediction: each gate M0..M6 turns RED on its plant; an underpowered M2 refuses promotion
-  if_fails: 'a gate cannot fail (owed EXT-12 #4394; planned: cargo test -p apr-cli --test ext_promote falsify_ext_015_gates_red_on_plant)'
+  test: cargo test -p apr-cli --lib falsify_ext_015_underpowered_m2_refuses_promotion
+  if_fails: 'an underpowered M2 comparison promotes (the M2 half, bound). The M0, M1, M3..M6 plants are still owed by EXT-12 #4394 with apr model gate'
 - id: FALSIFY-EXT-016
   obligation: EXT-INV-002
   rule: Clean-room gate sees corruption
