@@ -19,11 +19,13 @@
         "pass": true
       },
       "timing": {
-        "oxide_us": 2.949,
-        "handptx_us": 3.123,
-        "ratio": 0.9443,
-        "worst_heads": 48,
+        "oxide_us": 2.212,
+        "handptx_us": 2.447,
+        "ratio": 0.9038,
+        "worst_heads": 16,
         "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 0.9441,
         "pass": true
       },
       "register_budget": {
@@ -31,7 +33,7 @@
         "handptx": 27
       },
       "host": "yoga",
-      "sha": "5630ddc8b674a442ab45c9a4cced1bbcc9140aae",
+      "sha": "0c4a4664c95efd984224d59e79cad4a916e923aa",
       "tree_dirty_paths": 0,
       "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
       "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
@@ -54,11 +56,13 @@
         "pass": true
       },
       "timing": {
-        "oxide_us": 2.959,
-        "handptx_us": 3.123,
-        "ratio": 0.9475,
-        "worst_heads": 48,
+        "oxide_us": 2.222,
+        "handptx_us": 2.447,
+        "ratio": 0.9079,
+        "worst_heads": 16,
         "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 0.9366,
         "pass": true
       },
       "register_budget": {
@@ -66,7 +70,7 @@
         "handptx": 27
       },
       "host": "yoga",
-      "sha": "5630ddc8b674a442ab45c9a4cced1bbcc9140aae",
+      "sha": "0c4a4664c95efd984224d59e79cad4a916e923aa",
       "tree_dirty_paths": 0,
       "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
       "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",

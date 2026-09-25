@@ -19,11 +19,13 @@
         "pass": true
       },
       "timing": {
-        "oxide_us": 2.354,
-        "handptx_us": 2.591,
-        "ratio": 0.9085,
+        "oxide_us": 1.741,
+        "handptx_us": 1.975,
+        "ratio": 0.8814,
         "worst_heads": 16,
         "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 0.9323,
         "pass": true
       },
       "register_budget": {
@@ -31,7 +33,7 @@
         "handptx": 27
       },
       "host": "noah-Lambda-Vector",
-      "sha": "5b29ed2cdfb6ebb67800771b50e9f6cb7cb6e4c7",
+      "sha": "9a129b5f94e206532c571eabc6dd64ff280fd523",
       "tree_dirty_paths": 0,
       "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
       "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
@@ -54,11 +56,13 @@
         "pass": true
       },
       "timing": {
-        "oxide_us": 2.376,
-        "handptx_us": 2.601,
-        "ratio": 0.9134,
-        "worst_heads": 48,
+        "oxide_us": 1.751,
+        "handptx_us": 1.975,
+        "ratio": 0.8867,
+        "worst_heads": 16,
         "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 0.9286,
         "pass": true
       },
       "register_budget": {
@@ -66,7 +70,7 @@
         "handptx": 27
       },
       "host": "noah-Lambda-Vector",
-      "sha": "5b29ed2cdfb6ebb67800771b50e9f6cb7cb6e4c7",
+      "sha": "9a129b5f94e206532c571eabc6dd64ff280fd523",
       "tree_dirty_paths": 0,
       "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
       "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
