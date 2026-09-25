@@ -1,4 +1,4 @@
-# Nightly binary builds for Linux x86_64 and aarch64, on the self-hosted fleet.
+# Nightly binary builds for Linux x86_64 and aarch64 and macOS aarch64, on the self-hosted fleet.
 # APR-MONO: All deps are in-tree. No sibling repo checkouts needed.
 # Spec: docs/specifications/release-system.md
 #
@@ -24,14 +24,16 @@
 # <bin>-{target}/<bin>) and nightly-manifest.json, on the "nightly" prerelease.
 # Plus apr-{target}-cuda.tar.gz (+ .sha256): apr built --features cuda, the name
 # binary-release.yml gives the same build, so GPU hosts can run the nightly (#4326).
+# Plus apr-x86_64-unknown-linux-gnu-wgpu.tar.gz (apr --features wgpu, for intel
+# hosts) and apr/pv-aarch64-apple-darwin.tar.gz built on the mini (#4353).
 #
 # #3073 (operator rule 2026-09-10: "WE DO NOT USE HOSTED GITHUB RUNNERS"): every
 # job runs on the fleet. x86_64 builds on yoga and aarch64 natively on gx10, both
 # inside rust:1.93.0-bullseye (binary-release.yml's CPU-lane pattern), so the
 # nightly's glibc floor is 2.31; the ubuntu-latest build needed GLIBC_2.39 and did
-# not run on lambda's 22.04. The macOS and Windows targets are gone: no self-hosted
-# macOS or Windows runner is registered in the org, and there is no hosted
-# fallback. They come back when a box for them does.
+# not run on lambda's 22.04. macOS came back with the mini (self-hosted, macOS,
+# ARM64, mini; #4353), which builds apr + pv natively. Windows stays gone: no
+# self-hosted Windows runner is registered, and there is no hosted fallback.
 
 name: Nightly
 
@@ -99,9 +101,11 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             host: yoga
             labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
+            variants: apr:cuda,apr:wgpu
           - target: aarch64-unknown-linux-gnu
             host: gx10
             labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
+            variants: apr:cuda
     runs-on: ${{ fromJSON(matrix.labels) }}
     steps:
       - name: Checkout
@@ -186,6 +190,41 @@ jobs:
           tar czf "dist/$A.tar.gz" "$A"
           (cd dist && shasum -a 256 "$A.tar.gz" > "$A.tar.gz.sha256")
           echo "Packaged: dist/$A.tar.gz ($(du -h "dist/$A.tar.gz" | cut -f1))"
+          # #4353 (operator: "wgpu enabled binary for intel"): apr --features wgpu,
+          # shipped as apr-{target}-wgpu (binary-release.yml's name). There is no
+          # byte marker for wgpu (trueno/gpu is linked into every apr), so the
+          # feature is proven by behaviour: a build with no accelerator refuses
+          # `--gpu` with "no GPU backend compiled in"; a wgpu build must not.
+          case ",${{ matrix.variants }}," in *,apr:wgpu,*) ;; *) exit 0 ;; esac
+          mkdir -p "$CACHE/target-wgpu"
+          $DOCKER run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$CACHE/registry:/usr/local/cargo/registry" \
+            -v "$CACHE/target-wgpu:/workspace/target-wgpu" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target-wgpu \
+            -e CARGO_INCREMENTAL=0 \
+            -e APR_GIT_SHA_OVERRIDE="$APR_SHA" \
+            -e T="$T" \
+            rust:1.93.0-bullseye \
+            sh -c 'set -e; cargo build --locked --release -p apr-cli --bin apr --features wgpu --target "$T"'
+          mkdir -p "target/$T/release/wgpu"
+          cp "$CACHE/target-wgpu/$T/release/apr" "target/$T/release/wgpu/apr"
+          out=$("target/$T/release/wgpu/apr" run /nonexistent/apr-flavour-probe.gguf --gpu --prompt x 2>&1) && rc=0 || rc=$?
+          n=$(printf '%s\n' "$out" | grep -c 'no GPU backend compiled in' || true)
+          echo "wgpu flavour probe: rc=$rc refusal_lines=$n"
+          if [ "$rc" -eq 0 ] || [ "$n" -ne 0 ]; then
+            echo "::error::apr --features wgpu still refuses --gpu: the feature did not take"; exit 1
+          fi
+          A="apr-$T-wgpu"
+          mkdir -p "$A"
+          cp "target/$T/release/wgpu/apr" "$A/"
+          for f in README.md LICENSE LICENSE-MIT COPYING UNLICENSE; do
+            if [ -f "$f" ]; then cp "$f" "$A/"; fi
+          done
+          tar czf "dist/$A.tar.gz" "$A"
+          (cd dist && shasum -a 256 "$A.tar.gz" > "$A.tar.gz.sha256")
+          echo "Packaged: dist/$A.tar.gz ($(du -h "dist/$A.tar.gz" | cut -f1))"
 
       # Runs on failure too: a failed build is a verdict the manifest records.
       - name: Record (sha256 of tarball and executable, --version, build SHA)
@@ -202,7 +241,7 @@ jobs:
           # without reading --bins, so "none" is never probed as a bin.
           python3 scripts/nightly_manifest.py record --target "${{ matrix.target }}" --sha "$GITHUB_SHA" \
             --bins "${NIGHTLY_BINS:-none}" --bin-dir "target/${{ matrix.target }}/release" --dist dist \
-            --variants apr:cuda \
+            --variants "${{ matrix.variants }}" \
             --build-outcome "${{ steps.build.outcome }}" --version "$V" > "dist/fragment-${{ matrix.target }}.json"
           cat "dist/fragment-${{ matrix.target }}.json"
 
@@ -214,9 +253,67 @@ jobs:
           path: dist/*
           if-no-files-found: warn
 
+  # #4353 (operator: "mac is critical"): apr + pv for aarch64-apple-darwin, native
+  # on the mini -- no container on macOS, and no linux-only [[bin]] (cuda, fleet
+  # daemons) belongs on a mac, so the target ships exactly the two tools a Mac
+  # runs. Same record/verdicts as the linux arches; a dead mini is a red target
+  # that keeps its last green tools, never a blocked publish.
+  build-darwin:
+    needs: gate
+    if: needs.gate.outputs.decision == 'build'
+    name: aarch64-apple-darwin on mini
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
+    timeout-minutes: 90
+    env:
+      T: aarch64-apple-darwin
+      DARWIN_BINS: apr,pv
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build apr + pv natively
+        id: build
+        run: |
+          set -euo pipefail
+          APR_GIT_SHA_OVERRIDE="$(git rev-parse --short HEAD)" \
+            cargo build --locked --release -p apr-cli --bin apr -p aprender-contracts-cli --bin pv --target "$T"
+          mkdir -p dist
+          for b in ${DARWIN_BINS//,/ }; do
+            strip "target/$T/release/$b"
+            A="$b-$T"
+            mkdir -p "$A"
+            cp "target/$T/release/$b" "$A/"
+            for f in README.md LICENSE LICENSE-MIT COPYING UNLICENSE; do
+              if [ -f "$f" ]; then cp "$f" "$A/"; fi
+            done
+            tar czf "dist/$A.tar.gz" "$A"
+            (cd dist && shasum -a 256 "$A.tar.gz" > "$A.tar.gz.sha256")
+            echo "Packaged: dist/$A.tar.gz ($(du -h "dist/$A.tar.gz" | cut -f1))"
+          done
+
+      - name: Record (sha256 of tarball and executable, --version, build SHA)
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          V=$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p&&/^version *=/{gsub(/"/,"",$3);print $3;exit}' Cargo.toml)
+          if [ -z "$V" ]; then echo "::error::no [workspace.package] version in Cargo.toml"; exit 1; fi
+          python3 scripts/nightly_manifest.py record --target "$T" --sha "$GITHUB_SHA" \
+            --bins "$DARWIN_BINS" --bin-dir "target/$T/release" --dist dist \
+            --build-outcome "${{ steps.build.outcome }}" --version "$V" > "dist/fragment-$T.json"
+          cat "dist/fragment-$T.json"
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightly-aarch64-apple-darwin
+          path: dist/*
+          if-no-files-found: warn
+
   # ── Publish per arch, then the manifest ──────────────────
   publish:
-    needs: [gate, build]
+    needs: [gate, build, build-darwin]
     if: always() && needs.gate.result == 'success'
     runs-on: [self-hosted, Linux, X64, clean-room]
     steps:

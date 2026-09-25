@@ -61,7 +61,10 @@ SCHEMA = "aprender-nightly-manifest/v1"
 MANIFEST_ASSET = "nightly-manifest.json"
 STAGED = "staged."  # prefix of an upload not yet swapped in
 REQUIRED = ["ci / gate", "workspace-test"]
-TARGETS = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+# #4353 (operator: "mac is critical"): the mini builds apr + pv natively. It is a
+# target like the others: a dead mini records red and keeps its last green tools,
+# and never stops a linux arch from publishing.
+TARGETS = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "aarch64-apple-darwin"]
 # A SHA printed in parentheses -- `apr 0.69.0 (aa7c6ef03)`. `pv 0.69.0
 # (aprender provable-contracts verifier)` prints none, and neither does a
 # tarball build's `(v0.69.1+no-git)`.
@@ -74,6 +77,9 @@ BUILD_VERDICTS = {"build-failed", "version-mismatch", "version-no-sha", "version
 # loader name, present only under --features cuda (1 vs 0 on 0.66.0; the same
 # proof binary-release.yml's cuda lane runs).
 VARIANT_MARKERS = {"cuda": b"libcuda.so"}
+# wgpu (#4353) has no marker: every build links trueno/gpu, so wgpu bytes are in
+# the CPU apr too. nightly.yml proves that feature by behaviour instead (`--gpu`
+# is refused only by a build with no accelerator) before it records.
 
 
 class GateError(Exception):
@@ -241,6 +247,20 @@ def record(target, sha, bins, bin_dir, dist, build_outcome="success", probe=prob
 
 # ---------------------------------------------------------------- bins
 
+def matrix_variants(workflow_text):
+    """{target: variants} from nightly.yml's build matrix, line by line (#4353)."""
+    out, cur = {}, None
+    for line in workflow_text.splitlines():
+        m = re.match(r"\s*- target: (\S+)\s*$", line)
+        if m:
+            cur = m.group(1)
+            continue
+        m = re.match(r"\s*variants: (\S+)\s*$", line)
+        if m and cur:
+            out[cur] = m.group(1)
+    return out
+
+
 def workspace_bins(meta):
     """[(bin, package, required_features)] for every workspace [[bin]], one per
     bin name, sorted. A name defined twice resolves to the package NOT at the
@@ -388,7 +408,21 @@ def self_test():
         if not ok:
             fails.append(name)
 
-    S, OLD, T = "a" * 40, "b" * 40, TARGETS
+    # The rows below pin two-arch behaviour, so they name their arches rather than
+    # following TARGETS; the row after them pins TARGETS itself.
+    S, OLD, T = "a" * 40, "b" * 40, ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+    check("#4353: the mini (aarch64-apple-darwin) is a nightly target",
+          "aarch64-apple-darwin" in TARGETS and all(t in TARGETS for t in T), True)
+    # #4353 wiring: TARGETS naming the mini is only a promise; the workflow must
+    # build it and must build the intel wgpu apr, or the manifest says red forever.
+    wf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".github", "workflows", "nightly.yml")
+    wf = open(wf_path).read() if os.path.isfile(wf_path) else ""
+    check("#4353: nightly.yml builds aarch64-apple-darwin apr+pv on the mini",
+          bool(re.search(r"(?m)^  build-darwin:", wf)) and "DARWIN_BINS: apr,pv" in wf
+          and "T: aarch64-apple-darwin" in wf and "build-darwin]" in wf, True)
+    check("#4353: nightly.yml ships apr --features wgpu on x86_64",
+          matrix_variants(wf).get("x86_64-unknown-linux-gnu", "").split(",").count("apr:wgpu") == 1
+          and "--bin apr --features wgpu --target" in wf, True)
     head_sha, old_sha = S, OLD  # id names: the guard reads `sha[:9]` as an id prefix (#3904)
     run = lambda n, s, c, i=1: {"name": n, "status": s, "conclusion": c, "id": i}  # noqa: E731
     green = [run("ci / gate", "completed", "success"), run("workspace-test", "completed", "success")]
