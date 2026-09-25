@@ -270,7 +270,7 @@ mod fp8_activation_cache;
 mod gdn_ops;
 /// PMAT-3596 (#3596): the Qwen3.5 hybrid's batched-prefill wrappers (GEMM projections,
 /// row-batched Gated `DeltaNet` kernels, causal attention over the resident cache).
-mod gdn_prefill_ops;
+pub(crate) mod gdn_prefill_ops;
 mod gemm;
 /// PMAT-291: Transformer layer graph builder for Qwen2.5 architecture
 mod graph_builder;

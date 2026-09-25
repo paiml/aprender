@@ -70,6 +70,7 @@ pub use types::{
 // - executor/graph.rs: CUDA graph capture and replay
 // - executor/kv_cache.rs: KV cache management
 mod executor;
+pub(crate) use executor::gdn_prefill_ops::{qwen35_prefill_gemm_mode, Qwen35PrefillGemm};
 pub mod gpu_profile;
 pub use executor::CudaExecutor;
 pub use gpu_profile::GpuProfile;
