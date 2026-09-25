@@ -25,14 +25,14 @@
 #     the runner step is skipped and the job goes green having run nothing;
 #   - no manifest without its job.
 #
-# The step list is read from ci.yml by scripts/lib/ci_guard_steps.py, the
+# The step list is read from ci.yml by scripts/lib/ci_guard_steps.sh, the
 # runner itself. There is no second list.
 #
 #   bash scripts/check_guard_steps_run_all.sh              # check
 #   bash scripts/check_guard_steps_run_all.sh --self-test  # case table
 set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIB="${REPO_ROOT}/scripts/lib/ci_guard_steps.py"
+LIB="${REPO_ROOT}/scripts/lib/ci_guard_steps.sh"
 
 usage() {
     sed -n '2,/^set -uo pipefail/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'
@@ -76,7 +76,7 @@ self_test() {
 
     case_row() { # case_row <label> <want_rc> <workflow> <baseline> [job]
         local got
-        python3 "$LIB" --workflow "$3" check-run-all --baseline "$4" "${5:-guard-x}" > "$d/out" 2>&1
+        bash "$LIB" --workflow "$3" check-run-all --baseline "$4" "${5:-guard-x}" > "$d/out" 2>&1
         got=$?
         n=$((n + 1))
         if [ "$got" -eq "$2" ]; then
@@ -110,7 +110,7 @@ self_test() {
     mkdir -p "$repo" && git -C "$repo" init -q && mkdir -p "$repo/.github/workflows"
     fixture "$repo/.github/workflows/ci.yml" pass fail pass fail
     local got
-    ( cd "$repo" && CI_GUARDS_SCRATCH="$d/scratch" python3 "$LIB" run guard-x ) > "$d/out" 2>/dev/null
+    ( cd "$repo" && CI_GUARDS_SCRATCH="$d/scratch" bash "$LIB" run guard-x ) > "$d/out" 2>/dev/null
     got=$?
     n=$((n + 1))
     if [ "$got" -eq 1 ] && grep -q '^SUMMARY: 2 failed / 4 ran / 0 skipped$' "$d/out"; then
@@ -121,7 +121,7 @@ self_test() {
         fail=1
     fi
     fixture "$repo/.github/workflows/ci.yml" event
-    ( cd "$repo" && CI_GUARDS_SCRATCH="$d/scratch" python3 "$LIB" run guard-x ) > "$d/out" 2>/dev/null
+    ( cd "$repo" && CI_GUARDS_SCRATCH="$d/scratch" bash "$LIB" run guard-x ) > "$d/out" 2>/dev/null
     got=$?
     n=$((n + 1))
     if [ "$got" -eq 2 ]; then
@@ -132,6 +132,7 @@ self_test() {
     fi
 
     manifest_rows || fail=1
+    reader_rows || fail=1
 
     if [ "$fail" -ne 0 ]; then
         echo "check_guard_steps_run_all self-test: FAILED"
@@ -187,7 +188,7 @@ manifest_rows() {
         shift 3
         : > "$d/msummary"
         ( cd "$repo" && GITHUB_ACTIONS=true GITHUB_TOKEN=tok-123 GITHUB_STEP_SUMMARY="$d/msummary" \
-            CI_GUARDS_SCRATCH="$d/mscratch" python3 "$LIB" run "$@" guard-x ) > "$d/out" 2>&1
+            CI_GUARDS_SCRATCH="$d/mscratch" bash "$LIB" run "$@" guard-x ) > "$d/out" 2>&1
         got=$?
         n=$((n + 1))
         if [ "$got" -eq "$want" ] && grep -Eq "$pat" "$d/out"; then
@@ -225,10 +226,78 @@ manifest_rows() {
     if [ $((t1 - t0)) -lt 15 ]; then printf 'ok   %-58s %ss\n' "timeout returned promptly" $((t1 - t0))
     else printf 'FAIL %-58s %ss\n' "timeout returned promptly" $((t1 - t0)); bad=1; fi
     n=$((n + 1))
-    if [ "$(cd "$repo" && python3 "$LIB" sha guard-x)" = "$(cd "$repo" && GITHUB_ACTIONS=true python3 "$LIB" sha guard-x)" ] \
+    if [ "$(cd "$repo" && bash "$LIB" sha guard-x)" = "$(cd "$repo" && GITHUB_ACTIONS=true bash "$LIB" sha guard-x)" ] \
         && grep -q '^ci_guards: sha256 [0-9a-f]\{16\} manifest [0-9a-f]\{16\}' "$d/out"; then
         printf 'ok   %-58s\n' "the sha line is the same in CI and locally, and is printed"
     else printf 'FAIL %-58s\n' "the sha line is the same in CI and locally, and is printed"; bad=1; fi
+    return "$bad"
+}
+
+# The YAML reader (#4415, bash port): ci.yml is read by an awk block-YAML
+# reader, not PyYAML. It reads the subset ci.yml uses and REFUSES (rc 2)
+# everything else -- a shape it misread would be a guard that checks nothing.
+# Each refusal row has a control row: the same fixture with a valid step
+# appended passes, so the rc 2 is the defect and not the fixture.
+# Uses self_test's $d, $n, case_row.
+reader_rows() {
+    local bad=0 kind got want out
+    rfixture() { # rfixture <file> <step text, indented 8, after "- name: extra">
+        fixture "$1" plain plain
+        printf '      - name: extra\n        if: ${{ !cancelled() }}\n%s\n' "$2" >> "$1"
+    }
+    # shellcheck disable=SC2016 # literal YAML
+    rfixture "$d/r_ok.yml" '        run: |-
+          x='"'"'a: b # not a comment'"'"'
+
+          test "$x" = "a: b # not a comment"
+        env: {}
+        with: [a, '"'"'b, c'"'"', "d"]'
+    case_row "reader control: |- block, flow list, {} -> pass" 0 "$d/r_ok.yml" "$d/base2"
+    for kind in anchor alias tag folded multiline_plain unclosed_dq duplicate_key tab_indent flow_map colon_in_plain; do
+        case "$kind" in
+            anchor) out='        run: &a "true"' ;;
+            alias) out='        run: *a' ;;
+            tag) out='        run: !!str "true"' ;;
+            folded) out='        run: >
+          true' ;;
+            multiline_plain) out='        run: echo a
+          echo b' ;;
+            unclosed_dq) out='        run: "true' ;;
+            duplicate_key) out='        run: "true"
+        run: "false"' ;;
+            tab_indent) out="$(printf '\t    run: "true"')" ;;
+            flow_map) out='        env: {A: b}' ;;
+            colon_in_plain) out='        run: echo a: b' ;;
+        esac
+        rfixture "$d/r_$kind.yml" "$out"
+        case_row "reader refuses '$kind' (rc 2, never a guess)" 2 "$d/r_$kind.yml" "$d/base2"
+    done
+
+    # Fidelity: quoted scalars decode as YAML says, and a trailing comment is not a name.
+    mfixture "$d/r_names.yml" good "true"
+    # shellcheck disable=SC2016
+    printf '%s\n' "      - name: 'it''s \"q\"'" '        run: "true"' \
+        '      - name: "a\tb \"x\" \\ z"' '        run: "true"' \
+        '      - name: plain # a comment' '        run: "true"' >> "$d/r_names.yml"
+    got="$(bash "$LIB" --workflow "$d/r_names.yml" list guard-x 2>&1)"
+    want="$(printf '== guard-x\n  m0  tokened\n  m1  step 4\n  m2  it'"'"'s "q"\n  m3  a\tb "x" \\ z\n  m4  plain')"
+    n=$((n + 1))
+    if [ "$got" = "$want" ]; then printf 'ok   %-58s\n' "reader: '' / \\\" / \\t / \\\\ / trailing # decode like YAML"
+    else printf 'FAIL %-58s\n' "reader: '' / \\\" / \\t / \\\\ / trailing # decode like YAML"; printf '%s\n' "$got" | sed 's/^/     | /'; bad=1; fi
+
+    # The gate's needs as a flow list names the guard jobs (no job argument given).
+    fixture "$d/r_gate.yml" plain plain
+    printf '  gate:\n    needs: [build, guard-x]\n    runs-on: x\n    steps:\n      - run: "true"\n' >> "$d/r_gate.yml"
+    got="$(bash "$LIB" --workflow "$d/r_gate.yml" check-run-all --baseline "$d/base2" 2>&1)"
+    n=$((n + 1))
+    if printf '%s\n' "$got" | grep -q '^ok   guard-x: 2 fail-fast'; then printf 'ok   %-58s\n' "reader: gate needs: [a, guard-x] -> guard-x is checked"
+    else printf 'FAIL %-58s\n' "reader: gate needs: [a, guard-x] -> guard-x is checked"; printf '%s\n' "$got" | sed 's/^/     | /'; bad=1; fi
+
+    # The port's point: no python anywhere on the path.
+    n=$((n + 1))
+    if ! grep -n 'python' "$LIB" "${REPO_ROOT}/scripts/ci_guards.sh" > "$d/py" 2>&1 && [ -f "$LIB" ]; then
+        printf 'ok   %-58s\n' "no python in the lib or the runner"
+    else printf 'FAIL %-58s\n' "no python in the lib or the runner"; sed 's/^/     | /' "$d/py"; bad=1; fi
     return "$bad"
 }
 
@@ -239,11 +308,11 @@ case "${1:-}" in
     *) echo "unknown argument: $1" >&2; exit 2 ;;
 esac
 
-command -v python3 > /dev/null 2>&1 || { echo "check_guard_steps_run_all: python3 missing" >&2; exit 2; }
+command -v jq > /dev/null 2>&1 || { echo "check_guard_steps_run_all: jq missing" >&2; exit 2; }
 cd "$REPO_ROOT" || exit 2
 rc=0
-python3 "$LIB" check-run-all || rc=$?
+bash "$LIB" check-run-all || rc=$?
 # Every guard-shaped step in ci.yml is in a manifest or acknowledged (#4415 lane b):
 # run here so CI enforces it, not only make guards-local / pre-push.
-python3 "$LIB" check-coverage || { r=$?; [ "$rc" -ge "$r" ] || rc=$r; }
+bash "$LIB" check-coverage || { r=$?; [ "$rc" -ge "$r" ] || rc=$r; }
 exit "$rc"
