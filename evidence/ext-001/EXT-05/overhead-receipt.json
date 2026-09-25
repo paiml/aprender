@@ -1,0 +1,35 @@
+{
+ "row": "EXT-05",
+ "issue": "paiml/aprender#4387",
+ "purpose": "overhead of pacha recording on a train verb vs the EXT-04 noise band (FALSIFY-EXT-004 overhead clause)",
+ "measured_utc": "2026-09-25T16:51Z..16:56Z",
+ "host": "lambda-vector (CPU only; no GPU used, R-9 respected)",
+ "build": "debug (dev profile) test binary at worktree HEAD 349dc91e0 + blake3-only input hashing; release is faster, so these are upper bounds",
+ "harness": "cargo test -p apr-cli --lib ext05_recorder_overhead_receipt -- --ignored --nocapture (EXT05_BASE_MB sets base size); tmp pacha home on /mnt/nvme-raid0",
+ "workload": "base file N MB, dataset dir 50 MB + 2 small files, produced adapter 50 MB",
+ "runs": [
+  {
+   "base_mb": 1000,
+   "start_s": 0.409,
+   "finish_s": 1.224,
+   "total_s": 1.633
+  },
+  {
+   "base_mb": 250,
+   "start_s": 0.27,
+   "finish_s": 2.104,
+   "total_s": 2.374
+  },
+  {
+   "base_mb": 1000,
+   "start_s": 0.432,
+   "finish_s": 1.251,
+   "total_s": 1.683
+  }
+ ],
+ "host_load": "load average 19-43 from other fleet work (shared host, not clean-room)",
+ "structure": "the recorder runs once before and once after the verb, outside the training step loop, so steady tok/s (the EXT-04 metric) is unchanged by construction; the cost is fixed wall time",
+ "noise_band_basis": "evidence/ext-001/EXT-04/tok-s-cv-receipt.json: cv 18.63%",
+ "verdict": "PASS: added wall time is <=2.4 s per run (<0.5 s at start). That is under 18.63% of any run longer than ~13 s; every real finetune/pretrain run is minutes or more",
+ "finding": "the first cut hashed inputs with blake3+sha256 in one pass: 25.0 s start for a 1 GB base in debug. Inputs need only blake3 (pacha's content address), and that brought start to 0.41 s. sha256 is computed only for the produced artifact"
+}

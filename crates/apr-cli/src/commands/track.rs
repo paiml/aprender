@@ -19,7 +19,6 @@ use entrenar::tracking::{ulid::new_ulid, Run, RunStatus};
 use pacha::model::{ModelCard, ModelVersion};
 use pacha::{Registry, RegistryConfig};
 use sha2::Digest;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 type Result<T> = std::result::Result<T, CliError>;
@@ -76,30 +75,18 @@ fn pacha_err(e: impl std::fmt::Display) -> CliError {
     CliError::ValidationFailed(format!("pacha: {e}"))
 }
 
-/// Streamed BLAKE3 (pacha's content address) and sha256 of one file.
-fn hash_file(path: &Path) -> Result<(String, String)> {
-    let mut file = std::fs::File::open(path)?;
-    let (mut b3, mut sha) = (blake3::Hasher::new(), sha2::Sha256::new());
-    let mut buf = vec![0u8; 1 << 20];
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        b3.update(&buf[..n]);
-        sha.update(&buf[..n]);
-    }
-    Ok((
-        b3.finalize().to_hex().to_string(),
-        format!("{:x}", sha.finalize()),
-    ))
+/// Streamed BLAKE3 of one file: inputs need only pacha's content address.
+fn blake3_file(path: &Path) -> Result<String> {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update_reader(std::fs::File::open(path)?)?;
+    Ok(hasher.finalize().to_hex().to_string())
 }
 
 /// BLAKE3 of a file, or of a directory as its sorted `(relative path, file
 /// BLAKE3)` list, so a dataset directory is content-addressed too.
 fn blake3_tree(path: &Path) -> Result<String> {
     if path.is_file() {
-        return Ok(hash_file(path)?.0);
+        return blake3_file(path);
     }
     let mut files = Vec::new();
     let mut stack = vec![path.to_path_buf()];
@@ -123,7 +110,7 @@ fn blake3_tree(path: &Path) -> Result<String> {
             .into_owned();
         tree.update(rel.as_bytes());
         tree.update(&[0]);
-        tree.update(hash_file(&f)?.0.as_bytes());
+        tree.update(blake3_file(&f)?.as_bytes());
         tree.update(&[b'\n']);
     }
     Ok(tree.finalize().to_hex().to_string())

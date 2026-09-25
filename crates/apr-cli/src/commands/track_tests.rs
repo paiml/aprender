@@ -90,7 +90,10 @@ fn falsify_ext_004_train_verb_delta_on_tmp_pacha_home() {
         (1, 3, 1),
         "delta (runs, lineage, models)"
     );
-    let want_sha = hash_file(&f.out).expect("hash").1;
+    let want_sha = format!(
+        "{:x}",
+        sha2::Sha256::digest(std::fs::read(&f.out).expect("read"))
+    );
     assert_eq!(
         recorded.produced_sha256.as_deref(),
         Some(want_sha.as_str()),
@@ -226,4 +229,46 @@ fn no_track_trains_without_recording() {
     })
     .expect("untracked run");
     assert!(ran);
+}
+
+/// EXT-05 overhead receipt (run by hand, `--ignored --nocapture`): wall
+/// time the recorder adds to one run for a base of `EXT05_BASE_MB` (default
+/// 1000), a 50 MB dataset and a 50 MB adapter.
+#[test]
+#[ignore = "timing receipt, not a gate"]
+fn ext05_recorder_overhead_receipt() {
+    let mb = |v: &str, d| {
+        std::env::var(v)
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(d)
+    };
+    let f = fixture();
+    let fill = |p: &Path, n: usize| {
+        let chunk: Vec<u8> = (0..1usize << 20).map(|i| (i * 31 % 251) as u8).collect();
+        let mut w = std::fs::File::create(p).expect("create");
+        for _ in 0..n {
+            std::io::Write::write_all(&mut w, &chunk).expect("write");
+        }
+    };
+    fill(&f.base, mb("EXT05_BASE_MB", 1000));
+    fill(&f.data.join("train.jsonl"), 50);
+    fill(&f.out, 50);
+    let t = std::time::Instant::now();
+    let rec = Recorder::start_in(
+        &f.home,
+        &clean_engine(),
+        "finetune",
+        Some(&f.base),
+        Some(&f.data),
+    )
+    .expect("start");
+    let start_s = t.elapsed().as_secs_f64();
+    let t = std::time::Instant::now();
+    rec.finish(true, Some(&f.out)).expect("finish");
+    let finish_s = t.elapsed().as_secs_f64();
+    println!(
+        "EXT05_OVERHEAD start_s={start_s:.3} finish_s={finish_s:.3} total_s={:.3}",
+        start_s + finish_s
+    );
 }
