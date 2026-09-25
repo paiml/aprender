@@ -167,6 +167,39 @@ mod ptx_tests {
         assert_eq!(ptx.matches("ex2.approx.f32").count(), 1, "{ptx}");
         assert_eq!(kernel.grid(), (16, 1, 1));
     }
+
+    /// #3522 OXIDE-001 O-1: the cuda-oxide pilot times its port against the hand
+    /// PTX committed under `experiments/cuda-oxide/gated-rmsnorm/baseline-ptx/`.
+    /// If this kernel's emitter changes and the baseline does not, the timing
+    /// receipt compares against a kernel that no longer ships. This golden
+    /// check fails on that drift. It is also the PTX-golden half mini can run
+    /// with no GPU.
+    ///
+    /// Regenerate: `APR_BLESS_PTX=1 cargo test -p aprender-gpu --features cuda --lib gdn_gated_rmsnorm_ptx_golden`
+    /// (`cuda` only loads the driver at runtime, so this runs on a host with no GPU).
+    #[test]
+    fn gdn_gated_rmsnorm_ptx_golden() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../experiments/cuda-oxide/gated-rmsnorm/baseline-ptx");
+        let kernel = GatedRmsNormKernel::new(128, 16, 1e-6);
+        let bless = std::env::var_os("APR_BLESS_PTX").is_some();
+        for target in ["sm_89", "sm_121"] {
+            let path = dir.join(format!("gdn_gated_rmsnorm_h128.{target}.ptx"));
+            let ptx = kernel.emit_ptx_for_target(target);
+            if bless {
+                std::fs::create_dir_all(&dir).expect("baseline dir");
+                std::fs::write(&path, &ptx).expect("write baseline");
+                continue;
+            }
+            let golden = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{}: {e} (bless with APR_BLESS_PTX=1)", path.display()));
+            assert!(
+                golden == ptx,
+                "{} drifted from the emitter; re-bless and re-run the #3522 receipts",
+                path.display()
+            );
+        }
+    }
 }
 
 /// Device parity against a verbatim port of `gated_rmsnorm`.
