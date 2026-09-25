@@ -710,6 +710,9 @@ jobs:
         # measured shard 1 at 7-59x the others (gx10: 1.5 min compile + 5.6 min
         # tests here, 5 + 4.8 in part 2). Test execution is the larger half, so it
         # goes 3-wide; the compile repeats per shard from the shared sccache.
+        # --no-tests=warn: a small selection can hash to zero tests on one shard;
+        # nextest's default (fail) would turn that shard red with nothing broken.
+        # The partitions still cover the selection exactly once across the shards.
         if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.crates != ''
         # 20, not 60 (PMAT-1098, #3084). A quick tier that is ALLOWED an hour is
         # not a quick tier, and 60 is the number that let part 2 burn 55 minutes
@@ -747,7 +750,7 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            bash -c "cargo nextest run --profile ci --lib --tests$pkgs --partition hash:${SHARD}/${SHARDS}"
+            bash -c "cargo nextest run --profile ci --lib --tests$pkgs --partition hash:${SHARD}/${SHARDS} --no-tests=warn"
       # BSE-17 quick tier, part 2: every test target that reads the tree, from
       # scripts/tree_reader_tests.txt (derived; the guard has already proved the
       # registry equals the sources in this run).
@@ -822,7 +825,7 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            cargo nextest run --profile ci $pkgs --lib --tests -E "$EXPR" --partition "hash:${SHARD}/${SHARDS}"
+            cargo nextest run --profile ci $pkgs --lib --tests -E "$EXPR" --partition "hash:${SHARD}/${SHARDS}" --no-tests=warn
       # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
       # selection was OVER THE CAP (touched crates + their direct reverse
       # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate
@@ -840,6 +843,7 @@ jobs:
       # different dependency graph from the one the PR is proposing.
       - name: "Quick tier: cargo check --workspace (over-the-cap integration, BSE-17 rule (i))"
         if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && matrix.shard == 3
+        # Y2: shard 3, not 1 — shard 1 already carries the once-only guard steps.
         timeout-minutes: 20
         env:
           REASON: ${{ steps.tier.outputs.reason }}
