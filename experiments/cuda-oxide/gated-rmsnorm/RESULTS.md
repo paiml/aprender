@@ -25,6 +25,13 @@ Both kernels are safe Rust: they contain no `unsafe` block and no raw pointer.
 - The single `unsafe` in the crate is on the host side. It is the raw `launch_kernel_on_stream` call for the
   hand-PTX baseline.
 
+O-2 (#3522) makes this a checked fact rather than prose. `evidence/kernels/gdn_gated_rmsnorm/kernel.json` declares
+the kernel, and `contracts/kernel-receipt-v1.yaml` grades it:
+- The `kernel-safety` shape reads the device module through a `syn` walk: helpers, impl and trait methods,
+  extern blocks and macro tokens included.
+- The `kernel-parity` and `kernel-timing` shapes read these receipts.
+- The shapes are reported, not armed. See `pv lint contracts --gate shapes`.
+
 ## Results (worst ratio over heads 16/32/48; parity over heads 1/16/32/48)
 
 | host | GPU | cc | variant | cos min | max\|Δ\| | oxide µs | hand µs | ratio | regs oxide/hand |
