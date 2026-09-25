@@ -480,134 +480,55 @@ fn test_bench_command_invalid_batch_sizes() {
 }
 
 // ============================================================================
-// Audit command tests
+// Audit / monitor command tests (#2477)
+//
+// Both commands used to print a verdict from literals without reading the
+// input, and nine tests asserted `is_ok()` on that. They now refuse. Each test
+// excludes an outcome: an Ok, or an Err that is a verdict ("Bias audit failed",
+// "Drift detected") rather than the refusal, turns it red.
 // ============================================================================
 
-#[test]
-fn test_audit_command_bias() {
-    let dir = TempDir::new().expect("temp file creation should succeed");
-    let model_path = dir.path().join("model.bin");
-    std::fs::write(&model_path, b"dummy model").expect("file write should succeed");
+fn dummy_input(dir: &TempDir, name: &str, bytes: &[u8]) -> PathBuf {
+    let p = dir.path().join(name);
+    std::fs::write(&p, bytes).expect("file write should succeed");
+    p
+}
 
-    let args = AuditArgs {
-        input: model_path,
-        audit_type: AuditType::Bias,
-        protected_attr: None,
-        threshold: 0.8,
-        format: OutputFormat::Text,
-    };
-
-    let result = audit::run_audit(args, LogLevel::Quiet);
-    assert!(result.is_ok());
+fn assert_refused(result: Result<(), String>, marker: &str) {
+    let err = result.expect_err("an unimplemented command must not return Ok (#2477)");
+    assert!(err.contains(marker), "not the #2477 refusal: {err}");
+    for verdict in ["PASS", "failed", "Drift detected", "PSI score"] {
+        assert!(!err.contains(verdict), "refusal carries a verdict ({verdict}): {err}");
+    }
 }
 
 #[test]
-fn test_audit_command_bias_with_protected_attr() {
+fn test_audit_command_refuses_every_type_and_input() {
     let dir = TempDir::new().expect("temp file creation should succeed");
-    let model_path = dir.path().join("model.bin");
-    std::fs::write(&model_path, b"dummy model").expect("file write should succeed");
-
-    let args = AuditArgs {
-        input: model_path,
-        audit_type: AuditType::Bias,
-        protected_attr: Some("gender".to_string()),
-        threshold: 0.8,
-        format: OutputFormat::Text,
-    };
-
-    let result = audit::run_audit(args, LogLevel::Quiet);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn test_audit_command_bias_json_output() {
-    let dir = TempDir::new().expect("temp file creation should succeed");
-    let model_path = dir.path().join("model.bin");
-    std::fs::write(&model_path, b"dummy model").expect("file write should succeed");
-
-    let args = AuditArgs {
-        input: model_path,
-        audit_type: AuditType::Bias,
-        protected_attr: None,
-        threshold: 0.8,
-        format: OutputFormat::Json,
-    };
-
-    let result = audit::run_audit(args, LogLevel::Quiet);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn test_audit_command_bias_fail_threshold() {
-    let dir = TempDir::new().expect("temp file creation should succeed");
-    let model_path = dir.path().join("model.bin");
-    std::fs::write(&model_path, b"dummy model").expect("file write should succeed");
-
-    let args = AuditArgs {
-        input: model_path,
-        audit_type: AuditType::Bias,
-        protected_attr: None,
-        threshold: 0.99, // Very high threshold, should fail
-        format: OutputFormat::Text,
-    };
-
-    let result = audit::run_audit(args, LogLevel::Quiet);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Bias audit failed"));
-}
-
-#[test]
-fn test_audit_command_fairness() {
-    let dir = TempDir::new().expect("temp file creation should succeed");
-    let model_path = dir.path().join("model.bin");
-    std::fs::write(&model_path, b"dummy model").expect("file write should succeed");
-
-    let args = AuditArgs {
-        input: model_path,
-        audit_type: AuditType::Fairness,
-        protected_attr: None,
-        threshold: 0.8,
-        format: OutputFormat::Text,
-    };
-
-    let result = audit::run_audit(args, LogLevel::Quiet);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn test_audit_command_privacy() {
-    let dir = TempDir::new().expect("temp file creation should succeed");
-    let model_path = dir.path().join("model.bin");
-    std::fs::write(&model_path, b"dummy model").expect("file write should succeed");
-
-    let args = AuditArgs {
-        input: model_path,
-        audit_type: AuditType::Privacy,
-        protected_attr: None,
-        threshold: 0.8,
-        format: OutputFormat::Text,
-    };
-
-    let result = audit::run_audit(args, LogLevel::Quiet);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn test_audit_command_security() {
-    let dir = TempDir::new().expect("temp file creation should succeed");
-    let model_path = dir.path().join("model.bin");
-    std::fs::write(&model_path, b"dummy model").expect("file write should succeed");
-
-    let args = AuditArgs {
-        input: model_path,
-        audit_type: AuditType::Security,
-        protected_attr: None,
-        threshold: 0.8,
-        format: OutputFormat::Text,
-    };
-
-    let result = audit::run_audit(args, LogLevel::Quiet);
-    assert!(result.is_ok());
+    let inputs = [
+        dummy_input(&dir, "model.bin", b"dummy model"),
+        dummy_input(&dir, "data.jsonl", b"{\"x\":1}\n{\"x\":2}\n"),
+        dummy_input(&dir, "model.pkl", b"\x80\x04\x95cos\nsystem\n"),
+    ];
+    for input in &inputs {
+        for audit_type in
+            [AuditType::Bias, AuditType::Fairness, AuditType::Privacy, AuditType::Security]
+        {
+            for (protected_attr, threshold, format) in [
+                (None, 0.8, OutputFormat::Text),
+                (Some("gender".to_string()), 0.99, OutputFormat::Json),
+            ] {
+                let args = AuditArgs {
+                    input: input.clone(),
+                    audit_type,
+                    protected_attr,
+                    threshold,
+                    format,
+                };
+                assert_refused(audit::run_audit(args, LogLevel::Quiet), "aprender#2477");
+            }
+        }
+    }
 }
 
 #[test]
@@ -620,88 +541,26 @@ fn test_audit_command_missing_file() {
         format: OutputFormat::Text,
     };
 
-    let result = audit::run_audit(args, LogLevel::Quiet);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("not found"));
-}
-
-// ============================================================================
-// Monitor command tests
-// ============================================================================
-
-#[test]
-fn test_monitor_command_basic() {
-    let dir = TempDir::new().expect("temp file creation should succeed");
-    let model_path = dir.path().join("model.bin");
-    std::fs::write(&model_path, b"dummy model").expect("file write should succeed");
-
-    let args = MonitorArgs {
-        input: model_path,
-        baseline: None,
-        threshold: 0.2,
-        interval: 60,
-        format: OutputFormat::Text,
-    };
-
-    let result = monitor::run_monitor(args, LogLevel::Quiet);
-    assert!(result.is_ok());
+    let err = audit::run_audit(args, LogLevel::Quiet).expect_err("missing input must fail");
+    assert!(err.contains("not found"), "{err}");
+    assert!(!err.contains("#2477"), "a missing file is reported before the refusal: {err}");
 }
 
 #[test]
-fn test_monitor_command_with_baseline() {
+fn test_monitor_command_refuses_every_input() {
     let dir = TempDir::new().expect("temp file creation should succeed");
-    let model_path = dir.path().join("model.bin");
-    let baseline_path = dir.path().join("baseline.json");
-    std::fs::write(&model_path, b"dummy model").expect("file write should succeed");
-    std::fs::write(&baseline_path, b"{}").expect("file write should succeed");
-
-    let args = MonitorArgs {
-        input: model_path,
-        baseline: Some(baseline_path),
-        threshold: 0.2,
-        interval: 60,
-        format: OutputFormat::Text,
-    };
-
-    let result = monitor::run_monitor(args, LogLevel::Quiet);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn test_monitor_command_json_output() {
-    let dir = TempDir::new().expect("temp file creation should succeed");
-    let model_path = dir.path().join("model.bin");
-    std::fs::write(&model_path, b"dummy model").expect("file write should succeed");
-
-    let args = MonitorArgs {
-        input: model_path,
-        baseline: None,
-        threshold: 0.2,
-        interval: 60,
-        format: OutputFormat::Json,
-    };
-
-    let result = monitor::run_monitor(args, LogLevel::Quiet);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn test_monitor_command_drift_detected() {
-    let dir = TempDir::new().expect("temp file creation should succeed");
-    let model_path = dir.path().join("model.bin");
-    std::fs::write(&model_path, b"dummy model").expect("file write should succeed");
-
-    let args = MonitorArgs {
-        input: model_path,
-        baseline: None,
-        threshold: 0.001, // Very low threshold, should trigger drift
-        interval: 60,
-        format: OutputFormat::Text,
-    };
-
-    let result = monitor::run_monitor(args, LogLevel::Quiet);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Drift detected"));
+    let model = dummy_input(&dir, "model.bin", b"dummy model");
+    let baseline = dummy_input(&dir, "baseline.json", b"{}");
+    for (baseline, threshold, format) in [
+        (None, 0.2, OutputFormat::Text),
+        (Some(baseline.clone()), 0.2, OutputFormat::Text),
+        (None, 0.2, OutputFormat::Json),
+        (None, 0.001, OutputFormat::Text), // once "drift detected" from constants
+        (Some(baseline), 10.0, OutputFormat::Json),
+    ] {
+        let args = MonitorArgs { input: model.clone(), baseline, threshold, interval: 60, format };
+        assert_refused(monitor::run_monitor(args, LogLevel::Quiet), "aprender#2477");
+    }
 }
 
 #[test]
@@ -714,9 +573,9 @@ fn test_monitor_command_missing_file() {
         format: OutputFormat::Text,
     };
 
-    let result = monitor::run_monitor(args, LogLevel::Quiet);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("not found"));
+    let err = monitor::run_monitor(args, LogLevel::Quiet).expect_err("missing input must fail");
+    assert!(err.contains("not found"), "{err}");
+    assert!(!err.contains("#2477"), "a missing file is reported before the refusal: {err}");
 }
 
 // ============================================================================
@@ -1211,8 +1070,8 @@ fn test_run_command_audit() {
         }),
     };
 
-    let result = run_command(cli);
-    assert!(result.is_ok());
+    // #2477: the dispatch reaches the refusal, not a fabricated verdict.
+    assert_refused(run_command(cli), "aprender#2477");
 }
 
 #[test]
@@ -1233,8 +1092,8 @@ fn test_run_command_monitor() {
         }),
     };
 
-    let result = run_command(cli);
-    assert!(result.is_ok());
+    // #2477: the dispatch reaches the refusal, not a fabricated verdict.
+    assert_refused(run_command(cli), "aprender#2477");
 }
 
 // ============================================================================
