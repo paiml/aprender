@@ -1,5 +1,9 @@
-//! REX-07 day-0 shadow lane: `review-ledger-v1` rows built from quorum
+//! REX-07 day-0 shadow lane: `review-ledger-v2` rows built from quorum
 //! receipts (`docs/audits/quorum-*.json`), and the shadow-coverage check.
+//! v2 (PRA-001 T2) keeps each counted lane's findings text and its
+//! agent-trace-v1 shas; v1 rows stay readable through [`read_row`] and
+//! migrate with [`v1::Row::migrate`]. Outcomes are appended as
+//! [`OutcomeJoin`]s; a written row is never rewritten.
 //!
 //! The 4B lane runs inside the quorum rail as a non-voting advisory lane
 //! (paiml-implement `advisory-lane.sh`, which records `.advisory_lane` in the
@@ -15,7 +19,13 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const SCHEME: &str = "review-ledger-v1";
+pub const SCHEME: &str = "review-ledger-v2";
+
+/// Rows written before v2 stay readable: see [`v1`] and [`read_row`].
+pub const SCHEME_V1: &str = "review-ledger-v1";
+
+#[path = "ledger_v1.rs"]
+pub mod v1;
 
 #[derive(Debug, Deserialize)]
 struct Lane {
@@ -27,6 +37,11 @@ struct Lane {
     verdict: Option<String>,
     #[serde(default)]
     findings: Option<Vec<serde_json::Value>>,
+    /// agent-trace-v1 blob shas (exact bytes sent / full raw reply).
+    #[serde(default)]
+    input_sha256: Option<String>,
+    #[serde(default)]
+    output_sha256: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -65,15 +80,24 @@ struct QuorumReceipt {
 
 /// One counted lane, as the ledger keeps it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LaneRow {
     pub family: Option<String>,
     pub model: Option<String>,
     pub verdict: Option<String>,
-    pub findings: usize,
+    /// Carried by both versions; equals the text's length when text exists.
+    pub findings_count: usize,
+    /// The findings text, verbatim: a count cannot train anything. `None` is
+    /// text never captured (a v1 row, or a receipt without the key): a trace
+    /// gap, never an empty list.
+    pub findings: Option<Vec<String>>,
+    /// agent-trace-v1 blob shas; a lane without both is a trace gap.
+    pub input_sha256: Option<String>,
+    pub output_sha256: Option<String>,
 }
 
 /// The apr lane's verdict.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Verdict {
     #[serde(rename = "PASS")]
     Pass,
@@ -118,8 +142,9 @@ pub enum Shadow {
     },
 }
 
-/// One `review-ledger-v1` row (§5.2).
+/// One `review-ledger-v2` row (§5.2; PRA-001 T2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Row {
     pub schema: String,
     pub repo: String,
@@ -149,6 +174,9 @@ pub struct Coverage {
     pub violations: Vec<String>,
     /// Rows without an apr tag or weights sha (the §5.2 identity fields).
     pub identity_gaps: usize,
+    /// Counted lanes without findings text or both agent-trace-v1 shas: the
+    /// Jidoka goal is 0.
+    pub trace_gaps: usize,
 }
 
 impl Coverage {
@@ -160,6 +188,65 @@ impl Coverage {
             && self.missing.is_empty()
             && self.violations.is_empty()
             && self.identity_gaps == 0
+            && self.trace_gaps == 0
+    }
+}
+
+/// A finding as text: a string stays verbatim, anything else is its JSON.
+fn finding_text(v: &serde_json::Value) -> String {
+    v.as_str().map_or_else(|| v.to_string(), str::to_owned)
+}
+
+/// An outcome join, appended to its own JSONL. Rows are never rewritten.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OutcomeJoin {
+    pub repo: String,
+    pub head: String,
+    pub outcome: String,
+    /// RFC 3339 UTC; the latest join for a (repo, head) wins.
+    pub at: String,
+}
+
+/// A row's outcome read through the append-only joins, latest first;
+/// the row's own value (`pending`) when nothing joined.
+#[must_use]
+pub fn outcome<'a>(row: &'a Row, joins: &'a [OutcomeJoin]) -> &'a str {
+    joins
+        .iter()
+        .filter(|j| j.repo == row.repo && j.head == row.head)
+        .max_by(|a, b| a.at.cmp(&b.at))
+        .map_or(row.outcome.as_str(), |j| j.outcome.as_str())
+}
+
+/// A counted lane whose trace a fine-tune could not use: no findings text,
+/// or not both agent-trace-v1 shas.
+fn trace_gap(l: &LaneRow) -> bool {
+    l.findings.is_none() || l.input_sha256.is_none() || l.output_sha256.is_none()
+}
+
+/// A ledger line of either version, dispatched on its `schema`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnyRow {
+    V1(v1::Row),
+    V2(Row),
+}
+
+/// Read one ledger line. An unknown `schema` is an error, never a guess.
+pub fn read_row(line: &str) -> Result<AnyRow, String> {
+    #[derive(Deserialize)]
+    struct Head {
+        schema: String,
+    }
+    let h: Head = serde_json::from_str(line).map_err(|e| e.to_string())?;
+    match h.schema.as_str() {
+        SCHEME_V1 => serde_json::from_str(line)
+            .map(AnyRow::V1)
+            .map_err(|e| format!("{SCHEME_V1}: {e}")),
+        SCHEME => serde_json::from_str(line)
+            .map(AnyRow::V2)
+            .map_err(|e| format!("{SCHEME}: {e}")),
+        s => Err(format!("unknown ledger schema {s:?}")),
     }
 }
 
@@ -228,7 +315,13 @@ pub fn build(receipts: &[(String, String)], repo: &str) -> (Vec<Row>, Coverage) 
                     family: l.family.clone(),
                     model: l.model.clone(),
                     verdict: l.verdict.clone(),
-                    findings: l.findings.as_ref().map_or(0, Vec::len),
+                    findings_count: l.findings.as_ref().map_or(0, Vec::len),
+                    findings: l
+                        .findings
+                        .as_ref()
+                        .map(|f| f.iter().map(finding_text).collect()),
+                    input_sha256: l.input_sha256.clone(),
+                    output_sha256: l.output_sha256.clone(),
                 })
                 .collect(),
             shadow,
@@ -239,6 +332,7 @@ pub fn build(receipts: &[(String, String)], repo: &str) -> (Vec<Row>, Coverage) 
         if row.apr_tag.is_none() || row.weights_sha256.is_none() {
             c.identity_gaps += 1;
         }
+        c.trace_gaps += row.lanes.iter().filter(|l| trace_gap(l)).count();
         rows.push(row);
     }
     (rows, c)

@@ -28,7 +28,7 @@
 //!   `admit --cell C --removed-by R ...` appends a `Refused` row.
 //! - `admission-check --file F` every §2.1 cell resolved exactly once; prints the
 //!   summary JSON. Exit 1 if inadmissible, 10 if admissible but S-7 (no cell admitted).
-//! - `ledger REPO OUT_JSONL QUORUM_RECEIPT...` REX-07: write `review-ledger-v1`
+//! - `ledger REPO OUT_JSONL QUORUM_RECEIPT...` REX-07: write `review-ledger-v2`
 //!   rows from quorum receipts and print shadow coverage. Exit 10 unless every
 //!   receipt carries an uncounted shadow row that leaves the width alone.
 //! - `ladder REPORT_JSON` REX-09: the lane's rung (shadow/tripwire/vote) from a

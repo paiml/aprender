@@ -1,9 +1,9 @@
 use super::*;
 
 fn receipt(advisory: Option<&str>, width: u64) -> String {
-    let lanes = r#"[{"family":"claude","model":"claude-sonnet-5","verdict":"PASS","findings":[]},
-        {"family":"gemini","model":"gemini-3.1-pro-high","verdict":"PASS","findings":[{"f":1}]},
-        {"family":"claude","model":"claude-haiku-4-5","verdict":"PASS","findings":[]}]"#;
+    let lanes = r#"[{"family":"claude","model":"claude-sonnet-5","verdict":"PASS","findings":[],"input_sha256":"i1","output_sha256":"o1"},
+        {"family":"gemini","model":"gemini-3.1-pro-high","verdict":"PASS","findings":["ledger.rs:205 drops the weights sha",{"f":1}],"input_sha256":"i2","output_sha256":"o2"},
+        {"family":"claude","model":"claude-haiku-4-5","verdict":"PASS","findings":[],"input_sha256":"i3","output_sha256":"o3"}]"#;
     let adv = advisory.map_or(String::new(), |a| format!(r#","advisory_lane":{a}"#));
     format!(
         r#"{{"ticket":"PMAT-1","head":"abc","diff_sha256":"d","agreed":true,"width":{width},"lanes":{lanes}{adv}}}"#
@@ -24,7 +24,16 @@ fn an_answered_shadow_becomes_a_ledger_row() {
     let r = &rows[0];
     assert_eq!(r.schema, SCHEME);
     assert_eq!(r.width, 3);
-    assert_eq!(r.lanes[1].findings, 1);
+    assert_eq!(
+        r.lanes[1].findings,
+        Some(vec![
+            "ledger.rs:205 drops the weights sha".to_string(),
+            r#"{"f":1}"#.to_string()
+        ]),
+        "findings are kept as text, verbatim"
+    );
+    assert_eq!(r.lanes[1].output_sha256.as_deref(), Some("o2"));
+    assert_eq!(c.trace_gaps, 0);
     assert_eq!(
         r.shadow,
         Shadow::Verdict {
@@ -131,4 +140,73 @@ fn falsify_rxl_005_a_free_text_reason_fails_to_parse() {
     }
     let untyped = r#"{"state":"answered","apr":"0.69.3","weights_sha256":"w","counts":false}"#;
     assert!(!one(receipt(Some(untyped), 3)).1.holds(), "no typed row");
+}
+
+#[test]
+fn falsify_rxl_006_a_counted_lane_without_trace_shas_does_not_hold() {
+    for gap in [
+        r#","output_sha256":"o2""#,
+        r#","input_sha256":"i2""#,
+        r#""findings":["ledger.rs:205 drops the weights sha",{"f":1}],"#,
+    ] {
+        let (rows, c) = one(receipt(Some(ANSWERED), 3).replace(gap, ""));
+        assert_eq!(rows.len(), 1, "the row is kept");
+        assert_eq!(c.trace_gaps, 1, "{gap}");
+        assert!(!c.holds(), "a lane without its trace is RED: {gap}");
+    }
+}
+
+#[test]
+fn falsify_rxl_007_an_outcome_join_appends_and_never_rewrites() {
+    let (rows, _) = one(receipt(Some(ANSWERED), 3));
+    let before = rows.clone();
+    let j = |head: &str, outcome: &str, at: &str| OutcomeJoin {
+        repo: "paiml/aprender".into(),
+        head: head.into(),
+        outcome: outcome.into(),
+        at: at.into(),
+    };
+    assert_eq!(outcome(&rows[0], &[]), "pending");
+    let joins = [
+        j("abc", "reverted", "2026-09-30T00:00:00Z"),
+        j("abc", "merged", "2026-09-25T00:00:00Z"),
+        j("other", "escape", "2026-10-01T00:00:00Z"),
+    ];
+    assert_eq!(outcome(&rows[0], &joins), "reverted", "latest join wins");
+    assert_eq!(rows, before, "the row itself is never rewritten");
+}
+
+// v1 rows exactly as the two v1 writers serialized them.
+const V1_LEGACY: &str = r#"{"schema":"review-ledger-v1","repo":"paiml/aprender","ticket":"PMAT-1","head":"abc","pr":null,"diff_sha256":"d","agreed":true,"width":3,"lanes":[{"family":"claude","model":"claude-sonnet-5","verdict":"PASS","findings":2}],"shadow":{"state":"Unknown","reason":{"LaneUnavailable":{"why":"gx10 down"}}},"apr_tag":null,"weights_sha256":null,"outcome":"pending"}"#;
+const V1_TYPED: &str = r#"{"schema":"review-ledger-v1","repo":"paiml/aprender","ticket":"PMAT-1","head":"abc","pr":4354,"diff_sha256":"d","agreed":true,"width":3,"lanes":[{"family":"gemini","model":"gemini-3.1-pro-high","verdict":"FAIL","findings":2}],"shadow":{"Verdict":{"verdict":"PASS","cell":"gx10-cuda","backend":"cuda"}},"apr_tag":"0.69.3","weights_sha256":"w4b","outcome":"merged"}"#;
+
+#[test]
+fn falsify_rxl_008_v1_rows_parse_and_migrate_without_invented_text() {
+    for line in [V1_LEGACY, V1_TYPED] {
+        assert!(
+            matches!(read_row(line), Ok(AnyRow::V1(_))),
+            "{:?}",
+            read_row(line)
+        );
+    }
+    let Ok(AnyRow::V1(typed)) = read_row(V1_TYPED) else {
+        panic!("v1 typed row")
+    };
+    let m = typed.migrate().expect("a typed v1 row migrates");
+    assert_eq!(m.schema, SCHEME);
+    assert_eq!(m.lanes[0].findings_count, 2, "the count carries over");
+    assert_eq!(m.lanes[0].findings, None, "text never captured stays None");
+    assert_eq!((m.pr, m.outcome.as_str()), (Some(4354), "merged"));
+    // A migrated row round-trips as v2 and still reads as a trace gap.
+    let line = serde_json::to_string(&m).expect("ser");
+    assert_eq!(read_row(&line), Ok(AnyRow::V2(m.clone())));
+    assert!(trace_gap(&m.lanes[0]));
+    // A legacy shadow has no cell/backend: refused, not guessed.
+    let Ok(AnyRow::V1(legacy)) = read_row(V1_LEGACY) else {
+        panic!("v1 legacy row")
+    };
+    assert!(legacy.migrate().is_err());
+    // A v1 body under the v2 name, and an unknown schema, are errors.
+    assert!(read_row(&V1_TYPED.replace(SCHEME_V1, SCHEME)).is_err());
+    assert!(read_row(&V1_TYPED.replace(SCHEME_V1, "review-ledger-v9")).is_err());
 }
