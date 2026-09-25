@@ -61,20 +61,32 @@ usage() {
 # "owner/repo" prefix before the '#'. This is CLASS: closing reference.
 CLOSE_RE='(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*:?[[:space:]]*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+'
 REF_RE='#[0-9]+'
-# A rule-20 checklist row reference (APR-EPIC-001 v1.4): `Refs #P row <id>`.
-ROW_REF_RE='(^|[^[:alnum:]_])refs?[[:space:]]*:?[[:space:]]*#[0-9]+[[:space:]]+row[[:space:]]+[A-Za-z0-9._-]+'
 
-# prose_body < body > prose: the body with what GitHub does NOT act on removed --
-# HTML comments, ``` / ~~~ fenced blocks and inline `code` spans. Rule 18 reads only
-# this, so an example `Closes #N` in a code block cannot discharge anything.
-prose_body() {
-    perl -0777 -pe 's/<!--.*?-->//gs; s/^[ \t]*(`{3,}|~{3,})[^\n]*\n.*?^[ \t]*\1[^\n]*(\n|\z)//gms; s/`[^`\n]*`//g'
+# prose_lines < body > the lines GitHub renders as prose, each as written: a
+# line-state pass, so an UNCLOSED ``` / ~~~ fence or <!-- runs to the end of the
+# body exactly as GitHub renders it (a closing fence is the opening character,
+# at least as long). Rule 18 then accepts only a WHOLE LINE at column 0 in one
+# strict form, so indented code, blockquotes, inline code of any backtick count
+# and mid-sentence keywords never discharge anything: they cannot be at column 0
+# with nothing else on the line. This replaces a regex race against a Markdown
+# parser (agy quorum @afc250626 and @1d16e6caa).
+prose_lines() {
+    perl -ne '
+        BEGIN { $fence = 0; $comment = 0 }
+        s/\r?\n\z//;
+        if ($fence) { $fence = 0 if /^ {0,3}(\Q$fc\E{$fl,})[ \t]*$/; next }
+        if ($comment) { if (s/^.*?-->//) { $comment = 0 } else { next } }
+        s/<!--.*?-->//g;
+        $comment = 1 if s/<!--.*\z//;
+        if (/^ {0,3}(`{3,}|~{3,})/) { $fc = substr($1, 0, 1); $fl = length($1); $fence = 1; next }
+        print "$_\n";'
 }
-# close_targets < prose > "[owner/repo]#N" per line, lower-case: a closing keyword as a
-# whole word and a whole issue number, as GitHub parses it ("aclose #1" and "#1a" do not close).
-close_targets() {
-    perl -ne 'while (/(?<![A-Za-z0-9_])(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*((?:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)?#[0-9]+)(?![A-Za-z0-9_])/gi) { print lc($1), "\n" }'
-}
+# The three discharge forms, each a whole line at column 0 (trailing period allowed):
+#   Closes #N | Fixes owner/repo#N | Resolves: #N     (any GitHub closing keyword)
+#   Refs #P row <id>                                  (rule 20 checklist row)
+#   no-issue: <reason>
+CLOSE_LINE_RE='^(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+[[:space:]]*\.?[[:space:]]*$'
+ROW_LINE_RE='^refs?:?[[:space:]]+#[0-9]+[[:space:]]+row[[:space:]]+[A-Za-z0-9._-]+[[:space:]]*$'
 
 # THE #3400 LANDMINE, CLASS: a hyphen-prefixed closing keyword. Requires a
 # word character immediately before the hyphen so it does not also match a
@@ -253,16 +265,16 @@ check_body_text() {
 # with this flag goes RED -- which is why check_reconcile.sh (merged PRs) does not
 # pass it, and ci.yml's pull_request step does.
 check_require_close() {
-    body="$(printf '%s\n' "$1" | prose_body)"
+    body="$(printf '%s\n' "$1" | prose_lines)"
     repo_lc="$(printf '%s' "${PR_CLOSES_REPO:-paiml/aprender}" | tr '[:upper:]' '[:lower:]')"
-    targets="$(printf '%s\n' "$body" | close_targets \
-        | sed -nE "s@^(${repo_lc}|)#([0-9]+)\$@\\2@p" || true)"
+    targets="$(printf '%s\n' "$body" | grep -iE "$CLOSE_LINE_RE" | tr '[:upper:]' '[:lower:]' \
+        | sed -nE "s@^[a-z]+:?[[:space:]]+(${repo_lc}|)#([0-9]+)[[:space:].]*\$@\\2@p" || true)"
     open=0; unverified=0; seen=" "
     # Row refs first, as "P:id" pairs: the parent must be an open issue AND list the
     # row unticked. Each pair is judged on its own; a bare parent number is not added
     # to the close targets, so an open parent alone never discharges.
-    row_pairs="$(printf '%s\n' "$body" | grep -oiE "$ROW_REF_RE" \
-        | sed -nE 's@^[^#]*#([0-9]+)[[:space:]]+[Rr][Oo][Ww][[:space:]]+(.+)$@\1:\2@p' || true)"
+    row_pairs="$(printf '%s\n' "$body" | grep -iE "$ROW_LINE_RE" \
+        | sed -nE 's@^[^#]*#([0-9]+)[[:space:]]+[Rr][Oo][Ww][[:space:]]+([^[:space:]]+)[[:space:]]*$@\1:\2@p' || true)"
     for pair in $row_pairs; do
         p="${pair%%:*}"; id="${pair#*:}"; id="${id%.}"   # a sentence-ending period is prose, not the id
         case "$(ref_kind "$p")" in
@@ -292,7 +304,7 @@ check_require_close() {
         printf 'PASS: discharges %s open issue(s) (rule 18).\n' "$open"
         return 0
     fi
-    no_issue_reason="$(printf '%s\n' "$body" | grep -iE '^[[:space:]]*no-issue:' | sed -E 's/^[[:space:]]*[Nn][Oo]-[Ii][Ss][Ss][Uu][Ee]:[[:space:]]*//' | tr -d '[:space:]' || true)"
+    no_issue_reason="$(printf '%s\n' "$body" | grep -iE '^no-issue:' | sed -E 's/^[Nn][Oo]-[Ii][Ss][Ss][Uu][Ee]:[[:space:]]*//' | tr -d '[:space:]' || true)"
     if [ -n "$no_issue_reason" ]; then
         printf 'PASS: no-issue reason given (rule 18).\n'
         return 0
@@ -459,7 +471,20 @@ STUB
     run_rc_case "rc-close-html-comment" '<!-- Closes #9002 -->'                      1 "FAIL no-close"
     run_rc_case "rc-row-ref-fenced"   $'```\nRefs #9002 row A8\n```\nkeep-open: parent checklist'                1 "FAIL no-close"
     run_rc_case "rc-no-issue-fenced"  $'```\nno-issue: example line\n```'          1 "FAIL no-close"
-    run_rc_case "rc-two-closes-one-line" "Closes #9004, closes #9002."               0 "PASS: discharges 1"
+    run_rc_case "rc-two-close-lines"  $'Closes #9004.\nCloses #9002.'              0 "PASS: discharges 1"
+    run_rc_case "rc-close-in-sentence" "This closes #9002 today."                    1 "FAIL no-close"
+    run_rc_case "rc-close-indented"   "    Closes #9002"                             1 "FAIL no-close"
+    run_rc_case "rc-close-blockquote" "> Closes #9002"                               1 "FAIL no-close"
+    run_rc_case "rc-close-double-tick" '``Closes #9002``'                            1 "FAIL no-close"
+    run_rc_case "rc-close-unclosed-fence" $'```\nCloses #9002'                      1 "FAIL no-close"
+    run_rc_case "rc-close-unclosed-comment" $'<!--\nCloses #9002'                   1 "FAIL no-close"
+    run_rc_case "rc-close-after-comment" $'<!--\nnote\n-->\nCloses #9002'           0 "PASS: discharges 1"
+    run_rc_case "rc-mixed-fences"     $'```\n~~~\n```\nCloses #9002'               0 "PASS: discharges 1"
+    run_rc_case "rc-comment-opened-in-fence" $'```\n<!--\n```\nCloses #9002'       0 "PASS: discharges 1"
+    run_rc_case "rc-crlf-fence-closes" $'```\r\nx\r\n```\r\nCloses #9002\r\n'      0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-inline-comment" $'<!-- note -->\nCloses #9002'     0 "PASS: discharges 1"
+    run_rc_case "rc-no-issue-code-reason" $'no-issue: `docs/` only'                 0 "PASS: no-issue"
+    run_rc_case "rc-no-issue-indented" $'  no-issue: docs'                          1 "FAIL no-close"
     run_rc_case "rc-close-after-fence" $'```\nexample\n```\nCloses #9002'           0 "PASS: discharges 1"
     # a row ref starts at a word: "Xrefs #N row X" is prose, not `Refs #N row X`
     run_rc_case "rc-row-ref-mid-word" $'Refs #9002\nXrefs #9002 row A8\nkeep-open: parent checklist' 1 "FAIL no-close"
@@ -477,7 +502,8 @@ STUB
     run_rc_case "rc-row-ref-ticked"   $'Refs #9002 row A7\nkeep-open: parent checklist' 1 "FAIL no-close"
     run_rc_case "rc-row-ref-prefix"   $'Refs #9002 row A\nkeep-open: parent checklist'  1 "FAIL no-close"
     run_rc_case "rc-row-ref-dotted"   $'Refs #9002 row A8b.1\nkeep-open: parent checklist' 0 "PASS: discharges 1"
-    run_rc_case "rc-row-ref-period"   $'Ticks Refs #9002 row A8.\nkeep-open: parent checklist' 0 "PASS: discharges 1"
+    run_rc_case "rc-row-ref-period"   $'Refs #9002 row A8.\nkeep-open: parent checklist' 0 "PASS: discharges 1"
+    run_rc_case "rc-row-ref-in-sentence" $'Ticks Refs #9002 row A8.\nkeep-open: parent checklist' 1 "FAIL no-close"
     run_rc_case "rc-row-ref-no-body"  $'Refs #9006 row A8\nkeep-open: parent checklist' 1 "FAIL close-target-unverified"
     run_rc_case "rc-unresolvable"     "Closes #9003"                                 1 "FAIL close-target-unverified"
     # R-2 still runs first under the flag: a discharge does not excuse an un-closed citation.
