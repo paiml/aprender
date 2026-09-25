@@ -1,0 +1,3 @@
+# REX-001 sealed test-split manifest, corpus v1.
+# PLACEHOLDER (REX-00). REX-02 fills this ONCE with one `sha256  item-id` line per
+# test item; after that the file is sealed and read only by the scorer (R-2).

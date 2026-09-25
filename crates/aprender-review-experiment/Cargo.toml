@@ -1,0 +1,20 @@
+[package]
+name = "aprender-review-experiment"
+description = "REX-001 review-lane experiment: pre-registration lock, corpus, receipts and the frozen analysis code (Wilson, McNemar exact, seeded bootstrap, Holm)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+# The pre-registration check hashes repo files (the spec, the prompt, the
+# corpus manifest) via include_str!, so the crate is meaningful only in-tree.
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+
+[lints]
+workspace = true
