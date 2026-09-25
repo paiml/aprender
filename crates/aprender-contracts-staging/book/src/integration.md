@@ -4,16 +4,16 @@
 
 | Project | Consumes | Role | Integration Level |
 |---------|----------|------|-------------------|
-| **aprender** | All contracts | ML algorithm layer | Level 3 (compile-time) |
-| **entrenar** | Training contracts | Training & optimization | Level 3 (compile-time) |
-| **realizar** | Tier 2-3 contracts | GPU inference engine | Level 3 (compile-time) |
-| **trueno** | Tier 1 contracts | SIMD kernel implementations | Level 3 (compile-time) |
-| **certeza** | QA gates from all contracts | Quality enforcement | Level 1 (binding) |
-| **probar** | Proof obligations from all contracts | Property-based testing | Level 2 (wired tests) |
-| **Kani** | Proof obligations from all contracts | Bounded model checking | Level 4 (Kani proofs) |
-| **pmat** | Contract metadata | Code quality annotations | Level 0 (YAML-only) |
+| **aprender** | All contracts | ML algorithm layer | E1 (build.rs bindings) |
+| **entrenar** | Training contracts | Training & optimization | E1 (build.rs bindings) |
+| **realizar** | Tier 2-3 contracts | GPU inference engine | E1 (build.rs bindings) |
+| **trueno** | Tier 1 contracts | SIMD kernel implementations | E1 (build.rs bindings) |
+| **certeza** | QA gates from all contracts | Quality enforcement | E1 (binding) |
+| **probar** | Proof obligations from all contracts | Property-based testing | L2 (falsification tests) |
+| **Kani** | Proof obligations from all contracts | Bounded model checking | L3 (Kani proofs) |
+| **pmat** | Contract metadata | Code quality annotations | L1 (contract YAML) |
 
-## Compile-Time Enforcement (Level 3)
+## Compile-Time Enforcement (E1)
 
 All four primary consumer crates enforce contract bindings at compile
 time via `build.rs`. Each crate's build script reads its binding
@@ -147,10 +147,10 @@ pv validate contracts/softmax-kernel-v1.yaml
 # Phase 3: Generate scaffold (delegates to pv scaffold)
 pv scaffold contracts/softmax-kernel-v1.yaml --output src/softmax/
 
-# Phase 5: Run falsification suite (Level 3)
+# Phase 5: Run falsification suite (L2)
 batuta falsify --contract contracts/softmax-kernel-v1.yaml
 
-# Phase 6: Run Kani proof harnesses (Level 4)
+# Phase 6: Run Kani proof harnesses (L3)
 pv verify contracts/softmax-kernel-v1.yaml
 # or directly:
 cargo kani --harness verify_softmax_normalization
@@ -195,7 +195,7 @@ EDD Cycle              Provable Contracts Phase
 Equation        →      Phase 1 (Extract)
 Failing Test    →      Phase 3 (Scaffold)
 Implementation  →      Phase 4 (Implement)
-Verification    →      Phase 5 (Falsify — probar, Level 3)
+Verification    →      Phase 5 (Falsify — probar, L2)
 Falsification   →      Phase 5 (Falsify — introduce bugs, verify detection)
-Proof           →      Phase 6 (Verify — Kani, Level 4)
+Proof           →      Phase 6 (Verify — Kani, L3)
 ```

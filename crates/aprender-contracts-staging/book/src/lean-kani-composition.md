@@ -81,9 +81,9 @@ Kani's `#[kani::stub_verified]` enables compositional verification:
 
 ```
 attention = softmax(Q * K^T / sqrt(d)) * V
-  uses: softmax (L5 Lean + L4 Kani)
-  uses: matmul  (L4 Kani + L5 Lean)
-  uses: scale   (L4 Kani)
+  uses: softmax (L4 Lean + L3 Kani)
+  uses: matmul  (L3 Kani + L4 Lean)
+  uses: scale   (L3 Kani)
 ```
 
 When verifying `attention`, softmax is stubbed with its proven

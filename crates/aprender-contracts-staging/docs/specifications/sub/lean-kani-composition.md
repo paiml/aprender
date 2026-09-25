@@ -87,8 +87,8 @@ kani_harnesses:
     # Kani proves: f32 implementation within ε for |x| ≤ 8
 ```
 
-The obligation is ONE claim. Lean gives L5 (unbounded, ideal).
-Kani gives L4 (bounded, real). Both are required because they cover
+The obligation is ONE claim. Lean gives L4 (unbounded, ideal).
+Kani gives L3 (bounded, real). Both are required because they cover
 different failure modes.
 
 ### 2.2 The stub_float Bridge
@@ -161,12 +161,12 @@ verified sub-kernels:
 
 ```
 ┌─────────────────────────────────────┐
-│ attention = softmax(Q·K^T/√d) · V  │  ← L3 + L4 (Kani compositional)
+│ attention = softmax(Q·K^T/√d) · V  │  ← L2 + L3 (Kani compositional)
 │                                     │
 │   uses:                             │
-│   ├── softmax  ← L5 (Lean) + L4 (Kani stub_float)
-│   ├── matmul   ← L4 (Kani exhaustive) + L5 (Lean)
-│   └── scale    ← L4 (Kani bounded_int)
+│   ├── softmax  ← L4 (Lean) + L3 (Kani stub_float)
+│   ├── matmul   ← L3 (Kani exhaustive) + L4 (Lean)
+│   └── scale    ← L3 (Kani bounded_int)
 └─────────────────────────────────────┘
 ```
 
@@ -201,7 +201,7 @@ quality-gate:
 
 ## 6. Current Status
 
-| Domain | Lean (L5) | Kani (L4) | Gap |
+| Domain | Lean (L4) | Kani (L3) | Gap |
 |---|---|---|---|
 | Softmax | 5 theorems | 3 harnesses (stub) | Harnesses need kernel wiring |
 | Elementwise | 3 theorems | 0 harnesses | Need Kani harnesses |

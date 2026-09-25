@@ -223,7 +223,7 @@ mod verification {
 
 ### Verification levels achieved for RMSNorm
 
-| Obligation | Level 1 (Type) | Level 3 (probar) | Level 4 (Kani) |
+| Obligation | Types (rustc) | L2 (probar) | L3 (Kani) |
 |-----------|----------------|-------------------|-----------------|
 | RMS-INV-001 (unit RMS) | N/A | `prop_rmsnorm_unit_rms` | KANI-RMS-002 (structural) |
 | RMS-INV-002 (output finite) | N/A | implicit | KANI-RMS-003 (all inputs <= 16) |
