@@ -1,5 +1,5 @@
 //! PRM-C13 (was PRA-001 T13): the lane κ_err probe and its independence gate
-//! (PRM-001 v2 §5.4 H7 and S-14; contract
+//! (PRM-001 v3 §3 H7 and S-14; contract
 //! `lane-independence-v1`).
 //!
 //! κ_err is Cohen's κ on binary per-item error indicators against GOLD, for
@@ -18,10 +18,13 @@
 //! - A pair with fewer than `min_n` shared items, or with κ undefined, is
 //!   `insufficient`: it never prints a number (S-14).
 //!
-//! The gate refuses a candidate when κ_err(candidate, L) − baseline(L) > δ for
-//! any counted lane L, or when any counted lane is insufficient or missing on
-//! either side. δ comes only from the run manifest, registered strictly before
-//! training started; nothing here defaults or widens it.
+//! The gate is H7 as PRM-001 v3 §3 states it, δ-free: on the items the shadow
+//! lane and EVERY counted lane scored, κ_err(shadow, V) ≤ the largest
+//! voter–voter κ_err for each voter V, decided by the prereg-locked
+//! [`crate::stats::h7_holds`]. It refuses (S-14) below `min_n` common items,
+//! on a voter with no rows, and when `h7_holds` is undecided. The voter set and
+//! `min_n` come only from the run manifest, registered strictly before
+//! training started.
 
 use serde::Serialize;
 use serde_json::Value;
@@ -147,19 +150,15 @@ pub struct Scoreboard {
     pub pairs: Vec<PairKappa>,
 }
 
-/// κ_err of `shadow` against every counted lane, on matured gold `split` rows.
-#[must_use]
-pub fn probe(rows: &[Row], split: &str, shadow: &str, min_n: usize) -> Scoreboard {
-    // item -> lane -> rows; a lane with two rows for one item is ambiguous.
-    let mut items: BTreeMap<(&str, u64), BTreeMap<&str, Vec<&Row>>> = BTreeMap::new();
-    let mut counted: BTreeSet<&str> = BTreeSet::new();
+type Items<'a> = BTreeMap<(&'a str, u64), BTreeMap<&'a str, Vec<&'a Row>>>;
+
+/// Matured gold `split` rows grouped item → lane → rows.
+fn items_of<'a>(rows: &'a [Row], split: &str) -> Items<'a> {
+    let mut items: Items<'a> = BTreeMap::new();
     for r in rows
         .iter()
         .filter(|r| r.gold_matured && r.split == split && r.defect.is_some())
     {
-        if r.counted && r.lane != shadow {
-            counted.insert(&r.lane);
-        }
         items
             .entry((&r.quorum_id, r.round))
             .or_default()
@@ -167,12 +166,28 @@ pub fn probe(rows: &[Row], split: &str, shadow: &str, min_n: usize) -> Scoreboar
             .or_default()
             .push(r);
     }
-    let one = |m: &BTreeMap<&str, Vec<&Row>>, l: &str| -> Option<(bool, bool)> {
-        match m.get(l).map(Vec::as_slice) {
-            Some([r]) => Some((r.flag?, r.defect?)),
-            _ => None,
-        }
-    };
+    items
+}
+
+/// A lane's `(flag, defect)` on one item; `None` if absent, unparsed, or
+/// ambiguous (two rows for one item).
+fn one(m: &BTreeMap<&str, Vec<&Row>>, l: &str) -> Option<(bool, bool)> {
+    match m.get(l).map(Vec::as_slice) {
+        Some([r]) => Some((r.flag?, r.defect?)),
+        _ => None,
+    }
+}
+
+/// κ_err of `shadow` against every counted lane, on matured gold `split` rows.
+#[must_use]
+pub fn probe(rows: &[Row], split: &str, shadow: &str, min_n: usize) -> Scoreboard {
+    let items = items_of(rows, split);
+    let counted: BTreeSet<&str> = rows
+        .iter()
+        .filter(|r| r.gold_matured && r.split == split && r.defect.is_some())
+        .filter(|r| r.counted && r.lane != shadow)
+        .map(|r| r.lane.as_str())
+        .collect();
     let pairs = counted
         .into_iter()
         .map(|lane| {
@@ -210,16 +225,15 @@ pub fn probe(rows: &[Row], split: &str, shadow: &str, min_n: usize) -> Scoreboar
     }
 }
 
-/// The `lane_independence` block of a run manifest.
+/// The `lane_independence` block of a run manifest. H7 is δ-free (PRM-001 v3
+/// §3), so what is pre-registered is the voter set and the item floor.
 #[derive(Debug, Clone, Serialize)]
 pub struct Manifest {
-    /// Allowed κ_err rise over baseline, per counted lane.
-    pub delta: f64,
-    /// Shared-item floor for a pair to be scored.
+    /// Shared-item floor for the gate to decide.
     pub min_n: usize,
-    /// The counted lanes the gate must see on both sides.
+    /// The counted lanes (voters) the gate must see on every item.
     pub counted_lanes: Vec<String>,
-    /// When δ was registered (`YYYY-MM-DDTHH:MM:SSZ`).
+    /// When the block was registered (`YYYY-MM-DDTHH:MM:SSZ`).
     pub registered_at: String,
     /// When candidate training started (`YYYY-MM-DDTHH:MM:SSZ`).
     pub training_started_at: String,
@@ -238,21 +252,19 @@ fn utc_stamp(s: &str) -> bool {
         })
 }
 
-/// Parse and validate a run manifest's `lane_independence` block. Every way δ
-/// could be missing, unusable or chosen after training started is an error.
+/// Parse and validate a run manifest's `lane_independence` block. A missing
+/// or unusable field, a block registered after training started, or a `delta`
+/// (v2's rule, gone in v3: nothing would read it) is an error.
 pub fn parse_manifest(json: &str) -> Result<Manifest, String> {
     let v: Value = serde_json::from_str(json).map_err(|e| format!("manifest: {e}"))?;
     let li = v
         .get("lane_independence")
         .ok_or("manifest has no lane_independence block")?;
-    let delta = li
-        .get("delta")
-        .and_then(Value::as_f64)
-        .ok_or("lane_independence.delta is not registered")?;
-    if !delta.is_finite() || delta < 0.0 {
-        return Err(format!(
-            "lane_independence.delta {delta} is not a finite δ ≥ 0"
-        ));
+    if li.get("delta").is_some() {
+        return Err(
+            "lane_independence.delta: H7 is δ-free in PRM-001 v3 (κ(qwen, V) ≤ max voter–voter κ); remove it"
+                .into(),
+        );
     }
     let min_n = li
         .get("min_n")
@@ -282,11 +294,10 @@ pub fn parse_manifest(json: &str) -> Result<Manifest, String> {
     let training_started_at = stamp("training_started_at")?;
     if registered_at >= training_started_at {
         return Err(format!(
-            "δ registered at {registered_at}, not before training started at {training_started_at}"
+            "lane_independence registered at {registered_at}, not before training started at {training_started_at}"
         ));
     }
     Ok(Manifest {
-        delta,
         min_n: usize::try_from(min_n).map_err(|e| e.to_string())?,
         counted_lanes,
         registered_at,
@@ -294,58 +305,108 @@ pub fn parse_manifest(json: &str) -> Result<Manifest, String> {
     })
 }
 
-/// The gate's decision.
+/// One lane pair's κ_err on the gate's common items.
+#[derive(Debug, Clone, Serialize)]
+pub struct GatePair {
+    pub pair: [String; 2],
+    pub kappa_err: Option<f64>,
+}
+
+/// The gate's decision and the κ it decided on.
 #[derive(Debug, Clone, Serialize)]
 pub struct GateVerdict {
-    /// `true` only when every counted lane is scored on both sides and none rose past δ.
+    /// `true` only when [`crate::stats::h7_holds`] returned `Some(true)` on at
+    /// least `min_n` common items.
     pub pass: bool,
     /// Every reason for refusal; empty when `pass`.
     pub refusals: Vec<String>,
+    /// Items every lane (shadow and each voter) scored, gold agreeing.
+    pub n: usize,
+    /// κ_err(shadow, V) per voter, manifest order.
+    pub qwen_vs_voter: Vec<GatePair>,
+    /// κ_err(V_i, V_j) per voter pair, i < j.
+    pub voter_vs_voter: Vec<GatePair>,
+    /// The largest voter–voter κ_err, when every pair is defined.
+    pub ceiling: Option<f64>,
 }
 
-/// Refuse the candidate if κ_err rose past δ for any counted lane, or if any
-/// counted lane cannot be scored on either side (S-14). The comparison is
-/// `candidate − baseline > δ`, so a rise of exactly δ passes.
-pub fn gate(
-    baseline: &Scoreboard,
-    candidate: &Scoreboard,
-    m: &Manifest,
-) -> Result<GateVerdict, String> {
-    let kappa = |b: &Scoreboard, lane: &str, side: &str| -> Result<f64, String> {
-        let p = b
-            .pairs
-            .iter()
-            .find(|p| p.counted_lane == lane)
-            .ok_or_else(|| format!("S-14 {lane}: no {side} pair"))?;
-        match p.kappa_err {
-            Some(k) if p.n >= m.min_n => Ok(k),
-            _ => Err(format!(
-                "S-14 {lane}: {side} insufficient (n={}, min_n={})",
-                p.n, m.min_n
-            )),
-        }
-    };
+/// H7 (PRM-001 v3 §3, δ-free) on candidate rows: with I the matured gold
+/// `split` items that `shadow` and EVERY counted lane scored (one parsed row
+/// each, gold agreeing), `pass` ⇔ `stats::h7_holds` on I is `Some(true)`, i.e.
+/// κ_err(shadow, V) ≤ max voter–voter κ_err for every voter V. Refuses (S-14)
+/// on fewer than `min_n` common items, a voter with no row, and an undecided
+/// `h7_holds` (fewer than two voters, or an undefined κ).
+#[must_use]
+pub fn gate(rows: &[Row], split: &str, shadow: &str, m: &Manifest) -> GateVerdict {
+    let items = items_of(rows, split);
     let mut refusals = Vec::new();
-    for lane in &m.counted_lanes {
-        match (
-            kappa(baseline, lane, "baseline"),
-            kappa(candidate, lane, "candidate"),
-        ) {
-            (Ok(k0), Ok(k1)) => {
-                if k1 - k0 > m.delta {
+    let voters: Vec<&str> = m.counted_lanes.iter().map(String::as_str).collect();
+    for v in &voters {
+        if !items.values().any(|l| l.contains_key(v)) {
+            refusals.push(format!("S-14 {v}: no scored rows"));
+        }
+    }
+    // err[lane] over I, in item order.
+    let lanes: Vec<&str> = std::iter::once(shadow)
+        .chain(voters.iter().copied())
+        .collect();
+    let mut err: Vec<Vec<bool>> = vec![Vec::new(); lanes.len()];
+    for m in items.values() {
+        let Some(got) = lanes.iter().map(|l| one(m, l)).collect::<Option<Vec<_>>>() else {
+            continue;
+        };
+        // All rows describe one PR; disagreeing gold is not gold.
+        if got.iter().all(|&(_, d)| d == got[0].1) {
+            for (e, (f, d)) in err.iter_mut().zip(got) {
+                e.push(f != d);
+            }
+        }
+    }
+    let n = err[0].len();
+    if n < m.min_n {
+        refusals.push(format!(
+            "S-14 insufficient: {n} items scored by the shadow lane and every voter, min_n={}",
+            m.min_n
+        ));
+    }
+    let k = |i: usize, j: usize| GatePair {
+        pair: [lanes[i].to_string(), lanes[j].to_string()],
+        kappa_err: crate::stats::error_kappa(&err[i], &err[j]),
+    };
+    let qwen_vs_voter: Vec<GatePair> = (1..lanes.len()).map(|j| k(0, j)).collect();
+    let voter_vs_voter: Vec<GatePair> = (1..lanes.len())
+        .flat_map(|i| (i + 1..lanes.len()).map(move |j| (i, j)))
+        .map(|(i, j)| k(i, j))
+        .collect();
+    let kappas = |p: &[GatePair]| p.iter().map(|p| p.kappa_err).collect::<Vec<_>>();
+    let ceiling = kappas(&voter_vs_voter)
+        .into_iter()
+        .collect::<Option<Vec<f64>>>()
+        .and_then(|v| v.into_iter().reduce(f64::max));
+    match crate::stats::h7_holds(&kappas(&qwen_vs_voter), &kappas(&voter_vs_voter)) {
+        Some(true) => {}
+        Some(false) => {
+            let c = ceiling.unwrap_or(f64::NAN);
+            for p in &qwen_vs_voter {
+                if let Some(q) = p.kappa_err.filter(|&q| q > c) {
                     refusals.push(format!(
-                        "S-14 {lane}: κ_err {k1:.4} > baseline {k0:.4} + δ {}",
-                        m.delta
+                        "S-14 {}: κ_err {q:.4} > voter–voter max {c:.4}",
+                        p.pair[1]
                     ));
                 }
             }
-            (a, b) => refusals.extend([a, b].into_iter().filter_map(Result::err)),
         }
+        None => refusals
+            .push("S-14 H7 undecided: fewer than two voters, or a κ_err is undefined".into()),
     }
-    Ok(GateVerdict {
+    GateVerdict {
         pass: refusals.is_empty(),
         refusals,
-    })
+        n,
+        qwen_vs_voter,
+        voter_vs_voter,
+        ceiling,
+    }
 }
 
 #[cfg(test)]

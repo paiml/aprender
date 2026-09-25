@@ -1,0 +1,57 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PRM-001 v3 PRM-C8 (was PRA T8), gate G-DUP. `dedup::clusters`
+    (crates/aprender-review-experiment/src/dedup.rs) groups trace diffs into near-duplicate
+    clusters so the split guard (PRM-C9, trace-split-guard-v1) can close each cluster to
+    one split. It reuses the G-CON fingerprint in cluster.rs (identifiers normalised to `$`,
+    whitespace dropped, 12-token shingles, bottom-64 sketch), so a re-indented, re-pathed or
+    renamed copy is the same diff here as it is to the contamination check. Candidates come
+    from an inverted index over sketch hashes (LSH); a candidate pair matches when either
+    sketch is at least 0.7 contained in the other's shingle set; union-find closes chains.
+    Diffs too short to sketch merge only on identical normalised tokens. A cluster's id is
+    its earliest member by (at, id), independent of input order. Recall bound, stated: two
+    items whose sketches share no hash are never compared.
+  references:
+    - "docs/specifications/research-design-pr-agent-qwen-3.5.md"
+    - "contracts/review-corpus-contamination-v1.yaml"
+    - "https://github.com/paiml/aprender/issues/4354"
+
+equations:
+  candidate:
+    formula: "cand(i, j) ⇔ sketch(i) ∩ sketch(j) ≠ ∅"
+  near_dup:
+    formula: "near(i, j) ⇔ cand(i, j) ∧ max(|sketch(i) ∩ S(j)| / |sketch(i)|, |sketch(j) ∩ S(i)| / |sketch(j)|) ≥ 0.7"
+  tiny:
+    formula: "|S(i)| < 32 ⇒ (i ~ j ⇔ tokens(i) = tokens(j))"
+  closure:
+    formula: "cluster = transitive closure of near ∪ tiny"
+  cluster_id:
+    formula: "id(C) = argmin_{m ∈ C} (at(m), id(m)); invariant under permutation of the input"
+
+falsification_tests:
+  - id: FALSIFY-TDD-001
+    name: a_perturbed_copy_joins_its_original_and_an_unrelated_diff_does_not
+    prediction: "a re-pathed, re-indented, renamed copy and a diff embedded in a larger one share the original's cluster, in either arrival order; an unrelated diff stays alone"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tdd_001"
+    expected_output: "exit 0"
+    if_fails: "A copy of a test item could sit in train under a different sha."
+  - id: FALSIFY-TDD-002
+    name: the_cluster_id_is_the_earliest_member_whatever_the_order
+    prediction: "the id is the member with the least (at, id), for any input order"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tdd_002"
+    expected_output: "exit 0"
+    if_fails: "A cluster's split would depend on read order, not on time."
+  - id: FALSIFY-TDD-003
+    name: near_dup_chains_close_transitively
+    prediction: "X~Y and Y~Z put X, Y, Z in one cluster although X and Z alone do not match"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tdd_003"
+    expected_output: "exit 0"
+    if_fails: "A chain of edits could straddle splits one link at a time."
+  - id: FALSIFY-TDD-004
+    name: tiny_diffs_merge_only_when_identical
+    prediction: "diffs below 32 shingles merge only on identical normalised tokens"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_tdd_004"
+    expected_output: "exit 0"
+    if_fails: "Every one-line diff would collapse into one cluster, or none would dedup."

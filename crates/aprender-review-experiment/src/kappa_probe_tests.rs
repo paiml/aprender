@@ -130,90 +130,174 @@ fn falsify_lind_002_thin_or_undefined_pairs_are_insufficient() {
     let u = board(&v, 10);
     assert_eq!(pair(&u, "sonnet").status, PairStatus::Insufficient);
     assert_eq!(pair(&u, "sonnet").kappa_err, None);
-    // The gate refuses on insufficient data (S-14), it never passes by default.
-    let g = gate(&thin, &thin, &manifest(0.05)).expect("manifest ok");
-    assert!(!g.pass, "insufficient data passed the gate");
+    // The gate refuses an undefined κ (S-14), it never passes by default.
+    v.extend(lane_rows("haiku", 40, defect, defect));
+    let g = run_gate(&[v], &manifest(&["sonnet", "haiku"], 10));
     assert!(
-        g.refusals.iter().any(|r| r.contains("S-14")),
+        !g.pass && g.refusals.iter().any(|r| r.contains("S-14")),
         "{:?}",
         g.refusals
     );
-    // The manifest's min_n binds even when the board was scored with a lower floor.
-    let loose = board(&base_fixture(), 10);
-    let mut m = manifest(1.0);
-    m.min_n = 41;
-    let g = gate(&loose, &loose, &m).expect("manifest ok");
-    assert!(
-        !g.pass,
-        "the gate took a board scored below the manifest's min_n"
-    );
 }
 
-fn manifest(delta: f64) -> Manifest {
+fn manifest(voters: &[&str], min_n: usize) -> Manifest {
     Manifest {
-        delta,
-        min_n: 10,
-        counted_lanes: vec!["sonnet".into()],
+        min_n,
+        counted_lanes: voters.iter().map(|v| (*v).to_string()).collect(),
         registered_at: "2026-09-20T00:00:00Z".into(),
         training_started_at: "2026-09-21T00:00:00Z".into(),
     }
 }
 
-#[test]
-fn falsify_lind_003_a_kappa_rise_past_delta_refuses() {
-    let base = board(&base_fixture(), 10);
-    let k0 = pair(&base, "sonnet").kappa_err.expect("defined");
-    // Candidate copies sonnet's errors exactly: κ_err = 1.
+/// `n` items, half regressed; `lane` errs exactly on the items where `err(i)`.
+fn errs(lane: &str, n: u32, err: impl Fn(u32) -> bool) -> Vec<String> {
     let defect = |i: u32| i % 2 == 0;
-    let mut v = lane_rows("sonnet", 40, defect, |i| (i % 2 == 0) != (i % 5 == 0));
-    v.extend(lane_rows("qwen-shadow", 40, defect, |i| {
-        (i % 2 == 0) != (i % 5 == 0)
-    }));
-    let copy = board(&v, 10);
-    assert_eq!(pair(&copy, "sonnet").kappa_err, Some(1.0));
-    let g = gate(&base, &copy, &manifest(0.05)).expect("manifest ok");
-    assert!(!g.pass, "a voter-copying candidate passed");
+    lane_rows(lane, n, defect, move |i| defect(i) != err(i))
+}
+
+fn run_gate(lines: &[Vec<String>], m: &Manifest) -> GateVerdict {
+    let rows = parse_rows(&lines.concat().join("\n")).expect("fixture parses");
+    gate(&rows, "val", "qwen-shadow", m)
+}
+
+fn five(i: u32) -> bool {
+    i % 5 == 0
+}
+
+/// Sonnet and haiku share most errors; qwen errs elsewhere.
+fn voters() -> Vec<Vec<String>> {
+    vec![
+        errs("sonnet", 40, five),
+        errs("haiku", 40, |i| five(i) || i % 11 == 0),
+    ]
+}
+
+#[test]
+fn falsify_lind_003_h7_is_qwen_kappa_at_most_max_voter_kappa() {
+    let m = manifest(&["sonnet", "haiku"], 10);
+    let mut v = voters();
+    v.push(errs("qwen-shadow", 40, |i| i % 3 == 0));
+    let g = run_gate(&v, &m);
+    assert!(g.pass, "{:?}", g.refusals);
+    assert_eq!(g.n, 40);
+    let c = g.ceiling.expect("defined");
+    assert!(g
+        .qwen_vs_voter
+        .iter()
+        .all(|p| p.kappa_err.expect("defined") <= c));
+    // A qwen that copies sonnet's blind spots: κ = 1 > the voter–voter max.
+    let mut v = voters();
+    v.push(errs("qwen-shadow", 40, five));
+    let g = run_gate(&v, &m);
+    assert!(c < 1.0 && !g.pass, "a voter-copying qwen passed");
     assert!(
         g.refusals.iter().any(|r| r.contains("sonnet")),
         "{:?}",
         g.refusals
     );
-    // Exactly baseline + δ passes (the gate is strict >).
-    let edge = gate(&base, &copy, &manifest(1.0 - k0)).expect("manifest ok");
-    assert!(edge.pass, "{:?}", edge.refusals);
-    // The unchanged candidate passes with δ = 0.
-    assert!(gate(&base, &base, &manifest(0.0)).expect("ok").pass);
-    // A counted lane the manifest names but the boards lack is a refusal, not a skip.
-    let mut m = manifest(0.5);
-    m.counted_lanes.push("haiku".into());
-    let g = gate(&base, &base, &m).expect("ok");
+    // Inclusive: identical voters put the ceiling at 1, so the same copy passes.
+    let v = vec![
+        errs("sonnet", 40, five),
+        errs("haiku", 40, five),
+        errs("qwen-shadow", 40, five),
+    ];
+    let g = run_gate(&v, &m);
+    assert_eq!(g.ceiling, Some(1.0));
+    assert!(g.pass, "κ = ceiling must pass (≤): {:?}", g.refusals);
+    // The ceiling is the MAX over every voter pair, not the first or the least.
+    let mut v = voters();
+    v.push(errs("agy", 40, |i| i % 3 == 0));
+    v.push(errs("qwen-shadow", 40, |i| i % 4 == 0));
+    let g = run_gate(&v, &manifest(&["sonnet", "haiku", "agy"], 10));
+    let vv: Vec<f64> = g
+        .voter_vs_voter
+        .iter()
+        .map(|p| p.kappa_err.expect("defined"))
+        .collect();
+    assert_eq!(vv.len(), 3);
+    assert_eq!(g.ceiling, vv.iter().copied().reduce(f64::max));
     assert!(
-        !g.pass && g.refusals.iter().any(|r| r.contains("haiku")),
-        "{:?}",
-        g.refusals
+        vv.iter().any(|&k| Some(k) != g.ceiling),
+        "the fixture must separate max from the rest"
     );
 }
 
 #[test]
-fn falsify_lind_004_delta_must_be_pre_registered() {
-    let ok = r#"{"lane_independence":{"delta":0.05,"min_n":30,"counted_lanes":["sonnet","haiku","agy"],
+fn falsify_lind_002_the_gate_refuses_what_it_cannot_decide() {
+    let mut v = voters();
+    v.push(errs("qwen-shadow", 40, |i| i % 3 == 0));
+    // One voter: no voter–voter κ, so H7 is undecided — a refusal, not a pass.
+    let g = run_gate(&v, &manifest(&["sonnet"], 10));
+    assert!(
+        !g.pass && g.refusals.iter().any(|r| r.contains("undecided")),
+        "{:?}",
+        g.refusals
+    );
+    // A voter the manifest names but the rows lack is a refusal, not a skip.
+    let g = run_gate(&v, &manifest(&["sonnet", "haiku", "agy"], 10));
+    assert!(
+        !g.pass && g.refusals.iter().any(|r| r.contains("agy")),
+        "{:?}",
+        g.refusals
+    );
+    // Below min_n common items.
+    let g = run_gate(&v, &manifest(&["sonnet", "haiku"], 41));
+    assert!(
+        !g.pass && g.refusals.iter().any(|r| r.contains("insufficient")),
+        "{:?}",
+        g.refusals
+    );
+    assert!(run_gate(&v, &manifest(&["sonnet", "haiku"], 40)).pass);
+}
+
+/// Every κ, the ceiling included, is taken on I, the items qwen AND every
+/// voter scored — not on each pair's own overlap.
+#[test]
+fn falsify_lind_002_kappas_are_on_the_common_items() {
+    let haiku = |i: u32| if i < 20 { i % 3 == 0 } else { five(i) };
+    let v = vec![
+        errs("sonnet", 40, five),
+        errs("haiku", 40, haiku),
+        errs("qwen-shadow", 20, |i| i % 4 == 0),
+    ];
+    // An item whose gold the lanes disagree on is not gold: it is not in I.
+    let mut v = v;
+    v.push(vec![
+        row("sonnet", 99, "approve", "merged"),
+        row("haiku", 99, "approve", "reverted_le14d"),
+        row("qwen-shadow", 99, "approve", "merged"),
+    ]);
+    let g = run_gate(&v, &manifest(&["sonnet", "haiku"], 10));
+    assert_eq!(g.n, 20);
+    let e = |f: &dyn Fn(u32) -> bool, n: u32| (0..n).map(f).collect::<Vec<_>>();
+    let on_i = crate::stats::error_kappa(&e(&five, 20), &e(&haiku, 20));
+    let on_all = crate::stats::error_kappa(&e(&five, 40), &e(&haiku, 40));
+    assert_ne!(
+        on_i, on_all,
+        "the fixture must separate the two, or this proves nothing"
+    );
+    assert_eq!(g.ceiling, on_i);
+}
+
+#[test]
+fn falsify_lind_004_voters_and_min_n_are_pre_registered_and_delta_is_gone() {
+    let ok = r#"{"lane_independence":{"min_n":30,"counted_lanes":["sonnet","haiku","agy"],
         "registered_at":"2026-09-20T00:00:00Z","training_started_at":"2026-09-21T00:00:00Z"}}"#;
     let m = parse_manifest(ok).expect("valid manifest");
-    assert_eq!((m.delta, m.min_n, m.counted_lanes.len()), (0.05, 30, 3));
+    assert_eq!((m.min_n, m.counted_lanes.len()), (30, 3));
     for bad in [
         "{}",
         r#"{"lane_independence":{}}"#,
-        r#"{"lane_independence":{"min_n":30,"counted_lanes":["sonnet"],"registered_at":"2026-09-20T00:00:00Z","training_started_at":"2026-09-21T00:00:00Z"}}"#,
-        r#"{"lane_independence":{"delta":-0.01,"min_n":30,"counted_lanes":["sonnet"],"registered_at":"2026-09-20T00:00:00Z","training_started_at":"2026-09-21T00:00:00Z"}}"#,
-        r#"{"lane_independence":{"delta":"NaN","min_n":30,"counted_lanes":["sonnet"],"registered_at":"2026-09-20T00:00:00Z","training_started_at":"2026-09-21T00:00:00Z"}}"#,
-        r#"{"lane_independence":{"delta":0.05,"min_n":0,"counted_lanes":["sonnet"],"registered_at":"2026-09-20T00:00:00Z","training_started_at":"2026-09-21T00:00:00Z"}}"#,
-        r#"{"lane_independence":{"delta":0.05,"min_n":30,"counted_lanes":[],"registered_at":"2026-09-20T00:00:00Z","training_started_at":"2026-09-21T00:00:00Z"}}"#,
-        // registered AFTER training started: δ could have been picked after seeing κ
-        r#"{"lane_independence":{"delta":0.05,"min_n":30,"counted_lanes":["sonnet"],"registered_at":"2026-09-22T00:00:00Z","training_started_at":"2026-09-21T00:00:00Z"}}"#,
+        // v2's δ: H7 is δ-free in v3, and a δ nothing reads is a false assurance
+        r#"{"lane_independence":{"delta":0.05,"min_n":30,"counted_lanes":["sonnet"],"registered_at":"2026-09-20T00:00:00Z","training_started_at":"2026-09-21T00:00:00Z"}}"#,
+        r#"{"lane_independence":{"min_n":0,"counted_lanes":["sonnet"],"registered_at":"2026-09-20T00:00:00Z","training_started_at":"2026-09-21T00:00:00Z"}}"#,
+        r#"{"lane_independence":{"min_n":30,"counted_lanes":[],"registered_at":"2026-09-20T00:00:00Z","training_started_at":"2026-09-21T00:00:00Z"}}"#,
+        // registered AFTER training started: the voters could be picked after seeing κ
+        r#"{"lane_independence":{"min_n":30,"counted_lanes":["sonnet"],"registered_at":"2026-09-22T00:00:00Z","training_started_at":"2026-09-21T00:00:00Z"}}"#,
         // same instant is not "before"
-        r#"{"lane_independence":{"delta":0.05,"min_n":30,"counted_lanes":["sonnet"],"registered_at":"2026-09-21T00:00:00Z","training_started_at":"2026-09-21T00:00:00Z"}}"#,
+        r#"{"lane_independence":{"min_n":30,"counted_lanes":["sonnet"],"registered_at":"2026-09-21T00:00:00Z","training_started_at":"2026-09-21T00:00:00Z"}}"#,
         // a timestamp that does not compare lexicographically (offset, not Z)
-        r#"{"lane_independence":{"delta":0.05,"min_n":30,"counted_lanes":["sonnet"],"registered_at":"2026-09-20T00:00:00+02:00","training_started_at":"2026-09-21T00:00:00Z"}}"#,
+        r#"{"lane_independence":{"min_n":30,"counted_lanes":["sonnet"],"registered_at":"2026-09-20T00:00:00+02:00","training_started_at":"2026-09-21T00:00:00Z"}}"#,
         "not json",
     ] {
         assert!(parse_manifest(bad).is_err(), "accepted: {bad}");
