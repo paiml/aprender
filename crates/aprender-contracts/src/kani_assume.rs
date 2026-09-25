@@ -267,6 +267,27 @@ pub fn baseline_of(measured: &Count, command: &str) -> Baseline {
     }
 }
 
+/// The baseline `make kani-ratchet` writes over an existing one: it only ever moves DOWN. Each file keeps
+/// `min(was, now)` and leaves at 0; a file that rose keeps `was` (the rise is [`rises`]' to report); a file
+/// absent from `old` stays absent, so a new or renamed file with a `kani::assume` stays RED until the baseline
+/// is edited on purpose, in review.
+#[must_use]
+pub fn ratchet_down(measured: &Count, old: &Baseline, command: &str) -> Baseline {
+    let files: BTreeMap<String, u64> = old
+        .files
+        .iter()
+        .filter_map(|(path, &was)| {
+            let n = measured.files.get(path).copied().unwrap_or(0).min(was);
+            (n > 0).then(|| (path.clone(), n))
+        })
+        .collect();
+    Baseline {
+        command: command.to_owned(),
+        total: files.values().sum(),
+        files,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     include!("kani_assume_tests.rs");

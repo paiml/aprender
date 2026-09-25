@@ -1,0 +1,33 @@
+{
+  "command": "make kani-ratchet",
+  "total": 181,
+  "files": {
+    "aprender-contracts-staging/generated/ptx-target-parity/ptx-target-parity-v1_kani.rs": 3,
+    "aprender-contracts-staging/generated/qwen2-e2e-verification-v1_kani.rs": 1,
+    "aprender-contracts-staging/generated/qwen2-shapes-v1_kani.rs": 4,
+    "aprender-contracts-staging/generated/qwen3-e2e-verification-v1_kani.rs": 1,
+    "aprender-contracts-staging/generated/qwen3-shapes-v1_kani.rs": 4,
+    "aprender-contracts-staging/generated/qwen35-e2e-verification-v1_kani.rs": 1,
+    "aprender-contracts-staging/generated/qwen35-hybrid-forward-v1_kani.rs": 9,
+    "aprender-contracts-staging/generated/qwen35-shapes-v1_kani.rs": 4,
+    "aprender-contracts-staging/generated/qwen3moe-e2e-verification-v1_kani.rs": 1,
+    "aprender-contracts-staging/generated/qwen3moe-shapes-v1_kani.rs": 6,
+    "aprender-contracts/src/kernels/kani_proofs.rs": 8,
+    "aprender-contracts/src/kernels/kani_proofs_ab.rs": 21,
+    "aprender-contracts/src/kernels/kani_proofs_cd.rs": 29,
+    "aprender-contracts/src/kernels/kani_proofs_e1.rs": 20,
+    "aprender-contracts/src/kernels/kani_proofs_e2.rs": 24,
+    "aprender-contracts/src/ontology/verdict.rs": 2,
+    "aprender-contracts/src/ontology/witness.rs": 4,
+    "aprender-core/src/format/kani_proofs.rs": 7,
+    "aprender-profile-core/src/span_record.rs": 3,
+    "aprender-profile-core/src/trace_context.rs": 3,
+    "aprender-profile/src/adaptive_sampler.rs": 2,
+    "aprender-profile/src/anomaly.rs": 6,
+    "aprender-profile/src/span_record.rs": 3,
+    "aprender-profile/src/trace_context.rs": 3,
+    "aprender-quant/src/ggml_type.rs": 1,
+    "aprender-registry/src/model/version.rs": 3,
+    "aprender-zram/src/verification_specs.rs": 8
+  }
+}

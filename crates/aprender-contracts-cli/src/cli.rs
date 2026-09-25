@@ -518,10 +518,23 @@ pub enum DischargeAction {
     },
     /// Judge the tree: escapes vs escape-allowlist.yaml, exact-name roots, the label ratchet, Axioms.lean
     /// freshness, then `lake env lean Axioms.lean` (after `build.sh`) unless `--no-lake`
+    ///
+    /// `--kani <dir> --baseline <file>` judges something else instead: the `kani::assume` count per `.rs` file
+    /// under `<dir>` against the committed baseline. rc 1 only if a file's count ROSE; it never writes the
+    /// baseline (`make kani-ratchet` does). The Lean arms are refused with it (PVL-001 EV-6c, #4197)
     Check {
-        lean_dir: PathBuf,
+        #[arg(required_unless_present = "kani")]
+        lean_dir: Option<PathBuf>,
         #[arg(long, default_value = "contracts")]
         contracts: PathBuf,
+        /// Judge the `kani::assume` ratchet over this source tree instead of a Lean dir
+        #[arg(long, requires = "baseline", conflicts_with_all = [
+            "lean_dir", "no_lake", "strict", "validate_formalization", "leanchecker", "comparator",
+        ])]
+        kani: Option<PathBuf>,
+        /// `--kani`'s committed baseline, `{command, total, files: {path: n}}`
+        #[arg(long, requires = "kani")]
+        baseline: Option<PathBuf>,
         /// Skip the Lean elaboration of Axioms.lean
         #[arg(long)]
         no_lake: bool,
@@ -577,6 +590,15 @@ pub enum DischargeAction {
         lean_dir: PathBuf,
         #[arg(long, default_value = "contracts")]
         contracts: PathBuf,
+    },
+    /// `make kani-ratchet`: rewrite the `kani::assume` baseline DOWNWARD -- each file keeps min(baseline,
+    /// measured), a file that rose keeps its old count and is reported (rc 1), a missing baseline is seeded from
+    /// what is measured. `check --kani` never writes it (PVL-001 EV-6c, #4197)
+    KaniRatchet {
+        /// The source tree whose `.rs` files are counted
+        dir: PathBuf,
+        #[arg(long)]
+        baseline: PathBuf,
     },
 }
 

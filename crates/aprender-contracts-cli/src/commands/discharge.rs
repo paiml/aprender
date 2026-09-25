@@ -1,5 +1,5 @@
 //! `pv discharge gen-axioms | check | run` (PVL-001 EV-6a, #4139; `--leanchecker` EV-6b, #4199; `--comparator`
-//! EV-7b, #4201; `run` EV-8a, #4202). The judging lives in
+//! EV-7b, #4201; `run` EV-8a, #4202; `check --kani` and `kani-ratchet` EV-6c, #4197, in [`super::discharge_kani`]). The judging lives in
 //! [`provable_contracts::discharge`]; this module prints the report and runs Lean.
 //!
 //! Exit: 0 accept · 1 reject (`reject:`) · 2 decline (`decline:` — no root file, zero roots, no `lake`, no
@@ -54,7 +54,12 @@ pub fn run(action: DischargeAction) -> Res {
             check,
         } => gen_axioms(&lean_dir, &contracts, check),
         DischargeAction::Check {
-            lean_dir,
+            kani: Some(dir),
+            baseline,
+            ..
+        } => super::discharge_kani::check(&dir, baseline.as_deref()),
+        DischargeAction::Check {
+            lean_dir: Some(lean_dir),
             contracts,
             no_lake,
             strict,
@@ -64,6 +69,7 @@ pub fn run(action: DischargeAction) -> Res {
             leanchecker_ulimit_v,
             comparator,
             lake_timeout,
+            ..
         } => {
             let opts = CheckOpts {
                 strict,
@@ -110,6 +116,13 @@ pub fn run(action: DischargeAction) -> Res {
             false,
             None,
         ),
+        DischargeAction::KaniRatchet { dir, baseline } => {
+            super::discharge_kani::ratchet(&dir, &baseline)
+        }
+        // clap: `lean_dir` is required unless `--kani` is present.
+        DischargeAction::Check { .. } => {
+            Err(DischargeDeclined("discharge check: give <LEAN_DIR> or --kani <DIR>".into()).into())
+        }
     }
 }
 
@@ -797,8 +810,10 @@ mod tests {
 
     fn check(lean: &Path, contracts: &Path, strict: bool) -> Res {
         run(DischargeAction::Check {
-            lean_dir: lean.into(),
+            lean_dir: Some(lean.into()),
             contracts: contracts.into(),
+            kani: None,
+            baseline: None,
             no_lake: true,
             strict,
             validate_formalization: false,

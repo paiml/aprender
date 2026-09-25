@@ -586,6 +586,12 @@ coverage-check: coverage
 label-ratchet:
 	@. scripts/pv_bin.sh && "$$PV" discharge label-ratchet crates/aprender-contracts-staging/lean --contracts contracts
 
+# PVL-001 EV-6c (#4197): the ONLY writer of the kani::assume baseline. `pv discharge check --kani` never writes
+# it; this rewrites it DOWNWARD (a file's count only falls; a rise or a new file is reported, rc 1, and left OUT).
+.PHONY: kani-ratchet
+kani-ratchet:
+	@. scripts/pv_bin.sh && "$$PV" discharge kani-ratchet crates --baseline contracts/kani-assume-baseline.json
+
 # Ditto for `contracts`. The provable-contract tier is a HARD release gate per
 # CLAUDE.md, and the dogfood protocol looked for a target that did not exist, so
 # it WARNed instead of checking. `pv lint` runs validate + audit + score across
