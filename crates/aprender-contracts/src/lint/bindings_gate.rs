@@ -69,6 +69,12 @@ pub struct BindingsCounters {
     pub files_parsed: usize,
     /// `fired` — the resolver found a present item and refused an absent one this run.
     pub pc_resolver: String,
+    /// ONT-001 row ONT-3a's probe names the extractor's positive control `pc_extract` (R-3's `pc_*` set); it is the
+    /// same control as `pc_resolver`, reported under the spec's name so the row's probe reads it (#4072).
+    pub pc_extract: String,
+    /// The bindings ONT-3a's probe counts as unresolved: bound, not resolving, NOT allowlisted — `ghosts` under the
+    /// spec's name. An allowlisted ghost is accounted for (`allowlisted`), so it is not unresolved here (#4072).
+    pub unresolved: usize,
     pub violations: usize,
 }
 
@@ -146,6 +152,7 @@ pub fn run_bindings_gate(contract_dir: &Path) -> RatchetOutcome {
         crates_scanned: r.stats.crates_scanned,
         files_parsed: r.stats.files_parsed,
         pc_resolver: crate::ontology::witness::FIRED.to_string(),
+        pc_extract: crate::ontology::witness::FIRED.to_string(),
         ..BindingsCounters::default()
     };
     let mut unresolved: BTreeSet<String> = BTreeSet::new();
@@ -193,6 +200,7 @@ pub fn run_bindings_gate(contract_dir: &Path) -> RatchetOutcome {
         }
     }
 
+    c.unresolved = c.ghosts;
     c.violations = findings.len();
     let verdict = if findings.is_empty() {
         Verdict::Pass
