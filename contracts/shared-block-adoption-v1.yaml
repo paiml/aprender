@@ -1,0 +1,73 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-26'
+  author: PAIML Engineering
+  kind: pattern
+  description: >-
+    PP-ARCH-001 Phase 0 (#3422). Every RMSNorm, RoPE, softmax and attention
+    implementation in aprender-serve is classified shared / duplicate / wrapper
+    / novel by a re-derivable oracle, and the duplicate count may only fall.
+    A new architecture must call the shared layer, not reimplement it.
+  references:
+  - 'docs/specifications/PP-ARCH-001-MASTER.md §2.1 (exit criterion), §3 row 0, §5'
+  - 'scripts/classify_shared_block_adoption.py — the oracle (SHARED_HOMES, FAMILIES, OVERRIDES)'
+  - 'docs/audits/shared-block-duplicates-baseline.tsv — the ratchet; 72 rows at creation'
+  - 'ci/explicit-test-commands.d/490-shared-block-ratchet.cmd — the CI wiring'
+equations:
+  duplicate_ratchet:
+    formula: >-
+      dup(tree) = |{ fn in serve_src \ tests : family(name(fn)) != none
+                     AND file(fn) not in SHARED_HOMES
+                     AND math(family, body(fn)) AND (file, fn) not in OVERRIDES }|
+      GATE(tree) = GREEN iff multiset(dup(tree)) == multiset(baseline)
+    domain: >-
+      crates/aprender-serve/src/**/*.rs minus test paths and #[cfg(test)] / #[test]
+      items; families rmsnorm, rope, softmax, attention (PP-ARCH-001 §2.1)
+    codomain: "GREEN or RED with one line per violation naming family, path and fn"
+    invariants:
+    - >-
+      THE BASELINE ONLY SHRINKS. A duplicate absent from the baseline is RED (a new
+      reimplementation); a baseline row with no matching fn is also RED (a
+      migration landed and must delete its row, so the gain cannot be spent later).
+    - >-
+      MATH, NOT NAMES, MAKES A DUPLICATE. A family-named fn whose body carries no
+      family math (kernel launch, dispatch, getter) is a wrapper. String literals
+      and comments are blanked first, so PTX/WGSL source never reads as CPU math.
+    - >-
+      A NOVEL OPERATOR IS A REVIEWED OVERRIDE WITH A REASON (§2.2). An override
+      whose fn no longer exists is RED, so the exemption list cannot rot.
+    preconditions:
+    - "python3 >= 3.8 on PATH; run from any cwd (paths are script-relative)"
+    postconditions:
+    - "exit 0 iff GATE(tree) == GREEN; exit 1 otherwise"
+proof_obligations:
+- type: invariant
+  property: the oracle's own case table holds
+  formal: "classify_shared_block_adoption.py --self-test exits 0"
+  applies_to: all
+- type: invariant
+  property: the tree matches the ratchet baseline
+  formal: "classify_shared_block_adoption.py exits 0 on HEAD"
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-SBA-001
+  rule: a new reimplementation outside the shared layer is RED
+  prediction: >-
+    Planting `fn rms_norm_planted(x: &[f32]) -> f32 { x[0].sqrt() }` in any
+    non-test aprender-serve file turns the gate RED and names that fn.
+  test: "python3 scripts/classify_shared_block_adoption.py"
+  if_fails: the ratchet admits new duplicates; §2.1 is unenforced
+- id: FALSIFY-SBA-002
+  rule: a migrated duplicate must delete its baseline row
+  prediction: >-
+    Deleting one baselined duplicate fn without editing the baseline turns the
+    gate RED with a STALE baseline row line.
+  test: "python3 scripts/classify_shared_block_adoption.py"
+  if_fails: the baseline can silently re-grow into space a migration freed
+- id: FALSIFY-SBA-003
+  rule: the classifier's case table is load-bearing
+  prediction: >-
+    Every self-test case (math in strings/comments, #[cfg(test)] and #[test]
+    exclusion, bodiless trait fns, launcher-vs-reimplementation) passes.
+  test: "python3 scripts/classify_shared_block_adoption.py --self-test"
+  if_fails: the oracle's classification is not what the spec says it is
