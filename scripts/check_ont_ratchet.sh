@@ -42,8 +42,20 @@ BASELINE="$REPO_ROOT/contracts/lint-baseline.json"
 # ── the consumer probe ───────────────────────────────────────────────────────
 # Derived from the binary's own surface, never from a list here. `pv census` is
 # ONT-1; until it exists, `entity:` is a key nothing reads.
+#
+# The TREE's pv first (#4046): the ratchet judges the commit under test, and a
+# runner's PATH pv is whatever that host last installed. yoga-build carried a pv
+# that predates census, so a tree that ships `pv census` read "no consumer" and
+# the release's 8th anchor failed as unconsumed. The PATH probe is the fallback
+# only when the tree carries no pv CLI source at all.
+PV_CLI_SRC="${_ONT_PV_CLI_SRC:-$REPO_ROOT/crates/aprender-contracts-cli/src/cli.rs}"
 ont_consumer_present() {
     local pvbin help_out
+    if [ -f "$PV_CLI_SRC" ]; then
+        # the clap variant IS the subcommand: `Census {` (or a unit `Census,`)
+        grep -qE '^[[:space:]]*Census[[:space:]]*[{,]' "$PV_CLI_SRC"
+        return
+    fi
     pvbin="$(command -v pv 2>/dev/null || true)"
     [ -n "$pvbin" ] || return 1
     help_out="$("$pvbin" --help 2>&1 || true)"
@@ -337,6 +349,19 @@ self_test() {
     rc=$?
     set -e
     row "anchored rises with NO consumer -> refused" "$rc" "1"
+    # #4046: the consumer is the TREE's pv, never the runner's PATH pv. A stale PATH pv
+    # (no census) must not hide a tree that ships census, and a PATH pv that has census
+    # must not vouch for a tree that dropped it.
+    mkdir -p "$t/bin" "$t/cli"
+    printf '#!/bin/sh\necho "Commands:"\necho "  validate  Validate"\n' > "$t/bin/pv"; chmod +x "$t/bin/pv"
+    printf '    /// ONT-1\n    Census {\n        dir: PathBuf,\n    },\n' > "$t/cli/with.rs"
+    printf '    /// no census here\n    Diff {\n    },\n' > "$t/cli/without.rs"
+    row "tree has census, stale PATH pv -> consumer" \
+        "$( (PATH="$t/bin:$PATH"; PV_CLI_SRC="$t/cli/with.rs"; ont_consumer_present) && echo true || echo false)" true
+    printf '#!/bin/sh\necho "  census  Census"\n' > "$t/bin/pv"
+    row "tree lacks census, PATH pv has it -> no consumer" \
+        "$( (PATH="$t/bin:$PATH"; PV_CLI_SRC="$t/cli/without.rs"; ont_consumer_present) && echo true || echo false)" false
+    row "the real tree ships census" "$(ont_consumer_present && echo true || echo false)" true
     printf 'self-test: %s passed, %s failed\n' "$pass" "$fail"
     [ -n "$t" ] && [ -d "$t" ] && rm -rf "$t"
     [ "$fail" -eq 0 ]
