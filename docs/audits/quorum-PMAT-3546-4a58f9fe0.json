@@ -1,0 +1,71 @@
+{
+  "ticket": "PMAT-3546",
+  "github_issue": 3546,
+  "subject": "0a0c59716d7baea2482b2ebb3710b86f2db2fd27",
+  "cherry_picked_from": "2fe8a74cfbadd9e4209bf49c06a9fd6342111011",
+  "base": "origin/batch/0.69.4-epic-4249",
+  "files": [
+    ".github/workflows/binary-release.yml",
+    ".github/workflows/install-script.yml",
+    "scripts/install.sh",
+    "scripts/tests/install_e2e_container.sh",
+    "docs/roadmaps/entries/PMAT-3546.yaml"
+  ],
+  "author": {
+    "model": "claude-opus-5-5",
+    "session": "aprender-ea (taken over from aprender-76, 0.69.4 captain aprender-3d)"
+  },
+  "degraded": "same-family",
+  "degraded_reason": "agy lane (gemini-3.1-pro-high, conv 1b7fa1b5-ea88-41e8-a711-dd7e5fde7f0d) exited 3: 22 shared refs + .git/config moved by sibling sessions during the lane. Not counted; Claude Code lanes used, the opus author's seat taken by a 2nd sonnet.",
+  "lanes": [
+    {
+      "lane": 1,
+      "model": "claude-haiku-4-5",
+      "verdict": "PASS",
+      "findings": []
+    },
+    {
+      "lane": 2,
+      "model": "claude-sonnet-5",
+      "verdict": "PASS",
+      "findings": [
+        "minor: install-e2e covers the -cpu asset only"
+      ]
+    },
+    {
+      "lane": 3,
+      "model": "claude-sonnet-5",
+      "angle": "workflow wiring + summary/needs + triggers + secrets",
+      "verdict": "PASS",
+      "findings": [
+        "medium: summary step text does not echo needs.install-e2e.result (run still fails on job failure)",
+        "low: releases/latest read-after-write lag right after publish could flake --expect-tag"
+      ]
+    }
+  ],
+  "uncounted": [
+    {
+      "model": "gemini-3.1-pro-high",
+      "verdict": "FAIL",
+      "exit": 3,
+      "claim": "--expect-tag vs releases/latest goes RED for a backport after a newer release",
+      "disposition": "latent: v0.69.3 is Latest, a published v0.69.4 becomes Latest; RED only on inputs.tag re-runs of older tags or post-0.70 backports. Follow-up, not a 0.69.4 blocker."
+    },
+    {
+      "model": "claude-sonnet-5",
+      "verdict": "FAIL",
+      "claim": "no runner carries clean-room+docker, jobs would queue forever",
+      "disposition": "REFUTED by measurement 10:31Z: gh api orgs/paiml/actions/runners lists gx10-pool1..3, yoga-build, yoga-build2, yoga-build3 online with both labels. Lane superseded by lanes 2-3 given that fact."
+    }
+  ],
+  "tally": "3/3 PASS",
+  "author_checks": [
+    "install_test.sh 18/18 ok",
+    "install_e2e_container.sh --self-test rc 0",
+    "bashrs lint per file: 0 errors 0 warnings (install.sh, install_e2e_container.sh)",
+    "yaml parses: binary-release.yml, install-script.yml, qwen-story-daily.yml",
+    "build.rs #4254 .git SHA fallback present in this tree, so release assets do not print +no-git"
+  ],
+  "reviewed_sha": "4a58f9fe045b62540625058ffe2831c60a63cfb9",
+  "note": "reviewed as 4a58f9fe0 (pick of 2fe8a74cf); re-picked unchanged onto the moved batch tip as subject"
+}
