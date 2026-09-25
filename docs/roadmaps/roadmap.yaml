@@ -21205,3 +21205,23 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4347
+  github_issue: 4347
+  item_type: task
+  title: 'PVL: prove all 7 escape-allowlist axioms (DPO x3, f16 bound, NF4 x3) instead of confirming them'
+  status: in_progress
+  priority: high
+  assigned_to: pvl-b
+  created: 2026-09-25T01:30:00Z
+  updated: 2026-09-25T02:00:00Z
+  spec: infra docs/specifications/PVL-001-pv-lean-gate.md
+  acceptance_criteria:
+  - every escape-allowlist.yaml axiom is a Lean theorem whose #print axioms is [propext, Classical.choice, Quot.sound]
+  - escape-allowlist.yaml carries no entry for a proved decl; Axioms.lean regenerated (pv discharge gen-axioms --check rc 0)
+  - pv discharge check --no-lake PENDING count drops by the number proved
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'DPO x3 by pvl-b; NF4 x3 and f16 by aprender-57. The old dpo_gradient_formula axiom was false for beta < 0; now a HasDerivAt theorem plus dpo_gradient_scale_nonpos (0 <= beta).'

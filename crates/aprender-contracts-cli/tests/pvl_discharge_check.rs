@@ -423,7 +423,7 @@ fn the_real_lean_tree_passes_the_ev_6a_probe() {
         "is its regeneration",
     );
     let r = run(&["discharge", "check", lean, "--no-lake"]);
-    assert_rc(&r, 0, "PENDING (7)");
+    assert_rc(&r, 0, "PENDING (4)");
     assert!(r.stdout.contains("ok    discharge"), "{}", r.show());
     assert_eq!(
         std::fs::read(&labels).expect("label set"),

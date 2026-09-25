@@ -16,7 +16,7 @@ def pvlAxiomsSubset (n : Name) (pinned : List Name) : CommandElabM Unit := do
 
 open Lean in
 /-- formalization.yaml `status.axioms`, plus every axiom escape-allowlist.yaml exempts. -/
-def pvlPinned : List Name := [`propext, `Classical.choice, `Quot.sound, `ProvableContracts.DPO.sigmoid_bounded, `ProvableContracts.DPO.dpo_loss_zero_at_strong_preference, `ProvableContracts.DPO.dpo_gradient_formula, `ProvableContracts.CooperativeMatrix.f16_accumulation_error_bound, `ProvableContracts.NF4.nf4_lut, `ProvableContracts.NF4.nf4_lut_monotone, `ProvableContracts.NF4.nf4_lut_bounded]
+def pvlPinned : List Name := [`propext, `Classical.choice, `Quot.sound, `ProvableContracts.CooperativeMatrix.f16_accumulation_error_bound, `ProvableContracts.NF4.nf4_lut, `ProvableContracts.NF4.nf4_lut_monotone, `ProvableContracts.NF4.nf4_lut_bounded]
 
 run_cmd pvlAxiomsSubset `ProvableContracts.AdamW.decay_update_eq pvlPinned
 run_cmd pvlAxiomsSubset `ProvableContracts.Alibi.alibi_bias_antitone pvlPinned

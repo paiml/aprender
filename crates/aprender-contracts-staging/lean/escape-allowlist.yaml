@@ -1,26 +1,8 @@
 # PVL-001 EV-6a (#4139): every compiler/logic escape in ProvableContracts/** that `pv discharge check` allows.
 # {file, decl, kind, reason, ticket, confirmed_by}. `confirmed_by: pending` is PENDING: `pv discharge check --strict`
 # (the EV-9 gate) stays RED until a person confirms the entry or the axiom is proved/deleted. The scanner and its
-# exemptions are never confirmed by the same run (PVL-001 §5.3): these 7 were DRAFTED from each axiom's own doc
+# exemptions are never confirmed by the same run (PVL-001 §5.3): these were DRAFTED from each axiom's own doc
 # comment and are not confirmed.
-- file: ProvableContracts/Theorems/DPO.lean
-  decl: ProvableContracts.DPO.sigmoid_bounded
-  kind: axiom
-  reason: "Sigmoid is bounded in (0, 1). The file's comment: 'Status: axiom (positivity + bound argument)' -- provable from Real.exp_pos, not yet proved."
-  ticket: "#4139"
-  confirmed_by: pending
-- file: ProvableContracts/Theorems/DPO.lean
-  decl: ProvableContracts.DPO.dpo_loss_zero_at_strong_preference
-  kind: axiom
-  reason: "DPO loss -> 0 as the preference margin grows. The file's comment: 'Status: axiom (requires limit theory)'."
-  ticket: "#4139"
-  confirmed_by: pending
-- file: ProvableContracts/Theorems/DPO.lean
-  decl: ProvableContracts.DPO.dpo_gradient_formula
-  kind: axiom
-  reason: "The DPO gradient formula. The file's comment: 'Status: axiom (gradient formula from Rafailov et al.)'."
-  ticket: "#4139"
-  confirmed_by: pending
 - file: ProvableContracts/Theorems/MatMul/CooperativeTiling.lean
   decl: ProvableContracts.CooperativeMatrix.f16_accumulation_error_bound
   kind: axiom
