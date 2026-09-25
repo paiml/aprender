@@ -1,0 +1,19 @@
+- id: PMAT-4406
+  github_issue: 4406
+  item_type: task
+  kind: docs
+  title: 'EXT-24: CRUX bind (runs before EXT-11) (EXT-001 epic #4381)'
+  status: planned
+  priority: high
+  assigned_to: ext
+  created: 2026-09-25T12:28:24Z
+  updated: 2026-09-25T12:28:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  - ext-001
+  notes: null

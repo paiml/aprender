@@ -1,0 +1,19 @@
+- id: PMAT-4398
+  github_issue: 4398
+  item_type: task
+  kind: code
+  title: 'EXT-16: card renderer (EXT-001 epic #4381)'
+  status: planned
+  priority: high
+  assigned_to: ext
+  created: 2026-09-25T12:28:20Z
+  updated: 2026-09-25T12:28:20Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - ext-001
+  notes: null

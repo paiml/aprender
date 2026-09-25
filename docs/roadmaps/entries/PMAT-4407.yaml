@@ -1,0 +1,19 @@
+- id: PMAT-4407
+  github_issue: 4407
+  item_type: task
+  kind: code
+  title: 'EXT-25: contracts + coverage gate (D-8 must-carry candidate) (EXT-001 epic #4381)'
+  status: planned
+  priority: high
+  assigned_to: ext
+  created: 2026-09-25T12:28:24Z
+  updated: 2026-09-25T12:28:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - ext-001
+  notes: null

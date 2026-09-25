@@ -1,0 +1,19 @@
+- id: PMAT-4382
+  github_issue: 4382
+  item_type: task
+  kind: docs
+  title: 'EXT-00: bind — re-derive §1 ground truth, emit ext-bind-receipt.json'
+  status: planned
+  priority: high
+  assigned_to: ext
+  created: 2026-09-25T12:26:49Z
+  updated: 2026-09-25T12:26:49Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  - ext-001
+  notes: null

@@ -1,0 +1,19 @@
+- id: PMAT-4387
+  github_issue: 4387
+  item_type: task
+  kind: code
+  title: 'EXT-05: train verbs (EXT-001 epic #4381)'
+  status: planned
+  priority: high
+  assigned_to: ext
+  created: 2026-09-25T12:28:16Z
+  updated: 2026-09-25T12:28:16Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - ext-001
+  notes: null

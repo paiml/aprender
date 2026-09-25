@@ -1,0 +1,19 @@
+- id: PMAT-4384
+  github_issue: 4384
+  item_type: task
+  kind: code
+  title: 'EXT-02: isolation (EXT-001 epic #4381)'
+  status: planned
+  priority: high
+  assigned_to: ext
+  created: 2026-09-25T12:28:15Z
+  updated: 2026-09-25T12:28:15Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - ext-001
+  notes: null
