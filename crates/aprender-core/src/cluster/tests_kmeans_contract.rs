@@ -180,6 +180,18 @@ fn falsify_km_007_n_init_never_worse_than_single() {
                 42 % x.n_rows(),
                 "FALSIFIED KM-007: restart 0 no longer starts at seed % n"
             );
+            // The kept run IS the best of the ten: its inertia equals the
+            // minimum over each restart run alone. Deleting the restart loop
+            // (every fit = restart 0) fails this wherever restart 0 is not
+            // the minimum, independently of KM-008.
+            let runs_min = (0..10)
+                .map(|r| ten.lloyd(&x, ten.restart_start_row(r, x.n_rows())).2)
+                .fold(f32::INFINITY, f32::min);
+            assert_eq!(
+                ten.inertia(),
+                runs_min,
+                "FALSIFIED KM-007: seed {seed} k {k}: kept inertia is not the min over the 10 restarts"
+            );
         }
     }
 }
