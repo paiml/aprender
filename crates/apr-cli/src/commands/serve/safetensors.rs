@@ -391,6 +391,8 @@ fn st_cpu_generate(
     input_ids: &[u32],
     max_tokens: usize,
     temperature: f32,
+    seed: Option<u64>,
+    ignore_eos: bool,
 ) -> std::result::Result<Vec<u32>, String> {
     use realizar::safetensors_infer::StCpuForward;
     use realizar::session::Session;
@@ -399,14 +401,16 @@ fn st_cpu_generate(
         temperature,
         top_k: 0,
         top_p: 0.9,
-        // #3760: the sampler draws now; no seed is plumbed from this caller.
-        seed: realizar::apr_transformer::DEFAULT_SEED,
+        // #2853: the request's `seed`, else the engine default (#3760).
+        seed: seed.unwrap_or(realizar::apr_transformer::DEFAULT_SEED),
         repeat_penalty: 1.0,
         repeat_last_n: 0,
         // apr_transformer::generation::is_eos_token (GH-330) stopped on token 0
         // unconditionally; Session has no such builtin, so it is an explicit
         // stop token here to keep the handlers' stopping behavior identical.
-        stop_tokens: vec![0],
+        // #2853: `ignore_eos` empties the stop set, as PERF-039's
+        // `stop_tokens_unless_ignore_eos` does on the GGUF route.
+        stop_tokens: st_stop_tokens(ignore_eos),
         trace: false,
         logprobs: false,
         cancel: realizar::generate::CancelToken::never(),
@@ -415,6 +419,16 @@ fn st_cpu_generate(
         .generate(input_ids, &gen_config, &mut |_tok| true)
         .map(|turn| turn.tokens)
         .map_err(|e| e.to_string())
+}
+
+/// #2853: the SafeTensors stop set — token 0 (GH-330), or nothing under `ignore_eos`.
+#[cfg(feature = "inference")]
+fn st_stop_tokens(ignore_eos: bool) -> Vec<u32> {
+    if ignore_eos {
+        Vec::new()
+    } else {
+        vec![0]
+    }
 }
 
 #[cfg(all(test, feature = "inference"))]

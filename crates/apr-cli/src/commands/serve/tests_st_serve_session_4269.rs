@@ -40,7 +40,7 @@ fn st_serve_generate_runs_through_session_and_leaves_a_safetensors_witness() {
     let model = tiny_transformer();
     // A prompt no other test in this binary uses, so the witness is this call's.
     let prompt = [7_u32, 5, 3, 9, 4269 % 12];
-    let out = st_cpu_generate(&model, &prompt, 2, 0.0).expect("tiny model generates");
+    let out = st_cpu_generate(&model, &prompt, 2, 0.0, None, false).expect("tiny model generates");
     assert_eq!(&out[..prompt.len()], &prompt, "prompt is echoed first");
     assert!(out.len() > prompt.len(), "at least one token was generated");
     let entries = entries_for(&prompt);
@@ -49,5 +49,51 @@ fn st_serve_generate_runs_through_session_and_leaves_a_safetensors_witness() {
             .iter()
             .any(|e| e.arch == "safetensors" && e.kind == EntryKind::Generate),
         "serve ST CPU generate must go through Session, got {entries:?}"
+    );
+}
+
+/// #2853: a model whose greedy pick is always token 0, the SafeTensors stop token.
+fn eos_first_transformer() -> AprTransformer {
+    let mut model = tiny_transformer();
+    let mut bias = vec![0.0; model.config.vocab_size];
+    bias[0] = 10.0;
+    model.lm_head_bias = Some(bias);
+    model
+}
+
+#[test]
+fn st_generate_stops_at_eos_by_default_2853() {
+    let prompt = [3_u32, 1, 4, 1, 5];
+    let out =
+        st_cpu_generate(&eos_first_transformer(), &prompt, 8, 0.0, None, false).expect("generates");
+    assert!(
+        out.len() - prompt.len() < 8,
+        "the RED control: without ignore_eos the EOS-first model must stop early, got {out:?}"
+    );
+}
+
+#[test]
+fn st_generate_ignore_eos_runs_to_max_tokens_2853() {
+    let prompt = [3_u32, 1, 4, 1, 5];
+    let out =
+        st_cpu_generate(&eos_first_transformer(), &prompt, 8, 0.0, None, true).expect("generates");
+    assert_eq!(
+        out.len() - prompt.len(),
+        8,
+        "ignore_eos must generate exactly max_tokens past EOS, got {out:?}"
+    );
+}
+
+#[test]
+fn st_generate_seed_is_honoured_2853() {
+    // Uniform logits at temperature 1.0: the draw is the seed's alone.
+    let model = tiny_transformer();
+    let prompt = [2_u32, 7, 1, 8, 2];
+    let run =
+        |seed| st_cpu_generate(&model, &prompt, 16, 1.0, Some(seed), true).expect("generates");
+    assert_eq!(run(11), run(11), "one seed reproduces its draw");
+    assert!(
+        (12..20).any(|s| run(s) != run(11)),
+        "a request seed must change the draw, or it is still being dropped"
     );
 }

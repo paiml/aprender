@@ -486,6 +486,13 @@ pub struct ChatCompletionRequest {
     /// Top-p sampling
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f32>,
+    /// #2853: generate exactly `max_tokens`, never stopping at EOS (the
+    /// llama.cpp/vLLM field PERF-039 honours on the GGUF route).
+    #[serde(default)]
+    pub ignore_eos: bool,
+    /// #2853: sampler seed; `None` keeps the engine's `DEFAULT_SEED`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
 }
 
 /// Chat completion response

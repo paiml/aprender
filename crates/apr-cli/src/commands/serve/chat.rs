@@ -158,6 +158,11 @@ fn parse_chat_completion_request(
             .get("top_p")
             .and_then(|t| t.as_f64())
             .map(|v| v as f32),
+        ignore_eos: request
+            .get("ignore_eos")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+        seed: request.get("seed").and_then(serde_json::Value::as_u64),
     })
 }
 
@@ -280,7 +285,14 @@ pub(crate) async fn safetensors_chat_completions_handler(
                     .into_response();
             }
         };
-        match st_cpu_generate(&t, &input_ids, max_tokens, temperature) {
+        match st_cpu_generate(
+            &t,
+            &input_ids,
+            max_tokens,
+            temperature,
+            parsed_request.seed,
+            parsed_request.ignore_eos,
+        ) {
             Ok(ids) => ids,
             Err(e) => {
                 return (
@@ -310,12 +322,17 @@ pub(crate) async fn safetensors_chat_completions_handler(
             .collect()
     };
 
-    // Clean output (remove any trailing special tokens)
-    let output_text = output_text
-        .split("<|im_end|>")
-        .next()
-        .unwrap_or(&output_text)
-        .to_string();
+    // Clean output (remove any trailing special tokens). #2853: under
+    // `ignore_eos` the client asked for every generated token, so nothing is cut.
+    let output_text = if parsed_request.ignore_eos {
+        output_text
+    } else {
+        output_text
+            .split("<|im_end|>")
+            .next()
+            .unwrap_or(&output_text)
+            .to_string()
+    };
 
     let tokens_generated = new_tokens.len();
     let tok_per_sec = if elapsed.as_secs_f64() > 0.0 {
@@ -587,6 +604,30 @@ mod chat_helper_tests {
     }
 
     #[test]
+    fn parse_chat_completion_carries_ignore_eos_and_seed_2853() {
+        let structured = serde_json::json!({
+            "messages": [{"role": "user", "content": "hi"}],
+            "ignore_eos": true,
+            "seed": 42
+        });
+        // Non-string content forces the raw-JSON fallback path.
+        let fallback = serde_json::json!({
+            "messages": [{"role": "user", "content": 7}],
+            "ignore_eos": true,
+            "seed": 42
+        });
+        for req in [structured, fallback] {
+            let parsed = parse_chat_completion_request(&req).expect("parse");
+            assert!(parsed.ignore_eos, "ignore_eos dropped: {req}");
+            assert_eq!(parsed.seed, Some(42), "seed dropped: {req}");
+        }
+        let plain = serde_json::json!({"messages": [{"role": "user", "content": "hi"}]});
+        let parsed = parse_chat_completion_request(&plain).expect("parse");
+        assert!(!parsed.ignore_eos);
+        assert_eq!(parsed.seed, None);
+    }
+
+    #[test]
     fn parse_chat_completion_missing_messages_is_err() {
         let req = serde_json::json!({"model": "apr"});
         let result = parse_chat_completion_request(&req);
@@ -634,6 +675,8 @@ mod chat_helper_tests {
             stream: false,
             temperature: None,
             top_p: None,
+            ignore_eos: false,
+            seed: None,
         }
     }
 

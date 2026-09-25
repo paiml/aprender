@@ -53,7 +53,7 @@ pub(crate) async fn safetensors_generate_handler(
                     .into_response();
             }
         };
-        match st_cpu_generate(&t, &input_ids, max_tokens, temperature) {
+        match st_cpu_generate(&t, &input_ids, max_tokens, temperature, None, false) {
             Ok(ids) => ids,
             Err(e) => {
                 return (
