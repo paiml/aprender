@@ -1,5 +1,7 @@
 # research-design-pr-agent-qwen-3.5.md — PRA-001: Capture-First Trace Corpus for Distilling a Local Qwen 3.5 PR Reviewer
 
+> **SUPERSEDED** by [`PRM-001-prometheus.md`](PRM-001-prometheus.md) (PRM-001 v3, "PROMETHEUS"), which folds PRA-001 and REX-001 into one programme. This document is kept unchanged below as the design record. Where the two differ, PRM-001 wins.
+
 Every quorum is currently throwing away its training pairs. The fix is to capture every lane's exact input bytes, full raw output and findings text at dispatch, under a content-addressed and provenance-tagged `agent-trace-v1` contract, before any training happens. Silver and gold labels stay separable on every row, and a measured lane-independence guard (error-kappa) controls whether silver distillation is allowed at all.
 
 ## TL;DR
