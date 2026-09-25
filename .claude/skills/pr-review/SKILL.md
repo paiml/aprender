@@ -22,7 +22,7 @@ difference is a defect in this file.
 **Contract**: `contracts/pr-review-skill-v2.yaml` (§1 grounding, §7 blocking, §8 metrics)
 **Guard**: `scripts/check_pr_review_receipt.sh` — it validates what you emit here, it has
 its own positive controls, and its mutation set (`scripts/mutate-guard.sh`) reports
-233/233. **Run it on your own receipt before you post anything.**
+239/239. **Run it on your own receipt before you post anything.**
 
 ## Context
 
@@ -239,6 +239,17 @@ pmat query "<what the diff adds>" --limit 10       # duplication_hits[]
   week.
 - `satd_introduced[]` is markers **this diff added**, not markers the file already had.
   Diff the two SATD reports; do not report the file's standing debt as your finding.
+- **`analysis_coverage{}` says what the three analyzers could SEE (#2798, `2.2.0`+).** An
+  empty `tdg_delta[]` is "measured and clean" only if pmat graded the file. It grades no
+  `.sh` today: on PR #2795 all 8 changed scripts sat in `ungraded_files` and three of the four
+  arrays were empty for lack of coverage. So for each of `complexity_delta`, `tdg_delta` and
+  `satd_introduced`, record `measured` or `none` for **every surface the diff touches**
+  (`rust` `.rs` · `shell` `.sh`/`.bash`/`.mk`/`Makefile` · `python` `.py` · `config`
+  `.toml`/`.yaml`/`.yml`/`.json` · `docs` `.md` · `other`). The guard derives the touched
+  set from the diff, so an entry for an untouched surface is ignored and a missing entry for
+  a touched one is RED. `none` anywhere means the verdict is not `PASS` (it reads
+  `DEGRADED`), the same rule `duplication_coverage` applies. Write `none` when the file is in
+  pmat's `ungraded_files`. Do not write `measured` for a surface the analyzer skipped.
 - **`duplication_hits[]` is the highest-EV field in the receipt.** Before accepting that
   the diff adds something new, search for it: PERF-055 nearly re-implemented ~7,200 lines
   across 46 files that already existed. `pmat query "<the thing being added>"` and
@@ -438,7 +449,7 @@ Bash guards are exercised with `bats-core` fixtures. For the receipt guard itsel
 mutation set already exists and is a derivation, not a list:
 
 ```bash
-bash scripts/mutate-guard.sh          # 233/233 on scripts/check_pr_review_receipt.sh
+bash scripts/mutate-guard.sh          # 239/239 on scripts/check_pr_review_receipt.sh
 ```
 
 **`attempted: 0` with `status: consulted` is rejected** (fixture row 2). A mutation set
@@ -799,7 +810,7 @@ one: a pretty-printed Statement is many lines and is rejected as "holds N JSON r
                  "digest": { "sha1": "<head_sha>" } } ],
   "predicateType": "https://paiml.dev/attestations/pr-review/v2",
   "predicate": {
-    "skill_version": "2.1.0",
+    "skill_version": "2.2.0",
     "attestation_level": "L1-self",
     "pr": 2783,
     "base_sha": "<merge-base>", "head_sha": "<head>",
@@ -818,6 +829,10 @@ one: a pretty-printed Statement is many lines and is rejected as "holds N JSON r
                         "python": "lexical", "config": "lexical", "docs": "lexical",
                         "other": "lexical", "sibling_branches": "lexical",
                         "merge_base_to_main": "lexical" },
+                    "analysis_coverage": {
+                        "complexity_delta": { "rust": "measured", "shell": "none" },
+                        "tdg_delta":        { "rust": "measured", "shell": "none" },
+                        "satd_introduced":  { "rust": "measured", "shell": "measured" } },
                     "duplication_horizon": ["head=<head_sha>",
                         "siblings=refs/remotes/origin/* unmerged into origin/main",
                         "merge_base_to_main=<base_sha>..refs/remotes/origin/main"],
@@ -865,6 +880,8 @@ Fields the guard checks that are easy to forget:
   predates the arm and is judged by `2.0.0`'s rules, which is why this repository's one real
   receipt still validates instead of being back-filled with a consultation nobody performed.
   Writing `2.0.0` to skip §3.E is a **stated bypass**, owed to `PRREV-016` — do not use it.
+  At `2.2.0` and above `pmat.analysis_coverage` is **required** (#2798); a `2.1.0` receipt
+  that carries it anyway is checked in full.
 - `antigravity.model_id` must not be your own model family (§3.E step 2, fixture row 35).
   `agy models` lists two Claude ids; agy is a harness, not a model.
 - `antigravity.attempted: 0` under `status: consulted` is rejected (fixture row 31), exactly
@@ -1192,7 +1209,7 @@ the real merged commits, not from the spec's reasoning about them.
 ## §13 Autonomous merge on quorum (DESIGNED AND BUILT, **NOT ARMED**)
 
 Spec §13. Operator instruction, 2026-08-31: PRs auto-merge once the review quorum passes.
-The mechanism exists — `scripts/pr_review_quorum_arm.sh`, a table of 83 rows, a 134-mutant
+The mechanism exists — `scripts/pr_review_quorum_arm.sh`, a table of 84 rows, a 134-mutant
 set at 100% — and **it is reachable from no workflow that can merge anything.** §13.11 is
 the arming ladder; rung 0 is where this file is written.
 
@@ -1345,7 +1362,7 @@ That is the first falsifiable property of the section, and `q-44` plus the
 ### §13.9 Verifying the mechanism
 
 ```bash
-bats tests/pr-review-quorum.bats            # 83 rows: one per refusal path, four that PERMIT
+bats tests/pr-review-quorum.bats            # 84 rows: one per refusal path, four that PERMIT
 bash scripts/mutate_quorum_arm.sh           # 134/134 — §13.10 fixes this at one, no ratchet
 bash scripts/mutate_quorum_arm.sh --list    # the catalogue, no mutants run
 ```

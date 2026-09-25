@@ -791,7 +791,7 @@ validate_receipt() {
                 | sort -u | jq -R . | jq -sc .)
       acov_missing=$(jq -r --argjson t "$touched" '
           (.predicate.consultations.pmat.analysis_coverage // {}) as $c
-          | [ ("complexity_delta","tdg_delta","satd_introduced") as $a | $t[] as $s
+          | [ ("complexity_delta","tdg_delta","satd_introduced") as $a | ($t | .[]) as $s
               | select((($c | getpath([$a]) | type) != "object") or (($c | getpath([$a]) | has($s)) | not))
               | $a + "." + $s ] | join(", ")' "$rcpt")
       [ -z "$acov_missing" ] \

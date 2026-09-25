@@ -321,6 +321,11 @@ equations:
          and horizon_branches_scanned = 0
          and horizon_branches_total > 0                => REJECT(receipt)
       horizon_branches_scanned < horizon_branches_total => verdict != PASS
+      #2798, skill_version >= 2.2.0 (or the map present):
+      ARRAY   = { complexity_delta, tdg_delta, satd_introduced }
+      T       = { surface_of(f) : f in diff(base, head) }
+      forall a in ARRAY, s in T: analysis_coverage(a)(s) in { measured, none }
+      exists a, s: analysis_coverage(a)(s) = none      => verdict != PASS
     domain: 'the pmat consultation of a receipt whose status is `consulted`'
     codomain: 'bool — accepted or rejected whole'
     invariants:
@@ -1029,6 +1034,29 @@ falsification_tests:
     does not have. Re-pin it by re-running `agy --output-format stream-json` and checking
     the init event for a model field; the day one appears, this entry is dischargeable
     and the residual can be closed rather than stated.
+- id: F-PRREV-020
+  rule: >-
+    an empty complexity/tdg/satd array names, per touched surface, whether the analyzer
+    could see it, and an unmeasured surface never reads PASS (#2798)
+  prediction: >-
+    At skill_version 2.2.0 a receipt with pmat.status=consulted and NO analysis_coverage
+    is REJECTED naming every (array, touched surface) pair (probe acov-absent). A map that
+    answers only for an UNTOUCHED surface is REJECTED (acov-wrong-surface); one covering
+    exactly the touched surfaces is ACCEPTED (acov-touched-only). A verdict outside
+    { measured, none } is REJECTED (acov-bad-value), including on a 2.1.0 receipt that
+    carries the map (acov-legacy-carries-bad). `none` under PASS is REJECTED
+    (acov-none-pass) and the same map under DEGRADED is ACCEPTED (acov-none-degraded).
+    The quorum arm refuses `none` at Q2 (q-71). surface_of's case table pins the
+    classifier.
+  test: 'bats tests/pr-review.bats'
+  if_fails: >-
+    tdg_delta: [] on a shell-only diff keeps meaning "pmat graded nothing" while reading
+    as "graded and clean" - PR #2795, 8 ungraded scripts, 3 of 4 S3.A arrays empty for lack
+    of coverage
+  mutation: >-
+    drop any of the three analysis_coverage reject lines in
+    scripts/check_pr_review_receipt.sh (reject-39/40/41, drop and flip) - each is killed
+    by the probe named for it
 
 proof_obligations:
 - id: PRS-INV-001
@@ -1288,7 +1316,7 @@ qa_gate:
   - a_pr_editing_the_merge_mechanism_cannot_merge_itself
   - every_refusal_path_is_exercised_by_a_committed_fixture
   pass_criteria: >-
-    All 19 falsification tests turn RED against a fixture that violates them and GREEN
+    All 20 falsification tests turn RED against a fixture that violates them and GREEN
     against the honest fixture, through scripts/check_pr_review_receipt.sh, whose own
     positive control (S6.1) must fire first.
 
@@ -1303,7 +1331,7 @@ qa_gate:
     receipt - live-pending for the same reason those two are and not for want of effort:
     the thing it pins is a sentence, and a prose `test:` never runs. F-PRREV-018, added in
     the same ticket, IS bound to `bats`. Everything added since - F-PRREV-009
-    through F-PRREV-018 - is bound to a `bats` command, so all
+    through F-PRREV-018, and F-PRREV-020 - is bound to a `bats` command, so all
     but those same four are bound. The total is deliberately not restated here; it is in
     the `All N falsification tests` line above, which is derived and checked.
 

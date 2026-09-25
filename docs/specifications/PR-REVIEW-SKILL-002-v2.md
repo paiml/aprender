@@ -190,6 +190,26 @@ is inferable from the other, and a region absent from the horizon cannot be told
 one that was searched and held nothing — §3.0 one level down. `none` for any surface or
 region may not sit under a `PASS`.
 
+**The other three arrays get the same rule, keyed to what the diff touched (#2798, skill
+`2.2.0`).** `complexity_delta[]`, `tdg_delta[]` and `satd_introduced[]` have no lexical
+fallback: pmat grades no `.sh`, and on PR #2795 (8 changed scripts, 0 `.rs`) all three came
+back empty for lack of coverage while reading as measured-and-clean. So the receipt carries:
+
+```yaml
+analysis_coverage:                     # ARRAY -> SURFACE -> measured | none
+  complexity_delta: { <surface>: … }   # one entry per surface the DIFF touches
+  tdg_delta:        { <surface>: … }
+  satd_introduced:  { <surface>: … }
+```
+
+The guard derives the touched surfaces from `git diff --name-only base head` (`surface_of`:
+`.rs` rust, `.sh`/`.bash`/`.mk`/`Makefile` shell, `.py` python, `.toml`/`.yaml`/`.yml`/`.json`
+config, `.md` docs, else other), so the receipt self-declares nothing about files it did not
+change. A touched surface with no entry is REJECTED, a value outside { measured, none } is
+REJECTED, and `none` may not sit under a `PASS`, exactly as `duplication_coverage`'s `none`
+cannot. Remedy 1 of #2798, a pmat analyzer for `.sh`, is outside this repository; until it
+exists, `none` is the honest entry for shell.
+
 The third region is the ordinary case: your branch is a day behind and someone merged the
 thing you were about to write. It is not on `HEAD`, it is not an unmerged sibling, and B6
 forbids an index newer than `HEAD` from supplying it. Measured: one `git grep` over it costs
@@ -1187,7 +1207,7 @@ Recording this in the spec is not optional. A spec whose acceptance test failed 
 | re-run §9 step 7 against the same three merged PRs | `PRREV-014` | **is** enablement |
 | §3.E — the second-vendor arm: spec, SKILL steps, contract, guard, rows 27–35, 215/215 | `PRREV-015` | advisory; blocks nothing |
 | §3.E's two invocation defects + the vendor-identity limit: disposable tree, file-borne diff, `output_check`, rows 36–37, 217/217 | `PRREV-020` | advisory; blocks nothing |
-| the merged tree's `guard_mutation_score`, **measured**. `PRREV-019` and `PRREV-020` were written on the same parent and merged here; the derived counts moved again (mutation set 217 → 233/233, `tests/pr-review.bats` 156 → 158) and **no sweep has run on the merged tree**. Neither lane's figure transfers: 215/215 was measured on `PRREV-015`'s tree, and `PRREV-020` gave every `row-*` fixture an `output_check` block, so the corpus the sweep runs against moved as well as its size. The set size above is derived by `scripts/mutate-guard.sh --list` and is certain; the kill count is Arm 3 of the `pr-review-receipt` job, and lands as a follow-up commit the way `804559ed5` discharged `03d795423`'s pending 185/185. §8 allows no ratchet here: below 100% blocks. | `PRREV-021` | **PENDING** — the number is unverified until Arm 3 reports |
+| the merged tree's `guard_mutation_score`, **measured**. `PRREV-019` and `PRREV-020` were written on the same parent and merged here; the derived counts moved again (mutation set 217 → 233 → 239/239 (`#2798` +6), `tests/pr-review.bats` 156 → 158) and **no sweep has run on the merged tree**. Neither lane's figure transfers: 215/215 was measured on `PRREV-015`'s tree, and `PRREV-020` gave every `row-*` fixture an `output_check` block, so the corpus the sweep runs against moved as well as its size. The set size above is derived by `scripts/mutate-guard.sh --list` and is certain; the kill count is Arm 3 of the `pr-review-receipt` job, and lands as a follow-up commit the way `804559ed5` discharged `03d795423`'s pending 185/185. §8 allows no ratchet here: below 100% blocks. | `PRREV-021` | **PENDING** — the number is unverified until Arm 3 reports |
 | §3.E.8's stated bypass — `check_pr_review_arm4.sh` requires this PR's receipt to declare the TREE's skill version | `PRREV-018` | before §3.E is promoted out of advisory |
 
 **What the backtest did *not* falsify**, recorded so F1–F5 are not read as a verdict on the whole design: §3.B's path and message triggers discriminated **2/2 must-match and 2/2 must-not-match on real PRs**, including the deliberately over-broad `*cuda*`; the guard's four positive controls fired first on every run, and E1-control proves it is not a guard that reads red by refusing everything either; B6 and the merge-base recomputation behaved exactly as specified throughout; neither comparative regex produced a false positive on 16 real subjects; and pointed at a checkout without `schemas/`, the guard **halted with POSITIVE CONTROL MISFIRED rather than validating** — a control that fired for the wrong reason refused to be evidence.
@@ -1341,7 +1361,7 @@ of a JSON file is a disagreement that gets resolved in the primary's favour by d
 
 ## §13 Autonomous merge on quorum
 
-**Status: SHADOW MODE (§13.11 rung 1). STILL NOT ARMED.** Operator instruction, 2026-08-31: PRs auto-merge once the review quorum passes. Nothing below is enabled by writing it down, and nothing is enabled by the code landing either. `scripts/pr_review_quorum_arm.sh` exists, its fixture table is 83 rows and its derived mutation set kills 134/134. **As of 2026-09-01 it is reachable from one workflow — `pr-review-shadow` in `ci.yml` — which invokes it with `--explain` on every pull request and records the verdict. That job holds a read-only token and is in no `needs:` list, so the capability to merge is absent as well as unused.** §13.11 is the arming ladder and every rung carries a falsifier that must be RED-verified before it is climbed.
+**Status: SHADOW MODE (§13.11 rung 1). STILL NOT ARMED.** Operator instruction, 2026-08-31: PRs auto-merge once the review quorum passes. Nothing below is enabled by writing it down, and nothing is enabled by the code landing either. `scripts/pr_review_quorum_arm.sh` exists, its fixture table is 84 rows and its derived mutation set kills 134/134. **As of 2026-09-01 it is reachable from one workflow — `pr-review-shadow` in `ci.yml` — which invokes it with `--explain` on every pull request and records the verdict. That job holds a read-only token and is in no `needs:` list, so the capability to merge is absent as well as unused.** §13.11 is the arming ladder and every rung carries a falsifier that must be RED-verified before it is climbed.
 
 ### §13.0 What this changes, and the one rule that has no precedent
 
@@ -1413,6 +1433,7 @@ AUTONOMOUS_MERGE_PERMITTED(PR) :=
   AND vacuous_consultations(R) = 0
   AND mutation.survivors = []
   AND ∀ v ∈ pmat.duplication_coverage: v ≠ "none"
+  AND ∀ a, s: pmat.analysis_coverage[a][s] ≠ "none"          (#2798)
   AND ∀ h ∈ pmat.duplication_horizon: h does not end "=none"
   AND (touches_guard(diff) -> mutation.scope = "guard"
                             ∧ mutation.attempted > 0
@@ -1576,7 +1597,7 @@ Each rung has a falsifier that must be **RED-verified** before the rung is climb
 
 | rung | state | what it does | falsifier that must be RED first |
 |---|---|---|---|
-| **0** | climbed 2026-09-01 | the mechanism exists, reachable from no merging workflow | the 83-row table and the derived mutation set are green; `PRREV-017` owes the delta-sweep cost |
+| **0** | climbed 2026-09-01 | the mechanism exists, reachable from no merging workflow | the 84-row table and the derived mutation set are green; `PRREV-017` owes the delta-sweep cost |
 | **1** | **HERE** (2026-09-01) | **shadow mode**: CI runs `--explain` on every PR and records `PERMIT`/`REFUSE [Qn]`. Merges nothing. | delete any one `refuse Q<n>` site and the corresponding q-row must turn RED — RED-verified by `scripts/mutate_quorum_arm.sh`, 134/134, already green as Arm 6 |
 | **2** | after 30 shadow samples | publish `autonomy_refusal_rate` and `degraded_share`; no threshold is set from fewer (§8) | a `--explain` run on a PR whose receipt is DEGRADED must record `Q6` and not `PERMIT` |
 | **3** | after rung 2 | arm on a **narrow class**: docs-only diffs, `MECHANISM_PATHS ∩ diff = ∅`, quorum unanimous | a docs-only PR carrying a hand-edited receipt must refuse; the kill switch must stop rung 3 with one commit |
