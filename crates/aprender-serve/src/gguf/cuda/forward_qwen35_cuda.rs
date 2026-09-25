@@ -655,7 +655,7 @@ impl<'a> Qwen35CudaModel<'a> {
             prefill_rows: prefill::PREFILL_MAX_CHUNK_ROWS,
             prefill_attention,
         };
-        m.warm_prefill_weights()?;
+        m.warm_prefill_weights();
         Ok(m)
     }
 
