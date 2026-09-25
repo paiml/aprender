@@ -199,3 +199,80 @@ fn the_repo_corpus_has_no_unallowlisted_ghost_and_no_stale_entry() {
         "the walk measured little: {k:?}"
     );
 }
+
+/// Appends one implemented binding `module_path::function` to the copy's registry, and `src` to the named file.
+fn bind(c: &Path, module_path: &str, function: &str, file: &str, src: &str) {
+    let reg = c.join("binding.yaml");
+    let mut text = std::fs::read_to_string(&reg).unwrap();
+    text.push_str(&format!(
+        "- contract: softmax-kernel-v1.yaml\n  equation: {function}\n  module_path: {module_path}\n  function: {function}\n  status: implemented\n"
+    ));
+    std::fs::write(&reg, text).unwrap();
+    if !src.is_empty() {
+        let path = c.join("../crates/kern/src").join(file);
+        let mut code = std::fs::read_to_string(&path).unwrap();
+        code.push_str(src);
+        std::fs::write(&path, code).unwrap();
+    }
+}
+
+#[test]
+fn a_pub_super_fn_resolves() {
+    let (_g, c) = workspace();
+    allow(&c, &format!(r#"{{"entries": [{}]}}"#, entry(GHOST)));
+    bind(
+        &c,
+        "kern::nn::functional",
+        "sup_helper",
+        "nn/functional.rs",
+        "pub(super) fn sup_helper() {}\n",
+    );
+    let (r, f) = ran(run_bindings_gate(&c));
+    assert!(f.is_empty(), "{f:?}");
+    let k = counters(&r);
+    assert_eq!((k.checked, k.resolved, k.ghosts), (7, 6, 0));
+}
+
+#[test]
+fn a_fn_bound_under_the_wrong_module_does_not_resolve() {
+    let (_g, c) = workspace();
+    allow(&c, &format!(r#"{{"entries": [{}]}}"#, entry(GHOST)));
+    // `relu` exists, but in `kern::nn::functional`, not `kern::nn`.
+    bind(&c, "kern::nn", "relu", "", "");
+    let (r, f) = ran(run_bindings_gate(&c));
+    assert_eq!(r.verdict, Verdict::Fail);
+    assert_eq!(rules(&f), ["PV-ONT-028"]);
+    assert!(f[0].message.contains("kern::nn::relu"), "{}", f[0].message);
+    assert_eq!(counters(&r).ghosts, 1);
+}
+
+#[test]
+fn an_allowlist_entry_without_a_ticket_is_rejected() {
+    let (_g, c) = workspace();
+    allow(
+        &c,
+        &format!(r#"{{"entries": [{{"symbol": "{GHOST}", "reason": "ghost"}}]}}"#),
+    );
+    let (r, f) = ran(run_bindings_gate(&c));
+    assert_eq!(r.verdict, Verdict::Fail);
+    assert!(rules(&f).contains(&"PV-ONT-030"), "{f:?}");
+}
+
+/// ONT-001 row ONT-3a's probe: `jq -e '.pc_extract=="fired" and .unresolved==0 and .crates_scanned>1'` over the
+/// gate's JSON. The field names are the spec's, so this reads them off the serialized counters, not the struct.
+#[test]
+fn the_spec_probe_fields_are_serialized_and_count_only_unallowlisted_ghosts() {
+    let json = |c: &Path| serde_json::to_value(counters(&ran(run_bindings_gate(c)).0)).unwrap();
+    let (_g, c) = workspace();
+    let v = json(&c);
+    assert_eq!(
+        (v["pc_extract"].as_str(), v["unresolved"].as_u64()),
+        (Some("fired"), Some(1))
+    );
+    allow(&c, &format!(r#"{{"entries": [{}]}}"#, entry(GHOST)));
+    assert_eq!(json(&c)["unresolved"].as_u64(), Some(0));
+    let repo = json(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts"));
+    assert_eq!(repo["pc_extract"], "fired");
+    assert_eq!(repo["unresolved"], 0);
+    assert!(repo["crates_scanned"].as_u64() > Some(1), "{repo}");
+}
