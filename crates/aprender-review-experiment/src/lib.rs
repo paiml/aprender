@@ -34,3 +34,4 @@ pub mod ratchet;
 pub mod receipt;
 pub mod score;
 pub mod stats;
+pub mod terms;
