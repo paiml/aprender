@@ -74,7 +74,11 @@ fn falsify_wlp_002_claim_is_decided_per_lane_and_refused_when_thin() {
     let c = profile(&jsonl(&chatty), 20);
     assert!(lane(&c, "gemini").in_band() && !lane(&c, "gemini").prefill_heavy());
     assert_eq!(c.claim, Some(false));
-    assert!(c.refusals.iter().any(|r| r.contains("gemini")), "{:?}", c.refusals);
+    assert!(
+        c.refusals.iter().any(|r| r.contains("gemini")),
+        "{:?}",
+        c.refusals
+    );
     // the edge: output p95 == input p50 is not prefill-heavy
     let edge = profile(&jsonl(&[row("e", "d", 3000, 3000)]), 1);
     assert!(!lane(&edge, "e").prefill_heavy());
@@ -97,7 +101,11 @@ fn falsify_wlp_002_claim_is_decided_per_lane_and_refused_when_thin() {
     // no lane at min_n: undecided, refused, never confirmed
     let u = profile(&jsonl(&rows), 21);
     assert_eq!(u.claim, None);
-    assert!(u.refusals.iter().any(|r| r.contains("min_n")), "{:?}", u.refusals);
+    assert!(
+        u.refusals.iter().any(|r| r.contains("min_n")),
+        "{:?}",
+        u.refusals
+    );
     let e = profile("", 1);
     assert_eq!(e.claim, None);
     assert!(e.lanes.is_empty());
