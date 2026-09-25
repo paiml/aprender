@@ -251,7 +251,7 @@ jobs:
         run: |
           set -uo pipefail
           export PATH="$COV_TOOLS/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
-          series="${XDG_CACHE_HOME:-$HOME/.cache}/aprender-ci/pmat-metrics"
+          series="$HOME/.cache/aprender-ci/pmat-metrics"
           log=target/coverage/test.log
           if [ ! -s "$log" ]; then
             echo "::warning title=EvoScore NOT RECORDED::$log is absent or empty (the coverage run did not reach its tests)"
