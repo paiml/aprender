@@ -121,14 +121,39 @@ impl KMeans {
 
     /// Loads a model from a binary file.
     ///
+    /// Files saved before `n_init` existed still load, with `n_init = 1`.
+    ///
     /// # Errors
     ///
     /// Returns an error if file reading or deserialization fails.
     pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         let bytes = fs::read(path).map_err(|e| format!("File read failed: {e}"))?;
-        let model =
-            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {e}"))?;
-        Ok(model)
+        Self::from_bincode(&bytes)
+    }
+
+    /// Decodes the current layout, falling back to the pre-`n_init` one.
+    ///
+    /// `n_init` is the LAST field, so an old file runs out of bytes exactly
+    /// where it would start and the current decode fails; a current file is
+    /// never tried as legacy.
+    pub(crate) fn from_bincode(bytes: &[u8]) -> std::result::Result<Self, String> {
+        let current = match bincode::deserialize::<Self>(bytes) {
+            Ok(model) => return Ok(model),
+            Err(e) => e,
+        };
+        let old: LegacyKMeans = bincode::deserialize(bytes)
+            .map_err(|e| format!("Deserialization failed: {current} (pre-n_init layout: {e})"))?;
+        Ok(Self {
+            n_clusters: old.n_clusters,
+            max_iter: old.max_iter,
+            tol: old.tol,
+            random_state: old.random_state,
+            centroids: old.centroids,
+            labels: old.labels,
+            inertia: old.inertia,
+            n_iter: old.n_iter,
+            n_init: 1,
+        })
     }
 
     /// Saves the K-Means model to a `SafeTensors` file.
@@ -248,10 +273,11 @@ impl KMeans {
         let tol_data = safetensors::extract_tensor(&raw_data, tol_meta)?;
         let tol = tol_data[0];
 
-        // Files written before n_init existed carry no tensor: use the default.
+        // Files written before n_init existed carry no tensor: they were fitted
+        // from a single start, so they load as n_init = 1.
         let n_init = match metadata.get("n_init") {
             Some(meta) => (safetensors::extract_tensor(&raw_data, meta)?[0] as usize).max(1),
-            None => DEFAULT_N_INIT,
+            None => 1,
         };
 
         let random_state_meta = metadata
