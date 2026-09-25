@@ -60,21 +60,43 @@ jobs:
           fi
 
   # ── Build apr: Linux x86_64 on yoga, aarch64 natively on gx10 ──
+  # {cpu, cuda} x {x86_64, aarch64} (#4326). Before the cuda legs the nightly
+  # shipped CPU binaries only, so a GPU host could never run the latest
+  # nightly. The cuda legs mirror binary-release.yml's build-apr-cuda lane:
+  # `--features cuda`, and the libcuda.so loader string proves it in the bytes.
+  # The cpu assets keep their names (`apr-<target>.tar.gz`); cuda adds `-cuda`.
+  # A cuda leg is continue-on-error: it must never cost the fleet its CPU nightly,
+  # and a missing -cuda asset is named by fleet-bins' asset resolve, not hidden.
   build:
     needs: check-activity
     if: needs.check-activity.outputs.has_commits == 'true'
-    name: apr ${{ matrix.target }} on ${{ matrix.host }}
+    name: apr (${{ matrix.flavour }}) ${{ matrix.target }} on ${{ matrix.host }}
+    continue-on-error: ${{ matrix.flavour == 'cuda' }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             host: yoga
+            flavour: cpu
             labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
           - target: aarch64-unknown-linux-gnu
             host: gx10
+            flavour: cpu
+            labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
+          - target: x86_64-unknown-linux-gnu
+            host: yoga
+            flavour: cuda
+            labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
+          - target: aarch64-unknown-linux-gnu
+            host: gx10
+            flavour: cuda
             labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
     runs-on: ${{ fromJSON(matrix.labels) }}
+    env:
+      # cpu keeps the pre-#4326 name and cache path (a warm cache stays warm)
+      SUFFIX: ${{ matrix.flavour == 'cuda' && '-cuda' || '' }}
+      FEATURES: ${{ matrix.flavour == 'cuda' && '--features cuda' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -87,7 +109,7 @@ jobs:
         run: |
           DOCKER=docker; docker ps >/dev/null 2>&1 || DOCKER="sudo -n docker"
           T="${{ matrix.target }}"
-          CACHE="$(cd "$GITHUB_WORKSPACE/../.." && pwd)/cache-nightly/$T"
+          CACHE="$(cd "$GITHUB_WORKSPACE/../.." && pwd)/cache-nightly/$T$SUFFIX"
           mkdir -p "$CACHE/registry" "$CACHE/target" "$GITHUB_WORKSPACE/target"
           $DOCKER run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
@@ -97,15 +119,29 @@ jobs:
             -e CARGO_TARGET_DIR=/workspace/target \
             -e CARGO_INCREMENTAL=0 \
             -e T="$T" \
+            -e FEATURES="$FEATURES" \
             rust:1.93.0-bullseye \
-            sh -c 'set -e; ldd --version | head -1; cargo build --release -p apr-cli --target "$T"'
+            sh -c 'set -e; ldd --version | head -1; cargo build --release -p apr-cli --bin apr --target "$T" $FEATURES'
           mkdir -p "target/$T/release"
           cp "$CACHE/target/$T/release/apr" "target/$T/release/apr"
           "target/$T/release/apr" --version
 
+      # The feature must be in the BYTES, not in the intent (binary-release.yml):
+      # the driver loader string exists only under --features cuda.
+      - name: Prove the cuda feature is in the artifact
+        if: matrix.flavour == 'cuda'
+        run: |
+          BIN="target/${{ matrix.target }}/release/apr"
+          n=$(grep -ac 'libcuda.so' "$BIN" || true)
+          echo "libcuda.so loader strings in $BIN: $n"
+          if [ "$n" -lt 1 ]; then
+            echo "::error::$BIN carries no libcuda.so loader string — this is NOT a CUDA build"
+            exit 1
+          fi
+
       - name: Package
         run: |
-          ARCHIVE="apr-${{ matrix.target }}"
+          ARCHIVE="apr-${{ matrix.target }}$SUFFIX"
           mkdir -p "$ARCHIVE"
           cp "target/${{ matrix.target }}/release/apr" "$ARCHIVE/"
           for f in README.md LICENSE LICENSE-MIT COPYING UNLICENSE; do
@@ -118,10 +154,10 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: apr-${{ matrix.target }}
+          name: apr-${{ matrix.target }}${{ env.SUFFIX }}
           path: |
-            apr-${{ matrix.target }}.tar.gz
-            apr-${{ matrix.target }}.tar.gz.sha256
+            apr-${{ matrix.target }}${{ env.SUFFIX }}.tar.gz
+            apr-${{ matrix.target }}${{ env.SUFFIX }}.tar.gz.sha256
 
   # ── Build apr: macOS aarch64 natively on mini-m4 (#3204) ──
   # Host-native: there is no docker on macOS and no glibc floor to pin, so the
