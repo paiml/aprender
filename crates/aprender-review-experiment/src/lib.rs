@@ -34,4 +34,5 @@ pub mod prereg;
 pub mod ratchet;
 pub mod receipt;
 pub mod score;
+pub mod secret;
 pub mod stats;

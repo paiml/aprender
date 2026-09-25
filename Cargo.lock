@@ -1309,9 +1309,11 @@ dependencies = [
 name = "aprender-review-experiment"
 version = "0.69.3"
 dependencies = [
+ "regex",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "toml 0.8.23",
  "ureq 2.12.1",
 ]
 
