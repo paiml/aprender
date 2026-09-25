@@ -45,6 +45,9 @@ pub enum PtxType {
     V2F32,
     /// Vector of 4 x f32 (for vectorized loads)
     V4F32,
+    /// Two packed f16 in one 32-bit value. Only an instruction type
+    /// (`cvt.rn.f16x2.f32`); the register holding it is `B32`.
+    F16x2,
 }
 
 impl PtxType {
@@ -54,7 +57,7 @@ impl PtxType {
         match self {
             Self::Pred | Self::U8 | Self::S8 | Self::B8 => 1,
             Self::U16 | Self::S16 | Self::F16 | Self::BF16 | Self::B16 => 2,
-            Self::U32 | Self::S32 | Self::F32 | Self::B32 => 4,
+            Self::U32 | Self::S32 | Self::F32 | Self::B32 | Self::F16x2 => 4,
             Self::U64 | Self::S64 | Self::F64 | Self::B64 | Self::V2F32 => 8,
             Self::V4F32 => 16,
         }
@@ -89,6 +92,7 @@ impl PtxType {
             Self::B64 => ".b64",
             Self::V2F32 => ".v2.f32",
             Self::V4F32 => ".v4.f32",
+            Self::F16x2 => ".f16x2",
         }
     }
 
@@ -139,6 +143,7 @@ impl PtxType {
             Self::U8 => ".u16", // 8-bit → 16-bit for register declaration
             Self::S8 => ".s16",
             Self::B8 => ".b16",
+            Self::F16x2 => ".b32",
             _ => self.to_ptx_string(),
         }
     }
@@ -148,15 +153,15 @@ impl PtxType {
     pub const fn register_prefix(self) -> &'static str {
         match self {
             Self::Pred => "%p",
-            Self::U8 | Self::B8 => "%rs",   // 8-bit unsigned/bitfield
-            Self::S8 => "%rsi",             // 8-bit signed
-            Self::U16 | Self::B16 => "%rh", // 16-bit unsigned/bitfield
-            Self::S16 => "%rhi",            // 16-bit signed
-            Self::U32 => "%r",              // 32-bit unsigned
-            Self::S32 => "%ri",             // 32-bit signed (separate from %r!)
-            Self::B32 => "%rb",             // 32-bit bitfield (WMMA fragments)
-            Self::U64 | Self::B64 => "%rd", // 64-bit unsigned/bitfield
-            Self::S64 => "%rdi",            // 64-bit signed
+            Self::U8 | Self::B8 => "%rs",     // 8-bit unsigned/bitfield
+            Self::S8 => "%rsi",               // 8-bit signed
+            Self::U16 | Self::B16 => "%rh",   // 16-bit unsigned/bitfield
+            Self::S16 => "%rhi",              // 16-bit signed
+            Self::U32 => "%r",                // 32-bit unsigned
+            Self::S32 => "%ri",               // 32-bit signed (separate from %r!)
+            Self::B32 | Self::F16x2 => "%rb", // 32-bit bitfield (WMMA fragments)
+            Self::U64 | Self::B64 => "%rd",   // 64-bit unsigned/bitfield
+            Self::S64 => "%rdi",              // 64-bit signed
             Self::F16 | Self::BF16 => "%h",
             Self::F32 | Self::V2F32 | Self::V4F32 => "%f", // f32 and vector f32 use %f registers
             Self::F64 => "%fd",

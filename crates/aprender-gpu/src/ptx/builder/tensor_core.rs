@@ -236,6 +236,23 @@ impl<'a> KernelBuilder<'a> {
         dst
     }
 
+    /// Pack two F32 values into one f16x2 register: `cvt.rn.f16x2.f32 d, hi, lo`.
+    ///
+    /// `hi` lands in the upper 16 bits, `lo` in the lower — the layout an
+    /// `mma.sync` A/B fragment register expects (lower half = lower column).
+    pub fn cvt_rn_f16x2_f32(&mut self, hi: VirtualReg, lo: VirtualReg) -> VirtualReg {
+        let dst = self.registers.allocate_virtual(PtxType::B32);
+        self.instructions.push(
+            PtxInstruction::new(PtxOp::Cvt, PtxType::F16x2)
+                .dst(Operand::Reg(dst))
+                .src(Operand::Reg(hi))
+                .src(Operand::Reg(lo))
+                .with_src_type(PtxType::F32)
+                .rounding(RoundingMode::Rn),
+        );
+        dst
+    }
+
     /// Convert F16 value to F32 (for accumulation)
     pub fn cvt_f32_f16(&mut self, val: VirtualReg) -> VirtualReg {
         let dst = self.registers.allocate_virtual(PtxType::F32);

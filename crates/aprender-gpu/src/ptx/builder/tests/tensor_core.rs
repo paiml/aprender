@@ -91,6 +91,39 @@ fn test_wmma_store_d_f32() {
 }
 
 #[test]
+fn test_cvt_rn_f16x2_f32_packs_hi_then_lo_into_b32() {
+    let kernel = PtxKernel::new("test_cvt_f16x2").build(|ctx| {
+        let hi = ctx.mov_f32_imm(1.5);
+        let lo = ctx.mov_f32_imm(-2.0);
+        let _packed = ctx.cvt_rn_f16x2_f32(hi, lo);
+        ctx.ret();
+    });
+
+    let ptx = kernel.emit();
+    let line = ptx
+        .lines()
+        .find(|l| l.contains("cvt.rn.f16x2.f32"))
+        .unwrap_or_else(|| panic!("no cvt.rn.f16x2.f32 in:\n{ptx}"));
+    // dst is a b32 register; operand order is hi, lo.
+    let ops: Vec<&str> = line
+        .trim()
+        .trim_end_matches(';')
+        .split_whitespace()
+        .skip(1)
+        .collect::<String>()
+        .leak()
+        .split(',')
+        .collect();
+    assert_eq!(ops.len(), 3, "{line}");
+    assert!(ops[0].starts_with("%rb"), "dst must be b32: {line}");
+    assert!(ptx.contains(".reg .b32"), "{ptx}");
+    assert!(
+        !ptx.contains(".reg .f16x2"),
+        "f16x2 is never a register type: {ptx}"
+    );
+}
+
+#[test]
 fn test_cvt_f16_f32() {
     let kernel = PtxKernel::new("test_cvt_f16").build(|ctx| {
         let f32_val = ctx.mov_f32_imm(1.5);

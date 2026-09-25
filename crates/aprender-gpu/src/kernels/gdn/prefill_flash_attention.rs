@@ -13,24 +13,34 @@
 //! the online-softmax running max `m`, running sum `l` and the output accumulator `O`
 //! are f32 throughout. The f32 cuBLAS path stays selectable for diagnosis.
 //!
-//! ## Shape
+//! ## Shape (#4442 v2)
 //!
-//! One block per (16 query positions, KV head). Warp `w` owns query head
-//! `kv * heads_per_kv + w` over those 16 positions, so every `K`/`V` tile staged in
-//! shared memory serves all `heads_per_kv` query heads that read it (GQA reuse).
+//! `K` and `V` arrive **already f16** (the caller converts the cache once per call with
+//! `cvt.rn`, the rounding v1 applied per element in-kernel). v1 staged them with one
+//! scalar `ld.global.f32` + `cvt` + `st.shared` per element and ran at ~3 TFLOP/s on
+//! GB10 — latency-bound on those loads (#4442 profile, `docs/findings`).
 //!
-//! Per warp: its `Q` tile (16 × 256) is staged through shared memory as f16 in two
-//! 128-wide halves and held in registers as 16 `mma` A-fragments. The key loop walks
-//! 16-key tiles `0 ..= (pos0 + last_row) / 16`; per tile it stages `K` and `V` as f16
-//! (row stride padded to 264 halves, so `ldmatrix` rows fall in distinct banks), forms
-//! `S = Q Kᵀ` (32 `mma`), masks keys past each row's position, updates `m`/`l` with
-//! quad shuffles (a row lives in the four lanes of one quad in the accumulator
-//! layout), rescales `O`, round-trips `P` through a per-warp shared tile into an
-//! A-fragment and accumulates `O += P V` (32 `mma`). At the end `O / l` is written.
+//! One block per (`16 × RT` query positions, KV head), `heads_per_kv × RT` warps:
+//! warp `w` owns query head `kv * heads_per_kv + w % heads_per_kv` over row tile
+//! `w / heads_per_kv`. `RT = (8 / heads_per_kv).clamp(1, 4)`, so every `K`/`V` tile
+//! staged in shared memory serves all the GQA heads *and* up to four row tiles.
 //!
-//! Static shared memory: `2 × 16 × 264 × 2` (K, V) `+ heads_per_kv × (16 × 24 × 2 +
-//! 16 × 136 × 2)` (P, Q staging) — 37,376 B for 4 heads per KV head (0.8B–9B) and
-//! 47,616 B for 6 (27B), under the 48 KiB static limit.
+//! Per warp: its `Q` tile (16 × 256) is staged through shared memory as f16 in four
+//! 64-wide quarters and held in registers as 16 `mma` A-fragments. The key loop walks
+//! 16-key tiles through a two-stage `cp.async` (16 B) pipeline — tile `kb + 1` is in
+//! flight while tile `kb` is consumed. Per tile a warp forms `S = Q Kᵀ` (32 `mma`),
+//! masks keys past each row's position, updates `m`/`l` with quad shuffles, rescales
+//! `O`, packs `P` straight from the accumulator registers into an A-fragment
+//! (`cvt.rn.f16x2.f32` — the C and A fragment layouts coincide, so no shared round
+//! trip and no block barrier) and accumulates `O += P V` (32 `mma`). A warp skips the
+//! tiles past its own rows' causal extent (they would be fully masked: an exact
+//! identity on `m`, `l` and `O`). At the end `O / l` is written.
+//!
+//! Tile order, masking and every rounding are v1's, so v2 is bit-identical to v1.
+//!
+//! Static shared memory: two stages of `K`+`V`, `2 × 2 × 16 × 264 × 2` = 33,792 B for
+//! every head count; the `Q` staging (`warps × 16 × 72 × 2` ≤ 18,432 B) reuses it
+//! before the pipeline starts.
 
 use crate::kernels::Kernel;
 use crate::ptx::builder::{PtxArithmetic, PtxComparison, PtxControl, PtxMemory};
@@ -38,24 +48,29 @@ use crate::ptx::{PtxKernel, PtxReg, PtxType, VirtualReg};
 
 /// The head width this kernel is written for.
 pub const FLASH_HEAD_DIM: u32 = 256;
-/// Query positions per block (one mma row tile).
+/// Query positions per warp (one mma row tile).
 const BR: u32 = 16;
 /// Keys per tile.
 const BC: u32 = 16;
-/// f16 elements per shared K/V row (256 + 8 of padding).
+/// f16 elements per shared K/V row (256 + 8 of padding: `ldmatrix` rows fall in
+/// distinct banks, and 528 B keeps every 16 B `cp.async` destination aligned).
 const KV_ROW_H: u32 = 264;
-/// f16 elements per shared P row (16 + 8).
-const P_ROW_H: u32 = 24;
-/// f16 elements per shared Q-staging row (128 + 8).
-const Q_ROW_H: u32 = 136;
+/// f16 elements per shared Q-staging row (64 + 8).
+const Q_ROW_H: u32 = 72;
+/// Most warps per block.
+const MAX_WARPS: u32 = 8;
 
-const K_OFF: u32 = 0;
-const V_OFF: u32 = BC * KV_ROW_H * 2;
-const P_OFF: u32 = 2 * BC * KV_ROW_H * 2;
-const P_TILE_BYTES: u32 = BR * P_ROW_H * 2;
+const KV_TILE_BYTES: u32 = BC * KV_ROW_H * 2;
+const STAGE_BYTES: u32 = 2 * KV_TILE_BYTES;
+const SHARED_BYTES: u32 = 2 * STAGE_BYTES;
 const Q_TILE_BYTES: u32 = BR * Q_ROW_H * 2;
+/// 16 B chunks in one stage (K and V, 16 rows × 32 chunks each).
+const STAGE_CHUNKS: u32 = 2 * BC * (FLASH_HEAD_DIM / 8);
 
-/// Fused causal flash-attention prefill, `head_dim = 256`, GQA.
+const _: () = assert!(MAX_WARPS * Q_TILE_BYTES <= SHARED_BYTES);
+const _: () = assert!(SHARED_BYTES <= 48 * 1024);
+
+/// Fused causal flash-attention prefill, `head_dim = 256`, GQA, f16 `K`/`V`.
 #[derive(Debug, Clone, Copy)]
 pub struct PrefillFlashAttention256Kernel {
     /// Query heads.
@@ -68,58 +83,77 @@ impl PrefillFlashAttention256Kernel {
     /// Create the kernel.
     ///
     /// # Panics
-    /// If `num_heads` is not a positive multiple of `num_kv_heads`, or the shared
-    /// memory for that many heads per KV head exceeds the 48 KiB static limit.
+    /// If `num_heads` is not a positive multiple of `num_kv_heads`, or there are more
+    /// than 8 heads per KV head (one warp each, and the `Q` staging must fit the
+    /// pipeline's shared memory).
     #[must_use]
     pub fn new(num_heads: u32, num_kv_heads: u32) -> Self {
         assert!(
             num_kv_heads > 0 && num_heads % num_kv_heads == 0,
             "num_heads {num_heads} must be a positive multiple of num_kv_heads {num_kv_heads}"
         );
-        let k = Self {
+        assert!(
+            Self::fits(num_heads, num_kv_heads),
+            "{} heads per KV head exceed the {MAX_WARPS} warps whose Q staging fits the \
+             static shared memory",
+            num_heads / num_kv_heads
+        );
+        Self {
             num_heads,
             num_kv_heads,
-        };
-        assert!(
-            k.shared_bytes() <= 48 * 1024,
-            "{} heads per KV head need {} B of static shared memory (> 48 KiB)",
-            k.heads_per_kv(),
-            k.shared_bytes()
-        );
-        k
+        }
     }
 
-    /// Would [`Self::new`] accept these heads? (A multiple, and the per-KV-group warps'
-    /// tiles within the 48 KiB static shared memory.)
+    /// Would [`Self::new`] accept these heads? (A multiple, at most 8 per KV head.)
     #[must_use]
     pub const fn fits(num_heads: u32, num_kv_heads: u32) -> bool {
         num_kv_heads > 0
             && num_heads % num_kv_heads == 0
-            && (P_OFF + (num_heads / num_kv_heads) * (P_TILE_BYTES + Q_TILE_BYTES)) <= 48 * 1024
+            && num_heads / num_kv_heads >= 1
+            && num_heads / num_kv_heads <= MAX_WARPS
     }
 
-    /// Query heads per KV head — one warp each.
+    /// Query heads per KV head.
     #[must_use]
     pub const fn heads_per_kv(&self) -> u32 {
         self.num_heads / self.num_kv_heads
     }
 
+    /// Row tiles per block: `(8 / heads_per_kv).clamp(1, 4)`.
+    #[must_use]
+    pub const fn row_tiles(&self) -> u32 {
+        let rt = MAX_WARPS / self.heads_per_kv();
+        if rt < 1 {
+            1
+        } else if rt > 4 {
+            4
+        } else {
+            rt
+        }
+    }
+
+    /// Query rows per block.
+    #[must_use]
+    pub const fn rows_per_block(&self) -> u32 {
+        BR * self.row_tiles()
+    }
+
     /// Static shared memory the kernel declares.
     #[must_use]
     pub const fn shared_bytes(&self) -> usize {
-        (P_OFF + self.heads_per_kv() * (P_TILE_BYTES + Q_TILE_BYTES)) as usize
+        SHARED_BYTES as usize
     }
 
     /// Launch grid for `rows` query rows.
     #[must_use]
     pub const fn grid(&self, rows: u32) -> (u32, u32, u32) {
-        (rows.div_ceil(BR), self.num_kv_heads, 1)
+        (rows.div_ceil(self.rows_per_block()), self.num_kv_heads, 1)
     }
 
-    /// Launch block — one warp per query head of the KV group.
+    /// Launch block — one warp per (query head of the KV group, row tile).
     #[must_use]
     pub const fn block(&self) -> (u32, u32, u32) {
-        (32 * self.heads_per_kv(), 1, 1)
+        (32 * self.heads_per_kv() * self.row_tiles(), 1, 1)
     }
 }
 
@@ -160,6 +194,73 @@ fn quad_reduce(
     acc
 }
 
+/// Per-block constants the `cp.async` tile issue reads.
+struct Issue {
+    tid: VirtualReg,
+    nthreads: u32,
+    k_ptr: VirtualReg,
+    v_ptr: VirtualReg,
+    kv_stride: u32,
+    kv_col: VirtualReg,
+    last_key: VirtualReg,
+}
+
+/// Issue the 16 B `cp.async` copies of key tile `tile` (K then V, f16) into stage
+/// `tile & 1`. Rows past the last key re-read the last key: they are masked, and
+/// keep V finite. Does not commit.
+fn issue_tile(
+    ctx: &mut crate::ptx::builder::KernelBuilder<'_>,
+    is: &Issue,
+    tile: VirtualReg,
+    tag: &str,
+) {
+    let j0 = ctx.mul_u32(tile, BC);
+    let one = ctx.mov_u32_imm(1);
+    let parity = ctx.and_u32(tile, one);
+    let stage = ctx.mul_u32(parity, STAGE_BYTES);
+    let chunks = ctx.mov_u32_imm(STAGE_CHUNKS);
+    let half_chunks = ctx.mov_u32_imm(STAGE_CHUNKS / 2);
+    for i in 0..STAGE_CHUNKS.div_ceil(is.nthreads) {
+        let idx = ctx.add_u32(is.tid, i * is.nthreads);
+        let guarded = (i + 1) * is.nthreads > STAGE_CHUNKS;
+        let skip = format!("fa_issue_skip_{tag}_{i}");
+        if guarded {
+            let in_stage = ctx.setp_lt_u32(idx, chunks);
+            ctx.branch_if_not(in_stage, &skip);
+        }
+        let is_k = ctx.setp_lt_u32(idx, half_chunks);
+        let m511 = ctx.mov_u32_imm(STAGE_CHUNKS / 2 - 1);
+        let rem = ctx.and_u32(idx, m511);
+        let five = ctx.mov_u32_imm(5);
+        let r = ctx.shr_u32(rem, five); // row: 32 chunks per row
+        let m31 = ctx.mov_u32_imm(31);
+        let c = ctx.and_u32(rem, m31);
+        let jr = ctx.add_u32_reg(j0, r);
+        let j = ctx.min_u32(jr, is.last_key);
+        let rowel = ctx.mul_u32(j, is.kv_stride);
+        let c8 = ctx.mul_u32(c, 8);
+        let colh = ctx.add_u32_reg(is.kv_col, c8);
+        let el = ctx.add_u32_reg(rowel, colh);
+        let off = ctx.mul_wide_u32(el, 2);
+        let ka = ctx.add_u64(is.k_ptr, off);
+        let va = ctx.add_u64(is.v_ptr, off);
+        let gaddr = ctx.selp_u64(is_k, ka, va);
+        // Shared: stage + (V ? KV_TILE : 0) + r * 528 + c * 16.
+        let nine = ctx.mov_u32_imm(9);
+        let which = ctx.shr_u32(idx, nine);
+        let wb = ctx.mul_u32(which, KV_TILE_BYTES);
+        let rb = ctx.mul_u32(r, KV_ROW_H * 2);
+        let cb = ctx.mul_u32(c, 16);
+        let a = ctx.add_u32_reg(stage, wb);
+        let b = ctx.add_u32_reg(a, rb);
+        let soff = ctx.add_u32_reg(b, cb);
+        ctx.cp_async_global_to_shared(soff, gaddr, 16);
+        if guarded {
+            ctx.label(&skip);
+        }
+    }
+}
+
 impl Kernel for PrefillFlashAttention256Kernel {
     fn name(&self) -> &str {
         "gdn_prefill_flash_attention_256"
@@ -168,18 +269,18 @@ impl Kernel for PrefillFlashAttention256Kernel {
     #[allow(clippy::too_many_lines)]
     fn build_ptx(&self) -> PtxKernel {
         let hpk = self.heads_per_kv();
-        let nthreads = 32 * hpk;
+        let nthreads = self.block().0;
+        let br_block = self.rows_per_block();
         let q_stride = self.num_heads * FLASH_HEAD_DIM;
         let kv_stride = self.num_kv_heads * FLASH_HEAD_DIM;
-        let q_off = P_OFF + hpk * P_TILE_BYTES;
         // exp(x * scale) == ex2(x * scale * log2 e); scale = 1/sqrt(256).
         let c_exp = std::f32::consts::LOG2_E / (FLASH_HEAD_DIM as f32).sqrt();
 
         PtxKernel::new(self.name())
-            .param(PtxType::U64, "q_ptr") // [rows][num_heads * 256]
-            .param(PtxType::U64, "k_ptr") // [>= pos0 + rows][num_kv_heads * 256]
-            .param(PtxType::U64, "v_ptr") // [>= pos0 + rows][num_kv_heads * 256]
-            .param(PtxType::U64, "out_ptr") // [rows][num_heads * 256]
+            .param(PtxType::U64, "q_ptr") // f32 [rows][num_heads * 256]
+            .param(PtxType::U64, "k_ptr") // f16 [>= pos0 + rows][num_kv_heads * 256]
+            .param(PtxType::U64, "v_ptr") // f16 [>= pos0 + rows][num_kv_heads * 256]
+            .param(PtxType::U64, "out_ptr") // f32 [rows][num_heads * 256]
             .param(PtxType::U32, "rows")
             .param(PtxType::U32, "pos0")
             .shared_memory(self.shared_bytes())
@@ -206,40 +307,45 @@ impl Kernel for PrefillFlashAttention256Kernel {
                 let lane16 = ctx.and_u32(lane, fifteen);
                 let four = ctx.mov_u32_imm(4);
                 let lane_hi = ctx.shr_u32(lane, four); // 0 or 1
+                let rtile = ctx.div_u32(warp, hpk);
+                let rt_heads = ctx.mul_u32(rtile, hpk);
+                let hw = ctx.sub_u32_reg(warp, rt_heads);
                 let kvh_heads = ctx.mul_u32(kvh, hpk);
-                let head = ctx.add_u32_reg(kvh_heads, warp);
-                let q0 = ctx.mul_u32(qblk, BR);
+                let head = ctx.add_u32_reg(kvh_heads, hw);
+                let qb0 = ctx.mul_u32(qblk, br_block);
+                let rt_rows = ctx.mul_u32(rtile, BR);
+                let q0 = ctx.add_u32_reg(qb0, rt_rows);
                 let fz = ctx.mov_f32_imm(0.0);
                 let neg_inf = ctx.mov_f32_imm(f32::NEG_INFINITY);
                 let quad = quad_lanes(ctx, lane);
+                let one = ctx.mov_u32_imm(1);
 
-                // ---- Q: stage each 128-wide half as f16, lift it into A-fragments.
-                let q_warp_off = ctx.mul_u32(warp, Q_TILE_BYTES);
-                let q_warp_base = ctx.add_u32(q_warp_off, q_off);
+                // ---- Q: stage each 64-wide quarter as f16, lift it into A-fragments.
+                let q_warp_base = ctx.mul_u32(warp, Q_TILE_BYTES);
                 let head_col = ctx.mul_u32(head, FLASH_HEAD_DIM);
                 let mut qfrag: Vec<[VirtualReg; 4]> = Vec::with_capacity(16);
-                for half in 0..2u32 {
+                for quarter in 0..4u32 {
                     ctx.bar_sync(0);
                     let it = ctx.mov_u32_imm(0);
-                    let lbl = format!("fa_qstage_{half}");
-                    let end = format!("fa_qstage_end_{half}");
+                    let lbl = format!("fa_qstage_{quarter}");
+                    let end = format!("fa_qstage_end_{quarter}");
                     ctx.label(&lbl);
-                    let n = ctx.mov_u32_imm(BR * 128 / 32);
+                    let n = ctx.mov_u32_imm(BR * 64 / 32);
                     let more = ctx.setp_lt_u32(it, n);
                     ctx.branch_if_not(more, &end);
                     let it32 = ctx.mul_u32(it, 32);
                     let idx = ctx.add_u32_reg(it32, lane);
-                    let seven = ctx.mov_u32_imm(7);
-                    let r = ctx.shr_u32(idx, seven); // / 128
-                    let m127 = ctx.mov_u32_imm(127);
-                    let c = ctx.and_u32(idx, m127);
+                    let six = ctx.mov_u32_imm(6);
+                    let r = ctx.shr_u32(idx, six); // / 64
+                    let m63 = ctx.mov_u32_imm(63);
+                    let c = ctx.and_u32(idx, m63);
                     let qrow = ctx.add_u32_reg(q0, r);
                     let val = ctx.mov_f32_imm(0.0);
                     let in_rows = ctx.setp_lt_u32(qrow, rows);
-                    let skip = format!("fa_qload_skip_{half}");
+                    let skip = format!("fa_qload_skip_{quarter}");
                     ctx.branch_if_not(in_rows, &skip);
                     let rowel = ctx.mul_u32(qrow, q_stride);
-                    let col = ctx.add_u32(c, half * 128);
+                    let col = ctx.add_u32(c, quarter * 64);
                     let colh = ctx.add_u32_reg(head_col, col);
                     let el = ctx.add_u32_reg(rowel, colh);
                     let off = ctx.mul_wide_u32(el, 4);
@@ -264,11 +370,13 @@ impl Kernel for PrefillFlashAttention256Kernel {
                     let lel = ctx.add_u32_reg(lrow, lcol);
                     let lb = ctx.mul_u32(lel, 2);
                     let lbase = ctx.add_u32_reg(q_warp_base, lb);
-                    for kk in 0..8u32 {
+                    for kk in 0..4u32 {
                         let a = ctx.add_u32(lbase, kk * 16 * 2);
                         qfrag.push(ctx.ldmatrix_x4(a));
                     }
                 }
+                // Every warp's last ldmatrix is done before tile 0 lands on the staging.
+                ctx.bar_sync(0);
 
                 // ---- Per-row running state (rows g and g + 8) and the O accumulator.
                 let m = [ctx.mov_f32_imm(f32::NEG_INFINITY), ctx.mov_f32_imm(f32::NEG_INFINITY)];
@@ -284,18 +392,35 @@ impl Kernel for PrefillFlashAttention256Kernel {
                     })
                     .collect();
 
-                // Key tiles 0 ..= (pos0 + last valid row) / 16.
-                let r15 = ctx.add_u32(q0, BR - 1);
-                let one = ctx.mov_u32_imm(1);
+                // Block: key tiles 0 ..= (pos0 + the block's last valid row) / 16.
                 let rows_m1 = ctx.sub_u32_reg(rows, one);
-                let last_row = ctx.min_u32(r15, rows_m1);
-                let last_pos = ctx.add_u32_reg(pos0, last_row);
-                let last_tile = ctx.div_u32(last_pos, BC);
-                let tiles = ctx.add_u32(last_tile, 1);
+                let blk_end = ctx.add_u32(qb0, br_block - 1);
+                let blk_last = ctx.min_u32(blk_end, rows_m1);
+                let blk_pos = ctx.add_u32_reg(pos0, blk_last);
+                let blk_tile = ctx.div_u32(blk_pos, BC);
+                let tiles = ctx.add_u32(blk_tile, 1);
+                // Warp: its own rows' extent; 0 if the row tile is past `rows`.
+                let w_end = ctx.add_u32(q0, BR - 1);
+                let w_last = ctx.min_u32(w_end, rows_m1);
+                let w_pos = ctx.add_u32_reg(pos0, w_last);
+                let w_tile = ctx.div_u32(w_pos, BC);
+                let w_tiles1 = ctx.add_u32(w_tile, 1);
+                let has_rows = ctx.setp_lt_u32(q0, rows);
+                let zero = ctx.mov_u32_imm(0);
+                let warp_tiles = ctx.selp_u32(has_rows, w_tiles1, zero);
+
                 let total_keys = ctx.add_u32_reg(pos0, rows);
+                let last_key = ctx.sub_u32_reg(total_keys, one);
                 let kv_col = ctx.mul_u32(kvh, FLASH_HEAD_DIM);
-                let p_warp_off = ctx.mul_u32(warp, P_TILE_BYTES);
-                let p_base = ctx.add_u32(p_warp_off, P_OFF);
+                let issue = Issue {
+                    tid,
+                    nthreads,
+                    k_ptr,
+                    v_ptr,
+                    kv_stride,
+                    kv_col,
+                    last_key,
+                };
                 // This lane's query rows, absolute positions.
                 let row_lo_abs = {
                     let a = ctx.add_u32_reg(pos0, q0);
@@ -304,67 +429,11 @@ impl Kernel for PrefillFlashAttention256Kernel {
                 let row_hi_abs = ctx.add_u32(row_lo_abs, 8);
                 let c_exp_r = ctx.mov_f32_imm(c_exp);
                 let finite_floor = ctx.mov_f32_imm(-1.0e30);
+                let t2 = ctx.mul_u32(t, 2);
 
-                let kb = ctx.mov_u32_imm(0);
-                ctx.label("fa_key_loop");
-                let more = ctx.setp_lt_u32(kb, tiles);
-                ctx.branch_if_not(more, "fa_key_end");
-                ctx.bar_sync(0);
-                let j0 = ctx.mul_u32(kb, BC);
-
-                // Stage K and V tiles as f16.
-                for (src, dst, name) in [(k_ptr, K_OFF, "k"), (v_ptr, V_OFF, "v")] {
-                    let it = ctx.mov_u32_imm(0);
-                    let lbl = format!("fa_kv_{name}");
-                    let end = format!("fa_kv_end_{name}");
-                    ctx.label(&lbl);
-                    // ceil: 4096 is not a multiple of 192 (6 warps, the 27B) — a floor
-                    // left the tile's last 64 elements stale (measured: rel L∞ 0.218).
-                    let n = ctx.mov_u32_imm((BC * FLASH_HEAD_DIM).div_ceil(nthreads));
-                    let go = ctx.setp_lt_u32(it, n);
-                    ctx.branch_if_not(go, &end);
-                    let itn = ctx.mul_u32(it, nthreads);
-                    let idx = ctx.add_u32_reg(itn, tid);
-                    let tile_elems = ctx.mov_u32_imm(BC * FLASH_HEAD_DIM);
-                    let in_tile = ctx.setp_lt_u32(idx, tile_elems);
-                    let step = format!("fa_kv_step_{name}");
-                    ctx.branch_if_not(in_tile, &step);
-                    let eight = ctx.mov_u32_imm(8);
-                    let r = ctx.shr_u32(idx, eight); // / 256
-                    let m255 = ctx.mov_u32_imm(255);
-                    let c = ctx.and_u32(idx, m255);
-                    let j = ctx.add_u32_reg(j0, r);
-                    let val = ctx.mov_f32_imm(0.0);
-                    let exists = ctx.setp_lt_u32(j, total_keys);
-                    let skip = format!("fa_kv_skip_{name}");
-                    ctx.branch_if_not(exists, &skip);
-                    let rowel = ctx.mul_u32(j, kv_stride);
-                    let colh = ctx.add_u32_reg(kv_col, c);
-                    let el = ctx.add_u32_reg(rowel, colh);
-                    let off = ctx.mul_wide_u32(el, 4);
-                    let addr = ctx.add_u64(src, off);
-                    let x = ctx.ld_global_f32(addr);
-                    ctx.mov_f32_reg(val, x);
-                    ctx.label(&skip);
-                    let h = ctx.cvt_f16_f32(val);
-                    let srow = ctx.mul_u32(r, KV_ROW_H);
-                    let sel = ctx.add_u32_reg(srow, c);
-                    let sb = ctx.mul_u32(sel, 2);
-                    let sa = ctx.add_u32(sb, dst);
-                    let sa64 = ctx.cvt_u64_u32(sa);
-                    ctx.st_shared_f16(sa64, h);
-                    ctx.label(&step);
-                    ctx.add_u32_inplace(it, 1);
-                    ctx.branch(&lbl);
-                    ctx.label(&end);
-                }
-                ctx.bar_sync(0);
-
-                // S = Q Kᵀ over 16 k-steps; two n-tiles of 8 keys.
-                let mut s0 = [fz, fz, fz, fz];
-                let mut s1 = [fz, fz, fz, fz];
-                {
-                    // B from K ([key][d] row-major = col-major k×n): non-trans x4.
+                // Lane parts of the ldmatrix addresses (stage offset added per tile).
+                // K as B ([key][d] row-major = col-major k×n): non-trans x4.
+                let k_lane = {
                     let seven = ctx.mov_u32_imm(7);
                     let n_lo = ctx.and_u32(lane, seven);
                     let n_hi = ctx.mul_u32(lane_hi, 8);
@@ -375,8 +444,44 @@ impl Kernel for PrefillFlashAttention256Kernel {
                     let koff = ctx.mul_u32(kone, 8);
                     let nrow = ctx.mul_u32(n, KV_ROW_H);
                     let el = ctx.add_u32_reg(nrow, koff);
-                    let b = ctx.mul_u32(el, 2);
-                    let kbase = ctx.add_u32(b, K_OFF);
+                    ctx.mul_u32(el, 2)
+                };
+                let v_lane = {
+                    let vrow = ctx.mul_u32(lane16, KV_ROW_H);
+                    let vb = ctx.mul_u32(vrow, 2);
+                    ctx.add_u32(vb, KV_TILE_BYTES)
+                };
+
+                // Prologue: tile 0 in flight.
+                issue_tile(ctx, &issue, zero, "pro");
+                ctx.cp_async_commit_group();
+
+                let kb = ctx.mov_u32_imm(0);
+                ctx.label("fa_key_loop");
+                let more = ctx.setp_lt_u32(kb, tiles);
+                ctx.branch_if_not(more, "fa_key_end");
+                // Tile kb + 1 in flight while kb is consumed. Always commit (an empty
+                // group on the last tile) so `wait_group 1` means "tile kb landed".
+                let nxt = ctx.add_u32(kb, 1);
+                let has_next = ctx.setp_lt_u32(nxt, tiles);
+                ctx.branch_if_not(has_next, "fa_issue_none");
+                issue_tile(ctx, &issue, nxt, "loop");
+                ctx.label("fa_issue_none");
+                ctx.cp_async_commit_group();
+                ctx.cp_async_wait_group(1);
+                ctx.bar_sync(0);
+
+                let computes = ctx.setp_lt_u32(kb, warp_tiles);
+                ctx.branch_if_not(computes, "fa_tile_skip");
+                let j0 = ctx.mul_u32(kb, BC);
+                let parity = ctx.and_u32(kb, one);
+                let stage = ctx.mul_u32(parity, STAGE_BYTES);
+
+                // S = Q Kᵀ over 16 k-steps; two n-tiles of 8 keys.
+                let mut s0 = [fz, fz, fz, fz];
+                let mut s1 = [fz, fz, fz, fz];
+                {
+                    let kbase = ctx.add_u32_reg(stage, k_lane);
                     for (kk, a) in qfrag.iter().enumerate() {
                         let addr = ctx.add_u32(kbase, kk as u32 * 16 * 2);
                         let bf = ctx.ldmatrix_x4(addr);
@@ -386,7 +491,6 @@ impl Kernel for PrefillFlashAttention256Kernel {
                 }
 
                 // Causal mask: key j0 + col is visible to row p iff key <= p.
-                let t2 = ctx.mul_u32(t, 2);
                 let mut sv = [s0, s1];
                 for (nt, tile) in sv.iter_mut().enumerate() {
                     for e in 0..4usize {
@@ -400,7 +504,7 @@ impl Kernel for PrefillFlashAttention256Kernel {
                 }
 
                 // Online softmax per row half (hr 0: row g, hr 1: row g + 8).
-                let mut p16 = Vec::with_capacity(8);
+                let mut ps: Vec<Vec<VirtualReg>> = Vec::with_capacity(2);
                 for hr in 0..2usize {
                     let vals = [sv[0][2 * hr], sv[0][2 * hr + 1], sv[1][2 * hr], sv[1][2 * hr + 1]];
                     let a = ctx.max_f32(vals[0], vals[1]);
@@ -414,13 +518,13 @@ impl Kernel for PrefillFlashAttention256Kernel {
                     let dms = ctx.mul_f32(dm, c_exp_r);
                     let alpha = ctx.ex2_f32(dms);
                     let mut psum = fz;
-                    let mut ps = Vec::with_capacity(4);
+                    let mut row_p = Vec::with_capacity(4);
                     for &v in &vals {
                         let d = ctx.sub_f32(v, m_use);
                         let ds = ctx.mul_f32(d, c_exp_r);
                         let pv = ctx.ex2_f32(ds);
                         psum = ctx.add_f32(psum, pv);
-                        ps.push(pv);
+                        row_p.push(pv);
                     }
                     let rsum = quad_reduce(ctx, psum, &quad, false);
                     ctx.mul_f32_inplace(l[hr], alpha);
@@ -430,45 +534,32 @@ impl Kernel for PrefillFlashAttention256Kernel {
                         ctx.mul_f32_inplace(tile[2 * hr], alpha);
                         ctx.mul_f32_inplace(tile[2 * hr + 1], alpha);
                     }
-                    p16.push((hr, ps));
+                    ps.push(row_p);
                 }
 
-                // P -> the warp's shared tile as f16: row g/g+8, cols nt*8 + 2t + {0,1}.
-                for (hr, ps) in &p16 {
-                    let row = ctx.add_u32(g, *hr as u32 * 8);
-                    let prow = ctx.mul_u32(row, P_ROW_H);
-                    for (i, &pv) in ps.iter().enumerate() {
-                        // vals order: (nt0,e0),(nt0,e1),(nt1,e0),(nt1,e1)
-                        let nt = (i / 2) as u32;
-                        let e = (i % 2) as u32;
-                        let col = ctx.add_u32(t2, nt * 8 + e);
-                        let el = ctx.add_u32_reg(prow, col);
-                        let b = ctx.mul_u32(el, 2);
-                        let sa = ctx.add_u32_reg(p_base, b);
-                        let sa64 = ctx.cvt_u64_u32(sa);
-                        let h = ctx.cvt_f16_f32(pv);
-                        ctx.st_shared_f16(sa64, h);
-                    }
-                }
-                ctx.bar_sync(0);
+                // P -> A-fragment in registers. The accumulator holds (row g|g+8,
+                // cols 2t, 2t+1) of each 8-key n-tile; the A-fragment wants a0 = (g,
+                // 2t..), a1 = (g+8, 2t..), a2 = (g, 8+2t..), a3 = (g+8, 8+2t..), the
+                // lower column in the lower half.
+                let pfrag = [
+                    ctx.cvt_rn_f16x2_f32(ps[0][1], ps[0][0]),
+                    ctx.cvt_rn_f16x2_f32(ps[1][1], ps[1][0]),
+                    ctx.cvt_rn_f16x2_f32(ps[0][3], ps[0][2]),
+                    ctx.cvt_rn_f16x2_f32(ps[1][3], ps[1][2]),
+                ];
 
-                // O += P V: A = P (16×16) from the warp tile; B = V (k=16 keys × n=8 dims).
+                // O += P V: B = V (k=16 keys × n=8 dims), transposed ldmatrix.
                 {
-                    let prow = ctx.mul_u32(lane16, P_ROW_H);
-                    let pcol = ctx.mul_u32(lane_hi, 8);
-                    let pel = ctx.add_u32_reg(prow, pcol);
-                    let pb = ctx.mul_u32(pel, 2);
-                    let paddr = ctx.add_u32_reg(p_base, pb);
-                    let pfrag = ctx.ldmatrix_x4(paddr);
-                    let vrow = ctx.mul_u32(lane16, KV_ROW_H);
-                    let vb = ctx.mul_u32(vrow, 2);
-                    let vbase = ctx.add_u32(vb, V_OFF);
+                    let vbase = ctx.add_u32_reg(stage, v_lane);
                     for (nt, tile) in o.iter().enumerate() {
                         let addr = ctx.add_u32(vbase, nt as u32 * 8 * 2);
                         let bf = ctx.ldmatrix_x2_trans(addr);
                         ctx.mma_sync_m16n8k16_inplace(&pfrag, &bf, tile);
                     }
                 }
+                ctx.label("fa_tile_skip");
+                // The stage just read is the one tile kb + 2 lands on.
+                ctx.bar_sync(0);
 
                 ctx.add_u32_inplace(kb, 1);
                 ctx.branch("fa_key_loop");
@@ -507,9 +598,18 @@ mod ptx_tests {
 
     #[test]
     fn gdn_flash_prefill_ptx_shape_and_shared_budget() {
-        for (h, kv, bytes) in [(16u32, 4u32, 37_376usize), (24, 4, 47_616), (8, 2, 37_376)] {
+        // (heads, kv, block threads, rows per block)
+        for (h, kv, threads, rpb) in [
+            (16u32, 4u32, 256u32, 32u32), // 0.8B–9B: 4 heads per KV, 2 row tiles
+            (24, 4, 192, 16),             // 27B: 6 heads per KV, 1 row tile
+            (8, 2, 256, 32),
+            (4, 4, 128, 64), // MHA: 4 row tiles
+            (32, 4, 256, 16),
+        ] {
             let k = PrefillFlashAttention256Kernel::new(h, kv);
-            assert_eq!(k.shared_bytes(), bytes, "{h}/{kv}");
+            assert_eq!(k.shared_bytes(), 33_792, "{h}/{kv}");
+            assert_eq!(k.block(), (threads, 1, 1), "{h}/{kv}");
+            assert_eq!(k.rows_per_block(), rpb, "{h}/{kv}");
             let ptx = k.emit_ptx();
             assert!(
                 ptx.contains(".entry gdn_prefill_flash_attention_256"),
@@ -518,24 +618,27 @@ mod ptx_tests {
             assert!(ptx.contains("mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32"));
             assert!(ptx.contains("ldmatrix.sync.aligned.m8n8.x4.shared.b16"));
             assert!(ptx.contains("ldmatrix.sync.aligned.m8n8.x2.trans.shared.b16"));
+            // #4442 v2: K/V arrive by 16 B cp.async, P never touches shared memory.
+            assert!(ptx.contains("cp.async.ca.shared.global"), "{h}/{kv}");
+            assert!(ptx.contains("cp.async.wait_group 1"), "{h}/{kv}");
+            assert_eq!(ptx.matches("cvt.rn.f16x2.f32").count(), 4, "{h}/{kv}");
+            // The only shared stores left are the Q staging (4 quarters).
+            assert_eq!(ptx.matches("st.shared.b16").count(), 4, "{h}/{kv}");
         }
         assert_eq!(
             PrefillFlashAttention256Kernel::new(16, 4).grid(37),
-            (3, 4, 1)
-        );
-        assert_eq!(
-            PrefillFlashAttention256Kernel::new(24, 4).block(),
-            (192, 1, 1)
+            (2, 4, 1)
         );
         assert!(PrefillFlashAttention256Kernel::fits(24, 4));
-        assert!(!PrefillFlashAttention256Kernel::fits(32, 4));
+        assert!(PrefillFlashAttention256Kernel::fits(32, 4));
+        assert!(!PrefillFlashAttention256Kernel::fits(36, 4));
         assert!(!PrefillFlashAttention256Kernel::fits(16, 3));
     }
 
     #[test]
     #[should_panic(expected = "static shared memory")]
-    fn gdn_flash_prefill_refuses_what_does_not_fit_48k() {
-        let _ = PrefillFlashAttention256Kernel::new(32, 4); // 8 heads per KV head
+    fn gdn_flash_prefill_refuses_more_than_8_heads_per_kv() {
+        let _ = PrefillFlashAttention256Kernel::new(36, 4); // 9 heads per KV head
     }
 }
 
@@ -562,6 +665,22 @@ mod gdn_flash_prefill_device_tests {
             2f32.powi(exp - 10)
         };
         (x / quantum).round_ties_even() * quantum
+    }
+
+    /// The IEEE binary16 bits of `round_f16(x)` — what `cvt.rn.f16.f32` stores.
+    fn f16_bits(x: f32) -> u16 {
+        let r = round_f16(x);
+        let sign = if r.is_sign_negative() { 0x8000u16 } else { 0 };
+        let a = r.abs();
+        if a == 0.0 {
+            return sign;
+        }
+        if a < 2f32.powi(-14) {
+            return sign | (a / 2f32.powi(-24)) as u16;
+        }
+        let e = a.log2().floor() as i32;
+        let mant = ((a / 2f32.powi(e) - 1.0) * 1024.0) as u16;
+        sign | (((e + 15) as u16) << 10) | mant
     }
 
     /// Causal GQA attention in f64, over (optionally f16-rounded) inputs.
@@ -637,8 +756,11 @@ mod gdn_flash_prefill_device_tests {
 
         let kern = PrefillFlashAttention256Kernel::new(heads, kv_heads);
         let qb = GpuBuffer::from_host(&ctx, &q).expect("q");
-        let kb = GpuBuffer::from_host(&ctx, &k).expect("k");
-        let vb = GpuBuffer::from_host(&ctx, &v).expect("v");
+        // K/V enter as f16, as the executor's one-pass conversion leaves them.
+        let k16: Vec<u16> = k.iter().map(|&x| f16_bits(x)).collect();
+        let v16: Vec<u16> = v.iter().map(|&x| f16_bits(x)).collect();
+        let kb = GpuBuffer::from_host(&ctx, &k16).expect("k");
+        let vb = GpuBuffer::from_host(&ctx, &v16).expect("v");
         let ob = GpuBuffer::from_host(&ctx, &vec![f32::NAN; rows * h * d]).expect("o");
         let mut module =
             CudaModule::from_ptx(&ctx, &kern.emit_ptx_for_target("sm_80")).expect("module");
@@ -659,7 +781,7 @@ mod gdn_flash_prefill_device_tests {
             .iter_mut()
             .map(|a| std::ptr::from_mut(a).cast())
             .collect();
-        // SAFETY: q/k/v/o are sized for rows × heads × 256 and (pos0 + rows) keys; the
+        // SAFETY: q/o are f32 rows × heads × 256, k/v f16 × (pos0 + rows) keys; the
         // two u32 scalars sit in the low half of their slots.
         unsafe {
             stream
@@ -711,5 +833,26 @@ mod gdn_flash_prefill_device_tests {
         // 100 rows after 500 cached positions: 38 key tiles, so the running max and
         // sum are rescaled dozens of times per row.
         run(16, 4, 100, 500);
+    }
+
+    #[test]
+    fn gdn_flash_prefill_matches_reference_mha_four_row_tiles() {
+        // One head per KV head: 4 row tiles per block, 70 rows (the last block's
+        // later row tiles have no rows and still take part in every barrier).
+        run(4, 4, 70, 10);
+    }
+
+    #[test]
+    fn f16_bits_matches_known_encodings() {
+        for (x, bits) in [
+            (1.0f32, 0x3C00u16),
+            (-2.0, 0xC000),
+            (0.5, 0x3800),
+            (65504.0, 0x7BFF),
+            (2f32.powi(-24), 0x0001),
+            (1.0 + 1.0 / 1024.0, 0x3C01),
+        ] {
+            assert_eq!(f16_bits(x), bits, "{x}");
+        }
     }
 }
