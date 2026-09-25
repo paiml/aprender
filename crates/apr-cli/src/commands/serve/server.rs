@@ -322,6 +322,70 @@ mod qwen35_serve_route_tests {
         assert_eq!(body.compute_class, "cpu");
     }
 
+    /// #4254: one process, two endpoints, one answer. `/v1/effective-config` on the
+    /// hybrid named no backend (`backend_loaded: []`, `compute_class: unknown`), no
+    /// quantization and no parameter count while `/health` said `cpu` — and listed a
+    /// `gpu` feature this binary cannot dispatch to.
+    #[test]
+    fn qwen35_effective_config_agrees_with_health() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt;
+
+        if !Path::new(MODEL).exists() {
+            eprintln!("SKIP: {MODEL} is absent");
+            return;
+        }
+        let mapped = std::sync::Arc::new(
+            realizar::gguf::MappedGGUFModel::from_path(MODEL).expect("map the GGUF"),
+        );
+        let want_params =
+            realizar::gguf::forward_qwen35::qwen35_known_issue::gguf_param_count(&mapped.model);
+        let config = ServerConfig {
+            no_gpu: true,
+            ..ServerConfig::default()
+        };
+        let state = build_qwen35_state(mapped, &config).expect("qwen35 state");
+        let router = realizar::api::create_router_with_config(state, config.router_config());
+        let get = |uri: &'static str| {
+            let router = router.clone();
+            async move {
+                let req = Request::builder().uri(uri).body(Body::empty()).expect("request");
+                let resp = router.oneshot(req).await.expect("route");
+                let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+                    .await
+                    .expect("body");
+                serde_json::from_slice::<serde_json::Value>(&bytes).expect("JSON")
+            }
+        };
+        let (health, ec) = tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(async { (get("/health").await, get("/v1/effective-config").await) });
+
+        assert_eq!(health["compute_mode"], "cpu", "{health}");
+        assert_eq!(ec["compute_class"], "cpu", "must agree with /health: {ec}");
+        assert_eq!(ec["backend_loaded"], serde_json::json!(["cpu"]), "{ec}");
+        let q = ec["model"]["quantization"].as_str().expect("quantization named");
+        assert!(q.starts_with('Q'), "a GGUF qtype name, got {q:?}");
+        assert_eq!(ec["model"]["parameter_count"], want_params, "{ec}");
+        assert!(
+            (600_000_000..1_000_000_000).contains(&want_params),
+            "fixture: the 0.8B file counts {want_params}"
+        );
+        // The launcher's own set decides which accelerators are dispatchable.
+        let features: Vec<&str> = ec["build_features"]
+            .as_array()
+            .expect("build_features")
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect();
+        assert_eq!(features.contains(&"gpu"), cfg!(feature = "wgpu"), "{features:?}");
+        assert_eq!(features.contains(&"cuda"), cfg!(feature = "cuda"), "{features:?}");
+        let commit = ec["server"]["build_commit"].as_str().expect("build_commit");
+        assert_eq!(commit, env!("APR_GIT_SHA"));
+        assert!(!commit.ends_with("+no-git"), "built from a checkout: {commit}");
+    }
+
     /// The startup line's thinking mode is read off what the template renders.
     #[test]
     fn the_thinking_mode_is_read_off_the_rendered_template() {
