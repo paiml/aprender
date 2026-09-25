@@ -46,11 +46,10 @@ and PMAT-392 measured the CPU tier at >300 s per call on this host.
   and all 6 are PASS. The rest are fixtures, plant dirs, or rounds with fewer than 3 lanes. So history cannot supply
   ≥30 rounds, and it cannot measure agreement on FAIL at all.
 
-## (2b) p95 wall-clock per cell: pending
+## (2b) p95 wall-clock per cell: see "Executor change" below
 
-This is measured when the lane serves again. The earlier bench on this cell (`run_bench.log`, an 839-token prompt):
-TTFT 25.9–26.7 s, prefill ~32 tok/s. A 16–24 KB brief is ~4–6k tokens, so expect ≥2 min of prefill alone, against the
-lane's `timeout_s: 120`.
+It is now measured on :8091. The earlier estimate from the watcher's bench (TTFT ~26 s, prefill ~32 tok/s) is
+superseded.
 
 ## (3) Planted / known-good: routed to PRM-001
 
@@ -70,6 +69,27 @@ events in 4 h. At the time of the retirement check the lock was held by other co
 script and a cargo build), not by :8091. So the single executor has an availability problem of its own, and it
 belongs to infra#1088's measurement. A rerun waits for `/health` and uses a fresh output dir, so the 3 EOF rows are
 not mixed in. The rows go to prometheus (aprender-84) as shadow, non-prereg.
+
+**Dev split, complete (19:02–19:09Z).** The executor yields to GPU-lock waiters by design, so each retry was a
+whole fresh run in its own dir. Attempts 1–4 were cut at 11, 9, 8 and 0 rows. Attempt 5 finished 45/45. Output
+dir `/mnt/nvme-raid0/rex-shadow/4252-gx10-4b-dev-reviewserve-r3/attempt-5/` (host lambda). `rex score`, unsigned
+(exploratory), corpus review-corpus-v1@787d2026256cc08b:
+
+| measure | k/n | 95% CI |
+|---|---|---|
+| parse rate | 45/45 | 0.92–1.00 |
+| recall (planted P+R) | 27/30 | 0.74–0.97 |
+| precision | 27/30 | 0.74–0.97 |
+| false refute (known-good G) | 3/15 | 0.07–0.45 |
+
+## (2b) p95 wall-clock per cell: measured on Dev
+
+On 44 warm rows (the first row, which is cold, is excluded): p50 6.2 s, **p95 19.4 s**, max 34.6 s. The largest
+brief is ~30k tokens, with prefill at 1.2–2.2k tok/s on :8091. That is well inside the lane's `timeout_s: 120`. The
+earlier 26 s TTFT estimate came from the retired watcher's bench and no longer applies.
+
+**What still blocks promotion is availability, not speed.** Serving windows between yields ran 1–7 min in this
+hour, and only 1 of 5 attempts ran a full 45-item pass.
 
 ## Re-measure
 
