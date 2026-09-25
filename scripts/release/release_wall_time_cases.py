@@ -22,11 +22,13 @@ def run(mod):
     res["freeze-to-release"] = (s["freeze_to_release_min"] == 417.4, s["freeze_to_release_min"])
     res["tag-to-cascade-start"] = (s["tag_to_cascade_start_min"] == 200.4, s["tag_to_cascade_start_min"])
     res["cascade-span"] = (s["cascade_min"] == 41.4, s["cascade_min"])
+    res["cascade-end-to-release"] = (s["cascade_end_to_release_min"] == 1.3, s["cascade_end_to_release_min"])
     missing = dict(a, cascade_first=None)
     s2 = mod.spans(missing)
     res["missing-anchor-is-null-never-zero"] = (s2["cascade_min"] is None and s2["tag_to_cascade_start_min"] is None
                                                and s2["cut_to_release_min"] == 350.9, s2)
-    res["unparseable-anchor-is-null"] = (mod._ts("yesterday") is None and mod._ts(None) is None, mod._ts("yesterday"))
+    res["unparseable-anchor-is-null"] = (mod._ts("yesterday") is None and mod._ts(None) is None
+                                        and mod._ts(iso % "00:00:00Z") is not None, mod._ts("yesterday"))
     return res
 
 
@@ -37,6 +39,8 @@ MUTANTS = [
      "if a.get(x) is not None and a.get(y) is not None else 0.0", "missing-anchor-is-null-never-zero"),
     ("span-swapped", '"tag_to_cascade_start_min": d("tag", "cascade_first")', '"tag_to_cascade_start_min": d("cut", "cascade_first")',
      "tag-to-cascade-start"),
+    ("cascade-end-from-first", '"cascade_end_to_release_min": d("cascade_last", "release")',
+     '"cascade_end_to_release_min": d("cascade_first", "release")', "cascade-end-to-release"),
     ("parse-error-guessed", "    except ValueError:\n        return None", "    except ValueError:\n        return 0.0",
      "unparseable-anchor-is-null"),
 ]

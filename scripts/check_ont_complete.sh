@@ -28,7 +28,7 @@ while [ $# -gt 0 ]; do
 done
 
 judge() { # judge <infra> <pin> <wt> <ledger> -> ok/FAIL lines; rc 0 complete, 1 not, 2 vacuous/usage
-  local infra=$1 pin=$2 wt=$3 ledger=$4 head spec lint rows bound unbound viol p rc bad=0 n=0
+  local infra=$1 pin=$2 wt=$3 ledger=$4 head spec lint lrc rows bound unbound viol p rc bad=0 n=0
   [ -d "$infra/.git" ] || [ -f "$infra/.git" ] || { echo "decline: --infra $infra is not a git checkout"; return 2; }
   head=$(git -C "$infra" rev-parse HEAD 2> /dev/null)
   if [ -z "$pin" ] || [ "$head" != "$(git -C "$infra" rev-parse --verify --quiet "$pin^{commit}" 2> /dev/null)" ]; then
@@ -39,7 +39,7 @@ judge() { # judge <infra> <pin> <wt> <ledger> -> ok/FAIL lines; rc 0 complete, 1
   [ -f "$spec" ] || { echo "decline: $spec not found at ${head:0:9}"; return 2; }
   [ -n "$ledger" ] || ledger="$infra/docs/audits/ONT-001/ledger.jsonl"
   echo "note  spec $(sha256sum "$spec" | cut -c1-16) at infra ${head:0:9}; ledger $ledger"
-  lint=$(cd "$infra" && bash scripts/ont/precondition-lint.sh docs/specifications/paiml-ontology.md --ledger "$ledger" 2>&1)
+  lint=$(cd "$infra" && bash scripts/ont/precondition-lint.sh docs/specifications/paiml-ontology.md --ledger "$ledger" 2>&1); lrc=$?
   if [[ "$lint" =~ rows=([0-9]+)\ bound=([0-9]+)\ unbound=([0-9]+)\ .*violations=([0-9]+) ]]; then
     rows=${BASH_REMATCH[1]}; bound=${BASH_REMATCH[2]}; unbound=${BASH_REMATCH[3]}; viol=${BASH_REMATCH[4]}
   else
@@ -47,6 +47,10 @@ judge() { # judge <infra> <pin> <wt> <ledger> -> ok/FAIL lines; rc 0 complete, 1
     return 2
   fi
   [ "$rows" -gt 0 ] || { echo "decline: precondition-lint parsed 0 rows -- the vacuous pass"; return 2; }
+  if [ "$lrc" != 0 ] && [ "$unbound" = 0 ] && [ "$viol" = 0 ]; then   # its exit and its summary must agree
+    echo "decline: precondition-lint exited $lrc after printing a clean summary -- a crashed lint is not a pass"
+    return 2
+  fi
   if [ "$unbound" != 0 ] || [ "$viol" != 0 ]; then
     echo "FAIL  ONT rows: $rows, bound $bound, UNBOUND $unbound, violations $viol -- every row must be bound in the ledger"
     grep -E '^(BLOCKED-EXTERNAL|precondition-lint: ONT-)' <<< "$lint" | head -20 | sed 's/^/        /'
@@ -77,7 +81,7 @@ if [ "$SELF_TEST" = 1 ]; then
     mkdir -p "$f/scripts/ont/done_when" "$f/docs/specifications" "$f/docs/audits/ONT-001"
     echo "# ONT-001" > "$f/docs/specifications/paiml-ontology.md"; : > "$f/docs/audits/ONT-001/ledger.jsonl"
     if [ "$1" = - ]; then printf '#!/bin/bash\necho nothing\n' > "$f/scripts/ont/precondition-lint.sh"
-    else printf '#!/bin/bash\necho "%s"\n' "$1" > "$f/scripts/ont/precondition-lint.sh"; fi
+    else printf '#!/bin/bash\necho "%s"\nexit %s\n' "$1" "${LINT_RC:-0}" > "$f/scripts/ont/precondition-lint.sh"; fi
     shift
     for rc in "$@"; do i=$((i + 1)); printf '#!/bin/bash\nexit %s\n' "$rc" > "$f/scripts/ont/done_when/ONT-$i.sh"; done
     git -C "$f" init -q && git -C "$f" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t add -A && \
@@ -96,6 +100,7 @@ if [ "$SELF_TEST" = 1 ]; then
   row "violation-is-red" 1 "violations 2" "$(fixture "precondition-lint: rows=3 bound=3 unbound=0 probe_paths=2 declared=1 violations=2" 0 0)"
   row "probe-unmet-is-red" 1 "ONT-2: its done_when is not met (exit 1)" "$(fixture "$GOOD" 0 1)"
   row "probe-declined-is-red" 1 "ONT-1: its done_when DECLINED" "$(fixture "$GOOD" 2 0)"
+  row "lint-crash-after-clean-summary-declines" 2 "exited 3 after printing a clean summary" "$(LINT_RC=3 fixture "$GOOD" 0 0)"
   row "no-summary-declines" 2 "no rows=/bound=" "$(fixture - 0)"
   row "zero-rows-declines" 2 "parsed 0 rows" "$(fixture "precondition-lint: rows=0 bound=0 unbound=0 probe_paths=0 declared=0 violations=0" 0)"
   f=$(fixture "$GOOD" 0); row "unpinned-is-red" 1 "not read at the pinned infra commit" "$f" 0000000000000000000000000000000000000000
@@ -119,6 +124,7 @@ violation-ignored~violation-is-red~if [ "$unbound" != 0 ] || [ "$viol" != 0 ]; t
 decline-accepted~probe-declined-is-red~      2) echo "FAIL  $(basename "$p" .sh): its done_when DECLINED (exit 2) -- a declined probe is not done"; bad=1 ;;~      2) : ;;
 unmet-accepted~probe-unmet-is-red~      *) echo "FAIL  $(basename "$p" .sh): its done_when is not met (exit $rc)"; bad=1 ;;~      *) : ;;
 no-summary-passes~no-summary-declines~    echo "decline: precondition-lint printed no rows=~    return 0; echo "decline: precondition-lint printed no rows=
+lint-exit-ignored~lint-crash-after-clean-summary-declines~  if [ "$lrc" != 0 ] && [ "$unbound" = 0 ] && [ "$viol" = 0 ]; then~  if false; then
 zero-rows-pass~zero-rows-declines~  [ "$rows" -gt 0 ] || { echo "decline: precondition-lint parsed 0 rows -- the vacuous pass"; return 2; }~  :
 pin-ignored~unpinned-is-red~  if [ -z "$pin" ] || [ "$head" != "$(git -C "$infra" rev-parse --verify --quiet "$pin^{commit}" 2> /dev/null)" ]; then~  if false; then
 no-probe-pass~no-probes-declines~  [ "$n" -gt 0 ] || { echo "decline: no scripts/ont/done_when/ONT-*.sh probe at ${head:0:9}"; return 2; }~  :
