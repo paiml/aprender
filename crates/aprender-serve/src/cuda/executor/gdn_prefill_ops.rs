@@ -204,6 +204,18 @@ impl CudaExecutor {
     /// the f32 dequant this module already owns, then one f32→f16 conversion.
     /// Whether the f16 prefill GEMM may run: set after a complete prewarm, cleared
     /// when a prewarm is skipped or fails.
+    /// #4313: the tensor-op cuBLAS handle the f16 GEMM runs on, bound to the
+    /// executor stream. The prewarm creates it, so a host that cannot is left on f32
+    /// instead of failing its first prefill.
+    pub(crate) fn ensure_cublas_f16(&mut self) -> Result<(), GpuError> {
+        if self.cublas_f16_handle.is_none() {
+            let handle = trueno_gpu::driver::CublasHandle::new_with_tensor_cores(&self.context)?;
+            handle.set_stream(&self.stream)?;
+            self.cublas_f16_handle = Some(handle);
+        }
+        Ok(())
+    }
+
     pub(crate) fn set_qwen35_prefill_f16(&mut self, ready: bool) {
         self.qwen35_prefill_f16 = ready;
     }
@@ -256,11 +268,7 @@ impl CudaExecutor {
         k: u32,
         ldc: u32,
     ) -> Result<(), GpuError> {
-        if self.cublas_f16_handle.is_none() {
-            let handle = trueno_gpu::driver::CublasHandle::new_with_tensor_cores(&self.context)?;
-            handle.set_stream(&self.stream)?;
-            self.cublas_f16_handle = Some(handle);
-        }
+        self.ensure_cublas_f16()?;
         let w_f16 = self.qwen35_fp16_weight(qtype, w_ptr, n, k)?;
         let count = rows as usize * k as usize;
         self.ensure_fp16_activation_scratch(count)?;
