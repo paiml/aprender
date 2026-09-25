@@ -3,12 +3,12 @@
   "base": "origin/batch/0.70.0",
   "base_resolved": "origin/batch/0.70.0",
   "base_note": "no origin/origin/batch/0.70.0 exists; judged against the local ref",
-  "head": "25280342d6994fc61160d67352595a4c0a14cb6c",
-  "diff_sha256": "4f14edc24ff4bab9cc7a6d6feb00b2327d834b8b38568119f5b1c6ad4fded12a",
+  "head": "3680fcaf18becba5ab910a89be6000c471d10816",
+  "diff_sha256": "59a9d2ca93562c7da89471456f86a50990c9bdf48c07393213d49f66496ca05e",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 20267,
+  "prompt_bytes": 47376,
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
@@ -20,7 +20,7 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "FAIL",
-      "summary": "The diff implements an unrequested operator override that disables the lambda CPU fallback by default and adds a load-based rejection gate. This contradicts the ticket's requirement ('yields to lambda CPU on any need for the box') and invalidates the receipt's proof that a default `ask` yields to lambda-cpu.",
+      "summary": "The diff implements an unrequested operator override that disables the lambda CPU fallback by default and adds a load-based rejection gate. This contradicts the ticket's core requirement (\"yields to lambda CPU on any need for the box\"). Furthermore, it weakens the force mechanism by refusing --force-lambda based on load, and includes tests that assert the exact opposite of the original ticket.",
       "findings": [
         {
           "claim": "The diff implements unrequested logic that disables the lambda CPU fallback by default, directly contradicting the ticket's title ('yields to lambda CPU on any need for the box').",
@@ -30,15 +30,22 @@
           "line": 49
         },
         {
-          "claim": "The diff invalidates the receipt claim. The receipt claims that `ask` during a hold will be 'served_by lambda-cpu'. With this diff, a default `ask` will be refused with 'not tried: lambda CPU fallback is off by default'.",
+          "claim": "The --force-lambda gate is weakened/restricted: passing --force-lambda is now gated and refused if load1 >= 24.0, breaking previous unconditional forced execution on lambda CPU.",
           "file": "scripts/apr_dogfood_lane_4252.py",
-          "fix": "Ensure the behavior matches the receipt's proven claims, or provide a new receipt for the changed default behavior.",
+          "fix": "Ensure --force-lambda unconditionally executes on lambda regardless of system load if the user/caller explicitly forces it.",
           "grounding": "cited",
-          "line": 50
+          "line": 61
+        },
+        {
+          "claim": "Test asserts the opposite of the ticket's requirement by asserting that on gx10 yield, lambda CPU fallback is refused by default, producing 'unavailable' without posting to lambda.",
+          "file": "scripts/test_apr_dogfood_lane_4252.py",
+          "fix": "Preserve automatic fallback to lambda CPU on gx10 yield as mandated by PMAT-4252, or update PMAT-4252 acceptance criteria via official ticket revision before implementing opt-in semantics.",
+          "grounding": "cited",
+          "line": 177
         }
       ],
-      "raw_bytes": 3563,
-      "err_bytes": 0,
+      "raw_bytes": 6710,
+      "err_bytes": 62,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -64,38 +71,45 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "FAIL",
-      "summary": "Refuted: Diff fails review against ticket PMAT-4252. The diff disables the mandatory lambda CPU fallback by default (adding --allow-lambda and refusing execution when load1 >= 24), which directly contradicts ticket PMAT-4252's core requirement and acceptance criterion ('yields to lambda CPU on any need for the box'). A new test case in scripts/test_apr_dogfood_lane_4252.py explicitly asserts the opposite of the ticket (asserting that on gx10 yield, lambda is off by default and no request is posted), the change addresses out-of-band requirements (operator fan complaints, infra#1087) not requested in PMAT-4252, and the receipt claim asserting byte identity with f5c28b106 is contradicted by the diff.",
+      "summary": "Refuted: Diff fails review against ticket PMAT-4252. The diff disables the mandatory lambda CPU fallback by default (adding --allow-lambda and refusing execution when load1 >= 24), which directly contradicts ticket PMAT-4252's core requirement and acceptance criterion ('yields to lambda CPU on any need for the box'). A new test case in scripts/test_apr_dogfood_lane_4252.py explicitly asserts the opposite of the ticket (asserting that on gx10 yield, lambda is off by default and no request is posted), the change addresses out-of-band requirements (operator fan complaints, infra#1087) not requested in PMAT-4252, the --force-lambda gate is restricted when load1 >= 24, and receipt claims are invalidated by the new default behavior.",
       "findings": [
         {
-          "claim": "Test asserts the opposite of ticket PMAT-4252 acceptance criteria (AC 2: 'Any need for the box ... stops the gx10 server by recorded pid; asks pass to lambda CPU') by asserting that on gx10 yield, lambda CPU fallback is refused by default, producing 'unavailable' without posting to lambda (okg asserts not posts and served_by is None).",
+          "claim": "In scripts/test_apr_dogfood_lane_4252.py, test case 'default: lambda off' asserts that on gx10 yield, asks do NOT fall back to lambda CPU (asserts rcg == 2, recg['served_by'] is None, and not posts), directly asserting the opposite of the ticket's title and acceptance criterion ('gx10 CUDA primary, yields to lambda CPU on any need for the box').",
           "file": "scripts/test_apr_dogfood_lane_4252.py",
-          "fix": "Preserve automatic fallback to lambda CPU on gx10 yield as mandated by PMAT-4252 AC 2, or update PMAT-4252 acceptance criteria via official ticket revision before implementing opt-in semantics.",
+          "fix": "Ensure default ask retains automatic fallback to lambda CPU on gx10 yield as mandated by ticket PMAT-4252, or have the ticket requirements formally revised before changing default behavior.",
           "grounding": "cited",
           "line": 177
         },
         {
-          "claim": "Diff does something not asked for by ticket PMAT-4252: introduces an unrequested --allow-lambda opt-in gate and load1 refusal threshold (citing out-of-band 'operator 2026-09-25, fans' and 'infra#1087 row 5'), turning off the core ticket requirement that gx10 'yields to lambda CPU on any need for the box'.",
+          "claim": "The diff introduces unrequested logic in lambda_refusal that disables lambda CPU fallback by default and adds a load threshold gate (load1() >= 24.0) citing out-of-band oral directives ('operator 2026-09-25, fans') and infra#1087 row 5, none of which was asked for in ticket PMAT-4252.",
           "file": "scripts/apr_dogfood_lane_4252.py",
-          "fix": "Revert the opt-in refusal logic in lambda_refusal and keep the default yield-to-lambda behavior specified in PMAT-4252, or scope this change under a dedicated ticket for infra#1087.",
+          "fix": "Revert the opt-in refusal logic in lambda_refusal and restore default fallback to lambda CPU on gx10 yield as specified in PMAT-4252, or scope this change under a dedicated ticket for infra#1087.",
           "grounding": "cited",
           "line": 56
         },
         {
-          "claim": "Receipt claim in docs/audits/impl-PMAT-4252-receipt.md ('The lane code (apr_dogfood_lane_4252.py) and both test files are byte-identical to f5c28b106') is refuted by the diff, which alters both scripts/apr_dogfood_lane_4252.py and scripts/test_apr_dogfood_lane_4252.py.",
+          "claim": "The --force-lambda gate is weakened/restricted: passing --force-lambda is now subject to the load1 >= 24.0 check and refused, breaking previously unconditional execution on lambda CPU when explicitly forced by the caller.",
           "file": "scripts/apr_dogfood_lane_4252.py",
-          "fix": "Update the receipt audit and documentation to reflect code changes rather than asserting byte identity with f5c28b106.",
-          "grounding": "measured",
-          "line": 6
-        },
-        {
-          "claim": "The --force-lambda gate is weakened/restricted: passing --force-lambda is now gated and refused if load1 >= 24.0, breaking previous unconditional forced execution on lambda CPU.",
-          "file": "scripts/apr_dogfood_lane_4252.py",
-          "fix": "Ensure --force-lambda unconditionally executes on lambda regardless of system load if the user/caller explicitly forces it.",
+          "fix": "Ensure --force-lambda unconditionally executes on lambda regardless of system load if the caller explicitly forces it.",
           "grounding": "cited",
           "line": 61
+        },
+        {
+          "claim": "The receipt claim in Section 'Yield mutation proof' step 3 ('ask during the hold: gx10 attempt CURL_RC=7 ... -> served_by lambda-cpu') is invalidated by the diff, under which a default ask during a hold produces verdict unavailable (rc 2) with 'not tried: lambda CPU fallback is off by default'. Furthermore, receipt line 109 acknowledges that the lambda serve backing the receipt was shut down on 2026-09-25.",
+          "file": "docs/audits/impl-PMAT-4252-receipt.md",
+          "fix": "Provide an updated receipt reflecting the actual behavior and running services rather than claiming default ask yields to lambda-cpu.",
+          "grounding": "cited",
+          "line": 22
+        },
+        {
+          "claim": "The roadmap ticket entry file docs/roadmaps/entries/PMAT-4252.yaml read by pmat work status PMAT-4252 was not updated and still mandates: 'yields to lambda CPU on any need for the box', leaving the ticket definition inconsistent with the modifications made in docs/roadmaps/roadmap.yaml.",
+          "file": "docs/roadmaps/entries/PMAT-4252.yaml",
+          "fix": "Keep roadmap files synchronized or avoid self-amending ticket criteria within a code PR.",
+          "grounding": "measured",
+          "line": 4
         }
       ],
-      "raw_bytes": 6957,
+      "raw_bytes": 8418,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -121,39 +135,39 @@
     {
       "lane": 3,
       "status": "SUCCESS",
-      "verdict": "PASS",
-      "summary": "The diff implements the operator-mandated opt-in and load1 < 24 gate for lambda CPU fallback on the advisory dogfood lane #4252. When gx10 fails and lambda is either not opted-in (--allow-lambda / --force-lambda) or the host load1 is >= 24.0, the lambda attempt is refused and recorded in the receipt with the refusal reason rather than executing a heavy CPU inference job. The test suite is updated to cover all refusal scenarios as well as the positive control path under the load threshold. No gates are weakened and the implementation matches the ticket specification.",
+      "verdict": "FAIL",
+      "summary": "Refuted: The diff fails review against ticket PMAT-4252. The diff disables the mandatory fallback to lambda CPU by default (requiring --allow-lambda and refusing execution when load1 >= 24.0), which directly contradicts ticket PMAT-4252's core requirement ('yields to lambda CPU on any need for the box'). A test in scripts/test_apr_dogfood_lane_4252.py asserts the opposite of the ticket (verifying default refusal without posting to lambda), the receipt's yield mutation proof is contradicted by the new default behavior, and the change incorporates unrequested out-of-band constraints from infra#1087.",
       "findings": [
         {
-          "claim": "The lambda CPU fallback is disabled by default unless --allow-lambda or --force-lambda is passed, and is refused when load1 >= 24.0",
+          "claim": "Diff implements unrequested logic that disables the lambda CPU fallback by default unless --allow-lambda or --force-lambda is passed and load1 < 24.0, which contradicts ticket PMAT-4252's mandate ('yields to lambda CPU on any need for the box').",
           "file": "scripts/apr_dogfood_lane_4252.py",
-          "fix": "N/A",
+          "fix": "Remove the opt-in and load refusal logic in lambda_refusal to preserve the ticket-mandated automatic fallback to lambda CPU on gx10 yield, or scope this change under a dedicated ticket for infra#1087.",
           "grounding": "cited",
-          "line": 49
+          "line": 58
         },
         {
-          "claim": "The lambda leg refusal reason is appended to attempts without raising, allowing cmd_ask to return rc 2 with verdict 'unavailable'",
-          "file": "scripts/apr_dogfood_lane_4252.py",
-          "fix": "N/A",
-          "grounding": "cited",
-          "line": 393
-        },
-        {
-          "claim": "The CLI flag --allow-lambda is added to the 'ask' subparser with appropriate help text",
-          "file": "scripts/apr_dogfood_lane_4252.py",
-          "fix": "N/A",
-          "grounding": "cited",
-          "line": 424
-        },
-        {
-          "claim": "Test cases verify default off refusal, load threshold refusal at load1 30 and 24, and positive execution at load1 23.9 with allow_lambda",
+          "claim": "Test in scripts/test_apr_dogfood_lane_4252.py asserts the opposite of ticket PMAT-4252 by verifying that upon gx10 yield, fallback to lambda CPU is off by default and yields an 'unavailable' receipt with zero POST requests sent to lambda.",
           "file": "scripts/test_apr_dogfood_lane_4252.py",
-          "fix": "N/A",
+          "fix": "Update the test suite to assert automatic fallback to lambda CPU on gx10 yield as mandated by PMAT-4252.",
           "grounding": "cited",
-          "line": 174
+          "line": 177
+        },
+        {
+          "claim": "The --force-lambda flag is restricted and rejected when host load1 >= 24.0, breaking unconditional execution on lambda CPU.",
+          "file": "scripts/apr_dogfood_lane_4252.py",
+          "fix": "Ensure --force-lambda executes unconditionally on lambda CPU regardless of host load threshold.",
+          "grounding": "cited",
+          "line": 61
+        },
+        {
+          "claim": "Receipt claim in docs/audits/impl-PMAT-4252-receipt.md asserting that ask during a hold is 'served_by lambda-cpu' is invalidated by the diff, as default asks now return 'unavailable' with error 'not tried: lambda CPU fallback is off by default'.",
+          "file": "docs/audits/impl-PMAT-4252-receipt.md",
+          "fix": "Ensure the lane behavior matches the receipt's proven claims or provide an updated receipt reflecting the modified default behavior.",
+          "grounding": "cited",
+          "line": 24
         }
       ],
-      "raw_bytes": 4259,
+      "raw_bytes": 6103,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -181,7 +195,7 @@
     {
       "lane": 1,
       "verdict": "FAIL",
-      "summary": "The diff implements an unrequested operator override that disables the lambda CPU fallback by default and adds a load-based rejection gate. This contradicts the ticket's requirement ('yields to lambda CPU on any need for the box') and invalidates the receipt's proof that a default `ask` yields to lambda-cpu.",
+      "summary": "The diff implements an unrequested operator override that disables the lambda CPU fallback by default and adds a load-based rejection gate. This contradicts the ticket's core requirement (\"yields to lambda CPU on any need for the box\"). Furthermore, it weakens the force mechanism by refusing --force-lambda based on load, and includes tests that assert the exact opposite of the original ticket.",
       "findings": [
         {
           "claim": "The diff implements unrequested logic that disables the lambda CPU fallback by default, directly contradicting the ticket's title ('yields to lambda CPU on any need for the box').",
@@ -191,81 +205,138 @@
           "line": 49
         },
         {
-          "claim": "The diff invalidates the receipt claim. The receipt claims that `ask` during a hold will be 'served_by lambda-cpu'. With this diff, a default `ask` will be refused with 'not tried: lambda CPU fallback is off by default'.",
+          "claim": "The --force-lambda gate is weakened/restricted: passing --force-lambda is now gated and refused if load1 >= 24.0, breaking previous unconditional forced execution on lambda CPU.",
           "file": "scripts/apr_dogfood_lane_4252.py",
-          "fix": "Ensure the behavior matches the receipt's proven claims, or provide a new receipt for the changed default behavior.",
+          "fix": "Ensure --force-lambda unconditionally executes on lambda regardless of system load if the user/caller explicitly forces it.",
           "grounding": "cited",
-          "line": 50
+          "line": 61
+        },
+        {
+          "claim": "Test asserts the opposite of the ticket's requirement by asserting that on gx10 yield, lambda CPU fallback is refused by default, producing 'unavailable' without posting to lambda.",
+          "file": "scripts/test_apr_dogfood_lane_4252.py",
+          "fix": "Preserve automatic fallback to lambda CPU on gx10 yield as mandated by PMAT-4252, or update PMAT-4252 acceptance criteria via official ticket revision before implementing opt-in semantics.",
+          "grounding": "cited",
+          "line": 177
         }
       ]
     },
     {
       "lane": 2,
       "verdict": "FAIL",
-      "summary": "Refuted: Diff fails review against ticket PMAT-4252. The diff disables the mandatory lambda CPU fallback by default (adding --allow-lambda and refusing execution when load1 >= 24), which directly contradicts ticket PMAT-4252's core requirement and acceptance criterion ('yields to lambda CPU on any need for the box'). A new test case in scripts/test_apr_dogfood_lane_4252.py explicitly asserts the opposite of the ticket (asserting that on gx10 yield, lambda is off by default and no request is posted), the change addresses out-of-band requirements (operator fan complaints, infra#1087) not requested in PMAT-4252, and the receipt claim asserting byte identity with f5c28b106 is contradicted by the diff.",
+      "summary": "Refuted: Diff fails review against ticket PMAT-4252. The diff disables the mandatory lambda CPU fallback by default (adding --allow-lambda and refusing execution when load1 >= 24), which directly contradicts ticket PMAT-4252's core requirement and acceptance criterion ('yields to lambda CPU on any need for the box'). A new test case in scripts/test_apr_dogfood_lane_4252.py explicitly asserts the opposite of the ticket (asserting that on gx10 yield, lambda is off by default and no request is posted), the change addresses out-of-band requirements (operator fan complaints, infra#1087) not requested in PMAT-4252, the --force-lambda gate is restricted when load1 >= 24, and receipt claims are invalidated by the new default behavior.",
       "findings": [
         {
-          "claim": "Test asserts the opposite of ticket PMAT-4252 acceptance criteria (AC 2: 'Any need for the box ... stops the gx10 server by recorded pid; asks pass to lambda CPU') by asserting that on gx10 yield, lambda CPU fallback is refused by default, producing 'unavailable' without posting to lambda (okg asserts not posts and served_by is None).",
+          "claim": "In scripts/test_apr_dogfood_lane_4252.py, test case 'default: lambda off' asserts that on gx10 yield, asks do NOT fall back to lambda CPU (asserts rcg == 2, recg['served_by'] is None, and not posts), directly asserting the opposite of the ticket's title and acceptance criterion ('gx10 CUDA primary, yields to lambda CPU on any need for the box').",
           "file": "scripts/test_apr_dogfood_lane_4252.py",
-          "fix": "Preserve automatic fallback to lambda CPU on gx10 yield as mandated by PMAT-4252 AC 2, or update PMAT-4252 acceptance criteria via official ticket revision before implementing opt-in semantics.",
+          "fix": "Ensure default ask retains automatic fallback to lambda CPU on gx10 yield as mandated by ticket PMAT-4252, or have the ticket requirements formally revised before changing default behavior.",
           "grounding": "cited",
           "line": 177
         },
         {
-          "claim": "Diff does something not asked for by ticket PMAT-4252: introduces an unrequested --allow-lambda opt-in gate and load1 refusal threshold (citing out-of-band 'operator 2026-09-25, fans' and 'infra#1087 row 5'), turning off the core ticket requirement that gx10 'yields to lambda CPU on any need for the box'.",
+          "claim": "The diff introduces unrequested logic in lambda_refusal that disables lambda CPU fallback by default and adds a load threshold gate (load1() >= 24.0) citing out-of-band oral directives ('operator 2026-09-25, fans') and infra#1087 row 5, none of which was asked for in ticket PMAT-4252.",
           "file": "scripts/apr_dogfood_lane_4252.py",
-          "fix": "Revert the opt-in refusal logic in lambda_refusal and keep the default yield-to-lambda behavior specified in PMAT-4252, or scope this change under a dedicated ticket for infra#1087.",
+          "fix": "Revert the opt-in refusal logic in lambda_refusal and restore default fallback to lambda CPU on gx10 yield as specified in PMAT-4252, or scope this change under a dedicated ticket for infra#1087.",
           "grounding": "cited",
           "line": 56
         },
         {
-          "claim": "Receipt claim in docs/audits/impl-PMAT-4252-receipt.md ('The lane code (apr_dogfood_lane_4252.py) and both test files are byte-identical to f5c28b106') is refuted by the diff, which alters both scripts/apr_dogfood_lane_4252.py and scripts/test_apr_dogfood_lane_4252.py.",
+          "claim": "The --force-lambda gate is weakened/restricted: passing --force-lambda is now subject to the load1 >= 24.0 check and refused, breaking previously unconditional execution on lambda CPU when explicitly forced by the caller.",
           "file": "scripts/apr_dogfood_lane_4252.py",
-          "fix": "Update the receipt audit and documentation to reflect code changes rather than asserting byte identity with f5c28b106.",
-          "grounding": "measured",
-          "line": 6
-        },
-        {
-          "claim": "The --force-lambda gate is weakened/restricted: passing --force-lambda is now gated and refused if load1 >= 24.0, breaking previous unconditional forced execution on lambda CPU.",
-          "file": "scripts/apr_dogfood_lane_4252.py",
-          "fix": "Ensure --force-lambda unconditionally executes on lambda regardless of system load if the user/caller explicitly forces it.",
+          "fix": "Ensure --force-lambda unconditionally executes on lambda regardless of system load if the caller explicitly forces it.",
           "grounding": "cited",
           "line": 61
+        },
+        {
+          "claim": "The receipt claim in Section 'Yield mutation proof' step 3 ('ask during the hold: gx10 attempt CURL_RC=7 ... -> served_by lambda-cpu') is invalidated by the diff, under which a default ask during a hold produces verdict unavailable (rc 2) with 'not tried: lambda CPU fallback is off by default'. Furthermore, receipt line 109 acknowledges that the lambda serve backing the receipt was shut down on 2026-09-25.",
+          "file": "docs/audits/impl-PMAT-4252-receipt.md",
+          "fix": "Provide an updated receipt reflecting the actual behavior and running services rather than claiming default ask yields to lambda-cpu.",
+          "grounding": "cited",
+          "line": 22
+        },
+        {
+          "claim": "The roadmap ticket entry file docs/roadmaps/entries/PMAT-4252.yaml read by pmat work status PMAT-4252 was not updated and still mandates: 'yields to lambda CPU on any need for the box', leaving the ticket definition inconsistent with the modifications made in docs/roadmaps/roadmap.yaml.",
+          "file": "docs/roadmaps/entries/PMAT-4252.yaml",
+          "fix": "Keep roadmap files synchronized or avoid self-amending ticket criteria within a code PR.",
+          "grounding": "measured",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "lane": 3,
+      "verdict": "FAIL",
+      "summary": "Refuted: The diff fails review against ticket PMAT-4252. The diff disables the mandatory fallback to lambda CPU by default (requiring --allow-lambda and refusing execution when load1 >= 24.0), which directly contradicts ticket PMAT-4252's core requirement ('yields to lambda CPU on any need for the box'). A test in scripts/test_apr_dogfood_lane_4252.py asserts the opposite of the ticket (verifying default refusal without posting to lambda), the receipt's yield mutation proof is contradicted by the new default behavior, and the change incorporates unrequested out-of-band constraints from infra#1087.",
+      "findings": [
+        {
+          "claim": "Diff implements unrequested logic that disables the lambda CPU fallback by default unless --allow-lambda or --force-lambda is passed and load1 < 24.0, which contradicts ticket PMAT-4252's mandate ('yields to lambda CPU on any need for the box').",
+          "file": "scripts/apr_dogfood_lane_4252.py",
+          "fix": "Remove the opt-in and load refusal logic in lambda_refusal to preserve the ticket-mandated automatic fallback to lambda CPU on gx10 yield, or scope this change under a dedicated ticket for infra#1087.",
+          "grounding": "cited",
+          "line": 58
+        },
+        {
+          "claim": "Test in scripts/test_apr_dogfood_lane_4252.py asserts the opposite of ticket PMAT-4252 by verifying that upon gx10 yield, fallback to lambda CPU is off by default and yields an 'unavailable' receipt with zero POST requests sent to lambda.",
+          "file": "scripts/test_apr_dogfood_lane_4252.py",
+          "fix": "Update the test suite to assert automatic fallback to lambda CPU on gx10 yield as mandated by PMAT-4252.",
+          "grounding": "cited",
+          "line": 177
+        },
+        {
+          "claim": "The --force-lambda flag is restricted and rejected when host load1 >= 24.0, breaking unconditional execution on lambda CPU.",
+          "file": "scripts/apr_dogfood_lane_4252.py",
+          "fix": "Ensure --force-lambda executes unconditionally on lambda CPU regardless of host load threshold.",
+          "grounding": "cited",
+          "line": 61
+        },
+        {
+          "claim": "Receipt claim in docs/audits/impl-PMAT-4252-receipt.md asserting that ask during a hold is 'served_by lambda-cpu' is invalidated by the diff, as default asks now return 'unavailable' with error 'not tried: lambda CPU fallback is off by default'.",
+          "file": "docs/audits/impl-PMAT-4252-receipt.md",
+          "fix": "Ensure the lane behavior matches the receipt's proven claims or provide an updated receipt reflecting the modified default behavior.",
+          "grounding": "cited",
+          "line": 24
         }
       ]
     }
   ],
   "dedup": [
     {
-      "file": "scripts/apr_dogfood_lane_4252.py",
-      "line": 6,
+      "file": "docs/audits/impl-PMAT-4252-receipt.md",
+      "line": 22,
       "lanes_agreeing": [
         2
       ],
       "claims": [
-        "Receipt claim in docs/audits/impl-PMAT-4252-receipt.md ('The lane code (apr_dogfood_lane_4252.py) and both test files are byte-identical to f5c28b106') is refuted by the diff, which alters both scripts/apr_dogfood_lane_4252.py and scripts/test_apr_dogfood_lane_4252.py."
+        "The receipt claim in Section 'Yield mutation proof' step 3 ('ask during the hold: gx10 attempt CURL_RC=7 ... -> served_by lambda-cpu') is invalidated by the diff, under which a default ask during a hold produces verdict unavailable (rc 2) with 'not tried: lambda CPU fallback is off by default'. Furthermore, receipt line 109 acknowledges that the lambda serve backing the receipt was shut down on 2026-09-25."
+      ]
+    },
+    {
+      "file": "docs/audits/impl-PMAT-4252-receipt.md",
+      "line": 24,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Receipt claim in docs/audits/impl-PMAT-4252-receipt.md asserting that ask during a hold is 'served_by lambda-cpu' is invalidated by the diff, as default asks now return 'unavailable' with error 'not tried: lambda CPU fallback is off by default'."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-4252.yaml",
+      "line": 4,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The roadmap ticket entry file docs/roadmaps/entries/PMAT-4252.yaml read by pmat work status PMAT-4252 was not updated and still mandates: 'yields to lambda CPU on any need for the box', leaving the ticket definition inconsistent with the modifications made in docs/roadmaps/roadmap.yaml."
       ]
     },
     {
       "file": "scripts/apr_dogfood_lane_4252.py",
       "line": 49,
       "lanes_agreeing": [
-        1,
-        3
-      ],
-      "claims": [
-        "The diff implements unrequested logic that disables the lambda CPU fallback by default, directly contradicting the ticket's title ('yields to lambda CPU on any need for the box').",
-        "The lambda CPU fallback is disabled by default unless --allow-lambda or --force-lambda is passed, and is refused when load1 >= 24.0"
-      ]
-    },
-    {
-      "file": "scripts/apr_dogfood_lane_4252.py",
-      "line": 50,
-      "lanes_agreeing": [
         1
       ],
       "claims": [
-        "The diff invalidates the receipt claim. The receipt claims that `ask` during a hold will be 'served_by lambda-cpu'. With this diff, a default `ask` will be refused with 'not tried: lambda CPU fallback is off by default'."
+        "The diff implements unrequested logic that disables the lambda CPU fallback by default, directly contradicting the ticket's title ('yields to lambda CPU on any need for the box')."
       ]
     },
     {
@@ -275,57 +346,45 @@
         2
       ],
       "claims": [
-        "Diff does something not asked for by ticket PMAT-4252: introduces an unrequested --allow-lambda opt-in gate and load1 refusal threshold (citing out-of-band 'operator 2026-09-25, fans' and 'infra#1087 row 5'), turning off the core ticket requirement that gx10 'yields to lambda CPU on any need for the box'."
+        "The diff introduces unrequested logic in lambda_refusal that disables lambda CPU fallback by default and adds a load threshold gate (load1() >= 24.0) citing out-of-band oral directives ('operator 2026-09-25, fans') and infra#1087 row 5, none of which was asked for in ticket PMAT-4252."
+      ]
+    },
+    {
+      "file": "scripts/apr_dogfood_lane_4252.py",
+      "line": 58,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Diff implements unrequested logic that disables the lambda CPU fallback by default unless --allow-lambda or --force-lambda is passed and load1 < 24.0, which contradicts ticket PMAT-4252's mandate ('yields to lambda CPU on any need for the box')."
       ]
     },
     {
       "file": "scripts/apr_dogfood_lane_4252.py",
       "line": 61,
       "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "The --force-lambda gate is weakened/restricted: passing --force-lambda is now gated and refused if load1 >= 24.0, breaking previous unconditional forced execution on lambda CPU."
-      ]
-    },
-    {
-      "file": "scripts/apr_dogfood_lane_4252.py",
-      "line": 393,
-      "lanes_agreeing": [
+        1,
+        2,
         3
       ],
       "claims": [
-        "The lambda leg refusal reason is appended to attempts without raising, allowing cmd_ask to return rc 2 with verdict 'unavailable'"
-      ]
-    },
-    {
-      "file": "scripts/apr_dogfood_lane_4252.py",
-      "line": 424,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "The CLI flag --allow-lambda is added to the 'ask' subparser with appropriate help text"
-      ]
-    },
-    {
-      "file": "scripts/test_apr_dogfood_lane_4252.py",
-      "line": 174,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "Test cases verify default off refusal, load threshold refusal at load1 30 and 24, and positive execution at load1 23.9 with allow_lambda"
+        "The --force-lambda flag is restricted and rejected when host load1 >= 24.0, breaking unconditional execution on lambda CPU.",
+        "The --force-lambda gate is weakened/restricted: passing --force-lambda is now gated and refused if load1 >= 24.0, breaking previous unconditional forced execution on lambda CPU.",
+        "The --force-lambda gate is weakened/restricted: passing --force-lambda is now subject to the load1 >= 24.0 check and refused, breaking previously unconditional execution on lambda CPU when explicitly forced by the caller."
       ]
     },
     {
       "file": "scripts/test_apr_dogfood_lane_4252.py",
       "line": 177,
       "lanes_agreeing": [
-        2
+        1,
+        2,
+        3
       ],
       "claims": [
-        "Test asserts the opposite of ticket PMAT-4252 acceptance criteria (AC 2: 'Any need for the box ... stops the gx10 server by recorded pid; asks pass to lambda CPU') by asserting that on gx10 yield, lambda CPU fallback is refused by default, producing 'unavailable' without posting to lambda (okg asserts not posts and served_by is None)."
+        "In scripts/test_apr_dogfood_lane_4252.py, test case 'default: lambda off' asserts that on gx10 yield, asks do NOT fall back to lambda CPU (asserts rcg == 2, recg['served_by'] is None, and not posts), directly asserting the opposite of the ticket's title and acceptance criterion ('gx10 CUDA primary, yields to lambda CPU on any need for the box').",
+        "Test asserts the opposite of the ticket's requirement by asserting that on gx10 yield, lambda CPU fallback is refused by default, producing 'unavailable' without posting to lambda.",
+        "Test in scripts/test_apr_dogfood_lane_4252.py asserts the opposite of ticket PMAT-4252 by verifying that upon gx10 yield, fallback to lambda CPU is off by default and yields an 'unavailable' receipt with zero POST requests sent to lambda."
       ]
     }
   ],

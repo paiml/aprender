@@ -19,7 +19,7 @@ Readings:
 ## Yield mutation proof (lane `scripts/apr_dogfood_lane_4252.py`, branch feat/4252-apr-dogfood-lane 0f83b9a7a)
 1. The gx10 watcher starts serve `--backend cuda --gpu-layers all`. `ask` → **served_by gx10-cuda**: wall 1.9 s, server pid 563471 holds GPU (175 MiB), used_gpu probe true, trace `gpu-layers … resolved=32 (backend=cuda)`, answer "PASS".
 2. PLANT: on gx10, `flock /tmp/apr-gpu.lock sleep 150` (pid 739221). The watcher logs `11:12:27Z YIELD ['gpu lock held (/tmp/apr-gpu.lock)']`. `kill -0 563471` → No such process. nvidia-smi compute-apps are empty.
-3. `ask` during the hold: gx10 attempt `CURL_RC=7` (state serving:false, stop_reason lock) → **served_by lambda-cpu**, wall 360 s (queued behind the bench). This run predates the hard budget: 0f83b9a7a had none. Under the current default (120 s) the same wait is `unavailable`; see below, answer "PASS", 51 prompt tok.
+3. `ask` during the hold (measured 2026-09-24, BEFORE round 7 made lambda opt-in; today's default gives `unavailable`, not lambda — see Round 7): gx10 attempt `CURL_RC=7` (state serving:false, stop_reason lock) → **served_by lambda-cpu**, wall 360 s (queued behind the bench). This run predates the hard budget: 0f83b9a7a had none. Under the current default (120 s) the same wait is `unavailable`; see below, answer "PASS", 51 prompt tok.
 4. Hold released → `11:14:57Z START` (the watcher resumes).
 Negative control (accidental): while the used_gpu probe was malformed, the lane labelled a real CUDA answer `gx10-cpu-UNPROVEN-GPU`. The label fails closed.
 
