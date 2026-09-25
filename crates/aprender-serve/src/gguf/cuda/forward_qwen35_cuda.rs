@@ -682,7 +682,7 @@ impl<'a> Qwen35CudaModel<'a> {
             decode_graph: None,
             use_decode_graph: graph::graph_enabled(),
         };
-        m.warm_prefill_weights()?;
+        m.warm_prefill_weights();
         Ok(m)
     }
 
