@@ -39,6 +39,7 @@ relations:
   depends_on: [ont-sigma-v1, ont-shapes-v1]
 
 shape:
+  targetClass: llm:LlmContext
   closed: true
   properties:
     - {path: llm:section, minCount: 0}
