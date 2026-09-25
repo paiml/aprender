@@ -836,3 +836,92 @@ async fn a_streamed_completion_arrives_token_by_token_and_ends_with_usage() {
     let usage = usage.expect("the terminal chunk carries usage (#4272)");
     assert_eq!(usage, plain["usage"], "the stream's usage is the body's");
 }
+
+// #4274: a chat's second turn, re-rendered through the official template (which
+// drops turn 1's think block), resumed from the checkpoint turn 1 left, and
+// answered exactly what a full re-prefill answers.
+
+fn msg_4274(role: &str, content: &str) -> ChatMessage {
+    ChatMessage {
+        role: role.to_string(),
+        content: content.to_string(),
+        ..Default::default()
+    }
+}
+
+/// The rendered and encoded prompt for `messages`, and the greedy turn.
+fn turn_4274(
+    session: &mut Qwen35Session,
+    mapped: &MappedGGUFModel,
+    messages: &[ChatMessage],
+    thinking: Option<bool>,
+) -> (Vec<u32>, crate::session::Turn) {
+    let m = &mapped.model;
+    let text = crate::api::realize_handlers::format_chat_messages_official_thinking(
+        Some(m),
+        messages,
+        Some("qwen35"),
+        thinking,
+    )
+    .expect("render");
+    let ids = m.encode(&text).expect("encode");
+    let config = QuantizedGenerateConfig {
+        max_tokens: 24,
+        temperature: 0.0,
+        top_k: 1,
+        stop_tokens: m.eos_token_id().into_iter().collect(),
+        ..QuantizedGenerateConfig::default()
+    };
+    let turn = session
+        .generate(&ids, &config, &mut |_| true)
+        .expect("generate");
+    (ids, turn)
+}
+
+#[test]
+fn second_chat_turn_resumes_from_the_first_turns_checkpoint_4274() {
+    if !std::path::Path::new(MODEL_PATH).exists() {
+        eprintln!("SKIP: {MODEL_PATH} is absent");
+        return;
+    }
+    let mapped = MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
+    let m = &mapped.model;
+    for thinking in [Some(false), Some(true)] {
+        let mut session = Qwen35Session::load(&mapped, true).expect("load the hybrid");
+        let first = [msg_4274("user", "Name three colors.")];
+        let (ids1, turn1) = turn_4274(&mut session, &mapped, &first, thinking);
+
+        let mut reply = turn1.tokens[ids1.len()..].to_vec();
+        if reply.last().is_some_and(|t| m.eos_token_id() == Some(*t)) {
+            reply.pop();
+        }
+        let reply = crate::api::realize_handlers::clean_chat_output(&m.decode(&reply));
+        let second = [
+            first[0].clone(),
+            msg_4274("assistant", &reply),
+            msg_4274("user", "Two more."),
+        ];
+        let (ids2, turn2) = turn_4274(&mut session, &mapped, &second, thinking);
+        let shared = ids1.iter().zip(&ids2).take_while(|(a, b)| a == b).count();
+        assert!(
+            shared < ids1.len(),
+            "thinking {thinking:?}: turn 2 must NOT extend turn 1 (else this is not #4274)"
+        );
+        // The #4274 body: turn 2 re-prefilled from 0 (reused 0).
+        assert!(
+            turn2.reused > 0 && turn2.reused <= shared,
+            "thinking {thinking:?}: turn 2 must resume from turn 1's checkpoint \
+             (reused {}, shared prefix {shared})",
+            turn2.reused
+        );
+
+        let mut fresh = Qwen35Session::load(&mapped, true).expect("load the hybrid");
+        let (_, full) = turn_4274(&mut fresh, &mapped, &second, thinking);
+        assert_eq!(full.reused, 0);
+        assert_eq!(
+            m.decode(&turn2.tokens[ids2.len()..]),
+            m.decode(&full.tokens[ids2.len()..]),
+            "thinking {thinking:?}: the resumed turn must answer what a full re-prefill answers"
+        );
+    }
+}
