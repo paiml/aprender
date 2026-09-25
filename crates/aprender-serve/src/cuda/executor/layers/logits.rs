@@ -38,7 +38,7 @@ impl CudaExecutor {
             vocab_size as usize,
             hidden_dim as usize,
         )
-        .unwrap_or(WeightQuantType::Q4K);
+        .ok_or_else(|| lm_head_qtype_unresolved(lm_head_buf_size, vocab_size, hidden_dim))?;
 
         // CORRECTNESS-002: Debug LM head weight buffer
         if debug_enabled {
@@ -349,4 +349,16 @@ impl CudaExecutor {
         );
         Ok(())
     }
+}
+
+/// #3850: the LM head's type could not be resolved: its declaration is absent or has
+/// no kernel, and its byte size matches no known layout. This used to be
+/// `.unwrap_or(Q4K)`, which decoded those bytes as Q4_K — garbage logits by the most
+/// direct route there is.
+fn lm_head_qtype_unresolved(size: usize, vocab_size: u32, hidden_dim: u32) -> GpuError {
+    GpuError::InvalidParameter(format!(
+        "output.weight: {size} bytes for [{vocab_size}, {hidden_dim}] match no GPU-decodable \
+         quant type and its declared type is absent or has no kernel — refused rather than \
+         decoded as Q4_K (#3850)"
+    ))
 }
