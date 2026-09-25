@@ -537,6 +537,39 @@ mod ptx_tests {
     fn gdn_flash_prefill_refuses_what_does_not_fit_48k() {
         let _ = PrefillFlashAttention256Kernel::new(32, 4); // 8 heads per KV head
     }
+
+    /// The hand PTX the #3522 oxide port is measured against, one file per head
+    /// shape and target. A drift means the committed receipts no longer describe the
+    /// shipped kernel.
+    /// Regenerate: `APR_BLESS_PTX=1 cargo test -p aprender-gpu --features cuda --lib gdn_prefill_flash_attention_ptx_golden`
+    #[test]
+    fn gdn_prefill_flash_attention_ptx_golden() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../experiments/cuda-oxide/prefill-flash-attention/baseline-ptx");
+        let bless = std::env::var_os("APR_BLESS_PTX").is_some();
+        for (nh, nkv) in [(8u32, 2u32), (16, 4), (24, 4)] {
+            let kernel = PrefillFlashAttention256Kernel::new(nh, nkv);
+            for target in ["sm_89", "sm_121"] {
+                let path = dir.join(format!(
+                    "gdn_prefill_flash_attention_256.h{nh}kv{nkv}.{target}.ptx"
+                ));
+                let ptx = kernel.emit_ptx_for_target(target);
+                if bless {
+                    std::fs::create_dir_all(&dir).expect("baseline dir");
+                    std::fs::write(&path, &ptx).expect("write baseline");
+                    continue;
+                }
+                let golden = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+                    panic!("{}: {e} (bless with APR_BLESS_PTX=1)", path.display())
+                });
+                assert!(
+                    golden == ptx,
+                    "{} drifted from the emitter; re-bless and re-run the #3522 receipts",
+                    path.display()
+                );
+            }
+        }
+    }
 }
 
 /// Device parity: the kernel against an exact reference of what it computes (f16

@@ -269,6 +269,40 @@ mod ptx_tests {
     fn gdn_delta_rule_zero_key_heads_is_clamped() {
         assert_eq!(DeltaRuleRecurrenceKernel::new(0, 8, 4, 8).num_k_heads, 1);
     }
+
+    /// #3522 OXIDE-001: the cuda-oxide port of [`DeltaRuleRecurrenceKernel`] times
+    /// itself against the hand PTX committed under
+    /// `experiments/cuda-oxide/delta-rule/baseline-ptx/`. Every head dimension is
+    /// baked into the PTX, so there is one baseline per Qwen3.5 value-head count
+    /// (16: 0.8B/2B, 32: 4B/9B, 48: 27B) per target, at nk 16, Dk = Dv = 128.
+    ///
+    /// Regenerate: `APR_BLESS_PTX=1 cargo test -p aprender-gpu --features cuda --lib gdn_delta_rule_ptx_golden`
+    #[test]
+    fn gdn_delta_rule_ptx_golden() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../experiments/cuda-oxide/delta-rule/baseline-ptx");
+        let bless = std::env::var_os("APR_BLESS_PTX").is_some();
+        for nv in [16, 32, 48] {
+            let kernel = DeltaRuleRecurrenceKernel::new(16, 128, nv, 128);
+            for target in ["sm_89", "sm_121"] {
+                let path = dir.join(format!("gdn_delta_rule_recurrence.nv{nv}.{target}.ptx"));
+                let ptx = kernel.emit_ptx_for_target(target);
+                if bless {
+                    std::fs::create_dir_all(&dir).expect("baseline dir");
+                    std::fs::write(&path, &ptx).expect("write baseline");
+                    continue;
+                }
+                let golden = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+                    panic!("{}: {e} (bless with APR_BLESS_PTX=1)", path.display())
+                });
+                assert!(
+                    golden == ptx,
+                    "{} drifted from the emitter; re-bless and re-run the #3522 receipts",
+                    path.display()
+                );
+            }
+        }
+    }
 }
 
 /// Device parity against a verbatim port of `delta_rule_recurrence`.

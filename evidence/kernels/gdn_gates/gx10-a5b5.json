@@ -1,0 +1,83 @@
+{
+  "schema": "apr-kernel-receipt/v1",
+  "kernel": "gdn_gates",
+  "issue": 3522,
+  "receipts": [
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_gates",
+      "variant": "exp",
+      "entry": "gdn_gates_exp",
+      "authoring": "oxide",
+      "cc": "sm_121",
+      "block": 256,
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 9.537e-07,
+        "cos_floor": 0.9999,
+        "maxdiff_ceiling": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 0.983,
+        "handptx_us": 1.029,
+        "ratio": 0.9552,
+        "worst_n": 16,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 1.0403,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 20,
+        "handptx": 14
+      },
+      "host": "gx10-a5b5",
+      "sha": "125ede286f15629771e749000e9b2d71422c80bd",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "590.48.01, NVIDIA GB10",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": ""
+    },
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_gates",
+      "variant": "ex2",
+      "entry": "gdn_gates_ex2",
+      "authoring": "oxide",
+      "cc": "sm_121",
+      "block": 256,
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 7.629e-06,
+        "cos_floor": 0.9999,
+        "maxdiff_ceiling": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 0.926,
+        "handptx_us": 1.028,
+        "ratio": 0.9013,
+        "worst_n": 16,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 1.0384,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 15,
+        "handptx": 14
+      },
+      "host": "gx10-a5b5",
+      "sha": "125ede286f15629771e749000e9b2d71422c80bd",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "590.48.01, NVIDIA GB10",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": ""
+    }
+  ]
+}

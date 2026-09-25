@@ -1,0 +1,207 @@
+{
+  "schema": "apr-kernel-receipt/v1",
+  "kernel": "gdn_prefill_flash_attention_256",
+  "issue": 3522,
+  "receipts": [
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_prefill_flash_attention_256",
+      "variant": "exp",
+      "entry": "prefill_attn_exp",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "head_dim": 256,
+      "shapes": [
+        [
+          8,
+          2
+        ],
+        [
+          16,
+          4
+        ],
+        [
+          24,
+          4
+        ]
+      ],
+      "parity_cases": [
+        [
+          16,
+          0
+        ],
+        [
+          20,
+          3
+        ],
+        [
+          37,
+          29
+        ],
+        [
+          100,
+          500
+        ],
+        [
+          128,
+          0
+        ],
+        [
+          512,
+          0
+        ]
+      ],
+      "timed_cases": [
+        [
+          16,
+          0
+        ],
+        [
+          128,
+          0
+        ],
+        [
+          512,
+          0
+        ]
+      ],
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 2.533e-07,
+        "rel_max": 1.543e-06,
+        "cos_threshold": 0.9999,
+        "maxdiff_threshold": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 8339.589,
+        "handptx_us": 957.645,
+        "ratio": 8.7084,
+        "worst_shape": [
+          24,
+          4
+        ],
+        "worst_case": [
+          512,
+          0
+        ],
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 8.6875,
+        "pass": false
+      },
+      "register_budget": {
+        "oxide": 48,
+        "handptx": 242
+      },
+      "host": "yoga",
+      "sha": "c2dbd116c99c8da99960f295e71d1397dae83728",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "595.91.07, NVIDIA GeForce RTX 4060 Laptop GPU",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": ""
+    },
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_prefill_flash_attention_256",
+      "variant": "ex2",
+      "entry": "prefill_attn_ex2",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "head_dim": 256,
+      "shapes": [
+        [
+          8,
+          2
+        ],
+        [
+          16,
+          4
+        ],
+        [
+          24,
+          4
+        ]
+      ],
+      "parity_cases": [
+        [
+          16,
+          0
+        ],
+        [
+          20,
+          3
+        ],
+        [
+          37,
+          29
+        ],
+        [
+          100,
+          500
+        ],
+        [
+          128,
+          0
+        ],
+        [
+          512,
+          0
+        ]
+      ],
+      "timed_cases": [
+        [
+          16,
+          0
+        ],
+        [
+          128,
+          0
+        ],
+        [
+          512,
+          0
+        ]
+      ],
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 2.682e-07,
+        "rel_max": 1.634e-06,
+        "cos_threshold": 0.9999,
+        "maxdiff_threshold": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 8278.21,
+        "handptx_us": 957.522,
+        "ratio": 8.6455,
+        "worst_shape": [
+          24,
+          4
+        ],
+        "worst_case": [
+          512,
+          0
+        ],
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 8.5653,
+        "pass": false
+      },
+      "register_budget": {
+        "oxide": 48,
+        "handptx": 242
+      },
+      "host": "yoga",
+      "sha": "c2dbd116c99c8da99960f295e71d1397dae83728",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "595.91.07, NVIDIA GeForce RTX 4060 Laptop GPU",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": ""
+    }
+  ]
+}

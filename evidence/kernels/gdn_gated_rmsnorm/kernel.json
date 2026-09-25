@@ -1,0 +1,12 @@
+{
+  "schema": "apr-kernel/v1",
+  "kernel": "gdn_gated_rmsnorm",
+  "issue": 3522,
+  "authoring": "oxide",
+  "source": "experiments/cuda-oxide/gated-rmsnorm/src/main.rs",
+  "module": "kernels",
+  "entries": ["gated_rmsnorm_exp", "gated_rmsnorm_ex2"],
+  "reference": "cpu_gated_rmsnorm",
+  "required_hosts": ["noah-Lambda-Vector", "yoga", "gx10-a5b5"],
+  "shipped_ptx": "crates/aprender-gpu/src/kernels/gdn/gated_rmsnorm.rs"
+}

@@ -1,0 +1,12 @@
+{
+  "schema": "apr-kernel/v1",
+  "kernel": "gdn_sigmoid_gate",
+  "issue": 3522,
+  "authoring": "oxide",
+  "source": "experiments/cuda-oxide/sigmoid-gate/src/main.rs",
+  "module": "kernels",
+  "entries": ["sigmoid_gate_exp", "sigmoid_gate_ex2"],
+  "reference": "cpu_sigmoid_gate",
+  "required_hosts": ["noah-Lambda-Vector", "yoga", "gx10-a5b5"],
+  "shipped_ptx": "crates/aprender-gpu/src/kernels/gdn/sigmoid_gate.rs"
+}

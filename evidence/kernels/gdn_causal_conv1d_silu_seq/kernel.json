@@ -1,0 +1,12 @@
+{
+  "schema": "apr-kernel/v1",
+  "kernel": "gdn_causal_conv1d_silu_seq",
+  "issue": 3522,
+  "authoring": "oxide",
+  "source": "experiments/cuda-oxide/causal-conv1d-seq/src/main.rs",
+  "module": "kernels",
+  "entries": ["conv1d_seq_exp", "conv1d_seq_ex2"],
+  "reference": "cpu_conv1d_seq",
+  "required_hosts": ["noah-Lambda-Vector", "yoga", "gx10-a5b5"],
+  "shipped_ptx": "crates/aprender-gpu/src/kernels/gdn/causal_conv1d_seq.rs"
+}

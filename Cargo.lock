@@ -487,6 +487,7 @@ dependencies = [
  "aprender-contracts-macros",
  "criterion 0.5.1",
  "half",
+ "proc-macro2",
  "proptest",
  "regex",
  "serde",

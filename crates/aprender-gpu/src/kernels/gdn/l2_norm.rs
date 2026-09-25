@@ -138,6 +138,36 @@ mod ptx_tests {
         );
         assert!(ptx.contains("rsqrt.approx.f32"), "{ptx}");
     }
+
+    /// #3522 OXIDE-001: the cuda-oxide port times itself against the hand PTX
+    /// committed under `experiments/cuda-oxide/l2-norm/baseline-ptx/`. If this
+    /// emitter changes and the baseline does not, the timing receipt compares
+    /// against a kernel that no longer ships; this golden check fails on that drift.
+    ///
+    /// Regenerate: `APR_BLESS_PTX=1 cargo test -p aprender-gpu --features cuda --lib gdn_l2_norm_ptx_golden`
+    #[test]
+    fn gdn_l2_norm_ptx_golden() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../experiments/cuda-oxide/l2-norm/baseline-ptx");
+        let kernel = PerHeadL2NormKernel::new(128, 16, 1e-6);
+        let bless = std::env::var_os("APR_BLESS_PTX").is_some();
+        for target in ["sm_89", "sm_121"] {
+            let path = dir.join(format!("gdn_per_head_l2_norm_h128.{target}.ptx"));
+            let ptx = kernel.emit_ptx_for_target(target);
+            if bless {
+                std::fs::create_dir_all(&dir).expect("baseline dir");
+                std::fs::write(&path, &ptx).expect("write baseline");
+                continue;
+            }
+            let golden = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{}: {e} (bless with APR_BLESS_PTX=1)", path.display()));
+            assert!(
+                golden == ptx,
+                "{} drifted from the emitter; re-bless and re-run the #3522 receipts",
+                path.display()
+            );
+        }
+    }
 }
 
 /// Device parity against a verbatim port of `l2_norm_per_head`.

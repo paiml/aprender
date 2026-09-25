@@ -205,6 +205,43 @@ mod ptx_tests {
         assert_eq!(kernel.grid(), (32, 1, 1));
     }
 
+    /// #3522 OXIDE-001: the cuda-oxide port times itself against the hand PTX
+    /// committed under `experiments/cuda-oxide/causal-conv1d-seq/baseline-ptx/`.
+    /// `channels`, `kernel_size` and both row strides are baked into the PTX, so there
+    /// is one baseline per timed width (K = 4, strides = channels, as
+    /// `qwen35_conv1d_rows` builds it). If this emitter changes and the baselines do
+    /// not, this golden check fails.
+    ///
+    /// Regenerate: `APR_BLESS_PTX=1 cargo test -p aprender-gpu --features cuda --lib gdn_conv1d_seq_ptx_golden`
+    #[test]
+    fn gdn_conv1d_seq_ptx_golden() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../experiments/cuda-oxide/causal-conv1d-seq/baseline-ptx");
+        let bless = std::env::var_os("APR_BLESS_PTX").is_some();
+        for channels in [2048u32, 4096, 6144] {
+            let kernel = CausalConv1dSiluSeqKernel::new(channels, 4, channels, channels);
+            for target in ["sm_89", "sm_121"] {
+                let path = dir.join(format!(
+                    "gdn_causal_conv1d_silu_seq_c{channels}.{target}.ptx"
+                ));
+                let ptx = kernel.emit_ptx_for_target(target);
+                if bless {
+                    std::fs::create_dir_all(&dir).expect("baseline dir");
+                    std::fs::write(&path, &ptx).expect("write baseline");
+                    continue;
+                }
+                let golden = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+                    panic!("{}: {e} (bless with APR_BLESS_PTX=1)", path.display())
+                });
+                assert!(
+                    golden == ptx,
+                    "{} drifted from the emitter; re-bless and re-run the #3522 receipts",
+                    path.display()
+                );
+            }
+        }
+    }
+
     #[test]
     #[should_panic(expected = "must cover")]
     fn gdn_conv1d_seq_refuses_a_stride_narrower_than_the_channels() {

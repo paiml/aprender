@@ -1,0 +1,91 @@
+{
+  "schema": "apr-kernel-receipt/v1",
+  "kernel": "gdn_partial_rope",
+  "issue": 3522,
+  "receipts": [
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_partial_rope",
+      "variant": "approx",
+      "entry": "partial_rope_approx",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "head_dim": 256,
+      "n_rot": 128,
+      "position": 1000,
+      "freq_base": 1000000.0,
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 4.172e-07,
+        "tail_intact": true,
+        "cos_floor": 0.9999,
+        "maxdiff_ceiling": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 1.413,
+        "handptx_us": 1.608,
+        "ratio": 0.879,
+        "worst_heads": 48,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 0.9569,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 16,
+        "handptx": 12
+      },
+      "host": "noah-Lambda-Vector",
+      "sha": "625fe7928b63d760bdfda6de44123e673372f5a5",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "580.119.02, NVIDIA GeForce RTX 4090",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": "3650689, [Not Found], 936 MiB;"
+    },
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_partial_rope",
+      "variant": "libm",
+      "entry": "partial_rope_libm",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "head_dim": 256,
+      "n_rot": 128,
+      "position": 1000,
+      "freq_base": 1000000.0,
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 1.192e-07,
+        "tail_intact": true,
+        "cos_floor": 0.9999,
+        "maxdiff_ceiling": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 1.454,
+        "handptx_us": 1.608,
+        "ratio": 0.9045,
+        "worst_heads": 48,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 0.9024,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 22,
+        "handptx": 12
+      },
+      "host": "noah-Lambda-Vector",
+      "sha": "625fe7928b63d760bdfda6de44123e673372f5a5",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "580.119.02, NVIDIA GeForce RTX 4090",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": "3650689, [Not Found], 936 MiB;"
+    }
+  ]
+}

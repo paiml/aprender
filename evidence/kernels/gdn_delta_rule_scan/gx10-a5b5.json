@@ -1,0 +1,103 @@
+{
+  "schema": "apr-kernel-receipt/v1",
+  "kernel": "gdn_delta_rule_scan",
+  "issue": 3522,
+  "receipts": [
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_delta_rule_scan",
+      "variant": "exp",
+      "entry": "delta_rule_scan_exp",
+      "authoring": "oxide",
+      "cc": "sm_121",
+      "head_k_dim": 128,
+      "head_v_dim": 128,
+      "num_k_heads": 16,
+      "chunk": 64,
+      "schedule": [
+        1,
+        17,
+        64
+      ],
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 5.96e-08,
+        "rel_max": 3.198e-07,
+        "cos_threshold": 0.9999,
+        "maxdiff_threshold": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 173.562,
+        "handptx_us": 149.744,
+        "ratio": 1.1591,
+        "worst_nv": 48,
+        "tokens": 64,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 1.1574,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 255,
+        "handptx": 158
+      },
+      "host": "gx10-a5b5",
+      "sha": "625fe7928b63d760bdfda6de44123e673372f5a5",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "590.48.01, NVIDIA GB10",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": ""
+    },
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_delta_rule_scan",
+      "variant": "ex2",
+      "entry": "delta_rule_scan_ex2",
+      "authoring": "oxide",
+      "cc": "sm_121",
+      "head_k_dim": 128,
+      "head_v_dim": 128,
+      "num_k_heads": 16,
+      "chunk": 64,
+      "schedule": [
+        1,
+        17,
+        64
+      ],
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 5.96e-08,
+        "rel_max": 5.062e-07,
+        "cos_threshold": 0.9999,
+        "maxdiff_threshold": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 173.415,
+        "handptx_us": 149.728,
+        "ratio": 1.1582,
+        "worst_nv": 48,
+        "tokens": 64,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 1.1622,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 255,
+        "handptx": 158
+      },
+      "host": "gx10-a5b5",
+      "sha": "625fe7928b63d760bdfda6de44123e673372f5a5",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "590.48.01, NVIDIA GB10",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": ""
+    }
+  ]
+}

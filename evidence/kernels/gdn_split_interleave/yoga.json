@@ -1,0 +1,44 @@
+{
+  "schema": "apr-kernel-receipt/v1",
+  "kernel": "gdn_split_interleave",
+  "issue": 3522,
+  "receipts": [
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_split_interleave",
+      "variant": "copy",
+      "entry": "split_interleave",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "head_dim": 256,
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 0.0,
+        "bit_exact": true,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 1.065,
+        "handptx_us": 0.993,
+        "ratio": 1.0722,
+        "worst_heads": 16,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 1.1753,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 14,
+        "handptx": 22
+      },
+      "host": "yoga",
+      "sha": "625fe7928b63d760bdfda6de44123e673372f5a5",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "595.91.07, NVIDIA GeForce RTX 4060 Laptop GPU",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": ""
+    }
+  ]
+}

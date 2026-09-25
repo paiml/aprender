@@ -1,0 +1,157 @@
+{
+  "schema": "apr-kernel-receipt/v1",
+  "kernel": "gdn_decode_attention",
+  "issue": 3522,
+  "receipts": [
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_decode_attention",
+      "variant": "exp",
+      "entry": "decode_attn_chunk_exp",
+      "entries": [
+        "decode_attn_chunk_exp",
+        "decode_attn_combine_exp"
+      ],
+      "authoring": "oxide",
+      "cc": "sm_121",
+      "head_dim": 256,
+      "shapes": [
+        [
+          16,
+          2
+        ],
+        [
+          16,
+          4
+        ],
+        [
+          24,
+          4
+        ]
+      ],
+      "seq_parity": [
+        1,
+        5,
+        37,
+        128,
+        1024,
+        4101
+      ],
+      "seq_timed": [
+        128,
+        1024,
+        4101
+      ],
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 1.937e-07,
+        "rel_max": 3.737e-06,
+        "cos_threshold": 0.9999,
+        "maxdiff_threshold": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 12.372,
+        "handptx_us": 41.429,
+        "ratio": 0.2986,
+        "worst_shape": [
+          24,
+          4
+        ],
+        "worst_seq": 128,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 0.3808,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 47,
+        "oxide_combine": 30,
+        "handptx": 33
+      },
+      "host": "gx10-a5b5",
+      "sha": "2283d4889b0010927b006c579b343ba303584964",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "590.48.01, NVIDIA GB10",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": ""
+    },
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_decode_attention",
+      "variant": "ex2",
+      "entry": "decode_attn_chunk_ex2",
+      "entries": [
+        "decode_attn_chunk_ex2",
+        "decode_attn_combine_ex2"
+      ],
+      "authoring": "oxide",
+      "cc": "sm_121",
+      "head_dim": 256,
+      "shapes": [
+        [
+          16,
+          2
+        ],
+        [
+          16,
+          4
+        ],
+        [
+          24,
+          4
+        ]
+      ],
+      "seq_parity": [
+        1,
+        5,
+        37,
+        128,
+        1024,
+        4101
+      ],
+      "seq_timed": [
+        128,
+        1024,
+        4101
+      ],
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 1.974e-07,
+        "rel_max": 3.808e-06,
+        "cos_threshold": 0.9999,
+        "maxdiff_threshold": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 12.394,
+        "handptx_us": 41.453,
+        "ratio": 0.299,
+        "worst_shape": [
+          24,
+          4
+        ],
+        "worst_seq": 128,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 0.3806,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 47,
+        "oxide_combine": 30,
+        "handptx": 33
+      },
+      "host": "gx10-a5b5",
+      "sha": "2283d4889b0010927b006c579b343ba303584964",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "590.48.01, NVIDIA GB10",
+      "foreign_gpu_procs": "",
+      "phantom_gpu_ctx": ""
+    }
+  ]
+}

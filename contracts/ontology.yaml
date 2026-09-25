@@ -147,6 +147,9 @@ entity_types:
   # aprender#3715: a release's receipts (per-host inventory + cells, kernel diffs, context rungs, the dogfood
   # receipt R5 judged), extracted ONLY when a release subject is given — an ordinary PR has no release.
   - {name: release-evidence, extractor: release_evidence, implemented: true}
+  # OXIDE-001 O-2 (aprender#3522): a GPU kernel declared under evidence/kernels/<k>/kernel.json becomes an
+  # ont:Kernel node joined to its per-host receipts; shapes in contracts/kernel-receipt-v1.yaml.
+  - {name: kernel-receipt, extractor: kernel_receipt, implemented: true}
 
 extractors:
   - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
@@ -160,6 +163,7 @@ extractors:
   - {name: csv, reader: ontology/extract/csv.rs, implemented: false}
   - {name: parity_receipt, reader: ontology/extract/parity_receipt.rs, implemented: true}
   - {name: release_evidence, reader: ontology/extract/release_evidence.rs, implemented: true}
+  - {name: kernel_receipt, reader: ontology/extract/kernel_receipt.rs, implemented: true}
 
 # What this ontology does NOT express, said out loud so nobody encodes it by accident. Each names the reader that
 # would have to change first.
