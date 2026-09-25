@@ -222,11 +222,24 @@ arm4() {
             best_dir=$d; best_head=$h
         fi
     done
+    # A legacy receipt is accepted ONLY where the pre-#4421 rule would have accepted it,
+    # or on the queue commit that rule could never bind (the defect #4421 fixes):
+    #   branch  its signed head_sha must be an ANCESTOR of the subject - the old rule,
+    #           unweakened. A legacy receipt that fails it is RED, exempt or not.
+    #   queue   no commit binding exists for a squash; the signature (A3/A4), the PR
+    #           ceiling and the 24h expiry are the whole of the check, by ruling.
     if [ -z "$best_dir" ] && [ -n "$legacy_dir" ] && legacy_exempt "$pr"; then
-        best_dir=$legacy_dir; best_head=$(receipt_head "$legacy_dir")
-        echo "  A2  LEGACY EXEMPT - $legacy_dir has no diff_patch_id (signed before #4421)."
-        echo "      Accepted because PR $pr < $PR_REVIEW_LEGACY_BELOW (open when FLOW-04 merged) and now"
-        echo "      $(legacy_now) < $PR_REVIEW_LEGACY_UNTIL (24h after it). Its signature is still checked (A3/A4)."
+        h=$(receipt_head "$legacy_dir")
+        if [ "$kind" = queue ] || { [ -n "$h" ] && git -C "$REPO_ROOT" merge-base --is-ancestor "$h" "$head" >/dev/null 2>&1; }; then
+            best_dir=$legacy_dir; best_head=$h
+            echo "  A2  LEGACY EXEMPT - $legacy_dir has no diff_patch_id (signed before #4421)."
+            echo "      Accepted because PR $pr < $PR_REVIEW_LEGACY_BELOW (open when FLOW-04 merged), now"
+            echo "      $(legacy_now) < $PR_REVIEW_LEGACY_UNTIL (24h after it), and ($kind) its head binds as"
+            echo "      before #4421. Its signature is still checked (A3/A4)."
+        else
+            echo "  A2  legacy receipt $legacy_dir: reviewed head ${h:-<none>} is not an ancestor of $head;" >&2
+            echo "      the exemption waives the diff binding, never the pre-#4421 ancestor rule." >&2
+        fi
     fi
     if [ -z "$best_dir" ]; then
         echo "  A2  $root/$pr holds no receipt whose predicate.diff_patch_id is $pid." >&2
@@ -482,6 +495,10 @@ self_test() {
         "$legacy" 999 "$tip"  PR_REVIEW_LEGACY_BELOW=1000 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=2000
     row legacy-pr-opened-after    1 "legacy receipt: a PR opened after the merge (999 >= 999) is RED in the window" \
         "$legacy" 999 "$tip"  PR_REVIEW_LEGACY_BELOW=999 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=1999
+    row legacy-exempt-not-ancestor 1 "legacy receipt in the window, branch event, head NOT an ancestor: the old rule still binds" \
+        "$legacy" 999 "$squash"  PR_REVIEW_LEGACY_BELOW=1000 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=1999
+    row legacy-exempt-queue       0 "legacy receipt in the window on the queue squash (the commit #4421 exists for)" \
+        "$legacy" 999 "$squash"  PR_REVIEW_LEGACY_BELOW=1000 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=1999 GITHUB_EVENT_NAME=merge_group
     row legacy-exempt-bad-sig     1 "legacy receipt in the window with a corrupted signature is RED (A4 still runs)" \
         "$legacy_bad" 999 "$tip"  PR_REVIEW_LEGACY_BELOW=1000 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=1999
     row corrupt-signature         1 "receipt present, signature does not verify (A4)" \
@@ -505,7 +522,7 @@ self_test() {
         echo "--- $st_fail row(s) did not produce the required verdict ---" >&2
         return 1
     fi
-    echo "--- 20/20 rows, both polarities ---"
+    echo "--- 22/22 rows, both polarities ---"
     return 0
 }
 
