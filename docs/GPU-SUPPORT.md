@@ -1,8 +1,8 @@
 # GPU vs CPU: which models get real GPU inference
 
 <!-- GENERATED. Do not edit by hand.
-     Architectures rendered from crates/aprender-serve/src/capability.rs;
-     quantizations read from contracts/apr-model-capability-v1.yaml (#3856).
+     Required ops per architecture from crates/aprender-serve/src/capability.rs;
+     op support, reasons and quantizations read from contracts/apr-model-capability-v1.yaml (#3856).
      Asserted byte-for-byte by the test
      `gpu_support_doc::the_committed_doc_matches_the_capability_gate`.
      Regenerate: APR_WRITE_GPU_SUPPORT_DOC=1 cargo test -p aprender-serve --lib gpu_support_doc
@@ -22,11 +22,11 @@ table exists to prevent is the surprise: assuming an RTX 4090 makes any GGUF fas
 | `qwen35` | Qwen3.5 hybrid (Gated DeltaNet) | yes | — |
 | `qwen3_moe` | Qwen3 MoE (Qwen3-30B-A3B, Qwen3-Coder-30B-A3B) | yes | — |
 | `qwen3_5_moe` | Qwen3.5 MoE (A3B, hybrid Gated DeltaNet) | **refused** | no CUDA forward: hybrid SSM MoE, not run by the qwen3moe forward (#3714) |
-| `gemma2` | Gemma 2 | CPU fallback | missing `AttnFinalSoftcap`, `PostAttnFfnNorm` |
-| `gemma3` | Gemma 3 | CPU fallback | missing `AttnFinalSoftcap`, `PostAttnFfnNorm` |
-| `phi2` | Phi-2 | CPU fallback | missing `GeluMlp`, `LayerNorm` |
-| `phi3` | Phi-3 | CPU fallback | missing `LayerNorm` |
-| `gpt2` | GPT-2 | CPU fallback | missing `AbsolutePos`, `GeluMlp`, `LayerNorm` |
+| `gemma2` | Gemma 2 | CPU fallback | missing `AttnFinalSoftcap`: CUDA forward_gpu_resident applies NO tanh attention/final-logit softcapping, so Gemma2/Gemma3 fall back to CPU; `PostAttnFfnNorm`: CUDA forward applies only the two LLaMA-style norms, not the four-per-block Gemma2/Gemma3 norms, so those fall back to CPU |
+| `gemma3` | Gemma 3 | CPU fallback | missing `AttnFinalSoftcap`: CUDA forward_gpu_resident applies NO tanh attention/final-logit softcapping, so Gemma2/Gemma3 fall back to CPU; `PostAttnFfnNorm`: CUDA forward applies only the two LLaMA-style norms, not the four-per-block Gemma2/Gemma3 norms, so those fall back to CPU |
+| `phi2` | Phi-2 | CPU fallback | missing `GeluMlp`: GPU uses the SwiGLU path; GELU-MLP models fall back to CPU; `LayerNorm`: GPU uses the RMSNorm path; LayerNorm models fall back to CPU |
+| `phi3` | Phi-3 | CPU fallback | missing `LayerNorm`: GPU uses the RMSNorm path; LayerNorm models fall back to CPU |
+| `gpt2` | GPT-2 | CPU fallback | missing `AbsolutePos`: GPU uses RoPE; absolute-position models fall back to CPU; `GeluMlp`: GPU uses the SwiGLU path; GELU-MLP models fall back to CPU; `LayerNorm`: GPU uses the RMSNorm path; LayerNorm models fall back to CPU |
 
 **`refused` is not `CPU fallback`.** A refusal names the architecture and exits
 rather than loading; a fallback runs on the CPU. `apr run` without `--gpu` uses the

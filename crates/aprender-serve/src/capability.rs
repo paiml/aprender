@@ -684,14 +684,69 @@ mod gpu_support_doc {
     ///
     /// The contract is now the single declaration, exhaustive over the ggml enum,
     /// one row per type with its id.
-    fn quant_rows() -> Vec<(String, bool, String)> {
+    fn contract() -> serde_yaml_ng::Value {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../contracts/apr-model-capability-v1.yaml");
         let text = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-        let doc: serde_yaml_ng::Value =
-            serde_yaml_ng::from_str(&text).unwrap_or_else(|e| panic!("contract is not YAML: {e}"));
-        doc.get("quant_types")
+        serde_yaml_ng::from_str(&text).unwrap_or_else(|e| panic!("contract is not YAML: {e}"))
+    }
+
+    /// The op table, READ FROM THE CONTRACT (#3856 done_when 3): op name →
+    /// (gpu_supported, reason). The architecture verdict below is decided from
+    /// this map, not from `check_capability`, so the doc shows the contract's
+    /// own reason for every op it names as missing.
+    fn op_rows() -> std::collections::BTreeMap<String, (bool, String)> {
+        contract()
+            .get("ops")
+            .and_then(|v| v.as_sequence())
+            .expect("contract has no `ops`")
+            .iter()
+            .map(|r| {
+                let op = r
+                    .get("op")
+                    .and_then(|v| v.as_str())
+                    .expect("op row has no op");
+                let ok = r
+                    .get("gpu_supported")
+                    .and_then(serde_yaml_ng::Value::as_bool)
+                    .expect("op row has no gpu_supported");
+                let reason = r
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                (op.to_string(), (ok, reason))
+            })
+            .collect()
+    }
+
+    /// The ops `arch` requires that the contract declares unsupported, sorted,
+    /// each with its reason. A required op the contract does not declare is a
+    /// panic: the contract is exhaustive over `RequiredOp` (FALSIFY-CAP-002).
+    fn missing_ops(
+        arch: &str,
+        ops: &std::collections::BTreeMap<String, (bool, String)>,
+    ) -> Vec<(String, String)> {
+        let c = ArchConstraints::from_architecture(arch);
+        let mut missing: Vec<(String, String)> = required_ops_for_model(&c, arch)
+            .iter()
+            .map(ToString::to_string)
+            .filter_map(|name| {
+                let (ok, reason) = ops
+                    .get(&name)
+                    .unwrap_or_else(|| panic!("`{name}` is required but not in the contract"));
+                (!ok).then(|| (name, reason.clone()))
+            })
+            .collect();
+        missing.sort();
+        missing
+    }
+
+    fn quant_rows() -> Vec<(String, bool, String)> {
+        contract()
+            .get("quant_types")
             .and_then(|v| v.as_sequence())
             .expect("contract has no `quant_types`")
             .iter()
@@ -728,13 +783,15 @@ mod gpu_support_doc {
     }
 
     fn render() -> String {
-        let supported = gpu_supported_ops();
+        let ops = op_rows();
         let mut out = String::new();
         out.push_str("# GPU vs CPU: which models get real GPU inference\n\n");
         out.push_str("<!-- GENERATED. Do not edit by hand.\n");
-        out.push_str("     Architectures rendered from crates/aprender-serve/src/capability.rs;\n");
         out.push_str(
-            "     quantizations read from contracts/apr-model-capability-v1.yaml (#3856).\n",
+            "     Required ops per architecture from crates/aprender-serve/src/capability.rs;\n",
+        );
+        out.push_str(
+            "     op support, reasons and quantizations read from contracts/apr-model-capability-v1.yaml (#3856).\n",
         );
         out.push_str("     Asserted byte-for-byte by the test\n");
         out.push_str("     `gpu_support_doc::the_committed_doc_matches_the_capability_gate`.\n");
@@ -747,26 +804,24 @@ mod gpu_support_doc {
         out.push_str("## Architectures\n\n");
         out.push_str("| architecture | models | GPU | why not |\n|---|---|---|---|\n");
         for (arch, models) in ARCHES {
-            let c = ArchConstraints::from_architecture(arch);
-            let required = required_ops_for_model(&c, arch);
-            let verdict = match no_cuda_forward_reason(arch) {
-                Some(_) => (
+            let missing = missing_ops(arch, &ops);
+            let verdict = if no_cuda_forward_reason(arch).is_some() {
+                (
                     "**refused**".to_string(),
                     "no CUDA forward: hybrid SSM MoE, not run by the qwen3moe forward (#3714)"
                         .to_string(),
-                ),
-                None => match check_capability(&required, &supported) {
-                    Ok(()) => ("yes".to_string(), "—".to_string()),
-                    Err(missing) => {
-                        let mut names: Vec<String> =
-                            missing.iter().map(ToString::to_string).collect();
-                        names.sort();
-                        (
-                            "CPU fallback".to_string(),
-                            format!("missing `{}`", names.join("`, `")),
-                        )
-                    },
-                },
+                )
+            } else if missing.is_empty() {
+                ("yes".to_string(), "—".to_string())
+            } else {
+                let why: Vec<String> = missing
+                    .iter()
+                    .map(|(op, reason)| format!("`{op}`: {reason}"))
+                    .collect();
+                (
+                    "CPU fallback".to_string(),
+                    format!("missing {}", why.join("; ")),
+                )
             };
             out.push_str(&format!(
                 "| `{arch}` | {models} | {} | {} |\n",
@@ -810,6 +865,51 @@ mod gpu_support_doc {
             committed, rendered,
             "docs/GPU-SUPPORT.md has drifted from capability.rs. \
              Regenerate: APR_WRITE_GPU_SUPPORT_DOC=1 cargo test -p aprender-serve --lib gpu_support_doc"
+        );
+    }
+
+    /// The doc decides each architecture from the CONTRACT; the runtime decides it
+    /// from `check_capability` over `gpu_supported_ops()`. For every row the two
+    /// must name the same missing ops — otherwise the doc tells a user one thing
+    /// and the loader does another, which is #3077's complaint restated.
+    #[test]
+    fn the_contract_verdict_agrees_with_the_runtime_gate_for_every_architecture() {
+        let ops = op_rows();
+        let supported = gpu_supported_ops();
+        for (arch, _) in ARCHES {
+            let from_contract: Vec<String> = missing_ops(arch, &ops)
+                .into_iter()
+                .map(|(op, _)| op)
+                .collect();
+            let c = ArchConstraints::from_architecture(arch);
+            let mut from_gate: Vec<String> =
+                match check_capability(&required_ops_for_model(&c, arch), &supported) {
+                    Ok(()) => Vec::new(),
+                    Err(missing) => missing.iter().map(ToString::to_string).collect(),
+                };
+            from_gate.sort();
+            assert_eq!(
+                from_contract, from_gate,
+                "`{arch}`: contract vs runtime gate"
+            );
+        }
+    }
+
+    /// Every op the doc names as missing carries the contract's reason — a
+    /// "CPU fallback" with no why is what #3077 asked us not to ship.
+    #[test]
+    fn every_missing_op_in_the_doc_carries_a_reason() {
+        let ops = op_rows();
+        let mut named = 0;
+        for (arch, _) in ARCHES {
+            for (op, reason) in missing_ops(arch, &ops) {
+                assert!(!reason.is_empty(), "`{arch}` misses `{op}` with no reason");
+                named += 1;
+            }
+        }
+        assert!(
+            named > 0,
+            "no architecture misses any op — the table is vacuous"
         );
     }
 
