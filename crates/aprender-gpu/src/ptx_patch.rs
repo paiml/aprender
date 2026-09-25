@@ -129,7 +129,11 @@ fn emit_patched_ptx(
     for (i, line) in lines.iter().enumerate() {
         let t = line.trim();
         if let Some(f) = scopes[i] {
-            if !is_meta_line(t) && need_decl.remove(&f) {
+            // Never on the line that opens the body: for a multi-line header
+            // that line is `) {`, and a `.reg` before it lands in the
+            // parameter list — ptxas rejects the module on sm_121.
+            let opener = i == 0 || scopes[i - 1] != Some(f);
+            if !opener && !is_meta_line(t) && need_decl.remove(&f) {
                 out.push_str("    .reg .pred %p_jw;\n");
                 out.push_str("    setp.ne.u32 %p_jw, 1, 0;\n");
             }
@@ -375,5 +379,21 @@ mod tests {
             "{patched}"
         );
         assert!(patched.find(".reg .pred %p_jw;") > patched.find(".visible .entry k()"));
+    }
+
+    /// A multi-line parameter list closed by `) {`: the declaration belongs
+    /// after that line, never inside the parameter list. This is the shape
+    /// trueno-gpu emits for `batched_rmsnorm_vectorized`, which took the
+    /// qwen35 CUDA path down on GB10 (ptxas: syntax error near `.reg`).
+    #[test]
+    fn test_decl_never_lands_in_a_multiline_param_list() {
+        let ptx = ".version 8.0\n.target sm_90\n.address_size 64\n\
+            .visible .entry k(\n    .param .u64 a,\n    .param .u64 b\n) {\n\
+            .reg .u32 %r<2>;\nloop:\n    add.u32 %r0, %r0, 1;\n    bra loop;\n    ret;\n}";
+        let patched = patch_backward_branches_sm121(ptx).expect("patched");
+        let decl = patched.find(".reg .pred %p_jw;").expect("decl");
+        let body = patched.find(") {").expect("opener");
+        assert!(decl > body, "decl inside the parameter list:\n{patched}");
+        assert!(patched.contains(".param .u64 b\n) {\n"), "{patched}");
     }
 }
