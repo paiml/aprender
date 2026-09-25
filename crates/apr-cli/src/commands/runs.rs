@@ -389,6 +389,24 @@ pub(crate) fn run_gc(dir: &Option<PathBuf>, global: bool, yes: bool, json: bool)
     Ok(())
 }
 
+/// EXT-001 §3.2 / FALSIFY-EXT-011 (aprender#4386): a training verb refuses to
+/// start if it could read a publish credential or write the sealed store.
+/// `output` is the verb's explicit output. Relative defaults land under the
+/// working directory, so that is checked too.
+pub(crate) fn enforce_training_perimeter(output: Option<&Path>) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let outputs: Vec<&Path> = output.into_iter().chain([cwd.as_path()]).collect();
+    entrenar::perimeter::Perimeter::fixed()
+        .enforce(outputs)
+        .map_err(|bad| {
+            let lines: Vec<String> = bad.iter().map(ToString::to_string).collect();
+            CliError::ValidationFailed(format!(
+                "training perimeter (EXT-001 §3.2) refused to start:\n  {}",
+                lines.join("\n  ")
+            ))
+        })
+}
+
 /// `apr runs fsck` (EXT-04, aprender#4386): I-6 over the pacha registry.
 /// A dangling pointer is an error (exit 5), after the report is printed.
 pub(crate) fn run_fsck(registry: Option<&Path>, json: bool) -> Result<()> {
@@ -1203,6 +1221,20 @@ mod runs_tests {
     use super::*;
 
     // ─── fsck (EXT-04, aprender#4386) ────────────────────────────────────
+
+    /// FALSIFY-EXT-011 at the CLI: a training output inside the sealed store
+    /// is refused with exit 5 before any training starts.
+    #[test]
+    fn falsify_ext_011_training_output_in_sealed_store_is_refused() {
+        let sealed = entrenar::perimeter::sealed_dir().expect("home");
+        let err = enforce_training_perimeter(Some(&sealed.join("promotion-contract.yaml")))
+            .expect_err("sealed output must be refused");
+        assert!(
+            matches!(err, CliError::ValidationFailed(ref m) if m.contains("sealed")),
+            "{err}"
+        );
+        assert_eq!(err.exit_code_value(), 5);
+    }
 
     /// FALSIFY-EXT-003 at the CLI: clean registry exits 0, a planted
     /// dangling pointer (its metrics DB deleted) exits non-zero.

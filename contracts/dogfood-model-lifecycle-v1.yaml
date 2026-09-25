@@ -205,7 +205,8 @@ falsification_tests:
   obligation: EXT-INV-009
   rule: Training write perimeter
   prediction: a training process cannot read the publish token nor write the sealed manifest or promotion contract
-  if_fails: 'the candidate can influence its own promotion evidence (owed EXT-04 #4386; planned: cargo test -p aprender-train --test ext_perimeter falsify_ext_011_train_cannot_reach_token_or_manifest)'
+  test: cargo test -p aprender-train --lib falsify_ext_011_train_cannot_reach_token_or_manifest
+  if_fails: 'the perimeter misses a readable token file, a publish token in the env, or a sealed-store output (direct, via .., or via symlink), so the candidate can influence its own promotion evidence. OS-level separation (publisher uid) is infra-owned'
 - id: FALSIFY-EXT-012
   obligation: EXT-INV-011
   rule: No contamination at dataset registration
