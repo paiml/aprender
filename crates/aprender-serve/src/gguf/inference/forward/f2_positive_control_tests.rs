@@ -15,7 +15,9 @@
 //! ```
 
 use super::Qwen35Model;
-use crate::gguf::{MappedGGUFModel, GGUF_TYPE_Q4_K, GGUF_TYPE_Q5_K, GGUF_TYPE_Q6_K, GGUF_TYPE_Q8_0};
+use crate::gguf::{
+    MappedGGUFModel, GGUF_TYPE_Q4_K, GGUF_TYPE_Q5_K, GGUF_TYPE_Q6_K, GGUF_TYPE_Q8_0,
+};
 
 /// F2's probe length: the last 64 prompt tokens.
 const PROBE: usize = 64;
@@ -47,7 +49,10 @@ fn per_position_logits(mapped: &MappedGGUFModel, data: &[u8], probe: &[u32]) -> 
     probe
         .iter()
         .enumerate()
-        .map(|(pos, &t)| m.forward_single_qwen35(t, &mut state, pos).expect("forward"))
+        .map(|(pos, &t)| {
+            m.forward_single_qwen35(t, &mut state, pos)
+                .expect("forward")
+        })
         .collect()
 }
 
@@ -97,22 +102,35 @@ fn f2_positive_control_planted_attn_out_scale_is_red() {
         .iter()
         .filter(|t| t.name.starts_with("blk.") && t.name.ends_with(".attn_output.weight"))
         .collect();
-    assert!(!attn.is_empty(), "no attn_output.weight: not a Qwen3.5 GGUF");
+    assert!(
+        !attn.is_empty(),
+        "no attn_output.weight: not a Qwen3.5 GGUF"
+    );
     let tensor = match std::env::var("APR_PC_LAYER") {
         Ok(l) => {
             let name = format!("blk.{l}.attn_output.weight");
-            *attn.iter().find(|t| t.name == name).expect("APR_PC_LAYER has no attn_output")
+            *attn
+                .iter()
+                .find(|t| t.name == name)
+                .expect("APR_PC_LAYER has no attn_output")
         },
         Err(_) => attn[attn.len() / 2],
     };
-    let (per_block, block, d_off) = d_layout(tensor.qtype).expect("unsupported qtype for the plant");
+    let (per_block, block, d_off) =
+        d_layout(tensor.qtype).expect("unsupported qtype for the plant");
     let n: u64 = tensor.dims.iter().product();
     let len = usize::try_from(n).expect("elements") / per_block * block;
     let start = mapped.model.tensor_data_start + usize::try_from(tensor.offset).expect("offset");
-    println!("[4313-pc] plant: {} qtype {} bytes {len}", tensor.name, tensor.qtype);
+    println!(
+        "[4313-pc] plant: {} qtype {} bytes {len}",
+        tensor.name, tensor.qtype
+    );
 
     let texts: Vec<String> = match std::env::var("APR_PC_TEXT") {
-        Ok(list) => list.split(':').map(|p| std::fs::read_to_string(p).expect("read text")).collect(),
+        Ok(list) => list
+            .split(':')
+            .map(|p| std::fs::read_to_string(p).expect("read text"))
+            .collect(),
         Err(_) => DEFAULT_PROMPTS.iter().map(|s| (*s).to_owned()).collect(),
     };
     let mut buf = mapped.data().to_vec();
@@ -140,12 +158,18 @@ fn f2_positive_control_planted_attn_out_scale_is_red() {
             );
             // Negative control: an unplanted model is bit-identical, so it must pass.
             if (s - 1.0).abs() < f32::EPSILON {
-                assert!(r.accepted && r.max_kl_real < 1e-6, "clean vs clean rejected: {r:?}");
+                assert!(
+                    r.accepted && r.max_kl_real < 1e-6,
+                    "clean vs clean rejected: {r:?}"
+                );
             } else if (s - 1.0).abs() >= 0.25 && r.accepted {
                 // A 25%+ mis-scaled (or deleted) attention output is a real defect.
                 missed.push((i, s, r.max_kl_real, cos));
             }
         }
     }
-    assert!(missed.is_empty(), "the new F2 metric ACCEPTED a planted defect: {missed:?}");
+    assert!(
+        missed.is_empty(),
+        "the new F2 metric ACCEPTED a planted defect: {missed:?}"
+    );
 }
