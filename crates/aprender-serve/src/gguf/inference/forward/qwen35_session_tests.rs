@@ -378,6 +378,50 @@ mod gpu {
         assert_eq!(t2.reused, 0);
         assert_eq!(t2.tokens, one_shot_gpu(&mapped, &p2, &config));
     }
+
+    /// #4443 through `ensure_capacity` itself: headroom the GPU will not
+    /// allocate retries at exactly the turn and the session STAYS on the GPU.
+    /// The control shows the ceiling is real: a turn that does not fit at all
+    /// still moves to the CPU.
+    #[test]
+    fn gpu_headroom_that_will_not_allocate_keeps_the_turn_on_the_gpu() {
+        use crate::session::ArchForward as _;
+        let mapped = mapped_or_skip!();
+        if !crate::cuda::CudaExecutor::is_available() {
+            eprintln!("SKIP: no CUDA device");
+            return;
+        }
+        let mut forward = Qwen35Forward::load(&mapped, false).expect("load");
+        assert!(
+            forward.on_gpu(),
+            "a CUDA build on a CUDA host serves from the GPU"
+        );
+        forward.min_capacity = 16;
+        forward.gpu_alloc_ceiling = Some(24);
+        assert!(
+            forward.reserve(20).expect("reserve"),
+            "the first turn allocates"
+        );
+        assert!(forward.on_gpu(), "the retry kept the turn on the GPU");
+        assert_eq!(forward.capacity, 20, "sized to exactly the turn, not 32");
+        assert!(
+            forward
+                .notices()
+                .last()
+                .is_some_and(|n| n.contains("#4443")),
+            "the retry says so: {:?}",
+            forward.notices()
+        );
+
+        let mut control = Qwen35Forward::load(&mapped, false).expect("load");
+        control.min_capacity = 16;
+        control.gpu_alloc_ceiling = Some(10);
+        control.reserve(20).expect("reserve");
+        assert!(
+            !control.on_gpu(),
+            "a turn over the ceiling cannot stay on the GPU"
+        );
+    }
 }
 
 // #4255: the two #4247 branches no GPU test reaches — the prefill that does not
@@ -481,6 +525,28 @@ fn a_state_that_outgrows_min_capacity_leaves_headroom_for_the_next_turn() {
     // The e2e shape: turn 2 (4279 positions) fits what turn 1 allocated.
     let first = grown_capacity(4197, 0, MIN_CAPACITY, 8192);
     assert!(4279 <= first, "turn 2 would reallocate from {first}");
+}
+
+/// #4274/#4443 through `ensure_capacity` itself, not just `grown_capacity`:
+/// a turn past `min_capacity` allocates with headroom, the next turn that fits
+/// the headroom does not reallocate, and one that outgrows it doubles.
+#[test]
+fn cpu_a_turn_past_min_capacity_is_allocated_with_headroom() {
+    use crate::session::ArchForward as _;
+    let mapped = mapped_or_skip!();
+    let mut forward = Qwen35Forward::load(&mapped, true).expect("load");
+    forward.min_capacity = 16;
+    assert!(
+        forward.reserve(20).expect("reserve"),
+        "the first turn allocates"
+    );
+    assert_eq!(forward.capacity, 32, "16 doubled until 20 fits");
+    assert!(
+        !forward.reserve(30).expect("reserve"),
+        "30 fits the headroom"
+    );
+    assert!(forward.reserve(33).expect("reserve"), "33 outgrows it");
+    assert_eq!(forward.capacity, 64);
 }
 
 /// #4443: headroom that does not fit must never cost the GPU. A failed
