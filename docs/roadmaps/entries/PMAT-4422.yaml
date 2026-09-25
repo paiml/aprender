@@ -1,0 +1,20 @@
+- id: PMAT-4422
+  github_issue: 4422
+  item_type: task
+  title: 'FLOW-08: cop CI-slot grant refuses when FR-4 or FR-10 is red, or a non-rc PR carries a fold; fold detector'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-25T13:30:49Z
+  updated: 2026-09-25T13:30:49Z
+  spec: paiml/infra docs/specifications/FLOW-001-fleet-flow-rules.md
+  acceptance_criteria:
+  - 'F-4, F-6, F-10 falsifiers go RED on a planted violation and GREEN on the compliant fixture'
+  - 'a refusal never blocks a defect report, a P0 fix, or a fix for a red main (FLOW-001 §0.4, S-2)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - epic:paiml/infra#1114
+  notes: 'FLOW-001 row FLOW-08 (EV 9). FR-6 ships SHADOW only until the operator promotes it. Depends on FLOW-02 (paiml/infra#1117). Implementer assigned by the cop.'
