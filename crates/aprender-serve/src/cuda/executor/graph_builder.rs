@@ -23,18 +23,11 @@ use crate::cuda::types::{ValidatedLayerWeights, WeightQuantType};
 /// Returns the graph and the index of the final output node.
 #[allow(clippy::too_many_arguments)]
 /// PERF-050 (aprender#2753): GGML type code for a weight, so the graph can carry what the
-/// dispatcher used to assume.
+/// dispatcher used to assume. #3850: delegates to the exhaustive
+/// [`WeightQuantType::ggml_type`]; the hand list here ended `_ => 12` and sent every
+/// variant it did not name across the graph as Q4_K.
 fn ggml_code(q: WeightQuantType) -> u32 {
-    match q {
-        WeightQuantType::Q4_0 => 2,
-        WeightQuantType::Q4_1 => 3,
-        WeightQuantType::Q5_0 => 6,
-        WeightQuantType::Q8_0 => 8,
-        WeightQuantType::Q4K => 12,
-        WeightQuantType::Q5K => 13,
-        WeightQuantType::Q6K => 14,
-        _ => 12,
-    }
+    q.ggml_type()
 }
 
 pub fn build_layer_graph(
@@ -403,5 +396,33 @@ mod tests {
         // 13 ops per layer: 2 rmsnorm + 7 mul_mat + 1 attention + 2 add + 1 swiglu
         assert_eq!(n, 13);
         assert_eq!(counter.0, 13);
+    }
+}
+
+#[cfg(test)]
+mod tests_3850 {
+    use super::{ggml_code, WeightQuantType};
+
+    /// #3850: the code a graph node carries must name the weight's own type.
+    /// The hand list this replaced ended `_ => 12`, so F16 (1), BF16 (30), Q2_K
+    /// (10), Q5_1 (7) and the IQ family crossed the graph as Q4_K. Walks every
+    /// GGML id the executor can decode, so a variant added later is covered too.
+    #[test]
+    fn every_decodable_type_crosses_the_graph_as_itself() {
+        let mut seen = 0;
+        for code in 0..=64 {
+            if let Some(q) = WeightQuantType::from_ggml_type(code) {
+                assert_eq!(
+                    ggml_code(q),
+                    code,
+                    "{q:?} crossed the graph as another type"
+                );
+                seen += 1;
+            }
+        }
+        assert!(
+            seen >= 18,
+            "only {seen} decodable types — the walk is vacuous"
+        );
     }
 }
