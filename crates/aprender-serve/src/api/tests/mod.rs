@@ -70,3 +70,5 @@ mod stream_mode_pp27; // PP-LLAMA-001 PP-27 / §3: an SSE stream declares live v
 mod usage_finish_3718; // aprender#3718: a context-clamped cut is "length", an unfittable prompt is 400
 #[cfg(feature = "gpu")] // create_test_quantized_model is gpu-gated
 mod completions_eog_stop_4339; // aprender#4339: raw /v1/completions stops on EOS and every EOG marker
+#[cfg(feature = "gpu")]
+mod completions_eog_stop_4345; // aprender#4345: the wgpu GpuModel /v1/completions path stops on EOS + EOG too
