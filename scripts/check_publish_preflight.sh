@@ -37,6 +37,12 @@
 #       scripts/check_model_ladder.sh -- the same judge autopilot's T-1 `models` step runs on its
 #       fresh measurement. Red, a missing receipt, a missing judge or a judge DECLINE (exit 2)
 #       refuses: a decline is not a pass.
+#   R8  the release's evidence graded by pv's `release-readiness-v1` SHACL shape (#3715 done_when 4),
+#       through scripts/release/release_readiness.sh -- the same wrapper autopilot's T-1 `models` step
+#       calls on its fresh receipts; here it reads the COMMITTED receipts at HEAD, with the dogfood
+#       receipt R5 judged. Any non-zero from the wrapper refuses. The wrapper's committed DEFAULT_MODE
+#       is `report` until #3712's cells[] producer lands: a Fail verdict then prints as a WARN row and
+#       exits 0; a decline, a caller error or a missing pv is a non-zero in either mode.
 #
 # EXIT  0 every rule holds · 1 a rule refused · 2 the box cannot answer
 #       (no git/cargo/python3, not a repository). 2 is not a pass.
@@ -47,6 +53,7 @@
 #   PUBLISH_PREFLIGHT_MAIN_REF     the main ref for R4 (default: origin/main)
 #   PUBLISH_PREFLIGHT_RECEIPT_DIR  the dogfood receipt dir (default: $ROOT/.dogfood)
 #   PUBLISH_PREFLIGHT_LADDER_JUDGE the R7 judge (default: $ROOT/scripts/check_model_ladder.sh)
+#   PUBLISH_PREFLIGHT_READINESS    the R8 wrapper (default: $ROOT/scripts/release/release_readiness.sh)
 #
 # USAGE
 #   bash scripts/check_publish_preflight.sh             # the gate
@@ -231,6 +238,23 @@ rule_r7_scope() {
     return 1
 }
 
+# R8, release-readiness-v1 (#3715): the committed receipts at HEAD, graded by the shape.
+# rule_r8 root version head -> prints its rows; 0 accepted, 1 refused
+rule_r8() {
+    local root="$1" version="$2" head="$3" wrapper receipt out rc
+    wrapper="${PUBLISH_PREFLIGHT_READINESS:-$root/scripts/release/release_readiness.sh}"
+    if [ ! -f "$wrapper" ]; then
+        echo "FAIL  R8 no release-readiness wrapper at $wrapper: the release evidence cannot be graded"
+        return 1
+    fi
+    receipt="$(newest_receipt "${PUBLISH_PREFLIGHT_RECEIPT_DIR:-$root/.dogfood}")"
+    out="$(bash "$wrapper" --root "$root" --version "$version" --commit "$head" ${receipt:+--dogfood-receipt "$receipt"} 2>&1)"; rc=$?
+    printf '%s\n' "$out"
+    [ "$rc" -eq 0 ] && return 0
+    echo "FAIL  R8 the release-readiness wrapper exited $rc (1 Fail under enforce, 2 could not judge, 3 caller error): none is a pass"
+    return 1
+}
+
 gate() {
     local root="${PUBLISH_PREFLIGHT_ROOT:-}" main_ref="${PUBLISH_PREFLIGHT_MAIN_REF:-origin/main}"
     local fails=0 status version tags head
@@ -349,6 +373,9 @@ for n, t, req in sorted(vdev):
     # R7 the model matrix, re-read at T-4 through the T-1 judge (#3717)
     rule_r7 "$root" "$version" || fails=1
 
+    # R8 release-readiness-v1 over the committed evidence (#3715)
+    rule_r8 "$root" "$version" "$head" || fails=1
+
     if [ "$fails" -ne 0 ]; then
         echo "REFUSE $PROG: publishing is not allowed from this tree (see the FAIL rows)."
         return 1
@@ -445,6 +472,20 @@ fi
 [ "${FX_LADDER_RC:-0}" = 0 ] || echo "FAIL  fx-rung red on lambda"
 exit "${FX_LADDER_RC:-0}"
 FXJUDGE
+        # R8's wrapper: it must be asked about THIS root, version 1.2.3, HEAD and the newest dogfood
+        # receipt, and it answers FX_READINESS_RC (default 0; FX_READINESS_WARN=1 prints the
+        # report-mode WARN row a Fail verdict yields under DEFAULT_MODE=report).
+        mkdir -p "$1/scripts/release"
+        cat > "$1/scripts/release/release_readiness.sh" <<'FXREADY'
+#!/usr/bin/env bash
+me="$(cd "$(dirname "$0")/../.." && pwd -P)"
+[ "${1:-}" = --root ] && [ "${2:-}" -ef "$me" ] || { echo "FAIL  R8 wrapper asked about root ${2:-}, not $me"; exit 3; }
+want="--version 1.2.3 --commit $(git -C "$me" rev-parse HEAD) --dogfood-receipt"
+case "${*:3}" in "$want "*.dogfood/receipt-*.json) : ;; *) echo "FAIL  R8 wrapper asked: $*"; exit 3 ;; esac
+[ "${FX_READINESS_WARN:-0}" = 1 ] && echo "WARN  R8 REPORT-ONLY release-readiness-v1 for 1.2.3: Fail, 3 violation(s): cell=3"
+[ "${FX_READINESS_RC:-0}" = 0 ] && [ "${FX_READINESS_WARN:-0}" = 0 ] && echo "ok    R8 release-readiness-v1 for 1.2.3: Pass"
+exit "${FX_READINESS_RC:-0}"
+FXREADY
     }
     write_receipt() { # dir, verdict, commit, version [, phase, deferred-json-array, open-obligations-json-array]
         printf '{"crate":"preflight-fixture","version":"%s","timestamp":"20260903T000000Z","commit":"%s","gates":[],"phase":"%s","deferred":%s,"open_obligations":%s,"verdict":"%s"}\n' \
@@ -613,6 +654,25 @@ FXJUDGE
     git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'no judge' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row r7_judge_absent_refuses        1 "FAIL  R7 no model-matrix judge" "$d"
+
+    # R8 (#3715): the release-readiness wrapper over the committed evidence. all_rules_hold above is the
+    # green row (the stub exits 3 unless it is asked about this root, 1.2.3, HEAD and the dogfood receipt).
+    d="$tmp/r8"; build_repo "$d"
+    row r8_pass_is_named                  0 "ok    R8 release-readiness-v1 for 1.2.3: Pass" "$d"
+    FX_READINESS_WARN=1 row r8_report_mode_warn_passes 0 "WARN  R8 REPORT-ONLY" "$d"
+    FX_READINESS_RC=1 row r8_enforced_fail_refuses 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
+    FX_READINESS_RC=2 row r8_could_not_judge_refuses 1 "FAIL  R8 the release-readiness wrapper exited 2" "$d"
+    FX_READINESS_RC=3 row r8_caller_error_refuses 1 "FAIL  R8 the release-readiness wrapper exited 3" "$d"
+    d="$tmp/r8-absent"; build_repo "$d"; git -C "$d" rm -q scripts/release/release_readiness.sh
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'no wrapper' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row r8_wrapper_absent_refuses      1 "FAIL  R8 no release-readiness wrapper" "$d"
+    # the wrapper's own table: modes, exit mapping, the receipts-commit rule (runs wherever this selftest runs)
+    if ( TMPDIR="${TMPDIR:-/tmp}" bash "$SCRIPT_DIR/release/release_readiness.sh" --selftest >/dev/null 2>&1 ); then
+        printf '  ok    %-36s release_readiness.sh --selftest green\n' r8_wrapper_selftest; pass=$((pass + 1))
+    else
+        printf '  BROKE %-36s release_readiness.sh --selftest RED\n' r8_wrapper_selftest; fail=$((fail + 1))
+    fi
 
     # R7 under the recorded operator EMERGENCY SCOPE (--scope crux-smoke). The scope's own must-REDs
     # (another release, receipts from another binary, a host missing) live in the judge's reader,

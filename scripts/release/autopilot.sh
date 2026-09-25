@@ -22,7 +22,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || { echo "cannot resolve the r
 release_params "${1:-}" "$REPO_ROOT" || { echo "usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]" >&2; exit 2; }
 STATUS="$AP/STATUS"; LOG="$AP/autopilot.log"
 PR="${2:?usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]}"; FROM="${3:-wait}"; TO="${4:-dryrun}"
-STEPS=(wait deep dogfood models tag cleanroom assets preflight dryrun cascade install hosts close)
+STEPS=(wait deep dogfood models readiness tag cleanroom assets preflight dryrun cascade install hosts close)
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATUS" >> "$LOG"; }
 die() { say "STOP $*"; exit 1; }
 run_step() { # run_step <name>: true when <name> is at or after FROM and at or before TO
@@ -122,6 +122,20 @@ if run_step models; then
   grep -E '^MODELS ' "$AP/models-t1.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "T-1 model matrix NO-GO rc=$rc: nothing is tagged ($AP/models-t1.log)"
   say "MODELS GO at $MC on lambda and gx10"
+fi
+# 2c. readiness (#3715 done_when 4): the same receipts, graded by pv's release-readiness-v1 SHACL shape,
+#     with the dogfood receipt R5 just judged. The T-4 preflight (R8) asks the same wrapper about the
+#     committed receipts. Its committed mode is `report` until #3712's cells[] producer lands: a Fail
+#     verdict is a WARN row in STATUS, not a stop; a decline, caller error or missing pv stops here.
+#     Its own step, so a models-only rerun never re-grades.
+if run_step readiness; then
+  DR=$(find .dogfood -maxdepth 1 -name 'receipt-*.json' -type f 2>/dev/null | LC_ALL=C sort | tail -n 1)
+  [ -n "$DR" ] || die "T-1 readiness: no dogfood receipt in $WT/.dogfood to grade"
+  bash scripts/release/release_readiness.sh --root "$WT" --version "$V" --commit "$MC" --receipts "$AP/models-t1" \
+    --dogfood-receipt "$DR" --out "$AP/readiness-t1.json" > "$AP/readiness-t1.log" 2>&1; rc=$?
+  grep -E '^(ok|WARN|FAIL) +R8 ' "$AP/readiness-t1.log" >> "$STATUS"
+  [ $rc -eq 0 ] || die "T-1 release-readiness-v1 rc=$rc: nothing is tagged ($AP/readiness-t1.log)"
+  say "READINESS $(grep -oE '^(ok|WARN)' "$AP/readiness-t1.log" | tail -n 1) at $MC"
 fi
 # 3. tag + release (binary-release.yml fires on release: published, from the TAG's workflow file)
 # cut_tag <version> <tag> <commit> -- PMAT-3459. The milestone gate lives INSIDE the
