@@ -46,15 +46,19 @@ export LEAN_NUM_THREADS="${LEAN_NUM_THREADS:-8}"
 say() { printf '%s: %s\n' "$PROG" "$*"; }
 notverdict() { say "NOT A VERDICT -- $*"; exit 2; }
 
-# judge <con-leche rc> <log> -> prints the verdict, returns 0 ACCEPT / 1 RED / 2 not a verdict
+# judge <con-leche rc> <log> [floor] -> prints the verdict, returns 0 ACCEPT / 1 RED / 2 not a verdict.
+# ACCEPT needs MORE than <floor> declarations (default 0). The tree run passes the positive control's count --
+# the core library alone -- so an empty or truncated export that con-leche happily accepts is not a pass.
 judge() {
-    local rc=$1 log=$2 n ax line
+    local rc=$1 log=$2 floor=${3:-0} n ax line
     line=$(grep -m1 -E 'accepted [0-9]+ declarations|non-standard axiom|not implemented yet|rejected|INTERNAL PANIC|error' "$log" || true)
     case "$rc" in
         0)  n=$(grep -oE 'accepted [0-9]+ declarations' "$log" | grep -oE '[0-9]+' | tail -1)
-            if [ -n "$n" ]; then say "ACCEPT: con-leche accepted $n declarations (--verified)"; return 0; fi
-            say "NOT A VERDICT -- exit 0 but no 'accepted N declarations' line"; return 2 ;;
-        1)  if grep -q 'out of memory' "$log"; then say "NOT A VERDICT -- out of memory under MemoryMax=$MEM"; return 2; fi
+            [ -n "$n" ] || { say "NOT A VERDICT -- exit 0 but no 'accepted N declarations' line"; return 2; }
+            if [ "$n" -gt "$floor" ]; then say "ACCEPT: con-leche accepted $n declarations (--verified)"; return 0; fi
+            say "NOT A VERDICT -- accepted only $n declarations, not more than the floor $floor: the export is empty or truncated"; return 2 ;;
+        1)  if grep -q 'rejected' "$log"; then say "RED: a declaration was rejected: $line"; return 1; fi
+            if grep -q 'out of memory' "$log"; then say "NOT A VERDICT -- out of memory under MemoryMax=$MEM"; return 2; fi
             if grep -q 'INTERNAL PANIC' "$log"; then say "NOT A VERDICT -- con-leche panicked: $line"; return 2; fi
             say "RED: a declaration was rejected: $line"; return 1 ;;
         2)  ax=$(grep -oE 'non-standard axiom \([^)]*\)' "$log" | head -1)
@@ -68,20 +72,24 @@ self_test() {
     local td n=0 red=0 got
     td=$(mktemp -d "${TMPDIR:-/tmp}/conleche.XXXXXX") || return 2
     [ -n "$td" ] && [ -d "$td" ] || return 2
-    row() { # row <want> <con-leche rc> <log text>
+    row() { # row <want> <con-leche rc> <log text> [floor]
         n=$((n + 1)); printf '%s\n' "$3" > "$td/log"; got=0
-        judge "$2" "$td/log" > "$td/out" || got=$?
+        judge "$2" "$td/log" "${4:-0}" > "$td/out" || got=$?
         if [ "$got" = "$1" ]; then printf 'ok    row %-2s %s  rc=%s  %s\n' "$n" "$1" "$2" "$(cat "$td/out")"
         else printf 'FAIL  row %-2s got %s wanted %s  rc=%s  %s\n' "$n" "$got" "$1" "$2" "$3"; red=1; fi
     }
     row 0 0 'con-leche: accepted 402163 declarations (--verified)'
     row 2 0 'con-leche: 49 inductive blocks modelled in-process'
+    row 2 0 'con-leche: accepted 0 declarations (--verified)'
+    row 2 0 'con-leche: accepted 52954 declarations (--verified)' 52954
+    row 0 0 'con-leche: accepted 402163 declarations (--verified)' 52954
     row 1 2 'con-leche: not implemented yet: non-standard axiom (ProvableContracts.DPO.dpo_gradient_formula) [at axiom ProvableContracts.DPO.dpo_gradient_formula, fold position 235754] (--verified) t=92.6s'
     row 1 2 'con-leche: not implemented yet: non-standard axiom (sorryAx) [at axiom sorryAx]'
     row 2 2 'con-leche: not implemented yet: nested inductive with indices'
     row 1 1 'con-leche: declaration Foo.bar rejected: type mismatch'
     row 2 1 'INTERNAL PANIC: out of memory'
     row 2 1 'INTERNAL PANIC: index out of bounds'
+    row 1 1 'con-leche: declaration Foo.bar rejected: INTERNAL PANIC while printing the term'
     row 2 3 'usage: con-leche [--verified|--trusted] FILE.ndjson'
     row 2 137 ''
     printf '%s/%s rows\n' "$((n - red))" "$n"
@@ -89,9 +97,12 @@ self_test() {
     [ "$red" = 0 ]
 }
 
-# capped <cmd...>: under the agent.slice caps when a user manager answers, else plain (LEAN_NUM_THREADS still caps)
+# capped <cmd...>: under the agent.slice caps when the user manager answered the probe in the main flow (CAPS=1),
+# else with LEAN_NUM_THREADS as the only cap. The probe prints its outcome ONCE to the run's own output: every
+# capped call below is redirected into a step log, and a warning written there reads like a capped run.
+CAPS=0
 capped() {
-    if systemd-run --user --scope --quiet --slice=agent.slice true >/dev/null 2>&1; then
+    if [ "$CAPS" = 1 ]; then
         systemd-run --user --scope --quiet --slice=agent.slice -p MemoryMax="$MEM" -p CPUQuota="$CPU" "$@"
     else
         "$@"
@@ -139,7 +150,8 @@ controls() {
     rc=0; check "$d/Pos.ndjson" "$d/Pos.log" || rc=$?
     judge "$rc" "$d/Pos.log" > /dev/null; rc=$?
     [ "$rc" = 0 ] || notverdict "positive control: a trivial theorem was not accepted (judge $rc): $(tail -1 "$d/Pos.log")"
-    say "controls ok: axiom module RED, trivial theorem accepted"
+    POS_DECLS=$(grep -oE 'accepted [0-9]+ declarations' "$d/Pos.log" | grep -oE '[0-9]+' | tail -1)
+    say "controls ok: axiom module RED, trivial theorem accepted ($POS_DECLS declarations: the floor for the tree)"
 }
 
 case "${1:-}" in
@@ -149,6 +161,11 @@ case "${1:-}" in
     *) echo "usage: conleche.sh [--self-test | --judge <rc> <log>]   (no argument: build, export, check)" >&2; exit 2 ;;
 esac
 
+if systemd-run --user --scope --quiet --slice=agent.slice true >/dev/null 2>&1; then
+    CAPS=1; say "capped: agent.slice MemoryMax=$MEM CPUQuota=$CPU, LEAN_NUM_THREADS=$LEAN_NUM_THREADS"
+else
+    say "UNCAPPED: systemd --user is unreachable, so there is no MemoryMax/CPUQuota; LEAN_NUM_THREADS=$LEAN_NUM_THREADS is the only cap"
+fi
 TC=$(tr -d '[:space:]' < "$HERE/lean-toolchain")
 EXPORT_SHA=$(printf '%s\n' "$EXPORT_PINS" | awk -v tc="$TC" '$1 == tc { print $2 }')
 [ -n "$EXPORT_SHA" ] || notverdict "no lean4export commit pinned for $TC: add it to EXPORT_PINS"
@@ -173,4 +190,4 @@ erc=0; (cd "$HERE" && capped lake env "$EXPORTER" ProvableContracts > "$CACHE/Pr
 say "checking $(git -C "$HERE" rev-parse --short=12 HEAD 2>/dev/null || echo '<no git>') on $TC with lean4export@${EXPORT_SHA:0:12} con-leche@${CONLECHE_SHA:0:12}"
 crc=0; check "$CACHE/ProvableContracts.ndjson" "$CACHE/check.log" || crc=$?
 rm -f -- "$CACHE/ProvableContracts.ndjson"
-judge "$crc" "$CACHE/check.log"
+judge "$crc" "$CACHE/check.log" "$POS_DECLS"
