@@ -1,0 +1,17 @@
+- id: PMAT-4354
+  github_issue: 4354
+  item_type: task
+  title: 'PRM-L: land PRM-001 v3 (PROMETHEUS) + rex/001 to main'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-25T18:38:33Z
+  updated: 2026-09-25T18:38:33Z
+  spec: null
+  acceptance_criteria:
+  - Refs paiml/aprender#4354. Spec PRM-001 v3 byte-exact, rex-prereg-v2 lock, v1 lock frozen, superseded banners, v3 figure.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
