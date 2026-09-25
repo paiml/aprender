@@ -451,6 +451,8 @@ self_test() {
     local legacy_two="$ST_ROOT/legacy-two" ev2
     cp -a "$legacy" "$legacy_two"
     ev2="$legacy_two/evidence/pr-review/999/zz-$not_ancestor"
+    # bashrs SEC010: $ev2 is under the self-test's own mktemp -d root; the rest is a sha.
+    # bashrs disable-next-line=SEC010
     mkdir -p "$ev2"
     jq -c --arg h "$not_ancestor" '.predicate.head_sha = $h' "$rcpt/receipt.intoto.jsonl" \
         > "$ev2/receipt.intoto.jsonl" || die_env "could not write the second legacy receipt"
@@ -567,7 +569,8 @@ self_test() {
 # The receipt's signature is still verified (A3/A4); only the diff binding is waived.
 PR_REVIEW_LEGACY_BELOW=${PR_REVIEW_LEGACY_BELOW:-4427}
 PR_REVIEW_LEGACY_UNTIL=${PR_REVIEW_LEGACY_UNTIL:-1790438400}
-legacy_now() { echo "${PR_REVIEW_NOW:-$(date -u +%s)}"; }
+# bashrs DET002: the 24h expiry IS a clock read; PR_REVIEW_NOW pins it in the self-test.
+legacy_now() { echo "${PR_REVIEW_NOW:-$(date -u +%s)}"; }  # bashrs disable-line=DET002
 legacy_exempt() {
     [ "$1" -lt "$PR_REVIEW_LEGACY_BELOW" ] 2>/dev/null && [ "$(legacy_now)" -lt "$PR_REVIEW_LEGACY_UNTIL" ] 2>/dev/null
 }
