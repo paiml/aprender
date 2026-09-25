@@ -33,22 +33,22 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
     let (architecture, rope_theta, max_pos, rms_norm_eps) = extract_model_metadata(&magic, path)?;
 
     let mut violations: Vec<String> = Vec::new();
-    let mut checks_passed = 0usize;
+    let mut tally = MetadataTally::default();
 
     check_rope_theta(
         architecture.as_deref(),
         rope_theta,
         &magic,
         &mut violations,
-        &mut checks_passed,
+        &mut tally,
     );
-    check_max_position_embeddings(max_pos, &mut violations, &mut checks_passed);
-    check_rms_norm_eps(rms_norm_eps, &mut violations, &mut checks_passed);
+    check_max_position_embeddings(max_pos, &mut violations, &mut tally);
+    check_rms_norm_eps(rms_norm_eps, &mut violations, &mut tally);
     check_arch_theta_cross_validation(
         architecture.as_ref(),
         rope_theta,
         &mut violations,
-        &mut checks_passed,
+        &mut tally,
     );
 
     let duration = start.elapsed();
@@ -57,12 +57,13 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
         Ok(GateResult::passed(
             "metadata_plausibility",
             &format!(
-                "{checks_passed} metadata checks passed (arch={}, rope_theta={}, max_pos={})",
+                "{} (arch={}, rope_theta={}, max_pos={})",
+                tally.summary(),
                 architecture.as_deref().unwrap_or("unknown"),
                 rope_theta.map_or("none".to_string(), |t| format!("{t}")),
                 max_pos.map_or("none".to_string(), |p| format!("{p}")),
             ),
-            Some(checks_passed as f64),
+            Some(tally.passed as f64),
             Some(0.0),
             duration,
         ))
@@ -78,6 +79,30 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
             Some(0.0),
             duration,
         ))
+    }
+}
+
+/// #3873: what the plausibility checks MEASURED, kept apart from what they could not
+/// measure. An absent field is not a violation, but it is not a pass either: counting it
+/// as one let a GGUF with no metadata at all report "4 metadata checks passed".
+#[derive(Debug, Default)]
+struct MetadataTally {
+    passed: usize,
+    absent: Vec<&'static str>,
+}
+
+impl MetadataTally {
+    fn summary(&self) -> String {
+        if self.absent.is_empty() {
+            format!("{} metadata checks passed", self.passed)
+        } else {
+            format!(
+                "{} metadata checks passed, {} not checked (absent: {})",
+                self.passed,
+                self.absent.len(),
+                self.absent.join(", ")
+            )
+        }
     }
 }
 
@@ -100,11 +125,11 @@ fn check_rope_theta(
     rope_theta: Option<f32>,
     data: &[u8],
     violations: &mut Vec<String>,
-    checks_passed: &mut usize,
+    tally: &mut MetadataTally,
 ) {
     let Some(theta) = rope_theta else {
         if data.len() >= 4 && &data[0..4] == b"GGUF" {
-            *checks_passed += 1;
+            tally.absent.push("rope_theta");
         } else {
             violations.push("rope_theta missing from APR metadata".to_string());
         }
@@ -113,7 +138,7 @@ fn check_rope_theta(
     let theta_f64 = f64::from(theta);
     let (min, max, msg) = rope_theta_range(arch);
     if theta_f64 >= min && theta_f64 <= max {
-        *checks_passed += 1;
+        tally.passed += 1;
     } else {
         violations.push(format!(
             "rope_theta={theta} for {} — {msg}",
@@ -126,18 +151,18 @@ fn check_rope_theta(
 fn check_max_position_embeddings(
     max_pos: Option<usize>,
     violations: &mut Vec<String>,
-    checks_passed: &mut usize,
+    tally: &mut MetadataTally,
 ) {
     if let Some(val) = max_pos {
         if (128..=1_048_576).contains(&val) {
-            *checks_passed += 1;
+            tally.passed += 1;
         } else {
             violations.push(format!(
                 "max_position_embeddings={val} outside plausible range [128, 1M]"
             ));
         }
     } else {
-        *checks_passed += 1;
+        tally.absent.push("max_position_embeddings");
     }
 }
 
@@ -145,7 +170,7 @@ fn check_max_position_embeddings(
 fn check_rms_norm_eps(
     rms_norm_eps: Option<f32>,
     violations: &mut Vec<String>,
-    checks_passed: &mut usize,
+    tally: &mut MetadataTally,
 ) {
     if let Some(eps) = rms_norm_eps {
         let eps_f64 = f64::from(eps);
@@ -154,10 +179,10 @@ fn check_rms_norm_eps(
                 "rms_norm_eps={eps} outside plausible range (0, 0.01]"
             ));
         } else {
-            *checks_passed += 1;
+            tally.passed += 1;
         }
     } else {
-        *checks_passed += 1;
+        tally.absent.push("rms_norm_eps");
     }
 }
 
@@ -166,7 +191,7 @@ fn check_arch_theta_cross_validation(
     architecture: Option<&String>,
     rope_theta: Option<f32>,
     violations: &mut Vec<String>,
-    checks_passed: &mut usize,
+    tally: &mut MetadataTally,
 ) {
     if let (Some(arch), Some(theta)) = (architecture, rope_theta) {
         let theta_f64 = f64::from(theta);
@@ -178,10 +203,10 @@ fn check_arch_theta_cross_validation(
                  likely missing config.json (Bug 210)"
             ));
         } else {
-            *checks_passed += 1;
+            tally.passed += 1;
         }
     } else {
-        *checks_passed += 1;
+        tally.absent.push("arch/rope_theta cross-check");
     }
 }
 
@@ -1460,5 +1485,64 @@ mod loud_truncation_3904 {
             !code.contains("THINKING_ON_BUDGET)"),
             "no ON-leg site may pass the old THINKING_ON_BUDGET const — it is deleted (#3907)"
         );
+    }
+}
+
+#[cfg(test)]
+mod absent_is_not_a_pass_3873 {
+    use super::*;
+
+    fn run_all(
+        arch: Option<&str>,
+        theta: Option<f32>,
+        max_pos: Option<usize>,
+        eps: Option<f32>,
+    ) -> (Vec<String>, MetadataTally) {
+        let mut violations = Vec::new();
+        let mut tally = MetadataTally::default();
+        let arch_owned = arch.map(str::to_string);
+        check_rope_theta(arch, theta, b"GGUF", &mut violations, &mut tally);
+        check_max_position_embeddings(max_pos, &mut violations, &mut tally);
+        check_rms_norm_eps(eps, &mut violations, &mut tally);
+        check_arch_theta_cross_validation(arch_owned.as_ref(), theta, &mut violations, &mut tally);
+        (violations, tally)
+    }
+
+    #[test]
+    fn a_gguf_with_no_metadata_claims_no_passed_check() {
+        let (violations, tally) = run_all(None, None, None, None);
+        assert!(violations.is_empty(), "absence is not a violation for GGUF");
+        assert_eq!(tally.passed, 0, "nothing was measured, so nothing passed");
+        assert_eq!(tally.absent.len(), 4);
+        let summary = tally.summary();
+        assert!(
+            summary.starts_with("0 metadata checks passed, 4 not checked"),
+            "{summary}"
+        );
+    }
+
+    #[test]
+    fn a_fully_populated_file_reports_four_measured_passes() {
+        let (violations, tally) = run_all(Some("qwen2"), Some(1_000_000.0), Some(32_768), Some(1e-6));
+        assert!(violations.is_empty(), "{violations:?}");
+        assert_eq!(tally.passed, 4);
+        assert!(tally.absent.is_empty());
+        assert_eq!(tally.summary(), "4 metadata checks passed");
+    }
+
+    #[test]
+    fn a_partial_file_names_exactly_the_missing_fields() {
+        let (_, tally) = run_all(Some("llama"), Some(500_000.0), None, Some(1e-5));
+        assert_eq!(tally.passed, 3);
+        assert_eq!(tally.absent, vec!["max_position_embeddings"]);
+    }
+
+    #[test]
+    fn apr_missing_rope_theta_stays_a_violation() {
+        let mut violations = Vec::new();
+        let mut tally = MetadataTally::default();
+        check_rope_theta(Some("qwen2"), None, b"APRN", &mut violations, &mut tally);
+        assert_eq!(violations.len(), 1);
+        assert_eq!(tally.passed, 0);
     }
 }
