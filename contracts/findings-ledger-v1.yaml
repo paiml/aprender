@@ -20,9 +20,9 @@
 #          bare under guard_tree.sh; --require-close runs in ci.yml's R-2 step
 #          on pull_request.
 #   * L2 — case tables, MEASURED 2026-09-25:
-#          check_findings_ledger.sh --self-test has 18 cases, 9/9 mutants
-#          killed; check_pr_closes_issue.sh --self-test has 47 cases (26 of
-#          them rule-18 rows), 17/17 mutants killed.
+#          check_findings_ledger.sh --self-test has 19 cases, 10/10 mutants
+#          killed; check_pr_closes_issue.sh --self-test has 57 cases (36 of
+#          them rule-18 rows), 23/23 mutants killed.
 #   * L3/L4 — NOT APPLICABLE: a data file and a PR body, not a kernel.
 # ─────────────────────────────────────────────────────────────────────────────
 name: findings-ledger
@@ -43,8 +43,8 @@ metadata:
   last_modified: '2026-09-25'
   author: PAIML Engineering
   references:
-    - 'scripts/check_findings_ledger.sh — the ledger guard: bare (case table, then docs/findings/) · <dir> · --self-test (18 cases)'
-    - 'scripts/check_pr_closes_issue.sh --require-close — rule 18 at PR time (26 rc-* rows in --self-test)'
+    - 'scripts/check_findings_ledger.sh — the ledger guard: bare (case table, then docs/findings/) · <dir> · --self-test (19 cases)'
+    - 'scripts/check_pr_closes_issue.sh --require-close — rule 18 at PR time (36 rc-* rows in --self-test)'
     - '.github/workflows/ci.yml — the R-2 step (pull_request only) runs the guard with --require-close'
     - 'scripts/release/prepare_bump.sh — the bump PR body carries a `no-issue:` line and is preflighted with --require-close'
     - 'docs/findings/README.md — the row schema, for the sessions that write it'
@@ -70,6 +70,7 @@ equations:
     domain: 'every non-blank line of docs/findings/*.jsonl'
     codomain: 'bool'
     invariants:
+    - 'ROWS SPLIT ON NEWLINE ONLY (case raw-u2028): a raw U+2028 inside a JSON string is valid, so splitlines() is not the row splitter.'
     - 'NO KEY TWICE (case duplicate-key): json keeps only the last value, so a row with two severity keys is refused rather than read as whichever came last.'
     - 'NO EXTRA KEYS (case typo-key): a misspelt `severty` is refused, so it cannot sit beside a row that is otherwise complete.'
     - 'ONLY *.jsonl IS LEDGER (case readme-ignored): README.md beside the rows is not parsed.'
@@ -99,6 +100,7 @@ equations:
     domain: 'the pull_request body in ci.yml R-2, and the bump PR body in prepare_bump.sh'
     codomain: 'bool'
     invariants:
+    - 'ONLY PROSE COUNTS, AS GITHUB PARSES IT (rc-close-fenced, -tilde-fence, -backticked, -html-comment, rc-row-ref-fenced, rc-no-issue-fenced, rc-close-mid-word, rc-close-suffix): code fences, inline code and HTML comments are removed first, and a closing keyword counts only as a whole word before a whole number.'
     - 'REFS ALONE DOES NOT DISCHARGE (rc-flow-012-refs-only, FALSIFY-FLOW-012).'
     - 'A ROW REF MUST NAME A REAL, UNTICKED ROW (rc-row-ref-fabricated, -ticked, -prefix): the parent body must carry `- [ ] <id>:`, matched whole, and `Refs` must start a word (rc-row-ref-mid-word: `Xrefs #N row X` is prose); a row ref closes nothing on merge, so an unchecked id would let `Refs #1 row x` discharge rule 18. An unreadable parent body is close-target-unverified (rc-row-ref-no-body).'
     - 'A CLOSED ISSUE, A PR NUMBER OR A CROSS-REPO TARGET DOES NOT DISCHARGE (rc-closes-closed, rc-closes-pr, rc-cross-repo).'

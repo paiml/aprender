@@ -64,6 +64,18 @@ REF_RE='#[0-9]+'
 # A rule-20 checklist row reference (APR-EPIC-001 v1.4): `Refs #P row <id>`.
 ROW_REF_RE='(^|[^[:alnum:]_])refs?[[:space:]]*:?[[:space:]]*#[0-9]+[[:space:]]+row[[:space:]]+[A-Za-z0-9._-]+'
 
+# prose_body < body > prose: the body with what GitHub does NOT act on removed --
+# HTML comments, ``` / ~~~ fenced blocks and inline `code` spans. Rule 18 reads only
+# this, so an example `Closes #N` in a code block cannot discharge anything.
+prose_body() {
+    perl -0777 -pe 's/<!--.*?-->//gs; s/^[ \t]*(`{3,}|~{3,})[^\n]*\n.*?^[ \t]*\1[^\n]*(\n|\z)//gms; s/`[^`\n]*`//g'
+}
+# close_targets < prose > "[owner/repo]#N" per line, lower-case: a closing keyword as a
+# whole word and a whole issue number, as GitHub parses it ("aclose #1" and "#1a" do not close).
+close_targets() {
+    perl -ne 'while (/(?<![A-Za-z0-9_])(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*((?:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)?#[0-9]+)(?![A-Za-z0-9_])/gi) { print lc($1), "\n" }'
+}
+
 # THE #3400 LANDMINE, CLASS: a hyphen-prefixed closing keyword. Requires a
 # word character immediately before the hyphen so it does not also match a
 # bare "close: #N" (that is CLOSE_RE's job, and is fine -- it really does
@@ -241,10 +253,10 @@ check_body_text() {
 # with this flag goes RED -- which is why check_reconcile.sh (merged PRs) does not
 # pass it, and ci.yml's pull_request step does.
 check_require_close() {
-    body="$1"
+    body="$(printf '%s\n' "$1" | prose_body)"
     repo_lc="$(printf '%s' "${PR_CLOSES_REPO:-paiml/aprender}" | tr '[:upper:]' '[:lower:]')"
-    targets="$(printf '%s\n' "$body" | grep -oiE "$CLOSE_RE" | tr '[:upper:]' '[:lower:]' \
-        | sed -nE "s@^[a-z]+[[:space:]]*:?[[:space:]]*(${repo_lc}|)#([0-9]+)\$@\\2@p" || true)"
+    targets="$(printf '%s\n' "$body" | close_targets \
+        | sed -nE "s@^(${repo_lc}|)#([0-9]+)\$@\\2@p" || true)"
     open=0; unverified=0; seen=" "
     # Row refs first, as "P:id" pairs: the parent must be an open issue AND list the
     # row unticked. Each pair is judged on its own; a bare parent number is not added
@@ -437,6 +449,18 @@ STUB
     run_rc_case "rc-closed-plus-open" $'Closes #9004\nFixes #9002'                   0 "PASS: discharges 1"
     run_rc_case "rc-row-ref"          $'Refs #9002 row A8\nkeep-open: parent checklist' 0 "PASS: discharges 1"
     run_rc_case "rc-no-issue"         $'Docs only.\nno-issue: typo in a comment'    0 "PASS: no-issue"
+    # GitHub closes only on a whole keyword and a whole number, in prose: not mid-word,
+    # not `#Na`, not inside a code fence, an inline code span or an HTML comment.
+    run_rc_case "rc-close-mid-word"   "aclose #9002"                                 1 "FAIL no-close"
+    run_rc_case "rc-close-suffix"     "Closes #9002a"                                1 "FAIL no-close"
+    run_rc_case "rc-close-fenced"     $'```\nCloses #9002\n```'                     1 "FAIL no-close"
+    run_rc_case "rc-close-tilde-fence" $'~~~\nCloses #9002\n~~~'                    1 "FAIL no-close"
+    run_rc_case "rc-close-backticked" 'Write `Closes #9002` to close it.'            1 "FAIL no-close"
+    run_rc_case "rc-close-html-comment" '<!-- Closes #9002 -->'                      1 "FAIL no-close"
+    run_rc_case "rc-row-ref-fenced"   $'```\nRefs #9002 row A8\n```\nkeep-open: parent checklist'                1 "FAIL no-close"
+    run_rc_case "rc-no-issue-fenced"  $'```\nno-issue: example line\n```'          1 "FAIL no-close"
+    run_rc_case "rc-two-closes-one-line" "Closes #9004, closes #9002."               0 "PASS: discharges 1"
+    run_rc_case "rc-close-after-fence" $'```\nexample\n```\nCloses #9002'           0 "PASS: discharges 1"
     # a row ref starts at a word: "Xrefs #N row X" is prose, not `Refs #N row X`
     run_rc_case "rc-row-ref-mid-word" $'Refs #9002\nXrefs #9002 row A8\nkeep-open: parent checklist' 1 "FAIL no-close"
     # FALSIFY-FLOW-012: a body with only `Refs #N` (R-2 satisfied by keep-open) and no trailer.
