@@ -62,7 +62,7 @@ usage() {
 CLOSE_RE='(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*:?[[:space:]]*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+'
 REF_RE='#[0-9]+'
 # A rule-20 checklist row reference (APR-EPIC-001 v1.4): `Refs #P row <id>`.
-ROW_REF_RE='refs?[[:space:]]*:?[[:space:]]*#[0-9]+[[:space:]]+row[[:space:]]+[A-Za-z0-9._-]+'
+ROW_REF_RE='(^|[^[:alnum:]_])refs?[[:space:]]*:?[[:space:]]*#[0-9]+[[:space:]]+row[[:space:]]+[A-Za-z0-9._-]+'
 
 # THE #3400 LANDMINE, CLASS: a hyphen-prefixed closing keyword. Requires a
 # word character immediately before the hyphen so it does not also match a
@@ -437,6 +437,8 @@ STUB
     run_rc_case "rc-closed-plus-open" $'Closes #9004\nFixes #9002'                   0 "PASS: discharges 1"
     run_rc_case "rc-row-ref"          $'Refs #9002 row A8\nkeep-open: parent checklist' 0 "PASS: discharges 1"
     run_rc_case "rc-no-issue"         $'Docs only.\nno-issue: typo in a comment'    0 "PASS: no-issue"
+    # a row ref starts at a word: "Xrefs #N row X" is prose, not `Refs #N row X`
+    run_rc_case "rc-row-ref-mid-word" $'Refs #9002\nXrefs #9002 row A8\nkeep-open: parent checklist' 1 "FAIL no-close"
     # FALSIFY-FLOW-012: a body with only `Refs #N` (R-2 satisfied by keep-open) and no trailer.
     run_rc_case "rc-flow-012-refs-only" $'Refs #9002\nkeep-open: tracked by the epic' 1 "FAIL no-close"
     run_rc_case "rc-no-refs"          "Bumps dependency versions."                   1 "FAIL no-close"
