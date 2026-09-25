@@ -276,10 +276,6 @@ fn decode_apr_output_tokens(model_path: &std::path::Path, output_tokens: &[u32])
 /// Greedy argmax over logits.
 #[cfg(feature = "cuda")]
 pub(crate) fn argmax(logits: &[f32]) -> u32 {
-    logits
-        .iter()
-        .enumerate()
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-        .map_or(0, |(idx, _)| idx as u32)
+    crate::sampling::argmax(logits)
 }
 

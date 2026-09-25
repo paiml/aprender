@@ -152,6 +152,17 @@ mod tests {
         assert_eq!(argmax(&[1.0, 3.0, 2.0]), 1);
         assert_eq!(argmax(&[-3.0, -1.0, -2.0]), 1, "all negative");
         assert_eq!(argmax(&[2.0, 1.0, 2.0]), 2, "a tie keeps the LAST maximum");
+        // A NaN compares Equal, so `max_by` hands the lead to whatever follows
+        // it. Pinned so a migrated copy cannot silently change it (#4266); the
+        // result depends on position and is not an endorsement.
+        assert_eq!(argmax(&[1.0, f32::NAN, 0.5]), 2, "NaN passes the lead on");
+        assert_eq!(argmax(&[f32::NAN, 0.5, 1.0]), 2);
+        // The chunked copy in gpu/scheduler/batch.rs split at 4096; a tie that
+        // straddles a chunk edge still resolves to the LAST maximum.
+        let mut wide = vec![0.0_f32; 5000];
+        wide[4095] = 1.0;
+        wide[4096] = 1.0;
+        assert_eq!(argmax(&wide), 4096, "tie across the old chunk edge");
     }
 
     #[test]

@@ -124,12 +124,7 @@ fn wgpu_is_stop_token(token: u32) -> bool {
 /// PMAT-355: Greedy argmax over a logits vector (0 when empty).
 #[cfg(feature = "wgpu")]
 fn wgpu_argmax(logits: &[f32]) -> u32 {
-    logits
-        .iter()
-        .enumerate()
-        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-        .map(|(i, _)| i as u32)
-        .unwrap_or(0)
+    realizar::sampling::argmax(logits)
 }
 
 /// PMAT-355: Tokens per second, guarding the zero-elapsed case.
