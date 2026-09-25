@@ -157,14 +157,23 @@ const NETWORK_IDENTS: [&str; 7] = [
 
 /// 1-based line numbers of `src` that name a network entry point outside a
 /// `//` comment.
-fn network_lines(_src: &str) -> Vec<usize> {
-    Vec::new()
+fn network_lines(src: &str) -> Vec<usize> {
+    src.lines()
+        .enumerate()
+        .filter(|(_, l)| {
+            let code = l.split("//").next().unwrap_or("");
+            NETWORK_IDENTS.iter().any(|n| code.contains(n))
+        })
+        .map(|(i, _)| i + 1)
+        .collect()
 }
 
 /// True when a Cargo.toml line declares pacha with its network feature
 /// (`remote`, or `full`, which includes it).
-fn pacha_dep_enables_remote(_line: &str) -> bool {
-    false
+fn pacha_dep_enables_remote(line: &str) -> bool {
+    let l = line.trim_start();
+    (l.starts_with("pacha ") || l.starts_with("aprender-registry "))
+        && (l.contains("\"remote\"") || l.contains("\"full\""))
 }
 
 #[test]
