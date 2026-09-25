@@ -274,9 +274,8 @@ mod ptx_tests {
                 std::fs::write(&path, &ptx).expect("write baseline");
                 continue;
             }
-            let golden = std::fs::read_to_string(&path).unwrap_or_else(|e| {
-                panic!("{}: {e} (bless with APR_BLESS_PTX=1)", path.display())
-            });
+            let golden = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{}: {e} (bless with APR_BLESS_PTX=1)", path.display()));
             assert!(
                 golden == ptx,
                 "{} drifted from the emitter; re-bless and re-run the #3522 receipts",
