@@ -18191,6 +18191,26 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-4129
+  github_issue: 4129
+  item_type: task
+  kind: code
+  title: 'Published tarballs of aprender-train, aprender-contracts, aprender-contracts-cli, aprender-present-terminal cannot compile their tests: include! of files outside the .crate'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T01:44:20.650601111+00:00
+  updated: 2026-09-24T01:44:20.650601111+00:00
+  spec: null
+  acceptance_criteria:
+  - 'aprender-train, aprender-contracts, aprender-contracts-cli, aprender-present-terminal: the #4114 tarball gate no longer lists them RED (their published tarballs compile their tests)'
+  - 'in tree every converted test RUNS (no SKIP) and a missing file FAILS it (panic), never skips; out of tree it SKIPs by name'
+  - 'one pattern with #4048/#4130: run-time read, SKIP <test>: out of tree ... on stderr, *_or_skip helper name (counted by the #4114 shrink report)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Cop row (aprender-cf, 2026-09-24). Pattern agreed with aprender-dd (#4130). MEASURED: the #4114 gate at 556994b7f on this tree (cdff936d2), lambda, compile-only, 404 s: the four crates are absent from the RED rows. Remaining RED: aprender-serve (#4048, fixed on the merge-back lineage) and the #4130 class. Shrink report: 43 run-time skip sites across 6 crates. gx10, in tree, per converted test (6 cases), with --nocapture: baseline 1 ok, 0 SKIP lines; the file moved -> rc 101, 0 SKIP, and the in-tree panic in 5 of 6. The 6th (contracts-cli validator.rs) cannot be measured by moving the file: validator.rs is a MODULE of the sibling crate, so moving it is a compile error (E0583). Its baseline shows the test runs in tree. NOT IN SCOPE on main: apr-cli golden_output.rs / thinking_budgets_mirror.rs and the aprender-orchestrate chat_template.rs include chat_template_3990 fixtures and thinking-budgets-v1.yaml; those files exist only on the 0.69.1 lineage (chore/0.69.1-merge-back), so they are fixed there.'
 - id: GH-4140
   github_issue: 4140
   item_type: task

@@ -113,7 +113,13 @@ mod beat_benchmark_tests {
     /// BeatBenchmark and validates with zero Error-severity violations (PMAT-741).
     #[test]
     fn pilot_beat_contract_validates() {
-        let yaml = include_str!("../../../../contracts/beat-sklearn-iris-v1.yaml");
+        let Some(yaml_owned) = crate::schema::workspace_contract_or_skip(
+            "pilot_beat_contract_validates",
+            "beat-sklearn-iris-v1.yaml",
+        ) else {
+            return;
+        };
+        let yaml: &str = &yaml_owned;
         let contract = parse_contract_str(yaml).expect("pilot beat contract parses");
         assert_eq!(contract.kind(), ContractKind::BeatBenchmark);
         let errors: Vec<_> = validate_contract(&contract)
