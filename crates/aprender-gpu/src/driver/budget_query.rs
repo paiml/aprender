@@ -3,8 +3,8 @@
 //! Split deliberately: the *policy* (`crate::launch_budget::validate_launch`) is pure and
 //! ungated so its case table runs in the required check; only these *queries* need a
 //! device. Putting the policy here would have made it untestable in CI, because the whole
-//! `driver` module is `#[cfg(feature = "cuda")]` — the same trap that leaves
-//! `driver::ptx_patch`'s GH-480 tests dark despite its comment claiming otherwise.
+//! `driver` module is `#[cfg(feature = "cuda")]` — the same trap that kept
+//! `ptx_patch`'s GH-480 tests dark until #4096 moved it to the crate root.
 
 use super::sys::{
     CUdevice, CUfunction, CudaDriver, CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_BLOCK,
