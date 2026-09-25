@@ -32,6 +32,22 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
 # by every call site in this file, rather than the check repeated at each one.
 rmtree() { case "${1:-}" in ''|/) return 0 ;; *) [ -d "$1" ] && rm -rf -- "$1" ;; esac; return 0; }
 SUBJECT="$ROOT/scripts/release/autopilot.sh"
+PROMOTE="$ROOT/scripts/release/promote_rc.sh"
+
+# judge_promote FILE -- the SECOND path to a final tag. promote_rc.sh publishes vX.Y.Z from
+# an rc with no rebuild (#4286), outside cut_tag(). Its own case table proves it runs the
+# same milestone gate before its first write, in order, and that the call cannot be deleted
+# or moved after `api POST releases` without turning it red (#3459 port, quorum lane a).
+# 0 green · 1 red · 2 ENV (no such file)
+judge_promote() {
+    [ -f "$1" ] || { printf 'ENV   %s missing -- the promote path cannot be judged\n' "$1" >&2; return 2; }
+    local out
+    if out=$(bash "$1" --self-test 2>&1) && grep -q 'self-test: PASS$' <<<"$out" \
+        && grep -q 'ok   promote() calls milestone_gate before api POST releases' <<<"$out"; then
+        echo "PASS  promote_rc.sh runs the milestone gate before it publishes a final"; return 0
+    fi
+    printf 'FAIL  promote_rc.sh can publish a final without a clean milestone\n%s\n' "$out" >&2; return 1
+}
 
 # run_cut_tag <autopilot> <strict-rc> [<must-carry-rc> [<carry-rc>]] -- extract cut_tag(), run
 # it with stubs, print a transcript (SAY/DIE/GIT-TAG/GIT-PUSH lines, then the CALL order).
@@ -161,6 +177,20 @@ if [ "${1:-}" = "--self-test" ]; then
     [ "$rc" -eq 2 ] && ok "mutant 3: cut_tag() removed -> ENV rc=2, not a pass" \
         || nok "mutant 3: cut_tag() removed gave rc=$rc, wanted 2"
 
+    # M6: promote_rc.sh with its milestone_gate call deleted -> the promote path is RED.
+    mkdir -p "$d/p/scripts/release"
+    grep -v '^    milestone_gate "${final#v}" "$dry" ||' "$PROMOTE" > "$d/p/scripts/release/promote_rc.sh"
+    if cmp -s "$PROMOTE" "$d/p/scripts/release/promote_rc.sh"; then nok "mutant 6 did not apply -- it proves nothing"
+    else
+        judge_promote "$d/p/scripts/release/promote_rc.sh" > "$d/m6.out" 2>&1; rc=$?
+        [ "$rc" -eq 1 ] && ok "mutant 6: promote_rc.sh gate call deleted -> RED" \
+            || nok "mutant 6: promote_rc.sh gate call deleted gave rc=$rc, wanted 1"
+    fi
+    judge_promote "$d/nope.sh" > /dev/null 2>&1; rc=$?
+    [ "$rc" -eq 2 ] && ok "a missing promote_rc.sh is ENV rc=2, not a pass" || nok "missing promote_rc.sh gave rc=$rc, wanted 2"
+    if judge_promote "$PROMOTE" > "$d/promote.out" 2>&1; then ok "the real promote_rc.sh is GREEN"
+    else nok "the real promote_rc.sh is RED"; cat "$d/promote.out" >&2; fi
+
     # and the real subject must be GREEN, or a red subject masquerades as a killed mutant
     if judge "$SUBJECT" > "$d/real.out" 2>&1; then
         ok "the real subject is GREEN, so the REDs above are the mutants'"
@@ -173,5 +203,6 @@ fi
 
 echo "=== the tag step cannot be reached without the milestone gate (check_tag_step_gated.sh) ==="
 judge "$SUBJECT"; rc=$?
+judge_promote "$PROMOTE" || { prc=$?; [ "$rc" -ne 0 ] || rc=$prc; }
 [ "$rc" -eq 0 ] && echo "PASS" || echo "FAIL: the tag step is reachable without a clean milestone (rc=$rc)" >&2
 exit "$rc"
