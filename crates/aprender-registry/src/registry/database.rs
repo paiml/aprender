@@ -24,6 +24,7 @@ impl RegistryDb {
         let conn = Connection::open(path)?;
         let db = Self { conn };
         db.init_schema()?;
+        db.init_evals_schema()?;
         Ok(db)
     }
 
@@ -659,6 +660,112 @@ fn hex_char_to_nibble(c: char) -> Result<u8> {
         'a'..='f' => Ok(c as u8 - b'a' + 10),
         'A'..='F' => Ok(c as u8 - b'A' + 10),
         _ => Err(PachaError::Validation(format!("invalid hex char: {c}"))),
+    }
+}
+
+// ==================== Evals (EXT-09, aprender#4391) ====================
+// Kept at the end of the file so it rebases cleanly past the lineage writer (EXT-05).
+
+const EVALS_DDL: &str = r"
+CREATE TABLE IF NOT EXISTS evals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_sha TEXT NOT NULL,
+    suite TEXT NOT NULL,
+    suite_manifest_sha TEXT NOT NULL,
+    score REAL NOT NULL,
+    n INTEGER NOT NULL,
+    engine_version TEXT NOT NULL,
+    engine_sha TEXT NOT NULL,
+    host TEXT NOT NULL,
+    ts TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_evals_model ON evals(model_sha);
+";
+
+impl RegistryDb {
+    fn init_evals_schema(&self) -> Result<()> {
+        self.conn.execute_batch(EVALS_DDL)?;
+        Ok(())
+    }
+
+    /// Insert one eval row. The caller validates it first.
+    pub fn insert_eval(&self, e: &super::evals::EvalRecord) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO evals (model_sha, suite, suite_manifest_sha, score, n, engine_version, engine_sha, host, ts)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                e.model_sha,
+                e.suite,
+                e.suite_manifest_sha,
+                e.score,
+                i64::try_from(e.n).map_err(|_| PachaError::Validation("eval row: n overflows i64".into()))?,
+                e.engine_version,
+                e.engine_sha,
+                e.host,
+                e.ts.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Every eval row for a model sha, oldest first.
+    pub fn list_evals_for_model(&self, model_sha: &str) -> Result<Vec<super::evals::EvalRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT model_sha, suite, suite_manifest_sha, score, n, engine_version, engine_sha, host, ts
+             FROM evals WHERE model_sha = ?1 ORDER BY ts, id",
+        )?;
+        let rows = stmt.query_map(params![model_sha], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, f64>(3)?,
+                r.get::<_, i64>(4)?,
+                r.get::<_, String>(5)?,
+                r.get::<_, String>(6)?,
+                r.get::<_, String>(7)?,
+                r.get::<_, String>(8)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (
+                model_sha,
+                suite,
+                suite_manifest_sha,
+                score,
+                n,
+                engine_version,
+                engine_sha,
+                host,
+                ts,
+            ) = row?;
+            out.push(super::evals::EvalRecord {
+                model_sha,
+                suite,
+                suite_manifest_sha,
+                score,
+                n: u64::try_from(n)
+                    .map_err(|_| PachaError::Validation("eval row: negative n".into()))?,
+                engine_version,
+                engine_sha,
+                host,
+                ts: chrono::DateTime::parse_from_rfc3339(&ts)
+                    .map_err(|e| PachaError::Validation(format!("eval row: bad ts {ts}: {e}")))?
+                    .with_timezone(&chrono::Utc),
+            });
+        }
+        Ok(out)
+    }
+
+    /// True when some model card records this sha256 in `extra.sha256` (EXT-05 writes it).
+    pub fn model_sha_registered(&self, model_sha: &str) -> Result<bool> {
+        let n: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM models WHERE json_extract(card_json, '$.extra.sha256') = ?1",
+            params![model_sha],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
     }
 }
 

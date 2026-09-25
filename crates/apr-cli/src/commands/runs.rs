@@ -300,10 +300,37 @@ pub(crate) fn run_show(
         .get_metrics(run_id, "tokens_per_second")
         .unwrap_or_default();
 
+    // EXT-09 (#4391): the evals pacha holds for the model this run produced.
+    let output_sha = match params.get("output_sha256") {
+        Some(entrenar::storage::ParameterValue::String(s)) => Some(s.clone()),
+        _ => None,
+    };
+    let evals = match (
+        output_sha.as_deref(),
+        super::eval_attach::default_pacha_home(),
+    ) {
+        (Some(sha), Some(home)) => super::eval_attach::evals_for(&home, sha).unwrap_or_else(|e| {
+            eprintln!("⚠ {e}");
+            Vec::new()
+        }),
+        _ => Vec::new(),
+    };
+
     if json {
-        print_show_json(&run, &params, &loss_metrics, &lr_metrics, &tps_metrics);
+        let output_model = output_sha.map(|sha| serde_json::json!({"sha256": sha, "evals": evals}));
+        print_show_json(
+            &run,
+            &params,
+            &loss_metrics,
+            &lr_metrics,
+            &tps_metrics,
+            output_model,
+        );
     } else {
         print_show_text(&run, &params, &loss_metrics, &lr_metrics, &tps_metrics);
+        if let Some(sha) = &output_sha {
+            print!("{}", super::eval_attach::evals_text(sha, &evals));
+        }
     }
 
     Ok(())
@@ -724,6 +751,7 @@ fn print_show_json(
     loss_metrics: &[entrenar::storage::MetricPoint],
     lr_metrics: &[entrenar::storage::MetricPoint],
     tps_metrics: &[entrenar::storage::MetricPoint],
+    output_model: Option<serde_json::Value>,
 ) {
     let mut metrics_map = serde_json::Map::new();
     if !loss_metrics.is_empty() {
@@ -779,6 +807,7 @@ fn print_show_json(
         "duration_seconds": run.end_time.map(|end| (end - run.start_time).num_seconds()),
         "params": params_map,
         "metrics": serde_json::Value::Object(metrics_map),
+        "output_model": output_model,
     });
     println!(
         "{}",
