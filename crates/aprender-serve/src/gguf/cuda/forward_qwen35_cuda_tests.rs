@@ -1297,6 +1297,71 @@ fn qwen35_cuda_dp4a_gemv_is_catastrophic_through_the_recurrence() {
     );
 }
 
+/// Run [`LONG_PROMPT`] end to end with `groups` armed and return
+/// `(broken positions, worst cosine)` against the CPU.
+fn dp4a_mask_reading(
+    qwen: &Qwen35Model<'_>,
+    gpu: &mut Qwen35CudaModel<'_>,
+    groups: super::Dp4aGroups,
+) -> (usize, f32) {
+    gpu.set_dp4a_groups(Some(groups));
+    let mut gpu_state = gpu.new_state().expect("device state");
+    let mut cpu_state = qwen.new_state(LONG_PROMPT.len() + 1);
+    let (mut broken, mut worst) = (0usize, 1.0f32);
+    for (pos, &token) in LONG_PROMPT.iter().enumerate() {
+        let want = qwen
+            .forward_single_qwen35(token, &mut cpu_state, pos)
+            .expect("cpu forward");
+        let got = gpu
+            .forward_single(token, &mut gpu_state, pos)
+            .expect("gpu forward");
+        let cos = cosine(&got, &want);
+        worst = worst.min(cos);
+        if crate::gguf::ops::argmax(&got) != crate::gguf::ops::argmax(&want) || cos < COSINE_FLOOR {
+            broken += 1;
+        }
+    }
+    gpu.set_dp4a_groups(None);
+    (broken, worst)
+}
+
+/// #3513: WHICH projections carry the DP4A divergence through the recurrence.
+///
+/// Controls first, so the sweep cannot read as a finding when the mask never
+/// engaged: the empty mask must match the CPU at every position, and the full
+/// mask must reproduce the catastrophic reading above.
+#[test]
+#[serial_test::serial]
+fn qwen35_cuda_dp4a_per_group_characterisation() {
+    use super::Dp4aGroups;
+    let executor = qwen35_cuda_fixture_or_skip!();
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
+    let base = load_cpu_model(&mapped);
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+    let mut gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the CUDA model");
+
+    let (none_broken, none_cos) = dp4a_mask_reading(&qwen, &mut gpu, Dp4aGroups::NONE);
+    let (all_broken, all_cos) = dp4a_mask_reading(&qwen, &mut gpu, Dp4aGroups::ALL);
+    eprintln!("[dp4a-groups] none: broken {none_broken}/6 worst cosine {none_cos:.6}");
+    eprintln!("[dp4a-groups] all : broken {all_broken}/6 worst cosine {all_cos:.6}");
+    assert_eq!(none_broken, 0, "the empty mask must be the float path");
+    assert!(
+        all_broken > 0,
+        "the full mask must reproduce the DP4A divergence"
+    );
+
+    for (name, group) in Dp4aGroups::EACH {
+        let (only_broken, only_cos) = dp4a_mask_reading(&qwen, &mut gpu, group);
+        let (but_broken, but_cos) =
+            dp4a_mask_reading(&qwen, &mut gpu, Dp4aGroups::ALL.without(group));
+        eprintln!(
+            "[dp4a-groups] {name:<12} only: broken {only_broken}/6 worst cosine {only_cos:.6} \
+             | all-but: broken {but_broken}/6 worst cosine {but_cos:.6}"
+        );
+    }
+}
+
 /// Keep the layer type in the compiled surface: the parity tests bind it, and a
 /// rename of the CPU struct must break here, not silently at phase 2.
 const _: Option<&Qwen35OwnedDeltaNetLayer> = None;
