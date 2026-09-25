@@ -4,7 +4,7 @@
 use super::*;
 use crate::contamination::{Hit, Index};
 use crate::corpus::{hunk_fingerprints, sha256_hex, Sealed};
-use crate::pool::{admit, Verdict};
+use crate::pool::{admit, local_tagged, Verdict};
 
 const SEALED: &str = "--- a/crates/x/src/sum.rs\n+++ b/crates/x/src/sum.rs\n@@ -40,12 +40,14 @@ impl Ledger {\n     pub fn total(&self, rows: &[Row]) -> u64 {\n         let mut total = 0u64;\n         for row in rows {\n-            if row.amount > 0 {\n-                total += row.amount;\n+            if row.amount > 0 && !row.voided {\n+                total = total.saturating_add(row.amount);\n             }\n         }\n+        debug_assert!(total >= self.floor);\n         total\n     }\n";
 
@@ -66,7 +66,7 @@ fn falsify_rcc_004_perturbed_sealed_item_is_a_cluster_hit() {
     );
     let row = serde_json::json!({"lane": "sonnet-5", "input": format!("Review this diff.\n\n{p}\nBe terse.")})
         .to_string();
-    let clean = serde_json::json!({"lane": "sonnet-5", "input": UNRELATED[0]}).to_string();
+    let clean = local_tagged(serde_json::json!({"lane": "qwen", "input": UNRELATED[0]}));
     let a = admit(&format!("{row}\n{clean}\n"), &ix);
     assert_eq!(
         a.verdicts[0].1,
