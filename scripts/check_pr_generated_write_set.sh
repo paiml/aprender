@@ -60,7 +60,6 @@ REGEN_RE='^regen/'
 usage() { printf 'usage: %s [--base <ref>] [--head <ref>] [--branch <name>] [--event <name>] [--pr <N>] [--allowlist <tsv>] | --self-test\n' "$PROG" >&2; exit 2; }
 
 to_epoch() { # to_epoch <ISO-8601 UTC> -> seconds, or rc 1
-    date -u -d "$1" +%s 2>/dev/null && return 0
     python3 -c 'import sys,datetime;print(int(datetime.datetime.strptime(sys.argv[1],"%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc).timestamp()))' "$1" 2>/dev/null
 }
 
@@ -264,4 +263,4 @@ if [ -z "$BASE" ]; then
         BASE="$BASE_REF"; printf '               comparand: %s (%s)\n' "${BASE:0:9}" "$BASE_HOW"
     fi
 fi
-judge "$ROOT" "$BASE" "$HEAD_REF" "$BRANCH" "$EVENT" "$PR" "$(date -u +%s)" "$ALLOWLIST"
+judge "$ROOT" "$BASE" "$HEAD_REF" "$BRANCH" "$EVENT" "$PR" "${PR_GENERATED_NOW:-$(python3 -c 'import time;print(int(time.time()))')}" "$ALLOWLIST"
