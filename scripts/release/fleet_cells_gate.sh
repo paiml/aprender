@@ -6,7 +6,7 @@
 #
 # rc.2 was cut with intel on an old apr, mini unable to install anything (no darwin asset)
 # and jetson unreachable: every one of those cells was RED and nothing on the cut path read
-# them. rc_cut.sh now runs this gate before it writes the tag.
+# them. The rc tagger must run this gate before it writes the tag (see the WIRING row).
 #
 # CELLS come from infra-64's andon monitor (#4328 C3), published where the clean-room cut
 # job can read it: `fleet/cells.tsv` on the `fleet-state` branch of this repo.
@@ -118,13 +118,16 @@ self_test() {
         if [ "$rc" = 0 ]; then echo "  ok   mutant lets the RED cell through: the refusal is load-bearing"
         else echo "  FAIL mutant still refuses (rc $rc): $got"; fail=1; fi
     done
-    # WIRING: rc_cut.sh runs this gate before it writes the tag, and dies on a refusal.
-    local cut; cut="$(dirname -- "${BASH_SOURCE[0]}")/rc_cut.sh"
+    # WIRING: the rc tagger runs this gate before it writes the tag, and dies on a refusal.
+    # rc_cut.sh (#4314) was superseded by the 2026-09-25 16:58 ruling (rc = tag on a queue-green
+    # main, e6's tagger). Until that tagger calls this gate, this row is RED on purpose: an
+    # unwired gate blocks nothing. RC_TAGGER names the tagger script once it exists.
+    local cut; cut="${RC_TAGGER:-$(dirname -- "${BASH_SOURCE[0]}")/rc_cut.sh}"
     local call tagline
     call=$(grep -n 'fleet_cells_gate.sh' "$cut" | grep -v '^\s*[0-9]*:\s*#' | head -n 1 | cut -d: -f1)
     tagline=$(grep -nF 'out=$(api_post git/refs' "$cut" | head -n 1 | cut -d: -f1)
-    if [ -n "$call" ] && [ -n "$tagline" ] && [ "$call" -lt "$tagline" ]; then echo "  ok   rc_cut.sh runs the gate (line $call) before it writes the tag (line $tagline)"
-    else echo "  FAIL rc_cut.sh does not run fleet_cells_gate.sh before creating the tag (call=${call:-none}, tag=${tagline:-none})"; fail=1; fi
+    if [ -n "$call" ] && [ -n "$tagline" ] && [ "$call" -lt "$tagline" ]; then echo "  ok   $(basename -- "$cut") runs the gate (line $call) before it writes the tag (line $tagline)"
+    else echo "  FAIL UNWIRED: $(basename -- "$cut") does not run fleet_cells_gate.sh before creating the tag (call=${call:-none}, tag=${tagline:-none})"; fail=1; fi
     rm -rf -- "${d:?}"
     if [ "$fail" = 0 ]; then echo "$PROG self-test: PASS"; else echo "$PROG self-test: FAIL"; fi
     return "$fail"
