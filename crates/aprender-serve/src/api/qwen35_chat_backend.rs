@@ -222,7 +222,9 @@ async fn try_qwen35_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
-        None,
+        // #4146: the turn says whether the GPU served it to its end. `None` here left every
+        // chat reply without provenance while /v1/completions carried it.
+        Some(turn.used_gpu),
     ))
 }
 

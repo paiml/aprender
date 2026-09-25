@@ -139,6 +139,12 @@ async fn a_chat_request_answers_what_apr_run_answers() {
         got, want,
         "serve must hand the model apr run's tokens: {body}"
     );
+    // #4146: a chat reply names the route that served it, as /v1/completions does.
+    assert_eq!(
+        json["used_gpu"],
+        serde_json::Value::Bool(false),
+        "a --no-gpu session reports used_gpu false on chat: {body}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -374,6 +380,11 @@ async fn gpu_a_chat_request_answers_from_the_gpu_session() {
     assert_eq!(
         got, want,
         "the GPU session answers what apr run --gpu answers: {body}"
+    );
+    assert_eq!(
+        json["used_gpu"],
+        serde_json::Value::Bool(true),
+        "#4146: a GPU-served chat reply says so: {body}"
     );
     assert!(
         served.session.lock().expect("lock").on_gpu(),
