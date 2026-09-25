@@ -86,7 +86,10 @@ pub(crate) mod format_factory;
 pub use batch_scheduler::*;
 pub use config::*;
 #[cfg(feature = "cuda")]
-pub use cuda::{BatchedDecodeState, CudaBackend, CudaInitError, Qwen35CudaModel, Qwen35CudaState};
+pub use cuda::{
+    BatchedDecodeState, CudaBackend, CudaInitError, Qwen35CudaModel, Qwen35CudaState,
+    Qwen3MoeCudaModel, Qwen3MoeCudaState, Qwen3MoeShape,
+};
 #[cfg(feature = "cuda")]
 pub use cuda_model::*;
 pub use model::*;
@@ -126,6 +129,15 @@ mod quantized_tests;
 #[cfg(test)]
 mod tests;
 
+/// The dense (llama/qwen2/qwen3/...) forward behind the one engine (#4268):
+/// `apr run`, `run --batch`, `chat` and `serve` drive a dense GGUF through
+/// [`crate::session::Session`] on the CPU or the CUDA backend.
+#[path = "inference/forward/dense_session.rs"]
+pub mod dense_session;
+/// The dense CUDA forward over a borrowed model: serve's scheduler turn (#4280).
+#[cfg(feature = "cuda")]
+#[path = "inference/forward/dense_session_borrowed.rs"]
+pub mod dense_session_borrowed;
 /// #3604: the F2 hybrid guard's receipt. CUDA-free on purpose, so its decision
 /// table is tested on every build.
 #[path = "inference/forward/f2_receipt.rs"]
@@ -133,3 +145,10 @@ pub mod f2_receipt;
 /// Qwen3.5 / Qwen3.8 hybrid (Gated `DeltaNet` + gated attention) CPU forward (#3091).
 #[path = "inference/forward/forward_qwen35.rs"]
 pub mod forward_qwen35;
+/// PMAT-4269 (M1): the Qwen3-MoE CPU forward behind the one engine.
+#[path = "inference/forward/moe_session.rs"]
+pub mod moe_session;
+/// The Qwen3.5 hybrid held resident across calls — one build, one F2 guard, a
+/// decode state that outlives the turn (#3595 `apr chat`, #3571 `apr serve`).
+#[path = "inference/forward/qwen35_session.rs"]
+pub mod qwen35_session;

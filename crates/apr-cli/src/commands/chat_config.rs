@@ -45,6 +45,7 @@
     fn test_chat_config_force_cpu() {
         let config = ChatConfig {
             force_cpu: true,
+            json: false,
             ..Default::default()
         };
         assert!(config.force_cpu);
@@ -70,25 +71,34 @@
     fn test_clean_chat_response_normalizes_repeated_punctuation() {
         let raw = "Wow!!!!!";
         let cleaned = clean_chat_response(raw);
-        assert_eq!(cleaned, "Wow!!!");
+        // VERBATIM (0.69.1 sweep, cop ruling): the model's punctuation is its output; this used to
+        // assert a cap at three, a rewrite chat did and run did not.
+        assert_eq!(cleaned, "Wow!!!!!");
 
         let raw2 = "Really??????";
         let cleaned2 = clean_chat_response(raw2);
-        assert_eq!(cleaned2, "Really???");
+        assert_eq!(cleaned2, "Really??????");
     }
 
     #[test]
     fn test_clean_chat_response_normalizes_spaces() {
         let raw = "Hello   world";
         let cleaned = clean_chat_response(raw);
-        assert_eq!(cleaned, "Hello world");
+        // 0.69.1 CRUX sweep: runs of spaces are content (byte-level BPE `ĠĠ` IS two spaces -- the tokens
+        // Python indentation is made of), so they survive; only surrounding blank lines and trailing
+        // whitespace go. This test used to assert the collapse, i.e. the ctl-code-add defect.
+        assert_eq!(cleaned, "Hello   world");
     }
 
     #[test]
     fn test_clean_chat_response_trims_whitespace() {
         let raw = "  Hello world  ";
         let cleaned = clean_chat_response(raw);
-        assert_eq!(cleaned, "Hello world");
+        // Trailing whitespace goes; the first line's leading indentation stays.
+        // 0.69.1 CRUX sweep: runs of spaces are content (byte-level BPE `ĠĠ` IS two spaces -- the tokens
+        // Python indentation is made of), so they survive; only surrounding blank lines and trailing
+        // whitespace go. This test used to assert the collapse, i.e. the ctl-code-add defect.
+        assert_eq!(cleaned, "  Hello world");
     }
 
     #[test]
@@ -307,8 +317,10 @@
     fn test_run_file_not_found() {
         let path = Path::new("/nonexistent/model.gguf");
         let result = run(
-            path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
+            path, 0.7, 0.9, 512, None, false, false, false /* #3955 accel_forced */, false, None, false, None, "info", false,
             false, // offline
+            false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
         match result {
@@ -330,7 +342,7 @@
             512,
             Some("You are helpful"),
             true,
-            true,
+            true, false /* #3955 accel_forced */,
             true,
             Some(&["tokenize".to_string(), "sample".to_string()]),
             true,
@@ -338,6 +350,8 @@
             "debug",
             true,
             false, // offline
+            false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }
@@ -378,7 +392,9 @@
     fn test_clean_chat_response_repeated_dots() {
         let raw = "Hmm........ let me think";
         let cleaned = clean_chat_response(raw);
-        assert_eq!(cleaned, "Hmm... let me think");
+        // VERBATIM (0.69.1 sweep, cop ruling): the model's punctuation is its output; this used to
+        // assert a cap at three, a rewrite chat did and run did not.
+        assert_eq!(cleaned, "Hmm........ let me think");
     }
 
     #[test]

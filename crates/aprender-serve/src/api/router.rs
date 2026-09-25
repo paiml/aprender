@@ -123,9 +123,44 @@ fn metrics_routes() -> Vec<Route> {
     ]
 }
 
+/// What the loaded `AppState` can answer (#3991).
+///
+/// A route in `GET /` is a capability claim. `/v1/batch/completions` needs a
+/// `cached_model` (the wgpu batch path); a GGUF server — CPU or CUDA — has none, so
+/// the route answered 503 "No GPU-capable model loaded" while `GET /` and the
+/// startup banner listed it. A route whose handler has no backend in this state is
+/// now neither mounted nor listed.
+#[derive(Debug, Clone, Copy)]
+pub struct RouteCapabilities {
+    /// `cached_model` is present, so `/v1/batch/completions` can answer.
+    pub gpu_batch: bool,
+}
+
+impl RouteCapabilities {
+    /// Read the capabilities off a built state.
+    #[must_use]
+    pub fn of(state: &AppState) -> Self {
+        #[cfg(feature = "gpu")]
+        let gpu_batch = state.cached_model().is_some();
+        // Without `gpu` the handler is a stub that always answers 503.
+        #[cfg(not(feature = "gpu"))]
+        let gpu_batch = {
+            let _ = state;
+            false
+        };
+        Self { gpu_batch }
+    }
+
+    /// Every capability present: the largest surface any state can mount.
+    #[must_use]
+    pub fn all() -> Self {
+        Self { gpu_batch: true }
+    }
+}
+
 /// Routes mounted only when `RouterConfig::openai_api` is set (the default).
-fn openai_routes() -> Vec<Route> {
-    vec![
+fn openai_routes(caps: RouteCapabilities) -> Vec<Route> {
+    let mut routes = vec![
         // OpenAI-compatible API (v1) - spec §5.1
         ("GET", "/v1/models", get(openai_models_handler)),
         ("POST", "/v1/completions", post(openai_completions_handler)),
@@ -147,11 +182,6 @@ fn openai_routes() -> Vec<Route> {
         // GPU batch inference API (PARITY-022)
         ("POST", "/v1/gpu/warmup", post(gpu_warmup_handler)),
         ("GET", "/v1/gpu/status", get(gpu_status_handler)),
-        (
-            "POST",
-            "/v1/batch/completions",
-            post(gpu_batch_completions_handler),
-        ),
         // TUI monitoring API (PARITY-107)
         ("GET", "/v1/metrics", get(server_metrics_handler)),
         // PP-LLAMA-001 §12 row 6 / PP-2: what THIS process resolved — compute
@@ -173,7 +203,16 @@ fn openai_routes() -> Vec<Route> {
         // aprender#2396(2): every Ollama embedding client posts here; the route
         // did not exist, so they got the 404 fallback.
         ("POST", "/api/embeddings", post(ollama_embeddings_handler)),
-    ]
+    ];
+    // GPU batch inference API (PARITY-022): only where a `cached_model` can serve it.
+    if caps.gpu_batch {
+        routes.push((
+            "POST",
+            "/v1/batch/completions",
+            post(gpu_batch_completions_handler),
+        ));
+    }
+    routes
 }
 
 /// Routes mounted only in CUDA builds (realizr#191, F-QUALITY-01).
@@ -185,14 +224,14 @@ fn cuda_routes() -> Vec<Route> {
     ]
 }
 
-/// Every route this configuration mounts, in advertised order.
-fn route_table(config: &RouterConfig) -> Vec<Route> {
+/// Every route this configuration mounts for a state with `caps`, in advertised order.
+fn route_table(config: &RouterConfig, caps: RouteCapabilities) -> Vec<Route> {
     let mut table = native_routes();
     if config.metrics {
         table.extend(metrics_routes());
     }
     if config.openai_api {
-        table.extend(openai_routes());
+        table.extend(openai_routes(caps));
     }
     #[cfg(feature = "cuda")]
     table.extend(cuda_routes());
@@ -209,9 +248,16 @@ fn route_table(config: &RouterConfig) -> Vec<Route> {
 /// and `/v1/predict` for GGUF models, where it can only answer 503.
 ///
 /// Derived from `route_table`, the same table `create_router_with_config` mounts,
-/// so advertising a route and mounting it are one act.
-pub fn advertised_routes(config: &RouterConfig) -> Vec<String> {
-    route_index_of(&route_table(config))
+/// so advertising a route and mounting it are one act. It takes the STATE the
+/// router will be built with (#3991): which routes are mounted depends on what the
+/// loaded model can answer, so a banner computed without it would be a second claim.
+pub fn advertised_routes(config: &RouterConfig, state: &AppState) -> Vec<String> {
+    advertised_routes_for(config, RouteCapabilities::of(state))
+}
+
+/// `advertised_routes` for explicit capabilities — the guard's route universe.
+pub fn advertised_routes_for(config: &RouterConfig, caps: RouteCapabilities) -> Vec<String> {
+    route_index_of(&route_table(config, caps))
 }
 
 fn route_index_of(table: &[Route]) -> Vec<String> {
@@ -247,7 +293,7 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
     // route table this router actually mounted — the one thing a client needs to
     // discover the surface it landed on — and `/ready` is the conventional
     // readiness path, an alias of `/health/ready`.
-    let table = route_table(&config);
+    let table = route_table(&config, RouteCapabilities::of(&state));
     let index_routes = route_index_of(&table);
 
     // `GET /` answers with the route table this router actually mounted — the one
@@ -562,7 +608,14 @@ fn build_health_response(state: &AppState) -> HealthResponse {
         compute_mode = "gpu";
     }
     #[cfg(feature = "cuda")]
-    if state.has_cuda_model() {
+    if state.has_cuda_model() || state.apr_q4k_tx().is_some() {
+        compute_mode = "gpu";
+    }
+    // #3571: the hybrid's session reports its own backend, without waiting on a generation.
+    if state
+        .qwen35_session()
+        .is_some_and(|s| s.on_gpu.load(std::sync::atomic::Ordering::Relaxed))
+    {
         compute_mode = "gpu";
     }
 

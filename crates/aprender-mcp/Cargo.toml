@@ -29,8 +29,15 @@ name = "aprender_mcp"
 path = "src/lib.rs"
 
 [features]
-default = ["native"]
-native = ["dep:anyhow"]
+default = ["native", "apr-tools"]
+# The threaded stdio transport (worker per tools/call, cancellation). No external
+# dependency: serve_stream/run_stdio return std::io::Result (PMAT-3954).
+native = []
+# apr's OWN tools: the apr-binary wrappers, their link-time registry (inventory),
+# subprocess signals (nix) and the contract-driven schema codegen (serde_yaml, build.rs).
+# A caller serving its own tools (ToolIndex::from_entries + AprMcpServer::with_tools)
+# builds with default-features = false, features = ["native"]: serde + serde_json only.
+apr-tools = ["dep:inventory", "dep:nix", "dep:serde_yaml"]
 # M5 scaffold: enables the pmcp v2.3 dispatcher path alongside the hand-rolled
 # stdio loop. Off by default — PR 1 wires the dep, PR 2 lands the parity test
 # (FALSIFY-MCP-009), PR 3 extends cancellation, PR 4/5 add SSE/WebSocket
@@ -40,12 +47,11 @@ pmcp-dispatcher = ["dep:pmcp"]
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-anyhow = { workspace = true, optional = true }
 # HELIX-IDEA-002: link-time tool registration. Each `tools/<tool>.rs`
 # submits an `McpToolEntry` via `register_mcp_tool!`; the dispatcher
 # iterates `inventory::iter::<McpToolEntry>` at startup. See
 # contracts/apr-mcp-tool-inventory-v1.yaml.
-inventory = "0.3"
+inventory = { version = "0.3", optional = true }
 # M5 prep: pmcp 2.3 is PAIML's Rust MCP SDK, already pinned in
 # aprender-orchestrate for the MCP client side. Pulled in here as an optional
 # dep so PR 1 is a zero-behaviour-change patch — the dispatcher still runs on
@@ -55,13 +61,13 @@ pmcp = { version = "2.3", optional = true }
 # FALSIFY-MCP-006: SIGTERM/SIGKILL for cancelling in-flight `apr.run` subprocesses.
 # nix 0.29 is already in the workspace lockfile (pulled in by other crates).
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.29", default-features = false, features = ["signal"] }
+nix = { version = "0.29", default-features = false, features = ["signal"], optional = true }
 
 [build-dependencies]
 # FALSIFY-MCP-008: build.rs reads contracts/apr-mcp-tool-schemas-v1.yaml at
 # compile time and codegens per-tool JSON Schema string constants. Using the
 # same workspace serde_yaml 0.9 the contracts crate uses (already in lockfile).
-serde_yaml = { workspace = true }
+serde_yaml = { workspace = true, optional = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
 

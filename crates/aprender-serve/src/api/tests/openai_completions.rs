@@ -291,6 +291,7 @@ fn test_completion_choice_finish_reason_length() {
 #[test]
 fn test_completion_response_empty_choices() {
     let response = CompletionResponse {
+        used_gpu: None,
         id: "cmpl-empty".to_string(),
         object: "text_completion".to_string(),
         created: 0,

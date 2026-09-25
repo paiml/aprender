@@ -20,9 +20,9 @@ pub fn mwv_warp_count() -> u32 {
 // All kernel types are imported for exhaustive KernelType enum coverage
 #[allow(unused_imports)]
 use trueno_gpu::kernels::{
-    Activation, ArgMaxFinalKernel, ArgMaxKernel, AttentionKernel, BatchedHwDp4aQ4KGemvKernel,
-    BatchedIncrementalAttentionKernel, BatchedQ4KGemvKernel, BatchedQ6KGemvKernel,
-    BatchedResidualAddKernel, BatchedRopeKernel, BatchedSwigluKernel,
+    backward::GemmBackwardAKernel, Activation, ArgMaxFinalKernel, ArgMaxKernel, AttentionKernel,
+    BatchedHwDp4aQ4KGemvKernel, BatchedIncrementalAttentionKernel, BatchedQ4KGemvKernel,
+    BatchedQ6KGemvKernel, BatchedResidualAddKernel, BatchedRopeKernel, BatchedSwigluKernel,
     BatchedVectorizedRmsNormKernel, BiasActivationKernel, ChunkedTiledQ4KGemvKernel,
     CoalescedGemvKernel, CoalescedQ4KGemvKernel, CoalescedQ6KGemvKernel, Dp4aQ4KGemmKernel,
     Dp4aQ4KGemvKernel, Dp4aQ6KGemvKernel, ElementwiseMulKernel, Fp16Q4KGemvKernel,

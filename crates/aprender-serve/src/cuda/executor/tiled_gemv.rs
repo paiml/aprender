@@ -52,11 +52,7 @@ impl CudaExecutor {
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -139,11 +135,7 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("chunked_tiled_q4k_gemv_{}_{}_{}", k, n, outputs_per_block);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -222,11 +214,7 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("dp4a_q4k_gemv_{}_{}", k, n);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -292,11 +280,7 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("q8_quantize_{}", n);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -336,7 +320,7 @@ impl CudaExecutor {
     /// PAR-PERF-DP4A: Q8 quantize into PRE-ALLOCATED buffer (zero allocation)
     ///
     /// Five-Whys root cause (2026-02-09):
-    /// 1. Why is DP4A path 10.7 tok/s (8x slower than MWV)?
+    // 1. Why is DP4A path 10.7 tok/s (8x slower than MWV)?
     /// 2. Why so slow? → q8_quantize_async allocates a new GpuBuffer per call
     /// 3. Why per call? → GpuBuffer::new calls cudaMalloc (10-50us each)
     /// 4. Why 280x per token? → Called for every GEMV (10/layer × 28 layers)
@@ -352,11 +336,7 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("q8_quantize_{}", n);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules

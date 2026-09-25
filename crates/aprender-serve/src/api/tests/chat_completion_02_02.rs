@@ -2,6 +2,7 @@
 #[test]
 fn test_chat_completion_response_serialize_cov() {
     let resp = ChatCompletionResponse {
+        used_gpu: None,
         id: "chatcmpl-123".to_string(),
         object: "chat.completion".to_string(),
         created: 1677652288,

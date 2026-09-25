@@ -71,6 +71,7 @@ fn main() {
             load_ms: 0.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert_eq!(result.input_token_count + result.generated_token_count, 0);
     }
@@ -87,6 +88,7 @@ fn main() {
             load_ms: f64::MAX,
             format: "GGUF".to_string(),
             used_gpu: true,
+            gpu_attempted: true,
         };
         assert_eq!(result.tokens.len(), 1_000_000);
     }
@@ -191,6 +193,7 @@ fn main() {
             verbose: true,
             use_mock_backend: false,
             force_chat_template: false,
+            thinking: None,
         };
 
         let debug = format!("{:?}", config);
@@ -228,6 +231,7 @@ fn main() {
             load_ms: 50.0,
             format: "APR".to_string(),
             used_gpu: true,
+            gpu_attempted: true,
         };
 
         let mut cloned = original.clone();

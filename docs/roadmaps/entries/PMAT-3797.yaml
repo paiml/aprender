@@ -1,0 +1,22 @@
+- id: PMAT-3797
+  github_issue: 3797
+  item_type: task
+  title: 'CRUX slice 4 (#3739): the serve verb — apr serve, llama-server and ollama through ONE OpenAI client, streaming + non-streaming, plus hf/llamafile servers'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-76
+  created: 2026-09-21T23:55:00Z
+  updated: 2026-09-22T00:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3797 done_when 1, verbatim: "`scripts/crux_inference_dogfood.sh <version> --verbs run,serve` runs ONE serve cell per model under one hold of the GPU lock: `apr serve run` and `llama-server` each load the model once, next to the running ollama daemon; every golden prompt goes through `scripts/lib/crux_openai_client.py`, non-streaming and streaming; then the servers stop, and ollama unloads (keep_alive 0, plus the unload wait)." Teardown kills every server before waiting, and waits on those pids only. The first real run hung here: a bare `wait` after the first kill blocked on the other server.'
+  - 'done_when 2, verbatim: "One client for every server. `crux_openai_client.py` sends the same body (model, messages, max_tokens, temperature, seed, stream) and writes the row-contract JSON `{\"text\", \"reported\": {device, stream, finish_reason, usage, chunks}}`. It reads no clock and computes no rate." MEASURED against the three servers on lambda (cpu): non-stream and stream both answer, and the usage is transcribed (apr serve prompt_tokens 18; llama-server and ollama 36).'
+  - 'done_when 3/4, verbatim: "Plugin engines (hf, llamafile) run `gen --verb ''serve run''` ... The judge reads every serve row through the client JSON and applies the same RED rule. The key gains an additive `mode` (nonstream | stream) for serve cells only. apr serve''s cells carry `backend_verified: false`." Per aprender-97 (#3715), the correspondence ENTRY for `serve run` declares `modes: [nonstream, stream]`, with per-engine modes (llama.cpp and ollama both, hf and llamafile nonstream), so pv never names a verb.'
+  - 'done_when 5, MEASURED: `bash scripts/check_crux_inference_judge.sh` gives 44 ok, 0 broke. The serve rows: stream and non-stream are distinct GREEN cells with apr serve''s backend unverified; an apr serve that answered nothing (connection refused) while llama-server answered is RED. Mutants: dropping the mode from the key breaks 1; dropping the serve backend flag breaks 1.'
+  - 'done_when 6, MEASURED on lambda (cpu lane, qwen2.5-coder-1.5b Q4_K_M, `--verbs run,serve`), rerun after the teardown fix and finishing unaided: PASS, 9 cells (3 run + 6 serve), 9 GREEN. apr serve, llama-server@d1d3c3396 and ollama 0.33.2 each answered every golden prompt in both modes. No server process and no ollama import was left behind. apr serve answers 2+2 with "4" from an 18-token prompt, where llama-server and ollama send 36 and answer "2 + 2 equals 4.": apr serve does not inject the GGUF template''s default system prompt. It is recorded; the byte-equal tmpl rows against HF are what will judge it.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Refs #3739 (slice 4; not a closing keyword for the parent). Closes #3797 when merged. STACKED on crux-3739-chat (#3796), so the diff to judge is `origin/crux-3739-chat...HEAD`. SCOPE: scripts/crux_inference_dogfood.sh (the serve cell, the `serve` verb token mapped to key `serve run`, emit_gen/cell_result/rows_for carrying verb and mode), scripts/lib/crux_openai_client.py (new), scripts/lib/crux_inference_judge.py (serve parsing, the `mode` key part), scripts/check_crux_inference_judge.sh (serve rows), evidence/crux/verb-correspondence.yaml (`modes` on the serve run entry, regenerated from the same v1.1 surface, sha 207c3297), and this fragment. NOT in this slice and named in `not_covered`: TTFT and decode rate through `apr test llm bench` (the canonical client, PERF-009, the next increment), and max accepted context. The client computes no rate: check_no_competing_harnesses stays count=0.'

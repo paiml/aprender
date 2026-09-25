@@ -76,3 +76,7 @@ pub struct SafetensorsToAprConverter;
 
 include!("safetensors_infer_convert.rs");
 include!("safetensors_infer_convert_02.rs");
+// #4269 (workstream M of #4263): the SafeTensors CPU `ArchForward`, so `apr
+// serve` / `apr chat` drive generation through `crate::session::Session`
+// instead of `AprTransformer::generate_with_cache`'s own loop.
+include!("safetensors_infer_session.rs");

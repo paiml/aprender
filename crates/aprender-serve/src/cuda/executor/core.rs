@@ -49,6 +49,8 @@ impl CudaExecutor {
             memory_pool: GpuMemoryPool::new(),
             staging_pool: StagingBufferPool::new(), // PARITY-042: pinned memory pool
             modules: std::mem::ManuallyDrop::new(HashMap::new()),
+            #[cfg(any(debug_assertions, test))]
+            module_key_ledger: Default::default(),
             weight_cache: HashMap::new(),
             named_fp16_weight_cache: HashMap::new(), // GH-174: SafeTensors F16
             quantized_weight_cache: HashMap::new(),  // PAR-005: quantized weight cache
@@ -186,11 +188,10 @@ impl CudaExecutor {
             num_sms: context.multiprocessor_count().unwrap_or(8) as u32,
             // PMAT-027: Q8 activation cache starts invalid
             q8_activation_valid: false,
-            fp8_activation_cache_key: None,
-            fp8_weight_scales: HashMap::new(),
+            fp8_act_cache: Default::default(),
+            fp8_weight_row_absmax: HashMap::new(),
             fp8_act_scale_buf: None,
-            fp8_absmax_buf: None,
-            fp8_act_dequant_buf: None,
+            fp8_act_row_absmax: None,
             graph_dispatch_positions: Vec::new(),
             batched_done_mask: Vec::new(),
             hgemm_batched_decode_active: false,

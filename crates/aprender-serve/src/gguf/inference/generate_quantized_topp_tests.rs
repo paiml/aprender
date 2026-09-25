@@ -6,7 +6,7 @@
 //! `sample_topk_with_draw` never took the parameter, so the value was read and then
 //! silently discarded: `--top-p 0.001` produced byte-identical output to
 //! `--top-p 1.0`. The only working nucleus implementation lived in `fails.rs`,
-//! which is not compiled into the crate.
+//! which was never compiled into the crate (deleted, #4266).
 //!
 //! Why the prior contract missed it: `apr-run-sampling-plumbing-v1` only proved the
 //! value was *plumbed* from CLI/HTTP into the config struct — which was true. Nothing

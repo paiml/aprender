@@ -19,7 +19,7 @@ architecture visualization.
 |---------|---------|
 | `inspect` | Metadata, vocab, structure, weight stats |
 | `debug` | Drama mode, hex dump, ASCII extraction |
-| `validate` | Integrity check, 100-point quality score |
+| `validate` | Integrity check, structural quality score |
 | `diff` | Two-model comparison (metadata, weights, values) |
 | `tensors` | List tensor names, shapes, statistics |
 | `trace` | Layer-by-layer analysis with reference comparison |
@@ -30,7 +30,8 @@ architecture visualization.
 
 ## 3. Validate Quality Score
 
-100-point assessment across:
+Structural assessment across the dimensions below. The score is reported
+over the checks that RAN, not over the number declared:
 - Format integrity (header, checksums)
 - Tensor completeness (all expected tensors present)
 - Value sanity (no NaN/Inf, reasonable ranges)

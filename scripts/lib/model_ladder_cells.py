@@ -25,6 +25,14 @@ judge(ladder, receipts, rungs_doc, out) -> 0 green | 1 red. `receipts` maps host
 `rungs_doc` is the parsed context-rungs file, or None when it is missing or unreadable (a named FAIL).
 """
 RUNGS_SCHEMA = "apr-release-context-rungs/v1"
+def _loud(s, n):
+    """Truncate so the reader can TELL. A bare slice makes a decapitated message
+    indistinguishable from a complete short one -- the reader cannot know to go
+    looking. This is the shape already used for the line cap below (#3904)."""
+    s = str(s)
+    return s if len(s) <= n else f"{s[:n]} ... and {len(s) - n} more chars"
+
+
 MAX_LINES_PER_MODEL = 12
 
 
@@ -100,6 +108,38 @@ def judge(L, receipts, rungs_doc, out, rungs_main=None):
         return 0
     required = {h["id"] for h in L.get("hosts") or [] if h.get("required")}
     receipts = {hid: R for hid, R in receipts.items() if hid in required}  # a non-required host proves nothing here
+    # NOT ARMED vs FAIL (#3712 row B, and the operator's rule "a gate NEVER GREEN on its
+    # own target is not a gate -- first-green proof on a real target before it may block").
+    #
+    # MEASURED 2026-09-22 on every receipt that has ever existed in this tree: NONE carries
+    # a `cells` key, and no inventory item carries `context_length` or `thinking_modes`.
+    #   0.68.1/{gx10,lambda}.json  cells=False   0.68.2/{gx10,lambda}.json  cells=False
+    #   0.69.1/lambda.json         cells=False   inventory item keys: [bytes, file, sha256]
+    # scripts/model_ladder.sh emits no `cells` at any point -- the producer for row B is not
+    # built. So this judge demanded a field nothing has ever written, which makes its red
+    # carry ZERO information: it was red for every possible input, which is a constant and
+    # not a gate.
+    #
+    # This is NOT the same as softening a gate that fired. The distinction is the one a
+    # quorum drew tonight when it refused to defer IQ4_NL: that gate fired on a real defect,
+    # so disarming it would hide one. This gate has never been able to fire on anything, so
+    # its red hides nothing and costs a reader the whole receipt's credibility.
+    #
+    # IT STAYS ABLE TO FIRE, which is what keeps this from being the vacuity it replaces:
+    # NOT ARMED requires that NO required receipt carries cells. The moment the producer
+    # emits them the judge arms itself with no edit here, and a receipt that carries cells
+    # beside one that does not is a REGRESSION and still FAILs. Proven by the case table's
+    # cells-partial row; deleting either branch below turns it red.
+    carrying = {hid for hid, R in receipts.items() if R.get("cells")}
+    if receipts and not carrying:
+        out(
+            "NOT ARMED  cells: no required receipt carries a `cells` block, and "
+            "scripts/model_ladder.sh writes none -- verbs x thinking x context is declared "
+            "in the contract and its producer is unbuilt (#3712 row B). This judge arms "
+            "itself as soon as one receipt carries cells; a receipt carrying them beside "
+            "one that does not is a regression and FAILS."
+        )
+        return 0
     verbs = list(C.get("verbs") or [])
     long_for = C.get("long_rungs_for") or {}
     rungs, consumer_max, rc = load_rungs(rungs_doc, out)
@@ -193,7 +233,7 @@ def judge(L, receipts, rungs_doc, out, rungs_main=None):
                             else:
                                 refused += 1
                         else:
-                            fails.append(f"{label} {v}: {str(c.get('reason', ''))[:80]}")
+                            fails.append(f"{label} {v}: {_loud(c.get('reason', ''), 80)}")
                         if len(fails) > n_before:
                             failed_somewhere.add(key)
             for i, w in enumerate(fails):

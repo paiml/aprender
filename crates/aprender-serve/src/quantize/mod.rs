@@ -76,12 +76,29 @@ pub(crate) mod gemv_pool;
 pub mod generic_dot;
 pub mod generic_matvec;
 pub mod iq2_s;
+#[cfg(test)]
+pub(crate) mod iq2_s_geometry_tests;
 pub mod iq2_xxs;
+#[cfg(test)]
+#[path = "iq2_xxs_geometry_tests.rs"]
+pub(crate) mod iq2_xxs_geometry_tests;
+#[cfg(test)]
+mod q2k_gguf_py_parity_tests;
+
 pub mod iq3_s;
 pub mod iq3_xxs;
+pub mod iq4_nl;
 pub mod iq4_xs;
 pub mod iq_dispatch;
+#[cfg(test)]
+#[path = "iq_gguf_py_parity_tests.rs"]
+mod iq_gguf_py_parity_tests;
 pub mod iq_grids;
+
+#[cfg(test)]
+#[path = "ptx_codebook_tests_3931.rs"]
+mod ptx_codebook_tests_3931;
+
 pub mod parallel_dequant;
 pub mod parallel_k;
 pub mod simd;
@@ -121,9 +138,10 @@ pub use fused_q5k_q6k::{
 // Re-export parallel K-quant operations (PMAT-802)
 // LAYOUT-002: All kernels are ROW-MAJOR. No colmajor/auto aliases.
 pub use parallel_k::{
-    fused_q4k_parallel_matvec, fused_q4k_parallel_matvec_into, fused_q4k_q8k_ffn_up_gate_into,
-    fused_q4k_q8k_parallel_matvec_into, fused_q4k_tiled_matvec, fused_q5k_parallel_matvec,
-    fused_q5k_parallel_matvec_into, fused_q6k_parallel_matvec, fused_q6k_parallel_matvec_into,
+    fp32_activations_scoped, fused_q4k_parallel_matvec, fused_q4k_parallel_matvec_into,
+    fused_q4k_q8k_ffn_up_gate_into, fused_q4k_q8k_parallel_matvec_into, fused_q4k_tiled_matvec,
+    fused_q5k_parallel_matvec, fused_q5k_parallel_matvec_into, fused_q6k_parallel_matvec,
+    fused_q6k_parallel_matvec_into, with_fp32_activations,
 };
 
 // Re-export activation functions (PMAT-802)

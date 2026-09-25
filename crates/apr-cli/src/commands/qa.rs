@@ -281,10 +281,15 @@ impl GateResult {
         }
     }
 
+    /// A gate that did not run. #3965: it is NOT `passed`. `passed: true` on an unrun
+    /// check told every JSON consumer that read `passed` alone that the check had
+    /// passed: `gpu_speedup` "Skipped: CUDA not available" read as a GPU pass. A skip
+    /// is Unknown(NotRun), never a pass. Whether a skip fails the RUN is a separate
+    /// rule, and it lives in one place: [`gates_pass`].
     pub(crate) fn skipped(name: &str, reason: &str) -> Self {
         Self {
             name: name.to_string(),
-            passed: true, // Skipped gates don't fail
+            passed: false,
             message: format!("Skipped: {reason}"),
             value: None,
             threshold: None,
@@ -292,6 +297,67 @@ impl GateResult {
             skipped: true,
         }
     }
+}
+
+/// #3965: the gate registry: every gate `run_qa` dispatches, by the name it reports.
+///
+/// `run_qa` checks the gates it actually emitted against this on every run, and a
+/// mismatch is a FAILED `gate_registry` gate, not a warning, so the list cannot
+/// drift from the pipeline silently. It is published in the report as
+/// `gates_registered`, so a JSON consumer derives what to expect from the binary
+/// it ran instead of from a number it once counted.
+pub(crate) const QA_GATES: [&str; 12] = [
+    "capability_match",
+    "tensor_contract",
+    "metadata_plausibility",
+    "classifier_head",
+    "golden_output",
+    "throughput",
+    "ollama_parity",
+    "gpu_speedup",
+    "format_parity",
+    "ptx_parity",
+    "gpu_state_isolation",
+    "performance_regression",
+];
+
+/// `None` when the emitted gates are exactly [`QA_GATES`] (order-free, each once),
+/// otherwise the reason.
+#[must_use]
+pub(crate) fn gate_registry_mismatch(gates: &[GateResult]) -> Option<String> {
+    let mut emitted: Vec<&str> = gates.iter().map(|g| g.name.as_str()).collect();
+    emitted.sort_unstable();
+    let mut want: Vec<&str> = QA_GATES.to_vec();
+    want.sort_unstable();
+    if emitted == want {
+        return None;
+    }
+    let missing: Vec<&str> = want
+        .iter()
+        .copied()
+        .filter(|w| !emitted.contains(w))
+        .collect();
+    let extra: Vec<&str> = emitted
+        .iter()
+        .copied()
+        .filter(|e| !want.contains(e))
+        .collect();
+    Some(format!(
+        "emitted gates do not match the registry: missing {missing:?}, unregistered or repeated {extra:?}"
+    ))
+}
+
+/// #3965: the RUN verdict over a set of gates, in ONE place.
+///
+/// Every executed gate must pass. A skipped gate does not fail the run: that rule is
+/// unchanged, and `check_min_executed` still bounds how many may skip. What changed
+/// is that a skip no longer claims `passed` at the gate level, so this rule has to
+/// say `skipped` explicitly. Before, it was hidden inside `all(|g| g.passed)`.
+/// Several tests re-implemented that expression inline instead of calling
+/// production; they now call this, so they test the code that ships.
+#[must_use]
+pub(crate) fn gates_pass(gates: &[GateResult]) -> bool {
+    gates.iter().all(|g| g.passed || g.skipped)
 }
 
 /// System information captured during QA run
@@ -362,6 +428,13 @@ pub struct QaReport {
     /// Number of gates that were skipped
     #[serde(default)]
     pub gates_skipped: usize,
+    /// #3965 / SHIP-006: every gate this binary runs, from [`QA_GATES`]. A consumer
+    /// compares `gates` against THIS instead of a count it hardcoded. SHIP-006
+    /// required exactly 8 while apr qa emitted 12, so it could never go green again.
+    /// A report from a binary predating the registry deserializes to an empty list,
+    /// which consumers must treat as "cannot check", never as "nothing required".
+    #[serde(default)]
+    pub gates_registered: Vec<String>,
     /// Total duration
     pub total_duration_ms: u64,
     /// Timestamp (ISO 8601)
@@ -449,13 +522,31 @@ pub fn run(
         assert_classifier_head,
     };
 
-    let report = run_qa(path, &config)?;
+    // `run_qa(...)?` used to propagate straight past the `if json` block below, so
+    // ANY error meant `apr qa --json` exited having written ZERO BYTES. Measured
+    // 2026-09-22 on gx10 (#3842): on qwen35-27b-q4km it ran 78s of GPU work and
+    // its own stderr says `F2 guard: passed in 78442 ms on 20 positions` — then
+    // wrote nothing. `model_ladder.sh` appended the empty result as an empty row,
+    // the receipt assembler dropped it, and a RED REQUIRED RUNG disappeared from
+    // its own receipt while the red counter went on counting: the receipt said
+    // `red: 3` with two reds in its rows.
+    //
+    // A gate that produces NO DOCUMENT is strictly worse than one that fails: a
+    // failure is evidence, an absence is not, and no per-row judging can find a
+    // row that was never written. So the document is emitted on BOTH paths and
+    // the error is still returned, preserving the exit code.
+    let report = match run_qa(path, &config) {
+        Ok(report) => report,
+        Err(e) => {
+            if json {
+                emit_qa_json(&qa_report_for_error(path, &e));
+            }
+            return Err(e);
+        }
+    };
 
     if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&report).unwrap_or_default()
-        );
+        emit_qa_json(&report);
     }
 
     if !report.passed {
@@ -466,7 +557,111 @@ pub fn run(
     Ok(())
 }
 
+/// Minimal JSON string escaper, so the last-resort document cannot itself fail.
+///
+/// Deliberately not `serde_json` — the fallback below exists precisely for the
+/// case where serialization did not work, and reaching for the thing that just
+/// failed is how a fallback becomes decoration.
+fn json_escaped(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Emit the report as JSON. NEVER emits an empty document.
+///
+/// The old call site was `serde_json::to_string_pretty(&report).unwrap_or_default()`,
+/// which turns a serialization failure into an empty String — a bare newline on
+/// stdout. That is the same zero-byte outcome as printing nothing, with the extra
+/// property that it looks like output, so a reader sees a truncated file rather
+/// than a missing one (#3842). A serializer that cannot describe the report is
+/// itself a finding and is reported as one.
+pub(crate) fn emit_qa_json(report: &QaReport) {
+    println!("{}", qa_json_document(report));
+}
+
+/// Build the `--json` document. Pure, and the return value is NEVER empty.
+///
+/// Separated from the printing so the invariant is a value a test can assert on.
+/// The defect this replaces was covered by a test called `test_run_with_json_output`
+/// which drove `--json` down the error path and asserted only `result.is_err()` —
+/// the test named for the output never looked at the output. A pure function makes
+/// "never empty" checkable without capturing stdout.
+pub(crate) fn qa_json_document(report: &QaReport) -> String {
+    match serde_json::to_string_pretty(report) {
+        Ok(s) if !s.trim().is_empty() => s,
+        other => {
+            let why = match other {
+                Ok(_) => "the serializer produced an empty document".to_string(),
+                Err(e) => e.to_string(),
+            };
+            format!(
+                "{{{}:{},{}:false,{}:[],{}:0,{}:0,{}:0,{}:{},{}:{}}}",
+                json_escaped("model"),
+                json_escaped(&report.model),
+                json_escaped("passed"),
+                json_escaped("gates"),
+                json_escaped("gates_executed"),
+                json_escaped("gates_skipped"),
+                json_escaped("total_duration_ms"),
+                json_escaped("timestamp"),
+                json_escaped(&report.timestamp),
+                json_escaped("summary"),
+                json_escaped(&format!("apr qa could not serialize its report: {why}")),
+            )
+        }
+    }
+}
+
+/// The report `apr qa --json` emits when the run itself could not complete.
+///
+/// It carries a FAILED gate rather than an empty `gates` list, because an empty
+/// list reads as "nothing failed" to anything counting failures — the same
+/// ambiguity that let a missing row look like an absent model instead of a red
+/// one (#3842).
+pub(crate) fn qa_report_for_error(path: &Path, e: &CliError) -> QaReport {
+    let why = format!("apr qa did not complete: {e}");
+    QaReport {
+        model: path.display().to_string(),
+        passed: false,
+        gates: vec![GateResult::failed(
+            "qa_run",
+            &why,
+            None,
+            None,
+            Duration::ZERO,
+        )],
+        gates_executed: 0,
+        gates_skipped: 0,
+        gates_registered: Vec::new(),
+        total_duration_ms: 0,
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        summary: why,
+        system_info: None,
+    }
+}
+
 /// Dispatch a single QA gate: skip if flagged, otherwise run, then print and collect.
+///
+/// A gate whose runner returns `Err` is recorded as a FAILED row carrying the
+/// error, and the remaining gates still run (#3714 done_when 3). It used to be
+/// `runner()?`, which abandoned `run_qa` before the report existed: on a
+/// qwen3moe file the golden gate's dense CPU path errored and `apr qa --json`
+/// printed ZERO bytes and exited 5 — every gate that had already passed, and
+/// the one that failed, were lost. An error is a FAIL, never a skip and never
+/// a pass; the report is always written.
 fn dispatch_gate(
     gates: &mut Vec<GateResult>,
     json: bool,
@@ -478,7 +673,25 @@ fn dispatch_gate(
     let result = if skip {
         GateResult::skipped(name, skip_reason)
     } else {
-        runner()?
+        // #3817: a gate that cannot RUN is a FAILED gate, never an aborted
+        // report. `apr qa` on a qwen3moe GGUF used to propagate the dense
+        // loader's error out of `run_qa`, so the process exited 5 having printed
+        // **zero bytes of JSON** — `capability_match` and `golden_output` were
+        // absent rather than red, and absence reads as conformance to anything
+        // parsing the report. The error is now the gate's message. (#3714 R2
+        // fixed the same abort independently; the fold keeps this message and
+        // takes its measured duration rather than a zero.)
+        let start = Instant::now();
+        match runner() {
+            Ok(result) => result,
+            Err(e) => GateResult::failed(
+                name,
+                &format!("{name} could not run: {e}"),
+                None,
+                None,
+                start.elapsed(),
+            ),
+        }
     };
     if !json {
         print_gate_result(&result);
@@ -562,4 +775,6 @@ include!("golden_output.rs");
 include!("speedup.rs");
 include!("forward_error.rs");
 include!("gpu_isolation_result.rs");
+include!("qa_dense_session.rs");
 include!("qa_08.rs");
+include!("qa_json_never_empty.rs");

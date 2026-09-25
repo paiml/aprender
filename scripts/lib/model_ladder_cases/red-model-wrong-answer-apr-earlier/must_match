@@ -1,0 +1,1 @@
+apr diverges from the llama.cpp CPU reference at step 2.*EARLIER than the reference's own CUDA leg does \(step 4\)

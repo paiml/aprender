@@ -266,6 +266,7 @@ fn test_chat_message_empty_content() {
 #[test]
 fn test_chat_completion_response_structure() {
     let response = ChatCompletionResponse {
+        used_gpu: None,
         id: "chatcmpl-123".to_string(),
         object: "chat.completion".to_string(),
         created: 1234567890,
@@ -314,6 +315,7 @@ fn test_chat_completion_response_with_traces() {
     };
 
     let response = ChatCompletionResponse {
+        used_gpu: None,
         id: "test".to_string(),
         object: "chat.completion".to_string(),
         created: 0,
