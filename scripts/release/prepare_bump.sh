@@ -85,8 +85,12 @@ CLOSES_GUARD="$REPO_ROOT/scripts/check_pr_closes_issue.sh"
 owed=$(bash "$CLOSES_GUARD" --list-owed --body "$AP/pr_body.md") || die "check_pr_closes_issue.sh --list-owed could not read $AP/pr_body.md"
 owed=$(printf '%s' "$owed" | tr '\n' ' ')
 [ -z "$owed" ] || printf '\nkeep-open: %s -- cited by the CHANGELOG for context; each closes via its own PR; the release EPIC closes at T-4\n' "$owed" >> "$AP/pr_body.md"
+# RULE 18 (APR-EPIC-001, #4455): ci.yml runs the guard with --require-close, so the body must
+# discharge an issue or say why not. A bump closes none itself (the epic closes at T-4), so it says
+# so. The reason carries no `#` and no closing keyword: it cannot close anything on merge.
+printf '\nno-issue: release version bump -- the release EPIC and milestone close at T-4\n' >> "$AP/pr_body.md"
 printf '\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n' >> "$AP/pr_body.md"
-bash "$CLOSES_GUARD" --body "$AP/pr_body.md" > "$AP/r2.log" 2>&1 || die "the bump PR body fails §6 R-2; nothing committed, pushed or opened ($AP/r2.log, $AP/pr_body.md)"
+bash "$CLOSES_GUARD" --require-close --body "$AP/pr_body.md" > "$AP/r2.log" 2>&1 || die "the bump PR body fails §6 R-2; nothing committed, pushed or opened ($AP/r2.log, $AP/pr_body.md)"
 # THE MODEL-LADDER RECEIPTS FOR THE NEW VERSION RIDE ON THE BUMP (#3708). The dogfood's
 # check_model_ladder row reads evidence/dogfood/models/<V>/<host>.json for the version being cut;
 # 0.68.2 committed them on its bump by hand (#3498) and 0.69.0 did not, so the row could not be

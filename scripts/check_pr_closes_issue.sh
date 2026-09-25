@@ -61,6 +61,8 @@ usage() {
 # "owner/repo" prefix before the '#'. This is CLASS: closing reference.
 CLOSE_RE='(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*:?[[:space:]]*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+'
 REF_RE='#[0-9]+'
+# A rule-20 checklist row reference (APR-EPIC-001 v1.4): `Refs #P row <id>`.
+ROW_REF_RE='refs?[[:space:]]*:?[[:space:]]*#[0-9]+[[:space:]]+row[[:space:]]+[A-Za-z0-9._-]+'
 
 # THE #3400 LANDMINE, CLASS: a hyphen-prefixed closing keyword. Requires a
 # word character immediately before the hyphen so it does not also match a
@@ -206,6 +208,57 @@ check_body_text() {
     return 1
 }
 
+# EVERY PR DISCHARGES AN ISSUE (--require-close; APR-EPIC-001 rule 18, #4455).
+#
+# R-2 above judges what a body CITES; a body that cites nothing passes it. That is
+# the gap rule 18 closes: on 2026-09-25, 33 issues were done on main and still open,
+# because a PR landed the fix and nothing closed the ticket, and ~77 issues/day were
+# being filed against a queue with no exit. So a PR body must also carry one of:
+#   * a closing keyword naming an OPEN ISSUE of this repository (`Closes #N`,
+#     `Fixes paiml/aprender#N`); a pull request, a closed issue, or another
+#     repository's issue does not discharge anything;
+#   * a rule-20 row reference `Refs #P row <id>` to an open parent checklist issue
+#     (the PR ticks one line; only the last line's PR says `Closes #P`);
+#   * a line `no-issue: <reason>` with a non-empty reason. It carries no closing
+#     keyword, so it cannot be the #3400 landmine.
+# An unresolvable target is RED `close-target-unverified`: a guess is not a close.
+#
+# PR-TIME ONLY. After a merge, the issue it closed IS closed, so a merged body judged
+# with this flag goes RED -- which is why check_reconcile.sh (merged PRs) does not
+# pass it, and ci.yml's pull_request step does.
+check_require_close() {
+    body="$1"
+    repo_lc="$(printf '%s' "${PR_CLOSES_REPO:-paiml/aprender}" | tr '[:upper:]' '[:lower:]')"
+    targets="$(printf '%s\n' "$body" | grep -oiE "$CLOSE_RE" | tr '[:upper:]' '[:lower:]' \
+        | sed -nE "s@^[a-z]+[[:space:]]*:?[[:space:]]*(${repo_lc}|)#([0-9]+)\$@\\2@p" || true)"
+    rows="$(printf '%s\n' "$body" | grep -oiE "$ROW_REF_RE" | grep -oE '#[0-9]+' | tr -d '#' || true)"
+    open=0; unverified=0; seen=" "
+    for n in $targets $rows; do
+        case "$seen" in *" $n "*) continue ;; esac
+        seen="$seen$n "
+        case "$(ref_kind "$n")" in
+            issue) printf '  discharges #%s (open issue)\n' "$n"; open=$((open + 1)) ;;
+            unknown) printf '  #%s: state UNREADABLE\n' "$n"; unverified=$((unverified + 1)) ;;
+            *) printf '  #%s: not an open issue (does not discharge)\n' "$n" ;;
+        esac
+    done
+    if [ "$open" -gt 0 ]; then
+        printf 'PASS: discharges %s open issue(s) (rule 18).\n' "$open"
+        return 0
+    fi
+    no_issue_reason="$(printf '%s\n' "$body" | grep -iE '^[[:space:]]*no-issue:' | sed -E 's/^[[:space:]]*[Nn][Oo]-[Ii][Ss][Ss][Uu][Ee]:[[:space:]]*//' | tr -d '[:space:]' || true)"
+    if [ -n "$no_issue_reason" ]; then
+        printf 'PASS: no-issue reason given (rule 18).\n'
+        return 0
+    fi
+    if [ "$unverified" -gt 0 ]; then
+        printf 'FAIL close-target-unverified: %s close target(s) could not be resolved; a guess is not a close.\n' "$unverified"
+        return 1
+    fi
+    printf 'FAIL no-close: the body closes no open issue of %s and has no `no-issue: <reason>` line (APR-EPIC-001 rule 18). `Refs #N` does not close; use `Closes #N`, `Refs #P row <id>` for a rule-20 checklist row, or `no-issue: <reason>`.\n' "$repo_lc"
+    return 1
+}
+
 # self_test: a must-RED/must-GREEN case table, plus a vacuity row and a usage
 # row. The table itself is the mutation proof: a neutered check that always
 # passes fails the RED rows (refs-only, noclose-empty, bare-mention); a
@@ -316,6 +369,42 @@ STUB
     # that stops "closed" from becoming a way through.
     run_kind_case "closed-plus-open" "see #9004 and #9002"        1
 
+    # --- --require-close: every PR discharges an issue (rule 18, #4455) -----
+    # Each RED row is a body R-2 alone PASSES, so a row going green under a
+    # mutant proves the rule-18 predicate, not R-2, is what refused it.
+    run_rc_case() { # run_rc_case NAME BODY WANT [MARKER the output must carry]
+        name="$1"; body="$2"; want="$3"; marker="${4:-}"
+        printf '%s' "$body" > "${tmp}/${name}.txt"
+        got=0
+        cases=$((cases + 1))
+        PR_CLOSES_REF_KIND_CMD="${tmp}/kindstub.sh" \
+            bash "$SELF_PATH" --require-close --body "${tmp}/${name}.txt" > "${tmp}/${name}.out" 2>&1 || got=$?
+        if [ "$got" -ne "$want" ]; then
+            printf 'FAIL case %s: expected exit %s, got %s\n' "$name" "$want" "$got" >&2
+            fails=$((fails + 1))
+        elif [ -n "$marker" ] && ! grep -q -- "$marker" "${tmp}/${name}.out"; then
+            printf 'FAIL case %s: exit %s but no "%s" line\n' "$name" "$got" "$marker" >&2
+            fails=$((fails + 1))
+        fi
+    }
+    run_rc_case "rc-closes-open"      "Closes #9002"                                 0 "PASS: discharges 1"
+    run_rc_case "rc-own-repo-prefix"  "Fixes paiml/aprender#9002"                    0 "PASS: discharges 1"
+    run_rc_case "rc-closed-plus-open" $'Closes #9004\nFixes #9002'                   0 "PASS: discharges 1"
+    run_rc_case "rc-row-ref"          $'Refs #9002 row A8\nkeep-open: parent checklist' 0 "PASS: discharges 1"
+    run_rc_case "rc-no-issue"         $'Docs only.\nno-issue: typo in a comment'    0 "PASS: no-issue"
+    # FALSIFY-FLOW-012: a body with only `Refs #N` (R-2 satisfied by keep-open) and no trailer.
+    run_rc_case "rc-flow-012-refs-only" $'Refs #9002\nkeep-open: tracked by the epic' 1 "FAIL no-close"
+    run_rc_case "rc-no-refs"          "Bumps dependency versions."                   1 "FAIL no-close"
+    run_rc_case "rc-no-issue-empty"   $'Docs only.\nno-issue:'                       1 "FAIL no-close"
+    run_rc_case "rc-no-issue-midline" "this line mentions no-issue: inline"          1 "FAIL no-close"
+    run_rc_case "rc-closes-closed"    "Closes #9004"                                 1 "FAIL no-close"
+    run_rc_case "rc-closes-pr"        "Closes #9001"                                 1 "FAIL no-close"
+    run_rc_case "rc-cross-repo"       "Fixes paiml/infra#9002"                       1 "FAIL no-close"
+    run_rc_case "rc-row-ref-closed"   $'Refs #9004 row A8'                           1 "FAIL no-close"
+    run_rc_case "rc-unresolvable"     "Closes #9003"                                 1 "FAIL close-target-unverified"
+    # R-2 still runs first under the flag: a discharge does not excuse an un-closed citation.
+    run_rc_case "rc-r2-still-applies" $'Closes #9002\nsee #9005'                     1 "non-closing ref"
+
     # THE DEFAULT PATH, not the seam. Every row above pins the stub, which
     # proves the DECISION and says nothing about the resolver. This one takes
     # the stub away and shadows `gh` with one that exits 1 — the shape a runner
@@ -414,8 +503,13 @@ main() {
 
     body_file=""
     list_owed=0
+    require_close=0
     while [ $# -gt 0 ]; do
         case "$1" in
+            --require-close)
+                require_close=1
+                shift
+                ;;
             --body)
                 body_file="${2:-}"
                 shift 2
@@ -461,6 +555,10 @@ main() {
     rc=0
     out="$(check_body_text "$body")" || rc=$?
     printf '%s\n' "$out"
+    if [ "$rc" -eq 0 ] && [ "$require_close" -eq 1 ]; then
+        out="$(check_require_close "$body")" || rc=$?
+        printf '%s\n' "$out"
+    fi
     exit "$rc"
 }
 
