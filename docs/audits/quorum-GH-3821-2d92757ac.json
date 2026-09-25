@@ -1,0 +1,50 @@
+{
+ "ticket": "GH-3821",
+ "base": "3f7f502a3",
+ "head": "2d92757ac8dec54e8ff7f9640c8eff6319fe5da8",
+ "branch": "fix/3821-on-mergeback",
+ "scope": "apr qa GPU golden leg runs the F2 parity guard after generation and reports GPU-correct contradictions (REPORT_ONLY)",
+ "diff_sha256": "9bf49b6df4480b877a31c32893a26eab6a452347c6dd7d654445a537f14ef4b6",
+ "brief_sha256": "7993d89effd8ce0b15577b87640993e4c91f02cb4882704f9dbd7ee3a2ad9561",
+ "author": {
+  "model": "claude-opus-5-5",
+  "family": "claude"
+ },
+ "executor": "manual: claude -p --permission-mode plan --allowedTools Read,Grep,Glob,Bash(wc/grep/sed -n), chmod a-w git-archive snapshot",
+ "shape": "sonnet-5 + sonnet-5 + haiku-4-5",
+ "degraded": "same-family: agy lane produced no verdict (headless 'command' permission auto-denied; not re-run with skip-permissions for a review lane)",
+ "round_1": {
+  "head": "e4d622340",
+  "result": "sonnet FAIL (confirmed): the F2 probe ran BEFORE generation; f2_remeasure_without_fp8 permanently flips FP8->FP16, so it could change the gate verdict. Fixed in 2d92757ac: the guard runs after generation."
+ },
+ "agreed": true,
+ "lanes": [
+  {
+   "lane": "sonnet",
+   "model": "claude-sonnet-5",
+   "model_source": "measured",
+   "family": "claude",
+   "conversation_id": "8c01c304-57b5-46f5-a8e1-bc00bb90f274",
+   "verdict": "PASS",
+   "summary": "Round 2 initial FAIL on one finding: dead_code under non-cuda `cargo clippy -p apr-cli --lib -- -D warnings`. Author measured rc=0; crates/apr-cli/src/lib.rs:26-31 has crate-level #![allow(dead_code,...)]. The lane re-checked it on resume, retracted the finding and gave PASS. Axes 1-4 (mapping, guard strictly after gen, REPORT_ONLY, non-vacuous tests) verified."
+  },
+  {
+   "lane": "sonnet2 (agy seat fallback)",
+   "model": "claude-sonnet-5",
+   "model_source": "measured",
+   "family": "claude",
+   "conversation_id": "df4f9ac8-ed19-4e48-8a81-0c48c825ee2d",
+   "verdict": "PASS",
+   "summary": "Same single dead_code finding. After the lib.rs:26-31 evidence it was retracted, since the lane had reasoned from the workspace lint table only. No other defect; PASS."
+  },
+  {
+   "lane": "haiku",
+   "model": "claude-haiku-4-5-20251001",
+   "model_source": "measured",
+   "family": "claude",
+   "conversation_id": "a4d0b9c1-e118-4455-b959-a3c592114a0a",
+   "verdict": "PASS",
+   "summary": "All 5 axes pass: NotMeasured->Unknown(NotRun), guard after gen via into_engine/into_cuda, returned GpuGoldenLeg unchanged, tests catch arm swaps, cfg gating sound."
+  }
+ ]
+}
