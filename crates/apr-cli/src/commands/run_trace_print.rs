@@ -78,7 +78,11 @@ fn render_layer_trace(result: &RunResult, max_tokens: usize) -> String {
 
     let mut out = String::new();
     let _ = writeln!(out);
-    let _ = writeln!(out, "{}", "=== Layer Trace (APR-TRACE-001) ===".cyan().bold());
+    let _ = writeln!(
+        out,
+        "{}",
+        "=== Layer Trace (APR-TRACE-001) ===".cyan().bold()
+    );
     let _ = writeln!(out);
     let _ = writeln!(
         out,
@@ -198,40 +202,53 @@ fn classify_roofline(
     tok_per_sec: f64,
     used_gpu: Option<bool>,
 ) -> (u8, u8, &'static str, &'static str) {
-    if used_gpu == Some(true) {
-        return if tok_per_sec > 50.0 {
-            (
-                65,
-                35,
-                "Compute (GPU tensor cores engaged)",
-                "Efficient — GPU-accelerated path active",
-            )
-        } else {
-            (
-                20,
-                80,
-                "Memory bandwidth (GPU VRAM); wall-clock tok/s includes load and one-off CUDA setup",
-                "Measure decode-only throughput with `apr bench` before tuning",
-            )
-        };
+    match used_gpu {
+        Some(true) => classify_roofline_gpu(tok_per_sec),
+        _ if tok_per_sec > 50.0 => classify_roofline_fast_non_gpu(used_gpu),
+        _ => classify_roofline_tiers(tok_per_sec),
     }
+}
+
+/// GPU arm (#4211): never names the CPU, never recommends `--gpu`.
+fn classify_roofline_gpu(tok_per_sec: f64) -> (u8, u8, &'static str, &'static str) {
     if tok_per_sec > 50.0 {
-        return if used_gpu == Some(false) {
-            (
-                40,
-                60,
-                "Mixed (CPU SIMD path, memory bandwidth limited)",
-                "Efficient for CPU — enable GPU with --gpu for more",
-            )
-        } else {
-            (
-                65,
-                35,
-                "Compute (high throughput; backend not reported)",
-                "Efficient at this throughput",
-            )
-        };
+        (
+            65,
+            35,
+            "Compute (GPU tensor cores engaged)",
+            "Efficient — GPU-accelerated path active",
+        )
+    } else {
+        (
+            20,
+            80,
+            "Memory bandwidth (GPU VRAM); wall-clock tok/s includes load and one-off CUDA setup",
+            "Measure decode-only throughput with `apr bench` before tuning",
+        )
     }
+}
+
+/// Above 50 tok/s without a GPU report: a CPU run never claims tensor cores.
+fn classify_roofline_fast_non_gpu(used_gpu: Option<bool>) -> (u8, u8, &'static str, &'static str) {
+    if used_gpu == Some(false) {
+        (
+            40,
+            60,
+            "Mixed (CPU SIMD path, memory bandwidth limited)",
+            "Efficient for CPU — enable GPU with --gpu for more",
+        )
+    } else {
+        (
+            65,
+            35,
+            "Compute (high throughput; backend not reported)",
+            "Efficient at this throughput",
+        )
+    }
+}
+
+/// The throughput-only tiers at or below 50 tok/s.
+fn classify_roofline_tiers(tok_per_sec: f64) -> (u8, u8, &'static str, &'static str) {
     if tok_per_sec > 20.0 {
         (
             40,
@@ -278,8 +295,16 @@ fn print_roofline_profile(result: &RunResult, max_tokens: usize) {
     eprintln!();
     eprintln!("  Throughput:     {tok_per_sec:.1} tok/s (wall clock, load included)");
     eprintln!("  Latency:        {total_ms:.1} ms ({tokens_generated} tokens)");
-    eprintln!("  Per-token:      {:.2} ms", total_ms / tokens_generated.max(1) as f64);
-    eprintln!("  GPU used:       {}", result.used_gpu.map_or("unknown", |g| if g { "yes" } else { "no" }));
+    eprintln!(
+        "  Per-token:      {:.2} ms",
+        total_ms / tokens_generated.max(1) as f64
+    );
+    eprintln!(
+        "  GPU used:       {}",
+        result
+            .used_gpu
+            .map_or("unknown", |g| if g { "yes" } else { "no" })
+    );
     eprintln!();
     eprintln!("  {}", "Roofline Classification".bold());
     eprintln!("  Compute bound:  {compute_pct}%");
