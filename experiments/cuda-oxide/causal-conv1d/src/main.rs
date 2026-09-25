@@ -26,8 +26,9 @@
 // Two variants, differing only in the exponential of the SiLU:
 //   (A) conv1d_silu_exp — `exp(-sum)` (libdevice), the more precise
 //   (B) conv1d_silu_ex2 — `exp2(-sum * log2 e)`, mirroring the hand PTX's ex2.approx
-// Both keep the CPU's separate multiply and add (no FMA contraction), as the hand
-// PTX does, and divide with `/` (`div.rn.f32`).
+// Both divide with `/` (`div.rn.f32`). LLVM contracts each `sum += a * b` into
+// `fma.rn.f32` (13 in the emitted PTX), where the hand PTX keeps a separate mul and add;
+// parity against f64 is unaffected (max|Δ| 1.2e-7).
 //
 // Output: a human table on stdout plus one `apr-kernel-receipt/v1` JSON line
 // prefixed `RECEIPT ` per variant; `receipt.sh` adds host facts and writes
