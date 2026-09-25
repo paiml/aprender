@@ -34,7 +34,7 @@
 // evidence/kernels/gdn_causal_conv1d_silu/<host>.json.
 
 use cuda_core::{CudaContext, DeviceBuffer, IntoResult, LaunchConfig1D, sys};
-use cuda_device::{DisjointSlice, LinearTiles, cuda_module, kernel, launch_bounds, launch_contract, thread};
+use cuda_device::{DisjointSlice, LinearTiles, ThreadRunMut32, cuda_module, kernel, launch_bounds, launch_contract, thread};
 use std::sync::Arc;
 
 const BLOCK: usize = 256;
@@ -71,33 +71,31 @@ mod kernels {
         mut state_out: DisjointSlice<f32, LinearTiles<3>>,
     ) {
         let c = thread::index_1d_u32(launch_context).get() as usize;
-        let Some(mut o) = out.thread_run32(thread::index_1d_u32(launch_context)) else {
+        let Some(ThreadRunMut32::Full(mut o)) = out.thread_run32(thread::index_1d_u32(launch_context)) else {
             return;
         };
-        let Some(mut so) = state_out.thread_run32(thread::index_1d_u32(launch_context)) else {
+        let Some(ThreadRunMut32::Full(mut so)) =
+            state_out.thread_run32(thread::index_1d_u32(launch_context))
+        else {
             return;
         };
-        let x = input[c];
-        let s0 = state[c * 3];
-        let s1 = state[c * 3 + 1];
-        let s2 = state[c * 3 + 2];
+        // One checked chunk per operand instead of one check per element.
+        let (Some(&x), Some(st), Some(w)) = (
+            input.get(c),
+            state.get(c * 3..).and_then(|s| s.first_chunk::<3>()),
+            weight.get(c * 4..).and_then(|s| s.first_chunk::<4>()),
+        ) else {
+            return;
+        };
         let mut sum = 0.0f32;
-        sum += s0 * weight[c * 4];
-        sum += s1 * weight[c * 4 + 1];
-        sum += s2 * weight[c * 4 + 2];
-        sum += x * weight[c * 4 + 3];
-        if let Some(mut slot) = so.at(0) {
-            slot.write(s1);
-        }
-        if let Some(mut slot) = so.at(1) {
-            slot.write(s2);
-        }
-        if let Some(mut slot) = so.at(2) {
-            slot.write(x);
-        }
-        if let Some(mut slot) = o.at(0) {
-            slot.write(sum / (1.0f32 + (-sum).exp()));
-        }
+        sum += st[0] * w[0];
+        sum += st[1] * w[1];
+        sum += st[2] * w[2];
+        sum += x * w[3];
+        so.at_const::<0>().write(st[1]);
+        so.at_const::<1>().write(st[2]);
+        so.at_const::<2>().write(x);
+        o.at_const::<0>().write(sum / (1.0f32 + (-sum).exp()));
     }
 
     /// (B) SiLU via `exp2(-sum * log2 e)`, the hand PTX's form.
@@ -112,34 +110,32 @@ mod kernels {
         mut state_out: DisjointSlice<f32, LinearTiles<3>>,
     ) {
         let c = thread::index_1d_u32(launch_context).get() as usize;
-        let Some(mut o) = out.thread_run32(thread::index_1d_u32(launch_context)) else {
+        let Some(ThreadRunMut32::Full(mut o)) = out.thread_run32(thread::index_1d_u32(launch_context)) else {
             return;
         };
-        let Some(mut so) = state_out.thread_run32(thread::index_1d_u32(launch_context)) else {
+        let Some(ThreadRunMut32::Full(mut so)) =
+            state_out.thread_run32(thread::index_1d_u32(launch_context))
+        else {
             return;
         };
-        let x = input[c];
-        let s0 = state[c * 3];
-        let s1 = state[c * 3 + 1];
-        let s2 = state[c * 3 + 2];
+        // One checked chunk per operand instead of one check per element.
+        let (Some(&x), Some(st), Some(w)) = (
+            input.get(c),
+            state.get(c * 3..).and_then(|s| s.first_chunk::<3>()),
+            weight.get(c * 4..).and_then(|s| s.first_chunk::<4>()),
+        ) else {
+            return;
+        };
         let mut sum = 0.0f32;
-        sum += s0 * weight[c * 4];
-        sum += s1 * weight[c * 4 + 1];
-        sum += s2 * weight[c * 4 + 2];
-        sum += x * weight[c * 4 + 3];
-        if let Some(mut slot) = so.at(0) {
-            slot.write(s1);
-        }
-        if let Some(mut slot) = so.at(1) {
-            slot.write(s2);
-        }
-        if let Some(mut slot) = so.at(2) {
-            slot.write(x);
-        }
-        if let Some(mut slot) = o.at(0) {
-            let e = ((-sum) * std::f32::consts::LOG2_E).exp2();
-            slot.write(sum / (1.0f32 + e));
-        }
+        sum += st[0] * w[0];
+        sum += st[1] * w[1];
+        sum += st[2] * w[2];
+        sum += x * w[3];
+        so.at_const::<0>().write(st[1]);
+        so.at_const::<1>().write(st[2]);
+        so.at_const::<2>().write(x);
+        let e = ((-sum) * std::f32::consts::LOG2_E).exp2();
+        o.at_const::<0>().write(sum / (1.0f32 + e));
     }
 }
 
