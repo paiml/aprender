@@ -836,7 +836,7 @@ fn write_reachable_serve_script(
 /// Answer every connection with a minimal OpenAI chat-completion, so a
 /// `-p` turn completes and `apr code` reaches its exit path.
 #[cfg(unix)]
-fn answer_completions_forever(listener: std::net::TcpListener) {
+fn answer_completions_forever(listener: &std::net::TcpListener) {
     use std::io::{Read, Write};
     const BODY: &str = concat!(
         r#"{"choices":[{"message":{"role":"assistant","content":"ok"},"#,
@@ -1031,7 +1031,7 @@ fn falsify_2607_non_interactive_p_run_leaves_no_serve_child() {
              another process is holding the port `apr code` derived from its own pid"
         )
     });
-    std::thread::spawn(move || answer_completions_forever(listener));
+    std::thread::spawn(move || answer_completions_forever(&listener));
 
     let output = child.wait_with_output().expect("wait for apr code");
 

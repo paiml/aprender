@@ -85,17 +85,17 @@ fn recall_at_10_meets_threshold() {
     // Phase 3 compares against the FULL persistence pipeline:
     // build → flush → drop → reopen → query. Recall must hold after
     // round-trip just as it does in-memory.
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("create tempdir");
     let path = dir.path().join("recall.bin");
 
-    let mut idx = PersistentHnsw::open(&path, 16, 200).unwrap();
+    let mut idx = PersistentHnsw::open(&path, 16, 200).expect("open index");
     for (id, v) in &corpus {
         idx.add(id.clone(), Vector::from_slice(v));
     }
-    idx.flush().unwrap();
+    idx.flush().expect("flush");
     drop(idx);
 
-    let reopened = PersistentHnsw::open(&path, 16, 200).unwrap();
+    let reopened = PersistentHnsw::open(&path, 16, 200).expect("open index");
 
     // Brute-force baseline + HNSW result for each query.
     let mut sum_recall: f64 = 0.0;

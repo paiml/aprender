@@ -144,6 +144,7 @@ fn build_init_apr_fixture(_path: &PathBuf) {
 ///   - flag accidentally removed
 ///   - flag renamed without updating contract
 ///   - flag's help-text drifts away from the contract description
+///
 /// Without needing a full init-APR fixture.
 #[test]
 fn force_under_provisioned_flag_documented_in_help() {

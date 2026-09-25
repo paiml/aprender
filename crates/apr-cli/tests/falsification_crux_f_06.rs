@@ -4,7 +4,6 @@
 //! gate the classifier discharges has a matching captured KV-timeline JSON
 //! that the binary must classify exactly as the harness expects.
 
-use serde_json::json;
 use std::io::Write;
 use std::process::Command;
 
@@ -19,7 +18,7 @@ fn write_body(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .prefix("crux-f-06-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
+        .expect("create temp file");
     f.write_all(
         serde_json::to_vec_pretty(body)
             .expect("serialize")
@@ -31,17 +30,17 @@ fn write_body(body: &serde_json::Value) -> tempfile::NamedTempFile {
 }
 
 fn good_timeline() -> serde_json::Value {
-    json!({
+    serde_json::from_str::<serde_json::Value>(r#"{
         "timeline": [
             {"step": 0, "t_ms": 0.0,  "used_blocks":  10, "free_blocks":  90, "used_pct": 0.10, "active_seqs": 1, "preempted_seqs": 0},
             {"step": 1, "t_ms": 8.0,  "used_blocks":  50, "free_blocks":  50, "used_pct": 0.50, "active_seqs": 1, "preempted_seqs": 0},
-            {"step": 2, "t_ms": 16.0, "used_blocks":  96, "free_blocks":   4, "used_pct": 0.96, "active_seqs": 2, "preempted_seqs": 1},
+            {"step": 2, "t_ms": 16.0, "used_blocks":  96, "free_blocks":   4, "used_pct": 0.96, "active_seqs": 2, "preempted_seqs": 1}
         ],
         "block_size_tokens": 16,
         "total_blocks": 100,
         "peak_used_pct": 0.96,
-        "preemption_count": 1,
-    })
+        "preemption_count": 1
+    }"#).expect("literal fixture is valid JSON")
 }
 
 // ===== g2: CLI shape =====
@@ -133,8 +132,10 @@ fn falsify_crux_f_06_001_schema_ok_on_good_body() {
 
 #[test]
 fn falsify_crux_f_06_001_schema_reports_missing_top_key() {
-    let body =
-        json!({"timeline": [], "block_size_tokens": 16, "total_blocks": 100, "peak_used_pct": 0.0});
+    let body = serde_json::from_str::<serde_json::Value>(
+        r#"{"timeline": [], "block_size_tokens": 16, "total_blocks": 100, "peak_used_pct": 0.0}"#,
+    )
+    .expect("literal fixture is valid JSON");
     let f = write_body(&body);
     let out = apr_binary()
         .args(["kv-timeline-lint", "--timeline-file"])
@@ -151,13 +152,13 @@ fn falsify_crux_f_06_001_schema_reports_missing_top_key() {
 
 #[test]
 fn falsify_crux_f_06_002_block_conservation_rejects_violation() {
-    let body = json!({
+    let body = serde_json::from_str::<serde_json::Value>(r#"{
         "timeline": [{"step": 0, "t_ms": 0.0, "used_blocks": 30, "free_blocks": 30, "used_pct": 0.30, "active_seqs": 1, "preempted_seqs": 0}],
         "block_size_tokens": 16,
         "total_blocks": 100,
         "peak_used_pct": 0.30,
-        "preemption_count": 0,
-    });
+        "preemption_count": 0
+    }"#).expect("literal fixture is valid JSON");
     let f = write_body(&body);
     let out = apr_binary()
         .args(["kv-timeline-lint", "--timeline-file"])
@@ -177,13 +178,13 @@ fn falsify_crux_f_06_002_block_conservation_rejects_violation() {
 
 #[test]
 fn falsify_crux_f_06_002_used_pct_arithmetic_rejects_mismatch() {
-    let body = json!({
+    let body = serde_json::from_str::<serde_json::Value>(r#"{
         "timeline": [{"step": 0, "t_ms": 0.0, "used_blocks": 50, "free_blocks": 50, "used_pct": 0.10, "active_seqs": 1, "preempted_seqs": 0}],
         "block_size_tokens": 16,
         "total_blocks": 100,
         "peak_used_pct": 0.10,
-        "preemption_count": 0,
-    });
+        "preemption_count": 0
+    }"#).expect("literal fixture is valid JSON");
     let f = write_body(&body);
     let out = apr_binary()
         .args(["kv-timeline-lint", "--timeline-file"])
@@ -201,7 +202,8 @@ fn falsify_crux_f_06_002_used_pct_arithmetic_rejects_mismatch() {
 #[test]
 fn falsify_crux_f_06_004_peak_consistency_rejects_peak_mismatch() {
     let mut body = good_timeline();
-    body["peak_used_pct"] = json!(0.50);
+    body["peak_used_pct"] = serde_json::from_str::<serde_json::Value>(r#"0.50"#)
+        .expect("literal fixture is valid JSON");
     let f = write_body(&body);
     let out = apr_binary()
         .args(["kv-timeline-lint", "--timeline-file"])
@@ -219,7 +221,8 @@ fn falsify_crux_f_06_004_peak_consistency_rejects_peak_mismatch() {
 #[test]
 fn falsify_crux_f_06_004_peak_consistency_rejects_preempt_count_mismatch() {
     let mut body = good_timeline();
-    body["preemption_count"] = json!(99);
+    body["preemption_count"] =
+        serde_json::from_str::<serde_json::Value>(r#"99"#).expect("literal fixture is valid JSON");
     let f = write_body(&body);
     let out = apr_binary()
         .args(["kv-timeline-lint", "--timeline-file"])
@@ -236,13 +239,13 @@ fn falsify_crux_f_06_004_peak_consistency_rejects_preempt_count_mismatch() {
 
 #[test]
 fn falsify_crux_f_06_003_preemption_trigger_rejects_below_threshold() {
-    let body = json!({
+    let body = serde_json::from_str::<serde_json::Value>(r#"{
         "timeline": [{"step": 0, "t_ms": 0.0, "used_blocks": 50, "free_blocks": 50, "used_pct": 0.50, "active_seqs": 1, "preempted_seqs": 1}],
         "block_size_tokens": 16,
         "total_blocks": 100,
         "peak_used_pct": 0.50,
-        "preemption_count": 1,
-    });
+        "preemption_count": 1
+    }"#).expect("literal fixture is valid JSON");
     let f = write_body(&body);
     let out = apr_binary()
         .args(["kv-timeline-lint", "--timeline-file"])
@@ -261,13 +264,13 @@ fn falsify_crux_f_06_003_preemption_trigger_rejects_below_threshold() {
 fn falsify_crux_f_06_003_preemption_trigger_respects_custom_threshold() {
     // A trace that preempts at 0.80; default threshold (0.95) rejects, but
     // --preempt-threshold 0.80 accepts.
-    let body = json!({
+    let body = serde_json::from_str::<serde_json::Value>(r#"{
         "timeline": [{"step": 0, "t_ms": 0.0, "used_blocks": 80, "free_blocks": 20, "used_pct": 0.80, "active_seqs": 1, "preempted_seqs": 1}],
         "block_size_tokens": 16,
         "total_blocks": 100,
         "peak_used_pct": 0.80,
-        "preemption_count": 1,
-    });
+        "preemption_count": 1
+    }"#).expect("literal fixture is valid JSON");
     let f = write_body(&body);
     let out = apr_binary()
         .args(["kv-timeline-lint", "--timeline-file"])

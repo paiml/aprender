@@ -87,10 +87,12 @@ fn x2_no_unimplemented_in_public_api() {
 fn x3_trueno_dependency_documented() {
     // Verify trueno is a mandatory dependency in Cargo.toml
     let cargo_toml =
-        std::fs::read_to_string(&workspace_root().join("Cargo.toml")).expect(&format!(
-            "Cargo.toml should exist, path: {:?}",
-            workspace_root().join("Cargo.toml")
-        ));
+        std::fs::read_to_string(&workspace_root().join("Cargo.toml")).unwrap_or_else(|_| {
+            panic!(
+                "Cargo.toml should exist, path: {:?}",
+                workspace_root().join("Cargo.toml")
+            )
+        });
 
     assert!(
         cargo_toml.contains("trueno"),
@@ -128,10 +130,8 @@ fn x4_architecture_layers_documented() {
     // Check spec documents layer separation
     let spec_path = workspace_root()
         .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
-    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
-        "Specification should exist, path: {:?}",
-        spec_path
-    ));
+    let spec = std::fs::read_to_string(&spec_path)
+        .unwrap_or_else(|_| panic!("Specification should exist, path: {:?}", spec_path));
 
     assert!(
         spec.contains("aprender") && spec.contains("realizar") && spec.contains("trueno"),
@@ -157,10 +157,12 @@ fn x5_no_duplicate_http_server() {
 fn x6_no_axum_in_aprender() {
     // Check Cargo.toml doesn't have axum in core deps
     let cargo_toml =
-        std::fs::read_to_string(&workspace_root().join("Cargo.toml")).expect(&format!(
-            "Cargo.toml should exist, path: {:?}",
-            workspace_root().join("Cargo.toml")
-        ));
+        std::fs::read_to_string(&workspace_root().join("Cargo.toml")).unwrap_or_else(|_| {
+            panic!(
+                "Cargo.toml should exist, path: {:?}",
+                workspace_root().join("Cargo.toml")
+            )
+        });
 
     // axum should be in apr-cli with inference feature, not in aprender core
     let lines: Vec<&str> = cargo_toml.lines().collect();
@@ -192,10 +194,8 @@ fn x7_tests_detect_logic_errors() {
     // Verify test coverage is meaningful
     let spec_path = workspace_root()
         .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
-    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
-        "Specification should exist, path: {:?}",
-        spec_path
-    ));
+    let spec = std::fs::read_to_string(&spec_path)
+        .unwrap_or_else(|_| panic!("Specification should exist, path: {:?}", spec_path));
 
     assert!(
         spec.contains("96.94%") || spec.contains("coverage"),
@@ -239,10 +239,8 @@ fn x9_profile_metrics_vary_with_model() {
     // This is a specification check - actual profiling is implementation-dependent
     let spec_path = workspace_root()
         .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
-    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
-        "Specification should exist, path: {:?}",
-        spec_path
-    ));
+    let spec = std::fs::read_to_string(&spec_path)
+        .unwrap_or_else(|_| panic!("Specification should exist, path: {:?}", spec_path));
 
     assert!(
         spec.contains("GFLOPS") || spec.contains("Roofline"),
@@ -256,10 +254,12 @@ fn x9_profile_metrics_vary_with_model() {
 fn x10_binary_size_realistic() {
     // Check that we have substantial dependencies
     let cargo_toml =
-        std::fs::read_to_string(&workspace_root().join("Cargo.toml")).expect(&format!(
-            "Cargo.toml should exist, path: {:?}",
-            workspace_root().join("Cargo.toml")
-        ));
+        std::fs::read_to_string(&workspace_root().join("Cargo.toml")).unwrap_or_else(|_| {
+            panic!(
+                "Cargo.toml should exist, path: {:?}",
+                workspace_root().join("Cargo.toml")
+            )
+        });
 
     let dep_count = cargo_toml.matches("[dependencies]").count()
         + cargo_toml

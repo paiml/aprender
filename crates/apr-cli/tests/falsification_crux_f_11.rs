@@ -4,7 +4,6 @@
 //! classifier discharges has a matching captured JSON body that the binary
 //! must classify exactly as the harness expects.
 
-use serde_json::json;
 use std::io::Write;
 use std::process::Command;
 
@@ -19,7 +18,7 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .prefix("crux-f-11-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
+        .expect("create temp file");
     f.write_all(
         serde_json::to_vec_pretty(body)
             .expect("serialize")
@@ -31,14 +30,17 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
 }
 
 fn good_error_json() -> serde_json::Value {
-    json!({
+    serde_json::from_str::<serde_json::Value>(
+        r#"{
         "error": "non_finite",
         "layer": "blk.0.ffn_up",
         "shape": [1, 4096],
         "first_bad_index": 0,
         "value": "nan",
         "op": "ffn_up"
-    })
+    }"#,
+    )
+    .expect("literal fixture is valid JSON")
 }
 
 fn good_layer_list(n_blocks: usize) -> serde_json::Value {
@@ -55,13 +57,25 @@ fn good_layer_list(n_blocks: usize) -> serde_json::Value {
             "layernorm_in",
             "layernorm_post",
         ] {
-            layers.push(json!({"name": format!("blk.{b}.{op}"), "shape": [1, 4096]}));
+            layers.push(serde_json::Value::from_iter([
+                ("name", serde_json::Value::from(format!("blk.{b}.{op}"))),
+                ("shape", serde_json::Value::from(vec![1, 4096])),
+            ]));
         }
     }
-    layers.push(json!({"name": "embed_tokens"}));
-    layers.push(json!({"name": "output_norm"}));
-    layers.push(json!({"name": "lm_head"}));
-    json!({"layers": layers})
+    layers.push(
+        serde_json::from_str::<serde_json::Value>(r#"{"name": "embed_tokens"}"#)
+            .expect("literal fixture is valid JSON"),
+    );
+    layers.push(
+        serde_json::from_str::<serde_json::Value>(r#"{"name": "output_norm"}"#)
+            .expect("literal fixture is valid JSON"),
+    );
+    layers.push(
+        serde_json::from_str::<serde_json::Value>(r#"{"name": "lm_head"}"#)
+            .expect("literal fixture is valid JSON"),
+    );
+    serde_json::Value::from_iter([("layers", layers)])
 }
 
 // ===== g2: CLI shape =====
@@ -153,7 +167,8 @@ fn falsify_crux_f_11_002_error_json_rejects_missing_layer() {
 #[test]
 fn falsify_crux_f_11_002_error_json_rejects_wrong_error_tag() {
     let mut body = good_error_json();
-    body["error"] = json!("weird_other");
+    body["error"] = serde_json::from_str::<serde_json::Value>(r#""weird_other""#)
+        .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["check-finite-lint", "--error-file"])
@@ -171,7 +186,8 @@ fn falsify_crux_f_11_002_error_json_rejects_wrong_error_tag() {
 #[test]
 fn falsify_crux_f_11_002_error_json_rejects_value_out_of_set() {
     let mut body = good_error_json();
-    body["value"] = json!("banana");
+    body["value"] = serde_json::from_str::<serde_json::Value>(r#""banana""#)
+        .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["check-finite-lint", "--error-file"])
@@ -223,13 +239,19 @@ fn falsify_crux_f_11_003_layer_coverage_rejects_missing_op_prefixes() {
     let mut layers: Vec<serde_json::Value> = Vec::new();
     for b in 0..20 {
         for op in &["attention_q", "attention_k", "attention_v", "attention_out"] {
-            layers.push(json!({"name": format!("blk.{b}.{op}")}));
+            layers.push(serde_json::Value::from_iter([(
+                "name",
+                format!("blk.{b}.{op}"),
+            )]));
         }
         for k in 0..5 {
-            layers.push(json!({"name": format!("blk.{b}.extra_{k}")}));
+            layers.push(serde_json::Value::from_iter([(
+                "name",
+                format!("blk.{b}.extra_{k}"),
+            )]));
         }
     }
-    let f = write_json(&json!({"layers": layers}));
+    let f = write_json(&serde_json::Value::from_iter([("layers", layers)]));
     let out = apr_binary()
         .args(["check-finite-lint", "--list-file"])
         .arg(f.path())

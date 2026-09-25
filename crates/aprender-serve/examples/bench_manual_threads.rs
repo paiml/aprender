@@ -47,6 +47,9 @@ fn main() {
                 let q8k_scales = &q8k_scales;
                 let q8k_quants = &q8k_quants;
                 // Get mutable slice
+                // SAFETY: out_dim = 8960 = output.len(), so start_row <= end_row <= output.len();
+                // the thread ranges [start_row, end_row) are disjoint, and the scope joins every
+                // thread before `output` is touched again.
                 let output_slice = unsafe {
                     std::slice::from_raw_parts_mut(
                         output.as_mut_ptr().add(start_row),
@@ -83,6 +86,9 @@ fn main() {
                 let weight_data = &weight_data;
                 let q8k_scales = &q8k_scales;
                 let q8k_quants = &q8k_quants;
+                // SAFETY: out_dim = 8960 = output.len(), so start_row <= end_row <= output.len();
+                // the thread ranges [start_row, end_row) are disjoint, and the scope joins every
+                // thread before `output` is touched again.
                 let output_slice = unsafe {
                     std::slice::from_raw_parts_mut(
                         output.as_mut_ptr().add(start_row),
@@ -115,6 +121,9 @@ fn main() {
                 let weight_data = &weight_data;
                 let q8k_scales = &q8k_scales;
                 let q8k_quants = &q8k_quants;
+                // SAFETY: out_dim = 8960 = output.len(), so start_row <= end_row <= output.len();
+                // the thread ranges [start_row, end_row) are disjoint, and the scope joins every
+                // thread before `output` is touched again.
                 let output_slice = unsafe {
                     std::slice::from_raw_parts_mut(
                         output.as_mut_ptr().add(start_row),

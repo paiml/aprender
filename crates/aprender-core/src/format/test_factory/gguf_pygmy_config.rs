@@ -133,7 +133,7 @@ pub fn build_pygmy_quantize_data() -> Vec<f32> {
     data.push(0.5); // Mid positive
     data.push(-0.5); // Mid negative
                      // Small values to fill remaining capacity
-    data.extend(std::iter::repeat(0.001).take(27));
+    data.extend(std::iter::repeat_n(0.001, 27));
 
     data
 }

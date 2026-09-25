@@ -20,7 +20,6 @@ use std::time::Instant;
 
 use aprender::classification::GaussianNB;
 use aprender::datasets::make_classification;
-use aprender::prelude::*;
 
 const N_SAMPLES: usize = 50_000;
 const N_FEATURES: usize = 30;

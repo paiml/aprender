@@ -48,11 +48,9 @@ fn chat_body(content: &str, stream: bool) -> serde_json::Value {
 fn prompt_ids(state: &AppState, body: &serde_json::Value) -> Vec<u32> {
     let request: ChatCompletionRequest =
         serde_json::from_value(body.clone()).expect("a chat request");
-    let tokenizer = require_tokenizer(state).ok().expect("tokenizer");
+    let tokenizer = require_tokenizer(state).expect("tokenizer");
     let arch = state.model_architecture();
-    tokenize_chat_prompt(&tokenizer, &request.messages, arch.as_deref(), None, state)
-        .ok()
-        .expect("prompt ids")
+    tokenize_chat_prompt(&tokenizer, &request.messages, arch.as_deref(), None, state).expect("prompt ids")
 }
 
 async fn served_by_the_engine(content: &str, stream: bool) {

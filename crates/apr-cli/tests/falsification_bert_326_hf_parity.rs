@@ -133,7 +133,7 @@ fn extract_score_from_json(stdout: &str) -> f32 {
     let v: serde_json::Value = serde_json::from_str(stdout).expect("apr rerank JSON parse");
     v.get("scores")
         .and_then(|s| s.get(0))
-        .and_then(|s| s.as_f64())
+        .and_then(serde_json::Value::as_f64)
         .expect("scores[0] missing") as f32
 }
 

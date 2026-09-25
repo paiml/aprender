@@ -125,10 +125,8 @@ fn v4_model_loading_respects_offline() {
     // Verify architecture mandates offline mode
     let spec_path = workspace_root()
         .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
-    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
-        "Specification should exist, path: {:?}",
-        spec_path
-    ));
+    let spec = std::fs::read_to_string(&spec_path)
+        .unwrap_or_else(|_| panic!("Specification should exist, path: {:?}", spec_path));
 
     assert!(
         spec.contains("offline") || spec.contains("Offline"),
@@ -143,10 +141,8 @@ fn v5_cli_warns_on_network() {
     // Verify CLI guidelines
     let spec_path = workspace_root()
         .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
-    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
-        "Specification should exist, path: {:?}",
-        spec_path
-    ));
+    let spec = std::fs::read_to_string(&spec_path)
+        .unwrap_or_else(|_| panic!("Specification should exist, path: {:?}", spec_path));
 
     assert!(
         spec.contains("warn") || spec.contains("explicit"),
@@ -161,10 +157,8 @@ fn v6_air_gapped_operation() {
     // Verify mandate for air-gapped operation
     let spec_path = workspace_root()
         .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
-    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
-        "Specification should exist, path: {:?}",
-        spec_path
-    ));
+    let spec = std::fs::read_to_string(&spec_path)
+        .unwrap_or_else(|_| panic!("Specification should exist, path: {:?}", spec_path));
 
     assert!(
         spec.contains("Air-Gapped") || spec.contains("no internet"),
@@ -179,10 +173,8 @@ fn v8_update_checks_respect_config() {
     // Verify update check policy
     let spec_path = workspace_root()
         .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
-    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
-        "Specification should exist, path: {:?}",
-        spec_path
-    ));
+    let spec = std::fs::read_to_string(&spec_path)
+        .unwrap_or_else(|_| panic!("Specification should exist, path: {:?}", spec_path));
 
     // Should mention updates or telemetry (which covers this)
     assert!(
@@ -198,10 +190,8 @@ fn v9_remote_execution_disabled() {
     // Verify default bind address policy
     let spec_path = workspace_root()
         .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
-    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
-        "Specification should exist, path: {:?}",
-        spec_path
-    ));
+    let spec = std::fs::read_to_string(&spec_path)
+        .unwrap_or_else(|_| panic!("Specification should exist, path: {:?}", spec_path));
 
     assert!(
         spec.contains("localhost") || spec.contains("127.0.0.1"),
@@ -216,10 +206,8 @@ fn v10_wasm_sandbox_no_fetch() {
     // Verify WASM sandbox restrictions
     let spec_path = workspace_root()
         .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
-    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
-        "Specification should exist, path: {:?}",
-        spec_path
-    ));
+    let spec = std::fs::read_to_string(&spec_path)
+        .unwrap_or_else(|_| panic!("Specification should exist, path: {:?}", spec_path));
 
     assert!(
         spec.contains("Sandbox") || spec.contains("sandboxing"),
@@ -243,7 +231,7 @@ fn v11_offline_rejects_uncached_hf() {
     // Verify the offline mode implementation exists with proper rejection
     let run_path = workspace_root().join("crates/apr-cli/src/commands/run.rs");
     let content = std::fs::read_to_string(&run_path)
-        .expect(&format!("run.rs should exist, path: {:?}", run_path));
+        .unwrap_or_else(|_| panic!("run.rs should exist, path: {:?}", run_path));
 
     // Must contain OFFLINE MODE rejection logic
     assert!(
@@ -264,7 +252,7 @@ fn v11_offline_rejects_uncached_hf() {
 fn v12_offline_rejects_uncached_url() {
     let run_path = workspace_root().join("crates/apr-cli/src/commands/run.rs");
     let content = std::fs::read_to_string(&run_path)
-        .expect(&format!("run.rs should exist, path: {:?}", run_path));
+        .unwrap_or_else(|_| panic!("run.rs should exist, path: {:?}", run_path));
 
     // Must handle URL sources with offline check
     assert!(
@@ -318,10 +306,8 @@ fn v13_inference_loop_no_network_imports() {
 fn v14_network_isolation_spec_mandate() {
     let spec_path = workspace_root()
         .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
-    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
-        "Specification should exist, path: {:?}",
-        spec_path
-    ));
+    let spec = std::fs::read_to_string(&spec_path)
+        .unwrap_or_else(|_| panic!("Specification should exist, path: {:?}", spec_path));
 
     // Must have network isolation section
     assert!(
@@ -349,7 +335,7 @@ fn v15_offline_flag_exists_in_cli() {
     // Cli struct is defined in lib.rs, main.rs is just a thin shim
     let lib_path = workspace_root().join("crates/apr-cli/src/lib.rs");
     let content = std::fs::read_to_string(&lib_path)
-        .expect(&format!("lib.rs should exist, path: {:?}", lib_path));
+        .unwrap_or_else(|_| panic!("lib.rs should exist, path: {:?}", lib_path));
 
     // Must have offline flag definition
     assert!(

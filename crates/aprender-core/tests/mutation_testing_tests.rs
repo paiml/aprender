@@ -11,7 +11,5 @@
 //! Hints on Test Data Selection: Help for the Practicing Programmer.
 //! IEEE Computer, 11(4), 34-41.
 
-use std::path::Path;
-
 include!("includes/mut0.rs");
 include!("includes/mutations.rs");

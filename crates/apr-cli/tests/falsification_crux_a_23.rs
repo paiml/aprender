@@ -4,7 +4,6 @@
 //! gate the classifier discharges has a matching e2e JSON observation
 //! that the binary must classify exactly as the harness expects.
 
-use serde_json::json;
 use std::io::Write;
 use std::process::Command;
 
@@ -19,9 +18,13 @@ fn write_obs(json_body: &serde_json::Value) -> tempfile::NamedTempFile {
         .prefix("crux-a-23-obs-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
-    f.write_all(serde_json::to_vec_pretty(json_body).unwrap().as_slice())
-        .expect("write obs");
+        .expect("create temp file");
+    f.write_all(
+        serde_json::to_vec_pretty(json_body)
+            .expect("serialise JSON")
+            .as_slice(),
+    )
+    .expect("write obs");
     f.flush().expect("flush");
     f
 }
@@ -78,12 +81,12 @@ fn falsify_crux_a_23_cli_empty_file_fails() {
         .prefix("crux-a-23-empty-")
         .suffix(".json")
         .tempfile()
-        .unwrap();
+        .expect("create temp file");
     let out = apr_binary()
         .args([
             "unified-search-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -96,14 +99,14 @@ fn falsify_crux_a_23_cli_invalid_json_fails() {
         .prefix("crux-a-23-bad-")
         .suffix(".json")
         .tempfile()
-        .unwrap();
-    tmp.write_all(b"{bad json").unwrap();
-    tmp.flush().unwrap();
+        .expect("create temp file");
+    tmp.write_all(b"{bad json").expect("write");
+    tmp.flush().expect("flush");
     let out = apr_binary()
         .args([
             "unified-search-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -112,12 +115,15 @@ fn falsify_crux_a_23_cli_invalid_json_fails() {
 
 #[test]
 fn falsify_crux_a_23_cli_no_gates_fails() {
-    let tmp = write_obs(&json!({"unrelated": true}));
+    let tmp = write_obs(
+        &serde_json::from_str::<serde_json::Value>(r#"{"unrelated": true}"#)
+            .expect("literal fixture is valid JSON"),
+    );
     let out = apr_binary()
         .args([
             "unified-search-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -129,7 +135,8 @@ fn falsify_crux_a_23_cli_no_gates_fails() {
 #[test]
 fn falsify_crux_a_23_001_offline_local_only_surfaces() {
     // Hub absent (offline); local rows must appear with source=LOCAL.
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "offline": {
             "local": [
                 { "repo": "gpt2",              "cached": true },
@@ -138,13 +145,15 @@ fn falsify_crux_a_23_001_offline_local_only_surfaces() {
             "expected_count": 2,
             "expected_sources": { "gpt2": "LOCAL", "bert-base-uncased": "LOCAL" }
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "unified-search-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -160,19 +169,22 @@ fn falsify_crux_a_23_001_offline_local_only_surfaces() {
 #[test]
 fn falsify_crux_a_23_001_offline_empty_hub_and_local_is_empty() {
     // Classifier returns 0 rows, observer pre-declared expected_count=0 — PASS.
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "offline": {
             "local": [],
             "expected_count": 0,
             "expected_sources": {}
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "unified-search-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -181,18 +193,21 @@ fn falsify_crux_a_23_001_offline_empty_hub_and_local_is_empty() {
 
 #[test]
 fn falsify_crux_a_23_001_offline_count_mismatch_fails() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "offline": {
             "local": [{ "repo": "gpt2", "cached": true }],
             "expected_count": 2
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "unified-search-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -204,19 +219,22 @@ fn falsify_crux_a_23_001_offline_count_mismatch_fails() {
 #[test]
 fn falsify_crux_a_23_001_offline_wrong_source_fails() {
     // local-only repo but observer claimed source=HUB → classifier reports LOCAL → FAIL.
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "offline": {
             "local": [{ "repo": "gpt2", "cached": true }],
             "expected_count": 1,
             "expected_sources": { "gpt2": "HUB" }
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "unified-search-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -229,20 +247,23 @@ fn falsify_crux_a_23_001_offline_wrong_source_fails() {
 
 #[test]
 fn falsify_crux_a_23_002_dedup_repo_in_both_halves_is_both() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "dedup": {
             "hub":   [{ "repo": "gpt2", "downloads": 1000, "likes": 10 }],
             "local": [{ "repo": "gpt2", "cached": true }],
             "expected_count": 1,
             "expected_sources": { "gpt2": "BOTH" }
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "unified-search-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -255,20 +276,23 @@ fn falsify_crux_a_23_002_dedup_repo_in_both_halves_is_both() {
 
 #[test]
 fn falsify_crux_a_23_002_dedup_disjoint_halves_both_appear() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "dedup": {
             "hub":   [{ "repo": "gpt2", "downloads": 500 }],
             "local": [{ "repo": "bert", "cached": true }],
             "expected_count": 2,
             "expected_sources": { "gpt2": "HUB", "bert": "LOCAL" }
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "unified-search-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -277,19 +301,22 @@ fn falsify_crux_a_23_002_dedup_disjoint_halves_both_appear() {
 
 #[test]
 fn falsify_crux_a_23_002_dedup_count_mismatch_fails() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "dedup": {
             "hub":   [{ "repo": "gpt2" }],
             "local": [{ "repo": "gpt2" }],
             "expected_count": 2
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "unified-search-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -301,20 +328,23 @@ fn falsify_crux_a_23_002_dedup_count_mismatch_fails() {
 #[test]
 fn falsify_crux_a_23_002_dedup_source_both_not_hub() {
     // Overlap → source=BOTH; declaring HUB must FAIL.
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "dedup": {
             "hub":   [{ "repo": "gpt2" }],
             "local": [{ "repo": "gpt2" }],
             "expected_count": 1,
             "expected_sources": { "gpt2": "HUB" }
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "unified-search-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -323,19 +353,22 @@ fn falsify_crux_a_23_002_dedup_source_both_not_hub() {
 
 #[test]
 fn falsify_crux_a_23_002_dedup_missing_repo_fails() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "dedup": {
             "hub":   [{ "repo": "gpt2" }],
             "local": [],
             "expected_sources": { "nonexistent-repo": "HUB" }
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "unified-search-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -346,7 +379,8 @@ fn falsify_crux_a_23_002_dedup_missing_repo_fails() {
 
 #[test]
 fn falsify_crux_a_23_multi_gate_all_pass() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "offline": {
             "local": [{ "repo": "gpt2", "cached": true }],
             "expected_count": 1,
@@ -358,13 +392,15 @@ fn falsify_crux_a_23_multi_gate_all_pass() {
             "expected_count": 1,
             "expected_sources": { "bert": "BOTH" }
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "unified-search-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");
@@ -380,19 +416,22 @@ fn falsify_crux_a_23_multi_gate_all_pass() {
 
 #[test]
 fn falsify_crux_a_23_json_output_shape() {
-    let obs = json!({
+    let obs = serde_json::from_str::<serde_json::Value>(
+        r#"{
         "offline": {
             "local": [{ "repo": "gpt2", "cached": true }],
             "expected_count": 1
         }
-    });
+    }"#,
+    )
+    .expect("literal fixture is valid JSON");
     let tmp = write_obs(&obs);
     let out = apr_binary()
         .args([
             "--json",
             "unified-search-lint",
             "--observation-file",
-            tmp.path().to_str().unwrap(),
+            tmp.path().to_str().expect("temp path is UTF-8"),
         ])
         .output()
         .expect("run");

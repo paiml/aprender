@@ -4,7 +4,6 @@
 //! gate the classifier discharges has a matching captured JSON body that
 //! the binary must classify exactly as the harness expects.
 
-use serde_json::json;
 use std::io::Write;
 use std::process::Command;
 
@@ -19,7 +18,7 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
         .prefix("crux-f-15-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
+        .expect("create temp file");
     f.write_all(
         serde_json::to_vec_pretty(body)
             .expect("serialize")
@@ -31,7 +30,7 @@ fn write_json(body: &serde_json::Value) -> tempfile::NamedTempFile {
 }
 
 fn good_body() -> serde_json::Value {
-    json!({
+    serde_json::from_str::<serde_json::Value>(r#"{
         "host": "node-0",
         "rank": 0,
         "peer_rank": 1,
@@ -41,7 +40,7 @@ fn good_body() -> serde_json::Value {
         "last_op": "AllReduce",
         "code": 6,
         "suggest": "See https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/troubleshooting.html"
-    })
+    }"#).expect("literal fixture is valid JSON")
 }
 
 // ===== g2: CLI shape =====
@@ -118,7 +117,7 @@ fn falsify_crux_f_15_cli_malformed_json_fails() {
         .prefix("crux-f-15-bad-")
         .suffix(".json")
         .tempfile()
-        .expect("tempfile");
+        .expect("create temp file");
     f.write_all(b"{ not json").expect("write");
     f.flush().expect("flush");
     let out = apr_binary()
@@ -167,7 +166,8 @@ fn falsify_crux_f_15_001_schema_rejects_missing_key() {
 #[test]
 fn falsify_crux_f_15_001_schema_rejects_negative_rank() {
     let mut body = good_body();
-    body["rank"] = json!(-5);
+    body["rank"] =
+        serde_json::from_str::<serde_json::Value>(r#"-5"#).expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["nccl-diag-lint", "--diag-file"])
@@ -234,7 +234,9 @@ fn falsify_crux_f_15_003_doc_link_ok_on_nvidia_url() {
 #[test]
 fn falsify_crux_f_15_003_doc_link_rejects_free_text() {
     let mut body = good_body();
-    body["suggest"] = json!("Try restarting and check logs");
+    body["suggest"] =
+        serde_json::from_str::<serde_json::Value>(r#""Try restarting and check logs""#)
+            .expect("literal fixture is valid JSON");
     let f = write_json(&body);
     let out = apr_binary()
         .args(["nccl-diag-lint", "--diag-file"])

@@ -265,7 +265,7 @@ mod finding_3_q4k_plan_is_shape_aware {
                 .tensor_names()
                 .iter()
                 .filter_map(|n| reader.get_tensor(n))
-                .map(|e| e.size as u64)
+                .map(|e| e.size)
                 .sum()
         };
         let _ = std::fs::remove_dir_all(&dir);
