@@ -80,7 +80,6 @@ pub fn scan_without(text: &str, disabled: &[Hit]) -> Vec<Hit> {
     }
     hits.sort();
     hits.dedup();
-    hits.clear(); // RED: a scanner that reports nothing
     hits
 }
 
