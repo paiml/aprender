@@ -160,6 +160,70 @@ impl crate::commands::qa::GpuGoldenLeg {
     }
 }
 
+/// The surface names, as a user would invoke each one.
+#[cfg(all(feature = "inference", feature = "cuda"))]
+const F2_SURFACE: &str = "apr run --gpu (F2 parity guard)";
+#[cfg(all(feature = "inference", feature = "cuda"))]
+const GOLDEN_SURFACE: &str = "apr qa golden_output (GPU leg)";
+
+/// The F2 guard's outcome as a verdict ABOUT THE SUBJECT, in the lattice the
+/// golden leg speaks. `NotMeasured` is `Unknown(NotRun)`: `apr run` proceeds on
+/// it, flagged UNVALIDATED (#3973), but it is not evidence that the GPU is correct
+/// — absence is not agreement.
+#[cfg(all(feature = "inference", feature = "cuda"))]
+fn f2_surface_verdict(f2: &realizar::infer::F2Outcome) -> SurfaceVerdict {
+    use provable_contracts::ontology::verdict::{Reason, Verdict};
+    use realizar::infer::F2Outcome;
+    match f2 {
+        F2Outcome::Validated { min_cosine } => SurfaceVerdict::new(
+            F2_SURFACE,
+            Verdict::Pass,
+            format!("accepted, min cosine {min_cosine:.4} over the real positions"),
+        ),
+        F2Outcome::Mismatch => SurfaceVerdict::new(
+            F2_SURFACE,
+            Verdict::Fail,
+            "refused: GPU logits diverge from the CPU reference (or the GPU forward failed)",
+        ),
+        F2Outcome::NotMeasured { reason } => SurfaceVerdict::new(
+            F2_SURFACE,
+            Verdict::Unknown(Reason::NotRun),
+            format!("not measured: {reason}"),
+        ),
+    }
+}
+
+/// Reconcile the guard and the golden leg on ONE subject and print a
+/// contradiction to stderr. REPORT_ONLY (see the header): the gate's own result
+/// is unchanged. The model is hashed only when there is a contradiction to name,
+/// so an agreeing run pays nothing for the digest.
+#[cfg_attr(coverage_nightly, coverage(off))]
+#[cfg(all(feature = "inference", feature = "cuda"))]
+fn report_gpu_correct_subject(
+    model_bytes: &[u8],
+    f2: &realizar::infer::F2Outcome,
+    leg: &crate::commands::qa::GpuGoldenLeg,
+) {
+    let surfaces = [
+        f2_surface_verdict(f2),
+        SurfaceVerdict::new(GOLDEN_SURFACE, leg.subject_verdict(), leg.subject_detail()),
+    ];
+    if reconcile_gpu_correct("", &surfaces).contradiction.is_none() {
+        return;
+    }
+    let digest = {
+        use sha2::{Digest, Sha256};
+        format!("{:x}", Sha256::digest(model_bytes))
+    };
+    let host = std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .map(|h| h.trim().to_string())
+        .unwrap_or_else(|_| "unknown-host".to_string());
+    let subject = gpu_correct_subject(&digest, &host, env!("CARGO_PKG_VERSION"));
+    if let Some(contradiction) = reconcile_gpu_correct(&subject, &surfaces).contradiction {
+        eprintln!("[#3821 REPORT_ONLY] {contradiction}");
+    }
+}
+
 #[cfg(test)]
 mod subject_verdict_tests {
     use super::{gpu_correct_subject, reconcile_gpu_correct, SurfaceVerdict};
@@ -328,5 +392,53 @@ mod subject_verdict_tests {
     fn a_short_digest_does_not_panic() {
         assert!(gpu_correct_subject("abc", "h", "v").contains("abc"));
         assert!(gpu_correct_subject("", "h", "v").contains("host h"));
+    }
+}
+
+// The guard's side of the comparison. `F2Outcome` exists only under cuda, so these
+// rows compile there; names avoid `gpu_` for the coverage `--skip` (see above).
+#[cfg(all(test, feature = "inference", feature = "cuda"))]
+mod f2_surface_tests {
+    use super::{f2_surface_verdict, reconcile_gpu_correct, SurfaceVerdict, GOLDEN_SURFACE};
+    use crate::commands::qa::GpuGoldenLeg;
+    use provable_contracts::ontology::verdict::{Reason, Verdict};
+    use realizar::infer::F2Outcome;
+
+    #[test]
+    fn each_f2_outcome_maps_to_one_lattice_value() {
+        let validated = f2_surface_verdict(&F2Outcome::Validated { min_cosine: 0.9978 });
+        assert_eq!(validated.verdict, Verdict::Pass);
+        assert!(validated.detail.contains("0.9978"), "{}", validated.detail);
+        assert_eq!(f2_surface_verdict(&F2Outcome::Mismatch).verdict, Verdict::Fail);
+        let unmeasured = f2_surface_verdict(&F2Outcome::NotMeasured { reason: "empty prompt".into() });
+        // `apr run` proceeds on NotMeasured; that is not evidence of correctness.
+        assert_eq!(unmeasured.verdict, Verdict::Unknown(Reason::NotRun));
+        assert!(unmeasured.detail.contains("empty prompt"), "{}", unmeasured.detail);
+    }
+
+    /// The ordering #3821 exists for: the guard refuses, the gate passes.
+    #[test]
+    fn guard_refusing_while_the_golden_leg_passes_is_named() {
+        let leg = GpuGoldenLeg::Passed;
+        let surfaces = [
+            f2_surface_verdict(&F2Outcome::Mismatch),
+            SurfaceVerdict::new(GOLDEN_SURFACE, leg.subject_verdict(), leg.subject_detail()),
+        ];
+        let report = reconcile_gpu_correct("s", &surfaces);
+        assert_eq!(report.verdict, Verdict::Fail);
+        let c = report.contradiction.expect("a Fail and a Pass on one subject must be named");
+        assert!(c.contains("F2 parity guard") && c.contains("golden_output"), "{c}");
+    }
+
+    #[test]
+    fn an_unmeasured_guard_does_not_contradict_a_passing_leg() {
+        let leg = GpuGoldenLeg::Passed;
+        let surfaces = [
+            f2_surface_verdict(&F2Outcome::NotMeasured { reason: "r".into() }),
+            SurfaceVerdict::new(GOLDEN_SURFACE, leg.subject_verdict(), leg.subject_detail()),
+        ];
+        let report = reconcile_gpu_correct("s", &surfaces);
+        assert!(report.contradiction.is_none());
+        assert_eq!(report.verdict, Verdict::Unknown(Reason::NotRun));
     }
 }

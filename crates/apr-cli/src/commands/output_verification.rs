@@ -834,25 +834,29 @@ fn validate_gpu_golden_output(
     }
     let model = OwnedQuantizedModel::from_mapped(mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-    let generated = match OwnedQuantizedModelCuda::new(model, 0) {
-        Ok(cuda_model) => qa_dense_generate(
-            &mut qa_dense_cuda(cuda_model),
-            prompt_tokens,
-            gen_config,
-            true,
-        )
-        .map(|gpu_tokens| gguf.decode(&gpu_tokens))
-        .map_err(|e| format!("GPU generation: {e}")),
-        Err(e) => Err(format!("CUDA init on device 0: {e}")),
+    let (generated, f2) = match OwnedQuantizedModelCuda::new(model, 0) {
+        Ok(mut cuda_model) => {
+            // #3821: ask the SAME F2 guard `apr run --gpu` asks, on the same
+            // prompt, so the two surfaces decide one subject. The probe resets the
+            // GPU KV cache on every path, so the generation below starts clean.
+            let f2 =
+                realizar::infer::validate_gpu_first_token(&mut cuda_model, gen_config, prompt_tokens);
+            let generated =
+                qa_dense_generate(&mut qa_dense_cuda(cuda_model), prompt_tokens, gen_config, true)
+                    .map(|gpu_tokens| gguf.decode(&gpu_tokens))
+                    .map_err(|e| format!("GPU generation: {e}"));
+            (generated, Some(f2))
+        },
+        Err(e) => (Err(format!("CUDA init on device 0: {e}")), None),
     };
     // #3711 + #3724: ONE typed leg. The budget is passed so the leg can
     // distinguish "still reasoning when the budget ran out" from "answered
     // wrongly" and from "never started" — three outcomes, not two.
-    Ok(GpuGoldenLeg::judge(
-        generated,
-        expected_patterns,
-        gen_config.max_tokens,
-    ))
+    let leg = GpuGoldenLeg::judge(generated, expected_patterns, gen_config.max_tokens);
+    if let Some(f2) = &f2 {
+        report_gpu_correct_subject(mapped.data(), f2, &leg);
+    }
+    Ok(leg)
 }
 
 /// Note, in a verbose human-readable run, that the GPU half of the golden gate
