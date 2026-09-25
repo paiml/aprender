@@ -919,8 +919,7 @@ pub enum Commands {
     Rag(aprender_rag_cli::Commands),
 
     /// zram device management (was the `trueno-zram` binary)
-    #[command(subcommand)]
-    Zram(aprender_zram_cli::Commands),
+    Zram(aprender_zram_cli::ZramArgs),
 
     /// Discrete-event simulation: run, render, validate, verify, emc-check
     /// (was the `simular` binary)
