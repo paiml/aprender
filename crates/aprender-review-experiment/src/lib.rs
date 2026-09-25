@@ -23,6 +23,7 @@ pub mod b2;
 pub mod build_corpus;
 pub mod champion;
 pub mod cluster;
+pub mod dedup;
 pub mod contamination;
 pub mod corpus;
 pub mod fewshot;
