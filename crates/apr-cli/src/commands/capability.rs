@@ -56,19 +56,29 @@ fn str_of(v: &serde_yaml::Value, key: &str) -> String {
 ///
 /// `--json` emits the contract's own sections verbatim rather than a re-shaped
 /// summary, so a consumer reads the same field names the contract declares.
+/// The registry as the JSON document every surface serves (#3856 Row 3).
+///
+/// `apr capability --json`, `GET /v1/capability` and the `apr.capability` MCP
+/// tool all answer from this one function, so the three transports cannot
+/// disagree about what the build can do.
+pub fn registry_json() -> Result<serde_json::Value> {
+    let doc = contract()?;
+    Ok(serde_json::json!({
+        "source": "contracts/apr-model-capability-v1.yaml",
+        "embedded_from": "crates/apr-cli/contracts/apr-model-capability-v1.yaml",
+        "ops": rows(&doc, "ops")?,
+        "quant_types": rows(&doc, "quant_types")?,
+        "op_implementation": doc.get("op_implementation"),
+    }))
+}
+
 pub fn run(json: bool) -> Result<()> {
     let doc = contract()?;
     let ops = rows(&doc, "ops")?;
     let quants = rows(&doc, "quant_types")?;
 
     if json {
-        let out = serde_json::json!({
-            "source": "contracts/apr-model-capability-v1.yaml",
-            "embedded_from": "crates/apr-cli/contracts/apr-model-capability-v1.yaml",
-            "ops": ops,
-            "quant_types": quants,
-            "op_implementation": doc.get("op_implementation"),
-        });
+        let out = registry_json()?;
         let text = serde_json::to_string_pretty(&out).map_err(|e| {
             CliError::ValidationFailed(format!("capability registry did not serialize: {e}"))
         })?;

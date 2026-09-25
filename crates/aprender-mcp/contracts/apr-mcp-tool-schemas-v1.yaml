@@ -26,10 +26,11 @@
 # hand-written schemas OR descriptions — they only consume the codegen
 # constants. To change a schema or description: edit this file and rebuild.
 #
-# Scope (M3-complete, 2026-04-18): all 9 registered tools (`apr.version` +
+# Scope (M3-complete, 2026-04-18): all 9 then-registered tools (`apr.version` +
 # 8 Phase-1 wrappers) migrated to full codegen for both `inputSchema` and
 # `description`. Related PRs: #880 (apr.version first), #881 (apr.finetune
 # + batch codegen), #884 (remaining 7 tools).
+# apr.capability (aprender#3856 Row 3) is the 10th, codegen from day one.
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
@@ -263,6 +264,14 @@ tools:
         description: "Output path (adapter directory or merged model)"
     required:
       - base_model
+
+  - name: apr.capability
+    shipped_in: 'aprender#3856 (Row 3)'
+    source: crates/aprender-mcp/src/tools/capability.rs
+    description: "Report what this build can and cannot run on the GPU (ops and ggml quant types, each with a reason), from the embedded apr-model-capability-v1 contract. Wraps `apr capability --json`. Takes no arguments."
+    cli_mapping: "apr capability --json"
+    args: []
+    required: []
 
 # ── Falsification gates ──
 # FALSIFY-MCP-008 is the flagship gate this contract unblocks. It landed in M3

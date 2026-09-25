@@ -1276,6 +1276,7 @@ mod tests {
             "apr.run",
             "apr.serve",
             "apr.finetune",
+            "apr.capability",
         ] {
             assert!(names.contains(&expected), "{expected} registered");
         }

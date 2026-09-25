@@ -34,7 +34,7 @@ fn run_server_async(app: axum::Router, bind_addr: &str, label: &str) -> Result<(
         println!();
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
-        axum::serve(listener, app)
+        axum::serve(listener, with_capability_route(app))
             .with_graceful_shutdown(shutdown_signal())
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;

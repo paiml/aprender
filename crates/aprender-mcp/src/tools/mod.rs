@@ -11,6 +11,7 @@
 
 pub mod args;
 pub mod bench;
+pub mod capability;
 pub mod finetune;
 pub mod port_owner;
 pub mod qa;
@@ -26,6 +27,7 @@ pub mod version;
 pub use registry::{DispatchFn, McpToolEntry, ToolIndex};
 
 pub use bench::bench_tool_definition;
+pub use capability::capability_tool_definition;
 pub use finetune::finetune_tool_definition;
 pub use qa::qa_tool_definition;
 pub use run::run_tool_definition;

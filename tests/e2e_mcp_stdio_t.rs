@@ -192,6 +192,12 @@ fn initialize_then_tools_list_over_stdio() {
     let first = string_field_after(tools, 0, "name")
         .unwrap_or_else(|| panic!("first tool has no name: {listed}"));
     assert!(!first.is_empty(), "first tool has an empty name: {listed}");
+    // aprender#3856: the capability registry is a surface on every transport.
+    assert!(
+        tools.contains("\"name\":\"apr.capability\""),
+        "tools/list does not advertise apr.capability — the capability registry \
+         is unreachable over MCP: {listed}"
+    );
 
     eprintln!("mcp stdio: server={name}, {count} tool(s), first={first}");
 

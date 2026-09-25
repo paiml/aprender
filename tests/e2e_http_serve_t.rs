@@ -167,6 +167,18 @@ fn serve_run_binds_localhost_and_answers_health() {
         "GET / did not return 200:\n{root}"
     );
 
+    // aprender#3856: every `apr serve` router carries the capability registry.
+    let cap = http_get(port, "/v1/capability")
+        .unwrap_or_else(|e| panic!("GET /v1/capability failed: {e}"));
+    assert!(
+        cap.starts_with("HTTP/1.1 200"),
+        "GET /v1/capability did not return 200:\n{cap}"
+    );
+    assert!(
+        cap.contains("\"quant_types\":[{"),
+        "GET /v1/capability returned no quant_types rows:\n{cap}"
+    );
+
     eprintln!("http: port={port} /health body={}", body.trim());
 
     // Explicit kill, so the assertion that the transport shut down is part of

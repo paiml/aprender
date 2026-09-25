@@ -19,6 +19,7 @@
 use super::routes::create_router;
 use super::types::{ChatCompletionRequest, ChatMessage, ServerConfig};
 
+use super::capability_route::with_capability_route;
 use crate::error::{CliError, Result};
 use colored::Colorize;
 use std::path::Path;
@@ -226,7 +227,7 @@ pub(crate) fn start_safetensors_server(model_path: &Path, config: &ServerConfig)
         }
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
-        axum::serve(listener, app)
+        axum::serve(listener, with_capability_route(app))
             .with_graceful_shutdown(super::handlers::shutdown_signal())
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;
@@ -426,7 +427,7 @@ pub(crate) fn start_sharded_safetensors_server(
         }
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
-        axum::serve(listener, app)
+        axum::serve(listener, with_capability_route(app))
             .with_graceful_shutdown(super::handlers::shutdown_signal())
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;

@@ -16,9 +16,9 @@
 //!    transport contract — anything else means MCP clients can't connect).
 //! 2. `initialize` returns `protocolVersion = "2024-11-05"` and
 //!    `serverInfo.name = "aprender-mcp"`.
-//! 3. `tools/list` returns the 9 registered Phase-1 tools with valid object
+//! 3. `tools/list` returns the 10 registered tools with valid object
 //!    schemas (one per `crates/aprender-mcp/src/tools/mod.rs`).
-//! 4. `tools/call` works for every one of those 9 tools — either succeeding
+//! 4. `tools/call` works for every one of those 10 tools — either succeeding
 //!    via a mock subprocess (for tools that shell out to `apr <cmd> --json`)
 //!    or returning `isError:true` via the argument-validation branch (the
 //!    same path a real client would hit on a malformed request). Either
@@ -75,6 +75,7 @@ const EXPECTED_TOOLS: &[&str] = &[
     "apr.run",
     "apr.serve",
     "apr.finetune",
+    "apr.capability",
 ];
 
 /// Hard cap on how long a single stdout read may block. Anything longer is
@@ -188,6 +189,11 @@ fn write_mock_apr_shim(dir: &Path) {
         .expect("finetune body");
         writeln!(f, "    exit 0 ;;").expect("finetune close");
 
+        // apr.capability — wraps `apr capability --json`.
+        writeln!(f, "  capability)").expect("capability open");
+        writeln!(f, "    printf '{{\"ops\":[],\"quant_types\":[]}}\\n'").expect("capability body");
+        writeln!(f, "    exit 0 ;;").expect("capability close");
+
         // Reject `mcp` explicitly so accidental re-entrancy is loud, not
         // infinite. Any other subcommand falls through to the catch-all.
         writeln!(f, "  mcp)").expect("mcp guard open");
@@ -281,7 +287,7 @@ fn request(id: u64, method: &str, params: serde_json::Value) -> serde_json::Valu
 /// a real readable path.
 fn minimal_args(tool: &str) -> serde_json::Value {
     match tool {
-        "apr.version" => serde_json::json!({}),
+        "apr.version" | "apr.capability" => serde_json::json!({}),
         "apr.serve" => serde_json::json!({ "model_path": "/dev/null", "port": 18080 }),
         "apr.finetune" => serde_json::json!({ "base_model": "/dev/null" }),
         // Every other tool takes a single required `model_path`.
@@ -293,7 +299,7 @@ fn minimal_args(tool: &str) -> serde_json::Value {
 ///
 /// Single test (per spec) that walks the entire conversation a real MCP
 /// client would have on first connection:
-/// initialize → tools/list → tools/call × 9 → unknown method → bad
+/// initialize → tools/list → tools/call × 10 → unknown method → bad
 /// jsonrpc → close stdin → exit 0. The whole thing must finish well under
 /// the 2s read timeout per message.
 #[test]
@@ -357,7 +363,7 @@ fn falsify_mcp_dogfood_001_full_client_session() {
         "capabilities.tools must be present (spec v2024-11-05)"
     );
 
-    // 5. tools/list — assert exactly 9 tools and every name is registered.
+    // 5. tools/list — assert exactly 10 tools and every name is registered.
     send(&mut stdin, &request(2, "tools/list", serde_json::json!({})));
     let list = recv(&rx);
     assert_eq!(list["id"], 2);

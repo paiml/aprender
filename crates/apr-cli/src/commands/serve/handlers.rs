@@ -11,6 +11,7 @@
 #[cfg(feature = "wgpu")]
 use axum::response::IntoResponse;
 
+use super::capability_route::with_capability_route;
 use crate::error::{CliError, Result};
 use colored::Colorize;
 use std::fmt::Write;
@@ -745,7 +746,7 @@ fn run_wgpu_server(app: axum::Router, config: &ServerConfig) -> Result<()> {
         );
         println!("  POST /v1/chat/completions - Chat completions (WGPU)");
         println!("  GET  /health              - Health check");
-        axum::serve(listener, app)
+        axum::serve(listener, with_capability_route(app))
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Serve: {e}")))?;
         Ok::<(), CliError>(())
@@ -1401,7 +1402,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 
         print_apr_cpu_banner(&bind_addr, is_transformer);
 
-        axum::serve(listener, app)
+        axum::serve(listener, with_capability_route(app))
             .with_graceful_shutdown(shutdown_signal())
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;

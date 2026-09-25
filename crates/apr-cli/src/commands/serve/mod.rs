@@ -6,6 +6,8 @@
 // Submodules (PMAT-200: split from 4351-line serve.rs)
 pub mod auth;
 #[cfg(feature = "inference")]
+pub(crate) mod capability_route;
+#[cfg(feature = "inference")]
 pub mod handlers;
 #[cfg(feature = "inference")]
 pub mod ollama;
