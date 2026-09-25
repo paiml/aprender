@@ -22,8 +22,8 @@ fn main() {
     // #4219: stamp APR_GIT_SHA for `--version` before anything can return early.
     build_sha::emit();
 
-    let binding_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../contracts/batuta/binding.yaml");
+    let binding_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/batuta/binding.yaml");
 
     println!("cargo:rerun-if-changed={}", binding_path.display());
 
@@ -68,7 +68,7 @@ fn main() {
 
     // Phase 2: contract PRE/POST env vars
     {
-        let cdir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts");
+        let cdir = Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts");
         if let Ok(es) = std::fs::read_dir(&cdir) {
             #[derive(serde::Deserialize, Default)]
             struct CY {

@@ -120,7 +120,7 @@ fn emit_contract_file(path: &Path, total_pre: &mut usize, total_post: &mut usize
         return;
     };
     for (eq_name, equation) in &contract.equations {
-        let key = provable_contracts::build_helper::env_key(&stem, eq_name);
+        let key = provable_contracts::build_helper::env_key(stem, eq_name);
         emit_pre_post(&key, equation, total_pre, total_post);
     }
 }
