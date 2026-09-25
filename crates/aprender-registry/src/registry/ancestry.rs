@@ -119,12 +119,15 @@ mod tests {
     }
 
     /// A diamond (merge of two siblings of one base) is a DAG: each node and
-    /// each edge appears once.
+    /// each edge appears once, including the edges above the shared base.
     #[test]
     fn a_diamond_is_not_a_cycle() {
-        let a = walk("m", &mut graph(&[("s1", "m"), ("s2", "m"), ("b", "s1"), ("b", "s2")]))
-            .expect("walk");
-        assert_eq!(a.nodes.len(), 4);
-        assert_eq!(a.edges.len(), 4);
+        let a = walk(
+            "m",
+            &mut graph(&[("s1", "m"), ("s2", "m"), ("b", "s1"), ("b", "s2"), ("r", "b")]),
+        )
+        .expect("walk");
+        assert_eq!(a.nodes, ["m", "s1", "b", "r", "s2"]);
+        assert_eq!(a.edges.len(), 5);
     }
 }
