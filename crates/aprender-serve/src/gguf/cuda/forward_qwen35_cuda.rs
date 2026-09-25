@@ -655,7 +655,7 @@ impl<'a> Qwen35CudaModel<'a> {
             dims,
             max_seq_len.min(DEFAULT_MAX_SEQ_LEN),
         )?;
-        Ok(Self {
+        let mut m = Self {
             model,
             executor,
             layers,
@@ -673,7 +673,9 @@ impl<'a> Qwen35CudaModel<'a> {
             prefill_attention,
             decode_graph: None,
             use_decode_graph: graph::graph_enabled(),
-        })
+        };
+        m.warm_prefill_weights()?;
+        Ok(m)
     }
 
     /// Allocate a fresh decode state: every layer's conv window and recurrent
