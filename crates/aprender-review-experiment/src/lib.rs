@@ -10,12 +10,14 @@
 //! - [`score`]: the REX-03 scorer (§2.3 metrics, §3 hypothesis inputs).
 //! - [`harness`]: the REX-03 client that drives a resident `apr serve`.
 //! - [`admission`]: the REX-04 per-cell admission file (`rex-cell-admission-v1`).
+//! - [`pilot`]: the REX-05 pilot projection and the §2.2 sample-size rule.
 
 pub mod admission;
 pub mod build_corpus;
 pub mod contamination;
 pub mod corpus;
 pub mod harness;
+pub mod pilot;
 pub mod prereg;
 pub mod receipt;
 pub mod score;

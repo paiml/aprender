@@ -20,6 +20,8 @@
 //! - `score --receipts F --cell C --arm A --split dev|test [--rerun]
 //!   [--pubkey P]` the §2.3 metrics as JSON. Without `--pubkey` the result
 //!   is labelled `unsigned` (exploratory); with it, `minisign -V` must pass.
+//!   `--pilot` (with `--split dev`) adds the REX-05 projection: warm/cold
+//!   wall-clock spread, projected test runtime, and the §2.2 sample-size rule.
 //! - `admit --cell C|all --why NoDeclaredExecutor --model-id M --weights-sha W
 //!   --apr-tag T --apr-sha S --out FILE` append `NotRun` admission rows (REX-04);
 //!   `admit --cell C --removed-by R ...` appends a `Refused` row.
@@ -35,8 +37,9 @@ use aprender_review_experiment::corpus::{
 use aprender_review_experiment::harness::{
     classify, post, request_body, rerun_subset, run_order, utc_now, Run,
 };
+use aprender_review_experiment::pilot::{project, Projection};
 use aprender_review_experiment::prereg;
-use aprender_review_experiment::receipt::{Arm, Expect, NotRun, Receipt};
+use aprender_review_experiment::receipt::{admissible, Arm, Expect, NotRun, Receipt};
 use aprender_review_experiment::score::{collect, score};
 use std::collections::BTreeMap;
 use std::process::ExitCode;
@@ -344,6 +347,8 @@ struct Report<'a> {
     corpus_version: &'a str,
     rejected_rows: usize,
     score: aprender_review_experiment::score::LaneScore,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pilot: Option<Projection>,
 }
 
 fn score_cmd(f: &Flags) -> Result<(), String> {
@@ -385,6 +390,33 @@ fn score_cmd(f: &Flags) -> Result<(), String> {
         |r| r.cell == cell && r.arm == arm && r.rerun == rerun,
         |p| std::fs::read_to_string(root.join(p)).ok(),
     );
+    let sc = score(&rows);
+    let pilot = if f.contains_key("pilot") {
+        if split_of(f)? != Split::Dev {
+            return Err("--pilot projects from dev items: pass --split dev".into());
+        }
+        let ran: std::collections::BTreeSet<&str> = rows
+            .iter()
+            .filter(|s| s.verdict.executed())
+            .map(|s| s.id.as_str())
+            .collect();
+        let (mut warm, mut cold) = (Vec::new(), Vec::new());
+        for r in lines.lines().filter_map(|l| admissible(l, expect).ok()) {
+            let mine = r.cell == cell && r.arm == arm && !r.rerun;
+            if let (true, Some(t)) = (mine && ran.contains(r.item_id.as_str()), r.timings) {
+                if r.cold {
+                    cold.push(t.wall_ms);
+                } else {
+                    warm.push(t.wall_ms);
+                }
+            }
+        }
+        let test: Vec<&Item> = items.iter().filter(|i| i.split == Split::Test).collect();
+        let defects = test.iter().filter(|i| i.class.is_defect()).count() as u64;
+        Some(project(sc.recall, &warm, &cold, defects, test.len() as u64))
+    } else {
+        None
+    };
     let out = Report {
         cell: &cell,
         arm,
@@ -392,7 +424,8 @@ fn score_cmd(f: &Flags) -> Result<(), String> {
         prereg_sha: &prereg_sha,
         corpus_version: &cv,
         rejected_rows: rejected.len(),
-        score: score(&rows),
+        score: sc,
+        pilot,
     };
     println!(
         "{}",
