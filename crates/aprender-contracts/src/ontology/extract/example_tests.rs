@@ -77,13 +77,28 @@ fn a_planted_workspace_yields_exactly_its_member_targets() {
 }
 
 #[test]
-fn a_workspace_root_with_no_examples_is_an_error_not_a_green() {
+fn a_workspace_root_that_read_nothing_is_an_error_and_one_with_no_examples_is_not() {
+    // A member with no examples/: zero is the measurement, not an error (the ONT-3b code-bound fixture's shape).
     let d = tempfile::tempdir().unwrap();
     write(d.path(), "Cargo.toml", "[workspace]\nmembers = [\"x\"]\n");
     write(d.path(), "x/Cargo.toml", "[package]\nname = \"x\"\n");
     let (_, stats) = walk(d.path());
-    assert_eq!(stats.examples, 0);
+    assert_eq!((stats.examples, stats.members), (0, 1));
+    assert!(stats.errors.is_empty(), "{:?}", stats.errors);
+    // Targets on disk, none admitted: the membership reading lost the corpus.
+    write(d.path(), "y/Cargo.toml", "[package]\nname = \"y\"\n");
+    write(d.path(), "y/examples/a.rs", "fn main() {}\n");
+    let (_, stats) = walk(d.path());
+    assert_eq!((stats.examples, stats.non_member_examples), (0, 1));
     assert_eq!(stats.errors.len(), 1, "{:?}", stats.errors);
+    // A workspace that admits no member read nothing.
+    let none = tempfile::tempdir().unwrap();
+    write(
+        none.path(),
+        "Cargo.toml",
+        "[workspace]\nmembers = [\"gone\"]\n",
+    );
+    assert_eq!(walk(none.path()).1.errors.len(), 1);
     // Without a workspace manifest the corpus is not measured, and that is not an error.
     let bare = tempfile::tempdir().unwrap();
     assert!(walk(bare.path()).1.errors.is_empty());

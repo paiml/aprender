@@ -121,8 +121,10 @@ impl Example {
 /// Counts reported beside the graph.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ExampleStats {
-    /// The repo root carries a `[workspace]` manifest — the only case in which zero examples is an error.
+    /// The repo root carries a `[workspace]` manifest — the only case in which zero examples can be an error.
     pub at_workspace_root: bool,
+    /// Member packages read, with or without example targets.
+    pub members: usize,
     /// Member packages with at least one example target.
     pub packages: usize,
     pub examples: usize,
@@ -214,14 +216,15 @@ pub fn walk(root: &Path) -> (Vec<Example>, ExampleStats) {
     let mut out = Vec::new();
     for manifest in manifests(root) {
         let dir = manifest.parent().unwrap_or(root);
-        let targets = targets_of(dir);
-        if targets.is_empty() {
-            continue;
-        }
         let package = std::fs::read_to_string(&manifest)
             .ok()
             .and_then(|t| manifest_names(&t).package);
         let admitted = membership.as_ref().is_none_or(|m| m.admits(root, dir));
+        stats.members += usize::from(admitted && package.is_some());
+        let targets = targets_of(dir);
+        if targets.is_empty() {
+            continue;
+        }
         let Some(krate) = package.filter(|_| admitted) else {
             stats.non_member_examples += targets.len();
             continue;
@@ -254,11 +257,19 @@ pub fn walk(root: &Path) -> (Vec<Example>, ExampleStats) {
             *stats.by_family.entry((*f).to_string()).or_default() += 1;
         }
     }
-    if stats.at_workspace_root && stats.examples == 0 {
+    // Zero examples is a measurement when the workspace simply has none. It is RED when the walk read nothing it
+    // could have: no member admitted, or example targets on disk and every one refused by the membership reading.
+    if stats.at_workspace_root
+        && stats.examples == 0
+        && (stats.members == 0 || stats.non_member_examples > 0)
+    {
         stats.errors.push(ExtractError {
             file: "Cargo.toml".into(),
-            what: "a [workspace] root with zero example targets read — the walk measured nothing"
-                .into(),
+            what: format!(
+                "a [workspace] root read zero example targets from {} member(s) while {} target(s) sat outside \
+                 the membership — the walk measured nothing",
+                stats.members, stats.non_member_examples
+            ),
         });
     }
     (out, stats)
