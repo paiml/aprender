@@ -254,7 +254,7 @@ commands:
     description: "Registry operations (CRUX-A-01): inspect alias map, etc."
     requires_model: false
     side_effects: []
-    subcommands: [aliases]
+    subcommands: [aliases, lineage]
 
   - name: publish
     category: registry

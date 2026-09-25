@@ -182,7 +182,8 @@ falsification_tests:
   obligation: EXT-INV-001
   rule: Lineage is acyclic
   prediction: a 3-hop fixture gives 3 nodes and 2 edges; a cycle fixture is refused
-  if_fails: 'lineage traversal loops or accepts a cycle (owed EXT-07 #4389; planned: cargo test -p apr-cli --test ext_lineage falsify_ext_006_cycle_refused)'
+  test: cargo test -p apr-cli --lib falsify_ext_006_lineage_three_hop_and_cycle_refused
+  if_fails: 'lineage traversal loops, truncates, or accepts a cycle; or a model named by id, content hash, recorded sha256 or file resolves to a different root (walk: cargo test -p aprender-registry --lib falsify_ext_006)'
 - id: FALSIFY-EXT-007
   obligation: EXT-INV-009
   rule: Promotion needs an eval row
