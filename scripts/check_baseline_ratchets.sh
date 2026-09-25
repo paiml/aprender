@@ -79,6 +79,7 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         assertion_exclusion_baseline.txt)        printf 'keyed\n' ;;
         claim_literal_baseline.txt)              printf 'set-aperture\tscripts/check_no_claim_literals.sh\n' ;;
         contract_duplicate_stem_baseline.txt)    printf 'set\n' ;;
+        clippy_members_baseline.txt)             printf 'keyed\n' ;;   # workspace-member clippy findings, <pkg>/<kind>:<target>/<lint><TAB><count> (scripts/check_clippy_members.sh, #4152)
         comparator_consumer_baseline.txt)        printf 'set\n' ;;   # known llama.cpp consumers not resolving through llama_bin.sh, each owned by an issue (scripts/check_comparator_consumers_resolve.sh, #3740)
         comparator_pin_citations.txt)            printf 'set\n' ;;   # files citing a SUPERSEDED llama.cpp pin as dated history / fixture, one line each (scripts/check_comparator_pin_citations.sh, #3741)
         contract_test_binding_baseline.txt)      printf 'keyed\n' ;;
