@@ -346,6 +346,15 @@ impl CudaExecutor {
         Ok(())
     }
 
+    /// PMAT-027 / #3513: forget the cached Q8_1 activation, so the next DP4A
+    /// GEMV quantizes its OWN input. The cache is keyed on nothing — not the
+    /// input buffer, not its contents — so any caller that writes a new
+    /// activation and then dispatches a DP4A GEMV must call this first, or the
+    /// GEMV reads whatever activation was quantized last.
+    pub(crate) fn invalidate_q8_activation(&mut self) {
+        self.q8_activation_valid = false;
+    }
+
     /// GH-176: Half-warp DP4A Q4_K GEMV (16 threads/SB, 1.77x fewer thread-insn)
     ///
     /// Same two-step pipeline as MWV DP4A but uses half-warp kernel:

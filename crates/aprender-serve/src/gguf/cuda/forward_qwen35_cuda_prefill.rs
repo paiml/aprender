@@ -648,6 +648,9 @@ impl Qwen35CudaModel<'_> {
                 d.eps,
             )
             .map_err(err)?;
+        // #3513: the projections above ran through cuBLAS, so the executor's
+        // cached Q8_1 activation is still the LAST decode step's `out_normed`.
+        self.executor.invalidate_q8_activation();
         self.executor
             .gemv_dispatch(
                 self.lm_head.qtype,

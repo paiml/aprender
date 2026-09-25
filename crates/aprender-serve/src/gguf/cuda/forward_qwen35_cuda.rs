@@ -560,21 +560,19 @@ impl<'a> Qwen35CudaModel<'a> {
 
         // PRODUCTION DEFAULT, not a test affordance (PMAT-3477 / #3090): this
         // architecture runs the FLOAT Q4_K/Q6_K GEMV kernels, never the DP4A
-        // ones `GpuProfile::detect` picks for a dense decode. The DP4A kernels
-        // quantize the ACTIVATION to int8, and Qwen3.5 feeds its projections
-        // straight into a recurrence, which compounds that error instead of
-        // absorbing it. Measured on the real 0.8B file: with the float variants
-        // pinned, a whole DeltaNet layer's output is 0.000 relative from a
-        // second float run and inside the layer budget against the CPU; with
-        // `HwDp4a` the DeltaNet-only path lands **1.656 relative** away, and the
-        // end-to-end argmax is garbage — a wrong token at position 0, not a
-        // rounding difference. The falsifier lives in the tests file
-        // (`qwen35_cuda_dp4a_gemv_is_catastrophic_through_the_recurrence`).
+        // ones `GpuProfile::detect` picks for a dense decode.
         //
-        // Recovering the DP4A throughput for this architecture (a higher-
-        // precision activation quantization, or DP4A only on the layers that do
-        // not feed the recurrence) is the DP4A-through-recurrence ticket,
-        // 0.69.0. Until it lands, correctness is not optional here.
+        // The pin went in because DP4A measured "catastrophic through the
+        // recurrence" (wrong argmax at position 0). #3513 found the real cause:
+        // the DP4A GEMVs reuse the executor's cached Q8_1 activation
+        // (PMAT-027), and this forward never invalidated it, so every GEMV but
+        // the first in a block ran on a STALE activation. Every `gemv_dispatch`
+        // below now invalidates first, and DP4A matches the CPU argmax at every
+        // position (`qwen35_cuda_dp4a_gemv_matches_cpu_when_each_gemv_quantizes_
+        // its_own_input`, worst cosine 0.9974 vs floor 0.996).
+        //
+        // The pin stays until lifting it is measured as a decode-throughput
+        // change on its own ticket; it is no longer needed for correctness.
         Self::pin_float_gemv(&mut executor.gpu_profile);
 
         let mut layers = Vec::with_capacity(model.layers.len());
@@ -1087,6 +1085,7 @@ impl<'a> Qwen35CudaModel<'a> {
         ex.rmsnorm_into(hidden, &w.attn_norm, &s.normed, d.hidden_dim, d.eps)?;
 
         // attn_q . normed -> [q | gate] per head ; attn_k, attn_v -> the cache row
+        ex.invalidate_q8_activation();
         ex.gemv_dispatch(
             w.attn_q.qtype,
             w.attn_q.ptr,
@@ -1095,6 +1094,7 @@ impl<'a> Qwen35CudaModel<'a> {
             w.attn_q.n,
             w.attn_q.k,
         )?;
+        ex.invalidate_q8_activation();
         ex.gemv_dispatch(
             w.attn_k.qtype,
             w.attn_k.ptr,
@@ -1103,6 +1103,7 @@ impl<'a> Qwen35CudaModel<'a> {
             w.attn_k.n,
             w.attn_k.k,
         )?;
+        ex.invalidate_q8_activation();
         ex.gemv_dispatch(
             w.attn_v.qtype,
             w.attn_v.ptr,
@@ -1169,6 +1170,7 @@ impl<'a> Qwen35CudaModel<'a> {
 
         // the output gate, then the output projection and the first residual
         ex.gdn_sigmoid_gate_into(&a.attn_out_in, &a.gate, q_dim)?;
+        ex.invalidate_q8_activation();
         ex.gemv_dispatch(
             w.attn_output.qtype,
             w.attn_output.ptr,
@@ -1187,6 +1189,7 @@ impl<'a> Qwen35CudaModel<'a> {
             d.hidden_dim,
             d.eps,
         )?;
+        ex.invalidate_q8_activation();
         ex.gemv_dispatch(
             w.ffn_gate.qtype,
             w.ffn_gate.ptr,
@@ -1195,6 +1198,7 @@ impl<'a> Qwen35CudaModel<'a> {
             w.ffn_gate.n,
             w.ffn_gate.k,
         )?;
+        ex.invalidate_q8_activation();
         ex.gemv_dispatch(
             w.ffn_up.qtype,
             w.ffn_up.ptr,
@@ -1204,6 +1208,7 @@ impl<'a> Qwen35CudaModel<'a> {
             w.ffn_up.k,
         )?;
         ex.fused_swiglu_into(&s.ffn_gate, &s.ffn_up, &s.ffn_act, d.intermediate_dim)?;
+        ex.invalidate_q8_activation();
         ex.gemv_dispatch(
             w.ffn_down.qtype,
             w.ffn_down.ptr,
@@ -1290,6 +1295,7 @@ impl<'a> Qwen35CudaModel<'a> {
         let dev =
             GpuBuffer::from_host(self.executor.context(), x).map_err(|e| gpu_err("diag", &e))?;
         let out = Self::zeros(&self.executor, n as usize)?;
+        self.executor.invalidate_q8_activation();
         self.executor
             .gemv_dispatch(qtype, ptr, &dev, &out, n, k)
             .map_err(|e| gpu_err("diag", &e))?;
@@ -1362,6 +1368,7 @@ impl<'a> Qwen35CudaModel<'a> {
         ex.rmsnorm_into(hidden, &w.attn_norm, &s.normed, d.hidden_dim, d.eps)?;
 
         // attn_qkv . normed -> conv_in
+        ex.invalidate_q8_activation();
         ex.gemv_dispatch(
             w.attn_qkv.qtype,
             w.attn_qkv.ptr,
@@ -1391,6 +1398,7 @@ impl<'a> Qwen35CudaModel<'a> {
         // Gated DeltaNet applies NO RoPE: position comes from the causal conv.
 
         // dt = softplus(ssm_alpha . x + dt_bias) * a ; beta = sigmoid(ssm_beta . x)
+        ex.invalidate_q8_activation();
         ex.gemv_dispatch(
             w.ssm_alpha.qtype,
             w.ssm_alpha.ptr,
@@ -1399,6 +1407,7 @@ impl<'a> Qwen35CudaModel<'a> {
             w.ssm_alpha.n,
             w.ssm_alpha.k,
         )?;
+        ex.invalidate_q8_activation();
         ex.gemv_dispatch(
             w.ssm_beta.qtype,
             w.ssm_beta.ptr,
@@ -1418,6 +1427,7 @@ impl<'a> Qwen35CudaModel<'a> {
         )?;
 
         // attn_gate . x
+        ex.invalidate_q8_activation();
         ex.gemv_dispatch(
             w.attn_gate.qtype,
             w.attn_gate.ptr,
@@ -1455,6 +1465,7 @@ impl<'a> Qwen35CudaModel<'a> {
             d.num_v_heads,
             d.eps,
         )?;
+        ex.invalidate_q8_activation();
         ex.gemv_dispatch(
             w.ssm_out.qtype,
             w.ssm_out.ptr,
@@ -1473,6 +1484,7 @@ impl<'a> Qwen35CudaModel<'a> {
             d.hidden_dim,
             d.eps,
         )?;
+        ex.invalidate_q8_activation();
         ex.gemv_dispatch(
             w.ffn_gate.qtype,
             w.ffn_gate.ptr,
@@ -1481,6 +1493,7 @@ impl<'a> Qwen35CudaModel<'a> {
             w.ffn_gate.n,
             w.ffn_gate.k,
         )?;
+        ex.invalidate_q8_activation();
         ex.gemv_dispatch(
             w.ffn_up.qtype,
             w.ffn_up.ptr,
@@ -1490,6 +1503,7 @@ impl<'a> Qwen35CudaModel<'a> {
             w.ffn_up.k,
         )?;
         ex.fused_swiglu_into(&s.ffn_gate, &s.ffn_up, &s.ffn_act, d.intermediate_dim)?;
+        ex.invalidate_q8_activation();
         ex.gemv_dispatch(
             w.ffn_down.qtype,
             w.ffn_down.ptr,
@@ -1570,6 +1584,7 @@ impl<'a> Qwen35CudaModel<'a> {
                 d.eps,
             )
             .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e))?;
+        self.executor.invalidate_q8_activation();
         self.executor
             .gemv_dispatch(
                 self.lm_head.qtype,
