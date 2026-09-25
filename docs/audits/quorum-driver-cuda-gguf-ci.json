@@ -1,0 +1,38 @@
+{
+ "subject": "fix/driver-cuda-gguf-e0063",
+ "head_sha": "48d32d5cd1c9654f18220680febddb98d55338f6",
+ "base": "origin/main",
+ "scope": "b79bc3a63 (driver_cuda_gguf E0063 fix) + ci.yml step: cargo check -p aprender-serve --features cuda --tests in workspace-test-shard",
+ "author": {
+  "model": "claude-opus-5-5",
+  "family": "claude",
+  "session": "aprender-5d"
+ },
+ "authorization": "cop aprender-77 under operator standing yes for workflow PRs (3/3 quorum + green CI, no runner/secret change)",
+ "lanes": [
+  {
+   "model": "claude-sonnet-5",
+   "family": "claude",
+   "executor": "claude -p plan Read/Grep/Glob",
+   "verdict": "PASS",
+   "summary": "Both new fields (GGUFConfig.query_pre_attn_scalar, OwnedQuantizedLayer.post_attn_norm_weight/post_ffw_norm_weight) are Option types whose None value is a documented no-op/default (post_norm_in_place skips normalization when None; query_pre_attn_scalar None uses default scaling), matching the same None pattern used in ~60 other existing test fixtures across the crate \u2014 semantically correct for these non-Gemma2 test models. The new ci.yml step is inserted inside workspace-test-shard, gated `(tier=='quick' || tier=='full') && matrix.shard==1`, correctly excluding 'reuse' and 'none' tiers (which have their own dedicated steps immediately after) and restricting to shard 1 only. It reuses the exact docker mounts/env block verbatim from the neighboring quick-tier step (same $IMAGE, cache/target volumes, sccache/env vars), with no new job, no runner-label change, and no secret change. The target was confirmed dark: driver_cuda_gguf.rs has `#![cfg(feature = \"cuda\")]`, aprender-serve's Cargo.toml cuda feature is optional and not enabled by any other workspace member or existing CI step, so the new `cargo check -p aprender-serve --features cuda --tests --locked` step is the first place this target actually compiles in CI."
+  },
+  {
+   "model": "gemini-3.1-pro-high",
+   "model_measured": "gemini-3.1-pro-high",
+   "family": "gemini",
+   "executor": "agy -p --mode plan (retry 2; attempt 1 empty after a denied RunCommand)",
+   "verdict": "PASS",
+   "summary": "The fix correctly initializes the new fields to None, matching the crate's existing test initializers and safely preserving default behavior. The CI change introduces exactly one compile-only step in the existing workspace-test-shard job for shard 1 (quick/full tiers only), reusing the exact docker run command, mounts, and environment variables without modifying runners or secrets. This successfully brings the previously dark cuda-gated tests under CI coverage."
+  },
+  {
+   "model": "claude-haiku-4-5-20251001",
+   "family": "claude",
+   "executor": "claude -p plan Read/Grep/Glob",
+   "verdict": "PASS",
+   "summary": "The branch correctly fixes E0063 compilation errors in cuda-gated tests by initializing new struct fields to None with appropriate semantics. The CI step properly tests the previously-DARK target without introducing new runners, secrets, or misconfigured mounts."
+  }
+ ],
+ "agreed": true,
+ "note": "lanes ran on a chmod a-w git-archive snapshot of head_sha"
+}
