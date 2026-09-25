@@ -21737,3 +21737,20 @@ roadmap:
   labels:
   - kind:code
   notes: 'cuda_batch_scheduler generate_single_request (the m==1 fast path, shared with the iteration scheduler) runs one Session::generate over BorrowedCudaForward, a dense CUDA ArchForward over the scheduler''s borrowed model built on aprender-49''s cuda_reset/cuda_forward/cuda_forward_greedy. Stop tokens are filtered in the callback so none is sent (pre-port semantics). The m>1 batched path (batched_setup_and_prefill/batched_decode_step) is multi-slot and stays as is. Known delta: the per-request prefix cache (establish_prompt_kv/populate_prefix_cache) is not used on the ported path.'
+- id: PMAT-4438
+  github_issue: 4438
+  item_type: task
+  title: 'APR-EPIC-001: themed epics and issue cap — A1 epic skeleton, A3 issue-to-epic map, triage-apply'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-d1
+  created: 2026-09-25T16:20:00Z
+  updated: 2026-09-25T16:20:00Z
+  spec: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:triage
+  notes: null
