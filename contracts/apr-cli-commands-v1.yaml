@@ -382,6 +382,13 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: ptx-debug
+    category: hardware
+    description: "PTX falsification analysis and FKR test generation (was the aprender-ptx-debug binary)"
+    requires_model: false
+    side_effects: [filesystem]
+    subcommands: [analyze, gen-fkr, version]
+
   - name: ptx-map
     category: hardware
     description: "Model-to-PTX source mapping"
