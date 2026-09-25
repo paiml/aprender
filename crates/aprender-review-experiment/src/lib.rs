@@ -34,6 +34,7 @@ pub mod harness;
 pub mod kappa_probe;
 pub mod ladder;
 pub mod ledger;
+pub mod logits_capture;
 pub mod outcome_join;
 pub mod pilot;
 pub mod pool;

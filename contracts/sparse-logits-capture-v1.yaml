@@ -1,0 +1,48 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PRM-001 v3 PRM-C11 (was PRA T11): "`sparse-logits-v1` in `apr serve` rows (local only)". Done when:
+    "header + residual mass round-trip". `logits_capture::capture_blob`
+    (crates/aprender-review-experiment/src/logits_capture.rs) reads the `logprobs` object that
+    `apr run --json --logprobs K` prints (#4026: `{top_k, prompt_token_ids, steps[{step, chosen,
+    top[{token_id, logit, logprob}]}]}`, unknown or missing keys refused) and writes it with
+    `sparse_logits::encode` (contract sparse-logits-v1). The run records no logsumexp; each entry
+    carries it as logit − logprob, and the entries of one step must agree on it within 1e-3 or the
+    step is refused as not one softmax. topk_mass = Σ exp(logprob), so the residual mass 1 − M
+    survives. `logits_sha` = sha256 of the blob. A null value (no --logprobs), no steps, top_k
+    outside 1..=255, a step out of order, a top list shorter than top_k, a repeated id, an ascending
+    pair, or a header the codec refuses is an error, never a repaired row.
+  references:
+    - "docs/specifications/PRM-001-prometheus.md"
+    - "contracts/sparse-logits-v1.yaml"
+    - "https://github.com/paiml/aprender/issues/4026"
+    - "https://github.com/paiml/aprender/issues/4354"
+
+equations:
+  logsumexp:
+    formula: "lse(step) = logit_0 − logprob_0; ∀ j: |(logit_j − logprob_j) − lse| ≤ 1e-3, else refuse"
+  mass:
+    formula: "M = Σ_j exp(logprob_j); residual = 1 − M"
+  sha:
+    formula: "logits_sha = sha256(encode(header, tokens))"
+
+falsification_tests:
+  - id: FALSIFY-SLC-001
+    name: header_and_residual_mass_round_trip
+    prediction: "decode(capture_blob(run)) returns the run's header (k, n_tokens, model sha, backend, apr_tag) and per token the sampled id, the ids, logsumexp = logit − logprob and 1 − M within f16 tolerance; a full-vocab run leaves ≈0 residual; logits_sha is the blob's sha256"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_slc_001"
+    expected_output: "exit 0"
+    if_fails: "A distilled student would be trained against a teacher whose tail mass was lost or invented."
+  - id: FALSIFY-SLC-002
+    name: capture_matches_the_full_logit_row
+    prediction: "the capture of #4026's top-k equals sparse_logits::TokenLogits::from_full_logits of the logits it came from: same ids, logsumexp within 1e-3, logprobs within f16 rounding"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_slc_002"
+    expected_output: "exit 0"
+    if_fails: "Rows captured from apr run would differ from rows the teacher writes from its own logits."
+  - id: FALSIFY-SLC-003
+    name: a_bad_run_is_refused
+    prediction: "null, no steps, top_k 0 or 256, an unknown or missing key, a null logit, a step out of order, a short top list, a repeated id, an ascending pair, two distributions in one step, a positive logprob and a bad model sha are all errors"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_slc_003"
+    expected_output: "exit 0"
+    if_fails: "A malformed or mixed row could be written as a teacher distribution."
