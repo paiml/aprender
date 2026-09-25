@@ -445,7 +445,7 @@ jobs:
   # `rust:1.93.0-bullseye` for a glibc 2.31 floor; this lane is written to be the
   # same step, so the merge moves both or neither.
   build-apr-cpu:
-    name: apr (cpu) ${{ matrix.target }} on ${{ matrix.host }}
+    name: apr (${{ matrix.flavour }}) ${{ matrix.target }} on ${{ matrix.host }}
     needs: assets
     if: needs.assets.outputs.present == 'false'
     runs-on: ${{ fromJSON(matrix.labels) }}
@@ -455,10 +455,22 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             host: yoga
+            flavour: cpu
+            features: ''
             labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
           - target: aarch64-unknown-linux-gnu
             host: gx10
+            flavour: cpu
+            features: ''
             labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
+          # #4353 (operator 2026-09-25: "wgpu enabled binary for intel"): intel has no
+          # NVIDIA device, so neither -cpu (refuses --gpu) nor -cuda serves it. Same
+          # container, same glibc floor; `--features wgpu` is what flips the refusal off.
+          - target: x86_64-unknown-linux-gnu
+            host: yoga
+            flavour: wgpu
+            features: '--features wgpu'
+            labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
     steps:
       - name: Resolve release tag
         id: tag
@@ -469,7 +481,7 @@ jobs:
             exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Building apr (default features, no cuda) for $TAG -> ${{ matrix.target }}"
+          echo "Building apr (${{ matrix.flavour }}, no cuda) for $TAG -> ${{ matrix.target }}"
 
       - name: Checkout at tag
         uses: actions/checkout@v7
@@ -508,7 +520,7 @@ jobs:
           # machines/<box>/forjar-ephemeral.yaml): the bullseye build is a SIBLING container
           # through the mounted socket, so every bind-mount path must exist on the HOST at
           # the same path. The work root is mirrored host<->container; $HOME is not.
-          CACHE="$(cd "$GITHUB_WORKSPACE/../.." && pwd)/cache-apr-cpu/${{ matrix.target }}"
+          CACHE="$(cd "$GITHUB_WORKSPACE/../.." && pwd)/cache-apr-${{ matrix.flavour }}/${{ matrix.target }}"
           mkdir -p "$CACHE/registry" "$CACHE/target"
           # The bind-mount TARGET inside the workspace must exist BEFORE the container
           # starts: when it does not, dockerd creates the mountpoint as root, and after
@@ -526,14 +538,14 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e APR_GIT_SHA_OVERRIDE="$(git rev-parse --short=9 HEAD)" \
             rust:1.93.0-bullseye \
-            sh -c 'set -e; ldd --version | head -1 > /workspace/target/BUILDER_GLIBC; rustc --version > /workspace/target/BUILDER_RUSTC; cargo build --release -p apr-cli --bin apr --target ${{ matrix.target }} --locked; strip target/${{ matrix.target }}/release/apr'
+            sh -c 'set -e; ldd --version | head -1 > /workspace/target/BUILDER_GLIBC; rustc --version > /workspace/target/BUILDER_RUSTC; cargo build --release -p apr-cli --bin apr --target ${{ matrix.target }} --locked ${{ matrix.features }}; strip target/${{ matrix.target }}/release/apr'
           # the mounted target dir is the host cache; expose the binary where the next steps expect it
           mkdir -p "target/${{ matrix.target }}/release"
           cp "$CACHE/target/${{ matrix.target }}/release/apr" "target/${{ matrix.target }}/release/apr"
           GLIBC=$(cat "$CACHE/target/BUILDER_GLIBC"); RUSTC=$(cat "$CACHE/target/BUILDER_RUSTC")
           echo "builder glibc: $GLIBC"; echo "builder rustc: $RUSTC"
           {
-            echo "### apr (cpu) ${{ matrix.target }} built on ${{ matrix.host }} inside rust:1.93.0-bullseye"
+            echo "### apr (${{ matrix.flavour }}) ${{ matrix.target }} built on ${{ matrix.host }} inside rust:1.93.0-bullseye"
             echo "- toolchain: $RUSTC"
             echo "- glibc floor of this asset (the container's): $GLIBC"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -553,6 +565,25 @@ jobs:
             exit 1
           fi
           "$BIN" --version
+
+      # #4353: the flavour is read from BEHAVIOUR, not bytes. Every inference build links
+      # trueno's wgpu backend (aprender-serve enables trueno/gpu unconditionally), so a
+      # `wgpu` byte count cannot tell the two apart (measured 2026-09-25: 125-127 hits in
+      # cpu and gpu builds alike). What `--features wgpu` changes is accel.rs: a -cpu build
+      # REFUSES `apr run --gpu` (exit 9, "no GPU backend compiled in") before it touches the
+      # model; a GPU build goes on and fails on the missing file instead (exit 3). Both
+      # polarities are asserted, so each lane is the other's positive control.
+      - name: Prove the flavour (--gpu refusal present iff -cpu)
+        run: |
+          BIN="target/${{ matrix.target }}/release/apr"
+          out=$("$BIN" run /nonexistent/apr-flavour-probe.gguf --gpu --prompt x 2>&1) && rc=0 || rc=$?
+          n=$(printf '%s\n' "$out" | grep -c 'no GPU backend compiled in' || true)
+          echo "flavour=${{ matrix.flavour }} rc=$rc refusal_lines=$n"
+          case "${{ matrix.flavour }}" in
+            cpu)  if [ "$rc" -eq 0 ] || [ "$n" -lt 1 ]; then echo "::error::-cpu asset did not refuse --gpu (rc=$rc): not a cpu build"; exit 1; fi ;;
+            wgpu) if [ "$rc" -eq 0 ] || [ "$n" -ne 0 ]; then echo "::error::-wgpu asset refused --gpu (rc=$rc): the wgpu feature is not in the build"; exit 1; fi ;;
+            *)    echo "::error::unknown flavour ${{ matrix.flavour }}"; exit 1 ;;
+          esac
 
       # The asset's floor is what its BYTES require, not what the builder happens
       # to run: objdump -T names every versioned glibc symbol it imports. Recorded
@@ -579,7 +610,7 @@ jobs:
         run: |
           VERSION="${{ steps.tag.outputs.tag }}"
           TARGET="${{ matrix.target }}"
-          ARCHIVE="apr-${VERSION}-${TARGET}-cpu"
+          ARCHIVE="apr-${VERSION}-${TARGET}-${{ matrix.flavour }}"
           mkdir -p "$ARCHIVE"
           cp "target/${TARGET}/release/apr" "$ARCHIVE/"
           for f in README.md LICENSE LICENSE-MIT LICENSE-APACHE; do
@@ -689,6 +720,79 @@ jobs:
               | python3 -c 'import json,sys; a=json.load(sys.stdin); print("uploaded", a["name"], a["size"], "bytes")'
           done
 
+  # #4353 (operator 2026-09-25: "mac is critical"): mini ran pv 0.69.1 because no release
+  # carried a darwin pv. Same native build as build-apr-darwin above; the asset name follows
+  # the pv lane's `pv-<tag>-<target>` convention (no flavour suffix).
+  build-pv-darwin:
+    name: pv aarch64-apple-darwin on mini
+    needs: assets
+    if: needs.assets.outputs.present == 'false'
+    runs-on: [self-hosted, macOS, ARM64, mini]
+    steps:
+      - name: Resolve release tag
+        id: tag
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          [ -n "$TAG" ] || { echo "::error::No tag resolved"; exit 1; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout at tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      # The release scripts come from THIS workflow's commit: the tag tree predates them.
+      - name: Stamp the rc version into the tag tree (#4110)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git fetch --no-tags --depth 1 origin "$GITHUB_WORKFLOW_SHA"
+          for f in stamp_rc_version.sh asset_version_check.sh; do
+            git show "FETCH_HEAD:scripts/release/$f" > "$RUNNER_TEMP/$f"
+          done
+          case "$TAG" in *-rc.*) ;; *) echo "final tag $TAG: nothing to stamp"; exit 0 ;; esac
+          bash "$RUNNER_TEMP/stamp_rc_version.sh" "$GITHUB_WORKSPACE" "$TAG"
+
+      - name: Build pv
+        run: |
+          APR_GIT_SHA_OVERRIDE="$(git rev-parse --short=9 HEAD)" \
+            cargo build --release -p aprender-contracts-cli --bin pv --target aarch64-apple-darwin --locked
+          strip target/aarch64-apple-darwin/release/pv
+
+      # As the linux pv lane: the asset must run on the box that built it.
+      - name: The asset runs
+        run: target/aarch64-apple-darwin/release/pv --version
+
+      - name: Package archive
+        id: package
+        run: |
+          ARCHIVE="pv-${{ steps.tag.outputs.tag }}-aarch64-apple-darwin"
+          mkdir -p "$ARCHIVE"
+          cp target/aarch64-apple-darwin/release/pv "$ARCHIVE/"
+          for f in README.md LICENSE LICENSE-MIT LICENSE-APACHE; do [ -f "$f" ] && cp "$f" "$ARCHIVE/"; done
+          tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
+          shasum -a 256 "${ARCHIVE}.tar.gz" > "${ARCHIVE}.tar.gz.sha256"
+          echo "archive=${ARCHIVE}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "sha=${ARCHIVE}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload assets to release (REST, no gh)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327)
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
+            | python3 -c 'import json,sys; t=sys.argv[1]; print(json.dumps(next(r for r in json.load(sys.stdin) if r["tag_name"]==t)))' "$TAG")
+          rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
+            aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next((a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n), ""))' "$f")
+            [ -n "$aid" ] && curl -sSf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "$API/releases/assets/$aid" > /dev/null
+            curl -sSf -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/octet-stream" \
+              --data-binary @"$f" "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/$rid/assets?name=$f" \
+              | python3 -c 'import json,sys; a=json.load(sys.stdin); print("uploaded", a["name"], a["size"], "bytes")'
+          done
+
   # The hard requirement, as a check that can fail: all FOUR apr assets (tarball +
   # sha256) and the eight pv assets must be on the release. A missing one is a red
   # workflow, never a partial summary.
@@ -701,7 +805,7 @@ jobs:
   # mutation (RED) that this job cannot demonstrate on a real release.
   verify-apr-assets:
     name: All four apr assets are on the release
-    needs: [build, build-apr-cuda, build-apr-cpu, build-apr-darwin]
+    needs: [build, build-apr-cuda, build-apr-cpu, build-apr-darwin, build-pv-darwin]
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
@@ -889,7 +993,7 @@ jobs:
 
   summary:
     name: Summary
-    needs: [assets, build, build-apr-cuda, build-apr-cpu, build-apr-darwin, verify-apr-assets, smoke-cuda, smoke-cpu]
+    needs: [assets, build, build-apr-cuda, build-apr-cpu, build-apr-darwin, build-pv-darwin, verify-apr-assets, smoke-cuda, smoke-cpu]
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
@@ -919,13 +1023,15 @@ jobs:
             echo "  - x86_64-unknown-linux-gnu"
             echo "  - aarch64-unknown-linux-musl"
             echo "  - aarch64-unknown-linux-gnu"
+            echo "  - aarch64-apple-darwin (mini): ${{ needs.build-pv-darwin.result }}"
             echo ""
             echo "### apr Binary Release: $TAG - four assets, {cuda,cpu} x {x86_64,aarch64}"
-            echo "- cuda build: ${{ needs.build-apr-cuda.result }} · cpu build: ${{ needs.build-apr-cpu.result }} · darwin build (mini): ${{ needs.build-apr-darwin.result }}"
+            echo "- cuda build: ${{ needs.build-apr-cuda.result }} · cpu build: ${{ needs.build-apr-cpu.result }} · darwin build (mini): ${{ needs.build-apr-darwin.result }} · pv darwin: ${{ needs.build-pv-darwin.result }}"
             echo "- all four on the release: ${{ needs.verify-apr-assets.result }} · smoke cuda (yoga+gx10): ${{ needs.smoke-cuda.result }} · smoke cpu (clean-room+yoga+gx10): ${{ needs.smoke-cpu.result }}"
             echo "  - apr-$TAG-x86_64-unknown-linux-gnu-cuda.tar.gz (+ .sha256)"
             echo "  - apr-$TAG-aarch64-unknown-linux-gnu-cuda.tar.gz (+ .sha256)"
             echo "  - apr-$TAG-x86_64-unknown-linux-gnu-cpu.tar.gz (+ .sha256)"
             echo "  - apr-$TAG-aarch64-unknown-linux-gnu-cpu.tar.gz (+ .sha256)"
+            echo "  - apr-$TAG-x86_64-unknown-linux-gnu-wgpu.tar.gz (+ .sha256)"
             echo "  - apr-$TAG-aarch64-apple-darwin-cpu.tar.gz (+ .sha256)"
           } >> "$GITHUB_STEP_SUMMARY"
