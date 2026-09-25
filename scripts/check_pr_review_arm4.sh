@@ -515,7 +515,7 @@ self_test() {
     # (row() pins PR_REVIEW_LEGACY_BELOW=0 so no other row can reach it by accident).
     row legacy-exempt-in-window   0 "legacy receipt: PR open at merge (999 < 1000) and inside the 24h" \
         "$legacy" 999 "$tip"  PR_REVIEW_LEGACY_BELOW=1000 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=1999
-    row legacy-expired-at-24h     1 "legacy receipt: the SAME PR at the expiry second is RED" \
+    row legacy-expired-at-expiry  1 "legacy receipt: the SAME PR at the expiry second is RED" \
         "$legacy" 999 "$tip"  PR_REVIEW_LEGACY_BELOW=1000 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=2000
     row legacy-pr-opened-after    1 "legacy receipt: a PR opened after the merge (999 >= 999) is RED in the window" \
         "$legacy" 999 "$tip"  PR_REVIEW_LEGACY_BELOW=999 PR_REVIEW_LEGACY_UNTIL=2000 PR_REVIEW_NOW=1999
