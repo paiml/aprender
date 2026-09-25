@@ -475,66 +475,81 @@ fn lean_char_literal_body(rest: &str) -> Option<usize> {
 /// matches `sorry` as a whole identifier. It fails CLOSED: an unterminated comment or string reads as
 /// containing `sorry`, because a file this scan cannot parse must not ground a claim.
 pub(crate) fn lean_has_sorry(src: &str) -> bool {
-    let b = src.as_bytes();
-    let ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c == b'\'' || c >= 0x80;
     let mut i = 0;
-    while i < b.len() {
-        match b[i] {
-            b'-' if b.get(i + 1) == Some(&b'-') => {
-                while i < b.len() && b[i] != b'\n' {
-                    i += 1;
-                }
-            }
-            b'/' if b.get(i + 1) == Some(&b'-') => {
-                let mut depth = 1usize;
+    while i < src.len() {
+        match lean_scan_step(src, i) {
+            Some(next) => i = next,
+            None => return true,
+        }
+    }
+    false
+}
+
+/// One lexer step of [`lean_has_sorry`] from byte `i`: the offset after the token, comment, string
+/// or char literal there, or `None` when the token is `sorry` or the construct never terminates
+/// (both read as "has sorry").
+fn lean_scan_step(src: &str, i: usize) -> Option<usize> {
+    let b = src.as_bytes();
+    match b[i] {
+        b'-' if b.get(i + 1) == Some(&b'-') => Some(lean_line_comment_end(b, i)),
+        b'/' if b.get(i + 1) == Some(&b'-') => lean_block_comment_end(b, i),
+        b'"' => lean_string_end(b, i),
+        // `'c'`, `'\n'`, `'\u{..}'` is a char literal, skipped whole so `'"'` cannot open a
+        // phantom string that hides a real `sorry` (quorum finding, #4351). Any other prime is
+        // term syntax (`xs[i]'h`) and is skipped alone; a literal spans one char or escape, so it
+        // can never swallow a `sorry`.
+        b'\'' => Some(i + 1 + lean_char_literal_body(&src[i + 1..]).map_or(0, |n| n + 1)),
+        c if lean_ident_byte(c) => {
+            let end = i + b[i..].iter().take_while(|&&c| lean_ident_byte(c)).count();
+            (&src[i..end] != "sorry").then_some(end)
+        }
+        _ => Some(i + 1),
+    }
+}
+
+/// A byte that continues a Lean identifier (a trailing prime is part of it: `sorry'` is not `sorry`).
+fn lean_ident_byte(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || c == b'_' || c == b'\'' || c >= 0x80
+}
+
+/// The offset of the newline ending the `--` comment at `i` (or the end of input).
+fn lean_line_comment_end(b: &[u8], i: usize) -> usize {
+    b[i..]
+        .iter()
+        .position(|&c| c == b'\n')
+        .map_or(b.len(), |p| i + p)
+}
+
+/// The offset after the nested `/- ... -/` comment opening at `i`; `None` if it never closes.
+fn lean_block_comment_end(b: &[u8], mut i: usize) -> Option<usize> {
+    let mut depth = 1usize;
+    i += 2;
+    while depth > 0 {
+        match b.get(i..i + 2)? {
+            [b'/', b'-'] => {
+                depth += 1;
                 i += 2;
-                while depth > 0 {
-                    if i + 1 >= b.len() {
-                        return true;
-                    }
-                    if b[i] == b'/' && b[i + 1] == b'-' {
-                        depth += 1;
-                        i += 2;
-                    } else if b[i] == b'-' && b[i + 1] == b'/' {
-                        depth -= 1;
-                        i += 2;
-                    } else {
-                        i += 1;
-                    }
-                }
             }
-            b'"' => {
-                i += 1;
-                loop {
-                    match b.get(i) {
-                        None => return true,
-                        Some(b'\\') => i += 2,
-                        Some(b'"') => break,
-                        Some(_) => i += 1,
-                    }
-                }
-                i += 1;
-            }
-            // `'c'`, `'\n'`, `'\u{..}'` is a char literal, skipped whole so `'"'` cannot open a
-            // phantom string that hides a real `sorry` (quorum finding, #4351). Any other prime is
-            // term syntax (`xs[i]'h`) and is skipped alone; a literal spans one char or escape, so it
-            // can never swallow a `sorry`.
-            b'\'' => {
-                i += 1 + lean_char_literal_body(&src[i + 1..]).map_or(0, |n| n + 1);
-            }
-            c if ident(c) => {
-                let start = i;
-                while i < b.len() && ident(b[i]) {
-                    i += 1;
-                }
-                if &src[start..i] == "sorry" {
-                    return true;
-                }
+            [b'-', b'/'] => {
+                depth -= 1;
+                i += 2;
             }
             _ => i += 1,
         }
     }
-    false
+    Some(i)
+}
+
+/// The offset after the string literal opening at `i`; `None` if it never closes.
+fn lean_string_end(b: &[u8], mut i: usize) -> Option<usize> {
+    i += 1;
+    loop {
+        match b.get(i)? {
+            b'\\' => i += 2,
+            b'"' => return Some(i + 1),
+            _ => i += 1,
+        }
+    }
 }
 
 /// Register the names contributed by one domain directory's sorry-free `.lean` files.
