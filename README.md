@@ -355,7 +355,7 @@ apr --help
 The README's own gate — a merge-path CI step runs exactly this line, which is what lets this fence stay `bash`:
 
 ```bash
-bash scripts/check_readme_claims.sh    # README contract gate
+setsid --wait bash scripts/check_readme_claims.sh    # README contract gate (as CI runs it)
 ```
 
 ## License

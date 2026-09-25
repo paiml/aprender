@@ -333,7 +333,7 @@ The one of the two that a merge-path CI step runs verbatim — so it stays a `ba
 `contracts/claude-md.yaml`); the fence above is `text` because no workflow runs those lines:
 
 ```bash
-bash scripts/check_package_includes.sh  # scans src/ ONLY, against `cargo package -p aprender --list`
+setsid --wait bash scripts/check_package_includes.sh  # as CI runs it; scans src/ ONLY, against `cargo package -p aprender --list`
 ```
 
 **`check_package_includes.sh` is currently vacuous — know this before trusting it.**

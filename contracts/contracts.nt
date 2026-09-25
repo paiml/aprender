@@ -9521,6 +9521,7 @@
 <https://ont.paiml.dev/v1alpha1/csv/csv-train> <https://ont.paiml.dev/v1alpha1/csv/rows> "100"^^<http://www.w3.org/2001/XMLSchema#integer> .
 <https://ont.paiml.dev/v1alpha1/csv/csv-train> <https://ont.paiml.dev/v1alpha1/csv/sha256> "e92a2460d310818411a48fdb440336024818d1d8fac5f2da853427ba9888bd52"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/llm/LlmContext> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/command> "setsid --wait bash scripts/check_package_includes.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/commandsSection> "APR CLI (`cargo install aprender`)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/commandsSection> "Build Commands"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/commandsSection> "Debugging: Use apr Tools First (MANDATORY)"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -9890,6 +9891,10 @@
 <https://ont.paiml.dev/v1alpha1/parity/OracleComparedReceipt> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <https://ont.paiml.dev/v1alpha1/parity/ParityReceipt> .
 <https://ont.paiml.dev/v1alpha1/parity/SelfComparedReceipt> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <https://ont.paiml.dev/v1alpha1/parity/ParityReceipt> .
 <https://ont.paiml.dev/v1alpha1/readme/readme-root> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/readme/Readme> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/contractCount> "1840"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/entrypoint> "crates/aprender-contracts-cli"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/kind> "library"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/schemaVersion> "1.0"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "A Qwen story"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Architecture"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "At HEAD"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -9914,6 +9919,7 @@
 <https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Quick Start"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "Verified this release"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/section> "What is Aprender?"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/readme/readme-root> <https://ont.paiml.dev/v1alpha1/readme/verifiedCommand> "setsid --wait bash scripts/check_readme_claims.sh"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.68.1%2Fgx10%2Fqwen2-1.5b-q4km> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/model/Receipt> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.68.1%2Fgx10%2Fqwen2-1.5b-q4km> <https://ont.paiml.dev/v1alpha1/model/backendRan> "cpu=ok"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/receipt/0.68.1%2Fgx10%2Fqwen2-1.5b-q4km> <https://ont.paiml.dev/v1alpha1/model/backendRan> "cuda=ok"^^<http://www.w3.org/2001/XMLSchema#string> .
