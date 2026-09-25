@@ -1,0 +1,77 @@
+{
+  "schema": "apr-kernel-receipt/v1",
+  "kernel": "gdn_gated_rmsnorm",
+  "issue": 3522,
+  "receipts": [
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_gated_rmsnorm",
+      "variant": "exp",
+      "entry": "gated_rmsnorm_exp",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "head_dim": 128,
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 1.431e-06,
+        "cos_floor": 0.9999,
+        "maxdiff_ceiling": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 2.384,
+        "handptx_us": 2.61,
+        "ratio": 0.9135,
+        "worst_heads": 48,
+        "ratio_max": 1.2,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 31,
+        "handptx": 27
+      },
+      "host": "noah-Lambda-Vector",
+      "sha": "5630ddc8b674a442ab45c9a4cced1bbcc9140aae",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "580.119.02, NVIDIA GeForce RTX 4090",
+      "foreign_gpu_procs": ""
+    },
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_gated_rmsnorm",
+      "variant": "ex2",
+      "entry": "gated_rmsnorm_ex2",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "head_dim": 128,
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 1.431e-06,
+        "cos_floor": 0.9999,
+        "maxdiff_ceiling": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 2.56,
+        "handptx_us": 2.611,
+        "ratio": 0.9804,
+        "worst_heads": 48,
+        "ratio_max": 1.2,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 31,
+        "handptx": 27
+      },
+      "host": "noah-Lambda-Vector",
+      "sha": "5630ddc8b674a442ab45c9a4cced1bbcc9140aae",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "580.119.02, NVIDIA GeForce RTX 4090",
+      "foreign_gpu_procs": ""
+    }
+  ]
+}
