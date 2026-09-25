@@ -79,10 +79,17 @@ capable() {
 # contract to use it, so no fleet pv could have it until that car ships. A key the tree does NOT
 # parse either (a typo, an unimplemented component) stays RED.
 SHAPES_SRC="${FLEET_PV_SHAPES_SRC:-$ROOT/crates/aprender-contracts/src/ontology/shapes.rs}"
+shape_keys() { # the keys in this tree's NODE_KEYS and PROPERTY_KEYS arrays, one per line -- ONLY
+    # those two: shapes.rs quotes other identifiers too (NUMERIC_TYPES, test strings), and a key
+    # found there is not a key the parser accepts (aprender-59's refutation of 0cd5ac42b)
+    awk '/^const (NODE|PROPERTY)_KEYS: &\[&str\] = &\[$/ { on = 1; next } on && /^\];/ { on = 0 } on { gsub(/[[:space:]",]/, ""); if ($0 != "") print }' "$SHAPES_SRC" 2>/dev/null
+}
 tree_component() { # tree_component <pv stderr line> -> the key, when the tree's parser lists it
+    local key
     [[ $1 =~ ^error:\ shape\ [^\ ]+\ uses\ unsupported\ ([A-Za-z]+)$ ]] || return 1
-    grep -qxE "[[:space:]]*\"${BASH_REMATCH[1]}\"," "$SHAPES_SRC" 2>/dev/null || return 1
-    printf '%s' "${BASH_REMATCH[1]}"
+    key=${BASH_REMATCH[1]}
+    shape_keys | grep -qxF "$key" || return 1
+    printf '%s' "$key"
 }
 
 # resolve_fleet_pv -> prints the first candidate that exists and is executable; rc 1 if none
@@ -294,22 +301,31 @@ STUB
     mkcrash "$d/pv_unsup" "echo 'error: shape release-readiness-v1.refusal uses unsupported allowEmpty' >&2; exit 3"
     mkcrash "$d/pv_typo" "echo 'error: shape release-readiness-v1.refusal uses unsupported allowEmtpy' >&2; exit 3"
     mkcrash "$d/pv_three" "echo 'error: io failure reading contracts' >&2; exit 3"
-    printf 'const NODE_KEYS: &[&str] = &[\n    "targetClass",\n    "allowEmpty",\n];\n' > "$d/shapes.rs"
+    mkcrash "$d/pv_decoy" "echo 'error: shape release-readiness-v1.refusal uses unsupported decoyKey' >&2; exit 3"
+    #     decoyKey is quoted in shapes.rs the way the real file quotes NUMERIC_TYPES and test
+    #     strings -- but it is in neither key array, so the parser does not accept it
+    printf 'const NODE_KEYS: &[&str] = &[\n    "targetClass",\n    "allowEmpty",\n];\nconst PROPERTY_KEYS: &[&str] = &[\n    "path",\n];\nconst NUMERIC_TYPES: &[&str] = &[\n    "decoyKey",\n];\nfn t() {\n    let v = [\n        "decoyKey",\n    ];\n}\n' > "$d/shapes.rs"
     out=$(FLEET_PV_BIN="$d/pv_unsup" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" RUNNER_NAME=intel-clean-room-4 bash "$0" 2>&1); rc=$?
     [ "$rc" -eq 0 ] && grep -q '^UNMEASURED runner=intel-clean-room-4 reason=incapable .*refuses shape key allowEmpty, which this tree' <<<"$out" && ! grep -qE '^(SUMMARY )?(PASS|FAIL)' <<<"$out" && ok "pinned pv refuses a shape key the tree parses (exit 3) -> UNMEASURED reason=incapable, never PASS" || nok "expected UNMEASURED reason=incapable for allowEmpty, got rc=$rc: $out"
     out=$(FLEET_PV_BIN="$d/pv_unsup" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
     [ "$rc" -eq 0 ] && grep -q '^UNMEASURED .*reason=incapable .*allowEmpty' <<<"$out" && ok "...and this tree's REAL shapes.rs lists allowEmpty (the row is tied to the parser, not the fixture)" || nok "this tree's shapes.rs does not list allowEmpty, or the arm did not read it: rc=$rc: $out"
-    for c in "pv_typo allowEmtpy" "pv_three io.failure"; do
+    for c in "pv_typo allowEmtpy" "pv_three io.failure" "pv_decoy decoyKey"; do
         read -r stub err <<<"$c"
         out=$(FLEET_PV_BIN="$d/$stub" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
         [ "$rc" -eq 1 ] && grep -q "^FAIL runner=probe-runner reason=pv-no-verdict .*pv exited 3[ ,].*pv stderr: .*$err" <<<"$out" && ! grep -qE '^(SUMMARY )?(PASS|UNMEASURED)' <<<"$out" && ok "exit 3 with '$err' (no shape key the tree parses) -> RED, never UNMEASURED" || nok "expected RED for exit-3 $stub, got rc=$rc: $out"
     done
     #     ...and the mutant that stops asking the tree turns the typo UNMEASURED, exit 0
-    sed 's/^\( *\)grep -qxE "\[\[:space:\]\]\*\\"\${BASH_REMATCH\[1\]}\\"," "\$SHAPES_SRC" 2>\/dev\/null || return 1$/\1true/' "$0" > "$d/mut_tree.sh"
+    sed 's/^\( *\)shape_keys | grep -qxF "\$key" || return 1$/\1true/' "$0" > "$d/mut_tree.sh"
     if cmp -s "$0" "$d/mut_tree.sh"; then nok "mutant (tree not asked) did not apply; the typo row proves nothing"
     elif ! bash -n "$d/mut_tree.sh" 2>/dev/null; then nok "mutant (tree not asked) is not valid bash; the row would prove nothing"
     else out=$(FLEET_PV_BIN="$d/pv_typo" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" bash "$d/mut_tree.sh" 2>&1); rc=$?
          [ "$rc" -eq 0 ] && grep -q '^UNMEASURED .*reason=incapable .*allowEmtpy' <<<"$out" && ok "mutant that does not ask the tree's parser turns the typo UNMEASURED exit 0 -- the typo row would go RED under it" || nok "mutant (tree not asked) did not reproduce the hole: rc=$rc: $out"; fi
+    #     ...and the mutant that reads every quoted string in shapes.rs (0cd5ac42b's grep) turns the decoy UNMEASURED
+    sed 's/^\( *\)shape_keys | grep -qxF "\$key" || return 1$/\1tr -d " \\",\\t" < "$SHAPES_SRC" | grep -qxF "$key" || return 1/' "$0" > "$d/mut_scope.sh"
+    if cmp -s "$0" "$d/mut_scope.sh"; then nok "mutant (unscoped) did not apply; the decoy row proves nothing"
+    elif ! bash -n "$d/mut_scope.sh" 2>/dev/null; then nok "mutant (unscoped) is not valid bash; the row would prove nothing"
+    else out=$(FLEET_PV_BIN="$d/pv_decoy" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_SHAPES_SRC="$d/shapes.rs" bash "$d/mut_scope.sh" 2>&1); rc=$?
+         [ "$rc" -eq 0 ] && grep -q '^UNMEASURED .*reason=incapable .*decoyKey' <<<"$out" && ok "mutant that reads all of shapes.rs (not just NODE/PROPERTY_KEYS) turns the decoy UNMEASURED exit 0 -- the decoy row would go RED under it" || nok "mutant (unscoped) did not reproduce the hole: rc=$rc: $out"; fi
 
     # 8c. the verdict parser cannot run (no python3 on the runner) -> UNMEASURED reason=judge-env
     out=$(FLEET_PV_BIN="$d/pv_ok" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_PYTHON="$d/no-such-python" bash "$0" 2>&1); rc=$?
