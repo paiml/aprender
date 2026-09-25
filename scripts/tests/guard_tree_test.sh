@@ -244,7 +244,9 @@ else
 fi
 
 # The guard-cargo job body: from its key to the next top-level job key.
-guard_cargo_job="$(awk '/^  guard-cargo:/{f=1} f&&/^  [a-z][a-z0-9_-]*:/&&!/^  guard-cargo:/{f=0} f' <<<"$ci_text")"
+# guard-cargo AND its guard-cargo-steps manifest (#4415): the docker steps run by
+# scripts/ci_guards.sh guard-cargo live in the manifest.
+guard_cargo_job="$(awk '/^  guard-cargo(-steps)?:/{f=1;print;next} f&&/^  [a-z][a-z0-9_-]*:/{f=0} f' <<<"$ci_text")"
 n_job="$(grep -c 'guard-cargo:' <<<"$guard_cargo_job")"
 n_registry_only="$(grep -c -- ':/usr/local/cargo/registry' <<<"$guard_cargo_job")"
 n_cargo_home="$(grep -c -- '-e CARGO_HOME=' <<<"$guard_cargo_job")"
