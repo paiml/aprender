@@ -17,8 +17,10 @@
 // region, evaluated in f64.
 //
 // SAFETY SHAPE (kernel-safety, #3522): both device kernels are safe Rust — no
-// `unsafe` block, no raw pointer. Reads go through bounds-checked slice indexing.
-// The write goes through `DisjointSlice<f32, RuntimeRowMajorTiles<1, TILE>>`: the
+// `unsafe` block. The block reduction passes its shared scratch as `&raw mut SMEM`,
+// which is safe to write in Rust 2024; `block_reduce` owns the unsafety internally.
+// Reads go through bounds-checked slice indexing.
+// The write goes through `DisjointSlice<f32, RuntimeRowMajorTiles<1, 1>>`: the
 // row stride is a RUNTIME row width, bound once on the host (`RowWidth`) and read
 // back on the device with `row_width()`, so every thread uses the same stride and
 // the tiles of distinct (row, lane) coordinates are disjoint. `tile_2d32_rt` checks
@@ -30,8 +32,16 @@
 // as a copy of `x` and must end with only the head regions changed; the harness
 // checks the padding between rows bit for bit.
 //
-// Geometry: the thread's 2-D coordinate is (col = head*32 + lane, row = t), its
-// tile TILE = head_dim/32 contiguous floats at column col*TILE of row t.
+// Geometry: one 128-thread block per (row, head), one element per thread, so the
+// thread's 2-D coordinate is (col = head*128 + tid, row = t) and each warp access
+// is 32 consecutive floats — coalesced, like the hand PTX's lane-strided loop.
+// The sum of squares is a 4-warp `block_reduce` through 4 floats of shared memory.
+//
+// The first port (cb69551a0) kept the hand PTX's block of 32 but gave each lane
+// TILE = 4 CONTIGUOUS floats (the only per-lane ownership the index spaces offer;
+// there is no lane-strided tile). Parity was exact but every warp load and store
+// then spanned 4 cache lines: timing NO-GO, worst 1.25x on sm_89 and 2.17x on
+// sm_121. See GDN-DECISIONS.md, row 8.
 //
 // Two variants, differing only in the reciprocal square root:
 //   (A) l2_norm_rows_sqrt  — `1.0 / sqrt(..)`, IEEE sqrt and divide
@@ -42,18 +52,18 @@
 // evidence/kernels/gdn_l2_norm_rows/<host>.json.
 
 use cuda_core::{CudaContext, DeviceBuffer, IntoResult, LaunchConfig2D, sys};
+use cuda_device::cooperative_groups::{block_reduce, ops::Sum, this_thread_block};
 use cuda_device::{
-    DisjointSlice, LocalIndex32, RuntimeRowMajorTiles, cuda_module, float, kernel, launch_bounds,
-    launch_contract, thread, warp,
+    DisjointSlice, LocalIndex32, RuntimeRowMajorTiles, SharedArray, cuda_module, float, kernel,
+    launch_bounds, launch_contract, thread,
 };
 use cuda_host::RowWidth;
 use std::sync::Arc;
 
 const HEAD_DIM: usize = 128;
 const WARP: usize = 32;
-const TILE: usize = HEAD_DIM / WARP;
+const WARPS: usize = HEAD_DIM / WARP;
 const EPS: f32 = 1e-6;
-const FULL: u32 = 0xFFFF_FFFF;
 
 const PARITY_COS: f64 = 0.9999;
 const PARITY_MAXDIFF: f32 = 1e-3;
@@ -85,70 +95,54 @@ const fn timed_stride(heads: usize) -> usize {
 mod kernels {
     use super::*;
 
-    /// Sum of squares of this lane's TILE, reduced across the warp and
-    /// broadcast: the same shfl.down butterfly and lane-0 broadcast as the
-    /// hand PTX.
+    /// Sum of squares over this (row, head)'s HEAD_DIM elements, one per thread,
+    /// reduced across the block's 4 warps and broadcast to every thread.
+    ///
+    /// Every thread reaches the barrier inside `block_reduce`; the output tile
+    /// bounds check comes after it, so no thread returns early past a barrier.
     #[inline(always)]
-    fn warp_sum_sq(x: &[f32], base: usize) -> f32 {
-        let mut sq = 0.0f32;
-        for k in 0..TILE {
-            let v = x[base + k];
-            sq += v * v;
-        }
-        sq += warp::shuffle_down_f32_sync(FULL, sq, 16);
-        sq += warp::shuffle_down_f32_sync(FULL, sq, 8);
-        sq += warp::shuffle_down_f32_sync(FULL, sq, 4);
-        sq += warp::shuffle_down_f32_sync(FULL, sq, 2);
-        sq += warp::shuffle_down_f32_sync(FULL, sq, 1);
-        warp::shuffle_f32_sync(FULL, sq, 0)
+    fn block_sum_sq(v: f32) -> f32 {
+        static mut SMEM: SharedArray<f32, WARPS> = SharedArray::UNINIT;
+        let block = this_thread_block();
+        block_reduce::<f32, Sum, WARPS>(&block, v * v, &raw mut SMEM)
     }
 
     /// (A) scale via `1 / sqrt`.
     #[kernel(launch_context = launch_context)]
-    #[launch_bounds(32)]
-    #[launch_contract(domain = 2, coordinates = u32, block = (32, 1, 1))]
+    #[launch_bounds(128)]
+    #[launch_contract(domain = 2, coordinates = u32, block = (128, 1, 1))]
     pub fn l2_norm_rows_sqrt(
         x: &[f32],
-        mut out: DisjointSlice<f32, RuntimeRowMajorTiles<1, TILE>>,
+        mut out: DisjointSlice<f32, RuntimeRowMajorTiles<1, 1>>,
         eps: f32,
     ) {
         let c = thread::coord_2d_u32(launch_context);
-        let base = c.row() as usize * out.row_width() as usize + c.col() as usize * TILE;
-        let scale = 1.0f32 / (warp_sum_sq(x, base) + eps).sqrt();
+        let v = x[c.row() as usize * out.row_width() as usize + c.col() as usize];
+        let scale = 1.0f32 / (block_sum_sq(v) + eps).sqrt();
         let Some(mut o) = out.tile_2d32_rt(c) else {
             return;
         };
-        for k in 0..TILE as u32 {
-            let Some(col) = LocalIndex32::<TILE>::new(k) else {
-                return;
-            };
-            o.at(LocalIndex32::constant::<0>(), col)
-                .write(x[base + k as usize] * scale);
-        }
+        o.at(LocalIndex32::constant::<0>(), LocalIndex32::constant::<0>())
+            .write(v * scale);
     }
 
     /// (B) scale via `rsqrt.approx`, the hand PTX's form.
     #[kernel(launch_context = launch_context)]
-    #[launch_bounds(32)]
-    #[launch_contract(domain = 2, coordinates = u32, block = (32, 1, 1))]
+    #[launch_bounds(128)]
+    #[launch_contract(domain = 2, coordinates = u32, block = (128, 1, 1))]
     pub fn l2_norm_rows_rsqrt(
         x: &[f32],
-        mut out: DisjointSlice<f32, RuntimeRowMajorTiles<1, TILE>>,
+        mut out: DisjointSlice<f32, RuntimeRowMajorTiles<1, 1>>,
         eps: f32,
     ) {
         let c = thread::coord_2d_u32(launch_context);
-        let base = c.row() as usize * out.row_width() as usize + c.col() as usize * TILE;
-        let scale = float::rsqrt_approx_f32(warp_sum_sq(x, base) + eps);
+        let v = x[c.row() as usize * out.row_width() as usize + c.col() as usize];
+        let scale = float::rsqrt_approx_f32(block_sum_sq(v) + eps);
         let Some(mut o) = out.tile_2d32_rt(c) else {
             return;
         };
-        for k in 0..TILE as u32 {
-            let Some(col) = LocalIndex32::<TILE>::new(k) else {
-                return;
-            };
-            o.at(LocalIndex32::constant::<0>(), col)
-                .write(x[base + k as usize] * scale);
-        }
+        o.at(LocalIndex32::constant::<0>(), LocalIndex32::constant::<0>())
+            .write(v * scale);
     }
 }
 
@@ -375,7 +369,7 @@ fn run_oxide(
     let mut d_out = DeviceBuffer::from_host(&stream, &x).expect("out");
     let st = stride as u32;
 
-    let config = LaunchConfig2D::new((heads as u32, rows as u32), (WARP as u32, 1), 0);
+    let config = LaunchConfig2D::new((heads as u32, rows as u32), (HEAD_DIM as u32, 1), 0);
     let launch = |d_out: &mut DeviceBuffer<f32>| {
         if rsqrt {
             let p = module
@@ -468,7 +462,7 @@ fn main() {
 
     println!("== #3522 cuda-oxide per-head L2 norm rows ({sm}) ==");
     println!(
-        "   head_dim={HEAD_DIM} eps={EPS:e} tile={TILE}/lane, 1 warp/(row, head), timed at {ROWS} rows"
+        "   head_dim={HEAD_DIM} eps={EPS:e} 1 elem/thread, {WARPS} warps/(row, head), timed at {ROWS} rows"
     );
 
     let mut all_ok = true;
