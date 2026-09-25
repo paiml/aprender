@@ -16,8 +16,20 @@ fn terms(url: &str, effective: &str, fetched: &str) -> String {
 /// One row per channel, all correctly tagged.
 fn mixed_batch() -> String {
     [
-        row("t1", "anthropic", "claude-sonnet-5", "claude-code-cli", TERMS),
-        row("t2", "anthropic", "claude-haiku-4-5-20251001", "anthropic-api", TERMS),
+        row(
+            "t1",
+            "anthropic",
+            "claude-sonnet-5",
+            "claude-code-cli",
+            TERMS,
+        ),
+        row(
+            "t2",
+            "anthropic",
+            "claude-haiku-4-5-20251001",
+            "anthropic-api",
+            TERMS,
+        ),
         row("t3", "google", "gemini-3.1-pro-high", "antigravity", TERMS),
         row("t4", "google", "gemini-3.1-pro", "gemini-api", TERMS),
         row("t5", "google", "gemini-3.1-pro", "vertex", TERMS),
@@ -45,8 +57,15 @@ fn falsify_terms_001_pool_rebuild_excluding_a_provider() {
     assert_eq!(ids(&r.excluded), ["t3", "t4", "t5"]);
     for kept in &r.kept {
         let t = tags(&serde_json::from_str(kept).expect("json")).expect("tagged");
-        assert_ne!(t.provider, Provider::Google, "a google row survived: {kept}");
-        assert!(batch.lines().any(|l| l == *kept), "kept row rewritten: {kept}");
+        assert_ne!(
+            t.provider,
+            Provider::Google,
+            "a google row survived: {kept}"
+        );
+        assert!(
+            batch.lines().any(|l| l == *kept),
+            "kept row rewritten: {kept}"
+        );
     }
 }
 
@@ -67,35 +86,169 @@ fn falsify_terms_003_identity_case_table() {
     let upper = LOCAL_SHA.to_uppercase();
     // (trace_id, provider, model_id, channel, terms_ref, must be tagged?)
     let cases: Vec<(&str, &str, &str, &str, String, bool)> = vec![
-        ("ok-a", "anthropic", "claude-opus-5-5", "claude-code-cli", TERMS.into(), true),
-        ("ok-g", "google", "gemini-3.1-pro-high", "antigravity", TERMS.into(), true),
+        (
+            "ok-a",
+            "anthropic",
+            "claude-opus-5-5",
+            "claude-code-cli",
+            TERMS.into(),
+            true,
+        ),
+        (
+            "ok-g",
+            "google",
+            "gemini-3.1-pro-high",
+            "antigravity",
+            TERMS.into(),
+            true,
+        ),
         ("ok-l", "local", LOCAL_SHA, "apr-serve", TERMS.into(), true),
         ("ok-l2", "local", &prefixed, "apr-serve", TERMS.into(), true),
-        ("alias", "anthropic", "claude-sonnet", "claude-code-cli", TERMS.into(), false),
-        ("bare", "anthropic", "sonnet", "claude-code-cli", TERMS.into(), false),
-        ("gem-alias", "google", "gemini-pro", "gemini-api", TERMS.into(), false),
-        ("unk-model", "anthropic", "unknown", "claude-code-cli", TERMS.into(), false),
-        ("empty-model", "anthropic", "", "claude-code-cli", TERMS.into(), false),
-        ("unk-prov", "openai", "gpt-5", "anthropic-api", TERMS.into(), false),
-        ("unk-chan", "anthropic", "claude-opus-5-5", "web", TERMS.into(), false),
-        ("mismatch", "google", "gemini-3.1-pro", "claude-code-cli", TERMS.into(), false),
-        ("local-alias", "local", "qwen3.5-4b", "apr-serve", TERMS.into(), false),
-        ("local-short", "local", "sha256:3f1a9c", "apr-serve", TERMS.into(), false),
-        ("local-upper", "local", &upper, "apr-serve", TERMS.into(), false),
-        ("no-terms", "anthropic", "claude-opus-5-5", "claude-code-cli", "null".into(), false),
-        ("http", "anthropic", "claude-opus-5-5", "claude-code-cli",
-            terms("http://x.example/terms", "2025-06-17", at), false),
-        ("bad-date", "anthropic", "claude-opus-5-5", "claude-code-cli",
-            terms(https, "June 17", at), false),
-        ("bad-month", "anthropic", "claude-opus-5-5", "claude-code-cli",
-            terms(https, "2025-13-17", at), false),
-        ("bad-fetch", "anthropic", "claude-opus-5-5", "claude-code-cli",
-            terms(https, "2025-06-17", "yesterday"), false),
-        ("fetch-no-zone", "anthropic", "claude-opus-5-5", "claude-code-cli",
-            terms(https, "2025-06-17", "2026-09-25T17:00:00"), false),
+        (
+            "alias",
+            "anthropic",
+            "claude-sonnet",
+            "claude-code-cli",
+            TERMS.into(),
+            false,
+        ),
+        (
+            "bare",
+            "anthropic",
+            "sonnet",
+            "claude-code-cli",
+            TERMS.into(),
+            false,
+        ),
+        (
+            "gem-alias",
+            "google",
+            "gemini-pro",
+            "gemini-api",
+            TERMS.into(),
+            false,
+        ),
+        (
+            "unk-model",
+            "anthropic",
+            "unknown",
+            "claude-code-cli",
+            TERMS.into(),
+            false,
+        ),
+        (
+            "empty-model",
+            "anthropic",
+            "",
+            "claude-code-cli",
+            TERMS.into(),
+            false,
+        ),
+        (
+            "unk-prov",
+            "openai",
+            "gpt-5",
+            "anthropic-api",
+            TERMS.into(),
+            false,
+        ),
+        (
+            "unk-chan",
+            "anthropic",
+            "claude-opus-5-5",
+            "web",
+            TERMS.into(),
+            false,
+        ),
+        (
+            "mismatch",
+            "google",
+            "gemini-3.1-pro",
+            "claude-code-cli",
+            TERMS.into(),
+            false,
+        ),
+        (
+            "local-alias",
+            "local",
+            "qwen3.5-4b",
+            "apr-serve",
+            TERMS.into(),
+            false,
+        ),
+        (
+            "local-short",
+            "local",
+            "sha256:3f1a9c",
+            "apr-serve",
+            TERMS.into(),
+            false,
+        ),
+        (
+            "local-upper",
+            "local",
+            &upper,
+            "apr-serve",
+            TERMS.into(),
+            false,
+        ),
+        (
+            "no-terms",
+            "anthropic",
+            "claude-opus-5-5",
+            "claude-code-cli",
+            "null".into(),
+            false,
+        ),
+        (
+            "http",
+            "anthropic",
+            "claude-opus-5-5",
+            "claude-code-cli",
+            terms("http://x.example/terms", "2025-06-17", at),
+            false,
+        ),
+        (
+            "bad-date",
+            "anthropic",
+            "claude-opus-5-5",
+            "claude-code-cli",
+            terms(https, "June 17", at),
+            false,
+        ),
+        (
+            "bad-month",
+            "anthropic",
+            "claude-opus-5-5",
+            "claude-code-cli",
+            terms(https, "2025-13-17", at),
+            false,
+        ),
+        (
+            "bad-fetch",
+            "anthropic",
+            "claude-opus-5-5",
+            "claude-code-cli",
+            terms(https, "2025-06-17", "yesterday"),
+            false,
+        ),
+        (
+            "fetch-no-zone",
+            "anthropic",
+            "claude-opus-5-5",
+            "claude-code-cli",
+            terms(https, "2025-06-17", "2026-09-25T17:00:00"),
+            false,
+        ),
         // Terms announced ahead of their effective date are still a valid snapshot.
-        ("fetch-before-effective", "anthropic", "claude-opus-5-5", "claude-code-cli",
-            terms(https, "2026-10-01", at), true),
+        (
+            "fetch-before-effective",
+            "anthropic",
+            "claude-opus-5-5",
+            "claude-code-cli",
+            terms(https, "2026-10-01", at),
+            true,
+        ),
     ];
     for (id, p, m, c, t, want) in &cases {
         let v: Value = serde_json::from_str(&row(id, p, m, c, t)).expect("case is JSON");
@@ -118,7 +271,13 @@ fn falsify_terms_003_identity_case_table() {
 fn falsify_terms_004_untagged_row_is_refused_never_kept() {
     let batch = format!(
         "{}\n{}\n\n",
-        row("good", "anthropic", "claude-opus-5-5", "claude-code-cli", TERMS),
+        row(
+            "good",
+            "anthropic",
+            "claude-opus-5-5",
+            "claude-code-cli",
+            TERMS
+        ),
         row("alias", "google", "gemini-pro", "gemini-api", TERMS),
     );
     // Excluding anthropic must not let an untagged row into the pool.
