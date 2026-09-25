@@ -228,7 +228,10 @@ fn time_eager_us(stream: &Arc<cuda_core::CudaStream>, mut launch: impl FnMut()) 
 fn time_graph_us(stream: &Arc<cuda_core::CudaStream>, mut launch: impl FnMut()) -> f64 {
     const NODES: u32 = 100;
     let s = stream.cu_stream();
-    assert!(!s.is_null(), "graph capture needs a created stream, not the legacy default");
+    assert!(
+        !s.is_null(),
+        "graph capture needs a created stream, not the legacy default"
+    );
     // SAFETY: `s` is a live stream owned by `stream`; the graph and its executable
     // are created, launched on `s` and destroyed inside this function, and the
     // captured launches reference buffers the caller keeps alive across the call.
@@ -254,7 +257,11 @@ fn time_graph_us(stream: &Arc<cuda_core::CudaStream>, mut launch: impl FnMut()) 
         exec
     };
     // SAFETY: `exec` is the executable instantiated above, `s` its stream.
-    let replay = || unsafe { sys::cuGraphLaunch(exec, s) }.result().expect("graph launch");
+    let replay = || {
+        unsafe { sys::cuGraphLaunch(exec, s) }
+            .result()
+            .expect("graph launch")
+    };
     for _ in 0..3 {
         replay();
     }
