@@ -323,7 +323,11 @@ pub async fn gpu_batch_completions_handler(
         max_tokens: request.max_tokens,
         temperature: request.temperature,
         top_k: request.top_k,
-        stop_tokens: vec![],
+        // aprender#4345: was `vec![]`, so every prompt ran to `max_tokens`.
+        stop_tokens: crate::api::realize_handlers::completion_stop_tokens(
+            &tokenizer,
+            state.model_eos_token_id(),
+        ),
         trace: false,
             ..Default::default()
     };

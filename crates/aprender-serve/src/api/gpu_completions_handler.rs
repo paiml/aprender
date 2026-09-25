@@ -627,6 +627,27 @@ async fn completions_inner(
     registry_completions(&state, &request, max_tokens, temperature, start, &cancel)
 }
 
+/// The `/v1/logprobs` generation config: greedy, logprobs on, and stopping on
+/// the EOS plus every end-of-generation marker (aprender#4345). It stopped on
+/// the EOS alone, so a Qwen instruct GGUF (EOS `<|im_end|>`) generated past
+/// `<|endoftext|>` and folded those tokens into the perplexity. Split out of the
+/// CUDA-only handler so the stop set is tested without a GPU.
+#[cfg(any(feature = "cuda", test))]
+pub(crate) fn logprobs_config(
+    tokenizer: &crate::tokenizer::BPETokenizer,
+    cached_eos: Option<u32>,
+    max_tokens: usize,
+) -> crate::gguf::QuantizedGenerateConfig {
+    crate::gguf::QuantizedGenerateConfig {
+        max_tokens,
+        temperature: 0.0, // greedy for perplexity
+        top_k: 1,
+        stop_tokens: completion_stop_tokens(tokenizer, Some(cached_eos.unwrap_or(151643))),
+        logprobs: true,
+        ..Default::default()
+    }
+}
+
 /// realizr#191: Logprobs endpoint for perplexity measurement (F-QUALITY-01).
 ///
 /// Returns per-token log probabilities for the generated sequence.
@@ -639,8 +660,6 @@ pub async fn logprobs_handler(
     State(state): State<AppState>,
     Json(request): Json<CompletionRequest>,
 ) -> Result<Json<serde_json::Value>, RErr> {
-    use crate::gguf::QuantizedGenerateConfig;
-
     let cuda_model_lock = state.cuda_model().ok_or_else(|| {
         rerr(&state, StatusCode::SERVICE_UNAVAILABLE, "No CUDA model loaded")
     })?;
@@ -653,16 +672,11 @@ pub async fn logprobs_handler(
         return Err(rerr(&state, StatusCode::BAD_REQUEST, "Empty prompt"));
     }
 
-    let max_tokens = request.max_tokens.unwrap_or(256);
-    let eos = state.cached_eos_token_id.unwrap_or(151643);
-    let config = QuantizedGenerateConfig {
-        max_tokens,
-        temperature: 0.0, // greedy for perplexity
-        top_k: 1,
-        stop_tokens: vec![eos],
-        logprobs: true,
-        ..Default::default()
-    };
+    let config = logprobs_config(
+        &tokenizer,
+        state.cached_eos_token_id,
+        request.max_tokens.unwrap_or(256),
+    );
 
     let result = {
         let mut model = cuda_model_lock.write().expect("CUDA model lock");

@@ -213,3 +213,64 @@ async fn the_cached_backend_stops_on_an_eog_marker() {
 async fn the_batch_scheduler_stops_on_an_eog_marker() {
     assert_backend_stops_on_eog(Backend::CachedBatch, "cached+batch").await;
 }
+
+/// aprender#4345: `/v1/batch/completions` built its config with `stop_tokens:
+/// vec![]`, so every prompt ran to `max_tokens` whatever the model emitted.
+async fn batch_generated(token0: &str) -> usize {
+    let body = serde_json::json!({
+        "prompts": ["def f(x): return x"],
+        "max_tokens": BUDGET,
+        "temperature": 0.0,
+        "top_k": 1,
+    });
+    let response = create_router(backend_state(Backend::Cached, token0, Some(7)))
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/batch/completions")
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let body = String::from_utf8_lossy(&bytes).into_owned();
+    assert_eq!(status, StatusCode::OK, "{body}");
+    serde_json::from_value(json(&body)["results"][0]["num_generated"].clone())
+        .unwrap_or_else(|e| panic!("num_generated ({e}): {body}"))
+}
+
+#[tokio::test]
+async fn the_batch_completions_route_stops_on_an_eog_marker() {
+    assert_eq!(
+        batch_generated("tokenZ").await,
+        BUDGET,
+        "control: an ordinary token must run to the budget"
+    );
+    assert_eq!(
+        batch_generated("<|endoftext|>").await,
+        0,
+        "#4345: /v1/batch/completions ran past <|endoftext|>"
+    );
+}
+
+/// aprender#4345: `/v1/logprobs` stopped on the EOS alone. Its handler needs a
+/// CUDA model, so the config it builds is checked directly.
+#[test]
+fn the_logprobs_config_stops_on_the_eos_and_every_eog_marker() {
+    use crate::api::realize_handlers::logprobs_config;
+    let vocab: Vec<String> = ["<unk>", "<|endoftext|>", "a", "<|im_end|>"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    let tok = crate::tokenizer::BPETokenizer::new(vocab, vec![], "<unk>").expect("tokenizer");
+    let config = logprobs_config(&tok, Some(3), 9);
+    assert_eq!(config.stop_tokens, vec![3, 1], "EOS <|im_end|>, then <|endoftext|>");
+    assert_eq!(config.max_tokens, 9);
+    assert!(config.logprobs);
+    assert_eq!((config.temperature, config.top_k), (0.0, 1), "greedy for perplexity");
+}
