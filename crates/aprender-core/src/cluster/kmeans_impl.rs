@@ -8,6 +8,7 @@ impl KMeans {
             max_iter: 300,
             tol: 1e-4,
             random_state: None,
+            n_init: DEFAULT_N_INIT,
             centroids: None,
             labels: None,
             inertia: 0.0,
@@ -34,6 +35,23 @@ impl KMeans {
     pub fn with_random_state(mut self, seed: u64) -> Self {
         self.random_state = Some(seed);
         self
+    }
+
+    /// Sets the number of seeded restarts (sklearn's `n_init`, default 10).
+    ///
+    /// Restart 0 starts from the same row a single-init fit uses, and a later
+    /// restart replaces it only with a strictly lower inertia, so the fitted
+    /// inertia never exceeds the `n_init = 1` inertia. Zero is treated as 1.
+    #[must_use]
+    pub fn with_n_init(mut self, n_init: usize) -> Self {
+        self.n_init = n_init.max(1);
+        self
+    }
+
+    /// Returns the number of seeded restarts.
+    #[must_use]
+    pub fn n_init(&self) -> usize {
+        self.n_init
     }
 
     /// Returns the cluster centroids.
@@ -157,6 +175,10 @@ impl KMeans {
             (vec![self.max_iter as f32], vec![1]),
         );
         tensors.insert("tol".to_string(), (vec![self.tol], vec![1]));
+        tensors.insert(
+            "n_init".to_string(),
+            (vec![self.n_init as f32], vec![1]),
+        );
 
         let random_state_val = if let Some(state) = self.random_state {
             state as f32
@@ -226,6 +248,12 @@ impl KMeans {
         let tol_data = safetensors::extract_tensor(&raw_data, tol_meta)?;
         let tol = tol_data[0];
 
+        // Files written before n_init existed carry no tensor: use the default.
+        let n_init = match metadata.get("n_init") {
+            Some(meta) => (safetensors::extract_tensor(&raw_data, meta)?[0] as usize).max(1),
+            None => DEFAULT_N_INIT,
+        };
+
         let random_state_meta = metadata
             .get("random_state")
             .ok_or("Missing 'random_state' tensor")?;
@@ -250,6 +278,7 @@ impl KMeans {
             max_iter,
             tol,
             random_state,
+            n_init,
             centroids: Some(centroids),
             labels: None, // Training labels not serialized
             inertia,
@@ -257,13 +286,23 @@ impl KMeans {
         })
     }
 
-    /// Initializes centroids using k-means++ algorithm.
-    fn kmeans_plusplus_init(&self, x: &Matrix<f32>) -> Matrix<f32> {
-        let (n_samples, n_features) = x.shape();
+    /// First centroid row of restart `run`. Restart 0 is `seed % n_samples`,
+    /// the row a single-init fit has always used; later restarts draw a row
+    /// from the seed through `SplitMix64`, so they are reproducible.
+    pub(crate) fn restart_start_row(&self, run: usize, n_samples: usize) -> usize {
+        let seed = self.random_state.unwrap_or(42);
+        if run == 0 {
+            return (seed as usize) % n_samples;
+        }
+        (splitmix64(seed ^ (run as u64).wrapping_mul(0xD1B5_4A32_D192_ED03)) % n_samples as u64)
+            as usize
+    }
+
+    /// Initializes centroids by farthest-point seeding from row `first_idx`.
+    fn kmeans_plusplus_init(&self, x: &Matrix<f32>, first_idx: usize) -> Matrix<f32> {
+        let (_, n_features) = x.shape();
         let mut centroids_data = Vec::with_capacity(self.n_clusters * n_features);
 
-        let seed = self.random_state.unwrap_or(42);
-        let first_idx = (seed as usize) % n_samples;
         append_row(&mut centroids_data, x, first_idx, n_features);
 
         for _ in 1..self.n_clusters {
@@ -371,31 +410,21 @@ impl UnsupervisedEstimator for KMeans {
             return Err("Number of samples must be >= number of clusters".into());
         }
 
-        // Initialize centroids using k-means++
-        let mut centroids = self.kmeans_plusplus_init(x);
-
-        let mut labels = vec![0; n_samples];
-
-        for iter in 0..self.max_iter {
-            // Assign samples to nearest centroid
-            labels = self.assign_labels(x, &centroids);
-
-            // Update centroids
-            let new_centroids = self.update_centroids(x, &labels);
-
-            // Check convergence
-            if self.centroids_converged(&centroids, &new_centroids) {
-                self.n_iter = iter + 1;
-                centroids = new_centroids;
-                break;
+        // Best of n_init seeded restarts; ties keep the earlier run, so restart 0
+        // (the single-init result) survives unless a restart strictly beats it.
+        let mut best: Option<(Matrix<f32>, Vec<usize>, f32, usize)> = None;
+        for run in 0..self.n_init.max(1) {
+            let first_idx = self.restart_start_row(run, n_samples);
+            let (centroids, labels, run_inertia, n_iter) = self.lloyd(x, first_idx);
+            if best.as_ref().map_or(true, |b| run_inertia < b.2) {
+                best = Some((centroids, labels, run_inertia, n_iter));
             }
-
-            centroids = new_centroids;
-            self.n_iter = iter + 1;
         }
+        let (centroids, labels, best_inertia, n_iter) =
+            best.expect("n_init >= 1 runs at least one restart");
 
-        // Compute final inertia
-        self.inertia = inertia(x, &centroids, &labels);
+        self.inertia = best_inertia;
+        self.n_iter = n_iter;
         self.labels = Some(labels);
         self.centroids = Some(centroids);
 
@@ -412,6 +441,45 @@ impl UnsupervisedEstimator for KMeans {
 
         self.assign_labels(x, centroids)
     }
+}
+
+impl KMeans {
+    /// One Lloyd run from farthest-point seeding at `first_idx`:
+    /// (centroids, labels, inertia, iterations).
+    fn lloyd(&self, x: &Matrix<f32>, first_idx: usize) -> (Matrix<f32>, Vec<usize>, f32, usize) {
+        let mut centroids = self.kmeans_plusplus_init(x, first_idx);
+        let mut labels = vec![0; x.n_rows()];
+        let mut n_iter = 0;
+
+        for iter in 0..self.max_iter {
+            // Assign samples to nearest centroid
+            labels = self.assign_labels(x, &centroids);
+
+            // Update centroids
+            let new_centroids = self.update_centroids(x, &labels);
+
+            // Check convergence
+            if self.centroids_converged(&centroids, &new_centroids) {
+                n_iter = iter + 1;
+                centroids = new_centroids;
+                break;
+            }
+
+            centroids = new_centroids;
+            n_iter = iter + 1;
+        }
+
+        let run_inertia = inertia(x, &centroids, &labels);
+        (centroids, labels, run_inertia, n_iter)
+    }
+}
+
+/// `SplitMix64` finalizer: a seeded, platform-independent row draw for restarts.
+fn splitmix64(mut z: u64) -> u64 {
+    z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
 }
 
 /// Append the `row`-th row of `x` to the flat centroid buffer.
