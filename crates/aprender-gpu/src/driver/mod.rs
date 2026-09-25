@@ -102,13 +102,10 @@ mod cublaslt;
 )]
 pub mod cublaslt_sys;
 
-// GH-480: PTX backward branch patcher (not feature-gated — pure string transform)
 // CUDA-backed queries that FEED launch_budget (the policy itself is ungated at
 // crate::launch_budget so its case table runs in the required check).
 #[cfg(feature = "cuda")]
 pub mod budget_query;
-
-pub(crate) mod ptx_patch;
 
 // PTX disk cache utilities (not feature-gated — SHA-256, cache I/O testable without CUDA)
 pub(crate) mod ptx_cache;
