@@ -27,6 +27,9 @@
 #        3b  invokes NO gate of the protocol, and mentions no gate name
 #        3c  FAILS CLOSED when the aprender checkout is absent — never silently
 #            falls back, never degrades to a local copy
+#        3e  runs the runner at a pinned git REF, not the checkout's working
+#            tree — a feature branch without the runner must not break the gate
+#            (#2701)
 #   4  no user-scope SKILL.md shadows the repo's dogfood skill
 #
 #   bash scripts/check_dogfood_shim.sh              # check
@@ -184,6 +187,33 @@ check_shim_file() {
     else
         printf 'ok    3c shim fails closed (rc=%s) and names the revisit trigger\n' "$srrc"
     fi
+
+    # 3e PINNED REF, NOT WORKING TREE (#2701). A fixture checkout whose branch
+    # lacks scripts/dogfood.sh while `main` has it — the state that made the
+    # fleet's release gate exit 2 whenever aprender sat on a feature branch.
+    # The shim must run main's runner, and say which commit it ran.
+    local fx
+    fx=$(mktemp -d) || return 2
+    (
+        cd "$fx" && git init -q -b main && mkdir scripts \
+        && printf '#!/usr/bin/env bash\necho CANON-AT-REF "$@"\n' > scripts/dogfood.sh \
+        && chmod +x scripts/dogfood.sh && git add scripts \
+        && git -c user.name=t -c user.email=t@t commit -qm canon \
+        && git checkout -q -b feature && git rm -q scripts/dogfood.sh \
+        && git -c user.name=t -c user.email=t@t commit -qm drop
+    ) >/dev/null 2>&1 || { printf 'FAIL  3e could not build the fixture checkout\n'; rm -rf "${fx:?}"; return 1; }
+    out=$(DOGFOOD_CANON_ROOT="$fx" DOGFOOD_CANON_REF=main XDG_CACHE_HOME="$fx/.cache" \
+        bash "$f" --probe 2>&1); srrc=$?
+    if [ "$srrc" -eq 0 ] && grep -q 'CANON-AT-REF --probe' <<< "$out" \
+        && grep -q "$(git -C "$fx" rev-parse main)" <<< "$out"; then
+        printf 'ok    3e shim runs the runner at the pinned ref, not the working tree\n'
+    else
+        printf 'FAIL  3e shim did not run the pinned-ref runner from a checkout whose branch\n'
+        printf '         lacks it (rc=%s). The release gate would depend on which branch\n' "$srrc"
+        printf '         aprender has checked out (#2701). Output: %s\n' "$(head -c 300 <<< "$out")"
+        rc=1
+    fi
+    rm -rf "${fx:?}"
     return "$rc"
 }
 
@@ -298,6 +328,24 @@ self_test() {
         printf 'FAIL  row 9 extraction yielded %s names / %s call sites — a 3b row that\n' \
             "$n_names" "$n_calls"
         printf '         greps an empty vocabulary accepts every shim.\n'
+        fails=1
+    fi
+
+    # Mutation F (#2701): the pre-#2701 shim, which exec'd the WORKING TREE's
+    # runner. It fails closed and names the trigger, so 3a-3c accept it; only 3e
+    # sees that it follows whatever branch the checkout is on.
+    cat > "$td/worktree.sh" <<'SHIM'
+#!/usr/bin/env bash
+CANON="${DOGFOOD_CANON_ROOT:-$HOME/src/aprender}/scripts/dogfood.sh"
+[ -x "$CANON" ] || { echo 'REVISIT TRIGGER' >&2; exit 2; }
+exec "$CANON" "$@"
+SHIM
+    out=$(check_shim_file "$td/worktree.sh" 2>&1)
+    if grep -q 'FAIL  3e' <<< "$out" && ! grep -q 'FAIL  3[abc]' <<< "$out"; then
+        printf 'ok    row 10 a shim that runs the WORKING TREE is REJECTED by 3e alone\n'
+    else
+        printf 'FAIL  row 10 a working-tree shim was not rejected by 3e (and only 3e):\n'
+        sed 's/^/        /' <<< "$out"
         fails=1
     fi
 

@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-08-23'
   author: PAIML Engineering
   references:
@@ -132,12 +132,15 @@ equations:
                    AND U is byte-identical to scripts/.dogfood-shim-reference.sh
                    AND run(U with the aprender checkout ABSENT) exits != 0
                        AND names the REVISIT TRIGGER
+                   AND run(U with the checkout's branch LACKING the runner and ref R
+                       HAVING it) execs R's runner and prints R's commit   (#2701)
     domain: the user-scope copy, if the host has one
     codomain: bool
     invariants:
     - 'The CAP lives in the repo, on protected main; the FILE it caps lives at user scope. Any state the author writes and the gate reads can be moved in the same commit — so it is deliberately not co-located.'
     - '70 is chosen, not guessed: the shim is 49 lines, of which 32 are rationale. The smallest gate in the protocol is ~12 lines with its rationale plus a call site, so re-inlining even ONE gate spends the whole headroom.'
     - 'Fail-closed is BEHAVIOURAL, not textual: the shim is actually run with the checkout absent.'
+    - 'The runner comes from a pinned git REF (default origin/main), never the working tree (#2701): with aprender on a feature branch without scripts/dogfood.sh the fleet release gate exited 2 and cost a release on 2026-08-23. A present repo with an absent FILE is the likelier failure than the absent repo the trigger names.'
     - 'REVISIT TRIGGER: the first time dogfood is invoked on a crate whose own repo is checked out but aprender is NOT. That is the signal infra-canonical has become correct — move the protocol, do not restore a local copy.'
 
   single_prose:
@@ -386,6 +389,12 @@ falsification_tests:
   test: 'bash scripts/check_verifier_pinning.sh   # the "known gaps" section'
   if_fails: 'a documented gap silently widens, or is closed and left undocumented — the TODO-as-gate shape'
   mutation: 'inject a partial VP-01 fix (strip leading redirections before tokenising); the VP-01 row must turn RED naming promotion (observed 2026-08-23, engagement proven: mutated scan rc=1 vs pristine rc=0 on the same probe)'
+- id: F-DOG1-029
+  rule: the shim runs the runner at a pinned ref, not the working tree (#2701)
+  prediction: 'from a fixture checkout whose branch lacks scripts/dogfood.sh while `main` has it, the shim with DOGFOOD_CANON_REF=main exits 0, runs main''s runner and prints main''s commit'
+  test: 'bash scripts/check_dogfood_shim.sh --self-test   # row 3e (via row 1) and row 10'
+  if_fails: 'the fleet release gate is a function of which branch the aprender checkout happens to be on — it exited 2 mid-release on 2026-08-23'
+  mutation: 'the pre-#2701 shim that exec''d $CANON_ROOT/scripts/dogfood.sh; row 10 asserts 3e alone turns RED on it while 3a-3c stay green'
 
 proof_obligations:
 - id: DRU-INV-001
