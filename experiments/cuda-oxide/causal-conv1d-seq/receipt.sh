@@ -26,7 +26,23 @@ sha="$(git -C "$repo" rev-parse HEAD)"
 dirty="$(git -C "$repo" status --porcelain -- "$here" "$repo/crates/aprender-gpu/src/kernels/gdn" | wc -l)"
 ptxas_version="$(ptxas --version 2>/dev/null | tail -1 || echo unknown)"
 driver="$(nvidia-smi --query-gpu=driver_version,name --format=csv,noheader 2>/dev/null | head -1 || echo unknown)"
-foreign="$(nvidia-smi --query-compute-apps=pid,name,used_memory --format=csv,noheader 2>/dev/null | tr '\n' ';' || true)"
+# A compute-app row whose pid is not in /proc is a context the driver kept after its
+# process died (lambda, 2026-09-25: pid 3650689, 936 MiB, `[Not Found]`, for hours).
+# Nothing is left to launch work on it, so it cannot skew timing; it is recorded as
+# `phantom_gpu_ctx` instead of failing every receipt until a GPU reset. Host /proc
+# shows container processes too, so a live process in a container stays foreign.
+# Anything that does not parse as a numeric pid stays foreign (fail closed).
+foreign=""
+phantom=""
+while IFS= read -r row; do
+    [[ -n "$row" ]] || continue
+    pid="${row%%,*}"
+    if [[ "$pid" =~ ^[0-9]+$ ]] && [[ ! -e "/proc/$pid" ]]; then
+        phantom+="$row;"
+    else
+        foreign+="$row;"
+    fi
+done < <(nvidia-smi --query-compute-apps=pid,name,used_memory --format=csv,noheader 2>/dev/null || true)
 
 cd "$here" || exit 1
 rc=0
@@ -40,7 +56,7 @@ fi
 
 mkdir -p "$out_dir"
 HOST="$host" SHA="$sha" DIRTY="$dirty" OXIDE_REV="$oxide_rev" PTXAS="$ptxas_version" \
-DRIVER="$driver" FOREIGN="$foreign" RECEIPTS="$receipts" python3 - >"$out_dir/$host.json" <<'EOF'
+DRIVER="$driver" FOREIGN="$foreign" PHANTOM="$phantom" RECEIPTS="$receipts" python3 - >"$out_dir/$host.json" <<'EOF'
 import json, os
 rows = [json.loads(line) for line in os.environ["RECEIPTS"].splitlines() if line.strip()]
 for r in rows:
@@ -48,7 +64,8 @@ for r in rows:
              tree_dirty_paths=int(os.environ["DIRTY"]),
              cuda_oxide_rev=os.environ["OXIDE_REV"],
              ptxas_version=os.environ["PTXAS"], driver=os.environ["DRIVER"],
-             foreign_gpu_procs=os.environ["FOREIGN"])
+             foreign_gpu_procs=os.environ["FOREIGN"],
+             phantom_gpu_ctx=os.environ["PHANTOM"])
 print(json.dumps({"schema": "apr-kernel-receipt/v1", "kernel": "gdn_causal_conv1d_silu_seq",
                   "issue": 3522, "receipts": rows}, indent=2))
 EOF
