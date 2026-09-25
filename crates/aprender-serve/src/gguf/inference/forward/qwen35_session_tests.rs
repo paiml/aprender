@@ -540,8 +540,15 @@ fn with_no_cache_to_release_the_first_refusal_stands() {
         fp16: 0,
         fits: vec![],
     };
+    let first = fit(&mut Device {
+        free: 408 * MIB,
+        fp16: 0,
+        fits: vec![],
+    })
+    .expect_err("408 MiB refuses every rung");
     let why = fit_or_release(&mut d, fit, release).expect_err("nothing to give back");
-    assert!(!why.contains("after releasing"), "{why}");
+    assert_eq!(why, first, "the first refusal, unchanged");
+    assert_eq!(d.free, 408 * MIB, "nothing was released");
 }
 
 #[test]

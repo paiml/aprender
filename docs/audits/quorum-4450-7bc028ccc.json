@@ -1,0 +1,48 @@
+{
+  "ticket": "#4450",
+  "branch": "ea/4450-f16-release",
+  "reviewed_commit": "7bc028ccc",
+  "author_model": "claude-opus-5-5",
+  "lanes": [
+    {
+      "model": "claude-sonnet-5",
+      "round": 1,
+      "verdict": "PASS"
+    },
+    {
+      "model": "claude-haiku-4-5-20251001",
+      "round": 1,
+      "verdict": "PASS"
+    },
+    {
+      "model": "agy gemini-3.1-pro-high",
+      "round": 1,
+      "verdict": "FAIL",
+      "findings": 8
+    },
+    {
+      "model": "agy gemini-3.1-pro-high",
+      "round": 2,
+      "verdict": "PASS",
+      "note": "F6 (weak assertion) and F8 (512 literal) accepted and fixed; F1-F5,F7 rebutted with code citations"
+    }
+  ],
+  "result": "3/3 PASS",
+  "gpu_ab": {
+    "host": "lambda RTX 4090",
+    "gguf": "Qwen3.5-9B-Q4_K_M",
+    "flags": "--gpu-layers all --context-length 40960",
+    "rc1_5660b0877": {
+      "per_token_fallbacks": 8,
+      "ttft_p32k_ms": 971326.2,
+      "ttft_p850_after_32k_ms": 24875.9
+    },
+    "fix_7bc028ccc": {
+      "per_token_fallbacks": 0,
+      "released_mib": 13196,
+      "ttft_p32k_ms": 26507.4,
+      "ttft_p850_after_32k_ms": 1018.4
+    },
+    "unexplained": "fix-arm warmup ttft 68690 ms vs rc1 1698 ms, single sample; prewarm itself 163 ms"
+  }
+}
