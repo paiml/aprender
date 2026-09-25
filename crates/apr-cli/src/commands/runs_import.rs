@@ -240,10 +240,8 @@ fn free_bytes(path: &Path) -> Result<u64> {
         .ok_or_else(|| CliError::ValidationFailed(format!("df failed for {}", at.display())))
 }
 
-/// Write every `Import` in `planned` to the pacha home `home`; returns the
-/// minted run ids.
-pub(crate) fn apply(home: &Path, planned: &[Planned]) -> Result<Vec<String>> {
-    let free = free_bytes(home)?;
+/// R-6: refuse a backfill write with under [`MIN_FREE_BYTES`] free.
+fn refuse_low_space(free: u64, home: &Path) -> Result<()> {
     if free < MIN_FREE_BYTES {
         return Err(CliError::ValidationFailed(format!(
             "R-6: {} GiB free under {}, need {} GiB before backfill",
@@ -252,6 +250,13 @@ pub(crate) fn apply(home: &Path, planned: &[Planned]) -> Result<Vec<String>> {
             MIN_FREE_BYTES >> 30
         )));
     }
+    Ok(())
+}
+
+/// Write every `Import` in `planned` to the pacha home `home`; returns the
+/// minted run ids.
+pub(crate) fn apply(home: &Path, planned: &[Planned]) -> Result<Vec<String>> {
+    refuse_low_space(free_bytes(home)?, home)?;
     pacha::Registry::open(RegistryConfig::new(home)).map_err(pacha_err)?;
     let mut backend = open_backend(home)?;
     let mut ids = Vec::new();

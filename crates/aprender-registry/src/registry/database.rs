@@ -14,6 +14,9 @@ pub struct RegistryDb {
     conn: Connection,
 }
 
+/// A stored lineage row: `(from_id, to_id, edge_type, metadata_json)`.
+pub type LineageRow = (String, String, String, Option<String>);
+
 impl RegistryDb {
     /// Open or create a database at the given path.
     ///
@@ -342,7 +345,7 @@ impl RegistryDb {
     pub fn lineage_edges_into(
         &self,
         to_id: &str,
-    ) -> Result<Vec<(String, String, String, Option<String>)>> {
+    ) -> Result<Vec<LineageRow>> {
         let mut stmt = self.conn.prepare(
             "SELECT from_id, to_id, edge_type, metadata_json FROM lineage WHERE to_id = ?1 ORDER BY id",
         )?;
