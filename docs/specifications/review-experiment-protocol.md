@@ -49,7 +49,7 @@
 | G4 | Train themes | 0.69 = verbs that are true; 0.70 = fast (TTFT, resident serve, `--json-schema`); finetune/distill on qwen35 refuse until 0.71; WGPU/Metal refuse until 0.71 | [A] operator ruling 2026-09-20; [U] at HEAD | `docs/specifications/06x-release-schedule.md`, milestones |
 | G5 | Parity oracle | llama.cpp pin `d1d3c3396` (`scripts/llama_pin.toml` `build_commit`); `ds.yaml` min_cosine 0.98 | [V] 2026-09-20; [U] at HEAD | `scripts/llama_pin.toml`, `ds.yaml` |
 | G6 | TTFT gap | apr 0.68.2 TTFT 7.7×, end-to-end 4.9× slower than llama.cpp on Qwen3.5-4B, 4090 | [V] 2026-09-20 | #3596 |
-| G7 | Host roles | lambda-labs = agent host, primary x86 CUDA (scarce); **its GPU is excluded from this experiment by construction.** intel = clean-room runner (contended), dual AMD GPU (Vulkan). gx10 = GB10, 120 GB unified, clean-room pool. mini = M4, macOS, `rust-neutral` pool | [A] | `infra/machines/*/forjar.yaml` |
+| G7 | Host roles | lambda-labs = agent host, primary x86 CUDA (scarce); **its GPU is excluded from this experiment by construction** (shadow rung 2 only, R-9). intel = clean-room runner (contended), dual AMD GPU (Vulkan). gx10 = GB10, 120 GB unified, clean-room pool. mini = M4, macOS, `rust-neutral` pool | [A] | `infra/machines/*/forjar.yaml` |
 | G8 | Undeclared apr | lambda-labs `~/.local/bin/apr` was a hand-installed 0.64.0 | [V] 2026-09-20; [U] at HEAD | `command -v apr`; `fleet-bins.tsv` |
 | G9 | Reviewer identity | 301/301 historical quorum receipts record the reviewer model as `unknown` | [V] 2026-09-10 | PV-LEAN-AUDIT |
 | G10 | Decode ceilings (bandwidth ÷ bytes/token) | 4B Q4_K_M ≈ 2.5 GB/token → 4090 ≈ 400, GB10 ≈ 110 tok/s | [C] theoretical, [U] for apr | — |
@@ -263,7 +263,12 @@ A challenger (any §5.3 candidate) replaces the champion only if all of these ho
   - Every numeric gate cites its measurement command or is marked `[A]`/`[U]`.
   - The `[A]` values in this spec (corpus sizes, 14-day revert window, 20-evaluation budget) are recalibrated after the first test version and logged.
 - **R-8 No Python** in any file this spec creates, harness or analysis. Shell passes `bashrs`; everything else is Rust (an aprender workspace crate or xtask).
-- **R-9 Lambda GPU is excluded.** No cell, teacher job or serve in this spec may place work on the lambda-labs 4090.
+- **R-9 Lambda GPU is excluded, except as shadow rung 2 at dispatch time** (operator ruling 2026-09-25, option b; `cop-inbox/handoff/ruling-r9-b.md`).
+  - No REX experiment cell, teacher or finetune job, resident `apr serve` or VRAM-preloaded weights may place work on the lambda-labs 4090. Every other R-9 exclusion stands.
+  - The single exception: the apr SHADOW lane may run on `lambda-cuda` as rung 2, only when rung 1 (`gx10-cuda`) returned `NotRun` and the lambda GPU lock is free at dispatch time.
+  - `lambda-cuda` yields to agent sessions and `train-active`. A lock taken before or during the round makes the row `NotRun{Busy}`, never a Verdict, and the ladder continues. The round is not retried on the same cell.
+  - Fallback order: `gx10-cuda` → `lambda-cuda` → `intel-wgpu` → `mini-metal` → `intel-cpu` → `NotRun{NoExecutor}`. Each row records the backend that actually ran; the `gx10-cpu` labelling rule applies to lambda too.
+  - The rung-2 routing lives in paiml-implement#436. Falsifier: a fixture holding the lambda GPU lock produces a `lambda-cuda` row of `NotRun{Busy}`.
 - **R-10 The release train wins.** When `train-active` is set, the lane and the experiment jobs yield on clean-room/CUDA pools.
 - **R-11 The asymmetric vote holds** until H4 and H5 pass through the §5.4 machinery. Before that, apr never casts a deciding vote.
 - **R-12 Measurement states its tree:** HEAD vs `origin/main`, the host, and a per-session worktree.
@@ -299,7 +304,7 @@ A challenger (any §5.3 candidate) replaces the champion only if all of these ho
 - **S-1** REX-00 cannot be committed before any measurement (pre-registration out of order).
 - **S-2** An executing host resolves `apr` to an undeclared binary, or its weights sha mismatches the declaration.
 - **S-3** The sealed-test contamination check fails anywhere.
-- **S-4** Any change would place work on the lambda-labs GPU (R-9).
+- **S-4** Any change would place work on the lambda-labs GPU outside the R-9 shadow rung-2 exception.
 - **S-5** A run overlaps `train-active` on a clean-room/CUDA pool without yielding.
 - **S-6** **Training on hosted-model outputs.** Using Claude or agy (Gemini) outputs as training data for B2 may conflict with those providers' terms. It is an operator decision, and until Noah rules, silver labels stay evaluation-irrelevant and unused for training. B2 proceeds with the local 27B teacher and gold labels only.
 - **S-7** Every cell is `Refused` or `NotRun`, so there is no admissible cell for (A).
@@ -349,5 +354,5 @@ next_row: REX-NN
 | Gap to llama.cpp on the primary cell | measured every tag; filed when it grows | perf ratchet |
 | Champion correctness on the sealed test | never-down across promotions | §5.4 reports |
 | Lane precision / recall | measured, then ratcheted never-down | §5.4 reports |
-| Lambda GPU minutes consumed by this spec | **0** | host receipts |
+| Lambda GPU minutes consumed by this spec outside the R-9 shadow rung 2 | **0** | host receipts |
 | Python lines in files this spec touches | **0** | `grep -rl python3` over the diff |
