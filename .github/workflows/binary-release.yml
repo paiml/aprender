@@ -60,6 +60,14 @@ name: Binary Release
 # scratch / Alpine; gnu variants are smaller, match typical Linux
 # distributions, and import nothing above GLIBC_2.31. No GitHub-hosted
 # runner and no `cross` (#3073: the operator rule of 2026-09-10).
+#
+# WHO STARTS THIS. A pushed tag emits no event here, and creating a draft emits `created`, not
+# `published`. So an rc (operator ruling 2026-09-25 16:58: a tag on a queue-green main) runs this
+# only because the rc tagger does two things in order: `gh release create <tag> --draft`, then
+# `gh workflow run binary-release.yml -f tag=<tag>`. Every release lookup below lists releases
+# (drafts included) and fails by name when that first step was skipped. The draft goes public
+# only through scripts/release/rc_fleet_stage.sh --publish (#4327). A final promoted with
+# promote_rc.sh is `published`, and it arrives with its assets already in place (#4286).
 
 on:
   release:
