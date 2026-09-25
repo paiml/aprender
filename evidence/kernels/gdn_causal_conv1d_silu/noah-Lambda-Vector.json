@@ -1,0 +1,83 @@
+{
+  "schema": "apr-kernel-receipt/v1",
+  "kernel": "gdn_causal_conv1d_silu",
+  "issue": 3522,
+  "receipts": [
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_causal_conv1d_silu",
+      "variant": "exp",
+      "entry": "conv1d_silu_exp",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "block": 256,
+      "conv_kernel": 4,
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 1.192e-07,
+        "cos_floor": 0.9999,
+        "maxdiff_ceiling": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 1.103,
+        "handptx_us": 1.024,
+        "ratio": 1.0769,
+        "worst_n": 2048,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 1.4563,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 20,
+        "handptx": 17
+      },
+      "host": "noah-Lambda-Vector",
+      "sha": "78a1769df30af12946ad4adeb28d0c7ce839d750",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "580.119.02, NVIDIA GeForce RTX 4090",
+      "foreign_gpu_procs": ""
+    },
+    {
+      "schema": "apr-kernel-receipt/v1",
+      "kernel": "gdn_causal_conv1d_silu",
+      "variant": "ex2",
+      "entry": "conv1d_silu_ex2",
+      "authoring": "oxide",
+      "cc": "sm_89",
+      "block": 256,
+      "conv_kernel": 4,
+      "parity": {
+        "cos_min": 1.0,
+        "maxdiff_max": 1.192e-07,
+        "cos_floor": 0.9999,
+        "maxdiff_ceiling": 0.001,
+        "pass": true
+      },
+      "timing": {
+        "oxide_us": 1.106,
+        "handptx_us": 1.024,
+        "ratio": 1.08,
+        "worst_n": 4096,
+        "ratio_max": 1.2,
+        "method": "cuda-graph-100",
+        "eager_ratio_max": 1.4358,
+        "pass": true
+      },
+      "register_budget": {
+        "oxide": 20,
+        "handptx": 17
+      },
+      "host": "noah-Lambda-Vector",
+      "sha": "78a1769df30af12946ad4adeb28d0c7ce839d750",
+      "tree_dirty_paths": 0,
+      "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
+      "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
+      "driver": "580.119.02, NVIDIA GeForce RTX 4090",
+      "foreign_gpu_procs": ""
+    }
+  ]
+}

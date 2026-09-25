@@ -11,10 +11,11 @@ that is neither a manifest nor a receipt (WrongCorpus).
 The set is every `impl Kernel` under `crates/aprender-gpu/src/kernels/gdn/`, measured at 7af9e6637, except
 `HelperProbe`, which is a test helper. `layernorm/` and `conv1d.rs` are outside the GDN set.
 
-## Decided (3 of 15)
+## Decided (4 of 15)
 
 The thresholds are cos ≥ 0.9999, max|Δ| < 1e-3 against f64, and oxide/hand ≤ 1.2, taking the worst ratio
-over the timed shapes (heads 16/32/48 for the per-head kernels, n = 2048/4096/6144 for the elementwise one).
+over the timed shapes (heads 16/32/48 for the per-head kernels, n = 2048/4096/6144 for the elementwise ones,
+channels = 2048/4096/6144 with K = 4 for the conv).
 
 **Timing method: CUDA-graph replay** (`time_graph_us`: 100 launches captured on a created stream, median of
 5 replays). The first receipts timed eager back-to-back launches on the legacy null stream. At ~2 µs per
@@ -28,6 +29,7 @@ A receipt whose `timing` has no `"method":"cuda-graph-100"` is an eager one.
 | `GatedRmsNormKernel` | `kernels/gdn/gated_rmsnorm.rs` | **oxide** | 0.887 | 0.908 | 0.902 |
 | `PerHeadL2NormKernel` | `kernels/gdn/l2_norm.rs` | **oxide** (`rsqrt`) | 0.839 | 0.860 | 0.834 |
 | `SigmoidGateKernel` | `kernels/gdn/sigmoid_gate.rs` | **oxide** (`ex2`), within budget, not a win | 1.058 | 1.076 | 1.089 |
+| `CausalConv1dSiluKernel` | `kernels/gdn/causal_conv1d.rs` | **oxide** (`ex2`), within budget, not a win | 1.080 | 1.091 | 1.139 |
 
 **`GatedRmsNormKernel`**
 - Receipts: `evidence/kernels/gdn_gated_rmsnorm/{noah-Lambda-Vector,yoga,gx10-a5b5}.json`, 2 entries per
@@ -77,7 +79,36 @@ A receipt whose `timing` has no `"method":"cuda-graph-100"` is an eager one.
     single row is disclosed here rather than hidden. A re-run that goes over 1.2 again reopens the row.
   - lambda ran once (1.058 for both variants).
 
-## Undecided: RED, no receipt (12 of 15)
+**`CausalConv1dSiluKernel`**
+- Port: `experiments/cuda-oxide/causal-conv1d/`, two entries, out of place. The hand PTX shifts the state
+  window in place. The port reads `state` and writes `state_out`, a second `DisjointSlice` with
+  `LinearTiles<3>`. Each output slice is claimed with its own `thread::index_1d_u32`, because the index
+  token is `!Copy`. Parity checks the SiLU output and the shifted window.
+- `channels` and `K` are baked into the hand PTX, so there is one golden baseline per timed width
+  (`gdn_conv1d_ptx_golden`, K = 4).
+- Receipts: `evidence/kernels/gdn_causal_conv1d_silu/{noah-Lambda-Vector,yoga,gx10-a5b5}.json`, 2 entries per
+  host. All are at 78a1769df on a clean tree with no foreign GPU process.
+- Parity on every host: cos 1.0, max|Δ| ≤ 1.2e-7 (output and state).
+- **Slower than the hand PTX: 8–14%, worst on gx10.** It passes the gate, so the decision is oxide with no
+  speedup claimed. `exp` is within 0.004 of `ex2` on every host. The table shows `ex2`, the hand PTX's form,
+  as for the sigmoid gate.
+- **The first form failed on gx10, and the fix is recorded here.**
+  - At 204bbb660 the port indexed every element (`state[c*3+k]`, `weight[c*4+k]`), so its PTX carried 8
+    bounds checks with `trap` arms.
+  - gx10 timed that form at 1.20–1.22 in all three runs, a timing NO-GO. Lambda measured 1.12 and yoga
+    1.13 for the same form.
+  - 78a1769df takes one checked chunk per operand (`get(..)` + `first_chunk::<N>()`, early return on
+    `None`), claims `ThreadRunMut32::Full` runs and writes through `at_const`.
+  - The rewrite has 0 traps. gx10 dropped to 1.12–1.14, lambda to 1.08 and yoga to 1.09. The kernel math
+    did not change.
+  - The checks cost more on sm_121 than on sm_89, and this port measures that directly. It is the same
+    fixed per-launch overhead the sigmoid-gate notes list.
+- The PTX still differs from the hand PTX: 10 params against 4, a `stacksave` pair, and 20 registers
+  (sm_89) or 22 (sm_121) against 17.
+- Runs: yoga and gx10 ran 3 times each, and the committed receipt is run 3. Every run on both hosts was GO
+  (yoga ≤ 1.092, gx10 ≤ 1.144). Lambda ran once.
+
+## Undecided: RED, no receipt (11 of 15)
 
 Each row needs an O-1-style port: an oxide `#[kernel]` beside the hand PTX, an f64 CPU reference, a
 `receipt.sh` run on lambda, yoga and gx10, and a manifest under `evidence/kernels/`, with
@@ -85,7 +116,6 @@ Each row needs an O-1-style port: an oxide `#[kernel]` beside the hand PTX, an f
 
 | kernel | shipped PTX |
 |---|---|
-| `CausalConv1dSiluKernel` | `kernels/gdn/causal_conv1d.rs` |
 | `CausalConv1dSiluSeqKernel` | `kernels/gdn/causal_conv1d_seq.rs` |
 | `GdnGatesKernel` | `kernels/gdn/gdn_gates.rs` |
 | `GdnGatesRowsKernel` | `kernels/gdn/rows.rs` |
