@@ -492,6 +492,9 @@ pub(crate) fn m2(
     })
 }
 
+#[path = "model_gate_m2_arms.rs"]
+pub(crate) mod arms;
+
 #[cfg(test)]
 #[path = "model_gate_m2_tests.rs"]
 mod tests;
