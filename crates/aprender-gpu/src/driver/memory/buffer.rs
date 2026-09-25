@@ -90,6 +90,31 @@ thread_local! {
     /// Device bytes this thread has allocated through `GpuBuffer` and not yet
     /// freed.
     static OUTSTANDING_DEVICE_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// Device allocations this thread has made through `GpuBuffer`, ever (#4215).
+    static DEVICE_ALLOCS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// Bytes this thread has copied device→host through `GpuBuffer`, ever (#4215).
+    static DEVICE_TO_HOST_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Device allocations the current thread has made through `GpuBuffer` since it
+/// started — a monotonic count, so a caller measures a region by differencing
+/// two readings (#4215: a steady-state decode token must allocate nothing).
+#[must_use]
+pub fn device_allocs_total() -> u64 {
+    DEVICE_ALLOCS.with(std::cell::Cell::get)
+}
+
+/// Bytes the current thread has copied device→host through `GpuBuffer` since
+/// it started, monotonic like [`device_allocs_total`] (#4215: a greedy decode
+/// token downloads the 4-byte token id, not the logits).
+#[must_use]
+pub fn device_to_host_bytes_total() -> u64 {
+    DEVICE_TO_HOST_BYTES.with(std::cell::Cell::get)
+}
+
+/// Record a device→host copy against the current thread.
+pub(super) fn record_device_to_host(bytes: usize) {
+    DEVICE_TO_HOST_BYTES.with(|c| c.set(c.get().saturating_add(bytes as u64)));
 }
 
 /// Device bytes allocated by the current thread through `GpuBuffer` and not
@@ -124,6 +149,7 @@ pub fn device_bytes_outstanding() -> u64 {
 /// Record a successful device allocation against the current thread.
 fn record_device_alloc(bytes: usize) {
     OUTSTANDING_DEVICE_BYTES.with(|c| c.set(c.get().saturating_add(bytes as u64)));
+    DEVICE_ALLOCS.with(|c| c.set(c.get().saturating_add(1)));
 }
 
 /// Record a device free against the current thread.
