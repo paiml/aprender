@@ -1256,3 +1256,282 @@ impl ExpressionExecutor {
         Ok(Value::Array(vec![]))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn obj(pairs: &[(&str, Value)]) -> Value {
+        Value::Object(
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), v.clone()))
+                .collect(),
+        )
+    }
+
+    fn rows(field: &str, vals: &[Value]) -> Value {
+        Value::Array(vals.iter().map(|v| obj(&[(field, v.clone())])).collect())
+    }
+
+    /// Nine operators, most with two or three spellings, in one `match`. The
+    /// spellings are the CONTRACT — a YAML author writes `>=` or `gte` and must
+    /// get the same rows either way. Nothing else pins the aliases to each
+    /// other, so one arm losing a spelling is a silent behaviour change for
+    /// every document using it.
+    #[test]
+    fn every_spelling_of_an_operator_decides_the_same_way() {
+        let x = ExpressionExecutor::new();
+        let groups: &[&[&str]] = &[
+            &["eq", "==", "="],
+            &["ne", "!=", "<>"],
+            &["gt", ">"],
+            &["lt", "<"],
+            &["gte", ">="],
+            &["lte", "<="],
+        ];
+        let probes = [
+            (Value::Number(5.0), "5"),
+            (Value::Number(5.0), "7"),
+            (Value::Number(7.0), "5"),
+            (Value::String("ab".into()), "ab"),
+            (Value::String("ab".into()), "zz"),
+            (Value::Bool(true), "true"),
+            (Value::Null, "5"),
+        ];
+        let mut drift = Vec::new();
+        for group in groups {
+            for (v, target) in &probes {
+                let first = x.compare_values(v, group[0], target);
+                for alias in &group[1..] {
+                    let got = x.compare_values(v, alias, target);
+                    if got != first {
+                        drift.push(format!(
+                            "\n  - {v:?} vs {target:?}: `{}` said {first}, `{alias}` said {got}",
+                            group[0]
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(
+            drift.is_empty(),
+            "operator spellings have drifted apart, so the same filter written two \
+             ways returns different rows:{}",
+            drift.join("")
+        );
+    }
+
+    /// `ne` is implemented as the negation of `eq`'s helper, so they must be
+    /// exact complements on EVERY input — including the ones where both
+    /// ordering operators are false.
+    #[test]
+    fn equality_and_inequality_are_exact_complements() {
+        let x = ExpressionExecutor::new();
+        for v in [
+            Value::Number(5.0),
+            Value::String("ab".into()),
+            Value::Bool(false),
+            Value::Null,
+            Value::Array(vec![]),
+        ] {
+            for target in ["5", "ab", "false", "", "nonsense"] {
+                assert_ne!(
+                    x.compare_values(&v, "eq", target),
+                    x.compare_values(&v, "ne", target),
+                    "eq and ne disagreed about being opposites for {v:?} vs {target:?}"
+                );
+            }
+        }
+    }
+
+    /// A typo'd operator must match NOTHING rather than everything. A `where`
+    /// clause that silently stops filtering is the dangerous failure: it
+    /// returns MORE data than asked for, and looks like success.
+    #[test]
+    fn an_unrecognised_operator_matches_nothing() {
+        let x = ExpressionExecutor::new();
+        for op in ["", "equals", "EQ", "=>", "~=", "greater_than"] {
+            assert!(
+                !x.compare_values(&Value::Number(5.0), op, "5"),
+                "operator {op:?} is not in the table and must not match — a filter \
+                 that stops filtering returns more rows than the document asked for"
+            );
+        }
+    }
+
+    /// Every ordering comparison needs BOTH sides to be numeric and returns
+    /// false otherwise. So for a string, `gt` and `lte` are both false —
+    /// they are NOT complements. Surprising, and load-bearing for anyone
+    /// reading a filter's results.
+    #[test]
+    fn ordering_against_a_non_number_is_false_in_both_directions() {
+        let x = ExpressionExecutor::new();
+        let v = Value::String("ab".into());
+        for (a, b) in [("gt", "lte"), ("lt", "gte")] {
+            assert!(
+                !x.compare_values(&v, a, "5"),
+                "{a} on a string must be false"
+            );
+            assert!(
+                !x.compare_values(&v, b, "5"),
+                "{b} on a string must be false"
+            );
+        }
+        // and with a non-numeric target against a real number
+        assert!(!x.compare_values(&Value::Number(5.0), "gt", "abc"));
+        assert!(!x.compare_values(&Value::Number(5.0), "lte", "abc"));
+    }
+
+    /// The suffix ladder tests "ms" BEFORE the bare "s". Reversing those two
+    /// arms makes "500ms" strip to "500m" and then fail to parse — the whole
+    /// millisecond unit stops working, and only on inputs that use it.
+    #[test]
+    fn the_ms_suffix_is_read_before_the_bare_s() {
+        let x = ExpressionExecutor::new();
+        assert_eq!(
+            x.parse_window("500ms").expect("500ms parses"),
+            500,
+            "\"500ms\" must be read as milliseconds, not as \"500m\" with a stray s"
+        );
+        assert_eq!(x.parse_window("500s").expect("500s parses"), 500_000);
+    }
+
+    /// The unit table is exact multiples. A wrong factor silently rescales
+    /// every rate computed with that unit.
+    #[test]
+    fn window_units_convert_by_their_exact_multiple() {
+        let x = ExpressionExecutor::new();
+        let cases: &[(&str, u64)] = &[
+            ("1ms", 1),
+            ("1s", 1_000),
+            ("1m", 60_000),
+            ("1h", 3_600_000),
+            ("1d", 86_400_000),
+            ("250", 250),      // no unit at all defaults to milliseconds
+            (" 2m ", 120_000), // surrounding space is trimmed
+        ];
+        let wrong: Vec<String> = cases
+            .iter()
+            .filter_map(|(w, want)| {
+                let got = x.parse_window(w).unwrap_or(u64::MAX);
+                (got != *want).then(|| format!("\n  - {w:?}: expected {want} ms, got {got}"))
+            })
+            .collect();
+        assert!(
+            wrong.is_empty(),
+            "window unit conversion drifted:{}",
+            wrong.join("")
+        );
+    }
+
+    #[test]
+    fn an_empty_or_unparseable_window_is_refused() {
+        let x = ExpressionExecutor::new();
+        for w in ["", "   ", "m", "abc", "1.5s", "-1s"] {
+            assert!(
+                x.parse_window(w).is_err(),
+                "window {w:?} must be refused rather than silently treated as 0"
+            );
+        }
+    }
+
+    /// `extract_numbers` is a `filter_map`, so rows missing the field — or
+    /// holding a non-number in it — are DROPPED, not zero-filled and not an
+    /// error. `sum` and `mean` therefore aggregate over a smaller set than the
+    /// caller handed in, silently. Pinned because it decides what a mean means.
+    #[test]
+    fn rows_that_cannot_be_read_are_dropped_from_an_aggregate() {
+        let x = ExpressionExecutor::new();
+        let data = Value::Array(vec![
+            obj(&[("v", Value::Number(1.0))]),
+            obj(&[("other", Value::Number(99.0))]), // field absent
+            obj(&[("v", Value::String("nope".into()))]), // wrong type
+            obj(&[("v", Value::Number(3.0))]),
+        ]);
+        assert_eq!(data.extract_numbers("v").expect("array"), vec![1.0, 3.0]);
+        assert_eq!(
+            x.apply_sum(&data, "v").expect("sum"),
+            Value::Number(4.0),
+            "the two unreadable rows are dropped, not counted as zero"
+        );
+        assert_eq!(
+            x.apply_mean(&data, "v").expect("mean"),
+            Value::Number(2.0),
+            "the mean divides by 2, the number of READABLE rows — not by 4. A \
+             caller reading this as the average over their four rows is wrong, \
+             and nothing tells them so"
+        );
+    }
+
+    /// Dividing by an empty count would be NaN, which serializes as `null` and
+    /// propagates silently. The guard returns 0.0 instead; pinned so it is not
+    /// removed as dead code.
+    #[test]
+    fn the_mean_of_nothing_is_zero_rather_than_not_a_number() {
+        let x = ExpressionExecutor::new();
+        let empty = Value::Array(vec![]);
+        assert_eq!(x.apply_mean(&empty, "v").expect("mean"), Value::Number(0.0));
+        let all_unreadable = rows("other", &[Value::Number(1.0)]);
+        assert_eq!(
+            x.apply_mean(&all_unreadable, "v").expect("mean"),
+            Value::Number(0.0)
+        );
+    }
+
+    /// A transform handed a non-array must refuse rather than coerce.
+    #[test]
+    fn a_transform_that_needs_an_array_refuses_anything_else() {
+        for v in [
+            Value::Null,
+            Value::Number(1.0),
+            Value::String("x".into()),
+            obj(&[]),
+        ] {
+            assert!(
+                v.require_array().is_err(),
+                "{v:?} is not an array and must be refused"
+            );
+        }
+        assert!(Value::Array(vec![]).require_array().is_ok());
+    }
+
+    /// `is_empty` is defined as `len() == 0`, so they cannot disagree — but
+    /// `len` covers four variants with different meanings (array items, object
+    /// keys, string BYTES, and 0 for scalars). Pinned across all of them.
+    #[test]
+    fn length_and_emptiness_always_agree() {
+        let cases = [
+            (Value::Null, 0),
+            (Value::Bool(true), 0),
+            (Value::Number(9.0), 0),
+            (Value::String(String::new()), 0),
+            (Value::String("abc".into()), 3),
+            (Value::String("é".into()), 2), // bytes, not characters
+            (Value::Array(vec![]), 0),
+            (Value::Array(vec![Value::Null, Value::Null]), 2),
+            (obj(&[]), 0),
+            (obj(&[("a", Value::Null)]), 1),
+        ];
+        for (v, want) in cases {
+            assert_eq!(v.len(), want, "len of {v:?}");
+            assert_eq!(v.is_empty(), want == 0, "is_empty of {v:?} must track len");
+        }
+    }
+
+    /// A dotted source name walks nested objects, and a missing segment
+    /// anywhere yields None rather than a partial result.
+    #[test]
+    fn a_dotted_source_name_walks_nested_objects() {
+        let mut ctx = DataContext::new();
+        ctx.insert(
+            "data",
+            obj(&[("inner", obj(&[("leaf", Value::Number(7.0))]))]),
+        );
+        assert_eq!(ctx.get("data.inner.leaf"), Some(&Value::Number(7.0)));
+        assert!(ctx.contains("data.inner"));
+        assert_eq!(ctx.get("data.missing.leaf"), None);
+        assert_eq!(ctx.get("nosuch"), None);
+        assert_eq!(ctx.get(""), None, "an empty name must not panic on split");
+    }
+}

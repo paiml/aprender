@@ -944,6 +944,103 @@ else
     fail_row "39m: mutant without the partition check" "expected a silent exit 0 on 1 check; rc=$pm_rc; tail: $(tail -2 <<<"$pm_out" | tr '\n' '|')"
 fi
 
+# ---------------------------------------------------------------------------
+# 50-52 (#4046): the --help probe is BOUNDED. A guard that ignores --help used
+# to run its whole body inside the probe; the CRUX judge's worker doubled to
+# ~22 min and guard-tree hit its 30-min job timeout. Fixture: a guard that
+# ignores every argument and sleeps. 50: it is reported by name as PROBE-TIMEOUT.
+# 51: the run stays bounded (probe cut at 1 s, plus one real run). 52: the
+# mutant with the timeout removed loses 50 (the assertion can fail).
+# ---------------------------------------------------------------------------
+pfix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $pfix"
+mkdir -p "$pfix/.empty-git-template" "$pfix/scripts"
+git -C "$pfix" init -q --template="$pfix/.empty-git-template"
+git -C "$pfix" config user.email test@example.invalid
+git -C "$pfix" config user.name "guard_tree_test"
+cp "$GUARD_TREE" "$pfix/scripts/guard_tree.sh"
+# The body records each COMPLETED run after its sleep: a probe cut at the timeout
+# records nothing, so a bounded tree leaves exactly one line and an unbounded
+# one leaves two. No clock is read (DET002).
+printf '#!/usr/bin/env bash\n# ignores every argument, --help included\nsleep 4\necho ran >> "%s/body-runs"\nexit 0\n' "$pfix" >"$pfix/scripts/check_p_deaf.sh"
+git -C "$pfix" add -A && git -C "$pfix" commit -q -m fixture
+p_out="$(cd "$pfix" && GUARD_TREE_HELP_TIMEOUT=1 bash scripts/guard_tree.sh 2>&1)"
+p_runs="$(grep -c . "$pfix/body-runs" 2>/dev/null)"
+if grep -q '^PROBE-TIMEOUT scripts/check_p_deaf.sh' <<<"$p_out"; then
+    pass_row "50: a guard that ignores --help is named as PROBE-TIMEOUT"
+else
+    fail_row "50: a guard that ignores --help is named as PROBE-TIMEOUT" "$(tail -n 5 <<<"$p_out" | tr '\n' '|')"
+fi
+if [ "${p_runs:-0}" = 1 ]; then
+    pass_row "51: the body completed exactly once (the probe was cut before it; unbounded would be 2)"
+else
+    fail_row "51: the body completed exactly once" "completed runs: ${p_runs:-0}"
+fi
+sed 's/help_out="$(timeout "${GUARD_TREE_HELP_TIMEOUT:-10}" bash "$g" --help 2>&1)"/help_out="$(bash "$g" --help 2>\&1)"/' \
+    "$GUARD_TREE" >"$pfix/scripts/guard_tree.sh"
+if cmp -s "$GUARD_TREE" "$pfix/scripts/guard_tree.sh"; then
+    fail_row "52: mutant with the probe timeout removed" "the sed did not apply -- the mutant is the original"
+else
+    p_out="$(cd "$pfix" && GUARD_TREE_HELP_TIMEOUT=1 bash scripts/guard_tree.sh 2>&1)"
+    if grep -q '^PROBE-TIMEOUT' <<<"$p_out"; then
+        fail_row "52: mutant with the probe timeout removed" "row 50's assertion still holds under the mutant"
+    else
+        pass_row "52: mutant with the probe timeout removed loses row 50 (the assertion can fail)"
+    fi
+fi
+cp "$GUARD_TREE" "$pfix/scripts/guard_tree.sh"
+
+# ---------------------------------------------------------------------------
+# 53-55 (#4046): THE SERIAL LANE. A guard carrying `# guard-tree: serial` runs
+# after the pool, alone. Fixture: one serial guard and two pool guards that append
+# start/end events to one log (append order, no clock). 53: nothing interleaves
+# with the serial guard. 54: its verdict is still reported. 55: the mutant with the
+# serial routing removed shows the overlap (the assertion can fail).
+# ---------------------------------------------------------------------------
+lfix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $lfix"
+mkdir -p "$lfix/.empty-git-template" "$lfix/scripts"
+git -C "$lfix" init -q --template="$lfix/.empty-git-template"
+git -C "$lfix" config user.email test@example.invalid
+git -C "$lfix" config user.name "guard_tree_test"
+cp "$GUARD_TREE" "$lfix/scripts/guard_tree.sh"
+for nm in l_pool_a l_pool_b; do
+    printf '#!/usr/bin/env bash\n[ "${1:-}" = --help ] && { echo usage; exit 0; }\necho "start %s" >> "%s/events"\nsleep 2\necho "end %s" >> "%s/events"\nexit 0\n' \
+        "$nm" "$lfix" "$nm" "$lfix" >"$lfix/scripts/check_$nm.sh"
+done
+printf '#!/usr/bin/env bash\n# guard-tree: serial\n[ "${1:-}" = --help ] && { echo usage; exit 0; }\necho "start l_serial" >> "%s/events"\nsleep 2\necho "end l_serial" >> "%s/events"\nexit 0\n' \
+    "$lfix" "$lfix" >"$lfix/scripts/check_l_serial.sh"
+git -C "$lfix" add -A && git -C "$lfix" commit -q -m fixture
+serial_alone() { # -> 0 iff no other event falls between "start l_serial" and "end l_serial"
+    awk '/^start l_serial$/{f=1; next} /^end l_serial$/{f=0; next} f{bad=1} END{exit bad}' "$lfix/events"
+}
+: > "$lfix/events"
+l_out="$(cd "$lfix" && GUARD_TREE_JOBS=8 bash scripts/guard_tree.sh 2>&1)"
+if [ "$(grep -c . "$lfix/events")" = 6 ] && serial_alone; then
+    pass_row "53: a serial-marked guard never overlaps another guard"
+else
+    fail_row "53: a serial-marked guard never overlaps another guard" "$(tr '\n' '|' < "$lfix/events")"
+fi
+if grep -q '^PASS  scripts/check_l_serial.sh \[run\]' <<<"$l_out"; then
+    pass_row "54: the serial guard's verdict is still reported"
+else
+    fail_row "54: the serial guard's verdict is still reported" "$(tail -n 5 <<<"$l_out" | tr '\n' '|')"
+fi
+sed "s/    if grep -qx '# guard-tree: serial' \"\$g\" 2>\/dev\/null; then/    if false; then/" \
+    "$GUARD_TREE" >"$lfix/scripts/guard_tree.sh"
+if cmp -s "$GUARD_TREE" "$lfix/scripts/guard_tree.sh"; then
+    fail_row "55: mutant with the serial routing removed" "the sed did not apply -- the mutant is the original"
+else
+    : > "$lfix/events"
+    (cd "$lfix" && GUARD_TREE_JOBS=8 bash scripts/guard_tree.sh >/dev/null 2>&1)
+    if serial_alone; then
+        fail_row "55: mutant with the serial routing removed" "no overlap under the mutant: $(tr '\n' '|' < "$lfix/events")"
+    else
+        pass_row "55: mutant with the serial routing removed overlaps (row 53 can fail)"
+    fi
+fi
+cp "$GUARD_TREE" "$lfix/scripts/guard_tree.sh"
+
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then
     exit 1

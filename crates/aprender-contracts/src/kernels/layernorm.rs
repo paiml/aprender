@@ -245,10 +245,21 @@ mod tests {
             let mut output = vec![0.0_f32; v.len()];
             layernorm_scalar(&v, &gamma, &beta, 1e-5, &mut output);
 
+            // The output mean is (mean_true - mean_f32) * inv_std, so a fixed 1e-4
+            // is false once var_in nears eps: v = [9.388971, 9.394853] (var_in
+            // 8.6e-6, inv_std 232) put one ulp of the f32 mean at 1.1e-4 in the
+            // output (run 36086744293). Bound the f32 summation error of the mean,
+            // (n+1) * EPSILON * max|x|, scaled by the kernel's own inv_std.
+            let n = v.len() as f32;
+            let m = v.iter().sum::<f32>() / n;
+            let var_in = v.iter().map(|x| (x - m) * (x - m)).sum::<f32>() / n;
+            let inv_std = 1.0 / (var_in + 1e-5).sqrt();
+            let max_abs = v.iter().fold(0.0_f32, |a, x| a.max(x.abs()));
+            let tol = 1e-4 + (n + 1.0) * f32::EPSILON * max_abs * inv_std;
             let mean: f32 = output.iter().sum::<f32>() / output.len() as f32;
             prop_assert!(
-                mean.abs() < 1e-4,
-                "output mean = {mean}, expected ~0.0"
+                mean.abs() < tol,
+                "output mean = {mean}, expected ~0.0 (tol {tol}, var_in {var_in})"
             );
         }
 

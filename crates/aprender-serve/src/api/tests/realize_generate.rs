@@ -52,8 +52,10 @@ async fn test_realize_batch_endpoint_more_cov() {
 }
 
 #[tokio::test]
+#[cfg(feature = "gpu")]
 async fn test_gpu_batch_completions_empty_prompts_more_cov() {
-    let app = create_test_app_shared();
+    // #3991: only a `cached_model` state mounts this route.
+    let app = crate::api::test_helpers::create_test_cached_app();
     let json = r#"{"prompts":[]}"#;
 
     let response = app

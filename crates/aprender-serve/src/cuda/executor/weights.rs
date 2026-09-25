@@ -418,25 +418,25 @@ impl CudaExecutor {
             let (ffn_norm_ptr, ffn_norm_len) = get_rmsnorm(&ffn_norm_name)?;
 
             // PAR-058: Resolve quantization types for all weight tensors
-            let attn_q_qtype = self.resolve_qtype(&q_name);
-            let attn_k_qtype = self.resolve_qtype(&k_name);
-            let attn_v_qtype = self.resolve_qtype(&v_name);
-            let attn_output_qtype = self.resolve_qtype(&o_name);
+            let attn_q_qtype = self.resolve_qtype(&q_name)?;
+            let attn_k_qtype = self.resolve_qtype(&k_name)?;
+            let attn_v_qtype = self.resolve_qtype(&v_name)?;
+            let attn_output_qtype = self.resolve_qtype(&o_name)?;
             // M-GPU-MOE-1.3: qtype sentinels for MoE (FFN qtypes unused)
             let ffn_gate_qtype = if arch.is_moe {
                 WeightQuantType::Q4K
             } else {
-                self.resolve_qtype(&gate_name)
+                self.resolve_qtype(&gate_name)?
             };
             let ffn_up_qtype = if arch.is_moe {
                 WeightQuantType::Q4K
             } else {
-                self.resolve_qtype(&up_name)
+                self.resolve_qtype(&up_name)?
             };
             let ffn_down_qtype = if arch.is_moe {
                 WeightQuantType::Q4K
             } else {
-                self.resolve_qtype(&down_name)
+                self.resolve_qtype(&down_name)?
             };
 
             // Log if non-Q4K types detected (for debugging mixed-quant models)
@@ -532,7 +532,7 @@ impl CudaExecutor {
         }
 
         self.indexed_layer_weights = indexed;
-        self.index_output_weights();
+        self.index_output_weights()?;
         Ok(())
     }
 
@@ -576,18 +576,54 @@ impl CudaExecutor {
     ///
     /// Looks up the GGML type stored during `load_quantized_weights_with_type()`,
     /// converts it to `WeightQuantType`, and defaults to Q4K if not found.
-    fn resolve_qtype(&self, name: &str) -> WeightQuantType {
-        self.quantized_weight_types
-            .get(name)
-            .and_then(|&t| WeightQuantType::from_ggml_type(t))
-            .unwrap_or(WeightQuantType::Q4K)
+    /// #3850: the ggml type this weight will be decoded as, or a REFUSAL.
+    ///
+    /// This used to end `.unwrap_or(WeightQuantType::Q4K)`. A default that is a
+    /// plausible value rather than an error is the worst shape a default can
+    /// have: a quant type with no GPU kernel was **silently decoded as Q4_K**,
+    /// which is the PMAT-781/783/785 garbage-logits class. `dtype.rs`'s
+    /// whitelist exists to stop that, but it is consulted only at the CLI entry
+    /// points — never by `OwnedQuantizedModelCuda::new` and never by
+    /// `apr qa`'s `validate_gpu_golden_output` — so on the qa GPU golden leg
+    /// the substitution was the whole behaviour.
+    ///
+    /// Refusing HERE covers every caller, because this is the point of USE:
+    /// it is called per weight at GEMV-build time, so a model whose
+    /// unsupported tensors are never reached is unaffected.
+    ///
+    /// Blast radius, measured before this changed (census over both hosts'
+    /// inventories): 5 of 21 models on lambda carry a type outside
+    /// `from_ggml_type`, 0 of 14 on gx10, and every one of them is already
+    /// broken today — two refuse before the GPU, two fail on the CPU first.
+    /// There is no working case for this refusal to break.
+    ///
+    /// NOT changed: a name ABSENT from the map still resolves to Q4_K. That is
+    /// a different situation (a missing entry, not an undecodable type) and
+    /// widening this to cover it is a separate question, deliberately left.
+    fn resolve_qtype(&self, name: &str) -> Result<WeightQuantType, GpuError> {
+        let Some(&ggml_type) = self.quantized_weight_types.get(name) else {
+            return Ok(WeightQuantType::Q4K);
+        };
+        WeightQuantType::from_ggml_type(ggml_type).ok_or_else(|| {
+            GpuError::InvalidParameter(format!(
+                "'{name}' is GGML type {ggml_type}, which has no verified GPU GEMV kernel \
+                 - the file is fine and runs on the CPU; a Q4_K_M build of this model keeps \
+                 every projection in a GPU-eligible type (#3850). Decoding it as Q4_K \
+                 instead, which is what this did before, produces garbage logits silently."
+            ))
+        })
     }
 
     /// Index output norm and LM head pointers for zero-allocation forward pass.
     ///
     /// PAR-054: LM head weight for CUDA graph capture.
     /// PAR-058: Detect LM head quantization type (Q6_K in Qwen 1.5B, not Q4_K).
-    fn index_output_weights(&mut self) {
+    /// #3850: returns `Result` because the LM head's qtype is resolved here and
+    /// an undecodable type must refuse rather than be silently read as Q4_K.
+    /// The LM head is a real GEMV site (`logits.rs` dispatches on
+    /// `lm_head_qtype`), so a silent substitution here is garbage logits by
+    /// the most direct route there is.
+    fn index_output_weights(&mut self) -> Result<(), GpuError> {
         if let Some(buf) = self.rmsnorm_cache.get("output_norm.gamma") {
             self.output_norm_ptr = buf.as_ptr();
             self.output_norm_len = buf.len();
@@ -597,7 +633,7 @@ impl CudaExecutor {
         if let Ok((ptr, size)) = self.get_quantized_weight_ptr_and_size("output.weight") {
             self.lm_head_ptr = ptr;
             self.lm_head_len = size;
-            self.lm_head_qtype = self.resolve_qtype("output.weight");
+            self.lm_head_qtype = self.resolve_qtype("output.weight")?;
             if verbose() {
                 eprintln!(
                     "[PAR-058] LM head qtype: {:?}, ptr={:#x}, len={}",
@@ -605,6 +641,7 @@ impl CudaExecutor {
                 );
             }
         }
+        Ok(())
     }
 
     /// Log non-Q4K quantization types for debugging mixed-quant models (PAR-058).

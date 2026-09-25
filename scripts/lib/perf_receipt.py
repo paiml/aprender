@@ -1330,12 +1330,21 @@ def _p1_set(key, value):
     return mutate
 
 
+def _loud_tail(s, n):
+    """Keep the TAIL and say how much was dropped. Two fixes in one line (#3904):
+    the cut was silent, and it kept the wrong end -- a Python traceback puts the
+    actual exception LAST, so a head-slice of stderr preserves the least
+    informative part and discards the diagnosis."""
+    s = str(s)
+    return s if len(s) <= n else f"[... and {len(s) - n} more chars before this] {s[-n:]}"
+
+
 def _p1_receipt(work, extra=()):
     """The whole chain: P2 over $WORK, then P3 over the block it wrote."""
     block = os.path.join(work, "parity.json")
     emitted = _run_parity_block(work, block, ["--pin-expiry", P1_PIN_EXPIRY] + list(extra))
     if emitted.returncode != 0:
-        return None, emitted.stderr.strip().replace("\n", " ")[:200]
+        return None, _loud_tail(emitted.stderr.strip().replace("\n", " "), 200)
     out = os.path.join(work, "receipt.json")
     rc = main(["--from-parity", block, "--lane", P1_LANE, "--host", "lambda",
                "--workload", "W1", "--accelerator", "cpu",

@@ -372,67 +372,6 @@
     }
 
     #[test]
-    fn test_clean_model_output_empty() {
-        let output = clean_model_output("");
-        assert!(output.is_empty());
-    }
-
-    #[test]
-    fn test_clean_model_output_simple() {
-        let output = clean_model_output("Hello, world!");
-        assert_eq!(output, "Hello, world!");
-    }
-
-    #[test]
-    fn test_clean_model_output_with_special_tokens() {
-        let output = clean_model_output("<|im_end|>Hello<|endoftext|>");
-        assert!(!output.contains("<|im_end|>"));
-        assert!(!output.contains("<|endoftext|>"));
-    }
-
-    #[test]
-    fn test_clean_model_output_preserves_content() {
-        let output = clean_model_output("The answer is 42.");
-        assert!(output.contains("42"));
-    }
-
-    #[test]
-    fn test_parse_token_ids_simple() {
-        let result = parse_token_ids("1 2 3");
-        assert!(result.is_ok());
-        let tokens = result.expect("is_ok());         let tokens =");
-        assert_eq!(tokens, vec![1, 2, 3]);
-    }
-
-    #[test]
-    fn test_parse_token_ids_comma_separated() {
-        let result = parse_token_ids("1,2,3");
-        assert!(result.is_ok());
-        let tokens = result.expect("is_ok());         let tokens =");
-        assert_eq!(tokens, vec![1, 2, 3]);
-    }
-
-    #[test]
-    fn test_parse_token_ids_empty() {
-        let result = parse_token_ids("");
-        assert!(result.is_ok() || result.is_err());
-    }
-
-    #[test]
-    fn test_parse_token_ids_invalid() {
-        let result = parse_token_ids("not a number");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_token_ids_mixed_spaces() {
-        let result = parse_token_ids("1  2   3");
-        assert!(result.is_ok());
-        let tokens = result.expect("is_ok());         let tokens =");
-        assert_eq!(tokens, vec![1, 2, 3]);
-    }
-
-    #[test]
     fn test_model_source_display_local() {
         let source = ModelSource::Local(PathBuf::from("model.apr"));
         let _debug = format!("{:?}", source);

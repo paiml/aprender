@@ -1,0 +1,21 @@
+- id: PMAT-3947
+  github_issue: 3947
+  item_type: task
+  title: 'aprender-core has no IQ dequantizer, so tensor_contract cannot inspect three release-blocking models — port from the validated aprender-serve decoders'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-9b
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Per-tensor census of the three files, measured before any code'
+  - 'tensor_contract inspects those tensors, with an external oracle and a positive control that FAILS on a wrong decode'
+  - 'The three rows go green on their own merits, without weakening tensor_contract or whitelisting a type; #3850 must not regress'
+  - 'Report as capability cells (model, quant, tensor type, crate) -> number and oracle'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'PR #3958. CPU dequant only; the CUDA IQ4 GEMV kernels are out of scope.'

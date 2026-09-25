@@ -1,0 +1,2266 @@
+{
+ "generation": [
+  {
+   "route": "POST /generate",
+   "kind": "raw_generate",
+   "modes": [
+    "nonstream"
+   ]
+  },
+  {
+   "route": "POST /batch/generate",
+   "kind": "raw_batch",
+   "modes": [
+    "nonstream"
+   ]
+  },
+  {
+   "route": "POST /stream/generate",
+   "kind": "raw_sse",
+   "modes": [
+    "stream"
+   ]
+  },
+  {
+   "route": "POST /realize/generate",
+   "kind": "raw_sse",
+   "modes": [
+    "stream"
+   ]
+  },
+  {
+   "route": "POST /realize/batch",
+   "kind": "raw_batch",
+   "modes": [
+    "nonstream"
+   ]
+  },
+  {
+   "route": "POST /v1/completions",
+   "kind": "text_prompt",
+   "modes": [
+    "nonstream",
+    "stream"
+   ]
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "kind": "chat_messages",
+   "modes": [
+    "nonstream",
+    "stream"
+   ]
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "kind": "chat_messages",
+   "modes": [
+    "stream"
+   ]
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "kind": "raw_batch",
+   "modes": [
+    "nonstream"
+   ]
+  },
+  {
+   "route": "POST /api/chat",
+   "kind": "ollama_chat",
+   "modes": [
+    "nonstream",
+    "stream"
+   ]
+  },
+  {
+   "route": "POST /api/generate",
+   "kind": "ollama_generate",
+   "modes": [
+    "nonstream",
+    "stream"
+   ]
+  }
+ ],
+ "not_generation": [
+  {
+   "route": "GET /",
+   "why": "the route index itself"
+  },
+  {
+   "route": "GET /health",
+   "why": "liveness"
+  },
+  {
+   "route": "GET /health/live",
+   "why": "liveness"
+  },
+  {
+   "route": "GET /health/ready",
+   "why": "readiness"
+  },
+  {
+   "route": "GET /ready",
+   "why": "readiness"
+  },
+  {
+   "route": "GET /models",
+   "why": "model listing"
+  },
+  {
+   "route": "POST /tokenize",
+   "why": "token ids, no generation"
+  },
+  {
+   "route": "POST /batch/tokenize",
+   "why": "token ids, no generation"
+  },
+  {
+   "route": "POST /realize/embed",
+   "why": "embedding vector"
+  },
+  {
+   "route": "GET /realize/model",
+   "why": "model metadata"
+  },
+  {
+   "route": "POST /realize/reload",
+   "why": "model reload"
+  },
+  {
+   "route": "GET /metrics",
+   "why": "telemetry"
+  },
+  {
+   "route": "GET /metrics/dispatch",
+   "why": "telemetry"
+  },
+  {
+   "route": "POST /metrics/dispatch/reset",
+   "why": "telemetry reset"
+  },
+  {
+   "route": "GET /v1/models",
+   "why": "model listing"
+  },
+  {
+   "route": "POST /v1/embeddings",
+   "why": "embedding vector"
+  },
+  {
+   "route": "POST /v1/predict",
+   "why": "classical-model prediction (503 for an LLM)"
+  },
+  {
+   "route": "POST /v1/explain",
+   "why": "classical-model explanation (503 for an LLM)"
+  },
+  {
+   "route": "GET /v1/audit/:request_id",
+   "why": "audit record lookup"
+  },
+  {
+   "route": "POST /v1/gpu/warmup",
+   "why": "GPU warmup"
+  },
+  {
+   "route": "GET /v1/gpu/status",
+   "why": "GPU status"
+  },
+  {
+   "route": "GET /v1/metrics",
+   "why": "telemetry"
+  },
+  {
+   "route": "GET /v1/effective-config",
+   "why": "server configuration"
+  },
+  {
+   "route": "GET /api/tags",
+   "why": "ollama model listing"
+  },
+  {
+   "route": "POST /api/show",
+   "why": "ollama model metadata"
+  },
+  {
+   "route": "GET /api/version",
+   "why": "ollama version"
+  },
+  {
+   "route": "POST /api/embeddings",
+   "why": "embedding vector"
+  },
+  {
+   "route": "POST /v1/logprobs",
+   "why": "per-token logprobs of GIVEN text, no generation"
+  },
+  {
+   "route": "POST /v1/perplexity",
+   "why": "perplexity of GIVEN text, no generation"
+  }
+ ],
+ "unclassified": [],
+ "index": [
+  "GET /",
+  "GET /health",
+  "GET /health/live",
+  "GET /health/ready",
+  "GET /ready",
+  "GET /models",
+  "POST /tokenize",
+  "POST /generate",
+  "POST /batch/tokenize",
+  "POST /batch/generate",
+  "POST /stream/generate",
+  "POST /realize/generate",
+  "POST /realize/batch",
+  "POST /realize/embed",
+  "GET /realize/model",
+  "POST /realize/reload",
+  "GET /metrics",
+  "GET /metrics/dispatch",
+  "POST /metrics/dispatch/reset",
+  "GET /v1/models",
+  "POST /v1/completions",
+  "POST /v1/chat/completions",
+  "POST /v1/chat/completions/stream",
+  "POST /v1/embeddings",
+  "POST /v1/predict",
+  "POST /v1/explain",
+  "GET /v1/audit/:request_id",
+  "POST /v1/gpu/warmup",
+  "GET /v1/gpu/status",
+  "POST /v1/batch/completions",
+  "GET /v1/metrics",
+  "GET /v1/effective-config",
+  "POST /api/chat",
+  "POST /api/generate",
+  "GET /api/tags",
+  "POST /api/show",
+  "GET /api/version",
+  "POST /api/embeddings",
+  "POST /v1/logprobs",
+  "POST /v1/perplexity"
+ ],
+ "cells": [
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-ctl-2plus2.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-ctl-2plus2.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-ctl-2plus2.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-ctl-2plus2.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-ctl-2plus2.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-ctl-2plus2.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-ctl-2plus2.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-ctl-2plus2.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-ctl-2plus2.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-ctl-2plus2.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-ctl-2plus2.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-ctl-2plus2.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-ctl-2plus2.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-ctl-2plus2.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "ctl-2plus2",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-ctl-2plus2.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-ctl-recall-7.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-ctl-recall-7.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-ctl-recall-7.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-ctl-recall-7.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-ctl-recall-7.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-ctl-recall-7.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-ctl-recall-7.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-ctl-recall-7.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-ctl-recall-7.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-ctl-recall-7.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-ctl-recall-7.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-ctl-recall-7.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-ctl-recall-7.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-ctl-recall-7.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "ctl-recall-7",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-ctl-recall-7.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-fact-capital-japan.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-fact-capital-japan.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-fact-capital-japan.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-fact-capital-japan.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-fact-capital-japan.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-fact-capital-japan.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-fact-capital-japan.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-fact-capital-japan.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-fact-capital-japan.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-fact-capital-japan.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-fact-capital-japan.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-fact-capital-japan.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-fact-capital-japan.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-fact-capital-japan.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "fact-capital-japan",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-fact-capital-japan.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-fact-capital-france.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-fact-capital-france.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-fact-capital-france.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-fact-capital-france.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-fact-capital-france.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-fact-capital-france.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-fact-capital-france.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-fact-capital-france.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-fact-capital-france.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-fact-capital-france.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-fact-capital-france.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-fact-capital-france.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-fact-capital-france.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-fact-capital-france.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "fact-capital-france",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-fact-capital-france.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-golden-paris.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-golden-paris.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-golden-paris.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-golden-paris.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-golden-paris.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-golden-paris.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-golden-paris.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-golden-paris.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-golden-paris.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-golden-paris.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-golden-paris.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-golden-paris.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-golden-paris.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-golden-paris.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "golden-paris",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-golden-paris.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-fact-water-formula.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-fact-water-formula.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-fact-water-formula.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-fact-water-formula.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-fact-water-formula.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-fact-water-formula.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-fact-water-formula.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-fact-water-formula.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-fact-water-formula.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-fact-water-formula.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-fact-water-formula.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-fact-water-formula.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-fact-water-formula.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-fact-water-formula.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "fact-water-formula",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-fact-water-formula.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-arith-17x23.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-arith-17x23.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-arith-17x23.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-arith-17x23.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-arith-17x23.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-arith-17x23.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-arith-17x23.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-arith-17x23.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-arith-17x23.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-arith-17x23.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-arith-17x23.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-arith-17x23.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-arith-17x23.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-arith-17x23.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "arith-17x23",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-arith-17x23.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-arith-precedence.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-arith-precedence.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-arith-precedence.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-arith-precedence.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-arith-precedence.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-arith-precedence.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-arith-precedence.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-arith-precedence.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-arith-precedence.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-arith-precedence.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-arith-precedence.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-arith-precedence.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-arith-precedence.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-arith-precedence.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "arith-precedence",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-arith-precedence.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-arith-word-apples.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-arith-word-apples.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-arith-word-apples.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-arith-word-apples.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-arith-word-apples.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-arith-word-apples.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-arith-word-apples.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-arith-word-apples.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-arith-word-apples.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-arith-word-apples.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-arith-word-apples.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-arith-word-apples.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-arith-word-apples.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-arith-word-apples.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "arith-word-apples",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-arith-word-apples.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-hard-add-4digit.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-hard-add-4digit.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-hard-add-4digit.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-hard-add-4digit.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-hard-add-4digit.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-hard-add-4digit.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-hard-add-4digit.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-hard-add-4digit.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-hard-add-4digit.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-hard-add-4digit.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-hard-add-4digit.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-hard-add-4digit.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-hard-add-4digit.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-hard-add-4digit.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "hard-add-4digit",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-hard-add-4digit.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-hard-not-prime.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-hard-not-prime.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-hard-not-prime.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-hard-not-prime.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-hard-not-prime.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-hard-not-prime.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-hard-not-prime.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-hard-not-prime.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-hard-not-prime.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-hard-not-prime.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-hard-not-prime.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-hard-not-prime.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-hard-not-prime.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-hard-not-prime.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "hard-not-prime",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-hard-not-prime.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-hard-reverse-word.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-hard-reverse-word.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-hard-reverse-word.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-hard-reverse-word.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-hard-reverse-word.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-hard-reverse-word.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-hard-reverse-word.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-hard-reverse-word.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-hard-reverse-word.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-hard-reverse-word.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-hard-reverse-word.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-hard-reverse-word.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-hard-reverse-word.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-hard-reverse-word.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "hard-reverse-word",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-hard-reverse-word.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-hard-count-letters.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-hard-count-letters.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-hard-count-letters.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-hard-count-letters.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-hard-count-letters.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-hard-count-letters.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-hard-count-letters.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-hard-count-letters.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-hard-count-letters.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-hard-count-letters.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-hard-count-letters.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-hard-count-letters.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-hard-count-letters.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-hard-count-letters.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "hard-count-letters",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-hard-count-letters.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-recall-cats.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-recall-cats.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-recall-cats.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-recall-cats.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-recall-cats.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-recall-cats.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-recall-cats.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-recall-cats.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-recall-cats.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-recall-cats.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-recall-cats.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-recall-cats.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-recall-cats.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-recall-cats.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "recall-cats",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-recall-cats.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-recall-name.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-recall-name.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-recall-name.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-recall-name.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-recall-name.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-recall-name.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-recall-name.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-recall-name.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-recall-name.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-recall-name.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-recall-name.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-recall-name.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-recall-name.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-recall-name.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "recall-name",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-recall-name.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-recall-arith-chain.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-recall-arith-chain.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-recall-arith-chain.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-recall-arith-chain.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-recall-arith-chain.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-recall-arith-chain.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-recall-arith-chain.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-recall-arith-chain.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-recall-arith-chain.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-recall-arith-chain.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-recall-arith-chain.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-recall-arith-chain.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-recall-arith-chain.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-recall-arith-chain.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "recall-arith-chain",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-recall-arith-chain.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-long-primes-10.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-long-primes-10.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-long-primes-10.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-long-primes-10.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-long-primes-10.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-long-primes-10.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-long-primes-10.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-long-primes-10.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-long-primes-10.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-long-primes-10.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-long-primes-10.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-long-primes-10.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-long-primes-10.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-long-primes-10.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "long-primes-10",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-long-primes-10.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /generate",
+   "mode": "nonstream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__generate-nonstream-long-countdown-15.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /batch/generate",
+   "mode": "nonstream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__batch_generate-nonstream-long-countdown-15.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /stream/generate",
+   "mode": "stream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__stream_generate-stream-long-countdown-15.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/generate",
+   "mode": "stream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_generate-stream-long-countdown-15.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /realize/batch",
+   "mode": "nonstream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__realize_batch-nonstream-long-countdown-15.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "nonstream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-nonstream-long-countdown-15.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/completions",
+   "mode": "stream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_completions-stream-long-countdown-15.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "nonstream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-nonstream-long-countdown-15.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions",
+   "mode": "stream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions-stream-long-countdown-15.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/chat/completions/stream",
+   "mode": "stream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_chat_completions_stream-stream-long-countdown-15.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /v1/batch/completions",
+   "mode": "nonstream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__v1_batch_completions-nonstream-long-countdown-15.json",
+   "rc": 3
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "nonstream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-nonstream-long-countdown-15.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/chat",
+   "mode": "stream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_chat-stream-long-countdown-15.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "nonstream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-nonstream-long-countdown-15.json",
+   "rc": 0
+  },
+  {
+   "route": "POST /api/generate",
+   "mode": "stream",
+   "prompt_id": "long-countdown-15",
+   "out": "/tmp/tmp.faJPjjHACl/6a1a2eb6d156/serve/apr/POST__api_generate-stream-long-countdown-15.json",
+   "rc": 0
+  }
+ ],
+ "prompts": [
+  [
+   "ctl-2plus2",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "ctl-recall-7",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "fact-capital-japan",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "fact-capital-france",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "golden-paris",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "fact-water-formula",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "arith-17x23",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "arith-precedence",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "arith-word-apples",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "hard-add-4digit",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "hard-not-prime",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "hard-reverse-word",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "hard-count-letters",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "recall-cats",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "recall-name",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "recall-arith-chain",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "long-primes-10",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ],
+  [
+   "long-countdown-15",
+   [
+    "serve run",
+    "serve stream"
+   ]
+  ]
+ ]
+}

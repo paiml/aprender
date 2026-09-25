@@ -9,10 +9,10 @@
   "underived_proved_claims": 95,
   "ont": {
     "consumer_present": true,
-    "contracts_total": 1891,
+    "contracts_total": 1898,
     "entity_types_registered": 16,
     "extractors_implemented": 9,
-    "contracts_anchored": 9,
+    "contracts_anchored": 10,
     "contracts_shaped": 8,
     "unanchored_but_bindable": 297,
     "formal_prose": 1464,

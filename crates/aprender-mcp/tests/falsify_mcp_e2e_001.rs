@@ -1,3 +1,4 @@
+#![cfg(feature = "apr-tools")] // apr's own tools (PMAT-3954: they exist only under this feature)
 //! FALSIFY-MCP-E2E-001 — Real-model end-to-end validation for `apr.run` and `apr.qa`.
 //!
 //! Spec: `docs/specifications/apr-mcp-server-spec.md` M4 milestone — "End-to-end

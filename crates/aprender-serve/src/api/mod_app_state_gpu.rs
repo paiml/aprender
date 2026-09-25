@@ -61,6 +61,8 @@ impl AppState {
             apr_transformer: None,
             cached_architecture: None,
             mapped_gguf_model: None,
+            moe_no_gpu: true,
+            qwen35_session: None,
             cached_eos_token_id: None,
             verbose: false,
             trace: false,
@@ -118,6 +120,8 @@ impl AppState {
             apr_transformer: None,
             cached_architecture: None,
             mapped_gguf_model: None,
+            moe_no_gpu: true,
+            qwen35_session: None,
             cached_eos_token_id: None,
             verbose: false,
             trace: false,
@@ -183,6 +187,8 @@ impl AppState {
             apr_transformer: None,
             cached_architecture: arch,
             mapped_gguf_model: None,
+            moe_no_gpu: true,
+            qwen35_session: None,
             cached_eos_token_id: None,
             verbose: false,
             trace: false,
@@ -252,6 +258,8 @@ impl AppState {
             apr_transformer: None,
             cached_architecture: arch,
             mapped_gguf_model: None,
+            moe_no_gpu: true,
+            qwen35_session: None,
             cached_eos_token_id: eos,
             verbose: false,
             trace: false,
@@ -309,6 +317,8 @@ impl AppState {
             apr_transformer: None,
             cached_architecture: arch,
             mapped_gguf_model: None,
+            moe_no_gpu: true,
+            qwen35_session: None,
             cached_eos_token_id: eos,
             verbose: false,
             trace: false,
@@ -371,6 +381,8 @@ impl AppState {
             apr_transformer: Some(Arc::new(transformer)),
             cached_architecture: None,
             mapped_gguf_model: None,
+            moe_no_gpu: true,
+            qwen35_session: None,
             cached_eos_token_id: None,
             verbose: false,
             trace: false,
@@ -406,6 +418,8 @@ impl AppState {
             || self.apr_model.is_some()
             || self.quantized_model.is_some()
             || self.apr_transformer.is_some()
+            // #3571: the Qwen3.5 hybrid has no dense model at all; its session IS the model.
+            || self.qwen35_session.is_some()
         {
             return true;
         }
@@ -413,8 +427,13 @@ impl AppState {
         if self.gpu_model.is_some() || self.cached_model.is_some() {
             return true;
         }
+        // #3791: the APR Q4K pool path (ALB-095) serves from its inference thread's
+        // channel; with no other model in the state, /health reported it "loading" forever.
         #[cfg(feature = "cuda")]
-        if self.cuda_model.is_some() || self.safetensors_cuda_model.is_some() {
+        if self.cuda_model.is_some()
+            || self.safetensors_cuda_model.is_some()
+            || self.apr_q4k_tx.is_some()
+        {
             return true;
         }
         false
@@ -595,12 +614,25 @@ impl AppState {
             apr_transformer: None,
             cached_architecture: None,
             mapped_gguf_model: None,
+            moe_no_gpu: true,
+            qwen35_session: None,
             cached_eos_token_id: eos_id,
             verbose: false,
             trace: false,
             model_source: None,
             effective: EffectiveConfigState::new(),
         })
+    }
+
+    /// #3791: the architecture the model file declares, for states that hold no
+    /// model object to read it from (the APR Q4K pool path). Without it
+    /// `model_architecture()` is `None`, the shared chat-template selector falls
+    /// back to the raw template, and a chat request reaches the model as bare
+    /// text — measured: 7 prompt tokens for one user sentence.
+    #[must_use]
+    pub fn with_architecture(mut self, architecture: impl Into<String>) -> Self {
+        self.cached_architecture = Some(architecture.into());
+        self
     }
 
     /// #169: Create state with SafeTensors CUDA model for GPU-accelerated inference
@@ -644,6 +676,8 @@ impl AppState {
             apr_transformer: None,
             cached_architecture: None,
             mapped_gguf_model: None,
+            moe_no_gpu: true,
+            qwen35_session: None,
             cached_eos_token_id: None,
             verbose: false,
             trace: false,
@@ -670,6 +704,21 @@ impl AppState {
     ) -> Self {
         self.apr_q4k_tx = Some(tx);
         self
+    }
+
+    /// #3987: let qwen3moe generation use the CUDA forward (#3714) instead of the
+    /// CPU-only generator. A CUDA server calls this; nothing else does, so the
+    /// default stays CPU (the behaviour every other constructor had before).
+    #[must_use]
+    pub fn with_moe_gpu(mut self) -> Self {
+        self.moe_no_gpu = false;
+        self
+    }
+
+    /// Whether qwen3moe generation must stay on the CPU (see `with_moe_gpu`).
+    #[must_use]
+    pub fn moe_no_gpu(&self) -> bool {
+        self.moe_no_gpu
     }
 
     /// aprender#1789 Option B: builder to attach the retained

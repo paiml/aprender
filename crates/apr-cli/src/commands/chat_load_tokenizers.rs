@@ -117,15 +117,129 @@ fn dir_name_fallback(path: &Path) -> String {
         .to_string()
 }
 
-fn template_format_name(tf: TemplateFormat) -> &'static str {
+pub(crate) fn template_format_name(tf: TemplateFormat) -> &'static str {
     match tf {
         TemplateFormat::ChatML => "ChatML",
+        // #3801: this arm could not be written before — aprender-core's enum had
+        // no such variant, which is why `apr chat` reported ChatML for a model
+        // production serves with thinking off.
+        TemplateFormat::Qwen3NoThink => "Qwen3NoThink (thinking off)",
         TemplateFormat::Llama2 => "LLaMA2",
+        TemplateFormat::Zephyr => "Zephyr",
         TemplateFormat::Mistral => "Mistral",
         TemplateFormat::Phi => "Phi",
         TemplateFormat::Alpaca => "Alpaca",
         TemplateFormat::Custom => "Custom",
         TemplateFormat::Raw => "Raw",
+    }
+}
+
+/// #3595: load a Qwen3.5 hybrid GGUF as a resident session, or `None` for any other
+/// architecture (which the dense GH-224 path below serves).
+///
+/// The session attempts CUDA unless `force_cpu`, exactly as `apr run` does, and it is
+/// the only thing that tells the user which backend the hybrid runs on: its route
+/// notice is `qwen35_route_notice`'s, and its `Backend:` or fallback line is printed
+/// once, by the code that took that route. This used to print "the GPU backend does
+/// not implement it yet (#3090)" unconditionally — a day after #3090 shipped — and
+/// then rebuild the model on the GPU for every turn anyway.
+fn try_init_qwen35_session(
+    mapped: &realizar::gguf::MappedGGUFModel,
+    force_cpu: bool,
+) -> Result<Option<realizar::gguf::qwen35_session::Qwen35Session>, crate::error::CliError> {
+    if !realizar::gguf::hybrid_forward_handles(mapped.model.architecture().unwrap_or_default()) {
+        return Ok(None);
+    }
+    realizar::gguf::qwen35_session::Qwen35Session::load(mapped, force_cpu)
+        .map(Some)
+        .map_err(|e| crate::error::CliError::ModelLoadFailed(format!("Qwen3.5 hybrid: {e}")))
+}
+
+/// #3595 done_when 2: what the session PRINTED about its route must agree with the
+/// route it TOOK. The defect was two lines on one run — "runs on the CPU; the GPU
+/// backend does not implement it yet" and then "Backend: GPU" — and every test passed,
+/// because nothing compared the banner with the route.
+#[cfg(test)]
+mod qwen35_route_banner_tests {
+    use super::*;
+    use realizar::gguf::forward_qwen35::QWEN35_GPU_FALLBACK_PREFIX;
+
+    const MODEL: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
+
+    /// The route a line states: `Some(true)` the GPU, `Some(false)` the CPU, `None`
+    /// a line that states no route.
+    fn states_route(line: &str) -> Option<bool> {
+        if line.starts_with("Backend: GPU (CUDA,") {
+            Some(true)
+        } else if line.starts_with(QWEN35_GPU_FALLBACK_PREFIX) || line.contains("runs on the CPU") {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    /// On the GPU, exactly one route line and it says GPU. On the CPU, the last route
+    /// line says CPU — a GPU line may precede it only as the route a fallback then
+    /// left — or there is none (the user asked for the CPU, which is not news).
+    fn banner_agrees_with_route(notices: &[String], on_gpu: bool) -> Result<(), String> {
+        let stated: Vec<bool> = notices.iter().filter_map(|l| states_route(l)).collect();
+        let agrees = if on_gpu {
+            stated == [true]
+        } else {
+            stated.last().map_or(true, |&gpu| !gpu)
+        };
+        if agrees {
+            Ok(())
+        } else {
+            Err(format!("printed {notices:?}, but the session is on the {}", if on_gpu { "GPU" } else { "CPU" }))
+        }
+    }
+
+    #[test]
+    fn the_check_rejects_the_banner_3595_reported() {
+        let reported = [
+            "[qwen35: Gated DeltaNet runs on the CPU; the GPU backend does not implement it yet (#3090)]".to_string(),
+            "Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090]".to_string(),
+        ];
+        assert!(banner_agrees_with_route(&reported, true).is_err(), "the #3595 pair must be RED");
+        assert!(banner_agrees_with_route(&reported[1..], true).is_ok());
+        assert!(banner_agrees_with_route(&reported[1..], false).is_err(), "a GPU line on a CPU session");
+        let fell_back = [
+            reported[1].clone(),
+            format!("{QWEN35_GPU_FALLBACK_PREFIX}, falling back to CPU: the F2 CPU-parity guard rejected the GPU path"),
+        ];
+        assert!(banner_agrees_with_route(&fell_back, false).is_ok(), "GPU, then a printed fallback");
+        assert!(banner_agrees_with_route(&[], false).is_ok(), "--no-gpu owes no notice");
+        assert!(banner_agrees_with_route(&[], true).is_err(), "a GPU run must say so");
+    }
+
+    #[test]
+    fn a_qwen35_session_prints_the_route_it_took() {
+        if !Path::new(MODEL).exists() {
+            eprintln!("SKIP: {MODEL} is absent");
+            return;
+        }
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(MODEL).expect("map the GGUF");
+        #[cfg(feature = "cuda")]
+        let cuda_host = realizar::gguf::OwnedQuantizedModelCuda::is_available();
+        #[cfg(not(feature = "cuda"))]
+        let cuda_host = false;
+        for force_cpu in [false, true] {
+            let session = try_init_qwen35_session(&mapped, force_cpu)
+                .expect("the hybrid loads")
+                .expect("a qwen35 GGUF gets a session");
+            banner_agrees_with_route(session.notices(), session.on_gpu())
+                .unwrap_or_else(|e| panic!("force_cpu={force_cpu}: {e}"));
+            if force_cpu || !cuda_host {
+                assert!(!session.on_gpu(), "force_cpu={force_cpu}, cuda_host={cuda_host}");
+            } else {
+                // A CUDA binary on a CUDA host must reach the upload: either it serves
+                // from the GPU, or it printed why it could not.
+                let tried = session.on_gpu()
+                    || session.notices().iter().any(|l| l.starts_with(QWEN35_GPU_FALLBACK_PREFIX));
+                assert!(tried, "the GPU was never attempted: {:?}", session.notices());
+            }
+        }
     }
 }
 
@@ -137,13 +251,6 @@ fn try_init_gguf_cuda(
     mapped: &realizar::gguf::MappedGGUFModel,
 ) -> Result<(Option<realizar::gguf::OwnedQuantizedModelCuda>, bool), crate::error::CliError> {
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
-    // #3091: Qwen3.5/Qwen3.8 hybrids have a CPU forward but no GPU one yet (#3090). Skip the
-    // CUDA attempt instead of failing it, so chat does not report a load error for a model
-    // it can run.
-    if mapped.model.architecture() == Some("qwen35") {
-        eprintln!("[qwen35: Gated DeltaNet runs on the CPU; the GPU backend does not implement it yet (#3090)]");
-        return Ok((None, false));
-    }
     if !OwnedQuantizedModelCuda::is_available() {
         return Ok((None, false));
     }
@@ -182,49 +289,117 @@ fn try_init_gguf_cuda(
     }
 }
 
-/// GH-224: Try to initialize APR CUDA model.
-/// GH-272: Warns about F32 performance when VRAM > 2GB.
-/// Returns (cuda_model, init_failed).
+/// Initialize the CUDA model `apr chat` uses for an `.apr` (#3922).
+///
+/// ROUTED ONTO THE PATH `apr run` ALREADY USES. This built an
+/// `AprV2ModelCuda` — a generic transformer class that is **Q4K-only by
+/// construction and wrong for Q4K**: its init refuses F32 and bf16 with
+/// `GH-279 Quantized weight 'blk.0.attn_q.weight' not cached`, and on a Q4K
+/// `.apr` it produced GARBAGE on both required hosts while the same model
+/// answered correctly on CPU. There is no configuration in which it did useful
+/// GPU work.
+///
+/// Measured, one binary, every cell (d8):
+///
+///     model      via AprV2ModelCuda        via this path
+///     q4k .apr   GARBAGE on GPU            CORRECT on GPU
+///     F32 .apr   init fails -> CPU         CORRECT ON GPU
+///     bf16 .apr  init fails -> CPU         rc=14 decline -> CPU
+///
+/// Nothing gets worse; q4k goes garbage -> correct and F32 goes CPU -> GPU.
+///
+/// The loading chain is `run`'s and `apr bench`'s:
+/// `MappedAprModel` -> `OwnedQuantizedModel::from_apr` -> `OwnedQuantizedModelCuda`.
+///
+/// AND IT BRINGS THE F2 GATE, which is half the value. `try_apr_cuda_inference`
+/// probes the GPU's first token against the CPU's and falls back when they
+/// disagree; `chat` had no such check, so a silently wrong kernel had nothing to
+/// stop it. Routing without the gate would be a half-fix.
+///
+/// Returns `(model, init_failed)`. `init_failed` is sticky in the caller, so a
+/// decline here means CPU for the whole session rather than a retry per turn.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(feature = "cuda")]
 fn try_init_apr_cuda(
-    model_bytes: &[u8],
+    _model_bytes: &[u8],
     path: &Path,
-) -> (Option<realizar::apr::AprV2ModelCuda>, bool) {
-    use realizar::apr::{AprV2Model, AprV2ModelCuda};
-    if !AprV2ModelCuda::is_available() {
-        return (None, false);
-    }
-    let apr_model = match AprV2Model::from_bytes(model_bytes.to_vec()) {
+) -> (Option<realizar::gguf::OwnedQuantizedModelCuda>, bool) {
+    use realizar::apr::MappedAprModel;
+    use realizar::gguf::{
+        OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig,
+    };
+
+    // Read from the mapped file rather than the caller's byte buffer: the fused
+    // path wants the tensor map, and `from_apr` is where a non-Q4K `.apr` is
+    // refused by name instead of faulting later (#3885's shape at a third site).
+    let mapped = match MappedAprModel::from_path(path) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("[APR model parse failed: {}, will use CPU]", e);
+            eprintln!("[APR CUDA: cannot map {}: {e} — will use CPU]", path.display());
             return (None, true);
-        }
+        },
     };
-    match AprV2ModelCuda::new(apr_model, 0) {
-        Ok(cuda_model) => {
-            let vram_mb = cuda_model.vram_mb();
-            println!(
-                "{}",
-                format!(
-                    "[APR CUDA: {} ({} MB VRAM) — pre-cached]",
-                    cuda_model.device_name(),
-                    vram_mb
-                )
-                .bright_green()
-            );
-            // GH-272: Warn about F32 performance when model VRAM > 2GB
-            if vram_mb > 2048 {
-                print_apr_f32_perf_tip(vram_mb, path);
-            }
-            (Some(cuda_model), false)
-        }
+    let model = match OwnedQuantizedModel::from_apr(&mapped) {
+        Ok(m) => m,
         Err(e) => {
-            eprintln!("[APR CUDA init failed: {}, will use CPU]", e);
-            (None, true)
-        }
+            eprintln!("[APR CUDA: not a fused-kernel APR ({e}) — will use CPU]");
+            return (None, true);
+        },
+    };
+    // #3955: read what loaded BEFORE the model moves into the CUDA wrapper.
+    let qtypes = loaded_weight_qtypes(&model);
+    let cuda_model = match OwnedQuantizedModelCuda::new(model, 0) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("[APR CUDA init failed: {e}, will use CPU]");
+            return (None, true);
+        },
+    };
+
+    // F2 CANNOT RUN HERE, AND THE LINE NOW SAYS SO (#3924).
+    //
+    // This called `validate_gpu_first_token(.., &[])` and printed "F2 validation
+    // PASSED". TRACED, and verified against the source rather than taken on report:
+    //
+    //   gpu_probe(model, &[])        -> probe_context.is_empty() -> vec![bos] (len 1),
+    //                                   or None when the model declares no BOS
+    //   f2_probe_to_judge(..)        -> if probe.len() < 2 { return None }  1 < 2, ALWAYS
+    //   validate_gpu_first_token(..) -> let Some(..) = .. else { return true }
+    //                                   — no forward pass runs
+    //
+    // BOTH branches reach the skip, for every model regardless of BOS. The gate
+    // could not fail, and the caller printed PASSED anyway.
+    //
+    // A true-looking signal is the exact class this release spent the night
+    // removing — rc=0 with garbage, `fell_back` unread, a `green` field that was
+    // not the verdict. Shipping a new one with a ticket as the mitigation is the
+    // "we documented it" pattern, so the line states what happened instead.
+    //
+    // THE COMMENT THAT WAS HERE WAS WRONG: "the same one `run` uses" is false.
+    // Both `run` sites pass the real prompt (`gguf_gpu_generate.rs:371` and `:964`,
+    // `input_tokens`); only `batch.rs:343` passes `&[]`, and its own comment
+    // explains why — model-init there has no prompt yet. `chat` HAS a prompt; it is
+    // simply not in scope at construction.
+    //
+    // WIRING IT IS #3924 AND DELIBERATELY NOT HERE: the check must move from
+    // construction to first generation, which changes where the fallback decision
+    // is made — the model is already built and cached by then, so a failed gate has
+    // to invalidate `cached_apr_cuda` and reroute that turn and every turn after.
+    // That is a design change on the path being stabilised.
+    eprintln!("{F2_CHAT_NOTE}");
+
+    // #3955: chat's F2 outcome at construction is always NotMeasured (above), so
+    // the banner can never say validated here; it names what actually loaded.
+    let f2 = realizar::infer::F2Outcome::NotMeasured {
+        reason: "no prompt at construction (#3924)".to_string(),
+    };
+    let banner = apr_cuda_banner(&qtypes, &f2);
+    if matches!(f2, realizar::infer::F2Outcome::Validated { .. }) {
+        println!("{}", banner.bright_green());
+    } else {
+        println!("{}", banner.yellow());
     }
+    (Some(cuda_model), false)
 }
 
 /// GH-272: Print F32 performance tip suggesting APR-native Q4K quantization.
@@ -298,5 +473,237 @@ mod tests {
     #[test]
     fn test_chat_load_no_fallback_on_arch_refusal() {
         assert!(true);
+    }
+}
+
+// =============================================================================
+// #3801: ONE detector across every verb
+// =============================================================================
+
+#[cfg(test)]
+mod one_detector_tests {
+    use super::*;
+
+    /// THE DEFECT, as a test. `apr chat` imported `detect_format_from_name` from
+    /// aprender-core, whose `TemplateFormat` has seven variants and no
+    /// `Qwen3NoThink`; every `qwen*` became ChatML and the model reasoned. This
+    /// now resolves to realizar's detector — the one `apr serve`, `apr run --chat`
+    /// and `apr qa`'s golden gate already use.
+    #[test]
+    fn chat_gives_qwen3_the_no_think_template_like_every_other_verb() {
+        for arch in ["qwen3", "qwen35", "Qwen3-8B-Q4_K_M", "Qwen3.5-0.8B-Q4_K_M"] {
+            let got = detect_format_from_name(arch);
+            assert_eq!(
+                got,
+                TemplateFormat::Qwen3NoThink,
+                "{arch}: chat must select the template production selects"
+            );
+            assert_ne!(
+                got,
+                TemplateFormat::ChatML,
+                "{arch}: ChatML is the defect — it leaves the model in thinking mode"
+            );
+        }
+    }
+
+    /// The MoE exception survives the switch: PMAT-181 routes qwen3_moe to plain
+    /// ChatML because it was trained without `<think>` blocks. A unification that
+    /// swept it up would be a new defect.
+    #[test]
+    fn qwen3_moe_keeps_plain_chatml() {
+        for arch in ["qwen3_moe", "qwen3moe"] {
+            assert_eq!(detect_format_from_name(arch), TemplateFormat::ChatML, "{arch}");
+        }
+    }
+
+    /// Everything else chat used to name must still be named the same way: the
+    /// switch widens the enum, it does not re-label the formats that existed.
+    #[test]
+    fn the_formats_chat_already_reported_are_unchanged() {
+        assert_eq!(template_format_name(TemplateFormat::ChatML), "ChatML");
+        assert_eq!(template_format_name(TemplateFormat::Llama2), "LLaMA2");
+        assert_eq!(template_format_name(TemplateFormat::Mistral), "Mistral");
+        assert_eq!(template_format_name(TemplateFormat::Phi), "Phi");
+        assert_eq!(template_format_name(TemplateFormat::Alpaca), "Alpaca");
+        assert_eq!(template_format_name(TemplateFormat::Custom), "Custom");
+        assert_eq!(template_format_name(TemplateFormat::Raw), "Raw");
+    }
+
+    /// The two variants aprender-core could not express. `Qwen3NoThink` is the
+    /// one this row exists for: its name must SAY the thinking mode, because the
+    /// banner is what a user reads to know which mode they are in.
+    #[test]
+    fn the_variants_the_old_enum_could_not_express_are_named() {
+        let name = template_format_name(TemplateFormat::Qwen3NoThink);
+        assert!(name.contains("Qwen3NoThink"), "{name}");
+        assert!(name.contains("thinking off"), "{name}");
+        assert_eq!(template_format_name(TemplateFormat::Zephyr), "Zephyr");
+    }
+
+    /// The banner and the session must not disagree. The banner derives the
+    /// format from the FILE STEM and the session from `general.architecture`;
+    /// for a Qwen3 file both must land on the same template, or the line a user
+    /// reads describes a mode they are not in.
+    #[test]
+    fn the_banner_and_the_session_agree_on_a_qwen3_file() {
+        let from_file_stem = detect_format_from_name("Qwen3-1.7B-Q4_K_M");
+        let from_architecture = detect_format_from_name("qwen3");
+        assert_eq!(from_file_stem, from_architecture);
+        assert_eq!(from_file_stem, TemplateFormat::Qwen3NoThink);
+    }
+}
+
+/// What `apr chat` prints where `apr run` prints an F2 verdict (#3924).
+///
+/// A CONST rather than an inline literal so the claim itself is testable: the
+/// guard below asserts what this string may and may not say, and a future edit
+/// restoring "PASSED" for symmetry with `run` turns that test red.
+#[cfg(feature = "cuda")]
+const F2_CHAT_NOTE: &str =
+    "[GH-480] F2 validation SKIPPED — no prompt at construction, nothing was checked (#3924)";
+
+/// #3955: the distinct GGUF qtypes of every GEMV weight the CUDA model will run —
+/// Q/K/V (fused or separate), attention output, FFN up/down/gate, and the LM head.
+/// The banner names THESE, not the quantization the fused path was written for.
+#[cfg(feature = "cuda")]
+fn loaded_weight_qtypes(
+    model: &realizar::gguf::OwnedQuantizedModel,
+) -> std::collections::BTreeSet<u32> {
+    use realizar::gguf::OwnedQKVWeights;
+    let mut qtypes = std::collections::BTreeSet::new();
+    for layer in model.layers() {
+        match &layer.qkv_weight {
+            OwnedQKVWeights::Fused(t) => {
+                qtypes.insert(t.qtype);
+            },
+            OwnedQKVWeights::Separate { q, k, v } => {
+                qtypes.extend([q.qtype, k.qtype, v.qtype]);
+            },
+        }
+        qtypes.insert(layer.attn_output_weight.qtype);
+        qtypes.insert(layer.ffn_up_weight.qtype);
+        qtypes.insert(layer.ffn_down_weight.qtype);
+        if let Some(gate) = layer.ffn_gate_weight.as_ref() {
+            qtypes.insert(gate.qtype);
+        }
+    }
+    qtypes.insert(model.lm_head_weight().qtype);
+    qtypes
+}
+
+/// #3955: the APR CUDA load banner, derived from the loaded weight qtypes and the
+/// F2 outcome. It printed "fused Q4K kernels, F2-validated" as a literal — on a
+/// BF16 model, in the run whose own stderr said F2 was SKIPPED.
+#[cfg(feature = "cuda")]
+fn apr_cuda_banner(
+    qtypes: &std::collections::BTreeSet<u32>,
+    f2: &realizar::infer::F2Outcome,
+) -> String {
+    use realizar::infer::F2Outcome;
+    let weights = if qtypes.is_empty() {
+        "no GEMV".to_string()
+    } else {
+        qtypes
+            .iter()
+            .map(|&q| {
+                realizar::api::gguf_qtype_name(q)
+                    .map_or_else(|| format!("ggml type {q}"), str::to_string)
+            })
+            .collect::<Vec<_>>()
+            .join("+")
+    };
+    let f2 = match f2 {
+        F2Outcome::Validated { min_cosine } => {
+            format!("F2-validated (min cosine {min_cosine:.4})")
+        },
+        F2Outcome::Mismatch => "F2 MISMATCH".to_string(),
+        F2Outcome::NotMeasured { reason } => format!("F2 NOT MEASURED — {reason}"),
+    };
+    format!("[APR CUDA: {weights} weights, {f2}]")
+}
+
+#[cfg(all(test, feature = "cuda"))]
+mod apr_cuda_banner_tests_3955 {
+    use super::apr_cuda_banner;
+    use realizar::infer::F2Outcome;
+    use std::collections::BTreeSet;
+
+    fn not_measured() -> F2Outcome {
+        F2Outcome::NotMeasured { reason: "no prompt at construction (#3924)".to_string() }
+    }
+
+    /// The #3955 run: a BF16 `.apr` printed "fused Q4K kernels".
+    #[test]
+    fn a_bf16_model_is_not_announced_as_q4k() {
+        let banner = apr_cuda_banner(&BTreeSet::from([30]), &not_measured());
+        assert!(!banner.contains("Q4K") && !banner.contains("Q4_K"), "{banner}");
+        assert!(banner.contains("BF16"), "the banner must name what loaded: {banner}");
+    }
+
+    /// Only a `Validated` outcome may say validated — NotMeasured is the chat case.
+    #[test]
+    fn an_unmeasured_f2_is_never_called_validated() {
+        let banner = apr_cuda_banner(&BTreeSet::from([12]), &not_measured());
+        assert!(!banner.to_lowercase().contains("validated"), "{banner}");
+        assert!(banner.contains("NOT MEASURED") && banner.contains("#3924"), "{banner}");
+    }
+
+    #[test]
+    fn a_mismatch_is_never_called_validated() {
+        let banner = apr_cuda_banner(&BTreeSet::from([12]), &F2Outcome::Mismatch);
+        assert!(!banner.to_lowercase().contains("validated"), "{banner}");
+        assert!(banner.contains("MISMATCH"), "{banner}");
+    }
+
+    /// The positive control: a real validation on a mixed Q4_K/Q6_K model says so,
+    /// with the measured cosine, and names both types.
+    #[test]
+    fn a_validated_q4k_q6k_model_says_so_with_its_cosine() {
+        let banner = apr_cuda_banner(
+            &BTreeSet::from([12, 14]),
+            &F2Outcome::Validated { min_cosine: 0.9991 },
+        );
+        assert!(banner.contains("Q4_K+Q6_K"), "{banner}");
+        assert!(banner.contains("F2-validated") && banner.contains("0.9991"), "{banner}");
+    }
+
+    /// An id the name table does not know is shown as its number, never guessed.
+    #[test]
+    fn an_unknown_qtype_is_shown_by_number() {
+        let banner = apr_cuda_banner(&BTreeSet::from([9999]), &not_measured());
+        assert!(banner.contains("ggml type 9999"), "{banner}");
+    }
+}
+
+#[cfg(all(test, feature = "cuda"))]
+mod f2_chat_note_tests {
+    use super::F2_CHAT_NOTE;
+
+    /// The line must not CLAIM a verdict it did not reach.
+    ///
+    /// `validate_gpu_first_token(.., &[])` returns true without running a forward
+    /// pass, so "PASSED" would be a true-looking signal for a check that did not
+    /// happen. The mutant is the one that will actually be attempted: restore the
+    /// "PASSED" wording for symmetry with `run`, and this reds.
+    #[test]
+    fn the_chat_f2_line_does_not_claim_a_verdict() {
+        assert!(
+            !F2_CHAT_NOTE.contains("PASSED"),
+            "chat cannot pass F2 at construction — the probe is empty and the gate \
+             returns true without checking: {F2_CHAT_NOTE}"
+        );
+        assert!(!F2_CHAT_NOTE.contains("FAILED"), "nor can it fail: {F2_CHAT_NOTE}");
+    }
+
+    /// And it must say what DID happen, with somewhere to look. "Skipped" alone
+    /// leaves a reader knowing only that something did not occur.
+    #[test]
+    fn the_chat_f2_line_says_what_happened_and_where_to_look() {
+        assert!(F2_CHAT_NOTE.contains("SKIPPED"), "{F2_CHAT_NOTE}");
+        assert!(
+            F2_CHAT_NOTE.contains("nothing was checked"),
+            "the consequence must be explicit, not inferred from SKIPPED: {F2_CHAT_NOTE}"
+        );
+        assert!(F2_CHAT_NOTE.contains("#3924"), "it must name its ticket: {F2_CHAT_NOTE}");
     }
 }

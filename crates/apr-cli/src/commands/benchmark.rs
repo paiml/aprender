@@ -175,6 +175,28 @@ fn run_gguf_benchmark(
         .encode(&config.prompt)
         .unwrap_or_else(|| vec![bos, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]);
 
+    // #4270: a Qwen3.5 hybrid is timed through the one engine. The dense and MoE
+    // paths below build their own models, which have no Gated DeltaNet layers.
+    if realizar::gguf::hybrid_forward_handles(gguf.architecture().unwrap_or_default()) {
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(path)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to mmap model: {e}")))?;
+        let gen_config = QuantizedGenerateConfig {
+            max_tokens: config.max_tokens.min(128),
+            temperature: 0.0,
+            top_k: 1,
+            ..Default::default()
+        };
+        return run_qwen35_session_benchmark(
+            &mapped,
+            &prompt_tokens,
+            &gen_config,
+            config,
+            use_cuda,
+            start,
+            tracer,
+        );
+    }
+
     // #1749: MoE dispatch — Qwen3-Coder-30B-A3B + other MoE GGUFs have
     // 3D `*_exps` tensors and no 2D dense FFN tensors. The dense
     // `forward_single_with_cache` path used by `generate_with_cache`
@@ -346,6 +368,8 @@ fn run_apr_benchmark(
         temperature: 0.0,
         top_p: 1.0,
         top_k: 0,
+        // #3760: the sampler draws now; no seed is plumbed from this caller.
+        seed: realizar::apr_transformer::DEFAULT_SEED,
         repetition_penalty: 1.0,
         trace: false,
         stop_tokens: vec![],
@@ -434,8 +458,11 @@ fn run_apr_measurement(
 
 /// APR format CUDA benchmark using fused Q4K kernels (GH-87)
 ///
-/// F-KERNEL-DISPATCH-001: Uses OwnedQuantizedModelCuda (fused Q4K/Q6K GEMV,
-/// 190+ tok/s) instead of AprV2ModelCuda (generic transformer, 0.5 tok/s).
+/// F-KERNEL-DISPATCH-001: Uses OwnedQuantizedModelCuda (fused Q4K/Q6K GEMV)
+/// instead of AprV2ModelCuda (generic transformer). The two paths differ by
+/// orders of magnitude, but no rate literal belongs here: a number in a comment
+/// is a claim no measurement resolves, and these were never re-measured after
+/// the kernels changed. `apr bench` reports the rate for the build in hand.
 /// Loading path: MappedAprModel → OwnedQuantizedModel::from_apr() → OwnedQuantizedModelCuda.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]

@@ -380,6 +380,7 @@ fn test_preload_modules_for_capture_basic() {
         config.hidden_dim as u32,
         config.intermediate_dim as u32,
         config.vocab_size as u32,
+        1e-5,
     );
 
     // Should succeed or fail gracefully
@@ -399,7 +400,7 @@ fn test_preload_modules_different_dims() {
 
     // Test with different dimensions
     for (hidden, intermediate) in [(256, 1024), (512, 2048), (1024, 4096)] {
-        let result = exec.preload_modules_for_capture(1, hidden, intermediate, 1024);
+        let result = exec.preload_modules_for_capture(1, hidden, intermediate, 1024, 1e-5);
         let _ = result;
     }
 }

@@ -497,7 +497,7 @@ fn try_cuda_generate(
             )
         })?;
     let text = tokenizer
-        .decode(&generated)
+        .decode(completion(&generated, prompt_tokens))
         .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     Ok(Some(GenerateResponse {

@@ -440,3 +440,59 @@ fn test_dequantize_q8_0_parallel_basic() {
     let result = dequantize_q8_0_parallel(&data).expect("test");
     assert_eq!(result.len(), 32);
 }
+
+/// #3869: Q5_1 against the ggml reference, exercising the two things the
+/// pre-existing rows did not.
+///
+/// `test_dequantize_q5_1_basic` sets `qh = 0`, so the **5th bit** — the entire
+/// point of a 5-bit format — is never read; and it uses `0x88`, equal nibbles,
+/// so the **j / j+16 position split** is invisible. All-zero rows elsewhere
+/// assert only the length. A wrong 5th-bit shift or a transposed half would
+/// have passed all of them.
+///
+/// This matters now because #3869 made this function load-bearing: it was
+/// dispatched only from the gpu-gated `acceleration.rs::dequantize_weight`, and
+/// the CPU matmul now routes Q5_1 through it for the 24 Q5_1 tensors in
+/// `Qwen2.5-0.5B-Instruct-IQ4_XS.gguf`.
+///
+/// Expected values from llama.cpp `dequantize_row_q5_1`
+/// (`/mnt/nvme-raid0/llama.cpp-master`), d = 1.5, m = -0.25,
+/// qh = 0x0005_0003 so the 5th bit is set for low elements {0,1} and high
+/// elements {0,2}.
+#[test]
+fn q5_1_matches_the_ggml_reference_including_the_fifth_bit() {
+    const Q5_1_BLOCK: [u8; 24] = [
+        0x00, 0x3e, 0x00, 0xb4, 0x03, 0x00, 0x05, 0x00, 0x00, 0x11, 0x22, 0x03, 0x14, 0x25, 0x06,
+        0x10, 0x21, 0x02, 0x13, 0x24, 0x05, 0x16, 0x20, 0x01,
+    ];
+    const Q5_1_EXPECTED: [f32; 32] = [
+        23.75, 25.25, 2.75, 4.25, 5.75, 7.25, 8.75, -0.25, 1.25, 2.75, 4.25, 5.75, 7.25, 8.75,
+        -0.25, 1.25, 23.75, 1.25, 26.75, -0.25, 1.25, 2.75, -0.25, 1.25, 2.75, -0.25, 1.25, 2.75,
+        -0.25, 1.25, 2.75, -0.25,
+    ];
+
+    let got = dequantize_q5_1(&Q5_1_BLOCK).expect("one whole block");
+    assert_eq!(got.len(), 32);
+    for (i, (g, w)) in got.iter().zip(Q5_1_EXPECTED.iter()).enumerate() {
+        assert!(
+            (g - w).abs() <= 1e-5,
+            "element {i}: got {g}, ggml reference {w}"
+        );
+    }
+
+    // Spelled out so a failure names the mechanism rather than an index: the
+    // 5th bit adds 16 quantization levels, i.e. 16*d = 24.0 here.
+    assert!(
+        (got[0] - got[2] - 21.0).abs() <= 1e-5,
+        "low element 0 has the 5th bit set and element 2 does not; the gap must be \
+         16*d = 24.0 minus their nibble difference (2*1.5): got {} and {}",
+        got[0],
+        got[2]
+    );
+    assert!(
+        (got[16] - got[17] - 22.5).abs() <= 1e-5,
+        "high element 0 has the 5th bit set and element 1 does not: got {} and {}",
+        got[16],
+        got[17]
+    );
+}

@@ -12,8 +12,11 @@
             system: None,
             inspect: false,
             force_cpu: false,
+            accel_forced: false,
+            json: false,
             trace: false,
             trace_output: None,
+            thinking: None,
         };
         assert_eq!(config.temperature, 0.0);
         assert_eq!(config.top_p, 0.0);
@@ -29,8 +32,11 @@
             system: Some("Creative mode".to_string()),
             inspect: true,
             force_cpu: true,
+            accel_forced: false,
+            json: false,
             trace: true,
             trace_output: Some(PathBuf::from("/tmp/creative_trace.json")),
+            thinking: None,
         };
         assert_eq!(config.temperature, 2.0);
         assert_eq!(config.max_tokens, 4096);
@@ -342,10 +348,13 @@
 
     #[test]
     fn test_clean_chat_response_multiple_bpe_spaces() {
-        // Multiple Ġ should collapse to single space after cleaning
+        // Each Ġ is one space: two Ġ are two spaces.
         let raw = "HelloĠĠworld";
         let cleaned = clean_chat_response(raw);
-        assert_eq!(cleaned, "Hello world");
+        // 0.69.1 CRUX sweep: runs of spaces are content (byte-level BPE `ĠĠ` IS two spaces -- the tokens
+        // Python indentation is made of), so they survive; only surrounding blank lines and trailing
+        // whitespace go. This test used to assert the collapse, i.e. the ctl-code-add defect.
+        assert_eq!(cleaned, "Hello  world");
     }
 
     #[test]
@@ -416,7 +425,9 @@
     fn test_clean_chat_response_dots_many() {
         let raw = "Wait..........";
         let cleaned = clean_chat_response(raw);
-        assert_eq!(cleaned, "Wait...");
+        // VERBATIM (0.69.1 sweep, cop ruling): the model's punctuation is its output; this used to
+        // assert a cap at three, a rewrite chat did and run did not.
+        assert_eq!(cleaned, "Wait..........");
     }
 
     #[test]
@@ -430,7 +441,9 @@
     fn test_clean_chat_response_questions_many() {
         let raw = "What????????";
         let cleaned = clean_chat_response(raw);
-        assert_eq!(cleaned, "What???");
+        // VERBATIM (0.69.1 sweep, cop ruling): the model's punctuation is its output; this used to
+        // assert a cap at three, a rewrite chat did and run did not.
+        assert_eq!(cleaned, "What????????");
     }
 
     // =========================================================================

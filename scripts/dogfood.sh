@@ -29,10 +29,10 @@ SKILL_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # (scripts/check_publish_preflight.sh R5) reads BEFORE a cascade: the rows that
 # can only be measured against the PUBLISHED crate -- `publish-dry-run` of a
 # workspace root whose members are not on the registry yet, and the declared
-# multi-host `cargo install aprender` sweep -- are recorded DEFER, named in the
-# receipt with the obligation that discharges them, and are not FAIL. Every other
-# row is measured exactly as in a full run. The default is the full run: a
-# deferral outside the pre-publish phase is a FAIL, never a pass. Measured
+# multi-host `cargo install aprender` sweep -- are recorded OPEN, a named post-publish
+# obligation (#3957 F1b; DEFER is abolished), listed on the receipt as OPEN and never
+# as passed. Every other row is measured exactly as in a full run. The default is the
+# full run: an OPEN row outside the pre-publish phase is an unmet obligation, a FAIL. Measured
 # 2026-09-03: the full run is NO-GO on every commit before its own cascade, by
 # construction, which made a GO precondition on publishing unsatisfiable.
 DOGFOOD_PHASE="${DOGFOOD_PHASE:-full}"
@@ -189,28 +189,79 @@ FAILED=0
 strip_ansi() { sed -e 's/\x1b\[[0-9;]*[A-Za-z]//g' -e 's/\x1b([A-Z]//g'; }
 gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
   local name="$1"; shift
-  local out rc
+  local out rc log
+  # KEEP THE OUTPUT (#3841). This used to discard `out` into a shell variable, so
+  # `gate` was the ONLY row family writing nothing into $WORKLOG -- fmt, clippy, test
+  # and bashrs. d8's keep-the-worklog-on-NO-GO fix could not reach them because they
+  # never put anything there to keep. A red `test` row's real output was simply gone.
+  log="${WORKLOG:-${TMPDIR:-/tmp}}/$name.log"
   out=$("$@" 2>&1); rc=$?          # command substitution, NOT a pipeline: rc is cmd's
   out=$(printf '%s' "$out" | strip_ansi)
+  printf '%s\n' "$out" > "$log" 2>/dev/null || :
   local note
-  note=$(printf '%s' "$out" | grep -iE 'error|fail|warning:|denied|✗|regression' | head -1)
+  # ANCHORED picker (#3841). The old pattern was an unanchored case-insensitive
+  # 'error|fail|...' and it matched SUBSTRINGS INSIDE DEPENDENCY NAMES, so on a red
+  # row the entire visible explanation could be a `Compiling` line emitted minutes
+  # before the real diagnostic. Three instances measured on ONE yoga run:
+  #   clippy      -> "Compiling thiserror v1.0.69"            ("error" in thiserror)
+  #   test        -> "Compiling proc-macro-error-attr2 v2.0.0"
+  #   dogfood-use -> "2 pass / 0 fail / 2 skip"               ("fail" inside "0 fail")
+  # The last is the clearest: a FAILING row explained by a line saying zero failures.
+  note=$(printf '%s' "$out" | grep -nE '^(error|error\[|warning:)|^test result: FAILED|panicked at|^FAIL[: ]|^\s*✗|REGRESSION|^Error:' | head -1 | cut -d: -f2-)
+  # Fall back to the LAST line, never to an unanchored match: a trailing summary is
+  # a worse note than a real diagnostic but it cannot be a dependency's name.
   [ -z "$note" ] && note=$(printf '%s' "$out" | tail -1)
+  [ "$rc" -ne 0 ] && note="$note  [log: $log]"
   NAMES+=("$name")
   if [ $rc -eq 0 ]; then RESULTS+=("PASS"); else RESULTS+=("FAIL"); FAILED=1; fi
   NOTES+=("${note:0:120}")
   printf '  [%s] %-26s %s\n' "$([ $rc -eq 0 ] && echo ' OK ' || echo 'FAIL')" "$name" "${note:0:80}"
 }
-mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|DEFER> <note>
+# #3957 F1b, operator ruling (a) 2026-09-23. DEFER is ABOLISHED ("no defer": a row is
+# measured or it is RED). Exactly two rows cannot be measured BEFORE a publish by
+# construction -- a workspace root cannot dry-run before its members are on the registry,
+# and no host can `cargo install` a version that is not on crates.io -- and they alone may
+# be OPEN: a named post-publish obligation, legal in --phase pre-publish only, listed on the
+# receipt as OPEN and never as passed. In any other phase an OPEN row is an unmet obligation
+# and FAILs, which is what makes the post-publish dogfood discharge it. The list is closed.
+POST_PUBLISH_OBLIGATIONS="publish-dry-run declared:check_multiplatform_dogfood"
+mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|OPEN> <note>
   local st="$2" note="$3"
-  # DEFER is legal in the pre-publish phase only: a row that needs the published
-  # crate is recorded with its obligation. Anywhere else it is a FAIL wearing a
-  # softer word, and is recorded as the FAIL it is.
-  if [ "$st" = DEFER ] && [ "$DOGFOOD_PHASE" != pre-publish ]; then
-    st=FAIL; note="deferred outside --phase pre-publish (that is a refusal to measure, not a pass): $note"
+  if [ "$st" = DEFER ]; then
+    st=FAIL; note="DEFER is abolished (operator 2026-09-23, \"no defer\"): a row is measured or it is RED -- $note"
+  fi
+  if [ "$st" = OPEN ] && [ "$DOGFOOD_PHASE" != pre-publish ]; then
+    st=FAIL; note="an OPEN post-publish obligation outside --phase pre-publish is an UNMET obligation: $note"
+  elif [ "$st" = OPEN ]; then
+    case " $POST_PUBLISH_OBLIGATIONS " in *" $1 "*) ;; *) st=FAIL; note="only [$POST_PUBLISH_OBLIGATIONS] may be OPEN; '$1' is not a post-publish obligation: $note" ;; esac
   fi
   NAMES+=("$1"); RESULTS+=("$st"); NOTES+=("${note:0:200}")
   [ "$st" = FAIL ] && FAILED=1
   printf '  [%s] %-26s %s\n' "$([ "$st" = PASS ] && echo ' OK ' || echo "$st")" "$1" "${note:0:96}"
+}
+# classify_declared <name> <path> <rc> <log> — records ONE declared gate's row from its exit
+# code and log; returns 1 when the row counts against the declared gates. A function so the
+# rule can be lifted and driven by a case table (scripts/check_dogfood_no_defer.sh).
+classify_declared() {
+  local name="$1" path="$2" rc="$3" log="$4" tail defer obl
+  tail=$(tail -3 "$log" 2>/dev/null | strip_ansi | tr '\n' ' ')
+  defer=$(grep -m1 '^DEFERRED: ' "$log" 2>/dev/null | strip_ansi)
+  obl=$(grep -m1 '^OPEN-OBLIGATION: ' "$log" 2>/dev/null | strip_ansi)
+  if [ -n "$defer" ]; then
+    # #3957 F1b: the DEFERRED: hatch is gone. A gate that still says it is a refusal to measure.
+    mark "$name" FAIL "$path printed a DEFERRED: line -- DEFER is abolished (#3957 F1b): ${defer#DEFERRED: }"
+    return 1
+  elif [ -n "$obl" ] && [ "$rc" -eq 0 ]; then
+    # A named post-publish obligation. mark() admits OPEN only for the closed list, pre-publish.
+    mark "$name" OPEN "$path: ${obl#OPEN-OBLIGATION: }"
+    [ "${RESULTS[${#RESULTS[@]}-1]}" = OPEN ] || return 1
+  elif [ "$rc" -eq 0 ]; then
+    mark "$name" PASS "$path exit=0"
+  else
+    mark "$name" FAIL "$path exit=$rc — $tail"
+    return 1
+  fi
+  return 0
 }
 # run_to <logfile> <cmd...> — runs cmd with stdout+stderr to <logfile> and puts
 # the command's OWN exit status in $RUN_RC. Never a pipeline: `cmd | tee log`
@@ -228,12 +279,29 @@ run_split() { local o="$1" e="$2"; shift 2; "$@" > "$o" 2> "$e"; RUN_RC=$?; }
 # ${BASH_SOURCE[0]} points at the wrong tree.
 WORKLOG=$(mktemp -d)
 # The delete is guarded (SEC011): an empty or root WORKLOG is left alone.
+# A NO-GO KEEPS ITS EVIDENCE. This used to delete the worklog unconditionally on exit,
+# while the FAIL messages cite paths inside it -- "[FAIL] pv-lint ... see
+# /tmp/tmp.XXXX/pv-lint.log" and "mark model-parity FAIL ... ($WORKLOG/c14-build.log)".
+# So a NO-GO told the operator to read logs it had just destroyed. Measured by aprender-d8
+# in the 0.69.1 tail rehearsal: a 38m20s run ended NO-GO with four red rows whose causes
+# were unreadable, and gate()'s note-picker surfaced a benign "warning:" line as the
+# coverage row's entire visible output. That is the difference between one 38-minute run
+# and three, which is why it is fixed for 0.69.1 rather than filed.
+#
+# On a GO the worklog is noise and is removed as before. On a NO-GO it is the only record
+# of WHY, so it is kept and its path is printed.
 _rm_worklog() {
   local v="${WORKLOG:-}"
   case "$v" in
-    /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$v" ] && [ "$v" != "/" ]; then rm -rf -- "$v" || :; fi ;;
+    /tmp/?*|/var/folders/?*|/mnt/?*) ;;
     *) return 0 ;;
   esac
+  [ -n "$v" ] && [ "$v" != "/" ] || return 0
+  if [ "${FAILED:-0}" -ne 0 ]; then
+    printf '\nWORKLOG KEPT (verdict was not GO): %s\n  every FAIL row above cites a log in here; it is not deleted so the causes stay readable\n' "$v" >&2
+    return 0
+  fi
+  rm -rf -- "$v" || :
 }
 trap _rm_worklog EXIT
 
@@ -334,6 +402,32 @@ elif [ "$DG_PLAN" = "EMPTY" ]; then
 elif [ "$DG_PLAN" = "BADSHAPE" ]; then
   mark dogfood-gates FAIL "[package.metadata.dogfood] gates must be a non-empty list of script paths — a malformed declaration verifies nothing"
 else
+  # The declared gates that resolve an `apr` binary through scripts/apr_bin.sh need
+  # target/release/apr to EXIST and to carry HEAD's sha. This loop used to run ~293
+  # lines BEFORE the release build below, so `declared:float16_greedy_parity` and
+  # `declared:tokenizer_parity` fell through to whatever target/debug/apr was lying
+  # around, saw a stale sha, and printed STALE apr BINARY -- a REFUSAL to measure, not
+  # a measurement. On any tree that has ever built a debug binary (every dev box, and
+  # any release runner that has built before) that made pre-publish dogfood unable to
+  # reach GO, so check_publish_preflight R5 could never accept a receipt and the tag
+  # could never be gated. Measured by aprender-d8 in the 0.69.1 tail rehearsal.
+  #
+  # Build it here, before the gates that read it. FEATS is set far above (the feature
+  # resolution around line 130), and the `cargo build --release` further down is then a
+  # cache hit rather than a second compile.
+  # This pre-build is an ENABLER, not a gate, and its failure must not be charged to
+  # gates that never touch a binary. aprender-d8 measured the regression: inside
+  # check_verifier_pinning.sh's temp-dir fixture the build cannot succeed, and marking
+  # `dogfood-gates` FAIL turned that gate RED even though all 18 MUST-FLAG, all 16
+  # MUST-NOT-FLAG and all 7 CALL-SITE rows passed. A build failure invalidates
+  # float16_greedy_parity and tokenizer_parity -- and those two REFUSE LOUDLY on their
+  # own (STALE apr BINARY, exit 1), which is the honest attribution. So: note it and let
+  # the dependent gates speak for themselves.
+  # shellcheck disable=SC2086
+  if ! cargo build --release $FEATS --bin apr > "$WORKLOG/prebuild-apr.log" 2>&1; then
+    printf 'NOTE  no target/release/apr could be built here (%s); any declared gate that resolves an apr binary will refuse by name rather than measure\n' \
+      "$WORKLOG/prebuild-apr.log"
+  fi
   DG_N=0; DG_BAD=0
   while read -r dg_kind dg_path; do
     [ "$dg_kind" = "GATE" ] || continue
@@ -344,20 +438,7 @@ else
       DG_BAD=$((DG_BAD + 1)); continue
     fi
     run_to "$WORKLOG/$(basename "$dg_path").log" bash "$dg_path"
-    dg_rc=$RUN_RC
-    dg_tail=$(tail -3 "$WORKLOG/$(basename "$dg_path").log" 2>/dev/null | strip_ansi | tr '\n' ' ')
-    dg_defer=$(grep -m1 '^DEFERRED: ' "$WORKLOG/$(basename "$dg_path").log" 2>/dev/null | strip_ansi)
-    if [ -n "$dg_defer" ]; then
-      # The gate itself said it cannot be measured before the cascade. mark()
-      # turns this into a FAIL outside the pre-publish phase.
-      mark "$dg_name" DEFER "$dg_path: ${dg_defer#DEFERRED: }"
-      [ "$DOGFOOD_PHASE" = pre-publish ] || DG_BAD=$((DG_BAD + 1))
-    elif [ "$dg_rc" -eq 0 ]; then
-      mark "$dg_name" PASS "$dg_path exit=0"
-    else
-      mark "$dg_name" FAIL "$dg_path exit=$dg_rc — $dg_tail"
-      DG_BAD=$((DG_BAD + 1))
-    fi
+    classify_declared "$dg_name" "$dg_path" "$RUN_RC" "$WORKLOG/$(basename "$dg_path").log" || DG_BAD=$((DG_BAD + 1))
   done <<EOF
 $DG_PLAN
 EOF
@@ -523,7 +604,7 @@ else
 DRY=$(env -u CARGO_REGISTRY_TOKEN cargo publish --dry-run --allow-dirty 2>&1); DRC=$?
 if [ "$DOGFOOD_PHASE" = post-publish ]; then
   # #3543: after the cascade the version SHOULD be on crates.io. The dry-run above still runs --
-  # row 10 (publish-dry-run) reads DRC, discharging the pre-publish DEFER -- but the version row is
+  # row 10 (publish-dry-run) reads DRC, discharging the pre-publish OPEN obligation -- but the version row is
   # the index lookup, asserting the opposite of pre-publish.
   mark_version_row post-publish
 # Here-string, never `printf | grep -q`: with the marker early and more than a
@@ -567,7 +648,46 @@ gate clippy           cargo clippy --all-targets $FEATS -- -D warnings
 gate test             cargo test $FEATS
 MAKEFILE_PATH=$(find_up Makefile)
 if [ -n "$MAKEFILE_PATH" ] && grep -qE '^coverage-check:' "$MAKEFILE_PATH" 2>/dev/null; then
-  gate coverage make -C "$(dirname "$MAKEFILE_PATH")" coverage-check
+  # #3839 made coverage DEFERRABLE in pre-publish (operator 2026-09-22). SUPERSEDED by #3957
+  # F1b (operator 2026-09-23: "no defer", and "fold in 88% coverage" blocks 0.69.1): a miss is
+  # RED in every phase. The pre-publish branch below keeps the measured percentage in its note,
+  # because a FAIL that does not say what it measured is harder to act on.
+  #
+  # WHY. 87.82% (824853/939270) against COV_FLOOR 88, red in the nightly for 8
+  # consecutive runs back to 2026-09-15 and independent of any one release. The
+  # measurement itself is known wrong in both directions: COVERAGE_EXCLUDE_REGEX was
+  # last touched 2026-02-08 and APR-MONO moved realizar/entrenar/trueno in April, so
+  # `entrenar/` matches nothing at all and `trueno` matches 73 files in aprender-zram
+  # instead of 580 in aprender-compute. Repairing that moves a release gate's
+  # denominator in the direction that helps whoever moves it, so it is NOT done here.
+  #
+  cov_out=$(make -C "$(dirname "$MAKEFILE_PATH")" coverage-check 2>&1); cov_rc=$?
+  # KEEP THE LOG (#3844, aprender-45). `gate()` rows now write $WORKLOG/<name>.log,
+  # but coverage is a `mark` row with its own command substitution, so it was still
+  # discarding everything but one grep'd line. This is the row whose deferral is being
+  # asked for, which makes it the row whose evidence matters most.
+  printf '%s\n' "$cov_out" > "${WORKLOG:-${TMPDIR:-/tmp}}/coverage.log" 2>/dev/null || :
+  # ANCHOR the percentage to the line that ONLY EXISTS when LCOV was parsed.
+  # A bare `grep -oE '[0-9.]+%' | tail -1` scraped the Makefile's own BANNER --
+  # `@echo "Running coverage ($(COV_THRESHOLD)%+ threshold)..."`, COV_THRESHOLD := 95
+  # (Makefile:495,610) -- so an aborted run reported `measured 95% against floor 88`:
+  # a FABRICATED number, ABOVE the floor, for a gate that never ran. The
+  # `NO PERCENTAGE` fallback below was dead code, because the banner guarantees a
+  # match on every run. Found by aprender-45 on the yoga rehearsal.
+  # Measured: banner-only output -> new extractor yields "" (fallback fires);
+  #           `TOTAL: 824853/939270 lines covered (87.82%)` -> yields 87.82%.
+  cov_pct=$(printf '%s' "$cov_out" | grep -oE 'lines covered \([0-9]+(\.[0-9]+)?%\)' \
+            | grep -oE '[0-9]+(\.[0-9]+)?%' | tail -1)
+  cov_why=$(printf '%s' "$cov_out" | grep -iE 'REGRESSION|below the enforced floor|coverage [0-9]' | head -1)
+  if [ "$cov_rc" -eq 0 ]; then
+    mark coverage PASS "${cov_pct:+$cov_pct, }floor met"
+  elif [ "$DOGFOOD_PHASE" = pre-publish ]; then
+    # #3957 F1b: coverage is deferred WORK, not an unmeasurable row -- it is RED (operator
+    # rulings 2026-09-23: "no defer", and "fold in 88% coverage" blocks 0.69.1).
+    mark coverage FAIL "measured ${cov_pct:-NO PERCENTAGE (the run died before parsing LCOV)} against floor ${COV_FLOOR:-88}; owed by #3839 (stale COVERAGE_EXCLUDE_REGEX + the real gap). ${cov_why:0:60}"
+  else
+    mark coverage FAIL "${cov_why:-coverage-check failed (rc $cov_rc)}"
+  fi
 else mark coverage FAIL "no coverage-check make target in ${MAKEFILE_PATH:-$PWD/Makefile} — the >=95% floor is UNVERIFIED, which is not the same as met (was a WARN, contradicting this skill's own rule that a missing capability is a NO-GO)"; fi
 if command -v cargo-deny >/dev/null 2>&1; then gate security cargo deny check advisories
 else mark security FAIL "cargo-deny not installed — the advisory scan did not run, and a scan that did not run is not a clean scan"; fi
@@ -1171,7 +1291,7 @@ fi
 
 # ── 10. publish dry-run (already run above; verdict is its exit code) ───────
 if [ "$DOGFOOD_PHASE" = pre-publish ]; then
-  mark publish-dry-run DEFER "a workspace root cannot dry-run before its members are on the registry; discharged by the cascade's own per-tier publish and the post-publish dogfood"
+  mark publish-dry-run OPEN "a workspace root cannot dry-run before its members are on the registry; discharged by the cascade's own per-tier publish and the post-publish dogfood"
 elif [ $DRC -eq 0 ]; then mark publish-dry-run PASS "packages cleanly"
 else mark publish-dry-run FAIL "$(printf '%s' "$DRY" | grep -iE 'error' | head -1)"; fi
 
@@ -1180,10 +1300,10 @@ else mark publish-dry-run FAIL "$(printf '%s' "$DRY" | grep -iE 'error' | head -
 # so. The asset set is a POST-PUBLISH question by construction: binary-release.yml
 # fires on `release: published`, so the assets do not exist until the tag does.
 #
-# It is a SKIP, not a DEFER, before that. DEFER is spelled by
-# scripts/check_publish_preflight.sh's PREPUBLISH_DEFERRABLE list
-# ("publish-dry-run declared:check_multiplatform_dogfood"); a pre-publish receipt
-# that defers a row that list does not name is REFUSED by the publish gate. Adding
+# It is a SKIP, not an OPEN obligation, before that. OPEN is admitted only for
+# POST_PUBLISH_OBLIGATIONS above, mirrored by scripts/check_publish_preflight.sh's
+# PREPUBLISH_OPEN_OBLIGATIONS ("publish-dry-run declared:check_multiplatform_dogfood");
+# a pre-publish receipt with any other OPEN row, or any DEFER, is REFUSED (#3957 F1b). Adding
 # `release-assets` to that list is the honest shape and is owed by a follow-up
 # (that file is outside PMAT-1098's scope) — until then this row names the phase
 # that owes the measurement instead of borrowing a word that would turn the
@@ -1688,7 +1808,8 @@ print(json.dumps({
     "crate": os.environ["CRATE"], "version": os.environ["VERSION"],
     "timestamp": os.environ["TS"], "commit": os.environ["SHA"], "gates": gates,
     "phase": os.environ["PHASE"],
-    "deferred": [g["gate"] for g in gates if g["result"] == "DEFER"],
+    "deferred": [g["gate"] for g in gates if g["result"] == "DEFER"],   # always empty since #3957 F1b; R5 refuses any
+    "open_obligations": [g["gate"] for g in gates if g["result"] == "OPEN"],
     "verdict": os.environ["VERDICT"],
 }, indent=2))
 PY
@@ -1705,11 +1826,11 @@ echo "────────────────────────�
 echo "receipt: $RECEIPT"
 if [ $FAILED -eq 0 ]; then
   for i in "${!NAMES[@]}"; do
-    [ "${RESULTS[$i]}" = DEFER ] || continue
-    printf '  · DEFER %-18s %s\n' "${NAMES[$i]}" "${NOTES[$i]}"
+    [ "${RESULTS[$i]}" = OPEN ] || continue
+    printf '  · OPEN  %-18s %s\n' "${NAMES[$i]}" "${NOTES[$i]}"
   done
   if [ "$DOGFOOD_PHASE" = pre-publish ]; then
-    echo "VERDICT: ✅ GO (phase pre-publish) — every measurable gate green; the DEFER rows above are owed by the post-publish dogfood on the published crate."
+    echo "VERDICT: ✅ GO (phase pre-publish) — every measurable gate green; the OPEN rows above are post-publish obligations, NOT passed: the post-publish dogfood FAILs if any is unmet (#3957 F1b)."
   else
     echo "VERDICT: ✅ GO — all automated gates green. Complete clean-room (MANDATORY) then release."
   fi

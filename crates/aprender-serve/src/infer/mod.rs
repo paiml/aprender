@@ -39,6 +39,137 @@ pub(crate) fn qtype_to_dtype_str(qtype: u32) -> &'static str {
     crate::gguf::admitted_from_id(qtype).map_or("Unknown", crate::gguf::GgmlQuantType::as_str)
 }
 
+/// #4006: the `quant=` label for a GGUF model: the transformer BODY, not the head.
+///
+/// It printed `lm_head_weight.qtype`. Unsloth "UD" files tie the head to a
+/// high-precision `token_embd` while the blocks are mixed, so
+/// Qwen3.5-0.8B-UD-IQ2_XXS (95 IQ2_XXS block tensors) was labelled `Q5_K` and a
+/// receipt quoting it said none of the IQ kernels ran.
+///
+/// `body` is the qtype of every 2-D projection weight in the blocks. One type
+/// prints as that type; several print as `mixed(A×n,B×m,…)`, most frequent first
+/// (ties by name). `lm_head=<qtype>` is appended when the head differs from the
+/// dominant body type.
+pub(crate) fn body_quant_label(body: &[u32], lm_head: u32) -> String {
+    // The full GGML name table, not the admitted-kernel one: a label names what
+    // the file holds, whether or not a GPU kernel exists for it.
+    let name = |q: u32| {
+        trueno_quant::GgmlType::from_id(q)
+            .map_or_else(|| format!("ggml type {q}"), |t| t.as_str().to_string())
+    };
+    let mut counts: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
+    for &q in body {
+        *counts.entry(q).or_insert(0) += 1;
+    }
+    let mut ranked: Vec<(String, usize, u32)> =
+        counts.into_iter().map(|(q, n)| (name(q), n, q)).collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let Some((_, _, dominant)) = ranked.first().cloned() else {
+        return name(lm_head);
+    };
+    let body_label = if ranked.len() == 1 {
+        ranked[0].0.clone()
+    } else {
+        let parts: Vec<String> = ranked.iter().map(|(n, c, _)| format!("{n}×{c}")).collect();
+        format!("mixed({})", parts.join(","))
+    };
+    if lm_head == dominant {
+        body_label
+    } else {
+        format!("{body_label} lm_head={}", name(lm_head))
+    }
+}
+
+/// The qtype of every 2-D block tensor (`blk.*`, `n_dims >= 2`) in the GGUF header,
+/// for [`body_quant_label`]. Read from the FILE, not the loaded model struct: the
+/// Qwen3.5 hybrid path builds only a base model (embeddings, final norm, head) with
+/// no layers, and its block tensors are the ones that decide the label.
+pub(crate) fn body_qtypes(gguf: &crate::gguf::GGUFModel) -> Vec<u32> {
+    gguf.tensors
+        .iter()
+        .filter(|t| t.name.starts_with("blk.") && t.n_dims >= 2)
+        .map(|t| t.qtype)
+        .collect()
+}
+
+/// #4006 (APR paths): the qtype of every 2-D projection weight in a LOADED model's
+/// layers, for [`body_quant_label`]. For `.apr` files, whose loader builds every
+/// layer; GGUF uses [`body_qtypes`] on the header, because the qwen35 hybrid
+/// builds no layers.
+pub(crate) fn model_body_qtypes(model: &crate::gguf::OwnedQuantizedModel) -> Vec<u32> {
+    use crate::gguf::OwnedQKVWeights;
+    let mut out = Vec::new();
+    for layer in model.layers() {
+        match &layer.qkv_weight {
+            OwnedQKVWeights::Fused(t) => out.push(t.qtype),
+            OwnedQKVWeights::Separate { q, k, v } => out.extend([q.qtype, k.qtype, v.qtype]),
+        }
+        out.push(layer.attn_output_weight.qtype);
+        out.push(layer.ffn_up_weight.qtype);
+        out.push(layer.ffn_down_weight.qtype);
+        if let Some(gate) = layer.ffn_gate_weight.as_ref() {
+            out.push(gate.qtype);
+        }
+    }
+    out
+}
+
+/// #4006 (SafeTensors): the GGML id for a float SafeTensors dtype (F32 0, F16 1,
+/// BF16 30), so [`body_quant_label`] names SafeTensors weights the same way.
+/// Integer dtypes are not weights and are skipped.
+pub(crate) fn safetensors_dtype_ggml_id(
+    dtype: &crate::safetensors::SafetensorsDtype,
+) -> Option<u32> {
+    use crate::safetensors::SafetensorsDtype as D;
+    match dtype {
+        D::F32 => Some(0),
+        D::F16 => Some(1),
+        D::BF16 => Some(30),
+        _ => None,
+    }
+}
+
+/// #4006: the `quant=` label for a SafeTensors file, read from its header: every
+/// 2-D float tensor under `.layers.` is the body, `lm_head.weight` (else the tied
+/// `embed_tokens`) is the head. `unknown (…)` when the header cannot be read, never
+/// a guessed type.
+pub(crate) fn safetensors_quant_label(path: &std::path::Path) -> String {
+    let model = match crate::safetensors::MappedSafeTensorsModel::load(path) {
+        Ok(m) => m,
+        Err(e) => return format!("unknown (header unreadable: {e})"),
+    };
+    let mut body = Vec::new();
+    let mut head = None;
+    for name in model.tensor_names() {
+        let Some(info) = model.get_tensor_info(name) else {
+            continue;
+        };
+        let Some(id) = safetensors_dtype_ggml_id(&info.dtype) else {
+            continue;
+        };
+        if name.contains(".layers.") && info.shape.len() >= 2 {
+            body.push(id);
+        } else if name == "lm_head.weight"
+            || (head.is_none() && name.ends_with("embed_tokens.weight"))
+        {
+            head = Some(id);
+        }
+    }
+    match head {
+        Some(h) => body_quant_label(&body, h),
+        None if body.is_empty() => "unknown (no float weights in the header)".to_string(),
+        // No head tensor: label the body alone (the head clause only appears on a mismatch).
+        None => {
+            let dominant = body_quant_label(&body, u32::MAX);
+            dominant
+                .split(" lm_head=")
+                .next()
+                .unwrap_or(&dominant)
+                .to_string()
+        },
+    }
+}
+
 /// Configuration for inference
 #[derive(Debug, Clone)]
 pub struct InferenceConfig {
@@ -68,6 +199,18 @@ pub struct InferenceConfig {
     pub repeat_last_n: usize,
     /// Disable GPU acceleration
     pub no_gpu: bool,
+    /// #3757: the user EXPLICITLY asked for an accelerator (`--gpu`, or
+    /// `--backend cuda|wgpu|gpu`), as classified by
+    /// `apr-cli::registry::Request::wanted` — the same signal `reconcile_accelerator`
+    /// already consumes, threaded one step further so the ATTEMPT is gated by it
+    /// and not only the post-hoc verdict.
+    ///
+    /// Without this the bare `apr run model.gguf` enters the GH-559 wgpu
+    /// fallback, dequantizes the whole model to F32, fails wgpu's own cpu-parity
+    /// gate and falls back — paying 1.7 GB and 2.5x the wall time to reach the
+    /// identical CPU answer. Measured on `release/0.69.1-batch-2` @ 9f8836c71,
+    /// qwen2.5-coder-1.5b-q4_k_m: default 7607 ms vs `--no-gpu` 3035 ms.
+    pub accel_forced: bool,
     /// Enable inference tracing (APR-TRACE-001)
     pub trace: bool,
     /// Verbose tracing output
@@ -87,6 +230,30 @@ pub struct InferenceConfig {
     /// name marks it as an instruct model (`apr run --chat`). The prompt stays raw text:
     /// the template is applied once, by `prepare_tokens`, never pre-wrapped by a caller.
     pub force_chat_template: bool,
+    /// #3723: `--thinking on|off`. `None` renders what production always has; `Some(true)`
+    /// removes the empty `<think>` prefill so the model reasons, and is refused by name on a
+    /// template with no thinking mode ([`crate::chat_template::apply_thinking_mode`]).
+    pub thinking: Option<bool>,
+}
+
+/// The top-k a SAMPLED generation uses when the caller names none (#3754).
+///
+/// `apr run` defaulted `--top-k` to 1, and every decode loop treats `top_k == 1` as greedy,
+/// so `apr run --temperature 0.8` decoded greedily and said nothing: a sampling flag that did
+/// nothing. `apr chat` and `apr serve` already sampled with 40, which is also the llama.cpp
+/// and Ollama default. This is that number, declared once. Greedy is still
+/// `temperature == 0.0` or an explicit `top_k == 1`; `0` disables the filter.
+pub const DEFAULT_TOP_K: usize = 40;
+
+/// The top-k a generation runs with: `1` (greedy) at temperature 0, else the caller's value,
+/// else [`DEFAULT_TOP_K`].
+#[must_use]
+pub fn sampling_top_k(temperature: f32, requested: Option<usize>) -> usize {
+    if temperature == 0.0 {
+        1
+    } else {
+        requested.unwrap_or(DEFAULT_TOP_K)
+    }
 }
 
 impl InferenceConfig {
@@ -99,6 +266,9 @@ impl InferenceConfig {
             input_tokens: None,
             max_tokens: 32,
             temperature: 0.0, // Greedy by default
+            // PMAT-823: a default config forwards the byte-identical greedy generation
+            // config, top_k 1 included. A caller that samples names its top-k:
+            // `apr run` sends `--top-k` (default DEFAULT_TOP_K), others use `sampling_top_k`.
             top_k: 1,
             // PMAT-823: defaults chosen so a config with no sampling flags
             // forwards to the SAME greedy QuantizedGenerateConfig as before
@@ -108,6 +278,7 @@ impl InferenceConfig {
             repeat_penalty: 1.0,
             repeat_last_n: 64,
             no_gpu: false,
+            accel_forced: false,
             trace: false,
             trace_verbose: false,
             trace_output: None,
@@ -116,6 +287,7 @@ impl InferenceConfig {
             stop_tokens: Vec::new(),
             use_mock_backend: false,
             force_chat_template: false,
+            thinking: None,
         }
     }
 
@@ -189,6 +361,13 @@ impl InferenceConfig {
         self
     }
 
+    /// #3757: record that the user explicitly asked for an accelerator.
+    #[must_use]
+    pub fn with_accel_forced(mut self, accel_forced: bool) -> Self {
+        self.accel_forced = accel_forced;
+        self
+    }
+
     /// Enable verbose output
     #[must_use]
     pub fn with_verbose(mut self, verbose: bool) -> Self {
@@ -200,6 +379,13 @@ impl InferenceConfig {
     #[must_use]
     pub fn with_force_chat_template(mut self, force: bool) -> Self {
         self.force_chat_template = force;
+        self
+    }
+
+    /// #3723: the thinking mode `--thinking on|off` asks for (`None`: the production default).
+    #[must_use]
+    pub fn with_thinking(mut self, thinking: Option<bool>) -> Self {
+        self.thinking = thinking;
         self
     }
 
@@ -341,6 +527,33 @@ pub fn prepare_tokens(config: &InferenceConfig, format: &ModelFormat) -> Result<
 /// BOS token: Prepend BOS when the model metadata says `add_bos_token = true`
 /// or when a BOS token ID exists and `add_bos_token` is not explicitly false.
 /// This matches llama.cpp behavior for LLaMA-family models.
+/// #3723: apply `--thinking` to a rendered prompt. A prompt that no chat template rendered has
+/// no thinking mode, so ON is refused there too; OFF and `None` leave every prompt unchanged.
+fn thinking_mode(config: &InferenceConfig, formatted: String) -> Result<String> {
+    if config.thinking.is_none() {
+        return Ok(formatted);
+    }
+    crate::chat_template::apply_thinking_mode(&formatted, config.thinking)
+}
+
+/// #3990: the `tokenizer_config.json` beside a SafeTensors model, when it declares a chat template
+/// (a string, or the list form with a `default` entry, as transformers reads it). Rendering, and
+/// bos/eos, are left to the ONE reader, `chat_template::render_official_from_tokenizer_config`;
+/// this only decides whether the model has a template of its own, so a model WITHOUT one takes
+/// the built-in formatter quietly while a template that fails to render is warned about.
+fn sibling_tokenizer_config(model_path: &std::path::Path) -> Option<String> {
+    let text = std::fs::read_to_string(model_path.with_file_name("tokenizer_config.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let declared = match v.get("chat_template")? {
+        serde_json::Value::String(s) => !s.is_empty(),
+        serde_json::Value::Array(list) => list
+            .iter()
+            .any(|t| t.get("name").and_then(serde_json::Value::as_str) == Some("default")),
+        _ => false,
+    };
+    declared.then_some(text)
+}
+
 fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<PreparedTokens> {
     use crate::chat_template::{format_messages, ChatMessage};
     use crate::gguf::{GGUFValue, MappedGGUFModel};
@@ -368,9 +581,20 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
     let formatted_prompt = if config.force_chat_template || has_chat_template || filename_instruct {
         let template_hint = apr_arch_to_template_hint(gguf_arch, model_name);
         let messages = vec![ChatMessage::user(prompt)];
-        format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string())
+        // #3990: the GGUF's own tokenizer.chat_template, when it carries one.
+        let own = has_chat_template.then_some(|t: Option<bool>| {
+            crate::chat_template::render_official_for_model(&mapped.model, &messages, t)
+        });
+        crate::chat_template::official_or_legacy(
+            own,
+            || {
+                format_messages(&messages, Some(template_hint))
+                    .unwrap_or_else(|_| prompt.to_string())
+            },
+            config.thinking,
+        )?
     } else {
-        prompt.to_string()
+        thinking_mode(config, prompt.to_string())?
     };
 
     if config.verbose {
@@ -380,7 +604,7 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
         );
         eprintln!(
             "[DEBUG] formatted_prompt={:?}",
-            &formatted_prompt[..formatted_prompt.len().min(200)]
+            log_head(&formatted_prompt, 200)
         );
     }
 
@@ -478,9 +702,24 @@ fn prepare_tokens_safetensors(config: &InferenceConfig, prompt: &str) -> Result<
     let formatted_prompt = if is_instruct {
         let template_hint = safetensors_arch_to_template_hint(&architecture, model_name);
         let messages = vec![ChatMessage::user(prompt)];
-        format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string())
+        // #3990: the sibling tokenizer_config.json's own chat_template, when it declares one.
+        let tc = sibling_tokenizer_config(&config.model_path);
+        let msgs = &messages;
+        let own = tc.as_deref().map(|json| {
+            move |t: Option<bool>| {
+                crate::chat_template::render_official_from_tokenizer_config(json, msgs, t)
+            }
+        });
+        crate::chat_template::official_or_legacy(
+            own,
+            || {
+                format_messages(&messages, Some(template_hint))
+                    .unwrap_or_else(|_| prompt.to_string())
+            },
+            config.thinking,
+        )?
     } else {
-        prompt.to_string()
+        thinking_mode(config, prompt.to_string())?
     };
 
     let tokens =
@@ -526,24 +765,25 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
         .and_then(|n| n.to_str())
         .unwrap_or("");
 
-    let (apr_arch, has_chat_template) = if config.model_path.extension().is_some_and(|e| e == "apr")
-    {
+    let (apr_arch, own_template) = if config.model_path.extension().is_some_and(|e| e == "apr") {
         match AprV2Model::load(&config.model_path) {
             Ok(model) => {
                 let meta = model.metadata();
                 let arch = meta.architecture.clone().unwrap_or_default();
-                let has_tmpl = meta
+                let tmpl = meta
                     .extra
                     .get("tokenizer.chat_template")
                     .and_then(|v| v.as_str())
-                    .is_some_and(|s| !s.is_empty());
-                (arch, has_tmpl)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string);
+                (arch, tmpl)
             },
-            Err(_) => (String::new(), false),
+            Err(_) => (String::new(), None),
         }
     } else {
-        (String::new(), false)
+        (String::new(), None)
     };
+    let has_chat_template = own_template.is_some();
 
     let filename_instruct = model_name.to_lowercase().contains("instruct")
         || model_name.to_lowercase().contains("-chat");
@@ -553,9 +793,24 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
     let formatted_prompt = if is_instruct {
         let template_hint = apr_arch_to_template_hint(&apr_arch, model_name);
         let messages = vec![ChatMessage::user(prompt)];
-        format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string())
+        // #3990: the .apr's own tokenizer.chat_template. The .apr carries no bos/eos STRINGS,
+        // so they stay undefined (a Qwen template references neither).
+        let msgs = &messages;
+        let own = own_template.as_deref().map(|tpl| {
+            move |t: Option<bool>| {
+                crate::chat_template::render_official(tpl, None, None, msgs, true, t)
+            }
+        });
+        crate::chat_template::official_or_legacy(
+            own,
+            || {
+                format_messages(&messages, Some(template_hint))
+                    .unwrap_or_else(|_| prompt.to_string())
+            },
+            config.thinking,
+        )?
     } else {
-        prompt.to_string()
+        thinking_mode(config, prompt.to_string())?
     };
 
     let tokens =
@@ -581,11 +836,134 @@ fn safetensors_arch_to_template_hint(architecture: &str, _model_name: &str) -> &
     crate::tensor_names::normalize_architecture(architecture)
 }
 
+/// #4018: at most the first `max` bytes of `s`, cut at a CHAR BOUNDARY, for a log or error line.
+///
+/// `&s[..s.len().min(max)]` panicked ("byte index N is not a char boundary") whenever byte `max`
+/// fell inside a multi-byte UTF-8 char, so `apr run -v` crashed on a non-ASCII prompt instead of
+/// answering. The cut floors to the previous boundary: at most 3 bytes short, since a char is at
+/// most 4 (the CRUX judge reads a logged prompt of >= max-3 bytes as possibly cut, #3962 B2).
+/// `str::floor_char_boundary` would do this, but is not stable at this crate's rust-version.
+pub(crate) fn log_head(s: &str, max: usize) -> &str {
+    let mut end = s.len().min(max);
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
+#[cfg(test)]
+mod log_head_4018 {
+    use super::log_head;
+
+    /// MUST-RED (#4018): `apr run -v` logs the formatted prompt's head, and a prompt whose byte 200
+    /// falls INSIDE a multi-byte char panicked ("byte index 200 is not a char boundary"). ChatML around
+    /// `x` + 80 CJK chars puts byte 200 mid-char.
+    #[test]
+    fn a_non_ascii_prompt_cut_mid_char_does_not_panic() {
+        let p = format!(
+            "<|im_start|>user\nx{}<|im_end|>\n<|im_start|>assistant\n",
+            "\u{6c34}".repeat(80)
+        );
+        assert!(
+            !p.is_char_boundary(200),
+            "the fixture must put byte 200 mid-char"
+        );
+        let head = log_head(&p, 200);
+        assert!(head.len() <= 200 && head.len() >= 197, "{}", head.len());
+        assert!(p.starts_with(head));
+    }
+
+    #[test]
+    fn ascii_and_short_inputs_are_unchanged() {
+        assert_eq!(log_head("What is 2+2?", 200), "What is 2+2?");
+        let a = "a".repeat(300);
+        assert_eq!(log_head(&a, 200).len(), 200);
+        assert_eq!(log_head("", 200), "");
+    }
+
+    /// #4018: the SITES use it -- the helper alone proves nothing if a caller still byte-slices.
+    #[test]
+    fn no_log_site_byte_slices_text_any_more() {
+        for (f, old) in [
+            (
+                "src/infer/mod.rs",
+                "&formatted_prompt[..formatted_prompt.len().min(200)]",
+            ),
+            (
+                "src/infer/inference_result.rs",
+                "&raw_text[..raw_text.len().min(200)]",
+            ),
+        ] {
+            let src = std::fs::read_to_string(format!("{}/{f}", env!("CARGO_MANIFEST_DIR")))
+                .expect("source");
+            // Scan the code ABOVE this test module: the module itself names the old pattern, and a
+            // source guard that reads its own assertion strings is satisfied by them (#3907's lesson).
+            let code = src.split("mod log_head_4018").next().unwrap_or(&src);
+            assert!(
+                !code.contains(old),
+                "{f} still slices text at a fixed byte length: {old}"
+            );
+        }
+    }
+}
+
 include!("inference_result.rs");
 include!("gguf_gpu_generate.rs");
 include!("mod_log_transformer_eos.rs");
 include!("mod_05.rs");
 include!("batch.rs");
 
+/// #3714: qwen3moe backend selection — the CUDA forward, or the CPU chain with a printed reason.
+pub mod qwen3_moe_dispatch;
 pub mod qwen3_moe_generate;
 pub mod run_report;
+
+// #3760: `apr run` on a SafeTensors model samples.
+#[cfg(test)]
+#[path = "tests_quant_label_4006.rs"]
+mod tests_quant_label_4006;
+#[cfg(test)]
+#[path = "tests_sampling_3760.rs"]
+mod tests_sampling_3760;
+// #3754: a sampling flag given alone samples (DEFAULT_TOP_K).
+#[cfg(test)]
+#[path = "tests_sampling_default_3754.rs"]
+mod tests_sampling_default_3754;
+// #4268: dense `run` and `run --batch` go through the one engine.
+#[cfg(test)]
+#[path = "tests_dense_session_4268.rs"]
+mod tests_dense_session_4268;
+
+#[cfg(test)]
+mod sibling_tokenizer_config_3990 {
+    use super::sibling_tokenizer_config;
+
+    fn with_config(json: Option<&str>) -> Option<String> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        if let Some(j) = json {
+            std::fs::write(dir.path().join("tokenizer_config.json"), j).expect("write");
+        }
+        sibling_tokenizer_config(&dir.path().join("model.safetensors"))
+    }
+
+    /// A declared template -- a string, or the list form with a `default` entry -- is the model's own;
+    /// no file, no key, an empty string or a list without `default` is not, and takes the built-in
+    /// formatter quietly (#3990: rendering and bos/eos belong to render_official_from_tokenizer_config).
+    #[test]
+    fn a_declared_template_is_found_in_both_forms_and_nothing_else_is() {
+        assert!(with_config(Some(r#"{"chat_template": "{{ messages }}"}"#)).is_some());
+        assert!(with_config(Some(
+            r#"{"chat_template": [{"name": "default", "template": "x"}]}"#
+        ))
+        .is_some());
+        for j in [
+            None,
+            Some("{}"),
+            Some(r#"{"chat_template": ""}"#),
+            Some(r#"{"chat_template": [{"name": "tool_use", "template": "x"}]}"#),
+            Some("not json"),
+        ] {
+            assert!(with_config(j).is_none(), "{j:?}");
+        }
+    }
+}
