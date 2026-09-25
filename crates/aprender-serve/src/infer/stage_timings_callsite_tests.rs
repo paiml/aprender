@@ -5,8 +5,9 @@
 //! hand-rolled wiring in `run_gguf_inference` slept OUTSIDE the measured window, and every helper
 //! test stayed green. So every case here goes through [`run_inference`] on a real GGUF file, once
 //! per planted stage. It asserts the plant moves ITS field by at least the plant, and moves no
-//! other field (`unattributed_ms` included) by more than [`TOL_MS`], measured against a clean
-//! baseline run of the same model.
+//! other field (`unattributed_ms` included) by more than its tolerance, measured against a clean
+//! baseline run of the same model. The CPU legs use the fixed [`TOL_MS`]; the GPU legs widen each
+//! field's tolerance by the noise it showed across clean runs (see [`Band`], #4105).
 //!
 //! What each path CAN measure, and where each case runs:
 //! - CPU (dense or qwen35): only `load`. Every other plant has no site on this path, so it must
@@ -68,6 +69,73 @@ fn field(s: &StageTimings, name: &str) -> Option<f64> {
     }
 }
 
+/// How many clean runs a GPU leg measures its noise from (after a warm-up it discards).
+const CLEAN_RUNS: usize = 4;
+/// A field's tolerance on a GPU leg is [`TOL_MS`] plus this many times the spread it showed across
+/// the clean runs. The spread of a handful of samples underestimates the true range, hence > 1.
+const NOISE_MARGIN: f64 = 2.0;
+/// The plant is at least this many times the widest tolerance, so a plant in the WRONG field
+/// still moves that field far outside its band.
+const PLANT_OVER_TOL: f64 = 3.0;
+
+/// What one plant is judged against: the size of the plant, and how far each field may move on
+/// noise alone.
+///
+/// #4105: a fixed [`TOL_MS`] cannot hold on the GPU legs. The F2 guard's CPU reference forward
+/// runs on every qwen35 run (the receipt is forced fresh), and on a loaded host `validate_ms`
+/// varied by ~2 s and `load_ms` by ~1 s between CLEAN runs. That is above both the tolerance and
+/// the 1000 ms plant, so every plant read as misattribution. The band is therefore MEASURED:
+/// each field's spread across clean runs widens its tolerance, and the plant grows with the
+/// widest tolerance so attribution stays unambiguous.
+#[derive(Debug, Clone)]
+struct Band {
+    plant_ms: u64,
+    tol_ms: [f64; FIELDS.len()],
+}
+
+impl Band {
+    /// The CPU legs and the checker's own tests: the stated constants, with no measurement.
+    fn fixed() -> Self {
+        Band {
+            plant_ms: PLANT_MS,
+            tol_ms: [TOL_MS; FIELDS.len()],
+        }
+    }
+
+    /// Sized from clean runs of the SAME model on the SAME host.
+    fn measured(clean: &[StageTimings]) -> Self {
+        let mut tol_ms = [TOL_MS; FIELDS.len()];
+        for (tol, f) in tol_ms.iter_mut().zip(FIELDS) {
+            let seen: Vec<f64> = clean.iter().filter_map(|s| field(s, f)).collect();
+            let lo = seen.iter().copied().fold(f64::INFINITY, f64::min);
+            let hi = seen.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            if hi >= lo {
+                *tol = TOL_MS + NOISE_MARGIN * (hi - lo);
+            }
+        }
+        let widest = tol_ms.iter().copied().fold(TOL_MS, f64::max);
+        // Round up to whole half-seconds so the plant spec in the log reads cleanly.
+        let wanted = (PLANT_OVER_TOL * widest / 500.0).ceil() as u64 * 500;
+        Band {
+            plant_ms: PLANT_MS.max(wanted),
+            tol_ms,
+        }
+    }
+
+    fn tol(&self, name: &str) -> f64 {
+        let i = FIELDS
+            .iter()
+            .position(|f| *f == name)
+            .unwrap_or_else(|| panic!("unknown field {name}"));
+        self.tol_ms[i]
+    }
+
+    /// The wall clock is not a field; it may move by as much as the noisiest field.
+    fn widest(&self) -> f64 {
+        self.tol_ms.iter().copied().fold(TOL_MS, f64::max)
+    }
+}
+
 /// The field a stage's plant must move, plus the parent it is nested inside (a plant in a
 /// validate HALF is inside `validate_ms` too, and moving it is not misattribution).
 fn target(stage: &str) -> (&'static str, Option<&'static str>) {
@@ -83,13 +151,15 @@ fn target(stage: &str) -> (&'static str, Option<&'static str>) {
     }
 }
 
-/// `Ok` when the plant for `stage` moved its own field by `>= PLANT_MS`, and no other field by
-/// more than `TOL_MS`. `Err` names the stage and each field that broke the rule.
+/// `Ok` when the plant for `stage` moved its own field by at least the band's plant, and no other
+/// field by more than that field's tolerance. `Err` names the stage and each field that broke the rule.
 fn plant_lands_in_its_stage(
     stage: &str,
+    band: &Band,
     base: &StageTimings,
     planted: &StageTimings,
 ) -> Result<(), String> {
+    let plant = band.plant_ms;
     let (own, parent) = target(stage);
     let mut why = Vec::new();
     match (field(base, own), field(planted, own)) {
@@ -99,14 +169,16 @@ fn plant_lands_in_its_stage(
             // is exact: the sleep is inside the window or it is not. And against the baseline it must
             // move by the plant, less the same run-to-run jitter every other field is allowed
             // (measured: 249.8 ms on a then-250 ms plant, the unslept part of load varying by 0.2 ms).
-            if p < PLANT_MS as f64 {
+            if p < plant as f64 {
                 why.push(format!(
-                    "{own} is {p:.1} ms, less than the {PLANT_MS} ms plant it must contain"
+                    "{own} is {p:.1} ms, less than the {plant} ms plant it must contain"
                 ));
             }
             let moved = p - b.unwrap_or(0.0);
-            if moved < PLANT_MS as f64 - TOL_MS {
-                why.push(format!("{own} moved {moved:.1} ms against the baseline, less than the {PLANT_MS} ms plant"));
+            if moved < plant as f64 - band.tol(own) {
+                why.push(format!(
+                    "{own} moved {moved:.1} ms against the baseline, less than the {plant} ms plant"
+                ));
             }
         },
     }
@@ -115,8 +187,12 @@ fn plant_lands_in_its_stage(
             continue;
         }
         match (field(base, f), field(planted, f)) {
-            (Some(b), Some(p)) if (p - b).abs() > TOL_MS => {
-                why.push(format!("{f} moved {:.1} ms (tolerance {TOL_MS} ms)", p - b));
+            (Some(b), Some(p)) if (p - b).abs() > band.tol(f) => {
+                why.push(format!(
+                    "{f} moved {:.1} ms (tolerance {:.0} ms)",
+                    p - b,
+                    band.tol(f)
+                ));
             },
             (None, Some(p)) => {
                 why.push(format!("{f} appeared ({p:.1} ms) only in the planted run"));
@@ -128,21 +204,23 @@ fn plant_lands_in_its_stage(
     if why.is_empty() {
         Ok(())
     } else {
-        Err(format!("plant `{stage}:{PLANT_MS}`: {}", why.join("; ")))
+        Err(format!("plant `{stage}:{plant}`: {}", why.join("; ")))
     }
 }
 
 /// `Ok` when a plant for a stage this PATH has no site for lands nowhere: no field moves past
-/// `TOL_MS`, and the wall clock does not grow by the plant (it did not sleep somewhere unmeasured).
+/// its tolerance, and the wall clock does not grow by the plant (it did not sleep somewhere unmeasured).
 fn plant_lands_nowhere(
     stage: &str,
+    band: &Band,
     base: &StageTimings,
     planted: &StageTimings,
 ) -> Result<(), String> {
+    let plant = band.plant_ms;
     let mut why = Vec::new();
     for f in FIELDS {
         match (field(base, f), field(planted, f)) {
-            (Some(b), Some(p)) if (p - b).abs() > TOL_MS => {
+            (Some(b), Some(p)) if (p - b).abs() > band.tol(f) => {
                 why.push(format!("{f} moved {:.1} ms", p - b));
             },
             (None, Some(_)) => why.push(format!("{f} appeared")),
@@ -151,7 +229,7 @@ fn plant_lands_nowhere(
         }
     }
     let grew = planted.wall_ms.unwrap_or(0.0) - base.wall_ms.unwrap_or(0.0);
-    if grew > TOL_MS {
+    if grew > band.widest() {
         why.push(format!(
             "wall grew {grew:.1} ms: the plant slept somewhere this path does not measure"
         ));
@@ -160,14 +238,14 @@ fn plant_lands_nowhere(
         Ok(())
     } else {
         Err(format!(
-            "plant `{stage}:{PLANT_MS}` on a path with no {stage} site: {}",
+            "plant `{stage}:{plant}` on a path with no {stage} site: {}",
             why.join("; ")
         ))
     }
 }
 
-fn run(config: &InferenceConfig, plant: Option<&str>) -> StageTimings {
-    let spec = plant.map(|s| format!("{s}:{PLANT_MS}"));
+fn run(config: &InferenceConfig, plant: Option<(&str, u64)>) -> StageTimings {
+    let spec = plant.map(|(s, ms)| format!("{s}:{ms}"));
     let stages = with_delay(spec.as_deref(), || {
         run_inference(config).expect("the fixture must run").stages
     });
@@ -224,8 +302,9 @@ fn cpu_a_load_plant_moves_load_and_only_load() {
     let (_f, config) = cpu_fixture();
     let _warm = run(&config, None);
     let base = run(&config, None);
-    let planted = run(&config, Some("load"));
-    plant_lands_in_its_stage("load", &base, &planted).unwrap_or_else(|e| panic!("{e}"));
+    let band = Band::fixed();
+    let planted = run(&config, Some(("load", band.plant_ms)));
+    plant_lands_in_its_stage("load", &band, &base, &planted).unwrap_or_else(|e| panic!("{e}"));
 }
 
 /// Every stage the CPU path has no site for: its plant must land NOWHERE. A plant that moved
@@ -235,6 +314,7 @@ fn cpu_plants_for_stages_the_cpu_path_cannot_measure_land_nowhere() {
     let (_f, config) = cpu_fixture();
     let _warm = run(&config, None);
     let base = run(&config, None);
+    let band = Band::fixed();
     let mut broke = Vec::new();
     for stage in [
         "h2d",
@@ -244,7 +324,8 @@ fn cpu_plants_for_stages_the_cpu_path_cannot_measure_land_nowhere() {
         "prefill",
         "decode",
     ] {
-        if let Err(e) = plant_lands_nowhere(stage, &base, &run(&config, Some(stage))) {
+        let planted = run(&config, Some((stage, band.plant_ms)));
+        if let Err(e) = plant_lands_nowhere(stage, &band, &base, &planted) {
             broke.push(e);
         }
     }
@@ -266,26 +347,29 @@ fn the_checker_rejects_a_plant_attributed_to_a_neighbour_or_to_nobody() {
         wall_ms: Some(46.0),
         ..StageTimings::default()
     };
-    let plant = PLANT_MS as f64;
+    let band = Band::fixed();
+    let plant = band.plant_ms as f64;
     // correct: h2d moved by the plant
     let good = StageTimings {
         h2d_ms: Some(10.0 + plant),
         ..base.clone()
     };
-    assert!(plant_lands_in_its_stage("h2d", &base, &good).is_ok());
+    assert!(plant_lands_in_its_stage("h2d", &band, &base, &good).is_ok());
     // misattributed to the neighbour
     let neighbour = StageTimings {
         validate_ms: Some(20.0 + plant),
         ..base.clone()
     };
-    let e = plant_lands_in_its_stage("h2d", &base, &neighbour).expect_err("neighbour must be RED");
+    let e = plant_lands_in_its_stage("h2d", &band, &base, &neighbour)
+        .expect_err("neighbour must be RED");
     assert!(e.contains("h2d") && e.contains("validate_ms moved"), "{e}");
     // attributed to nobody: the residual took it (the load bug)
     let nobody = StageTimings {
         unattributed_ms: Some(1.0 + plant),
         ..base.clone()
     };
-    let e = plant_lands_in_its_stage("load", &base, &nobody).expect_err("residual must be RED");
+    let e =
+        plant_lands_in_its_stage("load", &band, &base, &nobody).expect_err("residual must be RED");
     assert!(
         e.contains("load_ms is 5.0 ms") && e.contains("unattributed_ms moved"),
         "{e}"
@@ -296,15 +380,67 @@ fn the_checker_rejects_a_plant_attributed_to_a_neighbour_or_to_nobody() {
         validate_ms: Some(20.0 + plant),
         ..base.clone()
     };
-    assert!(plant_lands_in_its_stage("validate_ref", &base, &half).is_ok());
+    assert!(plant_lands_in_its_stage("validate_ref", &band, &base, &half).is_ok());
     // a sleep on a path with no site that still grew the wall clock is RED
     let hidden = StageTimings {
         unattributed_ms: Some(1.0 + plant),
         wall_ms: Some(46.0 + plant),
         ..base.clone()
     };
-    assert!(plant_lands_nowhere("prefill", &base, &hidden).is_err());
-    assert!(plant_lands_nowhere("prefill", &base, &base.clone()).is_ok());
+    assert!(plant_lands_nowhere("prefill", &band, &base, &hidden).is_err());
+    assert!(plant_lands_nowhere("prefill", &band, &base, &base.clone()).is_ok());
+}
+
+/// #4105: a measured band follows the noise it was given. A field that jittered by 2 s on
+/// clean runs gets a tolerance above 2 s, a quiet field keeps [`TOL_MS`], and the plant grows so
+/// that a plant in the WRONG field is still rejected.
+#[test]
+fn a_measured_band_widens_only_the_noisy_fields_and_still_rejects_a_neighbour() {
+    let clean = |validate: f64, load: f64| StageTimings {
+        load_ms: Some(load),
+        h2d_ms: Some(10.0),
+        validate_ms: Some(validate),
+        prefill_ms: Some(3.0),
+        decode_ms: Some(7.0),
+        unattributed_ms: Some(1.0),
+        wall_ms: Some(validate + load + 21.0),
+        ..StageTimings::default()
+    };
+    let runs = [
+        clean(15_000.0, 900.0),
+        clean(17_000.0, 1_900.0),
+        clean(16_000.0, 1_200.0),
+    ];
+    let band = Band::measured(&runs);
+    assert_eq!(
+        band.tol("h2d_ms"),
+        TOL_MS,
+        "a quiet field keeps the fixed tolerance"
+    );
+    assert!(band.tol("validate_ms") > 2_000.0, "{band:?}");
+    assert!(band.tol("load_ms") > 1_000.0, "{band:?}");
+    let plant = band.plant_ms as f64;
+    assert!(
+        plant >= PLANT_OVER_TOL * band.tol("validate_ms"),
+        "{band:?}"
+    );
+
+    let base = &runs[2];
+    // noise alone inside the band, plus a correct h2d plant: GREEN
+    let noisy_good = StageTimings {
+        h2d_ms: Some(10.0 + plant),
+        validate_ms: Some(17_500.0),
+        load_ms: Some(500.0),
+        ..base.clone()
+    };
+    plant_lands_in_its_stage("h2d", &band, base, &noisy_good).unwrap_or_else(|e| panic!("{e}"));
+    // the same plant landing in validate instead: RED, even on the noisiest field
+    let neighbour = StageTimings {
+        validate_ms: Some(16_000.0 + plant),
+        ..base.clone()
+    };
+    let e = plant_lands_in_its_stage("h2d", &band, base, &neighbour).expect_err("neighbour");
+    assert!(e.contains("validate_ms moved"), "{e}");
 }
 
 /// The GPU legs share one driver: every stage `stages` names, each through the real CUDA path,
@@ -318,20 +454,25 @@ fn cuda_leg(env_var: &str, want_backend: &str, stages: &[&str]) {
         .with_max_tokens(4)
         .with_temperature(0.0);
     let _warm = run(&config, None);
-    let base = run(&config, None);
-    assert_eq!(
-        base.backend, want_backend,
-        "the clean run did not stay on {want_backend}: {base:?}"
-    );
+    let clean: Vec<StageTimings> = (0..CLEAN_RUNS).map(|_| run(&config, None)).collect();
+    for c in &clean {
+        assert_eq!(
+            c.backend, want_backend,
+            "a clean run did not stay on {want_backend}: {c:?}"
+        );
+    }
+    let band = Band::measured(&clean);
+    eprintln!("[4105] {want_backend} band from {CLEAN_RUNS} clean runs: {band:?}");
+    let base = &clean[CLEAN_RUNS - 1];
     let mut broke = Vec::new();
     for stage in stages {
-        let planted = run(&config, Some(stage));
+        let planted = run(&config, Some((stage, band.plant_ms)));
         if planted.backend != want_backend {
             broke.push(format!(
                 "plant `{stage}`: the run fell back to {}",
                 planted.backend
             ));
-        } else if let Err(e) = plant_lands_in_its_stage(stage, &base, &planted) {
+        } else if let Err(e) = plant_lands_in_its_stage(stage, &band, base, &planted) {
             broke.push(e);
         }
     }
