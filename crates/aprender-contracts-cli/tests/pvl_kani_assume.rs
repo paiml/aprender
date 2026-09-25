@@ -212,6 +212,22 @@ fn the_lean_arms_are_refused_with_kani() {
         "--strict",
     ]);
     assert_eq!(rc, 2, "clap usage error expected: {out}");
+    for extra in [["--lake-timeout", "5"], ["--contracts", "contracts"]] {
+        let mut args = vec![
+            "discharge",
+            "check",
+            "--kani",
+            "crates",
+            "--baseline",
+            "contracts/kani-assume-baseline.json",
+        ];
+        args.extend(extra);
+        let (rc, out) = fx.pv(&args);
+        assert_eq!(
+            rc, 2,
+            "{extra:?} with --kani must be refused, not ignored: {out}"
+        );
+    }
     let (rc, out) = fx.pv(&["discharge", "check", "--kani", "crates"]);
     assert_eq!(rc, 2, "--kani without --baseline: {out}");
 }

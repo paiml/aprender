@@ -529,7 +529,8 @@ pub enum DischargeAction {
         contracts: PathBuf,
         /// Judge the `kani::assume` ratchet over this source tree instead of a Lean dir
         #[arg(long, requires = "baseline", conflicts_with_all = [
-            "lean_dir", "no_lake", "strict", "validate_formalization", "leanchecker", "comparator",
+            "lean_dir", "contracts", "no_lake", "strict", "validate_formalization", "leanchecker", "comparator",
+            "lake_timeout",
         ])]
         kani: Option<PathBuf>,
         /// `--kani`'s committed baseline, `{command, total, files: {path: n}}`
