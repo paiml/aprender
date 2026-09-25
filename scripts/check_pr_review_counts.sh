@@ -165,9 +165,12 @@ derive_arm4_rows() {
 derive_signer_rows() {
     local root=$1 n
     [ -f "$root/scripts/pr_review_sign_receipt.sh" ] || return 1
-    # seven `row` calls plus the one hand-rolled residue check the table also counts
+    # the `row` calls plus every hand-rolled check: each bumps pass_n itself, and
+    # one of those bumps is row()'s own, so it is not a check of its own
+    local hand
     n=$(grep -cE "^    row '" "$root/scripts/pr_review_sign_receipt.sh")
-    n=$((n + 1))
+    hand=$(grep -cF 'pass_n=$((pass_n + 1))' "$root/scripts/pr_review_sign_receipt.sh")
+    n=$((n + hand - 1))
     [ "$n" -gt 0 ] || return 1
     printf '%s\n' "$n"
 }
