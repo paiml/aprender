@@ -322,6 +322,13 @@ jobs:
             fi
           done
           MUT=$(res "$X86" mutants)
+          # --- GATE-MUTANTS-RULE-BEGIN (#3676; scripts/check_ci_gate_mutants_rule.sh runs this block) ---
+          # `skipped` is a pass ONLY when the skip is the job's own filter:
+          # mutants declares `if: github.event_name == 'pull_request'`, so on every
+          # other event it is skipped by design. On a pull_request it must have RUN
+          # and succeeded -- a diff with no .rs still succeeds (its steps skip, the
+          # job passes), so a pull_request `skipped` or `cancelled` means the job
+          # never ran, and the old rule ("success/skipped both pass") passed that.
           case "$EVT:$MUT" in
             pull_request:success) echo "mutants result: success on a pull_request" ;;
             pull_request:*) echo "mutants on a pull_request must succeed; got '$MUT' -- a skip here is not the job's filter"; exit 1 ;;
@@ -329,4 +336,5 @@ jobs:
             *:success) echo "mutants result: success on $EVT" ;;
             *) echo "mutants (diff-scoped mutation) on $EVT: $MUT"; exit 1 ;;
           esac
+          # --- GATE-MUTANTS-RULE-END ---
           echo "All required sections passed"
