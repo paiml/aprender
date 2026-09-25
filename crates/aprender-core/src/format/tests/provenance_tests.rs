@@ -176,10 +176,15 @@ fn falsify_ship_009_apr_metadata_applies_to_model_1_teacher() {
 /// binding or downgrade the discharge marker, this test fails.
 #[test]
 fn falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker() {
-    const CONTRACT_YAML: &str = include_str!("../../../../../contracts/apr-provenance-v1.yaml");
+    let Some(contract_yaml) = provable_contracts::workspace_file_or_skip!(
+        "falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker",
+        "contracts/apr-provenance-v1.yaml"
+    ) else {
+        return;
+    };
 
-    let doc: serde_yaml::Value =
-        serde_yaml::from_str(CONTRACT_YAML).expect("apr-provenance-v1.yaml must parse as YAML");
+    let doc: serde_yaml::Value = serde_yaml::from_str(contract_yaml.as_str())
+        .expect("apr-provenance-v1.yaml must parse as YAML");
 
     let gates = doc["gates"]
         .as_sequence()
