@@ -478,7 +478,11 @@ self_test() {
         # it the fixture PR numbers grandfather out and six rows silently pass on the
         # cutoff branch instead of the branch they name. A per-row override still wins:
         # a later `env VAR=VAL` beats an earlier one.
-        env PR_NUMBER="$pr" PR_HEAD_SHA="$subject" PR_REVIEW_CUTOFF=0 PR_REVIEW_LEGACY_BELOW=0 "$@" \
+        # The -u's: the self-test runs INSIDE the merge_group job too, and an
+        # inherited GITHUB_EVENT_NAME=merge_group turned every branch row into a
+        # queue row - four rows RED on #4426's own queue run. A row names its event.
+        env -u GITHUB_EVENT_NAME -u PR_REVIEW_SUBJECT_KIND -u PR_REVIEW_NOW \
+            -u PR_REVIEW_LEGACY_UNTIL PR_NUMBER="$pr" PR_HEAD_SHA="$subject" PR_REVIEW_CUTOFF=0 PR_REVIEW_LEGACY_BELOW=0 "$@" \
             bash "$tree/scripts/check_pr_review_arm4.sh" >/dev/null 2>&1 || got=$?
         if [ "$got" -eq "$want" ]; then
             printf 'ok    %-28s rc=%s  %s\n' "$id" "$got" "$desc"

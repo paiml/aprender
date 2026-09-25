@@ -21888,3 +21888,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'Merge-queue eval (Y5): head/ancestor binding 0/6, tree 4/6, patch-id 6/6. Root cause shared with ASL-00 (sessions == admin identity); cross-link pi-21 ASL-00a.'
+- id: PMAT-4453
+  github_issue: 4453
+  item_type: task
+  title: 'Arm 4 self-test inherits GITHUB_EVENT_NAME: four rows RED inside the merge_group job (FLOW-04 follow-up)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-ont
+  created: 2026-09-25 20:00:00+00:00
+  updated: '2026-09-25T20:00:00Z'
+  spec: docs/specifications/PR-REVIEW-SKILL-002-v2.md
+  acceptance_criteria:
+  - 'every self-test row runs with GITHUB_EVENT_NAME, PR_REVIEW_SUBJECT_KIND, PR_REVIEW_NOW and PR_REVIEW_LEGACY_UNTIL unset; a row that needs an event names it'
+  - 'self-test is 23/23 with the ambient event empty, merge_group and pull_request_target, and RED under merge_group without the fix'
+  - 'no change to the verdict logic of Arm 4 itself'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'pr-review-quorum run 36177378373 (merge_group, 00058476c = #4426 queue squash) failed on receipt-reviews-ancestor, legacy-exempt-in-window, legacy-exempt-not-ancestor, legacy-two-last-stale. Parent PMAT-4421.'
