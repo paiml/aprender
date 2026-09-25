@@ -37,3 +37,4 @@ pub mod receipt;
 pub mod score;
 pub mod secret;
 pub mod stats;
+pub mod terms;
