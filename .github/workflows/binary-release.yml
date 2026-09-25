@@ -600,6 +600,18 @@ jobs:
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
+      # #4110/#4290 parity with the linux apr lanes: without this an rc darwin asset prints
+      # bare X.Y.Z. Stamper and checker come from THIS workflow's commit, not the tag's tree.
+      - name: Stamp the rc version into the tag tree (#4110)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git fetch --no-tags --depth 1 origin "$GITHUB_WORKFLOW_SHA"
+          git show "FETCH_HEAD:scripts/release/stamp_rc_version.sh" > "$RUNNER_TEMP/stamp_rc_version.sh"
+          git show "FETCH_HEAD:scripts/release/asset_version_check.sh" > "$RUNNER_TEMP/asset_version_check.sh"
+          case "$TAG" in *-rc.*) ;; *) echo "final tag $TAG: nothing to stamp"; exit 0 ;; esac
+          bash "$RUNNER_TEMP/stamp_rc_version.sh" "$GITHUB_WORKSPACE" "$TAG"
+
       # The first thing this box does after it has a tree: fail fast on a missing tool.
       - name: Preflight - this box has the tools this job assumes
         run: |
@@ -631,7 +643,10 @@ jobs:
           file "$BIN" | grep -q 'arm64' || { echo "::error::$BIN is not arm64: $(file "$BIN")"; exit 1; }
           MINOS=$(otool -l "$BIN" | awk '/LC_BUILD_VERSION/{f=1} f&&$1=="minos"{print $2; exit}')
           echo "- minimum macOS (LC_BUILD_VERSION minos): ${MINOS:-unknown}" >> "$GITHUB_STEP_SUMMARY"
-          "$BIN" --version
+          v=$("$BIN" --version | head -1); echo "$v"
+          # #4275: the asset names its tag's X.Y.Z(-rc.N) and the tag's commit, as smoke-cpu/cuda require.
+          TAG="${{ steps.tag.outputs.tag }}"; COMMIT=$(git rev-parse HEAD)
+          bash "$RUNNER_TEMP/asset_version_check.sh" "$TAG" "$COMMIT" "$v" || { echo "::error::asset reports '$v', which does not belong to $TAG ($COMMIT)"; exit 1; }
 
       - name: Package archive
         id: package
