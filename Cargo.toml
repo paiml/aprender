@@ -33,6 +33,8 @@ members = [
     "crates/aprender-contracts",
     "crates/aprender-contracts-macros",
     "crates/aprender-contracts-cli",
+    # EPIC #4232: shared update check + `<bin> update` for every sovereign binary.
+    "crates/aprender-update",
     # --- APR-MONO Phase 2c: was realizar (inference server) ---
     "crates/aprender-serve",
     # --- APR-MONO Phase 2d: was entrenar (training) ---
@@ -313,6 +315,7 @@ aprender-qa-cli = { path = "crates/aprender-qa-cli", version = "0.69.4" }
 aprender-cgp = { path = "crates/aprender-cgp", version = "0.69.4" }
 aprender-contrastive-data = { path = "crates/aprender-contrastive-data", version = "0.69.4" }
 aprender-contracts-cli = { path = "crates/aprender-contracts-cli", version = "0.69.4" }
+aprender-update = { path = "crates/aprender-update", version = "0.69.4" }
 aprender-data = { path = "crates/aprender-data", version = "0.69.4" }
 
 # Additional external deps needed by sub-crates

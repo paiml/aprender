@@ -1,0 +1,17 @@
+# #4160: the claim shape lives in a contract with no entity type, so it is a focus of neither shape.
+name: claim-shape
+version: "1.0.0"
+status: active
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: fixture
+  description: the closed shape every per-row claim contract satisfies
+shape:
+  targetClass: entity:claim
+  closed: true
+  ignoredProperties: [ont:id, ont:file, ont:name, ont:version, ont:status, ont:kind, ont:entityType, ont:entityRef]
+  properties:
+    - {path: claim:row, minCount: 1, maxCount: 1, pattern: "^EV-[0-9]+[a-z]?$"}
