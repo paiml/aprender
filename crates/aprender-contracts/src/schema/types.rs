@@ -889,6 +889,11 @@ pub enum KaniStrategy {
     StubFloat,
     Compositional,
     BoundedInt,
+    /// Symbolic IEEE-754 `f32` over a bounded window, each element assumed
+    /// `is_finite()` and within a magnitude bound. Transcendentals are NOT
+    /// stubbed: the proof discharges the real float arithmetic. Contrast
+    /// `stub_float`, which axiomatizes exp/log/sin/cos (#2530).
+    BoundedFloat,
 }
 
 impl std::fmt::Display for KaniStrategy {
@@ -898,6 +903,7 @@ impl std::fmt::Display for KaniStrategy {
             Self::StubFloat => "stub_float",
             Self::Compositional => "compositional",
             Self::BoundedInt => "bounded_int",
+            Self::BoundedFloat => "bounded_float",
         };
         write!(f, "{s}")
     }

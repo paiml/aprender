@@ -238,6 +238,7 @@ fn strategy_explanation_all_variants() {
     assert!(strategy_explanation("stub_float").contains("transcendentals"));
     assert!(strategy_explanation("compositional").contains("sub-kernels"));
     assert!(strategy_explanation("bounded_int").contains("integer-only"));
+    assert!(strategy_explanation("bounded_float").contains("no stubs"));
     assert!(strategy_explanation("unknown_strategy").contains("bounded model check"));
     assert!(strategy_explanation("").contains("bounded model check"));
 }
