@@ -38,7 +38,18 @@
 # base64-decode to a non-empty file" tells the reader where to look and
 # "minisign -S failed (rc 1)" does not. Recording the distinction so nobody reads
 # "8 rows" as "8 independently killable rules" - which is the exact overclaim §6.4
-# exists to prevent.
+# exists to prevent. (#4421 added six patch-id rows; the table is 14 rows now.)
+#
+# IT STAMPS THE DIFF PATCH-ID BEFORE IT SIGNS (#4421). The merge queue lands a PR as a
+# one-parent squash, so the reviewed head_sha is never an ancestor of the queue sha and
+# a head binding verifies 0 of 6 queue merges. Before signing, this computes the
+# `git patch-id --verbatim` of the pinned diff predicate.base_sha..predicate.head_sha
+# (excluding evidence/pr-review/<pr>/, scripts/lib/pr_review_patch_id.sh) and writes it
+# into predicate.diff_patch_id with predicate.diff_patch_id_algo. The signature then
+# covers it, and Arm 4 recomputes it from the subject. FAILS CLOSED: a predicate with
+# no pr/base_sha/head_sha, a commit this checkout cannot resolve, an empty diff, or an
+# author-supplied diff_patch_id that disagrees with the computed one is exit 1, and
+# nothing is signed.
 #
 # USAGE
 #   pr_review_sign_receipt.sh <receipt-dir>
@@ -48,6 +59,7 @@
 #   PR_REVIEW_SIGNING_KEY_B64  base64 of the minisign secret-key FILE (required)
 #   PR_REVIEW_SIGNING_PASSWORD passphrase, or empty for a `-W` (unencrypted) key
 #   PR_REVIEW_PUBKEY           public key to verify against (default .github/pr-review.pub)
+#   PR_REVIEW_GIT_DIR          repository the patch-id is computed in (default: this one)
 #
 # EXIT
 #   0  receipt.intoto.jsonl.minisig exists and VERIFIES under the public key
@@ -59,6 +71,8 @@ set -uo pipefail
 PROG=${0##*/}
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$HERE/.." && pwd)
+# shellcheck source=scripts/lib/pr_review_patch_id.sh
+. "$HERE/lib/pr_review_patch_id.sh" || { echo "$PROG: ENV - cannot source lib/pr_review_patch_id.sh" >&2; exit 2; }
 PUBKEY=${PR_REVIEW_PUBKEY:-$REPO_ROOT/.github/pr-review.pub}
 
 WORK=''
@@ -80,6 +94,39 @@ trap cleanup EXIT
 die_env() { echo "$PROG: ENV - $*" >&2; exit 2; }
 fail()    { echo "$PROG: FAIL - $*" >&2; exit 1; }
 
+# stamp_patch_id <receipt> <workdir> - write predicate.diff_patch_id, or refuse.
+stamp_patch_id() {
+    local rcpt=$1 work=$2 gd=${PR_REVIEW_GIT_DIR:-$REPO_ROOT} pr base head pid have rc=0
+    command -v jq  >/dev/null 2>&1 || die_env "jq is not on PATH"
+    command -v git >/dev/null 2>&1 || die_env "git is not on PATH"
+    [ "$(wc -l < "$rcpt")" -eq 1 ] \
+      || fail "$rcpt is not exactly one JSON line; the patch-id is written into ONE statement"
+    pr=$(jq -r '.predicate.pr // empty' "$rcpt" 2>/dev/null)
+    base=$(jq -r '.predicate.base_sha // empty' "$rcpt" 2>/dev/null)
+    head=$(jq -r '.predicate.head_sha // empty' "$rcpt" 2>/dev/null)
+    [ -n "$pr" ] && [ -n "$base" ] && [ -n "$head" ] \
+      || fail "predicate lacks pr, base_sha or head_sha; the receipt binds the diff base_sha..head_sha and there is none to bind (#4421)"
+    pid=$(prpid_compute "$gd" "$base" "$head" "$pr") || rc=$?
+    case "$rc" in
+      0) ;;
+      2) die_env "cannot compute a patch-id on this box (no git patch-id --verbatim, no python3)" ;;
+      *) fail "no patch-id for $base..$head in $gd (unresolvable commit or empty diff); an unbindable receipt is not signed (#4421)" ;;
+    esac
+    have=$(jq -r '.predicate.diff_patch_id // empty' "$rcpt" 2>/dev/null)
+    if [ -n "$have" ]; then
+        [ "$have" = "$pid" ] \
+          || fail "the receipt carries diff_patch_id $have but $base..$head computes $pid; the author reviewed a different diff (#4421)"
+        echo "BOUND   diff_patch_id $pid (already in the receipt, recomputed and equal)"
+        return 0
+    fi
+    jq -c --arg p "$pid" --arg a "$PRPID_ALGO" \
+        '.predicate.diff_patch_id = $p | .predicate.diff_patch_id_algo = $a' \
+        "$rcpt" > "$work/stamped.jsonl" && [ -s "$work/stamped.jsonl" ] \
+      || fail "jq could not write diff_patch_id into $rcpt"
+    cat "$work/stamped.jsonl" > "$rcpt" || fail "could not rewrite $rcpt"
+    echo "BOUND   diff_patch_id $pid ($base..$head, evidence/pr-review/$pr/ excluded)"
+}
+
 sign_receipt() {
     local dir=$1 rcpt sig keyfile rc=0
     rcpt="$dir/receipt.intoto.jsonl"
@@ -97,6 +144,7 @@ sign_receipt() {
 
     WORK=$(mktemp -d -t prsign.XXXXXX) || die_env "cannot create a temp dir"
     chmod 700 "$WORK"
+    stamp_patch_id "$rcpt" "$WORK"
     keyfile="$WORK/minisign.key"
 
     printf '%s' "$PR_REVIEW_SIGNING_KEY_B64" | base64 -d > "$keyfile" 2>/dev/null
@@ -144,8 +192,24 @@ self_test() {
     printf '\n\n' | minisign -G -W -p "$td/b.pub" -s "$td/b.key" >/dev/null 2>&1
     [ -f "$td/a.key" ] && [ -f "$td/b.pub" ] || die_env "could not generate throwaway keys"
 
-    mkdir -p "$td/r"
-    printf '{"_type":"https://in-toto.io/Statement/v1"}\n' > "$td/r/receipt.intoto.jsonl"
+    # A two-commit repository, so the receipt has a real base_sha..head_sha to bind.
+    local g="$td/g" base head
+    git init -q "$g" || die_env "git init"
+    printf 'one\n' > "$g/f"
+    git -C "$g" add f && git -C "$g" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null commit -qm base \
+      || die_env "fixture commit"
+    base=$(git -C "$g" rev-parse HEAD)
+    printf 'two\n' > "$g/f"
+    git -C "$g" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null commit -qam head || die_env "fixture commit"
+    head=$(git -C "$g" rev-parse HEAD)
+    mk_rcpt() { # dir base head [diff_patch_id]
+        mkdir -p "$1"
+        jq -cn --arg b "$2" --arg h "$3" --arg p "${4:-}" \
+          '{"_type":"https://in-toto.io/Statement/v1","predicate":{"pr":7,"base_sha":$b,"head_sha":$h}}
+           | if $p != "" then .predicate.diff_patch_id = $p else . end' > "$1/receipt.intoto.jsonl"
+    }
+    mk_rcpt "$td/r" "$base" "$head"
+    export PR_REVIEW_GIT_DIR="$g"
 
     row() { # desc expect env-b64 pubkey dir
         local desc=$1 expect=$2 b=$3 pk=$4 d=$5 rc=0 out
@@ -175,9 +239,36 @@ self_test() {
     row 'a directory with no receipt is refused'         FAIL "$b64"        "$td/a.pub" "$td/empty"
     row 'a missing directory is refused'                 FAIL "$b64"        "$td/a.pub" "$td/absent"
 
+    # #4421 - the diff patch-id is stamped, signed, and fails closed.
+    local want got
+    want=$(prpid_compute "$g" "$base" "$head" 7)
+    got=$(jq -r '.predicate.diff_patch_id // empty' "$td/r/receipt.intoto.jsonl")
+    if [ -n "$want" ] && [ "$got" = "$want" ]; then
+        printf 'ok   %s\n' 'the signed receipt carries the diff patch-id of base_sha..head_sha'; pass_n=$((pass_n + 1))
+    else
+        printf 'FAIL %s (want %s, got %s)\n' 'the signed receipt carries the diff patch-id of base_sha..head_sha' "$want" "$got"
+        fails=$((fails + 1))
+    fi
+    mk_rcpt "$td/nohead" "$base" ""
+    row 'a predicate with no head_sha is refused (nothing to bind)' FAIL "$b64" "$td/a.pub" "$td/nohead"
+    mk_rcpt "$td/unres" "$base" "0123456789012345678901234567890123456789"
+    row 'a head_sha this checkout cannot resolve is refused' FAIL "$b64" "$td/a.pub" "$td/unres"
+    mk_rcpt "$td/empty-diff" "$head" "$head"
+    row 'an EMPTY diff (base == head) is refused'   FAIL "$b64" "$td/a.pub" "$td/empty-diff"
+    mk_rcpt "$td/lie" "$base" "$head" "$(printf '%040d' 0 | tr 0 a)"
+    row 'an author-supplied diff_patch_id that disagrees is refused' FAIL "$b64" "$td/a.pub" "$td/lie"
+    mk_rcpt "$td/honest" "$base" "$head" "$want"
+    row 'an author-supplied diff_patch_id that agrees is signed' PASS "$b64" "$td/a.pub" "$td/honest"
+    for d in nohead unres empty-diff lie; do
+        if [ -f "$td/$d/receipt.intoto.jsonl.minisig" ]; then
+            printf 'FAIL %s\n' "refused receipt $d was signed anyway"; fails=$((fails + 1))
+        fi
+    done
+
     # The mismatch row must also LEAVE NO SIGNATURE behind: a bad artifact on disk is
     # what a later run would read as success.
     rm -f "$td/r/receipt.intoto.jsonl.minisig"
+    mk_rcpt "$td/r" "$base" "$head"
     PR_REVIEW_SIGNING_KEY_B64="$b64" PR_REVIEW_PUBKEY="$td/b.pub" \
       bash "$HERE/$PROG" "$td/r" >/dev/null 2>&1
     if [ ! -f "$td/r/receipt.intoto.jsonl.minisig" ]; then

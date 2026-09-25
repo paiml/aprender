@@ -18191,6 +18191,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-4045
+  github_issue: 4045
+  item_type: task
+  kind: code
+  title: 'Release process for 0.70+: CRUX-smoke gate on the release binary; full ladder + full CRUX move to nightly; #4033 levers wired into the workflow'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-e6
+  created: 2026-09-23T20:30:19.864488525+00:00
+  updated: 2026-09-23T20:30:19.864488525+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: GH-4110
   github_issue: 4110
   item_type: task
@@ -22653,3 +22670,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Found by aprender-1c while measuring #3714 (cop assignment 2026-09-24). Fix: run_qwen35_generate_dispatch_timed returns setup_ms; inference_result subtracts it.'
+- id: PMAT-4421
+  github_issue: 4421
+  item_type: task
+  title: 'P0: bind the pr-review-sign receipt by diff patch-id (git patch-id --verbatim) so it verifies on the merge-queue sha; fail closed'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-5d
+  created: 2026-09-25 14:00:00+00:00
+  updated: '2026-09-25T16:00:00Z'
+  spec: docs/specifications/PR-REVIEW-SKILL-002-v2.md
+  acceptance_criteria:
+  - 'the signer stamps predicate.diff_patch_id (git patch-id --verbatim of the pinned base_sha..head_sha diff, evidence/pr-review/<pr>/ excluded) before signing'
+  - 'Arm 4 recomputes the id from the subject (merge_group: sha^1..sha; else merge-base(origin/main,sha)..sha) and fails closed on empty diff, two parents, missing id, or mismatch'
+  - 'negative arm: a 1-byte change and a trailing-space change to the squash no longer verify (self-test rows)'
+  - 'works on git 2.34 (no --verbatim) via a byte-exact port checked against golden ids and native git'
+  - 'legacy (pre-#4421) receipts are exempt only for PRs < 4427 and only until 2026-09-26T16:00Z (operator ruling via cop, FLOW-04); branch events keep the ancestor rule; each bound has a negative self-test row'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Merge-queue eval (Y5): head/ancestor binding 0/6, tree 4/6, patch-id 6/6. Root cause shared with ASL-00 (sessions == admin identity); cross-link pi-21 ASL-00a.'
