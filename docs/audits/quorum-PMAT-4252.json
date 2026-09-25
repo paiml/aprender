@@ -3,12 +3,12 @@
   "base": "origin/batch/0.70.0",
   "base_resolved": "origin/batch/0.70.0",
   "base_note": "no origin/origin/batch/0.70.0 exists; judged against the local ref",
-  "head": "983aa5eac2c4744538e7df355d55e54610268f23",
-  "diff_sha256": "82fbae79a3fd1b7949f152f9fb99827fcce5cb35a51ec292088d1df55ff4d10c",
+  "head": "af6fd7984454d50bbb934b15c7c2d242337a3f8a",
+  "diff_sha256": "98ec18138be3343fb131171e7470daca1f7ebd118e465cd257f9788ebccbfb0e",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 58922,
+  "prompt_bytes": 51956,
   "author": {
     "model": "claude-opus-5-5",
     "family": "claude",
@@ -19,11 +19,26 @@
     {
       "lane": 1,
       "status": "SUCCESS",
-      "verdict": "PASS",
-      "summary": "The diff correctly implements the amended ticket PMAT-4252 requirements. The previous lanes failed the diff by hallucinating that the ticket did not request the lambda opt-in and load1 < 24 gate, whereas the updated ticket title and acceptance criteria explicitly mandate these changes (e.g. 'lambda CPU fallback opt-in and only at load1 < 24' and 'lambda leg runs only with --allow-lambda/--force-lambda AND load1 < 24'). The lanes also falsely claimed that `docs/roadmaps/entries/PMAT-4252.yaml` was not updated, when the diff clearly updates it to reflect the new operator directive. Furthermore, the receipt was correctly amended to reflect that the yield mutation proof was measured before Round 7 made it opt-in. The implementation and test cases accurately enforce the new requirements.",
-      "findings": [],
-      "raw_bytes": 4272,
-      "err_bytes": 62,
+      "verdict": "FAIL",
+      "summary": "The diff implements the lambda fallback opt-in and load constraint logic as requested. However, it fails review for two reasons: 1) It commits an unagreed quorum review artifact (`docs/audits/quorum-PMAT-4252.json`) with 'agreed': false and 3 lanes of findings. Committing a rejected quorum artifact was not asked for by the ticket and clutters the repository. 2) The receipt contains a factual error, referencing a non-existent row '60.' ('The hold-then-lambda rows above (3. and 60.)') instead of the two '3.' rows.",
+      "findings": [
+        {
+          "claim": "The diff commits an unagreed quorum review artifact ('agreed': false) into the repository. The ticket does not ask for a rejected quorum artifact to be committed.",
+          "file": "docs/audits/quorum-PMAT-4252.json",
+          "fix": "Remove docs/audits/quorum-PMAT-4252.json from the diff.",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "The receipt refers to a non-existent row '60.' when describing the hold-then-lambda rows. There is no row '60.' in the document (it likely meant to refer to the two rows numbered '3.').",
+          "file": "docs/audits/impl-PMAT-4252-receipt.md",
+          "fix": "Fix the reference from '3. and 60.' to correctly point to the two '3.' rows.",
+          "grounding": "cited",
+          "line": 115
+        }
+      ],
+      "raw_bytes": 3665,
+      "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -48,39 +63,10 @@
     {
       "lane": 2,
       "status": "SUCCESS",
-      "verdict": "FAIL",
-      "summary": "Refuted: The diff fails review against ticket PMAT-4252 and receipt evidence. Receipt claims regarding default fallback to lambda CPU during a hold (line 79) are invalidated by the diff and contradict the new opt-in behavior. The receipt acknowledges that the lambda serve backing the lane was shut down on 2026-09-25 and fails to provide live mutation proof for amended Acceptance Criterion 4 (relying only on synthetic unit tests against stubs). Additionally, the diff commits an unagreed quorum review artifact (quorum-PMAT-4252.json) with agreed=false, which was not asked for by the ticket, and --force-lambda skips gx10 while being refused under load >= 24.0.",
-      "findings": [
-        {
-          "claim": "The receipt claim in Section 'Round-2 fixes' step 3 ('ask during the hold (default 120 s budget) -> gx10 CURL_RC=7 -> served_by lambda-cpu, rc 0, wall 22 s') is contradicted and invalidated by the diff, under which a default ask during a hold does not fall back to lambda CPU and instead produces verdict 'unavailable' (rc 2) with error 'not tried: lambda CPU fallback is off by default'. While step 3 of the earlier section was amended with a disclaimer, step 3 on line 79 was left unamended, and line 115 references a non-existent row '60.'.",
-          "file": "docs/audits/impl-PMAT-4252-receipt.md",
-          "fix": "Update the receipt on line 79 to accurately reflect the new default behavior and correct the erroneous reference on line 115.",
-          "grounding": "cited",
-          "line": 79
-        },
-        {
-          "claim": "The receipt fails to provide the required evidence for amended Acceptance Criterion 4 ('Mutation proof: planted hold -> watcher YIELD -> the ask is unavailable by default, or lambda answers when opted in at load1 < 24 -> watcher resumes'). Receipt line 109 acknowledges that 'The lambda serve (apr-dogfood-4252) was stopped on 2026-09-25', and Section 'Round 7' only provides unit test assertions against stubs (in scripts/test_apr_dogfood_lane_4252.py) with no live mutation proof demonstrating that lambda answers when opted in at load1 < 24 or that default asks return unavailable during a live planted hold.",
-          "file": "docs/audits/impl-PMAT-4252-receipt.md",
-          "fix": "Provide a live mutation proof on the running services demonstrating the amended behavior or restore the lambda service to verify the positive control.",
-          "grounding": "cited",
-          "line": 109
-        },
-        {
-          "claim": "The diff commits an unagreed quorum review artifact ('agreed': false with 3 failing lanes) into the repository. Committing a failed quorum artifact into the PR branch was not asked for by the ticket, and clutters the tree with a rejected review record.",
-          "file": "docs/audits/quorum-PMAT-4252.json",
-          "fix": "Remove docs/audits/quorum-PMAT-4252.json from the diff so that the quorum review script can generate and validate the artifact cleanly upon achieving agreement.",
-          "grounding": "cited",
-          "line": 1
-        },
-        {
-          "claim": "The --force-lambda flag is restricted and rejected when host load1 >= 24.0. When a caller passes --force-lambda, gx10 is unconditionally skipped (line 375), and if load1 >= 24.0, lambda is also refused (line 61), resulting in no server being attempted and returning 'unavailable'.",
-          "file": "scripts/apr_dogfood_lane_4252.py",
-          "fix": "Either allow --force-lambda to execute unconditionally on lambda CPU when explicitly forced by the caller, or ensure callers are aware that --force-lambda will result in an immediate refusal without attempting gx10.",
-          "grounding": "cited",
-          "line": 61
-        }
-      ],
-      "raw_bytes": 8216,
+      "verdict": "PASS",
+      "summary": "The diff satisfies all acceptance criteria of ticket PMAT-4252 as amended by the 2026-09-25 operator directive. The lambda CPU fallback is disabled by default and gated on `--allow-lambda` or `--force-lambda` combined with host `load1 < 24.0`. When refused, the attempt records 'not tried' with the refusal reason and returns rc 2 (unavailable) without issuing a POST request. The unit test suite (`scripts/test_apr_dogfood_lane_4252.py`) tests the default-off behavior, the load1 >= 24 refusal (including on `--force-lambda`), and the positive control execution at load1 < 24. The receipt accurately notes historical measurements predating Round 7, documents the live proof on a real GPU-lock hold returning unavailable, and provides mutant verification for the gates. No refutations found.",
+      "findings": [],
+      "raw_bytes": 2889,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -107,9 +93,9 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff fully satisfies the requirements of ticket PMAT-4252 as amended by the 2026-09-25 operator directive. The lambda CPU fallback is now opt-in via `--allow-lambda` / `--force-lambda` and strictly gated on `load1 < 24.0` (returning an unavailable receipt with the refusal reason otherwise). The test suite (`scripts/test_apr_dogfood_lane_4252.py`) tests the default-off behavior, the load threshold refusal, and the positive control execution path. The ticket definitions in `docs/roadmaps/entries/PMAT-4252.yaml` and `docs/roadmaps/roadmap.yaml` as well as `docs/audits/impl-PMAT-4252-receipt.md` have been updated consistently. No refuting findings were identified.",
+      "summary": "The diff accurately implements the amended requirements of ticket PMAT-4252 following the 2026-09-25 operator directive. Specifically:\n1. In `scripts/apr_dogfood_lane_4252.py`, lambda CPU fallback is now opt-in via `--allow-lambda` (or `--force-lambda`) and strictly gated on `load1 < 24.0` (`LAMBDA_MAX_LOAD1 = 24.0`). When refused, it records the exact refusal reason in the attempt log and returns verdict `unavailable` (exit code 2).\n2. In `scripts/test_apr_dogfood_lane_4252.py`, test cases verify that the lambda fallback is off by default, refused at `load1 >= 24` even with `--allow-lambda` or `--force-lambda` (with no HTTP POSTs made to lambda), and executes on the positive control (`load1 = 23.9`).\n3. Both `docs/roadmaps/entries/PMAT-4252.yaml` and `docs/roadmaps/roadmap.yaml` have been updated with the amended acceptance criteria and ticket title.\n4. `docs/audits/impl-PMAT-4252-receipt.md` documents Round 7, notes historical measurements before the opt-in change, and records the live proof on a real GPU lock hold.\nNo refuting findings were found.",
       "findings": [],
-      "raw_bytes": 2649,
+      "raw_bytes": 3445,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -135,37 +121,23 @@
   ],
   "dissent": [
     {
-      "lane": 2,
+      "lane": 1,
       "verdict": "FAIL",
-      "summary": "Refuted: The diff fails review against ticket PMAT-4252 and receipt evidence. Receipt claims regarding default fallback to lambda CPU during a hold (line 79) are invalidated by the diff and contradict the new opt-in behavior. The receipt acknowledges that the lambda serve backing the lane was shut down on 2026-09-25 and fails to provide live mutation proof for amended Acceptance Criterion 4 (relying only on synthetic unit tests against stubs). Additionally, the diff commits an unagreed quorum review artifact (quorum-PMAT-4252.json) with agreed=false, which was not asked for by the ticket, and --force-lambda skips gx10 while being refused under load >= 24.0.",
+      "summary": "The diff implements the lambda fallback opt-in and load constraint logic as requested. However, it fails review for two reasons: 1) It commits an unagreed quorum review artifact (`docs/audits/quorum-PMAT-4252.json`) with 'agreed': false and 3 lanes of findings. Committing a rejected quorum artifact was not asked for by the ticket and clutters the repository. 2) The receipt contains a factual error, referencing a non-existent row '60.' ('The hold-then-lambda rows above (3. and 60.)') instead of the two '3.' rows.",
       "findings": [
         {
-          "claim": "The receipt claim in Section 'Round-2 fixes' step 3 ('ask during the hold (default 120 s budget) -> gx10 CURL_RC=7 -> served_by lambda-cpu, rc 0, wall 22 s') is contradicted and invalidated by the diff, under which a default ask during a hold does not fall back to lambda CPU and instead produces verdict 'unavailable' (rc 2) with error 'not tried: lambda CPU fallback is off by default'. While step 3 of the earlier section was amended with a disclaimer, step 3 on line 79 was left unamended, and line 115 references a non-existent row '60.'.",
-          "file": "docs/audits/impl-PMAT-4252-receipt.md",
-          "fix": "Update the receipt on line 79 to accurately reflect the new default behavior and correct the erroneous reference on line 115.",
-          "grounding": "cited",
-          "line": 79
-        },
-        {
-          "claim": "The receipt fails to provide the required evidence for amended Acceptance Criterion 4 ('Mutation proof: planted hold -> watcher YIELD -> the ask is unavailable by default, or lambda answers when opted in at load1 < 24 -> watcher resumes'). Receipt line 109 acknowledges that 'The lambda serve (apr-dogfood-4252) was stopped on 2026-09-25', and Section 'Round 7' only provides unit test assertions against stubs (in scripts/test_apr_dogfood_lane_4252.py) with no live mutation proof demonstrating that lambda answers when opted in at load1 < 24 or that default asks return unavailable during a live planted hold.",
-          "file": "docs/audits/impl-PMAT-4252-receipt.md",
-          "fix": "Provide a live mutation proof on the running services demonstrating the amended behavior or restore the lambda service to verify the positive control.",
-          "grounding": "cited",
-          "line": 109
-        },
-        {
-          "claim": "The diff commits an unagreed quorum review artifact ('agreed': false with 3 failing lanes) into the repository. Committing a failed quorum artifact into the PR branch was not asked for by the ticket, and clutters the tree with a rejected review record.",
+          "claim": "The diff commits an unagreed quorum review artifact ('agreed': false) into the repository. The ticket does not ask for a rejected quorum artifact to be committed.",
           "file": "docs/audits/quorum-PMAT-4252.json",
-          "fix": "Remove docs/audits/quorum-PMAT-4252.json from the diff so that the quorum review script can generate and validate the artifact cleanly upon achieving agreement.",
+          "fix": "Remove docs/audits/quorum-PMAT-4252.json from the diff.",
           "grounding": "cited",
           "line": 1
         },
         {
-          "claim": "The --force-lambda flag is restricted and rejected when host load1 >= 24.0. When a caller passes --force-lambda, gx10 is unconditionally skipped (line 375), and if load1 >= 24.0, lambda is also refused (line 61), resulting in no server being attempted and returning 'unavailable'.",
-          "file": "scripts/apr_dogfood_lane_4252.py",
-          "fix": "Either allow --force-lambda to execute unconditionally on lambda CPU when explicitly forced by the caller, or ensure callers are aware that --force-lambda will result in an immediate refusal without attempting gx10.",
+          "claim": "The receipt refers to a non-existent row '60.' when describing the hold-then-lambda rows. There is no row '60.' in the document (it likely meant to refer to the two rows numbered '3.').",
+          "file": "docs/audits/impl-PMAT-4252-receipt.md",
+          "fix": "Fix the reference from '3. and 60.' to correctly point to the two '3.' rows.",
           "grounding": "cited",
-          "line": 61
+          "line": 115
         }
       ]
     }
@@ -173,42 +145,22 @@
   "dedup": [
     {
       "file": "docs/audits/impl-PMAT-4252-receipt.md",
-      "line": 79,
+      "line": 115,
       "lanes_agreeing": [
-        2
+        1
       ],
       "claims": [
-        "The receipt claim in Section 'Round-2 fixes' step 3 ('ask during the hold (default 120 s budget) -> gx10 CURL_RC=7 -> served_by lambda-cpu, rc 0, wall 22 s') is contradicted and invalidated by the diff, under which a default ask during a hold does not fall back to lambda CPU and instead produces verdict 'unavailable' (rc 2) with error 'not tried: lambda CPU fallback is off by default'. While step 3 of the earlier section was amended with a disclaimer, step 3 on line 79 was left unamended, and line 115 references a non-existent row '60.'."
-      ]
-    },
-    {
-      "file": "docs/audits/impl-PMAT-4252-receipt.md",
-      "line": 109,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "The receipt fails to provide the required evidence for amended Acceptance Criterion 4 ('Mutation proof: planted hold -> watcher YIELD -> the ask is unavailable by default, or lambda answers when opted in at load1 < 24 -> watcher resumes'). Receipt line 109 acknowledges that 'The lambda serve (apr-dogfood-4252) was stopped on 2026-09-25', and Section 'Round 7' only provides unit test assertions against stubs (in scripts/test_apr_dogfood_lane_4252.py) with no live mutation proof demonstrating that lambda answers when opted in at load1 < 24 or that default asks return unavailable during a live planted hold."
+        "The receipt refers to a non-existent row '60.' when describing the hold-then-lambda rows. There is no row '60.' in the document (it likely meant to refer to the two rows numbered '3.')."
       ]
     },
     {
       "file": "docs/audits/quorum-PMAT-4252.json",
       "line": 1,
       "lanes_agreeing": [
-        2
+        1
       ],
       "claims": [
-        "The diff commits an unagreed quorum review artifact ('agreed': false with 3 failing lanes) into the repository. Committing a failed quorum artifact into the PR branch was not asked for by the ticket, and clutters the tree with a rejected review record."
-      ]
-    },
-    {
-      "file": "scripts/apr_dogfood_lane_4252.py",
-      "line": 61,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "The --force-lambda flag is restricted and rejected when host load1 >= 24.0. When a caller passes --force-lambda, gx10 is unconditionally skipped (line 375), and if load1 >= 24.0, lambda is also refused (line 61), resulting in no server being attempted and returning 'unavailable'."
+        "The diff commits an unagreed quorum review artifact ('agreed': false) into the repository. The ticket does not ask for a rejected quorum artifact to be committed."
       ]
     }
   ],

@@ -112,7 +112,7 @@ amended in `docs/roadmaps/roadmap.yaml` to match. The lambda serve (`apr-dogfood
   `--force-lambda` is gated too, on purpose: the directive allows lambda CPU runs only under that load line, with no
   exception. A refused leg is recorded as `{"host": "lambda", "ok": false, "error": "not tried: …"}` with its reason,
   and the receipt is `unavailable` (rc 2). The lane is advisory, so this never blocks a quorum.
-- The hold-then-lambda rows above (3. and 60.) were measured before this change. Under the new default, the same
+- The two hold-then-lambda step-3 rows above (Yield mutation proof, Round-2 fixes) were measured before this change. Under the new default, the same
   hold gives `unavailable` unless `--allow-lambda` is passed while load1 < 24.
 - `scripts/test_apr_dogfood_lane_4252.py 4`: the five earlier rows opt in (`allow_lambda=True`, load stubbed to 0)
   and PASS. The new rows are: default off; `--allow-lambda` at load1 30; `--force-lambda` at the 24.0 boundary; and
