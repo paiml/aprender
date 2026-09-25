@@ -21486,7 +21486,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
 - id: PMAT-4252
   github_issue: 4252
   item_type: task
-  title: 'Mandatory apr dogfood: apr serve Qwen3.5-4B as an advisory 4th quorum lane (gx10 CUDA primary, yields to lambda CPU on any need for the box) (#4252)'
+  title: 'Mandatory apr dogfood: apr serve Qwen3.5-4B as an advisory 4th quorum lane (gx10 CUDA primary, yields on any need for the box; lambda CPU fallback opt-in and only at load1 < 24) (#4252)'
   status: inprogress
   priority: high
   assigned_to: aprender-6c
@@ -21495,8 +21495,9 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   spec: null
   acceptance_criteria:
   - 'gx10 serve runs --backend cuda --gpu-layers all; an answer is labelled gx10-cuda only with used_gpu true and the server pid holding GPU memory (#4089)'
-  - 'Any need for the box (gpu lock, queue, foreign GPU app, claim file, disk/mem alarm) stops the gx10 server by recorded pid; asks pass to lambda CPU'
-  - 'Mutation proof: planted hold -> watcher YIELD -> lambda answers -> watcher resumes'
+  - 'Any need for the box (gpu lock, queue, foreign GPU app, claim file, disk/mem alarm) stops the gx10 server by recorded pid; the ask records unavailable, or passes to lambda CPU only when opted in and load1 < 24'
+  - 'AMENDED 2026-09-25 (OPERATOR, verbatim, relayed by the cop aprender-77): "lambda fans are loud. Your 4B CPU apr lane (io-admit-4b, dogfood4252, about 8 cores) moves to gx10 now. Keep lambda CPU runs only when load1 < 24 (infra#1087 row 5). Do not start new lambda-CPU apr runs." So the lambda leg runs only with --allow-lambda/--force-lambda AND load1 < 24; otherwise it is recorded not-tried with its reason'
+  - 'Mutation proof: planted hold -> watcher YIELD -> the ask is unavailable by default, or lambda answers when opted in at load1 < 24 -> watcher resumes'
   - 'The lane never hangs a quorum: one hard budget per ask, verdict unavailable on expiry; advisory, counts=false'
   - 'Every serve failure is filed under #4252'
   phases: []

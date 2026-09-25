@@ -71,13 +71,14 @@ def main():
     lane.LAMBDA_URL = url
     real_health = lane.health
     lane.health = lambda u: {"stub": u}          # /health would hang too; the POST is the case
+    lane.load1 = lambda: 0.0                     # the lambda leg's load gate is its own case below
 
     def gx10_yielded(*_a, **_k):
         raise RuntimeError("gx10 CURL_RC=7 (yielded)")
     lane.gx10_ask = gx10_yielded
     brief = os.path.join(os.environ.get("TMPDIR", "/tmp"), f"brief-{os.getpid()}.txt")
     open(brief, "w").write("Reply PASS.")
-    args = argparse.Namespace(brief=brief, max_tokens=8, timeout=budget, force_lambda=False)
+    args = argparse.Namespace(brief=brief, max_tokens=8, timeout=budget, force_lambda=False, allow_lambda=True)
     out = io.StringIO()
     t0 = time.monotonic()
     with contextlib.redirect_stdout(out):
@@ -101,7 +102,7 @@ def main():
     lane.LAMBDA_URL = trickle_server()
     # --timeout 0 must still be a budget: signal.alarm(0) would cancel it.
     open(brief, "w").write("Reply PASS.")
-    args = argparse.Namespace(brief=brief, max_tokens=8, timeout=0, force_lambda=False)
+    args = argparse.Namespace(brief=brief, max_tokens=8, timeout=0, force_lambda=False, allow_lambda=True)
     t0 = time.monotonic()
     with contextlib.redirect_stdout(io.StringIO()):
         rc0 = lane.cmd_ask(args)
@@ -115,7 +116,7 @@ def main():
     # The alarm fires INSIDE the gx10 leg and the except swallows it; a lambda attempt
     # made after that would trickle unbounded. The ask must still end within the budget.
     open(brief, "w").write("Reply PASS.")
-    args = argparse.Namespace(brief=brief, max_tokens=8, timeout=budget, force_lambda=False)
+    args = argparse.Namespace(brief=brief, max_tokens=8, timeout=budget, force_lambda=False, allow_lambda=True)
     out = io.StringIO()
     t0 = time.monotonic()
     with contextlib.redirect_stdout(out):
@@ -166,7 +167,45 @@ def main():
     os.unlink(brief)
     print(json.dumps({"case": "malformed 200 -> unavailable receipt", "rc": rcm,
                       "detail": detail, "result": "PASS" if okm else "FAIL"}))
-    return 0 if okm else 1
+    if not okm:
+        return 1
+    # The lambda fallback is OFF unless asked for, and refused at load1 >= 24 even when asked
+    # (operator 2026-09-25, fans; infra#1087 row 5). A leg that must not run must not POST.
+    lane.gx10_ask = gx10_yielded                 # an earlier case left gx10 hanging
+    posts = []
+    lane.post_chat = lambda *_a, **_k: (posts.append(1), (0.1, {"choices": [{"message": {"content": "PASS"}}]}))[1]
+    cases = [("default: lambda off", dict(force_lambda=False), 0.0, "off by default"),
+             ("--allow-lambda at load1 30", dict(force_lambda=False, allow_lambda=True), 30.0, "load1 30.0"),
+             ("--force-lambda at load1 24", dict(force_lambda=True), 24.0, "load1 24.0")]
+    for name, kw, load, why in cases:
+        lane.load1 = lambda load=load: load
+        open(brief, "w").write("Reply PASS.")
+        args = argparse.Namespace(brief=brief, max_tokens=8, timeout=budget, **kw)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rcg = lane.cmd_ask(args)
+        os.unlink(brief)
+        recg = json.loads(out.getvalue())
+        last = recg["attempts"][-1]
+        okg = (rcg == 2 and recg["served_by"] is None and not posts and last["host"] == "lambda"
+               and why in last.get("error", ""))
+        print(json.dumps({"case": name, "rc": rcg, "detail": last.get("error"),
+                          "result": "PASS" if okg else "FAIL"}))
+        if not okg:
+            return 1
+    # The positive control: asked for and under the load line, the lambda leg does run.
+    lane.load1 = lambda: 23.9
+    open(brief, "w").write("Reply PASS.")
+    args = argparse.Namespace(brief=brief, max_tokens=8, timeout=budget, force_lambda=False, allow_lambda=True)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rcp = lane.cmd_ask(args)
+    os.unlink(brief)
+    recp = json.loads(out.getvalue())
+    okp = rcp == 0 and recp["served_by"] == "lambda-cpu" and len(posts) == 1
+    print(json.dumps({"case": "--allow-lambda at load1 23.9 runs", "rc": rcp,
+                      "served_by": recp["served_by"], "result": "PASS" if okp else "FAIL"}))
+    return 0 if okp else 1
 
 
 if __name__ == "__main__":

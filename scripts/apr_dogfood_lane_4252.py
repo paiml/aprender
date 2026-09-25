@@ -3,7 +3,11 @@
 
 PRIMARY  gx10, `apr serve` built with cuda, Qwen3.5-4B.
 FALLBACK lambda, the CPU release asset, inside the capped user slice
-         apr-dogfood.slice (Nice 19, CPUQuota 800%, MemoryMax 12G).
+         apr-dogfood.slice (Nice 19, CPUQuota 800%, MemoryMax 12G). OFF BY DEFAULT: operator,
+         via the cop (2026-09-25): "lambda fans are loud … Keep lambda CPU runs only when
+         load1 < 24 (infra#1087 row 5). Do not start new lambda-CPU apr runs." So `ask`
+         tries lambda only with --allow-lambda (or --force-lambda) AND load1 < 24; otherwise
+         the lambda attempt is recorded as not tried, with the reason.
 
 Operator, verbatim (via the cop, 2026-09-24): "perfect, if box is needed, it pauses and
 passes work to lambda cpu". So the gx10 server YIELDS to any need for the box: a gpu-q
@@ -42,6 +46,21 @@ DF_FLOOR_GB = 60                        # yield above the 50G alarm so a build n
 MEM_FLOOR_GB = 16
 GX10_PORT = 18253
 LAMBDA_URL = "http://127.0.0.1:18252"
+LAMBDA_MAX_LOAD1 = 24.0  # infra#1087 row 5
+
+
+def load1():
+    return os.getloadavg()[0]
+
+
+def lambda_refusal(args):
+    """None when the lambda leg may run; else why it may not (recorded, never raised)."""
+    if not (args.force_lambda or getattr(args, "allow_lambda", False)):
+        return "not tried: lambda CPU fallback is off by default (operator 2026-09-25, fans); pass --allow-lambda"
+    l1 = load1()
+    if l1 >= LAMBDA_MAX_LOAD1:
+        return f"not tried: lambda load1 {l1:.1f} >= {LAMBDA_MAX_LOAD1:g} (infra#1087 row 5)"
+    return None
 PROBE_TIMEOUT = 15                      # a hung probe (nvidia-smi) is a reason to yield
 
 
@@ -371,6 +390,8 @@ def _ask_legs(args, messages, rec, deadline, remaining):
         # raises LaneBudgetSpent, a BaseException — quorum R4/R5.)
         rec["attempts"].append({"host": "lambda", "ok": False,
                                 "error": f"not tried: < 1 s of the {args.timeout}s lane budget left"})
+    elif "served_by" not in rec and (why := lambda_refusal(args)) is not None:
+        rec["attempts"].append({"host": "lambda", "ok": False, "error": why})
     elif "served_by" not in rec:
         try:
             h = health(LAMBDA_URL)
@@ -400,6 +421,8 @@ def main():
     a.add_argument("--timeout", type=int, default=120,
                    help="hard budget for the whole ask; on expiry the lane is 'unavailable'")
     a.add_argument("--force-lambda", action="store_true")
+    a.add_argument("--allow-lambda", action="store_true",
+                   help="let a gx10 failure fall back to lambda CPU (still refused at load1 >= 24)")
     sub.add_parser("need")
     args = ap.parse_args()
     if args.cmd == "watch":
