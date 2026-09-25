@@ -211,12 +211,14 @@ falsification_tests:
   obligation: EXT-INV-011
   rule: No contamination at dataset registration
   prediction: a planted sealed-item hash in a training manifest is refused at registration
-  if_fails: 'sealed eval items can reach training (owed EXT-08 #4390; planned: cargo test -p apr-cli --test ext_datasets falsify_ext_012_sealed_leak_refused)'
+  test: cargo test -p aprender-registry --lib falsify_ext_012_sealed_leak_refused
+  if_fails: 'sealed eval items can reach training: register_dataset_manifest stores a manifest whose row sha256 is in the sealed set, or the refusal leaves a row behind'
 - id: FALSIFY-EXT-013
   obligation: EXT-INV-014
   rule: Self-generated data is labeled
   prediction: a planted unlabeled self_generated row is refused at registration
-  if_fails: 'collapse controls are bypassable (owed EXT-08 #4390; planned: cargo test -p apr-cli --test ext_datasets falsify_ext_013_unlabeled_self_generated_refused)'
+  test: cargo test -p aprender-registry --lib falsify_ext_013_unlabeled_self_generated_refused
+  if_fails: 'collapse controls are bypassable: a self_generated row with no label, or a label naming no resolver, is admitted'
 - id: FALSIFY-EXT-014
   obligation: EXT-INV-008
   rule: Pack is deterministic

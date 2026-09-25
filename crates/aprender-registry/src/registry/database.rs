@@ -25,6 +25,7 @@ impl RegistryDb {
         let db = Self { conn };
         db.init_schema()?;
         db.init_evals_schema()?;
+        db.init_dataset_manifest_schema()?;
         Ok(db)
     }
 
@@ -731,6 +732,79 @@ impl RegistryDb {
             |r| r.get(0),
         )?;
         Ok(n > 0)
+    }
+}
+
+// ==================== Dataset manifests (EXT-08, aprender#4390) ====================
+
+const DATASET_MANIFESTS_DDL: &str = "
+    CREATE TABLE IF NOT EXISTS dataset_manifests (
+        canonical_sha256 TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        version TEXT NOT NULL,
+        admitted_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(name, version)
+    );
+";
+
+impl RegistryDb {
+    fn init_dataset_manifest_schema(&self) -> Result<()> {
+        self.conn.execute_batch(DATASET_MANIFESTS_DDL)?;
+        Ok(())
+    }
+
+    /// Store an admitted manifest. A repeated canonical hash or name+version is refused.
+    pub fn insert_dataset_manifest(
+        &self,
+        name: &str,
+        version: &str,
+        admitted: &crate::data::AdmittedManifest,
+    ) -> Result<()> {
+        let json = serde_json::to_string(admitted)?;
+        self.conn
+            .execute(
+                "INSERT INTO dataset_manifests (canonical_sha256, name, version, admitted_json, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![admitted.canonical_sha256, name, version, json, chrono::Utc::now().to_rfc3339()],
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::SqliteFailure(f, _)
+                    if f.code == rusqlite::ErrorCode::ConstraintViolation =>
+                {
+                    PachaError::AlreadyExists {
+                        kind: "dataset manifest".to_string(),
+                        name: name.to_string(),
+                        version: version.to_string(),
+                    }
+                }
+                other => other.into(),
+            })?;
+        Ok(())
+    }
+
+    /// The admitted manifest with this canonical hash, if registered.
+    pub fn get_dataset_manifest(
+        &self,
+        canonical_sha256: &str,
+    ) -> Result<Option<crate::data::AdmittedManifest>> {
+        use rusqlite::OptionalExtension;
+        let json: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT admitted_json FROM dataset_manifests WHERE canonical_sha256 = ?1",
+                params![canonical_sha256],
+                |r| r.get(0),
+            )
+            .optional()?;
+        json.map(|j| serde_json::from_str(&j).map_err(Into::into)).transpose()
+    }
+
+    /// Number of stored dataset manifests.
+    pub fn dataset_manifest_count(&self) -> Result<usize> {
+        let n: i64 =
+            self.conn.query_row("SELECT COUNT(*) FROM dataset_manifests", [], |r| r.get(0))?;
+        Ok(usize::try_from(n).unwrap_or(0))
     }
 }
 
