@@ -15,7 +15,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 2
 WORK=$(mktemp -d) || exit 2
-trap 'rm -rf "$WORK"' EXIT
+trap 'rm -rf "${WORK:?}"' EXIT
 FAKE="$ROOT/scripts/lib/model_ladder_cells_produce_cases/fake_apr.py"
 
 cat > "$WORK/ladder.yaml" <<'EOF'
@@ -36,8 +36,8 @@ printf 'm.gguf|%s/m.gguf\n' "$WORK" > "$WORK/models.txt"
 
 # run_case <lib-dir> <mode> -> prints the case's verdict lines (the harness below)
 run_case() {
-  local lib=$1 mode=$2 d="$WORK/$2.$RANDOM"
-  mkdir -p "$d"
+  local lib=$1 mode=$2 d
+  d=$(mktemp -d "$WORK/$2.XXXXXX") || { echo "MKTEMP-FAIL"; return; }
   FAKE_APR_MODE=$mode python3 "$lib/model_ladder_cells_produce.py" enrich --apr "$FAKE" \
       --inventory "$WORK/inventory.jsonl" --models "$WORK/models.txt" --out "$d/inv.jsonl" > /dev/null 2>&1 \
       || { echo "ENRICH-CRASH"; return; }
