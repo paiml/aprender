@@ -120,9 +120,9 @@ self_test() {
     done
     # WIRING: the rc tagger runs this gate before it writes the tag, and dies on a refusal.
     # rc_cut.sh (#4314) was superseded by the 2026-09-25 16:58 ruling (rc = tag on a queue-green
-    # main, e6's tagger). Until that tagger calls this gate, this row is RED on purpose: an
-    # unwired gate blocks nothing. RC_TAGGER names the tagger script once it exists.
-    local cut; cut="${RC_TAGGER:-$(dirname -- "${BASH_SOURCE[0]}")/rc_cut.sh}"
+    # main); its successor is rc_tag_main.sh (#4327). An unwired gate blocks nothing, so this
+    # row goes RED if the tagger stops calling the gate before it writes the tag.
+    local cut; cut="${RC_TAGGER:-$(dirname -- "${BASH_SOURCE[0]}")/rc_tag_main.sh}"
     local call tagline
     call=$(grep -n 'fleet_cells_gate.sh' "$cut" | grep -v '^\s*[0-9]*:\s*#' | head -n 1 | cut -d: -f1)
     tagline=$(grep -nF 'out=$(api_post git/refs' "$cut" | head -n 1 | cut -d: -f1)
