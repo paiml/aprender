@@ -6,7 +6,9 @@ use std::path::Path;
 
 use provable_contracts::error::Severity;
 use provable_contracts::graph::dependency_graph;
-use provable_contracts::schema::{is_contract_yaml, parse_contract, validate_contract, Contract};
+use provable_contracts::schema::{
+    is_contract_yaml, parse_contract, validate_contract, Contract, ContractKind,
+};
 
 fn contracts_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -331,5 +333,101 @@ fn contract_data_integrity() {
     assert!(
         !paths.is_empty(),
         "no contracts examined — the ceiling above passes vacuously on an empty walk"
+    );
+}
+
+/// Every contract document under `contracts/`, recursively, with the same
+/// file filter `pv lint`'s walker uses.
+fn all_contract_paths_recursive() -> Vec<std::path::PathBuf> {
+    fn walk(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+        let entries =
+            std::fs::read_dir(dir).unwrap_or_else(|e| panic!("Cannot read {}: {e}", dir.display()));
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if is_contract_yaml(&path) {
+                out.push(path);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&contracts_dir(), &mut out);
+    out.sort();
+    out
+}
+
+/// Two ways a contract reads as enforced and enforces nothing (#2556).
+///
+/// SELF-EXEMPT: `metadata.registry: true` on a kernel contract. `kind()` then
+/// reports `Registry`, `requires_proofs()` is false, and
+/// `provability_violations()` returns nothing, so the contract has chosen the
+/// one kind that carries obligations and opted out of them with one flag.
+///
+/// INERT: entries in the legacy `falsification:` / `falsification_conditions:`
+/// blocks and zero `falsification_tests`. The schema keeps the legacy block but
+/// nothing evaluates it (#2504).
+///
+/// Neither can be fixed in one commit (the fix is a contract kind the flag
+/// cannot exempt, and migrating ~400 legacy blocks), and neither had any gate:
+/// the epic measured 481 self-exempt / 413 inert on 2026-08-20; this tree
+/// (batch/0.70.0 @10f531a0d, 1878 of 1881 files parsed) has 512 / 408.
+/// So both counts may only go DOWN from here.
+/// Lower a ceiling when you migrate contracts. Never raise one.
+#[test]
+fn self_exempt_and_inert_contracts_only_shrink() {
+    let paths = all_contract_paths_recursive();
+    let mut parsed = 0usize;
+    let mut self_exempt = Vec::new();
+    let mut inert = Vec::new();
+    for path in &paths {
+        let Ok(contract) = parse_contract(path) else {
+            continue;
+        };
+        parsed += 1;
+        let rel = path
+            .strip_prefix(contracts_dir())
+            .unwrap_or(path)
+            .display()
+            .to_string();
+        if contract.metadata.registry && contract.metadata.kind == ContractKind::Kernel {
+            self_exempt.push(rel.clone());
+        }
+        if contract.falsification_tests.is_empty() && contract.legacy_falsification_entries() > 0 {
+            inert.push(rel);
+        }
+    }
+    eprintln!(
+        "walked {} parsed {parsed} self_exempt {} inert {}",
+        paths.len(),
+        self_exempt.len(),
+        inert.len()
+    );
+    // A walker that parses nothing passes both ceilings vacuously.
+    const PARSED_FLOOR: usize = 1850;
+    assert!(
+        parsed >= PARSED_FLOOR,
+        "parsed only {parsed} of {} contract files (floor {PARSED_FLOOR}) — the ceilings \
+         below would pass vacuously",
+        paths.len()
+    );
+    const SELF_EXEMPT_CEILING: usize = 512;
+    const INERT_CEILING: usize = 408;
+    assert!(
+        self_exempt.len() <= SELF_EXEMPT_CEILING,
+        "kernel contracts self-exempted by `registry: true` rose to {} (ceiling \
+         {SELF_EXEMPT_CEILING}). Use `metadata.kind: registry` only for a real registry, or \
+         give the kernel contract its proof_obligations / falsification_tests / \
+         kani_harnesses:\n{}",
+        self_exempt.len(),
+        self_exempt.join("\n")
+    );
+    assert!(
+        inert.len() <= INERT_CEILING,
+        "contracts with a legacy falsification block and zero falsification_tests rose to {} \
+         (ceiling {INERT_CEILING}). Nothing evaluates the legacy block; move its entries into \
+         `falsification_tests`:\n{}",
+        inert.len(),
+        inert.join("\n")
     );
 }
