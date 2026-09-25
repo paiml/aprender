@@ -115,6 +115,9 @@ fn a_steady_state_greedy_decode_token_allocates_nothing_and_downloads_only_the_t
         pos += 1;
     }
 
+    // The #3759 key proof `format!`s every cache hit in test builds only; the warmup above
+    // ran it over every key this token uses. Measure the lookup a release build does.
+    gpu.executor.suspend_module_key_proof(true);
     let (h0, g0, d0) = (
         host_allocs_total(),
         device_allocs_total(),
@@ -129,6 +132,7 @@ fn a_steady_state_greedy_decode_token_allocates_nothing_and_downloads_only_the_t
         device_allocs_total(),
         device_to_host_bytes_total(),
     );
+    gpu.executor.suspend_module_key_proof(false);
     let (host, dev, d2h) = (h1 - h0, g1 - g0, d1 - d0);
     eprintln!(
         "[4215] per steady-state token: host allocs {:.1}, device allocs {:.1}, D2H bytes {:.1}",

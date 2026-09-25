@@ -52,7 +52,7 @@ impl CudaExecutor {
             #[cfg(any(debug_assertions, test))]
             module_key_ledger: Default::default(),
             weight_cache: HashMap::new(),
-            module_keys: Default::default(), // #4215: pre-formatted module keys
+            module_keys: Default::default(),
             named_fp16_weight_cache: HashMap::new(), // GH-174: SafeTensors F16
             quantized_weight_cache: HashMap::new(),  // PAR-005: quantized weight cache
             quantized_weight_types: HashMap::new(),  // PAR-058: weight quant types
