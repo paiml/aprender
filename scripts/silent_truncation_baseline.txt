@@ -134,3 +134,8 @@ numeric	scripts/reference_layer0.py|c8104aca|0	print(f"Q first 3: {q[:3].numpy()
 numeric	scripts/reference_layer0.py|cdb76739|0	print(f"Out proj first 3: {out_proj[:3].numpy().tolist()}")
 numeric	scripts/reference_layer0.py|e442df29|0	print(f"Norm weight first 5: {norm_weight[:5].tolist()}")
 numeric	scripts/reference_layer0.py|e8a6edf1|0	print(f"Layer RMSNorm first 3: {normed_np[:3].tolist()}")
+id-prefix	scripts/nightly_manifest.py|10cc5f61|0	good = {"apr": (0, f"apr 0.69.0 ({S[:9]})"), "pv": (0, f"pv 0.69.0 ({S[:9]}) (aprender provable-contracts verifier)")}
+id-prefix	scripts/nightly_manifest.py|423fccfb|0	f"| `{t}` | {e['status']} | `{(e['green_sha'] or '-')[:9]}` | {', '.join(sorted(e['tools'])) or '-'} | "
+id-prefix	scripts/nightly_manifest.py|582ba96b|0	vm = record(T[0], S, ["apr"], d, d, probe=by_path({cu_exe: (0, f"apr 0.69.0 ({OLD[:9]})")}),
+id-prefix	scripts/nightly_manifest.py|9ff5c1e9|0	mm = record(T[0], S, ["apr", "pv"], d, d, probe=fake(dict(good, apr=(0, f"apr 0.69.0 ({OLD[:9]})"))))
+id-prefix	scripts/nightly_manifest.py|d9416bb9|0	by_path = lambda out: (lambda exe: out.get(exe, (0, f"apr 0.69.0 ({S[:9]})"))) # noqa: E731

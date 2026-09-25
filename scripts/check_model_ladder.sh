@@ -173,7 +173,7 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
         if not isinstance(fit, dict) or not fit.get("verdict"):
             why.append("fit (#4016): NO llama.cpp fit verdict recorded -- a cell without one is refused")
         elif fit.get("verdict") != "fits":
-            why.append(f"fit (#4016): {fit.get('verdict')}: {str(fit.get('reason', ''))[:60]}")
+            why.append(f"fit (#4016): {fit.get('verdict')}: {_disp(fit.get('reason', ''))}")
     be = x.get("backends") or {}
     for b in backends:
         v = be.get(b)
@@ -572,7 +572,7 @@ blk = re.search(r'if ! grep -q \'"verdict": "fits"\' <<< "\$fit_json"; then\n(.*
 if not blk or not re.search(r"^\s*return\s*$", blk.group(1), re.M):
     print("FAIL  fit: measure() does not refuse (return) a cell whose verdict is not \"fits\" (#4016)"); bad = 1
 raw = [l.strip() for l in src.splitlines() if '"$LLAMA_FIT"' in l and "--model" in l and not l.lstrip().startswith("#")]
-if raw: print(f"FAIL  fit: a raw llama-fit-params model probe outside fit_locked: {raw[0][:90]}"); bad = 1
+if raw: print(f"FAIL  fit: a raw llama-fit-params model probe outside fit_locked: {raw[0]}"); bad = 1
 if not re.search(r'^fit_locked\(\) \{ flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" choom -n 1000 -- "\$LLAMA_FIT"', src, re.M):
     print("FAIL  fit: fit_locked does not run the probe under the bounded fleet lock + choom"); bad = 1
 sys.exit(bad)

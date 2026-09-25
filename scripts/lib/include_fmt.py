@@ -168,7 +168,7 @@ def self_test(root):
                 got = ("RAISE", str(e))
             n += 1
             if got != want:
-                print("FAIL  parity %r...: fallback %r, real parser %r" % (text[:60], got, want))
+                print("FAIL  parity %r: fallback %r, real parser %r" % (text, got, want))
                 fails += 1
     _toml = real
     parity = "%d manifest(s) match the real parser" % n if real is not None else "parity skipped: no tomllib/tomli"
@@ -279,7 +279,7 @@ def main(argv):
                         blamed.add(f)
                 if not blamed:
                     print("include_fmt: rustfmt failed (rc %d) and no include!d file could be blamed:\n%s"
-                          % (r.returncode, (r.stderr or r.stdout)[-800:]), file=sys.stderr)
+                          % (r.returncode, (r.stderr or r.stdout)), file=sys.stderr)
                     return 2
             bad |= blamed
     for b in sorted(bad):

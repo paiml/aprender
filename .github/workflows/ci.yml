@@ -2372,8 +2372,8 @@ jobs:
       # drain terminates in 6 passes.
       - name: "The crates.io cascade can FINISH, proven before anything uploads (#3892)"
         run: |
-          bash scripts/check_cascade_converges.sh --self-test
-          bash scripts/check_cascade_converges.sh
+          setsid --wait bash scripts/check_cascade_converges.sh --self-test
+          setsid --wait bash scripts/check_cascade_converges.sh
       - name: "GHSA guard must still turn RED (case table)"
         run: setsid --wait bash scripts/check_no_ghsa_banned_crates.sh --self-test
       # MOVED from guard-tree to guard-cargo (BSE-02, PMAT-1064): the guard
