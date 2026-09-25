@@ -321,7 +321,7 @@ fn declared(raw: u32) -> Vec<u8> {
 }
 
 #[test]
-fn falsify_tdc_007_the_weekly_receipt_measures_g15_or_says_unmeasured() {
+fn falsify_tdc_007_the_weekly_receipt_measures_g16_or_says_unmeasured() {
     let r = Root::new("weekly");
     let (b, c) = ("b".repeat(64), "c".repeat(64));
     day(
@@ -350,7 +350,7 @@ fn falsify_tdc_007_the_weekly_receipt_measures_g15_or_says_unmeasured() {
     assert_eq!(w39["blob_bytes_stored"], json!(19));
     assert_eq!(w39["blob_bytes_raw"], json!(1000));
     assert_eq!(
-        w39["g15"],
+        w39["g16"],
         json!("unmeasured"),
         "a missing blob is not a measurement"
     );
@@ -360,13 +360,13 @@ fn falsify_tdc_007_the_weekly_receipt_measures_g15_or_says_unmeasured() {
     blob(&r.0, &c, &[ZSTD[0], ZSTD[1], ZSTD[2], ZSTD[3], 0x00, 0x00]);
     let w = weekly(&s, &r.0).expect("weekly");
     assert_eq!(w["weeks"][0]["blobs_raw_undeclared"], json!(1));
-    assert_eq!(w["weeks"][0]["g15"], json!("unmeasured"));
+    assert_eq!(w["weeks"][0]["g16"], json!("unmeasured"));
 
     // Every blob measured: 1–2 quorums/day is outside the [O] 50–200 band.
     blob(&r.0, &c, &declared(500));
     let w = weekly(&s, &r.0).expect("weekly");
     assert_eq!(w["weeks"][0]["blob_bytes_raw"], json!(1500));
-    assert_eq!(w["weeks"][0]["g15"], json!("outside"));
+    assert_eq!(w["weeks"][0]["g16"], json!("outside"));
     let text = render(&w);
     assert!(
         !text.contains(&b) && !text.contains(SECRET_TEXT),
@@ -383,15 +383,15 @@ fn falsify_tdc_007_the_weekly_receipt_measures_g15_or_says_unmeasured() {
     blob(&r.0, &c, &declared(1000));
     let s = Snapshot::read(&r.0).expect("snapshot");
     assert_eq!(
-        weekly(&s, &r.0).expect("weekly")["weeks"][0]["g15"],
+        weekly(&s, &r.0).expect("weekly")["weeks"][0]["g16"],
         json!("within")
     );
 
     // In the quorum band but ~4.29 GB/day raw ≈ 1.57 TB/yr: outside the 0.45 TB cap.
     blob(&r.0, &c, &declared(u32::MAX));
     let w = weekly(&s, &r.0).expect("weekly");
-    assert!(w["weeks"][0]["raw_tb_per_year"].as_f64().expect("f64") > G15_RAW_TB_PER_YEAR);
-    assert_eq!(w["weeks"][0]["g15"], json!("outside"));
+    assert!(w["weeks"][0]["raw_tb_per_year"].as_f64().expect("f64") > G16_RAW_TB_PER_YEAR);
+    assert_eq!(w["weeks"][0]["g16"], json!("outside"));
 }
 
 #[test]

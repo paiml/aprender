@@ -19,7 +19,7 @@ metadata:
     PRM-001 v2 PRM-C14 (was PRA T14) adds the weekly yield/bytes receipt, trace-weekly-receipt-v1
     (weekly.json beside the card). Per ISO 8601 week it records quorums/day, rows, index bytes and
     the CAS blobs the rows address: stored bytes, plus raw bytes from the zstd frame header
-    (RFC 8878). It checks them against the G15 [O] band (50-200 quorums/day, <= 0.45 TB/yr raw)
+    (RFC 8878). It checks them against the G16 [O] band (50-200 quorums/day, <= 0.45 TB/yr raw)
     and reads within | outside | unmeasured. A missing blob or an undeclared raw size is
     unmeasured, never within.
   references:
@@ -35,7 +35,7 @@ equations:
     formula: "eligible(row) ⇔ label_tier = gold ∧ provider = local ∧ secret_scan.status = clean"
   card:
     formula: "write(card) ⇒ validate(card) = ∅;  exists(dir/f) ∧ bytes(dir/f) ≠ regen(f) ⇒ refuse"
-  g15:
+  g16:
     formula: "within(w) ⇔ missing(w) + undeclared(w) = 0 ∧ 50 ≤ min_d q(d) ∧ max_d q(d) ≤ 200 ∧ (index(w) + raw(w)) / days(w) · 365 ≤ 0.45 TB"
 
 falsification_tests:
@@ -76,11 +76,11 @@ falsification_tests:
     expected_output: "exit 0"
     if_fails: "A card would describe an index with rows silently dropped."
   - id: FALSIFY-TDC-007
-    name: the_weekly_receipt_measures_g15_or_says_unmeasured
+    name: the_weekly_receipt_measures_g16_or_says_unmeasured
     prediction: "per ISO week the receipt counts rows, distinct quorums/day, index bytes and distinct blobs; a missing blob or an undeclared zstd size reads unmeasured; all blobs measured at 1-2 quorums/day reads outside; 50 quorums/day with tiny blobs reads within; no sha or row text appears in it"
     test_harness: "cargo test -p aprender-review-experiment --lib falsify_tdc_007"
     expected_output: "exit 0"
-    if_fails: "G15 could read verified from a week whose bytes were never measured."
+    if_fails: "G16 could read verified from a week whose bytes were never measured."
   - id: FALSIFY-TDC-008
     name: iso_weeks_and_zstd_sizes_match_their_standards
     prediction: "iso_week agrees with ISO 8601 across year boundaries (2027-01-01 = 2026-W53, 2024-12-30 = 2025-W01, 2021-01-03 = 2020-W53); zstd_content_size reads 1/2/4-byte FCS (2-byte is +256), skips a dict id, and returns None for no FCS, a non-zstd magic or a truncated header"

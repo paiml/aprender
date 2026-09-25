@@ -137,7 +137,7 @@ pub struct Snapshot {
     pub public_eligible: u64,
     pub files: Vec<IndexFile>,
     counts: BTreeMap<(String, String), u64>,
-    /// Per index day: the G15 yield inputs. Shas only, never row content.
+    /// Per index day: the G16 yield inputs. Shas only, never row content.
     days: BTreeMap<String, DayYield>,
 }
 
@@ -729,10 +729,10 @@ fn check_field(f: &Value, ids: &BTreeSet<String>, errs: &mut Vec<String>) {
 }
 
 pub const WEEKLY_SCHEME: &str = "trace-weekly-receipt-v1";
-/// G15 `[O]`: 50–200 quorums/day and at most ~0.45 TB/yr raw. The operator's
-/// band, not ours; the receipt turns G15 `[U]` into `[V]` or names what is missing.
-pub const G15_QUORUMS_PER_DAY: (u64, u64) = (50, 200);
-pub const G15_RAW_TB_PER_YEAR: f64 = 0.45;
+/// G16 `[O]`: 50–200 quorums/day and at most ~0.45 TB/yr raw. The operator's
+/// band, not ours; the receipt turns G16 `[U]` into `[V]` or names what is missing.
+pub const G16_QUORUMS_PER_DAY: (u64, u64) = (50, 200);
+pub const G16_RAW_TB_PER_YEAR: f64 = 0.45;
 
 /// `YYYY-MM-DD` -> ISO 8601 week `YYYY-Www` (the year of the week's Thursday).
 pub fn iso_week(day: &str) -> Result<String, String> {
@@ -811,7 +811,7 @@ struct WeekYield {
     blobs: BTreeSet<String>,
 }
 
-/// The weekly yield/bytes receipt (PRM-C14, G15): per ISO week, quorums/day,
+/// The weekly yield/bytes receipt (PRM-C14, G16): per ISO week, quorums/day,
 /// rows, index bytes and the CAS blobs the rows address, stored and raw.
 /// A week with a missing blob, or a blob whose raw size is undeclared, reads
 /// `unmeasured` — never `within`.
@@ -829,10 +829,10 @@ pub fn weekly(s: &Snapshot, root: &Path) -> Result<Value, String> {
     Ok(json!({
         "schema": WEEKLY_SCHEME,
         "snapshot": s.id,
-        "g15": {
-            "quorums_per_day": [G15_QUORUMS_PER_DAY.0, G15_QUORUMS_PER_DAY.1],
-            "raw_tb_per_year_max": G15_RAW_TB_PER_YEAR,
-            "provenance": "[O] PRM-001 G15",
+        "g16": {
+            "quorums_per_day": [G16_QUORUMS_PER_DAY.0, G16_QUORUMS_PER_DAY.1],
+            "raw_tb_per_year_max": G16_RAW_TB_PER_YEAR,
+            "provenance": "[O] PRM-001 G16",
         },
         "weeks": rows,
     }))
@@ -862,9 +862,9 @@ fn week_row(root: &Path, week: &str, w: &WeekYield) -> Value {
     let tb_year = raw_total as f64 / n.max(1) as f64 * 365.0 / 1e12;
     let verdict = if missing + undeclared > 0 {
         "unmeasured"
-    } else if lo >= G15_QUORUMS_PER_DAY.0
-        && hi <= G15_QUORUMS_PER_DAY.1
-        && tb_year <= G15_RAW_TB_PER_YEAR
+    } else if lo >= G16_QUORUMS_PER_DAY.0
+        && hi <= G16_QUORUMS_PER_DAY.1
+        && tb_year <= G16_RAW_TB_PER_YEAR
     {
         "within"
     } else {
@@ -884,7 +884,7 @@ fn week_row(root: &Path, week: &str, w: &WeekYield) -> Value {
         "blob_bytes_stored": stored,
         "blob_bytes_raw": raw,
         "raw_tb_per_year": tb_year,
-        "g15": verdict,
+        "g16": verdict,
     })
 }
 
