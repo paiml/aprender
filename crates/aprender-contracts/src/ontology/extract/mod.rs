@@ -63,6 +63,11 @@ pub enum ExtractFailure {
     Receipt(receipts::ReceiptError),
     /// aprender#3715: the release subject is malformed, or a release input is unreadable or foreign.
     Release(release_inputs::ReleaseError),
+    /// PMAT-4160: a contract declares the reserved entity type [`RESERVED_ENTITY_TYPE`]. Its `entity:` predicates
+    /// would be byte-identical to the entity CLASS IRIs, so the extraction is refused rather than written.
+    ///
+    /// [`RESERVED_ENTITY_TYPE`]: crate::ontology::sigma::RESERVED_ENTITY_TYPE
+    ReservedEntityType { contract: String },
 }
 
 impl std::fmt::Display for ExtractFailure {
@@ -71,6 +76,12 @@ impl std::fmt::Display for ExtractFailure {
             Self::Json(e) => write!(f, "{e}"),
             Self::Receipt(e) => write!(f, "receipt {e}"),
             Self::Release(e) => write!(f, "{e}"),
+            Self::ReservedEntityType { contract } => write!(
+                f,
+                "contract `{contract}` declares entity.type `{}`, which is reserved — `<ONT_BASE>entity/` holds \
+                 the entity classes, so its entity predicates would collide with them (PMAT-4160)",
+                crate::ontology::sigma::RESERVED_ENTITY_TYPE
+            ),
         }
     }
 }
@@ -96,6 +107,10 @@ pub fn all_with(
     };
     let root = contract_dir.parent().unwrap_or(contract_dir);
     for (stem, _rel, doc) in pv_contract::documents(contract_dir) {
+        let entity_type = pv_contract::scalar(doc.get("entity").and_then(|e| e.get("type")));
+        if entity_type.as_deref() == Some(crate::ontology::sigma::RESERVED_ENTITY_TYPE) {
+            return Err(ExtractFailure::ReservedEntityType { contract: stem });
+        }
         if !json::applies(&doc) {
             continue;
         }
