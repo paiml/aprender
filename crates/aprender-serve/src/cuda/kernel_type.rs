@@ -668,4 +668,18 @@ pub enum KernelType {
         num_kv_heads: u32,
         head_dim: u32,
     },
+    /// aprender#4273: decode attention split over the sequence, one block per
+    /// (head, `split_len` positions); writes per-split partials.
+    GdnDecodeAttentionSplit {
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+        split_len: u32,
+    },
+    /// aprender#4273: combine the partials of [`Self::GdnDecodeAttentionSplit`].
+    GdnDecodeAttentionReduce {
+        num_heads: u32,
+        head_dim: u32,
+        split_len: u32,
+    },
 }
