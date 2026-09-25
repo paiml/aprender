@@ -57,6 +57,20 @@ lane's `timeout_s: 120`.
 `rex review --split dev` rows for this cell, once prometheus names the corpus items dir. The sealed Test split is not
 touched. PRM-001 itself is parked on infra#1088.
 
+## Executor change (18:0xZ, cop ruling)
+
+The GPU gets one executor: infra#1088's `apr-review-serve` on gx10 :8091. It runs the same binary (apr 0.69.3,
+sha256 `2f274f47…`) and the same weights (`00fe7986…`) under `flock /tmp/apr-gpu.lock`. The :18253 watcher above
+(pid 3854882) is retired: it was stopped by its recorded PID, and no child serve or port was left behind. The
+availability figure in (2) describes the retired watcher, not :8091.
+
+First Dev-split run against :8091: **3 rows, all Fail**, `rex review: …/v1/chat/completions: Network Error:
+Unexpected EOF`. systemd stopped `apr-review-serve` at 18:00:51Z, mid-run; the journal shows about 20 start/stop
+events in 4 h. At the time of the retirement check the lock was held by other consumers (a receipt script, a run
+script and a cargo build), not by :8091. So the single executor has an availability problem of its own, and it
+belongs to infra#1088's measurement. A rerun waits for `/health` and uses a fresh output dir, so the 3 EOF rows are
+not mixed in. The rows go to prometheus (aprender-84) as shadow, non-prereg.
+
 ## Re-measure
 
 On rc.2, once #4443 and #4313 land.
