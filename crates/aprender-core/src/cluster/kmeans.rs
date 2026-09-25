@@ -21,7 +21,8 @@ use std::path::Path;
 /// 3. Update centroids as mean of assigned samples
 /// 4. Repeat until convergence or max iterations
 /// 5. Repeat steps 1-4 `n_init` times from different seeded starts and keep
-///    the run with the lowest inertia (sklearn's `n_init`, default 10)
+///    the run with the lowest inertia (sklearn's `n_init`; default 1, as
+///    sklearn >= 1.4 `n_init="auto"` picks for D²-family seeding)
 ///
 /// # Examples
 ///
@@ -90,8 +91,11 @@ struct LegacyKMeans {
     n_iter: usize,
 }
 
-/// sklearn's `KMeans(n_init=10)` default.
-pub(crate) const DEFAULT_N_INIT: usize = 10;
+/// sklearn >= 1.4 `n_init="auto"`: one run for k-means++-family seeding
+/// (10 only for random init, which this type does not offer). One run is
+/// also the pre-`n_init` behaviour, so a default fit is unchanged; ask for
+/// restarts with [`KMeans::with_n_init`].
+pub(crate) const DEFAULT_N_INIT: usize = 1;
 
 fn default_n_init() -> usize {
     DEFAULT_N_INIT

@@ -158,7 +158,7 @@ falsification_tests:
   if_fails: Restarts reuse the same start row (same-start mutant turns this RED, 0/96)
 - id: FALSIFY-KM-009
   rule: n_init reproducible
-  prediction: same seed + n_init give bit-identical inertia and labels; default n_init = 10; n_init = 0 clamps to 1
+  prediction: same seed + n_init give bit-identical inertia and labels; default n_init = 1 (sklearn>=1.4 "auto" for k-means++-family seeding); n_init = 0 clamps to 1
   test: cluster::kmeans::tests_kmeans_contract::falsify_km_009_n_init_reproducible
   if_fails: Restart seeding depends on unseeded state
 - id: FALSIFY-KM-010
