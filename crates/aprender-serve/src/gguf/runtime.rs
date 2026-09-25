@@ -251,6 +251,7 @@ impl OwnedQuantizedKVCache {
 
     /// Keep only the first `new_len` positions, by the row width the cache was
     /// built with (#4214: a session resuming from a checkpoint).
+    #[allow(clippy::used_underscore_binding)] // `_hidden_dim` holds the kv_dim
     pub fn truncate(&mut self, new_len: usize) {
         self.rollback_to(new_len, self._hidden_dim);
     }

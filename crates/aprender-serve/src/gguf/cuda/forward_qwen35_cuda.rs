@@ -840,11 +840,9 @@ impl<'a> Qwen35CudaModel<'a> {
             }
             *into = Some(Qwen35CudaCheckpoint { layers, kv_len: 0 });
         }
-        let ckpt = into
-            .as_mut()
-            .ok_or_else(|| RealizarError::InvalidShape {
-                reason: "qwen35_cuda: the checkpoint was never allocated".to_string(),
-            })?;
+        let ckpt = into.as_mut().ok_or_else(|| RealizarError::InvalidShape {
+            reason: "qwen35_cuda: the checkpoint was never allocated".to_string(),
+        })?;
         for (i, conv, ssm) in &mut ckpt.layers {
             // SAFETY: source and destination are live device buffers of equal
             // length (checked by the copy) owned by `state` and `ckpt`, which
