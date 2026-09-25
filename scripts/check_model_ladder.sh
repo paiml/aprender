@@ -454,6 +454,29 @@ for h in hosts:
         elif why: print(f"FAIL  {h['id']:7} inv:{f:22} " + "; ".join(why)); rc = 1
         else:   inv_green += 1; print(f"ok    {h['id']:7} inv:{f:22} green on {','.join(inv_backends)}")
     print(f"ok    {h['id']:7} inventory: {len(inv)} Q4_K model(s) held, every one in the run")
+    # #3846: HELD BUT NOT SWEPT is its own counted category. The universe is read from each
+    # file's header; a held file the contract's inventory.scope excludes is recorded with the
+    # rule that excluded it. The receipt must account for every held file (held == swept +
+    # held_not_swept), every exclusion must carry a reason, and a file whose header could not
+    # be read is refused: an unclassifiable file is the blind spot this ticket closes.
+    held, hns = R.get("held"), R.get("held_not_swept")
+    if held is None and hns is None:
+        print(f"WARN  {h['id']:7} receipt predates #3846: no held/held_not_swept -- files held but not swept cannot be counted; re-measure to record them")
+    elif not isinstance(held, int) or isinstance(held, bool) or not isinstance(hns, list):
+        print(f"FAIL  {h['id']:7} receipt held/held_not_swept malformed (held={held!r}) -- the held universe is unaccounted (#3846)"); rc = 1
+    else:
+        if held != len(inv) + len(hns):
+            print(f"FAIL  {h['id']:7} receipt held={held} but swept {len(inv)} + held_not_swept {len(hns)} = {len(inv) + len(hns)} -- a held file is in neither category (#3846)"); rc = 1
+        for m in hns:
+            m = m if isinstance(m, dict) else {}
+            reason = m.get("reason")
+            if not isinstance(reason, str) or not reason.strip():
+                print(f"FAIL  {h['id']:7} held-not-swept {m.get('file')} carries no reason -- an exclusion nobody can read is an omission (#3846)"); rc = 1
+            elif reason.startswith("unreadable"):
+                print(f"FAIL  {h['id']:7} held-not-swept {m.get('file')}: {reason} -- a file whose header cannot be read cannot be classified (#3846)"); rc = 1
+            else:
+                print(f"HELD  {h['id']:7} {m.get('file')} ({m.get('arch')} {m.get('quant')}) not swept: {reason}")
+        print(f"ok    {h['id']:7} held: {held} model file(s), {len(inv)} swept, {len(hns)} held but not swept")
     for r in rungs:
         rid = r["id"]; req = bool(r.get("required")) or is_q4k(r)
         x = by.get(rid)
@@ -655,6 +678,10 @@ if [ "$SELF_TEST" = 1 ]; then
     fi
     mutant q4k-required-false red-q4k-required-false 's/if is_q4k(r) and r.get("required") is not True:/if False:/'
     mutant q4k-without-cuda   red-q4k-rung-cpu-only  's/if is_q4k(r) and "cuda" not in (r.get("backends") or \[\]):/if False:/'
+    # #3846: the held universe is accounted for, and every exclusion is reasoned and readable.
+    mutant held-unaccounted   red-held-unaccounted     's/        if held != len(inv) + len(hns):/        if False:/'
+    mutant held-no-reason     red-held-not-swept-no-reason 's/            if not isinstance(reason, str) or not reason.strip():/            if False:/'
+    mutant held-unreadable    red-held-not-swept-unreadable 's/            elif reason.startswith("unreadable"):/            elif False:/'
     mutant inventory-missing  red-inventory-model-missing 's/if x is None or not x.get("present"):  # held by the host, absent from the run/if False:/'
     # #3898: the rule that reads `qa_rc`. Deleting it must break the case that names it.
     mutant qa-rc-ignored      red-qa-rc-nonzero-refused 's/    elif qa_rc != 0:/    elif False:/'

@@ -478,21 +478,15 @@ PY
 ) || { echo "decline: the ladder declares no inventory (dirs, patterns, backends) -- the universe cannot be measured" >&2; exit 2; }
 INV_DIRS=$(sed -n 1p <<< "$INV_SPEC"); INV_PATTERNS=$(sed -n 2p <<< "$INV_SPEC"); INV_BACKENDS=$(sed -n 3p <<< "$INV_SPEC")
 # INVENTORY, one per line: file|path. Measured on THIS host, never listed.
-INVENTORY=$(python3 - "$INV_DIRS" "$INV_PATTERNS" <<'PY'
-import fnmatch, os, sys
-dirs, pats = sys.argv[1].split(":"), [p.lower() for p in sys.argv[2].split(",")]
-seen = {}
-for d in dirs:
-    if not os.path.isdir(d):
-        continue
-    for f in sorted(os.listdir(d)):
-        p = os.path.join(d, f)
-        if os.path.isfile(p) and f not in seen and any(fnmatch.fnmatch(f.lower(), pat) for pat in pats):
-            seen[f] = p
-for f, p in seen.items():
-    print(f + "|" + p)
-PY
-) || { echo "decline: the inventory scan failed" >&2; exit 2; }
+# #3846: the universe is every model file HELD in the dirs, classified from its own
+# header (general.architecture / file_type, APR metadata, safetensors dtype) against
+# `inventory.scope`. A filename pattern still sweeps a file (the union only grows);
+# a held file the scope excludes is recorded as held_not_swept WITH the rule that
+# excluded it, so "not measured" is a counted, reasoned category -- never invisible.
+UNIVERSE=$(python3 scripts/lib/model_ladder_universe.py "$LADDER" "$INV_DIRS" "$INV_PATTERNS") || { echo "decline: the inventory scan failed" >&2; exit 2; }
+INVENTORY=$(python3 -c 'import json,sys
+for m in json.loads(sys.argv[1])["swept"]: print(m["file"] + "|" + m["path"])' "$UNIVERSE") || { echo "decline: the inventory scan failed" >&2; exit 2; }
+HELD_NOT_SWEPT=$(python3 -c 'import json,sys; u=json.loads(sys.argv[1]); print(json.dumps({"held": u["held"], "held_not_swept": u["held_not_swept"]}))' "$UNIVERSE") || { echo "decline: the inventory scan failed" >&2; exit 2; }
 
 # --only: the selectable universe is the same union the run measures -- rung ids plus
 # `inv:<file>` -- derived from the same two variables, so it cannot drift from what
@@ -853,6 +847,9 @@ EXECUTED=0; RED=0
 printf -- '--- model capability ladder on %s (%s, cc %s) apr=%s sha=%s version=%s ---\n' \
   "$HOST" "${GPU_NAME:-no-gpu}" "${GPU_CC:-?}" "$APR" "$SHA" "$VERSION"
 printf '    inventory: %s model(s) matching %s under %s\n' "$(grep -c . <<< "$INVENTORY")" "$INV_PATTERNS" "$INV_DIRS"
+python3 -c 'import json,sys; u=json.loads(sys.argv[1])
+print("    held: %d model file(s); held but NOT swept: %d" % (u["held"], len(u["held_not_swept"])))
+for m in u["held_not_swept"]: print("      [HELD  ] %s (%s %s): %s" % (m["file"], m["arch"], m["quant"], m["reason"]))' "$HELD_NOT_SWEPT"
 
 # measure <id> <file> <path> <sha> <backends(csv)> <required 0|1> <inventory_only 0|1>
 # The per-model checks, one function so a ladder rung and an inventory model cannot drift:
@@ -1329,7 +1326,7 @@ mkdir -p "$OUT_DIR"
 APR_VERSION=$("$APR" --version 2>/dev/null | head -1)
 RECEIPT_TMP="$OUT_DIR/.$RECEIPT_BASE.json.tmp.$$"
 why=$(ladder_disk_probe "$OUT_DIR") || ladder_write_decline "before the receipt: $why"
-python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" <<'PY'
+python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" "$HELD_NOT_SWEPT" <<'PY'
 import json, sys, datetime, platform
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 inv = [json.loads(l) for l in open(sys.argv[11]) if l.strip()]
@@ -1339,6 +1336,8 @@ out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": 
        "apr_version": sys.argv[10], "executed": int(sys.argv[8]), "red": int(sys.argv[9]),
        "only": (sys.argv[15] or None),
        "inventory": inv, "inventory_dirs": sys.argv[12].split(":"), "inventory_patterns": sys.argv[13].split(","),
+       # #3846: every model file held, and the held ones this run did not sweep, each with its reason.
+       "held": json.loads(sys.argv[16])["held"], "held_not_swept": json.loads(sys.argv[16])["held_not_swept"],
        "rungs": rows}
 json.dump(out, open(sys.argv[2], "w"), indent=2); open(sys.argv[2], "a").write("\n")
 PY
@@ -1350,6 +1349,7 @@ import json, sys
 d = json.load(open(sys.argv[1]))
 assert len(d["rungs"]) == int(sys.argv[2]), f'rungs {len(d["rungs"])} != appended {sys.argv[2]}'
 assert len(d["inventory"]) == int(sys.argv[3]), f'inventory {len(d["inventory"])} != appended {sys.argv[3]}'
+assert d["held"] == len(d["inventory"]) + len(d["held_not_swept"]), f'held {d["held"]} != swept + held_not_swept'
 PY
 then
     rm -f "$RECEIPT_TMP" 2>/dev/null

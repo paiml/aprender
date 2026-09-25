@@ -137,6 +137,24 @@ ladder:
     # IQ3_M, IQ4_XS x2, f16, and both .apr) plus one deferred MoE.
     patterns: ["*q4_k*.gguf", "*q4k*.gguf", "*q4_k*.apr", "*q4k*.apr",
                "*qwen2.5*.gguf", "*qwen3.5*.gguf", "*qwen2.5*.apr", "*qwen3.5*.apr"]   # case-insensitive
+    # #3846: the universe is read from each file's HEADER, not its name
+    # (scripts/lib/model_ladder_universe.py). Every .gguf/.apr/.safetensors at depth 1 is HELD.
+    # A held file is SWEPT when its header is in `scope`, or a `patterns` glob matches it, so the
+    # union only grows the universe. Any other held file is recorded in the receipt as
+    # `held_not_swept` with the scope rule that excluded it, and the gate counts that category.
+    # The scope ENCODES the rulings already in force. It adds no new decision:
+    #   archs  -- the 2026-09-22 ruling, "we must support for Qwen 3.5 and 2.5". Header names are
+    #             qwen2 (Qwen2.5), qwen35, and qwen35moe (MoE folded into 0.69.1, 2026-09-23).
+    #   quants -- the original Q4_K universe of #3712, in any arch.
+    #   formats-- the formats the ladder has always swept. safetensors is HELD and recorded but
+    #             not swept; widening it is an open decision for the cop (#3846).
+    # Measured on lambda 2026-09-25: 29 held, 26 swept (the same 26 the globs swept), 3 held
+    # but not swept: Qwen3-0.6B-BF16.gguf (qwen3 BF16), Qwen3-Coder-30B-A3B-Instruct-Q4_0.gguf
+    # (qwen3moe Q4_0) and qwen2.5-coder-1.5b-instruct.safetensors (format).
+    scope:
+      formats: [gguf, apr]
+      archs: [qwen2, qwen35, qwen35moe]
+      quants: ["Q4_K*"]
     # DEFERRED, per the same ruling's "we kick the MoE work to later". A match is printed DEFERRED
     # and NEVER counted green: this build has no CUDA forward for qwen3moe at all (#3714), so an
     # A3B model owes cells no code can satisfy. This is a DECLARED deferral carrying a reason, not
