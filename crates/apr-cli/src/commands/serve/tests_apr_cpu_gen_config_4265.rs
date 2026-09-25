@@ -9,23 +9,31 @@ fn state_with(
     embedded: Option<realizar::apr::BpeTokenizer>,
     eos_from_tokenizer_json: Option<u32>,
 ) -> AprServerState {
+    let tokenizer = eos_from_tokenizer_json.map(tokenizer_json);
+    let stop_tokens = derive_apr_cpu_stop_tokens(embedded.as_ref(), tokenizer.as_ref());
     AprServerState {
         transformer: None,
         model_type: "test".to_string(),
         architecture: "test".to_string(),
         is_transformer: false,
-        tokenizer: eos_from_tokenizer_json.map(|eos| SafeTensorsTokenizerInfo {
-            tokenizer: std::sync::Arc::new(
-                realizar::tokenizer::BPETokenizer::new(vec!["<unk>".to_string()], vec![], "<unk>")
-                    .expect("tiny tokenizer"),
-            ),
-            vocab: vec![],
-            bos_token_id: None,
-            eos_token_id: Some(eos),
-        }),
+        tokenizer,
         embedded_tokenizer: embedded,
         model_name: "apr".to_string(),
         demo_scripted_tokens: None,
+        stop_tokens,
+    }
+}
+
+/// A sibling tokenizer.json with `eos` and an empty vocab.
+fn tokenizer_json(eos: u32) -> SafeTensorsTokenizerInfo {
+    SafeTensorsTokenizerInfo {
+        tokenizer: std::sync::Arc::new(
+            realizar::tokenizer::BPETokenizer::new(vec!["<unk>".to_string()], vec![], "<unk>")
+                .expect("tiny tokenizer"),
+        ),
+        vocab: vec![],
+        bos_token_id: None,
+        eos_token_id: Some(eos),
     }
 }
 
@@ -113,13 +121,24 @@ fn reply_keeps_a_budget_cut_and_an_inner_stop_id() {
 
 #[test]
 fn stop_set_holds_sibling_tokenizer_json_turn_end_by_vocab_index() {
+    let mut tok = tokenizer_json(2);
+    tok.vocab = ["a", "<|im_start|>", "b", "<|im_end|>"]
+        .iter()
+        .map(|t| (*t).to_string())
+        .collect();
+    // <|im_end|> sits at index 3; <|im_start|> (index 1) is not a stop.
+    assert_eq!(&*derive_apr_cpu_stop_tokens(None, Some(&tok)), &[2, 3]);
+}
+
+/// #4295: a request reads the set derived at load; it never walks the vocab
+/// again. The tokenizer changes after the state is built and the request's
+/// stop set does not.
+#[test]
+fn a_request_reads_the_stop_set_derived_at_load() {
     let mut s = state_with(None, Some(2));
     if let Some(tok) = s.tokenizer.as_mut() {
-        tok.vocab = ["a", "<|im_start|>", "b", "<|im_end|>"]
-            .iter()
-            .map(|t| (*t).to_string())
-            .collect();
+        tok.vocab = vec!["<|im_end|>".to_string()];
+        tok.eos_token_id = Some(7);
     }
-    // <|im_end|> sits at index 3; <|im_start|> (index 1) is not a stop.
-    assert_eq!(apr_cpu_stop_tokens(&s), vec![2, 3]);
+    assert_eq!(apr_cpu_stop_tokens(&s), vec![2]);
 }
