@@ -110,6 +110,7 @@ pub mod moe;
 pub mod monitor;
 pub mod numerical;
 pub mod optim;
+pub mod perimeter;
 pub mod pipeline;
 pub mod prune;
 pub mod quality;

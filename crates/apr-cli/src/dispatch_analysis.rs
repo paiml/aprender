@@ -1009,6 +1009,7 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
             profile,
             profile_interval,
         } => {
+            commands::runs::enforce_training_perimeter(output.as_deref())?;
             if *profile {
                 eprintln!(
                     "StepProfiler enabled (report every {} steps)",

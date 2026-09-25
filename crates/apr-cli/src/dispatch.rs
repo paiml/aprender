@@ -1038,6 +1038,9 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             gpu_share,
             profile,
         }) => {
+            if let Err(e) = commands::runs::enforce_training_perimeter(output.as_deref()) {
+                return Some(Err(e));
+            }
             if *profile {
                 eprintln!("StepProfiler enabled for finetune (PMAT-486)");
             }
@@ -1112,7 +1115,12 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             stage,
             backend,
             dataset,
-        }) => distill::run(
+        }) => {
+            #[cfg(feature = "training")]
+            if let Err(e) = commands::runs::enforce_training_perimeter(output.as_deref()) {
+                return Some(Err(e));
+            }
+            distill::run(
             teacher.as_deref(),
             student.as_deref(),
             data.as_deref(),
@@ -1127,7 +1135,8 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             backend.as_str(),
             dataset.as_deref(),
             cli.json,
-        ),
+        )
+        }
         Commands::Pull {
             model_ref,
             repo,
