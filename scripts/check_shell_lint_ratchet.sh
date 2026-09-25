@@ -42,6 +42,9 @@
 #   bash scripts/check_shell_lint_ratchet.sh --update     # re-baseline (shrink only)
 
 set -uo pipefail
+# guard_tree.sh probes `--help` to decide whether to run a self-test. Answer it before any work:
+# a probe that fell through to the body ran this whole guard and hit PROBE-TIMEOUT (#4144).
+case "${1:-}" in -h|--help) printf '%s\n' 'usage: bash scripts/check_shell_lint_ratchet.sh [--update]'; exit 0 ;; esac
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASELINE="${REPO_ROOT}/scripts/shell_lint_baseline.txt"

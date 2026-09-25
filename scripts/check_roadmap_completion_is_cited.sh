@@ -155,6 +155,9 @@
 #     (`id [#2]`), so reordering duplicated ids churns those keys. Two exist
 #     today, both in aprender-orchestrate (PMAT-139, PMAT-141).
 set -uo pipefail
+# guard_tree.sh probes `--help` to decide whether to run a self-test. Answer it before any work:
+# a probe that fell through to the body ran this whole guard and hit PROBE-TIMEOUT (#4144).
+case "${1:-}" in -h|--help) printf '%s\n' 'usage: bash scripts/check_roadmap_completion_is_cited.sh [--self-test|--selftest]'; exit 0 ;; esac
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASELINE_REL="scripts/roadmap_uncited_completion_baseline.txt"
