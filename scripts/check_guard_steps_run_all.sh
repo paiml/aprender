@@ -35,7 +35,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIB="${REPO_ROOT}/scripts/lib/ci_guard_steps.py"
 
 usage() {
-    sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,/^set -uo pipefail/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'
 }
 
 fixture() { # fixture <file> <kind>... ; kinds: plain cancelled always event event_cancelled setup nosetup pass fail
@@ -141,7 +141,7 @@ self_test() {
 }
 
 # mfixture <file> <variant> [step-run...] -- a guard job + its `-steps` manifest.
-# variants: good no_if_false step_if bad_expr no_runner orphan
+# variants: good no_if_false step_if bad_expr run_expr no_runner orphan
 mfixture() {
     local f=$1 v=$2 r
     shift 2
@@ -158,6 +158,7 @@ mfixture() {
             "$([ "$v" = bad_expr ] && echo github.event.pull_request.body || echo github.token)"
         printf '        run: test "$TOK" = tok-123\n'
         [ "$v" = step_if ] && printf '      - name: gated\n        if: always()\n        run: "true"\n'
+        [ "$v" = run_expr ] && printf '      - name: templated\n        run: echo "${{ github.sha }}"\n'
         for r in "$@"; do printf '      - name: "step %s"\n        run: |\n          %s\n' "${#r}" "$r"; done
         if [ "$v" = orphan ]; then
             printf '  guard-y-steps:\n    if: false\n    runs-on: ubuntu-latest\n    steps:\n      - name: a\n        run: "true"\n'
@@ -171,7 +172,7 @@ manifest_rows() {
     printf 'guard-x 0\n' > "$d/mbase"
     mfixture "$d/m_good.yml" good "true"
     case_row "manifest if:false + runner step -> pass" 0 "$d/m_good.yml" "$d/mbase"
-    for v in no_if_false step_if bad_expr no_runner orphan; do
+    for v in no_if_false step_if bad_expr run_expr no_runner orphan; do
         mfixture "$d/m_$v.yml" "$v" "true"
         case_row "manifest defect '$v' -> RED" 1 "$d/m_$v.yml" "$d/mbase"
     done
@@ -235,4 +236,9 @@ esac
 
 command -v python3 > /dev/null 2>&1 || { echo "check_guard_steps_run_all: python3 missing" >&2; exit 2; }
 cd "$REPO_ROOT" || exit 2
-python3 "$LIB" check-run-all
+rc=0
+python3 "$LIB" check-run-all || rc=$?
+# Every guard-shaped step in ci.yml is in a manifest or acknowledged (#4415 lane b):
+# run here so CI enforces it, not only make guards-local / pre-push.
+python3 "$LIB" check-coverage || { r=$?; [ "$rc" -ge "$r" ] || rc=$r; }
+exit "$rc"
