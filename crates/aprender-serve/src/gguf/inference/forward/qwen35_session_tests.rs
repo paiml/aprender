@@ -634,6 +634,13 @@ fn headroom_that_does_not_allocate_retries_at_exactly_the_turn() {
             want,
             "allocate_with_exact_retry({capacity}, {positions}) with room for {fits}"
         );
-        assert!(tried.len() <= 2 && tried[0] == capacity, "tried {tried:?}");
+        // one attempt at the headroom, and a second only when it failed AND
+        // there was headroom to drop
+        let want_tried = if capacity > fits && capacity > positions {
+            vec![capacity, positions]
+        } else {
+            vec![capacity]
+        };
+        assert_eq!(tried, want_tried, "allocation attempts");
     }
 }
