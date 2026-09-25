@@ -124,6 +124,13 @@ fn falsify_rxg_002_h4_alone_is_tripwire_never_vote() {
         let v = set(full(), "/hardware_ruling/rung_eligible", json!(cap));
         assert_eq!(rung(&v), want, "{cap}");
     }
+    // a ruling that names no eligible rung grants none
+    let mut no_rung = full();
+    no_rung["hardware_ruling"]
+        .as_object_mut()
+        .expect("ruling")
+        .remove("rung_eligible");
+    assert_eq!(rung(&no_rung), Mode::Shadow);
     let mut no_ruling = full();
     no_ruling
         .as_object_mut()
@@ -187,6 +194,9 @@ fn falsify_rxg_005_tie_breaker_needs_h4_h5_h7_h1_h2_and_availability() {
             "{id} fails"
         );
     }
+    // H5 is in the Holm family: a holds verdict over α does not hold
+    let h5_p = json!({"id": "H5", "p_holm": 0.6, "verdict": "holds"});
+    assert_eq!(rung(&replace_h(tb.clone(), h5_p)), Mode::Tripwire);
     // H7 is outside the Holm family: its verdict decides, a p is not needed
     assert!(full()["results"]["hypotheses"][4].get("p_holm").is_none());
     // availability: inclusive at 0.95, below or absent is tripwire
@@ -274,6 +284,15 @@ fn falsify_rxg_008_never_skips_a_rung_and_demotes_one() {
     assert_eq!(
         decide(&lambda, PREREG, Mode::TieBreaker).mode,
         Mode::Tripwire
+    );
+    // S-4 never promotes: a lambda lane with no evidence stays in shadow
+    let lambda_h4_fail = drop_h(
+        set(full(), "/hardware_ruling/primary", json!("lambda-cuda")),
+        "H4",
+    );
+    assert_eq!(
+        decide(&lambda_h4_fail.to_string(), PREREG, Mode::Shadow).mode,
+        Mode::Shadow
     );
     // a tripwire-only report demotes a vote lane one rung, not two
     let h4_only = drop_h(drop_h(full(), "H5"), "H7").to_string();

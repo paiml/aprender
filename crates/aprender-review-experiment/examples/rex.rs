@@ -31,9 +31,10 @@
 //! - `ledger REPO OUT_JSONL QUORUM_RECEIPT...` REX-07: write `review-ledger-v2`
 //!   rows from quorum receipts and print shadow coverage. Exit 10 unless every
 //!   receipt carries an uncounted shadow row that leaves the width alone.
-//! - `ladder REPORT_JSON` REX-09: the lane's rung (shadow/tripwire/vote) from a
-//!   `rex-001-report-v2` report, with every reason it stopped below vote. Exit 0
-//!   whatever the rung; the gates read `.mode`.
+//! - `ladder REPORT_JSON [--current RUNG]` PRM-09: the lane's next rung
+//!   (shadow/tripwire/tie-breaker/vote) from a `prm-001-report-v1` report, one
+//!   rung from `--current` (default shadow), with every reason it stopped below
+//!   vote. Exit 0 whatever the rung, 2 on usage; the gates read `.mode`.
 //! - `ratchet record --file F --tag T --cell C --receipts R [--llama-receipts L
 //!   --llama-cell LC]` REX-10: append one `review-lane-perf-ratchet-v1` entry
 //!   from the tag's warm, non-rerun receipts on the cell (and llama.cpp's p95 on
@@ -625,9 +626,20 @@ fn ledger_cmd(a: &[String]) -> ExitCode {
 }
 
 fn ladder_cmd(a: &[String]) -> ExitCode {
-    let Some(path) = a.first() else {
-        eprintln!("usage: rex ladder REPORT_JSON");
-        return ExitCode::from(2);
+    use aprender_review_experiment::ladder::{decide, Mode};
+    let usage = || {
+        eprintln!("usage: rex ladder REPORT_JSON [--current shadow|tripwire|tie-breaker|vote]");
+        ExitCode::from(2)
+    };
+    let (path, current) = match a {
+        [p] => (p, Mode::Shadow),
+        [p, f, r] if f == "--current" => {
+            match serde_json::from_value(serde_json::Value::String(r.clone())) {
+                Ok(m) => (p, m),
+                Err(_) => return usage(),
+            }
+        }
+        _ => return usage(),
     };
     let Some(lock) = prereg::locked_prereg_sha() else {
         eprintln!("rex ladder: no locked prereg sha");
@@ -640,11 +652,7 @@ fn ladder_cmd(a: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let d = aprender_review_experiment::ladder::decide(
-        &text,
-        lock,
-        aprender_review_experiment::ladder::Mode::Shadow,
-    );
+    let d = decide(&text, lock, current);
     match serde_json::to_string(&d) {
         Ok(j) => println!("{j}"),
         Err(e) => eprintln!("rex ladder: {e}"),
