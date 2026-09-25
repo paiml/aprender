@@ -24,18 +24,26 @@
 #       ("an unverifiable signature is not a verified one"), so a green Arm 4 in that
 #       state would mean precisely nothing was verified.
 #
-#   A2  A RECEIPT FOR THIS PR EXISTS, and it reviews a commit this PR contains.
-#       The receipt is selected by reading `predicate.head_sha` out of every
-#       receipt under <root>/<pr>/ and keeping those that are $PR_HEAD_SHA or an
-#       ANCESTOR of it; the newest such commit wins.
+#   A2  A RECEIPT FOR THIS PR EXISTS, and it binds THE DIFF BEING MERGED (#4421).
+#       The subject's diff - <subject>^1..<subject> on merge_group, otherwise
+#       merge-base(origin/main, subject)..subject, evidence/pr-review/<pr>/ excluded,
+#       pinned flags (scripts/lib/pr_review_patch_id.sh) - is hashed with
+#       `git patch-id --verbatim`, and a receipt is selected only if its SIGNED
+#       predicate.diff_patch_id (stamped by pr_review_sign_receipt.sh) equals it.
 #
-#       THE ANCESTOR RULE IS NOT A RELAXATION, IT IS THE ONLY SATISFIABLE ONE.
-#       The previous armed branch looked for exactly `<root>/<pr>/$PR_HEAD_SHA`. No
-#       pull request can ever satisfy that: committing the receipt CHANGES the tip, so
-#       the directory named after the tip cannot contain the review of the tip. That is
-#       a gate that cannot PASS, the dual of the `exit 0` above, and the two shipped in
-#       the same step. A review necessarily reviews a commit that precedes the commit
-#       recording it; requiring an ancestor is what that sentence means mechanically.
+#       WHY NOT THE HEAD SHA. It used to select by predicate.head_sha being the
+#       subject or an ANCESTOR of it. The merge queue lands a PR as a one-parent
+#       SQUASH, so the reviewed head is never an ancestor of the queue sha: that rule
+#       verified 0 of 6 queue merges (merge-queue evaluation, 2026-09-25; a tree
+#       binding 4 of 6, the patch-id 6 of 6). On a branch event the ancestor rule and
+#       the diff rule agree for every honest PR - committing the receipt changes the
+#       tip, not the diff - so nothing that passed before is lost there.
+#
+#       IT FAILS CLOSED. A receipt with no diff_patch_id (signed before #4421) binds
+#       nothing. A subject with an empty diff, or a queue commit with more than one
+#       parent, has no patch-id and verifies nothing. A 1-byte change to the patch,
+#       whitespace included (--verbatim, not --stable), is a different id: what merges
+#       is not what was reviewed, and that is RED.
 #
 #       How far behind the tip the newest receipt sits is MEASURED and printed
 #       (`commits_after_reviewed`) and does NOT gate. S8 is explicit that a threshold
@@ -80,6 +88,9 @@ PROG=${0##*/}
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
 PUBKEY_REL='.github/pr-review.pub'
+# shellcheck source=scripts/lib/pr_review_patch_id.sh
+. "$REPO_ROOT/scripts/lib/pr_review_patch_id.sh" \
+    || { echo "$PROG: ENV - cannot source scripts/lib/pr_review_patch_id.sh" >&2; exit 2; }
 GUARD_REL='scripts/check_pr_review_receipt.sh'
 
 # ---------------------------------------------------------------------------
@@ -153,7 +164,45 @@ arm4() {
     git -C "$REPO_ROOT" rev-parse --verify --quiet "${head}^{commit}" >/dev/null \
         || die_env "PR_HEAD_SHA $head does not resolve in $REPO_ROOT (shallow clone? fetch it before Arm 4)"
 
-    local dir best_dir='' best_head='' best_depth='' d h depth
+    # THE BINDING IS THE DIFF, NOT THE COMMIT (#4421). The merge queue lands a PR as a
+    # one-parent SQUASH, so the reviewed head_sha is never an ancestor of the queue sha:
+    # the ancestor rule verified 0 of 6 queue merges, the diff patch-id 6 of 6. The
+    # subject's diff is:
+    #   queue  (GITHUB_EVENT_NAME=merge_group)  <subject>^1 .. <subject>
+    #   branch (every other event)              merge-base(origin/main, subject) .. subject
+    # with evidence/pr-review/<pr>/ excluded, and its `git patch-id --verbatim` must
+    # equal a signed receipt's predicate.diff_patch_id. FAILS CLOSED: a receipt with
+    # no diff_patch_id binds nothing, and a subject whose patch-id cannot be computed
+    # (empty diff, a queue commit with more than one parent) verifies nothing.
+    local kind=${PR_REVIEW_SUBJECT_KIND:-} base np pid rc=0
+    if [ -z "$kind" ]; then
+        if [ "${GITHUB_EVENT_NAME:-}" = merge_group ]; then kind=queue; else kind=branch; fi
+    fi
+    case "$kind" in
+      queue)
+        np=$(git -C "$REPO_ROOT" rev-list --parents -n 1 "$head" | wc -w)
+        if [ "$np" -ne 2 ]; then
+            echo "  A2  queue subject $head has $((np - 1)) parents; the queue SQUASHES to one." >&2
+            echo "      Its diff against a single base is undefined, so nothing can bind to it." >&2
+            return 1
+        fi
+        base=$(git -C "$REPO_ROOT" rev-parse "$head^1") ;;
+      branch)
+        base=$(git -C "$REPO_ROOT" merge-base refs/remotes/origin/main "$head" 2>/dev/null) \
+            || die_env "no merge-base between refs/remotes/origin/main and $head (fetch origin/main)" ;;
+      *) die_env "PR_REVIEW_SUBJECT_KIND='$kind' is not queue|branch" ;;
+    esac
+    pid=$(prpid_compute "$REPO_ROOT" "$base" "$head" "$pr") || rc=$?
+    if [ "$rc" -eq 2 ]; then
+        die_env "cannot compute a patch-id on this box (no git patch-id --verbatim, no python3)"
+    elif [ "$rc" -ne 0 ]; then
+        echo "  A2  the subject diff $base..$head has no patch-id (empty, or not a diff)." >&2
+        echo "      Nothing was changed, so no receipt can be for it. FAIL CLOSED (#4421)." >&2
+        return 1
+    fi
+    echo "  A2  subject ($kind) diff $base..$head, patch-id $pid"
+
+    local dir best_dir='' best_head='' d h rp legacy=0 other=0
     if [ ! -d "$root/$pr" ]; then
         echo "  A2  no receipt directory at $root/$pr" >&2
         echo "      S6.3: a missing receipt is RED, not skipped. S8 fixes" >&2
@@ -162,24 +211,30 @@ arm4() {
     fi
     for dir in "$root/$pr"/*/; do
         d=${dir%/}
-        [ -d "$d" ] || continue
+        [ -f "$d/receipt.intoto.jsonl" ] || continue
+        rp=$(jq -r '.predicate.diff_patch_id // empty' "$d/receipt.intoto.jsonl" 2>/dev/null)
+        if [ -z "$rp" ]; then legacy=$((legacy + 1)); continue; fi
+        if [ "$rp" != "$pid" ]; then other=$((other + 1)); continue; fi
         h=$(receipt_head "$d")
-        [ -n "$h" ] || continue
-        git -C "$REPO_ROOT" merge-base --is-ancestor "$h" "$head" >/dev/null 2>&1 || continue
-        depth=$(git -C "$REPO_ROOT" rev-list --count "$h".."$head" 2>/dev/null) || continue
-        if [ -z "$best_depth" ] || [ "$depth" -lt "$best_depth" ]; then
-            best_depth=$depth; best_dir=$d; best_head=$h
+        # Several receipts may bind the same diff (a re-review); prefer the one whose
+        # head the subject contains, which is every branch-event case.
+        if [ -z "$best_dir" ] || { [ -n "$h" ] && git -C "$REPO_ROOT" merge-base --is-ancestor "$h" "$head" >/dev/null 2>&1; }; then
+            best_dir=$d; best_head=$h
         fi
     done
     if [ -z "$best_dir" ]; then
-        echo "  A2  $root/$pr holds no receipt whose predicate.head_sha is $head or an" >&2
-        echo "      ancestor of it. A receipt naming a commit this PR does not contain" >&2
-        echo "      is a review of something else." >&2
+        echo "  A2  $root/$pr holds no receipt whose predicate.diff_patch_id is $pid." >&2
+        echo "      $other receipt(s) bind a DIFFERENT diff (the change moved after review," >&2
+        echo "      or the queue resolved a conflict); $legacy carry no diff_patch_id at all" >&2
+        echo "      (signed before #4421 - re-sign to bind). What merges is not what was reviewed." >&2
         return 1
     fi
-    echo "  A2  receipt $best_dir reviews $best_head"
-    echo "      commits_after_reviewed = $best_depth   (MEASURED, not gating - S8 sets"
-    echo "      thresholds from 30 samples and never invents them)"
+    echo "  A2  receipt $best_dir binds this diff (reviewed head $best_head)"
+    if git -C "$REPO_ROOT" merge-base --is-ancestor "$best_head" "$head" >/dev/null 2>&1; then
+        echo "      commits_after_reviewed = $(git -C "$REPO_ROOT" rev-list --count "$best_head".."$head" 2>/dev/null)   (MEASURED, not gating)"
+    else
+        echo "      reviewed head is not an ancestor of the subject (a queue squash or a rebase): the diff binds, not the commit"
+    fi
 
     # -- A3 ----------------------------------------------------------------
     local scratch rc
@@ -257,10 +312,12 @@ self_test() {
     # Everything the guard resolves relative to itself or to the working
     # directory has to exist INSIDE the synthetic tree, or the run would reach
     # back into this repository and stop being hermetic.
-    mkdir -p "$repo/.github" "$repo/scripts" "$repo/tests/fixtures/pr-review"
+    mkdir -p "$repo/.github" "$repo/scripts/lib" "$repo/tests/fixtures/pr-review"
     cp "$fix/keys/pr-review-test.pub"            "$repo/.github/pr-review.pub"
     cp "$REPO_ROOT/scripts/check_pr_review_arm4.sh" \
        "$REPO_ROOT/scripts/check_pr_review_receipt.sh" "$repo/scripts/"
+    cp "$REPO_ROOT/scripts/lib/pr_review_patch_id.sh" \
+       "$REPO_ROOT/scripts/lib/git_patch_id.py" "$repo/scripts/lib/"
     cp -a "$REPO_ROOT/schemas"                   "$repo/schemas"
     cp -a "$fix/positive-control"                "$repo/tests/fixtures/pr-review/positive-control"
 
@@ -272,16 +329,70 @@ self_test() {
     git -C "$repo" rev-parse --verify --quiet "${head}^{commit}" >/dev/null \
         || die_env "row-14 reviews $head, which the fixture repo does not contain"
 
-    mkdir -p "$repo/evidence/pr-review/999/$head"
-    cp "$rcpt"/* "$repo/evidence/pr-review/999/$head/"
+    # #4421: the receipt must carry the diff patch-id of base_sha..head_sha, signed.
+    # row-14 predates it, so the copy is stamped here and RE-SIGNED with the committed
+    # TEST-ONLY key (keys/README.md) - the same key that signed row-14 originally.
+    # The unstamped original is kept for the legacy row.
+    command -v minisign >/dev/null 2>&1 || die_env "minisign is not on PATH"
+    local rbase pid ev="$repo/evidence/pr-review/999/$head"
+    rbase=$(jq -r '.predicate.base_sha // empty' "$rcpt/receipt.intoto.jsonl")
+    pid=$(prpid_compute "$repo" "$rbase" "$head" 999) \
+        || die_env "cannot compute the fixture's patch-id for $rbase..$head"
+    mkdir -p "$ev"
+    cp "$rcpt"/* "$ev/"
+    jq -c --arg p "$pid" --arg a "$PRPID_ALGO" \
+        '.predicate.diff_patch_id = $p | .predicate.diff_patch_id_algo = $a' \
+        "$rcpt/receipt.intoto.jsonl" > "$ev/receipt.intoto.jsonl" || die_env "could not stamp row-14"
+    rm -f -- "${ev:?}/receipt.intoto.jsonl.minisig"
+    minisign -S -s "$fix/keys/pr-review-test-TEST-ONLY.key" -m "$ev/receipt.intoto.jsonl" \
+        -t "arm4 self-test, #4421 stamped" </dev/null >/dev/null 2>&1 \
+        || die_env "could not re-sign the stamped fixture with the TEST-ONLY key"
 
-    # A DESCENDANT of the reviewed commit, so the ancestor rule is exercised at a
-    # depth of one and not only at the degenerate depth of zero. This is the
-    # shape every real PR has: the receipt reviews a commit, and the commit
-    # RECORDING the receipt sits on top of it.
-    local tip
-    tip=$(git -C "$repo" commit-tree -p "$head" -m "R1 record the receipt" "$head^{tree}" \
+    # A DESCENDANT of the reviewed commit that COMMITS the receipt, as every real PR
+    # does - so the evidence/pr-review/<pr>/ exclusion is exercised, not assumed.
+    local tip idx="$ST_ROOT/idx" tree
+    GIT_INDEX_FILE=$idx git -C "$repo" read-tree "$head" || die_env "read-tree"
+    GIT_INDEX_FILE=$idx git -C "$repo" add -f "evidence/pr-review/999" || die_env "add evidence"
+    tree=$(GIT_INDEX_FILE=$idx git -C "$repo" write-tree) || die_env "write-tree"
+    tip=$(git -C "$repo" commit-tree -p "$head" -m "R1 record the receipt" "$tree" \
           2>/dev/null) || die_env "could not create a descendant of $head"
+
+    # THE MERGE-QUEUE SHAPE: a SQUASH of the PR onto a main that MOVED, one parent.
+    # The reviewed head is not its ancestor - the ancestor rule's 0-of-6 case.
+    local main squash
+    main=$(git -C "$repo" rev-parse refs/remotes/origin/main) || die_env "no origin/main"
+    [ "$main" != "$rbase" ] \
+        || die_env "fixture origin/main has not moved past the reviewed base; the queue row would be degenerate"
+    rm -f -- "${idx:?}"
+    GIT_INDEX_FILE=$idx git -C "$repo" read-tree "$main" || die_env "read-tree main"
+    git -C "$repo" diff --full-index --binary "$rbase" "$tip" \
+        | GIT_INDEX_FILE=$idx git -C "$repo" apply --cached \
+        || die_env "the fixture PR does not apply cleanly onto origin/main"
+    tree=$(GIT_INDEX_FILE=$idx git -C "$repo" write-tree) || die_env "write-tree"
+    squash=$(git -C "$repo" commit-tree -p "$main" -m "PR 999 (squash)" "$tree") || die_env "commit-tree"
+
+    # The same squash with the PR's first changed file altered by exactly ONE BYTE,
+    # and with ONE trailing space - the negative arm, and the reason for --verbatim.
+    local f1 squash_1b squash_ws
+    f1=$(git -C "$repo" diff --name-only "$rbase" "$head" | head -1)
+    [ -n "$f1" ] || die_env "the fixture PR changes no file"
+    mut_squash() { # <sed-expr> -> sha of a squash whose $f1 is edited by <sed-expr>
+        local b
+        b=$(git -C "$repo" show "$squash:$f1" | sed "$1" | git -C "$repo" hash-object -w --stdin) || return 1
+        [ "$b" != "$(git -C "$repo" rev-parse "$squash:$f1")" ] || return 1
+        rm -f -- "${idx:?}"
+        GIT_INDEX_FILE=$idx git -C "$repo" read-tree "$squash" || return 1
+        GIT_INDEX_FILE=$idx git -C "$repo" update-index --cacheinfo "100644,$b,$f1" || return 1
+        git -C "$repo" commit-tree -p "$main" -m "PR 999 (mutated squash)" \
+            "$(GIT_INDEX_FILE=$idx git -C "$repo" write-tree)"
+    }
+    squash_1b=$(mut_squash '1s/^./\x01/') || die_env "could not build the 1-byte squash"
+    squash_ws=$(mut_squash '1s/$/ /')     || die_env "could not build the whitespace squash"
+    [ "$(git -C "$repo" diff "$squash" "$squash_1b" | grep -c '^[-+][^-+]')" -eq 2 ] \
+        || die_env "the 1-byte squash does not differ by exactly one line"
+    local merge2
+    merge2=$(git -C "$repo" commit-tree -p "$main" -p "$tip" -m "two-parent merge" "$tree") \
+        || die_env "commit-tree"
 
     # A commit the reviewed one is NOT an ancestor of. C3 sits on main, on the
     # other side of the fork - a property of the fixture topology, fixed forever.
@@ -293,6 +404,11 @@ self_test() {
     local nokey="$ST_ROOT/no-key"
     cp -a "$repo" "$nokey"
     rm -f "$nokey/.github/pr-review.pub"
+
+    # A copy whose receipt is the UNSTAMPED row-14: signed, valid, and pre-#4421.
+    local legacy="$ST_ROOT/legacy"
+    cp -a "$repo" "$legacy"
+    cp "$rcpt"/* "$legacy/evidence/pr-review/999/$head/"
 
     # A copy whose receipt signature does not verify.
     local badsig="$ST_ROOT/badsig"
@@ -330,8 +446,21 @@ self_test() {
         "$repo"   999 "$tip"
     row no-receipt-for-this-pr    1 "no receipt at all (§6.3: RED, not skipped)" \
         "$repo"  1000 "$tip"
-    row receipt-not-an-ancestor   1 "the only receipt reviews a commit the subject does not contain" \
+    row receipt-not-an-ancestor   1 "subject is origin/main itself: an EMPTY diff binds nothing" \
         "$repo"   999 "$not_ancestor"
+    # #4421 - the merge queue, and the binding failing closed.
+    row queue-squash-binds        0 "merge_group: one-parent squash onto a MOVED main, head not an ancestor (0/6 before #4421)" \
+        "$repo"   999 "$squash"    GITHUB_EVENT_NAME=merge_group
+    row queue-one-byte-changed    1 "merge_group: the squash differs from the reviewed diff by ONE BYTE" \
+        "$repo"   999 "$squash_1b" GITHUB_EVENT_NAME=merge_group
+    row queue-whitespace-changed  1 "merge_group: one trailing space - --stable would have passed this" \
+        "$repo"   999 "$squash_ws" GITHUB_EVENT_NAME=merge_group
+    row queue-two-parents         1 "merge_group: a two-parent queue commit has no single diff (fail closed)" \
+        "$repo"   999 "$merge2"    GITHUB_EVENT_NAME=merge_group
+    row branch-squash-as-branch   0 "the same squash judged as a branch event (merge-base = its parent)" \
+        "$repo"   999 "$squash"
+    row legacy-receipt-no-id      1 "a valid signed receipt with no diff_patch_id binds nothing" \
+        "$legacy" 999 "$tip"
     row corrupt-signature         1 "receipt present, signature does not verify (A4)" \
         "$badsig" 999 "$tip"
     row guard-accepts-everything  1 "A3: a permissive guard must not read green" \
@@ -353,7 +482,7 @@ self_test() {
         echo "--- $st_fail row(s) did not produce the required verdict ---" >&2
         return 1
     fi
-    echo "--- 10/10 rows, both polarities ---"
+    echo "--- 16/16 rows, both polarities ---"
     return 0
 }
 
