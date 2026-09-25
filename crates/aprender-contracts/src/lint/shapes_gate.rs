@@ -628,9 +628,10 @@ fn entity_count(name: &str, extraction: &extract::Extraction) -> Option<usize> {
     })
 }
 
-/// The entity types `<contract_dir>/ontology.yaml` (Σ) marks `implemented: true`. Empty when the tree has no Σ or
-/// Σ does not parse — Σ's well-formedness is the `sigma` gate's verdict, not this one's.
-fn sigma_implemented(contract_dir: &Path) -> BTreeSet<String> {
+/// The entity types `<contract_dir>/ontology.yaml` (Σ) marks `implemented: true`, each with the extractor Σ names
+/// for it. Empty when the tree has no Σ or Σ does not parse — Σ's well-formedness is the `sigma` gate's verdict,
+/// not this one's.
+fn sigma_implemented(contract_dir: &Path) -> BTreeMap<String, String> {
     std::fs::read_to_string(contract_dir.join("ontology.yaml"))
         .ok()
         .and_then(|text| crate::ontology::sigma::Sigma::from_yaml(&text).ok())
@@ -639,7 +640,7 @@ fn sigma_implemented(contract_dir: &Path) -> BTreeSet<String> {
                 .entity_types
                 .into_iter()
                 .filter(|e| e.implemented)
-                .map(|e| e.name)
+                .map(|e| (e.name, e.extractor))
                 .collect()
         })
         .unwrap_or_default()
@@ -650,16 +651,25 @@ fn sigma_implemented(contract_dir: &Path) -> BTreeSet<String> {
 /// implemented and uncounted, and every `by_entity_type["<name>"]` probe on them read ABSENT. A Σ-implemented type
 /// with no counting arm is now the gate's refusal, named, never a missing key. `implemented: false` types are
 /// omitted by rule unless this build counts them.
+///
+/// A type Σ reads with `pv_contract` needs no arm of its own: PMAT-4160 types each contract that declares it with
+/// the class `entity:<type>`, so its count is that class's instances — a Σ that registers `study` and `claim` is
+/// counted without a build change.
 fn by_entity_type(
     extraction: &extract::Extraction,
-    implemented: &BTreeSet<String>,
+    implemented: &BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, usize>, ShapeError> {
     COUNTED_ENTITY_TYPES
         .iter()
         .map(|s| (*s).to_string())
-        .chain(implemented.iter().cloned())
+        .chain(implemented.keys().cloned())
         .map(|name| match entity_count(&name, extraction) {
             Some(n) => Ok((name, n)),
+            None if implemented.get(&name).is_some_and(|x| x == "pv_contract") => {
+                let class = extract::pv_contract::entity_class(&name);
+                let n = extraction.graph.instances_of(&class).len();
+                Ok((name, n))
+            }
             None => Err(ShapeError::Malformed {
                 shape: "by_entity_type".into(),
                 what: format!(
@@ -1203,12 +1213,12 @@ mod tests {
         let contracts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
         let implemented = sigma_implemented(&contracts);
         assert!(
-            implemented.contains("json") && implemented.contains("release-evidence"),
+            implemented.contains_key("json") && implemented.contains_key("release-evidence"),
             "Σ no longer implements the two #3624 types — the test would be vacuous: {implemented:?}"
         );
         let map = by_entity_type(&extract::Extraction::default(), &implemented)
             .expect("every implemented type has an arm");
-        for name in &implemented {
+        for name in implemented.keys() {
             assert!(
                 map.contains_key(name),
                 "by_entity_type lacks Σ-implemented {name}"
@@ -1224,13 +1234,48 @@ mod tests {
     #[test]
     fn an_implemented_type_without_a_counting_arm_is_refused_by_name() {
         // The discrimination #3624 asks for: flip a type to implemented with no arm, and the gate names it.
-        let flipped: BTreeSet<String> = ["gguf", "readme"].iter().map(|s| s.to_string()).collect();
+        let flipped: BTreeMap<String, String> = [("gguf", "gguf"), ("readme", "readme")]
+            .iter()
+            .map(|(n, x)| ((*n).to_string(), (*x).to_string()))
+            .collect();
         match by_entity_type(&extract::Extraction::default(), &flipped) {
             Err(ShapeError::Malformed { what, .. }) => assert!(
                 what.contains("entity type readme is registered in Σ as implemented"),
                 "{what}"
             ),
             other => panic!("expected a named refusal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_pv_contract_type_is_counted_by_its_entity_class_and_only_by_its_extractor() {
+        // PMAT-4160 × #3624: Σ may register any type pv_contract reads; its count is the contracts typed
+        // `entity:<type>`. The same name under another extractor has no arm and stays the named refusal.
+        let mut x = extract::Extraction::default();
+        let study = extract::pv_contract::entity_class("study");
+        for c in ["PMAT-001", "PMAT-002"] {
+            x.graph
+                .insert(iri("contract", c), RDF_TYPE, Term::iri(study.clone()));
+        }
+        x.graph.insert(
+            iri("contract", "PMAT-003"),
+            RDF_TYPE,
+            Term::iri(extract::pv_contract::entity_class("claim")),
+        );
+        let typed = |ext: &str| -> BTreeMap<String, String> {
+            [("study", ext), ("claim", ext)]
+                .iter()
+                .map(|(n, e)| ((*n).to_string(), (*e).to_string()))
+                .collect()
+        };
+        let map = by_entity_type(&x, &typed("pv_contract")).expect("pv_contract types are counted");
+        assert_eq!(map.get("study"), Some(&2));
+        assert_eq!(map.get("claim"), Some(&1));
+        match by_entity_type(&x, &typed("json")) {
+            Err(ShapeError::Malformed { what, .. }) => {
+                assert!(what.contains("is not counted in by_entity_type"), "{what}");
+            }
+            other => panic!("a non-pv_contract type with no arm must be refused, got {other:?}"),
         }
     }
 }
