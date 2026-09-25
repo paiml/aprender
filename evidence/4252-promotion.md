@@ -94,3 +94,24 @@ hour, and only 1 of 5 attempts ran a full 45-item pass.
 ## Re-measure
 
 On rc.2, once #4443 and #4313 land.
+
+## (2c) :8091 availability after infra#1154 (19:13–20:13Z)
+
+With infra#1154 the executor yields only to priority-lock waiters and drains on SIGINT. The probe hit gx10 loopback
+`/health` every 15 s for 60 min (240 probes, `lambda:/mnt/nvme-raid0/rex-shadow/4252-avail-8091-1913/probe.tsv`).
+
+| window | state | length |
+|---|---|---|
+| 19:13:36–19:27:06Z | up | 13.5 min (open at the start) |
+| 19:27:06–19:35:36Z | down | 8.5 min |
+| 19:35:36–19:55:51Z | up | 20.3 min |
+| 19:55:51–20:06:06Z | down | 10.3 min |
+| 20:06:06–20:13:21Z | up | ≥7.5 min (open at the end) |
+
+- **Availability 165/240 = 68.8%**, against ≤60.8% for the retired watcher.
+- Both stops are `gpu-priority` yields in the yield log (19:27:00Z, 19:55:43Z). There were no `gpu-lock-waiter`
+  stops in the hour.
+- The executor stopped within 1 s, and `/health` answered about 17 s after each restart.
+- Every closed serving window was long enough for one 45-item Dev pass (7.3 min at 19:02Z), where last hour's
+  windows (1–7 min) were not.
+- Promotion to a forced lane is still blocked: it would NotRun about 3 rounds in 10.
