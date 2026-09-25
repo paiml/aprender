@@ -20,6 +20,8 @@ use std::path::Path;
 /// 2. Assign each sample to nearest centroid
 /// 3. Update centroids as mean of assigned samples
 /// 4. Repeat until convergence or max iterations
+/// 5. Repeat steps 1-4 `n_init` times from different seeded starts and keep
+///    the run with the lowest inertia (sklearn's `n_init`, default 10)
 ///
 /// # Examples
 ///
@@ -56,6 +58,9 @@ pub struct KMeans {
     tol: f32,
     /// Random seed for initialization.
     random_state: Option<u64>,
+    /// Number of seeded restarts; the lowest-inertia run is kept.
+    #[serde(default = "default_n_init")]
+    n_init: usize,
     /// Cluster centroids after fitting.
     centroids: Option<Matrix<f32>>,
     /// Labels for training data.
@@ -64,6 +69,13 @@ pub struct KMeans {
     inertia: f32,
     /// Number of iterations run.
     n_iter: usize,
+}
+
+/// sklearn's `KMeans(n_init=10)` default.
+pub(crate) const DEFAULT_N_INIT: usize = 10;
+
+fn default_n_init() -> usize {
+    DEFAULT_N_INIT
 }
 
 impl Default for KMeans {

@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-02-18'
   author: PAIML Engineering
   description: K-Means kernel — Lloyd's algorithm for cluster assignment
@@ -40,6 +40,18 @@ equations:
     - input.len() > 0
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Objective
+  restarts:
+    formula: 'J_best = min_{r in 0..n_init} J(Lloyd(init_r)), init_0 = farthest-point from row seed mod N'
+    domain: n_init >= 1, init_r seeded by (seed, r) via SplitMix64
+    codomain: J_best in R_>=0
+    invariants:
+    - J_best <= J(Lloyd(init_0)) (never worse than a single init)
+    - ties keep the earlier restart, so n_init = 1 is exactly the single-init fit
+    - same seed and n_init give bit-identical inertia and labels
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Restarts
 proof_obligations:
 - id: KM-INV-001
   type: invariant
@@ -60,6 +72,11 @@ proof_obligations:
   type: invariant
   property: Valid cluster indices
   formal: c_i in {0, ..., K-1} for all i
+  applies_to: all
+- id: KM-MON-006
+  type: monotonicity
+  property: Best-of-n_init never worse than single init
+  formal: '∀ n ≥ 1: J_best(n) ≤ J_best(1)'
   applies_to: all
 - id: KM-EQ-005
   type: equivalence
@@ -94,6 +111,10 @@ enforcement:
     description: Objective must not increase between iterations
     check: contract_tests::FALSIFY-KM-002
     severity: ERROR
+  restarts:
+    description: Best-of-n_init inertia must not exceed the single-init inertia
+    check: contract_tests::FALSIFY-KM-007
+    severity: ERROR
 falsification_tests:
 - id: FALSIFY-KM-001
   rule: Nearest assignment
@@ -125,6 +146,21 @@ falsification_tests:
   prediction: All points assigned to cluster 0, centroid = mean(x)
   test: proptest with K=1
   if_fails: Single-cluster degenerate case not handled
+- id: FALSIFY-KM-007
+  rule: n_init monotone
+  prediction: inertia(n_init=10) <= inertia(n_init=1) on 96 seeded blob fits (24 datasets x K in {2,3,5,8})
+  test: cluster::kmeans::tests_kmeans_contract::falsify_km_007_n_init_never_worse_than_single
+  if_fails: Best-of selection keeps a worse restart (last-run-wins mutant turns this RED)
+- id: FALSIFY-KM-008
+  rule: n_init explores
+  prediction: n_init=10 strictly beats n_init=1 on at least one of the 96 fits; on the E9 corpus (232x2665 TF-IDF) it wins at 21/29 K and loses at 0 (examples/kmeans_n_init_e9.rs)
+  test: cluster::kmeans::tests_kmeans_contract::falsify_km_008_n_init_strictly_improves_somewhere
+  if_fails: Restarts reuse the same start row (same-start mutant turns this RED, 0/96)
+- id: FALSIFY-KM-009
+  rule: n_init reproducible
+  prediction: same seed + n_init give bit-identical inertia and labels; default n_init = 10; n_init = 0 clamps to 1
+  test: cluster::kmeans::tests_kmeans_contract::falsify_km_009_n_init_reproducible
+  if_fails: Restart seeding depends on unseeded state
 kani_harnesses:
 - id: KANI-KM-001
   obligation: KM-INV-001
