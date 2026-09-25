@@ -16,9 +16,10 @@ fn pv_bin() -> PathBuf {
 }
 
 /// sha256 hashes `scripts/Comparator.lean` printed for `gelu_pos (x : Nat) (h : 0 < x) : 0 < g x`, and for the
-/// same theorem with its hypothesis strengthened to `1 < x` (measured with Lean v4.29.0-rc4, 2026-09-24).
-const PINNED: &str = "902d0aa1835a8af24db87013bf140f155ab57b9002d3665f37294f2a3623b6fd";
-const WEAKER: &str = "66afc7f44f64333e7cc3a4c495e91ce8d3e376d8e813accc9542f2a9f5397224";
+/// same theorem with its hypothesis strengthened to `1 < x` (measured with Lean v4.29.0-rc4, 2026-09-24;
+/// re-measured 2026-09-25 after #4241's canon change, the old script reproducing the old pair on the same file).
+const PINNED: &str = "2f264bb0afcc74e21bfc40220d9dbca9cbf2d2b34fdd5729aa3a74d3a36ce1f2";
+const WEAKER: &str = "2e6864e79530a3bd6bd657ba470b62ace36875c8cc65ef9c584a62297967862c";
 const NAME: &str = "ProvableContracts.Gelu.gelu_pos";
 
 struct Fx {
@@ -276,11 +277,18 @@ fn the_committed_comparator_script_matches_the_row_shape() {
         "--self-test",
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "autoImplicit",
+        // #4241: names length-prefixed, universe params by position; both pinned by self-test controls.
+        "def canonName (n : Name) : String",
+        "| some i => s!\"u{i}\"",
+        "for (a, b, want) in [(`ua, `ub, true), (`uc, `ud, false)] do",
+        "bad := bad + (← selfTestCanon)",
     ] {
         assert!(text.contains(needle), "Comparator.lean lacks {needle:?}");
     }
     assert!(
-        text.contains("def typeHash (e : Expr) : String := sha256 (canon e).toUTF8")
+        text.contains(
+            "def typeHash (ci : ConstantInfo) : String := sha256 (canon ci.levelParams ci.type).toUTF8"
+        )
             && !text.contains("hash (canon"),
         "the statement hash must be sha256 over canon, not Lean's 64-bit hash"
     );

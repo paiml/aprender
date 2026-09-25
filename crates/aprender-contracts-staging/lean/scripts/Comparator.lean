@@ -34,22 +34,45 @@ def solutionOf? (challenge : Name) : Option Name :=
   let s := challenge.replacePrefix `PvlChallenge .anonymous
   if s == challenge || s.isAnonymous then none else some s
 
+/-- A Name, injectively: each component length-prefixed (`s3:foo`) or tagged numeric (`n7.`), then `;`. Printing
+it with `toString` leaves the encoding to Lean's escaping, so a crafted component holding `,` or `)` could make two
+canonical strings collide (#4241). -/
+def canonName (n : Name) : String :=
+  "N" ++ String.join (n.components.map fun
+    | .str _ s => s!"s{s.length}:{s}"
+    | .num _ k => s!"n{k}."
+    | .anonymous => "") ++ ";"
+
+/-- A universe level, each parameter as its POSITION in the declaration's `levelParams` (`u0`, `u1`, …): `.{u}` and
+`.{v}` state the same thing, and order is kept because `@c.{a, b}` instantiates by position (#4241). A parameter
+outside the list (none, for a declaration's own type) keeps its name. -/
+partial def canonLevel (lps : List Name) : Level → String
+  | .zero => "0"
+  | .succ l => s!"+({canonLevel lps l})"
+  | .max a b => s!"max({canonLevel lps a},{canonLevel lps b})"
+  | .imax a b => s!"imax({canonLevel lps a},{canonLevel lps b})"
+  | .param n => match lps.findIdx? (· == n) with
+    | some i => s!"u{i}"
+    | none => s!"p{canonName n}"
+  | .mvar id => s!"m{canonName id.name}"
+
 /-- The type's canonical form: its structure, constants, universe levels, literals and binder INFO, and not its
-binder NAMES (`(x : Nat)` and `(y : Nat)` state the same thing; `{x : Nat}` and `(x : Nat)` do not). -/
-partial def canon : Expr → String
+binder NAMES (`(x : Nat)` and `(y : Nat)` state the same thing; `{x : Nat}` and `(x : Nat)` do not), nor its
+universe parameter names (`lps`, the declaration's `levelParams`; see `canonLevel`). -/
+partial def canon (lps : List Name) : Expr → String
   | .bvar i => s!"#{i}"
-  | .fvar id => s!"F({id.name})"
-  | .mvar id => s!"M({id.name})"
-  | .sort l => s!"S({l})"
-  | .const n ls => s!"C({n},{ls})"
-  | .app f a => s!"A({canon f},{canon a})"
-  | .lam _ t b bi => s!"L{repr bi}({canon t},{canon b})"
-  | .forallE _ t b bi => s!"P{repr bi}({canon t},{canon b})"
-  | .letE _ t v b nd => s!"E{nd}({canon t},{canon v},{canon b})"
+  | .fvar id => s!"F({canonName id.name})"
+  | .mvar id => s!"M({canonName id.name})"
+  | .sort l => s!"S({canonLevel lps l})"
+  | .const n ls => s!"C({canonName n}," ++ ",".intercalate (ls.map (canonLevel lps)) ++ ")"
+  | .app f a => s!"A({canon lps f},{canon lps a})"
+  | .lam _ t b bi => s!"L{repr bi}({canon lps t},{canon lps b})"
+  | .forallE _ t b bi => s!"P{repr bi}({canon lps t},{canon lps b})"
+  | .letE _ t v b nd => s!"E{nd}({canon lps t},{canon lps v},{canon lps b})"
   | .lit (.natVal n) => s!"N{n}"
   | .lit (.strVal v) => s!"T{v.quote}"
-  | .mdata _ e => canon e
-  | .proj s i e => s!"J({s},{i},{canon e})"
+  | .mdata _ e => canon lps e
+  | .proj s i e => s!"J({canonName s},{i},{canon lps e})"
 
 /-! SHA-256 (FIPS 180-4), in Lean: core has none, and a proof-to-statement binding wants a cryptographic hash, not
 the 32-bit `Expr.hash` (cop ruling on #4201). Checked against the FIPS vectors by `--self-test`. -/
@@ -94,8 +117,8 @@ def sha256 (msg : ByteArray) : String := Id.run do
     "".pushn '0' (8 - s.length) ++ s
   return String.join (h.toList.map hex)
 
-/-- sha256 of `canon`, as 64 hex digits. -/
-def typeHash (e : Expr) : String := sha256 (canon e).toUTF8
+/-- sha256 of `canon`, as 64 hex digits, of a declaration's type under its `levelParams`. -/
+def typeHash (ci : ConstantInfo) : String := sha256 (canon ci.levelParams ci.type).toUTF8
 
 def jStr (s : String) : String := (Json.str s).compress
 
@@ -147,11 +170,11 @@ def rowsOf (env : Environment) : IO (Array String) := do
   for (n, ci) in mine do
     let some sol := solutionOf? n | continue
     match env.find? sol with
-    | none => out := out.push (row sol (some (typeHash ci.type)) none none none)
+    | none => out := out.push (row sol (some (typeHash ci)) none none none)
     | some sci =>
       let (_, st) := ((CollectAxioms.collect sol).run env).run {}
       let axs := st.axioms.qsort (fun a b => a.toString < b.toString)
-      let (c, s) := (typeHash ci.type, typeHash sci.type)
+      let (c, s) := (typeHash ci, typeHash sci)
       let dq ← if c == s then pure none else some <$> defeqInstances env ci.type sci.type
       out := out.push (row sol (some c) (some s) dq (some axs))
   return out
@@ -180,7 +203,7 @@ def selfTestDefeq : IO Nat := do
     let (some ca, some cb) := (env.find? a, env.find? b)
       | IO.println s!"FAIL  defeq control {a} or {b} is not in the environment"; bad := bad + 1; continue
     let (ta, tb) := (ca.type, cb.type)
-    let hashEq := typeHash ta == typeHash tb
+    let hashEq := typeHash ca == typeHash cb
     let got ← defeqInstances env ta tb
     -- The positive control is only a control if the hashes DIFFER: else it would pass on the hash alone.
     let ok := got == want && !hashEq
@@ -188,7 +211,33 @@ def selfTestDefeq : IO Nat := do
     if !ok then bad := bad + 1
   return bad
 
-/-- FIPS 180-4 vectors: the empty string, "abc", and the two-block 448-bit message; then the defeq controls. -/
+/-- The `canon` controls (#4241). `ua`/`ub` differ only in their universe parameter's NAME: they must hash alike.
+`uc`/`ud` declare the same two parameters in the other order, which `@c.{a, b}` sees: they must not, so the fix
+cannot have dropped universe parameters altogether. -/
+def canonControls : String := "
+theorem ua.{u} (α : Sort u) (a : α) : a = a := rfl
+theorem ub.{v} (α : Sort v) (a : α) : a = a := rfl
+theorem uc.{u, v} (α : Sort u) (β : Sort v) (a : α) (b : β) : a = a ∧ b = b := ⟨rfl, rfl⟩
+theorem ud.{v, u} (α : Sort u) (β : Sort v) (a : α) (b : β) : a = a ∧ b = b := ⟨rfl, rfl⟩
+"
+
+def selfTestCanon : IO Nat := do
+  let some env ← elabInput canonControls "<self-test canon>" | IO.println "FAIL  the canon controls did not elaborate"; return 1
+  let mut bad := 0
+  for (a, b, want) in [(`ua, `ub, true), (`uc, `ud, false)] do
+    let (some ca, some cb) := (env.find? a, env.find? b)
+      | IO.println s!"FAIL  canon control {a} or {b} is not in the environment"; bad := bad + 1; continue
+    let got := typeHash ca == typeHash cb
+    IO.println s!"{if got == want then "ok  " else "FAIL"}  canon hash {a} = hash {b}: {got} (want {want})"
+    if got != want then bad := bad + 1
+  -- `a.b` (two components) and `«a.b»` (one) are distinct constants; unescaped they print alike.
+  let (dotted, flat) := (canon [] (.const (Name.mkStr (Name.mkStr .anonymous "a") "b") []),
+    canon [] (.const (Name.mkSimple "a.b") []))
+  IO.println s!"{if dotted != flat then "ok  " else "FAIL"}  canon name a.b ≠ «a.b»: {dotted} vs {flat}"
+  if dotted == flat then bad := bad + 1
+  return bad
+
+/-- FIPS 180-4 vectors: the empty string, "abc", and the two-block 448-bit message; then the defeq and canon controls. -/
 def selfTest : IO UInt32 := do
   let cases := [("", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
     ("abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
@@ -200,6 +249,7 @@ def selfTest : IO UInt32 := do
     IO.println s!"{if got == want then "ok  " else "FAIL"}  sha256 {i.quote} = {got}"
     if got != want then bad := bad + 1
   bad := bad + (← selfTestDefeq)
+  bad := bad + (← selfTestCanon)
   return if bad == 0 then 0 else 1
 
 def main (args : List String) : IO UInt32 := do
