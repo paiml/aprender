@@ -10,7 +10,7 @@
 # Rule: any `runs-on:` that names `self-hosted` must ALSO name one of:
 #   - clean-room  (the provisioned sovereign-ci pool: registry + cached image)
 #   - a GPU label: cuda | gpu | rtx4090 | ada | blackwell | gb10
-#   - a macOS label: apple-silicon | m4
+#   - a macOS label: apple-silicon | m4 | mini-builder
 # Reusable-workflow jobs (`uses:`) have no `runs-on` and are naturally exempt.
 # GitHub-hosted jobs (ubuntu-latest, …) don't name self-hosted and are exempt.
 set -euo pipefail
@@ -18,7 +18,10 @@ cd "$(dirname "$0")/.."
 
 # perf-solo (PERF-013, infra#338): one box, intel-clean-room-16, deliberately WITHOUT clean-room so
 # general pool work cannot queue in front of a speed measurement. A one-box label discriminates.
-DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4|perf-solo'
+# mini-builder (#4292, infra#1042): the mini's dedicated repo-level release runner, labelled
+# self-hosted,macOS,ARM64,mini-builder and "used only via mini-builder so it never joins the
+# general pool" (operator, via the cop). Also a one-box label.
+DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4|perf-solo|mini-builder'
 fail=0
 
 while IFS=: read -r file line sel; do

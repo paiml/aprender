@@ -526,6 +526,103 @@ jobs:
               | python3 -c 'import json,sys; a=json.load(sys.stdin); print("uploaded", a["name"], a["size"], "bytes")'
           done
 
+  # #4292: the Apple-silicon CPU asset. Without it a mac (the mini) had to build
+  # the tag from source. It runs on the mini, registered as a self-hosted mac
+  # builder (operator 2026-09-24: "register the mini as self-hosted mac builder";
+  # infra-8d owns the runner, label `mini-builder`), which keeps the no-hosted rule
+  # above (#3073). There is no glibc here: the floor that
+  # matters is the minimum macOS, pinned by MACOSX_DEPLOYMENT_TARGET and read back
+  # from the Mach-O load command.
+  build-apr-darwin:
+    name: apr (cpu) aarch64-apple-darwin on mini
+    runs-on: [self-hosted, macOS, ARM64, mini-builder]
+    env:
+      TARGET: aarch64-apple-darwin
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - name: Resolve release tag
+        id: tag
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            echo "::error::No tag resolved (release event missing tag_name and no dispatch input)"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout at tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      # The first thing this box does after it has a tree: fail fast on a missing tool.
+      - name: Preflight - this box has the tools this job assumes
+        run: |
+          for t in rustup cargo otool file strip shasum curl python3; do
+            command -v "$t" >/dev/null || { echo "::error::mini-builder has no $t"; exit 1; }
+          done
+
+      # rustup reads rust-toolchain.toml, so the build uses the workspace pin.
+      - name: Build apr on the default features (no cuda)
+        run: |
+          rustup target add "$TARGET"
+          rustc --version
+          cargo build --release -p apr-cli --bin apr --target "$TARGET" --locked
+          {
+            echo "### apr (cpu) $TARGET built on the mini"
+            echo "- toolchain: $(rustc --version)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The same discriminator as the linux cpu lane, plus the arch and the
+      # minimum macOS actually recorded in the binary.
+      - name: Prove the asset is an arm64 CPU build that runs
+        run: |
+          BIN="target/$TARGET/release/apr"
+          n=$(grep -ac 'libcuda.so' "$BIN" || true)
+          if [ "$n" -ne 0 ]; then
+            echo "::error::$BIN carries $n libcuda.so loader string(s) — this is a CUDA build wearing a -cpu name"
+            exit 1
+          fi
+          file "$BIN" | grep -q 'arm64' || { echo "::error::$BIN is not arm64: $(file "$BIN")"; exit 1; }
+          MINOS=$(otool -l "$BIN" | awk '/LC_BUILD_VERSION/{f=1} f&&$1=="minos"{print $2; exit}')
+          echo "- minimum macOS (LC_BUILD_VERSION minos): ${MINOS:-unknown}" >> "$GITHUB_STEP_SUMMARY"
+          "$BIN" --version
+
+      - name: Package archive
+        id: package
+        run: |
+          VERSION="${{ steps.tag.outputs.tag }}"
+          ARCHIVE="apr-${VERSION}-${TARGET}-cpu"
+          mkdir -p "$ARCHIVE"
+          strip "target/${TARGET}/release/apr"
+          cp "target/${TARGET}/release/apr" "$ARCHIVE/"
+          for f in README.md LICENSE LICENSE-MIT LICENSE-APACHE; do
+            [ -f "$f" ] && cp "$f" "$ARCHIVE/"
+          done
+          tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
+          shasum -a 256 "${ARCHIVE}.tar.gz" > "${ARCHIVE}.tar.gz.sha256"
+          echo "archive=${ARCHIVE}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "sha=${ARCHIVE}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+          du -h "${ARCHIVE}.tar.gz"
+
+      # The same REST upload as the other apr lanes.
+      - name: Upload assets to release (REST, no gh)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG")
+          rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
+            aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next((a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n), ""))' "$f")
+            [ -n "$aid" ] && curl -sSf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "$API/releases/assets/$aid" > /dev/null
+            curl -sSf -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/octet-stream" \
+              --data-binary @"$f" "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/$rid/assets?name=$f" \
+              | python3 -c 'import json,sys; a=json.load(sys.stdin); print("uploaded", a["name"], a["size"], "bytes")'
+          done
+
   # The hard requirement, as a check that can fail: all FOUR apr assets (tarball +
   # sha256) and the eight pv assets must be on the release. A missing one is a red
   # workflow, never a partial summary.
@@ -538,7 +635,7 @@ jobs:
   # mutation (RED) that this job cannot demonstrate on a real release.
   verify-apr-assets:
     name: All four apr assets are on the release
-    needs: [build, build-apr-cuda, build-apr-cpu]
+    needs: [build, build-apr-cuda, build-apr-cpu, build-apr-darwin]
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
