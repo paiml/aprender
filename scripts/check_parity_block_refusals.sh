@@ -134,10 +134,10 @@ row 0 "accel-absent.txt in WORK -> the block still builds (#3805)" \
     pbs_run "$AA" "$TD/aa.json"
 row 0 "the block carries accel_absent and --parity accepts it (#3805)" \
     python3 "$ROOT/scripts/lib/bench_receipt.py" --parity "$TD/aa.json"
-row 0 "--accel-absent prints the producer's reason (#3805)" \
+row 0 "--accel-absent prints the reason the producer wrote (#3805)" \
     python3 "$ROOT/scripts/lib/bench_receipt.py" --accel-absent "$TD/aa.json"
 assert_contains "$n" "crates.io apr has no cuda feature" \
-    "the reason is the producer's words, carried verbatim"
+    "the reason is carried verbatim from accel-absent.txt"
 row 1 "control block (no accel-absent.txt) -> --accel-absent exits 1 (#3805)" \
     python3 "$ROOT/scripts/lib/bench_receipt.py" --accel-absent "$TD/control.json"
 python3 - "$TD/aa.json" "$TD/aa-cuda.json" <<'PY2'
