@@ -523,6 +523,15 @@ impl Qwen35CudaModel<'_> {
                 return 0;
             }
         }
+        // The dequant + convert launches are asynchronous: wait for them here, so the
+        // time printed is the prewarm's and the first prefill is not billed for it, and
+        // so a fault in them disarms f16 instead of surfacing in that prefill.
+        if let Err(e) = self.executor.synchronize() {
+            let ptrs: Vec<u64> = weights.iter().map(|w| w.1).collect();
+            self.executor.drop_fp16_weights(&ptrs);
+            eprintln!("[qwen35] fp16 prefill prewarm failed ({e}); prefill uses f32");
+            return 0;
+        }
         self.executor.set_qwen35_prefill_f16(true);
         eprintln!(
             "[qwen35] fp16 prefill weights prewarmed: {} MiB in {} ms (#4313)",
