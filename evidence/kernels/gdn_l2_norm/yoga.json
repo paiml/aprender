@@ -1,80 +1,84 @@
 {
   "schema": "apr-kernel-receipt/v1",
-  "kernel": "gdn_gated_rmsnorm",
+  "kernel": "gdn_l2_norm",
   "issue": 3522,
   "receipts": [
     {
       "schema": "apr-kernel-receipt/v1",
-      "kernel": "gdn_gated_rmsnorm",
-      "variant": "exp",
-      "entry": "gated_rmsnorm_exp",
+      "kernel": "gdn_l2_norm",
+      "variant": "sqrt",
+      "entry": "l2_norm_sqrt",
       "authoring": "oxide",
-      "cc": "sm_121",
+      "cc": "sm_89",
       "head_dim": 128,
       "parity": {
         "cos_min": 1.0,
-        "maxdiff_max": 1.431e-06,
+        "maxdiff_max": 1.49e-08,
+        "unit_err_max": 2.421e-07,
         "cos_floor": 0.9999,
         "maxdiff_ceiling": 0.001,
+        "unit_err_ceiling": 0.0001,
         "pass": true
       },
       "timing": {
-        "oxide_us": 1.875,
-        "handptx_us": 2.092,
-        "ratio": 0.8966,
-        "worst_heads": 32,
+        "oxide_us": 1.556,
+        "handptx_us": 1.751,
+        "ratio": 0.8885,
+        "worst_heads": 48,
         "ratio_max": 1.2,
         "method": "cuda-graph-100",
-        "eager_ratio_max": 1.0009,
+        "eager_ratio_max": 0.9339,
         "pass": true
       },
       "register_budget": {
-        "oxide": 32,
-        "handptx": 29
+        "oxide": 20,
+        "handptx": 14
       },
-      "host": "gx10-a5b5",
-      "sha": "3eab8445abadda8469770b01cafb11644fdd210a",
+      "host": "yoga",
+      "sha": "211f73668daa3e7615975f1c2ad00f674b460234",
       "tree_dirty_paths": 0,
       "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
       "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
-      "driver": "590.48.01, NVIDIA GB10",
+      "driver": "595.91.07, NVIDIA GeForce RTX 4060 Laptop GPU",
       "foreign_gpu_procs": ""
     },
     {
       "schema": "apr-kernel-receipt/v1",
-      "kernel": "gdn_gated_rmsnorm",
-      "variant": "ex2",
-      "entry": "gated_rmsnorm_ex2",
+      "kernel": "gdn_l2_norm",
+      "variant": "rsqrt",
+      "entry": "l2_norm_rsqrt",
       "authoring": "oxide",
-      "cc": "sm_121",
+      "cc": "sm_89",
       "head_dim": 128,
       "parity": {
         "cos_min": 1.0,
-        "maxdiff_max": 1.431e-06,
+        "maxdiff_max": 2.98e-08,
+        "unit_err_max": 1.95e-07,
         "cos_floor": 0.9999,
         "maxdiff_ceiling": 0.001,
+        "unit_err_ceiling": 0.0001,
         "pass": true
       },
       "timing": {
-        "oxide_us": 1.887,
-        "handptx_us": 2.093,
-        "ratio": 0.9017,
-        "worst_heads": 32,
+        "oxide_us": 1.505,
+        "handptx_us": 1.751,
+        "ratio": 0.8596,
+        "worst_heads": 48,
         "ratio_max": 1.2,
         "method": "cuda-graph-100",
-        "eager_ratio_max": 1.0022,
+        "eager_ratio_max": 0.9069,
         "pass": true
       },
       "register_budget": {
-        "oxide": 32,
-        "handptx": 29
+        "oxide": 20,
+        "handptx": 14
       },
-      "host": "gx10-a5b5",
-      "sha": "3eab8445abadda8469770b01cafb11644fdd210a",
+      "host": "yoga",
+      "sha": "211f73668daa3e7615975f1c2ad00f674b460234",
       "tree_dirty_paths": 0,
       "cuda_oxide_rev": "b9847e9515ed3a23096f22567d3eaf0a6e3e440c",
       "ptxas_version": "Build cuda_13.3.r13.3/compiler.38244171_0",
-      "driver": "590.48.01, NVIDIA GB10",
+      "driver": "595.91.07, NVIDIA GeForce RTX 4060 Laptop GPU",
       "foreign_gpu_procs": ""
     }
   ]

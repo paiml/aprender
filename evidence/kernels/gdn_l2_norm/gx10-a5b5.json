@@ -1,36 +1,38 @@
 {
   "schema": "apr-kernel-receipt/v1",
-  "kernel": "gdn_gated_rmsnorm",
+  "kernel": "gdn_l2_norm",
   "issue": 3522,
   "receipts": [
     {
       "schema": "apr-kernel-receipt/v1",
-      "kernel": "gdn_gated_rmsnorm",
-      "variant": "exp",
-      "entry": "gated_rmsnorm_exp",
+      "kernel": "gdn_l2_norm",
+      "variant": "sqrt",
+      "entry": "l2_norm_sqrt",
       "authoring": "oxide",
       "cc": "sm_121",
       "head_dim": 128,
       "parity": {
         "cos_min": 1.0,
-        "maxdiff_max": 1.431e-06,
+        "maxdiff_max": 1.49e-08,
+        "unit_err_max": 2.421e-07,
         "cos_floor": 0.9999,
         "maxdiff_ceiling": 0.001,
+        "unit_err_ceiling": 0.0001,
         "pass": true
       },
       "timing": {
-        "oxide_us": 1.875,
-        "handptx_us": 2.092,
-        "ratio": 0.8966,
-        "worst_heads": 32,
+        "oxide_us": 1.258,
+        "handptx_us": 1.46,
+        "ratio": 0.8615,
+        "worst_heads": 16,
         "ratio_max": 1.2,
         "method": "cuda-graph-100",
-        "eager_ratio_max": 1.0009,
+        "eager_ratio_max": 0.8703,
         "pass": true
       },
       "register_budget": {
-        "oxide": 32,
-        "handptx": 29
+        "oxide": 23,
+        "handptx": 14
       },
       "host": "gx10-a5b5",
       "sha": "3eab8445abadda8469770b01cafb11644fdd210a",
@@ -42,32 +44,34 @@
     },
     {
       "schema": "apr-kernel-receipt/v1",
-      "kernel": "gdn_gated_rmsnorm",
-      "variant": "ex2",
-      "entry": "gated_rmsnorm_ex2",
+      "kernel": "gdn_l2_norm",
+      "variant": "rsqrt",
+      "entry": "l2_norm_rsqrt",
       "authoring": "oxide",
       "cc": "sm_121",
       "head_dim": 128,
       "parity": {
         "cos_min": 1.0,
-        "maxdiff_max": 1.431e-06,
+        "maxdiff_max": 2.98e-08,
+        "unit_err_max": 1.95e-07,
         "cos_floor": 0.9999,
         "maxdiff_ceiling": 0.001,
+        "unit_err_ceiling": 0.0001,
         "pass": true
       },
       "timing": {
-        "oxide_us": 1.887,
-        "handptx_us": 2.093,
-        "ratio": 0.9017,
-        "worst_heads": 32,
+        "oxide_us": 1.217,
+        "handptx_us": 1.458,
+        "ratio": 0.8343,
+        "worst_heads": 16,
         "ratio_max": 1.2,
         "method": "cuda-graph-100",
-        "eager_ratio_max": 1.0022,
+        "eager_ratio_max": 0.7298,
         "pass": true
       },
       "register_budget": {
-        "oxide": 32,
-        "handptx": 29
+        "oxide": 24,
+        "handptx": 14
       },
       "host": "gx10-a5b5",
       "sha": "3eab8445abadda8469770b01cafb11644fdd210a",

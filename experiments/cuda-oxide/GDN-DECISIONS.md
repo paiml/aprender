@@ -11,7 +11,7 @@ that is neither a manifest nor a receipt (WrongCorpus).
 The set is every `impl Kernel` under `crates/aprender-gpu/src/kernels/gdn/`, measured at 7af9e6637, except
 `HelperProbe`, which is a test helper. `layernorm/` and `conv1d.rs` are outside the GDN set.
 
-## Decided (1 of 15)
+## Decided (2 of 15)
 
 The thresholds are cos ≥ 0.9999, max|Δ| < 1e-3 against f64, and oxide/hand ≤ 1.2, taking the worst ratio
 over heads 16/32/48.
@@ -25,31 +25,30 @@ A receipt whose `timing` has no `"method":"cuda-graph-100"` is an eager one.
 
 | kernel | shipped PTX | decision | lambda (sm_89) | yoga (sm_89) | gx10 (sm_121) |
 |---|---|---|---|---|---|
-| `GatedRmsNormKernel` | `kernels/gdn/gated_rmsnorm.rs` | **oxide** | 0.887 | 0.908 | 1.000 (eager) |
+| `GatedRmsNormKernel` | `kernels/gdn/gated_rmsnorm.rs` | **oxide** | 0.887 | 0.908 | 0.902 |
+| `PerHeadL2NormKernel` | `kernels/gdn/l2_norm.rs` | **oxide** (`rsqrt`) | 0.839 | 0.860 | 0.834 |
 
+**`GatedRmsNormKernel`**
 - Receipts: `evidence/kernels/gdn_gated_rmsnorm/{noah-Lambda-Vector,yoga,gx10-a5b5}.json`, 2 entries per
   host (`exp`, `ex2`).
 - Parity and timing pass on every row, and every row is on a clean tree.
-- Oxide wins or ties on all three hosts, so no `ptx_exemption` is justified.
-- lambda and yoga are graph-timed (eager was 0.913 / 0.948). gx10 is still the eager receipt: its re-take is
-  blocked, see the gx10 note below.
+- Oxide wins on all three hosts, so no `ptx_exemption` is justified.
+- All three hosts are graph-timed. The eager ratios were 0.913 / 0.948 / 1.004: on gx10 eager read a tie
+  while graph replay shows the same ~10% win the sm_89 hosts show.
 - The shipped kernel is still the hand PTX. No crate on `main` depends on cuda-oxide yet, so replacing it is
   a separate migration row. This decision only settles which variant that row should ship.
 
-## Measured, RED until gx10 (1 of 15)
-
-| kernel | shipped PTX | lambda (sm_89) | yoga (sm_89) | gx10 (sm_121) |
-|---|---|---|---|---|
-| `PerHeadL2NormKernel` | `kernels/gdn/l2_norm.rs` | sqrt 0.866 · rsqrt 0.839 | sqrt 0.889 · rsqrt 0.860 | — |
-
-- Port: `experiments/cuda-oxide/l2-norm/`, two entries (`l2_norm_sqrt` = `1/sqrt`, `l2_norm_rsqrt` =
-  `rsqrt.approx`, the hand PTX's form), out of place: a safe kernel cannot alias its input.
-- Parity on both hosts: cos 1.0, max|Δ| ≤ 2.98e-8, every head's ‖h‖ within 2.5e-7 of 1.
-- The receipts and manifest (`evidence/kernels/gdn_l2_norm/`, `EXPECTED_KERNELS` = 2) land together once gx10
-  has a receipt, because the committed-tree gate fails a required host with no receipt.
-- **gx10 note (2026-09-25):** `apr-review-serve.service` (infra#1088) runs `apr serve` inside
-  `flock /tmp/apr-gpu.lock`, so gx10's GPU lock is held for the service's lifetime and a lock-respecting
-  receipt never starts. Measuring beside it would record `foreign_gpu_procs` and fail kernel-timing anyway.
+**`PerHeadL2NormKernel`**
+- Port: `experiments/cuda-oxide/l2-norm/`, two entries, out of place, because a safe kernel cannot alias its
+  input. `l2_norm_sqrt` computes `1/sqrt`; `l2_norm_rsqrt` uses `rsqrt.approx`, the hand PTX's form.
+- Receipts: `evidence/kernels/gdn_l2_norm/{noah-Lambda-Vector,yoga,gx10-a5b5}.json`, 2 entries per host.
+- Parity on every host: cos 1.0, max|Δ| ≤ 2.98e-8, and every head's ‖h‖ within 2.5e-7 of 1.
+- The table shows `rsqrt`. `sqrt` wins too: 0.866 / 0.889 / 0.862.
+- The decision is `rsqrt` because it is the faster entry on all three hosts and the same instruction the
+  shipped kernel uses, so the swap changes the authoring and not the math.
+- gx10 was taken after infra#1111 made `apr-review-serve` yield the GPU lock to a blocking waiter. Of three
+  runs, the first overlapped the serve process's exit (it listed a foreign GPU process); the committed
+  receipt is the third run, with `foreign_gpu_procs` empty.
 
 ## Undecided: RED, no receipt (13 of 15)
 
