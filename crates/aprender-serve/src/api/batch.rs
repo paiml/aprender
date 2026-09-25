@@ -113,7 +113,10 @@ fn quantized_config(
         temperature,
         top_k: sampling.top_k,
         top_p: sampling.top_p,
-        stop_tokens: vec![eos_id(tokenizer, state.model_eos_token_id())],
+        stop_tokens: crate::api::realize_handlers::completion_stop_tokens(
+            tokenizer,
+            Some(eos_id(tokenizer, state.model_eos_token_id())),
+        ), // aprender#4345
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),
         ..Default::default()
@@ -481,7 +484,10 @@ fn try_cuda_batch_generate(
         } else {
             request.top_k
         },
-        stop_tokens: vec![eos_id(&tokenizer, state.model_eos_token_id())],
+        stop_tokens: crate::api::realize_handlers::completion_stop_tokens(
+            &tokenizer,
+            Some(eos_id(&tokenizer, state.model_eos_token_id())),
+        ), // aprender#4345
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),
         ..Default::default()

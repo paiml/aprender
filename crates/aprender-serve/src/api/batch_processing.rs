@@ -476,7 +476,10 @@ fn try_cuda_generate(
         } else {
             request.top_k
         },
-        stop_tokens: vec![eos_id(&tokenizer, state.model_eos_token_id())],
+        stop_tokens: crate::api::realize_handlers::completion_stop_tokens(
+            &tokenizer,
+            Some(eos_id(&tokenizer, state.model_eos_token_id())),
+        ), // aprender#4345
         trace: false,
         cancel: cancel.clone(),
         ..Default::default()

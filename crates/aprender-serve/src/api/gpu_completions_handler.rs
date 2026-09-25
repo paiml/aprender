@@ -44,7 +44,12 @@ fn try_gpu_completions(
         max_tokens,
         temperature,
         top_k: 1,
-        stop_tokens: Vec::new(),
+        // aprender#4345: EOS + every EOG marker, as #4339 does on CPU; this
+        // path ran to `max_tokens` on every request.
+        stop_tokens: crate::api::realize_handlers::completion_stop_tokens(&tokenizer, state.model_eos_token_id())
+            .into_iter()
+            .map(|id| id as usize)
+            .collect(),
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),
     };
@@ -372,7 +377,9 @@ async fn try_cuda_gguf_completions(
     let q_config = QuantizedGenerateConfig {
         max_tokens,
         temperature,
-        stop_tokens: vec![eos],
+        // aprender#4345: a Qwen instruct GGUF declares <|im_end|> as EOS, and a
+        // raw completion ends with <|endoftext|>; stop on both, as #4339 does.
+        stop_tokens: crate::api::realize_handlers::completion_stop_tokens(&tokenizer, Some(eos)),
         ..Default::default()
     };
 
@@ -567,7 +574,7 @@ async fn completions_inner(
             max_tokens: max_tokens.min(4096),
             temperature,
             top_k: if temperature == 0.0 { 1 } else { 40 },
-            stop_tokens: vec![eos],
+            stop_tokens: crate::api::realize_handlers::completion_stop_tokens(&tokenizer, Some(eos)), // aprender#4345
             ..Default::default()
         };
         let result = {
