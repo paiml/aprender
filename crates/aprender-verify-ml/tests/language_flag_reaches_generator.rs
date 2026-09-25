@@ -12,7 +12,7 @@ use std::process::Command;
 
 /// Run `verificar generate` for `language` with a fixed seed and depth.
 fn generate(language: &str) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_verificar"))
+    let out = Command::new(env!("CARGO_BIN_EXE_aprender-verify"))
         .args([
             "generate",
             "--language",

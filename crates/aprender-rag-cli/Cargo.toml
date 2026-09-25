@@ -9,7 +9,10 @@ repository = "https://github.com/paiml/trueno-rag"
 readme = "../aprender-rag/README.md"
 
 [[bin]]
-name = "trueno-rag"
+# #4430: every shipped [[bin]] is aprender-* (was `trueno-rag`)
+name = "aprender-rag"
+# not documented: rustdoc would write it to doc/aprender_rag, the aprender-rag lib's dir
+doc = false
 path = "src/main.rs"
 
 [dependencies]

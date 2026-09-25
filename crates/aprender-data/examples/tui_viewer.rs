@@ -111,6 +111,6 @@ fn main() {
 
     println!("\n=== Demo Complete ===");
     println!(
-        "\nTry it: cargo run --bin alimentar --features cli -- view test_fixtures/data.parquet"
+        "\nTry it: cargo run --bin aprender-data --features cli -- view test_fixtures/data.parquet"
     );
 }

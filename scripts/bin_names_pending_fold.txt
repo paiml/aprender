@@ -1,0 +1,10 @@
+# Bins that are FOLDED into `apr` rather than renamed (#4430; operator ruling
+# relayed by the cop, 2026-09-25: "apr-qa, aprender-explain and ptx-debug get
+# FOLDED into apr (0.71 binary-debt #5), not renamed").
+#
+# <bin> <package>   -- checked by scripts/check_bin_names_aprender.sh.
+# A row whose bin no longer exists turns the guard RED: delete the row in the
+# PR that lands the fold, so this list only shrinks.
+apr-qa               aprender-qa-cli      # -> `apr qa`, 0.71 binary-debt #5
+aprender-explain     aprender-explain     # -> `apr explain`, 0.71 binary-debt #5
+aprender-ptx-debug   aprender-ptx-debug   # -> `apr` (ptx-debug), 0.71 binary-debt #5

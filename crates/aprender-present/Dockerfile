@@ -49,7 +49,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/ptop /usr/local/bin/
+COPY --from=builder /app/target/release/aprender-ptop /usr/local/bin/
 
 ENTRYPOINT ["ptop"]
 

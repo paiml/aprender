@@ -1,7 +1,7 @@
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
   created: "2026-04-08"
-  updated: "2026-04-10"
+  updated: "2026-09-25"
   author: PAIML Engineering
   registry: true
   references:
@@ -41,8 +41,8 @@ equations:
 
       INTERNAL-HELPER (8 crates, 9 binaries):
         aprender-cbtop         -> aprender-cbtop   # GPU monitor, called by `apr monitor`
-        aprender-present-cli   -> presentar        # TUI server, called by `apr present`
-        aprender-present-terminal -> score, ptop   # TUI widgets, used by presentar
+        aprender-present-cli   -> aprender-present        # TUI server, called by `apr present`
+        aprender-present-terminal -> aprender-score, aprender-ptop   # TUI widgets, used by presentar
         aprender-ptx-debug     -> aprender-ptx-debug  # CUDA PTX debugger (dev-only)
         aprender-test-cli      -> aprender-test-cli    # WASM test runner (dev-only)
         aprender-train-bench   -> aprender-train-bench # Training benchmark harness
@@ -51,7 +51,7 @@ equations:
 
       QA-TOOL (2 crates, 2 binaries — from Phase 2g port):
         aprender-qa-cli        -> apr-qa           # QA playbook runner (to wire into `apr qa`)
-        aprender-qa-certify    -> apr-qa-readme-sync  # README badge sync (CI tool)
+        aprender-qa-certify    -> aprender-qa-readme-sync  # README badge sync (CI tool)
 
       MIGRATED (2 crates — [[bin]] → [[example]]):
         aprender-serve         -> [[example]] aprender-serve   # Was: inference server. Use `apr serve`.
@@ -59,13 +59,13 @@ equations:
 
       LEGACY-TO-MIGRATE (8 crates, 9 binaries):
         aprender-cgp           -> aprender-cgp     # Contract graph processor → `apr contracts graph`
-        aprender-data          -> alimentar        # Data loading → `apr data`
+        aprender-data          -> aprender-data        # Data loading → `apr data`
         aprender-db            -> aprender-db      # Embedded DB → `apr db`
-        aprender-simulate      -> simular          # Simulation → `apr simulate`
+        aprender-simulate      -> aprender-simulate          # Simulation → `apr simulate`
         aprender-train-distill -> aprender-train-distill  # Distillation → `apr distill`
         aprender-train-inspect -> aprender-train-inspect  # Weight inspector → `apr train inspect`
         aprender-train-lora    -> aprender-train-lora     # LoRA training → `apr finetune`
-        aprender-zram-cli      -> trueno-zram      # ZRAM manager → `apr zram`
+        aprender-zram-cli      -> aprender-zram      # ZRAM manager → `apr zram`
 
     domain: 20 crates (22 → 20 after 2 migrated to [[example]])
     codomain: classification
@@ -92,6 +92,14 @@ falsification_tests:
     COUNT=$(grep -r '^\[\[bin\]\]' crates/*/Cargo.toml | wc -l)
     [ "$COUNT" -le 21 ]
   if_fails: "new binary added without updating this contract"
+
+- id: FALSIFY-BINRULE-004
+  rule: every shipped bin is aprender-* (#4430)
+  prediction: "every [[bin]] in the root and facade workspaces (from cargo metadata) is apr, pv,
+    aprender-<word>[-<word>...], or a pending-fold row in scripts/bin_names_pending_fold.txt"
+  test: |
+    bash scripts/check_bin_names_aprender.sh --self-test && bash scripts/check_bin_names_aprender.sh
+  if_fails: "a bin ships under a non-aprender name (rename it) or a pending-fold row is stale (delete it)"
 
 - id: FALSIFY-BINRULE-003
   rule: legacy binaries have apr subcommand equivalent

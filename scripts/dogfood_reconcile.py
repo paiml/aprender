@@ -54,13 +54,13 @@ HTTP_VERBS = ("GET ", "POST ", "PUT ", "DELETE ", "PATCH ", "HEAD ")
 # a real deletion. Anything not on this list turns the gate RED.
 FEATURE_GATED = {
     "apr mono archive", "apr mono audit", "apr mono publish", "apr mono shims",
-    "alimentar hub push", "alimentar import hf",
-    "alimentar doctest extract", "alimentar doctest merge",
+    "aprender-data hub push", "aprender-data import hf",
+    "aprender-data doctest extract", "aprender-data doctest merge",
     "apr data x hub push", "apr data x import hf",
     "apr data x doctest extract", "apr data x doctest merge",
-    "trueno-rag eval compare", "trueno-rag eval gate", "trueno-rag eval generate",
-    "trueno-rag eval judge", "trueno-rag eval metrics", "trueno-rag eval retrieve",
-    "trueno-rag eval sample",
+    "aprender-rag eval compare", "aprender-rag eval gate", "aprender-rag eval generate",
+    "aprender-rag eval judge", "aprender-rag eval metrics", "aprender-rag eval retrieve",
+    "aprender-rag eval sample",
     "apr rag eval compare", "apr rag eval gate", "apr rag eval generate",
     "apr rag eval judge", "apr rag eval metrics", "apr rag eval retrieve",
     "apr rag eval sample",
@@ -69,7 +69,7 @@ FEATURE_GATED = {
 # The emitter inherits dogfood_surfaces.sh's `grep -vE '^(help)$'` filter, so the
 # literal `help` subcommand never appears in the runtime set even though clap
 # does advertise it and the ledger records it.
-EMITTER_FILTERED = {"apr sim help", "simular help"}
+EMITTER_FILTERED = {"apr sim help", "aprender-simulate help"}
 
 ALLOWED_ABSENT = FEATURE_GATED | EMITTER_FILTERED
 

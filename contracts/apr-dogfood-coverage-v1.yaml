@@ -87,29 +87,29 @@ metadata:
       aprender-orchestrate: {total: 184, covered: 0}
       aprender-test-cli: {total: 39, covered: 0}
       pv: {total: 38, covered: 0}
-      alimentar: {total: 35, covered: 0}
+      aprender-data: {total: 35, covered: 0}
       aprender-cgp: {total: 25, covered: 0}
       aprender-profile: {total: 16, covered: 0}
       apr-qa: {total: 15, covered: 0}
       aprender-train-shell: {total: 13, covered: 0}
-      trueno-rag: {total: 13, covered: 0}
-      simular: {total: 12, covered: 0}
-      verificar: {total: 11, covered: 0}
+      aprender-rag: {total: 13, covered: 0}
+      aprender-simulate: {total: 12, covered: 0}
+      aprender-verify: {total: 11, covered: 0}
       aprender-explain: {total: 7, covered: 0}
-      presentar: {total: 7, covered: 0}
+      aprender-present: {total: 7, covered: 0}
       aprender-train-bench: {total: 6, covered: 0}
       aprender-train-inspect: {total: 6, covered: 0}
       aprender-cbtop: {total: 4, covered: 0}
       aprender-db: {total: 4, covered: 0}
       aprender-train-distill: {total: 4, covered: 0}
       aprender-train-lora: {total: 4, covered: 0}
-      ptop: {total: 4, covered: 0}
-      trueno-zram: {total: 4, covered: 0}
+      aprender-ptop: {total: 4, covered: 0}
+      aprender-zram: {total: 4, covered: 0}
       aprender-compute-xtask: {total: 3, covered: 0}
       aprender-ptx-debug: {total: 3, covered: 0}
-      apr-corpus-ingest: {total: 2, covered: 0}
-      score: {total: 2, covered: 0}
-      apr-qa-readme-sync: {total: 1, covered: 0}
+      aprender-corpus-ingest: {total: 2, covered: 0}
+      aprender-score: {total: 2, covered: 0}
+      aprender-qa-readme-sync: {total: 1, covered: 0}
       aprender-zram-generator: {total: 1, covered: 0}
 
     per_cluster:
