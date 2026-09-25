@@ -76,14 +76,8 @@ fn main() {
 }
 
 fn enforce_entrenar_binding() {
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("entrenar")
-        .join("binding.yaml");
+    let binding_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../contracts/entrenar/binding.yaml");
     println!("cargo:rerun-if-changed={}", binding_path.display());
 
     let Some(bindings) = load_binding_file(&binding_path) else {

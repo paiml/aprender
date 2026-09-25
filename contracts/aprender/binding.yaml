@@ -1,6 +1,162 @@
 version: 1.0.0
 target_crate: aprender
 bindings:
+- contract: adamw-kernel-v1.yaml
+  equation: weight_update
+  module_path: aprender::nn::optim::rm_sprop
+  function: step
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/nn/optim/rm_sprop.rs:97 had no binding row; row added when the binding moved in-tree'
+- contract: batchnorm-kernel-v1.yaml
+  equation: batchnorm_train
+  module_path: aprender::nn::normalization
+  function: forward
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/nn/normalization/mod.rs:391 had no binding row; row added when the binding moved in-tree'
+- contract: cma-es-kernel-v1.yaml
+  equation: mean_update
+  module_path: aprender::metaheuristics::cmaes_include_01
+  function: optimize
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/metaheuristics/cmaes_include_01.rs:5 had no binding row; row added when the binding moved in-tree'
+- contract: cma-es-kernel-v1.yaml
+  equation: sample
+  module_path: aprender::metaheuristics::cmaes
+  function: sample
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/metaheuristics/cmaes.rs:274 had no binding row; row added when the binding moved in-tree'
+- contract: conv1d-kernel-v1.yaml
+  equation: conv1d
+  module_path: aprender::nn::conv
+  function: forward
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/nn/conv/mod.rs:292 had no binding row; row added when the binding moved in-tree'
+- contract: cross-entropy-kernel-v1.yaml
+  equation: cross_entropy
+  module_path: aprender::nn::loss
+  function: forward
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/nn/loss.rs:257 had no binding row; row added when the binding moved in-tree'
+- contract: cross-entropy-kernel-v1.yaml
+  equation: log_softmax
+  module_path: aprender::nn::functional
+  function: log_softmax
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/nn/functional.rs:307 had no binding row; row added when the binding moved in-tree'
+- contract: embedding-algebra-v1.yaml
+  equation: embedding_lookup
+  module_path: aprender::models::qwen2
+  function: forward
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/models/qwen2/mod.rs:121 had no binding row; row added when the binding moved in-tree'
+- contract: f16-conversion-v1.yaml
+  equation: f16_to_f32_bias
+  module_path: aprender::format::gguf::dequant
+  function: f16_to_f32
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/format/gguf/dequant.rs:18 had no binding row; row added when the binding moved in-tree'
+- contract: gqa-kernel-v1.yaml
+  equation: gqa
+  module_path: aprender::nn::transformer
+  function: forward
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/nn/transformer/mod.rs:409 had no binding row; row added when the binding moved in-tree'
+- contract: kmeans-kernel-v1.yaml
+  equation: assignment
+  module_path: aprender::cluster::kmeans_impl
+  function: predict
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/cluster/kmeans_impl.rs:406 had no binding row; row added when the binding moved in-tree'
+- contract: kmeans-kernel-v1.yaml
+  equation: update
+  module_path: aprender::cluster::kmeans_impl
+  function: fit
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/cluster/kmeans_impl.rs:362 had no binding row; row added when the binding moved in-tree'
+- contract: layernorm-kernel-v1.yaml
+  equation: layernorm
+  module_path: aprender::nn::normalization
+  function: forward
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/nn/normalization/mod.rs:131 had no binding row; row added when the binding moved in-tree'
+- contract: matmul-kernel-v1.yaml
+  equation: matmul
+  module_path: aprender::autograd::ops::activation
+  function: matmul
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/autograd/ops/activation.rs:272 had no binding row; row added when the binding moved in-tree'
+- contract: rmsnorm-kernel-v1.yaml
+  equation: rmsnorm
+  module_path: aprender::nn::normalization::group_norm
+  function: forward
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/nn/normalization/group_norm.rs:348 had no binding row; row added when the binding moved in-tree'
+- contract: rope-kernel-v1.yaml
+  equation: rope
+  module_path: aprender::nn::transformer::attention_helpers
+  function: apply
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/nn/transformer/attention_helpers.rs:268 had no binding row; row added when the binding moved in-tree'
+- contract: setfit-encoder-conformance-v1.yaml
+  equation: additive_attention_mask
+  module_path: aprender::autograd::ops::masking
+  function: additive_attention_mask
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/autograd/ops/masking.rs:43 had no binding row; row added when the binding moved in-tree'
+- contract: setfit-encoder-conformance-v1.yaml
+  equation: apply_additive_mask
+  module_path: aprender::nn::transformer::positional_encoding
+  function: add_mask
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/nn/transformer/positional_encoding.rs:476 had no binding row; row added when the binding moved in-tree'
+- contract: setfit-encoder-conformance-v1.yaml
+  equation: cosine_similarity_rows
+  module_path: aprender::autograd::ops::similarity
+  function: cosine_similarity_rows
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/autograd/ops/similarity.rs:55 had no binding row; row added when the binding moved in-tree'
+- contract: setfit-encoder-conformance-v1.yaml
+  equation: embedding_gather
+  module_path: aprender::autograd::ops::embedding
+  function: embedding_gather
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/autograd/ops/embedding.rs:38 had no binding row; row added when the binding moved in-tree'
+- contract: setfit-encoder-conformance-v1.yaml
+  equation: gelu_exact
+  module_path: aprender::autograd::ops::activation
+  function: gelu_exact
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/autograd/ops/activation.rs:181 had no binding row; row added when the binding moved in-tree'
+- contract: setfit-encoder-conformance-v1.yaml
+  equation: l2_normalize_rows
+  module_path: aprender::autograd::ops::normalize
+  function: l2_normalize_rows
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/autograd/ops/normalize.rs:56 had no binding row; row added when the binding moved in-tree'
+- contract: setfit-encoder-conformance-v1.yaml
+  equation: masked_mean_pool
+  module_path: aprender::autograd::ops::pooling
+  function: masked_mean_pool
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/autograd/ops/pooling.rs:50 had no binding row; row added when the binding moved in-tree'
+- contract: setfit-encoder-conformance-v1.yaml
+  equation: mse_loss
+  module_path: aprender::autograd::ops::similarity
+  function: mse_loss
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/autograd/ops/similarity.rs:196 had no binding row; row added when the binding moved in-tree'
+- contract: silu-kernel-v1.yaml
+  equation: sigmoid
+  module_path: aprender::nn::functional
+  function: sigmoid
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/nn/functional.rs:58 had no binding row; row added when the binding moved in-tree'
+- contract: silu-kernel-v1.yaml
+  equation: silu
+  module_path: aprender::nn::functional
+  function: silu
+  status: implemented
+  notes: '#4369: #[contract] site at crates/aprender-core/src/nn/functional.rs:90 had no binding row; row added when the binding moved in-tree'
 - contract: softmax-kernel-v1.yaml
   equation: softmax
   module_path: aprender::nn::functional::softmax

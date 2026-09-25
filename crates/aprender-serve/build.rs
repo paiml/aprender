@@ -267,14 +267,8 @@ fn main() {
 /// Phase 2: Read binding.yaml and emit CONTRACT_* env vars for the proc macro.
 fn emit_contract_bindings() {
     // Re-run if binding.yaml changes
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("realizar")
-        .join("binding.yaml");
+    let binding_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../contracts/realizar/binding.yaml");
 
     // Always tell Cargo to re-run if the file appears or changes
     println!("cargo:rerun-if-changed={}", binding_path.display());

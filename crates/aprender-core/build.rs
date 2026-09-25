@@ -140,14 +140,8 @@ fn enforce_all_implemented(unallowed_gaps: &[String]) {
 /// `ALLOWED_GAPS` fails the build. This ensures all algorithm contracts
 /// have working implementations before code compiles.
 fn emit_provable_contract_bindings() {
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("aprender")
-        .join("binding.yaml");
+    let binding_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../contracts/aprender/binding.yaml");
 
     // Always tell Cargo to re-run if the file appears or changes
     println!("cargo:rerun-if-changed={}", binding_path.display());

@@ -150,12 +150,8 @@ fn emit_pre_post(
 }
 
 fn enforce_provable_binding() {
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("provable-contracts/contracts/simular/binding.yaml");
+    let binding_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../contracts/simular/binding.yaml");
 
     println!("cargo:rerun-if-changed={}", binding_path.display());
 

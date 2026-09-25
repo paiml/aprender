@@ -1323,4 +1323,64 @@ bindings:
             offenders.join("\n")
         );
     }
+
+    /// Every producer reads its binding from THIS repo's `contracts/<name>/`
+    /// (#4369). The old `../../../provable-contracts/contracts/<name>/` path
+    /// resolved only on a checkout with the pre-monorepo sibling beside it, so
+    /// worktrees and CI built with `CONTRACT_BINDING_SOURCE=none` and nothing
+    /// was enforced, while the one main checkout enforced a stale copy.
+    #[test]
+    fn producer_bindings_are_in_tree() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        if !root.join("crates/aprender-core").exists() {
+            eprintln!("SKIP: not in the aprender workspace (packaged crate)");
+            return;
+        }
+        let producers = [
+            ("aprender-compute", "trueno"),
+            ("aprender-core", "aprender"),
+            ("aprender-db", "trueno-db"),
+            ("aprender-orchestrate", "batuta"),
+            ("aprender-present-cli", "presentar"),
+            ("aprender-present-core", "presentar"),
+            ("aprender-rag", "trueno-rag"),
+            ("aprender-serve", "realizar"),
+            ("aprender-simulate", "simular"),
+            ("aprender-train", "entrenar"),
+        ];
+        let mut bad = Vec::new();
+        for (krate, name) in producers {
+            let build = root.join("crates").join(krate).join("build.rs");
+            let src = std::fs::read_to_string(&build).expect("read producer build.rs");
+            let want = format!("\"../../contracts/{name}/binding.yaml\"");
+            if !src.contains(&want) {
+                bad.push(format!("{krate}/build.rs does not read {want}"));
+            }
+            // Per statement: a sibling path joined onto binding.yaml. Other
+            // sibling reads (serve's arch-requirements codegen) are out of scope.
+            let sibling_binding = |st: &str| {
+                (st.contains("join(\"provable-contracts\")")
+                    || st.contains("provable-contracts/contracts/"))
+                    && st.contains("binding.yaml")
+            };
+            if src.split(';').any(sibling_binding) {
+                bad.push(format!(
+                    "{krate}/build.rs still reads binding.yaml from the sibling provable-contracts"
+                ));
+            }
+            if !root
+                .join("contracts")
+                .join(name)
+                .join("binding.yaml")
+                .is_file()
+            {
+                bad.push(format!("contracts/{name}/binding.yaml is missing"));
+            }
+        }
+        assert!(
+            bad.is_empty(),
+            "producer bindings not in-tree:\n{}",
+            bad.join("\n")
+        );
+    }
 }

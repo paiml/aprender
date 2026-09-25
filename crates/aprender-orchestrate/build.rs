@@ -22,14 +22,8 @@ fn main() {
     // #4219: stamp APR_GIT_SHA for `--version` before anything can return early.
     build_sha::emit();
 
-    let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("provable-contracts")
-        .join("contracts")
-        .join("batuta")
-        .join("binding.yaml");
+    let binding_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../contracts/batuta/binding.yaml");
 
     println!("cargo:rerun-if-changed={}", binding_path.display());
 
