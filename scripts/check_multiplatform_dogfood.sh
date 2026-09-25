@@ -59,9 +59,9 @@ if [ "${1:-}" = "--self-test" ]; then
     while IFS='|' read -r accel absent want; do
         got=$(required_lanes "$accel" "$absent")
         if [ "$got" = "$want" ]; then
-            printf 'ok    %-26s absent=%-24s -> %s\n' "$accel" "${absent:-<none>}" "$want"
+            printf 'ok    %-26s absent=%-24s => %s\n' "$accel" "${absent:-<none>}" "$want"
         else
-            printf 'FAIL  %-26s absent=%-24s -> %s (wanted %s)\n' "$accel" "${absent:-<none>}" "$got" "$want"
+            printf 'FAIL  %-26s absent=%-24s => %s (wanted %s)\n' "$accel" "${absent:-<none>}" "$got" "$want"
             bad=1
         fi
     done <<'EOF_CASES'
