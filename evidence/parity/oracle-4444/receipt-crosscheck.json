@@ -1,0 +1,653 @@
+{
+  "schema": "apr-parity-oracle/v1",
+  "oracle": "llama.cpp@d1d3c3396",
+  "verdict": "GREEN",
+  "cosine": 0.9959052275724324,
+  "min_cosine_pos": 4,
+  "threshold": 0.99,
+  "threshold_basis": "cross-check only (#4444): not an admission threshold; the qwen35 cpu-vs-llama.cpp row has no measured basis",
+  "n_positions": 78,
+  "n_vocab": 248320,
+  "positions_below_threshold": [],
+  "argmax_mismatches": [
+    2,
+    28,
+    36,
+    73
+  ],
+  "max_abs_diff": 1.342221736907959,
+  "reference": {
+    "path": "/mnt/nvme-raid0/tmp/rex4444/qwen35-0.8b-q4km-d1d3c3396.rawlogits.bin",
+    "sha256": "1d5eaf129545aa6087cd6c49792f9774b61caa874fccefdd79e6164afa15bb93"
+  },
+  "subject": {
+    "path": "/mnt/nvme-raid0/tmp/rex4444/apr-intel-run1.bin",
+    "sha256": "f6f792649014dcef6eec1afaf96852a293cc95c6cfceb1c88d62e16ee36c0252"
+  },
+  "per_position": [
+    {
+      "pos": 0,
+      "token_id": 760,
+      "cosine": 0.9983760150053064,
+      "argmax_reference": 2614,
+      "argmax_subject": 2614,
+      "max_abs_diff": 1.0186271667480469
+    },
+    {
+      "pos": 1,
+      "token_id": 3841,
+      "cosine": 0.9983168868087274,
+      "argmax_reference": 321,
+      "argmax_subject": 321,
+      "max_abs_diff": 0.8008735179901123
+    },
+    {
+      "pos": 2,
+      "token_id": 13477,
+      "cosine": 0.9982160560117099,
+      "argmax_reference": 627,
+      "argmax_subject": 37550,
+      "max_abs_diff": 1.342221736907959
+    },
+    {
+      "pos": 3,
+      "token_id": 37550,
+      "cosine": 0.9985828634278995,
+      "argmax_reference": 321,
+      "argmax_subject": 321,
+      "max_abs_diff": 1.0547950267791748
+    },
+    {
+      "pos": 4,
+      "token_id": 33075,
+      "cosine": 0.9959052275724324,
+      "argmax_reference": 888,
+      "argmax_subject": 888,
+      "max_abs_diff": 1.0440120697021484
+    },
+    {
+      "pos": 5,
+      "token_id": 888,
+      "cosine": 0.999371127624912,
+      "argmax_reference": 279,
+      "argmax_subject": 279,
+      "max_abs_diff": 0.7268409729003906
+    },
+    {
+      "pos": 6,
+      "token_id": 279,
+      "cosine": 0.9995199518206416,
+      "argmax_reference": 15740,
+      "argmax_subject": 15740,
+      "max_abs_diff": 0.7548505067825317
+    },
+    {
+      "pos": 7,
+      "token_id": 15217,
+      "cosine": 0.9995293251304134,
+      "argmax_reference": 5388,
+      "argmax_subject": 5388,
+      "max_abs_diff": 0.9621305465698242
+    },
+    {
+      "pos": 8,
+      "token_id": 5388,
+      "cosine": 0.9989324084361887,
+      "argmax_reference": 13,
+      "argmax_subject": 13,
+      "max_abs_diff": 0.7126979827880859
+    },
+    {
+      "pos": 9,
+      "token_id": 1345,
+      "cosine": 0.9994904251493713,
+      "argmax_reference": 279,
+      "argmax_subject": 279,
+      "max_abs_diff": 0.6574554443359375
+    },
+    {
+      "pos": 10,
+      "token_id": 279,
+      "cosine": 0.9996642031830938,
+      "argmax_reference": 15217,
+      "argmax_subject": 15217,
+      "max_abs_diff": 0.49237489700317383
+    },
+    {
+      "pos": 11,
+      "token_id": 12433,
+      "cosine": 0.998926579575052,
+      "argmax_reference": 369,
+      "argmax_subject": 369,
+      "max_abs_diff": 0.5537456274032593
+    },
+    {
+      "pos": 12,
+      "token_id": 21250,
+      "cosine": 0.9994356738649683,
+      "argmax_reference": 279,
+      "argmax_subject": 279,
+      "max_abs_diff": 0.5533342361450195
+    },
+    {
+      "pos": 13,
+      "token_id": 34227,
+      "cosine": 0.9994507910804754,
+      "argmax_reference": 34129,
+      "argmax_subject": 34129,
+      "max_abs_diff": 0.5454311370849609
+    },
+    {
+      "pos": 14,
+      "token_id": 36165,
+      "cosine": 0.9995740244059567,
+      "argmax_reference": 314,
+      "argmax_subject": 314,
+      "max_abs_diff": 0.5191996097564697
+    },
+    {
+      "pos": 15,
+      "token_id": 23497,
+      "cosine": 0.9993035857095601,
+      "argmax_reference": 13,
+      "argmax_subject": 13,
+      "max_abs_diff": 0.5136661529541016
+    },
+    {
+      "pos": 16,
+      "token_id": 883,
+      "cosine": 0.9995872384119082,
+      "argmax_reference": 279,
+      "argmax_subject": 279,
+      "max_abs_diff": 0.564519464969635
+    },
+    {
+      "pos": 17,
+      "token_id": 31108,
+      "cosine": 0.9994966224106925,
+      "argmax_reference": 4649,
+      "argmax_subject": 4649,
+      "max_abs_diff": 0.5353240966796875
+    },
+    {
+      "pos": 18,
+      "token_id": 4649,
+      "cosine": 0.9994535965380136,
+      "argmax_reference": 13,
+      "argmax_subject": 13,
+      "max_abs_diff": 0.5678443908691406
+    },
+    {
+      "pos": 19,
+      "token_id": 5638,
+      "cosine": 0.9991111189086658,
+      "argmax_reference": 13,
+      "argmax_subject": 13,
+      "max_abs_diff": 0.6192231178283691
+    },
+    {
+      "pos": 20,
+      "token_id": 11,
+      "cosine": 0.9990729092845325,
+      "argmax_reference": 321,
+      "argmax_subject": 321,
+      "max_abs_diff": 0.56448894739151
+    },
+    {
+      "pos": 21,
+      "token_id": 4098,
+      "cosine": 0.9982937710971385,
+      "argmax_reference": 3808,
+      "argmax_subject": 3808,
+      "max_abs_diff": 0.8337390422821045
+    },
+    {
+      "pos": 22,
+      "token_id": 23122,
+      "cosine": 0.9968034649865266,
+      "argmax_reference": 11,
+      "argmax_subject": 11,
+      "max_abs_diff": 1.1334352493286133
+    },
+    {
+      "pos": 23,
+      "token_id": 11,
+      "cosine": 0.9979681723648399,
+      "argmax_reference": 321,
+      "argmax_subject": 321,
+      "max_abs_diff": 1.0104761123657227
+    },
+    {
+      "pos": 24,
+      "token_id": 15167,
+      "cosine": 0.9990101449547019,
+      "argmax_reference": 3741,
+      "argmax_subject": 3741,
+      "max_abs_diff": 0.6518816947937012
+    },
+    {
+      "pos": 25,
+      "token_id": 47410,
+      "cosine": 0.9986148046574831,
+      "argmax_reference": 11,
+      "argmax_subject": 11,
+      "max_abs_diff": 0.6735444068908691
+    },
+    {
+      "pos": 26,
+      "token_id": 11,
+      "cosine": 0.999435699676287,
+      "argmax_reference": 321,
+      "argmax_subject": 321,
+      "max_abs_diff": 0.4892120361328125
+    },
+    {
+      "pos": 27,
+      "token_id": 9966,
+      "cosine": 0.997801441189045,
+      "argmax_reference": 1954,
+      "argmax_subject": 1954,
+      "max_abs_diff": 0.6453280448913574
+    },
+    {
+      "pos": 28,
+      "token_id": 1452,
+      "cosine": 0.9967963912424309,
+      "argmax_reference": 795,
+      "argmax_subject": 28758,
+      "max_abs_diff": 1.2011916637420654
+    },
+    {
+      "pos": 29,
+      "token_id": 6326,
+      "cosine": 0.9989860318451239,
+      "argmax_reference": 11,
+      "argmax_subject": 11,
+      "max_abs_diff": 0.7108321189880371
+    },
+    {
+      "pos": 30,
+      "token_id": 61369,
+      "cosine": 0.9985247069101376,
+      "argmax_reference": 11,
+      "argmax_subject": 11,
+      "max_abs_diff": 0.5840244293212891
+    },
+    {
+      "pos": 31,
+      "token_id": 11,
+      "cosine": 0.9994280735721762,
+      "argmax_reference": 321,
+      "argmax_subject": 321,
+      "max_abs_diff": 0.5015325546264648
+    },
+    {
+      "pos": 32,
+      "token_id": 321,
+      "cosine": 0.9993668188617342,
+      "argmax_reference": 279,
+      "argmax_subject": 279,
+      "max_abs_diff": 0.5490787029266357
+    },
+    {
+      "pos": 33,
+      "token_id": 279,
+      "cosine": 0.9994177313995518,
+      "argmax_reference": 491,
+      "argmax_subject": 491,
+      "max_abs_diff": 0.5524590015411377
+    },
+    {
+      "pos": 34,
+      "token_id": 26984,
+      "cosine": 0.9982748902005709,
+      "argmax_reference": 314,
+      "argmax_subject": 314,
+      "max_abs_diff": 0.6412869691848755
+    },
+    {
+      "pos": 35,
+      "token_id": 314,
+      "cosine": 0.9993849631474455,
+      "argmax_reference": 29144,
+      "argmax_subject": 29144,
+      "max_abs_diff": 0.57236647605896
+    },
+    {
+      "pos": 36,
+      "token_id": 638,
+      "cosine": 0.9986965722180243,
+      "argmax_reference": 5331,
+      "argmax_subject": 57695,
+      "max_abs_diff": 0.7794630527496338
+    },
+    {
+      "pos": 37,
+      "token_id": 37309,
+      "cosine": 0.9979451250741606,
+      "argmax_reference": 290,
+      "argmax_subject": 290,
+      "max_abs_diff": 0.7241470813751221
+    },
+    {
+      "pos": 38,
+      "token_id": 290,
+      "cosine": 0.999405388192485,
+      "argmax_reference": 14791,
+      "argmax_subject": 14791,
+      "max_abs_diff": 0.7390639781951904
+    },
+    {
+      "pos": 39,
+      "token_id": 42903,
+      "cosine": 0.9987762100604791,
+      "argmax_reference": 13,
+      "argmax_subject": 13,
+      "max_abs_diff": 0.8116443157196045
+    },
+    {
+      "pos": 40,
+      "token_id": 3808,
+      "cosine": 0.9995633120608292,
+      "argmax_reference": 279,
+      "argmax_subject": 279,
+      "max_abs_diff": 0.49668312072753906
+    },
+    {
+      "pos": 41,
+      "token_id": 2943,
+      "cosine": 0.9993031494190178,
+      "argmax_reference": 3478,
+      "argmax_subject": 3478,
+      "max_abs_diff": 0.6030654907226562
+    },
+    {
+      "pos": 42,
+      "token_id": 94408,
+      "cosine": 0.9991021630065362,
+      "argmax_reference": 795,
+      "argmax_subject": 795,
+      "max_abs_diff": 0.6694235801696777
+    },
+    {
+      "pos": 43,
+      "token_id": 17882,
+      "cosine": 0.9990357097723913,
+      "argmax_reference": 13,
+      "argmax_subject": 13,
+      "max_abs_diff": 0.6039481163024902
+    },
+    {
+      "pos": 44,
+      "token_id": 26,
+      "cosine": 0.9988080928361295,
+      "argmax_reference": 279,
+      "argmax_subject": 279,
+      "max_abs_diff": 0.658595085144043
+    },
+    {
+      "pos": 45,
+      "token_id": 1396,
+      "cosine": 0.998856284141621,
+      "argmax_reference": 13340,
+      "argmax_subject": 13340,
+      "max_abs_diff": 0.759709358215332
+    },
+    {
+      "pos": 46,
+      "token_id": 13901,
+      "cosine": 0.9990833815782368,
+      "argmax_reference": 314,
+      "argmax_subject": 314,
+      "max_abs_diff": 0.5934407711029053
+    },
+    {
+      "pos": 47,
+      "token_id": 557,
+      "cosine": 0.9993772022114372,
+      "argmax_reference": 5158,
+      "argmax_subject": 5158,
+      "max_abs_diff": 0.5509777069091797
+    },
+    {
+      "pos": 48,
+      "token_id": 47193,
+      "cosine": 0.9994433127576811,
+      "argmax_reference": 11,
+      "argmax_subject": 11,
+      "max_abs_diff": 0.5429751873016357
+    },
+    {
+      "pos": 49,
+      "token_id": 11,
+      "cosine": 0.9981925446817014,
+      "argmax_reference": 1396,
+      "argmax_subject": 1396,
+      "max_abs_diff": 0.5942728221416473
+    },
+    {
+      "pos": 50,
+      "token_id": 1396,
+      "cosine": 0.999094016425334,
+      "argmax_reference": 11316,
+      "argmax_subject": 11316,
+      "max_abs_diff": 0.5683993101119995
+    },
+    {
+      "pos": 51,
+      "token_id": 1898,
+      "cosine": 0.9987649311087907,
+      "argmax_reference": 557,
+      "argmax_subject": 557,
+      "max_abs_diff": 0.6330986022949219
+    },
+    {
+      "pos": 52,
+      "token_id": 557,
+      "cosine": 0.9994134894416468,
+      "argmax_reference": 28853,
+      "argmax_subject": 28853,
+      "max_abs_diff": 0.5105462074279785
+    },
+    {
+      "pos": 53,
+      "token_id": 21197,
+      "cosine": 0.9989316197824392,
+      "argmax_reference": 11,
+      "argmax_subject": 11,
+      "max_abs_diff": 0.5477492809295654
+    },
+    {
+      "pos": 54,
+      "token_id": 11,
+      "cosine": 0.9991851096179983,
+      "argmax_reference": 321,
+      "argmax_subject": 321,
+      "max_abs_diff": 0.5282158851623535
+    },
+    {
+      "pos": 55,
+      "token_id": 321,
+      "cosine": 0.9992913625650941,
+      "argmax_reference": 1396,
+      "argmax_subject": 1396,
+      "max_abs_diff": 0.5240788459777832
+    },
+    {
+      "pos": 56,
+      "token_id": 279,
+      "cosine": 0.9992215881451781,
+      "argmax_reference": 4307,
+      "argmax_subject": 4307,
+      "max_abs_diff": 0.5785746574401855
+    },
+    {
+      "pos": 57,
+      "token_id": 1830,
+      "cosine": 0.9989113359278249,
+      "argmax_reference": 557,
+      "argmax_subject": 557,
+      "max_abs_diff": 0.6385142803192139
+    },
+    {
+      "pos": 58,
+      "token_id": 9202,
+      "cosine": 0.9991041984368242,
+      "argmax_reference": 440,
+      "argmax_subject": 440,
+      "max_abs_diff": 0.5184112787246704
+    },
+    {
+      "pos": 59,
+      "token_id": 440,
+      "cosine": 0.9994000202405249,
+      "argmax_reference": 264,
+      "argmax_subject": 264,
+      "max_abs_diff": 0.5409719944000244
+    },
+    {
+      "pos": 60,
+      "token_id": 264,
+      "cosine": 0.9994138909445681,
+      "argmax_reference": 1562,
+      "argmax_subject": 1562,
+      "max_abs_diff": 0.6154276132583618
+    },
+    {
+      "pos": 61,
+      "token_id": 50802,
+      "cosine": 0.999120761725228,
+      "argmax_reference": 314,
+      "argmax_subject": 314,
+      "max_abs_diff": 0.6127066612243652
+    },
+    {
+      "pos": 62,
+      "token_id": 314,
+      "cosine": 0.9993326387545048,
+      "argmax_reference": 279,
+      "argmax_subject": 279,
+      "max_abs_diff": 0.5887793302536011
+    },
+    {
+      "pos": 63,
+      "token_id": 50614,
+      "cosine": 0.9992612601761823,
+      "argmax_reference": 34129,
+      "argmax_subject": 34129,
+      "max_abs_diff": 0.5962321758270264
+    },
+    {
+      "pos": 64,
+      "token_id": 39663,
+      "cosine": 0.999374930086979,
+      "argmax_reference": 3470,
+      "argmax_subject": 3470,
+      "max_abs_diff": 0.5591201782226562
+    },
+    {
+      "pos": 65,
+      "token_id": 22188,
+      "cosine": 0.9992526656618687,
+      "argmax_reference": 7123,
+      "argmax_subject": 7123,
+      "max_abs_diff": 0.6682627201080322
+    },
+    {
+      "pos": 66,
+      "token_id": 7123,
+      "cosine": 0.9991043542577749,
+      "argmax_reference": 13,
+      "argmax_subject": 13,
+      "max_abs_diff": 0.6183450222015381
+    },
+    {
+      "pos": 67,
+      "token_id": 421,
+      "cosine": 0.9992971750444432,
+      "argmax_reference": 998,
+      "argmax_subject": 998,
+      "max_abs_diff": 0.6304163932800293
+    },
+    {
+      "pos": 68,
+      "token_id": 995,
+      "cosine": 0.9991484883071186,
+      "argmax_reference": 978,
+      "argmax_subject": 978,
+      "max_abs_diff": 0.5894808769226074
+    },
+    {
+      "pos": 69,
+      "token_id": 310,
+      "cosine": 0.999164975674223,
+      "argmax_reference": 381,
+      "argmax_subject": 381,
+      "max_abs_diff": 0.6447272300720215
+    },
+    {
+      "pos": 70,
+      "token_id": 1440,
+      "cosine": 0.9990846085601421,
+      "argmax_reference": 1518,
+      "argmax_subject": 1518,
+      "max_abs_diff": 0.6895544528961182
+    },
+    {
+      "pos": 71,
+      "token_id": 1518,
+      "cosine": 0.9994956681082799,
+      "argmax_reference": 279,
+      "argmax_subject": 279,
+      "max_abs_diff": 0.5682699680328369
+    },
+    {
+      "pos": 72,
+      "token_id": 279,
+      "cosine": 0.9993851698919112,
+      "argmax_reference": 1534,
+      "argmax_subject": 1534,
+      "max_abs_diff": 0.5930241346359253
+    },
+    {
+      "pos": 73,
+      "token_id": 4722,
+      "cosine": 0.9991860071303892,
+      "argmax_reference": 13,
+      "argmax_subject": 314,
+      "max_abs_diff": 0.7248187065124512
+    },
+    {
+      "pos": 74,
+      "token_id": 1362,
+      "cosine": 0.9994493954781931,
+      "argmax_reference": 381,
+      "argmax_subject": 381,
+      "max_abs_diff": 0.5657573938369751
+    },
+    {
+      "pos": 75,
+      "token_id": 381,
+      "cosine": 0.9993674233191967,
+      "argmax_reference": 11454,
+      "argmax_subject": 11454,
+      "max_abs_diff": 0.6697990894317627
+    },
+    {
+      "pos": 76,
+      "token_id": 35883,
+      "cosine": 0.9994505192415695,
+      "argmax_reference": 430,
+      "argmax_subject": 430,
+      "max_abs_diff": 0.5476088523864746
+    },
+    {
+      "pos": 77,
+      "token_id": 13,
+      "cosine": 0.9988852293697987,
+      "argmax_reference": 271,
+      "argmax_subject": 271,
+      "max_abs_diff": 0.6266951560974121
+    }
+  ]
+}
