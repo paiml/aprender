@@ -363,3 +363,53 @@ fn row_serializes_with_stable_engine_and_stratum_names() {
     assert_eq!(v["stratum"], "8k");
     assert_eq!(v["schema"], ROW_SCHEMA);
 }
+
+/// FALSIFY-REPLAY-003: two PRs with many diffs each cannot fill a stratum of 3.
+#[test]
+fn falsify_replay_003_many_diffs_on_one_pr_count_once() {
+    let mut cands: Vec<Candidate> = pool(3)
+        .into_iter()
+        .filter(|c| Stratum::of(c.input_tokens) != Some(Stratum::K2))
+        .collect();
+    for i in 0..6 {
+        cands.push(cand("paiml/a#1", &format!("a{i}"), 100 + i));
+        cands.push(cand("paiml/b#2", &format!("b{i}"), 200 + i));
+    }
+    assert_eq!(
+        build("v1", 1, 3, &cands, &unrelated_seal()),
+        Err(BuildError::Short(vec![Short {
+            stratum: Stratum::K2,
+            have: 2,
+            need: 3
+        }]))
+    );
+}
+
+/// FALSIFY-REPLAY-002: a stratum is never over-filled either.
+#[test]
+fn falsify_replay_002_each_stratum_holds_exactly_per_stratum() {
+    let set = build("v1", 1, 2, &pool(5), &unrelated_seal()).expect("fits");
+    assert_eq!(set.items.len(), 8);
+    for s in Stratum::ALL {
+        assert_eq!(set.items.iter().filter(|i| i.stratum == s).count(), 2);
+    }
+}
+
+#[test]
+fn falsify_replay_004_ratio_and_median_edges() {
+    assert_eq!(Ratio::of(Some(0.5), Some(2.0)).ratio, Some(0.25));
+    assert_eq!(Ratio::of(Some(1.0), Some(0.0)).ratio, None);
+    assert_eq!(Ratio::of(None, Some(2.0)).ratio, None);
+    let xs: Vec<Option<f64>> = (1..=10).map(|x| Some(f64::from(x))).collect();
+    assert_eq!(median(xs.into_iter()), Some(5.0));
+    assert_eq!(median(std::iter::empty()), None);
+    assert_eq!(median([Some(1.0), None].into_iter()), None);
+}
+
+#[test]
+fn falsify_replay_004_p95_equal_to_the_budget_is_within() {
+    let exact = vec![("haiku".to_string(), vec![19.0])];
+    let s = summarize(&run(20), &exact, None, 1).expect("valid");
+    assert!((s.p95_s - s.queue_budget_p95_s).abs() < 1e-12);
+    assert!(s.within_budget);
+}
