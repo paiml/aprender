@@ -152,6 +152,7 @@ impl CudaExecutor {
             kv_cache_q8_v_scales: HashMap::new(),
             // PMAT-024: cuBLAS handle for prefill GEMM (lazy init on first prefill)
             cublas_handle: None,
+            cublas_f16_handle: None,
             // PMAT-063: cuBLAS workspace for graph capture (lazy init)
             cublas_workspace: None,
             // PMAT-053: cuBLASLt handle for FP8 GEMM (lazy init on first FP8 prefill)
