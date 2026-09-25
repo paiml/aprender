@@ -119,7 +119,10 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
 /// The threshold is untouched (10 tok/s for unasserted GGUF); what changes is
 /// that the number the gate compares is decode throughput.
 #[cfg(feature = "inference")]
-fn throughput_runtime(path: &Path, config: &QaConfig) -> Result<f64> {
+/// #3873: tok/s plus how many measured runs the runtime says it served on the GPU.
+/// The label comes from `used_gpu`, never from what the binary was built with — a
+/// cuda build that fell back to CPU is a CPU measurement.
+fn throughput_runtime(path: &Path, config: &QaConfig) -> Result<(f64, usize, usize)> {
     use realizar::{run_inference, InferenceConfig};
 
     let infer_config = InferenceConfig::new(path)
@@ -139,17 +142,32 @@ fn throughput_runtime(path: &Path, config: &QaConfig) -> Result<f64> {
 
     let mut generated = 0usize;
     let mut seconds = 0.0_f64;
-    for _ in 0..config.iterations.max(1) {
+    let runs = config.iterations.max(1);
+    let mut gpu_runs = 0usize;
+    for _ in 0..runs {
         let result = run()?;
         generated += result.generated_token_count;
         seconds += result.inference_ms / 1000.0;
+        gpu_runs += usize::from(result.used_gpu);
     }
 
-    Ok(if seconds > 0.0 {
+    let tps = if seconds > 0.0 {
         generated as f64 / seconds
     } else {
         0.0
-    })
+    };
+    Ok((tps, gpu_runs, runs))
+}
+
+/// #3873: name the backend the runs were MEASURED on.
+fn runtime_backend_label(gpu_runs: usize, runs: usize) -> String {
+    if gpu_runs == runs {
+        "hybrid forward, GPU #3090".to_string()
+    } else if gpu_runs == 0 {
+        "hybrid forward, CPU #3091".to_string()
+    } else {
+        format!("hybrid forward, MIXED: {gpu_runs}/{runs} runs on GPU")
+    }
 }
 
 /// Gate 2 for an architecture the dense loader refuses: the same falsifiable
@@ -168,14 +186,10 @@ fn run_throughput_gate_runtime(path: &Path, config: &QaConfig) -> Result<GateRes
 
     #[cfg(feature = "inference")]
     {
-        let tps = throughput_runtime(path, config)?;
+        let (tps, gpu_runs, runs) = throughput_runtime(path, config)?;
         let threshold = throughput_threshold(config.min_tps, realizar::format::ModelFormat::Gguf);
         let duration = start.elapsed();
-        let backend = if cfg!(feature = "cuda") {
-            "hybrid forward, GPU #3090"
-        } else {
-            "hybrid forward, CPU #3091"
-        };
+        let backend = runtime_backend_label(gpu_runs, runs);
         let message = format!(
             "{tps:.1} tok/s {} {threshold:.0} tok/s threshold ({backend})",
             if tps >= threshold { ">=" } else { "<" }
@@ -404,7 +418,11 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 /// Measure GPU and CPU throughput for a GGUF model, returning (cpu_tps, gpu_tps).
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
-fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> Result<(f64, f64)> {
+fn measure_gpu_cpu_tps(
+    path: &Path,
+    config: &QaConfig,
+    tracer: &TracerImpl,
+) -> Result<(f64, std::result::Result<f64, String>)> {
     use realizar::gguf::{
         GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
         QuantizedGenerateConfig,
@@ -462,12 +480,56 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> R
                         .unwrap_or_default()
                 },
             );
-            tps
+            Ok(tps)
         }
-        Err(_) => 0.0, // GPU unavailable for this architecture (e.g. missing QkNorm)
+        // GH-284: GPU unavailable for this architecture (e.g. missing QkNorm).
+        // #3873: carried as the error it is, never as a 0 tok/s measurement.
+        Err(e) => Err(e.to_string()),
     };
 
     Ok((cpu_tps, gpu_tps))
+}
+
+/// #3873: the speedup verdict from what was MEASURED. A GPU that never initialised
+/// is named as such — it used to read "GPU 0.00x faster than CPU (0 vs N tok/s)".
+#[cfg_attr(not(all(feature = "inference", feature = "cuda")), allow(dead_code))]
+fn gpu_speedup_verdict(
+    cpu_tps: f64,
+    gpu_tps: std::result::Result<f64, String>,
+    min_speedup: f64,
+    duration: std::time::Duration,
+) -> GateResult {
+    let gpu_tps = match gpu_tps {
+        Ok(tps) => tps,
+        Err(e) => {
+            return GateResult::failed(
+                "gpu_speedup",
+                &format!("GPU path failed to initialise, nothing measured on GPU: {e}"),
+                None,
+                Some(min_speedup),
+                duration,
+            )
+        }
+    };
+    if cpu_tps <= 0.0 {
+        return GateResult::failed(
+            "gpu_speedup",
+            "CPU throughput was zero - cannot calculate speedup",
+            None,
+            None,
+            duration,
+        );
+    }
+    let speedup = gpu_tps / cpu_tps;
+    let message = format!(
+        "GPU/CPU speedup {speedup:.2}x ({gpu_tps:.0} vs {cpu_tps:.0} tok/s) {} {min_speedup:.1}x threshold",
+        if speedup >= min_speedup { ">=" } else { "<" }
+    );
+    if speedup >= min_speedup {
+        GateResult::passed("gpu_speedup", &message, Some(speedup), Some(min_speedup), duration)
+    } else {
+        GateResult::failed("gpu_speedup", &message, Some(speedup), Some(min_speedup), duration)
+    }
 }
 
 fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
@@ -506,41 +568,7 @@ fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
         let (cpu_tps, gpu_tps) = measure_gpu_cpu_tps(path, config, &tracer)?;
         let duration = start.elapsed();
 
-        if cpu_tps <= 0.0 {
-            return Ok(GateResult::failed(
-                "gpu_speedup",
-                "CPU throughput was zero - cannot calculate speedup",
-                None,
-                None,
-                duration,
-            ));
-        }
-
-        let speedup = gpu_tps / cpu_tps;
-
-        if speedup >= config.min_gpu_speedup {
-            Ok(GateResult::passed(
-                "gpu_speedup",
-                &format!(
-                    "GPU {:.1}x faster than CPU ({:.0} vs {:.0} tok/s) >= {:.1}x threshold",
-                    speedup, gpu_tps, cpu_tps, config.min_gpu_speedup
-                ),
-                Some(speedup),
-                Some(config.min_gpu_speedup),
-                duration,
-            ))
-        } else {
-            Ok(GateResult::failed(
-                "gpu_speedup",
-                &format!(
-                    "GPU {:.2}x faster than CPU ({:.0} vs {:.0} tok/s) < {:.1}x threshold",
-                    speedup, gpu_tps, cpu_tps, config.min_gpu_speedup
-                ),
-                Some(speedup),
-                Some(config.min_gpu_speedup),
-                duration,
-            ))
-        }
+        Ok(gpu_speedup_verdict(cpu_tps, gpu_tps, config.min_gpu_speedup, duration))
     }
 
     #[cfg(not(all(feature = "inference", feature = "cuda")))]
@@ -624,5 +652,44 @@ mod assert_tps_tests {
         // `--assert-tps 2` was silently tightened to 10. An assertion is an
         // assertion in both directions.
         assert!((throughput_threshold(Some(2.0), ModelFormat::Gguf) - 2.0).abs() < f64::EPSILON);
+    }
+}
+
+#[cfg(test)]
+mod measured_not_asserted_3873 {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn the_backend_label_follows_used_gpu_not_the_build() {
+        assert!(runtime_backend_label(3, 3).contains("GPU"));
+        assert!(runtime_backend_label(0, 3).contains("CPU"));
+        let mixed = runtime_backend_label(1, 3);
+        assert!(mixed.contains("MIXED") && mixed.contains("1/3"), "{mixed}");
+    }
+
+    #[test]
+    fn a_gpu_that_never_initialised_is_not_reported_as_a_speedup() {
+        let g = gpu_speedup_verdict(40.0, Err("QkNorm unsupported".into()), 2.0, Duration::ZERO);
+        assert!(!g.passed && !g.skipped);
+        assert!(g.message.contains("failed to initialise"), "{}", g.message);
+        assert!(g.message.contains("QkNorm unsupported"), "{}", g.message);
+        assert!(!g.message.contains("faster"), "{}", g.message);
+        assert_eq!(g.value, None, "no speedup was measured");
+    }
+
+    #[test]
+    fn a_slower_gpu_is_not_called_faster() {
+        let g = gpu_speedup_verdict(40.0, Ok(20.0), 2.0, Duration::ZERO);
+        assert!(!g.passed);
+        assert!(!g.message.contains("faster"), "{}", g.message);
+        assert_eq!(g.value, Some(0.5));
+    }
+
+    #[test]
+    fn a_measured_speedup_over_threshold_passes() {
+        let g = gpu_speedup_verdict(40.0, Ok(200.0), 2.0, Duration::ZERO);
+        assert!(g.passed, "{}", g.message);
+        assert_eq!(g.value, Some(5.0));
     }
 }
