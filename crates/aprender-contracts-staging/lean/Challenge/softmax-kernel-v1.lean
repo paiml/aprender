@@ -90,7 +90,7 @@ end
 
 section
 namespace ProvableContracts.SoftmaxCore
-theorem _root_.PvlChallenge.ProvableContracts.SoftmaxCore.softmax_num_lt_denom (i : Int) (rest : List Int) (hi : 0 ≤ i) (hrest : 0 < lsum rest) : i < lsum (i :: rest) := sorry
+theorem _root_.PvlChallenge.ProvableContracts.SoftmaxCore.softmax_num_lt_denom (i : Int) (rest : List Int) (_hi : 0 ≤ i) (hrest : 0 < lsum rest) : i < lsum (i :: rest) := sorry
 end ProvableContracts.SoftmaxCore
 end
 

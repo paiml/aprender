@@ -35,13 +35,6 @@ end
 section
 namespace ProvableContracts.Sigmoid
 open Real
-theorem _root_.PvlChallenge.ProvableContracts.Sigmoid.sigmoid_lt_exp (x : ℝ) : sigmoid x < Real.exp x := sorry
-end ProvableContracts.Sigmoid
-end
-
-section
-namespace ProvableContracts.Sigmoid
-open Real
 theorem _root_.PvlChallenge.ProvableContracts.Sigmoid.sigmoid_lt_one (x : ℝ) : sigmoid x < 1 := sorry
 end ProvableContracts.Sigmoid
 end

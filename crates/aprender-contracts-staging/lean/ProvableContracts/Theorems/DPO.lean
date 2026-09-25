@@ -35,7 +35,7 @@ axiom sigmoid_bounded (x : ℝ) : 0 < sigmoid x ∧ sigmoid x < 1
 
 -- Status: proved
 /-- DPO loss is non-negative when sigmoid argument is in (0,1) -/
-theorem dpo_loss_nonneg (β : ℝ) (lrw lrl : ℝ) (hβ : β > 0) :
+theorem dpo_loss_nonneg (β : ℝ) (lrw lrl : ℝ) (_hβ : β > 0) :
     dpo_loss β lrw lrl ≥ 0 := by
   unfold dpo_loss
   have hs := sigmoid_bounded (β * (lrw - lrl))

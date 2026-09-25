@@ -183,3 +183,38 @@ fn a_root_whose_statement_cannot_be_lifted_is_unrestated_not_dropped() {
     assert_eq!(r.unrestated.len(), 1);
     assert_eq!(r.unrestated[0].1, "ProvableContracts.Gelu.gelu_bound");
 }
+
+/// #4244: `SiluAsymptotic` and `SiluLowerBound` both declare `ProvableContracts.Sigmoid.sigmoid_lt_exp` (Lean accepts
+/// the identical duplicate on import), so the binding held two roots with one fqn and `silu-kernel-v1.lean` declared
+/// the challenge twice -- Lean rejected the file. One restatement per fqn.
+#[test]
+fn a_theorem_declared_in_two_modules_is_restated_once() {
+    let d = fixture();
+    std::fs::write(
+        d.path().join("lean/ProvableContracts.lean"),
+        "import ProvableContracts.Theorems.Gelu.Bound\nimport ProvableContracts.Theorems.Gelu.Again\n",
+    )
+    .expect("write root");
+    std::fs::write(
+        d.path()
+            .join("lean/ProvableContracts/Theorems/Gelu/Again.lean"),
+        "namespace ProvableContracts.Gelu\n\
+         theorem gelu_bound (x : Nat) : x ≤ x + 1 := Nat.le_succ x\n\
+         end ProvableContracts.Gelu\n",
+    )
+    .expect("write twin");
+    // silu-kernel-v1 binds by module prefix (`lean_theorem: Theorems.Sigmoid`), which reaches both declarations.
+    std::fs::write(
+        d.path().join("contracts/gelu-v1.yaml"),
+        "equations:\n  e:\n    lean_theorem: Theorems.Gelu\n",
+    )
+    .expect("write contract");
+    let r = render(&d.path().join("lean"), &d.path().join("contracts")).expect("render");
+    let text = &r.files["Challenge/gelu-v1.lean"];
+    assert_eq!(
+        text.matches("theorem _root_.PvlChallenge.ProvableContracts.Gelu.gelu_bound")
+            .count(),
+        1,
+        "{text}"
+    );
+}

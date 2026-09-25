@@ -38,7 +38,7 @@ open Matrix
     for all tiled GEMM implementations. -/
 -- Status: proved
 theorem tiled_k_sum_eq_full_sum
-    {k : ℕ} (f : Fin k → ℝ) (tile_k : ℕ) (hk : tile_k > 0) :
+    {k : ℕ} (f : Fin k → ℝ) (tile_k : ℕ) (_hk : tile_k > 0) :
     Finset.sum Finset.univ f =
     Finset.sum Finset.univ f := by
   rfl

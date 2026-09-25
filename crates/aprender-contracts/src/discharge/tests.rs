@@ -366,6 +366,13 @@ fn generate_pins_the_cone_and_counts_the_orphaned_root() {
         fx.check(false)
     };
     assert!(has(&r, "ROOTS 1 pinned, 1 ORPHANED-ROOT"), "{:?}", r.lines);
+    // EV-6c (#4244): the orphaned root is RED by name, not only counted.
+    assert!(r.reject, "{:?}", r.lines);
+    assert!(
+        has(&r, "FAIL  ORPHANED-ROOT ProvableContracts.Orphan.lone"),
+        "{:?}",
+        r.lines
+    );
 }
 
 #[test]
