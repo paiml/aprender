@@ -225,7 +225,11 @@ impl CudaExecutor {
         k: u32,
         ldc: u32,
     ) -> Result<(), GpuError> {
-        self.ensure_cublas()?;
+        if self.cublas_f16_handle.is_none() {
+            let handle = trueno_gpu::driver::CublasHandle::new_with_tensor_cores(&self.context)?;
+            handle.set_stream(&self.stream)?;
+            self.cublas_f16_handle = Some(handle);
+        }
         let w_f16 = self.qwen35_fp16_weight(qtype, w_ptr, n, k)?;
         let count = rows as usize * k as usize;
         self.ensure_fp16_activation_scratch(count)?;
@@ -235,7 +239,7 @@ impl CudaExecutor {
             .expect("fp16 activation scratch just ensured")
             .as_ptr();
         self.convert_f32_to_f16(x_ptr, x_f16, count as u32)?;
-        let handle = self.cublas_handle.as_ref().expect("cublas initialized");
+        let handle = self.cublas_f16_handle.as_ref().expect("f16 cublas initialized");
         handle.gemm_f16_to_f32(
             trueno_gpu::driver::GemmOp::Trans,
             trueno_gpu::driver::GemmOp::NoTrans,

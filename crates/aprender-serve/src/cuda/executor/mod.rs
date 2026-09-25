@@ -584,6 +584,9 @@ pub struct CudaExecutor {
     kv_cache_q8_v_scales: HashMap<String, GpuBuffer<f32>>,
     // PMAT-024: cuBLAS handle for prefill GEMM (dequant Q4K → dense → cuBLAS)
     cublas_handle: Option<trueno_gpu::driver::CublasHandle>,
+    // #4313: tensor-op handle for the Qwen3.5 f16 prefill GEMM. `cublas_handle` is
+    // PEDANTIC, which confines f16 GemmEx to the legacy s1688 kernel.
+    cublas_f16_handle: Option<trueno_gpu::driver::CublasHandle>,
     // PMAT-063: Pre-allocated cuBLAS workspace for CUDA graph capture
     // Without this, cuBLAS falls back to workspace-free algorithms (7x slower)
     cublas_workspace: Option<GpuBuffer<u8>>,
