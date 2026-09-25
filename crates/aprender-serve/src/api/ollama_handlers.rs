@@ -664,8 +664,11 @@ fn chat_response_to_parts(
             let content = choice
                 .map(|c| c.message.content.clone())
                 .unwrap_or_default();
+            // An empty list is no tool call (aprender#4182) — normalised here
+            // so the streaming and non-streaming replies both omit the key.
             let tool_calls = choice
                 .and_then(|c| c.message.tool_calls.clone())
+                .filter(|calls| !calls.is_empty())
                 .map(|calls| calls.into_iter().map(OllamaToolCall::from).collect());
             return (
                 content,
@@ -1068,6 +1071,20 @@ mod tests {
         assert_eq!(calls[0].function.name, "bash");
         assert_eq!(calls[0].function.arguments["command"], "ls");
         assert_eq!(calls[0].function.arguments["description"], "list");
+    }
+
+    /// aprender#4182: an upstream `"tool_calls": []` is no tool call on
+    /// EITHER reply path — normalised before the stream/non-stream split.
+    #[test]
+    fn chat_response_to_parts_empty_tool_calls_is_none() {
+        let body = br#"{
+            "id":"x","object":"chat.completion","created":0,"model":"m",
+            "choices":[{"index":0,"message":{"role":"assistant","content":"hi",
+                "tool_calls":[]},"finish_reason":"stop"}],
+            "usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}
+        }"#;
+        let (_content, tool_calls, ..) = chat_response_to_parts(StatusCode::OK, body);
+        assert!(tool_calls.is_none(), "got {tool_calls:?}");
     }
 
     fn response_call(arguments: &str) -> ResponseToolCall {
