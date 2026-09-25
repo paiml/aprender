@@ -118,8 +118,10 @@ self_test() {
         if [ "$rc" = 0 ]; then echo "  ok   mutant lets the RED cell through: the refusal is load-bearing"
         else echo "  FAIL mutant still refuses (rc $rc): $got"; fail=1; fi
     done
-    # WIRING: rc_cut.sh runs this gate before it writes the tag, and dies on a refusal.
-    local cut; cut="$(dirname -- "${BASH_SOURCE[0]}")/rc_cut.sh"
+    # WIRING: the rc tagger runs this gate before it writes the tag, and dies on a refusal.
+    # The car cuts with rc_cut.sh; rc_tag_main.sh (#4327, rc = tag on a queue-green main) is its
+    # successor, checked with RC_TAGGER=.../rc_tag_main.sh until it replaces rc_cut.sh.
+    local cut; cut="${RC_TAGGER:-$(dirname -- "${BASH_SOURCE[0]}")/rc_cut.sh}"
     local call tagline
     call=$(grep -n 'fleet_cells_gate.sh' "$cut" | grep -v '^\s*[0-9]*:\s*#' | head -n 1 | cut -d: -f1)
     tagline=$(grep -nF 'out=$(api_post git/refs' "$cut" | head -n 1 | cut -d: -f1)
