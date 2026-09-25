@@ -46,7 +46,10 @@ fn falsify_toj_001_immature_outcome_is_refused_as_gold() {
     );
     assert_eq!(rev.outcome, Outcome::Pending);
     // Days count by UTC date: 09-12 to 09-25 is 13, whatever the hour.
-    let d13 = one(&[ev(1, EventKind::Merged, "2026-09-12T00:00:00Z")], "2026-09-25T23:59:59Z");
+    let d13 = one(
+        &[ev(1, EventKind::Merged, "2026-09-12T00:00:00Z")],
+        "2026-09-25T23:59:59Z",
+    );
     assert_eq!(d13.outcome, Outcome::Pending, "13 days is immature");
     let d14 = one(&[ev(1, EventKind::Merged, "2026-09-11T08:00:00Z")], NOW);
     assert_eq!(d14.outcome, Outcome::Merged);
@@ -69,17 +72,33 @@ fn falsify_toj_001_immature_outcome_is_refused_as_gold() {
 fn falsify_toj_002_outcome_follows_the_revert_window() {
     let old = "2026-08-01T00:00:00Z";
     let at = |kind, at| one(&[ev(2, EventKind::Merged, old), ev(2, kind, at)], NOW).outcome;
-    assert_eq!(at(EventKind::Reverted, "2026-08-15T23:00:00Z"), Outcome::RevertedLe14d);
-    assert_eq!(at(EventKind::Reverted, "2026-08-16T00:00:00Z"), Outcome::RegressionEscape);
-    assert_eq!(at(EventKind::Escape, "2026-08-03T00:00:00Z"), Outcome::RegressionEscape);
+    assert_eq!(
+        at(EventKind::Reverted, "2026-08-15T23:00:00Z"),
+        Outcome::RevertedLe14d
+    );
+    assert_eq!(
+        at(EventKind::Reverted, "2026-08-16T00:00:00Z"),
+        Outcome::RegressionEscape
+    );
+    assert_eq!(
+        at(EventKind::Escape, "2026-08-03T00:00:00Z"),
+        Outcome::RegressionEscape
+    );
     assert_eq!(
         one(&[ev(2, EventKind::Closed, old)], NOW).outcome,
         Outcome::ClosedUnmerged
     );
-    assert_eq!(one(&[ev(2, EventKind::Merged, old)], NOW).outcome, Outcome::Merged);
+    assert_eq!(
+        one(&[ev(2, EventKind::Merged, old)], NOW).outcome,
+        Outcome::Merged
+    );
     // A merged PR's close event does not make it unmerged.
     assert_eq!(
-        one(&[ev(2, EventKind::Closed, old), ev(2, EventKind::Merged, old)], NOW).outcome,
+        one(
+            &[ev(2, EventKind::Closed, old), ev(2, EventKind::Merged, old)],
+            NOW
+        )
+        .outcome,
         Outcome::Merged
     );
     // The window runs from the merge, not from an earlier event.
@@ -92,6 +111,17 @@ fn falsify_toj_002_outcome_follows_the_revert_window() {
     );
     assert_eq!(r.outcome, Outcome::RevertedLe14d);
     assert_eq!(r.outcome_matured_at.as_deref(), Some("2026-08-24"));
+    // A revert or escape dated before the merge is not of this merge.
+    for kind in [EventKind::Reverted, EventKind::Escape] {
+        let early = one(
+            &[
+                ev(2, kind, "2026-08-05T00:00:00Z"),
+                ev(2, EventKind::Merged, "2026-08-10T00:00:00Z"),
+            ],
+            NOW,
+        );
+        assert_eq!(early.outcome, Outcome::Merged, "{kind:?}");
+    }
     assert_eq!(
         serde_json::to_string(&Outcome::RevertedLe14d).expect("ser"),
         "\"reverted_le14d\""
@@ -187,16 +217,19 @@ fn falsify_toj_005_weekly_matured_count() {
     assert_eq!(rs.len(), 5);
     assert_eq!(matured_between(&rs, "2026-09-18", "2026-09-25"), 2);
     assert_eq!(matured_between(&rs, "2026-09-17", "2026-09-26"), 4);
-    let v = serde_json::to_value(
-        gold(&rs, &[]).expect("gold").first().expect("one"),
-    )
-    .expect("ser");
+    let v = serde_json::to_value(gold(&rs, &[]).expect("gold").first().expect("one")).expect("ser");
     assert_eq!(v["label_source"], "outcome");
 }
 
 #[test]
 fn date_inverts_day() {
-    for s in ["1970-01-01", "2000-02-29", "2024-12-31", "2026-09-25", "2100-03-01"] {
+    for s in [
+        "1970-01-01",
+        "2000-02-29",
+        "2024-12-31",
+        "2026-09-25",
+        "2100-03-01",
+    ] {
         let d = crate::split_guard::day(s).expect("day");
         assert_eq!(crate::split_guard::date(d), s);
     }
