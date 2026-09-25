@@ -90,6 +90,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # The driver decides what every section's if:/matrix/needs means and whether
+      # the vendored workflow is the upstream one; its case table must go RED on
+      # each planted defect before it is trusted to report a section green.
+      - name: fat_driver case table must still turn RED
+        run: python3 scripts/ci/fat_driver.py self-test
       - name: Sections (the determinism raster returns first; the rest keep running)
         run: >-
           python3 scripts/ci/fat_driver.py run
