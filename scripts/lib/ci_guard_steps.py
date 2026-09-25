@@ -152,6 +152,10 @@ def manifest_findings(jobs, job):
     out = []
     man = jobs.get(job + MANIFEST_SUFFIX)
     if man is None:
+        # A runner step with no manifest runs only the steps left behind it --
+        # green over nothing it was meant to run (lane b, #4415).
+        if any(calls_runner(s, job) for s in jobs[job].get("steps") or []):
+            out.append(f"{job}: a step runs `bash {RUNNER} {job}` but there is no {job}{MANIFEST_SUFFIX} job")
         return out
     if man.get("if") is not False:
         out.append(f"{job}{MANIFEST_SUFFIX}: a manifest job needs `if: false`, or GitHub runs its steps a second time")
@@ -391,6 +395,10 @@ def cmd_run(args):
     jobs = load_jobs(args.workflow)
     names = args.jobs or guard_jobs(jobs, args.workflow)
     print(sha_line(jobs, names), flush=True)
+    missing = [j for j in names if in_ci() and j + MANIFEST_SUFFIX not in jobs]
+    if missing:
+        print(f"ci_guard_steps: no manifest job for {', '.join(missing)} -- nothing to run", file=sys.stderr)
+        return 2
     scratch = os.environ.get("CI_GUARDS_SCRATCH") or (
         tempfile.mkdtemp(prefix="ci-guards-") if in_ci() else os.path.join(root, "target", "ci-guards-local"))
     os.makedirs(scratch, exist_ok=True)

@@ -141,7 +141,8 @@ self_test() {
 }
 
 # mfixture <file> <variant> [step-run...] -- a guard job + its `-steps` manifest.
-# variants: good no_if_false step_if bad_expr run_expr no_runner orphan
+# variants: good no_if_false step_if bad_expr run_expr no_runner orphan no_manifest
+# (no_manifest: the -steps job is deleted and a step is left behind the runner.)
 mfixture() {
     local f=$1 v=$2 r
     shift 2
@@ -150,6 +151,10 @@ mfixture() {
         printf '      - id: guard-setup\n        name: fetch\n        run: "true"\n'
         if [ "$v" != no_runner ]; then
             printf '      - name: run all\n        if: ${{ !cancelled() }}\n        run: bash scripts/ci_guards.sh guard-x\n'
+        fi
+        if [ "$v" = no_manifest ]; then
+            printf '      - name: left behind\n        if: ${{ !cancelled() }}\n        run: "true"\n'
+            return 0
         fi
         printf '  guard-x-steps:\n'
         [ "$v" = no_if_false ] || printf '    if: false\n'
@@ -172,7 +177,7 @@ manifest_rows() {
     printf 'guard-x 0\n' > "$d/mbase"
     mfixture "$d/m_good.yml" good "true"
     case_row "manifest if:false + runner step -> pass" 0 "$d/m_good.yml" "$d/mbase"
-    for v in no_if_false step_if bad_expr run_expr no_runner orphan; do
+    for v in no_if_false step_if bad_expr run_expr no_runner orphan no_manifest; do
         mfixture "$d/m_$v.yml" "$v" "true"
         case_row "manifest defect '$v' -> RED" 1 "$d/m_$v.yml" "$d/mbase"
     done
