@@ -13,6 +13,61 @@
 # §4.1 (freeze: open milestone items move to the next milestone with slipped_from:) is done by hand before this.
 set -uo pipefail
 die() { printf 'STOP %s\n' "$*" >&2; exit 1; }
+# The conventional-commit group of a merged PR: fix -> Fixed, feat -> Added, anything else -> Changed.
+PB_JQ_GROUP='def group: ((.title | capture("^(?<k>\\w+)(\\([^)]*\\))?!?:").k | ascii_downcase) // "")
+    | if . == "fix" then "Fixed" elif . == "feat" then "Added" else "Changed" end;'
+
+# pb_section MERGED_JSON VERSION MARK OUT -> the CHANGELOG [VERSION] draft in OUT; prints the tally
+pb_section() {
+    local day; day=$(date -u +%F) || return 1
+    jq -r --arg v "$2" --arg mark "$3" --arg day "$day" "$PB_JQ_GROUP"'
+        [sort_by(.number)[] | {g: group, l: "- \(.title) (#\(.number))"}] as $p
+        | ["## [\($v)] - \($day)", "", $mark, ""]
+          + ([["Added", "Fixed", "Changed"][] as $g | [$p[] | select(.g == $g) | .l]
+              | if . == [] then [] else ["### \($g)", ""] + . + [""] end] | add)
+        | .[:-1][]' "$1" > "$4" || return 1
+    jq -r "$PB_JQ_GROUP"' [.[] | group] as $g
+        | "\(length) merged PRs since the last tag: "
+          + (["Added", "Fixed", "Changed"] | map(. as $n | "\($n) \([$g[] | select(. == $n)] | length)") | join(", "))' "$1"
+}
+
+# pb_splice CHANGELOG SECTION -> SECTION inserted under the one `## [Unreleased]` line; 1 if not exactly one
+pb_splice() {
+    local s sec rest anchor=$'## [Unreleased]\n'
+    s=$(cat -- "$1" && printf x) || return 1
+    s=${s%x}
+    sec=$(cat -- "$2") || return 1
+    # python's text mode read \r\n and a lone \r as \n; keep that (#4352)
+    s=${s//$'\r\n'/$'\n'}; s=${s//$'\r'/$'\n'}; sec=${sec//$'\r\n'/$'\n'}; sec=${sec//$'\r'/$'\n'}
+    sec=${sec%"${sec##*[!$'\n']}"}
+    rest=${s#*"$anchor"}
+    if [ "$rest" = "$s" ] || [[ $rest == *"$anchor"* ]]; then
+        echo "CHANGELOG has no single [Unreleased] anchor" >&2; return 1
+    fi
+    printf '%s' "${s%%"$anchor"*}$anchor"$'\n'"$sec"$'\n'"$rest" > "$1"
+}
+
+pb_self_test() {
+    local d fail=0 got; d=$(mktemp -d) || return 2
+    printf '%s' '[{"number":4,"title":"fixup: d"},{"number":1,"title":"Fix(x)!: a"},{"number":2,"title":"feat: b"},{"number":3,"title":"chore: c"}]' > "$d/m.json"
+    got=$(pb_section "$d/m.json" 9.9.9 MARK "$d/s.md")
+    if [ "$got" = "4 merged PRs since the last tag: Added 1, Fixed 1, Changed 2" ]; then echo "  ok   section tally groups fix/feat/other"
+    else echo "  FAIL section tally: $got"; fail=1; fi
+    got=$(grep -v '^## \[' "$d/s.md" | tr '\n' '|')
+    if [ "$got" = "|MARK||### Added||- feat: b (#2)||### Fixed||- Fix(x)!: a (#1)||### Changed||- chore: c (#3)|- fixup: d (#4)|" ]; then echo "  ok   section: Added, Fixed, Changed in order, PRs by number, fixup is not fix"
+    else echo "  FAIL section body: $got"; fail=1; fi
+    printf '# C\n## [Unreleased]\nold\n' > "$d/c.md"; printf 'NEW\n\n' > "$d/n.md"
+    if pb_splice "$d/c.md" "$d/n.md" && [ "$(tr '\n' '|' < "$d/c.md")" = "# C|## [Unreleased]||NEW|old|" ]; then echo "  ok   splice lands under the one [Unreleased] line"
+    else echo "  FAIL splice: $(tr '\n' '|' < "$d/c.md")"; fail=1; fi
+    printf '## [Unreleased]\n## [Unreleased]\n' > "$d/c.md"
+    if pb_splice "$d/c.md" "$d/n.md" 2>/dev/null; then echo "  FAIL splice accepted two [Unreleased] anchors"; fail=1; else echo "  ok   splice refuses two anchors"; fi
+    printf '# C\n' > "$d/c.md"
+    if pb_splice "$d/c.md" "$d/n.md" 2>/dev/null; then echo "  FAIL splice accepted no anchor"; fail=1; else echo "  ok   splice refuses no anchor"; fi
+    rm -rf -- "${d:?}"
+    if [ "$fail" -eq 0 ]; then echo "prepare_bump self-test: PASS"; else echo "prepare_bump self-test: FAIL"; fi
+    return "$fail"
+}
+if [ "${1:-}" = --self-test ]; then pb_self_test; exit $?; fi
 # D4/D5/D6/D7 (PMAT-3459): $0-derived root and CARGO_HOME-relative cargo. Root resolved
 # BEFORE any cd. NOT `git rev-parse --show-toplevel` — refused on a bind-mounted tree (#3586).
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || die "cannot resolve the repo root from $0"
@@ -35,30 +90,8 @@ if [ "${2:-}" != "--ship" ]; then
   bash scripts/bump-version.sh --check >> "$AP/bump.log" 2>&1 || die "bump-version.sh --check failed after the bump"
   since=$(git log -1 --format=%cI "$LAST_TAG") || die "no tag $LAST_TAG"
   gh pr list --repo $REPO --state merged --search "merged:>=$since" --limit 500 --json number,title > "$AP/merged.json" || die "gh pr list failed"
-  python3 - "$AP/merged.json" "$V" "$MARK" "$AP/section.md" <<'PY'
-import datetime, json, re, sys
-prs, v, mark, out = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3], sys.argv[4]
-groups = {"Added": [], "Fixed": [], "Changed": []}
-for p in sorted(prs, key=lambda p: p["number"]):
-    m = re.match(r"(\w+)(\([^)]*\))?!?:", p["title"])
-    kind = m.group(1).lower() if m else ""
-    g = "Fixed" if kind == "fix" else "Added" if kind == "feat" else "Changed"
-    groups[g].append(f"- {p['title']} (#{p['number']})")
-day = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
-lines = [f"## [{v}] - {day}", "", mark, ""]
-for g in ("Added", "Fixed", "Changed"):
-    if groups[g]:
-        lines += [f"### {g}", ""] + groups[g] + [""]
-open(out, "w").write("\n".join(lines))
-print(f"{len(prs)} merged PRs since the last tag: " + ", ".join(f"{k} {len(x)}" for k, x in groups.items()))
-PY
-  python3 - CHANGELOG.md "$AP/section.md" <<'PY'
-import sys
-p, sec = sys.argv[1], open(sys.argv[2]).read()
-s = open(p).read(); anchor = "## [Unreleased]\n"
-assert s.count(anchor) == 1, "CHANGELOG has no single [Unreleased] anchor"
-open(p, "w").write(s.replace(anchor, anchor + "\n" + sec.rstrip("\n") + "\n", 1))
-PY
+  pb_section "$AP/merged.json" "$V" "$MARK" "$AP/section.md" || die "CHANGELOG draft from $AP/merged.json failed"
+  pb_splice CHANGELOG.md "$AP/section.md" || die "CHANGELOG splice failed"
   printf 'REVIEW %s/CHANGELOG.md [%s]: replace the placeholder with the train summary, curate the bullets, then run: %s %s --ship\n' "$B" "$V" "$0" "$V"
   exit 0
 fi
