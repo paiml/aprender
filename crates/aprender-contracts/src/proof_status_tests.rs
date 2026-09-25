@@ -1147,6 +1147,11 @@ fn lean_has_sorry_case_table() {
         "/- unterminated comment",
         "def s := \"unterminated string",
         "theorem t : P := by\n  sorry -- TODO",
+        "def a := '\"'\ntheorem t : P := sorry\ndef b := '\"'",
+        "def a := '\\''\ntheorem t : P := sorry",
+        "example := xs[j]'sorry",
+        "example := f '\\sorry x'",
+        "def a := (xs[0]'h)\ntheorem t : P := sorry",
     ];
     let must_not_match: &[&str] = &[
         "/-! Module doc: this file compiles sorry-free. -/\ntheorem t : 1 = 1 := rfl",
@@ -1158,6 +1163,11 @@ fn lean_has_sorry_case_table() {
         "theorem sorry_free : 1 = 1 := rfl",
         "theorem not_sorry' : 1 = 1 := rfl",
         "theorem t : 1 = 1 := rfl",
+        "def q := '\"'\ntheorem t : 1 = 1 := rfl",
+        "example : (chunks.map List.sum)[j]'(by simpa using hj) = s := rfl",
+        "def q := xs[i]'h' ++ \"a\"",
+        "theorem t : P := f '\\sorry'",
+        "def q := '\\''\ndef r := '\\u{1F600}'\ntheorem x' : 1 = 1 := rfl",
     ];
     for src in must_match {
         assert!(lean_has_sorry(src), "must read as sorry: {src:?}");
