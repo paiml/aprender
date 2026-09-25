@@ -1,0 +1,182 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": { "driver": { "name": "pmat" } },
+      "invocations": [ { "executionSuccessful": true } ],
+      "results": [
+        {
+          "ruleId": "PRREV-4431-GHOST-BINDING-MSE-SPLIT",
+          "level": "error",
+          "message": {
+            "text": "Reused from evidence/pr-review/4431/5c1dbe01fbefbe94067187fccac35c0d843bd922/ (this re-stamp reviews only the 5c1dbe01f..0644f9c08 delta; contracts/aprender/binding.yaml is untouched by that delta, so the finding still holds unchanged). Tracked as finding row 59-4431-ghost-bindings in docs/findings/aprender-59.jsonl on stage/0.70.1, owner 0d; not re-investigated here per the re-stamp instruction to cite rather than re-derive."
+          },
+          "locations": [
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/aprender/binding.yaml" }, "region": { "startLine": 188 } } }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "docs/findings/aprender-59.jsonl#59-4431-ghost-bindings (stage/0.70.1, owner 0d); originally evidence/pr-review/4431/5c1dbe01f.../findings.sarif#PRREV-4431-GHOST-BINDING-MSE-SPLIT",
+            "excerpt_sha256": "01cc86128eb832a8c559d84e428caf80f6c92bbe86ca37adac6560ea19df75a5",
+            "failure_scenario": "pv obligations check-bindings / pv lint --gate bindings counts mse_split as an unresolved, unallowlisted ghost binding (PV-ONT-028); unchanged by this delta.",
+            "precision_class": "advisory",
+            "rationale_for_class": "Not one of the six mechanical B1-B6 classes in SS7; reported for the human/CI merge decision, carried forward unchanged."
+          }
+        },
+        {
+          "ruleId": "PRREV-4431-GHOST-BINDING-PAGERANK",
+          "level": "error",
+          "message": {
+            "text": "Reused from evidence/pr-review/4431/5c1dbe01fbefbe94067187fccac35c0d843bd922/ (delta does not touch contracts/aprender/binding.yaml). Tracked as finding row 59-4431-ghost-bindings in docs/findings/aprender-59.jsonl on stage/0.70.1, owner 0d; not re-investigated here."
+          },
+          "locations": [
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/aprender/binding.yaml" }, "region": { "startLine": 32 } } }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "source": "docs/findings/aprender-59.jsonl#59-4431-ghost-bindings (stage/0.70.1, owner 0d); originally evidence/pr-review/4431/5c1dbe01f.../findings.sarif#PRREV-4431-GHOST-BINDING-PAGERANK",
+            "excerpt_sha256": "8d95326fd7ce783b1b3d75472604c3975ffea5ec7a3e6a001ec99ffa2e7a1dc3",
+            "failure_scenario": "Same PV-ONT-028 ghost-binding failure mode as mse_split, unchanged by this delta.",
+            "precision_class": "advisory",
+            "rationale_for_class": "Same as PRREV-4431-GHOST-BINDING-MSE-SPLIT; carried forward unchanged."
+          }
+        },
+        {
+          "ruleId": "PRREV-4431-BUILD-VERIFY-RESOLVED",
+          "level": "note",
+          "message": {
+            "text": "The prior receipt (5c1dbe01f) could not independently verify ae1887db9's self-reported 'aprender-contracts --lib passes 2002/2002' because two cargo attempts were killed under host contention. This re-stamp re-ran the build verification to completion: cargo test -p aprender-contracts --lib (CARGO_TARGET_DIR=/mnt/nvme-raid0/targets/apr59-b3rev), after waiting for load1 < 48. Result: 2007 passed; 0 failed; 5 ignored; finished in 207.10s -- covering both ae1887db9 and this delta's 120e85697 (the VS-COUNT-001 validator fix and its case-table test)."
+          },
+          "locations": [
+            { "physicalLocation": { "artifactLocation": { "uri": "crates/aprender-contracts/src/schema/validator.rs" } } }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": ["cargo", "test", "-p", "aprender-contracts", "--lib"],
+            "exit_code": 0,
+            "stdout_sha256": "5251ff04fe8f7e4aba9901d72bdd3c6d961ce00fd4f07652e2777de8532f5032",
+            "precision_class": "advisory",
+            "rationale_for_class": "Resolves the prior receipt's DEGRADED build-verification gap; not itself a defect."
+          }
+        },
+        {
+          "ruleId": "PRREV-4431-VS-COUNT-TESTED-EXCEEDS-TOTAL",
+          "level": "error",
+          "message": {
+            "text": "120e85697's VS-COUNT-001 validator fix (crates/aprender-contracts/src/schema/validator.rs: validate_summary_obligation_count) corrects verification_summary.total_obligations to equal proof_obligations.len() in 17 contracts/*-v1.yaml files, but does not reconcile the dependent tested/proven fields. In at least 8 of those files, tested (or proven) now EXCEEDS the corrected total_obligations, producing an internally contradictory verification_summary the fix did not exist to introduce -- confirmed these 8 files were internally consistent immediately before this delta (git show 5c1dbe01f:<path>), so the delta is what regressed them. Independently found by the S3.E antigravity (gemini-3.1-pro-high) consultation via one file (apr-cli-qa-v1.yaml) and confirmed by primary via a systematic sweep of all 17 delta-touched contract files; classification: agreed (this file) + primary_only (the other 7)."
+          },
+          "locations": [
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/apr-cli-qa-v1.yaml" }, "region": { "startLine": 256 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/apr-docs-v1.yaml" }, "region": { "startLine": 161 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/apr-dogfood-coverage-v1.yaml" }, "region": { "startLine": 851 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/crate-hygiene-v1.yaml" }, "region": { "startLine": 128 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/crate-readme-v1.yaml" }, "region": { "startLine": 60 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/hero-svg-v1.yaml" }, "region": { "startLine": 67 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/ratatui-migration-v1.yaml" }, "region": { "startLine": 88 } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "contracts/unified-specs-v1.yaml" }, "region": { "startLine": 82 } } }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": ["grep", "-A4", "^verification_summary:", "contracts/apr-cli-qa-v1.yaml"],
+            "exit_code": 0,
+            "stdout_sha256": "ddbd72b3bac178f34aa47740cb45ddd66c1f31c8fd0ccd34182641923e0e5f02",
+            "failure_scenario": "A reader or downstream tool (e.g. pv obligations report) trusts verification_summary as a self-consistent rollup; total_obligations: 5 with tested: 11 (apr-cli-qa-v1.yaml) makes it impossible to tell which of the 11 tested claims actually maps to one of the 5 counted obligations, or whether 6 of them are stale/orphaned claims VS-COUNT-001 should have flagged instead of silently coexisting with.",
+            "precision_class": "advisory",
+            "rationale_for_class": "Not one of the six mechanical B1-B6 classes (does not touch a guard script's own falsifier or gate logic); a genuine correctness regression reported for the human/CI merge decision, not blocking."
+          }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "nvidia-cuda-docs" } },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "S3.B triggers on the same 2 fixture paths as the prior receipt (crates/aprender-contracts-cli/tests/fixtures/pvl/obligations/pmat/src/tdg/cuda_simd_scores.rs.txt, crates/aprender-contracts-staging/lean/Challenge/fp8-interchange-v1.lean); unchanged by the 5c1dbe01f..0644f9c08 delta. Per this re-stamp's explicit instruction, the CUDA consult being unreachable is accepted as not-applicable (B3 fold has no device code): cuda-docs-reviewer agent type still not registered in this session, and nvidia-cuda-docs MCP still requires OAuth this non-interactive session cannot complete."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": ["Agent", "subagent_type=cuda-docs-reviewer"],
+                "exit_code": 1,
+                "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": { "driver": { "name": "crux" } },
+      "invocations": [ { "executionSuccessful": true } ],
+      "results": [
+        {
+          "ruleId": "PRREV-4431-CRUX-NONE-PV-CLI",
+          "level": "note",
+          "message": {
+            "text": "Reused from the prior receipt: no contracts/crux-*.yaml names pv-sat or aprender-contracts-cli (crux_coverage none). The 5c1dbe01f..0644f9c08 delta touches only scripts/, .github/workflows/, and contracts/*-v1.yaml verification_summary counts -- none of it is user-facing pv/pv-sat CLI output or a comparative claim, so this consultation's status is unchanged."
+          },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "crates/aprender-contracts-cli/src/cli.rs" } } } ],
+          "properties": {
+            "grounding": "measured",
+            "command": ["git", "diff", "--stat", "5c1dbe01fbefbe94067187fccac35c0d843bd922", "0644f9c083264f86a4201cd122e64498fa90af22"],
+            "exit_code": 0,
+            "stdout_sha256": "f4e63e5c649fb406ffea236fdcd724749f20f51e02ee6060e28779f7c5900328",
+            "failure_scenario": "pv/pv-sat's CLI output can drift with no CRUX contract to catch a regression; unchanged risk carried forward from the prior receipt.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "mutation" } },
+      "invocations": [ { "executionSuccessful": true } ],
+      "results": [
+        {
+          "ruleId": "PRREV-4431-MUTATION-DELTA-GUARDS-CLEAN",
+          "level": "note",
+          "message": {
+            "text": "S3.D triggers on the delta's own guard/gate-logic scripts (scripts/check_pr_review_arm4.sh, scripts/pr_review_sign_receipt.sh, scripts/check_pr_review_counts.sh, plus new libs scripts/lib/git_patch_id.py and scripts/lib/pr_review_patch_id.sh). No committed cargo-mutants set exists for these; --self-test is the available substitute, per the same convention as the prior receipt. All three self-tests ran clean: check_pr_review_arm4.sh --self-test 23/23, pr_review_sign_receipt.sh --self-test 14/14, check_pr_review_counts.sh --self-test 16/16. The two new library files (git_patch_id.py, pr_review_patch_id.sh) are exercised indirectly through check_pr_review_arm4.sh's 23-row table (both polarities, native vs Python-port patch-id computation)."
+          },
+          "locations": [
+            { "physicalLocation": { "artifactLocation": { "uri": "scripts/check_pr_review_arm4.sh" } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "scripts/pr_review_sign_receipt.sh" } } },
+            { "physicalLocation": { "artifactLocation": { "uri": "scripts/check_pr_review_counts.sh" } } }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": ["bash", "scripts/check_pr_review_arm4.sh", "--self-test"],
+            "exit_code": 0,
+            "stdout_sha256": "9ab65a422dc9eb7038665638f5eaeb3f20949932097c797650e32c6e85c7ebe7",
+            "failure_scenario": "A future edit to the #4421 patch-id binding logic that breaks either the native or Python-port computation, or the signer's stamping/refusal behavior, has a self-test that would catch it before CI; none of the 3 scripts show a gap.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "antigravity" } },
+      "invocations": [ { "executionSuccessful": true } ],
+      "results": [
+        {
+          "ruleId": "PRREV-4431-VS-COUNT-TESTED-EXCEEDS-TOTAL",
+          "level": "error",
+          "message": {
+            "text": "agy (gemini-3.1-pro-high) independently found: 'The validate_summary_obligation_count rule sets total_obligations to proof_obligations.len() but ignores dependent fields like tested, proven, or l2_property_tested. As a result, the PR updates contracts to have impossible summaries (e.g., contracts/apr-cli-qa-v1.yaml has total_obligations: 5 but tested: 11).' Primary reverified this file and swept the remaining 16 delta-touched contract files, finding 7 more instances (see the pmat-driver run for the full 8-file list)."
+          },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "contracts/apr-cli-qa-v1.yaml" }, "region": { "startLine": 256 } } } ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "rationale_for_class": "S3.E is advisory-only (SS7); corroborates the pmat-driver finding on this one file, does not independently force any verdict."
+          }
+        }
+      ]
+    }
+  ]
+}
