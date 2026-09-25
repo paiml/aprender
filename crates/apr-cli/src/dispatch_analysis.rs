@@ -918,6 +918,9 @@ fn dispatch_runs_command(command: &RunsCommands, cli: &Cli) -> std::result::Resu
             yes,
             json,
         } => commands::runs::run_gc(dir, *global, *yes, *json || cli.json),
+        RunsCommands::Fsck { registry, json } => {
+            commands::runs::run_fsck(registry.as_deref(), *json || cli.json)
+        }
     }
 }
 

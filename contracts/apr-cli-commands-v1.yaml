@@ -430,11 +430,11 @@ commands:
 
   - name: runs
     category: ui
-    description: "List, show, compare, and garbage-collect training experiment runs"
+    description: "List, show, compare, garbage-collect, and fsck training experiment runs"
     requires_model: false
     # gc (EXT-03, aprender#4385) writes a backup and, with --yes, the store.
     side_effects: [filesystem]
-    subcommands: [diff, gc, ls, show]
+    subcommands: [diff, fsck, gc, ls, show]
 
   - name: experiment
     category: ui

@@ -163,7 +163,8 @@ falsification_tests:
   obligation: EXT-INV-006
   rule: PachaBackend round-trips and fsck sees dangling pointers
   prediction: round-trip preserves every run; a planted dangling metrics_db pointer makes apr runs fsck exit non-zero
-  if_fails: 'fsck does not resolve the pointer join (owed EXT-04 #4386; planned: cargo test -p aprender-train --test ext_pacha_backend falsify_ext_003_fsck_dangling_pointer)'
+  test: cargo test -p aprender-train --lib falsify_ext_003_fsck_dangling_pointer
+  if_fails: fsck does not resolve the pointer join, so a run whose metrics DB is gone, or no longer holds it, reads as intact
 - id: FALSIFY-EXT-004
   obligation: EXT-INV-001,EXT-INV-002
   rule: Train verbs record by default

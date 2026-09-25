@@ -1599,6 +1599,20 @@ pub enum RunsCommands {
         #[arg(long)]
         json: bool,
     },
+    /// Check that every tracking run in the pacha registry resolves (EXT-04, I-6)
+    ///
+    /// A tracking run's registry row points at the metrics DB holding its
+    /// series. Exits non-zero if any pointer dangles: the DB is missing, it
+    /// does not hold the run, or the row id is not the pointer's ULID.
+    /// Read-only.
+    Fsck {
+        /// pacha registry database (default: ~/.pacha/registry.db)
+        #[arg(long, value_name = "PATH")]
+        registry: Option<PathBuf>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[cfg(feature = "training")]
