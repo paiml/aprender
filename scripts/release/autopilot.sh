@@ -202,7 +202,7 @@ if run_step cleanroom; then
   say "CLEANROOM GREEN on $T: B2-cpu infra run $crun + B2-gpu aprender run $grun, both on $MC"
 fi
 
-# 4. assets: the release run completes and all sixteen assets are on the release, checked by command
+# 4. assets: the release run completes and every asset check_release_assets.sh requires is on the release, checked by command
 if run_step assets; then
   run=""; for _ in $(seq 1 40); do
     run=$(gh run list --repo $REPO --workflow binary-release.yml --event release --limit 10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$T\") | .databaseId" | head -1)

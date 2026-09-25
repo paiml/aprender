@@ -908,7 +908,7 @@ jobs:
   # defect the inverted loader-string check exists to catch), and on both GPU
   # hosts for their own architecture (an aarch64 asset is only proven on aarch64).
   smoke-cpu:
-    name: smoke apr (cpu) on ${{ matrix.host }}
+    name: smoke apr (${{ matrix.flavour }}) on ${{ matrix.host }}
     needs: verify-apr-assets
     # verify runs under always(); a skipped build two levels up must not skip this
     if: ${{ !cancelled() && needs.verify-apr-assets.result == 'success' }}
@@ -922,14 +922,23 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
+            flavour: cpu
+            host: clean-room
+            labels: '["self-hosted", "Linux", "X64", "clean-room"]'
+            preflight: ''
+          # #4353's x86_64 wgpu asset gets the same #4275 tag/commit binding (quorum r4, agy 8ba6854b)
+          - target: x86_64-unknown-linux-gnu
+            flavour: wgpu
             host: clean-room
             labels: '["self-hosted", "Linux", "X64", "clean-room"]'
             preflight: ''
           - target: x86_64-unknown-linux-gnu
+            flavour: cpu
             host: yoga
             labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
             preflight: '--need docker objdump'
           - target: aarch64-unknown-linux-gnu
+            flavour: cpu
             host: gx10
             labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
             preflight: '--need docker objdump'
@@ -948,22 +957,22 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.event.release.tag_name || inputs.tag }}"
-          T="${{ matrix.target }}"
+          T="${{ matrix.target }}"; F="${{ matrix.flavour }}"
           D="$RUNNER_TEMP/apr-cpu-smoke"; rm -rf "$D"; mkdir -p "$D"; cd "$D"
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
           # by listing, not releases/tags/: an rc is a DRAFT until every fleet host runs it (#4327),
           # and releases/tags/ never returns a draft
           rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases?per_page=100" \
             | python3 -c 'import json,sys; t=sys.argv[1]; r=next((r for r in json.load(sys.stdin) if r["tag_name"]==t), None); r or sys.exit(f"no release (draft or published) for {t}: the rc tagger must create it as a draft first (#4327)"); print(json.dumps(r))' "$TAG")
-          for f in "apr-${TAG}-${T}-cpu.tar.gz" "apr-${TAG}-${T}-cpu.tar.gz.sha256"; do
+          for f in "apr-${TAG}-${T}-${F}.tar.gz" "apr-${TAG}-${T}-${F}.tar.gz.sha256"; do
             aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; a=next((a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n), None); a or sys.exit(f"release has no asset {n}"); print(a)' "$f")
             curl -sSfL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" -o "$f" "$API/releases/assets/$aid"
           done
-          sha256sum -c "apr-${TAG}-${T}-cpu.tar.gz.sha256"
-          tar xzf "apr-${TAG}-${T}-cpu.tar.gz"
+          sha256sum -c "apr-${TAG}-${T}-${F}.tar.gz.sha256"
+          tar xzf "apr-${TAG}-${T}-${F}.tar.gz"
           # A promoted final (#4286) is its rc's exact bytes, so the archive's top directory
           # may carry the rc label (apr-vX.Y.Z-rc.N-...). Take the one apr directory it holds.
-          set -- "$D"/apr-v*-"${T}"-cpu/apr
+          set -- "$D"/apr-v*-"${T}"-"${F}"/apr
           if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then echo "::error::expected exactly one apr binary in the archive, found: $*"; exit 1; fi
           BIN=$1
           v=$("$BIN" --version | head -1); echo "$v"
@@ -971,7 +980,7 @@ jobs:
           COMMIT=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/commits/$TAG" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')
           bash "$GITHUB_WORKSPACE/scripts/release/asset_version_check.sh" "$TAG" "$COMMIT" "$v" || { echo "::error::asset reports '$v', which does not belong to $TAG ($COMMIT)"; exit 1; }
           n=$(grep -ac 'libcuda.so' "$BIN" || true)
-          [ "$n" -eq 0 ] || { echo "::error::the downloaded -cpu asset carries $n libcuda.so string(s) — it is a CUDA build"; exit 1; }
+          [ "$n" -eq 0 ] || { echo "::error::the downloaded -${F} asset carries $n libcuda.so string(s) — it is a CUDA build"; exit 1; }
           # The floor is READ on every row and ASSERTED only where the build was
           # containerised. On this branch the CPU lane builds natively, so its
           # floor is the builder's glibc and a `<= 2.31` assertion here would fail
@@ -981,7 +990,7 @@ jobs:
           if command -v objdump > /dev/null 2>&1; then
             FLOOR=$(objdump -T "$BIN" | grep -oE 'GLIBC_[0-9]+\.[0-9]+(\.[0-9]+)?' | sort -u -t_ -k2 -V | tail -1)
             echo "asset glibc floor: ${FLOOR:-none}"
-            echo "- apr-${TAG}-${T}-cpu on ${{ matrix.host }}: $v, glibc floor ${FLOOR:-none}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- apr-${TAG}-${T}-${F} on ${{ matrix.host }}: $v, glibc floor ${FLOOR:-none}" >> "$GITHUB_STEP_SUMMARY"
             if [ -n "${APR_ASSET_GLIBC_FLOOR:-}" ]; then
               want="${APR_ASSET_GLIBC_FLOOR}"
               highest=$(printf '%s\n%s\n' "$FLOOR" "$want" | sort -t_ -k2 -V | tail -1)
