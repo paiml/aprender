@@ -151,8 +151,9 @@ falsification_tests:
 - id: FALSIFY-EXT-001
   obligation: EXT-INV-004
   rule: Test isolation
-  prediction: the canary DB sha at the real-home path is unchanged after the workspace nextest run
-  if_fails: 'a test writer resolved $HOME/.entrenar or $HOME/.pacha; removing the env override must turn this RED (owed EXT-02 #4384; planned: cargo test -p aprender-train --test ext_isolation falsify_ext_001_canary_unchanged)'
+  prediction: every nextest profile runs each test with HOME, XDG_*, ENTRENAR_HOME and APR_HOME in a throwaway dir that is not the real home, with CARGO_HOME and RUSTUP_HOME left on the real toolchain; removing the setup-script binding, or exporting the real HOME, turns this RED
+  test: cargo test -p aprender-train --lib falsify_ext_001
+  if_fails: 'a test writer resolves $HOME/.entrenar or $HOME/.pacha into the developer registry. The CI canary (seed a DB at the real-home path, assert its sha unchanged after the workspace run) is a ci.yml change, queued 4th in the one-open-ci.yml-PR order (S-2, #4384)'
 - id: FALSIFY-EXT-002
   obligation: EXT-INV-006
   rule: Reaper spares live runs
