@@ -27,6 +27,9 @@
 //!   `admit --cell C --removed-by R ...` appends a `Refused` row.
 //! - `admission-check --file F` every §2.1 cell resolved exactly once; prints the
 //!   summary JSON. Exit 1 if inadmissible, 10 if admissible but S-7 (no cell admitted).
+//! - `ledger REPO OUT_JSONL QUORUM_RECEIPT...` REX-07: write `review-ledger-v1`
+//!   rows from quorum receipts and print shadow coverage. Exit 10 unless every
+//!   receipt carries an uncounted shadow row that leaves the width alone.
 
 use aprender_review_experiment::build_corpus::{
     choose, g_candidates, is_green, p_candidates, r_candidates, seal, Mutant, Pr, PER_CLASS,
@@ -54,6 +57,7 @@ fn main() -> ExitCode {
         Some("prereg") => prereg_cmd(false),
         Some("prereg-check") => prereg_cmd(true),
         Some("admission-check") => admission_check(&args[1..]),
+        Some("ledger") => ledger_cmd(&args[1..]),
         Some(c @ ("review" | "not-run" | "score" | "admit")) => {
             match flags(&args[1..]).and_then(|f| match c {
                 "review" => review(&f),
@@ -77,7 +81,7 @@ fn main() -> ExitCode {
         },
         _ => {
             eprintln!(
-                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check> (see the example docs)"
+                "usage: rex <prereg|prereg-check|corpus-build|review|not-run|score|admit|admission-check|ledger> (see the example docs)"
             );
             ExitCode::from(2)
         }
@@ -520,5 +524,52 @@ fn admission_check(a: &[String]) -> ExitCode {
             }
             ExitCode::from(1)
         }
+    }
+}
+
+fn ledger_cmd(a: &[String]) -> ExitCode {
+    let (Some(repo), Some(out), receipts) = (a.first(), a.get(1), a.get(2..).unwrap_or(&[])) else {
+        eprintln!("usage: rex ledger REPO OUT_JSONL QUORUM_RECEIPT...");
+        return ExitCode::from(2);
+    };
+    let mut read = Vec::new();
+    for p in receipts {
+        match std::fs::read_to_string(p) {
+            Ok(t) => read.push((p.clone(), t)),
+            Err(e) => {
+                eprintln!("rex ledger: {p}: {e}");
+                return ExitCode::from(1);
+            }
+        }
+    }
+    let (rows, c) = aprender_review_experiment::ledger::build(&read, repo);
+    let lines: Result<String, _> = rows
+        .iter()
+        .map(|r| serde_json::to_string(r).map(|j| j + "\n"))
+        .collect();
+    match lines
+        .map_err(|e| e.to_string())
+        .and_then(|l| std::fs::write(out, l).map_err(|e| format!("{out}: {e}")))
+    {
+        Ok(()) => {}
+        Err(e) => {
+            eprintln!("rex ledger: {e}");
+            return ExitCode::from(1);
+        }
+    }
+    match serde_json::to_string(&c) {
+        Ok(j) => println!("{j}"),
+        Err(e) => eprintln!("rex ledger: {e}"),
+    }
+    if c.holds() {
+        ExitCode::SUCCESS
+    } else {
+        eprintln!(
+            "REX-07: {} of {} quorums carry a shadow row, {} violations",
+            c.carried,
+            c.quorums,
+            c.violations.len()
+        );
+        ExitCode::from(10)
     }
 }

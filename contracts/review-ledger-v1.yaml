@@ -1,0 +1,44 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PROMETHEUS (PRM-001, was REX-001) REX-07 day-0 shadow lane, spec §5.2/§7. The 4B
+    lane runs inside the quorum rail as a non-voting advisory lane (paiml-implement
+    advisory-lane.sh, #420), which records `.advisory_lane` in every quorum receipt.
+    `rex ledger REPO OUT RECEIPT...` (crates/aprender-review-experiment: ledger.rs) turns
+    receipts into `review-ledger-v1` rows (repo, ticket, head, PR, diff sha, counted lanes
+    with model ids, verdicts and finding counts, the shadow result, apr tag, weights sha,
+    outcome=pending until the ASL escape join) and measures shadow coverage. A receipt
+    with no advisory_lane, or with the lane `off`, is missing; a lane that did not answer
+    is Unknown{LaneUnavailable}, never a verdict; a shadow not recorded as uncounted, or a
+    width other than the counted lanes, is a violation. Exit 10 unless coverage holds.
+  references:
+    - "docs/specifications/review-experiment-protocol.md"
+    - "https://github.com/paiml/aprender/issues/4362"
+    - "https://github.com/paiml/paiml-implement/pull/420"
+
+equations:
+  coverage:
+    formula: "holds ⇔ |Q| > 0 ∧ ∀ q ∈ Q: shadow(q) ∈ {Answered, Unknown} ∧ counts(q) = false ∧ width(q) = |counted_lanes(q)|"
+  unknown:
+    formula: "state(q) ≠ answered ∨ verdict(q) = ∅ ∨ served_by(q) = ∅ ⇒ shadow(q) = Unknown{LaneUnavailable}"
+
+falsification_tests:
+  - id: FALSIFY-RXL-001
+    name: a_quorum_without_a_shadow_row_is_missing
+    prediction: "a receipt with no advisory_lane, or with the lane off, is listed as missing and coverage fails; an empty or unparsable set never holds"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxl_001"
+    expected_output: "exit 0"
+    if_fails: "Quorums could run without the shadow lane and REX-07's 100 % would still read green."
+  - id: FALSIFY-RXL-002
+    name: gx10_down_is_unknown_and_keeps_the_width
+    prediction: "an unavailable lane, or an answered state with no verdict, is Unknown{LaneUnavailable}; the width stays 3"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxl_002"
+    expected_output: "exit 0"
+    if_fails: "A gx10 outage would enter the ledger as a verdict and contaminate H4/H5 agreement."
+  - id: FALSIFY-RXL-003
+    name: a_counted_or_width_changing_shadow_is_a_violation
+    prediction: "counts=true, a missing counts flag, or a width other than the counted lanes fails coverage"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxl_003"
+    expected_output: "exit 0"
+    if_fails: "The non-voting lane could start voting before REX-09's promotion gates."
