@@ -98,7 +98,7 @@ pub fn verify_bindings(binding_yaml_path: &str, policy: BindingPolicy) -> Verify
     };
 
     for binding in &registry.bindings {
-        let env_key = make_env_key(&binding.contract, &binding.equation);
+        let env_key = env_key(&binding.contract, &binding.equation);
 
         match binding.status {
             ImplStatus::Implemented => {
@@ -321,10 +321,15 @@ fn scan_source_fns(dir: &Path, found: &mut std::collections::HashSet<String>) {
     }
 }
 
-/// Generate the env var key from contract name and equation name.
+/// The env var key `#[contract(contract, equation = equation)]` reads.
 ///
-/// Same convention as `provable-contracts-macros::make_env_key`.
-fn make_env_key(contract: &str, equation: &str) -> String {
+/// A producer (a consuming crate's `build.rs`) must emit its
+/// `cargo:rustc-env` vars under exactly this key, plus `_PRE_COUNT`,
+/// `_PRE_<i>`, `_POST_COUNT` and `_POST_<i>`. Call this instead of
+/// re-deriving the format: a hand-rolled copy that drifts makes every
+/// condition land under a name the macro never reads (#2699 §4). It is
+/// tested equal to the macro's own `contract_env_key!`.
+pub fn env_key(contract: &str, equation: &str) -> String {
     let contract_part = contract.to_uppercase().replace(['-', '.'], "_");
     let equation_part = equation.to_uppercase().replace(['-', '.'], "_");
     format!("CONTRACT_{contract_part}_{equation_part}")
@@ -448,14 +453,39 @@ bindings:
 
     // ── make_env_key tests ──
 
+    /// Parity with the key the macro READS, over a case table, so the
+    /// producer's derivation and the consumer's cannot drift (#2699 §4).
+    #[test]
+    fn env_key_equals_the_key_the_contract_macro_reads() {
+        use provable_contracts_macros::contract_env_key;
+        let table = [
+            (
+                env_key("rmsnorm-kernel-v1", "rmsnorm"),
+                contract_env_key!("rmsnorm-kernel-v1", "rmsnorm"),
+            ),
+            (
+                env_key("attention-kernel-v1", "scaled_dot_product"),
+                contract_env_key!("attention-kernel-v1", "scaled_dot_product"),
+            ),
+            (env_key("v1.0", "eq.1"), contract_env_key!("v1.0", "eq.1")),
+            (
+                env_key("mixed-Case.v2", "Eq-x.y"),
+                contract_env_key!("mixed-Case.v2", "Eq-x.y"),
+            ),
+        ];
+        for (producer, consumer) in table {
+            assert_eq!(producer, consumer);
+        }
+    }
+
     #[test]
     fn test_make_env_key_matches_macro_convention() {
         assert_eq!(
-            make_env_key("rmsnorm-kernel-v1", "rmsnorm"),
+            env_key("rmsnorm-kernel-v1", "rmsnorm"),
             "CONTRACT_RMSNORM_KERNEL_V1_RMSNORM"
         );
         assert_eq!(
-            make_env_key("gated-delta-net-v1", "decay"),
+            env_key("gated-delta-net-v1", "decay"),
             "CONTRACT_GATED_DELTA_NET_V1_DECAY"
         );
     }
@@ -463,7 +493,7 @@ bindings:
     #[test]
     fn make_env_key_with_yaml_extension() {
         assert_eq!(
-            make_env_key("softmax-kernel-v1.yaml", "softmax"),
+            env_key("softmax-kernel-v1.yaml", "softmax"),
             "CONTRACT_SOFTMAX_KERNEL_V1_YAML_SOFTMAX"
         );
     }
@@ -471,7 +501,7 @@ bindings:
     #[test]
     fn make_env_key_dots_replaced() {
         assert_eq!(
-            make_env_key("my.contract.v1", "eq.1"),
+            env_key("my.contract.v1", "eq.1"),
             "CONTRACT_MY_CONTRACT_V1_EQ_1"
         );
     }
