@@ -100,10 +100,9 @@ members = [
     "crates/aprender-qa-report",
     "crates/aprender-qa-certify",
     "crates/aprender-qa-cli",
-    # Remaining excluded (workspace root shells with no src):
-    # "crates/aprender-viz-ttop",
-    # "crates/aprender-present",
-    # "crates/aprender-test",
+    # Remaining excluded (see `exclude` below): aprender-present and
+    # aprender-test are workspace root shells with no package; aprender-viz-ttop
+    # IS a package and ships a binary (ledgered in contracts/binary-debt-v1.yaml).
 ]
 exclude = [
     # Pulls burn 0.21 -> rusqlite 0.37 -> libsqlite3-sys 0.35, while aprender-rag
@@ -122,8 +121,11 @@ exclude = [
     'crates/aprender-zram/bins/trueno-ublk',
     "tools/ccpa-sft-export",
     "fuzz",
-    # Old workspace root shells (no package, just held sub-crates):
+    # A real package that ships the `aprender-viz-ttop` binary, NOT a shell;
+    # excluded, so cargo metadata cannot see it. scripts/check_binary_debt.sh
+    # derives it from this list (#4058).
     "crates/aprender-viz-ttop",
+    # Old workspace root shells (no package, just held sub-crates):
     "crates/aprender-present",
     "crates/aprender-test",
     # crates.io compatibility facades for the names APR-MONO renamed
