@@ -1,0 +1,93 @@
+# CRUX-P-03 — apr quantize output vs llama-quantize
+# CRUX category P: Dogfood Model Lifecycle (EXT-001 §10, surface C4).
+# Written by EXT-25 (aprender#4407). Coverage is gated by
+# FALSIFY-EXT-019 (validator_tests_ext_crux_coverage.rs).
+
+metadata:
+  id: CRUX-P-03
+  version: 1.0.0
+  created: '2026-09-25'
+  updated: '2026-09-25'
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  valid_under:
+    world: committed
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - dogfood-model-lifecycle-v1
+  category: P — Dogfood Model Lifecycle
+  competitor: llama_cpp
+  demand_score: 4
+  intake_status: partial
+  github_issue: 4407
+  description: 'apr quantize output vs llama-quantize. EXT-001 surface C4 `quantize`. Arms: llama.cpp
+    llama-quantize (+ llama-imatrix). Comparator: hermetic. Metric: output quality measured via C1; byte-determinism
+    across runs and hosts (ours required by I-7 / FALSIFY-EXT-014; theirs recorded). Gate: covered by
+    C1 + FALSIFY-EXT-014.'
+  surface: quantize
+  ext_surface: C4
+  verbs:
+  - quantize
+  crux_coverage: covered
+  gap_effect: none
+  gap_note: 'unmeasured: quality is scored under C1; determinism is ours to prove, theirs is only recorded'
+  references:
+  - 'spec: paiml/infra docs/specifications/EXT-001-dogfood-model-lifecycle.md §10 row C4'
+  - 'epic: https://github.com/paiml/aprender/issues/4381'
+  - 'row: https://github.com/paiml/aprender/issues/4407 (EXT-25, this contract)'
+  - 'measurement row: https://github.com/paiml/aprender/issues/4409 (EXT-27)'
+equations:
+  quantize_is_byte_deterministic:
+    formula: Two apr quantize runs of the same input and flags, on two hosts, produce byte-identical files
+    domain: EXT-001 C4 arms on pinned revisions
+    codomain: PASS iff the property holds; the planted failure turns it RED
+    invariants:
+    - Two apr quantize runs of the same input and flags, on two hosts, produce byte-identical files
+  quantize_quality_scored_under_c1:
+    formula: apr quantize output is scored by the C1 metric, not by a quantize-specific one
+    domain: EXT-001 C4 arms on pinned revisions
+    codomain: PASS iff the property holds; the planted failure turns it RED
+    invariants:
+    - apr quantize output is scored by the C1 metric, not by a quantize-specific one
+proof_obligations:
+- id: CRUX-P-03-OB-01
+  type: invariant
+  property: Two apr quantize runs of the same input and flags, on two hosts, produce byte-identical files
+  applies_to: quantize_is_byte_deterministic
+- id: CRUX-P-03-OB-02
+  type: invariant
+  property: apr quantize output is scored by the C1 metric, not by a quantize-specific one
+  applies_to: quantize_quality_scored_under_c1
+falsification_tests:
+- id: FALSIFY-CRUX-P-03-001
+  obligation: CRUX-P-03-OB-01
+  rule: quantize is byte deterministic
+  prediction: a planted nondeterministic tie-break yields two different sha256s and turns the check RED
+  if_fails: 'the C4 claim ''quantize is byte deterministic'' is unproven (owed EXT-27 #4409; planned:
+    the EXT-27 fixture binds FALSIFY-CRUX-P-03-001)'
+- id: FALSIFY-CRUX-P-03-002
+  obligation: CRUX-P-03-OB-02
+  rule: quantize quality scored under c1
+  prediction: a quantize receipt with no C1 record is refused
+  if_fails: 'the C4 claim ''quantize quality scored under c1'' is unproven (owed EXT-27 #4409; planned:
+    the EXT-27 fixture binds FALSIFY-CRUX-P-03-002)'
+kani_harnesses:
+- id: KH-CRUX-P-03-001
+  obligation: quantize_is_byte_deterministic
+  property: quantize_is_byte_deterministic_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-P-03-002
+  obligation: quantize_quality_scored_under_c1
+  property: quantize_quality_scored_under_c1_holds_on_bounded_input
+  bound: 4
+qa_gate:
+  id: F-CRUX-P-03-GATE
+  name: CRUX C4 quantize
+  description: Gate for EXT-001 surface C4 `quantize`
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 2 falsification tests are bound by EXT-27 and pass; until then crux_coverage is covered
+    and the obligations are owed, not satisfied
+  falsification: FALSIFY-CRUX-P-03-001 through FALSIFY-CRUX-P-03-002

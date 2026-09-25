@@ -120,7 +120,7 @@ fn explain_kind_default(caused: &mut [Violation]) {
 /// exercised by at least one contract in `contracts/`; adding a competitor is a
 /// deliberate one-line edit here plus a test, which is the point — an open
 /// domain is what let `THIS-COMPETITOR-DOES-NOT-EXIST` validate.
-pub(crate) const CRUX_COMPETITORS: [&str; 15] = [
+pub(crate) const CRUX_COMPETITORS: [&str; 18] = [
     "apr-qa-playbook",
     // AutoGluon (autogluon/autogluon) — the AutoML library, 1.6.3 at admission
     // (../autogluon @ 77946149). Added 2026-09-16 with 24 category-O stories
@@ -151,6 +151,10 @@ pub(crate) const CRUX_COMPETITORS: [&str; 15] = [
     // axis and is deliberately NOT here; linfa is the Rust-native UX source.
     "linfa",
     "llama_cpp",
+    // MLflow 3 — LoggedModel lineage + aliases. Added 2026-09-25 with CRUX-P-04
+    // (EXT-001 C5 `tracking`, aprender#4407): the experiment-tracking UX
+    // `apr runs` / `apr registry` is measured against. Not a BEAT pillar.
+    "mlflow",
     "none",
     "ollama",
     "openclaw",
@@ -161,6 +165,15 @@ pub(crate) const CRUX_COMPETITORS: [&str; 15] = [
     // number at all, which is itself a competitive datapoint.
     "pulp-free-chat",
     "pytorch",
+    // Qwen (upstream, official releases) — the stock Qwen3.5-4B every dogfood
+    // MINOR must not lose to. Added 2026-09-25 with CRUX-P-06 (EXT-001 C7
+    // `decision`, aprender#4407). A model line, not a tool: the story is
+    // "our fine-tune vs the model we started from".
+    "qwen",
+    // Unsloth — GGUF quants (incl. UD dynamic quants) and fast QLoRA. Added
+    // 2026-09-25 with CRUX-P-01 (EXT-001 C1 `model-artifact`, aprender#4407).
+    // Its training speed is CONCEDED (EXT-001 R-16); its quants are an arm.
+    "unsloth",
     "vllm",
 ];
 

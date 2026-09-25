@@ -218,6 +218,10 @@ fn competitor_registry_covers_the_corpus_vocabulary() {
         "linfa",
         // Category O — AutoML Parity (aprender#3370, 2026-09-16). 24 contracts.
         "autogluon",
+        // Category P — Dogfood Model Lifecycle (EXT-001, aprender#4407).
+        "mlflow",
+        "qwen",
+        "unsloth",
     ] {
         assert!(
             CRUX_COMPETITORS.contains(&required),
@@ -271,7 +275,9 @@ fn beat_incumbents_cannot_name_the_crux_corpus() {
     // Conversely, the BEAT pillars are not automatically research sources: a
     // crux story naming one is a deliberate registry edit, not an accident.
     assert!(!CRUX_COMPETITORS.contains(&"scikit-learn"));
-    assert!(!CRUX_COMPETITORS.contains(&"unsloth"));
+    // `unsloth` is the one pillar admitted on purpose: EXT-25 (aprender#4407)
+    // added it for CRUX-P-01, whose arms are Unsloth's published GGUF quants.
+    assert!(beat_accepts("unsloth") && CRUX_COMPETITORS.contains(&"unsloth"));
 }
 
 // ── Corpus regression anchors ────────────────────────────────────────────────

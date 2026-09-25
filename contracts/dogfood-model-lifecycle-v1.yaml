@@ -243,7 +243,8 @@ falsification_tests:
   obligation: EXT-INV-012
   rule: Every EXT surface has a CRUX contract
   prediction: an EXT surface without a CRUX contract turns ci / gate RED; deleting one contract turns it RED
-  if_fails: 'a new surface ships ungated (owed EXT-25 #4407; planned: cargo test -p aprender-core --test ext_crux_coverage falsify_ext_019_surface_without_contract_red)'
+  test: cargo test -p aprender-contracts --lib falsify_ext_019_surface_without_contract_red
+  if_fails: a new surface ships ungated
 - id: FALSIFY-EXT-020
   obligation: EXT-INV-010
   rule: Comparator arms are complete
@@ -270,6 +271,19 @@ falsification_tests:
   prediction: the card lint rejects a ratio token adjacent to a competitor name
   if_fails: 'the card makes an unreceipted comparative claim (owed EXT-16 #4398; planned: cargo test -p apr-cli --test ext_card_lint falsify_ext_024_ratio_next_to_competitor_rejected)'
 
+# EXT-001 §10: every surface this spec creates or depends on, and the CRUX
+# contract that covers it (R-14). FALSIFY-EXT-019 reads this list: a surface
+# with no contract, a contract that is missing or says `crux_coverage: none`,
+# or a verb not in the CLI registry turns the workspace-test job RED. C2
+# extends the existing inference contracts instead of duplicating them.
+crux_surfaces:
+- {id: C1, surface: model-artifact, verbs: [quantize, export], contracts: [crux-P-01-v1.yaml]}
+- {id: C2, surface: inference, verbs: [serve, run], extends: [crux-E-16-v1.yaml, crux-C-27-v1.yaml]}
+- {id: C3, surface: training, verbs: [finetune, distill], contracts: [crux-P-02-v1.yaml]}
+- {id: C4, surface: quantize, verbs: [quantize], contracts: [crux-P-03-v1.yaml]}
+- {id: C5, surface: tracking, verbs: [runs, registry], contracts: [crux-P-04-v1.yaml]}
+- {id: C6, surface: distribution, verbs: [publish, pull], contracts: [crux-P-05-v1.yaml]}
+- {id: C7, surface: decision, verbs: [eval], contracts: [crux-P-06-v1.yaml]}
 qa_gate:
   id: F-EXT-GATE
   name: Dogfood Model Lifecycle Contract

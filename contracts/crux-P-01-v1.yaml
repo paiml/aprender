@@ -1,0 +1,101 @@
+# CRUX-P-01 — Released quant file quality vs community quants
+# CRUX category P: Dogfood Model Lifecycle (EXT-001 §10, surface C1).
+# Written by EXT-25 (aprender#4407). Coverage is gated by
+# FALSIFY-EXT-019 (validator_tests_ext_crux_coverage.rs).
+
+metadata:
+  id: CRUX-P-01
+  version: 1.0.0
+  created: '2026-09-25'
+  updated: '2026-09-25'
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  valid_under:
+    world: committed
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - dogfood-model-lifecycle-v1
+  category: P — Dogfood Model Lifecycle
+  competitor: unsloth
+  demand_score: 5
+  intake_status: missing
+  github_issue: 4407
+  description: 'Released quant file quality vs community quants. EXT-001 surface C1 `model-artifact`.
+    Arms: unsloth/Qwen3.5-4B-GGUF Q4_K_M; bartowski/Qwen_Qwen3.5-4B-GGUF Q4_K_M; Ollama qwen3.5:4b (Q4_K_M
+    blob); Unsloth UD-Q4 (separate arm); reference: upstream BF16. Comparator: hermetic: pinned HF revision
+    + sha256, measured with llama.cpp d1d3c3396. Metric: KL divergence vs BF16 logits and top-1 agreement
+    on a committed text corpus; file bytes. Gate: blocks when our gap widens vs our previous release (R-15);
+    the first release sets the baseline.'
+  surface: model-artifact
+  ext_surface: C1
+  verbs:
+  - quantize
+  - export
+  crux_coverage: covered
+  gap_effect: none
+  gap_note: 'unmeasured: no arm has run; EXT-27 records the first baseline, which is not a gap claim'
+  references:
+  - 'spec: paiml/infra docs/specifications/EXT-001-dogfood-model-lifecycle.md §10 row C1'
+  - 'epic: https://github.com/paiml/aprender/issues/4381'
+  - 'row: https://github.com/paiml/aprender/issues/4407 (EXT-25, this contract)'
+  - 'measurement row: https://github.com/paiml/aprender/issues/4409 (EXT-27)'
+equations:
+  kl_measured_with_one_tool:
+    formula: Every arm, ours included, is scored by the same pinned llama.cpp build on the same committed
+      corpus
+    domain: EXT-001 C1 arms on pinned revisions
+    codomain: PASS iff the property holds; the planted failure turns it RED
+    invariants:
+    - Every arm, ours included, is scored by the same pinned llama.cpp build on the same committed corpus
+  gap_blocks_only_when_it_widens:
+    formula: The gate compares our gap to our previous release's gap on the same pins, never to an absolute
+      floor
+    domain: EXT-001 C1 arms on pinned revisions
+    codomain: PASS iff the property holds; the planted failure turns it RED
+    invariants:
+    - The gate compares our gap to our previous release's gap on the same pins, never to an absolute floor
+proof_obligations:
+- id: CRUX-P-01-OB-01
+  type: invariant
+  property: Every arm, ours included, is scored by the same pinned llama.cpp build on the same committed
+    corpus
+  applies_to: kl_measured_with_one_tool
+- id: CRUX-P-01-OB-02
+  type: invariant
+  property: The gate compares our gap to our previous release's gap on the same pins, never to an absolute
+    floor
+  applies_to: gap_blocks_only_when_it_widens
+falsification_tests:
+- id: FALSIFY-CRUX-P-01-001
+  obligation: CRUX-P-01-OB-01
+  rule: kl measured with one tool
+  prediction: an arm scored by a different llama.cpp build or corpus sha is refused, not averaged in
+  if_fails: 'the C1 claim ''kl measured with one tool'' is unproven (owed EXT-27 #4409; planned: the EXT-27
+    fixture binds FALSIFY-CRUX-P-01-001)'
+- id: FALSIFY-CRUX-P-01-002
+  obligation: CRUX-P-01-OB-02
+  rule: gap blocks only when it widens
+  prediction: one tensor re-quantized to Q2_K widens the gap and turns the gate RED; an unchanged artifact
+    stays GREEN
+  if_fails: 'the C1 claim ''gap blocks only when it widens'' is unproven (owed EXT-27 #4409; planned:
+    the EXT-27 fixture binds FALSIFY-CRUX-P-01-002)'
+kani_harnesses:
+- id: KH-CRUX-P-01-001
+  obligation: kl_measured_with_one_tool
+  property: kl_measured_with_one_tool_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-P-01-002
+  obligation: gap_blocks_only_when_it_widens
+  property: gap_blocks_only_when_it_widens_holds_on_bounded_input
+  bound: 4
+qa_gate:
+  id: F-CRUX-P-01-GATE
+  name: CRUX C1 model-artifact
+  description: Gate for EXT-001 surface C1 `model-artifact`
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 2 falsification tests are bound by EXT-27 and pass; until then crux_coverage is covered
+    and the obligations are owed, not satisfied
+  falsification: FALSIFY-CRUX-P-01-001 through FALSIFY-CRUX-P-01-002
