@@ -83,6 +83,9 @@ pub enum ExtendedCommands {
         // PMAT-488 / #2583: shared `--backend` declaration (see `BackendArg`).
         #[command(flatten)]
         backend: BackendArg,
+        // #3723: shared `--thinking` declaration (see `ThinkingArg`).
+        #[command(flatten)]
+        thinking: crate::ThinkingArg,
     },
     /// Benchmark throughput (spec H12: >= 10 tok/s)
     Bench {
@@ -640,6 +643,12 @@ pub enum ExtendedCommands {
         /// Slice range for partial tensor reads (e.g., 0:3 for first 3 elements)
         #[arg(long)]
         slice: Option<String>,
+    },
+    /// What this build can and cannot do, and why — read from the capability contract (#3856)
+    Capability {
+        /// Print the registry as JSON
+        #[arg(long)]
+        json: bool,
     },
     /// Backend discovery: probe, enumerate, print — every kind is a line (PP-066 R-0)
     #[cfg(feature = "inference")]

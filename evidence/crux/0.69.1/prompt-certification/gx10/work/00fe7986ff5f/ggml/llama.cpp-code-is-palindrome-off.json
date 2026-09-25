@@ -1,0 +1,1 @@
+{"text": "<think>\n\n</think>\n\n```python\ndef is_palindrome(s):\n    cleaned = ''.join(char.lower() for char in s if char.isalnum())\n    return cleaned == cleaned[::-1]\n```", "turns": ["<think>\n\n</think>\n\n```python\ndef is_palindrome(s):\n    cleaned = ''.join(char.lower() for char in s if char.isalnum())\n    return cleaned == cleaned[::-1]\n```"]}

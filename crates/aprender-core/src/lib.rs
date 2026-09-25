@@ -155,6 +155,8 @@ pub mod pruning;
 pub mod qa;
 pub mod recommend;
 pub mod regularization;
+/// #3769: the README's release matrix, rendered from the ladder receipts (never typed).
+pub mod release_section;
 /// 100-point model quality scoring system (spec §7)
 pub mod scoring;
 pub mod serialization;

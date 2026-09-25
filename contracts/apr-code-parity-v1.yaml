@@ -31,7 +31,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 5.4.0
+  version: 5.5.0
   created: '2026-04-18'
   last_modified: '2026-05-07'
   author: PAIML Engineering
@@ -401,6 +401,13 @@ categories:
       (exit 2) instead of running on garbage. 8 unit tests cover envelope
       shape, error subtype, content extraction, missing fields, and
       malformed-JSON rejection.
+      #3775 (2026-09-21): EVERY exit of a -p --output-format json run writes
+      exactly one JSON document to stdout, carrying the #3720 response
+      contract's `status` (ok | refused | failed) and, when not ok,
+      `error: {kind, message, exit_code}`, with is_error == (status != ok) and
+      exit_code equal to the process's real exit status. A driver error used to
+      leave stdout empty; an empty completion used to exit 0. See
+      FALSIFY-CODE-PARITY-006.
     evidence_path: crates/apr-cli/src/commands_enum.rs
     evidence_line_range: [1, 30]
     cross_check_command: |
@@ -571,6 +578,24 @@ falsification_conditions:
       - headline.counts.shipped >= 9
       - headline.counts.missing <= 4
     planned_tests: PLANNED_M6
+
+  - id: FALSIFY-CODE-PARITY-006
+    name: One JSON document per -p json exit (#3775, #3720 status/error)
+    status: ACTIVE
+    description: >
+      A `-p --output-format json` run writes exactly one JSON document to
+      stdout on every exit, with `status` and, when not ok,
+      `error: {kind, message, exit_code}` whose exit_code is the process's real
+      exit status. RED at 0.69.0 on all three cases: a driver error (the serve
+      child failing, or a 0-layer model answering HTTP 500) left stdout empty;
+      a tool that keeps failing and an empty completion both exited 0.
+    test: >
+      cargo test -p aprender-orchestrate --lib -- falsify_3775 code_envelope
+    tests:
+      - agent::code::tests::falsify_3775_driver_error_writes_one_json_document
+      - agent::code::tests::falsify_3775_tool_error_writes_one_json_document
+      - agent::code::tests::falsify_3775_empty_completion_is_a_failure_document
+      - agent::code_envelope::tests::every_agent_error_variant_has_a_snake_case_kind
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Priority buckets (flattened from category rows for quick CI grep)
@@ -867,3 +892,13 @@ change_log:
       flips. Priority order for those 4: worktree-isolation (P1),
       permission-modes (P1), then 2 of the 6 P2 deferred rows
       (status-line / notebook / monitor / plugins / ide / org-policy).
+  - date: '2026-09-21'
+    revision: '5.5'
+    author: aprender-f8
+    summary: >
+      #3775: `apr code -p --output-format json` writes exactly one JSON
+      document on every exit, with the #3720 response contract's status and
+      error fields (proposed on #3720, accepted by aprender-fd). New
+      FALSIFY-CODE-PARITY-006, whose three child-process falsifiers were
+      measured RED on the pre-fix code (a driver error left stdout empty; a
+      repeatedly failing tool and an empty completion exited 0).

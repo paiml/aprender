@@ -711,18 +711,70 @@ for tier in $(echo "${!TIERS[@]}" | tr ' ' '\n' | sort -n); do
   done
 done
 
+# DRAIN UNTIL NO FORWARD PROGRESS, not once (#3892).
+#
+# This was ONE retry round, so the cascade had exactly TWO passes: the tier walk
+# plus one retry. MEASURED by aprender-45 against the real dependency graph at
+# 014f93bdc, simulating each pass:
+#
+#   PASS 1 (tier order)   published 34   deferred 37
+#   DRAIN pass 1          published 49   deferred 22   <- the script stopped HERE, exit 1
+#   DRAIN pass 2          published 54   deferred 17
+#   DRAIN pass 3          published 59   deferred 12
+#   DRAIN pass 4          published 71   deferred  0
+#
+# needs 5 passes, had 2. And the failure was not a clean abort: 49 crates would be
+# PERMANENTLY on crates.io at the new version (you cannot unpublish), with
+# `aprender` and `apr-cli` -- the two crates `cargo install aprender` pulls --
+# among the 22 that never publish. So `cargo install aprender` would still resolve
+# the OLD version while half its dependency set had moved. That is worse than not
+# starting, and it is reached through a loud, correct-looking failure.
+#
+# WHY IT NEEDS MORE THAN ONE ROUND. The TIERS[] numbers do not describe the real
+# order: aprender-core is T2 and has non-optional workspace deps on aprender-common
+# (T8) and aprender-compute (T6), so T2 cannot publish until T8 has, and everything
+# downstream inherits it. 44 strictly-later-tier deps and 30 same-tier deps, 74
+# total. Fixing the tiers is the better fix and is 0.70.0 work (#3892); draining
+# correctly makes the cascade complete regardless of the tier order.
+#
+# THE PER-CRATE SAFETY IS UNCHANGED and was verified sound on four independent
+# grounds before this loop was written: `cargo publish --locked` with no
+# --no-verify builds against the registry so a missing dep version fails the
+# verification build; the DEFER branch greps cargo's own
+# `candidate versions found which didn't match`; rc=0 WITHOUT a `Published` line
+# is also deferred rather than counted as success; and crates.io independently
+# rejects an upload whose deps do not resolve. So a wrong order can never leave an
+# unresolvable crate on the registry -- the defect was only ever that the cascade
+# gave up before finishing.
+#
+# NO-FORWARD-PROGRESS is the failure condition, not a round count: a round that
+# publishes nothing means the remainder can never publish, and THAT is the real
+# error. A round cap alone would reintroduce this defect at a larger number.
 if [ -n "$DEFERRED" ]; then
-  echo ""
-  echo "=== RETRY ROUND ==="
-  STILL_DEFERRED=""
-  for crate in $DEFERRED; do
-    publish_crate "$crate" || STILL_DEFERRED="$STILL_DEFERRED $crate"
-  done
-  if [ -n "$STILL_DEFERRED" ]; then
+  round=0
+  while [ -n "$DEFERRED" ]; do
+    round=$((round + 1))
     echo ""
-    echo "❌ FAILED to publish:$STILL_DEFERRED"
-    exit 1
-  fi
+    echo "=== DRAIN ROUND $round ==="
+    STILL_DEFERRED=""
+    for crate in $DEFERRED; do
+      publish_crate "$crate" || STILL_DEFERRED="$STILL_DEFERRED $crate"
+    done
+    # Compare by content, not by count: two crates swapping places is not progress.
+    if [ "$(echo $STILL_DEFERRED | tr ' ' '\n' | sort | tr '\n' ' ')" = \
+         "$(echo $DEFERRED       | tr ' ' '\n' | sort | tr '\n' ' ')" ]; then
+      echo ""
+      echo "❌ STUCK after $round drain round(s): no crate published in the last round."
+      echo "   The remaining crates can never publish -- each is waiting on another"
+      echo "   member of this same set, or on a dependency that is not in TIERS[]."
+      echo "   Still deferred:$STILL_DEFERRED"
+      echo "   This is a dependency-order defect, not a transient registry delay (#3892)."
+      exit 1
+    fi
+    DEFERRED="$STILL_DEFERRED"
+  done
+  echo ""
+  echo "✅ drained in $round round(s)"
 fi
 
 echo ""

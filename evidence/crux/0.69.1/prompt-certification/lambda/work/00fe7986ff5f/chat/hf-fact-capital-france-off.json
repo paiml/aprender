@@ -1,0 +1,1 @@
+{"text": "The capital city of France is Paris.\n\n<answer>Paris</answer>", "turns": ["The capital city of France is Paris.\n\n<answer>Paris</answer>"], "reported": {"interface": "generate", "thinking_requested": "off", "thinking_emitted": false, "prompt_tokens": 31, "completion_tokens": 19, "device": "cuda:0 NVIDIA GeForce RTX 4090"}}

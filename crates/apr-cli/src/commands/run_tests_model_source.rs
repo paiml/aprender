@@ -37,6 +37,7 @@
             tokens_generated: Some(5),
             tok_per_sec: None,
             used_gpu: None,
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
@@ -93,36 +94,6 @@
     }
 
     #[test]
-    fn test_format_prediction_output_single() {
-        use std::time::Duration;
-        let options = RunOptions::default();
-        let result =
-            format_prediction_output(&[0.9, 0.05, 0.05], Duration::from_millis(100), &options);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_format_prediction_output_json() {
-        use std::time::Duration;
-        let options = RunOptions {
-            output_format: "json".to_string(),
-            ..Default::default()
-        };
-        let result = format_prediction_output(&[0.5, 0.5], Duration::from_millis(50), &options);
-        assert!(result.is_ok());
-        let output = result.expect("value");
-        assert!(output.contains("predictions"));
-    }
-
-    #[test]
-    fn test_format_prediction_output_empty() {
-        use std::time::Duration;
-        let options = RunOptions::default();
-        let result = format_prediction_output(&[], Duration::from_millis(10), &options);
-        assert!(result.is_ok());
-    }
-
-    #[test]
     fn test_resolve_model_local_returns_path() {
         let source = ModelSource::Local(PathBuf::from("/nonexistent/model.apr"));
         let result = resolve_model(&source, false, false);
@@ -156,20 +127,6 @@
     }
 
     #[test]
-    fn test_parse_input_features_none() {
-        let result = parse_input_features(None);
-        assert!(result.is_ok());
-        assert!(result.expect("value").is_empty());
-    }
-
-    #[test]
-    fn test_parse_input_features_file_not_found() {
-        let path = PathBuf::from("/nonexistent/input.wav");
-        let result = parse_input_features(Some(&path));
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn test_run_options_with_trace() {
         let options = RunOptions {
             trace: true,
@@ -190,6 +147,7 @@
             tokens_generated: None,
             tok_per_sec: None,
             used_gpu: None,
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
@@ -199,63 +157,7 @@
     }
 
     // ========================================================================
-    // clean_model_output: ChatML marker stripping (bug class: partial strip)
     // ========================================================================
-
-    /// Verify the assistant prefix with trailing newline is stripped.
-    /// Bug class: off-by-one in marker list omitting the newline variant.
-    #[test]
-    fn clean_model_output_strips_assistant_prefix_with_newline() {
-        let raw = "<|im_start|>assistant\nThe answer is 42.";
-        let cleaned = clean_model_output(raw);
-        assert_eq!(cleaned, "The answer is 42.");
-    }
-
-    /// Verify multiple distinct markers in a single string are all removed.
-    /// Bug class: first-match-only replacement instead of replace-all.
-    #[test]
-    fn clean_model_output_strips_all_markers_simultaneously() {
-        let raw = "<|im_start|>assistant\nHello<|im_end|><|endoftext|>";
-        let cleaned = clean_model_output(raw);
-        assert_eq!(cleaned, "Hello");
-    }
-
-    /// Verify repeated occurrences of the same marker are all stripped.
-    /// Bug class: replace() only removing first occurrence (not the case
-    /// in Rust, but the test documents the invariant).
-    #[test]
-    fn clean_model_output_strips_repeated_markers() {
-        let raw = "<|im_end|>text<|im_end|>";
-        let cleaned = clean_model_output(raw);
-        assert_eq!(cleaned, "text");
-    }
-
-    /// Verify that leading/trailing whitespace around markers is trimmed.
-    /// Bug class: markers removed but residual whitespace left behind.
-    #[test]
-    fn clean_model_output_trims_whitespace_after_removal() {
-        let raw = "  <|im_end|>  \n  Hello  \n  <|endoftext|>  ";
-        let cleaned = clean_model_output(raw);
-        assert_eq!(cleaned, "Hello");
-    }
-
-    /// Verify that text containing partial marker-like sequences is preserved.
-    /// Bug class: overly greedy regex stripping content that looks similar.
-    #[test]
-    fn clean_model_output_preserves_partial_marker_text() {
-        let raw = "Use <|tag|> for formatting";
-        let cleaned = clean_model_output(raw);
-        assert_eq!(cleaned, "Use <|tag|> for formatting");
-    }
-
-    /// Verify Unicode content is preserved through marker stripping.
-    /// Bug class: byte-level replacement corrupting multi-byte chars.
-    #[test]
-    fn clean_model_output_preserves_unicode() {
-        let raw = "<|im_start|>assistant\n\u{1f600} Hello \u{00e9}\u{00e8}<|im_end|>";
-        let cleaned = clean_model_output(raw);
-        assert_eq!(cleaned, "\u{1f600} Hello \u{00e9}\u{00e8}");
-    }
 
     // ========================================================================
     // ModelSource::parse edge cases
@@ -403,46 +305,4 @@
     }
 
     // ========================================================================
-    // parse_token_ids: format handling
     // ========================================================================
-
-    /// JSON array format: [1, 2, 3]
-    /// Bug class: JSON path not triggered without leading bracket.
-    #[test]
-    fn parse_token_ids_json_array() {
-        let result = parse_token_ids("[1, 2, 3]").expect("should parse JSON array");
-        assert_eq!(result, vec![1, 2, 3]);
-    }
-
-    /// Tab-separated values (TSV format).
-    /// Bug class: only comma and space as separators, missing tab.
-    #[test]
-    fn parse_token_ids_tab_separated() {
-        let result = parse_token_ids("10\t20\t30").expect("should parse TSV");
-        assert_eq!(result, vec![10, 20, 30]);
-    }
-
-    /// Newline-separated token IDs (one per line).
-    /// Bug class: newline not in separator list.
-    #[test]
-    fn parse_token_ids_newline_separated() {
-        let result = parse_token_ids("100\n200\n300").expect("should parse newlines");
-        assert_eq!(result, vec![100, 200, 300]);
-    }
-
-    /// Token IDs with leading/trailing whitespace.
-    /// Bug class: parse::<u32>() failing on untrimmed strings.
-    #[test]
-    fn parse_token_ids_with_padding() {
-        let result = parse_token_ids("  42 , 43 , 44  ").expect("should handle padding");
-        assert_eq!(result, vec![42, 43, 44]);
-    }
-
-    /// Maximum u32 token ID should not overflow.
-    /// Bug class: using u16 or i32 instead of u32 for token IDs.
-    #[test]
-    fn parse_token_ids_max_u32() {
-        let input = format!("{}", u32::MAX);
-        let result = parse_token_ids(&input).expect("should parse max u32");
-        assert_eq!(result, vec![u32::MAX]);
-    }

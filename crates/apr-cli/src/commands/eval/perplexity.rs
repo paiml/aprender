@@ -55,6 +55,13 @@ fn run_gguf_evaluation(path: &Path, config: &EvalConfig, json: bool) -> Result<E
     let mapped = MappedGGUFModel::from_path(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
 
+    // #4270: a Qwen3.5 hybrid is scored by the one engine `apr run`/`chat`/`serve`
+    // use (Session::score), never by the dense OwnedQuantizedModel, which has no
+    // Gated DeltaNet layers to run it with.
+    if realizar::gguf::hybrid_forward_handles(mapped.model.architecture().unwrap_or_default()) {
+        return run_qwen35_session_evaluation(&mapped, config, json, start);
+    }
+
     // Create quantized model
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
@@ -113,6 +120,67 @@ fn run_gguf_evaluation(path: &Path, config: &EvalConfig, json: bool) -> Result<E
         tokens_evaluated: tokens.len(),
         eval_time_secs: eval_time.as_secs_f32(),
         passed,
+        threshold: config.threshold,
+    })
+}
+
+/// #4270: perplexity of a Qwen3.5 hybrid GGUF through `Qwen35Session::score`.
+/// CPU, like every perplexity path (`perplexity_device`); the session's own route
+/// notices are still printed so the report names the backend that produced it.
+#[cfg(feature = "inference")]
+fn run_qwen35_session_evaluation(
+    mapped: &realizar::gguf::MappedGGUFModel,
+    config: &EvalConfig,
+    json: bool,
+    start: Instant,
+) -> Result<EvalResult> {
+    use realizar::gguf::qwen35_session::Qwen35Session;
+
+    let say = |m: &str| {
+        if json {
+            eprintln!("{m}")
+        } else {
+            println!("{m}")
+        }
+    };
+    let mut session = Qwen35Session::load(mapped, true)
+        .map_err(|e| CliError::ValidationFailed(format!("Qwen3.5 hybrid: {e}")))?;
+    for notice in session.notices() {
+        say(notice);
+    }
+    say(&format!(
+        "{} in {:.2}s (qwen35 session, on_gpu={})",
+        "Model ready".green(),
+        start.elapsed().as_secs_f32(),
+        session.on_gpu()
+    ));
+
+    let eval_text = get_eval_text(config)?;
+    let tokens = mapped
+        .model
+        .encode(&eval_text)
+        .ok_or_else(|| CliError::ValidationFailed("GGUF model has no tokenizer".to_string()))?;
+    let tokens: Vec<u32> = tokens.into_iter().take(config.max_tokens).collect();
+    if tokens.len() < 2 {
+        return Err(CliError::ValidationFailed(
+            "Need at least 2 tokens for perplexity calculation".to_string(),
+        ));
+    }
+    say(
+        &format!("Calculating perplexity on {} tokens...", tokens.len())
+            .yellow()
+            .to_string(),
+    );
+
+    let eval_start = Instant::now();
+    let (perplexity, cross_entropy) = super::session_perplexity(&mut session, &tokens)?;
+    let eval_time = eval_start.elapsed();
+    Ok(EvalResult {
+        perplexity,
+        cross_entropy,
+        tokens_evaluated: tokens.len(),
+        eval_time_secs: eval_time.as_secs_f32(),
+        passed: perplexity <= config.threshold,
         threshold: config.threshold,
     })
 }
@@ -267,3 +335,7 @@ fn run_safetensors_evaluation(
             .to_string(),
     ))
 }
+
+#[cfg(all(test, feature = "inference"))]
+#[path = "perplexity_qwen35_tests.rs"]
+mod qwen35_tests;

@@ -35,4 +35,5 @@ aprender-serve	--test	infer_deep_coverage
 aprender-serve	--test	parity_contract_falsify
 aprender-serve	--test	qwen3_moe_argmax_parity
 aprender-serve	--test	qwen3_moe_parity
+aprender-serve	--test	tokenizer_nonascii_4005
 aprender-train	--test	yaml_mode_integration

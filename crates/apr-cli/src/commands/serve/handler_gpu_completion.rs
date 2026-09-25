@@ -49,7 +49,7 @@ async fn handle_gpu_completion(
 
             // CPU fallback also in spawn_blocking
             let result = tokio::task::spawn_blocking(move || {
-                run_apr_cpu_inference(&s, &prompt, max_tokens, 0.0)
+                run_apr_cpu_inference(&s, &prompt, max_tokens, 0.0, None)
             })
             .await;
 
@@ -116,6 +116,7 @@ async fn gpu_cpu_fallback(
     prompt: String,
     max_tokens: usize,
     temperature: f32,
+    top_p: Option<f32>,
     start: Instant,
 ) -> axum::response::Response {
     use axum::{response::IntoResponse, Json};
@@ -132,7 +133,7 @@ async fn gpu_cpu_fallback(
     };
 
     let result = tokio::task::spawn_blocking(move || {
-        run_apr_cpu_inference(&s, &prompt, max_tokens, temperature)
+        run_apr_cpu_inference(&s, &prompt, max_tokens, temperature, top_p)
     })
     .await;
 
@@ -266,6 +267,7 @@ async fn handle_gpu_chat_completion(
     let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);
     let max_tokens = req.get("max_tokens").and_then(serde_json::Value::as_u64).unwrap_or(32) as usize;
     let temperature = req.get("temperature").and_then(serde_json::Value::as_f64).unwrap_or(0.0) as f32;
+    let top_p = req.get("top_p").and_then(serde_json::Value::as_f64).map(|v| v as f32);
 
     let Some(msgs) = messages else {
         return Json(serde_json::json!({"error": "Missing messages"})).into_response();
@@ -289,7 +291,7 @@ async fn handle_gpu_chat_completion(
     let output_tokens = match gen_result {
         Ok(Ok(t)) => t,
         Ok(Err(gpu_err)) => {
-            return gpu_cpu_fallback(gpu_err, &cpu_state, prompt, max_tokens_clamped, temperature, start).await;
+            return gpu_cpu_fallback(gpu_err, &cpu_state, prompt, max_tokens_clamped, temperature, top_p, start).await;
         }
         Err(e) => {
             return Json(serde_json::json!({"error": format!("GPU task failed: {e}")})).into_response();
@@ -356,11 +358,10 @@ fn print_gpu_server_banner(bind_addr: &str) {
 // GGUF server handlers
 // ============================================================================
 
-/// Start GGUF model inference server with Ollama-parity performance
+/// Start GGUF model inference server
 ///
 /// Uses realizar's full inference API for text generation, streaming, and batch inference.
-/// Achieves Ollama-parity: 100+ tok/s CPU, 500+ tok/s GPU.
-/// With --gpu --batch flags: 800+ tok/s (2.8x Ollama) via batched GPU inference.
+/// Measured throughput against Ollama lives in `docs/BEATS.md`, not here.
 #[cfg(feature = "inference")]
 fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
@@ -385,6 +386,15 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         )
         .dimmed()
     );
+
+    // #3571: the Qwen3.5 hybrid (Gated Delta Net) has no dense layers, so it is served from a
+    // resident session — and it is routed there BEFORE `build_serve_model`, whose zero-layer
+    // refusal its generic base would (rightly) fail. #3608 routed it to that base, which loaded
+    // and then decoded nothing: the routing gap was one verb deep, and every gate we own is
+    // single-stream `apr run` (#3555).
+    if realizar::gguf::hybrid_forward_handles(mapped_model.model.architecture().unwrap_or_default()) {
+        return start_qwen35_server(mapped_model, config);
+    }
 
     println!("{}", "Building quantized inference model...".dimmed());
     let quantized_model = build_serve_model(&mapped_model)?;
@@ -583,6 +593,33 @@ fn start_gguf_server_cuda(
     use realizar::api::{create_router_with_config, AppState, BatchConfig};
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
+    // #3987: a qwen3moe file has no DENSE FFN, only per-expert tensors, so the dense
+    // `OwnedQuantizedModelCuda` built below dereferences a null `ffn_gate` on its first
+    // forward (measured through `apr chat`: "ffn_gate_ptr is null (0)"), and the state it
+    // makes has no quantized model, so the MoE chat backend answered 501. Serve it from
+    // the state the CPU server builds (quantized model + retained map) and opt its MoE
+    // backend into the ONE dispatch `apr run` uses. Qwen3.5-MoE spellings are excluded:
+    // they are folded into `qwen3_moe` by the normaliser but carry SSM layers the
+    // qwen3moe forward does not run, and the capability refusal names them.
+    let arch = quantized_model.config().architecture.clone();
+    if realizar::gguf::moe_forward_handles(&arch)
+        && realizar::capability::no_cuda_forward_reason(&arch).is_none()
+    {
+        println!(
+            "{}",
+            "qwen3moe: serving through the MoE CUDA dispatch (#3714, #3987)".cyan()
+        );
+        let model_source = measured_model_source(&quantized_model, config);
+        let state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
+            .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+            .with_model_source(model_source)
+            .with_mapped_gguf_model(mapped_model)
+            .with_moe_gpu()
+            .with_offload_report(offload)
+            .with_verbose(config.verbose);
+        return serve_router(state, config);
+    }
+
     println!(
         "{}",
         "Enabling optimized CUDA acceleration (PAR-111)...".cyan()
@@ -689,6 +726,8 @@ fn start_gguf_server_cuda(
             run_server_async(app, &config.bind_addr(), "CUDA-optimized")
         }
         Err(e) => {
+            // #4089: an explicit request does not fall back.
+            config.refuse_unengaged_accelerator(&format!("CUDA init failed: {e}"))?;
             eprintln!(
                 "{}",
                 format!("CUDA init failed, falling back to CPU: {e}").yellow()
@@ -800,6 +839,77 @@ mod zero_layer_refusal_tests {
                 assert!(msg.contains("#3571"), "{msg}");
                 assert_eq!(msg.contains("apr chat"), arch == "qwen35", "the hint is the hybrid's: {msg}");
             }
+        }
+    }
+
+    /// A synthetic Qwen3.5 header: its config declares a block, and it carries only the
+    /// embeddings, final norm and `lm_head` — so its BASE is the zero-layer stack #3571 found,
+    /// built from nothing but the writer, and CI (which has no model files) exercises the call
+    /// site too. It has to be the hybrid: the dense loader already refuses `block_count = 0`
+    /// at config validation ("num_layers must be > 0"), so the hybrid base — config says N,
+    /// layers are empty — is the one zero-layer stack this tree can build.
+    fn zero_block_gguf() -> tempfile::NamedTempFile {
+        use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
+        let (hidden, vocab) = (8u64, 4u64);
+        let f32s = |n: u64| vec![0u8; (n * 4) as usize];
+        let tensors = vec![
+            GgufTensor {
+                name: "token_embd.weight".to_string(),
+                shape: vec![hidden, vocab],
+                dtype: GgmlType::F32,
+                data: f32s(hidden * vocab),
+            },
+            GgufTensor {
+                name: "output_norm.weight".to_string(),
+                shape: vec![hidden],
+                dtype: GgmlType::F32,
+                data: f32s(hidden),
+            },
+            GgufTensor {
+                name: "output.weight".to_string(),
+                shape: vec![hidden, vocab],
+                dtype: GgmlType::F32,
+                data: f32s(hidden * vocab),
+            },
+        ];
+        let u = |k: &str, v: u32| (k.to_string(), GgufValue::Uint32(v));
+        let metadata = vec![
+            ("general.architecture".to_string(), GgufValue::String("qwen35".to_string())),
+            u("qwen35.block_count", 1),
+            u("qwen35.embedding_length", 8),
+            u("qwen35.feed_forward_length", 16),
+            u("qwen35.attention.head_count", 2),
+            u("qwen35.attention.head_count_kv", 2),
+            u("qwen35.context_length", 32),
+            u("qwen35.rope.dimension_count", 4),
+            (
+                "qwen35.attention.layer_norm_rms_epsilon".to_string(),
+                GgufValue::Float32(1e-5),
+            ),
+            (
+                "tokenizer.ggml.tokens".to_string(),
+                GgufValue::ArrayString(["<unk>", "a", "b", "c"].map(String::from).to_vec()),
+            ),
+        ];
+        let file = tempfile::NamedTempFile::with_suffix(".gguf").expect("temp file");
+        let mut writer = std::io::BufWriter::new(&file);
+        export_tensors_to_gguf(&mut writer, &tensors, &metadata).expect("write GGUF");
+        drop(writer);
+        file
+    }
+
+    /// CI's row for the call site: needs no model file. Delete the check in
+    /// `build_serve_model` and this goes RED — the zero-layer base loads.
+    #[test]
+    fn serve_refuses_a_synthetic_zero_layer_hybrid_base_at_load() {
+        let file = zero_block_gguf();
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(file.path()).expect("map");
+        match build_serve_model(&mapped) {
+            Err(CliError::ModelLoadFailed(msg)) => {
+                assert!(msg.contains("'qwen35' resolved to 0 transformer layers"), "{msg}");
+            }
+            Err(other) => panic!("refused for the wrong reason: {other}"),
+            Ok(model) => panic!("a {}-layer stack reached the serve routes", model.layers().len()),
         }
     }
 

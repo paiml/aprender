@@ -269,6 +269,12 @@ tier3:
 	@bash scripts/check_hermetic_stdin_tests.sh
 	@echo "Checking fleet hosts accept only the manifest nightly apr/pv (aprender#4186)..."
 	@bash scripts/check_nightly_pin.sh --self-test
+	@echo "Checking no declared-unsupported capability is already implemented (aprender#3686)..."
+	@bash scripts/check_unwired_capabilities.sh --self-test
+	@bash scripts/check_unwired_capabilities.sh
+	@echo "Checking no NEW silent truncation of a value a human reads later (aprender#3904)..."
+	@bash scripts/check_no_silent_truncation.sh --self-test
+	@bash scripts/check_no_silent_truncation.sh
 	@if [ -d tests/golden ]; then \
 		if . scripts/apr_bin.sh 2>/dev/null; then \
 			echo "Running probar golden regression with profiling... ($$APR)"; \
@@ -615,7 +621,13 @@ coverage-check: coverage
 contracts:
 	@set -e
 	@echo "== provable contracts: pv lint contracts/ =="
-	@. scripts/pv_bin.sh && "$$PV" lint contracts/ 2>&1 | tail -5 || exit
+# `| tail -5` DISCARDED THE VERDICT: the pipeline's status is tail's, so the armed-meet
+# result was PRINTED and NOT ENFORCED (found by aprender-d8, 0.69.1 tail rehearsal). That
+# is Verification Discipline #1 in the release's own contract gate, and
+# contracts-exit-integrity does not catch it -- it looks for `|| true` and bare for-loops,
+# not for a pipe. The output is kept to a tail for readability by writing it to a file and
+# tailing THAT, so the exit status belongs to pv and nothing else.
+	@. scripts/pv_bin.sh && { "$$PV" lint contracts/ > /tmp/pv-lint-contracts.$$$$.log 2>&1; rc=$$?; tail -5 /tmp/pv-lint-contracts.$$$$.log; rm -f /tmp/pv-lint-contracts.$$$$.log; exit $$rc; }
 	@echo "== census: tracked contracts/census.json == a fresh one (ONT-001 ONT-1, F-1) =="
 	@git ls-files --error-unmatch contracts/census.json >/dev/null || { echo "FAIL: contracts/census.json is not tracked, so diffing it proves nothing"; exit 1; }
 	@. scripts/pv_bin.sh && "$$PV" census contracts --format json > contracts/census.json || exit

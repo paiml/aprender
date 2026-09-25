@@ -1,0 +1,22 @@
+- id: PMAT-3791
+  github_issue: 3791
+  item_type: task
+  title: 'APR Q4K GPU serve path (ALB-095) emits garbage: ''HHHH…'' for every seed at T=0.8, Invalid token ID 151935 (vocab-1 = argmax over NaN) at T=0, no chat template (7 prompt tokens), and /health 503 while serving'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-c7
+  created: 2026-09-21T21:54:05Z
+  updated: 2026-09-21T21:54:05Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3791 done_when 1, verbatim: "Bisect: 0.69.0 / main / this branch, CPU vs GPU on the same .apr, and the first op producing NaN (per-op), with the result recorded."'
+  - 'Issue #3791 done_when 2, verbatim: "The Q4K GPU forward matches the CPU forward on this file (argmax equal, cosine ≥ the F2 floor over 64 positions). The F2 gate runs on this path too; if F2 doesn''t exist here, that''s part of the defect."'
+  - 'Issue #3791 done_when 3, verbatim: "The chat template is applied on this path through the SAME shared selector as run/chat (#3755''s rendering)."'
+  - 'Issue #3791 done_when 4, verbatim: "/health and /health/ready report ready on a serving Q4K server (a router test), sharing #3571 unit (2)''s model_loaded() fix, not a second copy."'
+  - 'Issue #3791 done_when 5, verbatim: "A cell (serve × APR Q4K × GPU) in the derived set is green on lambda and gx10."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Stacked on #3571 unit (2) (PMAT-3571-serve-qwen35-session-main @ d2c8a7793) per the cop, so model_loaded() is ONE predicate. BISECT (lambda, qwen2.5-coder-1.5b-instruct-q4k.apr): 0.69.0 (225b2a9ab) already has it — serve --gpu takes the ALB-095 pool path, /health 503 "loading", T=0 chat HTTP 500 `Invalid token ID: 151935`. The CPU forward is right (`apr run --no-gpu`: "The sea is a vast and mysterious body of water that stretches across the globe."). `apr run --gpu` on the same file is a DIFFERENT GPU path (OwnedQuantizedModelCuda, FP8 cuBLASLt prefill): F2 rejects at pos 3, cos 0.8934 — aprender-37''s FP8 row, not this one. ROOT 1 (the NaN): every GEMV in gpu/adapters/apr_q4k.rs launched a Q4_K kernel; the pool upload records each tensor''s type and this Q4_K_M file keeps 29 tensors at Q6_K (14 layers'' attn_v and ffn_down, and output.weight — the lm_head). Fix: quantized_gemv dispatches on the recorded type (Q4_K → q4k, Q6_K → q6k_gemv_cached, anything else REFUSED by name, never decoded as Q4_K); the batched QKV and gate/up launches batch only when every tensor involved is Q4_K. ROOT 2 (after ROOT 1, the text was "helf helf helf…"): the host-weight extraction read QKV biases (and Q/K norms) under HF names only, `.ok()`; this file names them GGUF-style (blk.N.attn_q.bias — 84 of them), so every Qwen2 bias was silently dropped. Fix: optional_f32 looks under both names, and a tensor present but unreadable is an error, not None. TEMPLATE: the Q4K state had cached_architecture None, so the shared selector (tokenize_chat_prompt → format_chat_messages → detect_format_from_name — the path #3755 changes) fell back to raw: 7 prompt tokens. apr-cli now passes the file''s declared architecture (AppState::with_architecture): 18 prompt tokens, "The vast, blue sea stretches across the horizon, reflecting the sun''s warm rays…". HEALTH: model_loaded() counts apr_q4k_tx in the same predicate as #3571''s qwen35 session; compute_mode gpu. TESTS: q4k_gpu_forward_matches_the_cpu_forward_under_the_f2_rule (real file + CUDA; the pool forward vs OwnedQuantizedModel::from_apr''s forward, 64 real positions, crate::infer::f2_multi_position_report: accepted, min cosine 0.9999); a_q4k_state_reports_loaded_and_gpu (no device). MUTANTS, measured: Q6_K decoded as Q4_K → RED "the GPU logits carry NaN/inf"; GGUF bias names removed → RED, accepted=false, min cosine 0.5350, argmax 374 vs 74403 at pos 1. SIBLINGS (cop''s ask): apr/cache.rs dispatch_quantized_gemv matches on qtype (12/13/14) — guarded. The executor''s dense layer paths (cached.rs, layers/ffn.rs, swiglu.rs) select Q4K kernels upstream of these call sites; not audited here beyond the GGUF Q4_K_M ladder rungs (mixed Q4K/Q6K) that pass on them. OPEN in this row, named: a RUNTIME F2 gate on this path at load (the parity test proves the forward; a load-time guard needs the CPU model, and this path exists for 17 GB MoE .apr files — design question to the cop), and the serve × APR Q4K × GPU cells on both hosts.'

@@ -156,11 +156,26 @@ mod tests {
 
     // === sample_topk tests ===
 
+    /// #3760: the sampler DRAWS. It used to return the highest-probability survivor,
+    /// which is the argmax, whatever the temperature and top-k.
+    #[test]
+    fn test_sample_topk_draws_off_the_argmax_and_is_seeded() {
+        use rand::SeedableRng;
+        let logits = vec![1.0_f32, 0.9, 1.1, 0.95, 1.05];
+        let run = |seed: u64| {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            (0..32).map(|_| sample_topk(&logits, 1.0, 5, &mut rng)).collect::<Vec<_>>()
+        };
+        assert!(run(7).iter().any(|&t| t != 2), "32 draws all returned the argmax");
+        assert_eq!(run(7), run(7), "the same seed must reproduce the draws");
+        assert_ne!(run(7), run(8), "another seed must change the draws");
+    }
+
     #[test]
     fn test_sample_topk_returns_max_with_low_temp() {
         let logits = vec![1.0, 10.0, 2.0];
         // With temperature=1.0 and top_k=1, should return argmax
-        let result = sample_topk(&logits, 1.0, 1);
+        let result = sample_topk(&logits, 1.0, 1, &mut rand::SeedableRng::seed_from_u64(1));
         assert_eq!(result, 1);
     }
 
@@ -168,7 +183,7 @@ mod tests {
     fn test_sample_topk_top_3() {
         let logits = vec![0.0, 10.0, 5.0, 1.0];
         // Top-3: indices 1, 2, 3. Should return one of them (likely 1)
-        let result = sample_topk(&logits, 1.0, 3);
+        let result = sample_topk(&logits, 1.0, 3, &mut rand::SeedableRng::seed_from_u64(1));
         assert!(result <= 3, "result = {}", result);
     }
 
@@ -176,20 +191,20 @@ mod tests {
     fn test_sample_topk_with_high_temp() {
         let logits = vec![0.0, 1.0, 0.0];
         // High temperature makes distribution flatter, but max still most likely
-        let result = sample_topk(&logits, 10.0, 3);
+        let result = sample_topk(&logits, 10.0, 3, &mut rand::SeedableRng::seed_from_u64(1));
         assert!(result <= 2);
     }
 
     #[test]
     fn test_sample_topk_top_1_is_argmax() {
         let logits = vec![0.0, 0.0, 100.0, 0.0];
-        let result = sample_topk(&logits, 1.0, 1);
+        let result = sample_topk(&logits, 1.0, 1, &mut rand::SeedableRng::seed_from_u64(1));
         assert_eq!(result, 2);
     }
 
     #[test]
     fn test_sample_topk_empty_returns_zero() {
-        let result = sample_topk(&[], 1.0, 10);
+        let result = sample_topk(&[], 1.0, 10, &mut rand::SeedableRng::seed_from_u64(1));
         assert_eq!(result, 0);
     }
 
