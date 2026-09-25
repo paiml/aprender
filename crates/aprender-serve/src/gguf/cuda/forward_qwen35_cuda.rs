@@ -639,7 +639,7 @@ impl<'a> Qwen35CudaModel<'a> {
             dims,
             max_seq_len.min(DEFAULT_MAX_SEQ_LEN),
         )?;
-        Ok(Self {
+        let mut m = Self {
             model,
             executor,
             layers,
@@ -654,7 +654,9 @@ impl<'a> Qwen35CudaModel<'a> {
             max_seq_len,
             prefill_rows: prefill::PREFILL_MAX_CHUNK_ROWS,
             prefill_attention,
-        })
+        };
+        m.warm_prefill_weights()?;
+        Ok(m)
     }
 
     /// Allocate a fresh decode state: every layer's conv window and recurrent
