@@ -40,6 +40,7 @@ pub mod pool;
 pub mod prereg;
 pub mod ratchet;
 pub mod receipt;
+pub mod replay;
 pub mod score;
 pub mod secret;
 pub mod sparse_logits;

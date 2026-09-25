@@ -1,0 +1,66 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PRM-S1 (PRM-001 v3 "PROMETHEUS" §2.4 review-replay-v1, §9 speed block; Refs #4354, #4447).
+    crates/aprender-review-experiment/src/replay.rs builds a frozen replay set of real quorum
+    diffs (INPUTS only, never a lane's output), defines the review-replay-receipt-v1 row, and
+    folds one run into the §9 speed block. `examples/replay.rs` is the runner, and it
+    drives `apr serve` and llama.cpp d1d3c3396 `llama-server` with the same GGUF on the same cell.
+    Strata by composed input tokens: 2k (0,2048], 8k (2048,8192], 16k (8192,16384],
+    32k (16384,32768], 50 items each. One item per repo#PR and per diff sha. Sealed test items
+    (diff sha, hunk fingerprint, near-dup cluster) are excluded. Order within a stratum is
+    sha256(seed ‖ diff_sha), so the set is frozen by (version, seed, candidates). A short stratum is an
+    error and is never padded. Every ratio is apr / llama_cpp: TTFT targets ≤ 2.0 by E2, and prefill and
+    decode target ≥ 1.0 by E6. The queue budget is the p95 of the slowest counted voter, taken from
+    captured quorum latency. A summary refuses an inconsistent run rather than print a number.
+  references:
+    - "docs/specifications/review-experiment-protocol.md"
+
+equations:
+  stratum:
+    formula: "stratum(t) = min{ s ∈ (2k, 8k, 16k, 32k) : 0 < t ≤ upper(s) }, undefined for t = 0 or t > 32768"
+  ratio:
+    formula: "ratio(m) = median_apr(m) / median_llama_cpp(m); null if any row of either engine has m null"
+  queue_budget:
+    formula: "budget = max over counted voter lanes L of p95(latency_L); within_budget ⇔ p95(apr wall) ≤ budget"
+  verdict_identity:
+    formula: "identity = |{ i : verdict_tag(i) = verdict_prev_tag(i) }| / n, only on the same set_sha and the same items"
+
+falsification_tests:
+  - id: FALSIFY-REPLAY-001
+    name: sealed_items_never_enter_the_set
+    prediction: "a sealed diff, or the same diff re-posted under another repo#PR, is dropped, and its stratum reports short rather than silently shrinking"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_replay_001"
+    expected_output: "exit 0"
+    if_fails: "Sealed test diffs would be replayed and cached by a benchmark run. That is the leak §2.4 forbids."
+  - id: FALSIFY-REPLAY-002
+    name: short_strata_are_refused_not_padded
+    prediction: "a stratum with fewer than per_stratum eligible items is an error that names it; an out-of-range (>32768) item is never moved into a stratum"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_replay_002"
+    expected_output: "exit 0"
+    if_fails: "A 32k stratum filled from 16k inputs would report long-context prefill that was never measured."
+  - id: FALSIFY-REPLAY-003
+    name: one_item_per_pr_and_order_free
+    prediction: "the set has one item per repo#PR and per diff sha, is identical under reversed candidate order, and changes with the seed"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_replay_003"
+    expected_output: "exit 0"
+    if_fails: "One large PR could dominate a stratum, or re-collecting candidates could silently change the frozen set."
+  - id: FALSIFY-REPLAY-004
+    name: ratios_are_apr_over_llama_and_budget_is_slowest_voter
+    prediction: "TTFT, per-stratum prefill and decode ratios equal apr/llama_cpp medians; the queue budget is the largest voter-lane p95; a single null server timing nulls the figure"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_replay_004"
+    expected_output: "exit 0"
+    if_fails: "An inverted ratio would print a scoreboard win for a loss, and a subset median would hide the rows the server could not time."
+  - id: FALSIFY-REPLAY-005
+    name: inconsistent_runs_never_print_a_number
+    prediction: "mixed set_sha or version, a GGUF, cell or apr_tag mismatch, unequal engine coverage, a duplicate row, any not-run row, or a missing voter latency is refused"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_replay_005"
+    expected_output: "exit 0"
+    if_fails: "apr on one GGUF against llama.cpp on another, or apr with its timeouts dropped, would be reported as parity."
+  - id: FALSIFY-REPLAY-006
+    name: verdict_identity_is_same_set_item_by_item
+    prediction: "identity vs the previous tag is the per-item equal-verdict fraction on the same set_sha and items; another set or missing items refuse"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_replay_006"
+    expected_output: "exit 0"
+    if_fails: "A tag could change review verdicts while the speed block reported only faster wall-clock."
