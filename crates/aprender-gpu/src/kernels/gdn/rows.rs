@@ -414,6 +414,40 @@ mod ptx_tests {
             }
         }
     }
+
+    /// #3522 OXIDE-001: the cuda-oxide port of [`PerHeadL2NormRowsKernel`] times
+    /// itself against the hand PTX committed under
+    /// `experiments/cuda-oxide/l2-norm-rows/baseline-ptx/`. head_dim, eps and the
+    /// row stride are baked into the PTX, so there is one baseline per timed head
+    /// count, at Qwen3.5's conv_dim stride (`3 * heads * head_dim`).
+    ///
+    /// Regenerate: `APR_BLESS_PTX=1 cargo test -p aprender-gpu --features cuda --lib gdn_l2_norm_rows_ptx_golden`
+    #[test]
+    fn gdn_l2_norm_rows_ptx_golden() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../experiments/cuda-oxide/l2-norm-rows/baseline-ptx");
+        let bless = std::env::var_os("APR_BLESS_PTX").is_some();
+        for heads in [16u32, 32, 48] {
+            let kernel = PerHeadL2NormRowsKernel::new(128, heads, 1e-6, 3 * heads * 128);
+            for target in ["sm_89", "sm_121"] {
+                let path = dir.join(format!("gdn_per_head_l2_norm_rows_h{heads}.{target}.ptx"));
+                let ptx = kernel.emit_ptx_for_target(target);
+                if bless {
+                    std::fs::create_dir_all(&dir).expect("baseline dir");
+                    std::fs::write(&path, &ptx).expect("write baseline");
+                    continue;
+                }
+                let golden = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+                    panic!("{}: {e} (bless with APR_BLESS_PTX=1)", path.display())
+                });
+                assert!(
+                    golden == ptx,
+                    "{} drifted from the emitter; re-bless and re-run the #3522 receipts",
+                    path.display()
+                );
+            }
+        }
+    }
 }
 
 /// Device proof: each rows kernel over `T` rows equals `T` launches of its twin.
