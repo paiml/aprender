@@ -1,0 +1,346 @@
+{
+  "ticket": "PMAT-2730",
+  "base": "e7a52949d",
+  "base_resolved": "e7a52949d",
+  "base_note": "no origin/e7a52949d exists; judged against the local ref",
+  "head": "6c094f73b96881646ef1f22087447df31cf48b45",
+  "diff_sha256": "69674a780a0240178657b82b865781dc9f7b811f646f727992d33d606ce90cde",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 12859,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly addresses PMAT-2730 without introducing any forbidden changes. It removes the vacuous `.all()` check by introducing the `brick_verdict` helper to explicitly handle empty sets (1 failed point, FAIL/red). This is implemented securely across both producers, backed by new Falsification tests ensuring `--ci` fails on empty sets, and correctly updates the previously defective vacuous PASS test. All claims from the ticket and receipt are strongly backed by the diff.",
+      "findings": [
+        {
+          "claim": "Empty set is FAIL/red, failed 1/total 1",
+          "file": "crates/apr-cli/src/commands/cbtop_get_cpu_memory.rs",
+          "fix": "Verified via brick_verdict implementation which correctly calculates total = 1, passed = 0, failed = 1 and all_pass = false when brick_scores is empty.",
+          "grounding": "cited",
+          "line": 99
+        },
+        {
+          "claim": "Both producers use it",
+          "file": "crates/apr-cli/src/commands/cbtop_measure_batch.rs",
+          "fix": "Verified that both generate_headless_report_simulated and build_and_output_report use brick_verdict.",
+          "grounding": "cited",
+          "line": 349
+        },
+        {
+          "claim": "--ci fails on it without explicit thresholds",
+          "file": "crates/apr-cli/src/commands/cbtop_headless_report.rs",
+          "fix": "test_empty_brick_report_is_red_and_fails_ci asserts that check_ci_thresholds returns false for an empty report.",
+          "grounding": "cited",
+          "line": 461
+        },
+        {
+          "claim": "Non-empty unchanged",
+          "file": "crates/apr-cli/src/commands/cbtop_headless_report.rs",
+          "fix": "test_brick_verdict_counts_each_brick confirms non-empty logic is preserved.",
+          "grounding": "cited",
+          "line": 449
+        },
+        {
+          "claim": "Existing test asserted the defect",
+          "file": "crates/apr-cli/src/commands/cbtop_falsification_summary_hardware.rs",
+          "fix": "test_headless_report_simulated_no_bricks changed assert_eq!(report.status, \\\"PASS\\\") to \\\"FAIL\\\".",
+          "grounding": "cited",
+          "line": 312
+        }
+      ],
+      "raw_bytes": 6561,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff e7a52949d...HEAD for PMAT-2730 (#2730) fully satisfies all ticket acceptance criteria without refutation:\n\n1. Defect & Root Cause: Previously, an empty brick set evaluated `brick_scores.iter().all(...)`, which vacuously returned `true`, reporting `status: \"PASS\"` and `ci_result: \"green\"` despite a grade F and 0/0 falsification points. Consequently, `apr cbtop --ci` with default thresholds exited 0.\n2. Shared Helper (`crates/apr-cli/src/commands/cbtop_get_cpu_memory.rs`): Introduced `brick_verdict`, which treats an empty brick set as `all_pass: false`, `total: 1`, `passed: 0`, `failed: 1`. For non-empty sets, it maintains the existing `1.0 + 1e-9` gap factor epsilon rule.\n3. Dual Producers Unified: Both `generate_headless_report_simulated` (`cbtop_get_cpu_memory.rs`) and CUDA-gated `build_and_output_report` (`cbtop_measure_batch.rs`) now share `brick_verdict`, preventing producer divergence.\n4. CI Gate Verified: `test_empty_brick_report_is_red_and_fails_ci` verifies that `--ci` fails on empty brick sets without needing explicit throughput/score thresholds.\n5. Defect Inversion: `test_headless_report_simulated_no_bricks` in `cbtop_falsification_summary_hardware.rs` had previously asserted the defect (`\"PASS\"`); this was updated to assert `\"FAIL\"` and `\"red\"`.\n6. Receipt Claims & Mutation: All 7 claims in `docs/audits/impl-PMAT-2730-receipt.md` are backed by the diff. Restoring the vacuous `.all()` turns 3 tests RED. No gates were weakened, and no out-of-scope code was included.",
+      "findings": [],
+      "raw_bytes": 4364,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff completely and correctly satisfies ticket PMAT-2730 (#2730). It replaces the vacuous `.all()` check across both simulated and measured cbtop report producers with a shared `brick_verdict` helper function. Zero-brick reports are now assigned `total: 1, passed: 0, failed: 1, status: FAIL, ci_result: red`, causing `--ci` to fail as required without explicit thresholds. Non-empty brick sets retain identical epsilon-tolerant evaluation semantics. All receipt claims are backed by the diff. Verdict: PASS.",
+      "findings": [
+        {
+          "claim": "The shared `brick_verdict` helper handles empty brick scores by returning `all_pass: false`, `total: 1`, `passed: 0`, `failed: 1`, eliminating the vacuous pass defect.",
+          "file": "crates/apr-cli/src/commands/cbtop_get_cpu_memory.rs",
+          "grounding": "cited",
+          "line": 94
+        },
+        {
+          "claim": "`generate_headless_report_simulated` uses `brick_verdict` to derive `status`, `ci_result`, and `falsification` summary counts.",
+          "file": "crates/apr-cli/src/commands/cbtop_get_cpu_memory.rs",
+          "grounding": "cited",
+          "line": 131
+        },
+        {
+          "claim": "`build_and_output_report` in `cbtop_measure_batch.rs` uses the shared `brick_verdict` helper, ensuring both producers stay consistent.",
+          "file": "crates/apr-cli/src/commands/cbtop_measure_batch.rs",
+          "grounding": "cited",
+          "line": 350
+        },
+        {
+          "claim": "`test_headless_report_simulated_no_bricks` updated from asserting defect ('PASS' vacuously) to asserting status 'FAIL' and ci_result 'red'.",
+          "file": "crates/apr-cli/src/commands/cbtop_falsification_summary_hardware.rs",
+          "grounding": "cited",
+          "line": 314
+        },
+        {
+          "claim": "Added unit and end-to-end tests validating empty set rejection, epsilon-boundary counting, and `--ci` rejection on zero-brick reports.",
+          "file": "crates/apr-cli/src/commands/cbtop_headless_report.rs",
+          "grounding": "cited",
+          "line": 443
+        }
+      ],
+      "raw_bytes": 4846,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/src/commands/cbtop_falsification_summary_hardware.rs",
+      "line": 312,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Existing test asserted the defect"
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/cbtop_falsification_summary_hardware.rs",
+      "line": 314,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "`test_headless_report_simulated_no_bricks` updated from asserting defect ('PASS' vacuously) to asserting status 'FAIL' and ci_result 'red'."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/cbtop_get_cpu_memory.rs",
+      "line": 94,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The shared `brick_verdict` helper handles empty brick scores by returning `all_pass: false`, `total: 1`, `passed: 0`, `failed: 1`, eliminating the vacuous pass defect."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/cbtop_get_cpu_memory.rs",
+      "line": 99,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Empty set is FAIL/red, failed 1/total 1"
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/cbtop_get_cpu_memory.rs",
+      "line": 131,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "`generate_headless_report_simulated` uses `brick_verdict` to derive `status`, `ci_result`, and `falsification` summary counts."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/cbtop_headless_report.rs",
+      "line": 443,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Added unit and end-to-end tests validating empty set rejection, epsilon-boundary counting, and `--ci` rejection on zero-brick reports."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/cbtop_headless_report.rs",
+      "line": 449,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Non-empty unchanged"
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/cbtop_headless_report.rs",
+      "line": 461,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "--ci fails on it without explicit thresholds"
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/cbtop_measure_batch.rs",
+      "line": 349,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Both producers use it"
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/cbtop_measure_batch.rs",
+      "line": 350,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "`build_and_output_report` in `cbtop_measure_batch.rs` uses the shared `brick_verdict` helper, ensuring both producers stay consistent."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}
