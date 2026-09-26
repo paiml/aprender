@@ -1,0 +1,192 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# binary-aprender-orchestrate-cli-v1 — ONT-10 slice S4 (orchestrate 1/2: CLI + MCP tools) (ONT-001 v4.17 ONT-4g;
+# #4476, #4079). The 92 HTTP routes are slice S3 (orchestrate 2/2, aprender-1c), in their own contract.
+#
+# MEASURED (2026-09-26, batch/ont-10 @ b1cd8c0b0, release build, default features):
+#   - `aprender-orchestrate --version` prints "batuta 0.69.3": the pre-monorepo name. The identity shape requires
+#     the target name, so it is RED today. G0.1 (git sha in --version) is a warning and RED today.
+#   - the recursive --help walk gives 86 leaf commands, set-equal to surface_audit.csv's 86 CLI rows.
+#   - MCP: `aprender-orchestrate mcp` (stdio, the only transport) answers tools/list with 4 tools —
+#     hf_info, hf_integration, hf_search, hf_tree — server name "batuta-hf". surface_audit.csv has NO row for any
+#     of them. Its 6 `mcp:*` rows (calculator, code_execution, web_search from banco's POST /api/v1/mcp;
+#     compute, memory, rag from the agent tool registry) are not what the binary's MCP server lists. So
+#     `aprender-orchestrate-mcp` below is RED today on both sides: 4 unledgered tools, 6 orphan rows. The
+#     banco/agent tools are reachable only through an HTTP route or an agent session, so they belong to the
+#     route slice (S3) or need a feature column, not to tools/list.
+#
+# CONVENTION THIS DRAFT ASKS OF extract:binary (ONT-4g, aprender-98): nodes also typed bin:target/<package>/<target>;
+# commands as bin:command literals, MCP tools/list names as bin:mcpTool literals; the csv join yields
+# bin:ledgerOrphan / bin:unledgeredCommand / bin:unledgeredTool.
+#
+# KIND: pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+name: binary-aprender-orchestrate-cli
+version: "0.1.0"
+scope: >
+  The built `aprender-orchestrate` target of package `aprender-orchestrate` (default features) as the focus node binary/aprender-orchestrate/aprender-orchestrate:
+  its identity and its exact CLI command set, and the surface_audit.csv rows that must resolve to it.
+status: draft
+
+metadata:
+  version: "0.1.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice (aprender-orchestrate 1/2). Per-binary shapes over the node extract:binary (ONT-4g, #4476) draws for
+    binary/aprender-orchestrate/aprender-orchestrate. DRAFT: binary-surface-v1 (the bin: vocabulary) and extract:binary do not exist on this
+    branch yet, so this contract goes green only after ONT-4g lands.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger; binary column = aprender-orchestrate)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+
+entity:
+  type: binary
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: aprender-orchestrate-identity
+    targetClass: bin:target/aprender-orchestrate/aprender-orchestrate
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-orchestrate"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-orchestrate"]}
+      - {path: bin:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:helpSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-orchestrate [0-9]+\\.[0-9]+\\.[0-9]+"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+  - id: aprender-orchestrate-commands
+    targetClass: bin:target/aprender-orchestrate/aprender-orchestrate
+    properties:
+      - path: bin:command
+        minCount: 86
+        maxCount: 86
+        in:
+          - "agent chat"
+          - "agent contracts"
+          - "agent pool"
+          - "agent run"
+          - "agent sign"
+          - "agent status"
+          - "agent validate"
+          - "agent verify-sig"
+          - "analyze"
+          - "bug-hunter analyze"
+          - "bug-hunter deep-hunt"
+          - "bug-hunter diff"
+          - "bug-hunter ensemble"
+          - "bug-hunter falsify"
+          - "bug-hunter fuzz"
+          - "bug-hunter hunt"
+          - "bug-hunter spec"
+          - "bug-hunter stack"
+          - "bug-hunter ticket"
+          - "bug-hunter trend"
+          - "bug-hunter triage"
+          - "build"
+          - "code"
+          - "content emit"
+          - "content types"
+          - "content validate"
+          - "data tree"
+          - "deploy cloudflare"
+          - "deploy docker"
+          - "deploy fly"
+          - "deploy k8s"
+          - "deploy lambda"
+          - "experiment tree"
+          - "falsify"
+          - "hf catalog"
+          - "hf course"
+          - "hf info"
+          - "hf pull"
+          - "hf push"
+          - "hf search"
+          - "hf tree"
+          - "init"
+          - "mcp"
+          - "optimize"
+          - "oracle"
+          - "pacha alias"
+          - "pacha aliases"
+          - "pacha decrypt"
+          - "pacha encrypt"
+          - "pacha keygen"
+          - "pacha list"
+          - "pacha pin"
+          - "pacha prune"
+          - "pacha pull"
+          - "pacha rm"
+          - "pacha run"
+          - "pacha search"
+          - "pacha show"
+          - "pacha sign"
+          - "pacha stats"
+          - "pacha unpin"
+          - "pacha verify"
+          - "parf"
+          - "playbook lock"
+          - "playbook run"
+          - "playbook status"
+          - "playbook validate"
+          - "report"
+          - "reset"
+          - "serve"
+          - "stack check"
+          - "stack comply"
+          - "stack drift"
+          - "stack gate"
+          - "stack publish-status"
+          - "stack quality"
+          - "stack release"
+          - "stack status"
+          - "stack sync"
+          - "stack tree"
+          - "stack versions"
+          - "status"
+          - "transpile"
+          - "validate"
+          - "viz dashboard"
+          - "viz tree"
+      - {path: bin:ledgerOrphan, maxCount: 0}
+      - {path: bin:unledgeredCommand, maxCount: 0}
+
+  - id: aprender-orchestrate-mcp
+    targetClass: bin:target/aprender-orchestrate/aprender-orchestrate
+    properties:
+      - path: bin:mcpTool
+        minCount: 4
+        maxCount: 4
+        in: ["hf_info", "hf_integration", "hf_search", "hf_tree"]
+      - {path: bin:unledgeredTool, maxCount: 0}
+
+equations:
+  command_set:
+    formula: "commands(binary/aprender-orchestrate/aprender-orchestrate) = C, |C| = 86, where C = the leaves of the recursive --help walk of the default-feature build"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target"
+    codomain: "one bin:command literal per leaf command path, space-joined, LC_ALL=C sorted"
+    invariants:
+      - "in + minCount 86 + maxCount 86 over distinct literals is set equality: an added, dropped or renamed command is a violation naming it"
+  ledger_join:
+    formula: "ledgerOrphan = { r ∈ csv : r.binary = aprender-orchestrate ∧ r.feature ∉ C }; unledgeredCommand = C ∖ { r.feature : r.binary = aprender-orchestrate }"
+    domain: "docs/audits/surface_audit.csv rows whose binary column is aprender-orchestrate"
+    codomain: "literals on the focus node, one per orphan row or unledgered command"
+    invariants:
+      - "a ledger row for a command the built binary does not expose is a violation, never a silent skip"
+
+falsification_tests:
+  - id: FALSIFY-BIN-APRENDER_ORCHESTRATE-001
+    name: dropped_command_is_red
+    prediction: "deleting one leaf from the snapshot's command list makes aprender-orchestrate-commands RED naming the command (minCount 86)"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with one command removed"
+    expected_output: "verdict Fail, one result on binary/aprender-orchestrate/aprender-orchestrate path bin:command"
+    if_fails: "A command could vanish from the shipped aprender-orchestrate with the ontology green."
+  - id: FALSIFY-BIN-APRENDER_ORCHESTRATE-002
+    name: ledger_row_deleted_is_red
+    prediction: "deleting one surface_audit.csv row for a live aprender-orchestrate command makes bin:unledgeredCommand non-empty, RED naming it"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the csv with one row deleted"
+    expected_output: "verdict Fail naming the command"
+    if_fails: "The dogfood coverage ratio would be computed over a ledger that silently omits a shipped command."

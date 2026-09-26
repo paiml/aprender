@@ -1,0 +1,94 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# binary-aprender-train-lora-v1 — ONT-10 slice S16 (2/2): the `aprender-train-lora` binary as an entity
+# (ONT-001 v4.17 ONT-4g; #4476, #4079)
+#
+# MEASURED (2026-09-26, batch/ont-10 @ b1cd8c0b0, release build, default features): the --help walk gives 4 leaf
+# commands, set-equal to surface_audit.csv's 4 rows. `aprender-train-lora --version` prints "entrenar-lora 0.69.3":
+# the pre-monorepo name, not the binary's. The identity shape below requires the version string to start with
+# the target name, so it is RED today — a user who runs `aprender-train-lora --version` is told a different
+# program's name. G0.1 (git sha in --version) is a warning and RED today.
+#
+# CONVENTION THIS DRAFT ASKS OF extract:binary (ONT-4g, aprender-98): nodes also typed bin:target/<package>/<target>;
+# commands as bin:command literals; the csv join yields bin:ledgerOrphan / bin:unledgeredCommand.
+#
+# KIND: pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+name: binary-aprender-train-lora
+version: "0.1.0"
+scope: >
+  The built `aprender-train-lora` target of package `aprender-train-lora` (default features) as the focus node binary/aprender-train-lora/aprender-train-lora:
+  its identity and its exact CLI command set, and the surface_audit.csv rows that must resolve to it.
+status: draft
+
+metadata:
+  version: "0.1.0"
+  kind: pattern
+  created: '2026-09-26'
+  last_modified: '2026-09-26'
+  author: PAIML Engineering
+  description: >
+    ONT-10 binary slice (aprender-train-lora). Per-binary shapes over the node extract:binary (ONT-4g, #4476) draws for
+    binary/aprender-train-lora/aprender-train-lora. DRAFT: binary-surface-v1 (the bin: vocabulary) and extract:binary do not exist on this
+    branch yet, so this contract goes green only after ONT-4g lands.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.17 §5 ONT-4g, ONT-10'
+    - 'docs/audits/surface_audit.csv (the ledger; binary column = aprender-train-lora)'
+    - 'scripts/dogfood_surfaces.sh (the snapshot extract:binary reads)'
+
+entity:
+  type: binary
+
+relations:
+  depends_on: [binary-surface-v1]
+
+shapes:
+  - id: aprender-train-lora-identity
+    targetClass: bin:target/aprender-train-lora/aprender-train-lora
+    properties:
+      - {path: bin:name, minCount: 1, maxCount: 1, in: ["aprender-train-lora"]}
+      - {path: bin:package, minCount: 1, maxCount: 1, in: ["aprender-train-lora"]}
+      - {path: bin:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:helpSha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "^aprender-train-lora [0-9]+\\.[0-9]+\\.[0-9]+"}
+      - {path: bin:versionString, minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}", severity: warning}
+  - id: aprender-train-lora-commands
+    targetClass: bin:target/aprender-train-lora/aprender-train-lora
+    properties:
+      - path: bin:command
+        minCount: 4
+        maxCount: 4
+        in:
+          - "compare"
+          - "inspect"
+          - "merge"
+          - "plan"
+      - {path: bin:ledgerOrphan, maxCount: 0}
+      - {path: bin:unledgeredCommand, maxCount: 0}
+
+equations:
+  command_set:
+    formula: "commands(binary/aprender-train-lora/aprender-train-lora) = C, |C| = 4, where C = the leaves of the recursive --help walk of the default-feature build"
+    domain: "the snapshot record dogfood_surfaces.sh writes for this target"
+    codomain: "one bin:command literal per leaf command path, space-joined, LC_ALL=C sorted"
+    invariants:
+      - "in + minCount 4 + maxCount 4 over distinct literals is set equality: an added, dropped or renamed command is a violation naming it"
+  ledger_join:
+    formula: "ledgerOrphan = { r ∈ csv : r.binary = aprender-train-lora ∧ r.feature ∉ C }; unledgeredCommand = C ∖ { r.feature : r.binary = aprender-train-lora }"
+    domain: "docs/audits/surface_audit.csv rows whose binary column is aprender-train-lora"
+    codomain: "literals on the focus node, one per orphan row or unledgered command"
+    invariants:
+      - "a ledger row for a command the built binary does not expose is a violation, never a silent skip"
+
+falsification_tests:
+  - id: FALSIFY-BIN-APRENDER_TRAIN_LORA-001
+    name: dropped_command_is_red
+    prediction: "deleting one leaf from the snapshot's command list makes aprender-train-lora-commands RED naming the command (minCount 4)"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the snapshot with one command removed"
+    expected_output: "verdict Fail, one result on binary/aprender-train-lora/aprender-train-lora path bin:command"
+    if_fails: "A command could vanish from the shipped aprender-train-lora with the ontology green."
+  - id: FALSIFY-BIN-APRENDER_TRAIN_LORA-002
+    name: ledger_row_deleted_is_red
+    prediction: "deleting one surface_audit.csv row for a live aprender-train-lora command makes bin:unledgeredCommand non-empty, RED naming it"
+    test_harness: "pv lint contracts/ --gate shapes --format json (after ONT-4g), on the csv with one row deleted"
+    expected_output: "verdict Fail naming the command"
+    if_fails: "The dogfood coverage ratio would be computed over a ledger that silently omits a shipped command."
