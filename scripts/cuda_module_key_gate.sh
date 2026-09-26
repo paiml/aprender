@@ -226,27 +226,37 @@ run_mode() {
     fi
 
     mkdir -p "$EVIDENCE_DIR"
-    python3 - "$EVIDENCE_DIR/${host}.json" <<PY
-import json, sys
+    # Values travel as environment, never spliced into Python source: a quote in a GPU name
+    # or a host label must not turn the receipt writer into a syntax error.
+    R_HOST="$host" R_GPU="$gpu" R_CC="$cc" R_COMMIT="$commit" R_TREES="$trees" R_STARTED="$started" \
+    R_N_ONLY="$n_only" R_SKIPS="$skips" R_MUTANT="$MUTANT" R_STATUS="$status" R_REASON="$reason" \
+    R_M_RAN="$mutant_ran" R_M_PASSED="$mutant_passed" R_M_SKIPPED="$mutant_skipped" \
+    R_SERVE_PASSED="$(summary_count "$log_serve" passed)" R_SERVE_FAILED="$(summary_count "$log_serve" failed)" \
+    R_SERVE_IGNORED="$(summary_count "$log_serve" ignored)" \
+    R_GPU_PASSED="$(summary_count "$log_gpu" passed)" R_GPU_FAILED="$(summary_count "$log_gpu" failed)" \
+    python3 - "$EVIDENCE_DIR/${host}.json" <<'PY' || { echo "cuda_module_key_gate --run: could not write the receipt" >&2; exit 2; }
+import json, os, sys
+e = os.environ
 r = {
     "schema": "cuda-module-key-v1",
     "issue": "#3759",
-    "host": "${host}",
-    "gpu": "${gpu}",
-    "compute_cap": "${cc}",
-    "commit": "${commit}",
-    "trees": json.loads('''${trees}'''),
-    "started_utc": "${started}",
-    "serve_cuda_only": ${n_only},
-    "serve_passed": $(summary_count "$log_serve" passed),
-    "serve_failed": $(summary_count "$log_serve" failed),
-    "serve_ignored": $(summary_count "$log_serve" ignored),
-    "gpu_passed": $(summary_count "$log_gpu" passed),
-    "gpu_failed": $(summary_count "$log_gpu" failed),
-    "device_skips": ${skips},
-    "mutant": {"name": "${MUTANT}", "ran": ${mutant_ran^}, "passed": ${mutant_passed^}, "skipped": ${mutant_skipped^}},
-    "status": "${status}",
-    "reason": "${reason}",
+    "host": e["R_HOST"],
+    "gpu": e["R_GPU"],
+    "compute_cap": e["R_CC"],
+    "commit": e["R_COMMIT"],
+    "trees": json.loads(e["R_TREES"]),
+    "started_utc": e["R_STARTED"],
+    "serve_cuda_only": int(e["R_N_ONLY"]),
+    "serve_passed": int(e["R_SERVE_PASSED"]),
+    "serve_failed": int(e["R_SERVE_FAILED"]),
+    "serve_ignored": int(e["R_SERVE_IGNORED"]),
+    "gpu_passed": int(e["R_GPU_PASSED"]),
+    "gpu_failed": int(e["R_GPU_FAILED"]),
+    "device_skips": int(e["R_SKIPS"]),
+    "mutant": {"name": e["R_MUTANT"], "ran": e["R_M_RAN"] == "true",
+               "passed": e["R_M_PASSED"] == "true", "skipped": e["R_M_SKIPPED"] == "true"},
+    "status": e["R_STATUS"],
+    "reason": e["R_REASON"],
 }
 with open(sys.argv[1], "w", encoding="utf-8") as fh:
     json.dump(r, fh, indent=2, sort_keys=True)
