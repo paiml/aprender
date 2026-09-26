@@ -2,6 +2,7 @@
 //! each gate RED on its own plant.
 
 use super::super::model_gate_cr::{CrContainer, CrEngine, CrEvidence, CrFetch};
+use super::super::model_gate_m1b::{M1bEvidence, QualityArm, QualityRecord};
 use super::super::model_gate_m2::arms::{Arm, ArmIdentity, ArmRole};
 use super::super::model_gate_m2::{ReleaseClass, Suite, SuiteData};
 use super::*;
@@ -143,6 +144,7 @@ pub(crate) fn fixture() -> Fixture {
             m3: m3.clone(),
         }),
         m1: Some(m1),
+        m1b: Some(m1b_evidence(sha_of(files[0].2))),
         m2: Some(M2Evidence {
             class: ReleaseClass::First,
             suites: vec![Suite {
@@ -183,6 +185,33 @@ pub(crate) fn fixture() -> Fixture {
     };
     f.write_manifest();
     f
+}
+
+/// EXT-27: our quant measured as well as at the previous release, against one arm.
+fn m1b_evidence(ours_sha: String) -> M1bEvidence {
+    let quality = |kl_mean, top1| QualityRecord {
+        version: "0.1.0-rc.1".into(),
+        llama_cpp_commit: "d1d3c3396aa13a5f239109a822666c4870490ad5".into(),
+        corpus_sha256: item(0xc0),
+        reference_sha256: item(0xbf),
+        ours: QualityArm {
+            arm: "ours".into(),
+            file_sha256: ours_sha.clone(),
+            kl_mean,
+            top1,
+        },
+        arms: vec![QualityArm {
+            arm: "unsloth-q4_k_m".into(),
+            file_sha256: item(0x51),
+            kl_mean: 0.030,
+            top1: 0.930,
+        }],
+    };
+    M1bEvidence {
+        current: quality(0.031, 0.929),
+        baseline: Some(quality(0.031, 0.929)),
+        receipt_id: "m1b-quality".into(),
+    }
 }
 
 impl Fixture {
@@ -236,7 +265,7 @@ fn ext_12_green_release_passes_every_gate_deterministically() {
     let f = fixture();
     let r = f.gate();
     let names: Vec<_> = r.gates.iter().map(|g| g.gate).collect();
-    assert_eq!(names, ["M-CR", "M0", "M1", "M2", "M3", "M4", "M5", "M6"]);
+    assert_eq!(names, ["M-CR", "M0", "M1", "M1b", "M2", "M3", "M4", "M5", "M6"]);
     assert!(r.all_green, "{:#?}", r.gates);
     assert_eq!(r.schema, "model-gate-receipt-v1");
     assert_eq!(r.sealed_items_checked, 1);
@@ -253,7 +282,7 @@ type Plant = (&'static str, &'static str, fn(&mut Fixture));
 
 #[test]
 fn falsify_ext_015_each_gate_turns_red_on_its_plant() {
-    let plants: [Plant; 23] = [
+    let plants: [Plant; 25] = [
         ("M0", "one byte of the model flipped", |f| {
             std::fs::write(
                 f.dir.path().join("model.gguf"),
@@ -284,6 +313,12 @@ fn falsify_ext_015_each_gate_turns_red_on_its_plant() {
             f.evidence.m1.as_mut().unwrap().llama_cpp_commit = "b4000".into();
         }),
         ("M1", "no parity evidence", |f| f.evidence.m1 = None),
+        // FALSIFY-EXT-021: one tensor re-quantized to Q2_K raises our KL; the arm is
+        // unchanged, so the gap widens past the baseline.
+        ("M1b", "one tensor re-quantized to Q2_K", |f| {
+            f.evidence.m1b.as_mut().unwrap().current.ours.kl_mean = 0.045
+        }),
+        ("M1b", "no quality evidence", |f| f.evidence.m1b = None),
         ("M2", "below stock on the sealed suite", |f| {
             let arm = &mut f.evidence.m2.as_mut().unwrap().arms[0];
             arm.suites[0].data = SuiteData::Binary {
@@ -555,7 +590,7 @@ fn ext_12_evidence_file_round_trips_and_refuses_unknown_fields() {
     let red = f.red();
     assert_eq!(
         red,
-        ["M-CR", "M1", "M2", "M3", "M6"],
+        ["M-CR", "M1", "M1b", "M2", "M3", "M6"],
         "M6: the card cites receipts nobody vouched for"
     );
 }
