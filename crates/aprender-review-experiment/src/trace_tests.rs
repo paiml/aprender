@@ -137,6 +137,7 @@ fn falsify_atr_002_unknown_identity_is_red() {
         v["diff_sha256"] = json!("D".repeat(64))
     });
     red("head_sha short", hosted, |v| v["head_sha"] = json!("abc"));
+    red("base_sha short", hosted, |v| v["base_sha"] = json!("abc"));
     red("no input parts", hosted, |v| v["input_parts"] = json!([]));
     red("bad part sha", hosted, |v| {
         v["input_parts"][0]["blob_sha"] = json!("x")
