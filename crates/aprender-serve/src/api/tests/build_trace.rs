@@ -572,3 +572,17 @@ fn falsify_srv_tim_003_phase_clock_partitions_wall_time() {
     assert!(t.prompt_ms + t.predicted_ms <= wall_ms + 1e-6, "{t:?} > {wall_ms}");
     assert_eq!((t.prompt_n, t.predicted_n), (5, 2));
 }
+
+// Quorum (sonnet-5, SRV-TIM-001): the engines check stop BEFORE the token
+// callback, so a turn whose first token is a stop token never marks. It
+// generated nothing: the split is all prefill and 0 ms of decode over 0
+// tokens — still a measured timings block, never an absent one.
+#[test]
+fn falsify_srv_tim_001_stop_on_first_token_still_carries_timings() {
+    let clock = PhaseClock::start();
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    let t = clock.finish().to_timings(9, 0).expect("a zero-token turn is measured");
+    assert!(t.prompt_ms > 0.0, "{t:?}");
+    assert_eq!(t.predicted_ms, 0.0);
+    assert_eq!((t.prompt_n, t.predicted_n), (9, 0));
+}

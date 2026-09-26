@@ -645,14 +645,15 @@ async fn completions_inner(
             stop_tokens: vec![eos],
             ..Default::default()
         };
-        let generate_start = std::time::Instant::now();
-        let (result, mut phases) = {
+        let (result, mut phases, generate_start) = {
             let mut model = cuda_lock.write().expect("CUDA model lock");
+            // After the lock: waiting for another request is not decode.
+            let generate_start = std::time::Instant::now();
             let result = model.generate_gpu_resident_logprobs(
                 &prompt_ids.iter().map(|&id| id as u32).collect::<Vec<_>>(),
                 &config,
             ).map_err(|e| rerr(&state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
-            (result, model.take_phase_timings())
+            (result, model.take_phase_timings(), generate_start)
         };
         // SRV-TIM-001: the model records prefill; decode is the rest of the call.
         if let Some(prefill_ms) = phases.prefill_ms {

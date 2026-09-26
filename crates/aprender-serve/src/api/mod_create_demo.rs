@@ -658,8 +658,10 @@ pub const TIMINGS_CLOCK: &str = "server std::time::Instant (CLOCK_MONOTONIC)";
 /// SRV-TIM-001: the prefill/decode split for an engine that reports each
 /// chosen token through a callback. The first `mark` is the boundary — the
 /// prompt has been forwarded and the first token chosen (a host read-back on
-/// every backend), so timing it adds no synchronisation. A turn that chose no
-/// token has no split, and `finish` says so with `None`s rather than zeros.
+/// every backend), so timing it adds no synchronisation. A turn whose first
+/// sampled token was a stop token never calls `mark` (the engines check stop
+/// before the callback): it generated nothing, so the whole call was prefill
+/// and its decode is a measured 0 ms over 0 tokens — not an absent split.
 #[derive(Debug, Clone, Copy)]
 pub struct PhaseClock {
     start: std::time::Instant,
@@ -687,7 +689,10 @@ impl PhaseClock {
     #[must_use]
     pub fn finish(&self) -> PhaseTimings {
         let Some(first) = self.first_token else {
-            return PhaseTimings::default();
+            return PhaseTimings {
+                prefill_ms: Some(self.start.elapsed().as_secs_f64() * 1000.0),
+                decode_ms: Some(0.0),
+            };
         };
         PhaseTimings {
             prefill_ms: Some(first.duration_since(self.start).as_secs_f64() * 1000.0),

@@ -329,5 +329,6 @@ mod tests {
         assert!(out.contains("x_bucket{le=\"30000\"} 2"), "{out}");
         assert!(out.contains("x_bucket{le=\"+Inf\"} 3"), "{out}");
         assert!(out.contains("x_count 3"), "{out}");
+        assert!(out.contains("x_sum 100032\n"), "{out}");
     }
 }

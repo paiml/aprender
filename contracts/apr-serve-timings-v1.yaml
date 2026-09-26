@@ -43,7 +43,8 @@ equations:
     preconditions:
     - "a pinned apr binary (`. scripts/apr_bin.sh`) built with the backend under test"
     postconditions:
-    - "prompt_ms > 0 AND predicted_ms > 0 AND prompt_ms + predicted_ms <= wall_ms + 1"
+    - "prompt_ms > 0 AND prompt_ms + predicted_ms <= wall_ms + 1"
+    - "predicted_ms > 0 iff predicted_n > 0; a turn stopped by its first sampled token has predicted_n = 0 and predicted_ms = 0 (measured, not absent)"
   backend_coverage:
     formula: >-
       covered(backend) = GREEN iff F1 holds on it, stream and non-stream
@@ -82,7 +83,7 @@ proof_obligations:
   applies_to: all
 - type: invariant
   property: the phases partition wall time
-  formal: "prompt_ms > 0 ∧ predicted_ms > 0 ∧ prompt_ms + predicted_ms ≤ wall_ms + 1"
+  formal: "prompt_ms > 0 ∧ (predicted_n > 0 ⇒ predicted_ms > 0) ∧ prompt_ms + predicted_ms ≤ wall_ms + 1"
   applies_to: all
 - type: invariant
   property: every sink equals the response
@@ -103,8 +104,8 @@ falsification_tests:
   if_fails: the rates are computed over the wrong token counts
 - id: FALSIFY-SRV-TIM-003
   rule: the phases are positive and partition wall time
-  prediction: "prompt_ms > 0, predicted_ms > 0, prompt_ms + predicted_ms <= client wall ms + 1"
-  test: "python3 scripts/serve_timings_falsify.py ... (column F3); cargo test -p aprender-serve --lib falsify_srv_tim_003"
+  prediction: "prompt_ms > 0, predicted_ms > 0 when predicted_n > 0, prompt_ms + predicted_ms <= client wall ms + 1"
+  test: "python3 scripts/serve_timings_falsify.py ... (column F3); cargo test -p aprender-serve --lib falsify_srv_tim_003 falsify_srv_tim_001_stop"
   if_fails: a phase was invented or double-counted
 - id: FALSIFY-SRV-TIM-004
   rule: an unmeasured backend is RED, never zero-filled
