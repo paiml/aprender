@@ -18,15 +18,23 @@ fn ggml_dtype_element_size(dtype: u32) -> f64 {
 
 /// List tensors from GGUF file bytes
 fn list_tensors_gguf(data: &[u8], options: TensorListOptions) -> Result<TensorListResult> {
-    // #3661: a FormatError contributes its message, not its Display, or the
-    // result reads "Invalid model format: Failed to parse GGUF: Invalid model format: …".
-    let reader = GgufReader::from_bytes(data.to_vec()).map_err(|e| AprenderError::FormatError {
-        message: match e {
-            AprenderError::FormatError { message } => format!("Failed to parse GGUF: {message}"),
-            other => format!("Failed to parse GGUF: {other}"),
-        },
-    })?;
+    let reader = GgufReader::from_bytes(data.to_vec()).map_err(|e| gguf_parse_error(&error_message(e)))?;
     list_tensors_gguf_reader(&reader, data.len() as u64, options)
+}
+
+/// #3661: a FormatError contributes its message, not its Display, or the
+/// result reads "Invalid model format: Failed to parse GGUF: Invalid model format: …".
+fn error_message(e: AprenderError) -> String {
+    match e {
+        AprenderError::FormatError { message } => message,
+        other => other.to_string(),
+    }
+}
+
+fn gguf_parse_error(message: &str) -> AprenderError {
+    AprenderError::FormatError {
+        message: format!("Failed to parse GGUF: {message}"),
+    }
 }
 
 /// List tensors from a parsed GGUF. `file_len` is the whole file's length, which the
@@ -459,10 +467,10 @@ pub fn list_tensors(
     // A GGUF listing without `--stats` is its header (#3761). The whole-file path copied a
     // 2 GiB file into memory to print its tensor table: 4.2 GB peak, measured by the case row.
     if !options.compute_stats && crate::format::prefix::read_prefix(path, 4)? == b"GGUF" {
-        let reader = crate::format::prefix::parse_growing_prefix(path, GgufReader::from_bytes)
-            .map_err(|e| AprenderError::FormatError {
-                message: format!("Failed to parse GGUF: {e}"),
-            })?;
+        let reader = crate::format::prefix::parse_growing_prefix(path, |head| {
+            GgufReader::from_bytes(head).map_err(error_message)
+        })
+        .map_err(|e| gguf_parse_error(&e))?;
         let file_len = std::fs::metadata(path)?.len();
         let mut result = list_tensors_gguf_reader(&reader, file_len, options)?;
         result.file = path.display().to_string();
