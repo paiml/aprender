@@ -14,6 +14,7 @@ and re-run `pv lint contracts/ --gate shapes`. Each header records what was meas
 |---|---|---|---|---|
 | S4 (orchestrate 1/2) | binary-aprender-orchestrate-cli-v1.yaml | aprender-orchestrate | 86 CLI leaves; MCP tools/list = 4 | `--version` says "batuta"; 4 MCP tools unledgered, 6 `mcp:*` ledger rows are not tools/list tools |
 | S3 (orchestrate 2/2) | binary-aprender-orchestrate-http-v1.yaml | aprender-orchestrate | 92 HTTP routes (banco), set-equal to the ledger | extract gap: dogfood_surfaces.sh reads only aprender-serve routes, so bin:route is empty |
+| S9 (apr(apr-cli) 1/2) | binary-apr-cli-apr-v1.yaml | apr (apr-cli) | 264 (262 leaves + debug + sim help); identity + all CLI — S8 takes the 47 HTTP + mcp rows (split by kind: pv refuses qualifiedValueShape) | 15 ledger rows name feature-gated commands (mono, rag eval, data x doctest/hub); 12 pv/capability commands unledgered |
 | S10 | binary-alimentar-v1.yaml | alimentar (aprender-data) | 31 | 4 ledger rows name feature-gated commands the default build lacks |
 | S16 (1/2) | binary-apr-qa-v1.yaml | apr-qa (aprender-qa-cli) | 15 | none beyond G0.1 |
 | S16 (2/2) | binary-aprender-train-lora-v1.yaml | aprender-train-lora | 4 | `--version` says "entrenar-lora" |
