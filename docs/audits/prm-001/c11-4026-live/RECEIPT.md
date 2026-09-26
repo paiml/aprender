@@ -54,7 +54,7 @@ The step-0 prefill logits are not the culprit, because the other five step-0s lo
 ## Findings (for the cop; only the cop files issues)
 
 1. **Forward parity, apr vs llama.cpp, Qwen3.5-0.8B Q4_K_M on CPU.** Top-20 logprobs differ by 0.19–1.65 nats, and one top-1 flips (p1). Attribution is open: apr's Q4_K/Q8_K dot products, accumulation order, or the SSM/linear-attention kernels. It belongs to the parity contract, not #4026.
-2. **`POST /tokenize` on apr serve does not parse special tokens.** Given this prompt, it splits `<|im_end|>` into 6 literal pieces (28 ids, where the chat path and the oracle have 24). Evidence: `p1.apr_tok.json`.
+2. **`POST /tokenize` on apr serve splits `<|im_end|>`** while it parses `<|im_start|>` (248045) as one special. Given this prompt, it splits `<|im_end|>` into 6 literal pieces (28 ids, where the chat path and the oracle have 24). Evidence: `p1.apr_tok.json`.
 
 ## What this does not prove
 
