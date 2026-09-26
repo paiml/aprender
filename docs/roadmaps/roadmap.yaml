@@ -22074,6 +22074,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'Merge-queue eval (Y5): head/ancestor binding 0/6, tree 4/6, patch-id 6/6. Root cause shared with ASL-00 (sessions == admin identity); cross-link pi-21 ASL-00a.'
+- id: PMAT-4433
+  github_issue: 4433
+  item_type: task
+  title: 'CI = 5 fat jobs (x86 main, gx10, yoga, mac-refusal, determinism) with a Σ-executed invariant (operator ruling 2026-09-25 16:58, items 1+4)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-1c
+  created: 2026-09-25 17:00:00+00:00
+  updated: '2026-09-25T18:00:00Z'
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Collapse the ~20 ci.yml jobs into 5 fat jobs; each runs every section (ci/sections.yml, verbatim old job bodies; vendored sovereign-ci verified against its upstream sha256) to completion on the biggest runner in its class via scripts/ci/fat_driver.py. Required contexts gate / workspace-test / ci / gate keep their names. scripts/ci/sigma_executed.py enforces the executed test-id set == the universe listed independently (by id, not count); a dropped test turns it RED. Train-active priority hook kept as a floor. Item 3 (rc.N = tag on queue-green main) and the #4434/#4436 release-rule docs are a follow-up PR. Scope of the driver: fat_driver.py collapses the MULTI-section Linux jobs (x86-main, gx10, yoga, determinism); mac-check is the ruling''s mac-refusal job, already ONE section on the one macOS runner (no docker there), so it keeps its steps and its context name, and as on main it is not in gate.needs.'
 - id: PMAT-4453
   github_issue: 4453
   item_type: task
@@ -22094,3 +22111,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'pr-review-quorum run 36177378373 (merge_group, 00058476c = #4426 queue squash) failed on receipt-reviews-ancestor, legacy-exempt-in-window, legacy-exempt-not-ancestor, legacy-two-last-stale. Parent PMAT-4421.'
+- id: PMAT-4469
+  github_issue: 4469
+  item_type: task
+  title: 'yoga CUDA jobs run each test binary under the host GPU lock (infra#1178)'
+  status: in_progress
+  priority: high
+  assigned_to: infra-27
+  created: 2026-09-26 12:00:00+00:00
+  updated: '2026-09-26T12:00:00Z'
+  spec: null
+  acceptance_criteria:
+  - 'cuda-unit (ci/sections.yml) and cuda-nightly ada-yoga set CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER to flock -E 175 -w 600 /run/lock/fleet-gpu/gpu.lock, so test execution holds the lock and compilation does not'
+  - 'each job first asserts the lock is the host''s (bind mount in the container; root-owned file on the host runner) and fails closed when it is missing, never taking a private lock'
+  - 'the yoga cuda-unit job is green on a runner that has the infra#1178 mount'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Operator ruling 2026-09-26 (via the cop): yoga''s GPU is exclusive for CI. Host side paiml/infra#1182 (PMAT-1178 there), applied on yoga. PR #4468.'

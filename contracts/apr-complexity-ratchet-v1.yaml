@@ -140,7 +140,7 @@ falsification_tests:
   - id: FALSIFY-CX-RATCHET-009
     rule: "The guard is wired into the per-PR gate, not merely present in the tree"
     prediction: "ci.yml names the guard in guard-runner-labels, both the case table and the check"
-    test: "[ \"$(grep -c 'check_complexity_ratchet.sh' .github/workflows/ci.yml)\" -ge 2 ]"
+    test: "[ \"$(cat .github/workflows/ci.yml ci/sections.yml | grep -c 'check_complexity_ratchet.sh')\" -ge 2 ]"
     if_fails: "A reference is not an execution — the guard would sit unexecuted while being counted as enforcement (the #2327 defect class)."
 
   - id: FALSIFY-CX-RATCHET-010

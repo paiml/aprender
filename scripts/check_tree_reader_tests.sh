@@ -197,7 +197,8 @@ derive() { # derive <repo root> -> sorted rows: crate\t--test\tname | crate\t--l
 # So the derived set is SPLIT by an oracle, never a hand list:
 #   * `--lib`  — wired: the full tier runs `cargo nextest run --workspace --lib`
 #                and the excluded crates have their own named steps.
-#   * `--test NAME` — wired iff some file under .github/workflows/ names
+#   * `--test NAME` — wired iff some file under .github/workflows/ or
+#                ci/sections.yml (#4433: the job bodies ci.yml's fat jobs run) names
 #                `--test NAME`.
 # Unwired targets go to the ledger below and are NOT in the quick tier. The
 # ledger is shrink-only in the sense that matters: a new unwired reader FAILS
@@ -212,7 +213,7 @@ UNWIRED_LEDGER_DEFAULT="scripts/tree_reader_unwired_baseline.txt"
 # not wired by `--workspace --lib`, and the first quick-tier run would have
 # tested aprender-gpu --lib on a CPU runner had this not been derived.
 full_tier_excludes() { # full_tier_excludes <root> -> one crate per line
-    grep -rhoE 'nextest run --profile ci --workspace --lib( --exclude [a-z0-9-]+)+' "$1"/.github/workflows/ 2>/dev/null \
+    grep -rhoE 'nextest run --profile ci --workspace --lib( --exclude [a-z0-9-]+)+' "$1"/.github/workflows/ "$1"/ci/sections.yml 2>/dev/null \
         | head -1 | grep -oE -- '--exclude [a-z0-9-]+' | awk '{print $2}'
 }
 
@@ -224,7 +225,7 @@ full_tier_excludes() { # full_tier_excludes <root> -> one crate per line
 # match even if the directory is absent.
 names_test() {
     grep -rqF --include='*.cmd' -- "--test $2" "$1"/ci/explicit-test-commands.d/ 2>/dev/null \
-        || grep -rqF -- "--test $2" "$1"/.github/workflows/ 2>/dev/null
+        || grep -rqF -- "--test $2" "$1"/.github/workflows/ "$1"/ci/sections.yml 2>/dev/null
 }
 
 wired_targets() { # wired_targets <root> -- the derived set, wired half only
@@ -359,6 +360,16 @@ self_test() {
     else
         printf 'FAIL  row %-2s        split wrong. wired=[%s] unwired=[%s]\n' "$n" "$(printf '%s' "$w" | tr '\n' ';')" "$(printf '%s' "$u" | tr '\n' ';')"; red=1
     fi
+    # #4433: the same lane moved into ci/sections.yml is still wired.
+    mkdir -p "$td/ci"; mv "$td/.github/workflows/ci.yml" "$td/ci/sections.yml"
+    n=$((n + 1))
+    w=$(bash "$T" --print "$td" 2>/dev/null)
+    if grep -q '^alpha' <<< "$w"; then
+        printf 'ok    row %-2s        a lane named only in ci/sections.yml (#4433) is wired\n' "$n"
+    else
+        printf 'FAIL  row %-2s        ci/sections.yml lane not read. wired=[%s]\n' "$n" "$(printf '%s' "$w" | tr '\n' ';')"; red=1
+    fi
+    mv "$td/ci/sections.yml" "$td/.github/workflows/ci.yml"
     # PMAT-3313: the explicit integration list is a directory of one-command
     # fragments, not a workflow line. A target named ONLY there is wired; the same
     # tree without that fragment is not.

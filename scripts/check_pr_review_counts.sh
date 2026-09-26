@@ -230,11 +230,13 @@ derive_falsification_tests() {
 # than left to read as coverage. If a file states that count again, derive it again
 # and add the row.
 # ---------------------------------------------------------------------------
+# #4433: the pr-review job bodies (and the counts their step names state) moved
+# verbatim from .github/workflows/ci.yml into ci/sections.yml.
 SITES='
 mutants|.claude/skills/pr-review/SKILL.md|2|@N@/@N@
 mutants|contracts/binding.yaml|1|@N@/@N@
 mutants|docs/specifications/PR-REVIEW-SKILL-002-v2.md|1|@N@/@N@
-fixture_rows|.github/workflows/ci.yml|1|@N@-row
+fixture_rows|ci/sections.yml|1|@N@-row
 fixture_rows|scripts/check_pr_review_wiring.sh|1|@N@-row
 fixture_rows|tests/pr-review.bats|1|@N@ row
 fixture_rows|tests/pr-review.bats|1|-eq @N@ ]
@@ -249,10 +251,10 @@ quorum_bats_tests|.claude/skills/pr-review/SKILL.md|2|@N@ rows
 quorum_rows|tests/pr-review-quorum.bats|1|-eq @N@ ]
 quorum_rows|tests/pr-review-quorum.bats|1|expected @N@ q-*
 falsification_tests|contracts/pr-review-skill-v2.yaml|1|All @N@ falsification tests
-shadow_rows|.github/workflows/ci.yml|1|Shadow recorder case table: @N@ rows
-publish_rows|.github/workflows/ci.yml|1|Publisher case table: @N@ rows
+shadow_rows|ci/sections.yml|1|Shadow recorder case table: @N@ rows
+publish_rows|ci/sections.yml|1|Publisher case table: @N@ rows
 arm4_rows|.github/workflows/pr-review-quorum.yml|1|Arm 4 case table: @N@ rows
-signer_rows|.github/workflows/ci.yml|1|Signer case table: @N@ rows
+signer_rows|ci/sections.yml|1|Signer case table: @N@ rows
 '
 
 # ---------------------------------------------------------------------------
@@ -376,7 +378,7 @@ self_test() {
     # nothing to do with what it is measuring.
     ( cd "$REPO_ROOT" && \
       tar -cf - .claude/skills/pr-review/SKILL.md contracts/binding.yaml \
-                .github/workflows/ci.yml .github/workflows/pr-review-quorum.yml tests/pr-review.bats \
+                ci/sections.yml .github/workflows/pr-review-quorum.yml tests/pr-review.bats \
                 schemas scripts/pr_review_duplication_scan.sh \
                 scripts/mutate-guard.sh scripts/check_pr_review_receipt.sh \
                 scripts/check_pr_review_counts.sh tests/fixtures/pr-review \
@@ -433,7 +435,7 @@ self_test() {
     stale_mutants() { local n; n=$(derive_mutants "$1")
                       sed -i "s#$n/$n#$((n - 1))/$((n - 1))#" "$1/.claude/skills/pr-review/SKILL.md"; }
     stale_rows()    { local n; n=$(derive_fixture_rows "$1")
-                      sed -i "s#$n-row#$((n - 1))-row#"   "$1/.github/workflows/ci.yml"; }
+                      sed -i "s#$n-row#$((n - 1))-row#"   "$1/ci/sections.yml"; }
     # The site #3646 added: check_pr_review_wiring.sh states the fixture-row count too.
     stale_wrows()   { local n; n=$(derive_fixture_rows "$1")
                       sed -i "s#$n-row#$((n - 1))-row#"   "$1/scripts/check_pr_review_wiring.sh"; }

@@ -755,6 +755,9 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_TERM_COLOR: always
+      # One host GPU lock, shared by CI and agents (operator, 2026-09-26; see
+      # ci/sections.yml cuda-unit). cargo runs the TEST BINARY under it.
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: flock -E 175 -w 600 /run/lock/fleet-gpu/gpu.lock
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -780,6 +783,20 @@ jobs:
             exit 1
           fi
           test "$(uname -m)" = "x86_64" || { echo "::error::not x86_64"; exit 1; }
+
+      - name: Host GPU lock — present, root-owned, and the runner takes it
+        run: |
+          set -euo pipefail
+          l=/run/lock/fleet-gpu/gpu.lock
+          # flock creates a missing file; a file this job created would be a lock no
+          # other GPU user takes. The host provisions it root-owned (infra forjar).
+          if [ ! -f "$l" ] || [ "$(stat -c %U "$l")" != root ]; then
+            echo "::error::$l is not the host's root-owned lock (infra gpu-lock-tmpfiles)"; exit 1
+          fi
+          case "$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER" in
+            "flock "*" $l") ;;
+            *) echo "::error::cargo's target runner does not take $l"; exit 1 ;;
+          esac
 
       # THE ASSERTION THIS LANE EXISTS FOR (YOGA-NIGHTLY-001 R-3).
       #

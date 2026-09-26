@@ -175,7 +175,7 @@ falsification_tests:
   - id: FALSIFY-FACADE-004
     rule: "The guard is wired into the per-PR gate, not merely present in the tree"
     prediction: "ci.yml invokes check_facade_compat.sh in guard-runner-labels, which `gate` lists in its needs"
-    test: "grep -q 'check_facade_compat.sh' .github/workflows/ci.yml"
+    test: "grep -q 'check_facade_compat.sh' .github/workflows/ci.yml ci/sections.yml"
     if_fails: "A reference is not an execution — the guard would sit unexecuted while being counted as enforcement"
 
   - id: FALSIFY-FACADE-005
