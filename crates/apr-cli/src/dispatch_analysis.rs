@@ -1055,6 +1055,17 @@ fn dispatch_runs_command(command: &RunsCommands, cli: &Cli) -> std::result::Resu
         RunsCommands::Fsck { registry, json } => {
             commands::runs::run_fsck(registry.as_deref(), *json || cli.json)
         }
+        RunsCommands::Export {
+            out,
+            registry,
+            check,
+            json,
+        } => commands::runs_export::run_export(
+            registry.as_deref(),
+            out,
+            *check,
+            *json || cli.json,
+        ),
     }
 }
 

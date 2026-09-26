@@ -205,7 +205,8 @@ falsification_tests:
   obligation: EXT-INV-007
   rule: Export feeds the ledger
   prediction: deleting one export row turns the ledger test RED; re-export of an unchanged host is byte-identical
-  if_fails: 'the ledger does not check the export it cites (owed EXT-22 #4404; planned: cargo test -p apr-cli --test ext_export falsify_ext_010_deleted_export_row_red)'
+  test: cargo test -p apr-cli --lib falsify_ext_010
+  if_fails: 'the export depends on insertion order or host-local ids, or `apr runs export --check` passes a file missing a row (EXT-22 #4404; the pacha side is cargo test -p aprender-registry --lib falsify_ext_010)'
 - id: FALSIFY-EXT-011
   obligation: EXT-INV-009
   rule: Training write perimeter

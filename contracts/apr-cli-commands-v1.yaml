@@ -442,12 +442,13 @@ commands:
 
   - name: runs
     category: ui
-    description: "List, show, compare, garbage-collect, fsck, and backfill-import training experiment runs"
+    description: "List, show, compare, garbage-collect, fsck, backfill-import, and fleet-export training experiment runs"
     requires_model: false
     # gc (EXT-03, aprender#4385) writes a backup and, with --yes, the store.
     # import (EXT-10, aprender#4392) writes backfilled runs with --yes.
+    # export (EXT-22, aprender#4404) writes the fleet JSONL export unless --check.
     side_effects: [filesystem]
-    subcommands: [diff, fsck, gc, import, ls, show]
+    subcommands: [diff, export, fsck, gc, import, ls, show]
 
   - name: experiment
     category: ui

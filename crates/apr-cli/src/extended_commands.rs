@@ -1824,6 +1824,26 @@ pub enum RunsCommands {
         #[arg(long)]
         json: bool,
     },
+    /// Export the pacha registry as sorted JSONL for the fleet (EXT-22, I-7)
+    ///
+    /// One line per row, keyed by content (sha256, run ULID, manifest sha);
+    /// host-local autoincrement ids are left out. An unchanged registry
+    /// re-exports to the same bytes, and an identical file is not rewritten.
+    /// `--check` writes nothing and fails unless FILE is exactly that export.
+    Export {
+        /// Where to write the export (the nightly job points this at the RAID)
+        #[arg(long, value_name = "FILE")]
+        out: PathBuf,
+        /// pacha registry database (default: ~/.pacha/registry.db)
+        #[arg(long, value_name = "PATH")]
+        registry: Option<PathBuf>,
+        /// Compare FILE with a fresh export instead of writing it
+        #[arg(long)]
+        check: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[cfg(feature = "training")]
