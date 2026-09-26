@@ -49,25 +49,28 @@ impl PtxReg {
     /// Convert to PTX string representation
     #[must_use]
     pub const fn to_ptx_string(self) -> &'static str {
-        match self {
-            Self::TidX => "%tid.x",
-            Self::TidY => "%tid.y",
-            Self::TidZ => "%tid.z",
-            Self::CtaIdX => "%ctaid.x",
-            Self::CtaIdY => "%ctaid.y",
-            Self::CtaIdZ => "%ctaid.z",
-            Self::NtidX => "%ntid.x",
-            Self::NtidY => "%ntid.y",
-            Self::NtidZ => "%ntid.z",
-            Self::NctaIdX => "%nctaid.x",
-            Self::NctaIdY => "%nctaid.y",
-            Self::NctaIdZ => "%nctaid.z",
-            Self::WarpId => "%warpid",
-            Self::LaneId => "%laneid",
-            Self::SmId => "%smid",
-            Self::Clock => "%clock",
-            Self::Clock64 => "%clock64",
-        }
+        // `PtxReg`'s declaration order matches this table exactly, so the
+        // discriminant is a direct index into it.
+        const STRINGS: [&str; 17] = [
+            "%tid.x",
+            "%tid.y",
+            "%tid.z",
+            "%ctaid.x",
+            "%ctaid.y",
+            "%ctaid.z",
+            "%ntid.x",
+            "%ntid.y",
+            "%ntid.z",
+            "%nctaid.x",
+            "%nctaid.y",
+            "%nctaid.z",
+            "%warpid",
+            "%laneid",
+            "%smid",
+            "%clock",
+            "%clock64",
+        ];
+        STRINGS[self as usize]
     }
 
     /// Get the data type of this special register

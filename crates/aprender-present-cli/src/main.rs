@@ -1356,26 +1356,37 @@ fn collect_deploy_files(source: &PathBuf) -> Vec<(PathBuf, String)> {
     files
 }
 
+/// Extension -> content-type table for `get_content_type`.
+const CONTENT_TYPE_TABLE: &[(&str, &str)] = &[
+    ("html", "text/html"),
+    ("js", "application/javascript"),
+    ("wasm", "application/wasm"),
+    ("css", "text/css"),
+    ("json", "application/json"),
+    ("svg", "image/svg+xml"),
+    ("png", "image/png"),
+    ("jpg", "image/jpeg"),
+    ("jpeg", "image/jpeg"),
+    ("gif", "image/gif"),
+    ("ico", "image/x-icon"),
+    ("woff", "font/woff"),
+    ("woff2", "font/woff2"),
+    ("ttf", "font/ttf"),
+    ("yaml", "text/yaml"),
+    ("yml", "text/yaml"),
+    ("txt", "text/plain"),
+];
+
 /// Get content type for a file.
 fn get_content_type(path: &PathBuf) -> String {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("html") => "text/html",
-        Some("js") => "application/javascript",
-        Some("wasm") => "application/wasm",
-        Some("css") => "text/css",
-        Some("json") => "application/json",
-        Some("svg") => "image/svg+xml",
-        Some("png") => "image/png",
-        Some("jpg" | "jpeg") => "image/jpeg",
-        Some("gif") => "image/gif",
-        Some("ico") => "image/x-icon",
-        Some("woff") => "font/woff",
-        Some("woff2") => "font/woff2",
-        Some("ttf") => "font/ttf",
-        Some("yaml" | "yml") => "text/yaml",
-        Some("txt") => "text/plain",
-        _ => "application/octet-stream",
-    }
+    let ext = path.extension().and_then(|e| e.to_str());
+    ext.and_then(|ext| {
+        CONTENT_TYPE_TABLE
+            .iter()
+            .find(|(key, _)| *key == ext)
+            .map(|(_, value)| *value)
+    })
+    .unwrap_or("application/octet-stream")
     .to_string()
 }
 

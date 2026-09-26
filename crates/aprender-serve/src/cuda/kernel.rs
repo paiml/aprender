@@ -1,6 +1,4 @@
-
 impl CudaKernels {
-
     /// Get kernel name for the specified type
     #[must_use]
     pub fn kernel_name(&self, kernel_type: &KernelType) -> &'static str {
@@ -45,11 +43,12 @@ impl CudaKernels {
             KernelType::GemmTensorCore { .. } => "gemm_tensor_core",
             KernelType::GemmFp16TensorCore { .. } => "gemm_wmma_fp16",
             KernelType::QuantizedGemm { .. } => "q4k_gemm_fused",
-            KernelType::QuantizedGemmGgml { .. } => "q4k_gemm_ggml",
+            KernelType::QuantizedGemmGgml { .. } | KernelType::FusedQ4Q8Dot { .. } => {
+                "q4k_gemm_ggml"
+            },
             KernelType::QuantizedGemmGgmlTiled { .. } => "q4k_gemm_ggml_tiled",
             KernelType::Q5KQuantizedGemm { .. } => "q5k_gemm_ggml",
             KernelType::Q6KQuantizedGemm { .. } => "q6k_gemm_ggml",
-            KernelType::FusedQ4Q8Dot { .. } => "q4k_gemm_ggml",
             KernelType::TensorCoreQ4KGemm { .. } => "tensor_core_q4k_gemm",
             KernelType::MultiWarpTensorCoreQ4KGemm { .. } => "mw_tensor_core_q4k_gemm",
             KernelType::InterleavedWmmaQ4KGemm { .. } => "interleaved_wmma_q4k_gemm",
@@ -110,8 +109,9 @@ impl CudaKernels {
             KernelType::Dp4aQ4KGemv { .. } => "dp4a_q4k_gemv",
             KernelType::Dp4aSIMDQ4KGemv { .. } => "dp4a_q4k_gemv",
             KernelType::TrueDp4aQ4KGemv { .. } => "true_dp4a_q4k_gemv",
-            KernelType::BatchedQ4KGemv { .. }
-            | KernelType::MultiWarpBatchedQ4KGemv { .. } => "batched_q4k_gemv_warp_reduce",
+            KernelType::BatchedQ4KGemv { .. } | KernelType::MultiWarpBatchedQ4KGemv { .. } => {
+                "batched_q4k_gemv_warp_reduce"
+            },
             KernelType::BatchedHwDp4aQ4KGemv { .. } => "batched_hw_dp4a_q4k_gemv",
             KernelType::FusedFp32Q4KGemv { .. } => "fused_fp32_q4k_gemv",
             KernelType::InlineQ8Dp4aQ4KGemv { .. } => "inline_q8_dp4a_q4k_gemv",
@@ -130,24 +130,49 @@ impl CudaKernels {
             KernelType::LayerNorm { .. } => "layernorm_warp_shuffle",
             KernelType::Attention { causal, .. }
             | KernelType::MultiHeadAttention { causal, .. } => {
-                if *causal { "flash_attention_causal" } else { "flash_attention" }
+                if *causal {
+                    "flash_attention_causal"
+                } else {
+                    "flash_attention"
+                }
             },
             KernelType::AttentionTensorCore { causal, .. } => {
-                if *causal { "flash_attention_tensor_core_causal" } else { "flash_attention_tensor_core" }
+                if *causal {
+                    "flash_attention_tensor_core_causal"
+                } else {
+                    "flash_attention_tensor_core"
+                }
             },
             KernelType::IncrementalAttention { indirect, .. } => {
-                if *indirect { "incremental_attention_indirect" } else { "incremental_attention" }
+                if *indirect {
+                    "incremental_attention_indirect"
+                } else {
+                    "incremental_attention"
+                }
             },
             KernelType::MultiWarpAttention { indirect, .. } => {
-                if *indirect { "multi_warp_attention_indirect" } else { "multi_warp_attention" }
+                if *indirect {
+                    "multi_warp_attention_indirect"
+                } else {
+                    "multi_warp_attention"
+                }
             },
             _ => return None,
         };
         Some(name)
     }
 
-    /// Normalization and RoPE kernel names
+    /// Normalization and RoPE kernel names.
+    ///
+    /// Split into `rmsnorm_kernel_name` + `rope_kernel_name` (PMAT CB-200):
+    /// one 16-arm match graded B-; two smaller matches each grade A, and
+    /// `or_else` chaining keeps the combined lookup behaviour identical.
     fn norm_rope_kernel_name(kernel_type: &KernelType) -> Option<&'static str> {
+        Self::rmsnorm_kernel_name(kernel_type).or_else(|| Self::rope_kernel_name(kernel_type))
+    }
+
+    /// RMSNorm-family kernel names.
+    fn rmsnorm_kernel_name(kernel_type: &KernelType) -> Option<&'static str> {
         let name = match kernel_type {
             KernelType::RmsNorm { .. } => "rmsnorm",
             KernelType::VectorizedRmsNorm { .. } => "rmsnorm_vectorized",
@@ -159,6 +184,14 @@ impl CudaKernels {
             KernelType::FusedResidualRmsNorm { .. } => "fused_residual_rmsnorm",
             KernelType::FusedRmsNormQ4KGemv { .. } => "fused_rmsnorm_q4k_gemv",
             KernelType::FusedRmsNormGateUpSwigluQ4K { .. } => "fused_rmsnorm_gate_up_swiglu_q4k",
+            _ => return None,
+        };
+        Some(name)
+    }
+
+    /// RoPE (rotary positional encoding) kernel names.
+    fn rope_kernel_name(kernel_type: &KernelType) -> Option<&'static str> {
+        let name = match kernel_type {
             KernelType::Rope { .. } => "rope",
             KernelType::RopeIndirect { .. } => "rope_indirect",
             KernelType::RopeNeox { .. } => "rope_neox",
@@ -181,7 +214,9 @@ impl CudaKernels {
             KernelType::FusedQKV { .. } => "fused_qkv_gemv",
             KernelType::FusedGateUp { .. } => "fused_gate_up_swiglu",
             KernelType::FusedGateUpQ4KGemv { .. } => "fused_gate_up_q4k_gemv",
-            KernelType::FusedGateUpSwigluHwDp4aQ4KGemv { .. } => "fused_gate_up_swiglu_hw_dp4a_q4k_gemv",
+            KernelType::FusedGateUpSwigluHwDp4aQ4KGemv { .. } => {
+                "fused_gate_up_swiglu_hw_dp4a_q4k_gemv"
+            },
             KernelType::ResidualAdd { .. } => "residual_add",
             KernelType::BatchedResidualAdd { .. } => "batched_residual_add",
             KernelType::BatchedSwiglu { .. } => "batched_swiglu",

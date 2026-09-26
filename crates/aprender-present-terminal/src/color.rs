@@ -96,6 +96,26 @@ impl ColorMode {
         16 + 36 * r_idx + 6 * g_idx + b_idx
     }
 
+    /// Lookup table for `rgb_to_16`, indexed by `has_r | has_g<<1 | has_b<<2 | bright<<3`.
+    const RGB_16_LUT: [CrosstermColor; 16] = [
+        CrosstermColor::Black,       // F F F F
+        CrosstermColor::DarkRed,     // T F F F
+        CrosstermColor::DarkGreen,   // F T F F
+        CrosstermColor::DarkYellow,  // T T F F
+        CrosstermColor::DarkBlue,    // F F T F
+        CrosstermColor::DarkMagenta, // T F T F
+        CrosstermColor::DarkCyan,    // F T T F
+        CrosstermColor::Grey,        // T T T F
+        CrosstermColor::DarkGrey,    // F F F T
+        CrosstermColor::Red,         // T F F T
+        CrosstermColor::Green,       // F T F T
+        CrosstermColor::Yellow,      // T T F T
+        CrosstermColor::Blue,        // F F T T
+        CrosstermColor::Magenta,     // T F T T
+        CrosstermColor::Cyan,        // F T T T
+        CrosstermColor::White,       // T T T T
+    ];
+
     /// Convert RGB to 16-color ANSI.
     fn rgb_to_16(r: u8, g: u8, b: u8) -> CrosstermColor {
         let luminance = (u32::from(r) * 299 + u32::from(g) * 587 + u32::from(b) * 114) / 1000;
@@ -108,24 +128,11 @@ impl ColorMode {
         let has_g = g > threshold;
         let has_b = b > threshold;
 
-        match (has_r, has_g, has_b, bright) {
-            (false, false, false, false) => CrosstermColor::Black,
-            (false, false, false, true) => CrosstermColor::DarkGrey,
-            (true, false, false, false) => CrosstermColor::DarkRed,
-            (true, false, false, true) => CrosstermColor::Red,
-            (false, true, false, false) => CrosstermColor::DarkGreen,
-            (false, true, false, true) => CrosstermColor::Green,
-            (true, true, false, false) => CrosstermColor::DarkYellow,
-            (true, true, false, true) => CrosstermColor::Yellow,
-            (false, false, true, false) => CrosstermColor::DarkBlue,
-            (false, false, true, true) => CrosstermColor::Blue,
-            (true, false, true, false) => CrosstermColor::DarkMagenta,
-            (true, false, true, true) => CrosstermColor::Magenta,
-            (false, true, true, false) => CrosstermColor::DarkCyan,
-            (false, true, true, true) => CrosstermColor::Cyan,
-            (true, true, true, false) => CrosstermColor::Grey,
-            (true, true, true, true) => CrosstermColor::White,
-        }
+        let idx = usize::from(has_r)
+            | (usize::from(has_g) << 1)
+            | (usize::from(has_b) << 2)
+            | (usize::from(bright) << 3);
+        Self::RGB_16_LUT[idx]
     }
 }
 

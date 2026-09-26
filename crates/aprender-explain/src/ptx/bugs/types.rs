@@ -28,7 +28,7 @@ impl fmt::Display for BugSeverity {
 }
 
 /// PTX bug classification
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PtxBugClass {
     /// P0: Shared memory accessed with 64-bit register (should be 32-bit)
     SharedMemU64Addressing,
@@ -93,24 +93,27 @@ impl PtxBugClass {
     /// Get a short code for this bug class
     #[must_use]
     pub fn code(&self) -> &'static str {
-        match self {
-            Self::SharedMemU64Addressing => "SHARED_U64",
-            Self::LoopBranchToEnd => "LOOP_BRANCH_END",
-            Self::MissingBarrierSync => "MISSING_BARRIER",
-            Self::EarlyExitBeforeBarrier => "EARLY_EXIT_BARRIER",
-            Self::NonInPlaceLoopAccumulator => "NON_INPLACE_ACCUM",
-            Self::RegisterSpills => "REG_SPILLS",
-            Self::HighRegisterPressure => "HIGH_REG_PRESSURE",
-            Self::PredicateOverflow => "PRED_OVERFLOW",
-            Self::PlaceholderCode => "PLACEHOLDER_CODE",
-            Self::EmptyLoopBody => "EMPTY_LOOP",
-            Self::MissingBoundsCheck => "NO_BOUNDS_CHECK",
-            Self::RedundantMoves => "REDUNDANT_MOV",
-            Self::UnoptimizedMemoryPattern => "UNOPT_MEM",
-            Self::DeadCode => "DEAD_CODE",
-            Self::InvalidSyntaxAccepted => "INVALID_SYNTAX",
-            Self::MissingEntryPoint => "NO_ENTRY",
-        }
+        // `PtxBugClass`'s declaration order matches this table exactly, so the
+        // discriminant (`self as usize`) is a direct index into it.
+        const CODES: [&str; 16] = [
+            "SHARED_U64",
+            "LOOP_BRANCH_END",
+            "MISSING_BARRIER",
+            "EARLY_EXIT_BARRIER",
+            "NON_INPLACE_ACCUM",
+            "REG_SPILLS",
+            "HIGH_REG_PRESSURE",
+            "PRED_OVERFLOW",
+            "PLACEHOLDER_CODE",
+            "EMPTY_LOOP",
+            "NO_BOUNDS_CHECK",
+            "REDUNDANT_MOV",
+            "UNOPT_MEM",
+            "DEAD_CODE",
+            "INVALID_SYNTAX",
+            "NO_ENTRY",
+        ];
+        CODES[*self as usize]
     }
 }
 

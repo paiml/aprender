@@ -74,27 +74,29 @@ impl ModelType {
     /// Convert from u16 value.
     #[must_use]
     pub fn from_u16(value: u16) -> Option<Self> {
-        match value {
-            0x0001 => Some(Self::LinearRegression),
-            0x0002 => Some(Self::LogisticRegression),
-            0x0003 => Some(Self::DecisionTree),
-            0x0004 => Some(Self::RandomForest),
-            0x0005 => Some(Self::GradientBoosting),
-            0x0006 => Some(Self::KMeans),
-            0x0007 => Some(Self::Pca),
-            0x0008 => Some(Self::NaiveBayes),
-            0x0009 => Some(Self::Knn),
-            0x000A => Some(Self::Svm),
-            0x0010 => Some(Self::NgramLm),
-            0x0011 => Some(Self::Tfidf),
-            0x0012 => Some(Self::CountVectorizer),
-            0x0020 => Some(Self::NeuralSequential),
-            0x0021 => Some(Self::NeuralCustom),
-            0x0030 => Some(Self::ContentRecommender),
-            0x0040 => Some(Self::MixtureOfExperts),
-            0x00FF => Some(Self::Custom),
-            _ => None,
-        }
+        // Every discriminant is declared explicitly on the enum itself, so
+        // this table is just those same (value, variant) pairs, searched.
+        const VALUES: &[(u16, ModelType)] = &[
+            (0x0001, ModelType::LinearRegression),
+            (0x0002, ModelType::LogisticRegression),
+            (0x0003, ModelType::DecisionTree),
+            (0x0004, ModelType::RandomForest),
+            (0x0005, ModelType::GradientBoosting),
+            (0x0006, ModelType::KMeans),
+            (0x0007, ModelType::Pca),
+            (0x0008, ModelType::NaiveBayes),
+            (0x0009, ModelType::Knn),
+            (0x000A, ModelType::Svm),
+            (0x0010, ModelType::NgramLm),
+            (0x0011, ModelType::Tfidf),
+            (0x0012, ModelType::CountVectorizer),
+            (0x0020, ModelType::NeuralSequential),
+            (0x0021, ModelType::NeuralCustom),
+            (0x0030, ModelType::ContentRecommender),
+            (0x0040, ModelType::MixtureOfExperts),
+            (0x00FF, ModelType::Custom),
+        ];
+        VALUES.iter().find(|(v, _)| *v == value).map(|(_, t)| *t)
     }
 }
 

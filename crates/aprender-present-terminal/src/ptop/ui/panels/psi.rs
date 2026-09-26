@@ -39,20 +39,24 @@ pub fn build_psi_title_compact(cpu_pct: f64, io_pct: f64, mem_pct: f64) -> Strin
 // PRESSURE SYMBOLS
 // =============================================================================
 
+/// Pressure thresholds (descending) paired with their block symbol.
+const PRESSURE_LEVELS: &[(f64, &str)] = &[
+    (87.5, "█"),
+    (75.0, "▇"),
+    (62.5, "▆"),
+    (50.0, "▅"),
+    (37.5, "▄"),
+    (25.0, "▃"),
+    (12.5, "▂"),
+];
+
 /// Get Unicode block symbol for pressure percentage (8 levels).
 #[must_use]
 pub fn pressure_symbol(percent: f64) -> &'static str {
-    match percent {
-        p if p >= 87.5 => "█",
-        p if p >= 75.0 => "▇",
-        p if p >= 62.5 => "▆",
-        p if p >= 50.0 => "▅",
-        p if p >= 37.5 => "▄",
-        p if p >= 25.0 => "▃",
-        p if p >= 12.5 => "▂",
-        p if p > 0.0 => "▁",
-        _ => " ",
-    }
+    PRESSURE_LEVELS
+        .iter()
+        .find(|(threshold, _)| percent >= *threshold)
+        .map_or(if percent > 0.0 { "▁" } else { " " }, |(_, sym)| sym)
 }
 
 /// Get extended pressure symbol with numeric hint.

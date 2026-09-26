@@ -83,27 +83,38 @@ pub enum CallbackId {
 
 impl CallbackId {
     /// Get CUPTI callback ID.
+    ///
+    /// # Panics
+    ///
+    /// Never: every fixed variant has a table row, which the unit tests pin.
     pub fn cupti_id(&self) -> u32 {
-        match self {
-            CallbackId::CudaMalloc => 1,
-            CallbackId::CudaFree => 2,
-            CallbackId::CudaMemcpy => 3,
-            CallbackId::CudaMemcpyAsync => 4,
-            CallbackId::CudaLaunchKernel => 5,
-            CallbackId::CudaDeviceSynchronize => 6,
-            CallbackId::CudaStreamSynchronize => 7,
-            CallbackId::CuMemAlloc => 100,
-            CallbackId::CuMemFree => 101,
-            CallbackId::CuLaunchKernel => 102,
-            CallbackId::CuCtxSynchronize => 103,
-            CallbackId::ContextCreated => 200,
-            CallbackId::ContextDestroyed => 201,
-            CallbackId::StreamCreated => 202,
-            CallbackId::StreamDestroyed => 203,
-            CallbackId::ModuleLoaded => 204,
-            CallbackId::ModuleUnloaded => 205,
-            CallbackId::Other(id) => *id,
+        /// The fixed (non-`Other`) callback ids, paired with their CUPTI id.
+        const IDS: &[(CallbackId, u32)] = &[
+            (CallbackId::CudaMalloc, 1),
+            (CallbackId::CudaFree, 2),
+            (CallbackId::CudaMemcpy, 3),
+            (CallbackId::CudaMemcpyAsync, 4),
+            (CallbackId::CudaLaunchKernel, 5),
+            (CallbackId::CudaDeviceSynchronize, 6),
+            (CallbackId::CudaStreamSynchronize, 7),
+            (CallbackId::CuMemAlloc, 100),
+            (CallbackId::CuMemFree, 101),
+            (CallbackId::CuLaunchKernel, 102),
+            (CallbackId::CuCtxSynchronize, 103),
+            (CallbackId::ContextCreated, 200),
+            (CallbackId::ContextDestroyed, 201),
+            (CallbackId::StreamCreated, 202),
+            (CallbackId::StreamDestroyed, 203),
+            (CallbackId::ModuleLoaded, 204),
+            (CallbackId::ModuleUnloaded, 205),
+        ];
+        if let CallbackId::Other(id) = self {
+            return *id;
         }
+        IDS.iter()
+            .find(|(id, _)| id == self)
+            .map(|(_, v)| *v)
+            .expect("every fixed CallbackId variant is listed in IDS")
     }
 }
 
@@ -316,6 +327,33 @@ pub type RawCallbackFn = unsafe extern "C" fn(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn callback_id_cupti_id_pins_every_variant() {
+        let cases = [
+            (CallbackId::CudaMalloc, 1),
+            (CallbackId::CudaFree, 2),
+            (CallbackId::CudaMemcpy, 3),
+            (CallbackId::CudaMemcpyAsync, 4),
+            (CallbackId::CudaLaunchKernel, 5),
+            (CallbackId::CudaDeviceSynchronize, 6),
+            (CallbackId::CudaStreamSynchronize, 7),
+            (CallbackId::CuMemAlloc, 100),
+            (CallbackId::CuMemFree, 101),
+            (CallbackId::CuLaunchKernel, 102),
+            (CallbackId::CuCtxSynchronize, 103),
+            (CallbackId::ContextCreated, 200),
+            (CallbackId::ContextDestroyed, 201),
+            (CallbackId::StreamCreated, 202),
+            (CallbackId::StreamDestroyed, 203),
+            (CallbackId::ModuleLoaded, 204),
+            (CallbackId::ModuleUnloaded, 205),
+            (CallbackId::Other(4242), 4242),
+        ];
+        for (id, want) in cases {
+            assert_eq!(id.cupti_id(), want, "{id:?}");
+        }
+    }
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;

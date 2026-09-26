@@ -89,7 +89,14 @@ impl Metric {
 
     /// Get metric name as string
     pub fn name(&self) -> &'static str {
-        match self {
+        self.classification_or_regression_name().unwrap_or_else(|| self.other_name())
+    }
+
+    /// `name()` for the classification and regression variants; `None` for
+    /// the rest (clustering, ASR, text generation, LLM benchmarks, code,
+    /// retrieval), handled by `other_name`.
+    fn classification_or_regression_name(&self) -> Option<&'static str> {
+        Some(match self {
             Metric::Accuracy => "Accuracy",
             Metric::Precision(_) => "Precision",
             Metric::Recall(_) => "Recall",
@@ -98,6 +105,14 @@ impl Metric {
             Metric::MSE => "MSE",
             Metric::MAE => "MAE",
             Metric::RMSE => "RMSE",
+            _ => return None,
+        })
+    }
+
+    /// `name()` for the variants `classification_or_regression_name` does
+    /// not handle.
+    fn other_name(&self) -> &'static str {
+        match self {
             Metric::Silhouette => "Silhouette",
             Metric::Inertia => "Inertia",
             Metric::WER => "WER",
@@ -108,6 +123,9 @@ impl Metric {
             Metric::MMLUAccuracy => "MMLU",
             Metric::PassAtK(_) => "pass@k",
             Metric::NDCGAtK(_) => "NDCG@k",
+            _ => unreachable!(
+                "classification_or_regression_name already handles the remaining variants"
+            ),
         }
     }
 }

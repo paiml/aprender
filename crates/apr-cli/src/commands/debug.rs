@@ -551,29 +551,37 @@ fn run_strings_mode(path: &Path, limit: usize) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Known model type-id -> display-name mappings for `format_model_type`.
+const MODEL_TYPE_TABLE: &[(u16, &str)] = &[
+    (0x0001, "LinearRegression"),
+    (0x0002, "LogisticRegression"),
+    (0x0003, "DecisionTree"),
+    (0x0004, "RandomForest"),
+    (0x0005, "GradientBoosting"),
+    (0x0006, "KMeans"),
+    (0x0007, "PCA"),
+    (0x0008, "NaiveBayes"),
+    (0x0009, "KNN"),
+    (0x000A, "SVM"),
+    (0x0010, "NgramLM"),
+    (0x0011, "TfIdf"),
+    (0x0012, "CountVectorizer"),
+    (0x0020, "NeuralSequential"),
+    (0x0021, "NeuralCustom"),
+    (0x0030, "ContentRecommender"),
+    (0x0040, "MixtureOfExperts"),
+    (0x00FF, "Custom"),
+];
+
 /// Format model type as human-readable string
 fn format_model_type(type_id: u16) -> String {
-    match type_id {
-        0x0001 => "LinearRegression".to_string(),
-        0x0002 => "LogisticRegression".to_string(),
-        0x0003 => "DecisionTree".to_string(),
-        0x0004 => "RandomForest".to_string(),
-        0x0005 => "GradientBoosting".to_string(),
-        0x0006 => "KMeans".to_string(),
-        0x0007 => "PCA".to_string(),
-        0x0008 => "NaiveBayes".to_string(),
-        0x0009 => "KNN".to_string(),
-        0x000A => "SVM".to_string(),
-        0x0010 => "NgramLM".to_string(),
-        0x0011 => "TfIdf".to_string(),
-        0x0012 => "CountVectorizer".to_string(),
-        0x0020 => "NeuralSequential".to_string(),
-        0x0021 => "NeuralCustom".to_string(),
-        0x0030 => "ContentRecommender".to_string(),
-        0x0040 => "MixtureOfExperts".to_string(),
-        0x00FF => "Custom".to_string(),
-        _ => format!("Unknown(0x{type_id:04X})"),
-    }
+    MODEL_TYPE_TABLE
+        .iter()
+        .find(|(id, _)| *id == type_id)
+        .map_or_else(
+            || format!("Unknown(0x{type_id:04X})"),
+            |(_, name)| (*name).to_string(),
+        )
 }
 
 // ============================================================================

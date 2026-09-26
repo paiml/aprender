@@ -190,7 +190,13 @@ fn values_equal(a: &GgufValue, b: &GgufValue) -> bool {
 
 /// Variant name of a `GgufValue`, used as the label of a summarised value.
 fn value_kind(v: &GgufValue) -> &'static str {
-    match v {
+    scalar_value_kind(v).unwrap_or_else(|| compound_value_kind(v))
+}
+
+/// `value_kind` for the fixed-width numeric/bool scalar variants; `None` for
+/// the rest (strings, wide ints, arrays), handled by `compound_value_kind`.
+fn scalar_value_kind(v: &GgufValue) -> Option<&'static str> {
+    Some(match v {
         GgufValue::Uint8(_) => "Uint8",
         GgufValue::Int8(_) => "Int8",
         GgufValue::Uint16(_) => "Uint16",
@@ -199,6 +205,13 @@ fn value_kind(v: &GgufValue) -> &'static str {
         GgufValue::Int32(_) => "Int32",
         GgufValue::Float32(_) => "Float32",
         GgufValue::Bool(_) => "Bool",
+        _ => return None,
+    })
+}
+
+/// `value_kind` for the variants `scalar_value_kind` does not handle.
+fn compound_value_kind(v: &GgufValue) -> &'static str {
+    match v {
         GgufValue::String(_) => "String",
         GgufValue::Uint64(_) => "Uint64",
         GgufValue::Int64(_) => "Int64",
@@ -207,6 +220,7 @@ fn value_kind(v: &GgufValue) -> &'static str {
         GgufValue::ArrayInt32(_) => "ArrayInt32",
         GgufValue::ArrayFloat32(_) => "ArrayFloat32",
         GgufValue::ArrayString(_) => "ArrayString",
+        _ => unreachable!("scalar_value_kind already handles the remaining variants"),
     }
 }
 

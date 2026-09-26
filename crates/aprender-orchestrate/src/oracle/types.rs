@@ -532,28 +532,32 @@ pub enum ProblemDomain {
     MediaProduction,
 }
 
+/// Display names for `ProblemDomain`, indexed by its declaration order
+/// (`ProblemDomain as usize`).
+const PROBLEM_DOMAIN_NAMES: [&str; 18] = [
+    "Supervised Learning",
+    "Unsupervised Learning",
+    "Deep Learning",
+    "Model Inference",
+    "Speech Recognition",
+    "Linear Algebra",
+    "Vector Search",
+    "Graph Analytics",
+    "Python Migration",
+    "C/C++ Migration",
+    "Shell Migration",
+    "Distributed Computing",
+    "Data Pipeline",
+    "Model Serving",
+    "Testing",
+    "Profiling",
+    "Validation",
+    "Media Production",
+];
+
 impl std::fmt::Display for ProblemDomain {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ProblemDomain::SupervisedLearning => write!(f, "Supervised Learning"),
-            ProblemDomain::UnsupervisedLearning => write!(f, "Unsupervised Learning"),
-            ProblemDomain::DeepLearning => write!(f, "Deep Learning"),
-            ProblemDomain::Inference => write!(f, "Model Inference"),
-            ProblemDomain::SpeechRecognition => write!(f, "Speech Recognition"),
-            ProblemDomain::LinearAlgebra => write!(f, "Linear Algebra"),
-            ProblemDomain::VectorSearch => write!(f, "Vector Search"),
-            ProblemDomain::GraphAnalytics => write!(f, "Graph Analytics"),
-            ProblemDomain::PythonMigration => write!(f, "Python Migration"),
-            ProblemDomain::CMigration => write!(f, "C/C++ Migration"),
-            ProblemDomain::ShellMigration => write!(f, "Shell Migration"),
-            ProblemDomain::DistributedCompute => write!(f, "Distributed Computing"),
-            ProblemDomain::DataPipeline => write!(f, "Data Pipeline"),
-            ProblemDomain::ModelServing => write!(f, "Model Serving"),
-            ProblemDomain::Testing => write!(f, "Testing"),
-            ProblemDomain::Profiling => write!(f, "Profiling"),
-            ProblemDomain::Validation => write!(f, "Validation"),
-            ProblemDomain::MediaProduction => write!(f, "Media Production"),
-        }
+        write!(f, "{}", PROBLEM_DOMAIN_NAMES[*self as usize])
     }
 }
 
