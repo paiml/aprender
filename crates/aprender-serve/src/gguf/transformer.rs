@@ -242,6 +242,51 @@ pub struct QuantizedGGUFTransformer<'a> {
     pub lm_head_bias: Option<Vec<f32>>,
 }
 
+/// Why a norm vector of `len` elements cannot scale a `hidden_dim` hidden state, or `None`.
+///
+/// A norm weight is applied element-wise to the hidden state, so its length IS
+/// `hidden_dim`. #2378 finding 4: a half-length `output_norm.weight` was accepted
+/// silently and changed the generated text.
+#[must_use]
+pub fn norm_length_refusal(name: &str, len: usize, hidden_dim: usize) -> Option<String> {
+    (len != hidden_dim).then(|| {
+        format!(
+            "Tensor '{name}' has {len} elements but the model's hidden size \
+             (embedding_length) is {hidden_dim}. A norm scales the hidden state \
+             element-wise, so they must match: the file is corrupt or mislabelled (#2378)."
+        )
+    })
+}
+
+/// Load the final norm (`output_norm.weight`, optional bias) and refuse a
+/// length that is not `hidden_dim`.
+///
+/// #2378 finding 4: a GGUF declaring `output_norm.weight = [768]` against
+/// `embedding_length = 1536` loaded, ran, and exited 0 with different text.
+/// The too-LONG direction was caught only because the read ran off the end
+/// of the file. Both directions now fail here, by name. Every GGUF loader
+/// that reads the final norm calls this one function.
+pub(crate) fn load_output_norm(
+    model: &GGUFModel,
+    data: &[u8],
+    hidden_dim: usize,
+) -> Result<(Vec<f32>, Option<Vec<f32>>)> {
+    let weight = model.get_tensor_f32("output_norm.weight", data)?;
+    // GH-278: Output norm bias — standard + aprender fallback
+    let bias = model
+        .get_tensor_f32("output_norm.bias", data)
+        .or_else(|_| model.get_tensor_f32("model.norm.bias", data))
+        .ok();
+    let lengths = std::iter::once(("output_norm.weight", weight.len()))
+        .chain(bias.as_ref().map(|b| ("output_norm.bias", b.len())));
+    for (name, len) in lengths {
+        if let Some(reason) = norm_length_refusal(name, len, hidden_dim) {
+            return Err(RealizarError::FormatError { reason });
+        }
+    }
+    Ok((weight, bias))
+}
+
 impl<'a> QuantizedGGUFTransformer<'a> {
     /// Load quantized transformer from memory-mapped GGUF model
     ///
@@ -312,13 +357,9 @@ impl<'a> QuantizedGGUFTransformer<'a> {
             layers.push(layer);
         }
 
-        // Output norm - small, keep as f32
-        let output_norm_weight = model.get_tensor_f32("output_norm.weight", data)?;
-        // GH-278: Output norm bias — standard + aprender fallback
-        let output_norm_bias = model
-            .get_tensor_f32("output_norm.bias", data)
-            .or_else(|_| model.get_tensor_f32("model.norm.bias", data))
-            .ok();
+        // Output norm - small, keep as f32. GH-278 bias fallback + #2378 length check.
+        let (output_norm_weight, output_norm_bias) =
+            load_output_norm(model, data, config.hidden_dim)?;
 
         // LM head - large, keep quantized
         // Fall back to token_embd.weight for tied embeddings (Qwen2, some LLaMA variants)
@@ -417,11 +458,8 @@ impl<'a> QuantizedGGUFTransformer<'a> {
             )?));
         }
 
-        let output_norm_weight = model.get_tensor_f32("output_norm.weight", data)?;
-        let output_norm_bias = model
-            .get_tensor_f32("output_norm.bias", data)
-            .or_else(|_| model.get_tensor_f32("model.norm.bias", data))
-            .ok();
+        let (output_norm_weight, output_norm_bias) =
+            load_output_norm(model, data, config.hidden_dim)?;
 
         let lm_head_weight = Self::get_tensor_ref(model, data, "output.weight")
             .or_else(|_| Self::get_tensor_ref(model, data, "token_embd.weight"))?;
@@ -1123,6 +1161,87 @@ mod moe_forward_handles_tests {
         // The two dispatch predicates never claim the same spelling.
         for arch in ["qwen3moe", "qwen3_moe", "qwen35"] {
             assert!(!(moe_forward_handles(arch) && hybrid_forward_handles(arch)));
+        }
+    }
+}
+
+/// #2378 finding 4: the final norm must be `hidden_dim` long, in both directions,
+/// on every GGUF loader.
+#[cfg(test)]
+mod output_norm_length_tests {
+    use super::*;
+    use crate::gguf::test_factory::build_minimal_llama_gguf;
+    use crate::gguf::GGUFTransformer;
+
+    const HIDDEN: usize = 64;
+
+    /// A minimal llama GGUF whose header declares `output_norm.weight` as
+    /// `[declared]` while `embedding_length` stays `HIDDEN` — the same corruption
+    /// as the dogfood fixture `qwen_shape_shrink.gguf` (768 against 1536).
+    fn with_output_norm_declared(declared: u64) -> (GGUFModel, Vec<u8>) {
+        let data = build_minimal_llama_gguf(100, HIDDEN, 256, 4, 4);
+        let mut model = GGUFModel::from_bytes(&data).expect("parse minimal GGUF");
+        let norm = model
+            .tensors
+            .iter_mut()
+            .find(|t| t.name == "output_norm.weight")
+            .expect("fixture has output_norm.weight");
+        norm.dims = vec![declared];
+        (model, data)
+    }
+
+    #[test]
+    fn norm_length_refusal_case_table() {
+        // (len, hidden_dim, refused)
+        let rows = [
+            (64, 64, false),
+            (32, 64, true),
+            (128, 64, true),
+            (0, 64, true),
+            (1536, 1536, false),
+            (768, 1536, true),
+        ];
+        for (len, hidden, refused) in rows {
+            let got = norm_length_refusal("output_norm.weight", len, hidden);
+            assert_eq!(got.is_some(), refused, "len={len} hidden={hidden}: {got:?}");
+            if let Some(reason) = got {
+                assert!(reason.contains("output_norm.weight"), "{reason}");
+                assert!(
+                    reason.contains(&len.to_string()) && reason.contains(&hidden.to_string()),
+                    "{reason}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_intact_fixture_still_loads_on_both_loaders() {
+        let (model, data) = with_output_norm_declared(HIDDEN as u64);
+        let quantized =
+            QuantizedGGUFTransformer::from_gguf(&model, &data).expect("quantized loads");
+        assert_eq!(quantized.output_norm_weight.len(), HIDDEN);
+        let f32_path = GGUFTransformer::from_gguf(&model, &data).expect("f32 loads");
+        assert_eq!(f32_path.output_norm_weight.len(), HIDDEN);
+    }
+
+    #[test]
+    fn a_short_or_long_output_norm_is_refused_by_name_on_both_loaders() {
+        for declared in [HIDDEN as u64 / 2, HIDDEN as u64 * 2] {
+            let (model, data) = with_output_norm_declared(declared);
+            let quantized = QuantizedGGUFTransformer::from_gguf(&model, &data)
+                .err()
+                .unwrap_or_else(|| panic!("quantized loader accepted output_norm [{declared}]"))
+                .to_string();
+            let f32_path = GGUFTransformer::from_gguf(&model, &data)
+                .err()
+                .unwrap_or_else(|| panic!("f32 loader accepted output_norm [{declared}]"))
+                .to_string();
+            for err in [&quantized, &f32_path] {
+                assert!(
+                    err.contains("output_norm.weight") && err.contains("#2378"),
+                    "declared {declared}: {err}"
+                );
+            }
         }
     }
 }

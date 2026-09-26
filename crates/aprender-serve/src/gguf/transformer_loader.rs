@@ -50,13 +50,10 @@ impl GGUFTransformer {
             layers.push(layer);
         }
 
-        // Load output norm (raw gamma values - no delta transformation needed)
-        let output_norm_weight = model.get_tensor_f32("output_norm.weight", file_data)?;
-        // GH-278: Output norm bias — standard + aprender fallback
-        let output_norm_bias = model
-            .get_tensor_f32("output_norm.bias", file_data)
-            .or_else(|_| model.get_tensor_f32("model.norm.bias", file_data))
-            .ok();
+        // Load output norm (raw gamma values - no delta transformation needed).
+        // GH-278 bias fallback + #2378 length check live in the shared loader.
+        let (output_norm_weight, output_norm_bias) =
+            crate::gguf::load_output_norm(model, file_data, config.hidden_dim)?;
 
         // Load LM head (output projection)
         // Fall back to token_embd.weight for tied embeddings (Qwen2, some LLaMA variants)
