@@ -1,0 +1,102 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  created: '2026-09-26'
+  author: PAIML Engineering
+  references:
+  - 'docs/specifications/APR-OBS-001-dogfood-observability.md §2.3 — lane row; §3 falsifiers; §7 OBS-01'
+  - 'contracts/apr-obs-row-identity-v1.yaml — the identity block every row carries'
+  - 'aprender#4487 — OBS-00'
+  description: >
+    One row per review-lane call to apr serve, appended by the lane CLIENT (not by
+    apr) to the per-host fleet_perf_dir. §1 G1: the lambda shadow lane records
+    nothing per request today; its journal holds only the startup route list.
+
+    Lane rows are OPERATIONAL data, not benchmark data. They feed failure
+    detection and per-token p50/p95. No apr/llama.cpp ratio is ever computed
+    from them; ratios come only from apr-perf-ledger-v1.
+
+equations:
+  lane_row_shape:
+    formula: |
+      row = identity (apr-obs-row-identity-v1, schema = "apr-lane-row-v1")
+          + { prompt_n, completion_n, prompt_sha256, wall_ms, ttft_ms, ttft_reason,
+              prefill_ms_per_tok, decode_ms_per_tok, ok, error, load1, cold }
+      REQUIRE: prompt_n >= 0, completion_n >= 0, wall_ms > 0
+      REQUIRE: ok = false  <=>  error != null
+      REQUIRE: cold = true  for the first request after unit start, false after
+    domain: 'one line of the lane ledger'
+    codomain: bool
+    invariants:
+    - 'prompt_sha256 identifies the input without storing it: prompt text never
+       enters the ledger.'
+
+  ttft_is_measured_or_null:
+    formula: |
+      streaming      =>  ttft_ms measured at first token, ttft_ms < wall_ms
+      not streaming  =>  ttft_ms = null AND ttft_reason = "non-streaming"
+      NEVER: ttft_ms := wall_ms
+    domain: 'the ttft fields of a lane row'
+    codomain: bool
+    invariants:
+    - 'A copied wall time looks like a very slow first token, so it corrupts TTFT
+       p95 while reading as measured.'
+
+  rows_equal_calls:
+    formula: |
+      over any 24 h window:  |rows| = |lane calls|  AND  no gap > 24 h
+    domain: 'the lane ledger vs the lane call log'
+    codomain: bool
+    invariants:
+    - 'A lane with calls and 0 rows in 24 h is Liveness RED (spec §4 rule 5).'
+
+falsification_tests:
+- id: FALSIFY-OBS-LANE-001
+  rule: the client writes a row for every call
+  prediction: 'A lane client with the write step removed produces calls with 0 rows, and
+    rows_equal_calls turns RED.'
+  test: 'NOT YET WRITTEN — lands with OBS-01'
+  if_fails: 'the lane goes silent and every ratio downstream is over an empty set (§1 G1)'
+  mutation: 'remove the append call from the lane client; the 24 h rows = calls check must turn RED'
+- id: FALSIFY-OBS-LANE-002
+  rule: a row missing model_sha256 is inadmissible
+  prediction: 'A lane row without model_sha256 is REJECTED by the identity lint.'
+  test: 'NOT YET WRITTEN — lands with OBS-01 (reuses FALSIFY-OBS-ID-001)'
+  if_fails: 'a model swap on the lane is invisible in the per-token history'
+  mutation: 'drop model_sha256 from the writer; the lint must turn RED'
+- id: FALSIFY-OBS-LANE-003
+  rule: TTFT is never copied from wall time
+  prediction: 'A non-streaming row with ttft_ms == wall_ms is REJECTED; the same row with
+    ttft_ms null and ttft_reason "non-streaming" is ACCEPTED.'
+  test: 'NOT YET WRITTEN — lands with OBS-01'
+  if_fails: 'TTFT p95 reports the full request time as first-token latency'
+  mutation: 'set ttft_ms = wall_ms in the non-streaming branch; the case must turn RED'
+
+proof_obligations:
+- type: invariant
+  property: 'Every lane call leaves exactly one row (FALSIFY-OBS-LANE-001)'
+  formal: '∀ window w of 24h: |rows(w)| = |calls(w)|'
+- type: invariant
+  property: 'Every lane row carries the full identity block (FALSIFY-OBS-LANE-002)'
+  formal: '∀ r ∈ lane: admissible_identity(r)'
+- type: invariant
+  property: 'ttft_ms is measured or null, never wall_ms (FALSIFY-OBS-LANE-003)'
+  formal: '∀ r: ¬r.streaming ⇒ r.ttft_ms = null ∧ r.ttft_reason = "non-streaming"'
+
+qa_gate:
+  id: F-OBS-LANE-GATE-001
+  name: 'every lane call leaves an identity-bearing row'
+  description: 'OBS-01 acceptance: rows = lane calls over 24 h, 0 gaps > 24 h, all three falsifiers RED then GREEN.'
+  checks:
+  - rows_equal_calls_24h
+  - no_gap_over_24h
+  - identity_admissible
+  - ttft_never_wall
+  pass_criteria: 'All checks hold over a trailing 24 h window. Report-only through 0.70.'
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: proposed
+  notes: 'Shape only (OBS-00). The tests land with OBS-01, which needs the fleet_perf_dir infra issue.'
