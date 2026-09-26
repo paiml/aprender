@@ -1,0 +1,463 @@
+{
+  "ticket": "PMAT-4348",
+  "base": "origin/car/0.70.0",
+  "base_resolved": "origin/car/0.70.0",
+  "base_note": "no origin/origin/car/0.70.0 exists; judged against the local ref",
+  "head": "c2abfedab786831bb264e316da3821ad66404dd7",
+  "diff_sha256": "99d9fa8653322364a803462f3100d2ab46fd0bc4cea4058d5ed491a55e47066d",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 15100,
+  "prompt_sha256": "22248df72067b6e292cbde8260e4d93d2c09ca8881d2579b50b31e49f59760ed",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements the PMAT-4348 ticket as requested. It narrows the Lean imports to avoid bare `import Mathlib`, caps `LEAN_NUM_THREADS` to 8 for `forjar lean-build`, adds a scoped-leanchecker guard script that is auto-discovered by `guard_tree.sh` and contains a self-test with 26/26 rows passing, and verifies there are no unscoped `leanchecker` invocations. No unrequested changes were introduced outside of standard metadata updates.",
+      "findings": [
+        {
+          "claim": "No bare `import Mathlib` in crates/aprender-contracts-staging/lean",
+          "file": "crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Gqa/HeadMapping.lean",
+          "grounding": "measured",
+          "line": 1
+        },
+        {
+          "claim": "forjar lean-build (`lake build`) runs with LEAN_NUM_THREADS capped at 8 unless the caller sets it",
+          "file": "crates/aprender-contracts-staging/lean/forjar.yaml",
+          "grounding": "cited",
+          "line": 64
+        },
+        {
+          "claim": "no native_decide",
+          "file": "crates/aprender-contracts-staging/lean",
+          "grounding": "measured"
+        },
+        {
+          "claim": "scripts/check_leanchecker_scoped.sh is RED on a tracked leanchecker invocation outside `systemd-run ... MemoryMax=` or on --leanchecker-unscoped",
+          "file": "scripts/check_leanchecker_scoped.sh",
+          "grounding": "cited",
+          "line": 59
+        },
+        {
+          "claim": "The guard runs in CI through guard_tree.sh --no-cargo (auto-discovered, self-test + run)",
+          "file": "scripts/check_leanchecker_scoped.sh",
+          "grounding": "measured",
+          "line": 104
+        },
+        {
+          "claim": "wall and max RSS before/after in the receipt",
+          "file": "docs/audits/impl-PMAT-4348-receipt.md",
+          "grounding": "cited",
+          "line": 10
+        }
+      ],
+      "raw_bytes": 4381,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "22248df72067b6e292cbde8260e4d93d2c09ca8881d2579b50b31e49f59760ed",
+      "trace": {
+        "input_sha256": "7e28a15537cae6da51faab1584f549ae129f358def025cb38bf8ee81a1f1961e",
+        "output_sha256": "d9554187fb5f2dc567d010f6f2b45537777b9247b1de55b604f12a9b98a47607",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The provided diff meets all requirements of the PMAT-4348 ticket (the car-applicable half). Bare `import Mathlib` references were successfully narrowed in the Lean files. The `forjar.yaml` script correctly exports `LEAN_NUM_THREADS=\"${LEAN_NUM_THREADS:-8}\"` to cap worker threads. The new guard script `scripts/check_leanchecker_scoped.sh` checks tracked scripts and CI files to ensure no bare `leanchecker` commands execute without a `systemd-run` + `MemoryMax=` wrapping scope, and fails if `--leanchecker-unscoped` is encountered, which matches the criteria. The guard lacks a `cargo ` token and includes a `--self-test` option, meaning it is successfully auto-discovered by `guard_tree.sh --no-cargo`. \n\nNote on tree_witness: The `$(git rev-parse --git-dir)/paiml-lane-witness` file is missing from this workspace (and from the shared `.git` config and parent directories), so the token could not be retrieved.",
+      "findings": [
+        {
+          "claim": "No bare `import Mathlib` in crates/aprender-contracts-staging/lean",
+          "file": "crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Metrics/RegressionAnalytic.lean",
+          "fix": "None",
+          "grounding": "measured",
+          "line": 1
+        },
+        {
+          "claim": "forjar lean-build (`lake build`) runs with LEAN_NUM_THREADS capped at 8 unless the caller sets it",
+          "file": "crates/aprender-contracts-staging/lean/forjar.yaml",
+          "fix": "None",
+          "grounding": "cited",
+          "line": 64
+        },
+        {
+          "claim": "scripts/check_leanchecker_scoped.sh is RED on a tracked leanchecker invocation outside `systemd-run ... MemoryMax=` or on --leanchecker-unscoped",
+          "file": "scripts/check_leanchecker_scoped.sh",
+          "fix": "None",
+          "grounding": "cited",
+          "line": 35
+        },
+        {
+          "claim": "The guard runs in CI through guard_tree.sh --no-cargo (auto-discovered, self-test + run)",
+          "file": "scripts/check_leanchecker_scoped.sh",
+          "fix": "None",
+          "grounding": "measured",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 6710,
+      "err_bytes": 103,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "22248df72067b6e292cbde8260e4d93d2c09ca8881d2579b50b31e49f59760ed",
+      "trace": {
+        "input_sha256": "d9f6f4a0901341c48f0926190373af13128d3b819036551cb2baef3dd37aaaff",
+        "output_sha256": "5b40690ac98d9fd0a6f02ca547931e0dab68ddfa4bb17412a5e875bfd24775dc",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "claude-opus-4-6-thinking",
+            "why": "family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)"
+          }
+        ]
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-4348 diff correctly implements car/0.70.0-applicable half: narrows bare Mathlib imports in two files (with 77-95% performance gains), caps LEAN_NUM_THREADS=8 in forjar.yaml, adds comprehensive leanchecker scoping guard (26 self_test rows, 565 files verified), auto-discoverable by guard_tree.sh --no-cargo.",
+      "findings": [],
+      "raw_bytes": 1519,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "22248df72067b6e292cbde8260e4d93d2c09ca8881d2579b50b31e49f59760ed",
+      "trace": {
+        "input_sha256": "93bfe0255271ea54f3edf91566ab200249186d4d277185df70bd3e6c64ca5456",
+        "output_sha256": "f33c6e15a6ef42ff5c20771778a614790c37930582969b3cf2bddca0b5cb5c76",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-contracts-staging/lean",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "no native_decide"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Gqa/HeadMapping.lean",
+      "line": 1,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "No bare `import Mathlib` in crates/aprender-contracts-staging/lean"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Metrics/RegressionAnalytic.lean",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "No bare `import Mathlib` in crates/aprender-contracts-staging/lean"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-staging/lean/forjar.yaml",
+      "line": 64,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "forjar lean-build (`lake build`) runs with LEAN_NUM_THREADS capped at 8 unless the caller sets it"
+      ]
+    },
+    {
+      "file": "docs/audits/impl-PMAT-4348-receipt.md",
+      "line": 10,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "wall and max RSS before/after in the receipt"
+      ]
+    },
+    {
+      "file": "scripts/check_leanchecker_scoped.sh",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The guard runs in CI through guard_tree.sh --no-cargo (auto-discovered, self-test + run)"
+      ]
+    },
+    {
+      "file": "scripts/check_leanchecker_scoped.sh",
+      "line": 35,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "scripts/check_leanchecker_scoped.sh is RED on a tracked leanchecker invocation outside `systemd-run ... MemoryMax=` or on --leanchecker-unscoped"
+      ]
+    },
+    {
+      "file": "scripts/check_leanchecker_scoped.sh",
+      "line": 59,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "scripts/check_leanchecker_scoped.sh is RED on a tracked leanchecker invocation outside `systemd-run ... MemoryMax=` or on --leanchecker-unscoped"
+      ]
+    },
+    {
+      "file": "scripts/check_leanchecker_scoped.sh",
+      "line": 104,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The guard runs in CI through guard_tree.sh --no-cargo (auto-discovered, self-test + run)"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, gemini-3.1-pro-high) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through claude-opus-4-6-thinking (skipped: family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 19h45m52s."
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "claude-gpt": {
+          "bucket": "claude-gpt",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": 1790422948,
+          "window_calls": 7,
+          "window_429": 7,
+          "hour_calls": 2,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket claude-gpt is empty: a 429 in this window (started 2026-09-26T11:42:28Z)"
+        },
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 30,
+          "basis": "[U] default 30, raised to the 29 calls a window has made without a 429; no window reached one",
+          "window_start": 1790422948,
+          "window_calls": 29,
+          "window_429": 0,
+          "hour_calls": 6,
+          "share": 6,
+          "want": 2,
+          "state": "hour",
+          "reason": "agy bucket gemini: 6 calls in the last hour + 2 this round exceed the hour share 6 (1/5 of the budget 30, [U] default 30, raised to the 29 calls a window has made without a 429; no window reached one)"
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "shape": "canary",
+    "max_brief_bytes": 24576,
+    "brief_bytes": 15100
+  },
+  "advisory_lane": {
+    "state": "answered",
+    "counts": false,
+    "row": {
+      "Verdict": {
+        "verdict": "PASS",
+        "cell": "gx10-cuda",
+        "backend": "cuda"
+      }
+    },
+    "verdict": "PASS",
+    "why": null,
+    "served_by": "gx10-cuda",
+    "gpu_proof": {
+      "used_gpu_probe": true,
+      "server_holds_gpu": true,
+      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
+      "trace_lines": [
+        "3024355, 245 MiB"
+      ]
+    },
+    "apr": "0.70.0",
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 13,
+    "collected_s": 1573,
+    "budget_s": 300,
+    "budget_basis": "[U] 300 s: fewer than 10 gx10-cuda Verdict rows in the ledger",
+    "brief": {
+      "bytes": 15100,
+      "sent_bytes": 15269,
+      "max_bytes": 24576
+    },
+    "trace": {
+      "input_sha256": "8805a9c12def357d107eb0273deabdb5600b50996eb7408dc0fac1c6fc382ab1",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 13,
+        "used_gpu": true
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": true,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=1/2"
+  }
+}
