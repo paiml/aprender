@@ -680,6 +680,11 @@ gates = [
     # its tests. Release time only: one workspace test build. The PR-time half is its case table,
     # rows 14-16 of check_package_includes.sh --self-test (ci.yml guard-cargo).
     "scripts/package_tarball_build.sh",
+    # #4476 ONT-4g: docs/audits/surface_audit.csv has > 0 rows and names exactly the [[bin]]
+    # targets cargo metadata declares at the release sha, printed N/N; any mismatch is RED by
+    # name. The PR-time half is its case table, scripts/check_surface_audit_bins.sh, which
+    # guard_tree.sh dispatches (an empty ledger must turn it RED).
+    "scripts/surface_audit_bins_gate.sh",
 ]
 
 # The interfaces this release SHIPS, each paired with the e2e target that proves
