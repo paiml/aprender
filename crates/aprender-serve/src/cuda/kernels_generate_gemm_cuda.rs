@@ -312,7 +312,8 @@ impl CudaKernels {
     /// match grows past the complexity ceiling.
     fn generate_gdn_ptx(kernel_type: &KernelType, target: &str) -> Option<String> {
         use trueno_gpu::kernels::gdn::{
-            CausalConv1dSiluKernel, DecodeAttention256Kernel, DeltaRuleRecurrenceKernel, KvRowScatterIndirectKernel,
+            CausalConv1dSiluKernel, DecodeAttention256Kernel, DecodeAttentionReduceKernel,
+            DecodeAttentionSplitKernel, DeltaRuleRecurrenceKernel, KvRowScatterIndirectKernel,
             GatedRmsNormKernel, GdnGatesKernel, PartialNeoxRopeKernel, PerHeadL2NormKernel,
             SigmoidGateKernel, SplitInterleavedKernel,
         };
@@ -359,6 +360,15 @@ impl CudaKernels {
             },
             KernelType::GdnKvRowScatterIndirect { row } => {
                 KvRowScatterIndirectKernel::new(*row).emit_ptx_for_target(target)
+            },
+            KernelType::GdnDecodeAttentionSplit { num_heads, num_kv_heads, head_dim, split_len } => {
+                DecodeAttentionSplitKernel::new(*num_heads, *num_kv_heads, *head_dim)
+                    .with_split_len(*split_len)
+                    .emit_ptx_for_target(target)
+            },
+            KernelType::GdnDecodeAttentionReduce { num_heads, head_dim, split_len } => {
+                DecodeAttentionReduceKernel { num_heads: *num_heads, head_dim: *head_dim, split_len: *split_len }
+                    .emit_ptx_for_target(target)
             },
             _ => return None,
         };

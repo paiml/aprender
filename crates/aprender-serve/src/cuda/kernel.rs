@@ -32,6 +32,8 @@ impl CudaKernels {
             KernelType::GdnPartialNeoxRopeIndirect { .. } => "gdn_partial_neox_rope_indirect",
             KernelType::GdnDecodeAttentionIndirect { .. } => "gdn_decode_attention_indirect",
             KernelType::GdnKvRowScatterIndirect { .. } => "gdn_kv_row_scatter_indirect",
+            KernelType::GdnDecodeAttentionSplit { .. } => "gdn_decode_attention_split",
+            KernelType::GdnDecodeAttentionReduce { .. } => "gdn_decode_attention_reduce",
             _ => return None,
         };
         Some(name)

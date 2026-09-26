@@ -45,6 +45,7 @@
 mod causal_conv1d;
 mod causal_conv1d_seq;
 mod decode_attention;
+mod decode_attention_split;
 mod delta_rule;
 mod delta_rule_scan;
 mod gated_rmsnorm;
@@ -63,6 +64,9 @@ mod test_support;
 pub use causal_conv1d::CausalConv1dSiluKernel;
 pub use causal_conv1d_seq::CausalConv1dSiluSeqKernel;
 pub use decode_attention::{DecodeAttention256Kernel, DEFAULT_MAX_POSITIONS_PER_PASS};
+pub use decode_attention_split::{
+    DecodeAttentionReduceKernel, DecodeAttentionSplitKernel, DEFAULT_SPLIT_LEN,
+};
 pub use delta_rule::DeltaRuleRecurrenceKernel;
 pub use delta_rule_scan::DeltaRuleChunkScanKernel;
 pub use gated_rmsnorm::GatedRmsNormKernel;
