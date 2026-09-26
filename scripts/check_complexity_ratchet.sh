@@ -562,6 +562,45 @@ cb200_pair_check() { # <gates.toml> <mirror file> -> 0 when they agree, 1 otherw
     return 0
 }
 
+# The pair check and the file ratchet above compare TYPED numbers with each
+# other; neither ever MEASURES the count, and nothing else in a required job
+# runs `pmat comply`. main banked 599 and measured 620 under pmat 3.41.1 at
+# cbf623e5b with this step green (docs/findings/cb200-main-green-over-baseline.jsonl).
+# This leg asks pmat for the count and holds it to [tdg] baseline.
+# CB200_PMAT overrides the binary (selftest fakes); CB200_MEASURE=0 skips the
+# leg and says so — it never passes silently.
+cb200_measured_count() { # <repo root> -> the measured CB-200 count on stdout; 1 when unreadable
+    local out n
+    out=$(cd "$1" && "${CB200_PMAT:-pmat}" comply check --checks CB-200 2>&1)
+    n=$(printf '%s\n' "$out" | grep -oE '[0-9]+ (definition\(s\)|definitions|function\(s\)) below minimum grade' | head -n 1 | grep -oE '^[0-9]+')
+    if [ -z "$n" ] && printf '%s\n' "$out" | grep -q 'no grades below threshold'; then
+        n=0
+    fi
+    [ -n "$n" ] || return 1
+    printf '%s\n' "$n"
+}
+
+cb200_measured_check() { # <gates.toml> <repo root> -> 0 when measured <= baseline, 1 otherwise (prints why)
+    local toml n
+    if [ "${CB200_MEASURE:-1}" = 0 ]; then
+        printf 'SKIP  CB-200 measured count NOT CHECKED (CB200_MEASURE=0): the typed baseline above is unverified.\n'
+        return 0
+    fi
+    toml=$(cb200_toml_value "$1")
+    [ -n "$toml" ] || return 1   # cb200_pair_check already said why
+    if ! n=$(cb200_measured_count "$2"); then
+        printf 'FAIL: could not read a CB-200 count from `%s comply check --checks CB-200`; an unread count is not a held one.\n' "${CB200_PMAT:-pmat}"
+        return 1
+    fi
+    if [ "$n" -gt "$toml" ]; then
+        printf 'FAIL: CB-200 measured %s definition(s) below min_grade, %s OVER [tdg] baseline %s.\n' "$n" "$((n - toml))" "$toml"
+        printf '      Fix or revert the new debt. Raising the baseline is not the fix.\n'
+        return 1
+    fi
+    printf 'ok    CB-200 measured %s <= [tdg] baseline %s\n' "$n" "$toml"
+    return 0
+}
+
 cb200_selftest() { # both polarities of the pair check, on throwaway files; returns the broke count
     local td pass=0 broke=0
     td=$(mktemp -d) || return 1
@@ -584,6 +623,27 @@ cb200_selftest() { # both polarities of the pair check, on throwaway files; retu
     else
         printf '  ok    %-38s %s\n' cb200_baseline_absent 'no [tdg] baseline refused'; pass=$((pass + 1))
     fi
+    # The measured leg, against a fake pmat printing each pmat 3.41 verdict shape.
+    printf '[tdg]\nbaseline = 599\n' > "$td/gates.toml"
+    local row name msg want got
+    for row in \
+        'measured_over|620 definition(s) below minimum grade B — 21 OVER the recorded baseline of 599|1' \
+        'measured_at|599 definition(s) below minimum grade B across 12 file(s), at the recorded baseline|0' \
+        'measured_under|598 definition(s) below minimum grade B across 12 file(s)|0' \
+        'measured_zero|0 definitions below minimum grade B, against a recorded baseline of 599|0' \
+        'measured_legacy_over|600 function(s) below minimum grade B|1' \
+        'measured_unreadable|pmat: index missing|1'; do
+        IFS='|' read -r name msg want <<< "$row"
+        printf '#!/bin/sh\nprintf "%%s\\n" "%s"\nexit 1\n' "$msg" > "$td/fake-pmat"
+        chmod +x "$td/fake-pmat"
+        got=0
+        CB200_PMAT="$td/fake-pmat" CB200_MEASURE=1 cb200_measured_check "$td/gates.toml" "$td" > /dev/null 2>&1 || got=1
+        if [ "$got" = "$want" ]; then
+            printf '  ok    %-38s %s\n' "cb200_$name" "rc $got as expected"; pass=$((pass + 1))
+        else
+            printf '  BROKE %-38s %s\n' "cb200_$name" "rc $got, wanted $want"; broke=$((broke + 1))
+        fi
+    done
     rm -rf "${td:?}"
     printf '  CB-200: %s passed, %s broken\n' "$pass" "$broke"
     return "$broke"
@@ -797,6 +857,7 @@ fi
 RATCHET_RC=0
 baseline_ratchet_check "$REPO_ROOT" "$BASELINE_REL" keyed2 || RATCHET_RC=$?
 cb200_pair_check "$REPO_ROOT/.pmat-gates.toml" "$REPO_ROOT/$CB200_REL" || RATCHET_RC=1
+cb200_measured_check "$REPO_ROOT/.pmat-gates.toml" "$REPO_ROOT" || RATCHET_RC=1
 baseline_ratchet_check "$REPO_ROOT" "$CB200_REL" count || RATCHET_RC=$?
 
 if [ "$VERDICT_RC" -ne 0 ]; then
