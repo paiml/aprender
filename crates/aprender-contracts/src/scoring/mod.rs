@@ -319,7 +319,7 @@ fn compute_kani_coverage(contract: &Contract, probes: &mut Vec<ScoreProbe>) -> f
         }
         match h.strategy.as_ref() {
             Some(KaniStrategy::Exhaustive) => 1.0,
-            Some(KaniStrategy::BoundedInt) => 0.9,
+            Some(KaniStrategy::BoundedInt | KaniStrategy::BoundedFloat) => 0.9,
             Some(KaniStrategy::StubFloat) => 0.8,
             Some(KaniStrategy::Compositional) => 0.7,
             None => 0.5,

@@ -561,4 +561,54 @@ falsification_tests: []
             Some(KaniStrategy::Compositional)
         );
     }
+
+    /// #2530: symbolic finite f32 windows with unstubbed transcendentals had no
+    /// name, so a contract naming them failed to parse and every later check
+    /// passed vacuously.
+    #[test]
+    fn parse_bounded_float_strategy() {
+        use crate::schema::types::KaniStrategy;
+
+        let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "kani test"
+equations:
+  f:
+    formula: "f(x) = x"
+kani_harnesses:
+  - id: K1
+    obligation: OBL-1
+    bound: 8
+    strategy: bounded_float
+falsification_tests: []
+"#;
+        let contract = parse_contract_str(yaml).unwrap();
+        assert_eq!(
+            contract.kani_harnesses[0].strategy,
+            Some(KaniStrategy::BoundedFloat)
+        );
+        assert_eq!(KaniStrategy::BoundedFloat.to_string(), "bounded_float");
+    }
+
+    /// #2530: `bounded_array` was rmedia's interim spelling of the same technique;
+    /// the issue asks for exactly one variant, so it must stay refused.
+    #[test]
+    fn bounded_array_is_not_a_strategy() {
+        let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "kani test"
+equations:
+  f:
+    formula: "f(x) = x"
+kani_harnesses:
+  - id: K1
+    obligation: OBL-1
+    strategy: bounded_array
+falsification_tests: []
+"#;
+        let err = parse_contract_str(yaml).expect_err("bounded_array must not parse");
+        assert!(err.to_string().contains("bounded_float"), "{err}");
+    }
 }
