@@ -11,7 +11,7 @@ would build green and prove nothing.
 import json
 import pathlib
 import sys
-import tomllib
+import toml_compat as tomllib
 
 
 def package_name(d):

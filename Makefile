@@ -630,13 +630,13 @@ census:
 contracts:
 	@set -e
 	@echo "== provable contracts: pv lint contracts/ =="
-# `| tail -5` DISCARDED THE VERDICT: the pipeline's status is tail's, so the armed-meet
-# result was PRINTED and NOT ENFORCED (found by aprender-d8, 0.69.1 tail rehearsal). That
-# is Verification Discipline #1 in the release's own contract gate, and
-# contracts-exit-integrity does not catch it -- it looks for `|| true` and bare for-loops,
-# not for a pipe. The output is kept to a tail for readability by writing it to a file and
-# tailing THAT, so the exit status belongs to pv and nothing else.
-	@. scripts/pv_bin.sh && { "$$PV" lint contracts/ > /tmp/pv-lint-contracts.$$$$.log 2>&1; rc=$$?; tail -5 /tmp/pv-lint-contracts.$$$$.log; rm -f /tmp/pv-lint-contracts.$$$$.log; exit $$rc; }
+	@# `| tail -5` DISCARDED THE VERDICT: the pipeline's status is tail's, so the armed-meet
+	@# result was PRINTED and NOT ENFORCED (found by aprender-d8, 0.69.1 tail rehearsal). That
+	@# is Verification Discipline #1 in the release's own contract gate, and
+	@# contracts-exit-integrity does not catch it -- it looks for `|| true` and bare for-loops,
+	@# not for a pipe. The output is kept to a tail for readability by writing it to a file and
+	@# tailing THAT, so the exit status belongs to pv and nothing else.
+	@. scripts/pv_bin.sh && ( "$$PV" lint contracts/ > /tmp/pv-lint-contracts.$$$$.log 2>&1; rc=$$?; tail -5 /tmp/pv-lint-contracts.$$$$.log; rm -f /tmp/pv-lint-contracts.$$$$.log; exit $$rc ) || exit
 	@echo "== census: a FRESH pv census holds its invariants (ONT-001 ONT-1, F-1; #3569) =="
 	@# The tracked contracts/census.json is a release-train snapshot (its one writer,
 	@# `make census`) and is expected to lag; a PR may not edit it

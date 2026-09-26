@@ -3387,14 +3387,19 @@ jobs:
         run: |
           set -euo pipefail
           decline() { echo "decline: $1" | tee -a "$GITHUB_STEP_SUMMARY"; exit 2; }
+          # A file the ladder judges that this TREE does not carry is a SKIP, not a host defect:
+          # no ladder to run, so no verdict either way (#4429: build.sh and discharge-summary.json
+          # have never been committed). skip=true turns build + discharge off; summary-fresh and
+          # pv lint key on their outcomes and skip with them. Host defects below still DECLINE.
+          skip() { echo "SKIP (no verdict, not a pass): $1" | tee -a "$GITHUB_STEP_SUMMARY"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; }
+          for f in "$LEAN/lean-toolchain" "$LEAN/lake-manifest.json" "$LEAN/build.sh"; do
+            [ -f "$f" ] || skip "$f is not in this tree"
+          done
+          # summary-fresh diffs a TRACKED file: `git diff` exits 0 on an untracked path.
+          git ls-files --error-unmatch -- "$SUMMARY" >/dev/null 2>&1 || skip "$SUMMARY is not tracked"
           export PATH="$ELAN_HOME/bin:$PATH"
           command -v elan >/dev/null || decline "no elan in $ELAN_HOME on $(hostname) (proof-toolchain, infra)"
           [ -d "$LEAN_CACHE_ROOT" ] || decline "no $LEAN_CACHE_ROOT on $(hostname) (proof-toolchain, infra)"
-          for f in "$LEAN/lean-toolchain" "$LEAN/lake-manifest.json" "$LEAN/build.sh"; do
-            [ -f "$f" ] || decline "$f is not in this tree"
-          done
-          # summary-fresh diffs a TRACKED file: `git diff` exits 0 on an untracked path.
-          git ls-files --error-unmatch -- "$SUMMARY" >/dev/null 2>&1 || decline "$SUMMARY is not tracked"
           key=$(cat "$LEAN/lean-toolchain" "$LEAN/lake-manifest.json" | sha256sum | cut -c1-16)
           cache=$LEAN_CACHE_ROOT/$key
           mkdir -p "$cache"
@@ -3407,6 +3412,7 @@ jobs:
 
       - name: Build the in-tree pv
         id: build
+        if: ${{ steps.pre.outputs.skip != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -3415,6 +3421,7 @@ jobs:
 
       - name: pv discharge run (build.sh, then check --strict + comparator + leanchecker)
         id: discharge
+        if: ${{ steps.pre.outputs.skip != 'true' }}
         shell: bash
         # One run at a time per cache: two runs unpacking into the same .lake would race.
         # set +e: Actions runs `bash -e`, which would abort at a failing run before its rc and

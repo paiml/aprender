@@ -212,9 +212,17 @@ m=$(mutant no-exit-on-lint '/lint contracts\//s/ \|\| exit$//') || exit 2
 expect_stop "$m" contracts none 1 '== census' "$TMP/bin/stale-pv"
 went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: the lint line without || exit -> the stale-PV_BIN row goes RED" $?
 
+# The d8 shape: `exit $$rc` in a BRACE group runs in the recipe's own shell, so a
+# PASSING lint exits 0 there and census, graph, README, provenance and the engine
+# tests never run -- a gate that always passes. Only a subshell confines the exit.
+m=$(mutant brace-lint '/lint contracts\//{s/pv_bin\.sh \&\& \( /pv_bin.sh \&\& { /;s/exit \$\$rc \) \|\| exit$/exit $$rc; } || exit/}') || exit 2
+run "$m" contracts none
+{ [ "$RC" -eq 0 ] && grep -qF 'test result: ok' <<<"$OUT"; }
+went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: the lint step's exit in a { } group, not ( ) -> the every-step-passes row goes RED" $?
+
 m=$(mutant no-pipefail 's/-o pipefail //') || exit 2
-expect_stop "$m" contracts lint 7 '== census'
-went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: .SHELLFLAGS without pipefail -> the pv lint row goes RED" $?
+expect_stop "$m" contracts cargo 101 '@@unreachable@@'
+went_red=$?; [ "$went_red" -ne 0 ]; row "mutant: .SHELLFLAGS without pipefail -> the engine-tests row (cargo | grep | tail) goes RED; pv lint no longer pipes (d8)" $?
 
 m=$(mutant no-accumulator 's/ \|\| rc=\$\$\?;/;/') || exit 2
 expect_stop "$m" contract-audit audit-first 7 'Binding audit complete'

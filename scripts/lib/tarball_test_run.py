@@ -34,7 +34,7 @@ import signal
 import subprocess
 import sys
 import time
-import tomllib
+import toml_compat as tomllib
 
 
 def manifest_pkg(manifest_path, cache):
