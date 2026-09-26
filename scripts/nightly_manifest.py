@@ -16,6 +16,13 @@ on fleet from nightly build; the end. fix".
              red-ci      a required check completed and is not success on S
              ci-pending  a required check is absent or still running on S
            Exit 0 on a decision, 3 when the checks could not be read.
+  plan     --meta F
+           Every workspace [[bin]], from `cargo metadata --no-deps` JSON. Prints
+           NIGHTLY_BINS=a,b,.. and NIGHTLY_CARGO_ARGS=-p P --bin a .. (for
+           $GITHUB_ENV), each bin's required-features as --features P/f. A new or
+           renamed bin ships without a workflow edit. A bin name two packages
+           declare is built once, from the package under crates/ (the root facade
+           re-exports `apr`); a name declared twice under crates/ is refused.
   record   --target T --sha S --bins a,b --bin-dir D --dist D [--build-outcome X]
            One target's fragment: sha256 of each tarball AND of each
            executable, its --version line, and the SHA it prints. A printed
@@ -199,6 +206,38 @@ def record(target, sha, bins, bin_dir, dist, build_outcome="success", probe=prob
     return {"target": target, "sha": sha, "status": "red" if red else "green", "red": red, "tools": tools}
 
 
+# ---------------------------------------------------------------- plan
+
+def plan(meta):
+    """(bins, cargo_args) for every workspace [[bin]] in `cargo metadata --no-deps` JSON."""
+    root = os.path.dirname(meta.get("workspace_root", "") + "/")
+    chosen = {}
+    for pkg in meta["packages"]:
+        nested = os.path.dirname(pkg["manifest_path"]) != root
+        for t in pkg["targets"]:
+            if "bin" not in t["kind"]:
+                continue
+            cand = (nested, pkg["name"], t["name"], tuple(t.get("required-features") or ()))
+            have = chosen.get(t["name"])
+            if have is None or (nested and not have[0]):
+                chosen[t["name"]] = cand
+            elif nested and have[0]:
+                raise ValueError(f"bin {t['name']} is declared by {have[1]} and {pkg['name']}")
+            # else: a root-facade duplicate of a nested bin -- the nested one ships
+    bins = sorted(chosen)
+    args, pkgs, feats = [], [], []
+    for b in bins:
+        _, pkg, name, req = chosen[b]
+        if pkg not in pkgs:
+            pkgs.append(pkg)
+        args += ["--bin", name]
+        feats += [f"{pkg}/{f}" for f in req if f"{pkg}/{f}" not in feats]
+    out = [x for p in pkgs for x in ("-p", p)] + args
+    if feats:
+        out += ["--features", ",".join(feats)]
+    return bins, out
+
+
 # ---------------------------------------------------------------- merge
 
 def merge(prev, fragments, sha, decision, targets, run_id, run_url, now):
@@ -320,6 +359,30 @@ def self_test():
     man = lambda tg: {"targets": tg}  # noqa: E731
     gt = lambda sha: {"status": "green", "green_sha": sha, "tools": {}}  # noqa: E731
 
+    print("plan:")
+    tgt = lambda n, *f, kind="bin": {"name": n, "kind": [kind], "required-features": list(f)}  # noqa: E731
+    pk = lambda n, where, *ts: {"name": n, "manifest_path": f"/w/{where}Cargo.toml", "targets": list(ts)}  # noqa: E731
+    meta = {"workspace_root": "/w", "packages": [
+        pk("aprender", "", tgt("apr", "cli"), tgt("aprender", kind="lib")),
+        pk("apr-cli", "crates/apr-cli/", tgt("apr"), tgt("apr-corpus-ingest")),
+        pk("aprender-present-terminal", "crates/t/", tgt("ptop", "ptop"), tgt("score", "score")),
+        pk("aprender-core", "crates/c/", tgt("aprender", kind="lib"))]}
+    bins, args = plan(meta)
+    check("every [[bin]] once, sorted; libs are not bins", bins, ["apr", "apr-corpus-ingest", "ptop", "score"])
+    check("root-facade apr loses to crates/apr-cli (no cli feature pulled in)",
+          args, ["-p", "apr-cli", "-p", "aprender-present-terminal", "--bin", "apr", "--bin", "apr-corpus-ingest",
+                 "--bin", "ptop", "--bin", "score", "--features", "aprender-present-terminal/ptop,aprender-present-terminal/score"])
+    rev = dict(meta, packages=list(reversed(meta["packages"])))
+    check("package order does not change the plan", plan(rev), (bins, args))
+    try:
+        plan(dict(meta, packages=meta["packages"] + [pk("aprender-other", "crates/o/", tgt("ptop"))]))
+        got = "no error"
+    except ValueError:
+        got = "error"
+    check("MUTANT two crates/ packages declare one bin name -> refused (one would overwrite the other)", got, "error")
+    check("no required-features -> no --features flag",
+          plan({"workspace_root": "/w", "packages": [pk("x", "crates/x/", tgt("x"))]})[1], ["-p", "x", "--bin", "x"])
+
     print("gate:")
     check("no prev manifest, CI green -> build", gate(S, None, T, green)[0], "build")
     check("HEAD == green_sha on every target -> reused (no work, no build)",
@@ -420,9 +483,9 @@ def self_test():
     print("publish plan:")
     m = merge(prev, {T[0]: gfrag(T[0]), T[1]: rfrag(T[1])}, S, "build", T, 7, "u", now)
     files = {f"{b}-{t}.tar.gz{s}" for b in ("apr", "pv") for t in T for s in ("", ".sha256")}
-    plan = publish_plan(m, S, files)
+    pplan = publish_plan(m, S, files)
     check("only the green arch's assets are replaced; manifest last",
-          plan, [f"apr-{T[0]}.tar.gz", f"apr-{T[0]}.tar.gz.sha256", f"pv-{T[0]}.tar.gz", f"pv-{T[0]}.tar.gz.sha256",
+          pplan, [f"apr-{T[0]}.tar.gz", f"apr-{T[0]}.tar.gz.sha256", f"pv-{T[0]}.tar.gz", f"pv-{T[0]}.tar.gz.sha256",
                  MANIFEST_ASSET])
     check("red-ci uploads the manifest only", publish_plan(merge(prev, {}, S, "red-ci", T, 7, "u", now), S, files),
           [MANIFEST_ASSET])
@@ -470,6 +533,8 @@ def main(argv):
     g.add_argument("--targets", default=",".join(TARGETS))
     g.add_argument("--checks-json")
     g.add_argument("--repo", default="paiml/aprender")
+    pl = sub.add_parser("plan")
+    pl.add_argument("--meta", required=True)
     r = sub.add_parser("record")
     for a in ("--target", "--sha", "--bins", "--bin-dir", "--dist"):
         r.add_argument(a, required=True)
@@ -500,6 +565,19 @@ def main(argv):
         decision, why = gate(a.sha, load_manifest(a.prev), a.targets.split(","), runs)
         print(decision)
         print(f"gate {a.sha[:9]}: {decision} -- {why}", file=sys.stderr)
+        return 0
+    if a.cmd == "plan":
+        try:
+            bins, args = plan(load(a.meta))
+        except (ValueError, KeyError, TypeError) as e:
+            print(f"::error::nightly plan: {e}", file=sys.stderr)
+            return 1
+        if not bins:
+            print("::error::nightly plan: cargo metadata lists no [[bin]]", file=sys.stderr)
+            return 1
+        print(f"NIGHTLY_BINS={','.join(bins)}")
+        print(f"NIGHTLY_CARGO_ARGS={' '.join(args)}")
+        print(f"nightly plan: {len(bins)} bins", file=sys.stderr)
         return 0
     if a.cmd == "record":
         print(json.dumps(record(a.target, a.sha, a.bins.split(","), a.bin_dir, a.dist, a.build_outcome,

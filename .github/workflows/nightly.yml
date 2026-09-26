@@ -22,7 +22,8 @@
 # and only publish has `contents: write`: it moves refs/tags/nightly (/git/refs)
 # and replaces the release's assets (/releases), and both need it.
 #
-# Produces, per target: {apr,pv}-{target}.tar.gz (+ .sha256; each holds
+# Produces, per target and per workspace [[bin]] (`nightly_manifest.py plan`):
+# <bin>-{target}.tar.gz (+ .sha256; each holds
 # <bin>-{target}/<bin>) and nightly-manifest.json, on the "nightly" prerelease.
 #
 # #3073 (operator rule 2026-09-10: "WE DO NOT USE HOSTED GITHUB RUNNERS"): every
@@ -57,8 +58,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # The bins shipped nightly. #4189 extends this to every workspace [[bin]].
-  NIGHTLY_BINS: apr,pv
   MANIFEST_URL: https://github.com/${{ github.repository }}/releases/download/nightly/nightly-manifest.json
 
 jobs:
@@ -121,6 +120,15 @@ jobs:
           T="${{ matrix.target }}"
           CACHE="$(cd "$GITHUB_WORKSPACE/../.." && pwd)/cache-nightly/$T"
           mkdir -p "$CACHE/registry" "$CACHE/target" "$GITHUB_WORKSPACE/target"
+          # Every workspace [[bin]], derived (#4189): a new or renamed bin ships
+          # with no edit here. Planned inside this step, so a plan that fails is
+          # build-failed, not a skipped build the gate would retry forever.
+          $DOCKER run --rm -v "$GITHUB_WORKSPACE:/workspace" -w /workspace rust:1.93.0-bullseye \
+            cargo metadata --no-deps --format-version 1 > nightly-meta.json
+          python3 scripts/nightly_manifest.py plan --meta nightly-meta.json > nightly-plan.env
+          cat nightly-plan.env >> "$GITHUB_ENV"
+          NIGHTLY_BINS=$(sed -n 's/^NIGHTLY_BINS=//p' nightly-plan.env)
+          ARGS=$(sed -n 's/^NIGHTLY_CARGO_ARGS=//p' nightly-plan.env)
           $DOCKER run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -v "$CACHE/registry:/usr/local/cargo/registry" \
@@ -129,11 +137,11 @@ jobs:
             -e CARGO_TARGET_DIR=/workspace/target \
             -e CARGO_INCREMENTAL=0 \
             -e T="$T" \
+            -e ARGS="$ARGS" \
             rust:1.93.0-bullseye \
-            sh -c 'set -e; ldd --version | head -1; cargo build --locked --release -p apr-cli -p aprender-contracts-cli --bin apr --bin pv --target "$T"'
+            sh -c 'set -e; ldd --version | head -1; cargo build --locked --release $ARGS --target "$T"'
           mkdir -p "target/$T/release" dist
-          # The --bin list above and NIGHTLY_BINS must agree; a bin named only in
-          # NIGHTLY_BINS fails this cp, which fails this step: build-failed.
+          # A planned bin the build did not produce fails this cp: build-failed.
           for b in ${NIGHTLY_BINS//,/ }; do
             cp "$CACHE/target/$T/release/$b" "target/$T/release/$b"
             A="$b-$T"
@@ -153,12 +161,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          # Every bin's --version must print the workspace crate version. The SHA
-          # is bound by bin_sha256 in the manifest; only apr prints it today.
+          # Every bin's --version must print the workspace crate version, and a
+          # printed SHA must be this build's. bin_sha256 binds the executable.
+          # NIGHTLY_BINS comes from the Build step's plan; a build that failed
+          # before planning records build-failed without reading it.
           V=$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p&&/^version *=/{gsub(/"/,"",$3);print $3;exit}' Cargo.toml)
           if [ -z "$V" ]; then echo "::error::no [workspace.package] version in Cargo.toml"; exit 1; fi
           python3 scripts/nightly_manifest.py record --target "${{ matrix.target }}" --sha "$GITHUB_SHA" \
-            --bins "$NIGHTLY_BINS" --bin-dir "target/${{ matrix.target }}/release" --dist dist \
+            --bins "${NIGHTLY_BINS:-none}" --bin-dir "target/${{ matrix.target }}/release" --dist dist \
             --build-outcome "${{ steps.build.outcome }}" --version "$V" > "dist/fragment-${{ matrix.target }}.json"
           cat "dist/fragment-${{ matrix.target }}.json"
 
@@ -183,7 +193,7 @@ jobs:
     if: needs.gate.outputs.decision == 'build'
     name: aarch64-apple-darwin on mini
     runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
-    timeout-minutes: 90
+    timeout-minutes: 180   # every workspace [[bin]] on one 16 GB box
     env:
       CARGO_INCREMENTAL: 0
       CARGO_TERM_COLOR: never
@@ -197,9 +207,16 @@ jobs:
         run: |
           set -euo pipefail
           rustup show active-toolchain
-          cargo build --locked --release -p apr-cli -p aprender-contracts-cli --bin apr --bin pv --target "$T"
+          # As on Linux: the plan is every workspace [[bin]], made in this step.
+          cargo metadata --no-deps --format-version 1 > nightly-meta.json
+          python3 scripts/nightly_manifest.py plan --meta nightly-meta.json > nightly-plan.env
+          cat nightly-plan.env >> "$GITHUB_ENV"
+          NIGHTLY_BINS=$(sed -n 's/^NIGHTLY_BINS=//p' nightly-plan.env)
+          ARGS=$(sed -n 's/^NIGHTLY_CARGO_ARGS=//p' nightly-plan.env)
+          # shellcheck disable=SC2086  # ARGS is a word list by construction
+          cargo build --locked --release $ARGS --target "$T"
           mkdir -p dist
-          # As on Linux: a bin named only in NIGHTLY_BINS fails this cp: build-failed.
+          # A planned bin the build did not produce fails this cp: build-failed.
           for b in ${NIGHTLY_BINS//,/ }; do
             A="$b-$T"
             rm -rf "${A:?}"
@@ -221,7 +238,7 @@ jobs:
           V=$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p&&/^version *=/{gsub(/"/,"",$3);print $3;exit}' Cargo.toml)
           if [ -z "$V" ]; then echo "::error::no [workspace.package] version in Cargo.toml"; exit 1; fi
           python3 scripts/nightly_manifest.py record --target "$T" --sha "$GITHUB_SHA" \
-            --bins "$NIGHTLY_BINS" --bin-dir "target/$T/release" --dist dist \
+            --bins "${NIGHTLY_BINS:-none}" --bin-dir "target/$T/release" --dist dist \
             --build-outcome "${{ steps.build.outcome }}" --version "$V" > "dist/fragment-$T.json"
           cat "dist/fragment-$T.json"
 
