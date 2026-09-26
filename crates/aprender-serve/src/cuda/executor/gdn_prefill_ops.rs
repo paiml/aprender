@@ -45,6 +45,11 @@ pub enum PrefillGemm {
     F16Cached,
 }
 
+/// Device memory [`PrefillGemm::F16Cached`] leaves free: a weight whose FP16 copy would
+/// cut into it is not cached and runs the f32 path (KV cache, scratch and the decode
+/// graphs allocate after the first prefill).
+const FP16_CACHE_HEADROOM: usize = 1 << 30;
+
 /// The environment variable that selects [`PrefillGemm`].
 pub const PREFILL_GEMM_ENV: &str = "APR_QWEN35_PREFILL_GEMM";
 
@@ -201,7 +206,9 @@ impl CudaExecutor {
         validate_device_ptr(x_ptr, "qwen35_project_rows x")?;
         validate_device_ptr(y_ptr, "qwen35_project_rows y")?;
         if prefill_gemm() == PrefillGemm::F16Cached {
-            return self.qwen35_project_rows_f16(qtype, w_ptr, x_ptr, y_ptr, rows, n, k, ldc);
+            if let Some(w_f16) = self.qwen35_fp16_weight(qtype, w_ptr, n, k)? {
+                return self.qwen35_project_rows_f16(w_f16, x_ptr, y_ptr, rows, n, k, ldc);
+            }
         }
         let w_f32 = self.qwen35_dequant_f32(qtype, w_ptr, n, k)?;
         self.ensure_cublas()?;
@@ -224,15 +231,40 @@ impl CudaExecutor {
         )
     }
 
-    /// The FP16 twin of [`Self::qwen35_project_rows`]: the weight is dequantized to f32
-    /// and converted to FP16 on first use and cached under its device pointer (the same
-    /// `fp16_weight_cache` the dense HGEMM prefill uses, so one weight is one entry), and
-    /// the activations are converted to FP16 per call.
-    #[allow(clippy::too_many_arguments)]
-    fn qwen35_project_rows_f16(
+    /// The FP16 copy of the `[n × k]` weight at `w_ptr`: dequantized to f32, converted
+    /// and cached under its device pointer on first use (the `fp16_weight_cache` the
+    /// dense HGEMM prefill also uses, so one weight is one entry). `None` when caching it
+    /// would leave less than [`FP16_CACHE_HEADROOM`] of device memory free: that weight
+    /// then keeps the f32 path, so a model whose FP16 copy does not fit still prefills.
+    fn qwen35_fp16_weight(
         &mut self,
         qtype: WeightQuantType,
         w_ptr: u64,
+        n: u32,
+        k: u32,
+    ) -> Result<Option<u64>, GpuError> {
+        if let Some(buf) = self.fp16_weight_cache.get(&w_ptr) {
+            return Ok(Some(buf.as_ptr()));
+        }
+        let count = n as usize * k as usize;
+        let (free, _) = self.context.memory_info()?;
+        if free < count * 2 + FP16_CACHE_HEADROOM {
+            return Ok(None);
+        }
+        let w_f32 = self.qwen35_dequant_f32(qtype, w_ptr, n, k)?;
+        let buf = GpuBuffer::<u16>::new(&self.context, count)?;
+        let ptr = buf.as_ptr();
+        self.convert_f32_to_f16(w_f32, ptr, count as u32)?;
+        self.fp16_weight_cache.insert(w_ptr, buf);
+        Ok(Some(ptr))
+    }
+
+    /// The FP16 twin of [`Self::qwen35_project_rows`] over the cached FP16 weight
+    /// `w_f16`; the activations are converted to FP16 per call.
+    #[allow(clippy::too_many_arguments)]
+    fn qwen35_project_rows_f16(
+        &mut self,
+        w_f16: u64,
         x_ptr: u64,
         y_ptr: u64,
         rows: u32,
@@ -240,17 +272,6 @@ impl CudaExecutor {
         k: u32,
         ldc: u32,
     ) -> Result<(), GpuError> {
-        let w_f16 = if let Some(buf) = self.fp16_weight_cache.get(&w_ptr) {
-            buf.as_ptr()
-        } else {
-            let w_f32 = self.qwen35_dequant_f32(qtype, w_ptr, n, k)?;
-            let count = n as usize * k as usize;
-            let buf = GpuBuffer::<u16>::new(&self.context, count)?;
-            let ptr = buf.as_ptr();
-            self.convert_f32_to_f16(w_f32, ptr, count as u32)?;
-            self.fp16_weight_cache.insert(w_ptr, buf);
-            ptr
-        };
         let x_count = rows as usize * k as usize;
         self.ensure_fp16_activation_scratch(x_count)?;
         let x_f16 = self
