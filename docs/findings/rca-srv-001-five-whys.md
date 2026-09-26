@@ -116,6 +116,7 @@ That is already fixed on car B: decode slope 4.31 → 0.155 ms per 1k ctx.
 | 1 | qwen35 prefill weight GEMM on tensor cores, e.g. W4A16 fp16-activation WMMA (`fp16_tensor/w4a16_wmma_gemm.rs` exists) or an MMQ path. Gated by a pre-registered end-to-end quality falsifier, not the 1e-3 kernel-isolation bound. Keep `pin_float_gemv` for the isolation tests | 78% of mid / 55% of long prefill gap | PMAT: qwen35 tensor-core prefill projections |
 | 2 | qwen35 prefill attention as a real tensor-core flash kernel. The in-tree flash leg is 1.3–1.4x SLOWER than f32 cuBLAS | 41% of long prefill gap, 5% of mid | PMAT: qwen35 flash prefill attention faster than cuBLAS f32 |
 | 3 | residual decode after #4273: 1.37–1.82x vs llama wall. Top kernels are `mwv_q4k_gemv` 3.2–3.6, `q5k_gemv_warp_reduce` 2.5, `mwv_q6k_gemv` 2.1–2.5 and `gdn_delta_rule_recurrence` 1.1 ms/tok. The recurrence fix is already on `perf/gdn-recurrence-cuda` d856be9e5, awaiting 59's fold | ≈ 2.8–6.7 ms/tok of decode | PMAT: qwen35 decode GEMV + host idle (H2/H3) |
+| 4 | qwen35 decode host idle: CUDA-graph capture of the per-token launch sequence (618 launches), hoist the ≈5 per-token `cuMemFree`/alloc into the session scratch, keep sampling on device | 27–29% of decode span under nsys (≈3.6–5.6 ms/step, upper bound) | PMAT: qwen35 decode graph capture + alloc-free step (H3) |
 
 ## Open (not closed by this data)
 
@@ -123,5 +124,12 @@ That is already fixed on car B: decode slope 4.31 → 0.155 ms per 1k ctx.
   - GEMV: apr 8.17 (q4k 3.22, q5k 2.46, q6k 2.13, q8_0 0.36) vs llama `mul_mat_vec_q` 3.91, an excess of 4.26 ms;
   - recurrence: 1.09 vs 0.06, an excess of 1.03 ms.
   Together that is 94% of the excess, against the falsifier's < 50%. By quant type, apr/llama is 1.8x (Q4_K), 3.5x (Q5_K) and 3.0x (Q6_K). The same root cause applies: `pin_float_gemv` is applied at build time to every model of this architecture (its docstring, via `with_max_seq_len`), so decode runs the FLOAT GEMVs, while llama's `mul_mat_vec_q` uses q8_1 activations. Fix #3 is therefore the decode leg of fix #1's precision question.
-- **H3** (host idle share ≥ 15% of decode wall): **not scored.** `apr run` prints no decode-only wall. It needs SRV-TIM-001's per-request split from `apr serve`.
+- **H3** (host idle share ≥ 15% of decode wall): **NOT rejected.** Scored from the B `n=129` nsys timelines (`nsys_car1ac_{mid,long}_129.sqlite`), decode window = every kernel after the last prefill `sgemm`, 128 steps, 618 kernel launches per step. GPU-busy is the union of kernel intervals.
+  | ctx | span ms/step | GPU busy | idle | step-boundary gap | intra-step gaps |
+  |-----|-------------:|---------:|-----:|------------------:|----------------:|
+  | 2241 | 13.58 | 9.95 | **26.8%** | 2.71 | 0.93 |
+  | 29991 | 19.12 | 13.55 | **29.1%** | 3.81 | 1.76 |
+  Most of the idle sits between tokens: the gap from the lm-head `mwv_q6k_gemv` to the next step's `rmsnorm_vectorized`, which is host sampling plus the 1 MB logits D2H. The rest is 617 sub-µs launch gaps per step: no CUDA graph, versus llama's graphed decode. In the decode window, CUDA API shows 618 `cuLaunchKernel` (2.0–3.0 ms/step of host time), 2 `cuStreamSynchronize`, and **5.1 `cuMemFree` per step (0.73–0.90 ms/step)**. That is per-token device allocation churn, and `cuMemFree` synchronizes implicitly.
+  Caveat: this is measured under nsys, which inflates per-launch host cost, so 27–29% is an upper bound. The falsifier has room: to fall under 15% the true idle would need to be about half of this. The un-profiled wall split is SRV-TIM-001's per-request timing.
+  **WHY (decode host side): why the idle?** Decode is launched kernel by kernel (618 launches/token, no graph capture), frees ≈5 device buffers per token, and syncs on sampled logits on the host before launching the next step.
 - **gx10 replica:** fb's PRM-S1 run on car `1ac56f258` and 41's queued `edb076b27` run are the gx10 replicas. GB10 bandwidth and compute differ from the 4090, so the shares above are 4090 shares.
