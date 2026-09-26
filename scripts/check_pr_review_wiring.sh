@@ -50,7 +50,7 @@
 #       the job is gone AND the guards it used to carry still run.
 #
 # WHAT THIS FILE DOES NOT CLAIM. The two mutation sweeps the job carried
-# (`scripts/mutate-guard.sh`, `scripts/mutate_quorum_arm.sh`) and its 43-row bats
+# (`scripts/mutate-guard.sh`, `scripts/mutate_quorum_arm.sh`) and its 47-row bats
 # fixture table are not `check_*.sh` and no workflow invokes them, so they run
 # nowhere in CI today. That is stated in ci.yml at the deletion site and in the
 # PR that removed them; it is deliberately NOT asserted here, because a rule

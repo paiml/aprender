@@ -541,7 +541,7 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 @test "every S6.3 row, the contract's owed row, and PRREV-008's seven have a fixture" {
   local n
   n=$(find "$FIX" -maxdepth 1 -type d -name 'row-*' | wc -l)
-  [ "$n" -eq 43 ] || { echo "expected 43 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6 + rows 27-35 from PRREV-015/S3.E + rows 36-37 from PRREV-020/S3.E.4 + rows 38-40 from the pmat transport probes + rows 41-43 from PRREV-023/S4.2), found $n"; false; }
+  [ "$n" -eq 47 ] || { echo "expected 47 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6 + rows 27-35 from PRREV-015/S3.E + rows 36-37 from PRREV-020/S3.E.4 + rows 38-40 from the pmat transport probes + rows 41-43 from PRREV-023/S4.2 + rows 44-47 from #4472 docs tier), found $n"; false; }
   local i
   for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43; do
     find "$FIX" -maxdepth 1 -type d -name "row-$i-*" | grep -q . \
@@ -1673,13 +1673,45 @@ land_prior_art_on_main() {
   assert_row row-33-arm-e-finding-advisory GREEN
 }
 
-@test "row 34 agy declared not-triggered                               RED  B1" {
-  # Row 19's rule (pmat: not-triggered) for the fifth arm, and STRICTER: pmat's
-  # illegality needed a code file in the diff, S3.E's needs nothing, because there is
-  # no diff shape a second opinion is not owed on. The head here is the DOCS-ONLY one,
-  # which is the hardest case for that claim and therefore the right one to pin it.
+@test "row 34 agy declared not-triggered on a code diff                RED  B1" {
+  # Row 19's rule (pmat: not-triggered) for the fifth arm. Until #4472 this row sat on
+  # the DOCS-ONLY head as the hardest case for "no diff shape is exempt"; the operator
+  # ruled that case the other way (row 44). It now sits on row 14's complete GPU review
+  # with only the agy arm changed, so the RED is this rule's and nothing else's.
   assert_row row-34-arm-e-not-triggered RED B1 \
-    "consultations.antigravity is not-triggered, but S3.E's trigger is unconditional"
+    "consultations.antigravity is not-triggered, but S3.E's trigger is unconditional on every PR except a docs-tier diff, and this one is class=code"
+}
+
+@test "row 44 agy not-triggered on a docs-tier diff, reason names it    GREEN" {
+  # #4472: docs/note.md only -> diff_class.sh class=docs, no ratio added, BEATS untouched.
+  assert_row row-44-arm-e-docs-tier GREEN
+}
+
+@test "row 45 docs tier claimed on a docs diff that publishes a ratio   RED  B1" {
+  # book/**.md only, so class=docs -- but it adds "2.93x Ollama". A claim is what a
+  # second vendor is owed; the suffix of the file must not buy it off.
+  assert_row row-45-arm-e-docs-tier-refused-on-a-claim RED B1 \
+    "states a comparative ratio; the docs tier does not cover a claim"
+}
+
+@test "row 44 with the diff classifier absent -> the docs tier fails closed  RED B1" {
+  # The classifier is looked up lazily (harnesses that copy the guard alone must not
+  # break), so its absence has to reject HERE, on the one branch that reads it.
+  PR_REVIEW_DIFF_CLASS=/nonexistent/diff_class.sh run "$GUARD" "$FIX/row-44-arm-e-docs-tier"
+  [ "$status" -eq 1 ] || { echo "expected RED, got $status:"; echo "$output"; false; }
+  [[ "$output" == *"[B1]"* && "$output" == *"the docs tier fails closed"* ]] || { echo "$output"; false; }
+}
+
+@test "row 46 docs-tier diff, trigger_reason does not name the tier     RED  B1" {
+  # Row 44's diff with the pre-#4472 reason: taking the exemption must be on the record.
+  assert_row row-46-arm-e-docs-tier-reason-unnamed RED B1 \
+    "does not name the docs tier"
+}
+
+@test "row 47 docs tier claimed on a diff that edits docs/BEATS.md       RED  B1" {
+  # Row 44 in every respect but the path. Added when reject-53-drop SURVIVED.
+  assert_row row-47-arm-e-docs-tier-refused-on-beats RED B1 \
+    "the diff touches docs/BEATS.md"
 }
 
 @test "probe skill_version absent                                      RED  B1" {

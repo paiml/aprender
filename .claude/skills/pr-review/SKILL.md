@@ -22,7 +22,7 @@ difference is a defect in this file.
 **Contract**: `contracts/pr-review-skill-v2.yaml` (§1 grounding, §7 blocking, §8 metrics)
 **Guard**: `scripts/check_pr_review_receipt.sh` — it validates what you emit here, it has
 its own positive controls, and its mutation set (`scripts/mutate-guard.sh`) reports
-233/233. **Run it on your own receipt before you post anything.**
+241/241. **Run it on your own receipt before you post anything.**
 
 ## Context
 
@@ -438,7 +438,7 @@ Bash guards are exercised with `bats-core` fixtures. For the receipt guard itsel
 mutation set already exists and is a derivation, not a list:
 
 ```bash
-bash scripts/mutate-guard.sh          # 233/233 on scripts/check_pr_review_receipt.sh
+bash scripts/mutate-guard.sh          # 241/241 on scripts/check_pr_review_receipt.sh
 ```
 
 **`attempted: 0` with `status: consulted` is rejected** (fixture row 2). A mutation set
@@ -452,7 +452,15 @@ mutant on a guard is not a scoring detail: it is a rule the guard *states* and n
 
 ---
 
-### §3.E Antigravity — a second reviewer from a different vendor (**every PR**)
+### §3.E Antigravity — a second reviewer from a different vendor (**every PR except the docs tier**)
+
+**Docs tier (#4472).** The ONE case where you record `antigravity.status: not-triggered`.
+All four must hold, or the receipt guard rejects it [B1] (fixture rows 44–47):
+`scripts/ci/diff_class.sh --base <base> --head <head>` prints `class=docs`; `docs/BEATS.md`
+is not in the diff; no added line states a comparative ratio (a claim is owed a second
+vendor whatever file it sits in); and `trigger_reason` names the docs tier, e.g.
+`"docs tier (#4472): diff_class.sh class=docs, no comparative claim added, docs/BEATS.md untouched"`.
+On any other diff, `not-triggered` is rejected (row 34).
 
 §3.A–§3.D ask *sources*. §3.E asks **a different reviewing agent**: different vendor,
 different model family, its own process, its own tools. That is the only arm here whose

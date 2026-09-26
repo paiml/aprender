@@ -2527,7 +2527,7 @@ jobs:
   #
   # WHAT NO LONGER RUNS IN CI, stated rather than discovered later: the two
   # mutation sweeps `scripts/mutate-guard.sh` (Arm 3) and
-  # `scripts/mutate_quorum_arm.sh` (Arm 6), and the 43-row bats fixture table
+  # `scripts/mutate_quorum_arm.sh` (Arm 6), and the 47-row bats fixture table
   # (Arm 2). No other workflow invokes them (`grep -rln` over .github/workflows
   # returns nothing), and they are not `check_*.sh`, so guard_tree does not reach
   # them. They remain runnable by hand and are the natural content of a nightly.
