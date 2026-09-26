@@ -1059,14 +1059,28 @@ class RunCtx:
         self.fetch_jobs = self._fetch_jobs
         self._jobs_at = 0.0
         self._jobs: list = []
+        self.external_deadline = time.time() + EXTERNAL_TIMEOUT_S
 
     def _fetch_jobs(self) -> list:
-        attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "1")
-        url = (f"{self.api}/repos/{self.repo}/actions/runs/{self.run_id}"
-               f"/attempts/{attempt}/jobs?per_page=100")
-        return gh_json(url, self.token).get("jobs", [])
+        # Run-scoped with filter=latest, not attempt-scoped: "Re-run failed jobs"
+        # carries a green workspace-test over from the earlier attempt, and an
+        # attempt-scoped list would never show it. Every page, not the first.
+        jobs, page = [], 1
+        while True:
+            url = (f"{self.api}/repos/{self.repo}/actions/runs/{self.run_id}"
+                   f"/jobs?filter=latest&per_page=100&page={page}")
+            got = gh_json(url, self.token).get("jobs", [])
+            jobs += got
+            if len(got) < 100:
+                return jobs
+            page += 1
 
     def external_result(self, need: str):
+        # A job that never completes (or never appears) fails the need at the
+        # deadline, pointing at the need -- not at x86-main's own job timeout.
+        if time.time() >= self.external_deadline:
+            say(f"::error::external job {need!r}: not completed within {EXTERNAL_TIMEOUT_S:.0f}s")
+            return "failure"
         if time.time() - self._jobs_at >= EXTERNAL_POLL_S:
             self._jobs, self._jobs_at = self.fetch_jobs(), time.time()
         js = [j for j in self._jobs if j.get("name") == need]
@@ -1125,6 +1139,8 @@ class RunCtx:
 
 DEFAULT_TIMEOUT_SCALE = 2.0
 EXTERNAL_POLL_S = 60.0
+# The shard jobs' own timeout (180 min) plus the verdict job's (10), plus queue.
+EXTERNAL_TIMEOUT_S = 200 * 60.0
 
 
 def timeout_seconds(minutes, default_minutes=0) -> float:
@@ -1475,6 +1491,7 @@ def cmd_self_test(a):
     # job completes, then carries its conclusion; without the flag it is absent.
     x = RunCtx.__new__(RunCtx)
     x.sections, x.external, x._jobs_at, x._jobs = {}, {"workspace-test": None}, 0.0, []
+    x.external_deadline = time.time() + 3600
     for label, jobs, want in (
         ("external need: job not listed yet -> pending", [], None),
         ("external need: job in progress -> pending", [{"name": "workspace-test", "status": "in_progress"}], None),
@@ -1487,6 +1504,8 @@ def cmd_self_test(a):
         x._jobs_at, x.fetch_jobs = 0.0, (lambda j=jobs: j)
         row(label, x.need_result("workspace-test"), want)
     row("external need: a member of the run", x.members("workspace-test"), ["workspace-test"])
+    x.external_deadline, x._jobs_at, x.fetch_jobs = time.time() - 1, 0.0, (lambda: [])
+    row("external need: past the deadline and still absent -> failure", x.need_result("workspace-test"), "failure")
     x.external = {}
     row("no --external-job: the need is absent (schedule refuses)", x.members("workspace-test"), [])
     bad = 0

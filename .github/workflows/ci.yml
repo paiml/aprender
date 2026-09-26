@@ -383,7 +383,12 @@ jobs:
             tiers="$tiers $(cat "$d/sigma-shard-$n/tier")"
           done
           echo "shard tiers:$tiers"
-          [ "$tiers" = " full full full" ] || { echo "not a full-tier run on every shard: the lib/explicit Σ is not owed"; exit 0; }
+          # Each shard decides its tier on its own. Only an AGREED non-full tier
+          # skips the lib/explicit Σ; a split (full full quick) is RED, since
+          # the full shards' partitions would otherwise go unchecked.
+          set -- $tiers
+          [ "$1" = "$2" ] && [ "$2" = "$3" ] || { echo "::error::Σ: the shards disagree on the tier:$tiers"; exit 1; }
+          [ "$1" = full ] || { echo "every shard ran tier '$1': the lib/explicit Σ is not owed"; exit 0; }
           j=() l=()
           for n in 1 2 3; do
             j+=(--junit "$d/sigma-shard-$n/lib.junit.xml")
