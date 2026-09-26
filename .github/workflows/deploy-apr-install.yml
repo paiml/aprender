@@ -1,0 +1,104 @@
+# Publishes scripts/install.sh to https://paiml.com/apr/install.sh so the
+# public install one-liner doesn't depend on raw.githubusercontent.com or a
+# `main`-tracking redirect (main can be broken between releases; this
+# publishes a released, lint-checked copy on purpose, not on every push).
+#
+# Path is paiml.com/apr/ (not paiml.com/install.sh) so other apr-cli-adjacent
+# scripts can live under the same prefix later without a new deploy surface.
+#
+# Auth: OIDC only, no long-lived AWS keys. The `apr-install-deploy` IAM role
+# trusts ONLY GitHub Actions runs in this repo targeting the `paiml-apr-deploy`
+# environment (see the role's trust policy) and can write exclusively to
+# s3://paiml.com/apr/* plus invalidate CloudFront distribution E3GO2XPA298U37
+# (aliases paiml.com / www.paiml.com) — no broader S3 or CloudFront access.
+#
+# Triggers:
+#   - release: published — fires automatically so paiml.com/apr/install.sh
+#     tracks the latest tagged release, same cadence as binary-release.yml.
+#   - workflow_dispatch — manual run. Needed today: no installer has ever been
+#     published to paiml.com yet, so the first copy has to be pushed by hand
+#     ahead of (or independent of) the next tagged release.
+#
+# #3073 (operator rule 2026-09-10): no GitHub-hosted runners anywhere in this
+# repo's CI — runs on the same clean-room pool as install-script.yml.
+name: Deploy apr install.sh to paiml.com
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish scripts/install.sh from (blank = default branch HEAD)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write  # required for OIDC -> AssumeRoleWithWebIdentity, nothing else
+
+concurrency:
+  group: deploy-apr-install-paiml-com
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: publish install.sh
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    environment: paiml-apr-deploy
+    steps:
+      - name: Resolve ref to publish from
+        id: ref
+        run: |
+          REF="${{ github.event.release.tag_name || inputs.tag }}"
+          echo "ref=${REF:-$GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Publishing scripts/install.sh from ${REF:-$GITHUB_SHA}"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+
+      # pmat/bashrs are pinned-fleet tools, never installed per-job (BSE-10a,
+      # PMAT-1066) — see ci.yml's identical step for why.
+      - name: pmat/bashrs must match the pinned fleet versions (never install)
+        run: bash scripts/check_tool_versions.sh
+
+      - name: bashrs SEC/DET/IDEM (scripts/install.sh)
+        run: bashrs lint --level error scripts/install.sh
+
+      - name: Configure AWS credentials (OIDC, apr-install-deploy role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Upload to s3://paiml.com/apr/install.sh
+        run: |
+          aws s3 cp scripts/install.sh s3://paiml.com/apr/install.sh \
+            --content-type text/x-shellscript \
+            --cache-control "public, max-age=300"
+
+      - name: Invalidate CloudFront /apr/* (distribution E3GO2XPA298U37)
+        id: invalidate
+        run: |
+          ID=$(aws cloudfront create-invalidation \
+            --distribution-id E3GO2XPA298U37 \
+            --paths "/apr/*" \
+            --query 'Invalidation.Id' --output text)
+          echo "invalidation_id=$ID" >> "$GITHUB_OUTPUT"
+          echo "Invalidation $ID created for /apr/*"
+
+      - name: Wait for CloudFront invalidation to complete
+        run: |
+          aws cloudfront wait invalidation-completed \
+            --distribution-id E3GO2XPA298U37 \
+            --id "${{ steps.invalidate.outputs.invalidation_id }}"
+
+      # Byte-for-byte proof the CDN is serving what was just checked out —
+      # not "the PUT returned 200", not "intent to deploy" (CLAUDE.md
+      # Verification Discipline #2: cite a behaviour delta, not intent).
+      - name: Verify paiml.com/apr/install.sh matches the published source
+        run: |
+          curl -fsSL https://paiml.com/apr/install.sh -o /tmp/deployed-install.sh
+          diff scripts/install.sh /tmp/deployed-install.sh
+          echo "OK: https://paiml.com/apr/install.sh matches ${{ steps.ref.outputs.ref }}:scripts/install.sh"
