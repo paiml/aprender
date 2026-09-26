@@ -457,6 +457,30 @@ STUB
 }
 
 fails=0; rows=0
+# spawn KIND NAME CMD... -- run one row (KIND=row) or mutant (KIND=killed) in the background, at
+# most RHR_JOBS at once; drain reports every verdict IN TABLE ORDER. Each row owns its own $TMP/<name>
+# (or mktemp) fixture, so they are independent: serially they were ~340 s of CI's guard-tree (#4429).
+RHR_JOBS=${RHR_JOBS:-$(nproc 2> /dev/null || echo 4)}; [ "$RHR_JOBS" -le 8 ] 2> /dev/null || RHR_JOBS=8
+mkdir -p "$TMP/jobs" || env_die "cannot make $TMP/jobs"
+SPAWNED=0; declare -a SP_KIND=() SP_NAME=()
+spawn() {
+    local kind=$1 name=$2; shift 2
+    SPAWNED=$((SPAWNED + 1)); SP_KIND[SPAWNED]=$kind; SP_NAME[SPAWNED]=$name
+    while [ "$(jobs -rp | wc -l)" -ge "$RHR_JOBS" ]; do wait -n; done
+    ( "$@" > "$TMP/jobs/$SPAWNED.out" 2> "$TMP/jobs/$SPAWNED.err"; printf '%s\n' "$?" > "$TMP/jobs/$SPAWNED.rc" ) &
+}
+DRAINED=0
+drain() {
+    local i rc
+    wait
+    for ((i = DRAINED + 1; i <= SPAWNED; i++)); do
+        cat -- "$TMP/jobs/$i.err" >&2
+        rc=$(cat -- "$TMP/jobs/$i.rc" 2> /dev/null) || rc=3
+        if [ "${SP_KIND[i]}" = row ]; then row "${SP_NAME[i]}" "$rc" "$(cat -- "$TMP/jobs/$i.out")"
+        else killed "${SP_NAME[i]}" "$rc"; fi
+    done
+    DRAINED=$SPAWNED
+}
 row() { # row NAME RC MESSAGE
     rows=$((rows + 1))
     if [ "$2" = 0 ]; then printf 'ok    %s\n' "$1"
@@ -1022,57 +1046,57 @@ PY
 
 # ---- the rows ------------------------------------------------------------------------------------
 echo "=== the train's host receipts, in the gate's schema, judged after they exist (#3731) ==="
-out=$(a1_gpu_linux real "$HOST_RECEIPT"); row "A1 gpu-linux" $? "$out"
-out=$(a2_darwin real "$HOST_RECEIPT"); row "A2 darwin" $? "$out"
-out=$(a3_install_fails real "$HOST_RECEIPT"); row "A3 install-fails" $? "$out"
-out=$(a4_parity_refuses real "$HOST_RECEIPT"); row "A4 parity-refuses" $? "$out"
-out=$(a5_insane real "$HOST_RECEIPT"); row "A5 insane-answer" $? "$out"
-out=$(a6_two_hashes real "$HOST_RECEIPT"); row "A6 two-hashes" $? "$out"
-out=$(a7_bad_version real "$HOST_RECEIPT"); row "A7 bad-version" $? "$out"
-out=$(a8_nvsmi_fails real "$HOST_RECEIPT"); row "A8 nvsmi-fails" $? "$out"
-out=$(a9_gpu_fallback real "$HOST_RECEIPT"); row "A9 gpu-fallback" $? "$out"
-out=$(a10_legacy_wrap real "$HOST_RECEIPT"); row "A10 legacy-wrap" $? "$out"
-out=$(a11_bad_prio real "$HOST_RECEIPT"); row "A11 bad-prio" $? "$out"
-out=$(b1_train_green real "$AUTOPILOT" "$HOST_RECEIPT"); row "B1 train-green" $? "$out"
-out=$(b2_dir_removed real "$AUTOPILOT" "$HOST_RECEIPT"); row "B2 dir-removed" $? "$out"
-out=$(b3_dir_vanishes real "$AUTOPILOT" "$HOST_RECEIPT"); row "B3 dir-vanishes" $? "$out"
-out=$(b4_dir_blocked real "$AUTOPILOT" "$HOST_RECEIPT"); row "B4 dir-blocked" $? "$out"
-out=$(b5_unreachable real "$AUTOPILOT" "$HOST_RECEIPT"); row "B5 unreachable" $? "$out"
-out=$(b6_env_no_toolchain real "$AUTOPILOT" "$HOST_RECEIPT"); row "B6 env-no-toolchain" $? "$out"
-out=$(postpub_row b7-real "$AUTOPILOT" "post-publish dogfood NO-GO rc=1" FX_DOGFOOD_VERDICT=NO-GO); row "B7 postpub-nogo" $? "$out"
-out=$(postpub_row b8-real "$AUTOPILOT" "post-publish dogfood refused on its receipt: receipt-20260921T000000Z.json still DEFERS declared:check_multiplatform_dogfood" 'FX_DEFERRED=["declared:check_multiplatform_dogfood"]'); row "B8 postpub-defer" $? "$out"
-out=$(postpub_row b9-real "$AUTOPILOT" "post-publish dogfood refused on its receipt: no post-publish receipt" FX_NO_RECEIPT=1); row "B9 postpub-noreceipt" $? "$out"
-out=$(b10_install_only real "$AUTOPILOT"); row "B10 install-only" $? "$out"
-out=$(b11_postpub_alone real "$AUTOPILOT"); row "B11 postpub-alone" $? "$out"
-out=$(b12_report_notes real "$AUTOPILOT"); row "B12 report-notes" $? "$out"
-out=$(l1_ledger_pr real "$AUTOPILOT"); row "L1 ledger-pr" $? "$out"
-out=$(l2_ledger_rerun real "$AUTOPILOT"); row "L2 ledger-rerun" $? "$out"
-out=$(l3_ledger_empty real "$AUTOPILOT"); row "L3 ledger-empty" $? "$out"
-out=$(l4_ledger_rejected real "$AUTOPILOT"); row "L4 ledger-rejected" $? "$out"
-out=$(twin_row "$ROOT/scripts/lib"); row "T1 twin-equal" $? "$out"
-out=$(twin_missing_row); row "T2 twin-missing" $? "$out"
-out=$(p1_hold_release "$BANDLOCK"); row "P1 band-lock" $? "$out"
-out=$(p2_bound "$BANDLOCK"); row "P2 band-bound" $? "$out"
-out=$(p3_refused "$BANDLOCK"); row "P3 band-refused" $? "$out"
-out=$(p4_no_rule "$BANDLOCK"); row "P4 band-no-rule" $? "$out"
-out=$(run_band_row "$PARITY" cpu 0 free); row "R1 cpu-band" $? "$out"
-out=$(run_band_row "$PARITY" accel 0 held); row "R2 accel-band" $? "$out"
-out=$(run_band_row "$PARITY" accel 1 not-run FX_Q_REFUSE=1); row "R3 accel-refused" $? "$out"
-out=$(run_band_row "$PARITY" accel 1 held GPU_BAND_TIMEOUT_S=2 FX_BODY_OVERRUN=1); row "R4 accel-bound" $? "$out"
-out=$(g1_report_listed real "$GATE"); row "G1 report-listed" $? "$out"
-out=$(g2_report_other_version real "$GATE"); row "G2 report-other-version" $? "$out"
-out=$(g3_report_present real "$GATE"); row "G3 report-present" $? "$out"
-out=$(g4_report_shape); row "G4 report-shape" $? "$out"
+spawn row "A1 gpu-linux" a1_gpu_linux real "$HOST_RECEIPT"
+spawn row "A2 darwin" a2_darwin real "$HOST_RECEIPT"
+spawn row "A3 install-fails" a3_install_fails real "$HOST_RECEIPT"
+spawn row "A4 parity-refuses" a4_parity_refuses real "$HOST_RECEIPT"
+spawn row "A5 insane-answer" a5_insane real "$HOST_RECEIPT"
+spawn row "A6 two-hashes" a6_two_hashes real "$HOST_RECEIPT"
+spawn row "A7 bad-version" a7_bad_version real "$HOST_RECEIPT"
+spawn row "A8 nvsmi-fails" a8_nvsmi_fails real "$HOST_RECEIPT"
+spawn row "A9 gpu-fallback" a9_gpu_fallback real "$HOST_RECEIPT"
+spawn row "A10 legacy-wrap" a10_legacy_wrap real "$HOST_RECEIPT"
+spawn row "A11 bad-prio" a11_bad_prio real "$HOST_RECEIPT"
+spawn row "B1 train-green" b1_train_green real "$AUTOPILOT" "$HOST_RECEIPT"
+spawn row "B2 dir-removed" b2_dir_removed real "$AUTOPILOT" "$HOST_RECEIPT"
+spawn row "B3 dir-vanishes" b3_dir_vanishes real "$AUTOPILOT" "$HOST_RECEIPT"
+spawn row "B4 dir-blocked" b4_dir_blocked real "$AUTOPILOT" "$HOST_RECEIPT"
+spawn row "B5 unreachable" b5_unreachable real "$AUTOPILOT" "$HOST_RECEIPT"
+spawn row "B6 env-no-toolchain" b6_env_no_toolchain real "$AUTOPILOT" "$HOST_RECEIPT"
+spawn row "B7 postpub-nogo" postpub_row b7-real "$AUTOPILOT" "post-publish dogfood NO-GO rc=1" FX_DOGFOOD_VERDICT=NO-GO
+spawn row "B8 postpub-defer" postpub_row b8-real "$AUTOPILOT" "post-publish dogfood refused on its receipt: receipt-20260921T000000Z.json still DEFERS declared:check_multiplatform_dogfood" 'FX_DEFERRED=["declared:check_multiplatform_dogfood"]'
+spawn row "B9 postpub-noreceipt" postpub_row b9-real "$AUTOPILOT" "post-publish dogfood refused on its receipt: no post-publish receipt" FX_NO_RECEIPT=1
+spawn row "B10 install-only" b10_install_only real "$AUTOPILOT"
+spawn row "B11 postpub-alone" b11_postpub_alone real "$AUTOPILOT"
+spawn row "B12 report-notes" b12_report_notes real "$AUTOPILOT"
+spawn row "L1 ledger-pr" l1_ledger_pr real "$AUTOPILOT"
+spawn row "L2 ledger-rerun" l2_ledger_rerun real "$AUTOPILOT"
+spawn row "L3 ledger-empty" l3_ledger_empty real "$AUTOPILOT"
+spawn row "L4 ledger-rejected" l4_ledger_rejected real "$AUTOPILOT"
+spawn row "T1 twin-equal" twin_row "$ROOT/scripts/lib"
+spawn row "T2 twin-missing" twin_missing_row
+spawn row "P1 band-lock" p1_hold_release "$BANDLOCK"
+spawn row "P2 band-bound" p2_bound "$BANDLOCK"
+spawn row "P3 band-refused" p3_refused "$BANDLOCK"
+spawn row "P4 band-no-rule" p4_no_rule "$BANDLOCK"
+spawn row "R1 cpu-band" run_band_row "$PARITY" cpu 0 free
+spawn row "R2 accel-band" run_band_row "$PARITY" accel 0 held
+spawn row "R3 accel-refused" run_band_row "$PARITY" accel 1 not-run FX_Q_REFUSE=1
+spawn row "R4 accel-bound" run_band_row "$PARITY" accel 1 held GPU_BAND_TIMEOUT_S=2 FX_BODY_OVERRUN=1
+spawn row "G1 report-listed" g1_report_listed real "$GATE"
+spawn row "G2 report-other-version" g2_report_other_version real "$GATE"
+spawn row "G3 report-present" g3_report_present real "$GATE"
+spawn row "G4 report-shape" g4_report_shape
 G5_PATCH='{"generate": null, "unmeasured": ["generate: `apr run --format json` exited 1: boom"]}'
 G5_WANT='^FAIL +intel +generate is null: generate: `apr run --format json` exited 1: boom$'
 G6_PATCH='{"generate": {"output_sane": false}}'; G6_WANT='^FAIL +intel +generate\.output_sane is not true'
 G7_PATCH='{"sha256_measured": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}'; G7_WANT='^FAIL +intel +the \.crate the host downloaded \(eeeeeeeeeeee\) is not the one crates\.io published'
 G8_PATCH='{"unmeasured": []}'; G8_WANT='^FAIL +intel +unmeasured\[\] is empty or absent'
-out=$(gate_block_row g5-real "$GATE" "$G5_PATCH" "$G5_WANT"); row "G5 gen-null" $? "$out"
-out=$(gate_block_row g6-real "$GATE" "$G6_PATCH" "$G6_WANT"); row "G6 gen-insane" $? "$out"
-out=$(gate_block_row g7-real "$GATE" "$G7_PATCH" "$G7_WANT"); row "G7 hash-differs" $? "$out"
-out=$(gate_block_row g8-real "$GATE" "$G8_PATCH" "$G8_WANT"); row "G8 unmeasured-empty" $? "$out"
-out=$(gate_block_row g9-real "$GATE" "$G6_PATCH" '^REPORT intel +generate/sha256/unmeasured not required for 0\.65\.2' 0.65.2); row "G9 grandfathered" $? "$out"
+spawn row "G5 gen-null" gate_block_row g5-real "$GATE" "$G5_PATCH" "$G5_WANT"
+spawn row "G6 gen-insane" gate_block_row g6-real "$GATE" "$G6_PATCH" "$G6_WANT"
+spawn row "G7 hash-differs" gate_block_row g7-real "$GATE" "$G7_PATCH" "$G7_WANT"
+spawn row "G8 unmeasured-empty" gate_block_row g8-real "$GATE" "$G8_PATCH" "$G8_WANT"
+spawn row "G9 grandfathered" gate_block_row g9-real "$GATE" "$G6_PATCH" '^REPORT intel +generate/sha256/unmeasured not required for 0\.65\.2' 0.65.2
 BENCH_PATCH='{"bench_attempt": {"status": "refused", "rc": 1, "reason": "FAIL  apr bench exited non-zero"}}'
 G10_WANT='^FAIL +intel +no bench block: the producer refused on this host: FAIL  apr bench exited non-zero$'
 # a VALID parity block with every lane below its floor: the committed 0.65.2 lambda receipt's
@@ -1085,12 +1109,13 @@ assert nocuda["lanes"] and len(nocuda["lanes"]) < len(blk["lanes"])
 json.dump({"parity": nocuda, "accelerator": "NVIDIA GeForce RTX 4090 sm_89"}, open(sys.argv[3], "w"))
 PY
 G13_WANT='^REPORT intel +parity: a lane is below its declared floor -- runs as REPORT for 9\.9\.9, owed by #2844$'
-out=$(gate_block_row g13-real "$GATE" "@$TMP/floor-patch.json" "$G13_WANT" 9.9.9 "9.9.9:intel:parity:#2844"); row "G13 report-floor (listed)" $? "$out"
-out=$(gate_block_row g13b-real "$GATE" "@$TMP/floor-patch.json" '^FAIL +intel +a parity lane is below its declared floor$'); row "G13b report-floor (unlisted FAILs)" $? "$out"
-out=$(gate_block_row g14-real "$GATE" "@$TMP/nocuda-patch.json" 'needs lane\(s\) cuda, receipt has: cpu +-- runs as REPORT for 9\.9\.9, owed by #3805$' 9.9.9 "9.9.9:intel:parity:#3805"); row "G14 report-lanes" $? "$out"
-out=$(gate_block_row g10-real "$GATE" "$BENCH_PATCH" "$G10_WANT"); row "G10 bench-required" $? "$out"
-out=$(gate_block_row g11-real "$GATE" "$BENCH_PATCH" '^REPORT intel +no bench block: runs as REPORT for 9\.9\.9, owed by #7; the producer refused on this host: FAIL  apr bench exited non-zero$' 9.9.9 "9.9.9:intel:bench:#7"); row "G11 bench-listed" $? "$out"
-out=$(gate_block_row g12-real "$GATE" "$BENCH_PATCH" '^REPORT intel +no bench block \(hand-made receipt, pre-#3731\): the producer refused' 0.65.2); row "G12 bench-grandfathered" $? "$out"
+spawn row "G13 report-floor (listed)" gate_block_row g13-real "$GATE" "@$TMP/floor-patch.json" "$G13_WANT" 9.9.9 "9.9.9:intel:parity:#2844"
+spawn row "G13b report-floor (unlisted FAILs)" gate_block_row g13b-real "$GATE" "@$TMP/floor-patch.json" '^FAIL +intel +a parity lane is below its declared floor$'
+spawn row "G14 report-lanes" gate_block_row g14-real "$GATE" "@$TMP/nocuda-patch.json" 'needs lane\(s\) cuda, receipt has: cpu +-- runs as REPORT for 9\.9\.9, owed by #3805$' 9.9.9 "9.9.9:intel:parity:#3805"
+spawn row "G10 bench-required" gate_block_row g10-real "$GATE" "$BENCH_PATCH" "$G10_WANT"
+spawn row "G11 bench-listed" gate_block_row g11-real "$GATE" "$BENCH_PATCH" '^REPORT intel +no bench block: runs as REPORT for 9\.9\.9, owed by #7; the producer refused on this host: FAIL  apr bench exited non-zero$' 9.9.9 "9.9.9:intel:bench:#7"
+spawn row "G12 bench-grandfathered" gate_block_row g12-real "$GATE" "$BENCH_PATCH" '^REPORT intel +no bench block \(hand-made receipt, pre-#3731\): the producer refused' 0.65.2
+drain
 jqe="jq"" -e"   # built, so this file does not match its own search
 out=$(grep -n -- "$jqe" "$AUTOPILOT" "$HOST_RECEIPT"); [ -z "$out" ]; row "S1 no-jq-e" $? "found: $out"
 
@@ -1101,48 +1126,49 @@ killed() { # killed NAME ROW-RC
     elif [ "$2" = 2 ]; then env_die "mutant $1 could not build its fixture"
     else printf 'FAIL  mutant %s SURVIVED (its row stayed green)\n' "$1" >&2; fails=$((fails + 1)); fi
 }
-a1_gpu_linux m1 "$M/hr-drop-accel-line.sh" > /dev/null; killed hr-drop-accel-line $?
-a1_gpu_linux m2 "$M/hr-no-gpu-wrap.sh" > /dev/null; killed hr-no-gpu-wrap $?
-a1_gpu_linux m2b "$M/hr-gpuq-not-preferred.sh" > /dev/null; killed hr-gpuq-not-preferred $?
-a1_gpu_linux m2c "$M/hr-parity-nested.sh" > /dev/null; killed hr-parity-nested $?
-a2_darwin m3 "$M/hr-os-literal.sh" > /dev/null; killed hr-os-literal $?
-a4_parity_refuses m4 "$M/hr-drop-attempt.sh" > /dev/null; killed hr-drop-attempt $?
-a5_insane m5 "$M/hr-sane-always.sh" > /dev/null; killed hr-sane-always $?
-a6_two_hashes m6 "$M/hr-merge-hashes.sh" > /dev/null; killed hr-merge-hashes $?
-a7_bad_version m7 "$M/hr-no-version-check.sh" > /dev/null; killed hr-no-version-check $?
-a8_nvsmi_fails m7b "$M/hr-nvsmi-any-rc.sh" > /dev/null; killed hr-nvsmi-any-rc $?
-a9_gpu_fallback m7c "$M/hr-drop-fallback.sh" > /dev/null; killed hr-drop-fallback $?
-b1_train_green m8 "$AUTOPILOT" "$M/hr-version-key.sh" > /dev/null; killed hr-version-key $?
-b1_train_green m9 "$M/ap-steps-reordered.sh" "$HOST_RECEIPT" > /dev/null; killed ap-steps-reordered $?
-b1_train_green m10 "$M/ap-no-receipts-env.sh" "$HOST_RECEIPT" > /dev/null; killed ap-no-receipts-env $?
-b1_train_green m11 "$M/ap-hosts-literal.sh" "$HOST_RECEIPT" > /dev/null; killed ap-hosts-literal $?
-b1_train_green m11b "$M/ap-receipt-prio.sh" "$HOST_RECEIPT" > /dev/null; killed ap-receipt-prio $?
-b2_dir_removed m12 "$M/ap-drop-mkdir.sh" "$HOST_RECEIPT" > /dev/null; killed ap-drop-mkdir $?
-b3_dir_vanishes m13 "$M/ap-no-receipt-to.sh" "$HOST_RECEIPT" > /dev/null; killed ap-no-receipt-to $?
-b5_unreachable m14 "$M/ap-255-is-a-host.sh" "$HOST_RECEIPT" > /dev/null; killed ap-255-is-a-host $?
-postpub_row m15 "$M/ap-drop-nogo-stop.sh" "post-publish dogfood NO-GO rc=1" FX_DOGFOOD_VERDICT=NO-GO > /dev/null; killed ap-drop-nogo-stop $?
-postpub_row m16 "$M/ap-drop-receipt-read.sh" "post-publish dogfood refused on its receipt" 'FX_DEFERRED=["declared:check_multiplatform_dogfood"]' > /dev/null; killed ap-drop-receipt-read $?
-b10_install_only m17 "$M/ap-install-dogfood.sh" > /dev/null; killed ap-install-dogfood $?
-b12_report_notes m18 "$M/ap-drop-notes.sh" > /dev/null; killed ap-drop-notes $?
-l1_ledger_pr m24 "$M/ap-ledger-no-push.sh" > /dev/null; killed ap-ledger-no-push $?
-l1_ledger_pr m25 "$M/ap-ledger-armed.sh" > /dev/null; killed ap-ledger-armed $?
-l2_ledger_rerun m26 "$M/ap-ledger-from-main.sh" > /dev/null; killed ap-ledger-from-main $?
-l4_ledger_rejected m27 "$M/ap-ledger-no-stop.sh" > /dev/null; killed ap-ledger-no-stop $?
-g2_report_other_version m19 "$M/gate-any-version.sh" > /dev/null; killed gate-any-version $?
-a1_gpu_linux m28 "$M/hr-parity-wrapped.sh" > /dev/null; killed hr-parity-wrapped $?
-p1_hold_release "$M/lock-release-noop.sh" > /dev/null; killed lock-release-noop $?
-p2_bound "$M/lock-bound-kills-none.sh" > /dev/null; killed lock-bound-kills-none $?
-run_band_row "$M/band-lock-any-class.sh" cpu 0 free > /dev/null; killed band-lock-any-class $?
-b1_train_green m29 "$M/ap-no-twins.sh" "$HOST_RECEIPT" > /dev/null; killed ap-no-twins $?
-twin_row "$M/lib-reader" > /dev/null; killed reader-yaml-only $?
-twin_row "$M/lib-writer" > /dev/null; killed twin-writes-wrong $?
-g3_report_present m20 "$M/gate-report-present.sh" > /dev/null; killed gate-report-present $?
-gate_block_row m20b "$M/gate-floor-any.sh" "@$TMP/floor-patch.json" "$G13_WANT" 9.9.9 "9.9.9:intel:parity:#2844" > /dev/null; killed gate-floor-any $?
-gate_block_row m21 "$M/gate-gen-any.sh" "$G6_PATCH" "$G6_WANT" > /dev/null; killed gate-gen-any $?
-gate_block_row m21b "$M/gate-bench-absent-report.sh" "$BENCH_PATCH" "$G10_WANT" > /dev/null; killed gate-bench-absent-report $?
-gate_block_row m22 "$M/gate-hash-any.sh" "$G7_PATCH" "$G7_WANT" > /dev/null; killed gate-hash-any $?
-gate_block_row m23 "$M/gate-unmeasured-any.sh" "$G8_PATCH" "$G8_WANT" > /dev/null; killed gate-unmeasured-any $?
+spawn killed hr-drop-accel-line a1_gpu_linux m1 "$M/hr-drop-accel-line.sh"
+spawn killed hr-no-gpu-wrap a1_gpu_linux m2 "$M/hr-no-gpu-wrap.sh"
+spawn killed hr-gpuq-not-preferred a1_gpu_linux m2b "$M/hr-gpuq-not-preferred.sh"
+spawn killed hr-parity-nested a1_gpu_linux m2c "$M/hr-parity-nested.sh"
+spawn killed hr-os-literal a2_darwin m3 "$M/hr-os-literal.sh"
+spawn killed hr-drop-attempt a4_parity_refuses m4 "$M/hr-drop-attempt.sh"
+spawn killed hr-sane-always a5_insane m5 "$M/hr-sane-always.sh"
+spawn killed hr-merge-hashes a6_two_hashes m6 "$M/hr-merge-hashes.sh"
+spawn killed hr-no-version-check a7_bad_version m7 "$M/hr-no-version-check.sh"
+spawn killed hr-nvsmi-any-rc a8_nvsmi_fails m7b "$M/hr-nvsmi-any-rc.sh"
+spawn killed hr-drop-fallback a9_gpu_fallback m7c "$M/hr-drop-fallback.sh"
+spawn killed hr-version-key b1_train_green m8 "$AUTOPILOT" "$M/hr-version-key.sh"
+spawn killed ap-steps-reordered b1_train_green m9 "$M/ap-steps-reordered.sh" "$HOST_RECEIPT"
+spawn killed ap-no-receipts-env b1_train_green m10 "$M/ap-no-receipts-env.sh" "$HOST_RECEIPT"
+spawn killed ap-hosts-literal b1_train_green m11 "$M/ap-hosts-literal.sh" "$HOST_RECEIPT"
+spawn killed ap-receipt-prio b1_train_green m11b "$M/ap-receipt-prio.sh" "$HOST_RECEIPT"
+spawn killed ap-drop-mkdir b2_dir_removed m12 "$M/ap-drop-mkdir.sh" "$HOST_RECEIPT"
+spawn killed ap-no-receipt-to b3_dir_vanishes m13 "$M/ap-no-receipt-to.sh" "$HOST_RECEIPT"
+spawn killed ap-255-is-a-host b5_unreachable m14 "$M/ap-255-is-a-host.sh" "$HOST_RECEIPT"
+spawn killed ap-drop-nogo-stop postpub_row m15 "$M/ap-drop-nogo-stop.sh" "post-publish dogfood NO-GO rc=1" FX_DOGFOOD_VERDICT=NO-GO
+spawn killed ap-drop-receipt-read postpub_row m16 "$M/ap-drop-receipt-read.sh" "post-publish dogfood refused on its receipt" 'FX_DEFERRED=["declared:check_multiplatform_dogfood"]'
+spawn killed ap-install-dogfood b10_install_only m17 "$M/ap-install-dogfood.sh"
+spawn killed ap-drop-notes b12_report_notes m18 "$M/ap-drop-notes.sh"
+spawn killed ap-ledger-no-push l1_ledger_pr m24 "$M/ap-ledger-no-push.sh"
+spawn killed ap-ledger-armed l1_ledger_pr m25 "$M/ap-ledger-armed.sh"
+spawn killed ap-ledger-from-main l2_ledger_rerun m26 "$M/ap-ledger-from-main.sh"
+spawn killed ap-ledger-no-stop l4_ledger_rejected m27 "$M/ap-ledger-no-stop.sh"
+spawn killed gate-any-version g2_report_other_version m19 "$M/gate-any-version.sh"
+spawn killed hr-parity-wrapped a1_gpu_linux m28 "$M/hr-parity-wrapped.sh"
+spawn killed lock-release-noop p1_hold_release "$M/lock-release-noop.sh"
+spawn killed lock-bound-kills-none p2_bound "$M/lock-bound-kills-none.sh"
+spawn killed band-lock-any-class run_band_row "$M/band-lock-any-class.sh" cpu 0 free
+spawn killed ap-no-twins b1_train_green m29 "$M/ap-no-twins.sh" "$HOST_RECEIPT"
+spawn killed reader-yaml-only twin_row "$M/lib-reader"
+spawn killed twin-writes-wrong twin_row "$M/lib-writer"
+spawn killed gate-report-present g3_report_present m20 "$M/gate-report-present.sh"
+spawn killed gate-floor-any gate_block_row m20b "$M/gate-floor-any.sh" "@$TMP/floor-patch.json" "$G13_WANT" 9.9.9 "9.9.9:intel:parity:#2844"
+spawn killed gate-gen-any gate_block_row m21 "$M/gate-gen-any.sh" "$G6_PATCH" "$G6_WANT"
+spawn killed gate-bench-absent-report gate_block_row m21b "$M/gate-bench-absent-report.sh" "$BENCH_PATCH" "$G10_WANT"
+spawn killed gate-hash-any gate_block_row m22 "$M/gate-hash-any.sh" "$G7_PATCH" "$G7_WANT"
+spawn killed gate-unmeasured-any gate_block_row m23 "$M/gate-unmeasured-any.sh" "$G8_PATCH" "$G8_WANT"
 
+drain
 if [ "$fails" -eq 0 ]; then
     printf 'PASS  %s row(s) and mutant(s): the train emits, then judges, every host receipt; infra is never a host verdict\n' "$rows"
     exit 0

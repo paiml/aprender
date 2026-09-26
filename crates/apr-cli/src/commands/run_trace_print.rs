@@ -78,7 +78,11 @@ fn render_layer_trace(result: &RunResult, max_tokens: usize) -> String {
 
     let mut out = String::new();
     let _ = writeln!(out);
-    let _ = writeln!(out, "{}", "=== Layer Trace (APR-TRACE-001) ===".cyan().bold());
+    let _ = writeln!(
+        out,
+        "{}",
+        "=== Layer Trace (APR-TRACE-001) ===".cyan().bold()
+    );
     let _ = writeln!(out);
     let _ = writeln!(
         out,
@@ -234,8 +238,16 @@ fn print_roofline_profile(result: &RunResult, max_tokens: usize) {
     eprintln!();
     eprintln!("  Throughput:     {tok_per_sec:.1} tok/s");
     eprintln!("  Latency:        {total_ms:.1} ms ({tokens_generated} tokens)");
-    eprintln!("  Per-token:      {:.2} ms", total_ms / tokens_generated.max(1) as f64);
-    eprintln!("  GPU used:       {}", result.used_gpu.map_or("unknown", |g| if g { "yes" } else { "no" }));
+    eprintln!(
+        "  Per-token:      {:.2} ms",
+        total_ms / tokens_generated.max(1) as f64
+    );
+    eprintln!(
+        "  GPU used:       {}",
+        result
+            .used_gpu
+            .map_or("unknown", |g| if g { "yes" } else { "no" })
+    );
     eprintln!();
     eprintln!("  {}", "Roofline Classification".bold());
     eprintln!("  Compute bound:  {compute_pct}%");

@@ -70,6 +70,12 @@ if command -v cargo-llvm-cov &> /dev/null; then
     cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
     COVERAGE=$(cargo llvm-cov report $(python3 scripts/coverage_report_scope.py) --summary-only 2>&1 | grep "TOTAL" | awk '{print $10}' | tr -d '%')
 
+    # Restore mold linker (a no-op today: the refuse-instead-of-move logic above never
+    # creates this backup file; kept in case an older invocation left one behind).
+    if [ -f ~/.cargo/config.toml.ci-backup ]; then
+        mv ~/.cargo/config.toml.ci-backup ~/.cargo/config.toml
+    fi
+
     echo "Coverage: ${COVERAGE}%"
     if (( $(echo "$COVERAGE < $COVERAGE_THRESHOLD" | bc -l) )); then
         echo "⚠️  Coverage ${COVERAGE}% below threshold ${COVERAGE_THRESHOLD}%"

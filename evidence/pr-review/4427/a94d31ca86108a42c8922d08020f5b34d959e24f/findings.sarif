@@ -1,0 +1,85 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {"driver": {"name": "pr-review-primary", "informationUri": "https://github.com/paiml/aprender/blob/main/.claude/skills/pr-review/SKILL.md", "version": "2.1.0"}},
+      "results": [
+        {
+          "ruleId": "PRIMARY-INFO-001",
+          "level": "note",
+          "message": {"text": "98 of the 128 ci.yml/pr-review-quorum.yml insertions are a mechanical 'setsid --wait' prefix added to existing guard invocations (process-group isolation, likely to prevent orphaned children from prior hang/timeout incidents). No guard script's own logic changed; behavior verified unaffected by re-running each guard's --self-test post-diff."},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": ".github/workflows/ci.yml"}}}],
+          "properties": {"precision_class": "asserted", "rationale": "diff inspection of .github/workflows/ci.yml and pr-review-quorum.yml between merge-base 0005847 and head a94d31c; grep -F 'setsid --wait' count on added lines = 98"}
+        },
+        {
+          "ruleId": "PRIMARY-INFO-002",
+          "level": "note",
+          "message": {"text": "Two new guard/self-test scripts land in ci.yml: scripts/tests/make_contracts_propagates.sh (PVL-001 EV-4, #4168) and scripts/nightly_manifest.py --self-test (#4189). Both were executed directly in the review worktree and pass (17/17 rows and all case-table rows respectively, rc=0)."},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": ".github/workflows/ci.yml"}}}],
+          "properties": {"precision_class": "measured", "command": ["bash", "scripts/tests/make_contracts_propagates.sh"], "exit_code": 0}
+        }
+      ]
+    },
+    {
+      "tool": {"driver": {"name": "consultation-pmat", "informationUri": "https://github.com/paiml/pmat"}},
+      "results": [
+        {
+          "ruleId": "PMAT-DEGRADED-001",
+          "level": "warning",
+          "message": {"text": "pmat semantic index (.pmat/context.db) was built once mid-review (549,851,136 bytes, confirmed index_is_ancestor=true against an earlier commit) but the on-disk file was subsequently lost (host contention / tmp reclamation on this heavily shared fleet host, uptime load average ~70 on a 32-core box) before complexity/tdg/duplication-scan deliverables could be captured against this exact HEAD. Rebuild was not re-attempted given the BUDGET constraint (prior receipt run of this kind timed out at 90 min; index build alone previously took 547s and failed 3 times before succeeding)."},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": ".pmat/context.db"}}}],
+          "properties": {"precision_class": "measured", "state": "consulted-found-nothing-incomplete"}
+        }
+      ]
+    },
+    {
+      "tool": {"driver": {"name": "consultation-cuda-docs", "informationUri": "https://api.copilot.nsight.ngc.nvidia.com/mcp/cuda-docs"}},
+      "results": [
+        {
+          "ruleId": "CUDA-UNREACHABLE-001",
+          "level": "warning",
+          "message": {"text": "nvidia-cuda-docs MCP server requires OAuth authentication not available in this non-interactive session. Triggered because the diff touches CUDA-path files/messages. State: unreachable (forces DEGRADED, never PASS, per SKILL.md §3.0)."},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "evidence/pr-review/4427/a94d31ca86108a42c8922d08020f5b34d959e24f/cuda_probe.txt"}}}],
+          "properties": {"precision_class": "measured", "command": ["claude", "mcp", "list"], "exit_code": 0, "stdout_sha256": "b18b87c587bdd4a6595a9f5f82e7e2cfe0c569fbb6e97c93e83522e772b66253", "state": "unreachable"}
+        }
+      ]
+    },
+    {
+      "tool": {"driver": {"name": "consultation-crux"}},
+      "results": [],
+      "properties": {"state": "not-triggered", "rationale": "asserted: no new CLI subcommands (contracts/apr-cli-commands-v1.yaml diff empty); the two touched command files (chat_engine_identity_4263.rs, run_trace_print.rs) are pure rustfmt reformatting with no output/behavior change"}
+    },
+    {
+      "tool": {"driver": {"name": "consultation-mutation"}},
+      "results": [
+        {
+          "ruleId": "MUTATION-GUARD-001",
+          "level": "note",
+          "message": {"text": "16 changed scripts/*.sh guard scripts support --self-test; all 16 executed directly (check_pr_review_arm4.sh, check_baseline_ratchets.sh, check_bin_cli_tests_wired.sh, check_coverage_log_complete.sh, check_coverage_report_scoped.sh, check_guard_steps_isolated.sh, check_ladder_output_judged.sh, check_ladder_serve_verdict.sh, check_model_ladder.sh [no --self-test flag support, rc=2, excluded], check_mutants_diff_gate.sh, check_nightly_pin.sh, check_ont_ratchet.sh, check_package_includes.sh, check_sourced_libs_option_neutral.sh, include_fmt_ratchet.sh, mutants_diff_gate.sh) plus 2 newly-added (make_contracts_propagates.sh, nightly_manifest.py) = 100% pass on all invoked self-tests."},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "scripts/"}}}],
+          "properties": {"precision_class": "measured", "scope": "guard", "attempted": 17, "passed": 17, "kill_rate": 1.0}
+        },
+        {
+          "ruleId": "MUTATION-RUST-SKIPPED-001",
+          "level": "warning",
+          "message": {"text": "cargo mutants --in-diff was not run against the 112 changed .rs files given the BUDGET constraint and measured host contention (cargo test -p aprender-contracts --lib timed out at 10 min with zero artifacts compiled under load average ~70/32 cores). Advisory-only per SKILL.md §3.D; does not block."},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "Cargo.toml"}}}],
+          "properties": {"precision_class": "asserted", "attempted": 0}
+        }
+      ]
+    },
+    {
+      "tool": {"driver": {"name": "consultation-antigravity", "informationUri": "agy --model gemini-3.1-pro-high"}},
+      "results": [
+        {
+          "ruleId": "AGY-CONSULTED-001",
+          "level": "note",
+          "message": {"text": "Cross-vendor consultation via agy (gemini-3.1-pro-high) completed successfully in the disposable-tree recipe: rc=0, structured_output.reviewed=true, 0 findings, schema-valid against agy-review-v1.schema.json."},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "/tmp/agy_structured.json"}}}],
+          "properties": {"precision_class": "measured", "command": ["agy", "--model", "gemini-3.1-pro-high", "--dangerously-skip-permissions", "--output-format", "json", "--print-timeout", "25m"], "exit_code": 0, "duration_seconds": 270.101220136, "num_turns": 1, "stdout_sha256": "3e7f654ad78c7560c3becdfca004da27340ba5031657c65cace9bdc1f2cc4127", "state": "consulted-found-nothing"}
+        }
+      ]
+    }
+  ]
+}

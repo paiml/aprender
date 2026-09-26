@@ -146,7 +146,7 @@ assertions_yq() {
     a="$(yq \
         e '
         (.jobs."guard-tree".needs == null)
-        and ((.jobs."guard-tree".steps | map(.run // "") | join(" ") | test("(^|[^a-z_-])cargo ")) | not)
+        and (((.jobs."guard-tree".steps + (.jobs."guard-tree-steps".steps // [])) | map(.run // "") | join(" ") | test("(^|[^a-z_-])cargo ")) | not)
         and (.jobs."guard-tree"."runs-on" | contains(["clean-room"]))
     ' "$2" 2>/dev/null)"
     b="$(yq \
@@ -181,7 +181,9 @@ assertions_awk() {
     gate_needs="$(grep '^    needs:' <<<"$gate_job" || true)"
     gate_run="$(run_text_of_job_block <<<"$gate_job" || true)"
     x86_run="$(run_text_of_job_block <<<"$x86_job" | tr '\n' ' ' || true)"
-    gt_run="$(run_text_of_job_block <<<"$gt_job" || true)"
+    # guard-tree's guard steps live in its `guard-tree-steps` manifest, run by
+    # scripts/ci_guards.sh (#4415): the no-cargo leg must read both jobs.
+    gt_run="$(run_text_of_job_block <<<"$gt_job"; job_block "guard-tree-steps" "$sect" | run_text_of_job_block || true)"
     x86_runson="$(grep '^    runs-on:' <<<"$x86_job" || true)"
     grep -qE '(^|[^a-z0-9_-])x86-main([^a-z0-9_-]|$)' <<<"$gate_needs" \
         && grep -qE "$GATE_RE" <<<"$gate_run" \
@@ -258,6 +260,22 @@ awk '
     { print }
 ' "$SECT_YML" > "$m2"
 mutant_row "cargo step in guard-tree" "$CI_YML" "$m2" differs "$SECT_YML" "$m2"
+
+# ---------------------------------------------------------------------------
+# 2b. Mutant: a `cargo ` step added to the guard-tree-steps MANIFEST (#4415),
+#     which scripts/ci_guards.sh runs inside guard-tree -> must go RED.
+# ---------------------------------------------------------------------------
+m2b="$WORK/cargo-step-manifest.yml"
+awk '
+    /^  guard-tree-steps:/ { in_m = 1 }
+    { print }
+    in_m && /^    steps:/ {
+        print "      - name: mutant cargo step"
+        print "        run: cargo build --release"
+        in_m = 0
+    }
+' "$SECT_YML" > "$m2b"
+mutant_row "cargo step in the guard-tree-steps manifest" "$CI_YML" "$m2b" differs "$SECT_YML" "$m2b"
 
 # ---------------------------------------------------------------------------
 # 3. Mutant: guard-tree dropped from gate's required-section list.

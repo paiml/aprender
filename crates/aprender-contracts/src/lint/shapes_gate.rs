@@ -1,6 +1,8 @@
-//! ONT-001 §5 ONT-4b / ONT-4c1 — the `shapes` gate: every shape in the corpus, applied to the graph the
-//! extractors produce (`extract:pv-contract`, `extract:gguf`, `extract:apr-model`, and `resolves: receipt` over
-//! the tracked ladder receipts), with a positive control planted every run and arming per shape.
+//! ONT-001 §5 ONT-4b / ONT-4c1 / ONT-4c — the `shapes` gate: every shape in the corpus, applied to the graph
+//! the extractors produce (`extract:pv-contract`, `extract:gguf`, `extract:apr-model`, `extract:readme`,
+//! `extract:llm-context`, `extract:csv`, and `resolves: receipt` over the tracked ladder receipts), with a positive
+//! control planted every run and arming per shape. ONT-4c adds the measured claim sets (`readme`, `claude_md`)
+//! and F-33 (PV-ONT-013, here); F-34 (PV-ONT-014) needs git and is the CLI's (`lint_arming::measured_ratchet`).
 //!
 //! The answers, in ONT-6's lattice:
 //!
@@ -36,9 +38,10 @@ use crate::ontology::arming::ArmedShapes;
 use crate::ontology::capability_cells;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, cli_surface, code, gguf, json, lean, parity_receipt, pv_contract,
-    release_evidence, ExtractFailure,
+    self, apr_model, cli_surface, code, csv, gguf, json, lean, llm_context, parity_receipt,
+    pv_contract, readme, release_evidence, ExtractFailure,
 };
+use crate::ontology::measured_sets;
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
 use crate::ontology::receipts;
 use crate::ontology::shapes::{self, NodeShape, Report, Severity, ShapeError};
@@ -106,6 +109,27 @@ pub enum ShapesOutcome {
     },
 }
 
+/// v4.16 D-T1 (qd4c4): Σ `entity_type_target_class` from `<contract_dir>/ontology.yaml` — the map a shape without
+/// an explicit `targetClass` takes its target from. No Σ, or no map in it, is the EMPTY map: a shape that relies on
+/// a mapping Σ does not carry is malformed, named, exit 3 — never silently retargeted.
+#[must_use]
+pub fn target_class_map(contract_dir: &Path) -> shapes::TargetMap {
+    let Ok(text) = std::fs::read_to_string(contract_dir.join("ontology.yaml")) else {
+        return shapes::TargetMap::new();
+    };
+    let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&text) else {
+        return shapes::TargetMap::new();
+    };
+    doc.get("entity_type_target_class")
+        .and_then(serde_yaml::Value::as_mapping)
+        .map(|m| {
+            m.iter()
+                .filter_map(|(k, v)| Some((k.as_str()?.to_string(), v.as_str()?.to_string())))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Every shape under `contract_dir`, parsed, with the contract file (repo-relative) that declares it. The
 /// first unsupported one is the whole answer; a shape id declared twice is malformed.
 pub fn collect_shapes(
@@ -113,9 +137,10 @@ pub fn collect_shapes(
 ) -> Result<(Vec<(NodeShape, String)>, usize), ShapeError> {
     let mut shapes: Vec<(NodeShape, String)> = Vec::new();
     let mut checked = 0usize;
+    let targets = target_class_map(contract_dir);
     for (stem, rel, doc) in pv_contract::documents(contract_dir) {
         checked += 1;
-        for shape in shapes::parse_shapes(&stem, &doc)? {
+        for shape in shapes::parse_shapes_with(&stem, &doc, &targets)? {
             if let Some((_, other)) = shapes.iter().find(|(s, _)| s.id == shape.id) {
                 return Err(ShapeError::Malformed {
                     shape: shape.id.clone(),
@@ -301,13 +326,8 @@ fn run_or_answer(
     }
     let w3c_run = w3c_checked(shapes.len(), report.focus_nodes_n)?;
 
-    let mut counted = findings_of(
-        &report,
-        &arming,
-        graph,
-        &extraction.gguf,
-        &extraction.apr_model,
-    );
+    let mut counted = findings_of(&report, &arming, graph, &extraction);
+    count_freshness(&mut counted, contract_dir, &extraction);
     // PV-ONT-013 NAMES the NotRun cells; it deliberately does not add to `counted.violations`. The verdict comes
     // from the armed shape's own `maxCount 0` violation on the same edges, and `cells_controls` declines when the
     // two disagree (wiring_holds), so the named list and the verdict cannot drift apart silently.
@@ -383,6 +403,9 @@ fn run_or_answer(
             lean_statements: extraction.lean.statements,
             lean_refs_unresolved: extraction.lean.refs_unresolved.len(),
             release: extraction.release.clone().map(Box::new),
+            readme: measured(&extraction.readme),
+            claude_md: measured(&extraction.llm_context),
+            ratchets: super::Ratchets::default(),
         }),
     };
     Ok(ShapesOutcome::Ran {
@@ -589,6 +612,9 @@ const COUNTED_ENTITY_TYPES: &[&str] = &[
     "lean",
     "release-evidence",
     "cli-surface",
+    "readme",
+    "llm-context",
+    "csv",
 ];
 
 /// Focus nodes each extractor produced, for one Σ entity type. `None` is "this build has no counting arm for the
@@ -617,6 +643,10 @@ fn entity_count(name: &str, extraction: &extract::Extraction) -> Option<usize> {
             .as_ref()
             .and_then(|r| r.surface.as_ref())
             .map_or(0, |s| s.leaves),
+        // ONT-4c: `README.md` / `CLAUDE.md` / CSV datasets — files read, per [`extract::claims::DocStats`].
+        "readme" => extraction.readme.files_read,
+        "llm-context" => extraction.llm_context.files_read,
+        "csv" => extraction.csv.files_read,
         _ => return None,
     })
 }
@@ -741,6 +771,10 @@ fn extract_controls() -> BTreeMap<String, String> {
         ),
         // aprender#3715: drawn every run, subject or not — a cell owed without a receipt stays a node
         ("release-evidence", release_evidence::positive_control()),
+        // ONT-4c: an unrun claim, a missing referenced path, a ragged row — each refused by name
+        ("readme", readme::positive_control()),
+        ("llm-context", llm_context::positive_control()),
+        ("csv", csv::positive_control()),
         // aprender#3745 S2: a model arg read from its ROLE, never its name — drawn every run
         ("cli-surface", cli_surface::positive_control()),
     ]
@@ -752,6 +786,44 @@ fn extract_controls() -> BTreeMap<String, String> {
         )
     })
     .collect()
+}
+
+/// ONT-4c: one extractor's measured claim set, sorted, for the report.
+fn measured(stats: &extract::claims::DocStats) -> super::MeasuredSet {
+    super::MeasuredSet {
+        verified_commands: stats.verified_commands.iter().cloned().collect(),
+    }
+}
+
+/// ONT-4c F-33: the committed `verified_commands[]` in `<contract_dir>/lint-baseline.json` must EQUAL the live
+/// extraction, per key. A difference — or a key that cannot be read — is an Error (PV-ONT-013) in the meet.
+fn count_freshness(c: &mut Counted, contract_dir: &Path, extraction: &extract::Extraction) {
+    let path = contract_dir.join("lint-baseline.json");
+    let text = std::fs::read_to_string(&path).ok();
+    let live = [
+        (measured_sets::KEYS[0], &extraction.readme.verified_commands),
+        (
+            measured_sets::KEYS[1],
+            &extraction.llm_context.verified_commands,
+        ),
+    ];
+    for (key, live) in live {
+        let messages = match measured_sets::read(text.as_deref(), key) {
+            Ok(committed) => measured_sets::freshness(key, &committed, live),
+            Err(e) => vec![format!("F-33: {e}")],
+        };
+        for m in messages {
+            c.violations += 1;
+            let mut f = LintFinding::new(
+                "PV-ONT-013",
+                RuleSeverity::Error,
+                m,
+                path.display().to_string(),
+            );
+            f.contract_stem = None;
+            c.findings.push(f);
+        }
+    }
 }
 
 /// The findings of one run, and the counts the verdict is made of.
@@ -768,8 +840,7 @@ fn findings_of(
     report: &Report,
     arming: &ArmedShapes,
     graph: &Graph,
-    gguf_stats: &gguf::GgufStats,
-    apr_stats: &apr_model::AprStats,
+    extraction: &extract::Extraction,
 ) -> Counted {
     let mut c = Counted {
         findings: Vec::new(),
@@ -817,7 +888,15 @@ fn findings_of(
         f.contract_stem = Some(r.shape.clone());
         c.findings.push(f);
     }
-    for e in gguf_stats.errors.iter().chain(apr_stats.errors.iter()) {
+    let refusals = extraction
+        .gguf
+        .errors
+        .iter()
+        .chain(&extraction.apr_model.errors)
+        .chain(&extraction.readme.errors)
+        .chain(&extraction.llm_context.errors)
+        .chain(&extraction.csv.errors);
+    for e in refusals {
         c.violations += 1;
         let mut f = LintFinding::new(
             "PV-ONT-012",
@@ -1229,13 +1308,20 @@ mod tests {
     #[test]
     fn an_implemented_type_without_a_counting_arm_is_refused_by_name() {
         // The discrimination #3624 asks for: flip a type to implemented with no arm, and the gate names it.
-        let flipped: BTreeMap<String, String> = [("gguf", "gguf"), ("readme", "readme")]
+        // The plant was `readme` until ONT-4c gave readme an arm and the test went vacuous; a planted name
+        // cannot gain one, and the precondition below fails loudly if it ever does.
+        const PLANT: &str = "planted-no-arm";
+        assert!(
+            entity_count(PLANT, &extract::Extraction::default()).is_none(),
+            "{PLANT} has a counting arm — the plant is vacuous"
+        );
+        let flipped: BTreeMap<String, String> = [("gguf", "gguf"), (PLANT, PLANT)]
             .iter()
             .map(|(n, x)| (n.to_string(), x.to_string()))
             .collect();
         match by_entity_type(&extract::Extraction::default(), &flipped) {
             Err(ShapeError::Malformed { what, .. }) => assert!(
-                what.contains("entity type readme is registered in Σ as implemented"),
+                what.contains(&format!("entity type {PLANT} is registered in Σ as implemented")),
                 "{what}"
             ),
             other => panic!("expected a named refusal, got {other:?}"),

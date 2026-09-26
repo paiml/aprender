@@ -353,7 +353,9 @@ mod multirow_tests {
         let nsb = in_dim / QK_K;
         let mut s = seed;
         let mut next = move || {
-            s = s.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+            s = s
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
             (s >> 33) as u8
         };
         let mut w = vec![0u8; out_dim * nsb * 144];
@@ -424,8 +426,14 @@ mod multirow_tests {
                 .iter()
                 .zip(&got)
                 .position(|(a, b)| a.to_bits() != b.to_bits());
-            assert_eq!(diff, None, "m={m} in={in_dim} out={out_dim}: first mismatch index");
-            assert!(want.iter().any(|v| *v != 0.0), "fixture degenerate: all-zero output");
+            assert_eq!(
+                diff, None,
+                "m={m} in={in_dim} out={out_dim}: first mismatch index"
+            );
+            assert!(
+                want.iter().any(|v| *v != 0.0),
+                "fixture degenerate: all-zero output"
+            );
         }
     }
 
@@ -442,7 +450,11 @@ mod multirow_tests {
         fused_q4k_q8k_parallel_matvec_into(&w, &sc[1..2], &qq[k..2 * k], k, n, &mut t1)
             .expect("matvec");
         assert_eq!(&got[n..], &t1[..]);
-        assert_ne!(&got[..n], &got[n..], "fixture degenerate: both tokens identical");
+        assert_ne!(
+            &got[..n],
+            &got[n..],
+            "fixture degenerate: both tokens identical"
+        );
     }
 
     #[test]
@@ -457,7 +469,9 @@ mod multirow_tests {
         // activations too small for m
         assert!(fused_q4k_q8k_multirow_matmul_into(&w, &sc, &qq, 3, 256, 1, &mut out).is_err());
         // output too small
-        assert!(fused_q4k_q8k_multirow_matmul_into(&w, &sc, &qq, 2, 256, 2, &mut out[..3]).is_err());
+        assert!(
+            fused_q4k_q8k_multirow_matmul_into(&w, &sc, &qq, 2, 256, 2, &mut out[..3]).is_err()
+        );
         // m == 0 is a no-op
         assert!(fused_q4k_q8k_multirow_matmul_into(&w, &[], &[], 0, 256, 2, &mut []).is_ok());
     }
@@ -515,15 +529,25 @@ mod multirow_tests {
             seed
         };
         for &(sb_bytes, is_q5) in &[(176usize, true), (210usize, false)] {
-            for &(m, in_dim, out_dim) in &[(3usize, 256usize, 70usize), (9, 512, 300), (2, 768, 257), (17, 1024, 33)] {
+            for &(m, in_dim, out_dim) in &[
+                (3usize, 256usize, 70usize),
+                (9, 512, 300),
+                (2, 768, 257),
+                (17, 1024, 33),
+            ] {
                 let nsb = in_dim / 256;
-                let w: Vec<u8> = (0..out_dim * nsb * sb_bytes).map(|_| next() as u8).collect();
+                let w: Vec<u8> = (0..out_dim * nsb * sb_bytes)
+                    .map(|_| next() as u8)
+                    .collect();
                 let x: Vec<f32> = (0..m * in_dim)
                     .map(|_| ((next() % 2001) as f32 - 1000.0) / 997.0)
                     .collect();
                 let mut want = vec![0.0f32; m * out_dim];
                 for t in 0..m {
-                    let (xi, yo) = (&x[t * in_dim..(t + 1) * in_dim], &mut want[t * out_dim..(t + 1) * out_dim]);
+                    let (xi, yo) = (
+                        &x[t * in_dim..(t + 1) * in_dim],
+                        &mut want[t * out_dim..(t + 1) * out_dim],
+                    );
                     if is_q5 {
                         fused_q5k_parallel_matvec_into(&w, xi, in_dim, out_dim, yo).expect("q5k");
                     } else {
@@ -532,19 +556,31 @@ mod multirow_tests {
                 }
                 let mut got = vec![0.0f32; m * out_dim];
                 if is_q5 {
-                    fused_q5k_multirow_matmul_into(&w, &x, m, in_dim, out_dim, &mut got).expect("q5k mr");
+                    fused_q5k_multirow_matmul_into(&w, &x, m, in_dim, out_dim, &mut got)
+                        .expect("q5k mr");
                 } else {
-                    fused_q6k_multirow_matmul_into(&w, &x, m, in_dim, out_dim, &mut got).expect("q6k mr");
+                    fused_q6k_multirow_matmul_into(&w, &x, m, in_dim, out_dim, &mut got)
+                        .expect("q6k mr");
                 }
                 // Random bytes make some f16 scales NaN/Inf. Which NaN payload an add
                 // propagates depends on operand order in the SIMD lane, not on the math, so
                 // every NaN compares as one canonical NaN; every other bit must match.
                 let bits = |v: &[f32]| {
                     v.iter()
-                        .map(|f| if f.is_nan() { f32::NAN.to_bits() } else { f.to_bits() })
+                        .map(|f| {
+                            if f.is_nan() {
+                                f32::NAN.to_bits()
+                            } else {
+                                f.to_bits()
+                            }
+                        })
                         .collect::<Vec<_>>()
                 };
-                assert_eq!(bits(&got), bits(&want), "q5={is_q5} m={m} in={in_dim} out={out_dim}");
+                assert_eq!(
+                    bits(&got),
+                    bits(&want),
+                    "q5={is_q5} m={m} in={in_dim} out={out_dim}"
+                );
             }
         }
     }

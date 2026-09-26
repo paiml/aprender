@@ -395,16 +395,18 @@ status:
 /// metadata blocks added by this change ever drift out of the kind, these fail.
 #[test]
 fn real_kaizen_records_validate() {
-    for yaml in [
-        include_str!("../../../../contracts/entrenar/kaizen/backward-cpu-staging-v1.yaml"),
-        include_str!("../../../../contracts/trueno/kaizen/blis-safe-alloc-v1.yaml"),
-        include_str!("../../../../contracts/entrenar/kaizen/gpu-workspace-clip-v1.yaml"),
-        include_str!(
-            "../../../../contracts/entrenar/kaizen/gradient-accumulation-canary-v1.yaml"
-        ),
-        include_str!("../../../../contracts/entrenar/kaizen/vram-guard-v1.yaml"),
+    for rel in [
+        "entrenar/kaizen/backward-cpu-staging-v1.yaml",
+        "trueno/kaizen/blis-safe-alloc-v1.yaml",
+        "entrenar/kaizen/gpu-workspace-clip-v1.yaml",
+        "entrenar/kaizen/gradient-accumulation-canary-v1.yaml",
+        "entrenar/kaizen/vram-guard-v1.yaml",
     ] {
-        let contract = parse_contract_str(yaml).expect("real kaizen record parses");
+        let Some(yaml) = crate::schema::workspace_contract_or_skip("real_kaizen_records_validate", rel)
+        else {
+            return;
+        };
+        let contract = parse_contract_str(&yaml).expect("real kaizen record parses");
         assert_eq!(contract.kind(), ContractKind::Kaizen);
         let errors: Vec<_> = validate_contract(&contract)
             .into_iter()

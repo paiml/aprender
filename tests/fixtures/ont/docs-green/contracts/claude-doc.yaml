@@ -1,0 +1,26 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-24'
+  last_modified: '2026-09-24'
+  author: fixture
+  description: fixture claude-doc
+name: claude-doc
+version: "1.0.0"
+scope: fixture
+status: active
+entity:
+  type: llm-context
+  ref: CLAUDE.md
+shape:
+  closed: true
+  properties:
+    - {path: llm:section, minCount: 0}
+    - {path: llm:purposeSection, minCount: 1}
+    - {path: llm:rulesSection, minCount: 1}
+    - {path: llm:commandsSection, minCount: 1}
+    - {path: llm:layoutSection, minCount: 1}
+    - {path: llm:referencedPath, resolves: path}
+    - {path: llm:command, resolves: ci-step}
+    - {path: llm:declaredTool, in: [pmat, pv, forjar, bashrs, cargo, gh]}
+    - {path: llm:neverRule, minCount: 1}

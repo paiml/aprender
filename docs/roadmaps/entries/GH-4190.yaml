@@ -1,0 +1,18 @@
+- id: GH-4190
+  github_issue: 4190
+  item_type: task
+  kind: code
+  title: 'apr-format: golden_v2_f32_writer_is_byte_identical fails in tree (516 vs 1092 bytes) — a dark CI target'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T12:00:00+00:00
+  updated: 2026-09-24T12:00:00+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  notes: null

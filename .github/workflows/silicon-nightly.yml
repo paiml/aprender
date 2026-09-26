@@ -61,7 +61,7 @@ jobs:
       # six committed cases — including a runner whose labels are a strict SUBSET
       # of the selector, which must NOT match — or this exits 2 rather than green.
       - name: The coverage guard's own matcher must be able to fail
-        run: bash scripts/check_silicon_coverage.sh --self-test
+        run: setsid --wait bash scripts/check_silicon_coverage.sh --self-test
 
       # The run probe's own case table, offline: six committed fixtures standing
       # in for both GitHub listings, plus a MUTATION that deletes the probe and
@@ -76,8 +76,8 @@ jobs:
       # gx10 for 90 minutes to run a CPU suite while the ledger scored it covered.
       - name: A cuda-named axis must invoke CUDA (R-6)
         run: |
-          bash scripts/check_silicon_cuda.sh --self-test
-          bash scripts/check_silicon_cuda.sh
+          setsid --wait bash scripts/check_silicon_cuda.sh --self-test
+          setsid --wait bash scripts/check_silicon_cuda.sh
 
       # THE WORK ITSELF MUST BE RESOLVABLE, and this is the cheap place to find
       # out (#2793, merged into this branch). Both legs below shipped naming
@@ -96,13 +96,13 @@ jobs:
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - name: Every cargo -p in a workflow names a real crate (R-8)
         run: |
-          bash scripts/check_workflow_cargo_packages.sh --self-test
-          bash scripts/check_workflow_cargo_packages.sh
+          setsid --wait bash scripts/check_workflow_cargo_packages.sh --self-test
+          setsid --wait bash scripts/check_workflow_cargo_packages.sh
 
       # THE LIVE ONE, LAST: it needs the API, and everything above it can go
       # red without a network.
       - name: Every required silicon axis must have RUN inside its cadence window
-        run: bash scripts/check_silicon_coverage.sh
+        run: setsid --wait bash scripts/check_silicon_coverage.sh
 
   x86_64-cpu:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.axis == 'all' || inputs.axis == 'x86_64-cpu' }}

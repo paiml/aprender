@@ -688,15 +688,33 @@ fn validate_reaches_every_rule_at_the_right_severity() {
 /// which are emitted through a local closure — the exact "guard's universe
 /// built from the wrong side" failure this repo has hit before. A new rule must
 /// ADD to the loop, never quietly fall outside it.
-fn declared_rule_ids() -> BTreeSet<String> {
-    let src = include_str!("../../aprender-contracts/src/schema/validator.rs");
+///
+/// The validator source is read at RUN time from the sibling crate (#4129). It was an
+/// `include_str!("../../aprender-contracts/…")`, a path OUTSIDE this crate, so `cargo test` from
+/// the published aprender-contracts-cli tarball could not compile this test file. In tree, a
+/// missing validator.rs FAILS; only a build with no sibling `aprender-contracts/` (the crates.io
+/// tarball) returns `None`, and the caller skips by name.
+fn declared_rule_ids() -> Option<BTreeSet<String>> {
+    let sibling = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../aprender-contracts");
+    if !sibling.is_dir() {
+        eprintln!(
+            "SKIP every_rule_in_the_validator_source_appears_in_the_table: out of tree (no {} \
+             beside this crate) - the rule universe is read from the sibling crate's source, \
+             which a published crate does not carry (#4129)",
+            sibling.display()
+        );
+        return None;
+    }
+    let path = sibling.join("src/schema/validator.rs");
+    let src = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("in tree, {} must be readable: {e}", path.display()));
     let mut ids = BTreeSet::new();
     for chunk in src.split('"').skip(1).step_by(2) {
         if is_rule_id_shaped(chunk) {
             ids.insert(chunk.to_string());
         }
     }
-    ids
+    Some(ids)
 }
 
 /// `FAMILY-NNN` where FAMILY is upper-case ASCII (possibly hyphenated) and NNN
@@ -772,7 +790,9 @@ fn validate_reaches_every_beat_rule() {
 /// table, so a new rule removes nothing from the loop.
 #[test]
 fn every_rule_in_the_validator_source_appears_in_the_table() {
-    let declared = declared_rule_ids();
+    let Some(declared) = declared_rule_ids() else {
+        return;
+    };
     assert!(
         declared.len() >= 25,
         "parsed only {} rule ids out of validator.rs — the extractor broke, \
