@@ -5,9 +5,9 @@
 
 metadata:
   id: CRUX-P-05
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-09-25'
-  updated: '2026-09-25'
+  updated: '2026-09-26'
   author: PAIML Engineering
   registry: false
   status: draft
@@ -33,8 +33,12 @@ metadata:
   - pull
   - model
   crux_coverage: covered
-  gap_effect: none
-  gap_note: 'unmeasured: competitor behaviours recorded as [X] from pinned revisions in EXT-31'
+  gap_effect: closes
+  gap_note: 'EXT-31 (evidence/ext-001/EXT-31/behaviours.json), measured [V] 2026-09-25T23:35Z on the EXT-24
+    pins: the Qwen, unsloth and bartowski repos have no tags (branch main only), so a download by name
+    is not sha-stable (a); their cards carry 50-543 decimal lines and 0 receipt/sha256/provenance words
+    (c, d). apr holds (a) at the release gate (M0) and (c) (M6). Ollama is unmeasured [U]. Disclosed:
+    `apr pull` alone is not sha-stable — its cache hit checks size only (docs/findings/aprender-cb.jsonl)'
   references:
   - 'spec: paiml/infra docs/specifications/EXT-001-dogfood-model-lifecycle.md §10 row C6'
   - 'epic: https://github.com/paiml/aprender/issues/4381'
@@ -67,14 +71,19 @@ falsification_tests:
   obligation: CRUX-P-05-OB-01
   rule: tag redownload is sha stable
   prediction: a re-pushed tag with changed bytes turns the fixture RED
-  if_fails: 'the C6 claim ''tag redownload is sha stable'' is unproven (owed EXT-31 #4413; planned: the
-    EXT-31 fixture binds FALSIFY-CRUX-P-05-001)'
+  test: cargo test -p apr-cli --lib falsify_ext_015_each_gate_turns_red_on_its_plant
+  if_fails: 'the C6 claim ''tag redownload is sha stable'' is broken — `apr model gate` M0 no longer refuses
+    a release dir whose model bytes differ (same size) from the manifest sha256 (plant "one byte of the
+    model flipped"). Scope: the decision surface is the gate on the downloaded release dir; `apr pull`
+    itself is NOT sha-stable today — its cache hit compares size only and a re-download rewrites
+    .apr-manifest.json (docs/findings/aprender-cb.jsonl, EXT-31)'
 - id: FALSIFY-CRUX-P-05-002
   obligation: CRUX-P-05-OB-02
   rule: card numbers are receipted
   prediction: a hand-typed number on the card fails the card lint
-  if_fails: 'the C6 claim ''card numbers are receipted'' is unproven (owed EXT-31 #4413; planned: the
-    EXT-31 fixture binds FALSIFY-CRUX-P-05-002)'
+  test: cargo test -p apr-cli --lib falsify_ext_015_each_gate_turns_red_on_its_plant
+  if_fails: 'the C6 claim ''card numbers are receipted'' is broken — `apr model gate` M6 no longer refuses
+    a card figure with no [receipt:<id>] or one citing an unknown receipt'
 kani_harnesses:
 - id: KH-CRUX-P-05-001
   obligation: tag_redownload_is_sha_stable
@@ -91,6 +100,7 @@ qa_gate:
   checks:
   - validation
   - falsification
-  pass_criteria: All 2 falsification tests are bound by EXT-31 and pass; until then crux_coverage is covered
-    and the obligations are owed, not satisfied
+  pass_criteria: 'Both falsification tests are bound (EXT-31) to the M0 and M6 plants of
+    falsify_ext_015_each_gate_turns_red_on_its_plant and pass. C6 (b) immutable tags and (d) published
+    build receipt are blocking via M-CR, M7 and I-8 (spec §10 row C6), not fixtures here'
   falsification: FALSIFY-CRUX-P-05-001 through FALSIFY-CRUX-P-05-002

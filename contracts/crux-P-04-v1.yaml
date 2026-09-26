@@ -5,9 +5,9 @@
 
 metadata:
   id: CRUX-P-04
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-09-25'
-  updated: '2026-09-25'
+  updated: '2026-09-26'
   author: PAIML Engineering
   registry: false
   status: draft
@@ -17,7 +17,7 @@ metadata:
   - crux-competitive-research-ux-v1
   - dogfood-model-lifecycle-v1
   category: P — Dogfood Model Lifecycle
-  competitor: mlflow
+  competitor: ecosystem
   demand_score: 4
   intake_status: partial
   github_issue: 4407
@@ -36,8 +36,10 @@ metadata:
   crux_coverage: covered
   gap_effect: closes
   gap_note: 'closes one gap: `apr runs gc` (EXT-03) reaps .tmp and orphaned runs keyed on (host, boot_id,
-    pid, start_time); MLflow''s `mlflow gc` reaps only deleted runs. Behaviours (a)-(e) are unmeasured
-    until EXT-31'
+    pid, start_time); MLflow''s `mlflow gc` reaps only deleted runs. EXT-31 (evidence/ext-001/EXT-31/behaviours.json):
+    apr holds (a) [V], (b) [C] and (d) [V]; MLflow 3.16.1 holds (a) and (b) only in part, DVC 3.67.1 holds
+    (a) only in part [X]. (c) promotion-as-alias stays open: MLflow holds it and `apr registry promote`
+    does not exist yet [U]; (e) is report-only'
   references:
   - 'spec: paiml/infra docs/specifications/EXT-001-dogfood-model-lifecycle.md §10 row C5'
   - 'epic: https://github.com/paiml/aprender/issues/4381'
@@ -80,20 +82,24 @@ falsification_tests:
   obligation: CRUX-P-04-OB-01
   rule: lineage in one command
   prediction: a model registered without a producing run is reported as an orphan, RED
-  if_fails: 'the C5 claim ''lineage in one command'' is unproven (owed EXT-31 #4413; planned: the EXT-31
-    fixture binds FALSIFY-CRUX-P-04-001)'
+  test: cargo test -p apr-cli --lib falsify_crux_p_04_001_lineage_answers_run_dataset_base_or_orphan
+  if_fails: the C5 claim 'lineage in one command' is broken — `apr registry lineage` no longer answers
+    the producing run, its datasets and bases, or it gives an orphan a run
 - id: FALSIFY-CRUX-P-04-002
   obligation: CRUX-P-04-OB-02
   rule: promotion is an alias
   prediction: a mutated promote that rewrites a version turns the fixture RED
-  if_fails: 'the C5 claim ''promotion is an alias'' is unproven (owed EXT-31 #4413; planned: the EXT-31
-    fixture binds FALSIFY-CRUX-P-04-002)'
+  if_fails: 'the C5 claim ''promotion is an alias'' is unproven (owed EXT-31 #4413, blocked: `apr registry
+    promote` does not exist yet — the registry subcommands are aliases and lineage only, and pacha''s
+    transition_model_stage mutates the version row in place; the verb lands with EXT-12 FALSIFY-EXT-007;
+    planned: cargo test -p apr-cli --lib falsify_crux_p_04_002_promote_moves_an_alias_only)'
 - id: FALSIFY-CRUX-P-04-003
   obligation: CRUX-P-04-OB-03
   rule: tracking works offline
   prediction: a planted network call in the tracking path fails the offline fixture
-  if_fails: 'the C5 claim ''tracking works offline'' is unproven (owed EXT-31 #4413; planned: the EXT-31
-    fixture binds FALSIFY-CRUX-P-04-003)'
+  test: cargo test -p apr-cli --lib falsify_crux_p_04_003
+  if_fails: the C5 claim 'tracking works offline' is broken — a network entry point appeared in the
+    runs/registry/track path, or a workspace crate enabled pacha's remote feature
 kani_harnesses:
 - id: KH-CRUX-P-04-001
   obligation: lineage_in_one_command
@@ -114,6 +120,7 @@ qa_gate:
   checks:
   - validation
   - falsification
-  pass_criteria: All 3 falsification tests are bound by EXT-31 and pass; until then crux_coverage is covered
-    and the obligations are owed, not satisfied
+  pass_criteria: 'All 3 falsification tests are bound and pass. EXT-31 bound 001 and 003; 002 stays owed
+    until `apr registry promote` exists (EXT-12). C5 (b) content-addressed datasets is held by EXT-08
+    ext_08_canonical_hash_*; (e) write overhead is report-only (EXT-05 overhead receipt)'
   falsification: FALSIFY-CRUX-P-04-001 through FALSIFY-CRUX-P-04-003
