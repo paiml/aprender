@@ -21,7 +21,7 @@
 #
 #   aprender-compute-xtask    --help exited 1
 #   aprender-ptx-debug        (converted in #2520)
-#   aprender-qa-certify       apr-qa-readme-sync
+#   aprender-qa-certify       aprender-qa-readme-sync
 #   aprender-zram-generator   --help printed 0 BYTES, and an unknown flag was
 #                             accepted at exit 0 -- so a typo'd flag was treated
 #                             as one of its DIRECTORY arguments

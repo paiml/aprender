@@ -140,7 +140,7 @@ If you need a production-quality 0.5B code-completion model, use [`Qwen/Qwen2.5-
 | `bigcode/the-stack-dedup` (Python) | 28.6 GB | Permissive licenses (filtered, dedup'd) | ~75% of mix |
 | **Combined corpus** | **49.6B tokens** | Permissive (filtered + dedup'd) | qwen-v3 |
 
-The corpus is tokenized at ingest time via `apr tokenize encode-corpus --num-workers 48` and saved to disk as `.bin` shards (little-endian u32 tokens). The `apr-corpus-ingest` binary handles license filtering + minhash deduplication upstream.
+The corpus is tokenized at ingest time via `apr tokenize encode-corpus --num-workers 48` and saved to disk as `.bin` shards (little-endian u32 tokens). The `aprender-corpus-ingest` binary handles license filtering + minhash deduplication upstream.
 
 ## How to use
 
