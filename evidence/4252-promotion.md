@@ -115,3 +115,36 @@ With infra#1154 the executor yields only to priority-lock waiters and drains on 
 - Every closed serving window was long enough for one 45-item Dev pass (7.3 min at 19:02Z), where last hour's
   windows (1–7 min) were not.
 - Promotion to a forced lane is still blocked: it would NotRun about 3 rounds in 10.
+
+## (2d) lambda spawn-rung availability, 2026-09-26 11:14–12:14Z
+
+Context:
+- gx10 :8091 has been held stopped (infra#1088), so the lane now spawns `apr` on lambda (`lambda@spawn:<port>`,
+  0.69.5-rc.1 CUDA asset, sha-pinned in every ledger row).
+- A spawn can run only when the fleet GPU lock (`/tmp/apr-gpu.lock`) is free and no `/tmp/train-active` marker exists.
+
+Method:
+- The probe checked both conditions every 15 s for 60 min: 240 probes, read-only, and it never took the lock.
+- The raw file is `lambda:/mnt/nvme-raid0/tmp/apr60-avail-lambda-1114/probe.tsv`.
+- It also hit gx10 `/health` on each probe.
+
+| measure | value |
+|---|---|
+| lambda spawn rung available (lock free, no train marker) | **198/240 = 82.5%** |
+| same, excluding 11:50–12:10Z (see caveat 3) | 142/160 = 88.8% |
+| same, inside 11:50–12:10Z | 56/80 = 70.0% |
+| gx10 :8091 `/health` | 0/240 (held stopped, infra#1088) |
+| either rung | 82.5% |
+| train marker present | 0/240 |
+
+Caveats:
+1. This measures lock and marker state, not answers. A spawn also needs about 5 s to load and about 1 s to answer,
+   so a lock released for less than 6 s counts here but would not serve a round.
+2. The F2 CPU-parity fallback on qwen35 batched prefill is intermittent. It fired 3/3 during another session's GPU
+   sweep and 0/16 after. When it fires, the lane answers from the CPU path and the row records that.
+3. From 11:50 to 12:10Z the GPU lock holder was this session's own SRV-TIM-001 nsys runs. That window
+   under-counts what other sessions leave free.
+
+**Verdict:** this is above gx10's 68.8% (2c), but still below the level where a forced lane stops producing NotRun
+rows (about 1 round in 6 would NotRun). The lane stays shadow. Re-measure on 0.70.0-rc.1, when the lane switches
+to rc.1.
