@@ -1,4 +1,3 @@
-
 #[derive(Subcommand, Debug)]
 pub enum ModelOpsCommands {
     /// Fine-tune model with LoRA/QLoRA (GH-244)
@@ -108,6 +107,16 @@ pub enum ModelOpsCommands {
         /// PMAT-486: Enable StepProfiler for per-phase wall-clock timing
         #[arg(long)]
         profile: bool,
+
+        /// Declarative recipe (contracts/apr-recipe-v1.yaml, E8 #4002). Validated
+        /// before any model load; supplies model, method, rank, data, epochs and
+        /// learning rate, so it conflicts with those flags.
+        #[arg(
+            long,
+            value_name = "FILE",
+            conflicts_with_all = ["file", "method", "rank", "data", "epochs", "learning_rate"]
+        )]
+        recipe: Option<PathBuf>,
     },
     /// Prune model (structured/unstructured pruning) (GH-247)
     Prune {

@@ -1037,22 +1037,56 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             experimental_mps,
             gpu_share,
             profile,
+            recipe,
         }) => {
             if *profile {
                 eprintln!("StepProfiler enabled for finetune (PMAT-486)");
             }
+            // E8 R-1b: a recipe is validated before any model is opened, and
+            // supplies the args it conflicts with (clap enforces the conflict).
+            let recipe = match recipe.as_deref() {
+                Some(p) => {
+                    let r = match crate::commands::finetune_recipe::load(p) {
+                        Ok(r) => r,
+                        Err(e) => return Some(Err(e)),
+                    };
+                    if !cli.json {
+                        eprintln!("[recipe] {} sha256={}", p.display(), r.hash);
+                    }
+                    Some(r)
+                }
+                None => None,
+            };
+            let (file, method, rank, data, epochs, learning_rate) = match &recipe {
+                Some(r) => (
+                    Some(r.model.as_path()),
+                    r.method.as_str(),
+                    r.rank,
+                    Some(r.data.as_path()),
+                    r.epochs,
+                    Some(r.learning_rate),
+                ),
+                None => (
+                    file.as_deref(),
+                    method.as_str(),
+                    *rank,
+                    data.as_deref(),
+                    *epochs,
+                    *learning_rate,
+                ),
+            };
             finetune::run(
-                file.as_deref(),
+                file,
                 method,
-                *rank,
+                rank,
                 *vram,
                 *plan,
-                data.as_deref(),
+                data,
                 output.as_deref(),
                 adapter.as_deref(),
                 *merge,
-                *epochs,
-                *learning_rate,
+                epochs,
+                learning_rate,
                 model_size.as_deref(),
                 task.as_deref(),
                 *num_classes,
