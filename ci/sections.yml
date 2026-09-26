@@ -1402,6 +1402,13 @@ jobs:
         run: bash scripts/check_pr_review_wiring.sh --self-test
       - name: The PR-review receipt guard is wired job-level, not path-filtered
         run: bash scripts/check_pr_review_wiring.sh
+      # #4441 passed FAT_SECRET_PR_REVIEW_SIGNING_KEY_B (no "64"), so pr-review-sign
+      # read an empty key and Arm 4 went RED on every new PR. A section's
+      # secrets.NAME reaches it only through ci.yml's FAT_SECRET_NAME. Case table first.
+      - name: "Fat-job secret pass-through case table (6 rows)"
+        run: bash scripts/check_fat_secrets_passed.sh --self-test
+      - name: Every secret a section reads is passed to the fat job under its own name
+        run: bash scripts/check_fat_secrets_passed.sh
       # PRQ-013 (PP-066 C0-5, #2982): the job that judges a PR's OWN receipt must be
       # defined by the base — a workflow on pull_request_target + merge_group, never
       # pull_request — and `gate` must not wait on a head-defined receipt job. Case

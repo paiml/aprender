@@ -1,0 +1,410 @@
+{
+  "ticket": "PMAT-4478",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "1b3095e43ed0891ee7ea1e31af9e9e89593c2595",
+  "diff_sha256": "67655987b9dc10204756b9131d503114b9ddd8139f22ee182428de55640b4370",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 14779,
+  "prompt_sha256": "6558630a34c08ef2658926a286cfaf49fb3a4d1c5538646e647c049030bff0d2",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements PMAT-4478. The ci.yml secret is updated to the correct _B64 suffix. The check_fat_secrets_passed.sh script accurately checks S1 and S2 rules with a robust 6-row self-test case table (including the #4441 verbatim shape). Finally, the guard is correctly wired into ci/sections.yml (case table, then tree), meeting all acceptance criteria.",
+      "findings": [
+        {
+          "claim": "ci.yml passes FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64 from secrets.PR_REVIEW_SIGNING_KEY_B64",
+          "file": ".github/workflows/ci.yml",
+          "fix": "FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}",
+          "grounding": "cited",
+          "line": 86
+        },
+        {
+          "claim": "every secrets.NAME on a non-comment line of ci/sections.yml (except GITHUB_TOKEN) has FAT_SECRET_NAME from secrets.NAME in ci.yml",
+          "file": "scripts/check_fat_secrets_passed.sh",
+          "fix": "grep -vE '^[[:space:]]*#' \"$sections\" | grep -oE 'secrets\\.[A-Za-z0-9_]+' | sed 's/^secrets\\.//' | sort -u",
+          "grounding": "cited",
+          "line": 23
+        },
+        {
+          "claim": "every FAT_SECRET_KEY reads secrets.KEY",
+          "file": "scripts/check_fat_secrets_passed.sh",
+          "fix": "if [ \"$key\" != \"$val\" ]; then echo \"FAIL S2...\"",
+          "grounding": "cited",
+          "line": 32
+        },
+        {
+          "claim": "6-row case table carrying the #4441 shape verbatim as FAIL",
+          "file": "scripts/check_fat_secrets_passed.sh",
+          "fix": "row the_4441_truncation      '      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B: ${{ secrets.PR_REVIEW_SIGNING_KEY_B }}\\n' 1",
+          "grounding": "cited",
+          "line": 55
+        },
+        {
+          "claim": "the guard is wired in ci/sections.yml (case table, then tree)",
+          "file": "ci/sections.yml",
+          "fix": "- name: \"Fat-job secret pass-through case table (6 rows)\"\\n  run: bash scripts/check_fat_secrets_passed.sh --self-test\\n- name: Every secret a section reads is passed to the fat job under its own name\\n  run: bash scripts/check_fat_secrets_passed.sh",
+          "grounding": "cited",
+          "line": 1372
+        },
+        {
+          "claim": "check_guards_are_wired.sh is GREEN",
+          "file": "docs/audits/impl-PMAT-4478-receipt.md",
+          "fix": "`check_guards_are_wired.sh`: rc 0",
+          "grounding": "asserted",
+          "line": 26
+        }
+      ],
+      "raw_bytes": 5347,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "6558630a34c08ef2658926a286cfaf49fb3a4d1c5538646e647c049030bff0d2",
+      "trace": {
+        "input_sha256": "f2c77f110628de9648576ad1c6ee3cc5faab3e6f8652441d19918a6c4afc70bd",
+        "output_sha256": "5509608bbf7ce1d8797d573a45a0cddd4bdda96bb5a8ed22f6305a1132b3f0de",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff correctly implements PMAT-4478 by fixing the spelling of the secret name passed to the fat job, and adding a well-tested verification script.",
+      "findings": [],
+      "raw_bytes": 1590,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "6558630a34c08ef2658926a286cfaf49fb3a4d1c5538646e647c049030bff0d2",
+      "trace": {
+        "input_sha256": "3c198e79aa34a586761f58b68ac03e3eeb74fced1ef2c55aa8be65ee74a22c66",
+        "output_sha256": "eb7636ad5be9d68082b06926abc0775e4da6df55bcfc33c1aa05c82da52520a5",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "claude-opus-4-6-thinking",
+            "why": "family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)"
+          }
+        ]
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff correctly fixes the secret name typo (_B → _B64) in ci.yml and adds a comprehensive guard script with 6-row case table that explicitly covers the #4441 regression. Guard logic for S1/S2 validation is sound, properly wired in ci/sections.yml, and documented with implementation receipt and roadmap entries. No findings that refute the ticket.",
+      "findings": [],
+      "raw_bytes": 1604,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "6558630a34c08ef2658926a286cfaf49fb3a4d1c5538646e647c049030bff0d2",
+      "trace": {
+        "input_sha256": "92b15f4352df83b06edc3149c989dbe46fee147c6c51fb9ef997424b3178c2aa",
+        "output_sha256": "1c96cc0ea6f497f0bae8ce4260633e23e51cf8c36da7622a309695b7e20754c8",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "line": 86,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "ci.yml passes FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64 from secrets.PR_REVIEW_SIGNING_KEY_B64"
+      ]
+    },
+    {
+      "file": "ci/sections.yml",
+      "line": 1372,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "the guard is wired in ci/sections.yml (case table, then tree)"
+      ]
+    },
+    {
+      "file": "docs/audits/impl-PMAT-4478-receipt.md",
+      "line": 26,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "check_guards_are_wired.sh is GREEN"
+      ]
+    },
+    {
+      "file": "scripts/check_fat_secrets_passed.sh",
+      "line": 23,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "every secrets.NAME on a non-comment line of ci/sections.yml (except GITHUB_TOKEN) has FAT_SECRET_NAME from secrets.NAME in ci.yml"
+      ]
+    },
+    {
+      "file": "scripts/check_fat_secrets_passed.sh",
+      "line": 32,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "every FAT_SECRET_KEY reads secrets.KEY"
+      ]
+    },
+    {
+      "file": "scripts/check_fat_secrets_passed.sh",
+      "line": 55,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "6-row case table carrying the #4441 shape verbatim as FAIL"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, gemini-3.1-pro-high) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through claude-opus-4-6-thinking (skipped: family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 18h34m37s."
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "claude-gpt": {
+          "bucket": "claude-gpt",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": 1790422948,
+          "window_calls": 11,
+          "window_429": 11,
+          "hour_calls": 2,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket claude-gpt is empty: a 429 in this window (started 2026-09-26T11:42:28Z)"
+        },
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 41,
+          "basis": "[U] default 30, raised to the 41 calls a window has made without a 429; no window reached one",
+          "window_start": 1790422948,
+          "window_calls": 41,
+          "window_429": 0,
+          "hour_calls": 6,
+          "share": 8,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket gemini is empty: 41 calls in this window reach its budget 41 ([U] default 30, raised to the 41 calls a window has made without a 429; no window reached one)"
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "shape": "canary",
+    "max_brief_bytes": 24576,
+    "brief_bytes": 14779
+  },
+  "advisory_lane": {
+    "state": "answered",
+    "counts": false,
+    "row": {
+      "Verdict": {
+        "verdict": "PASS",
+        "cell": "gx10-cuda",
+        "backend": "cuda"
+      }
+    },
+    "verdict": "PASS",
+    "why": null,
+    "served_by": "gx10-cuda",
+    "gpu_proof": {
+      "used_gpu_probe": true,
+      "server_holds_gpu": true,
+      "used_gpu_source": "completions probe (chat omits used_gpu, aprender#4146)",
+      "trace_lines": [
+        "3393203, 245 MiB"
+      ]
+    },
+    "apr": "0.70.0",
+    "model": "/home/noah/data/models/Qwen3.5-4B-Q4_K_M.gguf",
+    "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "rc": 0,
+    "wall_s": 12,
+    "collected_s": 231,
+    "budget_s": 300,
+    "budget_basis": "[U] 300 s: fewer than 10 gx10-cuda Verdict rows in the ledger",
+    "brief": {
+      "bytes": 14779,
+      "sent_bytes": 14948,
+      "max_bytes": 24576
+    },
+    "trace": {
+      "input_sha256": "d2e65c379a443da19537c390ebd02ec87fb08c4f30206db39a1eeb1c2ffa14a5",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": true,
+        "wall_s": 12,
+        "used_gpu": true
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": true,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=1/2"
+  }
+}
