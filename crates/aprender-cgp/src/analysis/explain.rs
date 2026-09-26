@@ -311,8 +311,9 @@ pub fn run_explain(target: &str, kernel: Option<&str>) -> Result<()> {
             );
         }
         _ => {
-            println!("  Unknown target: {target}");
-            println!("  Supported: ptx, wgsl, simd");
+            // An unknown target was once reported on stdout with exit 0, so a script
+            // could not tell it from a successful analysis (ONT-10 S5 surface probe).
+            anyhow::bail!("unknown explain target '{target}' (supported: ptx, wgsl, simd)");
         }
     }
 
@@ -496,6 +497,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     #[test]
     fn test_run_explain_unknown() {
         let result = run_explain("unknown_target", None);
-        assert!(result.is_ok());
+        assert!(result.is_err());
     }
 }
