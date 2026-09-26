@@ -2,15 +2,3 @@
 # rustc=1.93.0
 # Workspace-member clippy findings, <package>/<kind>:<target>/<lint><TAB><count> (#4152).
 # SHRINK-ONLY: written by scripts/check_clippy_members.sh --update-baseline; never hand-raise a row.
-aprender-profile/lib:renacer/clippy::unnecessary_get_then_check	3
-aprender-profile/test:benchmark_vs_strace/clippy::manual_assert	2
-aprender-profile/test:sprint50_validate_tests/unreachable_patterns	7
-aprender-qa-cli/lib:aprender_qa_cli/clippy::disallowed_methods	42
-aprender-qa-report/example:generate_certificate/clippy::disallowed_methods	1
-aprender-qa-report/lib:aprender_qa_report/clippy::disallowed_methods	87
-aprender-registry/lib:pacha/clippy::module_inception	1
-aprender-test-cli/bin:aprender-test-cli/clippy::disallowed_methods	90
-aprender-test-cli/lib:probador/clippy::disallowed_methods	397
-aprender-test-cli/test:smoke_tests/clippy::disallowed_methods	8
-aprender-train-shell/lib:entrenar_shell/clippy::disallowed_methods	1
-aprender-zram-core/lib:trueno_zram_core/unexpected_cfgs	2
