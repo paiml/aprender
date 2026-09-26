@@ -81,8 +81,9 @@ arm_phases_all() { # -> "arm<TAB>phase" for every arm perf-matrix.yaml declares
   python3 - "$MATRIX" <<'PY_PHASES'
 import sys, yaml
 m = yaml.safe_load(open(sys.argv[1])) or {}
-for k, v in ((m.get("arms") or {}).items()):
-    print("%s\t%s" % (k, ((v or {}).get("phase") or "both")))
+for k, mx_arm in ((m.get("arms") or {}).items()):
+    mx_arm = mx_arm or {}
+    print("%s\t%s" % (k, mx_arm.get("phase") or "both"))
 PY_PHASES
 }
 
