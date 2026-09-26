@@ -111,6 +111,18 @@ fn row_errors(r: &Row, prereg_sha: &str) -> Vec<String> {
     if r.schema != SCHEME {
         e.push(format!("{id}: schema {}", r.schema));
     }
+    cell_errors(r, &mut e);
+    field_errors(r, &mut e);
+    if r.prereg_sha != prereg_sha {
+        e.push(format!("{id}: prereg_sha differs from the lock"));
+    }
+    status_errors(id, &r.status, &mut e);
+    e
+}
+
+/// The row names a §2.1 cell, on that cell's declared host and backend.
+fn cell_errors(r: &Row, e: &mut Vec<String>) {
+    let id = &r.cell;
     match CELLS.iter().find(|c| c.cell == r.cell) {
         None => e.push(format!("{id}: not a §2.1 cell")),
         Some(c) if c.host != r.host || c.backend != r.backend => e.push(format!(
@@ -119,6 +131,11 @@ fn row_errors(r: &Row, prereg_sha: &str) -> Vec<String> {
         )),
         Some(_) => {}
     }
+}
+
+/// Provenance fields are present, and the two digests are sha256s.
+fn field_errors(r: &Row, e: &mut Vec<String>) {
+    let id = &r.cell;
     for (k, v) in [
         ("apr_tag", &r.apr_tag),
         ("model_id", &r.model_id),
@@ -136,10 +153,11 @@ fn row_errors(r: &Row, prereg_sha: &str) -> Vec<String> {
             e.push(format!("{id}: {k} is not a sha256"));
         }
     }
-    if r.prereg_sha != prereg_sha {
-        e.push(format!("{id}: prereg_sha differs from the lock"));
-    }
-    match &r.status {
+}
+
+/// An Admitted row carries its parity evidence; a Refused row names its remover.
+fn status_errors(id: &str, status: &Status, e: &mut Vec<String>) {
+    match status {
         Status::Admitted { parity: p } => {
             if p.oracle.trim().is_empty() || p.threshold_basis.trim().is_empty() {
                 e.push(format!("{id}: Admitted without oracle or threshold basis"));
@@ -159,7 +177,6 @@ fn row_errors(r: &Row, prereg_sha: &str) -> Vec<String> {
         }
         _ => {}
     }
-    e
 }
 
 /// Check an admission file (JSON lines). Every §2.1 cell must appear exactly

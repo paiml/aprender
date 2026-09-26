@@ -207,7 +207,7 @@ def finish(row, rc, text, stderr):
     elif closed is False:
         row["reason"] = f"thinking never closed within max_tokens {row['max_tokens']}: no </think> in the output"
     elif NEEDLE_WORD not in answer:
-        row["reason"] = f"answer does not contain the needle planted at token 0: {answer[:120]!r}"
+        row["reason"] = f"answer does not contain the needle planted at token 0: {answer[:120]!r}" + (f" ... and {len(answer) - 120} more chars" if len(answer) > 120 else "")
     else:
         row["verdict"], row["reason"] = "pass", "ok"
     return row

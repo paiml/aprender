@@ -202,6 +202,26 @@ fn problems(r: &Receipt, expect: Expect<'_>) -> Vec<String> {
     if r.schema != SCHEME {
         bad.push(format!("schema {:?} != {SCHEME}", r.schema));
     }
+    named_problems(r, &mut bad);
+    sha_problems(r, &mut bad);
+    if r.prereg_sha != expect.prereg_sha {
+        bad.push("prereg_sha is not the locked one (exploratory data)".into());
+    }
+    if r.corpus_version != expect.corpus_version {
+        bad.push(format!(
+            "corpus_version {:?} is not {:?}",
+            r.corpus_version, expect.corpus_version
+        ));
+    }
+    if r.decoding.temperature != 0.0 {
+        bad.push("decoding is not greedy (temperature != 0)".into());
+    }
+    execution_problems(r, &mut bad);
+    bad
+}
+
+/// Every identifying field is present and not the literal `unknown`.
+fn named_problems(r: &Receipt, bad: &mut Vec<String>) {
     let named = [
         ("item_id", &r.item_id),
         ("cell", &r.cell),
@@ -216,6 +236,11 @@ fn problems(r: &Receipt, expect: Expect<'_>) -> Vec<String> {
             bad.push(format!("{k} is empty or unknown"));
         }
     }
+}
+
+/// Every digest is a sha256, except that a hosted arm's binary and weights
+/// digests must be the literal `hosted`.
+fn sha_problems(r: &Receipt, bad: &mut Vec<String>) {
     let mut shas = vec![
         ("item_sha256", &r.item_sha256),
         ("prompt_sha256", &r.prompt_sha256),
@@ -240,18 +265,10 @@ fn problems(r: &Receipt, expect: Expect<'_>) -> Vec<String> {
             bad.push(format!("{k} is not a sha256"));
         }
     }
-    if r.prereg_sha != expect.prereg_sha {
-        bad.push("prereg_sha is not the locked one (exploratory data)".into());
-    }
-    if r.corpus_version != expect.corpus_version {
-        bad.push(format!(
-            "corpus_version {:?} is not {:?}",
-            r.corpus_version, expect.corpus_version
-        ));
-    }
-    if r.decoding.temperature != 0.0 {
-        bad.push("decoding is not greedy (temperature != 0)".into());
-    }
+}
+
+/// An executed row carries its measurements, and any output is well-formed.
+fn execution_problems(r: &Receipt, bad: &mut Vec<String>) {
     if r.verdict.executed() {
         for (k, missing) in [
             ("tokens", r.tokens.is_none()),
@@ -269,7 +286,6 @@ fn problems(r: &Receipt, expect: Expect<'_>) -> Vec<String> {
             bad.push("output path/sha malformed".into());
         }
     }
-    bad
 }
 
 /// The model's answer with any `<think>…</think>` reasoning removed: the

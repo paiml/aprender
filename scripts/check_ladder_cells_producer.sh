@@ -113,7 +113,7 @@ mutant() { # mutant <name> <sed-expr>
 mutant needle     's/elif NEEDLE_WORD not in answer:/elif False:/'
 mutant fallback   's/row\["fallback"\] = be.get("fell_back")/row["fallback"] = False/'
 mutant retry      's/for _attempt in range(3):/for _attempt in range(1):/'
-mutant owed-set   's/for rid, tok in J.owed_rungs(item, rungs, C.get("long_rungs_for") or {}, consumer_max):/for rid, tok in list(J.owed_rungs(item, rungs, C.get("long_rungs_for") or {}, consumer_max))[:1]:/'
+mutant owed-set   's/for rid, tok in J.owed_rungs(item, rungs, C.get("long_rungs_for") or {}, consumer_max):/for (rid, tok), _one in zip(J.owed_rungs(item, rungs, C.get("long_rungs_for") or {}, consumer_max), range(1)):/'
 mutant refusal    's/if rc != 0 and ref is not None:/if False:/'
 mutant think      's/if "<\/think>" in text:/if False:/'
 
