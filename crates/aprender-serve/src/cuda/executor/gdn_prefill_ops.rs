@@ -334,12 +334,10 @@ impl CudaExecutor {
         let kern = DeltaRuleChunkScanKernel::new(nk, dk, nv, dv, qkv_row_stride, nv * dv);
         let key = format!("qp_scan_{nk}_{dk}_{nv}_{dv}_{qkv_row_stride}");
         self.qp_prepare(&key, &kern)?;
-        let (gx, _, _) = kern.grid();
-        let (bx, _, _) = kern.block();
         let config = LaunchConfig {
-            grid: (gx, 1, 1),
-            block: (bx, 1, 1),
-            shared_mem: 0, // static: the kernel declares its k/q staging buffer
+            grid: kern.grid(),
+            block: kern.block(),
+            shared_mem: 0, // the scan uses no shared memory
         };
         let mut args = [q, k, v, beta, gate, state, output, u64::from(rows)];
         self.qp_launch(&key, kern.name(), config, &mut args, 7)

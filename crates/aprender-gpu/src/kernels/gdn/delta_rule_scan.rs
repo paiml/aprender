@@ -9,21 +9,22 @@
 //!
 //! ## Why it is bitwise-identical to `T` launches of the per-token kernel
 //!
-//! Per token, per value head `h`, thread `j` runs the per-token kernel's four steps in
-//! its exact instruction sequence:
+//! Both kernels give each state row `j` to one WARP, and lane `l` owns the row elements
+//! `i = l, l + 32, …`. Per token, per value head `h`, each lane runs the per-token
+//! kernel's exact sequence on its elements, `m` ascending:
 //!
 //! ```text
-//! 1+2.  for i in 0..Dk:  s[i] = s[i] * exp(gate[h]);  sum += s[i] * k[kh*Dk + i]
+//! 1+2.  sum += (s[i] * exp(gate[h])) * k[kh*Dk + i]        (s[i] NOT overwritten)
+//!       sum  = warp_sum_broadcast(sum)
 //!       delta = (v[j] - sum) * beta[h]
-//! 3+4.  for i in 0..Dk:  s[i] = s[i] + k[kh*Dk + i] * delta;  out += s[i] * q[kh*Dk + i]
-//!       o[j] = out * Dk^-0.5
+//! 3+4.  s[i] = s[i] * exp(gate[h]) + k[kh*Dk + i] * delta;  out += s[i] * q[kh*Dk + i]
+//!       out  = warp_sum_broadcast(out);  o[j] = out * Dk^-0.5   (lane 0)
 //! ```
 //!
 //! The f32 operations are the per-token kernel's, in its order: the same `mul`/`add`
-//! dependency chains, the same `emit_exp_f32`, the accumulations `i` ascending. Only
-//! WHERE the operands live changes: the state row stays in registers instead of global
-//! memory, and each token's `k`/`q` head is staged once in shared memory instead of
-//! being re-read from global memory by every thread.
+//! dependency chains, the same `emit_exp_f32`, the same shuffle tree
+//! (`delta_rule::warp_sum_broadcast`). Only WHERE the state lives changes: `Dk / 32`
+//! registers per lane for the whole chunk instead of a global round trip per token.
 //!
 //! **Equality is measured, not constructed.** The builder records `.rn` on these ops
 //! but the emitter does not print a rounding modifier (the PTX says `mul.f32`,
@@ -43,14 +44,14 @@
 //! exactly (`s_h[j * Dk + i] == S[i][j]`), read once at the start and written once at
 //! the end.
 //!
-//! Grid: `(num_v_heads, 1, 1)`, Block: `(head_v_dim, 1, 1)` — the per-token shape. Two
-//! barriers per token fence the shared `k`/`q` staging; every thread of the block
-//! reaches both, which is why there is no early-exit bounds check (the block is exactly
-//! `head_v_dim` wide).
+//! Grid and block are the per-token kernel's: `(ceil(Dv / ROWS_PER_BLOCK), num_v_heads,
+//! 1)` and `(32 * ROWS_PER_BLOCK, 1, 1)`. Warps never communicate, so there is no
+//! barrier and a warp past the last row exits at once.
 
+use crate::kernels::gdn::delta_rule::{warp_sum_broadcast, ROWS_PER_BLOCK};
 use crate::kernels::gdn::emit_exp_f32;
 use crate::kernels::Kernel;
-use crate::ptx::builder::{PtxArithmetic, PtxComparison, PtxControl, PtxMemory};
+use crate::ptx::builder::{PtxArithmetic, PtxComparison, PtxControl};
 use crate::ptx::{PtxKernel, PtxReg, PtxType};
 
 /// Gated delta-rule recurrence over `t_count` consecutive tokens, state in registers.
@@ -61,11 +62,11 @@ use crate::ptx::{PtxKernel, PtxReg, PtxType};
 pub struct DeltaRuleChunkScanKernel {
     /// Number of key/query heads.
     pub num_k_heads: u32,
-    /// Key/query head width `Dk` — the number of state floats each thread holds.
+    /// Key/query head width `Dk` — each lane holds `ceil(Dk / 32)` state floats.
     pub head_k_dim: u32,
-    /// Number of value heads — one block each.
+    /// Number of value heads — grid `y`.
     pub num_v_heads: u32,
-    /// Value head width `Dv` — one thread per state row.
+    /// Value head width `Dv` — one warp per state row.
     pub head_v_dim: u32,
     /// Floats between token `t` and token `t + 1` in the `q`, `k` and `v` buffers.
     pub qkv_row_stride: u32,
@@ -106,23 +107,27 @@ impl DeltaRuleChunkScanKernel {
         }
     }
 
-    /// Launch grid — one block per value head.
+    /// Launch grid — the per-token kernel's: row tiles in `x`, value heads in `y`.
     #[must_use]
     pub const fn grid(&self) -> (u32, u32, u32) {
-        (self.num_v_heads, 1, 1)
+        (
+            self.head_v_dim.div_ceil(ROWS_PER_BLOCK),
+            self.num_v_heads,
+            1,
+        )
     }
 
-    /// Launch block — one thread per state row, and no more: every thread must reach
-    /// both per-token barriers.
+    /// Launch block — one warp per state row, as the per-token kernel.
     #[must_use]
     pub const fn block(&self) -> (u32, u32, u32) {
-        (self.head_v_dim, 1, 1)
+        (32 * ROWS_PER_BLOCK, 1, 1)
     }
 
-    /// Shared memory: one token's `k` head and `q` head.
+    /// Shared memory: none — `k` and `q` are read straight from global memory, where
+    /// the four warps of a block share them through L1.
     #[must_use]
     pub const fn shared_bytes(&self) -> usize {
-        (self.head_k_dim * 2 * 4) as usize
+        0
     }
 }
 
@@ -141,8 +146,10 @@ impl Kernel for DeltaRuleChunkScanKernel {
         let out_stride = self.out_row_stride;
         // The per-token kernel's immediate, computed the same way.
         let scale = 1.0 / (dk as f32).sqrt();
-        // Shared layout: k head at [0, Dk), q head at [Dk, 2 Dk).
-        let q_shared_base = dk * 4;
+        // Lane l holds elements l + 32 m for m in 0..per_lane; only the last can be
+        // past the row end, and only when Dk is not a multiple of 32.
+        let per_lane = dk.div_ceil(32);
+        let ragged = dk % 32 != 0;
 
         PtxKernel::new(self.name())
             .param(PtxType::U64, "q_ptr") // [T][qkv_row_stride], offset to the q section
@@ -153,10 +160,21 @@ impl Kernel for DeltaRuleChunkScanKernel {
             .param(PtxType::U64, "state_ptr") // [num_v_heads * Dv * Dk], updated in place
             .param(PtxType::U64, "output_ptr") // [T][out_row_stride]
             .param(PtxType::U32, "t_count")
-            .shared_memory(self.shared_bytes())
+            .shared_memory(0)
             .build(|ctx| {
-                let j = ctx.special_reg(PtxReg::TidX);
-                let h = ctx.special_reg(PtxReg::CtaIdX);
+                let tid = ctx.special_reg(PtxReg::TidX);
+                let lane = ctx.and_u32_imm(tid, 31);
+                let warp = ctx.shr_u32_imm(tid, 5);
+                let tile = ctx.special_reg(PtxReg::CtaIdX);
+                let h = ctx.special_reg(PtxReg::CtaIdY);
+                let rows_r = ctx.mov_u32_imm(ROWS_PER_BLOCK);
+                let tile_base = ctx.mul_u32_reg(tile, rows_r);
+                let j = ctx.add_u32_reg(tile_base, warp);
+
+                // Warp-uniform exit; no barrier follows.
+                let dv_r = ctx.mov_u32_imm(dv);
+                let row_in_bounds = ctx.setp_lt_u32(j, dv_r);
+                ctx.branch_if_not(row_in_bounds, "gdn_scan_exit");
 
                 let q_ptr = ctx.load_param_u64("q_ptr");
                 let k_ptr = ctx.load_param_u64("k_ptr");
@@ -173,59 +191,61 @@ impl Kernel for DeltaRuleChunkScanKernel {
                 // `h % num_k_heads`, emitted only when the heads are grouped.
                 let kh = if nk == nv { h } else { ctx.rem_u32(h, nk) };
                 let kh_elems = ctx.mul_u32(kh, dk);
+                let kh_lane = ctx.add_u32_reg(kh_elems, lane);
                 let h_v_elems = ctx.mul_u32(h, dv);
                 let v_col = ctx.add_u32_reg(h_v_elems, j); // h * Dv + j
 
-                // The state row, into registers: s_h[j * Dk + i] for i in 0..Dk.
+                // Last element's guard, computed once: lane + 32 (per_lane - 1) < Dk.
+                let tail_ok = if ragged {
+                    let tail_lane_limit = ctx.mov_u32_imm(dk - 32 * (per_lane - 1));
+                    Some(ctx.setp_lt_u32(lane, tail_lane_limit))
+                } else {
+                    None
+                };
+                let guard = |m: u32| (m + 1 == per_lane).then_some(()).and(tail_ok);
+
+                // This lane's slice of the state row, into registers.
                 let state_head_off = ctx.mul_wide_u32(h, dv * dk * 4);
                 let state_head = ctx.add_u64(state_ptr, state_head_off);
                 let row_off = ctx.mul_wide_u32(j, dk * 4);
                 let s_row = ctx.add_u64(state_head, row_off);
-                let s_addrs: Vec<_> = (0..dk)
-                    .map(|i| {
-                        let off = ctx.mov_u64_imm(u64::from(i) * 4);
-                        ctx.add_u64(s_row, off)
+                let lane_off = ctx.mul_wide_u32_reg(lane, four);
+                let s_lane = ctx.add_u64(s_row, lane_off);
+                let s_addrs: Vec<_> = (0..per_lane)
+                    .map(|m| {
+                        let off = ctx.mov_u64_imm(u64::from(m) * 128);
+                        ctx.add_u64(s_lane, off)
                     })
                     .collect();
-                let s: Vec<_> = s_addrs.iter().map(|&a| ctx.ld_global_f32(a)).collect();
+                let s: Vec<_> = (0..per_lane)
+                    .map(|m| {
+                        let s_m = ctx.mov_f32_imm(0.0);
+                        let skip = format!("gdn_scan_load_skip_{m}");
+                        if let Some(ok) = guard(m) {
+                            ctx.branch_if_not(ok, &skip);
+                        }
+                        let loaded = ctx.ld_global_f32(s_addrs[m as usize]);
+                        ctx.mov_f32_reg(s_m, loaded);
+                        if guard(m).is_some() {
+                            ctx.label(&skip);
+                        }
+                        s_m
+                    })
+                    .collect();
 
                 let t = ctx.mov_u32_imm(0);
                 ctx.label("gdn_scan_token_loop");
                 let more = ctx.setp_lt_u32(t, t_count);
                 ctx.branch_if_not(more, "gdn_scan_token_end");
 
-                // The previous token's shared k/q reads are finished before any thread
-                // overwrites them.
-                ctx.bar_sync(0);
-
-                // Stage this token's k and q heads: thread j copies elements j, j+Dv, …
+                // This token's k/q base for this lane: row t, key head kh, element lane.
                 let qkv_row = ctx.mul_u32(t, qkv_stride);
-                let qk_head_row = ctx.add_u32_reg(qkv_row, kh_elems);
-                for base in (0..dk).step_by(dv as usize) {
-                    let base_r = ctx.mov_u32_imm(base);
-                    let idx = ctx.add_u32_reg(base_r, j);
-                    let skip = format!("gdn_scan_stage_skip_{base}");
-                    let dk_r = ctx.mov_u32_imm(dk);
-                    let in_head = ctx.setp_lt_u32(idx, dk_r);
-                    ctx.branch_if_not(in_head, &skip);
-                    let elem = ctx.add_u32_reg(qk_head_row, idx);
-                    let elem_off = ctx.mul_wide_u32_reg(elem, four);
-                    let k_addr = ctx.add_u64(k_ptr, elem_off);
-                    let q_addr = ctx.add_u64(q_ptr, elem_off);
-                    let k_val = ctx.ld_global_f32(k_addr);
-                    let q_val = ctx.ld_global_f32(q_addr);
-                    let slot = ctx.mul_u32(idx, 4);
-                    let k_slot = ctx.cvt_u64_u32(slot);
-                    ctx.st_shared_f32(k_slot, k_val);
-                    let q_base_r = ctx.mov_u32_imm(q_shared_base);
-                    let q_slot32 = ctx.add_u32_reg(slot, q_base_r);
-                    let q_slot = ctx.cvt_u64_u32(q_slot32);
-                    ctx.st_shared_f32(q_slot, q_val);
-                    ctx.label(&skip);
-                }
-                ctx.bar_sync(0);
+                let qk_elem = ctx.add_u32_reg(qkv_row, kh_lane);
+                let qk_off = ctx.mul_wide_u32_reg(qk_elem, four);
+                let k_lane = ctx.add_u64(k_ptr, qk_off);
+                let q_lane = ctx.add_u64(q_ptr, qk_off);
 
-                // Per-(token, head) scalars and this thread's v element.
+                // Per-(token, head) scalars.
                 let nv_row = ctx.mul_u32(t, nv);
                 let scalar_idx = ctx.add_u32_reg(nv_row, h);
                 let scalar_off = ctx.mul_wide_u32_reg(scalar_idx, four);
@@ -235,15 +255,24 @@ impl Kernel for DeltaRuleChunkScanKernel {
                 let gate = ctx.ld_global_f32(gate_addr);
                 let exp_gate = emit_exp_f32(ctx, gate);
 
-                // Steps 1 + 2: decay the row and dot it with k, i ascending.
+                // Pass 1 (steps 1 + 2): the decayed row dotted with k; s is NOT written.
                 let sum = ctx.mov_f32_imm(0.0);
-                for (i, &s_i) in s.iter().enumerate() {
-                    ctx.mul_f32_inplace(s_i, exp_gate);
-                    let k_slot = ctx.mov_u64_imm(i as u64 * 4);
-                    let k_val = ctx.ld_shared_f32(k_slot);
-                    let prod = ctx.mul_f32(s_i, k_val);
+                for (m, &s_m) in s.iter().enumerate() {
+                    let skip = format!("gdn_scan_p1_skip_{m}");
+                    if let Some(ok) = guard(m as u32) {
+                        ctx.branch_if_not(ok, &skip);
+                    }
+                    let off = ctx.mov_u64_imm(m as u64 * 128);
+                    let k_addr = ctx.add_u64(k_lane, off);
+                    let s_scaled = ctx.mul_f32(s_m, exp_gate);
+                    let k_val = ctx.ld_global_f32(k_addr);
+                    let prod = ctx.mul_f32(s_scaled, k_val);
                     ctx.add_f32_inplace(sum, prod);
+                    if guard(m as u32).is_some() {
+                        ctx.label(&skip);
+                    }
                 }
+                let sum = warp_sum_broadcast(ctx, sum);
 
                 // delta = (v[j] - sum) * beta
                 let v_elem = ctx.add_u32_reg(qkv_row, v_col);
@@ -253,19 +282,33 @@ impl Kernel for DeltaRuleChunkScanKernel {
                 let diff = ctx.sub_f32(v_j, sum);
                 let delta = ctx.mul_f32(diff, beta);
 
-                // Steps 3 + 4: update the row and dot it with q, i ascending.
+                // Pass 2 (steps 1 + 3 + 4): s = s * exp_gate + k * delta, dotted with q.
                 let out_sum = ctx.mov_f32_imm(0.0);
-                for (i, &s_i) in s.iter().enumerate() {
-                    let k_slot = ctx.mov_u64_imm(i as u64 * 4);
-                    let k_val = ctx.ld_shared_f32(k_slot);
+                for (m, &s_m) in s.iter().enumerate() {
+                    let skip = format!("gdn_scan_p2_skip_{m}");
+                    if let Some(ok) = guard(m as u32) {
+                        ctx.branch_if_not(ok, &skip);
+                    }
+                    let off = ctx.mov_u64_imm(m as u64 * 128);
+                    let k_addr = ctx.add_u64(k_lane, off);
+                    let q_addr = ctx.add_u64(q_lane, off);
+                    let s_decayed = ctx.mul_f32(s_m, exp_gate);
+                    let k_val = ctx.ld_global_f32(k_addr);
                     let upd = ctx.mul_f32(k_val, delta);
-                    ctx.add_f32_inplace(s_i, upd);
-                    let q_slot = ctx.mov_u64_imm(u64::from(q_shared_base) + i as u64 * 4);
-                    let q_val = ctx.ld_shared_f32(q_slot);
-                    let prod = ctx.mul_f32(s_i, q_val);
+                    let s_new = ctx.add_f32(s_decayed, upd);
+                    ctx.mov_f32_reg(s_m, s_new);
+                    let q_val = ctx.ld_global_f32(q_addr);
+                    let prod = ctx.mul_f32(s_new, q_val);
                     ctx.add_f32_inplace(out_sum, prod);
+                    if guard(m as u32).is_some() {
+                        ctx.label(&skip);
+                    }
                 }
+                let out_sum = warp_sum_broadcast(ctx, out_sum);
 
+                let zero = ctx.mov_u32_imm(0);
+                let is_lane0 = ctx.setp_eq_u32(lane, zero);
+                ctx.branch_if_not(is_lane0, "gdn_scan_out_skip");
                 let scale_r = ctx.mov_f32_imm(scale);
                 let result = ctx.mul_f32(out_sum, scale_r);
                 let out_row = ctx.mul_u32(t, out_stride);
@@ -273,15 +316,24 @@ impl Kernel for DeltaRuleChunkScanKernel {
                 let out_off = ctx.mul_wide_u32_reg(out_elem, four);
                 let out_addr = ctx.add_u64(output_ptr, out_off);
                 ctx.st_global_f32(out_addr, result);
+                ctx.label("gdn_scan_out_skip");
 
                 ctx.add_u32_inplace(t, 1);
                 ctx.branch("gdn_scan_token_loop");
                 ctx.label("gdn_scan_token_end");
 
-                // The state row, back to global memory once.
-                for (&addr, &s_i) in s_addrs.iter().zip(&s) {
-                    ctx.st_global_f32(addr, s_i);
+                // This lane's slice of the state row, back to global memory once.
+                for (m, (&addr, &s_m)) in s_addrs.iter().zip(&s).enumerate() {
+                    let skip = format!("gdn_scan_store_skip_{m}");
+                    if let Some(ok) = guard(m as u32) {
+                        ctx.branch_if_not(ok, &skip);
+                    }
+                    ctx.st_global_f32(addr, s_m);
+                    if guard(m as u32).is_some() {
+                        ctx.label(&skip);
+                    }
                 }
+                ctx.label("gdn_scan_exit");
                 ctx.ret();
             })
     }
@@ -297,11 +349,11 @@ mod ptx_tests {
         let kernel = DeltaRuleChunkScanKernel::new(16, 128, 32, 128, 8192, 4096);
         let ptx = kernel.emit_ptx();
         assert!(ptx.contains(".entry gdn_delta_rule_chunk_scan"), "{ptx}");
-        // The state row is loaded once and stored once — 128 of each — plus the
-        // staged k/q, v, beta, gate loads and the one output store per token.
+        // Each lane's slice of the state row (Dk / 32 = 4 floats) is stored once, plus
+        // the one output store per token (lane 0).
         assert_eq!(
             ptx.matches("st.global.f32").count(),
-            128 + 1,
+            4 + 1,
             "state + output stores"
         );
         // No explicit fma: the per-token kernel emits none, and one here would be a
@@ -311,14 +363,17 @@ mod ptx_tests {
             !ptx.contains("fma."),
             "an explicit fma the per-token kernel lacks: {ptx}"
         );
-        // Per token: Dk decay muls + Dk dot muls + Dk update muls + Dk output muls,
-        // plus delta, the scale and exp's scaling mul(s) — never fewer than 4 Dk.
-        assert!(ptx.matches("mul.f32").count() >= 4 * 128, "{ptx}");
+        // Per token and element: pass 1 decays + dots (2 muls), pass 2 re-decays,
+        // updates and dots (3 muls) — the per-token kernel's five.
+        assert!(ptx.matches("mul.f32").count() >= 5 * 4, "{ptx}");
+        // The per-token kernel's two shuffle trees, no barrier, no shared staging.
+        assert_eq!(ptx.matches("shfl.sync.down").count(), 10, "{ptx}");
+        assert!(!ptx.contains("bar.sync"), "{ptx}");
         // Grouped heads: the tiled modulo is emitted.
         assert!(ptx.contains("rem.u32"), "{ptx}");
-        assert_eq!(kernel.grid(), (32, 1, 1));
+        assert_eq!(kernel.grid(), (32, 32, 1));
         assert_eq!(kernel.block(), (128, 1, 1));
-        assert_eq!(kernel.shared_bytes(), 1024);
+        assert_eq!(kernel.shared_bytes(), 0);
     }
 
     #[test]

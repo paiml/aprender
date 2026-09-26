@@ -19,25 +19,37 @@
 //! reference (`gguf/inference/forward/forward_qwen35.rs`) carries the citations and the
 //! measurement; this kernel only mirrors it.
 //!
-//! Grid: `(num_v_heads, 1, 1)`, Block: `(head_v_dim, 1, 1)`. Thread `j` owns memory
-//! row `j` of `S_h` **exclusively**: every one of steps 1–4 touches only row `j` for
-//! output `j`, so the whole recurrence runs with no barrier and no cross-thread
-//! dependency. Steps 1 and 2 are fused into one ascending pass over `i` and steps 3
-//! and 4 into a second, which keeps the fp32 accumulation order identical to the CPU
-//! loop (`i = 0..head_k_dim`) — the per-layer L∞ ≤ 1e-3 parity contract depends on it.
-//! Two value heads that share a key head still touch disjoint state and output, so the
-//! grouped case needs no more synchronisation than the symmetric one.
+//! Grid: `(ceil(Dv / ROWS_PER_BLOCK), num_v_heads, 1)`, Block: `(32 * ROWS_PER_BLOCK, 1, 1)`.
+//! **One warp owns memory row `j` of `S_h`**; its 32 lanes split `i` with stride 32, so
+//! every load and store of the state is a coalesced 128-byte warp transaction and the
+//! two dot products are warp-shuffle reductions. Every one of steps 1–4 touches only
+//! row `j` for output `j`, so warps never communicate and there is no barrier.
+//!
+//! SRV-TIM-001 item 6 (#4274 class): the previous shape gave each THREAD a row and
+//! walked `i` serially, so a warp's 32 loads hit 32 rows 512 bytes apart (fully
+//! uncoalesced) and the whole layer ran on `num_v_heads` blocks — 1.08 ms/token over 24
+//! layers on the 4090 against llama.cpp's 0.07. The row is now read twice (the second
+//! pass is an L1/L2 hit) and written once, where the old shape stored it twice.
+//!
+//! Numerics: step 1 is recomputed as `s * exp(gate)` in the second pass rather than
+//! stored, which is the same fp32 product the CPU stores. The dot products are summed
+//! lane-strided then tree-reduced instead of `i`-ascending, so the result is no longer
+//! bitwise the CPU order; the device parity tests hold it to 1e-5 relative, and the
+//! per-layer contract is L∞ ≤ 1e-3.
 
 use crate::kernels::gdn::emit_exp_f32;
 use crate::kernels::Kernel;
-use crate::ptx::builder::{PtxArithmetic, PtxComparison, PtxControl};
-use crate::ptx::{PtxKernel, PtxReg, PtxType};
+use crate::ptx::builder::{KernelBuilder, PtxArithmetic, PtxComparison, PtxControl};
+use crate::ptx::{PtxKernel, PtxReg, PtxType, VirtualReg};
 
 /// Gated delta-rule recurrence for a single token.
 ///
 /// For Qwen3.5-0.8B and -2B: `num_k_heads = num_v_heads = 16`,
 /// `head_k_dim = head_v_dim = 128`. For -4B and -9B: `num_k_heads = 16`,
 /// `num_v_heads = 32`. For -27B: `num_k_heads = 16`, `num_v_heads = 48`.
+/// State rows (warps) per block.
+pub const ROWS_PER_BLOCK: u32 = 4;
+
 #[derive(Debug, Clone, Copy)]
 pub struct DeltaRuleRecurrenceKernel {
     /// Number of key/query heads — `q` and `k` are `num_k_heads * head_k_dim` long.
@@ -66,16 +78,20 @@ impl DeltaRuleRecurrenceKernel {
         }
     }
 
-    /// Launch grid — one block per value head.
+    /// Launch grid — `x` tiles the state rows of one head, `y` is the value head.
     #[must_use]
     pub const fn grid(&self) -> (u32, u32, u32) {
-        (self.num_v_heads, 1, 1)
+        (
+            self.head_v_dim.div_ceil(ROWS_PER_BLOCK),
+            self.num_v_heads,
+            1,
+        )
     }
 
-    /// Launch block — one thread per state row.
+    /// Launch block — one warp per state row, [`ROWS_PER_BLOCK`] rows per block.
     #[must_use]
     pub const fn block(&self) -> (u32, u32, u32) {
-        (self.head_v_dim, 1, 1)
+        (32 * ROWS_PER_BLOCK, 1, 1)
     }
 }
 
@@ -103,9 +119,17 @@ impl Kernel for DeltaRuleRecurrenceKernel {
             .param(PtxType::U64, "output_ptr") // [num_v_heads * Dv]
             .shared_memory(0)
             .build(|ctx| {
-                let j = ctx.special_reg(PtxReg::TidX);
-                let h = ctx.special_reg(PtxReg::CtaIdX);
+                let tid = ctx.special_reg(PtxReg::TidX);
+                let lane = ctx.and_u32_imm(tid, 31);
+                let warp = ctx.shr_u32_imm(tid, 5);
+                let tile = ctx.special_reg(PtxReg::CtaIdX);
+                let h = ctx.special_reg(PtxReg::CtaIdY);
+                let rows_r = ctx.mov_u32_imm(ROWS_PER_BLOCK);
+                let tile_base = ctx.mul_u32_reg(tile, rows_r);
+                let j = ctx.add_u32_reg(tile_base, warp);
 
+                // Warp-uniform: a whole warp exits together, so the full-mask shuffles
+                // below never see a missing lane.
                 let dv_r = ctx.mov_u32_imm(dv);
                 let row_in_bounds = ctx.setp_lt_u32(j, dv_r);
                 ctx.branch_if_not(row_in_bounds, "gdn_dr_exit");
@@ -123,9 +147,8 @@ impl Kernel for DeltaRuleRecurrenceKernel {
                 let dk_bytes = ctx.mov_u32_imm(dk * 4);
                 let dv_bytes = ctx.mov_u32_imm(dv * 4);
 
-                // q/k head base: (h % num_k_heads) * Dk * 4. With nk == nv the block
-                // index IS the key head, so the `rem` is not emitted at all and the
-                // symmetric PTX is unchanged.
+                // q/k head base: (h % num_k_heads) * Dk * 4. With nk == nv the value
+                // head IS the key head, so the `rem` is not emitted at all.
                 let kh = if nk == nv { h } else { ctx.rem_u32(h, nk) };
                 let qk_head_off = ctx.mul_wide_u32_reg(kh, dk_bytes);
                 let q_base = ctx.add_u64(q_ptr, qk_head_off);
@@ -151,54 +174,63 @@ impl Kernel for DeltaRuleRecurrenceKernel {
                 let gate = ctx.ld_global_f32(gate_addr);
                 let exp_gate = emit_exp_f32(ctx, gate);
 
-                // Steps 1 + 2: decay row j in place and dot it with k, i ascending.
+                // Pass 1 (steps 1 + 2): sum_i (s[j][i] * exp_gate) * k[i], lane-strided.
                 let sum = ctx.mov_f32_imm(0.0);
                 let i = ctx.mov_u32_imm(0);
                 ctx.label("gdn_dr_decay_loop");
-                let go = ctx.setp_lt_u32(i, dk_r);
+                let ii = ctx.add_u32_reg(i, lane);
+                let go = ctx.setp_lt_u32(ii, dk_r);
                 ctx.branch_if_not(go, "gdn_dr_decay_end");
-                let off = ctx.mul_wide_u32_reg(i, four);
+                let off = ctx.mul_wide_u32_reg(ii, four);
                 let s_addr = ctx.add_u64(s_row, off);
                 let k_addr = ctx.add_u64(k_base, off);
                 let s_val = ctx.ld_global_f32(s_addr);
                 let s_scaled = ctx.mul_f32(s_val, exp_gate);
-                ctx.st_global_f32(s_addr, s_scaled);
                 let k_val = ctx.ld_global_f32(k_addr);
                 let prod = ctx.mul_f32(s_scaled, k_val);
                 ctx.add_f32_inplace(sum, prod);
-                ctx.add_u32_inplace(i, 1);
+                ctx.add_u32_inplace(i, 32);
                 ctx.branch("gdn_dr_decay_loop");
                 ctx.label("gdn_dr_decay_end");
+                let sum = warp_sum_broadcast(ctx, sum);
 
-                // delta[j] = (v[j] - sum) * beta
+                // delta[j] = (v[j] - sum) * beta — identical in every lane.
                 let v_off = ctx.mul_wide_u32_reg(j, four);
                 let v_addr = ctx.add_u64(v_base, v_off);
                 let v_j = ctx.ld_global_f32(v_addr);
                 let diff = ctx.sub_f32(v_j, sum);
                 let delta = ctx.mul_f32(diff, beta);
 
-                // Steps 3 + 4: update row j and dot it with q, i ascending.
+                // Pass 2 (steps 1 + 3 + 4): s = s * exp_gate + k * delta, stored once,
+                // then dotted with q.
                 let out_sum = ctx.mov_f32_imm(0.0);
                 let i2 = ctx.mov_u32_imm(0);
                 ctx.label("gdn_dr_update_loop");
-                let go2 = ctx.setp_lt_u32(i2, dk_r);
+                let ii2 = ctx.add_u32_reg(i2, lane);
+                let go2 = ctx.setp_lt_u32(ii2, dk_r);
                 ctx.branch_if_not(go2, "gdn_dr_update_end");
-                let off2 = ctx.mul_wide_u32_reg(i2, four);
+                let off2 = ctx.mul_wide_u32_reg(ii2, four);
                 let s_addr2 = ctx.add_u64(s_row, off2);
                 let k_addr2 = ctx.add_u64(k_base, off2);
                 let q_addr2 = ctx.add_u64(q_base, off2);
                 let s_old = ctx.ld_global_f32(s_addr2);
+                let s_decayed = ctx.mul_f32(s_old, exp_gate);
                 let k_val2 = ctx.ld_global_f32(k_addr2);
                 let upd = ctx.mul_f32(k_val2, delta);
-                let s_new = ctx.add_f32(s_old, upd);
+                let s_new = ctx.add_f32(s_decayed, upd);
                 ctx.st_global_f32(s_addr2, s_new);
                 let q_val = ctx.ld_global_f32(q_addr2);
                 let prod2 = ctx.mul_f32(s_new, q_val);
                 ctx.add_f32_inplace(out_sum, prod2);
-                ctx.add_u32_inplace(i2, 1);
+                ctx.add_u32_inplace(i2, 32);
                 ctx.branch("gdn_dr_update_loop");
                 ctx.label("gdn_dr_update_end");
+                let out_sum = warp_sum_broadcast(ctx, out_sum);
 
+                // Lane 0 writes out[j].
+                let zero = ctx.mov_u32_imm(0);
+                let is_lane0 = ctx.setp_eq_u32(lane, zero);
+                ctx.branch_if_not(is_lane0, "gdn_dr_exit");
                 let scale_r = ctx.mov_f32_imm(scale);
                 let result = ctx.mul_f32(out_sum, scale_r);
                 let out_addr = ctx.add_u64(out_base, v_off);
@@ -208,6 +240,16 @@ impl Kernel for DeltaRuleRecurrenceKernel {
                 ctx.ret();
             })
     }
+}
+
+/// Full-warp tree sum, broadcast from lane 0 so every lane holds the total. Shared with
+/// the chunk scan, whose bitwise equality with this kernel depends on the same tree.
+pub(super) fn warp_sum_broadcast(ctx: &mut KernelBuilder<'_>, v: VirtualReg) -> VirtualReg {
+    for offset in [16, 8, 4, 2, 1] {
+        let other = ctx.shfl_down_f32(v, offset, 0xFFFF_FFFF);
+        ctx.add_f32_inplace(v, other);
+    }
+    ctx.shfl_idx_f32(v, 0, 0xFFFF_FFFF)
 }
 
 #[cfg(test)]
@@ -221,13 +263,16 @@ mod ptx_tests {
         assert!(ptx.contains(".entry gdn_delta_rule_recurrence"), "{ptx}");
         // exp(gate) is the only transcendental in the recurrence.
         assert_eq!(ptx.matches("ex2.approx.f32").count(), 1, "{ptx}");
-        // No barrier: thread j owns state row j exclusively.
+        // No barrier: warp j owns state row j exclusively.
         assert!(!ptx.contains("bar.sync"), "{ptx}");
+        // Two warp reductions (pass 1 and pass 2), five shuffle-down steps each.
+        assert_eq!(ptx.matches("shfl.sync.down").count(), 10, "{ptx}");
         // Dk^-0.5 is a host-computed immediate, not an rsqrt.
         assert!(!ptx.contains("rsqrt"), "{ptx}");
         // Symmetric heads: the block index IS the key head, so no modulo is emitted.
         assert!(!ptx.contains("rem.u32"), "{ptx}");
-        assert_eq!(kernel.grid(), (16, 1, 1));
+        // 128 rows / 4 rows per block = 32 tiles per head, 16 heads.
+        assert_eq!(kernel.grid(), (32, 16, 1));
         assert_eq!(kernel.block(), (128, 1, 1));
     }
 
@@ -238,7 +283,7 @@ mod ptx_tests {
         for (nk, nv) in [(16u32, 32u32), (16, 48)] {
             let kernel = DeltaRuleRecurrenceKernel::new(nk, 128, nv, 128);
             let ptx = kernel.emit_ptx();
-            assert_eq!(kernel.grid(), (nv, 1, 1), "one block per VALUE head");
+            assert_eq!(kernel.grid(), (32, nv, 1), "grid.y follows the VALUE heads");
             assert_eq!(kernel.block(), (128, 1, 1));
             assert_eq!(
                 ptx.matches("rem.u32").count(),
@@ -257,8 +302,9 @@ mod ptx_tests {
     #[test]
     fn gdn_delta_rule_rectangular_state_uses_dk_for_the_row() {
         let kernel = DeltaRuleRecurrenceKernel::new(2, 8, 4, 6);
-        assert_eq!(kernel.grid(), (4, 1, 1));
-        assert_eq!(kernel.block(), (6, 1, 1), "one thread per state ROW (Dv)");
+        // Dv = 6 rows need 2 tiles of 4; the second tile's last two warps exit.
+        assert_eq!(kernel.grid(), (2, 4, 1));
+        assert_eq!(kernel.block(), (128, 1, 1), "one WARP per state row");
         let ptx = kernel.emit_ptx();
         // The per-head state block is Dv * Dk * 4 = 6 * 8 * 4 = 192 bytes.
         assert!(ptx.contains("192"), "{ptx}");

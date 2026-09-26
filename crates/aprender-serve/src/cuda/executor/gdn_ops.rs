@@ -477,9 +477,9 @@ impl CudaExecutor {
             head_k_dim
         );
         let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
-        let (gx, _, _) = kernel.grid();
+        let (gx, gy, _) = kernel.grid();
         let (bx, _, _) = kernel.block();
-        let config = LaunchConfig::grid_2d(gx, 1, bx, 1);
+        let config = LaunchConfig::grid_2d(gx, gy, bx, 1);
         self.gdn_launch(
             &cache_key,
             kernel_name,
