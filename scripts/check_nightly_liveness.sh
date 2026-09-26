@@ -123,16 +123,23 @@ OK|success cancelled cancelled|schedule|completed
 RED|success cancelled cancelled|workflow_dispatch|completed
 RED|success cancelled cancelled|schedule|in_progress
 OK|success success|schedule|in_progress
+RED|skipped neutral success|schedule|completed
+RED|action_required null|schedule|completed
 ROWS
     # No scheduled run at all, and a schedule that stopped firing.
     printf '{"workflow_runs":[]}\n' > "$tmp/runs.json"
     if judge "$tmp/runs.json" fx.yml "$now" >/dev/null; then
         printf '  FAIL  want RED got OK <- no runs\n'; fails=$((fails + 1))
     else printf '  ok    RED <- no runs\n'; fi
-    fixture "$tmp/runs.json" "$((now + 3 * 86400))" "success success"
-    if judge "$tmp/runs.json" fx.yml "$((now + 6 * 86400))" >/dev/null; then
-        printf '  FAIL  want RED got OK <- newest success 3 days old\n'; fails=$((fails + 1))
-    else printf '  ok    RED <- newest success 3 days old (stale)\n'; fi
+    # Stale boundary: the newest run is 1h before the fixture clock, so judging
+    # at +48h makes it 49h old (live) and at +50h 51h old (stale, > 50h).
+    fixture "$tmp/runs.json" "$now" "success success"
+    if judge "$tmp/runs.json" fx.yml "$((now + 48 * 3600))" >/dev/null; then
+        printf '  ok    OK  <- newest success 49h old\n'
+    else printf '  FAIL  want OK got RED <- newest success 49h old\n'; fails=$((fails + 1)); fi
+    if judge "$tmp/runs.json" fx.yml "$((now + 50 * 3600))" >/dev/null; then
+        printf '  FAIL  want RED got OK <- newest success 51h old\n'; fails=$((fails + 1))
+    else printf '  ok    RED <- newest success 51h old (stale)\n'; fi
     rm -rf "${tmp:?}" || return 1
     return "$fails"
 }

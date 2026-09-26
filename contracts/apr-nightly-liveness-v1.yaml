@@ -42,7 +42,7 @@ equations:
     codomain: "manifest rows, or a visible `skip` line per timed-out query / spent budget"
     invariants:
       - "a timed-out query or a spent budget prints a skip line and is not reported as an inert hunt"
-      - "the story's own beats are never starved by the hunt: 8 beats (~6 min) + 8 min budget < 30 min job timeout"
+      - "the hunt adds at most PMAT_HUNT_BUDGET_S (8 min, plus 5 s kill grace per query) to the job; the good run's 8 beats took 5.3 min. The workflow's apr install step (cargo install --features cuda) is NOT bounded by this contract: a cold build can still eat the 30-min job timeout, and a cancel from it is caught by nightly_liveness, not prevented here"
 
 proof_obligations:
   - id: NLV-INV-001
@@ -87,4 +87,4 @@ qa_gate:
   checks:
     - "nightly_liveness"
     - "hunt_is_bounded"
-  pass_criteria: "FALSIFY-NLV-001 and -002 PASS on every PR (guard_tree); FALSIFY-NLV-003 GREEN, and 0 cancelled model nightlies over the trailing 7 nights (OBS-02 done-when)"
+  pass_criteria: "FALSIFY-NLV-001 and -002 PASS on every PR (guard_tree). FALSIFY-NLV-003 GREEN and 0 cancelled model nightlies over the trailing 7 nights (OBS-02 done-when) are NOT met by this contract alone: mechanism A is fixed here, mechanism B (cuda-nightly's pending yoga job displaced in perf-yoga) needs a workflow change of its own, and until it lands NLV-003 is expected to go RED on cuda-nightly when B recurs on 2 nights running"

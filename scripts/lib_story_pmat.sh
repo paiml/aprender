@@ -126,10 +126,11 @@ PMAT_FILTER_FAULT='select((.fault_annotations // []) | length > 0)
 pmat_rows() {
   local filter="$1"; shift
   local raw prog rows t="${PMAT_ROWS_TIMEOUT_S:-$PMAT_QUERY_TIMEOUT_S}"
-  raw=$(timeout "$t" "${PMAT_BIN:-pmat}" query "$@" --format json 2>/dev/null)
+  raw=$(timeout -k 5 "$t" "${PMAT_BIN:-pmat}" query "$@" --format json 2>/dev/null)
   PMAT_ROWS_EC=$?
-  # 124 = timeout's own "the command ran out of time" status.
-  if [ "$PMAT_ROWS_EC" -eq 124 ]; then
+  # 124 = timeout's own "the command ran out of time" status. -k 5 SIGKILLs a
+  # query that ignores the SIGTERM, so the bound is a bound (137 = killed).
+  if [ "$PMAT_ROWS_EC" -eq 124 ] || [ "$PMAT_ROWS_EC" -eq 137 ]; then
     printf '%s %ss\n' "$PMAT_TIMEOUT_MARK" "$t"
     return 0
   fi
