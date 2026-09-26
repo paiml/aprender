@@ -486,15 +486,22 @@ where
     Ok(Token(token))
 }
 
-/// `<host>/<repo>[:<tag>]` split into (base URL, repo, tag). `localhost` and
-/// `127.0.0.1` registries are plain HTTP (a local `registry:2`); every other host is HTTPS.
+/// `<host>/<repo>[:<tag>|@sha256:<hex>]` split into (base URL, repo, tag or digest).
+/// `localhost` and `127.0.0.1` registries are plain HTTP (a local `registry:2`); every
+/// other host is HTTPS.
 pub(crate) fn parse_reference(r: &str) -> Result<(String, String, Option<String>)> {
-    let (host, rest) = r
-        .split_once('/')
-        .ok_or_else(|| invalid(format!("{r:?}: expected <registry>/<owner>/<name>[:<tag>]")))?;
-    let (repo, tag) = match rest.rsplit_once(':') {
-        Some((repo, tag)) => (repo, Some(tag.to_string())),
-        None => (rest, None),
+    let (host, rest) = r.split_once('/').ok_or_else(|| {
+        invalid(format!(
+            "{r:?}: expected <registry>/<owner>/<name>[:<tag>|@sha256:<hex>]"
+        ))
+    })?;
+    let (repo, tag, digest) = if let Some((repo, d)) = rest.split_once('@') {
+        (repo, None, Some(d.to_string()))
+    } else {
+        match rest.rsplit_once(':') {
+            Some((repo, tag)) => (repo, Some(tag.to_string()), None),
+            None => (rest, None, None),
+        }
     };
     let repo_ok = !repo.is_empty()
         && repo.split('/').all(|p| {
@@ -513,6 +520,13 @@ pub(crate) fn parse_reference(r: &str) -> Result<(String, String, Option<String>
             return Err(invalid(format!("{t:?} is not a valid OCI tag")));
         }
     }
+    if let Some(d) = &digest {
+        let hex = d.strip_prefix("sha256:").unwrap_or("");
+        if hex.len() != 64 || !hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+            return Err(invalid(format!("{d:?} is not a sha256 digest")));
+        }
+    }
+    let tag = tag.or(digest);
     let local = host.starts_with("localhost") || host.starts_with("127.0.0.1");
     let scheme = if local { "http" } else { "https" };
     Ok((format!("{scheme}://{host}"), repo.to_string(), tag))
@@ -588,8 +602,10 @@ impl HttpRegistry {
         if !lower.starts_with("bearer") {
             return Ok(false);
         }
+        // Auth-param names are case-insensitive; ASCII lowering keeps byte offsets,
+        // so the name is found in `lower` and the value read from `challenge`.
         let param = |key: &str| -> Option<String> {
-            let at = challenge.find(&format!("{key}=\""))? + key.len() + 2;
+            let at = lower.find(&format!("{key}=\""))? + key.len() + 2;
             let end = challenge[at..].find('"')? + at;
             Some(challenge[at..end].to_string())
         };
@@ -618,14 +634,26 @@ impl HttpRegistry {
         Ok(true)
     }
 
-    /// Send a request, authenticating once on a 401. A non-2xx status is returned as
-    /// `Ok((status, response))` so callers can read 404 as "absent".
+    /// Send a request, authenticating once on a 401; any other non-2xx is an error.
     fn send(
         &mut self,
         what: &str,
         make: &dyn Fn() -> ureq::Request,
         body: &dyn Fn(ureq::Request) -> std::result::Result<ureq::Response, ureq::Error>,
     ) -> Result<ureq::Response> {
+        self.exchange(what, make, body, false)?
+            .ok_or_else(|| self.fail(what, "HTTP 404"))
+    }
+
+    /// [`Self::send`], with a 404 read as `Ok(None)` when `absent_ok` — by its status
+    /// code, never by what a response body says.
+    fn exchange(
+        &mut self,
+        what: &str,
+        make: &dyn Fn() -> ureq::Request,
+        body: &dyn Fn(ureq::Request) -> std::result::Result<ureq::Response, ureq::Error>,
+        absent_ok: bool,
+    ) -> Result<Option<ureq::Response>> {
         let mut answered = false;
         loop {
             let mut req = make();
@@ -633,7 +661,8 @@ impl HttpRegistry {
                 req = req.set("Authorization", a);
             }
             match body(req) {
-                Ok(r) => return Ok(r),
+                Ok(r) => return Ok(Some(r)),
+                Err(ureq::Error::Status(404, _)) if absent_ok => return Ok(None),
                 Err(ureq::Error::Status(401, r)) if !answered => {
                     answered = true;
                     let challenge = r.header("WWW-Authenticate").unwrap_or("").to_string();
@@ -656,11 +685,7 @@ impl HttpRegistry {
         what: &str,
         make: &dyn Fn() -> ureq::Request,
     ) -> Result<Option<ureq::Response>> {
-        match self.send(what, make, &|r| r.call()) {
-            Ok(r) => Ok(Some(r)),
-            Err(CliError::NetworkError(m)) if m.contains("HTTP 404") => Ok(None),
-            Err(e) => Err(e),
-        }
+        self.exchange(what, make, &|r| r.call(), true)
     }
 }
 
@@ -827,7 +852,8 @@ pub(crate) fn run_fetch(
     json: bool,
 ) -> Result<()> {
     let (base, repo, tag) = parse_reference(reference)?;
-    let tag = tag.ok_or_else(|| invalid("give <registry>/<owner>/<name>:<tag>"))?;
+    let tag =
+        tag.ok_or_else(|| invalid("give <registry>/<owner>/<name>:<tag> or @sha256:<hex>"))?;
     let token = token_file
         .map(|p| read_token(p, std::env::vars()))
         .transpose()?;

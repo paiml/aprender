@@ -542,6 +542,17 @@ fn ghcr_reference_parsing() {
     );
     let (base, _, tag) = parse_reference("localhost:5000/paiml/x").expect("ok");
     assert_eq!((base.as_str(), tag), ("http://localhost:5000", None));
+    let digest = format!("sha256:{}", "ab".repeat(32));
+    let (_, repo, tag) = parse_reference(&format!("ghcr.io/paiml/x@{digest}")).expect("digest");
+    assert_eq!((repo.as_str(), tag), ("paiml/x", Some(digest.clone())));
+    for bad in [
+        format!("ghcr.io/paiml/x@{}", &digest[..70]),
+        format!("ghcr.io/paiml/x@{}", digest.to_uppercase()),
+        format!("ghcr.io/paiml/x@md5:{}", "ab".repeat(32)),
+        format!("ghcr.io/paiml/x:{digest}"),
+    ] {
+        assert!(parse_reference(&bad).is_err(), "{bad} must be refused");
+    }
     for bad in [
         "ghcr.io",
         "ghcr.io/Paiml/X",
@@ -659,4 +670,58 @@ fn ghcr_exchanged_token_is_redacted_when_the_registry_echoes_it() {
         !err.contains("EXCHANGED-registry-token"),
         "exchanged token leaked: {err}"
     );
+}
+
+/// Auth-param names are case-insensitive (RFC 7235): `Realm=` is still the realm.
+#[test]
+fn ghcr_challenge_params_are_case_insensitive() {
+    let (base, seen) = auth_registry(
+        r#"Bearer Realm="http://{addr}/token",SERVICE="ghcr.io""#,
+        "Bearer ANON-pull-token",
+    );
+    let mut reg = HttpRegistry::new(base, "paiml/m".into(), "apr".into(), None);
+    assert_eq!(
+        reg.tag_digest("0.1.0").expect("mixed-case challenge"),
+        Some("sha256:abc".into())
+    );
+    assert_eq!(seen.lock().expect("lock").len(), 3);
+}
+
+/// A 404 means absent by its status code; a 500 whose body happens to say
+/// "HTTP 404" is an error, not an absent tag (I-8 rests on that HEAD).
+#[test]
+fn ghcr_a_500_is_not_read_as_absent() {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    std::thread::spawn(move || {
+        for (i, stream) in listener.incoming().take(2).enumerate() {
+            let mut stream = stream.expect("conn");
+            let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+            loop {
+                let mut h = String::new();
+                reader.read_line(&mut h).expect("header");
+                if h.trim().is_empty() {
+                    break;
+                }
+            }
+            let reply = if i == 0 {
+                let body = "upstream said HTTP 404";
+                format!("HTTP/1.1 500 Internal Server Error\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
+            } else {
+                "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    .to_string()
+            };
+            stream.write_all(reply.as_bytes()).expect("reply");
+        }
+    });
+    let mut reg = HttpRegistry::new(
+        format!("http://{addr}"),
+        "paiml/m".into(),
+        "apr".into(),
+        None,
+    );
+    let err = reg.tag_digest("0.1.0").expect_err("500").to_string();
+    assert!(err.contains("HTTP 500"), "{err}");
+    assert_eq!(reg.tag_digest("0.1.0").expect("404"), None);
 }
