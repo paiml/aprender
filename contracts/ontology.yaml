@@ -35,6 +35,7 @@ concepts:
   PullRequest: {doc: "a GitHub pull request at one updatedAt, snapshotted under evidence/github/pull-request/ (pr:ref = <owner>/<repo>#<n>@<updatedAt>)"}
   Milestone: {doc: "a GitHub milestone at one updatedAt, snapshotted under evidence/github/milestone/ (milestone:ref = <owner>/<repo>#<n>@<updatedAt>)"}
   Example: {doc: "a cargo example target — examples/*.rs or examples/*/main.rs of a workspace member; the focus node of extract:example (#3560 R1: example:file, example:crate, example:name, example:namesModel, example:namesQwen35)"}
+  BookPage: {doc: "an mdbook source page — book/src/**/*.md; the focus node of extract:book (#3560 R2: book:file, book:inSummary, book:title, book:namesModel, book:namesQwen35, book:modelCurrent)"}
 
 roles:
   binds:
@@ -144,6 +145,7 @@ entity_types:
   - {name: code, extractor: code, implemented: true}
   - {name: lean, extractor: lean, implemented: true}
   - {name: example, extractor: example, implemented: true}
+  - {name: book, extractor: book, implemented: true}
   - {name: readme, extractor: readme, implemented: false}
   - {name: llm-context, extractor: llm_context, implemented: false}
   - {name: apr-model, extractor: apr_model, implemented: true}
@@ -170,6 +172,7 @@ extractors:
   - {name: code, reader: ontology/extract/code.rs, implemented: true}
   - {name: lean, reader: ontology/extract/lean.rs, implemented: true}
   - {name: example, reader: ontology/extract/example.rs, implemented: true}
+  - {name: book, reader: ontology/extract/book.rs, implemented: true}
   - {name: readme, reader: ontology/extract/readme.rs, implemented: false}
   - {name: llm_context, reader: ontology/extract/llm_context.rs, implemented: false}
   - {name: apr_model, reader: ontology/extract/apr_model.rs, implemented: true}

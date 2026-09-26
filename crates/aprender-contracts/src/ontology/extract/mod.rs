@@ -15,6 +15,7 @@ use crate::ontology::rdf::Graph;
 use crate::ontology::receipts;
 
 pub mod apr_model;
+pub mod book;
 pub mod code;
 pub mod example;
 pub mod gguf;
@@ -47,6 +48,8 @@ pub struct Extraction {
     pub lean: lean::LeanStats,
     /// #3560 R1: the cargo example targets of the workspace members, and what they name.
     pub example: example::ExampleStats,
+    /// #3560 R2: the mdbook source pages, what they name, and whether SUMMARY.md links them.
+    pub book: book::BookStats,
     /// ONT-4c3: the logit-parity receipts under `evidence/parity/**`, and the files this extractor refused.
     pub parity: parity_receipt::ParityStats,
     /// ONT-4f: the GitHub snapshots under `evidence/github/<type>/`, per Σ snapshot type, and the refused files.
@@ -160,6 +163,7 @@ pub fn all_with(
     out.code = code::extract(contract_dir, &mut out.graph);
     out.lean = lean::extract(contract_dir, &mut out.graph);
     out.example = example::extract(contract_dir, &mut out.graph);
+    out.book = book::extract(contract_dir, &mut out.graph);
     out.parity = parity_receipt::extract(root, &mut out.graph);
     // ONT-4f: the Σ snapshot types (repo, issue, pull-request, milestone), read by extract:json from the committed
     // snapshots only. No Σ is no snapshot types, so nothing under evidence/github/ is read — the sigma gate reports it.

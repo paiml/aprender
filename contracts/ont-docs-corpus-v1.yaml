@@ -5,8 +5,12 @@
 # R1 (this file's first row): extract:example — every cargo example target of a
 #   workspace member (examples/*.rs, examples/*/main.rs) is an ont:Example with
 #   its file, crate, target name, and the model families its text names.
-# LATER ROWS (not claimed here): R2 book pages (after ONT-4c's readme reader),
-#   R3 apr-cookbook (its own repo), R5 every example builds and runs.
+# R2: extract:book — every book/src/**/*.md is an ont:BookPage (file, inSummary, title,
+#   the families it names, currency by the same scan and pin as R1/R4, in its markdown
+#   form `<!-- ont:model-pinned: <reason> -->`). Self-contained: it does not wait on
+#   ONT-4c's readme reader, which is about a README's frontmatter, not a book page.
+# LATER ROWS (not claimed here): R3 apr-cookbook (its own repo), R5 every example
+#   builds and runs.
 # R4: the model-currency shape — an example that names a model family must name
 #   the current one (qwen3.5), or say why not.
 #
@@ -50,6 +54,20 @@ equations:
       - "the root's Cargo.toml, when it is a [workspace], lists its members"
     postconditions:
       - "at a [workspace] root, examples = 0 ∧ (members = 0 ∨ non_member_examples > 0) ⇒ one extractor error"
+      - "two extractions of the same tree are byte-identical (R-15)"
+    lean_theorem: none — L4 not declared
+  extract_book:
+    formula: "pages(root) = { p | p ∈ root/book/src/**/*.md } ; inSummary(p) ⇔ rel(p) ∈ links(SUMMARY.md) ∨ p = SUMMARY.md ; current(p) ⇔ namesModel(p) = ∅ ∨ qwen3.5 ∈ namesModel(p) ∨ mdpin(p) ≠ ⊥"
+    domain: "the repo root the contract dir sits in; a tree with no book/src/SUMMARY.md is not measured"
+    codomain: "one ont:BookPage per page, plus BookStats {pages, summary_links, summary_missing, dark, naming_a_model, naming_qwen35, stale, pinned, by_family, errors}"
+    invariants:
+      - "a # inside a code fence is not a title"
+      - "a markdown pin is an HTML comment on a line of its own carrying ont:model-pinned: and a non-empty reason"
+      - "stale and dark counts only shrink: a count above its pin is RED naming the files, one below it fails until the pin is lowered"
+    preconditions:
+      - "mdbook reads book/src/SUMMARY.md"
+    postconditions:
+      - "has_book ∧ (pages ≤ 1 ∨ summary_links = 0) ⇒ one extractor error (PV-ONT-012)"
       - "two extractions of the same tree are byte-identical (R-15)"
     lean_theorem: none — L4 not declared
   model_current:
@@ -115,10 +133,31 @@ falsification_tests:
     prediction: the repo's stale examples equal STALE_EXAMPLES_PINNED (430 on 2026-09-24)
     test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::the_repo_stale_examples_are_pinned_shrink_only
     if_fails: a new example on an older model landed (the message lists the stale files), or examples migrated and the pin was not lowered
+  - id: FALSIFY-DOCS-008
+    rule: the book walk reads every page and its SUMMARY links
+    prediction: a planted book yields its five pages (SUMMARY.md included, not the png or docs/), one dark page, one SUMMARY link to no file, two stale pages and one pinned
+    test: cargo test -p aprender-contracts --lib ontology::extract::book::tests::a_planted_book_yields_every_page_and_its_links
+    if_fails: a page mdbook renders is not graded, or a dark page reads as linked
+  - id: FALSIFY-DOCS-009
+    rule: a book that read nothing is RED
+    prediction: SUMMARY.md alone, or a SUMMARY linking no page, reports one extractor error; no book/ reports none; a linked page reports none
+    test: cargo test -p aprender-contracts --lib ontology::extract::book::tests::a_book_that_read_nothing_is_an_error_and_a_tree_with_no_book_is_not
+    if_fails: an empty or unlinked book reports a clean corpus
+  - id: FALSIFY-DOCS-010
+    rule: the page readers separate pins, titles and links from look-alikes
+    prediction: an inline or reasonless pin is no pin, a fenced # is no title, http and non-.md links are not pages
+    test: cargo test -p aprender-contracts --lib ontology::extract::book::tests::the_page_readers_separate_pins_titles_and_links_from_look_alikes
+    if_fails: a stale page passes as pinned, or an external link counts as a page
+  - id: FALSIFY-DOCS-011
+    rule: the repo's own book, pinned shrink-only
+    prediction: more than 300 pages and 300 SUMMARY links, no extractor error; stale and dark pages equal STALE_BOOK_PAGES_PINNED and DARK_BOOK_PAGES_PINNED
+    test: cargo test -p aprender-contracts --lib ontology::extract::book::tests
+    if_fails: a new page on an older model or outside SUMMARY.md landed (the message lists the files), or pages were fixed and the pin was not lowered
 
 qa_gate:
   required_checks:
     - "cargo test -p aprender-contracts --lib ontology::extract::example"
+    - "cargo test -p aprender-contracts --lib ontology::extract::book"
     - "cargo test -p aprender-contracts --lib lint::shapes_gate"
 
 shapes:
@@ -137,3 +176,16 @@ shapes:
     targetClass: ont:Example
     properties:
       - {path: example:modelCurrent, minCount: 1, maxCount: 1, in: [true]}
+  # R2, REPORTED, not armed. well-formed holds on this tree; model-current does not (STALE_BOOK_PAGES_PINNED
+  # pages name an older model) — the drift gate is the shrink-only pin (FALSIFY-DOCS-011); arm it at 0.
+  - id: book-pages-well-formed
+    targetClass: ont:BookPage
+    properties:
+      - {path: book:file, minCount: 1, maxCount: 1}
+      - {path: book:inSummary, minCount: 1, maxCount: 1, in: [true, false]}
+      - {path: book:namesQwen35, minCount: 1, maxCount: 1, in: [true, false]}
+      - {path: book:modelCurrent, minCount: 1, maxCount: 1, in: [true, false]}
+  - id: book-pages-model-current
+    targetClass: ont:BookPage
+    properties:
+      - {path: book:modelCurrent, minCount: 1, maxCount: 1, in: [true]}
