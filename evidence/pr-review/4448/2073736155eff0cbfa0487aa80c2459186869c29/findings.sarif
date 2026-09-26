@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.41.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "pull-hint-prints-invalid-serve",
+          "level": "warning",
+          "message": {
+            "text": "README.md:50 transcribes the hint that `apr pull` itself prints, `apr serve <path>`. That is not valid CLI, because serve requires the `run` or `plan` subcommand. The README is faithful to the binary. The defect is the hint at crates/apr-cli/src/commands/pull.rs:316, repeated at :372 and :437, outside this diff. The transcript stays as the contributor wrote it, per the maintainer ruling."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/apr-cli/src/commands/pull.rs"
+                },
+                "region": {
+                  "startLine": 316
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-n",
+              "-F",
+              "apr serve {}",
+              "crates/apr-cli/src/commands/pull.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "67cc6505365b6a778b5327447661b8d0ac9a8b5296e42ddfcf6c37a22b3d93f2",
+            "failure_scenario": "A user runs the hint that `apr pull` prints, which the README also shows, and gets a clap `unrecognized subcommand` error (rc=2). Round 1 of this review measured the same failure on the old README:28 line.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "transcript-banner-typo",
+          "level": "note",
+          "message": {
+            "text": "README.md:38 shows `== APR Pull ===`, but the binary prints `=== APR Pull ===` (pull.rs:77). This is a slip in the pasted transcript. It is cosmetic, and the text stays as the contributor wrote it, per the maintainer ruling."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "README.md"
+                },
+                "region": {
+                  "startLine": 38
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-n",
+              "-F",
+              "=== APR Pull ===",
+              "crates/apr-cli/src/commands/pull.rs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "3ef8b7307fa5339a546c9275f4b71dd5e74d091c9471db5f7a52338908620f6e",
+            "failure_scenario": "A reader who diffs the README transcript against real `apr pull` output finds one differing banner character. No command is affected.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.2.11"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy-invalid_serve_command",
+          "level": "warning",
+          "message": {
+            "text": "The documented `apr serve` command is incorrect and missing the required `run` subcommand."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "README.md"
+                },
+                "region": {
+                  "startLine": 48
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy (gemini-3.1-pro-high) finding `invalid_serve_command`, agy mark `cited`; agy source: crates/apr-cli/src/commands_enum.rs: Serve(ServeCommands) requires a subcommand (run or plan).. Re-marked asserted: agy supplied no excerpt that could be verified. The primary did not re-verify it.",
+            "failure_scenario": "Users will copy the documented command `apr serve ~/.cache/pacha/models/1e3be9285aea6923.safetensors` from the README and it will fail to run, because `apr serve` requires a subcommand (like `run` or `plan`) and does not accept a model path as its direct argument.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "agy-removed_alias_example",
+          "level": "warning",
+          "message": {
+            "text": "The PR removes a valuable and idiomatic example of using model aliases, replacing it with a verbose cache path."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "README.md"
+                },
+                "region": {
+                  "startLine": 26
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "agy (gemini-3.1-pro-high) finding `removed_alias_example`, agy mark `asserted`. Re-marked asserted: agy supplied no excerpt that could be verified. The primary did not re-verify it.",
+            "failure_scenario": "Users reading the Quick Start guide will not learn about the user-friendly model alias feature (`apr pull qwen2.5-coder-1.5b`), as the clean example was removed and replaced entirely with an opaque, verbose cache path (`~/.cache/pacha/...`). This makes the tool appear more difficult to use.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
