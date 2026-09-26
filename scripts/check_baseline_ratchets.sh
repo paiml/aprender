@@ -393,7 +393,7 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
                 printf '# tool_version=pmat 9.9.9\n%s\n' "$4" > "$SR/$C"
                 rm -f "${SR:?}/$R"
                 if [ -n "${5:-}" ]; then printf '%b' "$5" > "$SR/$R"; fi
-                ( BASELINE_RATCHET_BASE_REF="$3" \
+                ( BASELINE_RATCHET_BASE_REF="$3" BR_REBASELINE_PATHS="${RB_PATHS-$C}" \
                   baseline_ratchet_check "$SR" "$C" count ) >/dev/null 2>&1
                 got=$?
                 rows=$((rows + 1))
@@ -411,6 +411,10 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
             rb_row 'rebaseline receipt, short sha'         1 "$SR_CNT" 617 "sha: ${SR_CNT:0:12}\nmeasured: 620\ntool_version: pmat 9.9.9\n"
             rb_row 'rebaseline receipt, no measured'       1 "$SR_CNT" 617 "sha: $SR_CNT\ntool_version: pmat 9.9.9\n"
             rb_row 'rebaseline receipt, sha not on main'   1 "$SR_CNT" 617 "sha: $SR_ORPHAN\nmeasured: 620\ntool_version: pmat 9.9.9\n"
+            # A baseline whose guard does not re-measure the receipt is not listed:
+            # the receipt is then a self-declared number and must not open the ratchet.
+            RB_PATHS='scripts/cb200_baseline.txt' rb_row 'rebaseline receipt, path not listed' 1 "$SR_CNT" 617 "$RB_OK"
+            RB_PATHS='' rb_row 'rebaseline receipt, empty allow-list' 1 "$SR_CNT" 617 "$RB_OK"
             # The NEXT pull request: the receipt is on the comparand now, so it is
             # SPENT -- any rise is RED again, even one still under its measurement.
             printf '# tool_version=pmat 9.9.9\n617\n' > "$SR/$C"

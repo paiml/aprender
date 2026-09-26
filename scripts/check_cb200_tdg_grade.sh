@@ -118,7 +118,8 @@ case_row() { # <name> <want held|red> <verdict> -> prints the row; returns 1 whe
 
 self_test() {
     need_tools
-    local td bad=0
+    local td bad=0 self
+    self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
     td=$(mktemp -d -p "$TMPROOT")
     # 1. over the baseline -> RED, the polarity this guard exists for
     fixture "$td/over" 0 1
@@ -148,8 +149,44 @@ self_test() {
         return 1
     }
     mkdir -p "$td/rb/scripts"
+    git -C "$td/rb" update-ref refs/remotes/origin/main "$head"
     receipt_row receipt-true held 1 || bad=$((bad + 1))
     receipt_row receipt-false red 2 || bad=$((bad + 1))
+    # 8. a TRUE count at a sha that is not on origin/main (a commit the branch pushed) is RED
+    git -C "$td/rb" branch -f main "$head" 2>/dev/null || true
+    (cd "$td/rb" && git checkout -q -b side &&
+        git -c core.hooksPath=/dev/null -c user.email=t@t -c user.name=t commit -q --allow-empty -m off-main)
+    head=$(git -C "$td/rb" rev-parse HEAD)
+    receipt_row receipt-off-main red 1 || bad=$((bad + 1))
+    # 8b-8c. the same two receipts from a depth-1 clone, the checkout CI runs: ancestry is
+    #        undecidable there until main_has deepens origin's main, and an undecided answer is RED.
+    local off="$head"
+    head=$(git -C "$td/rb" rev-parse origin/main)
+    git clone -q --depth=1 --no-local "file://$td/rb" "$td/sh" 2>/dev/null
+    receipt_sh() { # <name> <want held|red> <sha>
+        local got=red
+        printf 'sha: %s\nmeasured: 1\ntool_version: x\n' "$3" > "$td/sh/$RECEIPT_REL"
+        if receipt_check "$td/sh" > /dev/null 2>&1; then got=held; fi
+        if [ "$got" = "$2" ]; then printf '  ok    %-14s shallow receipt -> %s\n' "$1" "$got"; return 0; fi
+        printf '  BROKE %-14s shallow receipt -> %s, want %s\n' "$1" "$got" "$2"
+        return 1
+    }
+    mkdir -p "$td/sh/scripts"
+    [ "$(git -C "$td/sh" rev-parse --is-shallow-repository)" = true ] || { printf '  BROKE shallow fixture is not shallow\n'; bad=$((bad + 1)); }
+    receipt_sh shallow-main held "$head" || bad=$((bad + 1))
+    receipt_sh shallow-off red "$off" || bad=$((bad + 1))
+    # 9-10. END TO END: the whole guard, not the function. A false receipt on a held tree must
+    #       fail the run, and a true one must not -- so the call site is proven wired, not just the helper.
+    run_row() { # <name> <want held|red> <measured>
+        local got=red
+        printf 'sha: %s  # main\nmeasured: %s  # re-measured\ntool_version: x\n' "$head" "$3" > "$td/rb/$RECEIPT_REL"
+        if (cd "$td/rb" && bash "$self") > /dev/null 2>&1; then got=held; fi
+        if [ "$got" = "$2" ]; then printf '  ok    %-14s whole guard -> %s\n' "$1" "$got"; return 0; fi
+        printf '  BROKE %-14s whole guard -> %s, want %s\n' "$1" "$got" "$2"
+        return 1
+    }
+    run_row e2e-true held 1 || bad=$((bad + 1))
+    run_row e2e-false red 2 || bad=$((bad + 1))
     (cd "$td/rb" && git add -A && git -c core.hooksPath=/dev/null -c user.email=t@t -c user.name=t commit -qm receipt &&
         git update-ref refs/remotes/origin/main HEAD)
     receipt_row receipt-spent held 2 || bad=$((bad + 1))
@@ -172,6 +209,22 @@ cb200_count() { # <dir> -> the number of definitions below min_grade, from the C
     printf '%s\n' "${v#*$'\t'}" | sed -nE 's/^([0-9]+) definition.*/\1/p' | grep -m1 .
 }
 
+# main_has <root> <sha> -> 0 when <sha> is an ancestor of origin/main. CI checks out at depth 1, where
+# ancestry is undecidable, so a shallow clone first fetches main back to a day before <sha>'s commit
+# time into a private ref. Undecidable is RED, never "skip": the lib cannot fetch, so this is the check.
+main_has() {
+    local root="$1" sha="$2" ct ref=refs/cb200-receipt/main rc=1
+    if [ "$(git -C "$root" rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+        ct=$(git -C "$root" log -1 --format=%ct "$sha" 2>/dev/null) || return 1
+        git -C "$root" fetch -q --no-tags --shallow-since="@$((ct - 86400))" origin "+refs/heads/main:$ref" 2>/dev/null || return 1
+    else
+        git -C "$root" update-ref "$ref" origin/main 2>/dev/null || return 1
+    fi
+    if git -C "$root" merge-base --is-ancestor "$sha" "$ref" 2>/dev/null; then rc=0; fi
+    git -C "$root" update-ref -d "$ref" 2>/dev/null || true
+    return "$rc"
+}
+
 receipt_check() { # <root> -> 0 no receipt / spent / proven, 1 the recorded count is not what the sha measures
     local root="$1" sha measured got tree
     [ -f "$root/$RECEIPT_REL" ] || return 0
@@ -179,8 +232,9 @@ receipt_check() { # <root> -> 0 no receipt / spent / proven, 1 the recorded coun
         printf 'ok    %s is on origin/main: spent; the baseline is shrink-only again.\n' "$RECEIPT_REL"
         return 0
     fi
-    sha=$(sed -nE 's/^sha:[[:space:]]*([0-9a-f]{40})[[:space:]]*$/\1/p' "$root/$RECEIPT_REL" | head -1)
-    measured=$(sed -nE 's/^measured:[[:space:]]*([0-9]+)[[:space:]]*$/\1/p' "$root/$RECEIPT_REL" | head -1)
+    # the same field grammar as lib_baseline_ratchet.sh's _br_receipt_field: a trailing # comment is allowed
+    sha=$(sed -nE 's/^sha:[[:space:]]*([0-9a-f]{40})[[:space:]]*(#.*)?$/\1/p' "$root/$RECEIPT_REL" | head -1)
+    measured=$(sed -nE 's/^measured:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$/\1/p' "$root/$RECEIPT_REL" | head -1)
     if [ -z "$sha" ] || [ -z "$measured" ]; then
         printf 'RED   %s carries no 40-hex sha: and integer measured: to re-measure.\n' "$RECEIPT_REL"
         return 1
@@ -188,6 +242,11 @@ receipt_check() { # <root> -> 0 no receipt / spent / proven, 1 the recorded coun
     git -C "$root" cat-file -e "${sha}^{commit}" 2>/dev/null ||
         git -C "$root" fetch -q --no-tags --depth=1 origin "$sha" 2>/dev/null || {
         printf 'RED   the receipt sha %s cannot be fetched, so its count is UNMEASURED.\n' "${sha:0:12}"
+        return 1
+    }
+    main_has "$root" "$sha" || {
+        printf 'RED   the receipt sha %s is not on origin/main: a re-baseline is pinned to MAIN'"'"'s measurement,\n' "${sha:0:12}"
+        printf '      never to a commit a pull request pushed. (Shallow checkouts are deepened to decide this.)\n'
         return 1
     }
     tree=$(mktemp -d -p "$TMPROOT")

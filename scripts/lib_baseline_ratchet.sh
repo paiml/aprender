@@ -408,8 +408,14 @@ _br_cmp_count() { # _br_cmp_count <base-file> <cur-file>
 #   * carries the same `tool_version` as the baseline, so the two numbers come
 #     from one analyser;
 #   * names a sha that is an ancestor of the comparand, when the history can
-#     say so. A shallow clone cannot; the count at that sha is then proven by
-#     the guard that owns the number (check_cb200_tdg_grade.sh re-measures it).
+#     say so. A shallow clone cannot; the count at that sha and its ancestry to
+#     origin/main are then proven by the guard that owns the number
+#     (check_cb200_tdg_grade.sh re-measures it and deepens to decide ancestry);
+#   * is for a baseline in BR_REBASELINE_PATHS (space-separated). ONLY a
+#     baseline whose owning guard re-measures the receipt may be listed: for
+#     any other count baseline a receipt is a self-declared number, so the
+#     escape hatch is closed to it.
+: "${BR_REBASELINE_PATHS:=scripts/cb200_baseline.txt}"
 _br_receipt_field() { # _br_receipt_field <file> <key> -> the value, rc 1 when absent
     sed -nE "s/^$2:[[:space:]]*([^[:space:]#][^#]*[^[:space:]#]|[^[:space:]#])[[:space:]]*(#.*)?\$/\\1/p" "$1" | grep -m1 .
 }
@@ -420,6 +426,12 @@ _br_rebaseline_admit() { # <root> <ref> <baseline-path> -> 0 admitted, 1 refused
     local root="$1" ref="$2" path="$3" rc_path sha measured tv btv new
     rc_path="${path%.txt}.rebaseline"
     [ -f "$root/$rc_path" ] || return 1
+    case " $BR_REBASELINE_PATHS " in
+        *" $path "*) ;;
+        *)
+            BR_DELTA=$(printf '%s\n        %s is refused: %s has no guard that re-measures a receipt\n        (BR_REBASELINE_PATHS), so it stays shrink-only.' "$BR_DELTA" "$rc_path" "$path")
+            return 1 ;;
+    esac
     if git -C "$root" cat-file -e "${ref}:${rc_path}" 2>/dev/null; then
         BR_DELTA=$(printf '%s\n        %s is already on the comparand: the one-time re-baseline is\n        SPENT, and this baseline is shrink-only again.' "$BR_DELTA" "$rc_path")
         return 1
