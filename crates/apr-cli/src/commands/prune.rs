@@ -123,7 +123,7 @@ fn validate_depth_args(prune_method: PruneMethod, remove_layers: Option<&str>) -
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
 #[provable_contracts_macros::contract(
-    "apr-cli-operations-v1",
+    "apr-cli-command-safety-v1",
     equation = "mutating_output_contract"
 )]
 pub(crate) fn run(

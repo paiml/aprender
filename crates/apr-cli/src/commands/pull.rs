@@ -45,7 +45,7 @@ pub struct FileChecksum {
 
 /// Run the pull command
 #[provable_contracts_macros::contract(
-    "apr-cli-operations-v1",
+    "apr-cli-command-safety-v1",
     equation = "mutating_output_contract"
 )]
 pub fn run(

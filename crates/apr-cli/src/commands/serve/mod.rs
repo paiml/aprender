@@ -269,7 +269,10 @@ fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
 }
 
 /// Serve command entry point (blocking)
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "long_running_graceful"
+)]
 pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
     // Record which file we are serving so the metadata endpoints can MEASURE
     // it instead of reporting constants. Everything downstream takes

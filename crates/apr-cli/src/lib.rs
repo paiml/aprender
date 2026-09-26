@@ -366,3 +366,25 @@ mod entry_point_is_shared {
         assert!(violations(clean).is_empty());
     }
 }
+
+/// #4370: `build.rs` is this crate's `#[contract]` producer. Without it every
+/// site expanded to nothing and a misspelt contract compiled silently.
+#[cfg(test)]
+mod contract_producer_ran {
+    #[test]
+    fn the_registry_sentinel_is_set() {
+        assert_eq!(option_env!("CONTRACT_BINDING_SOURCE"), Some("binding.yaml"));
+    }
+
+    #[test]
+    fn a_bound_site_carries_its_yaml_precondition() {
+        assert_eq!(
+            option_env!("CONTRACT_APR_CLI_SAFETY_V1_VALIDATE_EXIT_CODE_PRE_COUNT"),
+            Some("1")
+        );
+        assert_eq!(
+            option_env!("CONTRACT_APR_CLI_SAFETY_V1_VALIDATE_EXIT_CODE_PRE_0"),
+            Some("path.exists()")
+        );
+    }
+}

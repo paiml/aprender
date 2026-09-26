@@ -296,6 +296,9 @@ required-features = ["inference"]
 
 [build-dependencies]
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
+provable-contracts = { workspace = true }  # #4370: build_helper::env_key for the #[contract] producer
+serde = { version = "1", features = ["derive"] }
+serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
 
 [dev-dependencies]
 jsonschema = "0.28"  # apr devices --json validated against contracts/schemas/apr-devices-v1.schema.json (PP-066 R-0a)

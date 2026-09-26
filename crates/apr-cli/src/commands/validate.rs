@@ -15,7 +15,6 @@ use std::fs;
 use std::path::Path;
 
 /// Run the validate command
-#[provable_contracts_macros::contract("apr-cli-safety-v1", equation = "validate_exit_code")]
 pub(crate) fn run(
     path: &Path,
     quality: bool,
@@ -106,6 +105,9 @@ fn produces_qa_score(format: FormatType) -> bool {
 /// (e.g. an all-zero `lm_head.weight`, or a NaN/Inf tensor) is REJECTED at
 /// parity with the GGUF / SafeTensors path. `--strict` is now honored:
 /// any NaN / Inf / all-zero finding escalates to a hard non-zero exit.
+// `path.exists()` (the equation's precondition) holds here, after
+// `validate_path`; at `run` a missing path is a user error, not a bug (#4370).
+#[provable_contracts_macros::contract("apr-cli-safety-v1", equation = "validate_exit_code")]
 fn run_apr_validation(
     path: &Path,
     quality: bool,

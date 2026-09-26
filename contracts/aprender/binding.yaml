@@ -467,6 +467,42 @@ bindings:
   function: run
   status: implemented
   notes: Per-request KV cache, immutable model weights
+- contract: apr-cli-command-safety-v1.yaml
+  equation: read_only_no_side_effects
+  module_path: apr_cli::commands::probar
+  function: run
+  status: implemented
+  notes: 'Read-only commands (probar, ptx explain, rosetta diff/validate, runs ls, ...) write nothing outside stdout/stderr (#4370)'
+- contract: apr-cli-command-safety-v1.yaml
+  equation: mutating_output_contract
+  module_path: apr_cli::commands::import
+  function: run
+  status: implemented
+  notes: 'Mutating commands (import, convert, export, merge, quantize, prune, ...) write only their declared output (#4370)'
+- contract: apr-cli-command-safety-v1.yaml
+  equation: long_running_graceful
+  module_path: apr_cli::commands::serve
+  function: run
+  status: implemented
+  notes: 'Long-running commands (serve, run, chat, monitor, tui, tune, ...) shut down cleanly on signal (#4370)'
+- contract: apr-cli-safety-v1.yaml
+  equation: validate_exit_code
+  module_path: apr_cli::commands::validate
+  function: run_apr_validation
+  status: implemented
+  notes: 'Scored .apr validation exits 5 below 50; bound after validate_path, where path.exists() holds (#4370)'
+- contract: apr-cli-safety-v1.yaml
+  equation: offline_guard
+  module_path: apr_cli::commands::import
+  function: run
+  status: implemented
+  notes: '--offline rejects hf:// and http(s) sources before any network access (#4370)'
+- contract: apr-cli-safety-v1.yaml
+  equation: encrypt_guard
+  module_path: apr_cli::commands::eval
+  function: run_encrypt
+  status: implemented
+  notes: 'Rejects .enc input; its caller resolves the path through resolve_model_path, so input_path.exists() holds (#4370)'
 - contract: apr-cli-v1.yaml
   equation: contract_gate_enforcement
   module_path: apr_cli::dispatch

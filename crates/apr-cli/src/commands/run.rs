@@ -303,7 +303,10 @@ pub(crate) fn resolve_model_source(source: &str, offline: bool) -> Result<ModelS
 }
 
 /// Run the model on input
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "long_running_graceful"
+)]
 pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult> {
     let start = Instant::now();
 

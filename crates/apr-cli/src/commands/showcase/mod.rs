@@ -82,7 +82,10 @@ fn execute_step(
 }
 
 /// Run the showcase demo
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "long_running_graceful"
+)]
 pub fn run(config: &ShowcaseConfig) -> Result<()> {
     print_header(config.tier);
 

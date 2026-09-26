@@ -484,7 +484,7 @@ fn count_out_of_range_labels(
 
 /// Run data quality audit on a JSONL classification dataset.
 #[provable_contracts_macros::contract(
-    "apr-cli-operations-v1",
+    "apr-cli-command-safety-v1",
     equation = "mutating_output_contract"
 )]
 pub(crate) fn run_audit(

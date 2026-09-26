@@ -111,7 +111,10 @@ fn resolve_chat_model(path_arg: &Path, offline: bool) -> Result<std::path::PathB
 
 /// Run the chat command with optional inference tracing (APR-TRACE-001)
 #[allow(clippy::too_many_arguments)]
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "long_running_graceful"
+)]
 pub(crate) fn run(
     path_arg: &Path,
     temperature: f32,

@@ -109,7 +109,7 @@ fn estimate_sizes(file: &Path, file_size: u64, scheme: QuantScheme) -> (u64, u64
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
 #[provable_contracts_macros::contract(
-    "apr-cli-operations-v1",
+    "apr-cli-command-safety-v1",
     equation = "mutating_output_contract"
 )]
 pub(crate) fn run(

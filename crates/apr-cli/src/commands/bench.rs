@@ -147,14 +147,6 @@ struct BenchResult {
     pub passed: bool,
 }
 
-/// Run the benchmark command
-///
-/// Automatically detects format and uses realizar for optimized inference.
-/// Supports GGUF, APR, and SafeTensors formats.
-#[provable_contracts_macros::contract(
-    "apr-cli-operations-v1",
-    equation = "side_effect_classification"
-)]
 /// Parse one `--percentiles` point, enforcing the documented (0, 100] range.
 ///
 /// Out-of-range points used to sail through to `print_bench_json`, where the
@@ -173,6 +165,14 @@ pub(crate) fn parse_percentile(s: &str) -> std::result::Result<f64, String> {
     Ok(value)
 }
 
+/// Run the benchmark command
+///
+/// Automatically detects format and uses realizar for optimized inference.
+/// Supports GGUF, APR, and SafeTensors formats.
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 pub(crate) fn run(
     path: &Path,
     warmup: usize,

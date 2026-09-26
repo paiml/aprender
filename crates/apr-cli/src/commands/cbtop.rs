@@ -391,7 +391,10 @@ impl App {
 }
 
 /// Run the cbtop command
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "long_running_graceful"
+)]
 pub fn run(config: CbtopConfig) -> Result<()> {
     // A zero-iteration run collects no samples at all: every brick's measured
     // time stays 0.0µs, every gap factor is 0.00x, every score rounds to 100/A
