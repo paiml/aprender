@@ -816,11 +816,10 @@ fn build_provenance(input: ProvenanceInput<'_>) -> Result<Provenance> {
         server_config,
         comparator,
         notes,
+        client,
     } = input;
-    let exe = std::env::current_exe()
-        .map_err(|e| CliError::InvalidInput(format!("cannot resolve current_exe: {e}")))?;
-    let binary_sha256 = sha256_file(&exe)
-        .map_err(|e| CliError::InvalidInput(format!("cannot hash {}: {e}", exe.display())))?;
+    let exe = &client.path;
+    let binary_sha256 = &client.sha256;
     let compute_class = ComputeClass::from_str(args.compute_class)
         .map_err(|e| CliError::InvalidInput(format!("--compute-class: {e}")))?;
 
@@ -831,12 +830,15 @@ fn build_provenance(input: ProvenanceInput<'_>) -> Result<Provenance> {
     // same `apr`, so `current_exe` is the common case — but it is a DECLARED
     // fact, not an observed one, and it is named as such in
     // `unproduced_fields` unless the operator pointed at the served binary.
-    let subject_path = args
-        .subject_binary
-        .map_or_else(|| exe.clone(), Path::to_path_buf);
-    let subject_sha256 = sha256_file(&subject_path).map_err(|e| {
-        CliError::InvalidInput(format!("cannot hash {}: {e}", subject_path.display()))
-    })?;
+    // The default subject IS the client, whose digest is already in hand.
+    let (subject_path, subject_sha256) = match args.subject_binary {
+        None => (exe.clone(), binary_sha256.clone()),
+        Some(p) => (
+            p.to_path_buf(),
+            sha256_file(p)
+                .map_err(|e| CliError::InvalidInput(format!("cannot hash {}: {e}", p.display())))?,
+        ),
+    };
     if args.subject_binary.is_none() {
         notes.push(format!(
             "PP-18 provenance.subject.path/sha256 — DECLARED, not observed. No `--subject-binary` \
@@ -914,7 +916,7 @@ fn build_provenance(input: ProvenanceInput<'_>) -> Result<Provenance> {
         },
         client: ClientIdentity {
             path: exe.display().to_string(),
-            sha256: binary_sha256,
+            sha256: binary_sha256.clone(),
             commit: commit.to_string(),
             // PP-3 — the fourth input to `RunId::derive`, on the wire so a
             // reader can recompute the id the receipt states. Without it
@@ -940,6 +942,29 @@ struct ProvenanceInput<'a> {
     server_config: Option<Value>,
     comparator: Option<ComparatorIdentity>,
     notes: &'a mut Vec<String>,
+    client: &'a RunningBinary,
+}
+
+/// The binary writing the receipt, resolved and hashed once by the caller.
+///
+/// Hashing is the expensive half of provenance: an `apr` build is hundreds of
+/// MB, and every test that built a provenance used to hash its own test
+/// binary twice (client, then the default subject) — minutes per test on a
+/// loaded runner. Tests pass a fixture; [`RunningBinary::current`] is the
+/// production path and has its own test.
+struct RunningBinary {
+    path: PathBuf,
+    sha256: String,
+}
+
+impl RunningBinary {
+    fn current() -> Result<Self> {
+        let path = std::env::current_exe()
+            .map_err(|e| CliError::InvalidInput(format!("cannot resolve current_exe: {e}")))?;
+        let sha256 = sha256_file(&path)
+            .map_err(|e| CliError::InvalidInput(format!("cannot hash {}: {e}", path.display())))?;
+        Ok(Self { path, sha256 })
+    }
 }
 
 /// §4.7.1 — this cell's comparator posture when there is no comparator lane.
@@ -1534,6 +1559,7 @@ async fn prepare<'a>(
         None => None,
         Some(_) => Some(comparator_identity(args, props)?),
     };
+    let client = RunningBinary::current()?;
     let provenance = build_provenance(ProvenanceInput {
         args,
         commit: &commit,
@@ -1542,6 +1568,7 @@ async fn prepare<'a>(
         server_config,
         comparator: pin,
         notes: &mut notes,
+        client: &client,
     })?;
     if witness.is_empty() {
         notes.push(
@@ -2071,6 +2098,15 @@ mod tests {
     }
 
     /// Build provenance from `a`, with no server config behind it.
+    /// A client binary that is never read: its digest is a fixed 64-hex
+    /// string, so a provenance test costs no hashing.
+    fn fixture_binary() -> RunningBinary {
+        RunningBinary {
+            path: PathBuf::from("/fixture/apr"),
+            sha256: "ab".repeat(32),
+        }
+    }
+
     fn provenance_of(a: &BandArgs<'_>) -> Result<Provenance> {
         let mut notes = Vec::new();
         build_provenance(ProvenanceInput {
@@ -2081,6 +2117,7 @@ mod tests {
             server_config: None,
             comparator: None,
             notes: &mut notes,
+            client: &fixture_binary(),
         })
     }
 
@@ -2088,7 +2125,22 @@ mod tests {
     /// real 64-hex digest of the binary that is actually running.
     #[test]
     fn provenance_hashes_the_running_binary() {
-        let prov = provenance_of(&args("1", "server_usage")).expect("current_exe must hash");
+        let client = RunningBinary::current().expect("current_exe must hash");
+        assert_eq!(client.path, std::env::current_exe().expect("current_exe"));
+        assert!(client.sha256.len() == 64 && client.sha256.bytes().all(|b| b.is_ascii_hexdigit()));
+        let mut notes = Vec::new();
+        let prov = build_provenance(ProvenanceInput {
+            args: &args("1", "server_usage"),
+            commit: COMMIT,
+            started_utc: "2026-09-02T10:11:12.345Z",
+            facts: &ServerFacts::default(),
+            server_config: None,
+            comparator: None,
+            notes: &mut notes,
+            client: &client,
+        })
+        .expect("builds");
+        assert_eq!(prov.binary_sha256, client.sha256);
         assert_eq!(prov.binary_sha256.len(), 64);
         assert_eq!(prov.resolution, "current_exe");
         assert_eq!(prov.client.sha256, prov.binary_sha256, "PP-25: same binary");
@@ -2366,6 +2418,7 @@ mod tests {
             server_config: Some(effective_config()),
             comparator: None,
             notes: &mut notes,
+            client: &fixture_binary(),
         })
         .expect("builds");
         assert_eq!(prov.subject.feature_set, vec!["cuda", "inference"]);
@@ -2405,6 +2458,7 @@ mod tests {
             server_config: None,
             comparator: None,
             notes: &mut notes,
+            client: &fixture_binary(),
         })
         .expect("builds");
         let joined = notes.join("\n");
@@ -2695,6 +2749,7 @@ mod tests {
             server_config: None,
             comparator: None,
             notes: &mut notes,
+            client: &fixture_binary(),
         })
         .expect("provenance builds");
         ReceiptShell {

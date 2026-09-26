@@ -884,4 +884,13 @@ debug = "line-tables-only"
 [profile.dev.package.proptest]
 debug-assertions = false
 
+# sha2 at opt-level 0 hashes ~10-20 MB/s, so any dev/test code that digests a
+# built binary (hundreds of MB) spends minutes in the compression loop: the
+# test_llm_band provenance tests crossed nextest's 60s/120s SLOW marks on x86-main
+# hashing their own test binary. Optimising this one leaf crate costs nothing in
+# debuggability of our code. sha2 is in `apr`'s normal graph, so unlike the
+# block above this spec never prints a `cargo install` warning.
+[profile.dev.package.sha2]
+opt-level = 3
+
 
