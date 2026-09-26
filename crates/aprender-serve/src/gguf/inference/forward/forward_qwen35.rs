@@ -799,7 +799,9 @@ impl<'a> Qwen35Model<'a> {
         let config = crate::gguf::config::ValidatedModelConfig::from_gguf(model)?.into_inner();
 
         let token_embedding = model.get_tensor_f32("token_embd.weight", data)?;
-        let output_norm_weight = model.get_tensor_f32("output_norm.weight", data)?;
+        // #2378: the shared loader refuses a norm whose length is not hidden_dim.
+        let (output_norm_weight, _) =
+            crate::gguf::load_output_norm(model, data, config.hidden_dim)?;
 
         let lm_head_ref =
             crate::gguf::QuantizedGGUFTransformer::get_tensor_ref(model, data, "output.weight")

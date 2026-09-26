@@ -69,11 +69,10 @@ pub(super) fn load_weights_from_gguf(mapped: &crate::gguf::MappedGGUFModel) -> R
     }
 
     // Final layer norm
-    let final_norm_weight = mapped.model.get_tensor_f32("output_norm.weight", data)?;
-    let final_norm_bias = mapped
-        .model
-        .get_tensor_f32("output_norm.bias", data)
-        .unwrap_or_else(|_| vec![0.0f32; config.hidden_dim]);
+    // #2378: the shared loader refuses a norm whose length is not hidden_dim.
+    let (final_norm_weight, final_norm_bias) =
+        crate::gguf::load_output_norm(&mapped.model, data, config.hidden_dim)?;
+    let final_norm_bias = final_norm_bias.unwrap_or_else(|| vec![0.0f32; config.hidden_dim]);
 
     // LM head
     let lm_head_weight = mapped.model.get_tensor_f32("output.weight", data)?;
