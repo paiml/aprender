@@ -635,9 +635,32 @@ find_up() {  # echo the first of $1 in CWD then the repo root, or nothing
   [ -f "$REPO_ROOT/$1" ] && printf '%s' "$REPO_ROOT/$1"
 }
 CHANGELOG_PATH=$(find_up CHANGELOG.md)
-if [ -n "$CHANGELOG_PATH" ] && grep -qF "$VERSION" "$CHANGELOG_PATH"; then mark changelog PASS "CHANGELOG has $VERSION"
-elif [ -n "$CHANGELOG_PATH" ]; then mark changelog WARN "$CHANGELOG_PATH has no entry for $VERSION"
-else mark changelog WARN "no CHANGELOG.md (looked in $PWD and $REPO_ROOT)"; fi
+# #3183: `grep -qF "$VERSION"` passed a bare heading and a section describing
+# some other release. The row now asks check_changelog_covers_merged.sh whether
+# the [$VERSION] section cites every PR merged since the last release and none
+# that shipped before it. A miss is RED where the release is decided (pre- and
+# post-publish); in a `full` run the tree is mid-cycle, so a partial section is
+# expected and the row is a WARN that still names the count.
+CL_GUARD="$SKILL_DIR/check_changelog_covers_merged.sh"
+# Release tags are cut on release branches and are not ancestors of main, so
+# `git describe` finds none there; fall back to the highest non-rc tag below
+# $VERSION by version order.
+CL_LAST=$(git describe --tags --abbrev=0 --exclude "v$VERSION" --exclude '*-rc*' HEAD 2>/dev/null \
+  || { git tag -l 'v[0-9]*' | grep -v -- '-rc' ; echo "v$VERSION"; } | sort -uV | grep -B1 -xF "v$VERSION" | grep -vxF "v$VERSION" || true)
+CL_NOTES=$(find_up release_notes.md)
+if [ -z "$CHANGELOG_PATH" ]; then mark changelog WARN "no CHANGELOG.md (looked in $PWD and $REPO_ROOT)"
+elif [ ! -f "$CL_GUARD" ] || [ -z "$CL_LAST" ]; then
+  # No guard beside this script, or no earlier release tag to diff against: the
+  # coverage question has no inputs, so fall back to the heading presence check.
+  if grep -qF "## [$VERSION]" "$CHANGELOG_PATH"; then mark changelog WARN "CHANGELOG has a [$VERSION] heading; coverage unchecked (guard=$([ -f "$CL_GUARD" ] && echo present || echo absent), last tag=${CL_LAST:-none})"
+  else mark changelog FAIL "$CHANGELOG_PATH has no [$VERSION] section"; fi
+else
+  CL_OUT=$(bash "$CL_GUARD" --changelog "$CHANGELOG_PATH" ${CL_NOTES:+--notes "$CL_NOTES"} "$CL_LAST" HEAD "$VERSION" 2>&1); CL_RC=$?
+  CL_BAD=$(grep -cE '^(MISSING|FALSE-ROW)' <<< "$CL_OUT" || true)
+  if [ "$CL_RC" -eq 0 ]; then mark changelog PASS "[$VERSION] cites every PR merged in $CL_LAST..HEAD${CL_NOTES:+ (and $CL_NOTES)}"
+  elif [ "$CL_RC" -eq 1 ] && [ "$DOGFOOD_PHASE" = full ]; then mark changelog WARN "[$VERSION] misses $CL_BAD row(s) vs $CL_LAST..HEAD (RED at pre-publish): $(head -1 <<< "$CL_OUT" | cut -c1-120)"
+  else mark changelog FAIL "[$VERSION] vs $CL_LAST..HEAD: exit=$CL_RC, $CL_BAD missing/false row(s): $(head -2 <<< "$CL_OUT" | tr '\n' ' ' | cut -c1-160)"; fi
+fi
 
 # ── 4-8. quality gates ──────────────────────────────────────────────────────
 mark feature-scope INFO "clippy/test run with: ${FEAT_NOTE}"
