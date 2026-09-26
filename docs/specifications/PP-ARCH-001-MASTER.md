@@ -565,3 +565,41 @@ Key access goes through closures, so the four layouts (packed, `&[&[f32]]`, cach
 current, head-major) share one body. The dot product must stay a plain `0.0f32` loop:
 `zip().map().sum()` starts from `-0.0` on some toolchains, which changes the sign of an
 all-zero dot. Each migration needs its own frozen-copy test.
+
+### 9.11 Phase 2 step 5b delivered: scalar one-row attention home, Divide group (2026-09-26)
+
+**Home:** `gguf/ops.rs::attend_row_scalar(q, n_keys, key, value, scale, RowSoftmax, scores, out)`.
+- `score_j = dot(q, key(j)) * scale`, each dot a plain `0.0f32` loop.
+- Then `softmax_exp_in_place` + `softmax_normalize`.
+- Then `out[d] += w_j * value(j)[d]` in key order. `out` must be zeroed by the caller.
+- `RowSoftmax { norm, guard_positive_sum }`. The guard mirrors the one guarded site.
+  It cannot change the output: the max term contributes `exp(0) = 1`, so the sum is
+  `>= 1` or NaN.
+
+**Sites migrated (6 rows, all unguarded `Divide` except pmat-260):**
+- `apr_transformer/pmat-260.rs::compute_causal_gqa_attention` (guarded)
+- `gpu/adapters/apr_q4k.rs::gqa_attention`
+- `gpu/scheduler/kv_forward_block.rs::gqa_attention_with_kv`
+- `gpu/scheduler/kv_forward_block.rs::gqa_incremental_attention`
+- `apr_transformer/attention_kernels.rs::causal_attention_cached`: its three helpers
+  collapsed into one `attend_row`, which also serves `causal_attention`
+- `gpu/scheduler/attention.rs::simplified_attention`: its dim-outer V loop has the same
+  per-element order
+
+**Bit-exact:** `attend_row_scalar_equivalence_tests` checks 300 cases with `to_bits`
+against frozen copies of the three body forms.
+- The forms: plain loop, the apr_q4k variant, and the iterator dot/sum.
+- The grid: hd in {1, 8, 64, 128}, n in {1, 2, 7, 64, 300}, and magnitudes
+  {0, 1e-3, 1, 8, 60}.
+- Magnitude 0 is the all-zero dot, where the iterator sum can give `-0.0`. That case
+  is proven equal, not assumed.
+
+**Kept:** `apr/helpers.rs::simple_attention`. Its `get().unwrap_or(0.0)` reads turn
+out-of-bounds into zeros rather than a panic, so moving it would change behaviour.
+
+**Rows: 28 → 22.**
+
+**Next: step 5c, the MulInv family.**
+- rope.rs `causal_attention`
+- forward/batched.rs `compute_attention_output`
+- qwen35 `forward_attention`, which divides by `sqrt(hd)` and so needs a `ScoreScale` enum
