@@ -1108,10 +1108,8 @@ impl<'a> Qwen35Model<'a> {
         self.base
             .fused_matmul_into(post_attn_normed, &d.ffn_up, &mut ffn_up)?;
 
-        for i in 0..ffn_gate.len() {
-            let x = ffn_gate[i];
-            let silu = x / (1.0 + (-x as f32).exp());
-            ffn_up[i] *= silu;
+        for (u, &g) in ffn_up.iter_mut().zip(&ffn_gate) {
+            *u *= silu(g);
         }
         let mut ffn_down = vec![0.0; d.ffn_down.out_dim];
         self.base
@@ -1201,31 +1199,23 @@ impl<'a> Qwen35Model<'a> {
         let group_size = num_heads / num_kv_heads;
         let head_dim = self.head_dim;
 
+        let kv_dim = num_kv_heads * head_dim;
+        let mut scores = Vec::with_capacity(position + 1);
         for h in 0..num_heads {
-            let kv_h = h / group_size;
-            let q_h = &q[h * head_dim..(h + 1) * head_dim];
-
-            let mut scores = vec![0.0; position + 1];
-            for p in 0..=position {
-                let mut dot = 0.0;
-                let k_p = &k_cache[p * (num_kv_heads * head_dim) + kv_h * head_dim
-                    ..p * (num_kv_heads * head_dim) + (kv_h + 1) * head_dim];
-                for i in 0..head_dim {
-                    dot += q_h[i] * k_p[i];
-                }
-                scores[p] = dot / (head_dim as f32).sqrt();
-            }
-            crate::gguf::ops::softmax(&mut scores);
-
-            let out_h = &mut attn_out_in[h * head_dim..(h + 1) * head_dim];
-            for p in 0..=position {
-                let w = scores[p];
-                let v_p = &v_cache[p * (num_kv_heads * head_dim) + kv_h * head_dim
-                    ..p * (num_kv_heads * head_dim) + (kv_h + 1) * head_dim];
-                for i in 0..head_dim {
-                    out_h[i] += w * v_p[i];
-                }
-            }
+            let kv_row = (h / group_size) * head_dim;
+            crate::gguf::ops::attend_row_scalar(
+                &q[h * head_dim..(h + 1) * head_dim],
+                position + 1,
+                |p| &k_cache[p * kv_dim + kv_row..][..head_dim],
+                |p| &v_cache[p * kv_dim + kv_row..][..head_dim],
+                crate::gguf::ops::ScoreScale::Div((head_dim as f32).sqrt()),
+                crate::gguf::ops::RowSoftmax {
+                    norm: crate::gguf::ops::SoftmaxNorm::MulInv,
+                    guard_positive_sum: false,
+                },
+                &mut scores,
+                &mut attn_out_in[h * head_dim..(h + 1) * head_dim],
+            );
         }
         // Output gate, as llama.cpp: attn_output * sigmoid(gate) before the output projection
         // (the attn_gated node). The gate split off the joint Q projection was never applied.
@@ -1249,10 +1239,8 @@ impl<'a> Qwen35Model<'a> {
         let mut ffn_up = vec![0.0; a.ffn_up.out_dim];
         self.base
             .fused_matmul_into(post_attn_normed, &a.ffn_up, &mut ffn_up)?;
-        for i in 0..ffn_gate.len() {
-            let x = ffn_gate[i];
-            let silu = x / (1.0 + (-x as f32).exp());
-            ffn_up[i] *= silu;
+        for (u, &g) in ffn_up.iter_mut().zip(&ffn_gate) {
+            *u *= silu(g);
         }
         let mut ffn_down = vec![0.0; a.ffn_down.out_dim];
         self.base

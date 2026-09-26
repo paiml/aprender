@@ -65,7 +65,7 @@ impl AprTransformer {
                     i + 1,
                     |j| &k_all[kv_row(j)..][..head_dim],
                     |j| &v_all[kv_row(j)..][..head_dim],
-                    scale,
+                    crate::gguf::ops::ScoreScale::Mul(scale),
                     crate::gguf::ops::RowSoftmax {
                         norm: crate::gguf::ops::SoftmaxNorm::Divide,
                         guard_positive_sum: true,

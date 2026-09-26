@@ -263,31 +263,23 @@ impl OwnedQuantizedModel {
         let scale = 1.0 / (head_dim as f32).sqrt();
         let mut output = vec![0.0; hidden_dim];
 
-        // Process each head independently
+        let mut scores = Vec::with_capacity(seq_len);
         for head in 0..num_heads {
             let head_start = head * head_dim;
             let head_end = head_start + head_dim;
-
-            let q_head = &q[head_start..head_end];
-
-            // Compute attention scores for this head
-            let mut scores = Vec::with_capacity(seq_len);
-            for k in k_vecs {
-                let k_head = &k[head_start..head_end];
-                let score: f32 = q_head.iter().zip(k_head.iter()).map(|(a, b)| a * b).sum();
-                scores.push(score * scale);
-            }
-
-            // Softmax (SIMD-optimized, in-place)
-            crate::quantize::softmax_simd(&mut scores);
-
-            // Weighted sum of values
-            for (attn, v) in scores.iter().zip(v_vecs.iter()) {
-                let v_head = &v[head_start..head_end];
-                for (i, &v_val) in v_head.iter().enumerate() {
-                    output[head_start + i] += attn * v_val;
-                }
-            }
+            crate::gguf::ops::attend_row_scalar(
+                &q[head_start..head_end],
+                seq_len,
+                |j| &k_vecs[j][head_start..head_end],
+                |j| &v_vecs[j][head_start..head_end],
+                crate::gguf::ops::ScoreScale::Mul(scale),
+                crate::gguf::ops::RowSoftmax {
+                    norm: crate::gguf::ops::SoftmaxNorm::MulInv,
+                    guard_positive_sum: false,
+                },
+                &mut scores,
+                &mut output[head_start..head_end],
+            );
         }
 
         Ok(output)

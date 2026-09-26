@@ -105,6 +105,7 @@ impl OwnedQuantizedModel {
         let kv_dim = num_kv_heads * head_dim; // e.g., 4 * 64 = 256
 
         let mut output = vec![0.0f32; seq_len * q_dim];
+        let mut scores = Vec::with_capacity(seq_len);
 
         // Process each Q head independently
         for head in 0..num_heads {
@@ -114,35 +115,23 @@ impl OwnedQuantizedModel {
             let q_head_offset = head * head_dim;
             let kv_head_offset = kv_head * head_dim;
 
-            // Process each query position
+            let kv_row = |j: usize| j * kv_dim + kv_head_offset;
             for i in 0..seq_len {
-                // Compute attention scores for this query against all keys up to position i (causal)
-                let mut scores = Vec::with_capacity(i + 1);
+                // Causal: query i attends to keys 0..=i.
                 let q_start = i * q_dim + q_head_offset;
-
-                for j in 0..=i {
-                    // Only attend to positions 0..=i (causal mask)
-                    let k_start = j * kv_dim + kv_head_offset;
-
-                    // Dot product Q[i] · K[j]
-                    let mut score = 0.0f32;
-                    for d in 0..head_dim {
-                        score += q[q_start + d] * k[k_start + d];
-                    }
-                    scores.push(score * scale);
-                }
-
-                // Softmax (SIMD-optimized)
-                crate::quantize::softmax_simd(&mut scores);
-
-                // Weighted sum of values
-                let out_start = i * q_dim + q_head_offset;
-                for (j, &weight) in scores.iter().enumerate() {
-                    let v_start = j * kv_dim + kv_head_offset;
-                    for d in 0..head_dim {
-                        output[out_start + d] += weight * v[v_start + d];
-                    }
-                }
+                crate::gguf::ops::attend_row_scalar(
+                    &q[q_start..q_start + head_dim],
+                    i + 1,
+                    |j| &k[kv_row(j)..][..head_dim],
+                    |j| &v[kv_row(j)..][..head_dim],
+                    crate::gguf::ops::ScoreScale::Mul(scale),
+                    crate::gguf::ops::RowSoftmax {
+                        norm: crate::gguf::ops::SoftmaxNorm::MulInv,
+                        guard_positive_sum: false,
+                    },
+                    &mut scores,
+                    &mut output[q_start..q_start + head_dim],
+                );
             }
         }
 

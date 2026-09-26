@@ -214,7 +214,7 @@ fn gqa_attention_with_kv(
                 pos + 1,
                 |kpos| &k[kv_row(kpos)..][..head_dim],
                 |kpos| &v[kv_row(kpos)..][..head_dim],
-                scale,
+                crate::gguf::ops::ScoreScale::Mul(scale),
                 crate::gguf::ops::RowSoftmax {
                     norm: crate::gguf::ops::SoftmaxNorm::Divide,
                     guard_positive_sum: false,
@@ -260,7 +260,7 @@ fn gqa_incremental_attention(
             cache_len,
             |kpos| &all_k[kv_row(kpos)..][..head_dim],
             |kpos| &all_v[kv_row(kpos)..][..head_dim],
-            scale,
+            crate::gguf::ops::ScoreScale::Mul(scale),
             crate::gguf::ops::RowSoftmax {
                 norm: crate::gguf::ops::SoftmaxNorm::Divide,
                 guard_positive_sum: false,

@@ -22,7 +22,7 @@ fn attend_row(
         num_keys,
         |j| &keys[kv_row(j)..][..head_dim],
         |j| &values[kv_row(j)..][..head_dim],
-        scale,
+        crate::gguf::ops::ScoreScale::Mul(scale),
         crate::gguf::ops::RowSoftmax {
             norm: crate::gguf::ops::SoftmaxNorm::Divide,
             guard_positive_sum: false,

@@ -95,7 +95,7 @@ pub fn simplified_attention(
                 i + 1,
                 |j| &k[row(j)..][..head_dim],
                 |j| &v[row(j)..][..head_dim],
-                scale,
+                crate::gguf::ops::ScoreScale::Mul(scale),
                 crate::gguf::ops::RowSoftmax {
                     norm: crate::gguf::ops::SoftmaxNorm::Divide,
                     guard_positive_sum: false,

@@ -777,6 +777,17 @@ pub fn softmax_scalar_in_place(x: &mut [f32], form: SoftmaxNorm) {
     softmax_normalize(x, sum, form);
 }
 
+/// How one [`attend_row_scalar`] site turns a dot product into a score:
+/// `dot * s` or `dot / d`. The two differ in the last bit, so each site keeps
+/// its own form.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ScoreScale {
+    /// `dot * s` (sites that precompute `1 / sqrt(head_dim)`).
+    Mul(f32),
+    /// `dot / d` (sites that divide by `sqrt(head_dim)` per score).
+    Div(f32),
+}
+
 /// Softmax flavour of one [`attend_row_scalar`] site: the final division form,
 /// and whether normalisation is skipped when the sum is not positive. The max
 /// term always contributes `exp(0) = 1`, so the sum is `>= 1` or NaN and the
@@ -792,7 +803,7 @@ pub struct RowSoftmax {
 /// Scalar attention for ONE query head row over `n_keys` keys (PP-ARCH-001
 /// §9.11, the shared one-row attention home).
 ///
-/// `score_j = dot(q, key(j)) * scale`, each dot summed left to right from
+/// `score_j = dot(q, key(j))` scaled per [`ScoreScale`], each dot summed left to right from
 /// `0.0` in scalar f32; a full [`softmax_exp_in_place`] +
 /// [`softmax_normalize`] over the scores; then `out[d] += w_j * value(j)[d]`
 /// in key order. `out` (`[q.len()]`) is accumulated into, so callers pass a
@@ -805,7 +816,7 @@ pub fn attend_row_scalar<'a>(
     n_keys: usize,
     key: impl Fn(usize) -> &'a [f32],
     value: impl Fn(usize) -> &'a [f32],
-    scale: f32,
+    scale: ScoreScale,
     softmax: RowSoftmax,
     scores: &mut Vec<f32>,
     out: &mut [f32],
@@ -818,7 +829,10 @@ pub fn attend_row_scalar<'a>(
         for d in 0..head_dim {
             dot += q[d] * k[d];
         }
-        scores.push(dot * scale);
+        scores.push(match scale {
+            ScoreScale::Mul(s) => dot * s,
+            ScoreScale::Div(d) => dot / d,
+        });
     }
     let sum = softmax_exp_in_place(scores);
     if !softmax.guard_positive_sum || sum > 0.0 {
@@ -834,7 +848,7 @@ pub fn attend_row_scalar<'a>(
 
 #[cfg(test)]
 mod attend_row_scalar_equivalence_tests {
-    use super::{attend_row_scalar, RowSoftmax, SoftmaxNorm};
+    use super::{attend_row_scalar, RowSoftmax, ScoreScale, SoftmaxNorm};
 
     // Frozen per-site bodies (before step 5b), one query row each. Layout:
     // k/v rows of `head_dim`, key j at `j * head_dim`.
@@ -917,6 +931,68 @@ mod attend_row_scalar_equivalence_tests {
         }
     }
 
+    // gguf/inference/rope.rs::causal_attention (softmax_simd: AVX2 max and
+    // normalise on x86_64 hosts that have it, MulInv otherwise).
+    fn ref_rope(q: &[f32], k: &[f32], v: &[f32], n: usize, scale: f32, out: &mut [f32]) {
+        let hd = q.len();
+        let mut scores = Vec::with_capacity(n);
+        for j in 0..n {
+            let mut score = 0.0f32;
+            for d in 0..hd {
+                score += q[d] * k[j * hd + d];
+            }
+            scores.push(score * scale);
+        }
+        crate::quantize::softmax_simd(&mut scores);
+        for (j, &weight) in scores.iter().enumerate() {
+            for d in 0..hd {
+                out[d] += weight * v[j * hd + d];
+            }
+        }
+    }
+
+    // gguf/inference/forward/batched.rs::compute_attention_output
+    // (`&[&[f32]]` rows, iterator dot, softmax_simd).
+    fn ref_batched(q: &[f32], k: &[f32], v: &[f32], n: usize, scale: f32, out: &mut [f32]) {
+        let hd = q.len();
+        let k_vecs: Vec<&[f32]> = (0..n).map(|j| &k[j * hd..(j + 1) * hd]).collect();
+        let v_vecs: Vec<&[f32]> = (0..n).map(|j| &v[j * hd..(j + 1) * hd]).collect();
+        let mut scores = Vec::with_capacity(n);
+        for k_head in &k_vecs {
+            let score: f32 = q.iter().zip(k_head.iter()).map(|(a, b)| a * b).sum();
+            scores.push(score * scale);
+        }
+        crate::quantize::softmax_simd(&mut scores);
+        for (attn, v_head) in scores.iter().zip(v_vecs.iter()) {
+            for (i, &v_val) in v_head.iter().enumerate() {
+                out[i] += attn * v_val;
+            }
+        }
+    }
+
+    // gguf/inference/forward/forward_qwen35.rs::forward_attention
+    // (`dot / sqrt(hd)`, ops::softmax). `_scale` is unused: this site divides.
+    fn ref_qwen35(q: &[f32], k: &[f32], v: &[f32], n: usize, _scale: f32, out: &mut [f32]) {
+        let hd = q.len();
+        let mut scores = vec![0.0; n];
+        for p in 0..n {
+            let mut dot = 0.0;
+            let k_p = &k[p * hd..(p + 1) * hd];
+            for i in 0..hd {
+                dot += q[i] * k_p[i];
+            }
+            scores[p] = dot / (hd as f32).sqrt();
+        }
+        crate::gguf::ops::softmax(&mut scores);
+        for p in 0..n {
+            let w = scores[p];
+            let v_p = &v[p * hd..(p + 1) * hd];
+            for i in 0..hd {
+                out[i] += w * v_p[i];
+            }
+        }
+    }
+
     fn lcg(seed: &mut u64, mag: f32) -> f32 {
         *seed = seed
             .wrapping_mul(6_364_136_223_846_793_005)
@@ -932,15 +1008,24 @@ mod attend_row_scalar_equivalence_tests {
             norm: SoftmaxNorm::Divide,
             guard_positive_sum: guard,
         };
-        let sites: [(&str, Ref, RowSoftmax); 3] = [
-            ("pmat260", ref_pmat260, divide(true)),
-            ("apr_q4k", ref_apr_q4k, divide(false)),
-            ("kv_forward", ref_kv_forward, divide(false)),
+        let mul_inv = RowSoftmax {
+            norm: SoftmaxNorm::MulInv,
+            guard_positive_sum: false,
+        };
+        // (site, frozen body, softmax, divides by sqrt(hd) rather than
+        // multiplying by its inverse)
+        let sites: [(&str, Ref, RowSoftmax, bool); 6] = [
+            ("pmat260", ref_pmat260, divide(true), false),
+            ("apr_q4k", ref_apr_q4k, divide(false), false),
+            ("kv_forward", ref_kv_forward, divide(false), false),
+            ("rope", ref_rope, mul_inv, false),
+            ("batched", ref_batched, mul_inv, false),
+            ("qwen35", ref_qwen35, mul_inv, true),
         ];
         let mut cases = 0;
         let mut seed = 0x3422_005b_u64;
         let mut scratch = Vec::new();
-        for (name, reference, sm) in sites {
+        for (name, reference, sm, divides) in sites {
             for &hd in &[1usize, 8, 64, 128] {
                 for &n in &[1usize, 2, 7, 64, 300] {
                     // mag 0.0 makes every dot an exact zero (the iterator-sum
@@ -958,7 +1043,11 @@ mod attend_row_scalar_equivalence_tests {
                             n,
                             |j| &k[j * hd..(j + 1) * hd],
                             |j| &v[j * hd..(j + 1) * hd],
-                            scale,
+                            if divides {
+                                ScoreScale::Div((hd as f32).sqrt())
+                            } else {
+                                ScoreScale::Mul(scale)
+                            },
                             sm,
                             &mut scratch,
                             &mut got,
@@ -973,7 +1062,7 @@ mod attend_row_scalar_equivalence_tests {
                 }
             }
         }
-        assert_eq!(cases, 300);
+        assert_eq!(cases, 600);
     }
 }
 

@@ -603,3 +603,42 @@ out-of-bounds into zeros rather than a panic, so moving it would change behaviou
 - rope.rs `causal_attention`
 - forward/batched.rs `compute_attention_output`
 - qwen35 `forward_attention`, which divides by `sqrt(hd)` and so needs a `ScoreScale` enum
+
+### 9.12 Phase 2 step 5c delivered: MulInv attention family (2026-09-26)
+
+**Home change:** `attend_row_scalar` now takes `ScoreScale::{Mul(s), Div(d)}` in place
+of a bare `f32`.
+- `Div` exists for qwen35, which divides each dot by `sqrt(hd)`. That is not bit-equal
+  to multiplying by `1/sqrt(hd)`.
+- The step 5b callers pass `ScoreScale::Mul(scale)`, so they are unchanged.
+
+**Sites migrated (3 rows, all `RowSoftmax { MulInv, guard_positive_sum: false }`):**
+- `gguf/inference/rope.rs::causal_attention`: `Mul(scale)`, softmax was `quantize::softmax_simd`
+- `gguf/inference/forward/batched.rs::compute_attention_output`: `Mul(scale)`, `softmax_simd`
+- `gguf/inference/forward/forward_qwen35.rs::forward_attention`: `Div(sqrt(hd))`, `ops::softmax`
+
+**Bit-exact:** `attend_row_scalar_equivalence_tests` adds frozen copies of the three
+bodies. It now checks 600 cases over the same grid, with `to_bits`.
+
+**Two scope notes:**
+- `softmax_simd` equals the scalar MulInv form only for NaN-free input: its AVX2 max
+  and a NaN compare differently. Attention scores from finite weights are NaN-free.
+  A ±0 max cannot differ, since `exp(±0) = 1`.
+- qwen35 loses the `contract_pre_softmax!` debug assertion (finite, non-empty) that
+  `ops::softmax` carried. It was debug-only, and release output is unchanged.
+
+**The SwiGLU loops:** both qwen35 FFN loops (`forward_deltanet` and `forward_attention`)
+now call the file's own `silu(x)`. It is the same expression, `x / (1 + exp(-x))`.
+The ratchet had kept the `forward_attention` row alive because of the inline `.exp()`
+in its FFN gate, not because of any attention math.
+
+**Rows: 22 → 19.**
+
+**What remains (19 rows):**
+- `simple_attention`, kept: it reads out-of-bounds as zero.
+- The SIMD attention bodies: `cache_attention`, `attention_gqa` ×2, and rope
+  `attention_with_cache`.
+- `flash_attention_cached` and `flash_attention_dispatch`.
+- `gpu_fused_causal_attention` ×2.
+- `gpu/scheduler/ops.rs::gqa_multihead_attention`.
+- The non-attention rows.

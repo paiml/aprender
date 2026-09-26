@@ -868,7 +868,7 @@ fn gqa_attention(
             kv_len,
             |pos| &full_k[kv_row(pos)..][..head_dim],
             |pos| &full_v[kv_row(pos)..][..head_dim],
-            scale,
+            crate::gguf::ops::ScoreScale::Mul(scale),
             crate::gguf::ops::RowSoftmax {
                 norm: crate::gguf::ops::SoftmaxNorm::Divide,
                 guard_positive_sum: false,
