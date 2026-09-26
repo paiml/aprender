@@ -1,0 +1,9 @@
+gated_rmsnorm A/B on sm89: oxide #[kernel] vs hand-PTX gdn_gated_rmsnorm, eps=0.000001
+  h=128 n=16: oxide 2.458us cos=1.0000000 md=9.54e-7 | hand 2.734us cos=1.0000000 md=9.54e-7 | ratio 0.899 PARITY
+RECEIPT head_dim=128 heads=16 cos=1.000000000 maxdiff=9.537e-7 oxide_us=2.458 ptx_us=2.734
+  h=128 n=32: oxide 2.456us cos=1.0000000 md=9.54e-7 | hand 2.764us cos=1.0000000 md=9.54e-7 | ratio 0.889 PARITY
+RECEIPT head_dim=128 heads=32 cos=1.000000000 maxdiff=9.537e-7 oxide_us=2.456 ptx_us=2.764
+  h=128 n=48: oxide 2.478us cos=1.0000000 md=9.54e-7 | hand 2.765us cos=1.0000000 md=9.54e-7 | ratio 0.896 PARITY
+RECEIPT head_dim=128 heads=48 cos=1.000000000 maxdiff=9.537e-7 oxide_us=2.478 ptx_us=2.765
+  h=128 n=64: oxide 2.447us cos=1.0000000 md=9.54e-7 | hand 2.754us cos=1.0000000 md=9.54e-7 | ratio 0.889 PARITY
+RECEIPT head_dim=128 heads=64 cos=1.000000000 maxdiff=9.537e-7 oxide_us=2.447 ptx_us=2.754

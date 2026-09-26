@@ -1,0 +1,102 @@
+{
+  "schema": "apr-kernel-receipt/v1",
+  "sha": "91969973aac74cf031d14010d0f4a2938c2b1161",
+  "rows": [
+    {
+      "kernel": "gated_rmsnorm",
+      "host": "lambda",
+      "cc": "8.9",
+      "sha": "91969973aac74cf031d14010d0f4a2938c2b1161",
+      "shape": {
+        "head_dim": 128,
+        "heads": 16,
+        "eps": 0.000001
+      },
+      "parity": {
+        "cos": 1.000000000,
+        "maxdiff": 9.537E-7
+      },
+      "timing": {
+        "oxide_us": 2.458,
+        "ptx_us": 2.734
+      },
+      "register_budget": 21,
+      "ptxas_version": "Cuda compilation tools, release 12.8, V12.8.93",
+      "authoring": "oxide",
+      "gpu": "RTX 4090",
+      "method": "GPU-event median of 5x100 after 20 warmups; hand PTX = trueno_gpu GatedRmsNormKernel sm_89 (27 regs); oxide PTX ptxas -v -arch=sm_89: 21 regs, 0 spill"
+    },
+    {
+      "kernel": "gated_rmsnorm",
+      "host": "lambda",
+      "cc": "8.9",
+      "sha": "91969973aac74cf031d14010d0f4a2938c2b1161",
+      "shape": {
+        "head_dim": 128,
+        "heads": 32,
+        "eps": 0.000001
+      },
+      "parity": {
+        "cos": 1.000000000,
+        "maxdiff": 9.537E-7
+      },
+      "timing": {
+        "oxide_us": 2.456,
+        "ptx_us": 2.764
+      },
+      "register_budget": 21,
+      "ptxas_version": "Cuda compilation tools, release 12.8, V12.8.93",
+      "authoring": "oxide",
+      "gpu": "RTX 4090",
+      "method": "GPU-event median of 5x100 after 20 warmups; hand PTX = trueno_gpu GatedRmsNormKernel sm_89 (27 regs); oxide PTX ptxas -v -arch=sm_89: 21 regs, 0 spill"
+    },
+    {
+      "kernel": "gated_rmsnorm",
+      "host": "lambda",
+      "cc": "8.9",
+      "sha": "91969973aac74cf031d14010d0f4a2938c2b1161",
+      "shape": {
+        "head_dim": 128,
+        "heads": 48,
+        "eps": 0.000001
+      },
+      "parity": {
+        "cos": 1.000000000,
+        "maxdiff": 9.537E-7
+      },
+      "timing": {
+        "oxide_us": 2.478,
+        "ptx_us": 2.765
+      },
+      "register_budget": 21,
+      "ptxas_version": "Cuda compilation tools, release 12.8, V12.8.93",
+      "authoring": "oxide",
+      "gpu": "RTX 4090",
+      "method": "GPU-event median of 5x100 after 20 warmups; hand PTX = trueno_gpu GatedRmsNormKernel sm_89 (27 regs); oxide PTX ptxas -v -arch=sm_89: 21 regs, 0 spill"
+    },
+    {
+      "kernel": "gated_rmsnorm",
+      "host": "lambda",
+      "cc": "8.9",
+      "sha": "91969973aac74cf031d14010d0f4a2938c2b1161",
+      "shape": {
+        "head_dim": 128,
+        "heads": 64,
+        "eps": 0.000001
+      },
+      "parity": {
+        "cos": 1.000000000,
+        "maxdiff": 9.537E-7
+      },
+      "timing": {
+        "oxide_us": 2.447,
+        "ptx_us": 2.754
+      },
+      "register_budget": 21,
+      "ptxas_version": "Cuda compilation tools, release 12.8, V12.8.93",
+      "authoring": "oxide",
+      "gpu": "RTX 4090",
+      "method": "GPU-event median of 5x100 after 20 warmups; hand PTX = trueno_gpu GatedRmsNormKernel sm_89 (27 regs); oxide PTX ptxas -v -arch=sm_89: 21 regs, 0 spill"
+    }
+  ]
+}
