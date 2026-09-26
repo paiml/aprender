@@ -31,6 +31,8 @@ equations:
     formula: "ratio_vs_competitor(phase) = median_apr(phase) / median_competitor(phase)"
   gate:
     formula: "RED ⇔ ∃ phase: ci_lo_cur / median_prev − 1 > 0.10 ∨ median_cur / median_released − 1 > 0.05 ∨ median_cur / mean(median of last 3) − 1 > 0.03"
+  coverage:
+    formula: "gaps(tag) = { c ∈ admitted : no receipt r with r.tag = tag ∧ r.cell_id = c ∧ holds(r, asset_sha) } as T0, else no t1_topk_sha as T1; GREEN ⇔ gaps = ∅ ∧ admitted ≠ ∅"
   t2_use:
     formula: "t2 = Absent if no blob; Refused if trace_overhead_pct is missing or not finite; AttributionOnly if > 5; Diffable otherwise"
 
@@ -65,3 +67,15 @@ falsification_tests:
     test_harness: "cargo test -p aprender-review-experiment --lib falsify_crux_perf_005"
     expected_output: "exit 0"
     if_fails: "A local build would be recorded as the rc's speed: the receipt would measure a binary nobody ships."
+  - id: FALSIFY-CRUX-PERF-006
+    name: rc_missing_t0_or_t1_for_an_admitted_cell_is_red
+    prediction: "G3: an admitted cell with no receipt for the tag that holds against its asset sha is a T0 gap; one without a T1 sha is a T1 gap; another tag's or another binary's receipt fills nothing"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_crux_perf_006"
+    expected_output: "exit 0"
+    if_fails: "An rc could ship with a perf history that silently skipped a cell or never profiled it."
+  - id: FALSIFY-CRUX-PERF-007
+    name: replay_rows_give_phases_only_when_every_item_was_timed
+    prediction: "phases come from a PRM-S1 replay run one sample per item; a single untimed item (apr before SRV-TIM-001), mixed sets or no rows refuse rather than compute from the timed subset"
+    test_harness: "cargo test -p aprender-review-experiment --lib replay_rows_give_phases_only_when_every_item_was_timed"
+    expected_output: "exit 0"
+    if_fails: "A median over only the items the server happened to time would be recorded as the rc's speed."

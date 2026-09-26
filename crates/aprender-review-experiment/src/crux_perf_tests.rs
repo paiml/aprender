@@ -89,10 +89,10 @@ fn falsify_crux_perf_002_planted_ten_percent_decode_is_red() {
     let slow = receipt("v0.70.0-rc.2", 1.10);
     let g = gate(&slow, Some(&prev), Some(&released), &hist).expect("one series");
     assert!(g.red(), "a +10% decode must be RED: {g:?}");
-    assert!(g
-        .reasons
-        .iter()
-        .all(|r| r.phase == Phase::Decode), "only decode moved: {g:?}");
+    assert!(
+        g.reasons.iter().all(|r| r.phase == Phase::Decode),
+        "only decode moved: {g:?}"
+    );
     assert!(g.reasons.iter().any(|r| r.rule == Rule::Released));
     assert!(g.reasons.iter().any(|r| r.rule == Rule::Rolling3));
 
@@ -118,7 +118,10 @@ fn falsify_crux_perf_003_changed_cell_field_under_same_id_is_refused() {
     b.cell.driver_cuda = "590.10/13.1".to_string();
     // The claimed id is kept; the fields moved.
     assert_eq!(a.cell_id, b.cell_id);
-    assert!(matches!(b.check(TAG_SHA), Err(Refusal::CellIdMismatch { .. })));
+    assert!(matches!(
+        b.check(TAG_SHA),
+        Err(Refusal::CellIdMismatch { .. })
+    ));
     assert!(matches!(
         gate(&b, Some(&a), None, &[]),
         Err(Refusal::CellIdMismatch { .. })
@@ -146,7 +149,10 @@ fn falsify_crux_perf_003_changed_cell_field_under_same_id_is_refused() {
     let other = CruxPerfReceipt::new(
         "v0.70.0-rc.2".to_string(),
         TAG_SHA.to_string(),
-        Cell { host: "intel".to_string(), ..cell() },
+        Cell {
+            host: "intel".to_string(),
+            ..cell()
+        },
         a.competitor.clone(),
         a.apr.clone(),
         a.competitor_phases.clone(),
@@ -179,9 +185,15 @@ fn falsify_crux_perf_005_binary_sha_not_the_tag_asset_is_refused() {
     let r = receipt("v0.70.0-rc.2", 1.0);
     assert!(r.holds(TAG_SHA));
     let other = "ff".repeat(32);
-    assert!(matches!(r.check(&other), Err(Refusal::BinaryShaMismatch { .. })));
+    assert!(matches!(
+        r.check(&other),
+        Err(Refusal::BinaryShaMismatch { .. })
+    ));
     // A tag with no published asset sha cannot certify anything.
-    assert!(matches!(r.check(""), Err(Refusal::BinaryShaMismatch { .. })));
+    assert!(matches!(
+        r.check(""),
+        Err(Refusal::BinaryShaMismatch { .. })
+    ));
     // Case is not a difference.
     assert!(r.holds(&TAG_SHA.to_uppercase()));
 }
@@ -201,10 +213,107 @@ fn receipt_is_self_consistent_and_round_trips() {
     // A tampered ratio is refused.
     let mut bad = r.clone();
     bad.ratio_vs_competitor.decode = 0.5;
-    assert_eq!(bad.check(TAG_SHA), Err(Refusal::RatioInconsistent(Phase::Decode)));
+    assert_eq!(
+        bad.check(TAG_SHA),
+        Err(Refusal::RatioInconsistent(Phase::Decode))
+    );
+    // A claimed run count that is not the samples' is refused.
+    let mut bad = r.clone();
+    bad.n_runs = 200;
+    assert_eq!(bad.check(TAG_SHA), Err(Refusal::TooFewRuns(7)));
     // Fewer than MIN_RUNS is never a gate number.
     assert!(PhaseStats::from_samples(&[1.0, 2.0, 3.0, 4.0], 1).is_none());
     assert!(PhaseStats::from_samples(&[1.0, 2.0, 3.0, 4.0, f64::NAN], 1).is_none());
     let p = PhaseStats::from_samples(&samples(10.0, 1.0), 1).expect("seven samples");
     assert!(p.ci_lo <= p.median && p.median <= p.ci_hi && p.median <= p.p95);
+}
+
+fn row(engine: &str, i: u32, prompt_ms: Option<f64>) -> crate::replay::Row {
+    let prompt_ms = prompt_ms.map_or_else(|| "null".to_string(), |m| m.to_string());
+    serde_json::from_str(&format!(
+        r#"{{"schema":"review-replay-receipt-v1","replay_version":"review-replay-v2",
+        "set_sha":"a4910a65","diff_sha256":"d{i}","stratum":"2k","engine":"{engine}",
+        "engine_version":"x","apr_tag":"t","cell":"gx10-cuda","gguf_sha256":"00fe7986",
+        "wall_ms":1000.0,"prompt_ms":{prompt_ms},"prompt_tps":4000.0,"decode_tps":64.0,
+        "input_tokens":1000,"output_tokens":100,"peak_rss_mb":8000.0,
+        "verdict":{{"state":"Fail"}}}}"#
+    ))
+    .expect("a replay row")
+}
+
+#[test]
+fn replay_rows_give_phases_only_when_every_item_was_timed() {
+    use crate::replay::Engine;
+    let mut rows: Vec<_> = (0..6).map(|i| row("apr", i, Some(250.0))).collect();
+    rows.extend((0..6).map(|i| row("llama_cpp", i, Some(240.0))));
+    let p = Phases::from_replay_rows(&rows, Engine::Apr, 1).expect("six timed rows");
+    assert_eq!(p.ttft.median, 250.0);
+    assert!(
+        (p.prefill.median - 0.25).abs() < 1e-12,
+        "ms/token = 1000/tps"
+    );
+    assert!((p.decode.median - 15.625).abs() < 1e-12);
+    assert_eq!(p.decode.n, 6);
+    // One untimed apr item (apr serve before SRV-TIM-001) voids the engine's figure.
+    rows[3].prompt_ms = None;
+    assert_eq!(
+        Phases::from_replay_rows(&rows, Engine::Apr, 1),
+        Err(RowsError::UntimedRow("d3".to_string()))
+    );
+    assert!(Phases::from_replay_rows(&rows, Engine::LlamaCpp, 1).is_ok());
+    rows[7].set_sha = "other".to_string();
+    assert_eq!(
+        Phases::from_replay_rows(&rows, Engine::LlamaCpp, 1),
+        Err(RowsError::MixedSets)
+    );
+    assert_eq!(
+        Phases::from_replay_rows(&rows[..0], Engine::Apr, 1),
+        Err(RowsError::NoRows)
+    );
+}
+
+#[test]
+fn falsify_crux_perf_006_rc_missing_t0_or_t1_for_an_admitted_cell_is_red() {
+    let tag = "v0.70.0-rc.2";
+    let gx10 = cell().id();
+    let intel = Cell {
+        host: "intel".to_string(),
+        ..cell()
+    }
+    .id();
+    let admitted = vec![gx10.clone(), intel.clone()];
+    let mut a = receipt(tag, 1.0);
+    a.t1_topk_sha = Some("dd44".to_string());
+    // Only gx10 measured: intel has no T0.
+    assert_eq!(
+        coverage_gaps(tag, TAG_SHA, &admitted, &[a.clone()]),
+        vec![Gap::T0 {
+            cell_id: intel.clone()
+        }]
+    );
+    let mut b = a.clone();
+    b.cell = Cell {
+        host: "intel".to_string(),
+        ..cell()
+    };
+    b.cell_id = b.cell.id();
+    b.t1_topk_sha = None;
+    // Both measured, intel without its T1 profile.
+    assert_eq!(
+        coverage_gaps(tag, TAG_SHA, &admitted, &[a.clone(), b.clone()]),
+        vec![Gap::T1 {
+            cell_id: intel.clone()
+        }]
+    );
+    b.t1_topk_sha = Some("ee55".to_string());
+    assert!(coverage_gaps(tag, TAG_SHA, &admitted, &[a.clone(), b.clone()]).is_empty());
+    // Another tag's receipt, or a receipt of another binary, fills nothing.
+    assert_eq!(
+        coverage_gaps("v0.70.0-rc.3", TAG_SHA, &admitted, &[a.clone(), b.clone()]).len(),
+        2
+    );
+    assert_eq!(
+        coverage_gaps(tag, &"ff".repeat(32), &admitted, &[a, b]).len(),
+        2
+    );
 }
