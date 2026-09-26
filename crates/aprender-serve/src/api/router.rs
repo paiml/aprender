@@ -337,6 +337,13 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
         }
     });
 
+    // APR-OBS-001 OBS-03: scope the client's X-Request-ID for the per-request
+    // log line. INSIDE the cancel layer below: that layer runs the handler in a
+    // `tokio::spawn`, which a task-local does not cross.
+    router = router.layer(axum::middleware::from_fn(
+        crate::api::request_log::client_request_id_scope,
+    ));
+
     // aprender#2376(3): mint a per-request CancelToken, publish it to the handlers
     // via request extensions, and cancel it when axum drops this request because
     // the client went away. Applied to the WHOLE router, not just the generate
