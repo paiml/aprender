@@ -195,7 +195,10 @@ fn re_rendered_turn_two(mapped: &MappedGGUFModel, p1: &[u32]) -> Vec<u32> {
     let mut p2 = p1.to_vec();
     p2.extend(encode(
         mapped,
-        &format!("The capital of Peru is Lima.<|im_end|>\n{}", user_turn("And of Chile?")),
+        &format!(
+            "The capital of Peru is Lima.<|im_end|>\n{}",
+            user_turn("And of Chile?")
+        ),
     ));
     p2
 }
@@ -207,9 +210,17 @@ fn cpu_an_identical_prompt_again_resumes_at_its_generation_header_and_matches_on
     let mut session = Qwen35Session::load(&mapped, true).expect("load");
     let config = greedy(6);
     let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
-    let t1 = session.generate(&p1, &config, &mut |_| true).expect("turn 1");
-    let t2 = session.generate(&p1, &config, &mut |_| true).expect("turn 2");
-    assert_eq!(t2.reused, header_at(&mapped, &p1), "resumed at the checkpoint");
+    let t1 = session
+        .generate(&p1, &config, &mut |_| true)
+        .expect("turn 1");
+    let t2 = session
+        .generate(&p1, &config, &mut |_| true)
+        .expect("turn 2");
+    assert_eq!(
+        t2.reused,
+        header_at(&mapped, &p1),
+        "resumed at the checkpoint"
+    );
     assert!(t2.reused > 0);
     assert_eq!(t2.tokens, t1.tokens);
     assert_eq!(t2.tokens, one_shot_cpu(&mapped, &p1, &config));
@@ -222,10 +233,18 @@ fn cpu_a_re_rendered_turn_two_resumes_at_turn_ones_header_and_matches_one_shot()
     let mut session = Qwen35Session::load(&mapped, true).expect("load");
     let config = greedy(6);
     let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
-    session.generate(&p1, &config, &mut |_| true).expect("turn 1");
+    session
+        .generate(&p1, &config, &mut |_| true)
+        .expect("turn 1");
     let p2 = re_rendered_turn_two(&mapped, &p1);
-    let t2 = session.generate(&p2, &config, &mut |_| true).expect("turn 2");
-    assert_eq!(t2.reused, header_at(&mapped, &p1), "resumed at turn 1's checkpoint");
+    let t2 = session
+        .generate(&p2, &config, &mut |_| true)
+        .expect("turn 2");
+    assert_eq!(
+        t2.reused,
+        header_at(&mapped, &p1),
+        "resumed at turn 1's checkpoint"
+    );
     assert_eq!(
         t2.tokens,
         one_shot_cpu(&mapped, &p2, &config),
@@ -441,8 +460,12 @@ mod gpu {
         };
         let config = greedy(6);
         let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
-        let t1 = session.generate(&p1, &config, &mut |_| true).expect("turn 1");
-        let t2 = session.generate(&p1, &config, &mut |_| true).expect("turn 2");
+        let t1 = session
+            .generate(&p1, &config, &mut |_| true)
+            .expect("turn 1");
+        let t2 = session
+            .generate(&p1, &config, &mut |_| true)
+            .expect("turn 2");
         assert!(t1.used_gpu && t2.used_gpu, "no fallback");
         assert_eq!(t2.reused, header_at(&mapped, &p1));
         assert!(t2.reused > 0);
@@ -458,9 +481,13 @@ mod gpu {
         };
         let config = greedy(6);
         let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
-        session.generate(&p1, &config, &mut |_| true).expect("turn 1");
+        session
+            .generate(&p1, &config, &mut |_| true)
+            .expect("turn 1");
         let p2 = re_rendered_turn_two(&mapped, &p1);
-        let t2 = session.generate(&p2, &config, &mut |_| true).expect("turn 2");
+        let t2 = session
+            .generate(&p2, &config, &mut |_| true)
+            .expect("turn 2");
         assert!(t2.used_gpu, "no fallback");
         assert_eq!(t2.reused, header_at(&mapped, &p1));
         assert_eq!(t2.tokens, one_shot_gpu(&mapped, &p2, &config));
