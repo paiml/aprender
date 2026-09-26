@@ -19,6 +19,8 @@ What it emulates, and nothing more (anything else is refused, never guessed):
     `timeout-minutes`; job `if`, `env`, `needs`, `outputs`, `timeout-minutes`,
     `continue-on-error`, `container` (docker exec into a long-lived container).
   * `uses:` handlers in USES below. An unknown action is a hard error.
+  * `timeout-minutes` is SCALED by FAT_TIMEOUT_SCALE (default 2): see
+    timeout_seconds().
 
 Modes:
   run --sections a,b --results FILE [--background-until SECTION]
@@ -598,7 +600,7 @@ class Section:
             self.env[k] = to_str(interpolate(to_str(v), self.evaluator()))
         if "container" in job:
             self.start_container(job["container"])
-        timeout = float(job.get("timeout-minutes", 360)) * 60
+        timeout = timeout_seconds(job.get("timeout-minutes"), 360)
         deadline = self.started + timeout
         for idx, step in enumerate(job.get("steps") or []):
             self.run_step(idx, step, deadline)
@@ -759,7 +761,7 @@ class Section:
             raise ExprError(f"unsupported shell {shell!r}")
         wd = step.get("working-directory")
         cwd = str((self.workspace / interpolate(wd, ev)) if wd else self.workspace)
-        tmo = float(step.get("timeout-minutes", 0)) * 60 or None
+        tmo = timeout_seconds(step.get("timeout-minutes"), 0) or None
         remain = deadline - time.time()
         tmo = min(t for t in (tmo, remain) if t is not None)
         if self.container:
@@ -1092,6 +1094,28 @@ class RunCtx:
         }
 
 
+DEFAULT_TIMEOUT_SCALE = 2.0
+
+
+def timeout_seconds(minutes, default_minutes=0) -> float:
+    """A job/step `timeout-minutes`, in seconds, scaled for a shared runner.
+
+    Each value in ci/sections.yml was sized for a DEDICATED runner. Here every
+    section shares one box with the nextest shards, so the same work takes
+    longer: guard-tree finished in 1501 s of its 1800 s on 45aa0f4d5 and was
+    killed at 1800 s on 1e760c005, same intel host, same body, with its
+    cargo-free step at ~20 min on main's own runner (#4433). The budget is a
+    hang detector, not a speed gate; the fat job's own `timeout-minutes` still
+    bounds the whole run. FAT_TIMEOUT_SCALE overrides; below 1 is refused, as
+    that would kill a section sooner than its dedicated job would have been.
+    """
+    raw = os.environ.get("FAT_TIMEOUT_SCALE", "")
+    scale = float(raw) if raw.strip() else DEFAULT_TIMEOUT_SCALE
+    if scale < 1:
+        raise SystemExit(f"fat_driver: FAT_TIMEOUT_SCALE={raw!r} is below 1")
+    return float(minutes if minutes is not None else default_minutes) * 60 * scale
+
+
 def schedule(ctx: RunCtx, names: list, early: str | None, early_done: threading.Event):
     pending = list(names)
     running: dict = {}
@@ -1332,6 +1356,23 @@ def cmd_self_test(a):
     row("a bracketed name resolves to itself only", resolve_section_names(cat, "determinism[X64]"),
         ["determinism[X64]"])
     row("sov.* globs", resolve_section_names(cat, "sov.*"), ["sov.test", "sov.gate"])
+    saved = os.environ.pop("FAT_TIMEOUT_SCALE", None)
+    try:
+        row("timeout: a section's 30 min is scaled x2 on the shared runner", timeout_seconds(30), 3600.0)
+        row("timeout: an absent job timeout keeps Actions' 360 min, scaled", timeout_seconds(None, 360), 43200.0)
+        row("timeout: an absent step timeout stays unbounded", timeout_seconds(None, 0) or None, None)
+        os.environ["FAT_TIMEOUT_SCALE"] = "1"
+        row("timeout: FAT_TIMEOUT_SCALE=1 is the dedicated-runner budget", timeout_seconds(30), 1800.0)
+        os.environ["FAT_TIMEOUT_SCALE"] = "0.5"
+        try:
+            timeout_seconds(30)
+            row("timeout: MUTANT scale below 1 is refused", "accepted", "refused")
+        except SystemExit:
+            row("timeout: MUTANT scale below 1 is refused", "refused", "refused")
+    finally:
+        os.environ.pop("FAT_TIMEOUT_SCALE", None)
+        if saved is not None:
+            os.environ["FAT_TIMEOUT_SCALE"] = saved
     import http.server
     import threading
 
