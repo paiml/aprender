@@ -289,9 +289,148 @@ fn falsify_ext_017_ghcr_fetch_feeds_m7_green_and_a_corrupt_blob_is_caught() {
     assert!(on_disk.contains(RECEIPT), "the gate receipt rides along");
 
     let digest = format!("sha256:{}", sha256_hex(b"tuned-weights"));
-    reg.blobs.insert(digest, b"bitflipped-w".to_vec());
-    let err = fetch(&mut reg, "0.1.0-rc.1", &t.path().join("got2")).expect_err("corrupt");
+    reg.blobs.insert(digest.clone(), b"bitflipped-w".to_vec());
+    let got2 = t.path().join("got2");
+    let err = fetch(&mut reg, "0.1.0-rc.1", &got2).expect_err("corrupt");
     assert!(err.to_string().contains("tuned.apr"), "{err}");
+    assert!(
+        !got2.exists(),
+        "a failed fetch must not leave half a release in `to`"
+    );
+
+    reg.blobs.insert(digest, b"tuned-weights".to_vec());
+    fetch(&mut reg, "0.1.0-rc.1", &got2).expect("a re-run after the failure starts clean");
+    assert!(!t.path().join("got2.partial").exists());
+}
+
+/// A registry on a loopback socket that answers like GHCR: 401 with a challenge, then
+/// only the credential it expects. Records every Authorization header it was sent.
+fn auth_registry(
+    challenge: &'static str,
+    accept: &'static str,
+) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = seen.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().take(8) {
+            let mut stream = stream.expect("conn");
+            let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+            let mut line = String::new();
+            reader.read_line(&mut line).expect("request line");
+            let mut auth = String::new();
+            loop {
+                let mut h = String::new();
+                reader.read_line(&mut h).expect("header");
+                if h.trim().is_empty() {
+                    break;
+                }
+                if let Some((k, v)) = h.split_once(':') {
+                    if k.eq_ignore_ascii_case("authorization") {
+                        auth = v.trim().to_string();
+                    }
+                }
+            }
+            log.lock().expect("lock").push(auth.clone());
+            let reply = if line.starts_with("GET /token") {
+                let expected = format!(
+                    "Basic {}",
+                    base64::Engine::encode(
+                        &base64::engine::general_purpose::STANDARD,
+                        format!("apr:{TOKEN}")
+                    )
+                );
+                if auth == expected && line.contains("scope=repository%3Apaiml%2Fm%3Apull%2Cpush") {
+                    let body = r#"{"token":"EXCHANGED-registry-token"}"#;
+                    format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
+                } else {
+                    "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        .to_string()
+                }
+            } else if auth == accept {
+                "HTTP/1.1 200 OK\r\nDocker-Content-Digest: sha256:abc\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string()
+            } else {
+                let ch = challenge.replace("{addr}", &addr.to_string());
+                // The body echoes the credential, as a careless registry might.
+                let body = format!("denied for {auth}");
+                format!("HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: {ch}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
+            };
+            stream.write_all(reply.as_bytes()).expect("reply");
+        }
+    });
+    (format!("http://{addr}"), seen)
+}
+
+#[test]
+fn falsify_ext_017_ghcr_bearer_challenge_exchanges_the_file_token() {
+    let (base, seen) = auth_registry(
+        r#"Bearer realm="http://{addr}/token",service="ghcr.io",scope="repository:paiml/m:pull""#,
+        "Bearer EXCHANGED-registry-token",
+    );
+    let mut reg = HttpRegistry::new(
+        base,
+        "paiml/m".into(),
+        "apr".into(),
+        Some(Token(TOKEN.into())),
+    );
+    assert_eq!(
+        reg.tag_digest("0.1.0").expect("authenticated"),
+        Some("sha256:abc".into())
+    );
+    // The exchanged token is reused, not re-exchanged, on the next call.
+    assert_eq!(
+        reg.tag_digest("0.1.0").expect("reuse"),
+        Some("sha256:abc".into())
+    );
+    let seen = seen.lock().expect("lock").clone();
+    assert_eq!(seen.len(), 4, "401, token exchange, retry, reuse: {seen:?}");
+    assert_eq!(seen[0], "", "the first request goes out anonymous");
+    assert!(
+        seen[1].starts_with("Basic "),
+        "the file token is only sent to the realm"
+    );
+    assert_eq!(seen[2], "Bearer EXCHANGED-registry-token");
+    assert_eq!(seen[3], "Bearer EXCHANGED-registry-token");
+}
+
+#[test]
+fn ghcr_basic_challenge_gets_the_file_token_and_a_wrong_one_leaks_nothing() {
+    let good = format!(
+        "Basic {}",
+        base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            format!("apr:{TOKEN}")
+        )
+    );
+    let good: &'static str = Box::leak(good.into_boxed_str());
+    let (base, _) = auth_registry(r#"Basic realm="registry""#, good);
+    let mut reg = HttpRegistry::new(
+        base,
+        "paiml/m".into(),
+        "apr".into(),
+        Some(Token(TOKEN.into())),
+    );
+    assert_eq!(
+        reg.tag_digest("0.1.0").expect("basic"),
+        Some("sha256:abc".into())
+    );
+
+    let (base, _) = auth_registry(r#"Basic realm="registry""#, "Basic nobody");
+    let mut reg = HttpRegistry::new(
+        base,
+        "paiml/m".into(),
+        "apr".into(),
+        Some(Token(TOKEN.into())),
+    );
+    let err = reg.tag_digest("0.1.0").expect_err("rejected").to_string();
+    let b64 = good.trim_start_matches("Basic ");
+    assert!(err.contains("401"), "{err}");
+    assert!(
+        !err.contains(TOKEN) && !err.contains(b64),
+        "credential leaked: {err}"
+    );
 }
 
 #[test]
@@ -429,7 +568,12 @@ fn ghcr_http_roundtrip_against_a_live_registry() {
     let t = TempDir::new().expect("tmp");
     let rel = t.path().join("rel");
     release(&rel, "released");
-    let reference = format!("{host}/paiml/ext17-roundtrip");
+    // A fresh repository per run: the registry outlives the test.
+    let run = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let reference = format!("{host}/paiml/ext17-roundtrip-{run}");
     let (base, repo, _) = parse_reference(&reference).expect("reference");
     let mut reg = HttpRegistry::new(base, repo, "apr".into(), None);
 

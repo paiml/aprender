@@ -386,7 +386,15 @@ pub(crate) fn fetch(reg: &mut dyn Registry, reference: &str, to: &Path) -> Resul
             m.artifact_type
         )));
     }
-    std::fs::create_dir_all(to)?;
+    // Stage beside `to` and rename on success, so a failed fetch leaves `to` as it was
+    // and a re-run starts clean instead of tripping on half a release.
+    let mut staged = to.as_os_str().to_owned();
+    staged.push(".partial");
+    let staged = PathBuf::from(staged);
+    if staged.exists() {
+        std::fs::remove_dir_all(&staged)?;
+    }
+    std::fs::create_dir_all(&staged)?;
     for l in &m.layers {
         let name = l
             .annotations
@@ -397,7 +405,7 @@ pub(crate) fn fetch(reg: &mut dyn Registry, reference: &str, to: &Path) -> Resul
                 "layer title {name:?} is not a plain file name"
             )));
         }
-        let path = to.join(name);
+        let path = staged.join(name);
         reg.get_blob(&l.digest, &path)?;
         let (size, sha) = sha256_file(&path)?;
         if format!("sha256:{sha}") != l.digest || size != l.size {
@@ -407,6 +415,10 @@ pub(crate) fn fetch(reg: &mut dyn Registry, reference: &str, to: &Path) -> Resul
             )));
         }
     }
+    if to.exists() {
+        std::fs::remove_dir(to)?;
+    }
+    std::fs::rename(&staged, to)?;
     Ok(m)
 }
 
@@ -532,12 +544,21 @@ impl HttpRegistry {
         format!("{}/v2/{}/{tail}", self.base, self.repo)
     }
 
+    /// A network error with every credential this registry holds stripped from it:
+    /// the file token, its Basic encoding, and a token exchanged for it.
     fn fail(&self, what: &str, e: impl std::fmt::Display) -> CliError {
-        let msg = format!("{what}: {e}");
-        CliError::NetworkError(match &self.token {
-            Some(t) => t.redact(&msg),
-            None => msg,
-        })
+        let mut msg = format!("{what}: {e}");
+        if let Some(t) = &self.token {
+            msg = t.redact(&msg);
+        }
+        for header in [self.basic(), self.auth.clone()].into_iter().flatten() {
+            if let Some((_, cred)) = header.split_once(' ') {
+                if !cred.is_empty() {
+                    msg = msg.replace(cred, "<redacted>");
+                }
+            }
+        }
+        CliError::NetworkError(msg)
     }
 
     fn basic(&self) -> Option<String> {
@@ -619,6 +640,7 @@ impl HttpRegistry {
                 Err(e) => return Err(self.fail(what, e)),
             }
         }
+        // Only reachable if the loop bound changes: the second 401 returns above.
         Err(self.fail(what, "401 after authenticating"))
     }
 
