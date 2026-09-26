@@ -1,0 +1,178 @@
+{
+  "ticket": "PMAT-2880",
+  "base": "2718c5214",
+  "base_resolved": "2718c5214",
+  "base_note": "no origin/2718c5214 exists; judged against the local ref",
+  "head": "25dc0546a1b153b0fcecbbe4d0dc000945a1a180",
+  "diff_sha256": "921e34472dc8a19ba38fc599057cc1d82286937a8eb1055f12b66a20a625c576",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 40199,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff completely fulfills the acceptance criteria. It introduces the `reachability_gate` and `selected_dot_kernel` to verify that no quantized dot product falls back to scalar when a SIMD kernel is available on the host, except for explicitly declared gaps (Q5_K for all architectures, Q4_K×f32 for aarch64). The NEON kernels for Q4_K×Q8_K and Q6_K×f32 are properly implemented, bitwise-checked against the scalar kernel (Q4_K) and precision-checked against the f64 reference (Q6_K). The VNNI vs lean AVX2 benchmark in slice 1 is included as an ignored test, and the dispatch logic in `fused_q4k_q8k_parallel_matvec_into` correctly remains unchanged as requested, properly documented by comments. No extraneous changes or forbidden modifications were detected.",
+      "findings": [],
+      "raw_bytes": 2846,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Review of PMAT-2880 diff (2718c5214...HEAD) against all acceptance criteria, receipt claims, and ticket constraints. All 4 slices are verified: (1) Slice 1 bench vnni_reach_bench confirms AVX2 dispatch retains precedence over slower VNNI 4-row on Zen 4; (2) Slice 2 aarch64 NEON Q4_K×Q8_K dot in fused_q4k_q8k_dot_neon achieves exact bitwise parity with scalar reference; (3) Slice 3 aarch64 NEON Q6_K×f32 dot in fused_q6k_dot_neon achieves accuracy within 1e-5·Σ|w·a| of f64 reference; (4) Slice 4 reachability gate in kernel_path.rs correctly enforces that no quantized dot runs scalar on a SIMD host unless explicitly declared in KNOWN_SCALAR_GAPS, and fails if a declared gap closes. No tests assert the opposite, no gates are weakened, all receipt claims are backed by the diff, and no out-of-scope changes exist. Verdict: PASS.",
+      "findings": [],
+      "raw_bytes": 2946,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff 2718c5214...HEAD strictly satisfies all acceptance criteria of PMAT-2880 across Slices 1–4 without scope creep or weakened gates:\n- Slice 1: Benchmarked AVX-512 VNNI 4-row vs lean AVX2 on Zen 4 (ignored test vnni_reach_bench in vnni_reach_bench_tests.rs); dispatch order in q5k_q6k_matvec.rs preserved with measured rationale.\n- Slice 2: Implemented aarch64 NEON Q4_K×Q8_K dot in q4k_q8k_dot_neon.rs, wired into fused_q4k_q8k_dot_simd; verified bitwise identical to scalar via neon_matches_scalar_bitwise.\n- Slice 3: Implemented aarch64 NEON Q6_K×f32 dot in q6k_dot_neon.rs, wired into fused_q6k_dot_simd; verified against f64 reference within 1e-5·Σ|w·a| tolerance via q6k_neon_matches_f64_reference.\n- Slice 4: Added per-ISA reachability gate and selected_dot_kernel in kernel_path.rs. All dispatchers match on selected_dot_kernel; reachability_gate fails on undeclared scalar paths or closed declared gaps.\n- Declared gaps in KNOWN_SCALAR_GAPS are properly scoped and owned by #2880.",
+      "findings": [],
+      "raw_bytes": 3291,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}
