@@ -1,4 +1,4 @@
-//! #2880: the aarch64 NEON Q4K×Q8K dot against the scalar reference.
+//! #2880: the aarch64 NEON Q4K×Q8K, Q6_K and Q4_K×f32 dots against their references.
 //! Bench: cargo test -p aprender-serve --release --lib neon_q4k_q8k_bench -- --ignored --nocapture
 
 use super::fused_k::{fused_q4k_q8k_dot, fused_q4k_q8k_dot_neon, fused_q4k_q8k_dot_simd};
@@ -202,6 +202,112 @@ fn neon_q6k_bench() {
             t_s * 1e6,
             t_n * 1e6,
             t_s / t_n
+        );
+    }
+}
+
+// ---- #2880 slice 6: NEON Q4_K × f32 ----
+
+fn f32_activations(n: usize, seed: &mut u64) -> Vec<f32> {
+    (0..n).map(|_| (lcg(seed) as f32 / 2e9) - 1.0).collect()
+}
+
+/// f64 dot of the dequantized weights, and Σ|w·a| as the rounding scale.
+fn q4k_reference(w: &[u8], act: &[f32]) -> (f64, f64) {
+    let deq = super::dequantize_q4_k(w).expect("dequant");
+    deq.iter().zip(act).fold((0.0, 0.0), |(s, m), (&x, &a)| {
+        let t = f64::from(x) * f64::from(a);
+        (s + t, m + t.abs())
+    })
+}
+
+#[test]
+fn q4k_f32_neon_matches_f64_reference() {
+    use super::fused_k::{fused_q4k_dot, fused_q4k_dot_neon, fused_q4k_dot_simd};
+    let mut seed = 0x2880_0006u64;
+    for nsb in [1usize, 2, 7, 16, 24] {
+        for _ in 0..8 {
+            let w = weights(nsb, &mut seed);
+            let act = f32_activations(nsb * QK_K, &mut seed);
+            let (want, mag) = q4k_reference(&w, &act);
+            let tol = 1e-5 * mag;
+            let scalar = f64::from(fused_q4k_dot(&w, &act).expect("scalar"));
+            let neon = f64::from(fused_q4k_dot_neon(&w, &act).expect("neon"));
+            assert!(
+                (scalar - want).abs() <= tol,
+                "scalar off: {scalar} vs {want}"
+            );
+            assert!(
+                (neon - want).abs() <= tol,
+                "nsb={nsb}: neon {neon} vs {want} (tol {tol})"
+            );
+            assert_eq!(
+                fused_q4k_dot_simd(&w, &act).expect("simd").to_bits(),
+                fused_q4k_dot_neon(&w, &act).expect("neon").to_bits(),
+                "dispatch must reach NEON"
+            );
+        }
+    }
+}
+
+/// One weight at a time: a wrong nibble or scale index moves the result by a
+/// whole quantum, far outside the rounding tolerance.
+#[test]
+fn q4k_f32_neon_single_value_probe() {
+    use super::fused_k::fused_q4k_dot_neon;
+    let mut seed = 0x2880_0066u64;
+    let w = weights(1, &mut seed);
+    for i in 0..QK_K {
+        let mut act = vec![0f32; QK_K];
+        act[i] = 1.0;
+        let (want, _) = q4k_reference(&w, &act);
+        let got = f64::from(fused_q4k_dot_neon(&w, &act).expect("neon"));
+        assert!(
+            (got - want).abs() <= 1e-5 * want.abs().max(1e-3),
+            "value {i}: neon {got} vs {want}"
+        );
+    }
+}
+
+#[test]
+fn q4k_f32_neon_rejects_what_scalar_rejects() {
+    use super::fused_k::fused_q4k_dot_neon;
+    let mut seed = 11u64;
+    let w = weights(2, &mut seed);
+    let act = vec![0.5f32; 2 * QK_K];
+    assert!(fused_q4k_dot_neon(&w[..=SB], &act).is_err());
+    assert!(fused_q4k_dot_neon(&w, &act[..QK_K]).is_err());
+}
+
+#[test]
+#[ignore = "perf measurement for #2880"]
+fn neon_q4k_f32_bench() {
+    use super::fused_k::{fused_q4k_dot, fused_q4k_dot_simd};
+    let mut seed = 0x2880u64;
+    for &(in_dim, out_dim) in &[(2048usize, 2048usize), (2048, 6144), (6144, 2048)] {
+        let nsb = in_dim / QK_K;
+        let w = weights(out_dim * nsb, &mut seed);
+        let act = f32_activations(in_dim, &mut seed);
+        let bpr = nsb * SB;
+        let (mut t_s, mut t_v) = (f64::MAX, f64::MAX);
+        let mut sink = 0f32;
+        for _ in 0..20 {
+            let t = Instant::now();
+            for r in 0..out_dim {
+                sink += fused_q4k_dot(&w[r * bpr..(r + 1) * bpr], &act).expect("scalar");
+            }
+            t_s = t_s.min(t.elapsed().as_secs_f64());
+            let t = Instant::now();
+            for r in 0..out_dim {
+                sink += fused_q4k_dot_simd(&w[r * bpr..(r + 1) * bpr], &act).expect("simd");
+            }
+            t_v = t_v.min(t.elapsed().as_secs_f64());
+        }
+        println!(
+            "neon_q4k_f32 {in_dim}x{out_dim}: scalar {:.1}us  neon {:.1}us  speedup {:.2}x  (sink {sink:.1})",
+            t_s * 1e6,
+            t_v * 1e6,
+            t_s / t_v
         );
     }
 }
