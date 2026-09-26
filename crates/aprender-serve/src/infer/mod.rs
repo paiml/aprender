@@ -909,6 +909,7 @@ mod log_head_4018 {
 
 include!("inference_result.rs");
 include!("gguf_gpu_generate.rs");
+include!("f2_dense_gate.rs");
 include!("mod_log_transformer_eos.rs");
 include!("mod_05.rs");
 include!("batch.rs");

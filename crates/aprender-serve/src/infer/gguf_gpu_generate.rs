@@ -371,6 +371,7 @@ fn try_gguf_gpu_generate(
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     verbose: bool,
+    model_path: &std::path::Path,
 ) -> std::result::Result<Result<(Vec<u32>, bool)>, Box<crate::gguf::OwnedQuantizedModel>> {
     use crate::gguf::OwnedQuantizedModelCuda;
 
@@ -400,15 +401,18 @@ fn try_gguf_gpu_generate(
 
     // #3973: three states, each handled here. Routing is unchanged: only a MISMATCH
     // leaves the GPU. A not-measured probe proceeds, and says it is unvalidated.
-    match validate_gpu_first_token(&mut cuda_model, gen_config, input_tokens) {
-        F2Outcome::Mismatch => {
+    // #3602: behind its receipt. The guard is a CPU reference forward of the whole
+    // prompt; run per call it made `--gpu` reach its first token no sooner than
+    // `--no-gpu` finished its prompt.
+    match validate_dense_f2_receipted(&mut cuda_model, gen_config, input_tokens, model_path) {
+        DenseF2::Receipt | DenseF2::Fresh(F2Outcome::Validated { .. }) => {},
+        DenseF2::Fresh(F2Outcome::Mismatch) => {
             // Validation failed — extract model back for CPU fallback
             return Err(Box::new(cuda_model.into_model()));
         },
-        F2Outcome::NotMeasured { reason } => {
+        DenseF2::Fresh(F2Outcome::NotMeasured { reason }) => {
             eprintln!("[GH-480] F2 validation NOT MEASURED — {reason}. GPU output is UNVALIDATED (#3973)");
         },
-        F2Outcome::Validated { .. } => {},
     }
 
     // Reuse existing CUDA model — generate_gpu_resident() creates fresh KV cache
@@ -502,7 +506,13 @@ fn run_gguf_generate(
     #[cfg(feature = "cuda")]
     let model = if !config.no_gpu && !has_legacy_quant {
         gpu_attempted = true;
-        match try_gguf_gpu_generate(model, input_tokens, gen_config, config.verbose) {
+        match try_gguf_gpu_generate(
+            model,
+            input_tokens,
+            gen_config,
+            config.verbose,
+            &config.model_path,
+        ) {
             Ok(result) => return result.map(|(t, u)| (t, u, true)),
             Err(returned_model) => *returned_model, // GPU failed, use returned model for CPU
         }

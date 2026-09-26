@@ -309,6 +309,30 @@ pub fn model_sha256(bytes: &[u8]) -> String {
     s
 }
 
+/// [`model_sha256`] of a file, streamed (#3602): the dense path holds no mapping
+/// of the file it loaded, and reading a 4.7 GB model into one buffer to hash it
+/// would double its footprint. Same digest as `model_sha256(&std::fs::read(p)?)`.
+pub fn model_sha256_file(path: &Path) -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read as _;
+    let mut f = std::fs::File::open(path)?;
+    let mut h = Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        h.update(&buf[..n]);
+    }
+    let mut s = String::with_capacity(64);
+    for b in h.finalize() {
+        use std::fmt::Write as _;
+        let _ = write!(s, "{b:02x}");
+    }
+    Ok(s)
+}
+
 /// The BUILD that ran the guard: `<CARGO_PKG_VERSION> exe:<16 hex of the running executable's
 /// sha256>`.
 ///
