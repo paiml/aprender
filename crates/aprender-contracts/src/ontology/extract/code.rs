@@ -324,10 +324,14 @@ pub(crate) struct ManifestNames {
     pub(crate) package: Option<String>,
     lib: Option<String>,
     lib_path: Option<String>,
+    /// Each `[[example]]` table as `(name, path)` — cargo's explicit example targets (aprender#3560 R3).
+    pub(crate) examples: Vec<(Option<String>, Option<String>)>,
+    /// `[package] autoexamples = false` turns off discovery of `examples/*.rs` and `examples/*/main.rs`.
+    pub(crate) autoexamples_off: bool,
 }
 
-/// `[package] name`, `[lib] name` and `[lib] path` by a section-aware line scan — the two keys this walk needs,
-/// read without a TOML crate.
+/// `[package] name`, `[lib] name`, `[lib] path`, `[package] autoexamples` and every `[[example]]` table's `name` and
+/// `path` by a section-aware line scan, read without a TOML crate.
 pub(crate) fn manifest_names(text: &str) -> ManifestNames {
     let mut out = ManifestNames::default();
     let mut section = String::new();
@@ -335,6 +339,9 @@ pub(crate) fn manifest_names(text: &str) -> ManifestNames {
         let t = line.trim();
         if t.starts_with('[') && t.ends_with(']') {
             section = t.trim_matches(['[', ']']).trim().to_string();
+            if t.starts_with("[[") && section == "example" {
+                out.examples.push((None, None));
+            }
             continue;
         }
         let Some((k, v)) = t.split_once('=') else {
@@ -346,6 +353,17 @@ pub(crate) fn manifest_names(text: &str) -> ManifestNames {
             ("package", "name") => out.package = Some(v),
             ("lib", "name") => out.lib = Some(v),
             ("lib", "path") => out.lib_path = Some(v),
+            ("package", "autoexamples") => out.autoexamples_off = v == "false",
+            ("example", "name") => {
+                if let Some(e) = out.examples.last_mut() {
+                    e.0 = Some(v);
+                }
+            }
+            ("example", "path") => {
+                if let Some(e) = out.examples.last_mut() {
+                    e.1 = Some(v);
+                }
+            }
             _ => {}
         }
     }

@@ -1,7 +1,9 @@
 //! aprender#3560 R1 — `extract:example`: every cargo example target in the workspace becomes an `ont:Example`.
 //!
-//! The focus objects are `<member>/examples/*.rs` and `<member>/examples/*/main.rs` — cargo's two auto-discovered
-//! example forms — of every workspace MEMBER, found by the same `[workspace] members`/`exclude` reading
+//! The focus objects are the example targets cargo would build for every workspace MEMBER: each `[[example]]` table
+//! (`name`, optional `path` — the cookbook declares all of its targets this way, under `examples/<topic>/`), plus,
+//! unless `autoexamples = false`, `<member>/examples/*.rs` and `<member>/examples/*/main.rs` — cargo's two
+//! auto-discovered forms. Members are found by the same `[workspace] members`/`exclude` reading
 //! [`super::code`] uses. An `examples/` dir under a manifest the workspace excludes is counted
 //! (`non_member_examples`) and not extracted: cargo will not build it, so it is not an example of this workspace.
 //! Helper modules below `examples/<x>/` other than `main.rs` are not targets.
@@ -24,7 +26,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use super::code::{manifest_names, workspace_membership};
+use super::code::{manifest_names, workspace_membership, ManifestNames};
 use super::gguf::ExtractError;
 use crate::ontology::rdf::{iri_path, ont, Graph, Term, PROV_ENTITY, RDF_TYPE};
 
@@ -55,8 +57,10 @@ pub const FAMILIES: &[(&str, &[&str])] = &[
 pub const CURRENT_FAMILY: &str = "qwen3.5";
 
 /// Examples on this tree that name a model family and neither name [`CURRENT_FAMILY`] nor declare a pin — measured
-/// 2026-09-24 on B3 (430 of the 432 that name a model). Shrink-only: lower it as examples migrate or pin; never raise it.
-pub const STALE_EXAMPLES_PINNED: usize = 430;
+/// 2026-09-24 on B3 (430 of the 432 that name a model). Shrink-only: lower it as examples migrate or pin; never raise it
+/// for a new example. Raised ONCE, 2026-09-26, to 434 of 439: a measurement correction, not new drift — the walk began
+/// reading `[[example]]` targets (#3560 R3) and found the four `aprender-train/examples/llama2/*.rs` it had never seen.
+pub const STALE_EXAMPLES_PINNED: usize = 434;
 
 /// The marker that pins an example to an older model, followed by the reason.
 pub const PIN_MARKER: &str = "ont:model-pinned:";
@@ -141,9 +145,49 @@ pub struct ExampleStats {
     pub errors: Vec<ExtractError>,
 }
 
-/// The example target files of the package in `dir`, byte-ordered: `examples/*.rs` and `examples/*/main.rs`.
+/// The example targets of the package in `dir` with the names cargo gives them, byte-ordered by file: every
+/// `[[example]]` table of its manifest `m`, then — unless `autoexamples = false` — each `examples/*.rs` and
+/// `examples/*/main.rs` no table already declares. The second list holds each declared file that is absent: cargo
+/// refuses that manifest, so the walk reports it rather than skipping it.
 #[must_use]
-pub fn targets_of(dir: &Path) -> Vec<PathBuf> {
+pub(crate) fn targets_of(dir: &Path, m: &ManifestNames) -> (Vec<(PathBuf, String)>, Vec<PathBuf>) {
+    let mut out = Vec::new();
+    let mut missing = Vec::new();
+    for (name, path) in &m.examples {
+        let Some(name) = name else { continue };
+        let file = match path {
+            Some(p) => dir.join(p),
+            None => {
+                let flat = dir.join("examples").join(format!("{name}.rs"));
+                if flat.is_file() {
+                    flat
+                } else {
+                    dir.join("examples").join(name).join("main.rs")
+                }
+            }
+        };
+        if file.is_file() {
+            out.push((file, name.clone()));
+        } else {
+            missing.push(file);
+        }
+    }
+    if !m.autoexamples_off {
+        let declared: BTreeSet<PathBuf> = out.iter().map(|(f, _)| f.clone()).collect();
+        let auto = auto_targets(dir)
+            .into_iter()
+            .filter(|f| !declared.contains(f));
+        out.extend(auto.map(|f| {
+            let n = target_name(&f);
+            (f, n)
+        }));
+    }
+    out.sort();
+    (out, missing)
+}
+
+/// Cargo's two auto-discovered example forms under `dir`: `examples/*.rs` and `examples/*/main.rs`.
+fn auto_targets(dir: &Path) -> Vec<PathBuf> {
     let Ok(rd) = std::fs::read_dir(dir.join("examples")) else {
         return Vec::new();
     };
@@ -160,6 +204,25 @@ pub fn targets_of(dir: &Path) -> Vec<PathBuf> {
         .collect();
     out.sort();
     out
+}
+
+/// How many `.rs` files sit anywhere under `dir` (0 when it is absent).
+fn rs_files_under(dir: &Path) -> usize {
+    let mut n = 0;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for p in rd.flatten().map(|e| e.path()) {
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.extension().is_some_and(|e| e == "rs") {
+                n += 1;
+            }
+        }
+    }
+    n
 }
 
 /// Every `Cargo.toml` under `root`, skipping build and vcs dirs, byte-ordered.
@@ -216,12 +279,34 @@ pub fn walk(root: &Path) -> (Vec<Example>, ExampleStats) {
     let mut out = Vec::new();
     for manifest in manifests(root) {
         let dir = manifest.parent().unwrap_or(root);
-        let package = std::fs::read_to_string(&manifest)
-            .ok()
-            .and_then(|t| manifest_names(&t).package);
+        let names = std::fs::read_to_string(&manifest)
+            .map(|t| manifest_names(&t))
+            .unwrap_or_default();
+        let package = names.package.clone();
         let admitted = membership.as_ref().is_none_or(|m| m.admits(root, dir));
         stats.members += usize::from(admitted && package.is_some());
-        let targets = targets_of(dir);
+        let (targets, missing) = targets_of(dir, &names);
+        let member = admitted && package.is_some();
+        for file in missing.iter().filter(|_| member) {
+            stats.errors.push(ExtractError {
+                file: rel(root, file),
+                what: format!(
+                    "an [[example]] in {} declares a file that does not exist",
+                    rel(root, &manifest)
+                ),
+            });
+        }
+        // The cookbook shape (aprender#3560 R3): 1825 targets in `examples/<topic>/<x>.rs`, reachable only through
+        // `[[example]]`. A walk that misses that form reads zero and must say so, workspace root or not.
+        let on_disk = rs_files_under(&dir.join("examples"));
+        if member && targets.is_empty() && on_disk > 0 {
+            stats.errors.push(ExtractError {
+                file: rel(root, &manifest),
+                what: format!(
+                    "{on_disk} .rs file(s) under examples/ and zero example targets read — the walk measured nothing"
+                ),
+            });
+        }
         if targets.is_empty() {
             continue;
         }
@@ -230,7 +315,7 @@ pub fn walk(root: &Path) -> (Vec<Example>, ExampleStats) {
             continue;
         };
         stats.packages += 1;
-        for file in targets {
+        for (file, name) in targets {
             let Ok(text) = std::fs::read_to_string(&file) else {
                 stats.errors.push(ExtractError {
                     file: rel(root, &file),
@@ -241,7 +326,7 @@ pub fn walk(root: &Path) -> (Vec<Example>, ExampleStats) {
             out.push(Example {
                 file: rel(root, &file),
                 krate: krate.clone(),
-                name: target_name(&file),
+                name,
                 families: families_in(&text),
                 pinned: pin_reason(&text),
             });

@@ -231,3 +231,63 @@ fn the_repo_stale_examples_are_pinned_shrink_only() {
         stats.stale
     );
 }
+
+/// aprender#3560 R3 — the cookbook shape: one package, no `[workspace]`, every target declared by `[[example]]` under
+/// `examples/<topic>/`. The R1 walk knew only the auto forms and read ZERO of the cookbook's 1825 targets, green.
+#[test]
+fn declared_example_targets_are_read_and_a_package_that_yields_none_is_an_error() {
+    let d = tempfile::tempdir().unwrap();
+    let r = d.path();
+    write(
+        r,
+        "Cargo.toml",
+        "[package]\nname = \"cookbook\"\nautoexamples = false\n\n[[example]]\nname = \"serve_qwen\"\npath = \
+         \"examples/serving/serve_qwen.rs\"\n\n[[example]]\nname = \"flat\"\n\n[[example]]\nname = \"gone\"\npath = \
+         \"examples/serving/gone.rs\"\n\n[dependencies]\nname = \"not-an-example\"\n",
+    );
+    write(
+        r,
+        "examples/serving/serve_qwen.rs",
+        "// Qwen3.5-2B\nfn main() {}\n",
+    );
+    write(r, "examples/flat.rs", "fn main() {}\n");
+    write(r, "examples/auto_only.rs", "fn main() {}\n");
+    let (got, stats) = walk(r);
+    let names: Vec<(&str, &str)> = got
+        .iter()
+        .map(|e| (e.file.as_str(), e.name.as_str()))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("examples/flat.rs", "flat"),
+            ("examples/serving/serve_qwen.rs", "serve_qwen"),
+        ],
+        "declared targets with their declared names; autoexamples = false keeps auto_only.rs out"
+    );
+    assert_eq!(stats.errors.len(), 1, "{:?}", stats.errors);
+    assert_eq!(stats.errors[0].file, "examples/serving/gone.rs");
+
+    // The same tree with the tables gone: cargo builds none of the nested files, and the walk must say it read
+    // nothing rather than pass over 3 .rs files.
+    let e = tempfile::tempdir().unwrap();
+    write(e.path(), "Cargo.toml", "[package]\nname = \"cookbook\"\n");
+    write(e.path(), "examples/serving/serve_qwen.rs", "fn main() {}\n");
+    let (got, stats) = walk(e.path());
+    assert!(got.is_empty());
+    assert_eq!(stats.errors.len(), 1, "{:?}", stats.errors);
+    assert!(stats.errors[0].what.contains("zero example targets"));
+
+    // Declared AND auto-discoverable is one target under the declared name, not two.
+    let f = tempfile::tempdir().unwrap();
+    write(
+        f.path(),
+        "Cargo.toml",
+        "[package]\nname = \"p\"\n[[example]]\nname = \"renamed\"\npath = \"examples/a.rs\"\n",
+    );
+    write(f.path(), "examples/a.rs", "fn main() {}\n");
+    let (got, stats) = walk(f.path());
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].name, "renamed");
+    assert!(stats.errors.is_empty());
+}

@@ -15,7 +15,7 @@
 #   the current one (qwen3.5), or say why not.
 #
 # ARMING: both shapes are REPORTED, not armed. `examples-well-formed` holds on
-#   this tree. `examples-model-current` (R4) does not: 430 examples name an
+#   this tree. `examples-model-current` (R4) does not: 434 examples name an
 #   older model. R4's gate is the shrink-only pin, which CI's --lib run holds:
 #   a NEW stale example is RED today; the shape arms when the pin reaches 0.
 # PIN: an example that names an older model on purpose says so with
@@ -130,7 +130,7 @@ falsification_tests:
     if_fails: a stale example passes as current, or a pin without a reason exempts it
   - id: FALSIFY-DOCS-007
     rule: the stale count is pinned shrink-only (R4's drift gate)
-    prediction: the repo's stale examples equal STALE_EXAMPLES_PINNED (430 on 2026-09-24)
+    prediction: the repo's stale examples equal STALE_EXAMPLES_PINNED (430 on 2026-09-24; 434 on 2026-09-26 once `[[example]]` targets were read)
     test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::the_repo_stale_examples_are_pinned_shrink_only
     if_fails: a new example on an older model landed (the message lists the stale files), or examples migrated and the pin was not lowered
   - id: FALSIFY-DOCS-008
@@ -153,6 +153,11 @@ falsification_tests:
     prediction: more than 300 pages and 300 SUMMARY links, no extractor error; stale and dark pages equal STALE_BOOK_PAGES_PINNED and DARK_BOOK_PAGES_PINNED
     test: cargo test -p aprender-contracts --lib ontology::extract::book::tests
     if_fails: a new page on an older model or outside SUMMARY.md landed (the message lists the files), or pages were fixed and the pin was not lowered
+  - id: FALSIFY-DOCS-012
+    rule: an example target is what cargo builds — `[[example]]` tables (name, optional path, autoexamples = false) as well as the two auto forms; a package whose examples/ holds .rs files and yields no target is an error
+    prediction: a cookbook-shaped package (no workspace, targets under examples/<topic>/ declared by [[example]]) yields exactly its declared targets under their declared names; a declared file that is absent is one error; the same tree without the tables is one "zero example targets" error, never a green over 0
+    test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::declared_example_targets_are_read_and_a_package_that_yields_none_is_an_error
+    if_fails: the walk went back to auto-discovery only — measured before the fix, apr-cookbook read 0 of 1825 targets and passed, and this repo missed 6 (4 of them stale, aprender-train/examples/llama2)
 
 qa_gate:
   required_checks:
@@ -170,7 +175,7 @@ shapes:
       - {path: example:name, minCount: 1, maxCount: 1}
       - {path: example:namesQwen35, minCount: 1, maxCount: 1, in: [true, false]}
       - {path: example:modelCurrent, minCount: 1, maxCount: 1, in: [true, false]}
-  # R4, REPORTED, not armed: 430 of the 432 examples that name a model name an older one. The drift gate is the
+  # R4, REPORTED, not armed: 434 of the 439 examples that name a model name an older one. The drift gate is the
   # shrink-only pin STALE_EXAMPLES_PINNED (FALSIFY-DOCS-007), not this shape; arm it when the pin reaches 0.
   - id: examples-model-current
     targetClass: ont:Example
