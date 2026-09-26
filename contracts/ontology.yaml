@@ -156,6 +156,10 @@ entity_types:
   # aprender#3715: a release's receipts (per-host inventory + cells, kernel diffs, context rungs, the dogfood
   # receipt R5 judged), extracted ONLY when a release subject is given — an ordinary PR has no release.
   - {name: release-evidence, extractor: release_evidence, implemented: true}
+  # #3560 R3: apr-cookbook's `cookbook-recipe/v1` recipes (`entity: {type: recipe, ref: recipes/apr}`), read by the json
+  # extractor through the contract's own vocabulary. It derives the row the cookbook's script used to write as JSONL
+  # (argv0_is_apr, placeholders_resolve, receipt_current_pass), so the shape judges the recipes, not a copy.
+  - {name: recipe, extractor: json, implemented: true}
   # ONT-4f (aprender#4330): GitHub entities as COMMITTED SNAPSHOTS (evidence/github/<name>/<ref-slug>.json), read by
   # the json extractor through the vocabulary here — never a live API call. `version` is the snapshot's own field
   # the ref's `@<version>` slot must equal; a disagreement is refused naming both values.

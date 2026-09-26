@@ -444,6 +444,7 @@ fn by_entity_type(extraction: &extract::Extraction) -> BTreeMap<String, usize> {
         ("code", extraction.code.symbols),
         ("lean", extraction.lean.statements),
         ("example", extraction.example.examples),
+        ("recipe", extraction.recipe.recipes),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
@@ -499,6 +500,8 @@ fn extract_controls() -> BTreeMap<String, String> {
         ("code", code::positive_control()),
         ("lean", lean::positive_control()),
         ("example", example::positive_control()),
+        // #3560 R3: an undeclared {model:slot} extracts as placeholders_resolve=false; no recipe is refused
+        ("recipe", json::recipe::positive_control()),
         (
             "parity-receipt",
             parity_receipt::positive_control(&parity_receipt::control_sample()),

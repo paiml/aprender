@@ -27,6 +27,9 @@ use crate::ontology::shapes::expand;
 /// ONT-4f (aprender#4330): the GitHub snapshot entity types, read through this module's [`node`].
 pub mod github;
 
+/// #3560 R3: apr-cookbook's `cookbook-recipe/v1` recipes, read through this module's [`node`].
+pub mod recipe;
+
 /// The declaration's fault: the gate exits 3 naming the contract and the reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExtractError {
@@ -46,6 +49,12 @@ pub enum ExtractError {
     VocabularyIncomplete { contract: String, what: String },
     /// A nested object (or array of objects) under `key` that `vocabulary.nested` does not name.
     Unmapped { contract: String, key: String },
+    /// #3560 R3: a `recipe` contract whose `ref` holds no recipe, or a recipe that is not a YAML mapping.
+    Recipe {
+        contract: String,
+        path: String,
+        why: String,
+    },
 }
 
 impl std::fmt::Display for ExtractError {
@@ -64,6 +73,9 @@ impl std::fmt::Display for ExtractError {
                 f,
                 "extract:json {contract}: nested key `{key}` is not in vocabulary.nested — name its class or drop it"
             ),
+            Self::Recipe { contract, path, why } => {
+                write!(f, "extract:recipe {contract}: `{path}`: {why}")
+            }
         }
     }
 }

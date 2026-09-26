@@ -5,8 +5,11 @@
 # R1 (this file's first row): extract:example — every cargo example target of a
 #   workspace member (examples/*.rs, examples/*/main.rs) is an ont:Example with
 #   its file, crate, target name, and the model families its text names.
+# R3: extract:recipe — apr-cookbook's cookbook-recipe/v1 recipes as nodes, derived by
+#   pv itself (entity: {type: recipe, ref: recipes/apr}). The cookbook's closed shape
+#   is unchanged; only its entity: block moves off the script-derived recipes.jsonl.
 # LATER ROWS (not claimed here): R2 book pages (after ONT-4c's readme reader),
-#   R3 apr-cookbook (its own repo), R5 every example builds and runs.
+#   R5 every example builds and runs.
 # R4: the model-currency shape — an example that names a model family must name
 #   the current one (qwen3.5), or say why not.
 #
@@ -64,6 +67,19 @@ equations:
     postconditions:
       - "a new example naming an older model without a pin fails CI's --lib run naming the file"
     lean_theorem: none — L4 not declared
+  extract_recipe:
+    formula: "recipes(c) = sort_by_components({ f | f ∈ walk(root/ref(c)), ext(f) = yaml }) ; row(f) = the cookbook's derivation (recipes_to_jsonl.py, apr-cookbook#440) over bytes(f)"
+    domain: "a contract with entity: {type: recipe, ref: <dir>} and a vocabulary; receipts under root/receipts, or entity.receipts"
+    codomain: "one node per recipe, typed root_class and prov:Entity, through the same node() a json document takes"
+    invariants:
+      - "argv0_is_apr ⇔ argv[0] = apr ; placeholders_resolve ⇔ { s | {model:s} ∈ argv } = keys(models)"
+      - "receipt_current_pass ⇔ hosts ≠ ∅ ∧ ∀ h ∈ hosts: receipts/<CURRENT>/h/<id>.json has verdict PASS, the CURRENT sha, and sha256(bytes(f))"
+    preconditions:
+      - "every recipe is a YAML mapping"
+    postconditions:
+      - "|recipes(c)| = 0 ⇒ an extractor error (exit 3), never a smaller corpus graded green"
+      - "the graph equals extract:json over the JSONL line the derivation wrote, so the cookbook's verdicts do not move"
+    lean_theorem: none — L4 not declared
 
 invariants:
   - id: DOCS-INV-001
@@ -115,10 +131,26 @@ falsification_tests:
     prediction: the repo's stale examples equal STALE_EXAMPLES_PINNED (430 on 2026-09-24)
     test: cargo test -p aprender-contracts --lib ontology::extract::example::tests::the_repo_stale_examples_are_pinned_shrink_only
     if_fails: a new example on an older model landed (the message lists the stale files), or examples migrated and the pin was not lowered
+  - id: FALSIFY-DOCS-008
+    rule: extract:recipe hands the shape the triples the derived JSONL did
+    prediction: the D1 recipe's node equals extract:json over its derived JSONL line, byte for byte
+    test: cargo test -p aprender-contracts --lib ontology::extract::json::recipe::tests::the_extracted_graph_equals_the_json_extraction_of_the_derived_jsonl_line
+    if_fails: moving the cookbook off recipes.jsonl changes its closed shape's verdicts
+  - id: FALSIFY-DOCS-009
+    rule: each derived fact turns only on its own defect
+    prediction: "argv[0] not apr, an undeclared or half-matched {model:slot}, and an exit-only expect each turn exactly their field; a receipt passes only for every host, PASS, the CURRENT sha and these bytes"
+    test: cargo test -p aprender-contracts --lib ontology::extract::json::recipe
+    if_fails: a recipe the cookbook refused would extract as conforming
+  - id: FALSIFY-DOCS-010
+    rule: an empty corpus or a non-recipe is refused
+    prediction: "an empty ref dir or a list-rooted YAML is ExtractError::Recipe, an absent ref is RefUnreadable, and a refused corpus adds no node"
+    test: cargo test -p aprender-contracts --lib ontology::extract::json::recipe::tests::an_empty_corpus_or_a_non_recipe_is_refused_never_graded
+    if_fails: a walk that read nothing reports a clean cookbook
 
 qa_gate:
   required_checks:
     - "cargo test -p aprender-contracts --lib ontology::extract::example"
+    - "cargo test -p aprender-contracts --lib ontology::extract::json::recipe"
     - "cargo test -p aprender-contracts --lib lint::shapes_gate"
 
 shapes:

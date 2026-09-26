@@ -51,6 +51,8 @@ pub struct Extraction {
     pub parity: parity_receipt::ParityStats,
     /// ONT-4f: the GitHub snapshots under `evidence/github/<type>/`, per Σ snapshot type, and the refused files.
     pub github: json::github::GithubStats,
+    /// #3560 R3: the `cookbook-recipe/v1` recipes every `entity: {type: recipe}` contract reads.
+    pub recipe: json::recipe::RecipeStats,
     /// aprender#3715: the release evidence — `None` unless a release subject was given (an ordinary PR has none).
     pub release: Option<release_evidence::ReleaseStats>,
     /// ONT-4d: how many `rdf:type` triples the Σ closure added.
@@ -144,6 +146,12 @@ pub fn all_with(
         let entity_type = pv_contract::scalar(doc.get("entity").and_then(|e| e.get("type")));
         if entity_type.as_deref() == Some(crate::ontology::sigma::RESERVED_ENTITY_TYPE) {
             return Err(ExtractFailure::ReservedEntityType { contract: stem });
+        }
+        if json::recipe::applies(&doc) {
+            out.recipe.recipes += json::recipe::extract_into(&mut out.graph, &stem, &doc, root)
+                .map_err(ExtractFailure::Json)?;
+            out.entities_extracted.push(stem);
+            continue;
         }
         if !json::applies(&doc) {
             continue;
