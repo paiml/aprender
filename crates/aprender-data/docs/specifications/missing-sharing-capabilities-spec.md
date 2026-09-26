@@ -388,26 +388,26 @@ impl LocalRegistry {
 
 ```bash
 # Local operations
-alimentar registry index ./my-dataset.parquet
-alimentar registry list
-alimentar registry search "sentiment classification"
-alimentar registry info alimentar:abc123...
-alimentar registry card alimentar:abc123...
+aprender-data registry index ./my-dataset.parquet
+aprender-data registry list
+aprender-data registry search "sentiment classification"
+aprender-data registry info alimentar:abc123...
+aprender-data registry card alimentar:abc123...
 
 # Export/import
-alimentar registry export alimentar:abc123... -o dataset.alimentar
-alimentar registry import dataset.alimentar
+aprender-data registry export alimentar:abc123... -o dataset.alimentar
+aprender-data registry import dataset.alimentar
 
 # Signing
-alimentar registry keygen -o ~/.alimentar/key.enc
-alimentar registry sign alimentar:abc123...
-alimentar registry verify alimentar:abc123...
+aprender-data registry keygen -o ~/.alimentar/key.enc
+aprender-data registry sign alimentar:abc123...
+aprender-data registry verify alimentar:abc123...
 
 # Federation (optional)
-alimentar registry serve --port 8765
-alimentar registry peers
-alimentar registry sync --peer 192.168.1.100:8765
-alimentar registry pull alimentar:abc123... --peer 192.168.1.100:8765
+aprender-data registry serve --port 8765
+aprender-data registry peers
+aprender-data registry sync --peer 192.168.1.100:8765
+aprender-data registry pull alimentar:abc123... --peer 192.168.1.100:8765
 ```
 
 ## 10. Implementation Plan

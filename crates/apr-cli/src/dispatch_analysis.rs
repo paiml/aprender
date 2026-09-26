@@ -381,7 +381,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
 /// Run one alimentar command through `alimentar::cli::dispatch` -- the SAME
 /// function the standalone binary calls, so `apr data x <cmd>` and
-/// `alimentar <cmd>` cannot drift.
+/// `aprender-data <cmd>` cannot drift.
 ///
 /// The command is re-parsed from argv rather than moved out of the parsed value:
 /// the apr dispatch chain takes `&Cli`, and alimentar's arg types are not all
@@ -408,7 +408,7 @@ fn dispatch_alimentar_passthrough(
         Ok(())
     } else {
         Err(CliError::ValidationFailed(
-            "alimentar command failed".to_string(),
+            "aprender-data command failed".to_string(),
         ))
     }
 }

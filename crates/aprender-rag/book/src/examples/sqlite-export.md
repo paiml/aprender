@@ -60,10 +60,10 @@ for result in &results {
 
 ## CLI Equivalent
 
-The `--sqlite` flag on `trueno-rag index` creates a SQLite+FTS5 index alongside the standard JSON index:
+The `--sqlite` flag on `aprender-rag index` creates a SQLite+FTS5 index alongside the standard JSON index:
 
 ```bash
-trueno-rag index --path /data/corpus --output /data/index --recursive --dedup --sqlite
+aprender-rag index --path /data/corpus --output /data/index --recursive --dedup --sqlite
 ```
 
 This produces both `index.json` (for hybrid retrieval) and `index.sqlite` (for BM25 search via batuta oracle).

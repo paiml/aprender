@@ -40,14 +40,14 @@ fn main() {
 
     // Basic usage patterns
     println!("\n--- Basic Usage ---");
-    println!("  alimentar view data.parquet          # View Parquet file");
-    println!("  alimentar view data.csv              # View CSV file");
-    println!("  alimentar view data.json             # View JSON file");
-    println!("  alimentar view data.arrow            # View Arrow IPC file");
+    println!("  aprender-data view data.parquet          # View Parquet file");
+    println!("  aprender-data view data.csv              # View CSV file");
+    println!("  aprender-data view data.json             # View JSON file");
+    println!("  aprender-data view data.arrow            # View Arrow IPC file");
 
     // Search functionality
     println!("\n--- Search Functionality ---");
-    println!("  alimentar view data.parquet --search \"error\"");
+    println!("  aprender-data view data.parquet --search \"error\"");
     println!("  # Opens viewer and jumps to first row containing 'error'");
 
     // Keyboard controls
@@ -71,12 +71,12 @@ fn main() {
     // Integration with other commands
     println!("\n--- Pipeline Integration ---");
     println!("  # Quick inspection workflow");
-    println!("  alimentar info data.parquet     # Check schema first");
-    println!("  alimentar head data.parquet     # Preview first rows");
-    println!("  alimentar view data.parquet     # Interactive exploration");
+    println!("  aprender-data info data.parquet     # Check schema first");
+    println!("  aprender-data head data.parquet     # Preview first rows");
+    println!("  aprender-data view data.parquet     # Interactive exploration");
     println!();
     println!("  # Quality check then view");
-    println!("  alimentar quality check data.csv && alimentar view data.csv");
+    println!("  aprender-data quality check data.csv && aprender-data view data.csv");
 
     // Programmatic usage
     println!("\n--- Programmatic Usage (Library) ---");
@@ -111,6 +111,6 @@ fn main() {
 
     println!("\n=== Demo Complete ===");
     println!(
-        "\nTry it: cargo run --bin alimentar --features cli -- view test_fixtures/data.parquet"
+        "\nTry it: cargo run --bin aprender-data --features cli -- view test_fixtures/data.parquet"
     );
 }

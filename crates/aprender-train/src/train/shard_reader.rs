@@ -3,7 +3,7 @@
 //! Reads a directory of `.bin` files containing little-endian u32 tokens,
 //! chunks them into `seq_length + 1` sequences, and yields `LMBatch`es of
 //! `batch_size` sequences. No licensing filter, no MinHash dedup, no PII
-//! scrub — those belong to `apr-corpus-ingest run`.
+//! scrub — those belong to `aprender-corpus-ingest run`.
 //!
 //! Contract: `contracts/dataset-thestack-python-v1.yaml` (shard format).
 

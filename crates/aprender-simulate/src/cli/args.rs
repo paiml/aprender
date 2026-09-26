@@ -26,10 +26,10 @@ use std::path::PathBuf;
 /// CLI arguments container.
 #[derive(Debug, Clone, PartialEq, Parser)]
 #[command(
-    name = "simular",
+    name = "aprender-simulate",
     version,
     about = "Unified Simulation Engine for the Sovereign AI Stack",
-    // `help` and `version` are real subcommands below, so that `simular help`
+    // `help` and `version` are real subcommands below, so that `aprender-simulate help`
     // keeps printing simular's own help text (see `output::print_help`) rather
     // than clap's auto-generated one. The `-h`/`--help` and `-V`/`--version`
     // FLAGS are still clap's.

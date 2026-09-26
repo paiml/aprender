@@ -5,7 +5,7 @@
 //! # Usage
 //!
 //! ```bash
-//! score [OPTIONS] [PATH]
+//! aprender-score [OPTIONS] [PATH]
 //! ```
 //!
 //! # Scoring Dimensions
@@ -28,7 +28,11 @@ use std::time::Instant;
 
 /// TUI Quality Scorer - SPEC-024 Section 18.10
 #[derive(Parser, Debug)]
-#[command(name = "score", version, about = "TUI Quality Scorer for Rust crates")]
+#[command(
+    name = "aprender-score",
+    version,
+    about = "TUI Quality Scorer for Rust crates"
+)]
 #[allow(clippy::struct_excessive_bools)]
 struct Cli {
     /// Path to crate root (default: current directory)

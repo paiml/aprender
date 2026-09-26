@@ -20,7 +20,7 @@ build-release:
 
 # Build ptop binary
 build-ptop:
-    cargo build -p presentar-terminal --bin ptop --features ptop --release
+    cargo build -p aprender-present-terminal --bin aprender-ptop --features ptop --release
 
 # Run all tests with fixed seed
 test:
@@ -68,7 +68,7 @@ setup:
 
 # Run ptop
 run-ptop: build-ptop
-    ./target/release/ptop
+    ./target/release/aprender-ptop
 
 # Pre-commit checks
 pre-commit: fmt clippy test

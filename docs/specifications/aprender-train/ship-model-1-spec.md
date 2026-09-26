@@ -1476,7 +1476,7 @@ P1.0  Author contracts/apr-cli-pull-dataset-v1.yaml — provable
            model-only, signature is `apr pull <MODEL>`)
          - --include <glob>: subset selection within a repo
          - --license-allowlist <list>: per-row license filter
-           (delegate to `apr-corpus-ingest run` for tabular data)
+           (delegate to `aprender-corpus-ingest run` for tabular data)
          - --revision <rev>: pin to specific git SHA / branch
            (already exists for models, propagate to datasets)
          - drift-prevention falsification: pull a known parquet

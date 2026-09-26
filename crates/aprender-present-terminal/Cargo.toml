@@ -85,12 +85,14 @@ version = "0.10"
 optional = true
 
 [[bin]]
-name = "score"
+# #4430: every shipped [[bin]] is aprender-* (was `score`)
+name = "aprender-score"
 path = "src/bin/score.rs"
 required-features = ["score"]
 
 [[bin]]
-name = "ptop"
+# #4430: every shipped [[bin]] is aprender-* (was `ptop`)
+name = "aprender-ptop"
 path = "src/bin/ptop.rs"
 required-features = ["ptop"]
 

@@ -81,6 +81,9 @@ THE44="docs/audits/dogfood-the-44.yaml"
 GATE_PY="scripts/lib/dogfood_coverage_gate.py"
 IDGUARD="scripts/check_no_cluster_id_keys.sh"
 REASSIGN="docs/audits/cluster_reassignments.yaml"
+# Declared bin renames (#4430): the comparand's rows for <old> are compared as
+# rows of <new>. They must still exist; an unapplied rename is RED.
+RENAMES="scripts/bin_renames.txt"
 SKILL=".claude/skills/apr-dogfood/SKILL.md"
 BASE_REF="${DOGFOOD_BASE_REF:-origin/main}"
 
@@ -356,7 +359,7 @@ run_gate() {
   done
   python3 "$root/$GATE_PY" --base "$basecsv" --head "$root/$LEDGER" \
     --the44 "$root/$THE44" --reassignments "$root/$REASSIGN" \
-    --comparand-source "$mode" "${pairargs[@]}"
+    --renames "$root/$RENAMES" --comparand-source "$mode" "${pairargs[@]}"
   rc=$?
   rm -f "$basecsv"
 
@@ -378,6 +381,10 @@ selftest_build_repo() {
   cp "$SELF" "$td/scripts/check_dogfood_coverage.sh"
   cp "$REPO_ROOT/$GATE_PY" "$td/$GATE_PY"
   cp "$REPO_ROOT/$IDGUARD" "$td/$IDGUARD"
+  # cp keeps the source mode: from a read-only checkout (a review snapshot) the
+  # later restore-after-mutant `cp` would fail and leak the mutant into every
+  # following row (#4430 lanes).
+  chmod u+w "$td/scripts/check_dogfood_coverage.sh" "$td/$GATE_PY" "$td/$IDGUARD"
 
   for i in 1 2 3; do printf 'fn f%s() {}\n' "$i" > "$td/crates/demo/src/m$i.rs"; done
 
@@ -795,6 +802,24 @@ if [ "${1:-}" = "--self-test" ]; then
   fi
   rm -rf "${SHALLOW:?}"
   git -C "$TD" reset -q --hard HEAD~1
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+  printf '\n'
+
+  # --- M11 (G2.2 renames, #4430): renaming a bin in the ledger drops every row
+  #     of the old name -- RED unless the rename is DECLARED; a declaration the
+  #     ledger does not follow is RED too.
+  printf 'M11 G2.2 renames — rename the demo bin in the ledger\n'
+  sed -i 's/^demo,/demo2,/' "$TD/$LEDGER"
+  selftest_run "$TD" "bin renamed, rename undeclared" "RED" || FAILED=1
+  printf 'demo demo2\n' > "$TD/$RENAMES"
+  selftest_run "$TD" "bin renamed, rename declared" "GREEN" || FAILED=1
+  git -C "$TD" checkout -q -- "$LEDGER"
+  selftest_run "$TD" "rename declared, ledger not renamed" "RED" || FAILED=1
+  sed -i 's/^demo,/demo2,/' "$TD/$LEDGER"
+  printf 'demo nosuch\n' > "$TD/$RENAMES"
+  selftest_run "$TD" "rename to a bin not in the ledger" "RED" || FAILED=1
+  git -C "$TD" checkout -q -- "$LEDGER"
+  rm -f "${TD:?}/${RENAMES:?}"
   selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
   printf '\n'
 

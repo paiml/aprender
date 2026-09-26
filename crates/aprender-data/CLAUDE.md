@@ -150,10 +150,10 @@ When targeting WASM:
 ## CLI Commands (when implemented)
 
 ```bash
-alimentar import hf squad --output ./data/squad
-alimentar convert data.csv data.parquet
-alimentar registry list|push|pull
-alimentar info|head|schema ./data/train.parquet
+aprender-data import hf squad --output ./data/squad
+aprender-data convert data.csv data.parquet
+aprender-data registry list|push|pull
+aprender-data info|head|schema ./data/train.parquet
 ```
 
 

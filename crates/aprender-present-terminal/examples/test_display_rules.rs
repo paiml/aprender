@@ -1,6 +1,6 @@
 //! Test display rules capabilities detection
 //!
-//! Run with: cargo run -p presentar-terminal --features ptop --example `test_display_rules`
+//! Run with: cargo run -p aprender-present-terminal --features ptop --example `test_display_rules`
 
 use presentar_terminal::widgets::{
     BatteryDisplayRules, DataAvailability, DisplayContext, DisplayRules, DisplayTerminalSize,

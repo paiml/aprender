@@ -18,7 +18,7 @@ cargo build --release -p trueno-rag-cli
 Run a demo RAG query with built-in sample documents.
 
 ```bash
-trueno-rag demo --query "What is machine learning?" --top-k 3
+aprender-rag demo --query "What is machine learning?" --top-k 3
 ```
 
 | Flag | Default | Description |
@@ -32,22 +32,22 @@ Index documents from a file or directory into a persistent index.
 
 ```bash
 # Basic indexing
-trueno-rag index --path docs/ --output index/
+aprender-rag index --path docs/ --output index/
 
 # Recursive with timestamp chunking (for transcripts)
-trueno-rag index --path /data/courses --output /data/index \
+aprender-rag index --path /data/courses --output /data/index \
   --chunk-strategy timestamp --recursive --dimension 4096 --jobs 16
 
 # Semantic embeddings
-trueno-rag index --path docs/ --output index/ \
+aprender-rag index --path docs/ --output index/ \
   --embedder semantic --model mini-lm
 
 # Exclude directories
-trueno-rag index --path /data --output index/ \
+aprender-rag index --path /data --output index/ \
   --recursive --exclude "*/RAW" --exclude "*/RAW/*"
 
 # Export SQLite+FTS5 index alongside JSON (for BM25 search via batuta oracle)
-trueno-rag index --path /data/courses --output /data/index \
+aprender-rag index --path /data/courses --output /data/index \
   --recursive --dedup --sqlite
 ```
 
@@ -76,24 +76,24 @@ Dense and hybrid modes **auto-detect** the index's embedder type: if the index w
 
 ```bash
 # Hybrid retrieval (default — BM25 + semantic RRF fusion)
-trueno-rag query "how does Kubernetes handle pod scheduling" --index index/
+aprender-rag query "how does Kubernetes handle pod scheduling" --index index/
 
 # BM25-only (keyword-rich queries)
-trueno-rag query "AWS Lambda function" --index index/ --mode sparse
+aprender-rag query "AWS Lambda function" --index index/ --mode sparse
 
 # Dense cosine similarity (auto-detects TF-IDF or semantic)
-trueno-rag query "machine learning" --index index/ --mode dense
+aprender-rag query "machine learning" --index index/ --mode dense
 
 # Hybrid retrieval (BM25 + dense with RRF fusion)
-trueno-rag query "how does Kubernetes handle pod scheduling" \
+aprender-rag query "how does Kubernetes handle pod scheduling" \
   --index index/ --mode hybrid
 
 # JSON output with custom fusion
-trueno-rag query "AWS Lambda" --index index/ --format json \
+aprender-rag query "AWS Lambda" --index index/ --format json \
   --mode hybrid --fusion rrf --fusion-k 30 --candidates 100
 
 # Hybrid + lexical reranking (fetches 3x candidates, re-orders by term coverage)
-trueno-rag query "how does Kubernetes handle pod scheduling" \
+aprender-rag query "how does Kubernetes handle pod scheduling" \
   --index index/ --mode hybrid --rerank lexical
 ```
 
@@ -117,17 +117,17 @@ Requires the `transcription` feature: `cargo build --features transcription`
 
 ```bash
 # Basic transcription
-trueno-rag transcribe --path /data/courses --recursive --model base.apr
+aprender-rag transcribe --path /data/courses --recursive --model base.apr
 
 # With hotword biasing and parallel jobs
-trueno-rag transcribe --path /data/courses \
+aprender-rag transcribe --path /data/courses \
   --recursive --skip-existing --jobs 16 \
   --model /data/models/base.apr \
   --hotwords hotwords.txt \
   --exclude "*/RAW" --exclude "*/RAW/*"
 
 # Dry run (list files only)
-trueno-rag transcribe --path /data/courses --recursive --dry-run
+aprender-rag transcribe --path /data/courses --recursive --dry-run
 ```
 
 | Flag | Default | Description |
@@ -147,7 +147,7 @@ trueno-rag transcribe --path /data/courses --recursive --dry-run
 Show pipeline component information.
 
 ```bash
-trueno-rag info
+aprender-rag info
 ```
 
 ---
@@ -165,7 +165,7 @@ cargo build --release -p trueno-rag-cli --features eval
 Sample chunks from an index for ground truth generation. No API needed.
 
 ```bash
-trueno-rag eval sample \
+aprender-rag eval sample \
   --index /path/to/index \
   --output sampled-chunks.jsonl \
   --sample-size 250 --seed 42
@@ -188,13 +188,13 @@ Requires `ANTHROPIC_API_KEY` environment variable.
 
 ```bash
 # Full generation
-trueno-rag eval generate \
+aprender-rag eval generate \
   --index /path/to/index \
   --output ground-truth.jsonl \
   --sample-size 250 --seed 42
 
 # Dry run (sample only, no API calls)
-trueno-rag eval generate \
+aprender-rag eval generate \
   --index /path/to/index --output /dev/null --dry-run
 ```
 
@@ -215,28 +215,28 @@ Dense and hybrid modes auto-detect the index's embedder type (semantic or TF-IDF
 
 ```bash
 # Dense retrieval (auto-detects TF-IDF or semantic embeddings)
-trueno-rag eval retrieve \
+aprender-rag eval retrieve \
   --index /path/to/index \
   --ground-truth ground-truth.jsonl \
   --output retrieval-results.jsonl \
   --top-k 10 --mode dense
 
 # Sparse retrieval (BM25 only)
-trueno-rag eval retrieve \
+aprender-rag eval retrieve \
   --index /path/to/index \
   --ground-truth ground-truth.jsonl \
   --output retrieval-results-sparse.jsonl \
   --mode sparse
 
 # Hybrid retrieval (BM25 + dense with RRF fusion)
-trueno-rag eval retrieve \
+aprender-rag eval retrieve \
   --index /path/to/index \
   --ground-truth ground-truth.jsonl \
   --output retrieval-results-hybrid.jsonl \
   --mode hybrid --fusion rrf --candidates 50
 
 # Hybrid + lexical reranking (fetches 3x candidates, re-orders by term coverage)
-trueno-rag eval retrieve \
+aprender-rag eval retrieve \
   --index /path/to/index \
   --ground-truth ground-truth.jsonl \
   --output retrieval-results-reranked.jsonl \
@@ -262,7 +262,7 @@ Judge retrieval results for relevance via the Claude API.
 Requires `ANTHROPIC_API_KEY` environment variable.
 
 ```bash
-trueno-rag eval judge \
+aprender-rag eval judge \
   --retrieval-results retrieval-results.jsonl \
   --ground-truth ground-truth.jsonl \
   --output results.json \
@@ -283,7 +283,7 @@ trueno-rag eval judge \
 Compute IR metrics from pre-judged results. No API needed.
 
 ```bash
-trueno-rag eval metrics \
+aprender-rag eval metrics \
   --retrieval-results retrieval-results.jsonl \
   --judgments judgments.jsonl \
   --output results.json
@@ -300,7 +300,7 @@ trueno-rag eval metrics \
 Compare two evaluation result files, printing metric deltas.
 
 ```bash
-trueno-rag eval compare \
+aprender-rag eval compare \
   --baseline results-baseline.json \
   --candidate results-hybrid.json
 ```
@@ -310,7 +310,7 @@ trueno-rag eval compare \
 Regression gate. Exits with non-zero status if metrics fall below thresholds.
 
 ```bash
-trueno-rag eval gate \
+aprender-rag eval gate \
   --results results.json \
   --min-mrr 0.50 --min-hit5 0.70
 ```

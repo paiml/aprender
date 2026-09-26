@@ -124,6 +124,65 @@ def key(row):
     return (row["binary"], row["feature"])
 
 
+def read_renames(path):
+    """{old: new} from `<old bin> <new bin>  # why` rows (scripts/bin_renames.txt)."""
+    out = {}
+    if not path or not os.path.exists(path):
+        return out
+    with open(path, encoding="utf-8") as fh:
+        for n, line in enumerate(fh, 1):
+            f = line.split("#", 1)[0].split()
+            if not f:
+                continue
+            if len(f) != 2:
+                raise Fail(f"{path}:{n}: want `<old bin> <new bin>`, got {f}")
+            out[f[0]] = f[1]
+    return out
+
+
+def apply_renames(base, head, renames, findings):
+    """A declared bin rename (#4430) carries each comparand row to its new name,
+    so G2.2/G2.3 compare like with like: the rows must still EXIST, under the new
+    name. A rename whose old name is still in the working ledger was not applied,
+    and would silently double-count -- RED."""
+    stale = sorted({r["binary"] for r in head if r["binary"] in renames})
+    if stale:
+        findings.append(
+            "G2.2 renames FAIL: declared bin rename(s) not applied to the working "
+            "ledger (old name still present): " + ", ".join(stale))
+        return base, False
+    # A rename must land on a bin the working ledger has: a row pointing at a
+    # typo, or at an unrelated bin, would launder a real deletion (lane a).
+    head_bins = {r["binary"] for r in head}
+    nowhere = sorted(f"{o} -> {n}" for o, n in renames.items() if n not in head_bins)
+    if nowhere:
+        findings.append(
+            "G2.2 renames FAIL: declared rename target(s) not in the working "
+            "ledger: " + ", ".join(nowhere))
+        return base, False
+    # A feature string usually leads with the bin name ("alimentar convert");
+    # it moves with the rename unless the working ledger kept the old text.
+    head_keys = {key(r) for r in head}
+    out = []
+    for r in base:
+        old = r["binary"]
+        if old in renames:
+            r = dict(r)
+            new = renames[old]
+            r["binary"] = new
+            f = r["feature"]
+            if f == old or f.startswith(old + " "):
+                moved = new + f[len(old):]
+                if (new, moved) in head_keys or (new, f) not in head_keys:
+                    r["feature"] = moved
+        out.append(r)
+    n = sum(1 for r in base if r["binary"] in renames)
+    if renames:
+        print(f"  G2.2 renames         {n} comparand row(s) carried across "
+              f"{len(renames)} declared bin rename(s)")
+    return out, True
+
+
 def broken_and_ungated(rows):
     return {key(r) for r in rows if quality(r) <= 4 and not covered(r)}
 
@@ -765,6 +824,9 @@ def run(args):
         return 0 if ok else 1
 
     base, base_clustered = read_ledger(args.base, "comparand", allow_legacy=True)
+    rename_findings = []
+    base, renames_ok = apply_renames(base, head, read_renames(args.renames),
+                                     rename_findings)
     declared = parse_reassignments(args.reassignments)
     release = bool(os.environ.get("DOGFOOD_RELEASE"))
 
@@ -781,8 +843,8 @@ def run(args):
         else "NOT armed: the comparand predates the cluster columns",
         args.comparand_source or "unknown", schema)
 
-    findings = []
-    ok = check_reconciliation(base, head, findings)
+    findings = rename_findings
+    ok = check_reconciliation(base, head, findings) and renames_ok
     ok = check_floors(base, head, findings) and ok
     ok = check_cluster_floors(base, head, base_clustered, findings, release,
                               declared, armed_note) and ok
@@ -808,6 +870,8 @@ def main(argv=None):
     p.add_argument("--the44", help="triage yaml")
     p.add_argument("--reassignments", default=None,
                    help="declared cluster reassignment log (yaml)")
+    p.add_argument("--renames", default=None,
+                   help="declared bin renames, `<old> <new>` per line (#4430)")
     p.add_argument("--comparand-source", default=None,
                    help="ARMED|BOOTSTRAP -- how the shell wrapper resolved the "
                         "comparand, so the banner can name the path that ran")

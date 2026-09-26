@@ -46,21 +46,21 @@ HTTP_VERBS = ("GET ", "POST ", "PUT ", "DELETE ", "PATCH ", "HEAD ")
 # intends and a rebuild says what the binary does.
 #
 #   dev      -> apr mono {publish, shims, audit, archive}
-#   hf-hub   -> alimentar {hub push, import hf}   (+ the `apr data x` mirror)
-#   doctest  -> alimentar doctest {extract, merge} (+ the `apr data x` mirror)
-#   eval     -> trueno-rag eval {7 verbs}          (+ the `apr rag` mirror)
+#   hf-hub   -> aprender-data {hub push, import hf}   (+ the `apr data x` mirror)
+#   doctest  -> aprender-data doctest {extract, merge} (+ the `apr data x` mirror)
+#   eval     -> aprender-rag eval {7 verbs}          (+ the `apr rag` mirror)
 #
 # ENUMERATED, never a bare count: a tolerance of "<= 28 mismatches" would absorb
 # a real deletion. Anything not on this list turns the gate RED.
 FEATURE_GATED = {
     "apr mono archive", "apr mono audit", "apr mono publish", "apr mono shims",
-    "alimentar hub push", "alimentar import hf",
-    "alimentar doctest extract", "alimentar doctest merge",
+    "aprender-data hub push", "aprender-data import hf",
+    "aprender-data doctest extract", "aprender-data doctest merge",
     "apr data x hub push", "apr data x import hf",
     "apr data x doctest extract", "apr data x doctest merge",
-    "trueno-rag eval compare", "trueno-rag eval gate", "trueno-rag eval generate",
-    "trueno-rag eval judge", "trueno-rag eval metrics", "trueno-rag eval retrieve",
-    "trueno-rag eval sample",
+    "aprender-rag eval compare", "aprender-rag eval gate", "aprender-rag eval generate",
+    "aprender-rag eval judge", "aprender-rag eval metrics", "aprender-rag eval retrieve",
+    "aprender-rag eval sample",
     "apr rag eval compare", "apr rag eval gate", "apr rag eval generate",
     "apr rag eval judge", "apr rag eval metrics", "apr rag eval retrieve",
     "apr rag eval sample",
@@ -69,7 +69,7 @@ FEATURE_GATED = {
 # The emitter inherits dogfood_surfaces.sh's `grep -vE '^(help)$'` filter, so the
 # literal `help` subcommand never appears in the runtime set even though clap
 # does advertise it and the ledger records it.
-EMITTER_FILTERED = {"apr sim help", "simular help"}
+EMITTER_FILTERED = {"apr sim help", "aprender-simulate help"}
 
 ALLOWED_ABSENT = FEATURE_GATED | EMITTER_FILTERED
 

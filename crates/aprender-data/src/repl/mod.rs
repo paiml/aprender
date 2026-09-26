@@ -273,8 +273,8 @@ mod tests {
 
         let script = session.export_history();
 
-        assert!(script.contains("# alimentar session export"));
-        assert!(script.contains("alimentar"));
+        assert!(script.contains("# aprender-data session export"));
+        assert!(script.contains("aprender-data"));
         assert!(script.contains("load data.parquet"));
     }
 
@@ -734,7 +734,7 @@ mod tests {
 
         let script = session.export_history();
         assert!(script.contains("#!/usr/bin/env bash"));
-        assert!(script.contains("alimentar session export"));
+        assert!(script.contains("aprender-data session export"));
         // Commands should include file path
         assert!(script.contains("info"));
     }

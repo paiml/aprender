@@ -770,7 +770,7 @@ This enables timestamp-aware citation in retrieval results:
 The `index` command gains `--recursive` for deep directory traversal:
 
 ```
-trueno-rag index --path /data/courses/ --output index/ --recursive
+aprender-rag index --path /data/courses/ --output index/ --recursive
 ```
 
 ```rust
@@ -786,17 +786,17 @@ Implementation uses `walkdir` (or `std::fs` recursive read) filtered through `Lo
 
 ```
 # Index a directory containing mixed text and subtitle files
-trueno-rag index --path /data/ --output index/ --recursive
+aprender-rag index --path /data/ --output index/ --recursive
 
 # Index with timestamp-aware chunking (auto-selected for media)
-trueno-rag index --path /data/ --output index/ --recursive --chunk-strategy timestamp
+aprender-rag index --path /data/ --output index/ --recursive --chunk-strategy timestamp
 
 # With transcription (requires --features transcription)
-trueno-rag index --path /data/ --output index/ --recursive \
+aprender-rag index --path /data/ --output index/ --recursive \
     --model /models/whisper-large-v3.gguf --backend gpu
 
 # Control parallelism
-trueno-rag index --path /data/ --output index/ --recursive --jobs 16
+aprender-rag index --path /data/ --output index/ --recursive --jobs 16
 ```
 
 New CLI arguments:
@@ -927,7 +927,7 @@ Rough throughput targets for planning (actual numbers depend on hardware and mod
 
 **Recommended strategy for large corpora:**
 1. Use the best Whisper model available (large-v3 GGUF on GPU for accuracy)
-2. Run transcription as a background batch job via `trueno-rag transcribe`
+2. Run transcription as a background batch job via `aprender-rag transcribe`
 3. Sidecars accumulate on disk as `.srt` files
 4. Run indexing separately once transcription is complete (minutes)
 5. Re-index incrementally as new content is added
@@ -1068,7 +1068,7 @@ proptest! {
 
 ### Phase 4: Batch Tooling
 
-1. `trueno-rag transcribe` subcommand (batch transcription only, no indexing)
+1. `aprender-rag transcribe` subcommand (batch transcription only, no indexing)
 2. Manifest-based resume (skip completed files)
 3. Progress persistence across restarts
 4. Throughput reporting

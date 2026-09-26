@@ -307,10 +307,10 @@ roadmap:
   updated: 1970-01-01T00:00:00Z
   spec: null
   acceptance_criteria:
-  - verificar generate --count 10000 --strategy swarm --output data/
-  - verificar verify --input data/ --transpilers depyler,bashrs,decy
-  - verificar train --input data/verified/ --output models/
-  - verificar evaluate --model models/bug_predictor.bin --test data/test/
+  - aprender-verify generate --count 10000 --strategy swarm --output data/
+  - aprender-verify verify --input data/ --transpilers depyler,bashrs,decy
+  - aprender-verify train --input data/verified/ --output models/
+  - aprender-verify evaluate --model models/bug_predictor.bin --test data/test/
   - Rich progress bars (indicatif)
   phases: []
   subtasks: []

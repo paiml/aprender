@@ -18,7 +18,7 @@ use predicates::prelude::*;
 
 /// Helper function to create alimentar REPL command
 fn alimentar_repl() -> Command {
-    let mut cmd = Command::cargo_bin("alimentar").expect("Failed to find alimentar binary");
+    let mut cmd = Command::cargo_bin("aprender-data").expect("Failed to find alimentar binary");
     cmd.arg("repl");
     cmd
 }
@@ -136,7 +136,7 @@ fn test_ALIM_REPL_006_repl_exports_history() {
         .assert()
         .success()
         .stdout(predicate::str::contains("#!/usr/bin/env bash"))
-        .stdout(predicate::str::contains("alimentar session export"));
+        .stdout(predicate::str::contains("aprender-data session export"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -9,17 +9,17 @@
 //! ## CLI Usage
 //!
 //! ```bash
-//! # Install verificar
-//! cargo install verificar
+//! # Install the aprender-verify binary
+//! cargo install aprender-verify-ml --bin aprender-verify
 //!
 //! # Generate Python test cases for depyler
-//! verificar generate --language python --count 100 --max-depth 3
+//! aprender-verify generate --language python --count 100 --max-depth 3
 //!
 //! # Generate coverage-guided corpus (NAUTILUS-style)
-//! verificar corpus --language python --count 1000 --max-depth 4 > corpus.py
+//! aprender-verify corpus --language python --count 1000 --max-depth 4 > corpus.py
 //!
 //! # Output as JSON for programmatic use
-//! verificar generate -l python -c 50 -o json > tests.json
+//! aprender-verify generate -l python -c 50 -o json > tests.json
 //! ```
 //!
 //! ## Programmatic Usage

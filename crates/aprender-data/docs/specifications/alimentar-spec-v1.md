@@ -418,32 +418,32 @@ pub enum DriftRecommendation {
 
 ```bash
 # === Local Splits ===
-alimentar split --input data.ald --train 0.8 --test 0.2 --output ./splits/
-alimentar split --input data.ald --train 0.7 --test 0.15 --val 0.15 --stratify label
-alimentar split --input data.ald --train 0.8 --test 0.2 --seed 42
+aprender-data split --input data.ald --train 0.8 --test 0.2 --output ./splits/
+aprender-data split --input data.ald --train 0.7 --test 0.15 --val 0.15 --stratify label
+aprender-data split --input data.ald --train 0.8 --test 0.2 --seed 42
 
 # === Federated Splits (run on each node) ===
 # Step 1: Generate manifest (runs locally, shares only metadata)
-alimentar fed manifest --input local/data.ald --output manifest.json
+aprender-data fed manifest --input local/data.ald --output manifest.json
 
 # Step 2: Coordinator computes split plan (sees only manifests)
-alimentar fed plan --manifests node_a.json node_b.json node_c.json \
+aprender-data fed plan --manifests node_a.json node_b.json node_c.json \
     --strategy stratified --label-column target --output plan.json
 
 # Step 3: Each node executes its portion of the plan
-alimentar fed split --input local/data.ald --plan plan.json --node-id node_a
+aprender-data fed split --input local/data.ald --plan plan.json --node-id node_a
 
 # Step 4: Coordinator verifies global split quality
-alimentar fed verify --manifests post_split_a.json post_split_b.json post_split_c.json
+aprender-data fed verify --manifests post_split_a.json post_split_b.json post_split_c.json
 
 # === Single Dataset Drift ===
-alimentar drift detect --reference v1/train.ald --current v2/train.ald
-alimentar drift report --output drift-report.json
+aprender-data drift detect --reference v1/train.ald --current v2/train.ald
+aprender-data drift report --output drift-report.json
 
 # === Distributed Drift (federated) ===
-alimentar drift sketch --input local/train.ald --output sketch.json
-alimentar drift merge --sketches node1.json node2.json node3.json --output merged.json
-alimentar drift compare --reference baseline.json --current merged.json
+aprender-data drift sketch --input local/train.ald --output sketch.json
+aprender-data drift merge --sketches node1.json node2.json node3.json --output merged.json
+aprender-data drift compare --reference baseline.json --current merged.json
 ```
 
 ## Storage Backends
@@ -602,16 +602,16 @@ pub struct DatasetMetadata {
 
 ```bash
 # Local registry (air-gapped)
-alimentar registry init ./my-datasets
+aprender-data registry init ./my-datasets
 
 # MinIO (on-prem S3)
-alimentar registry init s3://datasets --endpoint http://minio.local:9000
+aprender-data registry init s3://datasets --endpoint http://minio.local:9000
 
 # Scaleway (EU)
-alimentar registry init s3://datasets --endpoint s3.fr-par.scw.cloud
+aprender-data registry init s3://datasets --endpoint s3.fr-par.scw.cloud
 
 # OVH (EU)
-alimentar registry init s3://datasets --endpoint s3.gra.cloud.ovh.net
+aprender-data registry init s3://datasets --endpoint s3.gra.cloud.ovh.net
 ```
 
 ## WASM Support
@@ -809,21 +809,21 @@ Chart::scatter(batch.column("x"), batch.column("y")).render()?;
 
 ```bash
 # Import from HuggingFace
-alimentar import hf squad --output ./data/squad
+aprender-data import hf squad --output ./data/squad
 
 # Convert formats
-alimentar convert data.csv data.parquet
-alimentar convert data.json data.arrow
+aprender-data convert data.csv data.parquet
+aprender-data convert data.json data.arrow
 
 # Registry operations
-alimentar registry list
-alimentar registry push my-dataset ./data --version 1.0.0
-alimentar registry pull my-dataset --version 1.0.0
+aprender-data registry list
+aprender-data registry push my-dataset ./data --version 1.0.0
+aprender-data registry pull my-dataset --version 1.0.0
 
 # Inspect dataset
-alimentar info ./data/train.parquet
-alimentar head ./data/train.parquet --rows 10
-alimentar schema ./data/train.parquet
+aprender-data info ./data/train.parquet
+aprender-data head ./data/train.parquet --rows 10
+aprender-data schema ./data/train.parquet
 ```
 
 ## Dependencies
@@ -1116,10 +1116,10 @@ pmat diagnose
 - [x] Data quality checking (nulls, outliers, duplicates, constants)
 - [x] Distributed drift (sketch-based) - TDigest, DDSketch, DistributedDriftDetector
 - [x] Federated split coordination (FederatedSplitCoordinator, NodeSplitManifest)
-- [x] CLI: `alimentar drift detect`
-- [x] CLI: `alimentar quality check`
-- [x] CLI: `alimentar drift sketch/merge/compare`
-- [x] CLI: `alimentar fed manifest/plan/split/verify`
+- [x] CLI: `aprender-data drift detect`
+- [x] CLI: `aprender-data quality check`
+- [x] CLI: `aprender-data drift sketch/merge/compare`
+- [x] CLI: `aprender-data fed manifest/plan/split/verify`
 
 ### v1.0.0 - Production (Quality Gate: all metrics green)
 - [ ] ≥90% test coverage

@@ -38,7 +38,7 @@ use tiny_http::{Response, Server};
 use tungstenite::accept;
 
 #[derive(Parser)]
-#[command(name = "presentar")]
+#[command(name = "aprender-present")]
 #[command(about = "WASM-first visualization framework CLI")]
 #[command(version)]
 struct Cli {
@@ -628,7 +628,7 @@ layout:
     println!();
     println!("Project created! Next steps:");
     println!("  cd {}", name);
-    println!("  presentar serve");
+    println!("  aprender-present serve");
 }
 
 fn check_manifest(path: &PathBuf) {
@@ -1046,7 +1046,7 @@ fn deploy(
         println!("Step 1: Building production bundle...");
         if dry_run {
             println!(
-                "  [dry-run] Would run: presentar bundle --output {}",
+                "  [dry-run] Would run: aprender-present bundle --output {}",
                 source.display()
             );
         } else {
@@ -1061,7 +1061,7 @@ fn deploy(
             "Error: Source directory '{}' does not exist",
             source.display()
         );
-        eprintln!("Run 'presentar bundle' first or use --skip-build with existing files");
+        eprintln!("Run 'aprender-present bundle' first or use --skip-build with existing files");
         std::process::exit(1);
     }
 

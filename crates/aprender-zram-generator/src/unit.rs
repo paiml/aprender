@@ -35,8 +35,8 @@ Before=swap.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/trueno-zram create --device {device} --size {size} --algorithm {algorithm} --streams {streams}
-ExecStop=/usr/bin/trueno-zram remove --device {device}
+ExecStart=/usr/bin/aprender-zram create --device {device} --size {size} --algorithm {algorithm} --streams {streams}
+ExecStop=/usr/bin/aprender-zram remove --device {device}
 
 [Install]
 WantedBy=swap.target
@@ -105,6 +105,11 @@ mod tests {
 
         assert!(temp_dir.join("trueno-zram0.service").exists());
         assert!(temp_dir.join("dev-zram0.swap").exists());
+        // #4430: the unit must exec the renamed binary, not the retired `trueno-zram`.
+        let service = fs::read_to_string(temp_dir.join("trueno-zram0.service")).unwrap();
+        assert!(service.contains("ExecStart=/usr/bin/aprender-zram create"));
+        assert!(service.contains("ExecStop=/usr/bin/aprender-zram remove"));
+        assert!(!service.contains("/usr/bin/trueno-zram"));
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

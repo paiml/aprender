@@ -93,17 +93,17 @@ let dataset = HfDataset::builder("username/private-dataset")
 
 ```bash
 # Download from Hub
-alimentar hf download username/dataset --split train
+aprender-data hf download username/dataset --split train
 
 # Upload to Hub
-alimentar hf upload data.parquet username/my-dataset
+aprender-data hf upload data.parquet username/my-dataset
 
 # With authentication
-HF_TOKEN=hf_xxx alimentar hf upload data.parquet username/my-dataset --private
+HF_TOKEN=hf_xxx aprender-data hf upload data.parquet username/my-dataset --private
 
 # Cache management
-alimentar hf cache --list
-alimentar hf cache --clear
+aprender-data hf cache --list
+aprender-data hf cache --clear
 ```
 
 ## Environment Variables

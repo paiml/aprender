@@ -404,7 +404,7 @@ pub(crate) fn cmd_quality_profiles() -> crate::Result<()> {
         }
     }
 
-    println!("Usage: alimentar quality score <path> --profile <name>");
+    println!("Usage: aprender-data quality score <path> --profile <name>");
     Ok(())
 }
 
@@ -501,7 +501,7 @@ pub(crate) fn build_checklist_from_report(
             Severity::High,
             low_duplicates,
         )
-        .with_suggestion("Run deduplication: alimentar dedupe <file>"),
+        .with_suggestion("Run deduplication: aprender-data dedupe <file>"),
     );
     id += 1;
 

@@ -13,13 +13,13 @@
 //! cargo build --release --features embeddings
 //!
 //! # Index documents with semantic embeddings
-//! trueno-rag index --path docs/ --output index/ --embedder semantic
+//! aprender-rag index --path docs/ --output index/ --embedder semantic
 //!
 //! # Index with recursive directory walking and subtitle support
-//! trueno-rag index --path /data/ --output index/ --recursive
+//! aprender-rag index --path /data/ --output index/ --recursive
 //!
 //! # Index with timestamp-aware chunking for media transcripts
-//! trueno-rag index --path /data/ --output index/ --recursive --chunk-strategy timestamp
+//! aprender-rag index --path /data/ --output index/ --recursive --chunk-strategy timestamp
 //! ```
 
 // APR-MONO §S #1976: this crate joined the workspace via flat-layout relocation, so it now
@@ -87,7 +87,7 @@ pub enum BackendType {
 }
 
 #[derive(Parser)]
-#[command(name = "trueno-rag")]
+#[command(name = "aprender-rag")]
 #[command(author = "Pragmatic AI Labs")]
 #[command(version)]
 #[command(about = "Pure-Rust RAG pipeline CLI", long_about = None)]

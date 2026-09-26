@@ -47,13 +47,13 @@ RUN useradd -m -u 1000 simular
 USER simular
 
 # Copy binary from builder
-COPY --from=builder /app/target/release/simular /usr/local/bin/
+COPY --from=builder /app/target/release/aprender-simulate /usr/local/bin/
 
 # Set working directory
 WORKDIR /home/simular
 
 # Default command
-ENTRYPOINT ["simular"]
+ENTRYPOINT ["aprender-simulate"]
 CMD ["--help"]
 
 # WASM build stage

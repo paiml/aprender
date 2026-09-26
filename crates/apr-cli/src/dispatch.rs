@@ -53,7 +53,7 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
 /// library: `apr rag` -> `aprender_rag_cli`, `apr zram` -> `aprender_zram_cli`.
 ///
 /// Each arm calls the SAME `dispatch` function the standalone binary calls, so
-/// `apr rag index` and `trueno-rag index` cannot drift apart. Before this, both
+/// `apr rag index` and `aprender-rag index` cannot drift apart. Before this, both
 /// command enums lived in a `main.rs`, which is importable by nothing -- the
 /// separate binary was the only way to reach any of it.
 fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {

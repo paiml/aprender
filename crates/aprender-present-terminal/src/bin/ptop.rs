@@ -1,6 +1,6 @@
 //! ptop: System monitor using presentar-terminal widget composition
 //!
-//! Run: cargo run -p presentar-terminal --features ptop --bin ptop
+//! Run: cargo run -p aprender-present-terminal --features ptop --bin aprender-ptop
 
 #![allow(clippy::struct_excessive_bools)]
 #![allow(clippy::unnecessary_debug_formatting)]
@@ -22,7 +22,7 @@ use presentar_terminal::ColorMode;
 
 /// Presentar System Monitor - widget composition demo
 #[derive(Parser)]
-#[command(name = "ptop", version, about, long_about = None)]
+#[command(name = "aprender-ptop", version, about, long_about = None)]
 struct Cli {
     /// Refresh interval in milliseconds
     #[arg(short, long, default_value = "1000")]

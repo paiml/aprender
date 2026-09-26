@@ -39,7 +39,7 @@ All released artifacts include SHA-256 checksums:
 
 ```bash
 # Generate checksums
-sha256sum target/release/ptop > ptop.sha256
+sha256sum target/release/aprender-ptop > ptop.sha256
 
 # Verify
 sha256sum -c ptop.sha256
