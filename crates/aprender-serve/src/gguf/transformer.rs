@@ -271,19 +271,25 @@ pub(crate) fn load_output_norm(
     data: &[u8],
     hidden_dim: usize,
 ) -> Result<(Vec<f32>, Option<Vec<f32>>)> {
+    // Judge the HEADER before reading data: a too-long declaration would
+    // otherwise fail as an out-of-file read, never naming the real defect.
+    for name in ["output_norm.weight", "output_norm.bias", "model.norm.bias"] {
+        let declared = model.tensors.iter().find(|t| t.name == name).map(|t| {
+            t.dims
+                .iter()
+                .map(|&d| usize::try_from(d).unwrap_or(usize::MAX))
+                .fold(1usize, usize::saturating_mul)
+        });
+        if let Some(reason) = declared.and_then(|len| norm_length_refusal(name, len, hidden_dim)) {
+            return Err(RealizarError::FormatError { reason });
+        }
+    }
     let weight = model.get_tensor_f32("output_norm.weight", data)?;
     // GH-278: Output norm bias — standard + aprender fallback
     let bias = model
         .get_tensor_f32("output_norm.bias", data)
         .or_else(|_| model.get_tensor_f32("model.norm.bias", data))
         .ok();
-    let lengths = std::iter::once(("output_norm.weight", weight.len()))
-        .chain(bias.as_ref().map(|b| ("output_norm.bias", b.len())));
-    for (name, len) in lengths {
-        if let Some(reason) = norm_length_refusal(name, len, hidden_dim) {
-            return Err(RealizarError::FormatError { reason });
-        }
-    }
     Ok((weight, bias))
 }
 
