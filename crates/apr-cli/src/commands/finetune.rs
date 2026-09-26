@@ -380,6 +380,7 @@ fn execute_training(
     gpu_backend: &str,
     max_seq_len: Option<usize>,
     seed: u64,
+    held_out: Option<&Path>,
 ) -> Result<()> {
     use entrenar::finetune::instruct_corpus::InstructSample;
     use entrenar::finetune::instruct_pipeline::InstructPipeline;
@@ -408,6 +409,9 @@ fn execute_training(
 
     // 2. Load training data from JSONL
     let corpus: Vec<InstructSample> = load_instruct_corpus(data_path)?;
+    // E8 #4002: a recipe's eval.held_out is the validation set; without one
+    // the trainer holds out a seeded slice of the corpus.
+    let held_out: Option<Vec<InstructSample>> = held_out.map(load_instruct_corpus).transpose()?;
 
     if !json_output {
         output::pipeline_stage("Loading model", output::StageStatus::Done);
@@ -440,6 +444,11 @@ fn execute_training(
 
     #[cfg(feature = "wgpu")]
     if use_wgpu {
+        if held_out.is_some() {
+            return Err(CliError::ValidationFailed(
+                "recipe field `eval.held_out`: the wgpu trainer does not validate on a held-out set; use --gpu-backend cuda or cpu".to_string(),
+            ));
+        }
         return execute_training_wgpu(
             model_path,
             &model_config,
@@ -478,7 +487,11 @@ fn execute_training(
         lr_min: 1e-6,
     };
 
-    let mut trainer = InstructTrainer::new(pipeline, corpus, train_config)
+    let trainer = match held_out {
+        Some(val) => InstructTrainer::with_held_out(pipeline, corpus, val, train_config),
+        None => InstructTrainer::new(pipeline, corpus, train_config),
+    };
+    let mut trainer = trainer
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create trainer: {e}")))?;
 
     let result = trainer.train();
@@ -1313,6 +1326,7 @@ pub(crate) fn run(
     experimental_mps: bool,
     gpu_share: u32,
     seed: u64,
+    held_out: Option<&Path>,
 ) -> Result<()> {
     contract_pre_rank_bounds_safety!();
     contract_pre_alpha_rank_ratio!();
@@ -1428,6 +1442,7 @@ pub(crate) fn run(
         gpu_backend,
         max_seq_len,
         seed,
+        held_out,
     )
 }
 
@@ -1445,6 +1460,7 @@ fn run_finetune_training(
     gpu_backend: &str,
     max_seq_len: Option<usize>,
     seed: u64,
+    held_out: Option<&Path>,
 ) -> Result<()> {
     let data = match data_path {
         Some(d) if d.exists() => d,
@@ -1483,6 +1499,7 @@ fn run_finetune_training(
         gpu_backend,
         max_seq_len,
         seed,
+        held_out,
     )
 }
 

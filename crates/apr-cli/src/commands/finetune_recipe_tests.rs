@@ -54,6 +54,7 @@ fn a_valid_recipe_supplies_the_finetune_args() {
     assert!((a.learning_rate - 1e-4).abs() < f64::EPSILON);
     // Relative data paths resolve against the recipe's own directory.
     assert_eq!(a.data, dir.path().join("train.jsonl"));
+    assert_eq!(a.held_out, dir.path().join("eval.jsonl"));
     // The model is never opened: a nonexistent model path still loads.
     assert_eq!(a.model, PathBuf::from("/models/does-not-exist.apr"));
     assert_eq!(a.seed, 7);
@@ -97,6 +98,11 @@ fn refusals_name_the_recipe_field() {
             "schema refusal passes through",
             text.replace("  seed: 7\n", ""),
             "training",
+        ),
+        (
+            "metric the trainer does not report",
+            text.replace("metric: loss", "metric: accuracy"),
+            "eval.metric",
         ),
     ];
     for (name, yaml, field) in cases {

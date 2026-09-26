@@ -110,11 +110,16 @@ pub enum ModelOpsCommands {
 
         /// Declarative recipe (contracts/apr-recipe-v1.yaml, E8 #4002). Validated
         /// before any model load; supplies model, method, rank, data, epochs and
-        /// learning rate, so it conflicts with those flags.
+        /// learning rate, so it conflicts with those flags. Its eval.held_out is
+        /// the validation set of the LoRA trainer, which the merge, --task and
+        /// multi-adapter modes do not run, so it conflicts with those too.
         #[arg(
             long,
             value_name = "FILE",
-            conflicts_with_all = ["file", "method", "rank", "data", "epochs", "learning_rate"]
+            conflicts_with_all = [
+                "file", "method", "rank", "data", "epochs", "learning_rate",
+                "merge", "task", "adapters", "adapters_config"
+            ]
         )]
         recipe: Option<PathBuf>,
     },

@@ -1057,7 +1057,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 }
                 None => None,
             };
-            let (file, method, rank, data, epochs, learning_rate, seed) = match &recipe {
+            let (file, method, rank, data, epochs, learning_rate, seed, held_out) = match &recipe {
                 Some(r) => (
                     Some(r.model.as_path()),
                     r.method.as_str(),
@@ -1066,6 +1066,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     r.epochs,
                     Some(r.learning_rate),
                     r.seed,
+                    Some(r.held_out.as_path()),
                 ),
                 None => (
                     file.as_deref(),
@@ -1075,6 +1076,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     *epochs,
                     *learning_rate,
                     finetune::DEFAULT_SEED,
+                    None,
                 ),
             };
             finetune::run(
@@ -1109,6 +1111,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 *experimental_mps,
                 *gpu_share,
                 seed,
+                held_out,
             )
         }
         Commands::ModelOps(ModelOpsCommands::Prune {

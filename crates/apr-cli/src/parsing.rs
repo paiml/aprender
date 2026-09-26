@@ -656,3 +656,25 @@
         // And the default (no --format at all) still works.
         assert!(parse_cli(vec!["apr", "tree", "m.apr"]).is_ok());
     }
+
+    /// E8 #4002: `--recipe` feeds only the LoRA trainer that validates on its
+    /// eval.held_out; the modes that would drop it are parse conflicts.
+    #[test]
+    fn test_parse_finetune_recipe_conflicts_with_modes_that_drop_eval() {
+        assert!(parse_cli(vec!["apr", "finetune", "--recipe", "r.yaml"]).is_ok());
+        for extra in [
+            vec!["--task", "classify"],
+            vec!["--merge"],
+            vec!["--adapters", "d.jsonl:ckpt"],
+            vec!["--adapters-config", "a.toml"],
+        ] {
+            let mut args = vec!["apr", "finetune", "--recipe", "r.yaml"];
+            args.extend(extra.iter().copied());
+            let err = parse_cli(args).expect_err("recipe plus a mode that drops eval must fail");
+            assert_eq!(
+                err.kind(),
+                clap::error::ErrorKind::ArgumentConflict,
+                "{extra:?}: {err}"
+            );
+        }
+    }

@@ -80,6 +80,7 @@ fn test_run_no_model() {
         false,
         0,
         DEFAULT_SEED,
+        None,
     );
     assert!(result.is_err());
 }
@@ -118,6 +119,7 @@ fn test_run_plan_with_model_size() {
         false,
         0,
         DEFAULT_SEED,
+        None,
     );
     assert!(result.is_ok());
 }
@@ -156,6 +158,7 @@ fn test_run_plan_json() {
         false,
         0,
         DEFAULT_SEED,
+        None,
     );
     assert!(result.is_ok());
 }
@@ -196,6 +199,7 @@ fn test_run_with_model_file() {
         false,
         0,
         DEFAULT_SEED,
+        None,
     );
     assert!(result.is_ok());
 }
@@ -327,6 +331,7 @@ fn test_run_training_creates_adapter() {
         false,
         0,
         DEFAULT_SEED,
+        None,
     );
     // Training fails with a minimal model (missing norm weights, etc.)
     // but the pipeline should get past config resolution and data parsing.
@@ -1319,6 +1324,7 @@ fn run_with_missing_model_file_errors() {
         false,         // experimental_mps
         0,             // gpu_share
         DEFAULT_SEED,
+        None,
     );
     assert!(result.is_err());
 }

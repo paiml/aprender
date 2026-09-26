@@ -136,8 +136,52 @@ impl InstructTrainer {
             return Err(crate::Error::ConfigError("GH-371: epochs must be > 0".to_string()));
         }
 
-        let (train_data, val_data) = Self::split_dataset(&corpus, config.val_split, config.seed);
+        let (train_data, val_data) = Self::partition(corpus.clone(), None, &config);
+        Self::assemble(pipeline, corpus, train_data, val_data, config)
+    }
 
+    /// Create a trainer that validates on a caller-supplied held-out set
+    /// (E8 #4002: a recipe's `eval.held_out`). The whole corpus trains and
+    /// `config.val_split` is not consulted.
+    ///
+    /// # Errors
+    /// Returns error if the corpus or the held-out set is empty, or epochs is 0.
+    pub fn with_held_out(
+        pipeline: InstructPipeline,
+        corpus: Vec<InstructSample>,
+        held_out: Vec<InstructSample>,
+        config: InstructTrainingConfig,
+    ) -> crate::Result<Self> {
+        if corpus.is_empty() {
+            return Err(crate::Error::ConfigError("GH-371: corpus must not be empty".to_string()));
+        }
+        if config.epochs == 0 {
+            return Err(crate::Error::ConfigError("GH-371: epochs must be > 0".to_string()));
+        }
+        let (train_data, val_data) = Self::partition(corpus.clone(), Some(held_out), &config);
+        Self::assemble(pipeline, corpus, train_data, val_data, config)
+    }
+
+    /// Train/val sets: the held-out set verbatim when one is given, otherwise
+    /// a seeded split of the corpus.
+    fn partition(
+        corpus: Vec<InstructSample>,
+        held_out: Option<Vec<InstructSample>>,
+        config: &InstructTrainingConfig,
+    ) -> (Vec<InstructSample>, Vec<InstructSample>) {
+        match held_out {
+            Some(val) => (corpus, val),
+            None => Self::split_dataset(&corpus, config.val_split, config.seed),
+        }
+    }
+
+    fn assemble(
+        pipeline: InstructPipeline,
+        corpus: Vec<InstructSample>,
+        train_data: Vec<InstructSample>,
+        val_data: Vec<InstructSample>,
+        config: InstructTrainingConfig,
+    ) -> crate::Result<Self> {
         if train_data.is_empty() || val_data.is_empty() {
             return Err(crate::Error::ConfigError(format!(
                 "GH-371: split produced empty set (train={}, val={}). Need more samples.",
@@ -534,6 +578,40 @@ mod tests {
         let trainer = trainer.unwrap();
         assert!(trainer.train_size() > 0);
         assert!(trainer.val_size() > 0);
+    }
+
+    /// FALSIFY-RECIPE-009: a held-out set is the validation set verbatim and
+    /// no training sample is diverted into it.
+    #[test]
+    fn a_held_out_set_is_the_validation_set_and_the_corpus_all_trains() {
+        let model_config = TransformerConfig::tiny();
+        let instruct_config =
+            InstructConfig { lora_rank: 4, max_seq_len: 32, ..InstructConfig::default() };
+        let corpus = make_corpus(20);
+        let held_out: Vec<InstructSample> = make_corpus(3)
+            .into_iter()
+            .map(|mut s| {
+                s.instruction.insert_str(0, "held-out ");
+                s
+            })
+            .collect();
+        let config = InstructTrainingConfig { epochs: 1, ..Default::default() };
+
+        let pipeline = InstructPipeline::new(&model_config, instruct_config.clone());
+        let t = InstructTrainer::with_held_out(
+            pipeline,
+            corpus.clone(),
+            held_out.clone(),
+            config.clone(),
+        )
+        .expect("held-out trainer");
+        assert_eq!(t.train_size(), corpus.len());
+        let names =
+            |v: &[InstructSample]| v.iter().map(|s| s.instruction.clone()).collect::<Vec<_>>();
+        assert_eq!(names(&t.val_data), names(&held_out));
+
+        let pipeline = InstructPipeline::new(&model_config, instruct_config);
+        assert!(InstructTrainer::with_held_out(pipeline, corpus, vec![], config).is_err());
     }
 
     #[test]

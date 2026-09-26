@@ -8,7 +8,7 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use entrenar::recipe::{MethodKind, Recipe, RecipeError};
+use entrenar::recipe::{EvalMetric, MethodKind, Recipe, RecipeError};
 use sha2::{Digest, Sha256};
 
 use crate::error::{CliError, Result};
@@ -20,6 +20,8 @@ pub(crate) struct RecipeArgs {
     pub method: String,
     pub rank: Option<u32>,
     pub data: PathBuf,
+    /// The validation set (`eval.held_out`), hashed against `eval.sha256`.
+    pub held_out: PathBuf,
     pub epochs: u32,
     pub learning_rate: f64,
     pub seed: u64,
@@ -104,6 +106,15 @@ pub(crate) fn load(path: &Path) -> Result<RecipeArgs> {
         ));
     }
 
+    // The finetune trainer reports validation loss only.
+    if recipe.eval.metric != EvalMetric::Loss {
+        return Err(refuse_field(
+            "eval.metric",
+            "apr finetune reports validation loss; metric accuracy is not honored yet (use loss)"
+                .to_string(),
+        ));
+    }
+
     let data = resolve(dir, &recipe.data.train);
     check_hash("data.sha256", &data, &recipe.data.sha256)?;
     let held_out = resolve(dir, &recipe.eval.held_out);
@@ -114,6 +125,7 @@ pub(crate) fn load(path: &Path) -> Result<RecipeArgs> {
         method: method.to_string(),
         rank: recipe.method.rank,
         data,
+        held_out,
         epochs: recipe.training.epochs,
         learning_rate: recipe.training.learning_rate,
         seed: recipe.training.seed,
