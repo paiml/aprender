@@ -1,0 +1,4803 @@
+{
+ "row": "APR-EPIC-001 A0",
+ "ticket": "GH-4432",
+ "derived_at_utc": "2026-09-26T08:32:17Z",
+ "head": "e7a52949d10141e177ca680bc8b95b0fb3792e2b",
+ "generator": "docs/audits/apr-epic-001/regen_a0.py",
+ "rules": {
+  "status_first_match": [
+   "in-PR",
+   "branch-only",
+   "claimed",
+   "stale",
+   "unclaimed"
+  ],
+  "rule16": "epics excluded from unclaimed and no-epic-link sets",
+  "is_epic": "label epic OR has GitHub sub-issues OR title matches \\bepic\\b"
+ },
+ "caveats": [
+  "claims read only from the inbox files present at derive time (rotated lines are gone); roadmap rows not read",
+  "idle ignores comments matching milestone/triage bookkeeping; only the last 10 comments are read",
+  "done_on_main scans origin/main since 2026-06-01; every candidate must be verified before any close"
+ ],
+ "counts": {
+  "open_issues": 235,
+  "open_epics": 29,
+  "open_epics_label_only": 15,
+  "no_epic_link_non_epic": 87,
+  "no_milestone": [
+   4337,
+   4449,
+   4454,
+   4456,
+   4458,
+   4462
+  ],
+  "status_non_epic": {
+   "branch-only": 64,
+   "stale": 5,
+   "unclaimed": 50,
+   "claimed": 4,
+   "in-PR": 83
+  },
+  "done_on_main_strong": [
+   3953,
+   4434,
+   4436
+  ],
+  "done_on_main_medium": [],
+  "close_candidates_idle_gt7_no_claim": [
+   2661,
+   2753,
+   3174,
+   3182,
+   3183
+  ]
+ },
+ "milestones": [
+  {
+   "title": "0.69.3",
+   "due": null,
+   "open": 0,
+   "closed": 7
+  },
+  {
+   "title": "0.69.4",
+   "due": null,
+   "open": 0,
+   "closed": 12
+  },
+  {
+   "title": "0.69.5",
+   "due": null,
+   "open": 10,
+   "closed": 0
+  },
+  {
+   "title": "0.70.0",
+   "due": "2026-09-26T00:00:00Z",
+   "open": 42,
+   "closed": 87
+  },
+  {
+   "title": "0.70.1",
+   "due": null,
+   "open": 49,
+   "closed": 15
+  },
+  {
+   "title": "0.71.0",
+   "due": "2026-09-29T00:00:00Z",
+   "open": 58,
+   "closed": 85
+  },
+  {
+   "title": "0.72.0",
+   "due": "2026-10-02T00:00:00Z",
+   "open": 19,
+   "closed": 16
+  },
+  {
+   "title": "0.73.0",
+   "due": null,
+   "open": 11,
+   "closed": 49
+  },
+  {
+   "title": "0.74.0",
+   "due": null,
+   "open": 4,
+   "closed": 12
+  },
+  {
+   "title": "0.75.0",
+   "due": null,
+   "open": 1,
+   "closed": 1
+  },
+  {
+   "title": "0.76.0",
+   "due": null,
+   "open": 5,
+   "closed": 12
+  },
+  {
+   "title": "Inference dispatch & architecture consolidation",
+   "due": null,
+   "open": 0,
+   "closed": 1
+  },
+  {
+   "title": "backlog",
+   "due": null,
+   "open": 30,
+   "closed": 588
+  }
+ ],
+ "issues": [
+  {
+   "number": 2373,
+   "title": "Epic: dogfood audit of apr 0.63.0 from crates.io \u2014 201 defects, 24 P0",
+   "milestone": "0.70.1",
+   "is_epic": true,
+   "epic_linked": false,
+   "status": "claimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [
+    "owner:aprender-df"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2378,
+   "title": "`apr run`: 7 defects incl. `--stream` emitting empty text and `--trace-output` always writing an empty event list",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 40,
+   "prs": [],
+   "branches": [
+    "fix/2378-apr-run-refusals"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2503,
+   "title": "SURF tracker: 45 of 150 command paths are ungated, and 3 of 5 CLI falsification conditions name a test that does not exist",
+   "milestone": "backlog",
+   "is_epic": true,
+   "epic_linked": false,
+   "status": "stale",
+   "idle_days": 41,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2530,
+   "title": "`KaniStrategy` has no label for symbolic-`f32`-array harnesses, the dominant DSP verification technique \u2014 7 of rmedia's 8 real Kani proofs are unrepresentable",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "fix/2530-kani-bounded-array"
+   ],
+   "claims": [
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2556,
+   "title": "Epic: pv / provable-contracts hardening \u2014 the tool that decides release soundness",
+   "milestone": "backlog",
+   "is_epic": true,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "wip/2556-pv-hardening"
+   ],
+   "claims": [
+    "aprender-df(x4233)",
+    "owner:aprender-df"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2582,
+   "title": "Epic: apr-dogfood v3.0 \u2014 coverage is the organizing gate (17.1% of 830 features, 27 of 28 binaries at zero)",
+   "milestone": "0.72.0",
+   "is_epic": true,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [],
+   "claims": [
+    "owner:aprender-ea"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2648,
+   "title": "pv schema forces the count constant P7 bans: verification_summary requires total_obligations/tested as hand-maintained integers",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 33,
+   "prs": [],
+   "branches": [
+    "PMAT-2648-summary-count-drift"
+   ],
+   "claims": [
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2661,
+   "title": "apr gpu reports unified memory on GB10 but not on Apple silicon, and steers macOS users to --device cpu",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "stale",
+   "idle_days": 33,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2701,
+   "title": "The dogfood release gate is unrunnable for every sibling repo whenever aprender is not on main",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [
+    "fix/2701-dogfood-canon-ref"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2730,
+   "title": "cbtop reports status PASS and ci_result green over its own grade F when the profiler returns zero bricks",
+   "milestone": "0.73.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2753,
+   "title": "P0: batched CUDA decode emits garbage for every m>1 \u2014 PERF-001's 3.32x aggregate is throughput of garbage tokens",
+   "milestone": "0.73.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "stale",
+   "idle_days": 12,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2814,
+   "title": "Code Quality Report Epic: Sovereign Stack Audit",
+   "milestone": "backlog",
+   "is_epic": true,
+   "epic_linked": false,
+   "status": "claimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [
+    "owner:aprender-57"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2815,
+   "title": "apr mis-tokenizes <|im_end|> after sentence punctuation: 4 junk tokens are fed to the model instead of the turn delimiter",
+   "milestone": "0.72.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "fix/2815-im-end-after-punct"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2817,
+   "title": "BLOCKER: no W1 cell is producible on the comparator lane in either mode \u2014 streaming reports prompt_tokens=0, non-streaming reports 534 against a 512 \u00b1 8 band",
+   "milestone": "0.72.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2853,
+   "title": "SafeTensors serve route drops `ignore_eos` and `seed`: apr-cli's ChatCompletionRequest has no such fields",
+   "milestone": "0.72.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "fix/2853-safetensors-ignore-eos-seed"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2870,
+   "title": "EPIC S2 standing: Provable Contracts (PVL-001)",
+   "milestone": "0.72.0",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [],
+   "claims": [
+    "owner:aprender-df"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2876,
+   "title": "Class: a gate that answers empty or degenerate input with PASS (or a traceback) instead of a named refusal",
+   "milestone": "0.72.0",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "stale",
+   "idle_days": 20,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2877,
+   "title": "Class: the required check dies of its environment (ENOENT, shared target dir, self-cancellation, runner $HOME, vanished binaries) and reports a code failure",
+   "milestone": "backlog",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "stale",
+   "idle_days": 20,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2878,
+   "title": "Class: universe authored, not derived \u2014 dark cargo targets, hand-enumerated CI lists and Makefile targets that advertise CI nothing invokes",
+   "milestone": "backlog",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "stale",
+   "idle_days": 20,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2879,
+   "title": "Class: ratchets that block edits rather than regressions \u2014 frozen files, line-keyed baselines and ledgers where honest work is the most expensive path",
+   "milestone": "0.72.0",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "stale",
+   "idle_days": 20,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 2880,
+   "title": "Class: the shipped CPU path runs a narrower kernel than the host supports \u2014 dispatch returns before the wider ISA, kernels absent, module DCE'd, prefill run as decode",
+   "milestone": "0.73.0",
+   "is_epic": true,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "1c/2880-vnni-reachable"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3111,
+   "title": "CUDA Q5_K gemv/gemm read a non-ggml block layout (qh bit order; gemm also qh/qs offsets and scale unpacking)",
+   "milestone": "0.72.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3147,
+   "title": "P0: SVD substrate in aprender-compute (Golub-Reinsch + randomized) \u2014 no SVD exists repo-wide",
+   "milestone": "0.76.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 13,
+   "prs": [],
+   "branches": [
+    "feat/3147-svd-substrate"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3148,
+   "title": "P0: rewire PCA onto SVD + add TruncatedSVD \u2014 retires the only measured sklearn loss in BEATS.md",
+   "milestone": "0.76.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "claimed",
+   "idle_days": 13,
+   "prs": [],
+   "branches": [],
+   "claims": [
+    "pvl-b"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3149,
+   "title": "P0: spatial neighbor index substrate (kd-tree + ball-tree) \u2014 KNN/DBSCAN/LOF/t-SNE/spectral all scan linearly",
+   "milestone": "0.76.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "claimed",
+   "idle_days": 13,
+   "prs": [],
+   "branches": [],
+   "claims": [
+    "pvl-b"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3150,
+   "title": "P0: const-generic rank-checked tensor (Burn's Tensor<B,D,K>) \u2014 make LAYOUT-001 a compile error",
+   "milestone": "0.76.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3174,
+   "title": "aprender-train-canary is dark: workspace-excluded, in no CI job, pinned to burn 0.21.0-pre.2 \u2014 there is no measured trueno-vs-Burn number",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "stale",
+   "idle_days": 13,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3177,
+   "title": "A merge group whose guard-tree is RED still burns ~2 h of intel workspace-test time before gate reports it",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 13,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "demo/3177-red-guard",
+    "fix/3177-workspace-test-waits-on-guards"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3182,
+   "title": "G3.EX: 38 of 44 non-pass rows were classifier gaps, not defects \u2014 feature refusals need a re-run, not a skip",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "stale",
+   "idle_days": 13,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3183,
+   "title": "release: the CHANGELOG gate checks only that the version string exists \u2014 four merged PRs were missing from 0.67.0 and nothing went RED",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "stale",
+   "idle_days": 13,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3204,
+   "title": "mini (Apple M4) is a full-time aprender build host: macOS/arm64 CI leg + runner re-registration (operator 2026-09-13)",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 12,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "PMAT-3204-mini-macos-leg"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3269,
+   "title": "EPIC E0 0.70: Ontology (ONT-001)",
+   "milestone": "0.70.0",
+   "is_epic": true,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [],
+   "claims": [
+    "owner:infra-83"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3298,
+   "title": "check_pr_ont_delta.sh grades an event-SNAPSHOT body against a LIVE file list, so the documented fix can never be applied without a push",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 11,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "fix/3298-pr-body-live"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3418,
+   "title": "ARCH: quant-type dispatch is duplicated across ~30 files with no single source of truth \u2014 propose a dedicated consolidation release",
+   "milestone": "0.74.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 3,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3422,
+   "title": "ARCH: shared attention/FFN building blocks exist but 0% adopted \u2014 new architectures still cost ~1,600 lines each",
+   "milestone": "0.74.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "feat/3422-pp-arch-adoption"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3431,
+   "title": "PP-QUANT-001 M2: reconciliation gate \u2014 `GgmlType` vs the vendored `ggml.h` id list at a pinned sha; exhaustive matches, no `_ =>`",
+   "milestone": "0.74.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "feat/3431-ggml-reconcile"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3459,
+   "title": "release train: move the release autopilot's tag path into the repo \u2014 tag step calls scripts/check_milestone_cut.sh and cannot be reached without it",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 4,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "GH-3459-must-carry-070",
+    "fix/3459-must-carry-universe"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3483,
+   "title": "FP8 batched prefill fails CPU parity at the post-prompt decode step \u2014 catastrophic on per-head-QK-norm models (Qwen3-8B cos \u22120.10), marginal on Qwen2.5 (0.92)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 5,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3513,
+   "title": "DP4A Q4K/Q6K GEMV profile is catastrophic through the Gated DeltaNet recurrence \u2014 Qwen3.5 on sm_89 needs the float MWV variant (PMAT-806 class)",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 7,
+   "prs": [],
+   "branches": [
+    "fix/3513-dp4a-groups",
+    "fix/3513-on-0701"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3544,
+   "title": "Make the host-receipt DEFER fail closed \u2014 0.68.2 discharged it by hand, and the gate's first run fabricated 4 host failures from a missing directory",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 5,
+   "prs": [
+    4429
+   ],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3546,
+   "title": "install.sh does not exist: /releases/latest/download/install.sh 404s, nothing in the tree provides it \u2014 yet T-2 asserts it ran on intel and gx10",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "PMAT-3546-installsh-ruling",
+    "fix/3546-install-e2e",
+    "wip/0694-ea-4283-3546-4346"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3552,
+   "title": "Facet/Coord have no runnable example \u2014 EV-15/EV-16 have nothing to build against",
+   "milestone": "0.72.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 6,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3555,
+   "title": "Name the Qwen model 0.69 blesses and commit its parity receipt at the SERVING shape \u2014 our gates are all single-stream",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 5,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3558,
+   "title": "First-party dogfood: Qwen3.5 at a Pareto-optimal size \u2014 publish the selection rule and the evidence a consumer re-derives it from",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 5,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3559,
+   "title": "ONT-001 to 80% in 0.69 (\u22487 more rows) with SHACL armed and falsifiable \u2014 and the \u00a711 one-row-per-train conflict this creates",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 5,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3560,
+   "title": "Docs, all 1037 examples and the cookbook: pv-SHACL validated and current for Qwen3.5 (6 of ~1500 artifacts mention it today)",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 5,
+   "prs": [],
+   "branches": [
+    "PMAT-3560-r1-extract-example"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3568,
+   "title": "Schema-constrained decoding in apr (--json-schema or grammar) \u2014 three customers: arbiter's quorum lane, tool calling in verb set V, and the ruchy language",
+   "milestone": "0.72.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 4,
+   "prs": [],
+   "branches": [
+    "PMAT-3568-token-constraint"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3569,
+   "title": "Decision 8: census.json becomes derived (CI computes, guard refuses PR diffs); lint-baseline counts become a base-vs-head never-down check",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 5,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "GH-3569-kind-as-label",
+    "fix/3569-census-derived"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3574,
+   "title": "ARB-APR-3: parity receipt for the decide lane's cell on the agent's host (Qwen3.5-9B-Q4_K_M @ lambda-labs)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "PMAT-3574-arb-apr-3-receipt"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3585,
+   "title": "aprender-queue: register here before opening an aprender PR (one PR in CI at a time)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 5,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3590,
+   "title": "aprender-viz: GGPlot::title/xlab/ylab are accepted and silently discarded \u2014 never drawn, and #[allow(dead_code)] hides it",
+   "milestone": "0.72.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "fix/3590-ggplot-labels"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3594,
+   "title": "The autonomous-merge arming gate has six assertions that are inert on jq 1.6 (the majority of the pool) \u2014 a zero-byte receipt is stopped by one unrelated line",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "PMAT-3594-arming-gate-jq16"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3597,
+   "title": "0.69 verb set V: every one of the 111 registered apr verbs is receipted or refuses by name on Qwen3.5",
+   "milestone": "0.70.1",
+   "is_epic": true,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "PMAT-3597-verb-classification",
+    "fix/3597-on-070",
+    "fix/3597-refusal-rows"
+   ],
+   "claims": [
+    "inbox",
+    "owner:aprender-88"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3598,
+   "title": "EPIC E2 0.71: Verbs Are Fast",
+   "milestone": "0.72.0",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "PMAT-3598-run-json-timing"
+   ],
+   "claims": [
+    "owner:aprender-3d"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3602,
+   "title": "apr run --gpu is 2-3x SLOWER than --no-gpu on the dense path: the GPU result fails correctness (cosine 0.4153) and falls back to CPU after the user has paid for it",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3610,
+   "title": "pv: a shapes gate reports Pass AND armed over ZERO focus nodes \u2014 aggregate swallows decline: NoFocus",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 4,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "PMAT-3610-vacuous-shapes",
+    "PMAT-3610-vacuous-shapes-r"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3611,
+   "title": "pv: implement sh:lessThan / sh:lessThanOrEquals \u2014 SHACL Core property-pair constraints",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "PMAT-3611-shacl-lessthan"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3624,
+   "title": "pv: by_entity_type is a hand-written list parallel to \u03a3 \u2014 derive it from ontology.yaml, or refuse when an implemented entity type is uncounted",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 5,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "fix/3624-by-entity-type-derived"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3668,
+   "title": "Docs-only PRs still spend ~45 min in guard-cargo (25) and guard-tree (15): gate them on a single docs_only decision so a roadmap PR's CI is < 10 min",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 4,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "PMAT-3668-docs-only-ci"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3676,
+   "title": "CI diet: aprender itself burns 99 intel runner-hours/day \u2014 coverage on tag/nightly only, path-filter book jobs, perf/model suites nightly, mutants only on .rs diffs",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 4,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "PMAT-3676-book-cancel-superseded",
+    "PMAT-3676-ci-diet"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3679,
+   "title": "check_ont_ratchet.sh probes a BARE pv (`pvbin=\"$(command -v pv)\"`) \u2014 on a fleet-clobbered runner (pv 0.65.2, no census) it reads 'no consumer' and REDs an honest anchored rise; check_apr_bin_pinned.sh is blind to the form",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "fix/3679-ont-ratchet-pinned-pv"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3693,
+   "title": "Qwen3.5-9B Q4_K_M on CUDA at ~12k-token context corrupts identifiers it quotes from the prompt (as_millis\u2192as_mi, Backend\u2192Backen) and runs at 1.0 tok/s; parity passes only at 79 positions \u2014 model weakness or long-context CUDA divergence is UNMEASURED",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 4,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3708,
+   "title": "autopilot's INHERITED dogfood GO writes no receipt that check_publish_preflight.sh R5 accepts \u2014 v0.69.0 stopped at the publish preflight 43 min after tagging",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 4,
+   "prs": [],
+   "branches": [
+    "PMAT-3708-dogfood-one-rule"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3714,
+   "title": "qwen3moe (Qwen3-30B-A3B, Qwen3-Coder-30B-A3B, Q4_K_M) has NO working CUDA path: apr run --gpu falls back to CPU (rc 14), apr qa emits no gates \u2014 blocks 0.69.1 under the all-Q4_K-CUDA rule",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "PMAT-3714-moe-on-070",
+    "PMAT-3714-qwen3moe-cuda",
+    "PMAT-3714-r1-on-3750",
+    "PMAT-3714-r2-on-v2",
+    "fold/3714-moe-into-0.69.1"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3715,
+   "title": "pv SHACL release-readiness shape: the tag is REFUSED unless every (Q4_K model in host inventory \u00d7 {lambda,gx10} \u00d7 {run,chat,serve,code} \u00d7 consumer-context) cell has a Pass receipt \u2014 a missing cell is a violation, never a skip",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 3,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "PMAT-3715-ollama-qwen35",
+    "PMAT-3715-release-readiness-shape",
+    "PMAT-3715-shapes-gate-complexity",
+    "fix/census-readme-after-3715",
+    "fold/3715-on-b3"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3716,
+   "title": "0.69.1 CONSUMER REQUIREMENTS: every project that uses apr states its user-interface needs (verbs/API, models, context, output shape, latency) \u2014 the release gate is derived from these answers",
+   "milestone": "0.72.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 4,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3717,
+   "title": "#3712 done_when 3 (child): the model-matrix gate runs at T-1 on BOTH hosts before any tag, receipts committed in the bump, re-read at T-4 by the same judge",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "PMAT-3717-models-t1-both-hosts"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3718,
+   "title": "apr run --json: add prompt_tokens (and completion_tokens) so consumers can see how many tokens the model actually read \u2014 RAH asked (#3716)",
+   "milestone": "0.72.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 4,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "feat/3718-run-json-usage"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3719,
+   "title": "`apr code` on Qwen3.5 Q4_K_M (4B, 9B) on CUDA: does it complete a scripted edit-and-verify task on lambda and gx10? UNMEASURED, and its driver runs through `apr serve --gpu` (#3571)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 4,
+   "prs": [],
+   "branches": [
+    "PMAT-3719-apr-code-qwen35-cuda"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3720,
+   "title": "apr response contract for consumers (#3716): weights digest + seed determinism, empty completion = error, refused vs did-not-run distinguishable \u2014 on run --json and serve",
+   "milestone": "0.72.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 4,
+   "prs": [],
+   "branches": [
+    "PMAT-3720-response-contract"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3725,
+   "title": "Qwen3.5 CUDA long-context DECODE is slow: the decode attention kernel runs 16 blocks \u2014 split-K needed for consumer use (RAH ~10 tok/s at 16k)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 4,
+   "prs": [],
+   "branches": [
+    "PMAT-3725-splitk-decode-attention"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3727,
+   "title": "FP8 batched GEMM multiplies a STALE activation on mixed-quant models: the PMAT-084 cache key (ptr, count) aliases across layers \u2014 #3602's cosine 0.4153",
+   "milestone": "0.73.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 4,
+   "prs": [],
+   "branches": [
+    "PMAT-3727-fp8-activation-cache-scope"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3728,
+   "title": "FP8 prefill GEMM overflows its FP16 output: D = true \u00d7 448/act_absmax exceeds 65,504 on qwen2.5-coder-7b (cosine 0.5668, lambda)",
+   "milestone": "0.73.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 4,
+   "prs": [],
+   "branches": [
+    "PMAT-3728-fp8-gemm-bf16-output"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3739,
+   "title": "CRUX inference dogfood, every release: the SAME GGUF + SAME prompts through apr, llama.cpp and ollama, per verb (run / chat / serve / code) on lambda and gx10 \u2014 apr must be right wherever a competitor is right",
+   "milestone": "0.73.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3745,
+   "title": "P0: release cells are hand-coded, not DERIVED from apr's interface \u2014 the gate cannot see a verb, flag or input shape nobody typed into a list (run --prompt --chat, serve, code all leaked)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "PMAT-3745-s1-surface-emitter",
+    "PMAT-3745-s2-derived-cells"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3759,
+   "title": "GPU RMSNorm runs with \u03b5 = 1e-5, not the model's 1e-6: the kernel cache key omits \u03b5 and preload bakes 1e-5 \u2014 special-token positions come out 0.431\u00d7 (qwen2.5-coder-7b, F2 pos 13/44)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 4,
+   "prs": [],
+   "branches": [
+    "PMAT-3759-rmsnorm-eps-in-key",
+    "fix/3759-cuda-module-key-gate"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3761,
+   "title": "#3750 PR B: the 17 header-only whole-file model reads outside apr qa \u2014 magic/header/metadata readers in their format crates",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 4,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "PMAT-3761-header-only-model-reads",
+    "fix/3761-header-only-reads-on-main"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3774,
+   "title": "CRUX verb correspondence (#3739 amendment): every leaf of the derived apr surface maps to its llama.cpp/ollama counterpart or `comparator: none` + reason",
+   "milestone": "0.73.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3795,
+   "title": "CRUX slice 3 (#3739): the chat verb \u2014 a two-turn conversation through apr chat, llama.cpp and ollama (pty-driven), hf and llamafile; judged on the final turn",
+   "milestone": "0.73.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3797,
+   "title": "CRUX slice 4 (#3739): the serve verb \u2014 apr serve, llama-server and ollama through ONE OpenAI client, streaming + non-streaming, plus hf/llamafile servers",
+   "milestone": "0.73.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [
+    "feat/3797-crux-serve-verify"
+   ],
+   "claims": [
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3819,
+   "title": "P0: agy budget exhausted \u2014 wire aprender's own models as quorum review lanes (prah lanes local), and measure whether they can actually judge our diffs",
+   "milestone": "0.72.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 4,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3844,
+   "title": "The release protocol's own reporting lied three ways: a fabricated 95% coverage note, a note-picker hijacked by crate names, and gate() keeping no log",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3846,
+   "title": "THE UNIVERSE IS A GLOB: 10 of 28 held models are never measured, because inventory.patterns only matches q4_k/q4k \u2014 incl. a Q4_0 MoE and an unmeasured 35B Qwen3.5",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "PMAT-3846-inventory-from-header"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3847,
+   "title": "ONT-4c: the first non-code contracts \u2014 README.md, CLAUDE.md, one .apr model file, one CSV \u2014 with their extractors",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [
+    "PMAT-3847-ont-4c",
+    "fix/3847-row-builder-selfdiagnose"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3850,
+   "title": "resolve_qtype silently decodes an UNKNOWN ggml quant as Q4_K, and the whitelist that would refuse it is not on the apr qa GPU path (#3821, second instance)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "PMAT-3850-resolve-qtype-refuses"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3856,
+   "title": "Capability facts as a contract: apr-model-capability-v1 + SHACL + exposure on verb/http/mcp (operator keystone)",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [
+    "PMAT-3856-capability-surfaces",
+    "PMAT-3856-shacl-rows",
+    "feat/3856-capability-contract",
+    "fix/3856-empty-reasons-b1",
+    "x/3856-capability-surfaces"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3859,
+   "title": "RandomForestRegressor/DecisionTreeRegressor carry the identical O(n\u00b2) split search \u2014 #3815's fix does not reach them",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 3,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3863,
+   "title": "EPIC S1 standing: Gates That Cannot Lie",
+   "milestone": "0.71.0",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "claimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [
+    "owner:aprender-d1"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3873,
+   "title": "the golden-output gate reports a GPU failure while asserting a CPU pass it never measured \u2014 it turned a model that fails everywhere into a CUDA blocker",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "PMAT-3873-golden-cpu-pass-measured"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3890,
+   "title": "apr kernel-explain reports ProofLevel::Proven from a SUBSTRING \u2014 nothing runs kani, and fixing the shipped contracts would make six kernels falsely claim Proven to users",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 3,
+   "prs": [],
+   "branches": [
+    "PMAT-3890-proof-level"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3953,
+   "title": "IQ2_S (ggml 22) has no CUDA GEMV \u2014 0.69.1 release blocker",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "feat/3953-iq2s-gpu-gemv"
+   ],
+   "claims": [],
+   "main_strong": [
+    "5fa13fe8c"
+   ],
+   "main_medium": []
+  },
+  {
+   "number": 3972,
+   "title": "ONT-4c5 (infra#921): aprender capability-cell extractor + arming rule (required Unknown{NotRun} meets to RED)",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "PMAT-3972-ont-4c5-r"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3994,
+   "title": "EPIC E3 0.71: Don't Leave Behind",
+   "milestone": "0.71.0",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "PMAT-3994-epic-plan"
+   ],
+   "claims": [
+    "inbox",
+    "owner:aprender-6b"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3997,
+   "title": "EPIC S3 standing: Debt Ratchet",
+   "milestone": "0.70.1",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "PMAT-3997-debt-ratchet-plan"
+   ],
+   "claims": [
+    "owner:aprender-fb"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3998,
+   "title": "EPIC E1 0.70: Fast Train",
+   "milestone": "0.70.1",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "docs/3998-fast-train-plan"
+   ],
+   "claims": [
+    "owner:aprender-57"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 3999,
+   "title": "EPIC E6 0.73: llama.cpp Parity",
+   "milestone": "0.73.0",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "PMAT-3999-epic-plan"
+   ],
+   "claims": [
+    "owner:aprender-1c"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4000,
+   "title": "EPIC E5 0.72: Agent Ready",
+   "milestone": "0.72.0",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "PMAT-4000-epic-plan"
+   ],
+   "claims": [
+    "owner:aprender-60"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4001,
+   "title": "EPIC E7 0.74: Any Model",
+   "milestone": "0.74.0",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "PMAT-4001-epic-plan"
+   ],
+   "claims": [
+    "owner:aprender-2e"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4002,
+   "title": "EPIC E8 0.75: CRUX Fine-Tune/Distill",
+   "milestone": "0.75.0",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "PMAT-4002-epic-plan",
+    "d1/E8-4002-recipe"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4016,
+   "title": "Process rule: llama.cpp fit (llama-fit-params) is the required placement gate for every model certification/test until apr has a parity fit tool",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4427
+   ],
+   "branches": [
+    "feat/4016-llama-fit-gate"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4047,
+   "title": "ONT-4c5 aprender extractor: capability-cells shape in pv lint (per paiml/infra#950)",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4058,
+   "title": "binary-debt #1: ledger + DERIVED-universe guard (BINARY_DEBT \u2264 22, LEGACY_NAMES \u2264 13 at 0.70) \u2014 a new binary must be classified",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "feat/4058-binary-debt-ledger"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4059,
+   "title": "binary-debt #2: the KEPT binaries' CLI tests are dark in CI \u2014 pv (17 files), aprender-profile (13), apr's non-registry CLI tests",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4427,
+    4429
+   ],
+   "branches": [
+    "fix/4059-kept-bin-cli-tests"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4069,
+   "title": "ONT-4c4: kernel symbols as focus nodes \u2014 extract:kernel over extract:code (ont:KernelSymbol \u2291 ont:Symbol, v4.15)",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [
+    "PMAT-4069-ont-4c4-kernel-receipts"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4070,
+   "title": "ONT-4d: subsumption in \u03a3; shapes inherit down the hierarchy",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "PMAT-4070-ont-4d-subsumption"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4071,
+   "title": "ONT-2c: in-house OWL 2 EL writer; TBox check via the oracle, advisory",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "PMAT-4071-ont-2c-owl-writer",
+    "PMAT-4071-receipts-onto-b3"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4072,
+   "title": "ONT-3a: extract:code \u2014 bindings resolve fail-closed across the workspace, via syn",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4431
+   ],
+   "branches": [],
+   "claims": [
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4073,
+   "title": "ONT-3b: formalization.yaml gains model_of; a statement with no model earns no L4",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 2,
+   "prs": [],
+   "branches": [
+    "GH-4073-refine-callsite-test",
+    "feat/4082-4073-ev8b-ont3b"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4074,
+   "title": "ONT-5: pv-sat offline behind a bin boundary; witness checked in the gate; two positive controls",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "PMAT-4074-ont5-pv-sat"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4075,
+   "title": "ONT-4e: requires/ensures as first-class; Liskov rule on refines, witness-checked",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "PMAT-4075-ont4e"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4077,
+   "title": "ONT-8: one evidence block \u2014 PROV-O names, one L-enum, every entity type",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [
+    "PMAT-4077-ont8-evidence",
+    "PMAT-4077-ont8-on-b4"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4078,
+   "title": "ONT-9: the ontology has a contract; checker soundness by Kani and planted-solution generation",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 2,
+   "prs": [],
+   "branches": [
+    "PMAT-4078-ont-9"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4079,
+   "title": "ONT-10: release aprender-contracts-cli with ONT-0..9 (incl. 4d, 4e) \u2014 CI tags, operator publishes (RP-001)",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 2,
+   "prs": [],
+   "branches": [
+    "feat/4079-ont10-release-path"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4080,
+   "title": "PVL-001 EV-2 \u2014 PVL-2: proof-status resolves bindings; ghost binding is a reject",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "PMAT-4080-pvl-2-ghost-binding-reject"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4081,
+   "title": "PVL-001 EV-3 \u2014 PVL-3: one definition of L4/L5",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "PMAT-4081-pvl-3-one-definition-l4-l5"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4094,
+   "title": "contracts/binding.yaml: apr-model-graph-v1 forward_pass_completeness claims implemented, but fn forward_pass does not exist (ghost binding)",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4096,
+   "title": "P0: IQ3_S/IQ2_S GEMV kernels fail to load on cc>=12 (GB10/Blackwell) \u2014 GH-480 PTX patch injects .reg inside a global array initializer",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "fix/4096-ptx-reg-outside-initializer"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4100,
+   "title": "pv lint --gate shapes: the GLOBAL NoFocus decline prints no report \u2014 by_shape/declines exist only on the per-shape path (#3610 follow-up)",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 2,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4108,
+   "title": "guard_tree.sh: vacuous PASS \u2014 lost scratch dir \u2192 '0 checks, 0 failed', exit 0; make gate green on nothing",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "fix/4108-guard-tree-zero-checks"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4110,
+   "title": "apr --version from crates.io install prints +no-git: build.rs ignores .cargo_vcs_info.json",
+   "milestone": "0.69.5",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "fix/4110-vcs-info-sha",
+    "fold/4110-on-0694"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4112,
+   "title": "ci.yml guards never run on PRs into release/** (or on fold pushes), so batch folds skip guard-cargo/guard-tree until the integration PR",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "fix/4112-ci-guards-on-release-push"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4122,
+   "title": "PVL-001 EV-5a: pin Mathlib, scoped Lean warning gate, orphan allowlist",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "feat/4122-pvl-5a-mathlib-pin"
+   ],
+   "claims": [
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4124,
+   "title": "PVL EV-5a orphan group ProvableContracts.Theorems: 55 module(s) outside the root import cone",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "feat/4124-4125-ev5c-orphans"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4133,
+   "title": "CI: guards invoked directly by workflow steps (guard-cargo, guards-nightly, 4 guard-tree arg steps) run outside setsid isolation (#4120 follow-up)",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4427
+   ],
+   "branches": [
+    "ci/4133-guard-steps-setsid"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4142,
+   "title": "ci: the mutants gate is vacuous for crates/** -- cargo mutants runs without --workspace, 0 mutants on every crate diff",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4427
+   ],
+   "branches": [
+    "fix/4142-mutants-workspace"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4152,
+   "title": "clippy -D warnings fails on aprender-serve on main (1280 excessive_precision in IQ tables, 5 deny-level undocumented unsafe) \u2014 no gate lints it: Makefile clippy is facade-only and serve doesn't inherit workspace lints",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4428,
+    4429
+   ],
+   "branches": [
+    "PMAT-4152-clippy-ratchet",
+    "PMAT-4152-member-wide-clippy",
+    "evidence/4152-serve-clippy-green"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4153,
+   "title": "clippy debt ratchet 1/5 (0.70): apr-cli + aprender-core + aprender-serve residual (~522)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4162,
+   "title": "P0: measured token usage for the fleet -- Claude Code + agy, by project / model / lane / hour, with the top levers",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "GH-4162-token-usage-report"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4164,
+   "title": "EPIC E9 0.76: Classical ML + AutoML",
+   "milestone": "0.76.0",
+   "is_epic": true,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4168,
+   "title": "PVL-001 EV-4 \u2014 PVL-4: make contracts propagates pv exit",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4427,
+    4429
+   ],
+   "branches": [
+    "GH-4168-ev4-batch",
+    "PMAT-4168-pvl-4-make-contracts-propagates"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4186,
+   "title": "P0: dogfood hosts run ONLY the latest green nightly apr/pv \u2014 apr_bin.sh + pv_bin.sh refuse anything older (arbiter manifest, fail closed)",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4427
+   ],
+   "branches": [
+    "feat/PMAT-4186-nightly-only-pin"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4189,
+   "title": "P0: nightly publishes 1 of 28 [[bin]]s (apr CPU only) and is RED today \u2014 build every bin at main head + publish a SHA manifest for lambda",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4414,
+    4427,
+    4437
+   ],
+   "branches": [
+    "df/4189-all-bins-plan",
+    "df/4189-nightly-all-bins",
+    "feat/4189-nightly-all-bins"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4191,
+   "title": "aprender-orchestrate: test_resolve_project_root_nonexistent_falls_back is host-dependent (stray /tmp/Cargo.toml)",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "fix/4191-project-root-ceiling"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4193,
+   "title": "aprender-serve published tarball: tokenizer_tests_unk_3609 include_bytes! tests/fixtures, which Cargo.toml excludes (/tests/)",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4428
+   ],
+   "branches": [
+    "fix/4193-on-070",
+    "fix/4193-serve-fixtures-shipped"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4197,
+   "title": "PVL-001 EV-6c \u2014 PVL-6c: Kani assume baseline",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [
+    "PMAT-4197-pvl-6c-kani-assume-baseline",
+    "x/4197-kani-assume-baseline"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4198,
+   "title": "PVL-001 EV-10 \u2014 PVL-10: pv obligations --gate replaces pv-obligation-gate.py",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "PMAT-4198-pvl-10-obligations-gate",
+    "fix/4198-on-070"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4199,
+   "title": "PVL-001 EV-6b \u2014 PVL-6b: leanchecker re-check inside discharge check",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "feat/4199-pvl-6b-leanchecker"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4201,
+   "title": "PVL-001 EV-7b \u2014 PVL-7b: comparator \u2014 the solution closes exactly the pinned statement",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "PMAT-4201-pvl-7b-comparator"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4202,
+   "title": "PVL-001 EV-8a \u2014 PVL-8a: pv discharge run \u2014 one summary the tree can carry",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 2,
+   "prs": [
+    4431
+   ],
+   "branches": [
+    "PMAT-4202-pvl-8a-derived-summary"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4207,
+   "title": "aprender-contracts lint::tests::lint_empty_dir fails on pristine main aa7c6ef03 (report.passed, mod_tests.rs:32), likely env-dependent",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429,
+    4431
+   ],
+   "branches": [
+    "GH-4207-lint-hermetic-batch",
+    "PMAT-4207-lint-hermetic"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4218,
+   "title": "Release gate: apr serve throughput vs llama.cpp on the SAME GGUF (Qwen3.5 0.8B/2B/4B/9B/27B) \u2014 a regression ratchet that blocks the tag, plus a published parity target",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [
+    "feat/4218-serve-parity-gate"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4220,
+   "title": "CRUX parity spike: apr serve vs ollama on Qwen3.5 (0.8B/2B/4B/9B/27B) \u2014 measure gap, name techniques, file fixes",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4238,
+   "title": "PVL: gate Comparator.lean --self-test (FIPS sha256 vectors) \u2014 nothing runs it today",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4431
+   ],
+   "branches": [],
+   "claims": [
+    "aprender-98"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4249,
+   "title": "EPIC 0.69.4 patch train: 0.69.3 carryovers + Qwen 3.5 serve parity part 2",
+   "milestone": "0.69.5",
+   "is_epic": true,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [
+    "batch/0.69.4-epic-4249"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4250,
+   "title": "0.69.4 G0: serve-level test that fails unless apr serve prefills Qwen3.5 through the batched path (#3596 countermeasure)",
+   "milestone": "0.69.5",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [
+    "feat/4250-nightly-wire",
+    "feat/4250-serve-batched-prefill-test"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4251,
+   "title": "0.69.4: run the #4250 serve batched-prefill test where the Qwen3.5 model exists (it is a model-absent SKIP in ci.yml cuda-unit)",
+   "milestone": "0.69.5",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [
+    "PMAT-4251-serve-prefill-nightly"
+   ],
+   "claims": [
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4256,
+   "title": "release assets print (vX+no-git): apr_bin.sh STRICT refuses every published apr binary",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4427,
+    4429
+   ],
+   "branches": [
+    "wip/0694-d1-4275-4256-4290"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4266,
+   "title": "Delete dead generate paths + one shared sampling/stop-token fn (verb\u2192engine map follow-up)",
+   "milestone": "0.69.5",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [
+    "fix/4266-generate-paths",
+    "fix/4266-p2-shared-sampler"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4273,
+   "title": "qwen35 CUDA decode collapses with context: 70 \u2192 40 \u2192 7.8 tok/s at 850/4k/32k (llama.cpp 166\u2192147), 0.05\u00d7 at 32k. gdn_decode_attention runs 16 blocks with no split over the sequence",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4428
+   ],
+   "branches": [
+    "e6/4273-on-car",
+    "perf/4273-split-decode-attention",
+    "perf/4273-split-decode-attention-main"
+   ],
+   "claims": [
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4274,
+   "title": "serve: Qwen3.5 chat turn 2 re-prefills from position 0; the session extend never engages via /v1/chat/completions",
+   "milestone": "0.69.5",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "fix/4274-on-0.69.3"
+   ],
+   "claims": [
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4275,
+   "title": "binary-release smoke: strip -rc.N from the tag before comparing it to the asset's --version",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "wip/0694-d1-4275-4256-4290"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4283,
+   "title": "install.sh: --channel rc \u2014 devs can install an -rc prerelease only if they already know its tag",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4427
+   ],
+   "branches": [
+    "fix/4283-install-channel-rc",
+    "wip/0694-ea-4283-3546-4346"
+   ],
+   "claims": [
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4290,
+   "title": "F2 receipt key uses CARGO_PKG_VERSION, so rc.1/rc.2/final (and every dev build) of one version share receipts: a forward-path change skips the CPU reference check",
+   "milestone": "0.69.5",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "wip/0694-d1-4275-4256-4290"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4292,
+   "title": "release: ship an aarch64-apple-darwin apr asset (v0.69.3-rc.1 has none; mini builds from tag)",
+   "milestone": "0.69.5",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "feat/4292-darwin-arm64-asset",
+    "fix/4292-darwin-asset",
+    "fix/4292-darwin-nightly-manifest"
+   ],
+   "claims": [
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4313,
+   "title": "perf(prefill): MMQ int8 prefill matmul + LM head on the last token only (0.69.5)",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [
+    "docs/4313-gb10-f2-prefill-finding",
+    "fix/4313-f2-prob-metric",
+    "perf/4313-mmq-prefill"
+   ],
+   "claims": [
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4319,
+   "title": "ONT-3a: 24 ghost bindings \u2014 implemented in binding.yaml, no item in the workspace",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4325,
+   "title": "perf(session): poll the cancel token before the decode forward, not after \u2014 one wasted forward per cancelled request (0.69.4)",
+   "milestone": "0.69.5",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "PMAT-4325-cancel-poll-before-forward"
+   ],
+   "claims": [
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4328,
+   "title": "P0 JIDOKA: fleet binary drift \u2014 every host runs the newest verified build of every binary, or the line stops",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "wip/4328-aud10-no-python",
+    "wip/4328-identity-on-0694"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4330,
+   "title": "ONT-4f: GitHub's own objects \u2014 repo, issue, pull-request, milestone \u2014 as typed focus nodes (ONT-001 v4.16)",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [
+    "PMAT-4330-ont-4f-github-entities"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4336,
+   "title": "cuda-unit clippy gate (#3636) does not run on apr-cli-only diffs \u2014 apr-cli is outside GPU_CRATES",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4337,
+   "title": "fleet-bins: UNVERIFIABLE on paiml/aprender",
+   "milestone": null,
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4339,
+   "title": "apr serve GGUF CPU: POST /v1/completions runs past stop on 13/13 CRUX prompts (llama-server stops)",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "fix/4339-gguf-completions-stop"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4340,
+   "title": "apr serve: /v1/chat/completions stream leaks <|im_end|> into delta content (1/14 CRUX prompts)",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "x/4340-stream-im-end"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4341,
+   "title": "crux serve sweep: one timeout over the whole sweep + end-only plan.json discards every completed row",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "claimed",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [],
+   "claims": [
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4342,
+   "title": "qwen35 --gpu tok/s counts the CUDA build + F2 guard as generation (inference_ms not generation-only) \u2014 sibling of #3714",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "PMAT-4342-q35-setup-timing"
+   ],
+   "claims": [
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4343,
+   "title": "nextest: 5 aprender-serve lib tests SIGKILLed by 16G local cargo-memcap \u2014 local runs false-red (heavy-memory group; mega test allocates 34GB)",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4344,
+   "title": "apr serve native routes leak <|im_end|> into text: /generate, /batch/generate, /stream/generate, /realize/generate, /realize/batch",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "docs/findings-3d-4344-verify",
+    "x/4344-native-im-end"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4345,
+   "title": "apr serve: GPU/CUDA /v1/completions paths stop on a single EOS or none (follow-up to #4339)",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 1,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "fix/4345-logprobs-gpu-batch-stop",
+    "x/4345-gpu-completions-stop"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4346,
+   "title": "qwen-story-daily cargo-installs apr into the gx10 host's ~/.cargo/bin, overwriting the fleet-bins release binary every beat",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "fix/4346-qwen-story-no-host-install",
+    "wip/0694-ea-4283-3546-4346"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4347,
+   "title": "PVL: prove all 7 escape-allowlist axioms (DPO x3, f16 bound, NF4 x3) instead of confirming them",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [
+    "GH-4347-dpo-lean",
+    "GH-4347-dpo-on-nf4",
+    "fix/4347-prove-nf4-f16"
+   ],
+   "claims": [
+    "inbox",
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4348,
+   "title": "P0: Lean/leanchecker must not overload lambda \u2014 narrow Mathlib imports, lake build vs leanchecker tiers, thread cap, no heavy kernel decide",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "claimed",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [],
+   "claims": [
+    "inbox"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4349,
+   "title": "GH-4117 follow-up: candidate watch runs the --scope release gate as a REAL row (needs #4045 M8 port)",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4350,
+   "title": "ARB-AUD-10: fleet_cells_gate.sh lands on main without Python, after ARB-AUD-01",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 1,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4351,
+   "title": "proof_status Lean scan: 'sorry' in a doc comment, and the domain.file citation form, deny credit to sorry-free theorems",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "GH-4351-lean-scan-false-negatives",
+    "PMAT-4351-lean-sorry-token"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4352,
+   "title": "ARB-AUD-10b: python3 out of the release path \u2014 12 scripts / 43 sites + release_wall_time.py, jq with a parity table per script",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "wip/4352-release-no-python"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4353,
+   "title": "Release+nightly must ship aarch64-apple-darwin (mini) and a wgpu-enabled x86_64 (intel) apr/pv asset; gate fails on any fleet host without a sha-verified install",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4463
+   ],
+   "branches": [
+    "feat/4353-mac-wgpu-assets",
+    "feat/4353-nightly-mac-wgpu"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4354,
+   "title": "PROMETHEUS (PRM-001 v3) epic: Qwen 3.5 4B local lane \u2014 fast enough and good enough to break quorum ties",
+   "milestone": "0.70.1",
+   "is_epic": true,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4459
+   ],
+   "branches": [],
+   "claims": [
+    "owner:rex"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4355,
+   "title": "REX-00: pre-register: commit spec, analysis plan (\u00a73 tests as code signatures), empty test-hash manifest, prompt v1 + sha",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4431
+   ],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4357,
+   "title": "REX-02: corpus: P/R/G review corpus, strata, dev/test splits, sealed hash manifest, contamination contract with fixtures",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4431
+   ],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4358,
+   "title": "REX-03: harness: Rust bench binary driving resident apr serve + deterministic verdict parser + receipt writer + scorer (Wilson, McNemar exact, seeded bootstrap, Holm)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4431
+   ],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4359,
+   "title": "REX-04: parity admission: apr parity per cell vs llama.cpp d1d3c3396 on exact weights",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4431
+   ],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4360,
+   "title": "REX-05: pilot: 10 dev items per admitted cell, cold-start runs, H6 reference workload alone x5",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4361,
+   "title": "REX-06: full run: test split on admitted cells, 9B control, Haiku+agy baselines, 10% determinism re-run, H6 co-located runs",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4362,
+   "title": "REX-07: day-0 shadow lane: 4B lane as non-voting 4th quorum lane on gx10, writes review-ledger-v1",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4363,
+   "title": "REX-08: analysis + hardware ruling: \u00a73 tests, \u00a74 rule, rex-001-hardware-ruling.md, per-divergence/per-gap issues",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4364,
+   "title": "REX-09: promotion ladder: H4/H5 shadow->tripwire->vote gates in paiml-implement and arbiter decide (filed issues)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4365,
+   "title": "REX-10: perf ratchet: per-tag \u00a75.1 job on primary cell, ratchet file, knob sweep per train",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4366,
+   "title": "REX-11: B1 loop: prompt versions + retrieval few-shot evaluated via \u00a75.4 champion/challenger",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4367,
+   "title": "REX-12: B2 loop: 27B teacher logits (gx10, top-k, m=1) over train pool; B2a/b/c acceptance tests wired to qwen35 finetune/distill/merge",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4368,
+   "title": "#[contract]: a registry sentinel \u2014 \"no registry\" is silent, \"registry has no such contract\" is a compile error (#2699 cause 2)",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "GH-4368-contract-registry-sentinel",
+    "fix/4368-setfit-bindings"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4369,
+   "title": "Migrate the 12 hand-rolled producer build.rs key builders onto build_helper::env_key (#2699 remainder)",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4429
+   ],
+   "branches": [
+    "GH-4369-producers-repoint"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4370,
+   "title": "apr-cli: 65 #[contract] sites with no producer build.rs enforce nothing (#2699 remainder)",
+   "milestone": "0.72.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4371,
+   "title": "Prose YAML pre/postconditions become compile_error! when wired \u2014 lint every emitted condition as a Rust expression (#2699 remainder)",
+   "milestone": "0.72.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4374,
+   "title": "effective-config reports Qwen3.5 CUDA residency as 'cpu residency' and drops the F2 parity verdict (v0.69.3)",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "fix/4374-effective-config-qwen35"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4376,
+   "title": "0.70.x: prefill kernel parity \u2014 llama-bench pp \u22650.8x llama.cpp (today 0.19\u20130.20x)",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4377,
+   "title": "Adopt dogfood-receipt-v1 in apr-dogfood, and remove python3 from it (ARB-SELF-001 ASL-05)",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4378,
+   "title": "PMAT-027 stale Q8_1 activation cache: batched fallback, batched decode, and Qwen3-MoE forward reuse the previous GEMV's input under DP4A",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "fix/4378-q8-cache-invalidate"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4379,
+   "title": "213 restored binding.yaml rows name symbols that do not resolve (bindings-gate ghosts, #4369 follow-up)",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "e6/4379-ghost-bindings"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4380,
+   "title": "build scripts still read the gone provable-contracts sibling path: serve codegen (arch-requirements, tensor-names), graph, verify, verify-ml (#4369 class)",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "e6/4380-build-contracts-paths"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4381,
+   "title": "EPIC E4 0.71: Dogfood Model Lifecycle",
+   "milestone": "0.71.0",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "ext/epic-4381"
+   ],
+   "claims": [
+    "owner:ext"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4382,
+   "title": "EXT-00: bind (EXT-001, Refs #4381)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4386,
+   "title": "EXT-04: backend (EXT-001, Refs #4381)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4393,
+   "title": "EXT-11: packager (EXT-001, Refs #4381)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4401,
+   "title": "EXT-19: speed ledger (EXT-001, Refs #4381)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4415,
+   "title": "Lever 0: guard-cargo/guard-tree stop at the first red step \u2014 run every guard and report every failure in one pass (RC #4318: 1 failure per run, 15\u201371 steps dark)",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4457
+   ],
+   "branches": [
+    "PMAT-4415-falsifier-plant",
+    "PMAT-4415-guards-run-all",
+    "PMAT-4415-y3-rc-gate",
+    "cb/4415-bash-port"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4416,
+   "title": "Lever 2: one local entry point that runs the SAME guard scripts CI runs (no second copy, F1 #2640) \u2014 catch guard reds before push",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "PMAT-4416-guards-local-wip"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4417,
+   "title": "PR write-set: no PR writes docs/roadmaps/roadmap.yaml or the README census; main regenerates both (operator P4)",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "GH-4417-pr-generated-write-set",
+    "feat/4417-pr-generated-write-set"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4418,
+   "title": "qwen35: apr quantize --format gguf emits a GGUF llama.cpp d1d3c3396 cannot load (738/739 tensors unmapped, embed/output F32) \u2014 blocks EXT-18",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4419,
+   "title": "Plausible-value defaults on file-decoded arch/tokenizer/quant: unknown arch exported as Qwen2, APR cache reads an untyped weight as Q4_K (#3850 audit)",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4420,
+   "title": "bindings resolver: bin-only modules and OUT_DIR-generated items are invisible to the ONT-3a walk (5 allowlisted rows)",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "e6/4420-resolver-bin-outdir"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4422,
+   "title": "FLOW-08: cop CI-slot grant refuses when FR-4 (open PRs > 10) or FR-10 (integration WIP) is red, or when a non-rc PR carries a fold; fold detector",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4423,
+   "title": "qa: 5 SUSPECT asserted-not-measured verdict clauses (follow-up to #3873)",
+   "milestone": "backlog",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4424,
+   "title": "Y2: nextest shard rebalance \u2014 weighted explicit-fragment plan + quick tier hash-partitioned on all shards",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4425,
+   "title": "ci: parity_receipt_denominator.sh verify mode is never run \u2014 only --self-test is wired (#3577 guard is dark)",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "GH-4425-parity-denominator-verify-wired",
+    "fold/4425-onto-stage-0701"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4430,
+   "title": "Binary names: every shipped [[bin]] is aprender-* (only apr and pv exempt), with a guard",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4437
+   ],
+   "branches": [
+    "PMAT-4430-aprender-bin-names",
+    "PMAT-4430-bin-names-nopy"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4432,
+   "title": "APR-EPIC-001 A0: re-derive live issue state (read-only receipt)",
+   "milestone": "0.70.1",
+   "is_epic": true,
+   "epic_linked": false,
+   "status": "claimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [
+    "aprender-98",
+    "aprender-98"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4433,
+   "title": "Release CI: one job, one reserved runner \u2014 a release PR must not fan out into 20 queued jobs",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4414
+   ],
+   "branches": [
+    "fix/4433-sigma-should-panic",
+    "pm/4433-consumers"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4434,
+   "title": "APR-RELEASE-001: rc = tag on queue-green main sha, receipts gate promotion, 5 fat jobs (diff vs main)",
+   "milestone": "0.70.0",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "docs/4434-4436-rc-ruling"
+   ],
+   "claims": [],
+   "main_strong": [
+    "a016cee94"
+   ],
+   "main_medium": []
+  },
+  {
+   "number": 4435,
+   "title": "Ruleset: merge queue B/K + auto-rollback drift check (after FLOW-04)",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "feat/4435-merge-queue-bk"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4436,
+   "title": "Cop rulings register: state points to merged paths, [U]/[M] rows",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "docs/4434-4436-rc-ruling"
+   ],
+   "claims": [],
+   "main_strong": [
+    "a016cee94"
+   ],
+   "main_medium": []
+  },
+  {
+   "number": 4438,
+   "title": "APR-EPIC-001 A1: epic skeleton \u2014 epics.yaml + 13 epic issues",
+   "milestone": "0.70.1",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4442,
+   "title": "qwen35 batched prefill: flash attention for the full-attention layers \u2014 32k prefill 3.2k tok/s vs llama.cpp 10.1k (0.26\u00d7 ollama)",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "fix/4442-qwen35-flash-prefill-4b"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4443,
+   "title": "qwen35 session: #4274 headroom doubles a 32k turn to 65536 positions \u2014 27B OOMs and silently falls back to CPU",
+   "milestone": "0.69.5",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "fix/4443-on-main",
+    "fix/4443-qwen35-headroom-exact-retry"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4444,
+   "title": "apr: llama.cpp logit-compare verb as the PRM parity.oracle (PRM-001 v2 \u00a74.1)",
+   "milestone": "0.71.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "feat/4444-llamacpp-logit-oracle"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4445,
+   "title": "apr bench (qwen35 --fast) refuses every run with warmup+iterations > 1: one session reuses its own prefix cache",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "fix/4445-bench-fresh-prefill"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4446,
+   "title": "PRA-001 T12: agent-trace terms/provider tagging + provider/channel-excluding pool rebuild (P-TERMS)",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4459
+   ],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4447,
+   "title": "PRM-S1: review-replay-v1 benchmark + runner (apr vs llama.cpp d1d3c3396, same cell and GGUF)",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "in-PR",
+   "idle_days": 0,
+   "prs": [
+    4459
+   ],
+   "branches": [],
+   "claims": [
+    "fb CLAIM PRM-S1/#4447 review-replay-v1 (replay.rs on rex/001, ff only) \u2014 matches cop assignment; no action."
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4449,
+   "title": "apr serve: drain on SIGTERM/SIGINT \u2014 keep listening, 503 + Retry-After for new requests, finish in-flight; today SIGTERM cuts requests to EOF",
+   "milestone": null,
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "fix/4449-serve-drain"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4450,
+   "title": "perf(serve): qwen35 prefill falls to one token at a time when the 512-row workspace misses \u2014 9B 32k TTFT 733 s, and it sticks (#4220 child)",
+   "milestone": "0.70.1",
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "branch-only",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [
+    "ea/4450-f16-release"
+   ],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4454,
+   "title": "ONT-3a: bindings gate emits pc_resolver/ghosts, spec probe reads pc_extract/unresolved \u2014 row cannot bind after #4431",
+   "milestone": null,
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4455,
+   "title": "APR-EPIC-001 A8: intake control in-tree \u2014 findings-ledger-v1, CLAUDE.md rewrite, check_pr_closes.sh",
+   "milestone": "0.70.1",
+   "is_epic": true,
+   "epic_linked": true,
+   "status": "claimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [
+    "owner:aprender-d1"
+   ],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4456,
+   "title": "check_fleet_pv_shapes_gate reds guard-tree when the fleet pv is older than a shape key the tree introduces (allowEmpty, car 0.70.0)",
+   "milestone": null,
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4458,
+   "title": "Nightly coverage report",
+   "milestone": null,
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4462,
+   "title": "pr-review gate has no self-service path for fork/external contributors without pmat/agy/minisign",
+   "milestone": null,
+   "is_epic": false,
+   "epic_linked": false,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  },
+  {
+   "number": 4464,
+   "title": "CRUX-PERF: crux-perf-receipt-v1 \u2014 per-cell T0 speed vs competitor, n>=5 bootstrap CI, falsifiers F1-F5 (G2/G3/G5)",
+   "milestone": "0.73.0",
+   "is_epic": false,
+   "epic_linked": true,
+   "status": "unclaimed",
+   "idle_days": 0,
+   "prs": [],
+   "branches": [],
+   "claims": [],
+   "main_strong": [],
+   "main_medium": []
+  }
+ ],
+ "diff_vs_snapshot": {
+  "snapshot_file": "~/Desktop/aprender-triage-report.json (aprender-d1)",
+  "snapshot_fetched_at_utc": "2026-09-25T14:51:23+00:00",
+  "spec_cites": "2026-09-25T14:16Z \u2014 the file says fetched_at_utc above; spec timestamp differs",
+  "open_issues": {
+   "snapshot": 827,
+   "now": 235
+  },
+  "open_epics": {
+   "snapshot": 42,
+   "now": 29
+  },
+  "closed_since": [
+   2307,
+   2463,
+   2470,
+   2473,
+   2477,
+   2482,
+   2492,
+   2494,
+   2500,
+   2507,
+   2526,
+   2584,
+   2585,
+   2590,
+   2614,
+   2615,
+   2616,
+   2630,
+   2646,
+   2653,
+   2655,
+   2663,
+   2664,
+   2693,
+   2699,
+   2728,
+   2731,
+   2732,
+   2750,
+   2757,
+   2766,
+   2775,
+   2782,
+   2784,
+   2790,
+   2798,
+   2808,
+   2812,
+   2822,
+   2826,
+   2828,
+   2832,
+   2834,
+   2844,
+   2846,
+   2855,
+   2856,
+   2881,
+   2882,
+   2883,
+   2884,
+   2885,
+   2886,
+   2892,
+   2894,
+   2896,
+   2897,
+   2898,
+   2901,
+   2904,
+   2905,
+   2906,
+   2907,
+   2908,
+   2909,
+   2910,
+   2914,
+   2915,
+   2916,
+   2919,
+   2920,
+   2921,
+   2922,
+   2923,
+   2924,
+   2925,
+   2926,
+   2927,
+   2928,
+   2929,
+   2930,
+   2931,
+   2939,
+   2940,
+   2941,
+   2942,
+   2943,
+   2944,
+   2945,
+   2946,
+   2947,
+   2948,
+   2949,
+   2950,
+   2951,
+   2952,
+   2953,
+   2954,
+   2955,
+   2956,
+   2957,
+   2958,
+   2959,
+   2972,
+   2973,
+   2974,
+   2975,
+   2976,
+   2977,
+   2978,
+   2979,
+   2980,
+   2983,
+   2984,
+   2988,
+   2989,
+   2990,
+   2991,
+   2992,
+   2993,
+   2994,
+   2995,
+   2996,
+   2997,
+   3002,
+   3013,
+   3014,
+   3015,
+   3016,
+   3018,
+   3019,
+   3029,
+   3034,
+   3042,
+   3045,
+   3054,
+   3055,
+   3058,
+   3062,
+   3067,
+   3075,
+   3076,
+   3077,
+   3081,
+   3117,
+   3129,
+   3133,
+   3135,
+   3140,
+   3141,
+   3142,
+   3143,
+   3144,
+   3146,
+   3151,
+   3152,
+   3153,
+   3154,
+   3155,
+   3156,
+   3157,
+   3158,
+   3159,
+   3161,
+   3165,
+   3166,
+   3167,
+   3168,
+   3170,
+   3171,
+   3172,
+   3173,
+   3176,
+   3178,
+   3179,
+   3180,
+   3184,
+   3190,
+   3203,
+   3206,
+   3217,
+   3218,
+   3226,
+   3234,
+   3235,
+   3236,
+   3239,
+   3242,
+   3251,
+   3252,
+   3254,
+   3261,
+   3275,
+   3279,
+   3282,
+   3283,
+   3284,
+   3286,
+   3291,
+   3293,
+   3304,
+   3306,
+   3324,
+   3330,
+   3332,
+   3343,
+   3345,
+   3353,
+   3370,
+   3371,
+   3372,
+   3373,
+   3374,
+   3375,
+   3376,
+   3377,
+   3378,
+   3379,
+   3380,
+   3381,
+   3382,
+   3383,
+   3384,
+   3385,
+   3386,
+   3387,
+   3388,
+   3389,
+   3390,
+   3391,
+   3392,
+   3393,
+   3394,
+   3416,
+   3421,
+   3423,
+   3428,
+   3429,
+   3433,
+   3434,
+   3435,
+   3441,
+   3442,
+   3443,
+   3446,
+   3454,
+   3457,
+   3458,
+   3460,
+   3462,
+   3464,
+   3466,
+   3478,
+   3493,
+   3495,
+   3518,
+   3522,
+   3531,
+   3532,
+   3541,
+   3542,
+   3543,
+   3553,
+   3554,
+   3562,
+   3563,
+   3573,
+   3576,
+   3579,
+   3583,
+   3584,
+   3586,
+   3587,
+   3591,
+   3592,
+   3593,
+   3595,
+   3596,
+   3603,
+   3607,
+   3612,
+   3615,
+   3625,
+   3628,
+   3635,
+   3636,
+   3639,
+   3643,
+   3646,
+   3649,
+   3650,
+   3652,
+   3667,
+   3677,
+   3680,
+   3683,
+   3684,
+   3686,
+   3687,
+   3690,
+   3694,
+   3697,
+   3699,
+   3700,
+   3705,
+   3709,
+   3712,
+   3713,
+   3722,
+   3731,
+   3732,
+   3733,
+   3734,
+   3735,
+   3740,
+   3741,
+   3742,
+   3747,
+   3748,
+   3749,
+   3751,
+   3756,
+   3762,
+   3763,
+   3765,
+   3768,
+   3770,
+   3771,
+   3776,
+   3777,
+   3778,
+   3779,
+   3780,
+   3783,
+   3787,
+   3788,
+   3790,
+   3792,
+   3793,
+   3803,
+   3805,
+   3806,
+   3809,
+   3811,
+   3818,
+   3821,
+   3822,
+   3824,
+   3826,
+   3827,
+   3829,
+   3830,
+   3831,
+   3832,
+   3833,
+   3834,
+   3836,
+   3837,
+   3838,
+   3839,
+   3841,
+   3845,
+   3848,
+   3851,
+   3852,
+   3853,
+   3854,
+   3855,
+   3857,
+   3860,
+   3861,
+   3862,
+   3864,
+   3865,
+   3866,
+   3867,
+   3868,
+   3869,
+   3871,
+   3872,
+   3874,
+   3876,
+   3878,
+   3879,
+   3882,
+   3887,
+   3888,
+   3889,
+   3893,
+   3895,
+   3896,
+   3897,
+   3898,
+   3900,
+   3901,
+   3902,
+   3904,
+   3906,
+   3907,
+   3908,
+   3909,
+   3910,
+   3911,
+   3912,
+   3913,
+   3915,
+   3916,
+   3917,
+   3918,
+   3919,
+   3920,
+   3921,
+   3922,
+   3923,
+   3924,
+   3927,
+   3928,
+   3930,
+   3931,
+   3936,
+   3937,
+   3940,
+   3941,
+   3942,
+   3943,
+   3945,
+   3947,
+   3948,
+   3951,
+   3952,
+   3954,
+   3955,
+   3956,
+   3957,
+   3960,
+   3961,
+   3962,
+   3963,
+   3964,
+   3965,
+   3966,
+   3968,
+   3971,
+   3973,
+   3974,
+   3975,
+   3977,
+   3978,
+   3980,
+   3981,
+   3982,
+   3985,
+   3986,
+   3987,
+   3991,
+   3992,
+   3996,
+   4004,
+   4005,
+   4015,
+   4018,
+   4019,
+   4020,
+   4021,
+   4026,
+   4027,
+   4028,
+   4030,
+   4031,
+   4033,
+   4041,
+   4043,
+   4044,
+   4045,
+   4048,
+   4049,
+   4050,
+   4054,
+   4055,
+   4056,
+   4057,
+   4060,
+   4061,
+   4062,
+   4063,
+   4064,
+   4065,
+   4066,
+   4067,
+   4068,
+   4082,
+   4083,
+   4084,
+   4085,
+   4086,
+   4089,
+   4097,
+   4098,
+   4099,
+   4101,
+   4102,
+   4105,
+   4106,
+   4111,
+   4113,
+   4114,
+   4116,
+   4117,
+   4118,
+   4120,
+   4125,
+   4129,
+   4130,
+   4132,
+   4134,
+   4138,
+   4139,
+   4140,
+   4143,
+   4144,
+   4145,
+   4146,
+   4148,
+   4149,
+   4151,
+   4154,
+   4155,
+   4156,
+   4157,
+   4161,
+   4166,
+   4173,
+   4175,
+   4176,
+   4179,
+   4181,
+   4182,
+   4192,
+   4200,
+   4209,
+   4211,
+   4214,
+   4215,
+   4219,
+   4221,
+   4222,
+   4223,
+   4225,
+   4228,
+   4232,
+   4233,
+   4234,
+   4235,
+   4236,
+   4239,
+   4240,
+   4241,
+   4244,
+   4245,
+   4252,
+   4255,
+   4258,
+   4259,
+   4260,
+   4262,
+   4268,
+   4271,
+   4280,
+   4285,
+   4286,
+   4288,
+   4298,
+   4299,
+   4300,
+   4306,
+   4310,
+   4324,
+   4326,
+   4327,
+   4329,
+   4356,
+   4383,
+   4384,
+   4385,
+   4387,
+   4388,
+   4389,
+   4390,
+   4391,
+   4392,
+   4394,
+   4395,
+   4396,
+   4397,
+   4398,
+   4399,
+   4400,
+   4402,
+   4403,
+   4404,
+   4405,
+   4406,
+   4407,
+   4408,
+   4409,
+   4410,
+   4411,
+   4412,
+   4413,
+   4421
+  ],
+  "opened_since": [
+   4434,
+   4435,
+   4436,
+   4438,
+   4442,
+   4443,
+   4444,
+   4445,
+   4446,
+   4447,
+   4449,
+   4450,
+   4454,
+   4455,
+   4456,
+   4458,
+   4462,
+   4464
+  ],
+  "milestone_changed": [
+   2378,
+   2530,
+   2648,
+   2661,
+   3174,
+   3182,
+   3183,
+   3513,
+   3544,
+   3546,
+   3552,
+   3574,
+   3585,
+   3590,
+   3594,
+   3708,
+   3714,
+   3719,
+   3725,
+   3739,
+   3745,
+   3761,
+   3774,
+   3795,
+   3797,
+   3844,
+   3859,
+   3953,
+   4058,
+   4096,
+   4124,
+   4152,
+   4153,
+   4162,
+   4186,
+   4220,
+   4328,
+   4344,
+   4346,
+   4347,
+   4348,
+   4350,
+   4355,
+   4357,
+   4358,
+   4359,
+   4360,
+   4361,
+   4362,
+   4363,
+   4364,
+   4365,
+   4366,
+   4368,
+   4369,
+   4377,
+   4379,
+   4380,
+   4417,
+   4422,
+   4424,
+   4430,
+   4432
+  ],
+  "epic_flag_changed": [],
+  "status_snapshot": {
+   "in-PR": 146,
+   "stale": 235,
+   "unclaimed": 232,
+   "branch-only": 156,
+   "claimed": 16
+  },
+  "status_now": {
+   "branch-only": 64,
+   "stale": 5,
+   "unclaimed": 50,
+   "claimed": 4,
+   "in-PR": 83
+  },
+  "status_moves": {
+   "claimed->unclaimed": 7,
+   "stale->branch-only": 6,
+   "unclaimed->in-PR": 6,
+   "in-PR->branch-only": 5,
+   "stale->unclaimed": 4,
+   "unclaimed->branch-only": 3,
+   "stale->claimed": 3,
+   "unclaimed->claimed": 2,
+   "branch-only->in-PR": 2,
+   "claimed->in-PR": 2,
+   "claimed->branch-only": 1
+  }
+ }
+}
