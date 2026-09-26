@@ -128,10 +128,14 @@ pub fn post(url: &str, body: &Value) -> Result<Reply, String> {
 /// # Errors
 /// The read failed, or the body ran past `cap`.
 pub fn read_bounded(r: impl Read, cap: u64) -> Result<String, String> {
+    // One byte past the cap tells a body that ran over from one that fit.
     let mut body = String::new();
-    r.take(cap)
+    r.take(cap.saturating_add(1))
         .read_to_string(&mut body)
         .map_err(|e| e.to_string())?;
+    if body.len() as u64 > cap {
+        return Err(format!("reply body ran past the {cap}-byte cap"));
+    }
     Ok(body)
 }
 
