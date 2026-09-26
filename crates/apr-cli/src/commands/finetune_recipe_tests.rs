@@ -262,3 +262,20 @@ fn a_seq_len_override_is_refused_under_a_recipe() {
     let same = DISTILL_SEQ_LEN.to_string();
     let _ = refused_field(refuse_seq_len_override(Some(std::ffi::OsStr::new(&same))));
 }
+
+/// Outside a recipe the override is honored, but a malformed one is refused
+/// instead of silently running at the default window length.
+#[test]
+fn a_malformed_seq_len_override_is_refused_not_defaulted() {
+    use std::ffi::OsStr;
+    assert_eq!(distill_seq_len(None).expect("unset"), DISTILL_SEQ_LEN);
+    assert_eq!(distill_seq_len(Some(OsStr::new("64"))).expect("64"), 64);
+    for bad in ["", "0", "-8", "abc", "12k", "1e3"] {
+        match distill_seq_len(Some(OsStr::new(bad))) {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains(DISTILL_SEQ_LEN_ENV), "{bad:?}: {msg}");
+            }
+            other => panic!("{bad:?} must be refused, got {other:?}"),
+        }
+    }
+}

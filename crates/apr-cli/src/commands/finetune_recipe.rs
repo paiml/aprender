@@ -261,6 +261,23 @@ pub(crate) fn refuse_seq_len_override(env: Option<&std::ffi::OsStr>) -> Result<(
     }
 }
 
+/// The distill window length outside a recipe: [`DISTILL_SEQ_LEN`] when
+/// [`DISTILL_SEQ_LEN_ENV`] is unset, else its value. A value that is not a
+/// positive integer is refused, never read as the default.
+#[cfg_attr(not(all(feature = "training", feature = "cuda")), allow(dead_code))]
+pub(crate) fn distill_seq_len(env: Option<&std::ffi::OsStr>) -> Result<usize> {
+    let Some(v) = env else {
+        return Ok(DISTILL_SEQ_LEN);
+    };
+    let s = v.to_string_lossy();
+    match s.trim().parse::<usize>() {
+        Ok(n) if n > 0 => Ok(n),
+        _ => Err(CliError::ValidationFailed(format!(
+            "{DISTILL_SEQ_LEN_ENV}={s} is not a positive integer (unset it for {DISTILL_SEQ_LEN})"
+        ))),
+    }
+}
+
 /// Full batches in one pass over a `.bin` shard of `shard_bytes` bytes: the
 /// reader cuts u32 tokens into `seq_len + 1` windows and groups `batch_size`
 /// windows per batch. Evaluating exactly this many never wraps around.

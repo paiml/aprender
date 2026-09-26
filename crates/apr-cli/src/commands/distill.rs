@@ -1013,10 +1013,9 @@ fn run_cuda_backend(
     // pipeline keeps its default SyntheticBatchSource for smoke tests.
     // Requires the `shard-batch-source` feature on aprender-train-distill
     // (enabled by default in apr-cli's `training` feature).
-    let smoke_seq_len: usize = std::env::var(crate::commands::finetune_recipe::DISTILL_SEQ_LEN_ENV)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(crate::commands::finetune_recipe::DISTILL_SEQ_LEN);
+    let smoke_seq_len = crate::commands::finetune_recipe::distill_seq_len(
+        std::env::var_os(crate::commands::finetune_recipe::DISTILL_SEQ_LEN_ENV).as_deref(),
+    )?;
     if let Some(dir) = dataset_dir {
         #[cfg(feature = "training")]
         {
