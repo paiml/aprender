@@ -30,3 +30,6 @@ dev-server = ["dep:notify", "dep:tungstenite"]
 
 [lints]
 workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+aprender-update = { workspace = true }  # EPIC #4232 update check (not wasm32: ureq)

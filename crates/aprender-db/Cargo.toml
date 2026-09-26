@@ -115,6 +115,7 @@ web-sys = { version = "0.3", features = [
 ] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+aprender-update = { workspace = true, optional = true }  # EPIC #4232 update check (not wasm32: ureq)
 # Native-only dependencies (Phase 3: gRPC distribution)
 tonic = { version = "0.12", optional = true }
 prost = { version = "0.13", optional = true }
@@ -132,7 +133,7 @@ default = ["simd", "tokio", "rayon", "parquet-io", "server"]
 parquet-io = ["dep:parquet"]
 
 # Server binary (HTTP API + CLI)
-server = ["dep:axum", "dep:clap", "dep:serde_yaml_ng", "tokio", "parquet-io"]
+server = ["dep:aprender-update", "dep:axum", "dep:clap", "dep:serde_yaml_ng", "tokio", "parquet-io"]
 
 # SIMD-only backend (12 dependencies, -0.4 MB vs SQLite, 18s compile)
 simd = []

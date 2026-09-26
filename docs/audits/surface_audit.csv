@@ -459,9 +459,9 @@ aprender-cgp,aprender-cgp tui,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-cgp/src
 aprender-compute-xtask,aprender-compute-xtask check-simd,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-compute-xtask/src/main.rs:42,high
 aprender-compute-xtask,aprender-compute-xtask install-hooks,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-compute-xtask/src/main.rs:44,high
 aprender-compute-xtask,aprender-compute-xtask validate-examples,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-compute-xtask/src/main.rs:46,high
-aprender-db,GET /health (aprender-db),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-db/src/main.rs:144,high
-aprender-db,GET /status (aprender-db),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-db/src/main.rs:146,high
-aprender-db,POST /query (aprender-db),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-db/src/main.rs:145,high
+aprender-db,GET /health (aprender-db),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-db/src/main.rs:146,high
+aprender-db,GET /status (aprender-db),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-db/src/main.rs:148,high
+aprender-db,POST /query (aprender-db),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-db/src/main.rs:147,high
 aprender-db,aprender-db --config <PATH> (single-mode DB server),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-db/src/main.rs:24-30,high
 aprender-explain,aprender-explain bugs,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-explain/src/main.rs:148,high
 aprender-explain,aprender-explain compare,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-explain/src/main.rs:114,high
@@ -732,7 +732,7 @@ aprender-train-lora,aprender-train-lora compare,6,UNKNOWN,unsloth,no,0,entrypoin
 aprender-train-lora,aprender-train-lora inspect,6,UNKNOWN,unsloth,no,0,entrypoint-and-mcp,crates/aprender-train-lora/src/main.rs:80,high
 aprender-train-lora,aprender-train-lora merge,6,UNKNOWN,unsloth,no,0,entrypoint-and-mcp,crates/aprender-train-lora/src/main.rs:61,high
 aprender-train-lora,aprender-train-lora plan,6,UNKNOWN,unsloth,no,0,entrypoint-and-mcp,crates/aprender-train-lora/src/main.rs:29,high
-aprender-train-shell,aprender-train-shell (interactive REPL),6,x86_64-linux,pytorch,no,0,entrypoint-and-mcp,crates/aprender-train-shell/src/main.rs:63,low
+aprender-train-shell,aprender-train-shell (interactive REPL),6,x86_64-linux,pytorch,no,0,entrypoint-and-mcp,crates/aprender-train-shell/src/main.rs:64,low
 aprender-train-shell,aprender-train-shell -c <STR> (one-shot REPL command),6,x86_64-linux,pytorch,no,12,test-harness,crates/aprender-train-shell/src/main.rs:16,low
 aprender-train-shell,aprender-train-shell -s <PATH> (resume saved session),6,x86_64-linux,pytorch,no,0,entrypoint-and-mcp,crates/aprender-train-shell/src/main.rs:12,low
 aprender-train-shell,repl: clear,6,x86_64-linux,pytorch,no,12,test-harness,crates/aprender-train-shell/src/commands.rs:71,low
@@ -753,9 +753,9 @@ presentar,presentar gate,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-
 presentar,presentar new,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:78,high
 presentar,presentar score,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:91,high
 presentar,presentar serve,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:52,high
-ptop,ptop (interactive TUI system monitor),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:120-134,high
+ptop,ptop (interactive TUI system monitor),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:121-135,high
 ptop,ptop --dump-config,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:56,high
-ptop,ptop --render-once,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:117,high
+ptop,ptop --render-once,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:118,high
 ptop,ptop --render-once --explode <PANEL>,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:63,high
 pv,pv audit,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:67,low
 pv,pv book,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/cli.rs:337,low

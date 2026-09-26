@@ -81,6 +81,8 @@ mod main_oracle_dispatch;
 
 #[cfg(feature = "native")]
 fn main() -> anyhow::Result<()> {
+    #[cfg(not(target_arch = "wasm32"))]
+    sovereign_update::hook!("aprender-orchestrate"); // EPIC #4232: `aprender-orchestrate update`, and the startup notice
     use clap::Parser;
     use tracing::info;
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

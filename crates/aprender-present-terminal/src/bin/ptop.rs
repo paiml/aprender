@@ -109,6 +109,7 @@ fn cleanup_terminal(stdout: &mut io::Stdout) -> io::Result<()> {
 }
 
 fn main() -> io::Result<()> {
+    sovereign_update::hook!("ptop"); // EPIC #4232: `ptop update`, and the startup notice
     let cli = Cli::parse();
 
     if cli.dump_config {

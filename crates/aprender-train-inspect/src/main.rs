@@ -94,6 +94,7 @@ enum Commands {
 }
 
 fn main() {
+    sovereign_update::hook!("aprender-train-inspect"); // EPIC #4232: `aprender-train-inspect update`, and the startup notice
     let cli = Cli::parse();
     let config = cli.common.to_cli();
 

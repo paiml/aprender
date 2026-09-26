@@ -144,6 +144,7 @@ struct ValidationReport {
 }
 
 fn main() -> Result<()> {
+    sovereign_update::hook!("apr-corpus-ingest"); // EPIC #4232: `apr-corpus-ingest update`, and the startup notice
     let cli = Cli::parse();
     match cli.cmd {
         Command::Plan {

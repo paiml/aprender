@@ -376,6 +376,7 @@ dependencies = [
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-test-lib",
+ "aprender-update",
  "chrono",
  "clap",
  "crossterm 0.28.1",
@@ -396,6 +397,7 @@ version = "0.69.3"
 dependencies = [
  "anyhow",
  "aprender-gpu",
+ "aprender-update",
  "chrono",
  "clap",
  "colored 3.1.1",
@@ -619,6 +621,7 @@ version = "0.69.3"
 dependencies = [
  "aes-gcm",
  "aprender-test-lib",
+ "aprender-update",
  "argon2",
  "arrow 59.2.0",
  "arrow-csv",
@@ -672,6 +675,7 @@ dependencies = [
  "anyhow",
  "aprender-common",
  "aprender-compute",
+ "aprender-update",
  "arrow 59.2.0",
  "axum 0.7.9",
  "bytemuck",
@@ -747,6 +751,7 @@ dependencies = [
  "aprender-gpu",
  "aprender-present-core",
  "aprender-present-terminal",
+ "aprender-update",
  "clap",
  "colored 2.2.0",
  "crossterm 0.28.1",
@@ -879,6 +884,7 @@ dependencies = [
  "aprender-simulate",
  "aprender-test-lib",
  "aprender-train",
+ "aprender-update",
  "aprender-viz",
  "aprender-zram-core",
  "assert_cmd",
@@ -931,6 +937,7 @@ name = "aprender-present-cli"
 version = "0.69.3"
 dependencies = [
  "aprender-present-yaml",
+ "aprender-update",
  "clap",
  "notify",
  "serde",
@@ -996,6 +1003,7 @@ name = "aprender-present-terminal"
 version = "0.69.3"
 dependencies = [
  "aprender-present-core",
+ "aprender-update",
  "bitvec",
  "clap",
  "compact_str 0.8.2",
@@ -1064,6 +1072,7 @@ dependencies = [
  "aprender-db",
  "aprender-graph",
  "aprender-profile-core",
+ "aprender-update",
  "aprender-viz",
  "arbitrary",
  "assert_cmd",
@@ -1119,6 +1128,7 @@ dependencies = [
 name = "aprender-ptx-debug"
 version = "0.69.3"
 dependencies = [
+ "aprender-update",
  "clap",
  "proptest",
  "thiserror 2.0.18",
@@ -1128,6 +1138,7 @@ dependencies = [
 name = "aprender-qa-certify"
 version = "0.69.3"
 dependencies = [
+ "aprender-update",
  "chrono",
  "clap",
  "proptest",
@@ -1143,6 +1154,7 @@ dependencies = [
  "aprender-qa-gen",
  "aprender-qa-report",
  "aprender-qa-runner",
+ "aprender-update",
  "chrono",
  "clap",
  "colored 2.2.0",
@@ -1256,6 +1268,7 @@ version = "0.69.3"
 dependencies = [
  "anyhow",
  "aprender-rag",
+ "aprender-update",
  "assert_cmd",
  "blake3",
  "clap",
@@ -1402,6 +1415,7 @@ dependencies = [
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-present-test",
+ "aprender-update",
  "bincode",
  "bitflags 2.13.0",
  "blake3",
@@ -1466,6 +1480,7 @@ name = "aprender-test-cli"
 version = "0.69.3"
 dependencies = [
  "aprender-test-lib",
+ "aprender-update",
  "assert_cmd",
  "atty",
  "axum 0.8.9",
@@ -1653,6 +1668,7 @@ version = "0.69.3"
 dependencies = [
  "aprender-train",
  "aprender-train-common",
+ "aprender-update",
  "assert_cmd",
  "clap",
  "criterion 0.7.0",
@@ -1682,6 +1698,7 @@ version = "0.69.3"
 dependencies = [
  "aprender-train",
  "aprender-train-common",
+ "aprender-update",
  "assert_cmd",
  "bytemuck",
  "clap",
@@ -1703,6 +1720,7 @@ version = "0.69.3"
 dependencies = [
  "aprender-train",
  "aprender-train-common",
+ "aprender-update",
  "assert_cmd",
  "clap",
  "predicates",
@@ -1719,6 +1737,7 @@ version = "0.69.3"
 dependencies = [
  "aprender-train",
  "aprender-train-common",
+ "aprender-update",
  "assert_cmd",
  "clap",
  "predicates",
@@ -1735,6 +1754,7 @@ version = "0.69.3"
 dependencies = [
  "aprender-train",
  "aprender-train-common",
+ "aprender-update",
  "clap",
  "dirs 5.0.1",
  "proptest",
@@ -1782,6 +1802,7 @@ dependencies = [
  "sha2 0.10.9",
  "tar",
  "tempfile",
+ "toml 0.8.23",
  "ureq 2.12.1",
 ]
 
@@ -1805,6 +1826,7 @@ dependencies = [
  "aprender-core",
  "aprender-profile",
  "aprender-train",
+ "aprender-update",
  "arrow 59.2.0",
  "clap",
  "criterion 0.7.0",
@@ -1879,6 +1901,7 @@ dependencies = [
 name = "aprender-zram-cli"
 version = "0.69.3"
 dependencies = [
+ "aprender-update",
  "aprender-zram-adaptive",
  "aprender-zram-core",
  "clap",
@@ -1905,6 +1928,7 @@ dependencies = [
 name = "aprender-zram-generator"
 version = "0.69.3"
 dependencies = [
+ "aprender-update",
  "aprender-zram-core",
  "clap",
  "serde",

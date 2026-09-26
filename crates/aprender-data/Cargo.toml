@@ -21,7 +21,7 @@ tokio-runtime = ["dep:tokio"]
 s3 = ["dep:aws-sdk-s3", "dep:aws-config", "tokio-runtime"]
 http = ["dep:reqwest"]
 hf-hub = ["http", "dep:base64", "dep:hex", "dep:sha2"]
-cli = ["dep:clap", "dep:crossterm"]
+cli = ["dep:aprender-update", "dep:clap", "dep:crossterm"]
 repl = ["cli", "dep:reedline", "dep:nu-ansi-term"]
 wasm = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:getrandom"]
 format-encryption = ["dep:aes-gcm", "dep:argon2", "dep:x25519-dalek", "dep:hkdf", "dep:sha2", "dep:rand_core", "dep:getrandom"]
@@ -101,6 +101,9 @@ unicode-width = "0.2"
 chrono = { version = "0.4", features = ["serde"], optional = true }
 regex = { version = "1", optional = true }
 walkdir = { version = "2", optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+aprender-update = { workspace = true, optional = true }  # EPIC #4232 update check (not wasm32: ureq)
 
 [dev-dependencies]
 tempfile = "3"

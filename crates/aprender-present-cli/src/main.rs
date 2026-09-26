@@ -154,6 +154,8 @@ enum Commands {
 }
 
 fn main() {
+    #[cfg(not(target_arch = "wasm32"))]
+    sovereign_update::hook!("presentar"); // EPIC #4232: `presentar update`, and the startup notice
     let cli = Cli::parse();
 
     match cli.command {

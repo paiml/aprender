@@ -60,6 +60,7 @@ struct Cli {
 }
 
 fn main() -> ExitCode {
+    sovereign_update::hook!("aprender-zram-generator"); // EPIC #4232: `aprender-zram-generator update`, and the startup notice
     let cli = Cli::parse();
 
     match run(&cli) {

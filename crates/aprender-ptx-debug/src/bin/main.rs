@@ -24,6 +24,7 @@ use trueno_ptx_debug::output::{generate_fkr_tests, generate_html_report, Analysi
 use trueno_ptx_debug::parser::Parser;
 
 fn main() {
+    sovereign_update::hook!("aprender-ptx-debug"); // EPIC #4232: `aprender-ptx-debug update`, and the startup notice
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(err) => {

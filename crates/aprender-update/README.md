@@ -8,6 +8,22 @@ Part of the [Aprender](https://github.com/paiml/aprender) monorepo.
 
 ## Use
 
+An aprender binary needs one line, as the first statement of `main`:
+
+```rust,ignore
+fn main() {
+    sovereign_update::hook!("trueno-rag"); // checks the nightly manifest only
+    // or, with a release asset: sovereign_update::hook!("pv", Some("{bin}-{tag}-{target}.tar.gz"));
+    // ... the binary's own CLI
+}
+```
+
+The in-crate test `all_bins_tests` fails CI when a workspace binary lacks it.
+A binary that no channel publishes for this target reports
+`no published build for <target>`, never "up to date".
+
+The long form, for a custom `Product` (another repo, a `build_sha`):
+
 ```rust,ignore
 const PRODUCT: sovereign_update::Product = sovereign_update::Product {
     bin: "pv",
