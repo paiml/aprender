@@ -17,8 +17,9 @@
 #           longer unpublishes x86_64 (run 35942026798). nightly-manifest.json
 #           is uploaded last and says, per arch, which SHA each asset is.
 # The run fails on red-ci / build-failed so the alerting sees it; the arbiter
-# (infra-8d) files the per-SHA ticket from the manifest -- this token has
-# `contents: write` only.
+# (infra-8d) files the per-SHA ticket from the manifest. Least privilege: the
+# workflow token is `contents: read`; gate adds `checks: read` for check-runs,
+# and only publish has `contents: write` (release assets).
 #
 # Produces, per target: {apr,pv}-{target}.tar.gz (+ .sha256; each holds
 # <bin>-{target}/<bin>) and nightly-manifest.json, on the "nightly" prerelease.
@@ -48,7 +49,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: nightly
@@ -63,6 +64,9 @@ jobs:
   # ── Is there work, and is HEAD green? ────────────────────
   gate:
     runs-on: [self-hosted, Linux, X64, clean-room]
+    permissions:
+      contents: read
+      checks: read
     outputs:
       decision: ${{ steps.gate.outputs.decision }}
     steps:
@@ -233,6 +237,8 @@ jobs:
     needs: [gate, build, build-darwin]
     if: always() && needs.gate.result == 'success'
     runs-on: [self-hosted, Linux, X64, clean-room]
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
