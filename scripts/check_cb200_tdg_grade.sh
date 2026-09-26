@@ -134,9 +134,71 @@ self_test() {
     case_row stale-index red "$(cb200_verdict "$td/held")" || bad=$((bad + 1))
     # 4. no verdict is RED, never a pass
     case_row no-verdict red "$(printf 'NONE\tno CB-200 row')" || bad=$((bad + 1))
+    # 5-7. the one-time re-baseline receipt: a count the sha does not measure is RED, the true
+    #      count is held, and a receipt already on origin/main is spent and never re-measured.
+    local head
+    fixture "$td/rb" 1 1
+    head=$(git -C "$td/rb" rev-parse HEAD)
+    receipt_row() { # <name> <want held|red> <measured>
+        local got=red
+        printf 'sha: %s\nmeasured: %s\ntool_version: x\n' "$head" "$3" > "$td/rb/$RECEIPT_REL"
+        if receipt_check "$td/rb" > /dev/null 2>&1; then got=held; fi
+        if [ "$got" = "$2" ]; then printf '  ok    %-14s receipt -> %s\n' "$1" "$got"; return 0; fi
+        printf '  BROKE %-14s receipt -> %s, want %s\n' "$1" "$got" "$2"
+        return 1
+    }
+    mkdir -p "$td/rb/scripts"
+    receipt_row receipt-true held 1 || bad=$((bad + 1))
+    receipt_row receipt-false red 2 || bad=$((bad + 1))
+    (cd "$td/rb" && git add -A && git -c core.hooksPath=/dev/null -c user.email=t@t -c user.name=t commit -qm receipt &&
+        git update-ref refs/remotes/origin/main HEAD)
+    receipt_row receipt-spent held 2 || bad=$((bad + 1))
     rm -rf "${td:?}"
     printf 'check_cb200_tdg_grade self-test: %s broken\n' "$bad"
     [ "$bad" -eq 0 ]
+}
+
+# RECEIPT <- a ONE-TIME re-baseline (car #4429, cop ruling B). scripts/lib_baseline_ratchet.sh
+# admits a rise of scripts/cb200_baseline.txt only up to the count a receipt says was MEASURED at
+# a main sha, and only while the receipt is new. The number is a claim until something measures
+# it, so while the receipt is new this guard measures the receipt's sha the same way (a cold index
+# over `git archive <sha>`) and requires the count it records. Once the receipt is on origin/main
+# it is spent and this is skipped: the next pull request pays for one measurement, not two.
+RECEIPT_REL='scripts/cb200_baseline.rebaseline'
+
+cb200_count() { # <dir> -> the number of definitions below min_grade, from the CB-200 message
+    local v
+    v=$(cb200_verdict "$1")
+    printf '%s\n' "${v#*$'\t'}" | sed -nE 's/^([0-9]+) definition.*/\1/p' | grep -m1 .
+}
+
+receipt_check() { # <root> -> 0 no receipt / spent / proven, 1 the recorded count is not what the sha measures
+    local root="$1" sha measured got tree
+    [ -f "$root/$RECEIPT_REL" ] || return 0
+    if git -C "$root" cat-file -e "origin/main:$RECEIPT_REL" 2>/dev/null; then
+        printf 'ok    %s is on origin/main: spent; the baseline is shrink-only again.\n' "$RECEIPT_REL"
+        return 0
+    fi
+    sha=$(sed -nE 's/^sha:[[:space:]]*([0-9a-f]{40})[[:space:]]*$/\1/p' "$root/$RECEIPT_REL" | head -1)
+    measured=$(sed -nE 's/^measured:[[:space:]]*([0-9]+)[[:space:]]*$/\1/p' "$root/$RECEIPT_REL" | head -1)
+    if [ -z "$sha" ] || [ -z "$measured" ]; then
+        printf 'RED   %s carries no 40-hex sha: and integer measured: to re-measure.\n' "$RECEIPT_REL"
+        return 1
+    fi
+    git -C "$root" cat-file -e "${sha}^{commit}" 2>/dev/null ||
+        git -C "$root" fetch -q --no-tags --depth=1 origin "$sha" 2>/dev/null || {
+        printf 'RED   the receipt sha %s cannot be fetched, so its count is UNMEASURED.\n' "${sha:0:12}"
+        return 1
+    }
+    tree=$(mktemp -d -p "$TMPROOT")
+    git -C "$root" archive "$sha" | tar -x -C "$tree"
+    got=$(cb200_count "$tree") || got=""
+    if [ "$got" != "$measured" ]; then
+        printf 'RED   %s records %s at %s, but a cold index there measures <%s>.\n' "$RECEIPT_REL" "$measured" "${sha:0:12}" "$got"
+        return 1
+    fi
+    printf 'ok    %s: %s below-B definitions at %s, re-measured (one-time re-baseline).\n' "$RECEIPT_REL" "$got" "${sha:0:12}"
+    return 0
 }
 
 case "${1:-}" in
@@ -154,6 +216,7 @@ printf 'pmat: %s (%s)\n' "$(pmat --version 2>/dev/null | head -1)" "$(command -v
 v=$(cb200_verdict "$root")
 s=${v%%$'\t'*}
 printf 'CB-200 %s: %s\n' "$s" "${v#*$'\t'}"
+receipt_check "$root" || exit 1
 if judge "$s"; then
     printf 'ok    CB-200 held (a cold index over this tree; the baseline is .pmat-gates.toml [tdg])\n'
     exit 0

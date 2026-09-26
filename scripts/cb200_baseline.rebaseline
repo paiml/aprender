@@ -1,0 +1,12 @@
+# ONE-TIME CB-200 re-baseline receipt (car #4429, cop ruling B, 2026-09-26).
+# Main recorded 599 but MEASURED 620 at the car's merge-base: nothing on main ever ran
+# check_cb200_tdg_grade.sh (docs/findings/cb200-main-green-over-baseline.jsonl). The car's tree
+# measures 617 after its own 7 fixes (net -3 vs main), so the baseline moves 599 -> 617 once,
+# bounded by this measurement. lib_baseline_ratchet.sh honours this file ONLY while it is absent
+# from origin/main; check_cb200_tdg_grade.sh re-measures the sha below until then. After this
+# lands the file is spent and scripts/cb200_baseline.txt is shrink-only again.
+# Measured: pmat comply check --checks CB-200 --format json, cold XDG_CACHE_HOME, over
+# `git archive <sha>`: "620 definition(s) below minimum grade B -- 21 OVER the recorded baseline of 599".
+sha: 00058476c32306bc0ff6321fdf7af12ea4a9b31f
+measured: 620
+tool_version: pmat 3.41.1
