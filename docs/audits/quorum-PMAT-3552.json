@@ -1,0 +1,295 @@
+{
+  "ticket": "PMAT-3552",
+  "base": "e7a52949d10141e177ca680bc8b95b0fb3792e2b",
+  "base_resolved": "e7a52949d10141e177ca680bc8b95b0fb3792e2b",
+  "base_note": "no origin/e7a52949d10141e177ca680bc8b95b0fb3792e2b exists; judged against the local ref",
+  "head": "95103c7199366a6fc9445b7ad25eaf3b93c8e7b0",
+  "diff_sha256": "38ced8f46c7657fa81b8e0590d4e26a087bbf3059fc9f4badecdc59d796c8552",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 23421,
+  "prompt_sha256": "1c6c1ee234a3ccd762b6429348e7f5d74848c74d7c8c10b3489451638fbfd581",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff satisfies all PMAT-3552 acceptance criteria. It provides the standalone `viz-facet-coord` example which correctly maps study data through the Facet/Coord pipeline to SVG. It is safely isolated via `Cargo.toml.in` and an empty `[workspace]`, ensuring it builds exclusively against the published `aprender-viz = \"=0.69.1\"` crate. The `check_viz_published_example.sh` validation script features robust isolation, a rigorous self-test, and mutation control (`Facet::none` -> RED). The example explicitly enforces the facet partition, limit/coord flip, and panel boundary laws, exiting 1 upon failure. Provided evidence is thoroughly consistent with these claims.\n\nNote: The required `paiml-lane-witness` file was not present in the git directory (`cat $(git rev-parse --git-dir)/paiml-lane-witness` returned \"No such file or directory\"). I am supplying a placeholder zero-token as it is a required field.",
+      "findings": [],
+      "raw_bytes": 3296,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "1c6c1ee234a3ccd762b6429348e7f5d74848c74d7c8c10b3489451638fbfd581",
+      "trace": {
+        "input_sha256": "77e47f0b8397eb0bbbea470108ec0dc8afb572a08b93be310005d2b48046139c",
+        "output_sha256": "703f3453d66f71fcebd493fb3c16f41d4da553066267b6eacf5f979ad19f550a",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements the requested visualization example perfectly. It creates an independent workspace using Cargo.toml.in, tests standard laws (facets, limits, point enclosure) returning error exits on violations, implements a self-tested CI script for verification, verifies the exact dependency version resolution against crates.io, and correctly enforces mutation testing. All ticket criteria and user rules are fully satisfied.",
+      "findings": [],
+      "raw_bytes": 2174,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "1c6c1ee234a3ccd762b6429348e7f5d74848c74d7c8c10b3489451638fbfd581",
+      "trace": {
+        "input_sha256": "3d15a31f2013ccc2813772d4cecc61e07c121993467ac3fbaedab28b72def400",
+        "output_sha256": "79e7cda7cf9d11761a3d0a2167961c4ec8661a4a1feb4d11fc807d8b3ae27018",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "claude-opus-4-6-thinking",
+            "why": "family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)"
+          }
+        ]
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3552 implementation is complete and correct. The diff adds a runnable example (examples/viz-facet-coord) that exercises the Facet→panels→Coord::apply→SVG pipeline against the published aprender-viz crate (=0.69.1). The example validates four laws (3-panel facet, flip-moves-xlim coordinate transformation, point-in-panel containment, one-point-per-row), with comprehensive mutation control (Facet::none must fail) and source verification (crates.io registry only). The gate script is wired into the release pipeline via [package.metadata.dogfood].gates and cannot rot.",
+      "findings": [],
+      "raw_bytes": 2074,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "1c6c1ee234a3ccd762b6429348e7f5d74848c74d7c8c10b3489451638fbfd581",
+      "trace": {
+        "input_sha256": "d3ee8734461f21cdfe495ad442fb2d97257c3de7343be0d058e3ffccb3c032c6",
+        "output_sha256": "d59920cac16c2e8ac2025b09fa612281570c1f6aa522b7a4dfe09e121a51ed49",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, gemini-3.1-pro-high) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through claude-opus-4-6-thinking (skipped: family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 21h40m16s."
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "claude-gpt": {
+          "bucket": "claude-gpt",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": 1790422948,
+          "window_calls": 3,
+          "window_429": 3,
+          "hour_calls": 3,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket claude-gpt is empty: a 429 in this window (started 2026-09-26T11:42:28Z)"
+        },
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 30,
+          "basis": "[U] default 30, raised to the 15 calls a window has made without a 429; no window reached one",
+          "window_start": 1790422948,
+          "window_calls": 15,
+          "window_429": 0,
+          "hour_calls": 15,
+          "share": 6,
+          "want": 2,
+          "state": "hour",
+          "reason": "agy bucket gemini: 15 calls in the last hour + 2 this round exceed the hour share 6 (1/5 of the budget 30, [U] default 30, raised to the 15 calls a window has made without a 429; no window reached one)"
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "shape": "canary",
+    "max_brief_bytes": 24576,
+    "brief_bytes": 23421
+  },
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 1,
+    "collected_s": 364,
+    "budget_s": 300,
+    "budget_basis": "[U] 300 s: fewer than 10 gx10-cuda Verdict rows in the ledger",
+    "brief": {
+      "bytes": 23421,
+      "sent_bytes": 23590,
+      "max_bytes": 24576
+    },
+    "trace": {
+      "input_sha256": "044acb08b0b04a6acf14fe47298daa0297151cb9505fadd63469ca8e1d4e7d7c",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": false,
+        "wall_s": 0,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-09-25T20:18:53Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)"
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=1/2"
+  }
+}
