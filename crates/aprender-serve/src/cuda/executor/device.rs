@@ -29,14 +29,14 @@ impl CudaExecutor {
         // PAR-058: Zero allocation Q4_1 GEMV for Qwen2.5-0.5B FFN down
         let kernel_type = KernelType::Q4_1Gemv { k, n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("q4_1_gemv_{}_{}", k, n);
+        let cache_key = module_key!(self, "q4_1_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let mut ptr_output = output.as_ptr();
@@ -63,7 +63,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),
@@ -102,14 +102,14 @@ impl CudaExecutor {
         // PAR-058: Zero allocation Q5K GEMV for mixed-quantization models
         let kernel_type = KernelType::Q5KGemv { k, n };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("q5k_gemv_{}_{}", k, n);
+        let cache_key = module_key!(self, "q5k_gemv_{}_{}", k, n);
         let config = LaunchConfig::grid_2d(n, 1, 32, 1);
 
         self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
-            .get_mut(&cache_key)
+            .get_mut(&*cache_key)
             .expect("module just inserted");
 
         let mut ptr_output = output.as_ptr();
@@ -136,7 +136,7 @@ impl CudaExecutor {
 
         // trueno#243: Record kernel for manual graph construction
         if self.graph_recording {
-            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let module = self.modules.get_mut(&*cache_key).expect("module exists");
             let func = module.get_function(kernel_name)?;
             self.graph_recorded_kernels.push(RecordedKernel {
                 func: SendCUfunction(func),

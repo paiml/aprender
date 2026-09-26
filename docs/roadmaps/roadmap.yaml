@@ -21721,6 +21721,25 @@ roadmap:
   labels:
   - kind:code
   notes: 'Option (a) from the ticket: the two header slices, MANIFEST.json and generate.py move from tests/fixtures/gguf-header-slices/ to src/fixtures/gguf-header-slices/ (the src/fixtures/chat_template_3990/ pattern), so they ship and the test runs for crates.io users. MEASURED: in tree, cargo test -p aprender-serve --lib tokenizer_tests_unk_3609 gives 9/9 pass. Tarball: the commit cherry-picked onto v0.69.1, packaged, and swapped into aprender-3a''s #4114 tarball workspace; cargo test -p aprender-serve --lib --no-run has 0 errors at tokenizer_tests_unk_3609.rs (it was 2). The one remaining error in that target is contracts/kernel-fusion-v1.yaml in fusion_call_site_guard_3985.rs, which is #4048 and out of scope. .crate is 8,224,489 bytes (under the 10 MB crates.io limit).'
+- id: PMAT-4215
+  github_issue: 4215
+  item_type: task
+  title: 'Qwen3.5 CUDA greedy decode: persistent embedding buffer, GPU argmax, no format!/Vec on the launch path'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T08:28:19Z
+  updated: 2026-09-24T20:45:00Z
+  spec: null
+  acceptance_criteria:
+  - 'A steady-state greedy decode token makes 0 host heap allocations, 0 device allocations and downloads exactly the 4-byte token id (counted, not asserted by reading).'
+  - 'Greedy on the device is token-identical to the CPU argmax of the downloaded logits at temperature 0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Scope is #4215 (a)(b)(c) from /mnt/nvme-raid0/tmp/alt0693/REPORT.md §A. Measured +2% at 850 on 4B (78.3 -> 79.9 tok/s); the 0.58x gap to ollama is NOT closed by this slice.'
 - id: PMAT-4242
   github_issue: 4242
   item_type: task
@@ -21755,6 +21774,24 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-4258
+  github_issue: 4258
+  item_type: task
+  title: 'Qwen3.5 CUDA: q8_activation_valid is never cleared on the qwen35 path, so DP4A reuses a stale Q8_1 activation'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T10:25:13Z
+  updated: 2026-09-24T12:01:41Z
+  spec: null
+  acceptance_criteria:
+  - 'A DP4A GEMV requantizes its input whenever the input buffer differs from the cached Q8_1 activation or a qwen35 writer kernel (rmsnorm_into, per_head_rmsnorm_into, residual_add_into, fused_swiglu_into, gdn_sigmoid_gate_into) rewrote it; a red-first test covers both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Found in /mnt/nvme-raid0/tmp/alt0693/REPORT.md "Extra finding". The DP4A-catastrophic falsifier now passes parity at every position on 0.8B; re-measure the #4030 pin on 2B/4B.'
 - id: PMAT-4259
   github_issue: 4259
   item_type: task

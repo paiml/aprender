@@ -247,6 +247,55 @@ use crate::cuda::types::{
 /// can recover — only a process restart fixes it.
 ///
 /// This check prevents kernel launch and returns a clean error instead.
+/// #4215: the `modules` cache key `format!($fmt, $args…)`, formatted the first
+/// time these arguments are seen and served from `module_keys` afterwards, so a
+/// hot launch path neither allocates nor formats. Every argument must convert
+/// to `u64` losslessly (pass an `f32` as `.to_bits()`, and format it yourself if
+/// the key spells it differently); at most four.
+macro_rules! module_key {
+    ($ex:expr, $fmt:literal $(, $arg:expr)* $(,)?) => {{
+        let dims = $crate::cuda::executor::key_dims(&[$(u64::from($arg)),*]);
+        $ex.module_key(($fmt, dims), || format!($fmt $(, $arg)*))
+    }};
+}
+pub(crate) use module_key;
+
+/// Pad a cache key's integer arguments to the fixed width `module_keys` stores.
+#[inline]
+pub(crate) fn key_dims(args: &[u64]) -> [u64; 4] {
+    assert!(args.len() <= 4, "module_key!: at most four key arguments");
+    let mut dims = [0u64; 4];
+    dims[..args.len()].copy_from_slice(args);
+    dims
+}
+
+impl CudaExecutor {
+    /// The formatted `modules` key for `id`, calling `make` only on the first
+    /// request for it (#4215). Use through [`module_key!`].
+    pub(crate) fn module_key(
+        &mut self,
+        id: (&'static str, [u64; 4]),
+        make: impl FnOnce() -> String,
+    ) -> std::sync::Arc<str> {
+        if let Some(key) = self.module_keys.get(&id) {
+            return std::sync::Arc::clone(key);
+        }
+        let key: std::sync::Arc<str> = make().into();
+        self.module_keys.insert(id, std::sync::Arc::clone(&key));
+        key
+    }
+}
+
+/// [`validate_device_ptr`] for argument `index` of `kernel`, naming it only on
+/// failure — the name costs a `format!`, and the check runs on every launch.
+#[inline]
+fn validate_kernel_arg(ptr: u64, kernel: &str, index: usize) -> Result<(), GpuError> {
+    if ptr == 0 {
+        return validate_device_ptr(ptr, &format!("{kernel} arg {index}"));
+    }
+    Ok(())
+}
+
 #[inline]
 fn validate_device_ptr(ptr: u64, name: &str) -> Result<(), GpuError> {
     if ptr == 0 {
@@ -310,6 +359,8 @@ mod poison_trace_test;
 // FALSIFY-QDOT-008 (#3111): the Q5_K GEMV against gguf-py's values of a llama.cpp block
 #[cfg(test)]
 mod tests_q5k_ggml;
+#[cfg(test)]
+mod tests_q8_activation_staleness;
 
 // COV-003 through COV-006 (layer preload, kv_cache, attention, quantized)
 #[cfg(test)]
@@ -367,6 +418,10 @@ pub struct CudaExecutor {
     /// #3759: debug and test builds record what each module key was compiled from.
     #[cfg(any(debug_assertions, test))]
     module_key_ledger: module_key_guard::ModuleKeyLedger,
+    /// #4215: `modules` keys already formatted, by (format string, integer
+    /// arguments) — see [`module_key!`]. A decode token looks its keys up here
+    /// instead of `format!`-ing ~600 of them.
+    module_keys: HashMap<(&'static str, [u64; 4]), std::sync::Arc<str>>,
     // Persistent weight buffers on GPU (PARITY-037)
     // These are loaded once at startup and reused for all forward passes
     weight_cache: HashMap<String, GpuBuffer<f32>>,
@@ -648,6 +703,11 @@ pub struct CudaExecutor {
     // Set to true after q8_quantize_into; callers invalidate (set false)
     // when the input buffer content changes (e.g. after RMSNorm write).
     q8_activation_valid: bool,
+    // #4258: which activation the Q8 cache holds — (source buffer ptr, element
+    // count). `ensure_q8_activation` re-quantizes when a GEMV's input is not this
+    // buffer, and every in-place writer clears `q8_activation_valid` when it writes
+    // this buffer, so a DP4A GEMV never reads another activation's Q8_1 bytes.
+    q8_activation_src: (u64, u32),
     // PMAT-084: FP8 activation cache — skip redundant absmax+convert when
     // multiple FP8 GEMMs share the same input (QKV phase, FFN gate+up).
     // Saves 84 kernel pairs per prefill (3 per layer × 28 layers).
