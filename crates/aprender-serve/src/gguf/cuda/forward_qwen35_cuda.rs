@@ -1078,6 +1078,7 @@ impl<'a> Qwen35CudaModel<'a> {
 
         // This token's row in the KV cache: the GEMVs and the norm write
         // straight into it, which IS the CPU's `kv_cache.append`.
+        let t = ex.start_brick_timer("qwen35.attn.core");
         //
         // #4233: under graph capture a row view would freeze the capture
         // token's row pointer into every replay, so k/v go to fixed scratch
@@ -1224,8 +1225,10 @@ impl<'a> Qwen35CudaModel<'a> {
             w.attn_output.k,
         )?;
         ex.residual_add_into(hidden, &a.attn_out, hidden, d.hidden_dim)?;
+        ex.stop_brick_timer(t, 1);
 
         // post_attention_norm -> SwiGLU FFN -> the second residual
+        let t = ex.start_brick_timer("qwen35.attn.ffn");
         ex.rmsnorm_into(
             hidden,
             &w.post_attention_norm,
@@ -1259,6 +1262,7 @@ impl<'a> Qwen35CudaModel<'a> {
             w.ffn_down.k,
         )?;
         ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)?;
+        ex.stop_brick_timer(t, 1);
 
         // NO sync here (#3090 review). Every op above is enqueued on the one
         // stream this model uses, so the next layer's first kernel is already
@@ -1404,7 +1408,11 @@ impl<'a> Qwen35CudaModel<'a> {
         let s = &self.scratch;
         let ex = &mut self.executor;
 
+        // Brick timers (`apr profile`, item 6 of SRV-TIM-001) are a no-op unless
+        // the executor profiler is on; `forward_single` never captures a graph
+        // while it is, so their syncs cannot land inside a capture.
         // rms_norm(hidden, attn_norm)
+        let t = ex.start_brick_timer("qwen35.gdn.qkv_in");
         ex.rmsnorm_into(hidden, &w.attn_norm, &s.normed, d.hidden_dim, d.eps)?;
 
         // attn_qkv . normed -> conv_in
@@ -1416,8 +1424,10 @@ impl<'a> Qwen35CudaModel<'a> {
             w.attn_qkv.n,
             w.attn_qkv.k,
         )?;
+        ex.stop_brick_timer(t, 1);
 
         // causal_conv1d + SiLU (the window is updated in place)
+        let t = ex.start_brick_timer("qwen35.gdn.conv_l2");
         ex.gdn_causal_conv1d_silu_into(
             &s.conv_in,
             &state.conv[il],
@@ -1433,10 +1443,12 @@ impl<'a> Qwen35CudaModel<'a> {
         let v_view = Self::view(&s.conv_out, d.k_dim * 2, d.v_dim);
         ex.gdn_per_head_l2_norm_into(&q_view, d.head_k_dim, d.num_k_heads, d.eps)?;
         ex.gdn_per_head_l2_norm_into(&k_view, d.head_k_dim, d.num_k_heads, d.eps)?;
+        ex.stop_brick_timer(t, 1);
 
         // Gated DeltaNet applies NO RoPE: position comes from the causal conv.
 
         // dt = softplus(ssm_alpha . x + dt_bias) * a ; beta = sigmoid(ssm_beta . x)
+        let t = ex.start_brick_timer("qwen35.gdn.ab_gates");
         ex.gemv_dispatch(
             w.ssm_alpha.qtype,
             w.ssm_alpha.ptr,
@@ -1472,8 +1484,10 @@ impl<'a> Qwen35CudaModel<'a> {
             w.attn_gate.n,
             w.attn_gate.k,
         )?;
+        ex.stop_brick_timer(t, 1);
 
         // the delta rule (the recurrent state is updated in place)
+        let t = ex.start_brick_timer("qwen35.gdn.delta_rule");
         ex.gdn_delta_rule_into(
             &q_view,
             &k_view,
@@ -1487,11 +1501,13 @@ impl<'a> Qwen35CudaModel<'a> {
             d.num_v_heads,
             d.head_v_dim,
         )?;
+        ex.stop_brick_timer(t, 1);
         std::mem::forget(q_view);
         std::mem::forget(k_view);
         std::mem::forget(v_view);
 
         // gated rmsnorm, then ssm_out, then the first residual
+        let t = ex.start_brick_timer("qwen35.gdn.ssm_out");
         ex.gdn_gated_rmsnorm_into(
             &s.out_h,
             &s.gate,
@@ -1510,8 +1526,10 @@ impl<'a> Qwen35CudaModel<'a> {
             w.ssm_out.k,
         )?;
         ex.residual_add_into(hidden, &s.ssm_out, hidden, d.hidden_dim)?;
+        ex.stop_brick_timer(t, 1);
 
         // post_attention_norm -> SwiGLU FFN -> the second residual
+        let t = ex.start_brick_timer("qwen35.gdn.ffn");
         ex.rmsnorm_into(
             hidden,
             &w.post_attention_norm,
@@ -1545,6 +1563,7 @@ impl<'a> Qwen35CudaModel<'a> {
             w.ffn_down.k,
         )?;
         ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)?;
+        ex.stop_brick_timer(t, 1);
 
         // NO sync here — see `attention_layer_inner`. Stream order IS the
         // dependency; the host only has to wait where it reads.
@@ -1577,7 +1596,9 @@ impl<'a> Qwen35CudaModel<'a> {
         state: &mut Qwen35CudaState,
         position: usize,
     ) -> Result<Vec<f32>> {
-        if self.use_decode_graph {
+        // A profiled token runs eager: the brick timers sync the stream, which a
+        // graph capture cannot contain, and a replay would hide every brick.
+        if self.use_decode_graph && !self.executor.is_profiling_enabled() {
             return self.forward_single_graphed(token, state, position);
         }
         self.forward_to_logits(token, state, position)?;
@@ -1687,8 +1708,12 @@ impl<'a> Qwen35CudaModel<'a> {
                 CudaLayer::Attention(_) => self.attention_layer(state, il, dev, position)?,
             }
         }
-        self.lm_head_tail(dev)
-            .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e))
+        let t = self.executor.start_brick_timer("qwen35.lm_head");
+        let tail = self
+            .lm_head_tail(dev)
+            .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e));
+        self.executor.stop_brick_timer(t, 1);
+        tail
     }
 
     /// The output norm and the `lm_head` GEMV into `logits_buf`, enqueued on

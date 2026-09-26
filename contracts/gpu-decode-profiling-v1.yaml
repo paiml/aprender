@@ -269,6 +269,15 @@ falsification_tests:
   prediction: falsification.total_points != 137 (must equal actual brick count)
   test: Parse JSON, verify total_points != 137
   if_fails: Hardcoded FalsificationSummary constant still present (B10 regression)
+- id: FALSIFY-GDP-016
+  rule: Hybrid architecture coverage — apr profile serves qwen35 on the GPU
+  prediction: gpu_profile_loader("qwen35") == Hybrid and every other spelling == Dense; `apr profile` on a qwen35
+    GGUF exits 0 with backend cuda and non-empty qwen35.gdn.* / qwen35.attn.* / qwen35.lm_head bricks, and
+    qwen35.lm_head.count == decoded tokens of the brick pass
+  test: apr-cli profile::gpu_profile_loader_tests::qwen35_routes_to_the_hybrid_gpu_forward; live run of
+    apr profile Qwen3.5-4B-Q4_K_M.gguf --format json on a CUDA host
+  if_fails: The profiler builds the dense OwnedQuantizedModel, which refuses qwen35 by name, and exits 5
+    (SRV-TIM-001 item 6), or the hybrid forward's brick timers do not fire
 kani_harnesses:
 - id: KANI-GDP-001
   obligation: GDP-INV-001

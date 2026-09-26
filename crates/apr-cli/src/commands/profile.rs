@@ -481,6 +481,7 @@ include!("profile_options.rs");
 include!("diff_benchmark_report.rs");
 include!("profile_pct_change_classify.rs");
 include!("kernel.rs");
+include!("kernel_qwen35.rs");
 include!("profile_ollama.rs");
 include!("profile_safetensors.rs");
 include!("profile_print_hotspot.rs");

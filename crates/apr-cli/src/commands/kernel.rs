@@ -37,6 +37,16 @@ fn profile_gpu_generation(
             let mapped = MappedGGUFModel::from_path(path)
                 .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
             let arch = mapped.model.architecture().unwrap_or("unknown").to_string();
+            if gpu_profile_loader(&arch) == GpuProfileLoader::Hybrid {
+                return profile_gpu_generation_qwen35(
+                    path,
+                    &mapped,
+                    arch,
+                    tokens_per_pass,
+                    warmup_passes,
+                    measure_passes,
+                );
+            }
             let m = OwnedQuantizedModel::from_mapped(&mapped)
                 .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
             (m, arch)
@@ -388,7 +398,8 @@ fn run_brick_profiler_pass(
     let _ = cuda_model.generate_gpu_resident(test_tokens, &profile_config);
     let wall_us = t0.elapsed().as_secs_f64() * 1_000_000.0;
 
-    let hotspots = extract_gpu_hotspots(cuda_model, num_layers, hidden_dim, vocab_size);
+    let _ = num_layers;
+    let hotspots = extract_gpu_hotspots(cuda_model.profiler(), hidden_dim, vocab_size);
     (hotspots, wall_us, PROFILE_PASS_TOKENS)
 }
 
@@ -482,12 +493,10 @@ fn compute_kernel_bytes(op: KernelOp, hidden_dim: usize, vocab_size: usize) -> O
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn extract_gpu_hotspots(
-    cuda_model: &realizar::gguf::OwnedQuantizedModelCuda,
-    _num_layers: usize,
+    profiler: &trueno::BrickProfiler,
     hidden_dim: usize,
     vocab_size: usize,
 ) -> Vec<Hotspot> {
-    let profiler = cuda_model.profiler();
     let total_ns = profiler.total_ns();
 
     let mut hotspots: Vec<Hotspot> = profiler
