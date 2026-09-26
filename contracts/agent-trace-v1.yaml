@@ -1,0 +1,68 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PRM-001 v3 PRM-C1 row schema: one `agent-trace-v1` index row per lane per quorum round
+    (research-design §2.2, PRM-001 §2.2). `trace::TraceRow`
+    (crates/aprender-review-experiment/src/trace.rs) is the typed row, strict on keys and
+    enum values; `trace::lint` makes a row RED when its identity is unknown (provider, exact
+    model id, access channel and terms_ref via `terms::tags`; served_by; commit and blob
+    shas; a ULID trace_id) or its fields disagree (output iff `lane_state = Verdict`; a
+    lane that did not reply carries no verdict or findings; a local lane is never counted,
+    carries apr_tag and, when it replied, a sparse-logits-v1 `logits_sha`; a hosted lane
+    carries no logits and is never gold; gold never has a pending outcome; `split_guard`
+    is keyed by repo#PR). `trace::parse_index` reads one index file and names every RED
+    line; `trace::tally` is the weekly receipt's composition (rows, unique diffs, rows by
+    lane x label_tier x outcome). Blobs and findings text live on almacen, never in git.
+  references:
+    - "docs/specifications/research-design-pr-agent-qwen-3.5.md"
+    - "docs/specifications/PRM-001-prometheus.md"
+    - "contracts/agent-trace-terms-v1.yaml"
+    - "contracts/trace-split-guard-v1.yaml"
+    - "contracts/trace-outcome-join-v1.yaml"
+    - "contracts/sparse-logits-v1.yaml"
+    - "https://github.com/paiml/aprender/issues/4354"
+
+equations:
+  identity:
+    formula: "GREEN(r) ⇒ tags(r) ok ∧ served_by(r) ≠ '' ∧ ulid(trace_id) ∧ sha256(diff, input, parts) ∧ sha1(head, base)"
+  reply:
+    formula: "output_sha ≠ null ⇔ lane_state = Verdict; lane_state ≠ Verdict ⇒ verdict = null ∧ findings = []"
+  fence:
+    formula: "provider = local ⇒ ¬counted ∧ apr_tag ∧ (Verdict ⇒ sha256(logits_sha)); provider ≠ local ⇒ logits_sha = null ∧ label_tier ≠ gold; gold ⇒ outcome ≠ pending"
+  split:
+    formula: "split_guard.group_key = repo + '#' + pr"
+  tally:
+    formula: "unique_diffs = |{diff_sha256(r)}|; cell(r) = lane/label_tier/outcome; Σ cells = rows"
+
+falsification_tests:
+  - id: FALSIFY-ATR-001
+    name: a_complete_row_is_green_and_round_trips
+    prediction: "a hosted and a local row lint GREEN, re-serialise to an equal row, and parse_index returns them with findings as text"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_atr_001"
+    expected_output: "exit 0"
+    if_fails: "A well-formed trace could not be written or read back."
+  - id: FALSIFY-ATR-002
+    name: unknown_identity_is_red
+    prediction: "an unknown provider, a family-alias or placeholder model id, a local id that is not a weights sha, a channel that cannot serve the provider, no terms_ref, an empty served_by or quorum_id, a non-ULID trace id, a malformed sha, an unknown or missing key are each RED"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_atr_002"
+    expected_output: "exit 0"
+    if_fails: "A row whose source cannot be named could enter a pool."
+  - id: FALSIFY-ATR-003
+    name: lane_state_and_output_agree
+    prediction: "NotRun without output is GREEN; NotRun with output, Verdict without output, Refused with a verdict, a parsed reply without verdict, an unknown NotRun reason, agreed on a NotRun, an empty finding and an inverted line range are RED; a failed parse keeps its output without a verdict"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_atr_003"
+    expected_output: "exit 0"
+    if_fails: "A missing reply could read as a reviewed one, or a reply could be dropped."
+  - id: FALSIFY-ATR-004
+    name: silver_gold_and_logits_are_fenced
+    prediction: "hosted gold, gold pending, a counted local lane, a local reply without (valid) logits_sha or apr_tag, and a hosted lane with logits are RED; local gold with a matured outcome is GREEN"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_atr_004"
+    expected_output: "exit 0"
+    if_fails: "Hosted output could be trained on as gold, or a local lane could vote."
+  - id: FALSIFY-ATR-005
+    name: split_key_index_and_tally
+    prediction: "a split_guard keyed by row or by another PR is RED; parse_index names each RED line, a non-JSON line and a repeated trace_id; tally counts one unique diff for three lanes and rows per lane/tier/outcome"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_atr_005"
+    expected_output: "exit 0"
+    if_fails: "Rows of one PR could land in two splits, or the weekly receipt could miscount."

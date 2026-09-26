@@ -19,6 +19,8 @@
 //! - [`b2`]: the REX-12 B2 loop: verb-gated row status and the teacher-logit dataset receipt.
 //! - [`datacard`]: PRM-C14 (was PRA T14): the Croissant + RAI card, Datasheet and G16 weekly
 //!   yield/bytes receipt over the agent-trace index (`trace-datacard-v1`).
+//! - [`trace`]: PRM-C1 `agent-trace-v1`: the typed index row, its RED lint, the index
+//!   reader and the weekly lane × tier × outcome tally.
 
 pub mod admission;
 pub mod b2;
@@ -47,4 +49,5 @@ pub mod sparse_logits;
 pub mod split_guard;
 pub mod stats;
 pub mod terms;
+pub mod trace;
 pub mod workload;
