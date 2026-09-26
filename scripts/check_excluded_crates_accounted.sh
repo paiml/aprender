@@ -12,16 +12,24 @@
 # THE RULE. The universe is the root manifest's `[workspace] exclude` list
 # itself, not a list kept by hand. Each entry needs a row in
 # `[workspace.metadata.excluded]` in the same manifest, with exactly one of:
-#   ci      = "<script>"  a script CI runs (a scripts/check_*.sh, which
-#                         guard_tree.sh runs, or one a workflow names), and
-#                         whose text names the excluded path
+#   ci      = "<script>"  a script CI runs, and whose CODE (comment lines
+#                         stripped) names the excluded path as a whole path.
+#                         "CI runs" means: a guard in the RUN set of
+#                         `scripts/guard_tree.sh --dry-run` (the decision CI's
+#                         guard-tree/guard-cargo sections execute, and the one
+#                         check_guards_are_wired.sh reads), or a script a
+#                         workflow names on a non-comment line
 #   unbuilt = "<reason>"  nothing builds it, and this says why
 # A row with no matching exclude entry is RED too, so the table cannot go stale.
 #
 # THE PIN. An excluded crate's dependencies are never re-resolved by the
 # workspace, so a pre-release pin there rots silently. Every version
-# requirement in an excluded crate's manifest must be a released version:
-# no `-pre`, `-rc`, `-alpha`, `-beta` or any other semver pre-release suffix.
+# requirement in every Cargo.toml under an excluded path (nested members
+# included; target/ skipped) must be a released version: no `-pre`, `-rc`,
+# `-alpha`, `-beta` or any other semver pre-release suffix. Scanned: the
+# [dependencies]/[dev-dependencies]/[build-dependencies] tables and their
+# target.* forms, [workspace.dependencies], [patch.*] and [replace]. Lockfiles
+# are not scanned: a transitive pre-release there is resolution, not a pin.
 #
 # THE CASE TABLE. `--self-test` runs the checker over fixture trees, one per
 # defect, and each must go RED (plus clean fixtures that must stay GREEN). A
@@ -50,6 +58,7 @@ esac
 exec python3 - "$REPO_ROOT" "$MODE" <<'PY'
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import tomllib
@@ -69,11 +78,44 @@ def dep_tables(manifest):
     for target, body in manifest.get("target", {}).items():
         for t in DEP_TABLES:
             yield f"target.{target}.{t}", body.get(t, {})
+    yield "workspace.dependencies", manifest.get("workspace", {}).get("dependencies", {})
+    for registry, body in manifest.get("patch", {}).items():
+        yield f"patch.{registry}", body
+    yield "replace", manifest.get("replace", {})
 
 
-def ci_run(root, script):
-    """A script CI runs: a guard_tree.sh guard, or one a workflow names."""
-    if re.fullmatch(r"scripts/check_[A-Za-z0-9_]+\.sh", script):
+def manifests(root, excluded):
+    """Every Cargo.toml under an excluded path, nested members included."""
+    top = os.path.join(root, excluded)
+    for d, dirs, files in os.walk(top):
+        dirs[:] = sorted(x for x in dirs if x not in ("target", ".git"))
+        if "Cargo.toml" in files:
+            yield os.path.join(d, "Cargo.toml")
+
+
+def code(text):
+    """Text with comment lines (first non-blank char `#`) removed."""
+    return "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+
+
+def names(text, token):
+    """`token` appears as a whole path: not glued to a longer name on either side."""
+    return re.search(r"(?<![\w./-])" + re.escape(token) + r"(?![\w-])", text) is not None
+
+
+def dispatched(root):
+    """Scripts guard_tree.sh --dry-run decides to RUN (its `run: <path>` rows)."""
+    out = subprocess.run(["bash", "scripts/guard_tree.sh", "--dry-run"], cwd=root,
+                         capture_output=True, text=True, check=False).stdout
+    run = {m.group(1) for m in re.finditer(r"^run: (\S+)", out, re.M)}
+    if not run:
+        raise SystemExit("FAIL  guard_tree.sh --dry-run reported no run: rows; cannot tell what CI runs")
+    return run
+
+
+def ci_run(root, script, run_set):
+    """A script CI runs: guard_tree.sh dispatches it, or a workflow names it."""
+    if script in run_set:
         return True
     wf = os.path.join(root, ".github", "workflows")
     if not os.path.isdir(wf):
@@ -81,12 +123,12 @@ def ci_run(root, script):
     for name in sorted(os.listdir(wf)):
         if name.endswith((".yml", ".yaml")):
             with open(os.path.join(wf, name), encoding="utf-8") as f:
-                if script in f.read():
+                if names(code(f.read()), script):
                     return True
     return False
 
 
-def check(root):
+def check(root, run_set):
     errs = []
     ws = load(os.path.join(root, "Cargo.toml")).get("workspace", {})
     excl = [e.rstrip("/") for e in ws.get("exclude", [])]
@@ -116,21 +158,21 @@ def check(root):
             path = os.path.join(root, script) if isinstance(script, str) else ""
             if not script or not os.path.isfile(path):
                 errs.append(f"{e}: ci script {script!r} does not exist")
-            elif not ci_run(root, script):
-                errs.append(f"{e}: ci script {script} is neither a scripts/check_*.sh guard nor named by a workflow")
-            else:
-                with open(path, encoding="utf-8") as f:
-                    if e not in f.read():
-                        errs.append(f"{e}: ci script {script} never names {e}")
+                continue
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            if not ci_run(root, script, run_set):
+                errs.append(f"{e}: ci script {script} is neither run by guard_tree.sh --dry-run nor named by a workflow")
+            elif not names(code(text), e):
+                errs.append(f"{e}: ci script {script} never names {e} outside comments")
     for e in excl:
-        mpath = os.path.join(root, e, "Cargo.toml")
-        if not os.path.isfile(mpath):
-            continue
-        for table, deps in dep_tables(load(mpath)):
-            for name, spec in deps.items():
-                req = spec if isinstance(spec, str) else spec.get("version") if isinstance(spec, dict) else None
-                if isinstance(req, str) and PRE.search(req):
-                    errs.append(f"{e}/Cargo.toml [{table}] {name} = \"{req}\": pinned to a pre-release")
+        for mpath in manifests(root, e):
+            rel = os.path.relpath(mpath, root)
+            for table, deps in dep_tables(load(mpath)):
+                for name, spec in deps.items():
+                    req = spec if isinstance(spec, str) else spec.get("version") if isinstance(spec, dict) else None
+                    if isinstance(req, str) and PRE.search(req):
+                        errs.append(f"{rel} [{table}] {name} = \"{req}\": pinned to a pre-release")
     return errs
 
 
@@ -150,7 +192,7 @@ exclude = ["crates/canary", "crates/shell/"]
 "crates/shell" = { unbuilt = "workspace root shell, no package" }
 """
 CANARY = '[package]\nname = "canary"\nversion = "0.1.0"\n[dependencies]\nburn = { version = "%s" }\n'
-GUARD = "#!/usr/bin/env bash\n# builds crates/canary\n"
+GUARD = "#!/usr/bin/env bash\nbash crates/canary/run.sh\n"
 
 
 def case(root_toml=ROOT_OK, canary="0.21.0", guard=GUARD, extra=None):
@@ -161,7 +203,8 @@ def case(root_toml=ROOT_OK, canary="0.21.0", guard=GUARD, extra=None):
 
 
 CASES = [
-    # (name, files, must_be_red)
+    # (name, files, must_be_red[, guard_tree RUN set]); the default RUN set holds the
+    # fixture guard, as guard_tree.sh --dry-run would for a tracked check_*.sh.
     ("clean", case(), False),
     ("exact released pin", case(canary="=0.21.0"), False),
     ("ci via a workflow-named script",
@@ -181,6 +224,22 @@ CASES = [
     ("pre-release string pin", case(canary="0.21.0-pre.2"), True),
     ("rc pin", case(canary="1.0.0-rc.1"), True),
     ("two-part pre-release pin", case(canary="0.22-alpha"), True),
+    ("ci script names the path only in a comment",
+     case(guard="#!/usr/bin/env bash\n# builds crates/canary\necho hi\n"), True),
+    ("ci script names only a longer path", case(guard="#!/usr/bin/env bash\nls crates/canary-old\n"), True),
+    ("check_ script guard_tree does not run", case(), True, set()),
+    ("workflow names the script only in a comment",
+     case(root_toml=ROOT_OK.replace("scripts/check_canary.sh", "scripts/run_canary.sh"),
+          extra={"scripts/run_canary.sh": GUARD,
+                 ".github/workflows/ci.yml": "steps:\n  # - run: bash scripts/run_canary.sh\n"}), True),
+    ("nested member pins a pre-release",
+     case(extra={"crates/canary/sub/Cargo.toml": CANARY % "1.0.0-beta.1"}), True),
+    ("pre-release in target/ is ignored",
+     case(extra={"crates/canary/target/x/Cargo.toml": CANARY % "1.0.0-beta.1"}), False),
+    ("workspace.dependencies pre-release",
+     case(extra={"crates/canary/Cargo.toml": CANARY % "0.21.0" + '[workspace.dependencies]\nx = "3.0.0-rc.2"\n'}), True),
+    ("patch pre-release",
+     case(extra={"crates/canary/Cargo.toml": CANARY % "0.21.0" + '[patch.crates-io]\nx = { version = "3.0.0-alpha" }\n'}), True),
     ("target-specific pre-release dev-dep",
      case(extra={"crates/canary/Cargo.toml": CANARY % "0.21.0"
                  + '[target.\'cfg(unix)\'.dev-dependencies]\nx = "2.0.0-beta.3"\n'}), True),
@@ -189,10 +248,11 @@ CASES = [
 
 def self_test():
     bad = 0
-    for name, files, must_red in CASES:
+    for name, files, must_red, *run_set in CASES:
+        run_set = run_set[0] if run_set else {"scripts/check_canary.sh"}
         with tempfile.TemporaryDirectory(prefix="excl-accounted.") as d:
             fixture(d, files)
-            errs = check(d)
+            errs = check(d, run_set)
         ok = bool(errs) == must_red
         bad += not ok
         print(f"  {'ok  ' if ok else 'FAIL'} {'RED  ' if must_red else 'GREEN'} {name}" + ("" if ok else f" -> {errs}"))
@@ -206,7 +266,7 @@ if not self_test():
     sys.exit(1)
 if mode == "--self-test":
     sys.exit(0)
-errs = check(root)
+errs = check(root, dispatched(root))
 for e in errs:
     print(f"FAIL  {e}")
 if errs:

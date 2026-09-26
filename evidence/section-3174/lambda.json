@@ -5,114 +5,122 @@
  "burn": "0.21.0",
  "iters": 10,
  "statistic": "median",
- "mechanism": "nvidia-smi --query-compute-apps during a run: aprender-train-canary C+G on the RTX 4090, 4290 MiB",
- "load_average_1m": 99.54,
+ "mechanism": "the canary pins trueno to the single hardware wgpu adapter (GpuDevice::list_adapters, software rasterisers excluded) and Burn to WgpuDevice::DiscreteGpu(0), and writes that adapter's name as `gpu`; nvidia-smi --query-compute-apps during a run showed aprender-train-canary C+G on the RTX 4090 (4290 MiB)",
+ "timed_unit": "host-to-host on both sides (upload A,B; matmul; read C). Burn's owned TensorData copies are made before the clock starts.",
+ "load_average_1m_after_each_run": [
+  69.52,
+  66.29,
+  44.73
+ ],
  "runs": [
   {
+   "gpu": "NVIDIA GeForce RTX 4090",
    "iters": 10,
    "statistic": "median",
    "rows": [
     {
      "size": "4x2560x9728",
-     "trueno_ms": 20.233,
-     "burn_ms": 199.116,
-     "ratio": 9.8414
+     "trueno_ms": 19.617,
+     "burn_ms": 171.451,
+     "ratio": 8.74
     },
     {
      "size": "32x2560x9728",
-     "trueno_ms": 20.366,
-     "burn_ms": 213.817,
-     "ratio": 10.4986
+     "trueno_ms": 18.864,
+     "burn_ms": 169.804,
+     "ratio": 9.0014
     },
     {
      "size": "128x2560x9728",
-     "trueno_ms": 25.241,
-     "burn_ms": 177.788,
-     "ratio": 7.0436
+     "trueno_ms": 27.801,
+     "burn_ms": 197.653,
+     "ratio": 7.1095
     },
     {
      "size": "4x2560x151936",
-     "trueno_ms": 1251.236,
-     "burn_ms": 3746.897,
-     "ratio": 2.9946
+     "trueno_ms": 1200.129,
+     "burn_ms": 4286.808,
+     "ratio": 3.572
     },
     {
      "size": "32x2560x4096",
-     "trueno_ms": 14.282,
-     "burn_ms": 105.818,
-     "ratio": 7.4093
+     "trueno_ms": 13.336,
+     "burn_ms": 89.497,
+     "ratio": 6.7108
     }
    ]
   },
   {
+   "gpu": "NVIDIA GeForce RTX 4090",
    "iters": 10,
    "statistic": "median",
    "rows": [
     {
      "size": "4x2560x9728",
-     "trueno_ms": 20.269,
-     "burn_ms": 252.791,
-     "ratio": 12.4716
+     "trueno_ms": 22.276,
+     "burn_ms": 195.03,
+     "ratio": 8.755
     },
     {
      "size": "32x2560x9728",
-     "trueno_ms": 21.31,
-     "burn_ms": 249.066,
-     "ratio": 11.688
+     "trueno_ms": 18.949,
+     "burn_ms": 196.818,
+     "ratio": 10.3866
     },
     {
      "size": "128x2560x9728",
-     "trueno_ms": 26.995,
-     "burn_ms": 213.19,
-     "ratio": 7.8974
+     "trueno_ms": 32.428,
+     "burn_ms": 184.13,
+     "ratio": 5.6781
     },
     {
      "size": "4x2560x151936",
-     "trueno_ms": 1413.698,
-     "burn_ms": 6368.356,
-     "ratio": 4.5047
+     "trueno_ms": 1224.911,
+     "burn_ms": 3980.026,
+     "ratio": 3.2492
     },
     {
      "size": "32x2560x4096",
-     "trueno_ms": 15.342,
-     "burn_ms": 177.564,
-     "ratio": 11.5734
+     "trueno_ms": 18.272,
+     "burn_ms": 102.202,
+     "ratio": 5.5935
     }
    ]
   },
   {
+   "gpu": "NVIDIA GeForce RTX 4090",
    "iters": 10,
    "statistic": "median",
    "rows": [
     {
      "size": "4x2560x9728",
-     "trueno_ms": 32.548,
-     "burn_ms": 391.162,
-     "ratio": 12.0181
+     "trueno_ms": 33.892,
+     "burn_ms": 200.082,
+     "ratio": 5.9035
     },
     {
      "size": "32x2560x9728",
-     "trueno_ms": 23.255,
-     "burn_ms": 651.56,
-     "ratio": 28.0178
+     "trueno_ms": 21.152,
+     "burn_ms": 223.888,
+     "ratio": 10.5848
     },
     {
      "size": "128x2560x9728",
-     "trueno_ms": 27.378,
-     "burn_ms": 378.382,
-     "ratio": 13.8208
+     "trueno_ms": 47.486,
+     "burn_ms": 192.878,
+     "ratio": 4.0618
     },
     {
      "size": "4x2560x151936",
-     "trueno_ms": 1352.517,
-     "burn_ms": 7078.047,
-     "ratio": 5.2332
+     "trueno_ms": 1265.376,
+     "burn_ms": 4652.462,
+     "ratio": 3.6767
     },
     {
      "size": "32x2560x4096",
-     "trueno_ms": 22.461,
-     "burn_ms": 165.957,
-     "ratio": 7.3885
+     "trueno_ms": 22.827,
+     "burn_ms": 88.359,
+     "ratio": 3.8708
     }
    ]
   }
@@ -120,88 +128,89 @@
  "per_size": {
   "4x2560x9728": {
    "ratios": [
-    9.8414,
-    12.4716,
-    12.0181
+    8.74,
+    8.755,
+    5.9035
    ],
    "trueno_ms": [
-    20.233,
-    20.269,
-    32.548
+    19.617,
+    22.276,
+    33.892
    ],
    "burn_ms": [
-    199.116,
-    252.791,
-    391.162
+    171.451,
+    195.03,
+    200.082
    ]
   },
   "32x2560x9728": {
    "ratios": [
-    10.4986,
-    11.688,
-    28.0178
+    9.0014,
+    10.3866,
+    10.5848
    ],
    "trueno_ms": [
-    20.366,
-    21.31,
-    23.255
+    18.864,
+    18.949,
+    21.152
    ],
    "burn_ms": [
-    213.817,
-    249.066,
-    651.56
+    169.804,
+    196.818,
+    223.888
    ]
   },
   "128x2560x9728": {
    "ratios": [
-    7.0436,
-    7.8974,
-    13.8208
+    7.1095,
+    5.6781,
+    4.0618
    ],
    "trueno_ms": [
-    25.241,
-    26.995,
-    27.378
+    27.801,
+    32.428,
+    47.486
    ],
    "burn_ms": [
-    177.788,
-    213.19,
-    378.382
+    197.653,
+    184.13,
+    192.878
    ]
   },
   "4x2560x151936": {
    "ratios": [
-    2.9946,
-    4.5047,
-    5.2332
+    3.572,
+    3.2492,
+    3.6767
    ],
    "trueno_ms": [
-    1251.236,
-    1413.698,
-    1352.517
+    1200.129,
+    1224.911,
+    1265.376
    ],
    "burn_ms": [
-    3746.897,
-    6368.356,
-    7078.047
+    4286.808,
+    3980.026,
+    4652.462
    ]
   },
   "32x2560x4096": {
    "ratios": [
-    7.4093,
-    11.5734,
-    7.3885
+    6.7108,
+    5.5935,
+    3.8708
    ],
    "trueno_ms": [
-    14.282,
-    15.342,
-    22.461
+    13.336,
+    18.272,
+    22.827
    ],
    "burn_ms": [
-    105.818,
-    177.564,
-    165.957
+    89.497,
+    102.202,
+    88.359
    ]
   }
- }
+ },
+ "superseded": "a first measurement (ratios 2.99-28x, load ~99) timed Burn's 1.5 GB input clone inside the clock and was discarded after quorum review"
 }

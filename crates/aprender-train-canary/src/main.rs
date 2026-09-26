@@ -2,7 +2,9 @@
 //!
 //! usage: aprender-train-canary [--iters N] [--json PATH]
 //!
-//! Both sides are timed host-to-host: upload A and B, matmul, read C back.
+//! Both sides are timed host-to-host: upload A and B, matmul, read C back, on
+//! the one hardware wgpu adapter present (the JSON's `gpu` names it). Burn's
+//! owned input copies are made outside the clock.
 //! Each size gets one synchronised warmup per side (shader compile, pipeline
 //! cache) and then N timed iterations; the reported time is the MEDIAN, so a
 //! single stall does not move the ratio. ratio = burn_ms / trueno_ms, so a
@@ -55,16 +57,40 @@ fn args() -> Result<(usize, Option<String>), String> {
     Ok((iters, json))
 }
 
+/// Software rasterisers wgpu can enumerate; a canary on one of these measures a CPU.
+const SOFTWARE: [&str; 3] = ["llvmpipe", "lavapipe", "swiftshader"];
+
+/// The one hardware adapter both backends run on. More than one distinct hardware
+/// adapter is an error: nothing could then say which one Burn's DiscreteGpu(0) is.
+fn pick_adapter() -> Result<(u32, String), String> {
+    let all = trueno::backends::gpu::GpuDevice::list_adapters();
+    let hw: Vec<&(u32, String, String)> = all
+        .iter()
+        .filter(|(_, name, _)| !SOFTWARE.iter().any(|s| name.to_lowercase().contains(s)))
+        .collect();
+    let mut names: Vec<&str> = hw.iter().map(|(_, n, _)| n.as_str()).collect();
+    names.dedup();
+    match (hw.first(), names.len()) {
+        (Some((idx, name, _)), 1) => Ok((*idx, name.clone())),
+        _ => Err(format!(
+            "need exactly one hardware wgpu adapter, found {all:?}"
+        )),
+    }
+}
+
 fn run() -> Result<(), String> {
+    use burn::backend::wgpu::WgpuDevice;
     use burn::backend::Wgpu;
     use burn::tensor::{Tensor, TensorData};
     type B = Wgpu;
-    let dev = Default::default();
     let (iters, json) = args()?;
 
-    eprintln!("=== Performance Canary: trueno vs Burn WGPU (median of {iters}) ===\n");
+    let (adapter_index, adapter) = pick_adapter()?;
+    eprintln!("=== Performance Canary: trueno vs Burn WGPU (median of {iters}) on {adapter} ===\n");
 
-    let gpu = trueno::backends::gpu::GpuDevice::new().map_err(|e| format!("{e}"))?;
+    let gpu = trueno::backends::gpu::GpuDevice::new_with_adapter_index(adapter_index)
+        .map_err(|e| format!("{e}"))?;
+    let dev = WgpuDevice::DiscreteGpu(0);
     let mut rows = Vec::new();
 
     for (m, k, n) in SIZES {
@@ -76,9 +102,18 @@ fn run() -> Result<(), String> {
             .collect();
         let mut c = vec![0.0f32; m * n];
 
-        let burn_once = || {
-            let ab = Tensor::<B, 2>::from_data(TensorData::new(a.clone(), [m, k]), &dev);
-            let bb = Tensor::<B, 2>::from_data(TensorData::new(b.clone(), [k, n]), &dev);
+        // Burn's from_data takes ownership, so each call needs its own host copy. The
+        // copy is made BEFORE the clock starts: trueno reads the same slices in place,
+        // and a 1.5 GB memcpy on the Burn side only would be measured as matmul.
+        let burn_inputs = || {
+            (
+                TensorData::new(a.clone(), [m, k]),
+                TensorData::new(b.clone(), [k, n]),
+            )
+        };
+        let burn_once = |(da, db): (TensorData, TensorData)| {
+            let ab = Tensor::<B, 2>::from_data(da, &dev);
+            let bb = Tensor::<B, 2>::from_data(db, &dev);
             // to_data() blocks until the result is on the host: the timed unit.
             ab.matmul(bb).to_data()
         };
@@ -86,7 +121,7 @@ fn run() -> Result<(), String> {
         // Warmup, synchronised on both sides so compile time stays out of the timings.
         gpu.matmul(&a, &b, &mut c, m, k, n)
             .map_err(|e| format!("{e}"))?;
-        let _ = burn_once();
+        let _ = burn_once(burn_inputs());
 
         let mut t_trueno = Vec::with_capacity(iters);
         for _ in 0..iters {
@@ -97,8 +132,9 @@ fn run() -> Result<(), String> {
         }
         let mut t_burn = Vec::with_capacity(iters);
         for _ in 0..iters {
+            let inputs = burn_inputs();
             let t = Instant::now();
-            let _ = burn_once();
+            let _ = burn_once(inputs);
             t_burn.push(t.elapsed().as_secs_f64() * 1000.0);
         }
 
@@ -118,7 +154,7 @@ fn run() -> Result<(), String> {
     eprintln!("\nratio > 1.0 = trueno faster, ratio < 1.0 = burn faster");
     if let Some(path) = json {
         let body = format!(
-            "{{\n  \"iters\": {iters},\n  \"statistic\": \"median\",\n  \"rows\": [\n{}\n  ]\n}}\n",
+            "{{\n  \"gpu\": {adapter:?},\n  \"iters\": {iters},\n  \"statistic\": \"median\",\n  \"rows\": [\n{}\n  ]\n}}\n",
             rows.join(",\n")
         );
         std::fs::write(&path, body).map_err(|e| format!("write {path}: {e}"))?;

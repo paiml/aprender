@@ -11,10 +11,11 @@
 # lock (never the build), evidence JSON written to --out.
 #
 # THE FLOOR. crates/aprender-train-canary/baseline.json holds the measured
-# per-size ratio (burn_ms / trueno_ms, median of N) for one named GPU. A run
+# per-size ratio (burn_ms / trueno_ms, median of N) for one named wgpu adapter
+# (the canary pins both backends to the single hardware adapter and records it). A run
 # FAILS when any size's ratio falls below baseline * (1 - tolerance), when a
 # baseline size is missing from the run, or when a ratio is not a positive
-# finite number. A run on a GPU the baseline was not measured on exits 3: no
+# finite number. A run on an adapter the baseline was not measured on exits 3: no
 # baseline is not a pass.
 #
 # THE COMPARATOR is scripts/check_train_canary_comparator.sh, a guard CI runs
@@ -38,25 +39,20 @@ while [ "$#" -gt 0 ]; do
         --compare)
             MODE=compare
             RESULT="${2:?--compare needs a result file}"
-            if [ -n "${3:-}" ]; then BASELINE="$3"; shift; fi
             shift 2
+            case "${1:-}" in
+                "" | -*) ;;
+                *) BASELINE="$1"; shift ;;
+            esac
             ;;
         -h | --help) sed -n '2,23p' "${BASH_SOURCE[0]}"; exit 0 ;;
         *) echo "run_train_canary: unknown argument $1" >&2; exit 2 ;;
     esac
 done
 
-gpu_name() {
-    if command -v nvidia-smi >/dev/null 2>&1; then
-        nvidia-smi --query-gpu=name --format=csv,noheader | head -1
-    else
-        echo "unknown"
-    fi
-}
-
 COMPARATOR="$REPO_ROOT/scripts/check_train_canary_comparator.sh"
 case "$MODE" in
-    compare) bash "$COMPARATOR" --compare "$RESULT" "$BASELINE" "$(gpu_name)" ;;
+    compare) bash "$COMPARATOR" --compare "$RESULT" "$BASELINE" ;;
     run)
         bash "$COMPARATOR"
         TARGET="${CANARY_TARGET_DIR:-$REPO_ROOT/target/train-canary}"
@@ -64,6 +60,6 @@ case "$MODE" in
         BIN="$TARGET/release/aprender-train-canary"
         flock /tmp/apr-gpu.lock "$BIN" --iters "$ITERS" --json "$OUT"
         echo "evidence: $OUT"
-        bash "$COMPARATOR" --compare "$OUT" "$BASELINE" "$(gpu_name)"
+        bash "$COMPARATOR" --compare "$OUT" "$BASELINE"
         ;;
 esac
