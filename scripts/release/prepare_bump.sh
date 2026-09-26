@@ -19,7 +19,7 @@ PB_JQ_GROUP='def group: ((.title | capture("^(?<k>\\w+)(\\([^)]*\\))?!?:").k | a
 
 # pb_section MERGED_JSON VERSION MARK OUT -> the CHANGELOG [VERSION] draft in OUT; prints the tally
 pb_section() {
-    local day; day=$(date -u +%F) || return 1
+    local day; day=$(date -u +%F) || return 1  # bashrs disable-line=DET002
     jq -r --arg v "$2" --arg mark "$3" --arg day "$day" "$PB_JQ_GROUP"'
         [sort_by(.number)[] | {g: group, l: "- \(.title) (#\(.number))"}] as $p
         | ["## [\($v)] - \($day)", "", $mark, ""]

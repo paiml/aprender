@@ -79,7 +79,7 @@ mkdir -p "$log_dir" || exit 2
 fail=0
 for h in "${HARNESSES[@]}"; do
     log="$log_dir/$h.log"
-    t0=$(date +%s)
+    t0=$(date +%s)  # bashrs disable-line=DET002
     timeout "$TIMEOUT" cargo kani -Z stubbing -p aprender-contracts --lib \
         --harness "kernels::kani_proofs::$h" --exact > "$log" 2>&1
     rc=$?

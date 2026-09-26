@@ -72,10 +72,12 @@ stage_verdict() {
 # args: <dir, relative to $HOME> <bin> <asset>. Prints one line: INSTALLED <path> | <REASON> <detail>.
 INSTALL_SH='set -u
 d=$HOME/$1 bin=$2 asset=$3
+# bashrs disable-next-line=SEC010
 cd "$d" || { echo "NO-DIR $d"; exit 1; }
 want=$(cut -d" " -f1 "$asset.sha256" 2>/dev/null)
 if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum "$asset" | cut -d" " -f1); else got=$(shasum -a 256 "$asset" | cut -d" " -f1); fi
 [ -n "$want" ] && [ "$got" = "$want" ] || { echo "SHA-MISMATCH $asset want=$want got=$got"; exit 1; }
+# bashrs disable-next-line=SEC010
 rm -rf -- "${d:?}/x" && mkdir x && tar -xzf "$asset" -C x || { echo "UNTAR $asset"; exit 1; }
 new=$(find x -type f -name "$bin" | head -n 1)
 [ -n "$new" ] || { echo "NO-BINARY $bin in $asset"; exit 1; }
@@ -226,6 +228,7 @@ self_test() {
     d=$(mktemp -d) || return 2
     local tag=v9.9.9-rc.3 sha=1234567890abcdef1234567890abcdef12345678 h
     mkdir -p "$d/bin" "$d/assets" "$d/pkg"
+    # bashrs disable-next-line=SEC010
     for h in good1 good2 bad; do mkdir -p "$d/hosts/$h/.cargo/bin"; done
     fake_bin() {  # fake_bin <name> <version line> -> a tarball + .sha256 in $d/assets
         local n=$1 a
@@ -251,6 +254,7 @@ while [ "\${1:-}" = -o ]; do shift 2; done
 h=\$1; shift
 [ -d "$d/hosts/\$h" ] || { echo "ssh: connect to host \$h: No route to host" >&2; exit 255; }
 export HOME="$d/hosts/\$h"; export PATH="\$HOME/shadow:\$HOME/.cargo/bin:/usr/bin:/bin"
+# bashrs disable-next-line=SEC001
 cd "\$HOME" && eval "\$*"
 EOF
     cat > "$d/bin/scp" <<EOF

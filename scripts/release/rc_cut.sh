@@ -228,11 +228,12 @@ for ref in json.load(sys.stdin):
     #    reachable fleet host. The notes carry the provenance the fleet pins by (commit and
     #    gating run) and the merge time the <=45 min target is measured from.
     merged_at=$(api_get "commits/$D_HEAD_SHA" | json 'print(d["commit"]["committer"]["date"])') || merged_at=unknown
+    cut_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)  # bashrs disable-line=DET002
     notes="Release candidate of ${v}, cut by CI (#4285). Not on crates.io.
 
 Commit \`$D_HEAD_SHA\` on \`release/$v\`, merged $merged_at.
 Gated by CI run https://github.com/$GITHUB_REPOSITORY/actions/runs/$run_id (\`ci / gate\` and \`workspace-test\` green).
-Cut at $(date -u +%Y-%m-%dT%H:%M:%SZ). binary-release.yml attaches the apr and pv assets to this DRAFT;
+Cut at $cut_at. binary-release.yml attaches the apr and pv assets to this DRAFT;
 scripts/release/rc_fleet_stage.sh publishes it only after every reachable fleet host runs it (#4327).
 
 Install: \`install.sh --version $tag\`, or \`install.sh --channel rc\` for the newest rc."
