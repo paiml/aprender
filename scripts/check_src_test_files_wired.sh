@@ -119,7 +119,10 @@ dark_in() {
         [ -d "$src" ] || continue
         names=$(named_files "$src")
         declare -A NAMED=()
-        while IFS= read -r f; do [ -n "$f" ] && NAMED[$f]=1; done <<< "$names"
+        while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            NAMED["$f"]=1
+        done <<< "$names"
         while IFS= read -r f; do
             is_declared "$f" "$src" "$names" || printf '%s\n' "${f#"$root"/}"
         # Raw grep -l is a superset prefilter; ONE awk re-checks every candidate without

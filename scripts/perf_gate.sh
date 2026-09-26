@@ -1057,7 +1057,8 @@ run_gate() {
   local ARM_PHASES_LOADED=0 _pl _pk _pv
   if _pl="$(arm_phases_all 2>/dev/null)"; then
     while IFS=$'\t' read -r _pk _pv; do
-      [ -n "$_pk" ] && ARM_PHASES[$_pk]="$_pv"
+      [ -n "$_pk" ] || continue
+      ARM_PHASES["$_pk"]="$_pv"
     done <<< "$_pl"
     ARM_PHASES_LOADED=1
   fi
