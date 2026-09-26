@@ -73,7 +73,8 @@ jobs:
   # with the same rule the old job of that name applied.
   # ==========================================================================
   x86-main:
-    runs-on: [self-hosted, Linux, X64, clean-room]   # intel, framework16 or yoga: any free X64 clean-room runner
+    # Any free X64 runner in the pool takes it: intel, framework16 or yoga.
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 240
     # The sections carry their own permissions blocks (the sov provenance section
     # needs id-token + attestations); one job token must cover all of them.
