@@ -27,10 +27,15 @@ fn lint_score_gate_fails_with_high_threshold() {
 
 #[test]
 fn lint_empty_dir() {
+    // run_lint takes the contract dir's PARENT as the project root. A bare
+    // tempdir makes that the host's /tmp, whose contents decided the verdict:
+    // RED in 101 s on a shared host, green in a clean CI container.
     let tmp = tempfile::tempdir().unwrap();
-    let config = LintConfig::new(tmp.path(), None, 0.0);
+    let dir = tmp.path().join("contracts");
+    std::fs::create_dir(&dir).unwrap();
+    let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
-    assert!(report.passed);
+    assert!(report.passed, "{:?}", report.gates);
 }
 
 #[test]
