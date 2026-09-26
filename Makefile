@@ -652,6 +652,11 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@# nightly wrote no lcov because of one timing test). Failures are LISTED, not hidden, and
 	@# every test run here is also run by CI's workspace-test, which fails on them.
 	@grep -E '^test .* \.\.\. FAILED$$' target/coverage/test.log | sed -e 's/^test //' -e 's/ \.\.\. FAILED$$//' | sort -u > target/coverage/failed-tests.txt || true
+	@# A test binary ended by a SIGNAL (OOM killer, earlyoom, timeout) wrote no .profraw, so
+	@# its whole crate reads as 0% and the total drops for a reason that is not the code.
+	@# Nightly 36204739015: earlyoom SIGTERMed aprender-serve's lib tests, 90% -> 76%, and
+	@# this gate called it a REGRESSION. It is refused as unmeasured below instead.
+	@bash scripts/coverage_killed_binaries.sh target/coverage/test.log > target/coverage/killed-binaries.txt || exit 1
 	@echo "📊 Parsing LCOV for the threshold check..."
 	@# Parse LCOV for line coverage (LH=lines hit, LF=lines found)
 	@if [ ! -s target/coverage/lcov.info ]; then echo "❌ coverage DID NOT MEASURE: no lcov.info was written. No coverage verdict."; exit 1; fi; \
@@ -660,6 +665,15 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	if [ "$$LF" -eq 0 ]; then echo "❌ coverage DID NOT MEASURE: lcov.info has 0 instrumented lines. No coverage verdict."; exit 1; fi; \
 	COV_PCT=$$((LH * 100 / LF)); \
 	NFAIL=$$(wc -l < target/coverage/failed-tests.txt); \
+	NKILL=$$(wc -l < target/coverage/killed-binaries.txt); \
+	if [ "$$NKILL" -gt 0 ]; then \
+		echo "❌ coverage DID NOT MEASURE: $$NKILL test binary(ies) were killed by a signal, so their"; \
+		echo "   crates wrote no profile. The partial figure $$LH/$$LF ($${COV_PCT}%) is not a measurement of this tree:"; \
+		sed 's/^/     /' target/coverage/killed-binaries.txt; \
+		echo "   This is NOT a coverage regression. Find the killer (journalctl -u earlyoom, dmesg)."; \
+		sed 's/^/KILLED /' target/coverage/killed-binaries.txt > target/coverage/summary.txt; \
+		exit 1; \
+	fi; \
 	echo "TOTAL: $$LH/$$LF lines covered ($${COV_PCT}%)"; \
 	echo "TOTAL $$LH $$LF $${COV_PCT}% failed_tests=$$NFAIL" > target/coverage/summary.txt; \
 	if [ "$$NFAIL" -gt 0 ]; then \
