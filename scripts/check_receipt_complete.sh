@@ -66,7 +66,29 @@ check_dag() { # every row with status: complete has a receipt with status: compl
     local dag=$1 rc=0 line rid pid rf st
     [ -f "$dag" ] || { printf '%s: ENV - %s is missing (the box cannot answer)\n' "$PROG" "$dag" >&2; return 2; }
     command -v python3 >/dev/null 2>&1 || { printf '%s: ENV - python3 is missing\n' "$PROG" >&2; return 2; }
+    # Parse FIRST, into a variable, and check the parser's status. Fed to the loop through
+    # `< <(python3 …)`, a DAG that does not parse (or whose `rows:` key was renamed) read
+    # as zero rows and printed PASS: the gate could not measure and said green.
+    local rows
+    if ! rows=$(python3 - "$dag" <<'PY'
+import sys, yaml
+try:
+    d = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+except Exception as e:
+    sys.exit(f"cannot parse: {e.__class__.__name__}: {str(e).splitlines()[0]}")
+rows = d.get("rows") if isinstance(d, dict) else None
+if not isinstance(rows, list) or not rows:
+    sys.exit("no non-empty top-level `rows:` list")
+for r in rows:
+    if r.get("status") == "complete":
+        print(f"{r['id']}\t{r.get('pmat_id') or 'UNKNOWN'}")
+PY
+    ); then
+        printf '%s: UNMEASURED - %s did not yield DAG rows (above); refusing to pass\n' "$PROG" "$dag" >&2
+        return 2
+    fi
     while IFS=$'\t' read -r rid pid; do
+        [ -n "$rid" ] || continue
         rf="$ROOT/docs/audits/impl-${pid}-receipt.md"
         st=$(receipt_status "$rf")
         if [ "$st" = complete ]; then
@@ -75,14 +97,7 @@ check_dag() { # every row with status: complete has a receipt with status: compl
             printf 'FAIL  %s (%s): the DAG says status: complete but %s is %s\n' "$rid" "$pid" "${rf#"$ROOT"/}" "$st"
             rc=1
         fi
-    done < <(python3 - "$dag" <<'PY'
-import sys, yaml
-d = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
-for r in d.get("rows", []):
-    if r.get("status") == "complete":
-        print(f"{r['id']}\t{r.get('pmat_id') or 'UNKNOWN'}")
-PY
-)
+    done <<<"$rows"
     local torn
     torn=$(cd "$ROOT" && git ls-files 'docs/audits/impl-*-receipt.md.tmp' 2>/dev/null || true)
     if [ -n "$torn" ]; then printf 'FAIL  tracked torn receipt(s): %s\n' "$torn"; rc=1; fi
@@ -150,6 +165,14 @@ EOF
     ( cd "$R" && git add -A >/dev/null 2>&1 && git commit -qm x >/dev/null 2>&1 )
     row 1 "--dag: a tracked *.tmp receipt is a torn write that was committed" bash "$R/scripts/check_receipt_complete.sh" --dag "$R/docs/specifications/pp-066-dag.yaml"
     row 2 "--dag: a missing DAG is exit 2, never a pass" bash "$R/scripts/check_receipt_complete.sh" --dag "$R/docs/specifications/nope.yaml"
+    # Can't-measure rows: a DAG the parser cannot read, or one with no `rows:` list, is
+    # exit 2 — never the PASS it printed before (kaizen, fail-closed sweep).
+    printf 'rows: [ {id: A-1, status: complete\n' > "$R/docs/specifications/torn.yaml"
+    row 2 "--dag: a DAG that does not parse is exit 2, never a pass" bash "$R/scripts/check_receipt_complete.sh" --dag "$R/docs/specifications/torn.yaml"
+    printf 'items:\n- {id: A-1, pmat_id: PMAT-99, status: complete}\n' > "$R/docs/specifications/renamed.yaml"
+    row 2 "--dag: a DAG whose rows: key was renamed is exit 2, never a pass" bash "$R/scripts/check_receipt_complete.sh" --dag "$R/docs/specifications/renamed.yaml"
+    printf 'rows: []\n' > "$R/docs/specifications/empty.yaml"
+    row 2 "--dag: an empty rows: list is exit 2 (0 rows measured is not a pass)" bash "$R/scripts/check_receipt_complete.sh" --dag "$R/docs/specifications/empty.yaml"
     printf '%s/%s rows\n' "$((n - red))" "$n"
     [ "$red" = 0 ] || exit 1
     exit 0

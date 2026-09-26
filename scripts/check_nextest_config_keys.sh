@@ -52,13 +52,17 @@ if ! command -v cargo-nextest >/dev/null 2>&1 && ! cargo nextest --version >/dev
 fi
 
 # Run nextest on a throwaway crate with the given config; echo any ignored-key
-# warnings. Nothing else about the run matters.
+# warnings. rc 2 when nextest itself did not run cleanly: the warning scan used
+# to drop nextest's status, so a config nextest could not LOAD (a mistyped value,
+# a missing file) printed no warning and read as "every key is understood"
+# (fail-closed sweep). The probe carries one #[test] so a clean run exits 0.
 ignored_keys_for() {
-    local cfg="$1" dir
-    dir="$(mktemp -d)" || return 1
+    local cfg="$1" dir rc=0
+    dir="$(mktemp -d)" || return 2
     case "$dir" in
         /tmp/*|/var/folders/*) : ;;
-        *) printf 'BADTMP %s\n' "${dir:-<empty>}"; return 1 ;;
+        "${TMPDIR:-/tmp}"/*) [ "${TMPDIR:-/tmp}" != / ] || { printf 'UNMEASURED: TMPDIR is /\n' >&2; return 2; } ;;
+        *) printf 'UNMEASURED: mktemp gave %s, outside any temp dir\n' "${dir:-<empty>}" >&2; return 2 ;;
     esac
     mkdir -p "$dir/src"
     # Line by line rather than a heredoc: bashrs parses an embedded heredoc as
@@ -69,13 +73,17 @@ ignored_keys_for() {
         printf 'version = "0.0.0"\n'
         printf 'edition = "2021"\n'
     } > "$dir/Cargo.toml"
-    printf 'pub fn probe() -> u8 { 1 }\n' > "$dir/src/lib.rs"
+    printf 'pub fn probe() -> u8 { 1 }\n#[test]\nfn probe_runs() { assert_eq!(probe(), 1); }\n' > "$dir/src/lib.rs"
 
-    ( cd "$dir" && cargo nextest run --config-file "$cfg" --profile ci 2>&1 ) \
-        | grep -F 'ignoring unknown configuration key' \
+    ( cd "$dir" && cargo nextest run --config-file "$cfg" --profile ci ) > "$dir/run.log" 2>&1 || rc=$?
+    grep -F 'ignoring unknown configuration key' "$dir/run.log" \
         | sed -e 's/.*ignoring unknown configuration key: //' -e 's/[[:space:]]*$//'
-
+    if [ "$rc" -ne 0 ]; then
+        printf 'UNMEASURED: cargo nextest exited %s on the probe crate with %s:\n' "$rc" "$cfg" >&2
+        grep -E '^(error|  ?Caused by|    )' "$dir/run.log" | head -n 6 | sed 's/^/    /' >&2
+    fi
     rm -rf "${dir:?refusing to rm an empty path}"
+    [ "$rc" -eq 0 ] || return 2
 }
 
 # ---------------------------------------------------------------------------
@@ -86,8 +94,8 @@ if [ "${1:-}" = "--self-test" ]; then
 
     # Row 1: the exact historical defect must be REPORTED.
     printf '[profile.ci]\nslow-warning = "60s"\n' > "$SD/bad.toml"
-    got="$(ignored_keys_for "$SD/bad.toml")"
-    if [ "$got" = "profile.ci.slow-warning" ]; then
+    rc=0; got="$(ignored_keys_for "$SD/bad.toml")" || rc=$?
+    if [ "$got" = "profile.ci.slow-warning" ] && [ "$rc" -eq 0 ]; then
         printf 'ok    row 1 the dead key that cost #2502 is reported\n'
     else
         printf 'FAIL  row 1 got [%s], expected profile.ci.slow-warning\n' "$got"; fails=1
@@ -96,15 +104,28 @@ if [ "${1:-}" = "--self-test" ]; then
     # Row 2 is the control. Without it row 1 passes even if this reported every
     # key it saw -- and then the real config could never go green.
     printf '[profile.ci]\nslow-timeout = { period = "60s", terminate-after = 10 }\n' > "$SD/good.toml"
-    got="$(ignored_keys_for "$SD/good.toml")"
-    if [ -z "$got" ]; then
+    rc=0; got="$(ignored_keys_for "$SD/good.toml")" || rc=$?
+    if [ -z "$got" ] && [ "$rc" -eq 0 ]; then
         printf 'ok    row 2 the CORRECT key is not reported\n'
     else
-        printf 'FAIL  row 2 reported [%s] for a valid config\n' "$got"; fails=1
+        printf 'FAIL  row 2 reported [%s] rc=%s for a valid config\n' "$got" "$rc"; fails=1
     fi
 
+    # Rows 3-4: nextest cannot load the config, so it prints no ignored-key
+    # warning. Before the fix both read as "every key is understood".
+    printf '[profile.ci]\nslow-timeout = 42\n' > "$SD/badtype.toml"
+    for c in "3 a known key with a value of the wrong type:$SD/badtype.toml" \
+             "4 a config file that does not exist:$SD/absent.toml"; do
+        rc=0; got="$(ignored_keys_for "${c##*:}" 2>/dev/null)" || rc=$?
+        if [ "$rc" -eq 2 ]; then
+            printf 'ok    row %s -> UNMEASURED (rc 2), not PASS\n' "${c%%:*}"
+        else
+            printf 'FAIL  row %s -> rc=%s got [%s], wanted UNMEASURED\n' "${c%%:*}" "$rc" "$got"; fails=1
+        fi
+    done
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (2/2)\n'
+    printf '\nSELF-TEST PASSED (4/4)\n'
     exit 0
 fi
 
@@ -123,7 +144,11 @@ if ! grep -q '^\[profile\.ci\]' "$CONFIG"; then
     exit 1
 fi
 
-FOUND="$(ignored_keys_for "$CONFIG")"
+rc=0; FOUND="$(ignored_keys_for "$CONFIG")" || rc=$?
+if [ "$rc" -ne 0 ] && [ -z "$FOUND" ]; then
+    printf 'UNMEASURED: nextest did not run the probe cleanly with %s, so no key was checked.\n' "$CONFIG"
+    exit 2
+fi
 
 if [ -n "$FOUND" ]; then
     printf '\nFAIL: nextest is IGNORING these keys:\n\n'

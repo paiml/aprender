@@ -11,17 +11,93 @@
 # Refs: PMAT-SQI (symlinks), GAP-UX-002 (companion lookup), CB-510 (gitignore)
 # Contract: contracts/publish-safety-v1.yaml
 #
-# Usage: bash scripts/check_publish_safety.sh
-# Exit 0 if all OK, exit 1 if any checks fail.
+# Usage: bash scripts/check_publish_safety.sh [--self-test]
+# Exit 0 if all OK, exit 1 if any checks fail, exit 2 if it cannot measure (the
+# package listings Checks 2/8/9 read could not be taken).
 
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# pkg_list <pkg>: the file list `cargo package` would publish, or rc 1 with the
+# reason. Checks 2, 8 and 9 used to run `cargo package -p … --list 2>/dev/null`
+# inline and read an empty result as clean. Check 2 even omitted --allow-dirty,
+# so on any dirty tree cargo refused, the listing was empty, and the
+# .cargo/config leak check printed OK without looking (fail-closed sweep).
+# PUBLISH_SAFETY_CARGO stands in for cargo in the case table only.
+pkg_list() {
+    local pkg=$1 out err rc=0
+    err=$(mktemp) || return 1
+    out=$("${PUBLISH_SAFETY_CARGO:-cargo}" package -p "$pkg" --list --allow-dirty 2>"$err" </dev/null) || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        printf 'UNMEASURED: cargo package -p %s --list exited %s:\n' "$pkg" "$rc" >&2
+        tail -n 3 "$err" | sed 's/^/    /' >&2
+        rm -f "${err:?}"
+        return 1
+    fi
+    rm -f "${err:?}"
+    if [ -z "$out" ]; then
+        printf 'UNMEASURED: cargo package -p %s --list listed no files\n' "$pkg" >&2
+        return 1
+    fi
+    printf '%s\n' "$out"
+}
+
+if [ "${1:-}" = "--self-test" ]; then
+    T=$(mktemp -d "${TMPDIR:-/tmp}/pubsafe-selftest.XXXXXX") || exit 2
+    trap 'rm -rf "${T:?}"' EXIT
+    n=0; red=0
+    row() { # row <want rc> <label> <cmd...>
+        local want=$1 label=$2 rc=0; shift 2
+        n=$((n + 1))
+        "$@" >"$T/out.$n" 2>&1 || rc=$?
+        if [ "$rc" = "$want" ]; then printf 'ok    row %s rc=%s  %s\n' "$n" "$rc" "$label"
+        else printf 'FAIL  row %s rc=%s (wanted %s)  %s\n' "$n" "$rc" "$want" "$label"; sed 's/^/        /' "$T/out.$n"; red=1; fi
+    }
+    fake() { # fake <name> <rc> <stdout>: a stand-in cargo
+        printf '#!/usr/bin/env bash\nprintf "%%b" %q\nexit %s\n' "$3" "$2" > "$T/$1"
+        chmod +x "$T/$1"
+    }
+    fake dirty 101 ''
+    fake empty 0 ''
+    fake ok 0 'Cargo.toml\nsrc/lib.rs\n'
+    row 1 "pkg_list: cargo refuses (dirty tree, offline: rc 101) is not a listing" \
+        env PUBLISH_SAFETY_CARGO="$T/dirty" bash -c ". \"\$1\" --lib-only && pkg_list aprender" _ "$0"
+    row 1 "pkg_list: an empty listing is not a clean one" \
+        env PUBLISH_SAFETY_CARGO="$T/empty" bash -c ". \"\$1\" --lib-only && pkg_list aprender" _ "$0"
+    row 0 "pkg_list: a real listing passes through" \
+        env PUBLISH_SAFETY_CARGO="$T/ok" bash -c ". \"\$1\" --lib-only && pkg_list aprender" _ "$0"
+    row 2 "whole gate: cargo cannot list the package -> exit 2, never 'OK'" \
+        env PUBLISH_SAFETY_CARGO="$T/dirty" bash "$0"
+    row 2 "whole gate: an empty listing -> exit 2, never 'OK (0 files)'" \
+        env PUBLISH_SAFETY_CARGO="$T/empty" bash "$0"
+    # Row 4's rc alone would also be 2 for an unrelated early exit: pin the reason.
+    if ! grep -q 'UNMEASURED: cargo package -p aprender' "$T/out.4"; then
+        printf 'FAIL  row 4 exited 2 without naming the unmeasured package\n'; red=1
+    fi
+    printf '%s/%s rows\n' "$((n - red))" "$n"
+    [ "$red" = 0 ] || exit 1
+    exit 0
+fi
+[ "${1:-}" = "--lib-only" ] && return 0
+
+cd "$REPO_ROOT" || { echo "UNMEASURED: cannot cd to $REPO_ROOT"; exit 2; }
+
 errors=0
 checked=0
 
 echo "Publish safety gate..."
+
+# The two listings Checks 2, 8 and 9 read, taken once. Without them those checks
+# cannot answer, so the gate stops here rather than print three OKs.
+LIST_aprender=$(pkg_list aprender) || { echo "UNMEASURED: no package listing for aprender; publish safety cannot be judged"; exit 2; }
+LIST_apr_cli=$(pkg_list apr-cli) || { echo "UNMEASURED: no package listing for apr-cli; publish safety cannot be judged"; exit 2; }
+listing_of() {
+    case "$1" in
+        aprender) printf '%s\n' "$LIST_aprender" ;;
+        apr-cli) printf '%s\n' "$LIST_apr_cli" ;;
+    esac
+}
 
 # Check 1: No tracked symlinks (P0: symlinks to build dirs broke all users)
 echo -n "  Symlink check... "
@@ -42,7 +118,7 @@ echo -n "  Cargo config leak check... "
 checked=$((checked + 1))
 config_leak=0
 for pkg in aprender apr-cli; do
-    if grep -q '\.cargo/config' <<< "$(cargo package -p "$pkg" --list 2>/dev/null)" ; then
+    if listing_of "$pkg" | grep -q '\.cargo/config'; then
         if [ "$config_leak" -eq 0 ]; then
             echo "FAIL"
         fi
@@ -204,7 +280,7 @@ echo -n "  Package hygiene check... "
 checked=$((checked + 1))
 hygiene_fail=0
 for pkg in aprender apr-cli; do
-    leaked=$(cargo package -p "$pkg" --list --allow-dirty 2>/dev/null \
+    leaked=$(listing_of "$pkg" \
         | grep -E '\.github/|\.githooks/|\.pmat-metrics|Dockerfile' || true)
     if [ -n "$leaked" ]; then
         if [ "$hygiene_fail" -eq 0 ]; then
@@ -224,7 +300,7 @@ fi
 # Check 9: Package file count sanity (catch accidental bloat regression)
 echo -n "  Package file count check... "
 checked=$((checked + 1))
-aprender_count=$(cargo package -p aprender --list --allow-dirty 2>/dev/null | wc -l)
+aprender_count=$(listing_of aprender | wc -l)
 # Threshold: current is ~1520. Alert if it grows by >200 files (new bloat).
 if [ "$aprender_count" -gt 1800 ]; then
     echo "WARN"

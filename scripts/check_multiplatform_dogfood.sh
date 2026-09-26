@@ -27,6 +27,64 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
+# main_floor_hosts <ref>: the HOSTS list this script carries at <ref>, or rc 2 with
+# the reason. The ratchet below used to read `git show origin/main:… 2>/dev/null`
+# and take an EMPTY result as "BOOTSTRAP: not on main yet". The gate landed long
+# ago, so that branch is only reachable now when the ref is missing (a shallow
+# clone, a fresh worktree never fetched) or the HOSTS line stopped parsing. In
+# both, the floor was skipped and the gate went on to pass (fail-closed sweep).
+main_floor_hosts() {
+    local ref=$1 src hosts
+    if ! git rev-parse --verify -q "$ref^{commit}" >/dev/null; then
+        printf 'UNMEASURED: %s does not resolve here (shallow clone or never fetched), so the protected host floor cannot be read. Fetch it: git fetch origin main\n' "$ref"
+        return 2
+    fi
+    if ! src=$(git show "$ref:scripts/check_multiplatform_dogfood.sh" 2>/dev/null); then
+        printf 'UNMEASURED: scripts/check_multiplatform_dogfood.sh is not at %s. The bootstrap is spent (the gate is on main); a missing copy is a rename or a wrong ref, not a first landing\n' "$ref"
+        return 2
+    fi
+    hosts=$(printf '%s\n' "$src" | sed -n 's/^HOSTS="\(.*\)"$/\1/p' | head -1)
+    if [ -z "$(printf '%s' "$hosts" | tr -d ' ')" ]; then
+        printf 'UNMEASURED: no HOSTS="…" line parses in the copy at %s\n' "$ref"
+        return 2
+    fi
+    printf '%s\n' "$hosts"
+}
+
+if [ "${1:-}" = "--self-test" ]; then
+    T=$(mktemp -d "${TMPDIR:-/tmp}/mpd-selftest.XXXXXX") || exit 2
+    trap 'rm -rf "${T:?}"' EXIT
+    fx() { # fx <dir> <file content|-> : a one-commit repo, file absent when "-"
+        mkdir -p "$T/$1/scripts"
+        git -C "$T/$1" init -q
+        if [ "$2" = - ]; then : > "$T/$1/README"; else printf '%s\n' "$2" > "$T/$1/scripts/check_multiplatform_dogfood.sh"; fi
+        git -C "$T/$1" add -A
+        git -C "$T/$1" -c core.hooksPath=/dev/null -c user.email=t@t -c user.name=t commit -qm fx
+    }
+    fx good 'HOSTS="lambda intel gx10 mini"'
+    fx renamed 'PLATFORMS="lambda intel gx10 mini"'
+    fx empty 'HOSTS=""'
+    fx absent -
+    n=0; red=0
+    row() { # row <want rc> <dir> <ref> <label>
+        local rc=0 out
+        n=$((n + 1))
+        out=$(cd "$T/$2" && main_floor_hosts "$3") || rc=$?
+        if [ "$rc" = "$1" ]; then printf 'ok    row %s rc=%s  %s\n' "$n" "$rc" "$4"
+        else printf 'FAIL  row %s rc=%s (wanted %s)  %s\n        %s\n' "$n" "$rc" "$1" "$4" "$out"; red=1; fi
+    }
+    row 2 good origin/main "ref missing (shallow clone): UNMEASURED, not BOOTSTRAP"
+    row 2 absent HEAD "script absent at the ref: UNMEASURED, the bootstrap is spent"
+    row 2 renamed HEAD "HOSTS line renamed: UNMEASURED, not an empty floor"
+    row 2 empty HEAD 'HOSTS="" at the ref: UNMEASURED, not an empty floor'
+    row 0 good HEAD "the floor at the ref is read"
+    got=$(cd "$T/good" && main_floor_hosts HEAD)
+    if [ "$got" != "lambda intel gx10 mini" ]; then printf 'FAIL  row 5 read %s\n' "$got"; red=1; fi
+    printf '%s/%s rows\n' "$((n - red))" "$n"
+    [ "$red" = 0 ] || exit 1
+    exit 0
+fi
+
 # The supported platform matrix. A host is here because it is a DISTINCT
 # combination of ISA, OS and accelerator -- not because we happen to own it.
 #   lambda      x86_64 Linux  + RTX 4090 (sm_89)     consumer x86, AVX2
@@ -132,16 +190,12 @@ if [ "$n_hosts" -lt 4 ]; then
 fi
 
 # Layer 2: the matrix at origin/main is the floor, and this file cannot move it.
-main_hosts=$(git show origin/main:scripts/check_multiplatform_dogfood.sh 2>/dev/null \
-             | sed -n 's/^HOSTS="\(.*\)"$/\1/p' | head -1)
-if [ -z "$main_hosts" ]; then
-    # BOOTSTRAP, and it is self-limiting rather than renewable: reachable only
-    # while this script does not exist at the protected ref. Once it lands, this
-    # branch is unreachable forever. A renewable bootstrap is the fifth hat of
-    # `registry: true` and is exactly what parity round 5 was caught on.
-    printf '!     BOOTSTRAP: this gate is not yet on origin/main, so the matrix\n'
-    printf '      has no protected floor this run. It gains one the moment this\n'
-    printf '      script lands.\n'
+# The BOOTSTRAP branch that stood here was self-limiting only in intent: once the
+# gate landed it stayed reachable through a missing ref, which is a renewable
+# bootstrap (the fifth hat of `registry: true`). No floor is now a refusal.
+if ! main_hosts=$(main_floor_hosts origin/main); then
+    printf '%s\n' "$main_hosts"
+    exit 2
 else
     missing=""
     for h in $main_hosts; do
