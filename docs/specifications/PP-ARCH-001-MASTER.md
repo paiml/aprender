@@ -675,3 +675,24 @@ The output buffer is poisoned with NaN, so the home's zeroing is tested too.
 stays. It uses a different kernel set (the APR `simd_dot_f32`, a scalar guarded MulInv
 softmax, a causal mask and a first-token shortcut), so it does not fit this home
 bit-exactly.
+
+### 9.14 Phase 2 step 5e delivered: `simple_attention` on the one-row home (2026-09-26)
+
+**Site migrated:** `apr/helpers.rs::simple_attention`, the causal multi-sequence GQA
+attention used by the APR forward and transform paths. Each (position, head) row is
+now one call to `gguf::ops::attend_row_scalar` over keys `0..=s`, with
+`ScoreScale::Mul(1/sqrt(hd))` and an unguarded `Divide` softmax. Its three private
+helpers (`compute_attention_score`, `softmax_causal`, `weighted_value_sum`) had no
+other callers and are gone.
+
+**Short buffers:** the old body read every element through `.get(..).unwrap_or(0.0)`,
+so a buffer shorter than `seq_len * dim` acted as zero-padded. The new body pads a
+short `q`, `k` or `v` once, up front, which keeps that behaviour exactly. Full-length
+buffers (every forward caller) are borrowed, not copied.
+
+**Bit-exact:** `simple_attention_equivalence_tests` keeps a frozen copy of the old
+body and runs 1125 cases with `to_bits`: 5 head layouts, `head_dim` ∈ {1, 7, 8, 16,
+33}, `seq_len` ∈ {0, 1, 2, 5, 17}, 3 magnitudes, and buffers that are full or short
+by 1 or 5 elements.
+
+**Rows: 18 → 17.**

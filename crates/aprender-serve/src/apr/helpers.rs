@@ -142,45 +142,6 @@ unsafe fn simd_dot_avx2(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
-/// Compute dot product attention score for a single query-key pair
-#[inline]
-fn compute_attention_score(
-    q: &[f32],
-    k: &[f32],
-    q_offset: usize,
-    k_offset: usize,
-    head_dim: usize,
-    scale: f32,
-) -> f32 {
-    let mut score = 0.0;
-    for d in 0..head_dim {
-        let q_val = q.get(q_offset + d).copied().unwrap_or(0.0);
-        let k_val = k.get(k_offset + d).copied().unwrap_or(0.0);
-        score += q_val * k_val;
-    }
-    score * scale
-}
-
-/// Apply softmax normalization to scores in-place (up to position s)
-#[inline]
-fn softmax_causal(scores: &mut [f32], s: usize) {
-    crate::gguf::ops::softmax_scalar_in_place(
-        &mut scores[..=s],
-        crate::gguf::ops::SoftmaxNorm::Divide,
-    );
-}
-
-/// Compute weighted sum of values for a single output dimension
-#[inline]
-fn weighted_value_sum(v: &[f32], scores: &[f32], v_base: usize, d: usize, s: usize) -> f32 {
-    let mut val = 0.0;
-    for t in 0..=s {
-        let v_val = v.get(v_base * t + d).copied().unwrap_or(0.0);
-        val += scores[t] * v_val;
-    }
-    val
-}
-
 /// Simplified multi-head attention (no RoPE, causal mask)
 ///
 /// NOTE: This is the **multi-sequence** variant — Q/K/V are `[seq_len, dim]`
@@ -190,6 +151,9 @@ fn weighted_value_sum(v: &[f32], scores: &[f32], v_base: usize, d: usize, s: usi
 /// come from a KV cache of length `kv_len`.  The two have fundamentally
 /// different loop structures and cannot be unified without a mode flag that
 /// would hurt clarity, so this implementation is intentionally kept separate.
+///
+/// Each (position, head) row is one call to the shared one-row home
+/// `gguf::ops::attend_row_scalar` over keys `0..=s` (PP-ARCH-001 §9.14).
 pub(crate) fn simple_attention(
     q: &[f32],
     k: &[f32],
@@ -205,29 +169,43 @@ pub(crate) fn simple_attention(
     let heads_per_kv = num_heads / num_kv_heads;
     let scale = 1.0 / (head_dim as f32).sqrt();
 
+    // The per-element reads this replaced treated an index past the end of a
+    // short buffer as 0.0; zero-padding up front keeps that exactly, and costs
+    // nothing when the buffers are full-length (the only case forward uses).
+    fn padded(x: &[f32], len: usize) -> std::borrow::Cow<'_, [f32]> {
+        if x.len() >= len {
+            std::borrow::Cow::Borrowed(x)
+        } else {
+            let mut p = x.to_vec();
+            p.resize(len, 0.0);
+            std::borrow::Cow::Owned(p)
+        }
+    }
+    let q = padded(q, seq_len * hidden_dim);
+    let k = padded(k, seq_len * kv_dim);
+    let v = padded(v, seq_len * kv_dim);
+
     let mut output = vec![0.0; seq_len * hidden_dim];
+    let mut scores = Vec::with_capacity(seq_len);
 
     for s in 0..seq_len {
         for h in 0..num_heads {
-            let kv_h = h / heads_per_kv;
+            let kv_off = (h / heads_per_kv) * head_dim;
             let q_base = s * hidden_dim + h * head_dim;
-            let k_base = kv_h * head_dim;
-            let v_base = kv_dim;
-
-            // Compute causal attention scores
-            let mut scores = vec![0.0; seq_len];
-            for t in 0..=s {
-                scores[t] =
-                    compute_attention_score(q, k, q_base, t * kv_dim + k_base, head_dim, scale);
-            }
-
-            softmax_causal(&mut scores, s);
-
-            // Weighted sum of values
-            for d in 0..head_dim {
-                let val = weighted_value_sum(v, &scores, v_base, kv_h * head_dim + d, s);
-                output[s * hidden_dim + h * head_dim + d] = val;
-            }
+            // Causal: query s attends to keys 0..=s.
+            crate::gguf::ops::attend_row_scalar(
+                &q[q_base..q_base + head_dim],
+                s + 1,
+                |t| &k[t * kv_dim + kv_off..t * kv_dim + kv_off + head_dim],
+                |t| &v[t * kv_dim + kv_off..t * kv_dim + kv_off + head_dim],
+                crate::gguf::ops::ScoreScale::Mul(scale),
+                crate::gguf::ops::RowSoftmax {
+                    norm: crate::gguf::ops::SoftmaxNorm::Divide,
+                    guard_positive_sum: false,
+                },
+                &mut scores,
+                &mut output[q_base..q_base + head_dim],
+            );
         }
     }
 

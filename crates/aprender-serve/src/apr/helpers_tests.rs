@@ -237,3 +237,110 @@ mod tests {
         assert_eq!(detect_format("/nonexistent/file.bin"), "unknown");
     }
 }
+
+/// PP-ARCH-001 §9.14: `simple_attention` moved onto `gguf::ops::attend_row_scalar`.
+/// The frozen pre-move body must agree bit for bit, including the zero-fill of
+/// short buffers.
+#[cfg(test)]
+mod simple_attention_equivalence_tests {
+    use super::simple_attention;
+
+    #[allow(clippy::too_many_arguments)]
+    fn frozen(
+        q: &[f32],
+        k: &[f32],
+        v: &[f32],
+        seq_len: usize,
+        num_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+    ) -> Vec<f32> {
+        let hidden_dim = num_heads * head_dim;
+        let kv_dim = num_kv_heads * head_dim;
+        let heads_per_kv = num_heads / num_kv_heads;
+        let scale = 1.0 / (head_dim as f32).sqrt();
+        let mut output = vec![0.0; seq_len * hidden_dim];
+        for s in 0..seq_len {
+            for h in 0..num_heads {
+                let kv_h = h / heads_per_kv;
+                let q_base = s * hidden_dim + h * head_dim;
+                let k_base = kv_h * head_dim;
+                let mut scores = vec![0.0f32; seq_len];
+                for t in 0..=s {
+                    let mut score = 0.0;
+                    for d in 0..head_dim {
+                        let q_val = q.get(q_base + d).copied().unwrap_or(0.0);
+                        let k_val = k.get(t * kv_dim + k_base + d).copied().unwrap_or(0.0);
+                        score += q_val * k_val;
+                    }
+                    scores[t] = score * scale;
+                }
+                let row = &mut scores[..=s];
+                let max = row.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                let mut sum = 0.0f32;
+                for x in row.iter_mut() {
+                    *x = (*x - max).exp();
+                    sum += *x;
+                }
+                for x in row.iter_mut() {
+                    *x /= sum;
+                }
+                for d in 0..head_dim {
+                    let mut val = 0.0;
+                    for t in 0..=s {
+                        let v_val = v.get(kv_dim * t + kv_h * head_dim + d).copied().unwrap_or(0.0);
+                        val += scores[t] * v_val;
+                    }
+                    output[s * hidden_dim + h * head_dim + d] = val;
+                }
+            }
+        }
+        output
+    }
+
+    fn fill(n: usize, seed: u32, mag: f32) -> Vec<f32> {
+        let mut x = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
+        (0..n)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                ((x as f32 / u32::MAX as f32) * 2.0 - 1.0) * mag
+            })
+            .collect()
+    }
+
+    #[test]
+    fn matches_frozen_body_bit_for_bit() {
+        let mut cases = 0;
+        for &(nh, nkv) in &[(1, 1), (4, 4), (4, 2), (8, 1), (6, 3)] {
+            for &hd in &[1usize, 7, 8, 16, 33] {
+                for &seq in &[0usize, 1, 2, 5, 17] {
+                    for &mag in &[0.1f32, 3.0, 40.0] {
+                        // short = 0: full buffers; short > 0: truncated k/v/q.
+                        for &short in &[0usize, 1, 5] {
+                            let seed = (nh * 1000 + hd * 31 + seq * 7) as u32;
+                            let qn = (seq * nh * hd).saturating_sub(short);
+                            let kn = (seq * nkv * hd).saturating_sub(short);
+                            let q = fill(qn, seed, mag);
+                            let k = fill(kn, seed + 1, mag);
+                            let v = fill(kn, seed + 2, mag);
+                            let got = simple_attention(&q, &k, &v, seq, nh, nkv, hd);
+                            let want = frozen(&q, &k, &v, seq, nh, nkv, hd);
+                            assert_eq!(got.len(), want.len());
+                            for (i, (g, w)) in got.iter().zip(&want).enumerate() {
+                                assert_eq!(
+                                    g.to_bits(),
+                                    w.to_bits(),
+                                    "nh={nh} nkv={nkv} hd={hd} seq={seq} mag={mag} short={short} i={i}: {g} vs {w}"
+                                );
+                            }
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(cases, 5 * 5 * 5 * 3 * 3);
+    }
+}
