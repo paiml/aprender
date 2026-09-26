@@ -205,13 +205,14 @@ fn planted_regressions_turn_red() {
         w1.iter().any(|r| r.starts_with("packaged:")),
         "no-vcs-rung plant survived: {w1:#?}"
     );
-    let retry = "run_git(&head).or_else(|| trusted_git_retry(&head))";
+    // #4254 split the chain across lines and appended the `.git` read after the retry.
+    let retry = "\n        .or_else(|| trusted_git_retry(&head))";
     assert_eq!(
         shipped.matches(retry).count(),
         1,
         "the git retry call site moved; re-anchor the plant"
     );
-    let w3 = table(&shipped.replace(retry, "run_git(&head)"), "plant_no_retry");
+    let w3 = table(&shipped.replace(retry, ""), "plant_no_retry");
     assert!(
         w3.iter().any(|r| r.starts_with("foreign-owner:")),
         "no-retry plant survived: {w3:#?}"
