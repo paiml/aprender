@@ -1924,22 +1924,7 @@ fn run_config_train_real(
     let result = entrenar_distill::run(&distill_config)
         .map_err(|e| CliError::ValidationFailed(format!("distillation pipeline failed: {e}")))?;
 
-    let meta = serde_json::json!({
-        "stage": "train",
-        "teacher": config.teacher.model_id,
-        "student": config.student.model_id,
-        "output_path": result.output_path.display().to_string(),
-        "temperature": config.distillation.temperature,
-        "alpha": config.distillation.alpha,
-        "epochs": config.training.epochs,
-        "batch_size": config.training.batch_size,
-        "learning_rate": config.training.learning_rate,
-        "initial_loss": result.metrics.initial_loss,
-        "final_loss": result.metrics.final_loss,
-        "steps_completed": result.metrics.steps_completed,
-        "duration_seconds": result.duration_seconds,
-        "status": "completed",
-    });
+    let meta = config_train_meta(config, &result);
 
     if json_output {
         println!(
@@ -1961,10 +1946,46 @@ fn run_config_train_real(
         );
         output::kv("  Duration", format!("{:.2}s", result.duration_seconds));
         println!();
+        output::kv("  Train data", CONFIG_TRAIN_DATA);
         println!("  {} Student training completed.", "DONE".green().bold());
     }
 
     Ok(true)
+}
+
+/// What the config-mode train stage trains on. The KD pipeline draws
+/// synthetic batches; `dataset.path` is consumed by precompute, never by
+/// this stage, so the report says so instead of implying the configured data
+/// was trained on (E8 #4002 row R-2h).
+#[cfg(feature = "training")]
+pub(crate) const CONFIG_TRAIN_DATA: &str =
+    "synthetic batches (dataset.path is not read by the train stage)";
+
+/// The JSON report of a config-mode train run.
+#[cfg(feature = "training")]
+fn config_train_meta(
+    config: &DistillYamlConfig,
+    result: &entrenar_distill::PipelineResult,
+) -> serde_json::Value {
+    serde_json::json!({
+        "stage": "train",
+        "teacher": config.teacher.model_id,
+        "student": config.student.model_id,
+        "output_path": result.output_path.display().to_string(),
+        "temperature": config.distillation.temperature,
+        "alpha": config.distillation.alpha,
+        "epochs": config.training.epochs,
+        "batch_size": config.training.batch_size,
+        "learning_rate": config.training.learning_rate,
+        "initial_loss": result.metrics.initial_loss,
+        "final_loss": result.metrics.final_loss,
+        "steps_completed": result.metrics.steps_completed,
+        "duration_seconds": result.duration_seconds,
+        "train_data": CONFIG_TRAIN_DATA,
+        "dataset_path_read": false,
+        "dataset_path": config.dataset.path,
+        "status": "completed",
+    })
 }
 
 /// Translate apr-cli's `DistillYamlConfig` to `entrenar_distill::DistillConfig`.

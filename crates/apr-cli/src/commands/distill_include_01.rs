@@ -1051,4 +1051,40 @@ mod tests {
             _ => panic!("expected ValidationFailed for unknown strategy"),
         }
     }
+
+    /// E8 #4002 R-2h: the config-mode train stage draws synthetic batches and
+    /// never reads `dataset.path`; its report must say so rather than imply
+    /// the configured dataset was trained on.
+    #[cfg(feature = "training")]
+    #[test]
+    fn config_train_report_names_its_synthetic_data() {
+        use std::fs;
+        let workdir = tempfile::tempdir().expect("create tempdir");
+        let dataset = workdir.path().join("dataset.bin");
+        fs::write(&dataset, b"dataset").expect("write dataset");
+        let yaml = format!(
+            "teacher:\n  model_id: paiml/teacher-7b\nstudent:\n  model_id: paiml/student-1b\ndistillation:\n  temperature: 4.0\n  alpha: 0.5\ntraining:\n  epochs: 1\n  batch_size: 2\n  learning_rate: 1.0e-3\ndataset:\n  path: {ds}\noutput:\n  dir: {out}\n",
+            ds = dataset.display(),
+            out = workdir.path().join("run").display()
+        );
+        let cfg_path = workdir.path().join("cfg.yaml");
+        fs::write(&cfg_path, &yaml).expect("write cfg");
+        let cfg = DistillYamlConfig::load(&cfg_path).expect("load cfg");
+
+        let result = entrenar_distill::PipelineResult {
+            output_path: workdir.path().join("run"),
+            metrics: entrenar_distill::pipeline::TrainingMetrics::default(),
+            duration_seconds: 0.0,
+        };
+        let meta = super::config_train_meta(&cfg, &result);
+        assert_eq!(meta["train_data"], super::CONFIG_TRAIN_DATA, "{meta}");
+        assert!(super::CONFIG_TRAIN_DATA.contains("synthetic"));
+        assert!(super::CONFIG_TRAIN_DATA.contains("dataset.path"));
+        assert_eq!(meta["dataset_path_read"], false, "{meta}");
+        assert_eq!(
+            meta["dataset_path"],
+            dataset.display().to_string(),
+            "{meta}"
+        );
+    }
 }

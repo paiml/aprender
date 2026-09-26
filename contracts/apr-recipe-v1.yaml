@@ -141,6 +141,13 @@ falsification_tests:
     cargo test -p apr-cli --lib commands::finetune_recipe::tests::a_malformed_seq_len_override_is_refused_not_defaulted
   if_fails: "an environment variable changes the distill window length while the recipe hash, the run's identity, stays the same"
 
+- id: FALSIFY-RECIPE-012
+  rule: the config-mode distill report names the data it trained on
+  prediction: "apr distill --config --stage train reports train_data as synthetic batches and dataset_path_read false, naming dataset.path, because the KD pipeline draws synthetic batches and never reads the configured dataset"
+  test: |
+    cargo test -p apr-cli --lib commands::distill::tests::config_train_report_names_its_synthetic_data
+  if_fails: "a config-mode train run reports completed as if it trained on dataset.path while it trained on synthetic batches"
+
 proof_obligations:
 - id: RECIPE-INV-001
   type: invariant
