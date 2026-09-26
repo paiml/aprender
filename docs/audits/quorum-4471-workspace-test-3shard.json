@@ -2,8 +2,6 @@
  "ticket": "workspace-test 3-shard split",
  "pr": 4471,
  "base": "e7a52949d10141e177ca680bc8b95b0fb3792e2b",
- "head": "92dd697cf8c07a8a855660732dc17e92095bf3d7",
- "diff_sha256": "aad72cb07ce59a29452ef18786e2bed3098fc0de29dfa6ecd7c0a9f7ea093641",
  "author": {
   "model": "claude-opus-5-5",
   "family": "claude"
@@ -26,38 +24,86 @@
   ]
  },
  "agreed": true,
- "consensus": "3/3 approve",
+ "open_questions": [
+  "filter=latest including a job carried over by 'Re-run failed jobs' was asserted by all lanes, not evidenced.",
+  "The external deadline starts at x86-main start; shards queued >~10 min behind fail closed (flake, not a silent pass).",
+  "Outside this PR: beat-speed-nightly.yml:68 and nightly-bench.yml:63 keep label words in trailing runs-on comments; not blind today (label also in the list)."
+ ],
+ "round_2": {
+  "head": "92dd697cf8c07a8a855660732dc17e92095bf3d7",
+  "diff_sha256": "aad72cb07ce59a29452ef18786e2bed3098fc0de29dfa6ecd7c0a9f7ea093641",
+  "result": "3/3 approve",
+  "lanes": [
+   {
+    "lane": 1,
+    "model": "gemini-3.1-pro-high",
+    "model_source": "measured",
+    "family": "gemini",
+    "conversation_id": "46a48b92-73a8-4210-9cca-b3f453934278",
+    "verdict": "PASS",
+    "summary": "R1-a..d RESOLVED (ci.yml:389-391; fat_driver.py:1068-1083); no silent drop, no hang."
+   },
+   {
+    "lane": 2,
+    "model": "gemini-3.8-flash-high",
+    "model_source": "measured",
+    "family": "gemini",
+    "conversation_id": "6c6413c0-ac9f-4323-9de1-95544d3f4d4c",
+    "verdict": "PASS",
+    "summary": "R1-a..d RESOLVED; tier split RED, missing tier file RED, exact job-name match, filter=latest + pagination, 200-min deadline -> failure (180+10+10 < 240), one section per shard glob, artifact paths agree, gate semantics unchanged."
+   },
+   {
+    "lane": 3,
+    "model": "gemini-3.7-flash-high",
+    "model_source": "measured",
+    "family": "gemini",
+    "conversation_id": "ba5ebdc9-063e-4f1b-8732-52b44deef526",
+    "verdict": "PASS",
+    "summary": "R1-a..d RESOLVED; Σ union vs shard-1 universe, exact job-name match, glob, artifact paths and gate integrity sound."
+   }
+  ]
+ },
+ "round_3": {
+  "head": "de7850c9d",
+  "scope": "intel pin dropped from x86-main + workspace-test-shard runs-on; this receipt",
+  "result": "1 approve / 2 request_changes",
+  "conversations": [
+   "ac1f606d-2276-499c-82ff-65a756f72192",
+   "64fc019d-4901-40d1-a1b1-1b8298de74a5",
+   "7a0a757e-2fbc-4abf-8434-441837b34850"
+  ],
+  "finding_fixed_in_09d5263d4": "a trailing runs-on comment containing 'clean-room' kept the line-oriented guards (guard_tree awk fallback, check_runner_labels) GREEN on a runs-on that had lost the label; comment moved to its own line"
+ },
+ "head": "09d5263d4d80455884bac6f8ca2cd60dc438ff7b",
+ "diff_sha256": "195769ca715e33cab493f8e686ce6a9cce05e47e08ca12043ebf2afe4e3bc693",
+ "result": "round 4: 3/3 approve",
  "lanes": [
   {
    "lane": 1,
    "model": "gemini-3.1-pro-high",
    "model_source": "measured",
    "family": "gemini",
-   "conversation_id": "46a48b92-73a8-4210-9cca-b3f453934278",
+   "conversation_id": "996236aa-8eb2-4dfe-aea9-3ebaf021d80e",
    "verdict": "PASS",
-   "summary": "R1-a..d RESOLVED (ci.yml:389-391; fat_driver.py:1068-1083); no silent drop, no hang."
+   "summary": "Q1-Q4 ok: round-3 finding resolved in yq and awk modes; check_runner_labels sees the bare label list; no intel reliance; receipt holds no private data."
   },
   {
    "lane": 2,
    "model": "gemini-3.8-flash-high",
    "model_source": "measured",
    "family": "gemini",
-   "conversation_id": "6c6413c0-ac9f-4323-9de1-95544d3f4d4c",
+   "conversation_id": "76145074-8f61-49b6-99bf-1c7ad0e22598",
    "verdict": "PASS",
-   "summary": "R1-a..d RESOLVED; tier split RED, missing tier file RED, exact job-name match, filter=latest + pagination, 200-min deadline -> failure (180+10+10 < 240), one section per shard glob, artifact paths agree, gate semantics unchanged."
+   "summary": "Q1-Q4 ok: round-3 finding resolved in yq and awk modes; check_runner_labels sees the bare label list; no intel reliance; receipt holds no private data."
   },
   {
    "lane": 3,
    "model": "gemini-3.7-flash-high",
    "model_source": "measured",
    "family": "gemini",
-   "conversation_id": "ba5ebdc9-063e-4f1b-8732-52b44deef526",
+   "conversation_id": "cde9688b-0515-4516-8068-4e5aa05ce6da",
    "verdict": "PASS",
-   "summary": "R1-a..d RESOLVED; Σ union vs shard-1 universe, exact job-name match, glob, artifact paths and gate integrity sound."
+   "summary": "Q1-Q4 ok: round-3 finding resolved in yq and awk modes; check_runner_labels sees the bare label list; no intel reliance; receipt holds no private data."
   }
- ],
- "open_questions": [
-  "filter=latest including a job carried over by 'Re-run failed jobs' was asserted by all lanes, not evidenced.",
-  "The external deadline starts at x86-main start; shards queued >~10 min behind fail closed (flake, not a silent pass)."
  ]
 }
