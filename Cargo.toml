@@ -638,6 +638,9 @@ gates = [
     # (GGUF BPE, GGUF SPM, HF tokenizer.json, .apr embedded); re-verifies #3726 on the head.
     "scripts/check_tokenizer_nonascii_parity.sh",
     "scripts/check_verifier_pinning.sh",
+    # #3552 — the Facet/Coord example (data -> panels -> Coord::apply -> SVG) still builds
+    # and runs against the PUBLISHED aprender-viz; needs crates.io, so a release gate, not tier3.
+    "scripts/check_viz_published_example.sh",
     "scripts/check_dogfood_shim.sh",
     "scripts/check_bench_receipt.sh",
     # #2696 — the parity validator must discriminate before a release reads it.
