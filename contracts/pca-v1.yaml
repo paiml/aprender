@@ -84,8 +84,8 @@ proof_obligations:
 - id: PCA-INV-007
   type: invariant
   property: Deterministic sign convention
-  formal: in every component row the first entry of largest |value| is positive (sklearn
-    svd_flip, u_based_decision=False); two fits give bit-identical components
+  formal: ∀ component row c, with j = the first index of max |c_j|, c_j > 0 (sklearn
+    svd_flip, u_based_decision=False); fit(X) twice ⇒ bit-identical components
   applies_to: all
 - id: PCA-INV-008
   type: invariant
