@@ -1060,6 +1060,7 @@ fn try_gpu_backend(
             ));
         },
     };
+    let used_gpu = gpu_model_decodes_on_device(&model);
     let generated = match model.generate(&prompt_usize, &gpu_config) {
         Ok(g) => g,
         Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
@@ -1109,8 +1110,26 @@ fn try_gpu_backend(
         // This backend does not separate prefill from decode; §3 timings are
         // absent rather than zero.
         None,
-        None,
+        // #4146: see `gpu_model_decodes_on_device`.
+        Some(used_gpu),
     ))
+}
+
+/// #4146: whether a `GpuModel` turn decodes on the device to its end. The CUDA scheduler
+/// runs every matmul there. The wgpu `HybridScheduler` sends every m=1 matmul, which is
+/// all of decode, to the CPU (IMP-097, `should_use_gpu`), so a hybrid turn is not
+/// GPU-served even when it found an adapter.
+#[cfg(feature = "gpu")]
+fn gpu_model_decodes_on_device(model: &crate::gpu::GpuModel) -> bool {
+    #[cfg(feature = "cuda")]
+    {
+        model.has_cuda_scheduler()
+    }
+    #[cfg(not(feature = "cuda"))]
+    {
+        let _ = model;
+        false
+    }
 }
 
 /// Cached model (GPU batched) backend.
@@ -1205,7 +1224,9 @@ fn try_cached_backend(
         // This backend does not separate prefill from decode; §3 timings are
         // absent rather than zero.
         None,
-        None,
+        // #4146: `OwnedQuantizedModelCachedSync::generate_with_cache` delegates to the
+        // CPU model, whatever this backend's name says.
+        Some(false),
     ))
 }
 

@@ -69,3 +69,4 @@ mod effective_config_route_pp2; // PP-LLAMA-001 §12 row 6 / PP-2 / PP-13 / PP-1
 mod stream_mode_pp27; // PP-LLAMA-001 PP-27 / §3: an SSE stream declares live vs replayed, and the terminal chunk carries usage + measured timings
 #[cfg(feature = "gpu")] // create_test_quantized_model is gpu-gated
 mod usage_finish_3718; // aprender#3718: a context-clamped cut is "length", an unfittable prompt is 400
+mod chat_used_gpu_4146; // aprender#4146: every non-streamed chat reply names its device (used_gpu)

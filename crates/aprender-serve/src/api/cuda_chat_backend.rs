@@ -80,8 +80,9 @@ fn try_safetensors_cuda_backend(
     let (output_text, finish_reason) =
         finalize_chat_text(output_text, request.stop.as_deref(), completion_tokens, max_tokens);
 
+    // #4146: `used_gpu` is always true here: the CUDA model's `generate` has no CPU path.
     let body = format!(
-        r#"{{"id":"{}","object":"chat.completion","model":"{}","choices":[{{"index":0,"message":{{"role":"assistant","content":{}}},"finish_reason":"{}"}}],"usage":{{"prompt_tokens":{},"completion_tokens":{},"total_tokens":{}}}}}"#,
+        r#"{{"id":"{}","object":"chat.completion","model":"{}","choices":[{{"index":0,"message":{{"role":"assistant","content":{}}},"finish_reason":"{}"}}],"usage":{{"prompt_tokens":{},"completion_tokens":{},"total_tokens":{}}},"used_gpu":true}}"#,
         request_id,
         request.model,
         serde_json::to_string(&output_text).unwrap_or_default(),
@@ -275,7 +276,8 @@ async fn try_cuda_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         timings,
-        None,
+        // #4146: `dense_cuda_turn` has no CPU fallback — an error returns above.
+        Some(true),
     ))
 }
 
@@ -461,7 +463,8 @@ fn try_quantized_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
-        None,
+        // #4146: `OwnedQuantizedModel` decodes on the CPU.
+        Some(false),
     ))
 }
 
@@ -570,7 +573,8 @@ fn try_apr_transformer_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
-        None,
+        // #4146: the f32 `AprTransformer` decodes on the CPU.
+        Some(false),
     ))
 }
 
@@ -723,7 +727,8 @@ fn registry_fallback(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
-        None,
+        // #4146: the registry `Model` decodes on the CPU.
+        Some(false),
     )
 }
 
@@ -898,7 +903,8 @@ async fn try_apr_q4k_chat_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
-        None,
+        // #4146: the Q4K scheduler thread owns a `CudaExecutor`; it has no CPU path.
+        Some(true),
     ))
 }
 
