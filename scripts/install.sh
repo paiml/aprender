@@ -175,8 +175,6 @@ detect_variant() {
     fi
 }
 
-# Latest non-prerelease tag. GitHub's /releases/latest endpoint already
-# excludes the "nightly" prerelease, so this always lands on a stable tag.
 # Newest release candidate OR stable tag (#4283). `/releases` is newest-first
 # and, unlike `/releases/latest`, includes prereleases, so the first tag_name
 # shaped vX.Y.Z or vX.Y.Z-rc.N is the rc channel: it never picks the rolling
@@ -191,6 +189,8 @@ get_rc_version() {
     echo "$version"
 }
 
+# Latest non-prerelease tag. GitHub's /releases/latest endpoint already
+# excludes the "nightly" prerelease, so this always lands on a stable tag.
 get_latest_version() {
     version=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
         | grep '"tag_name":' \
