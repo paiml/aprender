@@ -3,5 +3,6 @@
 # is RED at night when the measured count exceeds it. 620 measured 2026-09-26 under
 # pmat 3.41.1 at cbf623e5b (21 over the 599 [tdg] baseline: the burn-down is a 0.70.1 row,
 # docs/findings/cb200-main-green-over-baseline.jsonl). Lowered, never raised.
+# 617 2026-09-26: the car (#4429) measures 617 after its fixes and re-baselines [tdg] to it.
 # tool_version=pmat 3.41.1
-620
+617
