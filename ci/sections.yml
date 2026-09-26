@@ -26,17 +26,22 @@ sovereign-ci:
     coverage_on: 'tag'
 
 # A matrix job becomes one section per pinned combination. workspace-test-shard
-# runs as THREE shards, each its own ci.yml job on its own runner: as one shard
+# runs as EIGHT shards (CI-WIDE; three before), each its own ci.yml job on its own runner: as one shard
 # it took 5358 s of x86-main and was the release critical path. nextest's hash
-# partition N/3 and the explicit runner's round-robin N/3 each cover their list
+# partition N/8 and the explicit runner's round-robin N/8 each cover their list
 # exactly once between the shards; the cross-shard Σ fan-in in the workspace-test
 # verdict job checks that by id. determinism keeps both arches; x86-main runs
 # [X64], the determinism fat job runs [ARM64] + the compare.
 matrix-pins:
   workspace-test-shard:
-    - {shard: 1, shards: 3}
-    - {shard: 2, shards: 3}
-    - {shard: 3, shards: 3}
+    - {shard: 1, shards: 8}
+    - {shard: 2, shards: 8}
+    - {shard: 3, shards: 8}
+    - {shard: 4, shards: 8}
+    - {shard: 5, shards: 8}
+    - {shard: 6, shards: 8}
+    - {shard: 7, shards: 8}
+    - {shard: 8, shards: 8}
   determinism:
     - {arch: X64}
     - {arch: ARM64}
@@ -74,8 +79,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
-        shards: [3]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shards: [8]
     # PMAT-3138 (#3138): arch-neutral -- intel, yoga OR gx10. Measured 2026-09-12 on
     # gx10 with this image and env, --no-fail-fast: step 1 (59k tests) 10.6 min vs
     # 34.5 on intel, step 2 (102 tree readers) 6.7 vs 27.4, the over-the-cap
@@ -626,32 +631,6 @@ jobs:
           python3 scripts/ci/sigma_executed.py nextest --kind "nextest gpu" --junit "$sig/gpu.junit.xml" --list-json "$sig/gpu.list.json" || rc=1
           python3 scripts/ci/sigma_executed.py cargo --kind "compute" --log "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" --step "Compute tests" --list "$sig/compute.list.txt" --ignored "$sig/compute.ignored.txt" || rc=1
           exit "$rc"
-      # The shard's half of the cross-shard Σ (#4433). The tier file is written
-      # on every tier, so the verdict job can tell "not a full run" from "a
-      # shard's ids never arrived" -- a missing file there is RED, not a skip.
-      - name: "Σ-executed: stage this shard's executed ids for the fan-in (#4433)"
-        if: matrix.shards != 1
-        shell: bash
-        env:
-          TIER: ${{ steps.tier.outputs.tier }}
-        run: |
-          set -euo pipefail
-          sig="$RUNNER_TEMP/sigma"
-          mkdir -p sigma-shard
-          printf '%s\n' "$TIER" > sigma-shard/tier
-          if [ "$TIER" = full ]; then
-            cp "$sig/lib.junit.xml" sigma-shard/lib.junit.xml
-            cp "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" sigma-shard/section.log
-            if [ "$SHARD" = 1 ]; then
-              cp "$sig/lib.list.json" "$sig/explicit.list.txt" sigma-shard/
-            fi
-          fi
-      - uses: actions/upload-artifact@v7
-        if: matrix.shards != 1
-        with:
-          name: sigma-shard-${{ matrix.shard }}
-          path: sigma-shard/
-          if-no-files-found: error
       # PACK-001: the examples build used to be fragment 350 of the explicit
       # list. Measured on the first sharded full-tier run (35361149112, shard 1
       # on yoga): 489 s of that shard's 794 s integration phase was this ONE
@@ -681,11 +660,54 @@ jobs:
             -e SHARD -e SHARDS \
             "$IMAGE" \
             cargo build --examples --workspace --keep-going
+      # CI-WIDE: the owed set is LISTED before the runs, not after. Listed after
+      # (run 36252355396, shard 1) this step recompiled 27 crates for 13 m 36 s --
+      # the tree-reader runs had touched inputs the build scripts watch -- and was
+      # the PR's critical path. Listing first builds the binaries the runs then
+      # reuse, and the docker env is the runs' own, byte for byte.
+      - name: "Σ-executed (quick tier): list the tests this tier owes, before the runs (#4433)"
+        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
+        env:
+          CRATES: ${{ steps.tier.outputs.crates }}
+          TARGETS: ${{ steps.tier.outputs.targets }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sig="$RUNNER_TEMP/sigma"
+          mkdir -p "$sig"
+          read -ra crates <<< "$CRATES"
+          sel=""; for c in "${crates[@]}"; do sel="$sel -p $c"; done
+          read -ra targets <<< "$TARGETS"
+          tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \
+                  | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
+          EXPR="$(bash scripts/ci_test_tier.sh --filterset "$TARGETS")"
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -v "${sig}:/sigma" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_TERM_COLOR=never \
+            -e SEL="$sel" -e TREE="$tree" -e EXPR="$EXPR" \
+            "$IMAGE" \
+            bash -c 'set -euo pipefail
+              if [ -n "$SEL" ]; then cargo nextest list --profile ci --lib --tests $SEL --message-format json > /sigma/quick-sel.list.json; fi
+              cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --message-format json > /sigma/quick-tree.list.json'
       # BSE-17 quick tier, part 1: the selected crates' unit and integration
       # targets (default features) under the same image and mounts as the full
       # tier. Empty selection (a scripts/docs PR) skips this step; part 2 still runs.
       - name: "Quick tier: lib + integration tests of the selected crates (BSE-17)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1 && steps.tier.outputs.crates != ''
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.crates != ''
         # 20, not 60 (PMAT-1098, #3084). A quick tier that is ALLOWED an hour is
         # not a quick tier, and 60 is the number that let part 2 burn 55 minutes
         # (run 34449608126) before dying at the cap under fleet load on #3063
@@ -722,7 +744,7 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            bash -c "cargo nextest run --profile ci --lib --tests$pkgs"
+            bash -c "rm -f target/nextest/ci/junit.xml && cargo nextest run --profile ci --lib --tests$pkgs --partition hash:${SHARD}/${SHARDS} --no-tests=pass"
       # BSE-17 quick tier, part 2: every test target that reads the tree, from
       # scripts/tree_reader_tests.txt (derived; the guard has already proved the
       # registry equals the sources in this run).
@@ -752,16 +774,20 @@ jobs:
       # reads this exclude list out of this file and drops their targets), so the
       # exclusion removes nothing the filterset asks for.
       - name: "Σ-executed: keep the quick selected-crates junit (the next nextest run overwrites it)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1 && steps.tier.outputs.crates != ''
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.crates != ''
         # #4433: a PR merges on its QUICK tier (a merge_group whose tree equals the
         # PR head's reuses that result), so the quick tier's own runs are checked too.
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/sigma"
-          cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/quick-sel.junit.xml"
+          # CI-WIDE: a hash partition of a small selection can own no test; the run
+          # step removed junit.xml first, so an absent file is that empty partition,
+          # never a stale copy. The fan-in union is still compared to the whole list.
+          j="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml"
+          if [ -f "$j" ]; then cp "$j" "$RUNNER_TEMP/sigma/quick-sel.junit.xml"; else echo "shard ${SHARD}: empty quick-sel partition"; fi
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
+        if: steps.tier.outputs.tier == 'quick'
         # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
         # yoga-build2 compiled 811 crates in ~9 min (cold per-run target dir, warm shared sccache) and was part way
         # through 65,266 tests at the cap; attempt 2 on intel-clean-room-15 timed out at 20 min too. The ~6 min
@@ -805,7 +831,7 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            cargo nextest run --profile ci $pkgs --lib --tests -E "$EXPR"
+            bash -c 'rm -f target/nextest/ci/junit.xml && cargo nextest run --profile ci "$@" --no-tests=pass' _ $pkgs --lib --tests -E "$EXPR" --partition "hash:${SHARD}/${SHARDS}"
       # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
       # selection was OVER THE CAP (touched crates + their direct reverse
       # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate
@@ -822,16 +848,22 @@ jobs:
       # --locked: a quick tier that silently rewrites Cargo.lock would be a
       # different dependency graph from the one the PR is proposing.
       - name: "Σ-executed: keep the quick tree-reader junit (the next nextest run overwrites it)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
+        if: steps.tier.outputs.tier == 'quick'
         # #4433: a PR merges on its QUICK tier (a merge_group whose tree equals the
         # PR head's reuses that result), so the quick tier's own runs are checked too.
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/sigma"
-          cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/quick-tree.junit.xml"
+          # CI-WIDE: a hash partition of a small selection can own no test; the run
+          # step removed junit.xml first, so an absent file is that empty partition,
+          # never a stale copy. The fan-in union is still compared to the whole list.
+          j="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml"
+          if [ -f "$j" ]; then cp "$j" "$RUNNER_TEMP/sigma/quick-tree.junit.xml"; else echo "shard ${SHARD}: empty quick-tree partition"; fi
       - name: "Σ-executed (quick tier): the tests this job ran are exactly the tests it owes (#4433)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
+        # Unsharded only: a sharded run compares the UNION of the shards in the
+        # workspace-test fan-in against the list shard 1 made before its runs.
+        if: steps.tier.outputs.tier == 'quick' && matrix.shards == 1
         # The quick tier's universe is its SELECTION (BSE-17): the tier step's crates
         # and tree-reader targets. The filters are written out again HERE from those
         # outputs, never read back from the run steps -- an added --exclude or a
@@ -845,31 +877,6 @@ jobs:
           sig="$RUNNER_TEMP/sigma"
           mkdir -p "$sig"
           python3 scripts/ci/sigma_executed.py --self-test
-          read -ra crates <<< "$CRATES"
-          sel=""; for c in "${crates[@]}"; do sel="$sel -p $c"; done
-          read -ra targets <<< "$TARGETS"
-          tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \
-                  | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
-          EXPR="$(bash scripts/ci_test_tier.sh --filterset "$TARGETS")"
-          docker run --rm \
-            -v "${GITHUB_WORKSPACE}:/workspace" \
-            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
-            -v "${SCCACHE_HOST_DIR}:/sccache" \
-            -v "${sig}:/sigma" \
-            -w /workspace \
-            -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
-            -e SCCACHE_DIR=/sccache \
-            -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
-            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
-            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
-            -e SEL="$sel" -e TREE="$tree" -e EXPR="$EXPR" \
-            "$IMAGE" \
-            bash -c 'set -euo pipefail
-              if [ -n "$SEL" ]; then cargo nextest list --profile ci --lib --tests $SEL --message-format json > /sigma/quick-sel.list.json; fi
-              cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --message-format json > /sigma/quick-tree.list.json'
           rc=0
           if [ -n "$CRATES" ]; then
             python3 scripts/ci/sigma_executed.py nextest --kind "quick selected crates" --junit "$sig/quick-sel.junit.xml" --list-json "$sig/quick-sel.list.json" || rc=1
@@ -877,7 +884,7 @@ jobs:
           python3 scripts/ci/sigma_executed.py nextest --kind "quick tree readers" --junit "$sig/quick-tree.junit.xml" --list-json "$sig/quick-tree.list.json" || rc=1
           exit "$rc"
       - name: "Quick tier: cargo check --workspace (over-the-cap integration, BSE-17 rule (i))"
-        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && matrix.shard == 1
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && (matrix.shards == 1 || matrix.shard == 2)
         timeout-minutes: 20
         env:
           REASON: ${{ steps.tier.outputs.reason }}
@@ -906,6 +913,43 @@ jobs:
       # workspace-test already succeeded; measuring it again is waste, not
       # evidence. The tier step proved both facts (trees compared by hash, the
       # check-run's conclusion read from GitHub); this step records the citation.
+      # The shard's half of the cross-shard Σ (#4433), staged AFTER both tiers ran
+      # (CI-WIDE: the quick tier is partitioned as well). The tier file is written
+      # on every tier, so the verdict job can tell "not a full run" from "a
+      # shard's ids never arrived" -- a missing file there is RED, not a skip.
+      - name: "Σ-executed: stage this shard's executed ids for the fan-in (#4433)"
+        if: matrix.shards != 1
+        shell: bash
+        env:
+          TIER: ${{ steps.tier.outputs.tier }}
+        run: |
+          set -euo pipefail
+          sig="$RUNNER_TEMP/sigma"
+          mkdir -p sigma-shard
+          printf '%s\n' "$TIER" > sigma-shard/tier
+          if [ "$TIER" = full ]; then
+            cp "$sig/lib.junit.xml" sigma-shard/lib.junit.xml
+            cp "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" sigma-shard/section.log
+            if [ "$SHARD" = 1 ]; then
+              cp "$sig/lib.list.json" "$sig/explicit.list.txt" sigma-shard/
+            fi
+          fi
+          # CI-WIDE: the quick tier is partitioned too, so its executed ids fan in
+          # the same way; shard 1 listed the owed set BEFORE the runs.
+          if [ "$TIER" = quick ]; then
+            if [ -f "$sig/quick-tree.junit.xml" ]; then cp "$sig/quick-tree.junit.xml" sigma-shard/; fi
+            if [ -f "$sig/quick-sel.junit.xml" ]; then cp "$sig/quick-sel.junit.xml" sigma-shard/; fi
+            if [ "$SHARD" = 1 ]; then
+              cp "$sig/quick-tree.list.json" sigma-shard/
+              if [ -f "$sig/quick-sel.list.json" ]; then cp "$sig/quick-sel.list.json" sigma-shard/; fi
+            fi
+          fi
+      - uses: actions/upload-artifact@v7
+        if: matrix.shards != 1
+        with:
+          name: sigma-shard-${{ matrix.shard }}
+          path: sigma-shard/
+          if-no-files-found: error
       - name: "Reuse: this tree already passed workspace-test on the PR head (BSE-17)"
         if: steps.tier.outputs.tier == 'reuse'
         run: |
@@ -922,8 +966,11 @@ jobs:
           REASON: ${{ steps.tier.outputs.reason }}
         run: |
           printf 'workspace-test NOT RUN: %s\n' "$REASON"
+      # CI-WIDE: the two static guards run on shards 2 and 3, not 1. Shard 1
+      # already carries the Σ list, and with both guards it was the only shard
+      # cancelled at the 25-minute cap (run 36258937034; shard 2 took 7.3 min).
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
-        if: matrix.shard == 1
+        if: matrix.shards == 1 || matrix.shard == 2
         # Static Poka-Yoke: flags build.rs files that panic on files outside
         # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.
         # See scripts/check_build_rs_paths.sh for the full rationale.
@@ -935,7 +982,7 @@ jobs:
             "$IMAGE" \
             bash scripts/check_build_rs_paths.sh
       - name: apr-format leaf sovereignty guard (#2231)
-        if: matrix.shard == 1
+        if: matrix.shards == 1 || matrix.shard == 3
         # Poka-Yoke: prove the extracted `apr-format` leaf pulls no ML/GPU/
         # tokenizer/framework crate (so consumers `cargo add apr-format` without
         # aprender-core + trueno/wgpu). Discriminating: PASSES on apr-format +
