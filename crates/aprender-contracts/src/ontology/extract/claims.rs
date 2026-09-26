@@ -409,10 +409,16 @@ fn disabled(step: &serde_yaml::Value) -> bool {
 /// The normalised `run:` lines of one workflow document (empty unless it is on the merge path).
 #[must_use]
 pub fn workflow_run_lines(doc: &serde_yaml::Value) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
     if !on_merge_path(doc) {
-        return out;
+        return BTreeSet::new();
     }
+    job_run_lines(doc)
+}
+
+/// The normalised `run:` lines of every enabled step under `jobs:`, with no trigger check: the caller
+/// has already established that the document runs on the merge path.
+fn job_run_lines(doc: &serde_yaml::Value) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
     let Some(jobs) = doc.get("jobs").and_then(serde_yaml::Value::as_mapping) else {
         return out;
     };
@@ -432,7 +438,8 @@ pub fn workflow_run_lines(doc: &serde_yaml::Value) -> BTreeSet<String> {
     out
 }
 
-/// The CI set: every merge-path `run:` line under `<root>/.github/workflows/`. Unparseable files contribute
+/// The CI set: every merge-path `run:` line under `<root>/.github/workflows/`, plus `ci/sections.yml`'s when a
+/// merge-path workflow runs it through the fat driver. Unparseable files contribute
 /// nothing (a workflow GitHub cannot parse runs nothing either).
 #[must_use]
 pub fn ci_run_lines(root: &Path) -> BTreeSet<String> {
@@ -454,8 +461,23 @@ pub fn ci_run_lines(root: &Path) -> BTreeSet<String> {
             out.extend(workflow_run_lines(&doc));
         }
     }
+    // #4441 moved the merge-path steps VERBATIM into ci/sections.yml, which a merge-path workflow runs
+    // through `scripts/ci/fat_driver.py run`. Those steps are merge-path steps only while that call exists.
+    if out.iter().any(|l| l.contains(FAT_DRIVER_RUN)) {
+        if let Some(doc) = std::fs::read_to_string(root.join(SECTIONS_FILE))
+            .ok()
+            .and_then(|t| serde_yaml::from_str::<serde_yaml::Value>(&t).ok())
+        {
+            out.extend(job_run_lines(&doc));
+        }
+    }
     out
 }
+
+/// The fat-job driver invocation that makes `ci/sections.yml` part of the merge path (#4441).
+const FAT_DRIVER_RUN: &str = "scripts/ci/fat_driver.py run";
+/// The section catalogue the fat driver runs verbatim.
+const SECTIONS_FILE: &str = "ci/sections.yml";
 
 /// What the claim check found in one document: the commands that resolved, and the ones that did not.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
