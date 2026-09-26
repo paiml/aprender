@@ -25,7 +25,10 @@
 //!   wall-clock spread, projected test runtime, and the §2.2 sample-size rule.
 //! - `admit --cell C|all --why NoDeclaredExecutor --model-id M --weights-sha W
 //!   --apr-tag T --apr-sha S --out FILE` append `NotRun` admission rows (REX-04);
-//!   `admit --cell C --removed-by R ...` appends a `Refused` row.
+//!   `admit --cell C --removed-by R ...` appends a `Refused` row;
+//!   `admit --cell C --parity-receipt R --threshold T --threshold-basis B
+//!   --min-positions N ...` appends an `Admitted` row derived from the receipt
+//!   (FALSIFY-RCA-004..006), or writes nothing, exits 1 and says why.
 //! - `admission-check --file F` every §2.1 cell resolved exactly once; prints the
 //!   summary JSON. Exit 1 if inadmissible, 10 if admissible but S-7 (no cell admitted).
 //! - `ledger REPO OUT_JSONL QUORUM_RECEIPT...` REX-07: write `review-ledger-v2`
@@ -494,20 +497,43 @@ fn score_cmd(f: &Flags) -> Result<(), String> {
 
 /// REX-04: append admission rows for one cell or all six.
 fn admit(f: &Flags) -> Result<(), String> {
-    use aprender_review_experiment::admission::{Row, Status, CELLS, SCHEME};
+    use aprender_review_experiment::admission::{
+        parity_from_receipt, Expect, Row, Status, CELLS, SCHEME,
+    };
     let prereg_sha = prereg::locked_prereg_sha()
         .ok_or("no locked prereg sha")?
         .to_string();
-    let status = match f.get("removed-by") {
-        Some(r) => Status::Refused {
+    let which = need(f, "cell")?;
+    let status = match (f.get("parity-receipt"), f.get("removed-by")) {
+        (Some(path), _) => {
+            if which == "all" {
+                return Err("--parity-receipt admits one --cell, not all".into());
+            }
+            let num = |k: &str| -> Result<f64, String> {
+                need(f, k)?
+                    .parse()
+                    .map_err(|_| format!("--{k}: not a number"))
+            };
+            let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+            let x = Expect {
+                apr_sha256: need(f, "apr-sha")?,
+                weights_sha256: need(f, "weights-sha")?,
+                threshold: num("threshold")?,
+                threshold_basis: need(f, "threshold-basis")?,
+                min_positions: num("min-positions")? as usize,
+            };
+            let parity = parity_from_receipt(&bytes, &x)
+                .map_err(|e| format!("{which}: {path} does not admit: {}", e.join("; ")))?;
+            Status::Admitted { parity }
+        }
+        (None, Some(r)) => Status::Refused {
             removed_by: r.clone(),
         },
-        None => Status::NotRun {
+        (None, None) => Status::NotRun {
             reason: serde_json::from_value(serde_json::Value::String(need(f, "why")?.into()))
                 .map_err(|_| "--why NoDeclaredExecutor|ServeError|…")?,
         },
     };
-    let which = need(f, "cell")?;
     let cells: Vec<_> = CELLS
         .iter()
         .filter(|c| which == "all" || c.cell == which)

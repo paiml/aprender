@@ -1,3 +1,6 @@
+// `json!` expands to an `unwrap` of an infallible `to_value`.
+#![allow(clippy::disallowed_methods)]
+
 use super::*;
 
 const PREREG: &str = "ef51087dc79bab0ad160e8a14f5b13e2ea43986b30c05dafc63c84c2dc21cdc0";
@@ -151,4 +154,186 @@ fn identity_and_cell_declaration_are_enforced() {
         assert!(check(&file(&rows), PREREG).is_err(), "{name}");
     }
     assert!(check("{not json}\n", PREREG).is_err());
+}
+
+/// A `apr-review-serve parity` receipt (the declared C4 oneshot's shape) with
+/// `n` positions; position `low_at` carries cosine `low`, the rest 0.9999.
+fn serve_receipt(n: usize, low_at: usize, low: f64) -> serde_json::Value {
+    let metrics: Vec<_> = (0..n)
+        .map(|p| {
+            let c = if p == low_at { low } else { 0.9999 };
+            serde_json::json!({"position": p, "cosine_similarity": c, "verdict": "Pass"})
+        })
+        .collect();
+    serde_json::json!({
+        "host": "gx10-a5b5", "apr_tag": "v0.69.3",
+        "binary_sha256": h('a'), "weights_sha256": h('b'),
+        "comparator": "apr-cpu (apr parity: GPU vs CPU; no llama.cpp comparator in this apr, aprender#3576)",
+        "exit": 0, "verdict": "pass",
+        "parity": {"tokens": n, "passed": n, "failed": 0, "parity": true, "metrics": metrics}
+    })
+}
+
+/// An `apr-parity-oracle/v1` receipt (`apr parity-oracle`, #4444) with `n`
+/// positions; its top-level `cosine` claims 0.9999 whatever the positions say.
+fn oracle_receipt(n: usize, low_at: usize, low: f64) -> serde_json::Value {
+    let per: Vec<_> = (0..n)
+        .map(|p| {
+            let c = if p == low_at { low } else { 0.9999 };
+            serde_json::json!({"pos": p, "cosine": c})
+        })
+        .collect();
+    serde_json::json!({
+        "schema": "apr-parity-oracle/v1", "oracle": LLAMA_CPP, "verdict": "GREEN",
+        "cosine": 0.9999, "threshold": 0.5, "threshold_basis": "self-declared",
+        "n_positions": n,
+        "subject": {"producer": {"model_sha256": h('b')}},
+        "per_position": per
+    })
+}
+
+const BASIS: &str = "evidence/parity/thresholds.yaml default.min_cosine";
+
+fn expect() -> Expect<'static> {
+    Expect {
+        apr_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        weights_sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        threshold: 0.98,
+        threshold_basis: BASIS,
+        min_positions: 64,
+    }
+}
+
+fn bytes(v: &serde_json::Value) -> Vec<u8> {
+    serde_json::to_vec_pretty(v).expect("serialize receipt")
+}
+
+/// FALSIFY-RCA-004: an Admitted parity block is derived from the receipt —
+/// the minimum cosine over its positions (never a summary field), the sha256
+/// of its bytes, the oracle it measured against, and the declared threshold
+/// and basis (never the receipt's own).
+#[test]
+fn falsify_rca_004_admitted_is_derived_from_the_receipt() {
+    let b = bytes(&serve_receipt(64, 17, 0.985));
+    let p = parity_from_receipt(&b, &expect()).expect("admits");
+    assert_eq!(p.oracle, APR_GPU_CPU);
+    assert_eq!(p.cosine, 0.985);
+    assert_eq!(p.threshold, 0.98);
+    assert_eq!(p.threshold_basis, BASIS);
+    assert_eq!(p.receipt_sha256, crate::corpus::sha256_hex(&b));
+
+    let o = bytes(&oracle_receipt(78, 40, 0.981));
+    let q = parity_from_receipt(&o, &expect()).expect("admits");
+    assert_eq!(q.oracle, LLAMA_CPP);
+    assert_eq!(q.cosine, 0.981, "the summary `cosine` must not be read");
+    assert_eq!(
+        q.threshold, 0.98,
+        "the receipt's own threshold must not be read"
+    );
+    assert_eq!(q.threshold_basis, BASIS);
+
+    // exactly min_positions and exactly the threshold admit
+    assert!(parity_from_receipt(&bytes(&serve_receipt(64, 0, 0.98)), &expect()).is_ok());
+
+    // the derived block is a well-formed Admitted row
+    let mut rows: Vec<Row> = CELLS.iter().map(|c| row(c, not_run())).collect();
+    rows[3] = row(&CELLS[3], Status::Admitted { parity: p });
+    let s = check(&file(&rows), PREREG).expect("admissible");
+    assert_eq!((s.admitted, s.s7), (vec!["C4".to_string()], false));
+}
+
+/// FALSIFY-RCA-005: a receipt with too few positions, a failing or
+/// non-zero-exit run, a position below threshold, a missing or non-finite
+/// cosine, or no declared basis does not admit, and says why.
+#[test]
+fn falsify_rca_005_a_short_or_failing_receipt_does_not_admit() {
+    let refuse = |v: &serde_json::Value, x: &Expect<'_>, why: &str| {
+        let e = parity_from_receipt(&bytes(v), x).expect_err(why);
+        assert!(e.iter().any(|m| m.contains(why)), "{why}: {e:?}");
+    };
+    let x = expect();
+    // the declared gx10 oneshot measured 7 positions: under the 64 floor
+    refuse(&serve_receipt(7, 0, 0.9997), &x, "min_positions");
+    refuse(&serve_receipt(63, 0, 0.99), &x, "min_positions");
+    refuse(&oracle_receipt(63, 0, 0.99), &x, "min_positions");
+    refuse(&serve_receipt(64, 5, 0.979_999), &x, "below threshold");
+    refuse(&oracle_receipt(78, 5, 0.97), &x, "below threshold");
+    let mut v = serve_receipt(64, 0, 0.99);
+    v["exit"] = 1.into();
+    refuse(&v, &x, "exit");
+    let mut v = serve_receipt(64, 0, 0.99);
+    v["verdict"] = "fail".into();
+    refuse(&v, &x, "verdict");
+    let mut v = oracle_receipt(64, 0, 0.99);
+    v["verdict"] = "RED".into();
+    refuse(&v, &x, "verdict");
+    let mut v = serve_receipt(64, 0, 0.99);
+    v["parity"]["failed"] = 1.into();
+    refuse(&v, &x, "failed");
+    let mut v = serve_receipt(64, 0, 0.99);
+    v["parity"]["parity"] = false.into();
+    refuse(&v, &x, "failed");
+    let mut v = serve_receipt(64, 0, 0.99);
+    v["parity"]["metrics"][3] = serde_json::json!({"position": 3});
+    refuse(&v, &x, "cosine");
+    let mut v = oracle_receipt(64, 0, 0.99);
+    v["per_position"][3]["cosine"] = "NaN".into();
+    refuse(&v, &x, "cosine");
+    let mut v = oracle_receipt(64, 0, 0.99);
+    v["oracle"] = "ollama".into();
+    refuse(&v, &x, "oracle");
+    let mut v = serve_receipt(64, 0, 0.99);
+    v["comparator"] = "hf-transformers".into();
+    refuse(&v, &x, "oracle");
+    refuse(
+        &serve_receipt(64, 0, 0.99),
+        &Expect {
+            threshold_basis: " ",
+            ..x
+        },
+        "basis",
+    );
+    refuse(
+        &serve_receipt(64, 0, 0.99),
+        &Expect {
+            threshold: f64::NAN,
+            ..x
+        },
+        "threshold",
+    );
+    assert!(parity_from_receipt(b"{not json", &x).is_err());
+    assert!(parity_from_receipt(b"{\"schema\": \"other\"}", &x).is_err());
+    // a half-shaped receipt (parity block, no comparator, or the reverse) is
+    // not a parity receipt at all, not an oracle mismatch
+    for key in ["comparator", "parity"] {
+        let mut v = serve_receipt(64, 0, 0.99);
+        v.as_object_mut().expect("object").remove(key);
+        refuse(&v, &x, "not a parity receipt");
+    }
+}
+
+/// FALSIFY-RCA-006: the receipt must be of the row's own binary and weights —
+/// a passing receipt of another build or another model does not admit.
+#[test]
+fn falsify_rca_006_the_receipt_must_be_the_rows_binary_and_weights() {
+    let x = expect();
+    let wrong = "c".repeat(64);
+    let mut v = serve_receipt(64, 0, 0.99);
+    v["binary_sha256"] = wrong.clone().into();
+    let e = parity_from_receipt(&bytes(&v), &x).expect_err("binary");
+    assert!(e.iter().any(|m| m.contains("binary")), "{e:?}");
+    let mut v = serve_receipt(64, 0, 0.99);
+    v["weights_sha256"] = wrong.clone().into();
+    let e = parity_from_receipt(&bytes(&v), &x).expect_err("weights");
+    assert!(e.iter().any(|m| m.contains("weights")), "{e:?}");
+    let mut v = oracle_receipt(64, 0, 0.99);
+    v["subject"]["producer"]["model_sha256"] = wrong.into();
+    let e = parity_from_receipt(&bytes(&v), &x).expect_err("weights");
+    assert!(e.iter().any(|m| m.contains("weights")), "{e:?}");
+    let mut v = serve_receipt(64, 0, 0.99);
+    v.as_object_mut().expect("object").remove("binary_sha256");
+    assert!(
+        parity_from_receipt(&bytes(&v), &x).is_err(),
+        "a missing sha must not match"
+    );
 }

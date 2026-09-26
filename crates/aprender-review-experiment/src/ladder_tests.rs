@@ -228,6 +228,14 @@ fn falsify_rxg_006_lambda_primary_is_refused_above_tripwire() {
         "{:?}",
         d.reasons
     );
+    // the reason names the cell as written, never a Rust Debug rendering
+    assert!(
+        d.reasons
+            .iter()
+            .any(|r| r.contains("primary cell lambda-cuda is") && !r.contains("Some(")),
+        "{:?}",
+        d.reasons
+    );
     // a missing primary is not a non-lambda cell
     let mut none = full();
     none["hardware_ruling"]
@@ -235,6 +243,14 @@ fn falsify_rxg_006_lambda_primary_is_refused_above_tripwire() {
         .expect("ruling")
         .remove("primary");
     assert_eq!(rung(&none), Mode::Tripwire);
+    let n = evidence(&none.to_string(), PREREG);
+    assert!(
+        n.reasons
+            .iter()
+            .any(|r| r.contains("primary cell (unnamed) is")),
+        "{:?}",
+        n.reasons
+    );
 }
 
 /// FALSIFY-RXG-007: vote needs ≥ 20 decided tie-breaks whose 14-day outcome

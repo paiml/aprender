@@ -1,0 +1,5 @@
+rex ladder planted-h4-only.json --current shadow → rc=0 {"mode":"tripwire","reasons":["H5: not in the report","H7: not in the report","H1: not in the report","H2: not in the report"]}
+rex ladder planted-h4-h5-h7.json --current tripwire → rc=0 {"mode":"tie-breaker","reasons":["tie_breaks_decided 0 is not ≥ 20"]}
+rex ladder planted-lambda-primary.json --current tripwire → rc=0 {"mode":"tripwire","reasons":["tie_breaks_decided 0 is not ≥ 20","S-4: primary cell lambda-cuda is lambda or unnamed; lambda is shadow-only (R-9)"]}
+rex ladder planted-lambda-primary.json --current tie-breaker → rc=0 {"mode":"tripwire","reasons":["tie_breaks_decided 0 is not ≥ 20","S-4: primary cell lambda-cuda is lambda or unnamed; lambda is shadow-only (R-9)"]}
+rex ladder planted-h4-h5-h7.json --current shadow → rc=0 {"mode":"tripwire","reasons":["tie_breaks_decided 0 is not ≥ 20","one rung per report: Shadow → Tripwire, not TieBreaker"]}

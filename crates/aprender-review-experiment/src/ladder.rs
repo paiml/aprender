@@ -259,8 +259,8 @@ fn capped(r: &Report) -> Decision {
     }
     if s4(r) && mode > Mode::Tripwire {
         reasons.push(format!(
-            "S-4: primary cell {:?} is lambda or unnamed; lambda is shadow-only (R-9)",
-            h.primary
+            "S-4: primary cell {} is lambda or unnamed; lambda is shadow-only (R-9)",
+            h.primary.as_deref().unwrap_or("(unnamed)")
         ));
         mode = Mode::Tripwire;
     }
