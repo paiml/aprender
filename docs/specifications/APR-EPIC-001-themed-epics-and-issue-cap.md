@@ -59,7 +59,7 @@ Totals: 77 children + 13 epics = **90 steady-state**. Hard cap is 100 and the an
 
 - **E0**: rows bound/total ≥ 0.80 (`pv lint --gate shapes` at the tag sha); entity types 9/9; ghost bindings = 0; shapes over zero focus nodes = RED; ONT-10 releases `aprender-contracts-cli`; #3715's SHACL shape refuses the 0.70 tag on any missing cell; #3559 ruling recorded.
 - **E1**: freeze→publish ≤ 4 h `[O]`; `vX.Y.Z-rc.N` on every green merge to `release/*`; rc→final assets sha256-equal; nightly publishes every `[[bin]]` plus a CUDA `apr`; every fleet host runs the newest verified build, or andon.
-- **E2**: Qwen3.5 TTFT ≤ 2× llama.cpp d1d3c3396 on the same GGUF `[O 2026-09-20]`; `apr serve` resident with continuous batching; tok/s is generation-only; decode at 32k context ≥ `[U]`× llama.cpp (instrument first, then ratchet).
+- **E2**: Target: Qwen3.5 TTFT ≤ 2× llama.cpp d1d3c3396 on the same GGUF `[O 2026-09-20]`; `apr serve` resident with continuous batching; tok/s is generation-only; decode at 32k context ≥ `[U]`× llama.cpp (instrument first, then ratchet).
 - **E3**: every (Qwen × quant × verb × backend) cell is Pass or `Refused{removed_by}`; the universe is read from tensor headers; 0 silent CPU fallbacks under forced accelerator.
 - **E4**: PRM cells admitted once executors are declared (infra#1088); EXT-18 first public HF release; champion/challenger ratchet live.
 - **E5**: `/v1/chat/completions` and `/v1/messages` pass one conformance suite; tool calls; `--json-schema`; `used_gpu` provenance on every response.

@@ -48,11 +48,11 @@
 | G3 | Audited `apr` surface relevant to this spec | `apr run --backend wgpu` q=2, hw UNKNOWN · `apr serve run` q=4 · `apr finetune` q=2 · `apr distill` q=9 · `apr merge` q=6 · `apr quantize` q=4 · `apr parity` q=9 · `apr train apply` q=1 · `mcp:apr.serve` q=1 | [C] at audit snapshot; [U] at HEAD | `docs/audits/surface_audit.csv` |
 | G4 | Train themes | 0.69 = verbs that are true; 0.70 = fast (TTFT, resident serve, `--json-schema`); finetune/distill on qwen35 refuse until 0.71; WGPU/Metal refuse until 0.71 | [A] operator ruling 2026-09-20; [U] at HEAD | `docs/specifications/06x-release-schedule.md`, milestones |
 | G5 | Parity oracle | llama.cpp pin `d1d3c3396` (`scripts/llama_pin.toml` `build_commit`); `ds.yaml` min_cosine 0.98 | [V] 2026-09-20; [U] at HEAD | `scripts/llama_pin.toml`, `ds.yaml` |
-| G6 | TTFT gap | apr 0.68.2 TTFT 7.7×, end-to-end 4.9× slower than llama.cpp on Qwen3.5-4B, 4090 | [V] 2026-09-20 | #3596 |
+| G6 | TTFT gap | apr 0.68.2 TTFT and end-to-end slower than llama.cpp on Qwen3.5-4B, 4090 (ratios in #3596; no evidence/ file yet) | [V] 2026-09-20 | #3596 |
 | G7 | Host roles | lambda-labs = agent host, primary x86 CUDA (scarce); **its GPU is excluded from this experiment by construction.** intel = clean-room runner (contended), dual AMD GPU (Vulkan). gx10 = GB10, 120 GB unified, clean-room pool. mini = M4, macOS, `rust-neutral` pool | [A] | `infra/machines/*/forjar.yaml` |
 | G8 | Undeclared apr | lambda-labs `~/.local/bin/apr` was a hand-installed 0.64.0 | [V] 2026-09-20; [U] at HEAD | `command -v apr`; `fleet-bins.tsv` |
 | G9 | Reviewer identity | 301/301 historical quorum receipts record the reviewer model as `unknown` | [V] 2026-09-10 | PV-LEAN-AUDIT |
-| G10 | Decode ceilings (bandwidth ÷ bytes/token) | 4B Q4_K_M ≈ 2.5 GB/token → 4090 ≈ 400, GB10 ≈ 110 tok/s | [C] theoretical, [U] for apr | — |
+| G10 | Decode ceilings (bandwidth ÷ bytes/token) | 4B Q4_K_M bytes/token against 4090 and GB10 bandwidth, derived per host; no evidence/ file yet | [C] theoretical, [U] for apr | — |
 
 ---
 
